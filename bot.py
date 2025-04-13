@@ -15,11 +15,10 @@ import sys
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 FASTGPT_API_KEY = os.getenv("FASTGPT_API_KEY")
-FASTGPT_API_URL = os.getenv("FASTGPT_API_URL", "https://api.fastgpt.run/v1/chat/completions")
+FASTGPT_API_URL = os.getenv("FASTGPT_API_URL", "https://openrouter.ai/api/v1/chat/completions")
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", 0))
 MAG_THRESHOLD = float(os.getenv("MAG_THRESHOLD", 4.5))
 LATEST_EQ_FILE = "latest_earthquake.json"
-
 
 def get_git_version():
     try:
@@ -27,9 +26,7 @@ def get_git_version():
     except Exception:
         return "unknown"
 
-
 VERSION = f"v0.0.1 ({get_git_version()})"
-
 
 def load_latest_eq_guid():
     if os.path.exists(LATEST_EQ_FILE):
@@ -41,14 +38,12 @@ def load_latest_eq_guid():
             print(f"⚠️ 無法載入地震快取: {e}")
     return None
 
-
 def save_latest_eq_guid(guid):
     try:
         with open(LATEST_EQ_FILE, "w", encoding="utf-8") as f:
             json.dump({"guid": guid}, f)
     except Exception as e:
         print(f"⚠️ 無法儲存地震快取: {e}")
-
 
 latest_eq_guid = load_latest_eq_guid()
 
@@ -59,7 +54,6 @@ intents.messages = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-
 @client.event
 async def on_ready():
     print(f"✅ 已登入 {client.user.name}")
@@ -69,7 +63,6 @@ async def on_ready():
     channel = client.get_channel(CHANNEL_ID)
     if channel:
         await channel.send(f"🔄 機器人已啟動，版本：{VERSION}")
-
 
 @tasks.loop(minutes=1)
 async def check_earthquake():
@@ -116,7 +109,6 @@ async def check_earthquake():
     else:
         print("❌ 找不到指定頻道")
 
-
 @tree.command(name="測試地震", description="發送測試地震報告")
 async def test_earthquake(interaction: discord.Interaction):
     embed = discord.Embed(
@@ -127,7 +119,6 @@ async def test_earthquake(interaction: discord.Interaction):
     )
     embed.set_image(url="https://www.cwa.gov.tw/Data/earthquake_img/EEA20250413104500.jpg")
     await interaction.response.send_message(embed=embed)
-
 
 @client.event
 async def on_message(message):
@@ -144,13 +135,14 @@ async def on_message(message):
         await message.channel.typing()
         headers = {
             "Authorization": f"Bearer {FASTGPT_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://kpark.discord.bot"
         }
         payload = {
             "messages": [
                 {"role": "user", "content": question}
             ],
-            "model": "gpt-3.5-turbo",
+            "model": "mistralai/mistral-7b-instruct",
             "stream": False
         }
 
@@ -163,20 +155,20 @@ async def on_message(message):
                 reply = data.get("choices", [{}])[0].get("message", {}).get("content", "❓ 沒有回應")
                 await message.channel.send(reply)
 
-
 @tree.command(name="ai", description="與 KK 中控室 AI 對話")
 @app_commands.describe(question="你想問什麼？")
 async def ask_ai(interaction: discord.Interaction, question: str):
     await interaction.response.defer()
     headers = {
         "Authorization": f"Bearer {FASTGPT_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://kpark.discord.bot"
     }
     payload = {
         "messages": [
             {"role": "user", "content": question}
         ],
-        "model": "gpt-3.5-turbo",
+        "model": "mistralai/mistral-7b-instruct",
         "stream": False
     }
 
@@ -189,17 +181,15 @@ async def ask_ai(interaction: discord.Interaction, question: str):
             reply = data.get("choices", [{}])[0].get("message", {}).get("content", "❓ 沒有回應")
             await interaction.followup.send(reply)
 
-
 @tree.command(name="更新機器人", description="從 GitHub 更新 bot 代碼")
 async def update_bot(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
         output = subprocess.check_output(["git", "pull"], stderr=subprocess.STDOUT)
-        await interaction.followup.send(f"✅ 代碼更新成功\n```{output.decode()}\n重新啟動 bot...```")
+        await interaction.followup.send(f"✅ 代碼更新成功\n```{output.decode()}\n重新啟動 bot...```) 
         os.execv(sys.executable, [sys.executable, "bot.py"])
     except subprocess.CalledProcessError as e:
         await interaction.followup.send(f"❌ 更新失敗\n```{e.output.decode()}```")
-
 
 @client.event
 async def on_error(event, *args, **kwargs):
