@@ -21,6 +21,16 @@ MAG_THRESHOLD = float(os.getenv("MAG_THRESHOLD", 4.5))
 LATEST_EQ_FILE = "latest_earthquake.json"
 
 
+def get_git_version():
+    try:
+        return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+    except Exception:
+        return "unknown"
+
+
+VERSION = f"v0.0.1 ({get_git_version()})"
+
+
 def load_latest_eq_guid():
     if os.path.exists(LATEST_EQ_FILE):
         try:
@@ -56,6 +66,9 @@ async def on_ready():
     synced = await tree.sync()
     print(f"🔁 已同步指令: {[cmd.name for cmd in synced]}")
     check_earthquake.start()
+    channel = client.get_channel(CHANNEL_ID)
+    if channel:
+        await channel.send(f"🔄 機器人已啟動，版本：{VERSION}")
 
 
 @tasks.loop(minutes=1)
