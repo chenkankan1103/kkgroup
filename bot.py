@@ -186,7 +186,7 @@ async def update_bot(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
         output = subprocess.check_output(["git", "pull"], stderr=subprocess.STDOUT)
-        await interaction.followup.send(f"✅ 代碼更新成功\n```{output.decode()}\n重新啟動 bot...```) 
+await interaction.followup.send(f"✅ 代碼更新成功\n```{output.decode()}\n重新啟動 bot...```")
         os.execv(sys.executable, [sys.executable, "bot.py"])
     except subprocess.CalledProcessError as e:
         await interaction.followup.send(f"❌ 更新失敗\n```{e.output.decode()}```")
