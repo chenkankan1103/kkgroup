@@ -18,6 +18,7 @@ FASTGPT_API_KEY = os.getenv("FASTGPT_API_KEY")
 FASTGPT_API_URL = os.getenv("FASTGPT_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 FASTGPT_MODEL = os.getenv("FASTGPT_MODEL", "llama3-8b-8192")
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", 0))
+SYS_CHANNEL_ID = int(os.getenv("DISCORD_SYS_CHANNEL_ID", 0))
 MAG_THRESHOLD = float(os.getenv("MAG_THRESHOLD", 4.5))
 LATEST_EQ_FILE = "latest_earthquake.json"
 
@@ -61,9 +62,10 @@ async def on_ready():
     synced = await tree.sync()
     print(f"🔁 已同步指令: {[cmd.name for cmd in synced]}")
     check_earthquake.start()
-    channel = client.get_channel(CHANNEL_ID)
-    if channel:
-        await channel.send(f"🔄 機器人已啟動，版本：{VERSION}")
+    if SYS_CHANNEL_ID:
+        channel = client.get_channel(SYS_CHANNEL_ID)
+        if channel:
+            await channel.send(f"🔄 機器人已啟動，版本：{VERSION}")
 
 @tasks.loop(minutes=1)
 async def check_earthquake():
@@ -169,6 +171,18 @@ async def ask_ai(interaction: discord.Interaction, question: str):
         return
     await interaction.followup.send(reply)
 
+@tree.command(name="設定通報頻道", description="設定地震或系統通知傳送頻道")
+@app_commands.describe(type="通報類型 (eq/system)", channel="指定的頻道")
+async def set_notify_channel(interaction: discord.Interaction, type: str, channel: discord.TextChannel):
+    if type.lower() == "eq":
+        os.environ["DISCORD_CHANNEL_ID"] = str(channel.id)
+        await interaction.response.send_message(f"✅ 地震通報頻道已設為 {channel.mention}，請重新啟動 bot 套用。", ephemeral=True)
+    elif type.lower() == "system":
+        os.environ["DISCORD_SYS_CHANNEL_ID"] = str(channel.id)
+        await interaction.response.send_message(f"✅ 系統訊息頻道已設為 {channel.mention}，請重新啟動 bot 套用。", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ 類型錯誤，請用 eq 或 system。", ephemeral=True)
+
 @tree.command(name="更新機器人", description="從 GitHub 更新 bot 代碼")
 async def update_bot(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -179,68 +193,9 @@ async def update_bot(interaction: discord.Interaction):
     except subprocess.CalledProcessError as e:
         await interaction.followup.send(f"❌ 更新失敗\n```{e.output.decode()}```")
 
-# 公告指令
-@tree.command(name="公告", description="發布公告到指定頻道")
-async def announce(interaction: discord.Interaction):
-    # 檢查是否為管理員
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ 您沒有權限使用此指令。")
-        return
-
-    # 創建一個選擇框來讓用戶選擇公告的頻道
-    options = [
-        discord.SelectOption(label="公告區", value="announcements"),
-        discord.SelectOption(label="普通頻道", value="general"),
-        discord.SelectOption(label="管理區", value="admin")
-    ]
-    select = discord.ui.Select(placeholder="選擇公告頻道", options=options)
-
-    # 創建文本輸入框來讓用戶輸入公告內容
-    input_box = discord.ui.TextInput(label="公告內容", placeholder="請在此輸入公告內容...", required=True)
-
-    # 定義一個提交按鈕
-    async def send_announcement(interaction: discord.Interaction):
-        selected_channel = select.values[0]  # 用戶選擇的頻道
-        announcement_content = input_box.value  # 用戶輸入的公告內容
-
-        # 根據選擇的頻道來取得 Discord 頻道物件
-        if selected_channel == "announcements":
-            channel = discord.utils.get(client.guilds[0].channels, name="announcements")
-        elif selected_channel == "general":
-            channel = discord.utils.get(client.guilds[0].channels, name="general")
-        elif selected_channel == "admin":
-            channel = discord.utils.get(client.guilds[0].channels, name="admin")
-
-        if channel:
-            await channel.send(f"📢 公告: {announcement_content}")
-            await interaction.response.send_message("✅ 公告已成功發佈！")
-        else:
-            await interaction.response.send_message("❌ 找不到指定的頻道。")
-
-    # 創建一個包含下拉選單、文本框和提交按鈕的組合
-    view = discord.ui.View()
-    view.add_item(select)
-    view.add_item(input_box)
-    view.add_item(discord.ui.Button(label="發佈公告", style=discord.ButtonStyle.green, custom_id="send_announcement", disabled=False))
-
-    await interaction.response.send_message("📝 請選擇公告頻道並輸入公告內容", view=view)
-
 @client.event
-async def on_message(message):
-    if message.author.bot:
-        return
+async def on_error(event, *args, **kwargs):
+    print(f"出錯的事件: {event}")
+    traceback.print_exc()
 
-    mention = f"<@{client.user.id}>"
-    if message.content.startswith(mention):
-        question = message.content[len(mention):].strip()
-        if not question:
-            await message.channel.send("✉️ 您好，我是 KK 中控室 AI。想問什麼？")
-            return
-
-        await message.channel.typing()
-        reply = await ask_openrouter_ai(question)
-        if reply is None:
-            await message.channel.send("❌ 無法連線到 AI 伺服器。")
-            return
-        await message.channel.send(reply)
-
+client.run(TOKEN)
