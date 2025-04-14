@@ -130,7 +130,7 @@ async def ask_openrouter_ai(question):
         "messages": [
             {"role": "user", "content": question}
         ],
-        "model": nvidia/llama-3.1-nemotron-nano-8b-v1:free,
+        "model": "nvidia/llama-3.1-nemotron-nano-8b-v1:free",
         "stream": False
     }
     async with aiohttp.ClientSession() as session:
