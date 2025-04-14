@@ -16,6 +16,7 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 FASTGPT_API_KEY = os.getenv("FASTGPT_API_KEY")
 FASTGPT_API_URL = os.getenv("FASTGPT_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+FASTGPT_MODEL = os.getenv("FASTGPT_MODEL", "mistralai/mistral-7b-instruct")
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", 0))
 MAG_THRESHOLD = float(os.getenv("MAG_THRESHOLD", 4.5))
 LATEST_EQ_FILE = "latest_earthquake.json"
@@ -120,6 +121,25 @@ async def test_earthquake(interaction: discord.Interaction):
     embed.set_image(url="https://www.cwa.gov.tw/Data/earthquake_img/EEA20250413104500.jpg")
     await interaction.response.send_message(embed=embed)
 
+async def ask_openrouter_ai(question):
+    headers = {
+        "Authorization": f"Bearer {FASTGPT_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messages": [
+            {"role": "user", "content": question}
+        ],
+        "model": nvidia/llama-3.1-nemotron-nano-8b-v1:free,
+        "stream": False
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(FASTGPT_API_URL, headers=headers, json=payload) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            return data.get("choices", [{}])[0].get("message", {}).get("content", "❓ 沒有回應")
+
 @client.event
 async def on_message(message):
     if message.author.bot:
@@ -133,53 +153,21 @@ async def on_message(message):
             return
 
         await message.channel.typing()
-        headers = {
-            "Authorization": f"Bearer {FASTGPT_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://kpark.discord.bot"
-        }
-        payload = {
-            "messages": [
-                {"role": "user", "content": question}
-            ],
-            "model": "mistralai/mistral-7b-instruct",
-            "stream": False
-        }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(FASTGPT_API_URL, headers=headers, json=payload) as resp:
-                if resp.status != 200:
-                    await message.channel.send("❌ 無法連線到 AI 伺服器。")
-                    return
-                data = await resp.json()
-                reply = data.get("choices", [{}])[0].get("message", {}).get("content", "❓ 沒有回應")
-                await message.channel.send(reply)
+        reply = await ask_openrouter_ai(question)
+        if reply is None:
+            await message.channel.send("❌ 無法連線到 AI 伺服器。")
+            return
+        await message.channel.send(reply)
 
 @tree.command(name="ai", description="與 KK 中控室 AI 對話")
 @app_commands.describe(question="你想問什麼？")
 async def ask_ai(interaction: discord.Interaction, question: str):
     await interaction.response.defer()
-    headers = {
-        "Authorization": f"Bearer {FASTGPT_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://kpark.discord.bot"
-    }
-    payload = {
-        "messages": [
-            {"role": "user", "content": question}
-        ],
-        "model": "mistralai/mistral-7b-instruct",
-        "stream": False
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(FASTGPT_API_URL, headers=headers, json=payload) as resp:
-            if resp.status != 200:
-                await interaction.followup.send("❌ 無法連線到 AI 伺服器。")
-                return
-            data = await resp.json()
-            reply = data.get("choices", [{}])[0].get("message", {}).get("content", "❓ 沒有回應")
-            await interaction.followup.send(reply)
+    reply = await ask_openrouter_ai(question)
+    if reply is None:
+        await interaction.followup.send("❌ 無法連線到 AI 伺服器。")
+        return
+    await interaction.followup.send(reply)
 
 @tree.command(name="更新機器人", description="從 GitHub 更新 bot 代碼")
 async def update_bot(interaction: discord.Interaction):
@@ -190,7 +178,6 @@ async def update_bot(interaction: discord.Interaction):
         os.execv(sys.executable, [sys.executable, "bot.py"])
     except subprocess.CalledProcessError as e:
         await interaction.followup.send(f"❌ 更新失敗\n```{e.output.decode()}```")
-
 
 @client.event
 async def on_error(event, *args, **kwargs):
