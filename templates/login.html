@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>管理系統登入</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; background: #2c3e50; color: white; margin: 0; padding: 50px; }
+        .container { max-width: 400px; margin: 0 auto; background: #34495e; padding: 30px; border-radius: 8px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; background: #2c3e50; border: 1px solid #5a6c7d; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #3498db; border: none; color: white; cursor: pointer; border-radius: 4px; }
+        button:hover { background: #2980b9; }
+        .flash { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .error { background: #e74c3c; }
+        .success { background: #27ae60; }
+        .info { background: #3498db; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>系統登入</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <form method="post">
+            <input type="text" name="username" placeholder="帳號" required>
+            <input type="password" name="password" placeholder="密碼" required>
+            <button type="submit">登入</button>
+        </form>
+    </div>
+</body>
+</html>

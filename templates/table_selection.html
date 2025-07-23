@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>資料表選擇</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; background: #2c3e50; color: white; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
+        .table-card { background: #34495e; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db; }
+        .table-card h3 { margin: 0 0 15px 0; color: #3498db; font-size: 1.4em; }
+        .table-stats { margin: 10px 0; color: #bdc3c7; }
+        .btn { padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin: 5px 5px 0 0; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-warning { background: #f39c12; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn:hover { opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>資料表管理系統</h1>
+        <div>
+            <span>歡迎，{{ session.username }}</span>
+            <a href="{{ url_for('logout') }}" class="btn btn-danger">登出</a>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="table-grid">
+        {% for table in tables %}
+        <div class="table-card">
+            <h3>{{ table.name }}</h3>
+            <div class="table-stats">
+                <span><strong>記錄數：</strong>{{ table.records }}</span>
+                <span><strong>欄位數：</strong>{{ table.columns }}</span>
+            </div>
+            <div style="margin-top: 15px;">
+                <a href="{{ url_for('dashboard', table_name=table.name) }}" class="btn btn-primary">查看資料</a>
+                <a href="{{ url_for('bulk_edit', table_name=table.name) }}" class="btn btn-warning">批量編輯</a>
+                <a href="{{ url_for('add_record', table_name=table.name) }}" class="btn btn-success">新增記錄</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

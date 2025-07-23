@@ -1,0 +1,49 @@
+# 在你的 paste.txt 文件頂部添加這個導入
+from shop_commands.merchant.paperdoll_system import EnhancedPaperDollSystem
+
+class ButtonInteraction(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        # 初始化增強版紙娃娃系統
+        self.paperdoll_system = EnhancedPaperDollSystem(bot)
+        
+        # 設定定期清除快取的任務
+        self.cache_cleanup_task = bot.loop.create_task(self._periodic_cache_cleanup())
+
+    async def _periodic_cache_cleanup(self):
+        """定期清除過期快取"""
+        while not self.bot.is_closed():
+            await asyncio.sleep(3600)  # 每小時執行一次
+            self.paperdoll_system.clear_expired_cache()
+
+    async def cog_load(self):
+        """在 cog 加載時添加持久化視圖"""
+        self.bot.add_view(PersistentView(self))
+        self.bot.add_view(ExploreView(self))
+        self.bot.add_view(RoleShopView(self))
+        self.bot.add_view(EquipmentShopView(self))
+
+    # 替換原本的 fetch_character_image 方法
+    async def fetch_character_image(self, user_data: dict) -> discord.File:
+        """使用增強版系統獲取角色圖片"""
+        return await self.paperdoll_system.fetch_character_image(user_data)
+
+    # 替換原本的 handle_equipment_try_on 方法
+    async def handle_equipment_try_on(self, interaction, item_name: str, item_data: dict, category: str):
+        """處理裝備試穿 - 使用增強版系統"""
+        user_data = await self.get_user_data(interaction.user.id)
+        if not user_data:
+            await interaction.response.send_message("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
+            return
+        
+        await self.paperdoll_system.handle_enhanced_try_on(
+            interaction, item_name, item_data, category, user_data
+        )
+
+    def cog_unload(self):
+        """清理資源"""
+        if hasattr(self, 'cache_cleanup_task'):
+            self.cache_cleanup_task.cancel()
+
+    # 你的其他方法保持不變...
+    # ... (其他原有的方法)

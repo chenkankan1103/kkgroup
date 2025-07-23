@@ -1,0 +1,50 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>查看記錄 - {{ table_name }}</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; background: #2c3e50; color: white; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #34495e; padding: 30px; border-radius: 8px; }
+        .record-info { background: #2c3e50; padding: 20px; border-radius: 4px; margin-bottom: 20px; }
+        .info-row { display: flex; margin-bottom: 15px; border-bottom: 1px solid #5a6c7d; padding-bottom: 10px; }
+        .info-label { font-weight: bold; color: #3498db; width: 200px; flex-shrink: 0; }
+        .info-value { flex: 1; word-break: break-all; }
+        .btn { padding: 10px 20px; margin: 5px; text-decoration: none; border-radius: 4px; display: inline-block; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-back { background: #95a5a6; color: white; }
+        .btn:hover { opacity: 0.8; }
+        .field-type { font-size: 11px; color: #bdc3c7; font-weight: normal; }
+        .table-title { color: #3498db; margin: 0 0 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="table-title">{{ table_name }} 記錄詳情 (ID: {{ record_id }})</h2>
+        
+        <div class="record-info">
+            {% for column in columns %}
+            <div class="info-row">
+                <div class="info-label">
+                    {{ column }}
+                    <span class="field-type">({{ get_column_type(column) }})</span>
+                </div>
+                <div class="info-value">
+                    {% if record[column] is not none %}
+                        {{ format_field_value(record[column], get_column_type(column)) }}
+                    {% else %}
+                        <em style="color: #95a5a6;">null</em>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div>
+            <a href="{{ url_for('edit_record', table_name=table_name, record_id=record_id) }}" class="btn btn-primary">編輯記錄</a>
+            <a href="{{ url_for('dashboard', table_name=table_name) }}" class="btn btn-back">返回列表</a>
+        </div>
+    </div>
+</body>
+</html>
