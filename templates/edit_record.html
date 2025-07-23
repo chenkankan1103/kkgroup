@@ -1,0 +1,53 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>編輯記錄 - {{ table_name }}</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; background: #2c3e50; color: white; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #34495e; padding: 30px; border-radius: 8px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #3498db; }
+        input, select, textarea { width: 100%; padding: 10px; background: #2c3e50; border: 1px solid #5a6c7d; color: white; box-sizing: border-box; border-radius: 4px; }
+        button { width: 100%; padding: 12px; background: #3498db; border: none; color: white; cursor: pointer; margin: 10px 0; border-radius: 4px; }
+        button:hover { background: #2980b9; }
+        .btn-back { background: #95a5a6; }
+        .btn-back:hover { background: #7f8c8d; }
+        .flash { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .error { background: #e74c3c; }
+        .success { background: #27ae60; }
+        .field-type { font-size: 12px; color: #bdc3c7; }
+        .table-title { color: #3498db; margin: 0 0 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="table-title">編輯 {{ table_name }} 記錄 (ID: {{ record_id }})</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <form method="post">
+            {% for column in columns %}
+            <div class="form-group">
+                <label for="{{ column }}">
+                    {{ column }}
+                    <span class="field-type">({{ get_column_type(column) }})</span>
+                </label>
+                <input type="{{ get_input_type(column) }}" 
+                       id="{{ column }}" 
+                       name="{{ column }}" 
+                       value="{{ record[column] if record[column] is not none else '' }}"
+                       placeholder="請輸入 {{ column }}">
+            </div>
+            {% endfor %}
+            <button type="submit">更新記錄</button>
+            <button type="button" class="btn-back" onclick="window.location.href='{{ url_for('dashboard', table_name=table_name) }}'">返回</button>
+        </form>
+    </div>
+</body>
+</html>

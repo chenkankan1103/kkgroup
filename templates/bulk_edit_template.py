@@ -1,0 +1,383 @@
+import os
+
+def create_bulk_edit_template():
+    if not os.path.exists('templates'):
+        os.makedirs('templates')
+
+    bulk_edit_template = '''<!DOCTYPE html>
+<html>
+<head>
+    <title>批量編輯 - {{ table_name }}</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial; background: #2c3e50; color: white; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .controls { margin-bottom: 15px; }
+        .btn { padding: 8px 16px; margin: 2px; text-decoration: none; border-radius: 4px; display: inline-block; border: none; cursor: pointer; font-size: 14px; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-back { background: #95a5a6; color: white; }
+        .btn-warning { background: #f39c12; color: white; }
+        .btn:hover { opacity: 0.8; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .table-container { overflow: auto; max-height: 70vh; border: 1px solid #5a6c7d; }
+        table { width: 100%; background: #34495e; border-collapse: collapse; }
+        th, td { padding: 6px 8px; border: 1px solid #5a6c7d; min-width: 100px; }
+        th { background: #2c3e50; position: sticky; top: 0; z-index: 10; font-weight: bold; }
+        .editable { background: #2c3e50; border: 1px solid #5a6c7d; color: white; width: 100%; padding: 4px; border-radius: 2px; }
+        .editable:focus { border-color: #3498db; outline: none; }
+        .changed { background: #f39c12 !important; }
+        .new-row { background-color: rgba(39, 174, 96, 0.1); }
+        .deleted-row { background-color: rgba(231, 76, 60, 0.2); text-decoration: line-through; opacity: 0.6; }
+        .row-controls { width: 120px; text-align: center; }
+        .flash { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .success { background: #27ae60; }
+        .error { background: #e74c3c; }
+        .info { background: #3498db; }
+        .warning { background: #f39c12; }
+        .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+        .status-none { background: #95a5a6; }
+        .status-update { background: #f39c12; }
+        .status-insert { background: #27ae60; }
+        .status-delete { background: #e74c3c; }
+        .changes-summary { background: #34495e; padding: 10px; border-radius: 4px; margin-bottom: 10px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>批量編輯 {{ table_name }}</h1>
+        <div>
+            <a href="{{ url_for('dashboard', table_name=table_name) }}" class="btn btn-back">返回</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-danger">登出</a>
+        </div>
+    </div>
+
+    <div id="flash-container"></div>
+
+    <div class="changes-summary" id="changes-summary">
+        <h4>變更摘要：</h4>
+        <div id="changes-count">
+            <span id="update-count">修改: 0</span> | 
+            <span id="insert-count">新增: 0</span> | 
+            <span id="delete-count">刪除: 0</span>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn btn-success" id="save-btn" onclick="saveChanges()">
+            <span class="status-indicator status-none"></span>保存所有變更
+        </button>
+        <button class="btn btn-primary" onclick="addNewRow()">新增行</button>
+        <button class="btn btn-warning" onclick="clearChanges()">清除變更</button>
+        <button class="btn btn-danger" onclick="resetTable()">重置表格</button>
+    </div>
+
+    <div class="table-container">
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th style="width: 40px;">狀態</th>
+                    {% for column in columns %}
+                    <th>{{ column }}</th>
+                    {% endfor %}
+                    <th class="row-controls">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in records %}
+                <tr data-id="{{ record[primary_key] }}" data-action="none" data-original='{{ record | tojsonfilter | e }}'>
+                    <td><span class="status-indicator status-none" title="無變更"></span></td>
+                    {% for column in columns %}
+                    <td>
+                        {% if column == primary_key %}
+                            <span class="primary-key">{{ record[column] }}</span>
+                        {% else %}
+                            <input type="text" class="editable" data-field="{{ column }}" 
+                                   data-original="{{ record[column] if record[column] is not none else '' }}"
+                                   value="{{ record[column] if record[column] is not none else '' }}"
+                                   onchange="markChanged(this)" onkeyup="detectChange(this)">
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td class="row-controls">
+                        <button class="btn btn-danger" onclick="toggleDelete(this)" title="切換刪除狀態">刪除</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let newRowCounter = 0;
+        const primaryKey = '{{ primary_key }}';
+        const tableName = '{{ table_name }}';
+
+        document.addEventListener('DOMContentLoaded', function() {
+            updateChangesSummary();
+        });
+
+        function detectChange(input) {
+            const original = input.dataset.original || '';
+            const current = input.value || '';
+            
+            if (original !== current) {
+                input.classList.add('changed');
+            } else {
+                input.classList.remove('changed');
+            }
+            markChanged(input);
+        }
+
+        function markChanged(input) {
+            const row = input.closest('tr');
+            
+            if (row.dataset.action === 'insert') return;
+            
+            const hasChanges = row.querySelectorAll('.editable.changed').length > 0;
+            const isDeleted = row.classList.contains('deleted-row');
+            
+            if (hasChanges && !isDeleted) {
+                setRowAction(row, 'update');
+            } else if (isDeleted) {
+                setRowAction(row, 'delete');
+            } else {
+                setRowAction(row, 'none');
+            }
+            updateChangesSummary();
+        }
+
+        function setRowAction(row, action) {
+            row.dataset.action = action;
+            const statusIndicator = row.querySelector('.status-indicator');
+            statusIndicator.className = 'status-indicator';
+            
+            switch(action) {
+                case 'update':
+                    statusIndicator.classList.add('status-update');
+                    statusIndicator.title = '待修改';
+                    break;
+                case 'insert':
+                    statusIndicator.classList.add('status-insert');
+                    statusIndicator.title = '待新增';
+                    break;
+                case 'delete':
+                    statusIndicator.classList.add('status-delete');
+                    statusIndicator.title = '待刪除';
+                    break;
+                default:
+                    statusIndicator.classList.add('status-none');
+                    statusIndicator.title = '無變更';
+            }
+        }
+
+        function addNewRow() {
+            const tbody = document.querySelector('#dataTable tbody');
+            const columns = {{ columns | tojsonfilter }};
+            
+            const newRow = document.createElement('tr');
+            newRow.className = 'new-row';
+            newRow.dataset.id = 'new_' + (++newRowCounter);
+            newRow.dataset.action = 'insert';
+            newRow.dataset.original = '{}';
+            
+            const statusTd = document.createElement('td');
+            statusTd.innerHTML = '<span class="status-indicator status-insert" title="待新增"></span>';
+            newRow.appendChild(statusTd);
+            
+            columns.forEach(column => {
+                const td = document.createElement('td');
+                if (column === primaryKey) {
+                    td.innerHTML = '<span class="primary-key">自動產生</span>';
+                } else {
+                    td.innerHTML = `<input type="text" class="editable" data-field="${column}" 
+                                          data-original="" value="" 
+                                          onchange="markChanged(this)" onkeyup="detectChange(this)">`;
+                }
+                newRow.appendChild(td);
+            });
+            
+            const controlTd = document.createElement('td');
+            controlTd.className = 'row-controls';
+            controlTd.innerHTML = '<button class="btn btn-danger" onclick="removeNewRow(this)" title="移除新行">移除</button>';
+            newRow.appendChild(controlTd);
+            
+            tbody.appendChild(newRow);
+            updateChangesSummary();
+            
+            const firstInput = newRow.querySelector('.editable');
+            if (firstInput) firstInput.focus();
+        }
+
+        function removeNewRow(button) {
+            const row = button.closest('tr');
+            if (row.dataset.action === 'insert') {
+                row.remove();
+                updateChangesSummary();
+            }
+        }
+
+        function toggleDelete(button) {
+            const row = button.closest('tr');
+            
+            if (row.dataset.action === 'insert') {
+                removeNewRow(button);
+                return;
+            }
+            
+            if (row.classList.contains('deleted-row')) {
+                row.classList.remove('deleted-row');
+                button.textContent = '刪除';
+                button.title = '標記為刪除';
+                
+                const hasChanges = row.querySelectorAll('.editable.changed').length > 0;
+                setRowAction(row, hasChanges ? 'update' : 'none');
+            } else {
+                row.classList.add('deleted-row');
+                button.textContent = '復原';
+                button.title = '取消刪除';
+                setRowAction(row, 'delete');
+            }
+            updateChangesSummary();
+        }
+
+        function clearChanges() {
+            if (!confirm('確定要清除所有變更嗎？')) return;
+            
+            document.querySelectorAll('.changed').forEach(input => {
+                input.classList.remove('changed');
+                input.value = input.dataset.original || '';
+            });
+            
+            document.querySelectorAll('.new-row').forEach(row => row.remove());
+            
+            document.querySelectorAll('.deleted-row').forEach(row => {
+                row.classList.remove('deleted-row');
+                const deleteBtn = row.querySelector('button');
+                deleteBtn.textContent = '刪除';
+                deleteBtn.title = '標記為刪除';
+                setRowAction(row, 'none');
+            });
+            
+            newRowCounter = 0;
+            updateChangesSummary();
+            showFlash('已清除所有變更', 'info');
+        }
+
+        function resetTable() {
+            if (!confirm('確定要重置表格到初始狀態嗎？這將清除所有變更。')) return;
+            window.location.reload();
+        }
+
+        function updateChangesSummary() {
+            const rows = document.querySelectorAll('#dataTable tbody tr');
+            let updateCount = 0, insertCount = 0, deleteCount = 0;
+            
+            rows.forEach(row => {
+                switch(row.dataset.action) {
+                    case 'update': updateCount++; break;
+                    case 'insert': insertCount++; break;
+                    case 'delete': deleteCount++; break;
+                }
+            });
+            
+            document.getElementById('update-count').textContent = `修改: ${updateCount}`;
+            document.getElementById('insert-count').textContent = `新增: ${insertCount}`;
+            document.getElementById('delete-count').textContent = `刪除: ${deleteCount}`;
+            
+            const totalChanges = updateCount + insertCount + deleteCount;
+            const summaryDiv = document.getElementById('changes-summary');
+            const saveBtn = document.getElementById('save-btn');
+            
+            if (totalChanges > 0) {
+                summaryDiv.style.display = 'block';
+                saveBtn.disabled = false;
+                saveBtn.querySelector('.status-indicator').className = 'status-indicator status-warning';
+            } else {
+                summaryDiv.style.display = 'none';
+                saveBtn.disabled = false;
+                saveBtn.querySelector('.status-indicator').className = 'status-indicator status-none';
+            }
+        }
+
+        function saveChanges() {
+            const rows = document.querySelectorAll('#dataTable tbody tr');
+            const changes = [];
+            
+            rows.forEach(row => {
+                const action = row.dataset.action;
+                if (action === 'none') return;
+                
+                const change = {
+                    action: action,
+                    id: row.dataset.id,
+                    fields: {}
+                };
+                
+                if (action === 'update' || action === 'insert') {
+                    row.querySelectorAll('.editable').forEach(input => {
+                        if (action === 'insert' || input.classList.contains('changed')) {
+                            change.fields[input.dataset.field] = input.value || null;
+                        }
+                    });
+                }
+                changes.push(change);
+            });
+            
+            if (changes.length === 0) {
+                showFlash('沒有變更需要保存', 'info');
+                return;
+            }
+            
+            const saveBtn = document.getElementById('save-btn');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="status-indicator status-warning"></span>保存中...';
+            
+            fetch(`/api/bulk_save/${tableName}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({changes: changes})
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    showFlash(`成功保存 ${changes.length} 項變更！`, 'success');
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    throw new Error(data.message || '保存失敗');
+                }
+            })
+            .catch(error => {
+                console.error('保存錯誤:', error);
+                showFlash('保存失敗: ' + error.message, 'error');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<span class="status-indicator status-none"></span>保存所有變更';
+            });
+        }
+
+        function showFlash(message, type) {
+            const flashContainer = document.getElementById('flash-container');
+            const flashDiv = document.createElement('div');
+            flashDiv.className = `flash ${type}`;
+            flashDiv.textContent = message;
+            flashContainer.appendChild(flashDiv);
+            
+            setTimeout(() => flashDiv.remove(), 5000);
+        }
+    </script>
+</body>
+</html>'''
+
+    with open(os.path.join('templates', 'bulk_edit.html'), 'w', encoding='utf-8') as f:
+        f.write(bulk_edit_template)
+    
+    print("批量編輯模板已生成")
+
+if __name__ == "__main__":
+    create_bulk_edit_template()
