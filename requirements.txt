@@ -6,5 +6,6 @@ pillow
 regex
 huggingface_hub
 aiosqlite
-discord.py==2.5.2
-flask==3.1.1
+discord.py
+flask
+pytz
