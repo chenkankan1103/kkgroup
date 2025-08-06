@@ -40,9 +40,9 @@ class Earthquake(commands.Cog):
             return None
 
         try:
-            timeout = aiohttp.ClientTimeout(total=15)
+            timeout = aiohttp.ClientTimeout(total=20)  # 增加超時時間
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                params = {"Authorization": cwb_api_key, "limit": 10}  # 增加限制數量
+                params = {"Authorization": cwb_api_key, "limit": 5}  # 減少限制數量從10改為5
                 async with session.get(
                     "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001",
                     params=params
@@ -129,7 +129,7 @@ class Earthquake(commands.Cog):
                 "max_tokens": 150
             }
             
-            timeout = aiohttp.ClientTimeout(total=8)
+            timeout = aiohttp.ClientTimeout(total=10)  # 增加AI API超時時間
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     "https://api.groq.com/openai/v1/chat/completions",
@@ -157,20 +157,50 @@ class Earthquake(commands.Cog):
         else:
             return "📡 微小地震活動記錄，一般不會有感覺"
 
-    @tasks.loop(minutes=2)  # 調整為每2分鐘檢查一次，減少API調用頻率
+    def get_dynamic_check_interval(self):
+        """動態調整檢查間隔"""
+        now = datetime.now()
+        current_hour = now.hour
+        
+        # 深夜時間（23:00-06:00）較少檢查 - 10分鐘
+        if current_hour >= 23 or current_hour < 6:
+            return 10
+        # 一般時間（06:00-23:00）- 5分鐘
+        else:
+            return 5
+
+    @tasks.loop(minutes=5)  # 基礎間隔調整為5分鐘（從2分鐘增加）
     async def monitor_earthquake(self):
         """地震監控主任務"""
         try:
+            # 動態檢查間隔控制
+            now = datetime.now()
+            if self.last_check_time:
+                expected_interval = self.get_dynamic_check_interval()
+                time_since_last = (now - self.last_check_time).total_seconds() / 60
+                
+                # 如果還沒到檢查時間，跳過
+                if time_since_last < expected_interval:
+                    logger.debug(f"距離上次檢查僅{time_since_last:.1f}分鐘，跳過檢查（需間隔{expected_interval}分鐘）")
+                    return
+            
             # 如果連續多次API錯誤，延長檢查間隔
             if self.api_error_count >= 3:
-                logger.warning(f"API錯誤次數過多({self.api_error_count})，跳過本次檢查")
-                if self.api_error_count >= 10:
-                    # 如果錯誤次數過多，重置計數器避免永久停止
+                skip_minutes = min(self.api_error_count * 5, 30)  # 最多跳過30分鐘
+                logger.warning(f"API錯誤次數過多({self.api_error_count})，跳過{skip_minutes}分鐘檢查")
+                
+                if self.last_check_time:
+                    time_since_last = (now - self.last_check_time).total_seconds() / 60
+                    if time_since_last < skip_minutes:
+                        return
+                
+                # 重置錯誤計數器，避免永久停止
+                if self.api_error_count >= 12:  # 1小時後重置
                     self.api_error_count = 0
                     logger.info("重置API錯誤計數器")
-                return
 
             logger.debug("執行地震監控檢查...")
+            self.last_check_time = now
             
             # 獲取地震資料
             records = await self.get_earthquake_data()
@@ -179,7 +209,6 @@ class Earthquake(commands.Cog):
 
             # 首次運行時初始化 - 記錄所有最近的地震
             if not self.initialization_complete:
-                self.last_check_time = datetime.now()
                 # 記錄所有最近24小時內的地震，避免重複推送
                 for record in records:
                     if self.is_recent_earthquake(record, hours=24):
@@ -204,17 +233,17 @@ class Earthquake(commands.Cog):
                     self.processed_quakes.add(quake_id)
                     logger.info(f"發現新地震: {quake_id}")
 
-            # 清理過舊的記錄，只保留最近200筆
-            if len(self.processed_quakes) > 200:
-                # 轉換為列表並保留最新的100筆
+            # 清理過舊的記錄，只保留最近150筆（從200減少）
+            if len(self.processed_quakes) > 150:
+                # 轉換為列表並保留最新的75筆（從100減少）
                 quake_list = list(self.processed_quakes)
-                self.processed_quakes = set(quake_list[-100:])
+                self.processed_quakes = set(quake_list[-75:])
                 logger.info(f"清理舊地震記錄，保留 {len(self.processed_quakes)} 筆")
 
             # 處理新地震
             for record in new_quakes:
                 await self.process_earthquake(record)
-                await asyncio.sleep(2)  # 增加延遲避免發送太快
+                await asyncio.sleep(3)  # 增加延遲避免發送太快（從2秒增加到3秒）
 
             if new_quakes:
                 logger.info(f"處理了 {len(new_quakes)} 個新地震")
@@ -241,8 +270,8 @@ class Earthquake(commands.Cog):
             except (ValueError, TypeError):
                 magnitude_value = 0
 
-            # 只處理有意義的地震（規模2.0以上）
-            if magnitude_value < 2.0:
+            # 只處理有意義的地震（規模2.5以上，提高門檻減少通知）
+            if magnitude_value < 2.5:
                 logger.debug(f"跳過規模過小的地震: {magnitude_value}")
                 return
 
@@ -350,9 +379,12 @@ class Earthquake(commands.Cog):
             else:
                 last_check_info = f"{int(time_diff.total_seconds() // 3600)} 小時前"
         
+        # 顯示當前檢查間隔
+        current_interval = self.get_dynamic_check_interval()
+        
         embed = discord.Embed(
             title="🤖 地震監控狀態",
-            description=f"監控狀態：{status}\n初始化：{init_status}\n已處理地震：{processed_count} 筆\n上次成功檢查：{last_check_info}\nAPI錯誤次數：{self.api_error_count}",
+            description=f"監控狀態：{status}\n初始化：{init_status}\n已處理地震：{processed_count} 筆\n上次成功檢查：{last_check_info}\nAPI錯誤次數：{self.api_error_count}\n當前檢查間隔：{current_interval} 分鐘",
             color=0x00ff00 if self.monitor_earthquake.is_running() else 0xff0000
         )
         
