@@ -7,6 +7,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 import hashlib
+import pytz  # 新增時區處理
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +20,9 @@ class Earthquake(commands.Cog):
         self.initialization_complete = False  # 新增初始化完成標記
         self.api_error_count = 0  # 追蹤API錯誤次數
         self.last_successful_check = None  # 上次成功檢查時間
+        
+        # 設定台灣時區
+        self.taiwan_tz = pytz.timezone('Asia/Taipei')
         
     async def cog_load(self):
         """Cog載入時啟動監控"""
@@ -52,7 +56,7 @@ class Earthquake(commands.Cog):
                         records = data.get("records", {}).get("Earthquake", [])
                         logger.info(f"成功獲取 {len(records)} 筆地震資料")
                         self.api_error_count = 0  # 重置錯誤計數
-                        self.last_successful_check = datetime.now()
+                        self.last_successful_check = self.get_taiwan_time()  # 使用台灣時間
                         return records
                     else:
                         logger.error(f"API請求失敗: {resp.status}")
@@ -86,6 +90,13 @@ class Earthquake(commands.Cog):
             logger.error(f"生成地震ID失敗: {e}")
         return None
 
+    def get_taiwan_time(self):
+        """獲取台灣當前時間"""
+        utc_now = datetime.utcnow()
+        utc_time = pytz.utc.localize(utc_now)
+        taiwan_time = utc_time.astimezone(self.taiwan_tz)
+        return taiwan_time
+
     def is_recent_earthquake(self, record, hours=24):
         """檢查地震是否在指定時間內發生"""
         try:
@@ -96,7 +107,12 @@ class Earthquake(commands.Cog):
             
             # 解析時間格式 (假設格式為 "2024-01-01 12:00:00")
             origin_time = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S")
-            time_diff = datetime.now() - origin_time
+            # 將地震時間當作台灣時間處理
+            origin_time = self.taiwan_tz.localize(origin_time)
+            
+            # 計算與台灣當前時間的差距
+            taiwan_now = self.get_taiwan_time()
+            time_diff = taiwan_now - origin_time
             
             return time_diff <= timedelta(hours=hours)
         except Exception as e:
@@ -158,26 +174,30 @@ class Earthquake(commands.Cog):
             return "📡 微小地震活動記錄，一般不會有感覺"
 
     def get_dynamic_check_interval(self):
-        """動態調整檢查間隔"""
-        now = datetime.now()
-        current_hour = now.hour
+        """動態調整檢查間隔 - 基於台灣時間"""
+        taiwan_now = self.get_taiwan_time()
+        current_hour = taiwan_now.hour
+        
+        logger.debug(f"台灣當前時間: {taiwan_now.strftime('%Y-%m-%d %H:%M:%S %Z')}, 小時: {current_hour}")
         
         # 深夜時間（23:00-06:00）較少檢查 - 10分鐘
         if current_hour >= 23 or current_hour < 6:
+            logger.debug("台灣深夜時段，使用10分鐘檢查間隔")
             return 10
-        # 一般時間（06:00-23:00）- 5分鐘
+        # 一般時間（06:00-23:00）- 5分鐘  
         else:
+            logger.debug("台灣白天時段，使用5分鐘檢查間隔")
             return 5
 
     @tasks.loop(minutes=5)  # 基礎間隔調整為5分鐘（從2分鐘增加）
     async def monitor_earthquake(self):
         """地震監控主任務"""
         try:
-            # 動態檢查間隔控制
-            now = datetime.now()
+            # 動態檢查間隔控制 - 使用台灣時間
+            taiwan_now = self.get_taiwan_time()
             if self.last_check_time:
                 expected_interval = self.get_dynamic_check_interval()
-                time_since_last = (now - self.last_check_time).total_seconds() / 60
+                time_since_last = (taiwan_now - self.last_check_time).total_seconds() / 60
                 
                 # 如果還沒到檢查時間，跳過
                 if time_since_last < expected_interval:
@@ -190,7 +210,7 @@ class Earthquake(commands.Cog):
                 logger.warning(f"API錯誤次數過多({self.api_error_count})，跳過{skip_minutes}分鐘檢查")
                 
                 if self.last_check_time:
-                    time_since_last = (now - self.last_check_time).total_seconds() / 60
+                    time_since_last = (taiwan_now - self.last_check_time).total_seconds() / 60
                     if time_since_last < skip_minutes:
                         return
                 
@@ -200,7 +220,7 @@ class Earthquake(commands.Cog):
                     logger.info("重置API錯誤計數器")
 
             logger.debug("執行地震監控檢查...")
-            self.last_check_time = now
+            self.last_check_time = taiwan_now
             
             # 獲取地震資料
             records = await self.get_earthquake_data()
@@ -302,7 +322,7 @@ class Earthquake(commands.Cog):
             if img_url:
                 embed.set_image(url=img_url)
             
-            embed.set_footer(text=f"資料來源：中央氣象署 | 檢查時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            embed.set_footer(text=f"資料來源：中央氣象署 | 檢查時間：{self.get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
             # 發送訊息
             await self.send_notification(embed)
@@ -368,10 +388,11 @@ class Earthquake(commands.Cog):
         processed_count = len(self.processed_quakes)
         init_status = "✅ 已完成" if self.initialization_complete else "⏳ 進行中"
         
-        # 計算上次成功檢查的時間
+        # 計算上次成功檢查的時間 - 使用台灣時間
         last_check_info = "從未成功"
         if self.last_successful_check:
-            time_diff = datetime.now() - self.last_successful_check
+            taiwan_now = self.get_taiwan_time()
+            time_diff = taiwan_now - self.last_successful_check
             if time_diff.total_seconds() < 60:
                 last_check_info = f"{int(time_diff.total_seconds())} 秒前"
             elif time_diff.total_seconds() < 3600:
@@ -379,12 +400,13 @@ class Earthquake(commands.Cog):
             else:
                 last_check_info = f"{int(time_diff.total_seconds() // 3600)} 小時前"
         
-        # 顯示當前檢查間隔
+        # 顯示當前檢查間隔和台灣時間
         current_interval = self.get_dynamic_check_interval()
+        taiwan_time = self.get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S %Z')
         
         embed = discord.Embed(
             title="🤖 地震監控狀態",
-            description=f"監控狀態：{status}\n初始化：{init_status}\n已處理地震：{processed_count} 筆\n上次成功檢查：{last_check_info}\nAPI錯誤次數：{self.api_error_count}\n當前檢查間隔：{current_interval} 分鐘",
+            description=f"監控狀態：{status}\n初始化：{init_status}\n已處理地震：{processed_count} 筆\n上次成功檢查：{last_check_info}\nAPI錯誤次數：{self.api_error_count}\n當前檢查間隔：{current_interval} 分鐘\n台灣時間：{taiwan_time}",
             color=0x00ff00 if self.monitor_earthquake.is_running() else 0xff0000
         )
         
