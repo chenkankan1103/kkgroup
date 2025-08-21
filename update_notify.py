@@ -2,7 +2,7 @@ import os
 import discord
 import asyncio
 
-DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_SYS_CHANNEL_ID = int(os.getenv("DISCORD_SYS_CHANNEL_ID"))
 
 async def main():
