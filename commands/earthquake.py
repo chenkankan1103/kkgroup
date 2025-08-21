@@ -7,7 +7,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 import hashlib
-import pytz  # 新增時區處理
+import pytz
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 class Earthquake(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.processed_quakes = set()  # 使用 set 儲存已處理的地震ID
+        self.processed_quakes = set()
         self.last_check_time = None
-        self.initialization_complete = False  # 新增初始化完成標記
-        self.api_error_count = 0  # 追蹤API錯誤次數
-        self.last_successful_check = None  # 上次成功檢查時間
+        self.initialization_complete = False
+        self.api_error_count = 0
+        self.last_successful_check = None
         
         # 設定台灣時區
         self.taiwan_tz = pytz.timezone('Asia/Taipei')
@@ -44,9 +44,9 @@ class Earthquake(commands.Cog):
             return None
 
         try:
-            timeout = aiohttp.ClientTimeout(total=20)  # 增加超時時間
+            timeout = aiohttp.ClientTimeout(total=20)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                params = {"Authorization": cwb_api_key, "limit": 5}  # 減少限制數量從10改為5
+                params = {"Authorization": cwb_api_key, "limit": 10}  # 恢復為10筆
                 async with session.get(
                     "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001",
                     params=params
@@ -55,8 +55,8 @@ class Earthquake(commands.Cog):
                         data = await resp.json()
                         records = data.get("records", {}).get("Earthquake", [])
                         logger.info(f"成功獲取 {len(records)} 筆地震資料")
-                        self.api_error_count = 0  # 重置錯誤計數
-                        self.last_successful_check = self.get_taiwan_time()  # 使用台灣時間
+                        self.api_error_count = 0
+                        self.last_successful_check = self.get_taiwan_time()
                         return records
                     else:
                         logger.error(f"API請求失敗: {resp.status}")
@@ -68,24 +68,17 @@ class Earthquake(commands.Cog):
             return None
 
     def get_quake_id(self, record):
-        """生成地震唯一ID - 使用更穩定的方法"""
+        """生成地震唯一ID"""
         try:
             earthquake_info = record.get("EarthquakeInfo", {})
             origin_time = earthquake_info.get("OriginTime")
             magnitude = earthquake_info.get("EarthquakeMagnitude", {}).get("MagnitudeValue")
             location = earthquake_info.get("Epicenter", {}).get("Location")
             
-            # 使用更多欄位來確保唯一性
-            epicenter_info = earthquake_info.get("Epicenter", {})
-            epicenter_lat = epicenter_info.get("EpicenterLatitude")
-            epicenter_lon = epicenter_info.get("EpicenterLongitude")
-            depth = earthquake_info.get("FocalDepth")
-            
             if origin_time and magnitude and location:
-                # 創建一個更穩定的ID，包含經緯度和深度
-                id_string = f"{origin_time}_{magnitude}_{location}_{epicenter_lat}_{epicenter_lon}_{depth}"
-                # 使用hash來避免ID過長
-                return hashlib.md5(id_string.encode()).hexdigest()
+                # 簡化ID生成，只使用核心資訊
+                id_string = f"{origin_time}_{magnitude}_{location}"
+                return hashlib.md5(id_string.encode()).hexdigest()[:16]  # 縮短ID長度
         except Exception as e:
             logger.error(f"生成地震ID失敗: {e}")
         return None
@@ -97,27 +90,47 @@ class Earthquake(commands.Cog):
         taiwan_time = utc_time.astimezone(self.taiwan_tz)
         return taiwan_time
 
-    def is_recent_earthquake(self, record, hours=24):
+    def is_recent_earthquake(self, record, hours=4):  # 縮短為4小時
         """檢查地震是否在指定時間內發生"""
         try:
             earthquake_info = record.get("EarthquakeInfo", {})
             origin_time_str = earthquake_info.get("OriginTime")
             if not origin_time_str:
+                logger.warning("地震記錄缺少時間資訊")
                 return False
             
-            # 解析時間格式 (假設格式為 "2024-01-01 12:00:00")
-            origin_time = datetime.strptime(origin_time_str, "%Y-%m-%d %H:%M:%S")
+            # 嘗試多種時間格式
+            time_formats = [
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M:%SZ"
+            ]
+            
+            origin_time = None
+            for fmt in time_formats:
+                try:
+                    origin_time = datetime.strptime(origin_time_str, fmt)
+                    break
+                except ValueError:
+                    continue
+                    
+            if not origin_time:
+                logger.warning(f"無法解析時間格式: {origin_time_str}")
+                return True  # 無法解析時假設是最近的
+            
             # 將地震時間當作台灣時間處理
             origin_time = self.taiwan_tz.localize(origin_time)
             
-            # 計算與台灣當前時間的差距
             taiwan_now = self.get_taiwan_time()
             time_diff = taiwan_now - origin_time
             
-            return time_diff <= timedelta(hours=hours)
+            is_recent = time_diff <= timedelta(hours=hours)
+            logger.debug(f"地震時間: {origin_time}, 當前時間: {taiwan_now}, 時差: {time_diff}, 是否最近: {is_recent}")
+            
+            return is_recent
         except Exception as e:
             logger.error(f"檢查地震時間失敗: {e}")
-            return True  # 如果無法解析時間，則假設是最近的
+            return True
 
     async def get_ai_response(self, magnitude: float, location: str):
         """生成AI回應"""
@@ -126,7 +139,6 @@ class Earthquake(commands.Cog):
             return self.get_fallback_response(magnitude)
 
         try:
-            # 根據規模調整回應風格
             if magnitude >= 6.0:
                 prompt = f"台灣{location}發生規模{magnitude}強震，請用緊急但溫暖的語氣提醒大家注意安全，80字內"
             elif magnitude >= 4.0:
@@ -145,7 +157,7 @@ class Earthquake(commands.Cog):
                 "max_tokens": 150
             }
             
-            timeout = aiohttp.ClientTimeout(total=10)  # 增加AI API超時時間
+            timeout = aiohttp.ClientTimeout(total=10)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     "https://api.groq.com/openai/v1/chat/completions",
@@ -173,65 +185,35 @@ class Earthquake(commands.Cog):
         else:
             return "📡 微小地震活動記錄，一般不會有感覺"
 
-    def get_dynamic_check_interval(self):
-        """動態調整檢查間隔 - 基於台灣時間"""
-        taiwan_now = self.get_taiwan_time()
-        current_hour = taiwan_now.hour
-        
-        logger.debug(f"台灣當前時間: {taiwan_now.strftime('%Y-%m-%d %H:%M:%S %Z')}, 小時: {current_hour}")
-        
-        # 深夜時間（23:00-06:00）較少檢查 - 10分鐘
-        if current_hour >= 23 or current_hour < 6:
-            logger.debug("台灣深夜時段，使用10分鐘檢查間隔")
-            return 10
-        # 一般時間（06:00-23:00）- 5分鐘  
-        else:
-            logger.debug("台灣白天時段，使用5分鐘檢查間隔")
-            return 5
-
-    @tasks.loop(minutes=5)  # 基礎間隔調整為5分鐘（從2分鐘增加）
+    @tasks.loop(minutes=2)  # 固定2分鐘間隔，不要動態調整
     async def monitor_earthquake(self):
         """地震監控主任務"""
         try:
-            # 動態檢查間隔控制 - 使用台灣時間
-            taiwan_now = self.get_taiwan_time()
-            if self.last_check_time:
-                expected_interval = self.get_dynamic_check_interval()
-                time_since_last = (taiwan_now - self.last_check_time).total_seconds() / 60
-                
-                # 如果還沒到檢查時間，跳過
-                if time_since_last < expected_interval:
-                    logger.debug(f"距離上次檢查僅{time_since_last:.1f}分鐘，跳過檢查（需間隔{expected_interval}分鐘）")
-                    return
+            logger.info("執行地震監控檢查...")
             
-            # 如果連續多次API錯誤，延長檢查間隔
-            if self.api_error_count >= 3:
-                skip_minutes = min(self.api_error_count * 5, 30)  # 最多跳過30分鐘
-                logger.warning(f"API錯誤次數過多({self.api_error_count})，跳過{skip_minutes}分鐘檢查")
-                
-                if self.last_check_time:
-                    time_since_last = (taiwan_now - self.last_check_time).total_seconds() / 60
-                    if time_since_last < skip_minutes:
-                        return
-                
-                # 重置錯誤計數器，避免永久停止
-                if self.api_error_count >= 12:  # 1小時後重置
+            # 如果連續API錯誤過多，暫時跳過
+            if self.api_error_count >= 5:
+                logger.warning(f"API錯誤次數過多({self.api_error_count})，跳過本次檢查")
+                # 每30分鐘重置一次錯誤計數
+                if not hasattr(self, '_last_reset') or \
+                   (self.get_taiwan_time() - self._last_reset).total_seconds() > 1800:
                     self.api_error_count = 0
+                    self._last_reset = self.get_taiwan_time()
                     logger.info("重置API錯誤計數器")
-
-            logger.debug("執行地震監控檢查...")
-            self.last_check_time = taiwan_now
+                return
             
             # 獲取地震資料
             records = await self.get_earthquake_data()
             if not records:
+                logger.warning("未獲取到地震資料")
                 return
 
-            # 首次運行時初始化 - 記錄所有最近的地震
+            # 首次運行時的初始化
             if not self.initialization_complete:
-                # 記錄所有最近24小時內的地震，避免重複推送
+                logger.info("開始初始化地震監控...")
+                # 記錄最近4小時內的地震，避免重複推送
                 for record in records:
-                    if self.is_recent_earthquake(record, hours=24):
+                    if self.is_recent_earthquake(record, hours=4):
                         quake_id = self.get_quake_id(record)
                         if quake_id:
                             self.processed_quakes.add(quake_id)
@@ -243,27 +225,38 @@ class Earthquake(commands.Cog):
             # 檢查新地震
             new_quakes = []
             for record in records:
-                # 只處理最近24小時內的地震
-                if not self.is_recent_earthquake(record, hours=24):
+                # 檢查是否為最近的地震
+                if not self.is_recent_earthquake(record, hours=4):
                     continue
                 
                 quake_id = self.get_quake_id(record)
                 if quake_id and quake_id not in self.processed_quakes:
+                    earthquake_info = record.get("EarthquakeInfo", {})
+                    magnitude = earthquake_info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", 0)
+                    location = earthquake_info.get("Epicenter", {}).get("Location", "未知")
+                    
+                    try:
+                        magnitude_value = float(magnitude) if magnitude else 0
+                    except (ValueError, TypeError):
+                        magnitude_value = 0
+                    
+                    logger.info(f"發現新地震: ID={quake_id}, 地點={location}, 規模={magnitude_value}")
                     new_quakes.append(record)
                     self.processed_quakes.add(quake_id)
-                    logger.info(f"發現新地震: {quake_id}")
 
-            # 清理過舊的記錄，只保留最近150筆（從200減少）
-            if len(self.processed_quakes) > 150:
-                # 轉換為列表並保留最新的75筆（從100減少）
+            # 清理過舊的記錄
+            if len(self.processed_quakes) > 100:
                 quake_list = list(self.processed_quakes)
-                self.processed_quakes = set(quake_list[-75:])
+                self.processed_quakes = set(quake_list[-50:])
                 logger.info(f"清理舊地震記錄，保留 {len(self.processed_quakes)} 筆")
 
             # 處理新地震
             for record in new_quakes:
-                await self.process_earthquake(record)
-                await asyncio.sleep(3)  # 增加延遲避免發送太快（從2秒增加到3秒）
+                try:
+                    await self.process_earthquake(record)
+                    await asyncio.sleep(2)  # 避免發送太快
+                except Exception as e:
+                    logger.error(f"處理地震事件失敗: {e}")
 
             if new_quakes:
                 logger.info(f"處理了 {len(new_quakes)} 個新地震")
@@ -290,8 +283,8 @@ class Earthquake(commands.Cog):
             except (ValueError, TypeError):
                 magnitude_value = 0
 
-            # 只處理有意義的地震（規模2.5以上，提高門檻減少通知）
-            if magnitude_value < 2.5:
+            # 降低門檻為2.0，確保有感地震都會被通知
+            if magnitude_value < 2.0:
                 logger.debug(f"跳過規模過小的地震: {magnitude_value}")
                 return
 
@@ -362,7 +355,6 @@ class Earthquake(commands.Cog):
 
             record = records[0]
             
-            # 同時發送給查詢者
             earthquake_info = record.get("EarthquakeInfo", {})
             origin_time = earthquake_info.get("OriginTime", "未知")
             magnitude = earthquake_info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "未知")
@@ -388,7 +380,7 @@ class Earthquake(commands.Cog):
         processed_count = len(self.processed_quakes)
         init_status = "✅ 已完成" if self.initialization_complete else "⏳ 進行中"
         
-        # 計算上次成功檢查的時間 - 使用台灣時間
+        # 顯示詳細狀態
         last_check_info = "從未成功"
         if self.last_successful_check:
             taiwan_now = self.get_taiwan_time()
@@ -400,13 +392,11 @@ class Earthquake(commands.Cog):
             else:
                 last_check_info = f"{int(time_diff.total_seconds() // 3600)} 小時前"
         
-        # 顯示當前檢查間隔和台灣時間
-        current_interval = self.get_dynamic_check_interval()
         taiwan_time = self.get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S %Z')
         
         embed = discord.Embed(
             title="🤖 地震監控狀態",
-            description=f"監控狀態：{status}\n初始化：{init_status}\n已處理地震：{processed_count} 筆\n上次成功檢查：{last_check_info}\nAPI錯誤次數：{self.api_error_count}\n當前檢查間隔：{current_interval} 分鐘\n台灣時間：{taiwan_time}",
+            description=f"監控狀態：{status}\n初始化：{init_status}\n已處理地震：{processed_count} 筆\n上次成功檢查：{last_check_info}\nAPI錯誤次數：{self.api_error_count}\n台灣時間：{taiwan_time}",
             color=0x00ff00 if self.monitor_earthquake.is_running() else 0xff0000
         )
         
@@ -418,7 +408,6 @@ class Earthquake(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # 清空已處理的地震記錄
             self.processed_quakes.clear()
             self.initialization_complete = False
             self.last_check_time = None
@@ -437,6 +426,28 @@ class Earthquake(commands.Cog):
         except Exception as e:
             logger.error(f"重置監控系統失敗: {e}")
             await interaction.followup.send("❌ 重置失敗，請稍後再試", ephemeral=True)
+
+    @app_commands.command(name="earthquake_test", description="測試最新地震通知")
+    async def test_command(self, interaction: discord.Interaction):
+        """測試地震通知功能"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            records = await self.get_earthquake_data()
+            if not records:
+                await interaction.followup.send("❌ 無法獲取地震資料", ephemeral=True)
+                return
+            
+            # 處理第一筆地震資料進行測試
+            record = records[0]
+            await self.process_earthquake(record)
+            
+            await interaction.followup.send("✅ 測試通知已發送", ephemeral=True)
+            logger.info("地震通知測試完成")
+            
+        except Exception as e:
+            logger.error(f"測試失敗: {e}")
+            await interaction.followup.send("❌ 測試失敗，請稍後再試", ephemeral=True)
 
     @monitor_earthquake.before_loop
     async def before_monitor(self):
