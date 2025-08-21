@@ -9,4 +9,3 @@ aiosqlite
 discord.py
 flask
 pytz
-
