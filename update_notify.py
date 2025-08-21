@@ -1,22 +1,21 @@
 import os
 import discord
-import asyncio
+from discord.ext import commands
+from dotenv import load_dotenv
 
-DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-DISCORD_SYS_CHANNEL_ID = int(os.getenv("DISCORD_SYS_CHANNEL_ID"))
+load_dotenv()
 
-async def main():
-    intents = discord.Intents.default()
-    client = discord.Client(intents=intents)
+TOKEN = os.getenv("DISCORD_TOKEN")
+DISCORD_SYS_CHANNEL_ID = os.getenv("DISCORD_SYS_CHANNEL_ID")
 
-    @client.event
-    async def on_ready():
-        channel = client.get_channel(DISCORD_SYS_CHANNEL_ID)
-        if channel:
-            await channel.send("🤖 Bot 已自動更新到最新版本 ✅")
-        await client.close()
+intents = discord.Intents.default()
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-    await client.start(DISCORD_TOKEN)
+@bot.event
+async def on_ready():
+    channel = bot.get_channel(int(DISCORD_SYS_CHANNEL_ID))
+    if channel:
+        await channel.send("✅ BOT 已更新並重啟完成！")
+    await bot.close()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+bot.run(TOKEN)
