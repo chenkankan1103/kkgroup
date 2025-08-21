@@ -8,6 +8,9 @@ import logging
 from datetime import datetime, timedelta
 import hashlib
 import pytz
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,19 +19,38 @@ class Earthquake(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.processed_quakes = set()
-        self.last_check_time = None
         self.initialization_complete = False
         self.api_error_count = 0
         self.last_successful_check = None
-        
-        # 設定台灣時區
         self.taiwan_tz = pytz.timezone('Asia/Taipei')
         
+        # 從環境變量加載配置
+        self.config = {
+            'cwb_api_key': os.getenv("CWB_API_KEY"),
+            'cwb_api_url': os.getenv("CWB_API_URL"),
+            'ai_api_key': os.getenv("AI_API_KEY"),
+            'ai_api_url': os.getenv("AI_API_URL"),
+            'ai_model': os.getenv("AI_API_MODEL"),
+            'channel_id': os.getenv("DISCORD_CHANNEL_ID"),
+            'mag_threshold': float(os.getenv("MAG_THRESHOLD", "2.0")),
+            'recent_hours': int(os.getenv("RECENT_HOURS", "4")),
+            'api_limit': int(os.getenv("API_LIMIT", "10")),
+            'monitor_interval': int(os.getenv("MONITOR_INTERVAL", "2")),
+            'max_api_errors': int(os.getenv("MAX_API_ERRORS", "5")),
+            'reset_error_interval': int(os.getenv("RESET_ERROR_INTERVAL", "1800")),
+            'max_processed_quakes': int(os.getenv("MAX_PROCESSED_QUAKES", "100")),
+            'keep_processed_quakes': int(os.getenv("KEEP_PROCESSED_QUAKES", "50")),
+            'api_timeout': int(os.getenv("API_TIMEOUT", "20")),
+            'ai_timeout': int(os.getenv("AI_TIMEOUT", "10"))
+        }
+
     async def cog_load(self):
         """Cog載入時啟動監控"""
         if not self.monitor_earthquake.is_running():
+            # 動態設置監控間隔
+            self.monitor_earthquake.change_interval(minutes=self.config['monitor_interval'])
             self.monitor_earthquake.start()
-            logger.info("地震監控已啟動")
+            logger.info(f"地震監控已啟動，間隔{self.config['monitor_interval']}分鐘")
 
     async def cog_unload(self):
         """Cog卸載時停止監控"""
@@ -38,19 +60,18 @@ class Earthquake(commands.Cog):
 
     async def get_earthquake_data(self):
         """獲取地震資料"""
-        cwb_api_key = os.getenv("CWB_API_KEY")
-        if not cwb_api_key:
+        if not self.config['cwb_api_key']:
             logger.error("CWB_API_KEY 未設置")
             return None
 
         try:
-            timeout = aiohttp.ClientTimeout(total=20)
+            timeout = aiohttp.ClientTimeout(total=self.config['api_timeout'])
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                params = {"Authorization": cwb_api_key, "limit": 10}  # 恢復為10筆
-                async with session.get(
-                    "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0016-001",
-                    params=params
-                ) as resp:
+                params = {
+                    "Authorization": self.config['cwb_api_key'], 
+                    "limit": self.config['api_limit']
+                }
+                async with session.get(self.config['cwb_api_url'], params=params) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         records = data.get("records", {}).get("Earthquake", [])
@@ -75,28 +96,23 @@ class Earthquake(commands.Cog):
             magnitude = earthquake_info.get("EarthquakeMagnitude", {}).get("MagnitudeValue")
             location = earthquake_info.get("Epicenter", {}).get("Location")
             
-            if origin_time and magnitude and location:
-                # 簡化ID生成，只使用核心資訊
+            if all([origin_time, magnitude, location]):
                 id_string = f"{origin_time}_{magnitude}_{location}"
-                return hashlib.md5(id_string.encode()).hexdigest()[:16]  # 縮短ID長度
+                return hashlib.md5(id_string.encode()).hexdigest()[:16]
         except Exception as e:
             logger.error(f"生成地震ID失敗: {e}")
         return None
 
     def get_taiwan_time(self):
         """獲取台灣當前時間"""
-        utc_now = datetime.utcnow()
-        utc_time = pytz.utc.localize(utc_now)
-        taiwan_time = utc_time.astimezone(self.taiwan_tz)
-        return taiwan_time
+        return datetime.now(self.taiwan_tz)
 
-    def is_recent_earthquake(self, record, hours=4):  # 縮短為4小時
+    def is_recent_earthquake(self, record):
         """檢查地震是否在指定時間內發生"""
         try:
             earthquake_info = record.get("EarthquakeInfo", {})
             origin_time_str = earthquake_info.get("OriginTime")
             if not origin_time_str:
-                logger.warning("地震記錄缺少時間資訊")
                 return False
             
             # 嘗試多種時間格式
@@ -116,39 +132,34 @@ class Earthquake(commands.Cog):
                     
             if not origin_time:
                 logger.warning(f"無法解析時間格式: {origin_time_str}")
-                return True  # 無法解析時假設是最近的
+                return True
             
-            # 將地震時間當作台灣時間處理
             origin_time = self.taiwan_tz.localize(origin_time)
+            time_diff = self.get_taiwan_time() - origin_time
             
-            taiwan_now = self.get_taiwan_time()
-            time_diff = taiwan_now - origin_time
-            
-            is_recent = time_diff <= timedelta(hours=hours)
-            logger.debug(f"地震時間: {origin_time}, 當前時間: {taiwan_now}, 時差: {time_diff}, 是否最近: {is_recent}")
-            
-            return is_recent
+            return time_diff <= timedelta(hours=self.config['recent_hours'])
         except Exception as e:
             logger.error(f"檢查地震時間失敗: {e}")
             return True
 
     async def get_ai_response(self, magnitude: float, location: str):
         """生成AI回應"""
-        api_key = os.getenv("AI_API_KEY")
-        if not api_key:
+        if not self.config['ai_api_key']:
             return self.get_fallback_response(magnitude)
 
         try:
-            if magnitude >= 6.0:
-                prompt = f"台灣{location}發生規模{magnitude}強震，請用緊急但溫暖的語氣提醒大家注意安全，80字內"
-            elif magnitude >= 4.0:
-                prompt = f"台灣{location}發生規模{magnitude}地震，請用關懷的語氣提醒注意，60字內"
-            else:
-                prompt = f"台灣{location}發生規模{magnitude}輕微地震，請用輕鬆親切的語氣告知，40字內"
+            # 根據震級生成提示
+            prompts = {
+                6.0: f"台灣{location}發生規模{magnitude}強震，請用緊急但溫暖的語氣提醒大家注意安全，80字內",
+                4.0: f"台灣{location}發生規模{magnitude}地震，請用關懷的語氣提醒注意，60字內",
+                0.0: f"台灣{location}發生規模{magnitude}輕微地震，請用輕鬆親切的語氣告知，40字內"
+            }
+            
+            prompt = next((v for k, v in sorted(prompts.items(), reverse=True) if magnitude >= k), prompts[0.0])
 
-            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            headers = {"Authorization": f"Bearer {self.config['ai_api_key']}", "Content-Type": "application/json"}
             payload = {
-                "model": os.getenv("AI_API_MODEL", "llama3-8b-8192"),
+                "model": self.config['ai_model'],
                 "messages": [
                     {"role": "system", "content": "你是台灣氣象署的AI廣播員，回應要溫暖人性化"},
                     {"role": "user", "content": prompt}
@@ -157,12 +168,9 @@ class Earthquake(commands.Cog):
                 "max_tokens": 150
             }
             
-            timeout = aiohttp.ClientTimeout(total=10)
+            timeout = aiohttp.ClientTimeout(total=self.config['ai_timeout'])
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers=headers, json=payload
-                ) as resp:
+                async with session.post(self.config['ai_api_url'], headers=headers, json=payload) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         response = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
@@ -176,44 +184,39 @@ class Earthquake(commands.Cog):
 
     def get_fallback_response(self, magnitude: float):
         """備用回應"""
-        if magnitude >= 6.0:
-            return "🚨 強震警報！請立即採取防護措施，蹲下掩護穩住，台灣人加油！"
-        elif magnitude >= 4.0:
-            return "⚠️ 有感地震，請大家保持冷靜，注意周圍環境安全"
-        elif magnitude >= 3.0:
-            return "📢 輕微地震，敏感的朋友可能有感覺，請安心"
-        else:
-            return "📡 微小地震活動記錄，一般不會有感覺"
+        responses = {
+            6.0: "🚨 強震警報！請立即採取防護措施，蹲下掩護穩住，台灣人加油！",
+            4.0: "⚠️ 有感地震，請大家保持冷靜，注意周圍環境安全",
+            3.0: "📢 輕微地震，敏感的朋友可能有感覺，請安心",
+            0.0: "📡 微小地震活動記錄，一般不會有感覺"
+        }
+        return next((v for k, v in sorted(responses.items(), reverse=True) if magnitude >= k), responses[0.0])
 
-    @tasks.loop(minutes=2)  # 固定2分鐘間隔，不要動態調整
+    @tasks.loop()
     async def monitor_earthquake(self):
         """地震監控主任務"""
         try:
             logger.info("執行地震監控檢查...")
             
-            # 如果連續API錯誤過多，暫時跳過
-            if self.api_error_count >= 5:
+            # 檢查API錯誤次數
+            if self.api_error_count >= self.config['max_api_errors']:
                 logger.warning(f"API錯誤次數過多({self.api_error_count})，跳過本次檢查")
-                # 每30分鐘重置一次錯誤計數
                 if not hasattr(self, '_last_reset') or \
-                   (self.get_taiwan_time() - self._last_reset).total_seconds() > 1800:
+                   (self.get_taiwan_time() - self._last_reset).total_seconds() > self.config['reset_error_interval']:
                     self.api_error_count = 0
                     self._last_reset = self.get_taiwan_time()
                     logger.info("重置API錯誤計數器")
                 return
             
-            # 獲取地震資料
             records = await self.get_earthquake_data()
             if not records:
-                logger.warning("未獲取到地震資料")
                 return
 
-            # 首次運行時的初始化
+            # 初始化處理
             if not self.initialization_complete:
                 logger.info("開始初始化地震監控...")
-                # 記錄最近4小時內的地震，避免重複推送
                 for record in records:
-                    if self.is_recent_earthquake(record, hours=4):
+                    if self.is_recent_earthquake(record):
                         quake_id = self.get_quake_id(record)
                         if quake_id:
                             self.processed_quakes.add(quake_id)
@@ -225,8 +228,7 @@ class Earthquake(commands.Cog):
             # 檢查新地震
             new_quakes = []
             for record in records:
-                # 檢查是否為最近的地震
-                if not self.is_recent_earthquake(record, hours=4):
+                if not self.is_recent_earthquake(record):
                     continue
                 
                 quake_id = self.get_quake_id(record)
@@ -240,28 +242,29 @@ class Earthquake(commands.Cog):
                     except (ValueError, TypeError):
                         magnitude_value = 0
                     
-                    logger.info(f"發現新地震: ID={quake_id}, 地點={location}, 規模={magnitude_value}")
-                    new_quakes.append(record)
+                    # 檢查震級門檻
+                    if magnitude_value >= self.config['mag_threshold']:
+                        logger.info(f"發現新地震: ID={quake_id}, 地點={location}, 規模={magnitude_value}")
+                        new_quakes.append(record)
+                    
                     self.processed_quakes.add(quake_id)
 
             # 清理過舊的記錄
-            if len(self.processed_quakes) > 100:
+            if len(self.processed_quakes) > self.config['max_processed_quakes']:
                 quake_list = list(self.processed_quakes)
-                self.processed_quakes = set(quake_list[-50:])
+                self.processed_quakes = set(quake_list[-self.config['keep_processed_quakes']:])
                 logger.info(f"清理舊地震記錄，保留 {len(self.processed_quakes)} 筆")
 
             # 處理新地震
             for record in new_quakes:
                 try:
                     await self.process_earthquake(record)
-                    await asyncio.sleep(2)  # 避免發送太快
+                    await asyncio.sleep(2)
                 except Exception as e:
                     logger.error(f"處理地震事件失敗: {e}")
 
             if new_quakes:
                 logger.info(f"處理了 {len(new_quakes)} 個新地震")
-            else:
-                logger.debug("沒有發現新地震")
 
         except Exception as e:
             logger.error(f"監控任務錯誤: {e}")
@@ -277,16 +280,10 @@ class Earthquake(commands.Cog):
             location = earthquake_info.get("Epicenter", {}).get("Location", "未知地點")
             img_url = record.get("ReportImageURI")
 
-            # 處理規模
             try:
                 magnitude_value = float(magnitude) if magnitude else 0
             except (ValueError, TypeError):
                 magnitude_value = 0
-
-            # 降低門檻為2.0，確保有感地震都會被通知
-            if magnitude_value < 2.0:
-                logger.debug(f"跳過規模過小的地震: {magnitude_value}")
-                return
 
             # 處理圖片URL
             if img_url and img_url.startswith("/"):
@@ -296,14 +293,15 @@ class Earthquake(commands.Cog):
             ai_response = await self.get_ai_response(magnitude_value, location)
 
             # 決定警報等級
-            if magnitude_value >= 6.0:
-                color, title = 0xff0000, "🌋 **重大地震警報**"
-            elif magnitude_value >= 4.0:
-                color, title = 0xffa500, "⚠️ **地震速報**"
-            elif magnitude_value >= 3.0:
-                color, title = 0xffff00, "📢 **地震通知**"
-            else:
-                color, title = 0x00ff00, "📡 **地震記錄**"
+            alert_levels = {
+                6.0: (0xff0000, "🌋 **重大地震警報**"),
+                4.0: (0xffa500, "⚠️ **地震速報**"),
+                3.0: (0xffff00, "📢 **地震通知**"),
+                0.0: (0x00ff00, "📡 **地震記錄**")
+            }
+            
+            color, title = next((v for k, v in sorted(alert_levels.items(), reverse=True) 
+                               if magnitude_value >= k), alert_levels[0.0])
 
             # 建立嵌入訊息
             embed = discord.Embed(title=title, color=color)
@@ -315,9 +313,10 @@ class Earthquake(commands.Cog):
             if img_url:
                 embed.set_image(url=img_url)
             
-            embed.set_footer(text=f"資料來源：中央氣象署 | 檢查時間：{self.get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            embed.set_footer(
+                text=f"資料來源：中央氣象署 | 檢查時間：{self.get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            )
 
-            # 發送訊息
             await self.send_notification(embed)
             logger.info(f"地震通知已發送: {location} 規模{magnitude_value}")
 
@@ -326,15 +325,14 @@ class Earthquake(commands.Cog):
 
     async def send_notification(self, embed):
         """發送通知到Discord頻道"""
-        channel_id = os.getenv("DISCORD_CHANNEL_ID")
-        if not channel_id:
+        if not self.config['channel_id']:
             logger.error("DISCORD_CHANNEL_ID 未設置")
             return
 
         try:
-            channel = self.bot.get_channel(int(channel_id))
+            channel = self.bot.get_channel(int(self.config['channel_id']))
             if not channel:
-                channel = await self.bot.fetch_channel(int(channel_id))
+                channel = await self.bot.fetch_channel(int(self.config['channel_id']))
             
             await channel.send(embed=embed)
             logger.info("Discord通知發送成功")
@@ -354,7 +352,6 @@ class Earthquake(commands.Cog):
                 return
 
             record = records[0]
-            
             earthquake_info = record.get("EarthquakeInfo", {})
             origin_time = earthquake_info.get("OriginTime", "未知")
             magnitude = earthquake_info.get("EarthquakeMagnitude", {}).get("MagnitudeValue", "未知")
@@ -377,26 +374,28 @@ class Earthquake(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         status = "✅ 運行中" if self.monitor_earthquake.is_running() else "❌ 已停止"
-        processed_count = len(self.processed_quakes)
         init_status = "✅ 已完成" if self.initialization_complete else "⏳ 進行中"
         
-        # 顯示詳細狀態
         last_check_info = "從未成功"
         if self.last_successful_check:
-            taiwan_now = self.get_taiwan_time()
-            time_diff = taiwan_now - self.last_successful_check
-            if time_diff.total_seconds() < 60:
-                last_check_info = f"{int(time_diff.total_seconds())} 秒前"
-            elif time_diff.total_seconds() < 3600:
-                last_check_info = f"{int(time_diff.total_seconds() // 60)} 分鐘前"
+            time_diff = self.get_taiwan_time() - self.last_successful_check
+            seconds = int(time_diff.total_seconds())
+            if seconds < 60:
+                last_check_info = f"{seconds} 秒前"
+            elif seconds < 3600:
+                last_check_info = f"{seconds // 60} 分鐘前"
             else:
-                last_check_info = f"{int(time_diff.total_seconds() // 3600)} 小時前"
-        
-        taiwan_time = self.get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S %Z')
+                last_check_info = f"{seconds // 3600} 小時前"
         
         embed = discord.Embed(
             title="🤖 地震監控狀態",
-            description=f"監控狀態：{status}\n初始化：{init_status}\n已處理地震：{processed_count} 筆\n上次成功檢查：{last_check_info}\nAPI錯誤次數：{self.api_error_count}\n台灣時間：{taiwan_time}",
+            description=f"""監控狀態：{status}
+初始化：{init_status}
+已處理地震：{len(self.processed_quakes)} 筆
+上次成功檢查：{last_check_info}
+API錯誤次數：{self.api_error_count}
+震級門檻：{self.config['mag_threshold']}
+台灣時間：{self.get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S %Z')}""",
             color=0x00ff00 if self.monitor_earthquake.is_running() else 0xff0000
         )
         
@@ -410,7 +409,6 @@ class Earthquake(commands.Cog):
         try:
             self.processed_quakes.clear()
             self.initialization_complete = False
-            self.last_check_time = None
             self.api_error_count = 0
             self.last_successful_check = None
             
@@ -438,10 +436,7 @@ class Earthquake(commands.Cog):
                 await interaction.followup.send("❌ 無法獲取地震資料", ephemeral=True)
                 return
             
-            # 處理第一筆地震資料進行測試
-            record = records[0]
-            await self.process_earthquake(record)
-            
+            await self.process_earthquake(records[0])
             await interaction.followup.send("✅ 測試通知已發送", ephemeral=True)
             logger.info("地震通知測試完成")
             
