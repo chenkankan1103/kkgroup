@@ -12,7 +12,7 @@ client = gspread.authorize(creds)
 sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0").sheet1
 
 # === 讀取 SQLite 資料庫 ===
-conn = sqlite3.connect("kkgroup/user_data.db")
+conn = sqlite3.connect("user_data.db")
 cursor = conn.cursor()
 
 cursor.execute("SELECT * FROM users")
