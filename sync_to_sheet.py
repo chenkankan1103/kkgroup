@@ -6,18 +6,18 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from oauth2client.service_account import ServiceAccountCredentials
 
-# === 詳細調試版本 ===
+# === 雙向同步完整版本 ===
 logging.basicConfig(
-    level=logging.DEBUG,  # 設為 DEBUG 級別
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('sync_debug.log'),
+        logging.FileHandler('bidirectional_sync.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
-class DCDBSheetSyncDebug:
+class BidirectionalDBSheetSync:
     def __init__(self, credentials_path: str, sheet_url: str, db_path: str):
         self.credentials_path = credentials_path
         self.sheet_url = sheet_url
@@ -81,6 +81,20 @@ class DCDBSheetSyncDebug:
     def get_current_timestamp(self) -> int:
         return int(time.time())
     
+    def log_sync_action(self, direction: str, user_id: str, action: str, details: str = ""):
+        """記錄同步操作"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO sync_log (sync_time, direction, user_id, action, details)
+                VALUES (?, ?, ?, ?, ?)
+            """, (self.get_current_timestamp(), direction, user_id, action, details))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"記錄同步日誌失敗: {e}")
+    
     def get_db_data(self) -> Tuple[List[str], List[Tuple]]:
         """讀取資料庫資料"""
         try:
@@ -92,17 +106,14 @@ class DCDBSheetSyncDebug:
             conn.close()
             
             logger.debug(f"DB 資料讀取成功: {len(rows)} 筆資料")
-            logger.debug(f"DB 欄位: {col_names}")
-            
             return col_names, rows
         except Exception as e:
             logger.error(f"讀取資料庫失敗: {e}")
             return [], []
     
     def get_sheet_data(self) -> List[Dict]:
-        """讀取 Google Sheet 資料 (增強調試)"""
+        """讀取 Google Sheet 資料"""
         try:
-            # 獲取所有數值
             all_values = self.sheet.get_all_values()
             logger.debug(f"Sheet 原始資料: {all_values}")
             
@@ -125,7 +136,7 @@ class DCDBSheetSyncDebug:
                     # 特殊處理數字欄位
                     if header in ['created_at', 'last_updated'] and value:
                         try:
-                            row_dict[header] = int(float(value))  # 處理可能的浮點數
+                            row_dict[header] = int(float(value))
                         except (ValueError, TypeError):
                             row_dict[header] = 0
                             logger.warning(f"無法轉換時間戳 {header}: {value} (第{i}行)")
@@ -147,7 +158,7 @@ class DCDBSheetSyncDebug:
             return []
     
     def update_db_row(self, data: Dict) -> bool:
-        """更新資料庫 (增強調試)"""
+        """更新資料庫"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -160,7 +171,7 @@ class DCDBSheetSyncDebug:
                 if field in data:
                     processed_data[field] = data[field]
                 elif field == 'status':
-                    processed_data[field] = 'active'  # 預設值
+                    processed_data[field] = 'active'
                 elif field in ['created_at', 'last_updated']:
                     processed_data[field] = data.get(field, self.get_current_timestamp())
                 else:
@@ -168,37 +179,102 @@ class DCDBSheetSyncDebug:
             
             logger.debug(f"準備更新 DB 的資料: {processed_data}")
             
-            # 使用 INSERT OR REPLACE
             columns = list(processed_data.keys())
             placeholders = ', '.join(['?' for _ in columns])
             values = list(processed_data.values())
             
             query = f"INSERT OR REPLACE INTO users ({', '.join(columns)}) VALUES ({placeholders})"
-            logger.debug(f"執行 SQL: {query}")
-            logger.debug(f"參數: {values}")
-            
             cursor.execute(query, values)
             conn.commit()
-            
-            # 驗證是否成功寫入
-            cursor.execute("SELECT * FROM users WHERE user_id = ?", (processed_data['user_id'],))
-            result = cursor.fetchone()
             conn.close()
             
-            if result:
-                logger.info(f"✅ 成功更新 DB: {processed_data['user_id']}")
-                return True
-            else:
-                logger.error(f"❌ DB 更新失敗，找不到記錄: {processed_data['user_id']}")
-                return False
+            logger.info(f"✅ 成功更新 DB: {processed_data['user_id']}")
+            return True
                 
         except Exception as e:
             logger.error(f"更新資料庫失敗 (user_id: {data.get('user_id', 'unknown')}): {e}")
             return False
     
-    def sync_debug(self):
-        """調試版同步方法"""
-        logger.info("🔍 開始調試同步...")
+    def update_sheet_row(self, data: Dict, row_index: int = None) -> bool:
+        """更新 Google Sheet 中的單行資料"""
+        try:
+            # 確保必要欄位存在
+            required_fields = ['user_id', 'username', 'email', 'created_at', 'last_updated', 'status']
+            
+            # 獲取表頭
+            headers = self.sheet.row_values(1)
+            if not headers:
+                logger.error("無法獲取 Sheet 表頭")
+                return False
+            
+            # 準備要更新的資料
+            row_data = []
+            for header in headers:
+                if header in data:
+                    if header in ['created_at', 'last_updated']:
+                        # 時間戳保持為數字格式
+                        row_data.append(str(data[header]))
+                    else:
+                        row_data.append(str(data[header]))
+                else:
+                    row_data.append('')
+            
+            if row_index is None:
+                # 新增行：找到第一個空行或附加到末尾
+                all_values = self.sheet.get_all_values()
+                row_index = len(all_values) + 1
+                logger.debug(f"新增資料到第 {row_index} 行")
+            else:
+                logger.debug(f"更新第 {row_index} 行資料")
+            
+            # 更新整行
+            range_name = f"A{row_index}:{chr(ord('A') + len(row_data) - 1)}{row_index}"
+            self.sheet.update(range_name, [row_data])
+            
+            logger.info(f"✅ 成功更新 Sheet: {data.get('user_id', 'unknown')} (第{row_index}行)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新 Sheet 失敗 (user_id: {data.get('user_id', 'unknown')}): {e}")
+            return False
+    
+    def find_sheet_row_by_user_id(self, user_id: str) -> Optional[int]:
+        """根據 user_id 找到在 Sheet 中的行號"""
+        try:
+            all_values = self.sheet.get_all_values()
+            if not all_values:
+                return None
+            
+            headers = all_values[0]
+            user_id_col = None
+            
+            # 找到 user_id 欄位的索引
+            for i, header in enumerate(headers):
+                if header == 'user_id':
+                    user_id_col = i
+                    break
+            
+            if user_id_col is None:
+                logger.error("Sheet 中找不到 user_id 欄位")
+                return None
+            
+            # 查找對應的行
+            for i, row in enumerate(all_values[1:], start=2):  # 從第2行開始
+                if i - 2 < len(all_values) - 1 and user_id_col < len(row):
+                    if str(row[user_id_col]).strip() == str(user_id).strip():
+                        logger.debug(f"找到 user_id {user_id} 在第 {i} 行")
+                        return i
+            
+            logger.debug(f"未找到 user_id {user_id} 對應的行")
+            return None
+            
+        except Exception as e:
+            logger.error(f"查找 Sheet 行號失敗: {e}")
+            return None
+    
+    def bidirectional_sync(self):
+        """雙向同步：DB ↔ Sheet"""
+        logger.info("🔄 開始雙向同步...")
         
         try:
             # 1. 獲取資料
@@ -214,92 +290,128 @@ class DCDBSheetSyncDebug:
             for row in db_rows:
                 user_data = dict(zip(col_names, row))
                 db_dict[str(row[0])] = user_data
-                logger.debug(f"DB 資料 {row[0]}: {user_data}")
             
             sheet_dict = {}
             for row in sheet_data:
                 user_id = str(row.get("user_id", ""))
                 if user_id:
                     sheet_dict[user_id] = row
-                    logger.debug(f"Sheet 資料 {user_id}: {row}")
             
-            logger.info(f"🔄 開始比較和同步...")
-            
-            # 3. Sheet → DB 同步 (重點關注)
+            # 3. 統計變數
             sheet_to_db_updates = 0
+            db_to_sheet_updates = 0
+            new_in_sheet = 0
+            new_in_db = 0
+            
+            # 4. Sheet → DB 同步
+            logger.info("📥 Sheet → DB 同步開始...")
             for user_id, sheet_row in sheet_dict.items():
-                logger.info(f"--- 處理 Sheet 中的 {user_id} ---")
-                
                 db_row = db_dict.get(user_id)
                 
                 if not db_row:
-                    # Sheet 中的新資料，加到 DB
+                    # Sheet 中的新資料
                     logger.info(f"🆕 Sheet 中發現新資料: {user_id}")
                     sheet_row['created_at'] = sheet_row.get('created_at') or self.get_current_timestamp()
                     sheet_row['last_updated'] = self.get_current_timestamp()
                     
                     if self.update_db_row(sheet_row):
-                        sheet_to_db_updates += 1
-                        logger.info(f"✅ Sheet → DB 新增成功: {user_id}")
-                    else:
-                        logger.error(f"❌ Sheet → DB 新增失敗: {user_id}")
+                        new_in_sheet += 1
+                        self.log_sync_action("Sheet→DB", user_id, "INSERT", "新資料從 Sheet 加入 DB")
                 else:
-                    # 比較時間戳
+                    # 比較更新時間
                     sheet_time = int(sheet_row.get('last_updated', 0))
                     db_time = int(db_row.get('last_updated', 0))
                     
-                    logger.debug(f"時間比較 - Sheet: {sheet_time}, DB: {db_time}")
-                    logger.debug(f"Sheet 時間: {datetime.fromtimestamp(sheet_time) if sheet_time > 0 else 'N/A'}")
-                    logger.debug(f"DB 時間: {datetime.fromtimestamp(db_time) if db_time > 0 else 'N/A'}")
-                    
                     if sheet_time > db_time:
-                        logger.info(f"⏰ Sheet 資料較新，需要更新到 DB: {user_id}")
-                        
+                        logger.info(f"⏰ Sheet 資料較新，更新到 DB: {user_id}")
                         if self.update_db_row(sheet_row):
                             sheet_to_db_updates += 1
-                            logger.info(f"✅ Sheet → DB 更新成功: {user_id}")
-                        else:
-                            logger.error(f"❌ Sheet → DB 更新失敗: {user_id}")
-                    elif db_time > sheet_time:
-                        logger.info(f"⏰ DB 資料較新: {user_id} (此版本只關注 Sheet→DB)")
-                    else:
-                        logger.info(f"⚖️  資料同步，無需更新: {user_id}")
+                            self.log_sync_action("Sheet→DB", user_id, "UPDATE", 
+                                               f"Sheet時間: {sheet_time}, DB時間: {db_time}")
             
-            # 4. 統計結果
+            # 5. DB → Sheet 同步
+            logger.info("📤 DB → Sheet 同步開始...")
+            for user_id, db_row in db_dict.items():
+                sheet_row = sheet_dict.get(user_id)
+                
+                if not sheet_row:
+                    # DB 中的新資料
+                    logger.info(f"🆕 DB 中發現新資料: {user_id}")
+                    db_row['last_updated'] = self.get_current_timestamp()
+                    
+                    # 更新 DB 中的時間戳
+                    self.update_db_row(db_row)
+                    
+                    if self.update_sheet_row(db_row):
+                        new_in_db += 1
+                        self.log_sync_action("DB→Sheet", user_id, "INSERT", "新資料從 DB 加入 Sheet")
+                else:
+                    # 比較更新時間
+                    db_time = int(db_row.get('last_updated', 0))
+                    sheet_time = int(sheet_row.get('last_updated', 0))
+                    
+                    if db_time > sheet_time:
+                        logger.info(f"⏰ DB 資料較新，更新到 Sheet: {user_id}")
+                        
+                        # 找到 Sheet 中對應的行號
+                        sheet_row_index = self.find_sheet_row_by_user_id(user_id)
+                        
+                        if self.update_sheet_row(db_row, sheet_row_index):
+                            db_to_sheet_updates += 1
+                            self.log_sync_action("DB→Sheet", user_id, "UPDATE", 
+                                               f"DB時間: {db_time}, Sheet時間: {sheet_time}")
+            
+            # 6. 同步結果統計
             logger.info("=" * 60)
-            logger.info("🎯 調試同步完成!")
-            logger.info(f"   Sheet → DB 更新: {sheet_to_db_updates} 筆")
+            logger.info("🎯 雙向同步完成!")
+            logger.info(f"   📥 Sheet → DB:")
+            logger.info(f"      新增: {new_in_sheet} 筆")
+            logger.info(f"      更新: {sheet_to_db_updates} 筆")
+            logger.info(f"   📤 DB → Sheet:")
+            logger.info(f"      新增: {new_in_db} 筆") 
+            logger.info(f"      更新: {db_to_sheet_updates} 筆")
             logger.info("=" * 60)
             
         except Exception as e:
-            logger.error(f"調試同步失敗: {e}")
+            logger.error(f"雙向同步失敗: {e}")
             raise
     
-    def test_sheet_to_db_single(self, user_id: str):
-        """測試單一用戶的 Sheet → DB 同步"""
-        logger.info(f"🧪 測試單一用戶同步: {user_id}")
+    def manual_add_to_db(self, user_data: Dict):
+        """手動添加資料到資料庫"""
+        logger.info(f"🔧 手動添加資料到 DB: {user_data}")
         
-        sheet_data = self.get_sheet_data()
-        target_row = None
+        # 自動設置時間戳
+        current_time = self.get_current_timestamp()
+        user_data['created_at'] = user_data.get('created_at', current_time)
+        user_data['last_updated'] = current_time
+        user_data['status'] = user_data.get('status', 'active')
         
-        for row in sheet_data:
-            if str(row.get('user_id')) == str(user_id):
-                target_row = row
-                break
-        
-        if not target_row:
-            logger.error(f"在 Sheet 中找不到 user_id: {user_id}")
+        if self.update_db_row(user_data):
+            logger.info(f"✅ 手動添加成功: {user_data.get('user_id')}")
+            self.log_sync_action("MANUAL", user_data.get('user_id', 'unknown'), "INSERT", "手動添加到 DB")
+            return True
+        else:
+            logger.error(f"❌ 手動添加失敗: {user_data.get('user_id')}")
             return False
+    
+    def manual_add_to_sheet(self, user_data: Dict):
+        """手動添加資料到 Sheet"""
+        logger.info(f"🔧 手動添加資料到 Sheet: {user_data}")
         
-        logger.info(f"找到 Sheet 資料: {target_row}")
+        # 自動設置時間戳
+        current_time = self.get_current_timestamp()
+        user_data['created_at'] = user_data.get('created_at', current_time)
+        user_data['last_updated'] = current_time
+        user_data['status'] = user_data.get('status', 'active')
         
-        # 手動設置更新時間為當前時間，強制同步
-        target_row['last_updated'] = self.get_current_timestamp()
-        
-        result = self.update_db_row(target_row)
-        logger.info(f"測試結果: {'成功' if result else '失敗'}")
-        
-        return result
+        if self.update_sheet_row(user_data):
+            logger.info(f"✅ 手動添加到 Sheet 成功: {user_data.get('user_id')}")
+            self.log_sync_action("MANUAL", user_data.get('user_id', 'unknown'), "INSERT", "手動添加到 Sheet")
+            return True
+        else:
+            logger.error(f"❌ 手動添加到 Sheet 失敗: {user_data.get('user_id')}")
+            return False
+
 
 # === 使用方法 ===
 def main():
@@ -308,23 +420,53 @@ def main():
     DB_PATH = "user_data.db"
     
     try:
-        syncer = DCDBSheetSyncDebug(CREDENTIALS_PATH, SHEET_URL, DB_PATH)
+        syncer = BidirectionalDBSheetSync(CREDENTIALS_PATH, SHEET_URL, DB_PATH)
         
-        # 選擇執行方式
-        print("選擇執行模式:")
-        print("1. 調試完整同步")
-        print("2. 測試單一用戶同步")
+        print("選擇操作模式:")
+        print("1. 雙向同步 (推薦)")
+        print("2. 手動添加測試資料到 DB")
+        print("3. 手動添加測試資料到 Sheet")
+        print("4. 只執行一次同步")
         
-        choice = input("請輸入選項 (1/2): ").strip()
+        choice = input("請輸入選項 (1-4): ").strip()
         
         if choice == "1":
-            syncer.sync_debug()
+            # 持續同步模式
+            while True:
+                syncer.bidirectional_sync()
+                print("等待 30 秒後進行下次同步... (Ctrl+C 停止)")
+                time.sleep(30)
+                
         elif choice == "2":
-            user_id = input("請輸入要測試的 user_id: ").strip()
-            syncer.test_sheet_to_db_single(user_id)
-        else:
-            syncer.sync_debug()
+            # 手動添加測試資料到 DB
+            test_data = {
+                "user_id": f"test_db_{int(time.time())}",
+                "username": "測試用戶DB",
+                "email": "test_db@example.com",
+                "status": "active"
+            }
+            syncer.manual_add_to_db(test_data)
+            print("已添加測試資料到 DB，請選擇選項1進行同步")
             
+        elif choice == "3":
+            # 手動添加測試資料到 Sheet
+            test_data = {
+                "user_id": f"test_sheet_{int(time.time())}",
+                "username": "測試用戶Sheet", 
+                "email": "test_sheet@example.com",
+                "status": "active"
+            }
+            syncer.manual_add_to_sheet(test_data)
+            print("已添加測試資料到 Sheet，請選擇選項1進行同步")
+            
+        elif choice == "4":
+            syncer.bidirectional_sync()
+            
+        else:
+            syncer.bidirectional_sync()
+            
+    except KeyboardInterrupt:
+        logger.info("用戶中止同步")
     except Exception as e:
         logger.error(f"程式執行失敗: {e}")
 
