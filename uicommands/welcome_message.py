@@ -85,6 +85,7 @@ class WelcomeFlow(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.welcome_channel_id = int(os.getenv("WELCOME_CHANNEL_ID", 0))
+        self.image_storage_channel_id = int(os.getenv("IMAGE_STORAGE_CHANNEL_ID", 0))  # 新增：專用圖片儲存頻道
         self.temp_role1_id = int(os.getenv("TEMP_ROLE1_ID", 0))
         self.member_role_id = int(os.getenv("MEMBER_ROLE_ID", 0))
         self.db_path = './user_data.db'
@@ -95,8 +96,8 @@ class WelcomeFlow(commands.Cog):
         self.cache_dir = Path('./character_images')
         self.cache_dir.mkdir(exist_ok=True)
         
-        # 新增：圖片 URL 緩存，用於儲存上傳到 Discord 的圖片連結
-        self.image_url_cache = {}
+        # 優化的圖片 URL 緩存系統
+        self.discord_url_cache = {}  # 儲存 Discord 永久圖片連結
         
         self.init_database()
 
@@ -124,6 +125,16 @@ class WelcomeFlow(commands.Cog):
                     shoes INTEGER DEFAULT 1072005,
                     gender TEXT DEFAULT 'male',
                     is_stunned INTEGER DEFAULT 0
+                )
+            ''')
+            
+            # 新增圖片URL緩存表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS image_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    discord_url TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    message_id INTEGER
                 )
             ''')
             
@@ -281,46 +292,98 @@ class WelcomeFlow(commands.Cog):
             print(f"保存緩存圖片錯誤: {e}")
             return False
 
-    async def upload_image_to_discord(self, image_data: bytes, cache_key: str) -> Optional[str]:
-        """將圖片上傳到 Discord 並獲取 URL"""
+    def get_cached_discord_url(self, cache_key: str) -> Optional[str]:
+        """從資料庫獲取 Discord URL 緩存"""
         try:
-            # 檢查是否已有該圖片的 URL 緩存
-            if cache_key in self.image_url_cache:
-                cached_url = self.image_url_cache[cache_key]
-                # 檢查緩存是否過期（1小時）
-                if time.time() - cached_url['timestamp'] < 3600:
-                    print(f"使用 URL 緩存: {cache_key}")
-                    return cached_url['url']
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
             
-            # 創建一個臨時頻道訊息來上傳圖片
-            channel = self.bot.get_channel(self.welcome_channel_id)
+            # 清理過期的緩存 (超過30天)
+            thirty_days_ago = int(time.time()) - (30 * 24 * 60 * 60)
+            cursor.execute("DELETE FROM image_cache WHERE created_at < ?", (thirty_days_ago,))
+            
+            # 獲取緩存
+            cursor.execute("SELECT discord_url FROM image_cache WHERE cache_key = ?", (cache_key,))
+            result = cursor.fetchone()
+            
+            conn.commit()
+            conn.close()
+            
+            return result[0] if result else None
+            
+        except Exception as e:
+            print(f"獲取 Discord URL 緩存錯誤: {e}")
+            return None
+
+    def save_discord_url_cache(self, cache_key: str, discord_url: str, message_id: int = None):
+        """保存 Discord URL 到資料庫緩存"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            current_time = int(time.time())
+            cursor.execute('''
+                INSERT OR REPLACE INTO image_cache 
+                (cache_key, discord_url, created_at, message_id) 
+                VALUES (?, ?, ?, ?)
+            ''', (cache_key, discord_url, current_time, message_id))
+            
+            conn.commit()
+            conn.close()
+            print(f"Discord URL 已緩存: {cache_key}")
+            
+        except Exception as e:
+            print(f"保存 Discord URL 緩存錯誤: {e}")
+
+    async def upload_image_to_discord_storage(self, image_data: bytes, cache_key: str) -> Optional[str]:
+        """將圖片上傳到 Discord 儲存頻道並獲取永久 URL"""
+        try:
+            # 使用專用儲存頻道，如果沒有則使用歡迎頻道
+            storage_channel_id = self.image_storage_channel_id or self.welcome_channel_id
+            channel = self.bot.get_channel(storage_channel_id)
+            
             if not channel:
-                print("找不到歡迎頻道，無法上傳圖片")
+                print(f"找不到儲存頻道 ID: {storage_channel_id}")
                 return None
             
-            # 上傳圖片並獲取 URL
-            file_obj = discord.File(io.BytesIO(image_data), filename=f'character_{cache_key}.png')
+            # 創建文件對象
+            file_obj = discord.File(
+                io.BytesIO(image_data), 
+                filename=f'char_{cache_key}.png'
+            )
             
-            # 創建臨時訊息來獲取圖片 URL
-            temp_msg = await channel.send(file=file_obj)
-            
-            if temp_msg.attachments:
-                image_url = temp_msg.attachments[0].url
+            # 上傳到儲存頻道（不在歡迎頻道發送可見訊息）
+            if storage_channel_id == self.welcome_channel_id:
+                # 如果使用歡迎頻道，發送後立即刪除
+                temp_msg = await channel.send(file=file_obj)
                 
-                # 快速刪除臨時訊息
-                try:
-                    await temp_msg.delete()
-                except:
-                    pass
+                if temp_msg.attachments:
+                    discord_url = temp_msg.attachments[0].url
+                    
+                    # 保存到緩存
+                    self.save_discord_url_cache(cache_key, discord_url, temp_msg.id)
+                    
+                    # 快速刪除訊息（可選，URL 仍然有效）
+                    try:
+                        await asyncio.sleep(0.1)  # 稍等確保上傳完成
+                        await temp_msg.delete()
+                    except discord.NotFound:
+                        pass
+                    
+                    print(f"圖片已上傳到 Discord: {cache_key}")
+                    return discord_url
+            else:
+                # 使用專用儲存頻道
+                storage_msg = await channel.send(
+                    content=f"🖼️ **圖片儲存** - 緩存鍵: `{cache_key}`",
+                    file=file_obj
+                )
                 
-                # 緩存 URL
-                self.image_url_cache[cache_key] = {
-                    'url': image_url,
-                    'timestamp': time.time()
-                }
-                
-                print(f"圖片已上傳並獲得 URL: {cache_key}")
-                return image_url
+                if storage_msg.attachments:
+                    discord_url = storage_msg.attachments[0].url
+                    self.save_discord_url_cache(cache_key, discord_url, storage_msg.id)
+                    print(f"圖片已上傳到 Discord 儲存頻道: {cache_key}")
+                    return discord_url
             
         except Exception as e:
             print(f"上傳圖片到 Discord 錯誤: {e}")
@@ -328,18 +391,30 @@ class WelcomeFlow(commands.Cog):
         return None
 
     async def fetch_character_image_url(self, user_data: dict) -> Optional[str]:
-        """獲取角色圖片 URL（用於 embed）"""
+        """獲取角色圖片 URL（優先使用 Discord 緩存）"""
         try:
             cache_key = self.generate_cache_key(user_data)
             
-            # 檢查本地緩存
+            # 1. 檢查 Discord URL 緩存
+            cached_url = self.get_cached_discord_url(cache_key)
+            if cached_url:
+                print(f"使用 Discord URL 緩存: {cache_key}")
+                return cached_url
+            
+            # 2. 檢查本地緩存
             if self.is_image_cached(cache_key):
                 cache_path = self.get_cached_image_path(cache_key)
                 with open(cache_path, 'rb') as f:
                     image_data = f.read()
-                return await self.upload_image_to_discord(image_data, cache_key)
+                
+                # 上傳到 Discord 並獲取 URL
+                discord_url = await self.upload_image_to_discord_storage(image_data, cache_key)
+                if discord_url:
+                    return discord_url
             
-            # 從 API 獲取圖片
+            # 3. 從 API 獲取圖片
+            print(f"從 API 獲取圖片: {cache_key}")
+            
             items = [
                 {"itemId": 2000, "region": "GMS", "version": "217"},
                 {"itemId": user_data.get('skin', 12000), "region": "GMS", "version": "217"},
@@ -359,67 +434,23 @@ class WelcomeFlow(commands.Cog):
 
             item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
             pose = "prone" if user_data.get('is_stunned', 0) == 1 else "stand1"
-            url = f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
+            api_url = f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
 
-            print(f"請求 API 圖片: {cache_key}")
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-                async with session.get(url) as response:
+                async with session.get(api_url) as response:
                     if response.status == 200:
                         image_data = await response.read()
                         if len(image_data) > 100:
                             # 保存到本地緩存
                             await self.save_image_to_cache(image_data, cache_key)
+                            
                             # 上傳到 Discord 並獲取 URL
-                            return await self.upload_image_to_discord(image_data, cache_key)
+                            discord_url = await self.upload_image_to_discord_storage(image_data, cache_key)
+                            if discord_url:
+                                return discord_url
 
         except Exception as e:
             print(f"獲取角色圖片 URL 錯誤: {e}")
-        
-        return None
-
-    async def fetch_character_image_file(self, user_data: dict) -> Optional[discord.File]:
-        """獲取角色圖片文件（用於附件）"""
-        try:
-            cache_key = self.generate_cache_key(user_data)
-            
-            # 檢查本地緩存
-            if self.is_image_cached(cache_key):
-                cache_path = self.get_cached_image_path(cache_key)
-                print(f"使用本地緩存: {cache_path}")
-                return discord.File(cache_path, filename='character.png')
-            
-            # 從 API 獲取圖片（與上面相同的邏輯）
-            items = [
-                {"itemId": 2000, "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('skin', 12000), "region": "GMS", "version": "217"},
-            ]
-
-            if user_data.get('is_stunned', 0) == 1:
-                items.append({"itemId": user_data.get('face', 20005), "animationName": "stunned", "region": "GMS", "version": "217"})
-            else:
-                items.append({"itemId": user_data.get('face', 20005), "animationName": "default", "region": "GMS", "version": "217"})
-
-            items.extend([
-                {"itemId": user_data.get('hair', 30120), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('top', 1040014), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('bottom', 1060096), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('shoes', 1072005), "region": "GMS", "version": "217"}
-            ])
-
-            item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
-            pose = "prone" if user_data.get('is_stunned', 0) == 1 else "stand1"
-            url = f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
-
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        image_data = await response.read()
-                        if len(image_data) > 100:
-                            await self.save_image_to_cache(image_data, cache_key)
-                            return discord.File(io.BytesIO(image_data), filename='character.png')
-
-        except Exception as e:
-            print(f"獲取角色圖片文件錯誤: {e}")
         
         return None
 
@@ -436,6 +467,184 @@ class WelcomeFlow(commands.Cog):
                     "⏰ 請等待恢復，或聯繫管理員協助"
                 ),
                 color=0xFF6B6B
+            )
+        else:
+            embed = discord.Embed(
+                title="🎉 歡迎光臨 KK 園區™",
+                description=(
+                    f"🎉 歡迎 **{user.mention}** 蒞臨 KK 園區™ — 一個讓人留連忘返的樂園。\n\n"
+                    "🏠 食宿無憂，大通鋪讓你夜夜安穩；\n"
+                    "🤝 不怕孤單，因為你永遠有人作伴；\n"
+                    "🎭 娛樂充足，幹部們會「適時」安排你的休閒時光。\n\n"
+                    "📜 **入園流程如下：**\n"
+                    "1️⃣ 選擇你的性別\n"
+                    "2️⃣ 繳交不必要的物品\n"
+                    "3️⃣ 點擊確認，即刻入住\n\n"
+                    "📌 每日表現將自動記錄為積分，影響分配與待遇。\n"
+                    "🎁 定期將物品上繳以獲得特別回饋。\n"
+                    "🚪 出口目前維護中，開放時間未定。\n"
+                    "📷 園區全程監控中，請放心生活。"
+                ),
+                color=0x8B0000
+            )
+    
+        embed.add_field(name="⭐ 等級", value=f"{user_data['level']}", inline=True)
+        embed.add_field(name="💰 金錢", value=f"{user_data['kkcoin']} KKCoin", inline=True)
+        embed.add_field(name="🏆 職位", value=user_data['title'], inline=True)
+
+        hp_bar = self.create_progress_bar(user_data['hp'], 100)
+        stamina_bar = self.create_progress_bar(user_data['stamina'], 100)
+        embed.add_field(name="❤️ 血量", value=f"{hp_bar} {user_data['hp']}/100", inline=False)
+        embed.add_field(name="⚡ 體力", value=f"{stamina_bar} {user_data['stamina']}/100", inline=False)
+
+        gender_display = "男性 ♂️" if user_data.get('gender') == 'male' else "女性 ♀️"
+        embed.add_field(name="👤 性別", value=gender_display, inline=True)
+        embed.add_field(name="👔 上衣", value=f"ID: {user_data['top']}", inline=True)
+        embed.add_field(name="👖 下裝", value=f"ID: {user_data['bottom']}", inline=True)
+
+        inventory = '空的'
+        if user_data['inventory']:
+            try:
+                items = json.loads(user_data['inventory'])
+                if items:
+                    inventory = ', '.join(str(item) for item in items[:3])
+                    if len(items) > 3:
+                        inventory += f"... 等{len(items)}項"
+            except:
+                pass
+        embed.add_field(name="🎒 物品欄", value=inventory, inline=False)
+
+        embed.set_thumbnail(url=user.display_avatar.url)
+        
+        if user_data.get('is_stunned', 0) == 1:
+            embed.set_footer(text="💫 你目前處於擊暈狀態，請等待恢復...")
+        else:
+            embed.set_footer(text="⚠️ 園區已自動為你關閉離開選項，安心享受吧。")
+            
+        return embed
+
+    async def update_welcome_message(self, interaction: discord.Interaction, user_id: int):
+        try:
+            user_data = self.get_user_data(user_id)
+            if not user_data:
+                return
+
+            user = interaction.guild.get_member(user_id)
+            if not user:
+                return
+
+            embed = await self.create_welcome_embed(user_data, user)
+            
+            # 獲取角色圖片 URL
+            character_image_url = await self.fetch_character_image_url(user_data)
+            
+            if character_image_url:
+                embed.set_image(url=character_image_url)
+
+            # 如果被擊暈，不顯示互動按鈕
+            if user_data.get('is_stunned', 0) == 1:
+                await interaction.edit_original_response(embed=embed, view=None)
+            else:
+                combined_view = discord.ui.View(timeout=600)
+                gender_view = GenderSelectView(self, user_id)
+                action_view = WelcomeActionView(self, user_id)
+                
+                combined_view.add_item(gender_view.children[0])
+                combined_view.add_item(action_view.children[0])
+                combined_view.add_item(action_view.children[1])
+
+                await interaction.edit_original_response(embed=embed, view=combined_view)
+
+        except Exception as e:
+            print(f"更新歡迎訊息錯誤: {e}")
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        guild = member.guild
+
+        if self.temp_role1_id:
+            temp_role1 = guild.get_role(self.temp_role1_id)
+            if temp_role1:
+                await member.add_roles(temp_role1, reason="初步驗證角色")
+
+        self.create_user_data(member.id)
+        user_data = self.get_user_data(member.id)
+        
+        if not user_data:
+            return
+
+        channel = self.bot.get_channel(self.welcome_channel_id)
+        if channel:
+            embed = await self.create_welcome_embed(user_data, member)
+            
+            # 獲取角色圖片 URL
+            character_image_url = await self.fetch_character_image_url(user_data)
+            
+            if character_image_url:
+                embed.set_image(url=character_image_url)
+
+            combined_view = discord.ui.View(timeout=600)
+            gender_view = GenderSelectView(self, member.id)
+            action_view = WelcomeActionView(self, member.id)
+            
+            combined_view.add_item(gender_view.children[0])
+            combined_view.add_item(action_view.children[0])
+            combined_view.add_item(action_view.children[1])
+
+            welcome_msg = await channel.send(embed=embed, view=combined_view)
+            self.welcome_messages.setdefault(guild.id, {})[member.id] = welcome_msg.id
+
+    async def handle_final_verification(self, interaction: discord.Interaction, member: discord.Member):
+        guild = member.guild
+        temp_role1 = guild.get_role(self.temp_role1_id)
+        member_role = guild.get_role(self.member_role_id) 
+
+        # 設置擊暈狀態
+        await self.update_user_data(member.id, {
+            'is_stunned': 1,
+            'hp': 10,
+            'stamina': 10
+        })
+
+        # 立即添加正式成員身分
+        if member_role:
+            await member.add_roles(member_role, reason="進入園區成為正式成員")
+
+        scam_id = f"{random.randint(1, 99999):05d}"
+        nickname = f"NO.{scam_id} {member.display_name}"
+        try:
+            await member.edit(nick=nickname, reason="設定園編")
+        except discord.Forbidden:
+            pass
+
+        # 更新歡迎訊息為擊暈狀態
+        user_data = self.get_user_data(member.id)
+        embed = await self.create_welcome_embed(user_data, member)
+        
+        # 獲取擊暈狀態的圖片 URL
+        character_image_url = await self.fetch_character_image_url(user_data)
+        if character_image_url:
+            embed.set_image(url=character_image_url)
+
+        await interaction.edit_original_response(embed=embed, view=None)
+
+        # 記錄擊暈用戶資訊
+        self.stunned_users[member.id] = {
+            'guild_id': guild.id,
+            'temp_role1': temp_role1,
+            'message_id': self.welcome_messages.get(guild.id, {}).get(member.id)
+        }
+
+        embed_response = discord.Embed(
+            title="💫 擊暈成功！",
+            description=(
+                f"園編：**{nickname}**\n"
+                "💫 已被成功擊暈！\n"
+                "✅ 已獲得正式成員身分\n"
+                "⏰ 5分鐘後將移除臨時身分組\n"
+                "🏥 血量和體力已降至10"
+            ),
+            color=0x696969
         )
         embed_response.set_thumbnail(url=member.display_avatar.url)
 
@@ -534,7 +743,7 @@ class WelcomeFlow(commands.Cog):
 
         embed = await self.create_welcome_embed(user_data, interaction.user)
         
-        # 嘗試獲取圖片 URL
+        # 獲取角色圖片 URL
         character_image_url = await self.fetch_character_image_url(user_data)
         
         if character_image_url:
@@ -550,59 +759,43 @@ class WelcomeFlow(commands.Cog):
 
         await interaction.followup.send(embed=embed, view=combined_view)
 
-    @app_commands.command(name="測試圖片附件", description="測試圖片作為附件發送")
-    async def test_image_attachment(self, interaction: discord.Interaction):
-        """測試圖片作為附件發送（備用方案）"""
-        await interaction.response.defer()
-
-        user_id = interaction.user.id
-        user_data = self.get_user_data(user_id)
-        
-        if not user_data:
-            self.create_user_data(user_id)
-            user_data = self.get_user_data(user_id)
-
-        embed = await self.create_welcome_embed(user_data, interaction.user)
-        character_file = await self.fetch_character_image_file(user_data)
-        
-        files = []
-        if character_file:
-            files.append(character_file)
-            embed.set_image(url="attachment://character.png")
-
-        if files:
-            await interaction.followup.send(embed=embed, files=files)
-        else:
-            await interaction.followup.send(embed=embed)
-
     @app_commands.command(name="清理緩存", description="清理圖片緩存（管理員專用）")
     @app_commands.default_permissions(administrator=True)
     async def clear_cache(self, interaction: discord.Interaction, 
-                         cache_type: str = app_commands.Choice(name="全部", value="all")):
+                         cache_type: str = None):
         """清理圖片緩存"""
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # 清理本地文件緩存
-            cache_files = list(self.cache_dir.glob("*.png"))
-            deleted_count = 0
+            deleted_files = 0
+            deleted_db_records = 0
             
-            for cache_file in cache_files:
-                try:
-                    cache_file.unlink()
-                    deleted_count += 1
-                except Exception as e:
-                    print(f"刪除緩存文件失敗 {cache_file}: {e}")
+            if cache_type != "database_only":
+                # 清理本地文件緩存
+                cache_files = list(self.cache_dir.glob("*.png"))
+                
+                for cache_file in cache_files:
+                    try:
+                        cache_file.unlink()
+                        deleted_files += 1
+                    except Exception as e:
+                        print(f"刪除緩存文件失敗 {cache_file}: {e}")
             
-            # 清理 URL 緩存
-            url_cache_count = len(self.image_url_cache)
-            self.image_url_cache.clear()
+            if cache_type != "files_only":
+                # 清理資料庫緩存
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM image_cache")
+                deleted_db_records = cursor.fetchone()[0]
+                cursor.execute("DELETE FROM image_cache")
+                conn.commit()
+                conn.close()
             
             embed = discord.Embed(
                 title="🗑️ 緩存清理完成",
                 description=(
-                    f"📁 已清理 {deleted_count} 個本地緩存文件\n"
-                    f"🔗 已清理 {url_cache_count} 個 URL 緩存"
+                    f"📁 已清理 {deleted_files} 個本地緩存文件\n"
+                    f"💾 已清理 {deleted_db_records} 個 Discord URL 緩存"
                 ),
                 color=0x00FF00
             )
@@ -623,14 +816,19 @@ class WelcomeFlow(commands.Cog):
             total_files = len(cache_files)
             total_size = sum(f.stat().st_size for f in cache_files) / (1024 * 1024)  # MB
             
-            # URL 緩存統計
-            url_cache_count = len(self.image_url_cache)
-            active_url_cache = 0
+            # 資料庫緩存統計
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM image_cache")
+            db_cache_count = cursor.fetchone()[0]
             
-            current_time = time.time()
-            for cache_key, cache_data in self.image_url_cache.items():
-                if current_time - cache_data['timestamp'] < 3600:  # 1小時內
-                    active_url_cache += 1
+            # 獲取最近的緩存記錄
+            cursor.execute("""
+                SELECT cache_key, created_at FROM image_cache 
+                ORDER BY created_at DESC LIMIT 3
+            """)
+            recent_db_cache = cursor.fetchall()
+            conn.close()
             
             embed = discord.Embed(
                 title="📊 圖片緩存狀態",
@@ -640,8 +838,11 @@ class WelcomeFlow(commands.Cog):
             embed.add_field(name="📁 緩存目錄", value=str(self.cache_dir), inline=False)
             embed.add_field(name="📄 本地文件數", value=f"{total_files} 個", inline=True)
             embed.add_field(name="💾 本地總大小", value=f"{total_size:.2f} MB", inline=True)
-            embed.add_field(name="🔗 URL 緩存總數", value=f"{url_cache_count} 個", inline=True)
-            embed.add_field(name="✅ 有效 URL 緩存", value=f"{active_url_cache} 個", inline=True)
+            embed.add_field(name="🔗 Discord URL 緩存", value=f"{db_cache_count} 個", inline=True)
+            
+            # 配置資訊
+            storage_channel_info = "專用儲存頻道" if self.image_storage_channel_id else "使用歡迎頻道"
+            embed.add_field(name="⚙️ 儲存配置", value=storage_channel_info, inline=True)
             
             if total_files > 0:
                 recent_files = sorted(cache_files, key=lambda x: x.stat().st_mtime, reverse=True)[:3]
@@ -666,6 +867,31 @@ class WelcomeFlow(commands.Cog):
                 embed.add_field(
                     name="🕒 最近本地緩存", 
                     value="\n".join(recent_list), 
+                    inline=False
+                )
+            
+            if recent_db_cache:
+                db_recent_list = []
+                for cache_key, created_at in recent_db_cache:
+                    from datetime import datetime
+                    date_str = datetime.fromtimestamp(created_at).strftime("%m/%d %H:%M")
+                    
+                    try:
+                        parts = cache_key.split('_')
+                        if len(parts) == 7:
+                            skin, face, hair, top, bottom, shoes, stunned = parts
+                            status = "擊暈" if stunned == "1" else "正常"
+                            display_info = f"👤{face} ({status})"
+                        else:
+                            display_info = cache_key
+                    except:
+                        display_info = cache_key
+                    
+                    db_recent_list.append(f"• {display_info} - {date_str}")
+                
+                embed.add_field(
+                    name="🔗 最近 Discord URL 緩存", 
+                    value="\n".join(db_recent_list), 
                     inline=False
                 )
             
@@ -697,10 +923,13 @@ class WelcomeFlow(commands.Cog):
                 cache_path.unlink()
                 print(f"已刪除本地緩存: {cache_path}")
             
-            # 清除 URL 緩存
-            if cache_key in self.image_url_cache:
-                del self.image_url_cache[cache_key]
-                print(f"已清除 URL 緩存: {cache_key}")
+            # 清除 Discord URL 緩存
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM image_cache WHERE cache_key = ?", (cache_key,))
+            conn.commit()
+            conn.close()
+            print(f"已清除 Discord URL 緩存: {cache_key}")
             
             # 重新獲取圖片
             embed = discord.Embed(
@@ -726,183 +955,60 @@ class WelcomeFlow(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ 刷新圖片時發生錯誤: {str(e)}")
 
-async def setup(bot):
-    await bot.add_cog(WelcomeFlow(bot))=0x696969
-            )
-        else:
-            embed = discord.Embed(
-                title="🎉 歡迎光臨 KK 園區™",
-                description=(
-                    f"🎉 歡迎 **{user.mention}** 蒞臨 KK 園區™ — 一個讓人留連忘返的樂園。\n\n"
-                    "🏠 食宿無憂，大通鋪讓你夜夜安穩；\n"
-                    "🤝 不怕孤單，因為你永遠有人作伴；\n"
-                    "🎭 娛樂充足，幹部們會「適時」安排你的休閒時光。\n\n"
-                    "📜 **入園流程如下：**\n"
-                    "1️⃣ 選擇你的性別\n"
-                    "2️⃣ 繳交不必要的物品\n"
-                    "3️⃣ 點擊確認，即刻入住\n\n"
-                    "📌 每日表現將自動記錄為積分，影響分配與待遇。\n"
-                    "🎁 定期將物品上繳以獲得特別回饋。\n"
-                    "🚪 出口目前維護中，開放時間未定。\n"
-                    "📷 園區全程監控中，請放心生活。"
-                ),
-                color=0x8B0000
-            )
-    
-        embed.add_field(name="⭐ 等級", value=f"{user_data['level']}", inline=True)
-        embed.add_field(name="💰 金錢", value=f"{user_data['kkcoin']} KKCoin", inline=True)
-        embed.add_field(name="🏆 職位", value=user_data['title'], inline=True)
-
-        hp_bar = self.create_progress_bar(user_data['hp'], 100)
-        stamina_bar = self.create_progress_bar(user_data['stamina'], 100)
-        embed.add_field(name="❤️ 血量", value=f"{hp_bar} {user_data['hp']}/100", inline=False)
-        embed.add_field(name="⚡ 體力", value=f"{stamina_bar} {user_data['stamina']}/100", inline=False)
-
-        gender_display = "男性 ♂️" if user_data.get('gender') == 'male' else "女性 ♀️"
-        embed.add_field(name="👤 性別", value=gender_display, inline=True)
-        embed.add_field(name="👔 上衣", value=f"ID: {user_data['top']}", inline=True)
-        embed.add_field(name="👖 下裝", value=f"ID: {user_data['bottom']}", inline=True)
-
-        inventory = '空的'
-        if user_data['inventory']:
-            try:
-                items = json.loads(user_data['inventory'])
-                if items:
-                    inventory = ', '.join(str(item) for item in items[:3])
-                    if len(items) > 3:
-                        inventory += f"... 等{len(items)}項"
-            except:
-                pass
-        embed.add_field(name="🎒 物品欄", value=inventory, inline=False)
-
-        embed.set_thumbnail(url=user.display_avatar.url)
+    @app_commands.command(name="設定圖片儲存頻道", description="設定專用圖片儲存頻道（管理員專用）")
+    @app_commands.default_permissions(administrator=True)
+    async def set_image_storage_channel(self, interaction: discord.Interaction, 
+                                       channel: discord.TextChannel = None):
+        """設定圖片儲存頻道"""
+        await interaction.response.defer(ephemeral=True)
         
-        if user_data.get('is_stunned', 0) == 1:
-            embed.set_footer(text="💫 你目前處於擊暈狀態，請等待恢復...")
-        else:
-            embed.set_footer(text="⚠️ 園區已自動為你關閉離開選項，安心享受吧。")
-            
-        return embed
-
-    async def update_welcome_message(self, interaction: discord.Interaction, user_id: int):
-        try:
-            user_data = self.get_user_data(user_id)
-            if not user_data:
-                return
-
-            user = interaction.guild.get_member(user_id)
-            if not user:
-                return
-
-            embed = await self.create_welcome_embed(user_data, user)
-            
-            # 嘗試獲取圖片 URL 用於 embed
-            character_image_url = await self.fetch_character_image_url(user_data)
-            
-            if character_image_url:
-                embed.set_image(url=character_image_url)
-
-            # 如果被擊暈，不顯示互動按鈕
-            if user_data.get('is_stunned', 0) == 1:
-                await interaction.edit_original_response(embed=embed, view=None)
-            else:
-                combined_view = discord.ui.View(timeout=600)
-                gender_view = GenderSelectView(self, user_id)
-                action_view = WelcomeActionView(self, user_id)
-                
-                combined_view.add_item(gender_view.children[0])
-                combined_view.add_item(action_view.children[0])
-                combined_view.add_item(action_view.children[1])
-
-                await interaction.edit_original_response(embed=embed, view=combined_view)
-
-        except Exception as e:
-            print(f"更新歡迎訊息錯誤: {e}")
-
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
-        guild = member.guild
-
-        if self.temp_role1_id:
-            temp_role1 = guild.get_role(self.temp_role1_id)
-            if temp_role1:
-                await member.add_roles(temp_role1, reason="初步驗證角色")
-
-        self.create_user_data(member.id)
-        user_data = self.get_user_data(member.id)
-        
-        if not user_data:
-            return
-
-        channel = self.bot.get_channel(self.welcome_channel_id)
         if channel:
-            embed = await self.create_welcome_embed(user_data, member)
-            
-            # 嘗試獲取圖片 URL
-            character_image_url = await self.fetch_character_image_url(user_data)
-            
-            if character_image_url:
-                embed.set_image(url=character_image_url)
-
-            combined_view = discord.ui.View(timeout=600)
-            gender_view = GenderSelectView(self, member.id)
-            action_view = WelcomeActionView(self, member.id)
-            
-            combined_view.add_item(gender_view.children[0])
-            combined_view.add_item(action_view.children[0])
-            combined_view.add_item(action_view.children[1])
-
-            welcome_msg = await channel.send(embed=embed, view=combined_view)
-            self.welcome_messages.setdefault(guild.id, {})[member.id] = welcome_msg.id
-
-    async def handle_final_verification(self, interaction: discord.Interaction, member: discord.Member):
-        guild = member.guild
-        temp_role1 = guild.get_role(self.temp_role1_id)
-        member_role = guild.get_role(self.member_role_id) 
-
-        # 設置擊暈狀態
-        await self.update_user_data(member.id, {
-            'is_stunned': 1,
-            'hp': 10,
-            'stamina': 10
-        })
-
-        # 立即添加正式成員身分
-        if member_role:
-            await member.add_roles(member_role, reason="進入園區成為正式成員")
-
-        scam_id = f"{random.randint(1, 99999):05d}"
-        nickname = f"NO.{scam_id} {member.display_name}"
-        try:
-            await member.edit(nick=nickname, reason="設定園編")
-        except discord.Forbidden:
-            pass
-
-        # 更新歡迎訊息為擊暈狀態
-        user_data = self.get_user_data(member.id)
-        embed = await self.create_welcome_embed(user_data, member)
+            # 測試頻道權限
+            try:
+                test_embed = discord.Embed(
+                    title="🧪 頻道測試",
+                    description="測試機器人是否可以在此頻道發送訊息和上傳圖片",
+                    color=0x0099FF
+                )
+                
+                test_msg = await channel.send(embed=test_embed)
+                await test_msg.delete()
+                
+                # 儲存配置（這裡您可能需要將其儲存到資料庫或配置文件）
+                self.image_storage_channel_id = channel.id
+                
+                embed = discord.Embed(
+                    title="✅ 圖片儲存頻道設定成功",
+                    description=(
+                        f"📁 已設定 {channel.mention} 為圖片儲存頻道\n"
+                        "🖼️ 之後的角色圖片將上傳至此頻道\n"
+                        "💾 現有的緩存不會受到影響"
+                    ),
+                    color=0x00FF00
+                )
+                
+            except discord.Forbidden:
+                embed = discord.Embed(
+                    title="❌ 權限不足",
+                    description=f"機器人沒有權限在 {channel.mention} 發送訊息或上傳文件",
+                    color=0xFF0000
+                )
+            except Exception as e:
+                embed = discord.Embed(
+                    title="❌ 設定失敗",
+                    description=f"發生錯誤: {str(e)}",
+                    color=0xFF0000
+                )
+        else:
+            # 重置為使用歡迎頻道
+            self.image_storage_channel_id = 0
+            embed = discord.Embed(
+                title="🔄 已重置圖片儲存設定",
+                description="圖片將上傳到歡迎頻道（並立即刪除訊息）",
+                color=0xFF9900
+            )
         
-        # 獲取擊暈狀態的圖片 URL
-        character_image_url = await self.fetch_character_image_url(user_data)
-        if character_image_url:
-            embed.set_image(url=character_image_url)
+        await interaction.followup.send(embed=embed)
 
-        await interaction.edit_original_response(embed=embed, view=None)
-
-        # 記錄擊暈用戶資訊
-        self.stunned_users[member.id] = {
-            'guild_id': guild.id,
-            'temp_role1': temp_role1,
-            'message_id': self.welcome_messages.get(guild.id, {}).get(member.id)
-        }
-
-        embed_response = discord.Embed(
-            title="💫 擊暈成功！",
-            description=(
-                f"園編：**{nickname}**\n"
-                "💫 已被成功擊暈！\n"
-                "✅ 已獲得正式成員身分\n"
-                "⏰ 5分鐘後將移除臨時身分組\n"
-                "🏥 血量和體力已降至10"
-            ),
-            color
+async def setup(bot):
+    await bot.add_cog(WelcomeFlow(bot))
