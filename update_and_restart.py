@@ -173,82 +173,136 @@ def stop_bot_processes():
 async def send_update_notification(update_details, commits_count, notification_type="start"):
     """發送詳細更新通知到Discord"""
     intents = discord.Intents.default()
+    intents.message_content = True  # 確保有訊息內容權限
     notification_bot = commands.Bot(command_prefix="!", intents=intents)
     
     @notification_bot.event
     async def on_ready():
+        print(f"🔗 Discord BOT 已連線: {notification_bot.user}")
         try:
-            channel = notification_bot.get_channel(int(DISCORD_SYS_CHANNEL_ID))
-            if channel:
-                if notification_type == "start":
-                    # 開始更新通知
-                    embed = discord.Embed(
-                        title="🔄 BOT 更新開始",
-                        description="正在進行自動更新和重啟...",
-                        color=0xFFA500,  # 橙色
-                        timestamp=datetime.now()
-                    )
+            channel_id = int(DISCORD_SYS_CHANNEL_ID)
+            print(f"🎯 嘗試取得頻道 ID: {channel_id}")
+            
+            channel = notification_bot.get_channel(channel_id)
+            if not channel:
+                print("❌ 透過 get_channel 找不到頻道，嘗試 fetch_channel...")
+                try:
+                    channel = await notification_bot.fetch_channel(channel_id)
+                except Exception as fetch_error:
+                    print(f"❌ fetch_channel 也失敗: {fetch_error}")
+                    return
+            
+            print(f"📍 找到頻道: {channel.name} (ID: {channel.id})")
+            
+            if notification_type == "start":
+                # 開始更新通知
+                embed = discord.Embed(
+                    title="🔄 BOT 更新開始",
+                    description="正在進行自動更新和重啟...",
+                    color=0xFFA500,  # 橙色
+                    timestamp=datetime.now()
+                )
+                
+                # 添加 commit 資訊
+                commit_text = update_details.get('commits', '無 commit 資訊')
+                if len(commit_text) > 1000:  # Discord field 限制
+                    commit_text = commit_text[:1000] + "..."
+                
+                embed.add_field(
+                    name=f"📝 更新內容 ({commits_count} 個新提交)",
+                    value=f"```\n{commit_text}\n```",
+                    inline=False
+                )
+                
+                # 添加修改的檔案
+                if update_details.get('files'):
+                    files_text = '\n'.join([f"• {file}" for file in update_details['files'][:8]])
+                    if len(update_details['files']) > 8:
+                        files_text += f"\n... 還有 {len(update_details['files']) - 8} 個檔案"
                     
-                    # 添加 commit 資訊
+                    if len(files_text) > 1000:
+                        files_text = files_text[:1000] + "..."
+                        
                     embed.add_field(
-                        name=f"📝 更新內容 ({commits_count} 個新提交)",
-                        value=f"```\n{update_details['commits']}\n```",
+                        name="📂 修改的檔案",
+                        value=f"```\n{files_text}\n```",
                         inline=False
                     )
-                    
-                    # 添加修改的檔案
-                    if update_details['files']:
-                        files_text = '\n'.join([f"• {file}" for file in update_details['files'][:10]])
-                        if len(update_details['files']) > 10:
-                            files_text += f"\n... 還有 {len(update_details['files']) - 10} 個檔案"
-                        embed.add_field(
-                            name="📂 修改的檔案",
-                            value=f"```\n{files_text}\n```",
-                            inline=False
-                        )
-                    
-                    # 添加統計資訊
-                    if update_details['stats']:
-                        embed.add_field(
-                            name="📊 變更統計",
-                            value=f"```\n{update_details['stats']}\n```",
-                            inline=False
-                        )
-                    
-                    embed.set_footer(text="系統將自動重啟所有服務")
-                    
-                elif notification_type == "complete":
-                    # 完成通知
-                    embed = discord.Embed(
-                        title="✅ BOT 更新完成",
-                        description="所有服務已成功更新並重啟！",
-                        color=0x00FF00,  # 綠色
-                        timestamp=datetime.now()
-                    )
-                    embed.set_footer(text="所有機器人現在運行最新版本")
                 
-                elif notification_type == "error":
-                    # 錯誤通知
-                    embed = discord.Embed(
-                        title="❌ BOT 更新失敗",
-                        description="更新過程中發生錯誤，請檢查日誌",
-                        color=0xFF0000,  # 紅色
-                        timestamp=datetime.now()
+                # 添加統計資訊
+                stats_text = update_details.get('stats', '')
+                if stats_text and len(stats_text) < 1000:
+                    embed.add_field(
+                        name="📊 變更統計",
+                        value=f"```\n{stats_text}\n```",
+                        inline=False
                     )
                 
+                embed.set_footer(text="系統將自動重啟所有服務")
+                
+            elif notification_type == "complete":
+                # 完成通知
+                embed = discord.Embed(
+                    title="✅ BOT 更新完成",
+                    description="所有服務已成功更新並重啟！",
+                    color=0x00FF00,  # 綠色
+                    timestamp=datetime.now()
+                )
+                embed.set_footer(text="所有機器人現在運行最新版本")
+            
+            elif notification_type == "error":
+                # 錯誤通知
+                embed = discord.Embed(
+                    title="❌ BOT 更新失敗",
+                    description="更新過程中發生錯誤，請檢查日誌",
+                    color=0xFF0000,  # 紅色
+                    timestamp=datetime.now()
+                )
+            
+            # 先嘗試發送 embed，如果失敗則發送普通訊息
+            try:
                 await channel.send(embed=embed)
-                print(f"📢 {notification_type} 通知已發送")
-            else:
-                print("❌ 找不到指定的Discord頻道")
+                print(f"📢 {notification_type} Embed 通知已發送")
+            except Exception as embed_error:
+                print(f"⚠️ Embed 發送失敗，嘗試普通訊息: {embed_error}")
+                # 發送純文字版本
+                simple_message = f"🔄 **BOT 更新通知**\n"
+                if notification_type == "start":
+                    simple_message += f"正在更新 ({commits_count} 個新提交)..."
+                elif notification_type == "complete":
+                    simple_message += "✅ 更新完成！所有服務已重啟"
+                elif notification_type == "error":
+                    simple_message += "❌ 更新失敗，請檢查日誌"
+                
+                await channel.send(simple_message)
+                print(f"📢 {notification_type} 簡單通知已發送")
+                
         except Exception as e:
-            print(f"❌ 發送通知失敗: {e}")
+            print(f"❌ 發送通知過程中出錯: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
+            print("🔒 關閉通知 BOT 連線")
             await notification_bot.close()
     
+    @notification_bot.event
+    async def on_error(event, *args, **kwargs):
+        print(f"❌ Discord BOT 事件錯誤 {event}: {args}")
+    
     try:
+        print("🚀 啟動通知 BOT...")
+        if not TOKEN:
+            print("❌ 找不到 DISCORD_BOT_TOKEN")
+            return
+        if not DISCORD_SYS_CHANNEL_ID:
+            print("❌ 找不到 DISCORD_SYS_CHANNEL_ID")
+            return
+            
         await notification_bot.start(TOKEN)
     except Exception as e:
-        print(f"❌ Discord通知BOT啟動失敗: {e}")
+        print(f"❌ Discord 通知 BOT 啟動失敗: {e}")
+        import traceback
+        traceback.print_exc()
 
 def restart_systemd_services():
     """重啟 systemd 服務 (如果有配置的話)"""
@@ -329,9 +383,33 @@ async def main():
     print("✅ 更新流程完成！")
     print("ℹ️ systemd 將自動重啟機器人服務")
 
-if __name__ == "__main__":
+async def test_notification():
+    """測試 Discord 通知功能"""
+    print("🧪 測試 Discord 通知功能...")
+    
+    test_update_details = {
+        "commits": "• 測試更新通知功能 (abc123) - Test User\n• 修復機器人重啟問題 (def456) - Test User",
+        "files": ["bot.py", "update_script.py", "config.py"],
+        "stats": "3 files changed, 25 insertions(+), 10 deletions(-)"
+    }
+    
     try:
-        asyncio.run(main())
+        await send_update_notification(test_update_details, 2, "start")
+        await asyncio.sleep(3)
+        await send_update_notification({}, 0, "complete")
+        print("✅ 測試通知發送完成")
+    except Exception as e:
+        print(f"❌ 測試通知失敗: {e}")
+
+if __name__ == "__main__":
+    import sys
+    
+    try:
+        # 如果有 test 參數，執行測試
+        if len(sys.argv) > 1 and sys.argv[1] == "test":
+            asyncio.run(test_notification())
+        else:
+            asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 收到中斷信號，程式結束")
     except Exception as e:
