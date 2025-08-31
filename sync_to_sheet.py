@@ -78,12 +78,19 @@ def parse_datetime_to_timestamp(value) -> int:
     return 0
 
 
-def timestamp_to_iso_string(ts: int) -> str:
-    if not ts or ts <= 0:
+def timestamp_to_iso_string(ts) -> str:
+    """將時間戳轉換為 ISO 字串格式，修復類型檢查問題"""
+    if ts is None or ts == "" or ts == "0":
         return ""
+    
     try:
-        return datetime.fromtimestamp(int(ts)).isoformat()
-    except Exception:
+        # 確保轉換為整數
+        ts_int = int(float(str(ts)))
+        if ts_int <= 0:
+            return ""
+        return datetime.fromtimestamp(ts_int).isoformat()
+    except (ValueError, TypeError, OSError) as e:
+        logger.warning(f"[timestamp_to_iso_string] 無法轉換時間戳: '{ts}', 錯誤: {e}")
         return ""
 
 
@@ -249,9 +256,14 @@ class GameUserSync:
     def _convert_value_for_sheet(self, field: str, value) -> str:
         """轉換 DB 值為 Sheet 格式"""
         if field in self.date_fields:
-            return timestamp_to_iso_string(value) if value else ""
+            return timestamp_to_iso_string(value)
         elif field in self.boolean_fields:
-            return "TRUE" if value else "FALSE"
+            # 處理布林值轉換，確保正確的類型檢查
+            if isinstance(value, str):
+                bool_val = value.lower() in ('true', '1', 'yes', 'y')
+            else:
+                bool_val = bool(value) if value is not None else False
+            return "TRUE" if bool_val else "FALSE"
         else:
             return str(value) if value is not None else ""
 
