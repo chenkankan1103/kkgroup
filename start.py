@@ -39,7 +39,6 @@ if __name__ == "__main__":
     services = [
         ("python bot.py", 5),        # 主 bot 延遲 5 秒
         ("python uibot.py", 10),     # UI bot 延遲 10 秒
-        ("python web.py", 0),        # Flask 後台不用延遲
         ("python shopbot.py", 7),    # 黑市 bot 延遲 7 秒
     ]
 
@@ -55,29 +54,3 @@ if __name__ == "__main__":
 
     print("🔚 所有服務已結束")
 
-
-# ===================================
-
-# 方案二：最簡版 - 同時啟動所有程式
-"""
-import subprocess
-import os
-
-if __name__ == "__main__":
-    print("🚀 啟動所有服務...")
-    
-    # 同時啟動所有程式
-    processes = []
-    commands = ["python bot.py", "python uibot.py", "python web.py"]
-    
-    for cmd in commands:
-        print(f"🚀 啟動: {cmd}")
-        process = subprocess.Popen(cmd, shell=True)
-        processes.append(process)
-    
-    # 等待所有程式結束
-    for process in processes:
-        process.wait()
-    
-    print("🔚 所有服務已結束")
-"""
