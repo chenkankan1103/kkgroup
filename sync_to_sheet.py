@@ -42,7 +42,7 @@ def parse_datetime_to_timestamp(value) -> int:
       - ISO 與常見格式：2025-06-04T02:33:44、2025/06/04 02:33:44、2025-06-04 ...
       - Google Sheet/Excel 浮點日期（以 1899-12-30 為基準日）
     """
-    if value is None or value == "":
+    if value is None or value == "" or value == "0":
         return 0
 
     # 已是數字或數字字串
@@ -59,10 +59,15 @@ def parse_datetime_to_timestamp(value) -> int:
         # 其餘視為 Unix 秒
         if f > 10**9:  # 大約 2001 年之後
             return int(f)
+        # 小於合理範圍的數字
+        if f <= 0:
+            return 0
     except Exception:
         pass
 
     s = str(value).strip()
+    if not s or s == "0":
+        return 0
 
     patterns = [
         "%Y-%m-%dT%H:%M:%S.%f",
@@ -191,6 +196,14 @@ class DCDBSheetSync:
 
     def update_db_row(self, data: Dict) -> bool:
         try:
+            # 確保必要欄位有預設值
+            if not data.get("created_at"):
+                data["created_at"] = self._now_ts()
+            if not data.get("last_updated"):
+                data["last_updated"] = self._now_ts()
+            if not data.get("status"):
+                data["status"] = "active"
+                
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
             cols = list(data.keys())
@@ -274,6 +287,15 @@ class DCDBSheetSync:
                         item[h] = parse_datetime_to_timestamp(val)
                     else:
                         item[h] = str(val).strip()
+                
+                # 確保必要欄位有預設值
+                if not item.get("created_at"):
+                    item["created_at"] = 0
+                if not item.get("last_updated"):
+                    item["last_updated"] = 0
+                if not item.get("status"):
+                    item["status"] = "active"
+                    
                 if item.get("user_id"):
                     data.append(item)
                 else:
@@ -349,12 +371,16 @@ class DCDBSheetSync:
             db_dict: Dict[str, Dict] = {}
             for r in db_rows:
                 d = dict(zip(cols, r))
-                # 確保整數型時間
+                # 確保整數型時間，並提供預設值
                 d["created_at"] = int(d.get("created_at") or 0)
                 d["last_updated"] = int(d.get("last_updated") or 0)
+                if not d["created_at"]:
+                    d["created_at"] = self._now_ts()
+                if not d["last_updated"]:
+                    d["last_updated"] = self._now_ts()
                 db_dict[str(d["user_id"])] = d
 
-            # 轉換 Sheet → dict
+            # 轉換 Sheet → dict（已在 get_sheet_data 中處理預設值）
             sheet_dict: Dict[str, Dict] = {}
             for d in sheet_rows:
                 sheet_dict[str(d["user_id"])] = d
@@ -553,52 +579,147 @@ class DCDBSheetSync:
         logger.info(f"已重寫 {end_row-1} 筆資料到 Sheet")
 
     # -------------------------
-    # 新增：調試用方法
+    # 新增：調試用方法（修正版）
     # -------------------------
     def debug_sync_status(self):
         """調試用：比較 DB 和 Sheet 的資料差異"""
         logger.info("🔍 開始調試同步狀態")
         
-        cols, db_rows = self.get_db_data()
-        sheet_rows = self.get_sheet_data()
+        try:
+            cols, db_rows = self.get_db_data()
+            sheet_rows = self.get_sheet_data()
+            
+            db_dict = {}
+            for r in db_rows:
+                d = dict(zip(cols, r))
+                d["created_at"] = int(d.get("created_at") or 0)
+                d["last_updated"] = int(d.get("last_updated") or 0)
+                db_dict[str(d["user_id"])] = d
+            
+            sheet_dict = {str(d["user_id"]): d for d in sheet_rows}
+            
+            print("\n=== 調試報告 ===")
+            print(f"DB 總數: {len(db_dict)}")
+            print(f"Sheet 總數: {len(sheet_dict)}")
+            
+            # 檢查只在 DB 存在的記錄
+            db_only = set(db_dict.keys()) - set(sheet_dict.keys())
+            if db_only:
+                print(f"\n只在 DB 存在的 user_id: {list(db_only)}")
+                for uid in list(db_only)[:5]:  # 只顯示前5個
+                    d = db_dict[uid]
+                    print(f"  {uid}: last_updated={d['last_updated']} ({timestamp_to_iso_string(d['last_updated'])})")
+            
+            # 檢查只在 Sheet 存在的記錄
+            sheet_only = set(sheet_dict.keys()) - set(db_dict.keys())
+            if sheet_only:
+                print(f"\n只在 Sheet 存在的 user_id: {list(sheet_only)}")
+                for uid in list(sheet_only)[:5]:  # 只顯示前5個
+                    d = sheet_dict[uid]
+                    print(f"  {uid}: last_updated={d.get('last_updated', 0)} ({timestamp_to_iso_string(d.get('last_updated', 0))})")
+            
+            # 檢查時間戳差異（安全存取）
+            common_users = set(db_dict.keys()) & set(sheet_dict.keys())
+            if common_users:
+                print(f"\n共同 user_id 的時間戳比較 (前5個):")
+                for uid in list(common_users)[:5]:
+                    db_ts = db_dict[uid].get("last_updated", 0)
+                    sheet_ts = sheet_dict[uid].get("last_updated", 0)
+                    print(f"  {uid}: DB={db_ts} ({timestamp_to_iso_string(db_ts)}) vs Sheet={sheet_ts} ({timestamp_to_iso_string(sheet_ts)})")
+                    if db_ts > sheet_ts:
+                        print(f"    -> DB 較新，應該更新到 Sheet")
+                    elif sheet_ts > db_ts:
+                        print(f"    -> Sheet 較新，應該更新到 DB")
+                    else:
+                        print(f"    -> 時間戳相同，無需同步")
+            
+            # 檢查 Sheet 中的行號映射
+            print(f"\n檢查 user_id 到行號的映射 (前5個):")
+            for uid in list(db_dict.keys())[:5]:
+                row_num = self.find_sheet_row_by_user_id(uid)
+                print(f"  {uid}: 行號 = {row_num}")
+                
+        except Exception as e:
+            logger.error(f"調試檢查失敗: {e}")
+            print(f"調試檢查失敗: {e}")
+
+    def fix_missing_timestamps(self):
+        """
+        修復工具：為缺少時間戳的記錄補上當前時間
+        """
+        logger.info("🔧 開始修復缺少的時間戳")
         
-        db_dict = {}
-        for r in db_rows:
-            d = dict(zip(cols, r))
-            d["created_at"] = int(d.get("created_at") or 0)
-            d["last_updated"] = int(d.get("last_updated") or 0)
-            db_dict[str(d["user_id"])] = d
+        # 修復 DB
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            now_ts = self._now_ts()
+            
+            # 修復 created_at
+            cur.execute(
+                "UPDATE users SET created_at = ? WHERE created_at IS NULL OR created_at = 0",
+                (now_ts,)
+            )
+            created_fixed = cur.rowcount
+            
+            # 修復 last_updated
+            cur.execute(
+                "UPDATE users SET last_updated = ? WHERE last_updated IS NULL OR last_updated = 0",
+                (now_ts,)
+            )
+            updated_fixed = cur.rowcount
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"DB 修復完成: created_at 修復 {created_fixed} 筆, last_updated 修復 {updated_fixed} 筆")
+            
+        except Exception as e:
+            logger.error(f"DB 時間戳修復失敗: {e}")
         
-        sheet_dict = {str(d["user_id"]): d for d in sheet_rows}
-        
-        print("\n=== 調試報告 ===")
-        print(f"DB 總數: {len(db_dict)}")
-        print(f"Sheet 總數: {len(sheet_dict)}")
-        
-        # 檢查只在 DB 存在的記錄
-        db_only = set(db_dict.keys()) - set(sheet_dict.keys())
-        if db_only:
-            print(f"\n只在 DB 存在的 user_id: {list(db_only)}")
-            for uid in db_only:
-                d = db_dict[uid]
-                print(f"  {uid}: last_updated={d['last_updated']} ({timestamp_to_iso_string(d['last_updated'])})")
-        
-        # 檢查時間戳差異
-        common_users = set(db_dict.keys()) & set(sheet_dict.keys())
-        if common_users:
-            print(f"\n共同 user_id 的時間戳比較 (前5個):")
-            for uid in list(common_users)[:5]:
-                db_ts = db_dict[uid]["last_updated"]
-                sheet_ts = sheet_dict[uid]["last_updated"]
-                print(f"  {uid}: DB={db_ts} ({timestamp_to_iso_string(db_ts)}) vs Sheet={sheet_ts} ({timestamp_to_iso_string(sheet_ts)})")
-                if db_ts > sheet_ts:
-                    print(f"    -> DB 較新，應該更新到 Sheet")
-        
-        # 檢查 Sheet 中的行號映射
-        print(f"\n檢查 user_id 到行號的映射 (前5個):")
-        for uid in list(db_dict.keys())[:5]:
-            row_num = self.find_sheet_row_by_user_id(uid)
-            print(f"  {uid}: 行號 = {row_num}")
+        # 修復 Sheet（讀取並重寫有問題的行）
+        try:
+            sheet_data = self.get_sheet_data()
+            headers = self.get_sheet_headers()
+            user_id_to_row = {}
+            all_values = self.sheet.get_all_values()
+            
+            for row_idx, row in enumerate(all_values[1:], start=2):
+                if row and len(row) > 0 and row[0].strip():
+                    user_id_to_row[str(row[0]).strip()] = row_idx
+            
+            sheet_fixes = 0
+            for data in sheet_data:
+                uid = data["user_id"]
+                needs_fix = False
+                
+                if not data.get("created_at") or data["created_at"] == 0:
+                    data["created_at"] = now_ts
+                    needs_fix = True
+                    
+                if not data.get("last_updated") or data["last_updated"] == 0:
+                    data["last_updated"] = now_ts
+                    needs_fix = True
+                
+                if needs_fix:
+                    row_index = user_id_to_row.get(uid)
+                    if row_index:
+                        row_vals = []
+                        for h in headers:
+                            if h in ("created_at", "last_updated"):
+                                row_vals.append(timestamp_to_iso_string(data[h]))
+                            else:
+                                row_vals.append(str(data.get(h, "")))
+                        
+                        rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
+                        self.sheet.update(rng, [row_vals])
+                        sheet_fixes += 1
+                        time.sleep(0.1)
+            
+            logger.info(f"Sheet 修復完成: {sheet_fixes} 筆記錄")
+            
+        except Exception as e:
+            logger.error(f"Sheet 時間戳修復失敗: {e}")
 
 
 # 新增測試用的便利方法
@@ -631,6 +752,16 @@ def test_single_update():
     syncer.bidirectional_sync()
 
 
+def fix_timestamps_only():
+    """只修復時間戳的便利函數"""
+    CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0"
+    DB_FILE = "user_data.db"
+    
+    syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
+    syncer.fix_missing_timestamps()
+
+
 def main():
     # === 依你的實際檔名/URL 調整 ===
     CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
@@ -641,6 +772,9 @@ def main():
     
     # 先執行調試檢查
     syncer.debug_sync_status()
+    
+    # 修復缺少的時間戳
+    syncer.fix_missing_timestamps()
     
     # 常用：雙向同步
     syncer.bidirectional_sync()
@@ -657,4 +791,5 @@ def main():
 if __name__ == "__main__":
     # 可以選擇執行測試或正常同步
     # test_single_update()  # 取消註解來執行測試
+    # fix_timestamps_only()  # 取消註解來只修復時間戳
     main()
