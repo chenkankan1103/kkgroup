@@ -4,7 +4,7 @@
 功能：
 1. 檢查並拉取 git 更新
 2. 關閉指定的機器人進程
-3. 發送更新通知到 Discord
+3. 發送詳細更新通知到 Discord
 4. 讓 systemd 自動重啟服務
 """
 
@@ -17,6 +17,7 @@ import time
 import signal
 import psutil
 import asyncio
+from datetime import datetime
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -41,10 +42,43 @@ def check_git_updates():
         )
         
         commits_behind = int(result.stdout.strip())
-        return commits_behind > 0
+        return commits_behind > 0, commits_behind
     except Exception as e:
         print(f"❌ 檢查更新失敗: {e}")
-        return False
+        return False, 0
+
+def get_git_update_details():
+    """獲取詳細的 Git 更新資訊"""
+    try:
+        # 獲取最新的幾個 commit
+        commits = subprocess.check_output([
+            "git", "log", "HEAD..origin/main", 
+            "--pretty=format:• %s (%h) - %an", 
+            "--max-count=5"
+        ], cwd="/home/e193752468/kkgroup").decode("utf-8").strip()
+        
+        # 獲取更新的檔案列表
+        changed_files = subprocess.check_output([
+            "git", "diff", "--name-only", "HEAD", "origin/main"
+        ], cwd="/home/e193752468/kkgroup").decode("utf-8").strip()
+        
+        # 獲取新增和刪除的行數
+        stats = subprocess.check_output([
+            "git", "diff", "--stat", "HEAD", "origin/main"
+        ], cwd="/home/e193752468/kkgroup").decode("utf-8").strip()
+        
+        return {
+            "commits": commits if commits else "沒有具體 commit 資訊",
+            "files": changed_files.split('\n') if changed_files else [],
+            "stats": stats if stats else "沒有統計資訊"
+        }
+    except Exception as e:
+        print(f"⚠️ 獲取更新詳情失敗: {e}")
+        return {
+            "commits": f"⚠️ 無法取得 commit 資訊: {e}",
+            "files": [],
+            "stats": "無法取得統計資訊"
+        }
 
 def pull_git_updates():
     """拉取 git 更新"""
@@ -57,21 +91,10 @@ def pull_git_updates():
             check=True
         )
         print("✅ Git 更新完成")
-        return True
+        return True, result.stdout
     except Exception as e:
         print(f"❌ Git 更新失敗: {e}")
-        return False
-
-def get_last_commit():
-    """抓取最後一次 git commit 訊息"""
-    try:
-        commit_msg = subprocess.check_output(
-            ["git", "log", "-1", "--pretty=%s (%h)"],
-            cwd="/home/e193752468/kkgroup"
-        ).decode("utf-8").strip()
-        return commit_msg
-    except Exception as e:
-        return f"⚠️ 無法取得更新內容: {e}"
+        return False, str(e)
 
 def find_bot_processes():
     """找到所有指定的機器人進程"""
@@ -147,8 +170,8 @@ def stop_bot_processes():
         print("✅ 所有機器人進程已成功停止")
         return True
 
-async def send_update_notification(update_content):
-    """發送更新通知到Discord"""
+async def send_update_notification(update_details, commits_count, notification_type="start"):
+    """發送詳細更新通知到Discord"""
     intents = discord.Intents.default()
     notification_bot = commands.Bot(command_prefix="!", intents=intents)
     
@@ -157,8 +180,64 @@ async def send_update_notification(update_content):
         try:
             channel = notification_bot.get_channel(int(DISCORD_SYS_CHANNEL_ID))
             if channel:
-                await channel.send(f"🔄 BOT 正在更新重啟中...\n📌 更新內容：{update_content}")
-                print("📢 更新通知已發送")
+                if notification_type == "start":
+                    # 開始更新通知
+                    embed = discord.Embed(
+                        title="🔄 BOT 更新開始",
+                        description="正在進行自動更新和重啟...",
+                        color=0xFFA500,  # 橙色
+                        timestamp=datetime.now()
+                    )
+                    
+                    # 添加 commit 資訊
+                    embed.add_field(
+                        name=f"📝 更新內容 ({commits_count} 個新提交)",
+                        value=f"```\n{update_details['commits']}\n```",
+                        inline=False
+                    )
+                    
+                    # 添加修改的檔案
+                    if update_details['files']:
+                        files_text = '\n'.join([f"• {file}" for file in update_details['files'][:10]])
+                        if len(update_details['files']) > 10:
+                            files_text += f"\n... 還有 {len(update_details['files']) - 10} 個檔案"
+                        embed.add_field(
+                            name="📂 修改的檔案",
+                            value=f"```\n{files_text}\n```",
+                            inline=False
+                        )
+                    
+                    # 添加統計資訊
+                    if update_details['stats']:
+                        embed.add_field(
+                            name="📊 變更統計",
+                            value=f"```\n{update_details['stats']}\n```",
+                            inline=False
+                        )
+                    
+                    embed.set_footer(text="系統將自動重啟所有服務")
+                    
+                elif notification_type == "complete":
+                    # 完成通知
+                    embed = discord.Embed(
+                        title="✅ BOT 更新完成",
+                        description="所有服務已成功更新並重啟！",
+                        color=0x00FF00,  # 綠色
+                        timestamp=datetime.now()
+                    )
+                    embed.set_footer(text="所有機器人現在運行最新版本")
+                
+                elif notification_type == "error":
+                    # 錯誤通知
+                    embed = discord.Embed(
+                        title="❌ BOT 更新失敗",
+                        description="更新過程中發生錯誤，請檢查日誌",
+                        color=0xFF0000,  # 紅色
+                        timestamp=datetime.now()
+                    )
+                
+                await channel.send(embed=embed)
+                print(f"📢 {notification_type} 通知已發送")
             else:
                 print("❌ 找不到指定的Discord頻道")
         except Exception as e:
@@ -173,7 +252,6 @@ async def send_update_notification(update_content):
 
 def restart_systemd_services():
     """重啟 systemd 服務 (如果有配置的話)"""
-    # 這裡假設你的 systemd 服務名稱，你需要根據實際情況調整
     services = ["discord-bot", "discord-shopbot", "discord-uibot"]
     
     for service in services:
@@ -202,18 +280,19 @@ async def main():
     print("🔍 開始檢查更新...")
     
     # 檢查是否有更新
-    if not check_git_updates():
+    has_updates, commits_count = check_git_updates()
+    if not has_updates:
         print("ℹ️ 沒有新的更新，程式結束")
         return
     
-    print("📥 發現新更新，開始更新流程...")
+    print(f"📥 發現 {commits_count} 個新更新，開始更新流程...")
     
-    # 獲取更新內容
-    update_content = get_last_commit()
+    # 獲取詳細更新資訊
+    update_details = get_git_update_details()
     
-    # 發送開始更新的通知
+    # 發送開始更新的詳細通知
     try:
-        await send_update_notification(update_content)
+        await send_update_notification(update_details, commits_count, "start")
         await asyncio.sleep(3)  # 等待通知發送完成
     except Exception as e:
         print(f"⚠️ 發送開始通知失敗: {e}")
@@ -221,15 +300,31 @@ async def main():
     # 停止機器人進程
     if not stop_bot_processes():
         print("❌ 無法停止所有機器人進程，取消更新")
+        try:
+            await send_update_notification({}, 0, "error")
+        except Exception as e:
+            print(f"⚠️ 發送錯誤通知失敗: {e}")
         return
     
     # 拉取更新
-    if not pull_git_updates():
+    success, pull_result = pull_git_updates()
+    if not success:
         print("❌ Git 更新失敗")
+        try:
+            await send_update_notification({}, 0, "error")
+        except Exception as e:
+            print(f"⚠️ 發送錯誤通知失敗: {e}")
         return
     
     # 重啟 systemd 服務 (如果配置了的話)
     restart_systemd_services()
+    
+    # 發送完成通知
+    try:
+        await send_update_notification({}, 0, "complete")
+        await asyncio.sleep(2)
+    except Exception as e:
+        print(f"⚠️ 發送完成通知失敗: {e}")
     
     print("✅ 更新流程完成！")
     print("ℹ️ systemd 將自動重啟機器人服務")
