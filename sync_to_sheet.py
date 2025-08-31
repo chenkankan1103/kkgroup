@@ -122,18 +122,26 @@ class DCDBSheetSync:
             client = gspread.authorize(creds)
             self.sheet = client.open_by_url(self.sheet_url).sheet1
             logger.info("Google Sheet 連線成功")
-            # 確保表頭存在
+            # 確保表頭存在（加入 sync_flag 欄位）
             if not self.sheet.get_all_values():
                 headers = [
                     "user_id",
-                    "username",
+                    "username", 
                     "email",
                     "created_at",
                     "last_updated",
                     "status",
+                    "sync_flag"  # 新增：同步標記欄位
                 ]
                 self.sheet.update("A1", [headers])
-                logger.info("Sheet 空白，已建立標題列")
+                logger.info("Sheet 空白，已建立標題列（含 sync_flag）")
+            else:
+                # 檢查是否需要加入 sync_flag 欄
+                headers = self.sheet.row_values(1)
+                if "sync_flag" not in headers:
+                    headers.append("sync_flag")
+                    self.sheet.update("A1", [headers])
+                    logger.info("已在現有 Sheet 加入 sync_flag 欄位")
         except Exception as e:
             logger.error(f"Google Sheet 連接失敗: {e}")
             raise
@@ -142,7 +150,7 @@ class DCDBSheetSync:
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
-            # users 表
+            # users 表（加入 sync_flag 欄位）
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (
@@ -151,10 +159,19 @@ class DCDBSheetSync:
                     email TEXT,
                     created_at INTEGER,
                     last_updated INTEGER,
-                    status TEXT DEFAULT 'active'
+                    status TEXT DEFAULT 'active',
+                    sync_flag TEXT DEFAULT 'N'
                 )
                 """
             )
+            
+            # 檢查並新增 sync_flag 欄位（如果不存在）
+            cur.execute("PRAGMA table_info(users)")
+            columns = [row[1] for row in cur.fetchall()]
+            if 'sync_flag' not in columns:
+                cur.execute("ALTER TABLE users ADD COLUMN sync_flag TEXT DEFAULT 'N'")
+                logger.info("已在 DB users 表加入 sync_flag 欄位")
+            
             # 同步歷史
             cur.execute(
                 """
@@ -203,6 +220,8 @@ class DCDBSheetSync:
                 data["last_updated"] = self._now_ts()
             if not data.get("status"):
                 data["status"] = "active"
+            if not data.get("sync_flag"):
+                data["sync_flag"] = "N"
                 
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
@@ -216,6 +235,20 @@ class DCDBSheetSync:
         except Exception as e:
             logger.error(f"更新 DB 失敗: {e}")
             return False
+
+    def reset_db_sync_flags(self) -> int:
+        """重設 DB 中所有記錄的 sync_flag 為 'N'"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET sync_flag = 'N' WHERE sync_flag != 'N'")
+            count = cur.rowcount
+            conn.commit()
+            conn.close()
+            return count
+        except Exception as e:
+            logger.error(f"重設 DB sync_flag 失敗: {e}")
+            return 0
 
     def log_sync_action(self, direction: str, user_id: str, action: str, details: str = ""):
         try:
@@ -261,11 +294,15 @@ class DCDBSheetSync:
             headers = [
                 "user_id",
                 "username",
-                "email",
+                "email", 
                 "created_at",
                 "last_updated",
                 "status",
+                "sync_flag"
             ]
+            self.sheet.update("A1", [headers])
+        elif "sync_flag" not in headers:
+            headers.append("sync_flag")
             self.sheet.update("A1", [headers])
         return headers
 
@@ -295,6 +332,8 @@ class DCDBSheetSync:
                     item["last_updated"] = 0
                 if not item.get("status"):
                     item["status"] = "active"
+                if not item.get("sync_flag"):
+                    item["sync_flag"] = "N"
                     
                 if item.get("user_id"):
                     data.append(item)
@@ -306,29 +345,22 @@ class DCDBSheetSync:
             return []
 
     def find_sheet_row_by_user_id(self, user_id: str) -> Optional[int]:
-        """改進版：使用 findall 來處理重複 user_id 的情況"""
+        """找到 user_id 對應的 Sheet 行號"""
         try:
-            # 修正 1：使用 findall 而不是 find，避免找到 header 行
             cells = self.sheet.findall(str(user_id))
             if not cells:
                 return None
             
-            # 修正 2：排除第一行 (header)，找到正確的資料行
             for cell in cells:
-                if cell.row > 1:  # 跳過標題行
-                    # 修正 3：確認這個 cell 確實在 user_id 欄位 (A欄)
-                    if cell.col == 1:  # A欄是第1欄
-                        return cell.row
+                if cell.row > 1 and cell.col == 1:  # 跳過標題行，確認在 A 欄
+                    return cell.row
             return None
         except Exception as e:
             logger.error(f"查找 Sheet 行號失敗 (user_id={user_id}): {e}")
             return None
 
     def update_sheet_row(self, data: Dict, row_index: Optional[int] = None) -> bool:
-        """
-        更新/新增單行（會將 created_at / last_updated 轉為 ISO 字串寫入）
-        提醒：大量寫入建議改用 batch 更新（本檔也有提供）。
-        """
+        """更新/新增單行"""
         try:
             headers = self.get_sheet_headers()
             row_data: List[str] = []
@@ -350,93 +382,115 @@ class DCDBSheetSync:
                 rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_data))}"
 
             self.sheet.update(rng, [row_data])
-            time.sleep(0.1)  # 降低配額壓力
+            time.sleep(0.1)
             return True
         except Exception as e:
             logger.error(f"更新 Sheet 失敗 (user_id={data.get('user_id')}): {e}")
             return False
 
+    def reset_sheet_sync_flags(self) -> int:
+        """重設 Sheet 中所有記錄的 sync_flag 為 'N'"""
+        try:
+            headers = self.get_sheet_headers()
+            if "sync_flag" not in headers:
+                return 0
+                
+            sync_flag_col = headers.index("sync_flag") + 1  # gspread 使用 1-based 索引
+            all_values = self.sheet.get_all_values()
+            
+            # 批次更新所有 sync_flag 欄位
+            updates = []
+            for row_idx in range(2, len(all_values) + 1):  # 從第2行開始
+                updates.append({
+                    "range": f"{rowcol_to_a1(row_idx, sync_flag_col)}",
+                    "values": [["N"]]
+                })
+            
+            if updates:
+                self.sheet.spreadsheet.values_batch_update({
+                    "value_input_option": "RAW",
+                    "data": updates
+                })
+                logger.info(f"已重設 Sheet 中 {len(updates)} 行的 sync_flag 為 'N'")
+                return len(updates)
+            return 0
+        except Exception as e:
+            logger.error(f"重設 Sheet sync_flag 失敗: {e}")
+            return 0
+
     # -------------------------
-    # 同步邏輯
+    # 基於標記的同步邏輯
     # -------------------------
-    def bidirectional_sync(self):
-        logger.info("🔄 開始雙向同步")
+    def flag_based_sync(self):
+        """基於 sync_flag 標記的同步邏輯"""
+        logger.info("🚩 開始基於標記的同步")
         try:
             cols, db_rows = self.get_db_data()
             sheet_rows = self.get_sheet_data()
 
             logger.info(f"DB 筆數: {len(db_rows)} | Sheet 筆數: {len(sheet_rows)}")
 
-            # 轉換 DB → dict
+            # 轉換為字典格式
             db_dict: Dict[str, Dict] = {}
             for r in db_rows:
                 d = dict(zip(cols, r))
-                # 確保整數型時間，並提供預設值
                 d["created_at"] = int(d.get("created_at") or 0)
                 d["last_updated"] = int(d.get("last_updated") or 0)
                 if not d["created_at"]:
                     d["created_at"] = self._now_ts()
                 if not d["last_updated"]:
                     d["last_updated"] = self._now_ts()
+                if not d.get("sync_flag"):
+                    d["sync_flag"] = "N"
                 db_dict[str(d["user_id"])] = d
 
-            # 轉換 Sheet → dict（已在 get_sheet_data 中處理預設值）
             sheet_dict: Dict[str, Dict] = {}
             for d in sheet_rows:
                 sheet_dict[str(d["user_id"])] = d
 
-            # 統計與批次暫存
-            sheet_updates_batch: List[Tuple[int, List[str]]] = []  # (row_index, row_values)
-            sheet_appends_batch: List[List[str]] = []
-
+            # 統計
             stats = {
-                "sheet_to_db_insert": 0,
-                "sheet_to_db_update": 0,
-                "db_to_sheet_insert": 0,
-                "db_to_sheet_update": 0,
+                "sheet_to_db": 0,
+                "db_to_sheet": 0,
+                "flags_reset": 0,
             }
 
             headers = self.get_sheet_headers()
 
-            # ===== Sheet → DB =====
-            logger.info("📥 Sheet → DB 同步中...")
+            # ===== 第一階段：處理 Sheet 中標記為 'Y' 的記錄 =====
+            logger.info("📥 處理 Sheet → DB (sync_flag = 'Y')")
+            sheet_updates_to_reset = []  # 需要重設標記的 Sheet 行
+            
             for uid, srow in sheet_dict.items():
-                drow = db_dict.get(uid)
-                if not drow:
-                    # 新增到 DB
-                    if not srow.get("created_at"):
-                        srow["created_at"] = self._now_ts()
-                    if not srow.get("last_updated"):
-                        srow["last_updated"] = self._now_ts()
-                    if self.update_db_row(srow):
-                        db_dict[uid] = srow
-                        stats["sheet_to_db_insert"] += 1
-                        self.log_sync_action("Sheet→DB", uid, "INSERT", "Sheet 新增到 DB")
-                else:
-                    st = int(srow.get("last_updated") or 0)
-                    dt = int(drow.get("last_updated") or 0)
-                    if st > dt:
-                        # Sheet 比較新 → 覆寫 DB
-                        if self.update_db_row(srow):
-                            db_dict[uid] = srow
-                            stats["sheet_to_db_update"] += 1
-                            self.log_sync_action("Sheet→DB", uid, "UPDATE", f"Sheet:{st} > DB:{dt}")
+                if str(srow.get("sync_flag", "")).upper() == "Y":
+                    logger.info(f"發現 Sheet 標記同步: {uid}")
+                    
+                    # 同步到 DB
+                    srow_copy = srow.copy()
+                    srow_copy["last_updated"] = self._now_ts()
+                    srow_copy["sync_flag"] = "N"  # 重設標記
+                    
+                    if self.update_db_row(srow_copy):
+                        db_dict[uid] = srow_copy
+                        stats["sheet_to_db"] += 1
+                        self.log_sync_action("Sheet→DB", uid, "SYNC", "基於 sync_flag=Y 同步")
+                        
+                        # 記錄需要重設 Sheet 標記的行
+                        row_index = self.find_sheet_row_by_user_id(uid)
+                        if row_index:
+                            sheet_updates_to_reset.append((row_index, uid))
 
-            # ===== DB → Sheet =====
-            logger.info("📤 DB → Sheet 同步中...")
+            # ===== 第二階段：處理 DB 中標記為 'Y' 的記錄 =====
+            logger.info("📤 處理 DB → Sheet (sync_flag = 'Y')")
             
-            # 修正 4：重新讀取當前 Sheet 狀態，因為可能在上一步中有更新
-            current_sheet_data = self.get_sheet_data()
-            current_sheet_dict = {str(d["user_id"]): d for d in current_sheet_data}
-            
-            # 修正 5：建立 user_id 到行號的映射
+            # 建立 user_id 到行號的映射
             user_id_to_row = {}
             all_values = self.sheet.get_all_values()
-            for row_idx, row in enumerate(all_values[1:], start=2):  # 從第2行開始
-                if row and len(row) > 0 and row[0].strip():  # 確保有 user_id
+            for row_idx, row in enumerate(all_values[1:], start=2):
+                if row and len(row) > 0 and row[0].strip():
                     user_id_to_row[str(row[0]).strip()] = row_idx
 
-            # 轉出寫入 Sheet 的列資料（ISO 字串）
+            # 轉出寫入 Sheet 的列資料
             def to_sheet_row_values(row_dict: Dict) -> List[str]:
                 out: List[str] = []
                 for h in headers:
@@ -446,85 +500,194 @@ class DCDBSheetSync:
                         out.append(str(row_dict.get(h, "")))
                 return out
 
-            for uid, drow in db_dict.items():
-                srow = current_sheet_dict.get(uid)  # 使用更新後的 sheet 資料
-                
-                # 修正 6：確保 DB 記錄有 last_updated
-                if not drow.get("last_updated"):
-                    drow["last_updated"] = self._now_ts()
-                    self.update_db_row(drow)
+            batch_updates = []  # 批次更新
+            batch_appends = []  # 批次新增
 
-                if not srow:
-                    # 需要插入新行
-                    logger.info(f"準備新增到 Sheet: {uid}")
-                    row_vals = to_sheet_row_values(drow)
-                    sheet_appends_batch.append(row_vals)
-                    stats["db_to_sheet_insert"] += 1
-                    self.log_sync_action("DB→Sheet", uid, "INSERT", "DB 新增到 Sheet")
-                else:
-                    dt = int(drow.get("last_updated") or 0)
-                    st = int(srow.get("last_updated") or 0)
+            for uid, drow in db_dict.items():
+                if str(drow.get("sync_flag", "")).upper() == "Y":
+                    logger.info(f"發現 DB 標記同步: {uid}")
                     
-                    # 修正 7：添加調試信息
-                    logger.debug(f"比較時間戳 {uid}: DB={dt}, Sheet={st}")
+                    # 準備同步到 Sheet 的資料
+                    drow_copy = drow.copy()
+                    drow_copy["last_updated"] = self._now_ts()
+                    drow_copy["sync_flag"] = "N"  # 重設標記
                     
-                    if dt > st:
-                        # DB 比較新，需要更新 Sheet
+                    # 先更新 DB 中的標記
+                    self.update_db_row(drow_copy)
+                    db_dict[uid] = drow_copy
+                    
+                    srow = sheet_dict.get(uid)
+                    row_vals = to_sheet_row_values(drow_copy)
+                    
+                    if not srow:
+                        # 新增到 Sheet
+                        batch_appends.append(row_vals)
+                        stats["db_to_sheet"] += 1
+                        self.log_sync_action("DB→Sheet", uid, "INSERT", "基於 sync_flag=Y 新增")
+                    else:
+                        # 更新 Sheet 現有行
                         row_index = user_id_to_row.get(uid)
                         if row_index:
-                            logger.info(f"準備更新 Sheet 第 {row_index} 行: {uid}")
-                            row_vals = to_sheet_row_values(drow)
-                            sheet_updates_batch.append((row_index, row_vals))
-                            stats["db_to_sheet_update"] += 1
-                            self.log_sync_action("DB→Sheet", uid, "UPDATE", f"DB:{dt} > Sheet:{st}")
-                        else:
-                            logger.warning(f"找不到 {uid} 在 Sheet 中的行號")
+                            batch_updates.append((row_index, row_vals))
+                            stats["db_to_sheet"] += 1
+                            self.log_sync_action("DB→Sheet", uid, "UPDATE", "基於 sync_flag=Y 更新")
 
-            # ===== 批次寫入 Sheet（合併請求，降低配額）=====
-            # 批次更新（現有行）
-            if sheet_updates_batch:
-                logger.info(f"批次更新現有行：{len(sheet_updates_batch)}")
-                try:
-                    ranges = []
-                    for row_index, row_vals in sheet_updates_batch:
-                        rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
-                        ranges.append({"range": rng, "values": [row_vals]})
-                    
-                    # 使用 batch_update
-                    self.sheet.spreadsheet.values_batch_update(
-                        {
+            # ===== 第三階段：批次寫入 Sheet =====
+            # 處理更新
+            if batch_updates or sheet_updates_to_reset:
+                all_updates = []
+                
+                # 加入需要重設標記的更新
+                for row_index, uid in sheet_updates_to_reset:
+                    srow = sheet_dict[uid]
+                    srow["sync_flag"] = "N"
+                    row_vals = to_sheet_row_values(srow)
+                    all_updates.append((row_index, row_vals))
+                    stats["flags_reset"] += 1
+                
+                # 加入 DB→Sheet 的更新
+                all_updates.extend(batch_updates)
+                
+                if all_updates:
+                    logger.info(f"批次更新 Sheet：{len(all_updates)} 行")
+                    try:
+                        ranges = []
+                        for row_index, row_vals in all_updates:
+                            rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
+                            ranges.append({"range": rng, "values": [row_vals]})
+                        
+                        self.sheet.spreadsheet.values_batch_update({
                             "value_input_option": "RAW",
                             "data": ranges,
-                        }
-                    )
-                    logger.info(f"批次更新成功：{len(sheet_updates_batch)} 行")
-                    time.sleep(0.3)  # 增加延遲避免配額問題
-                except Exception as e:
-                    logger.error(f"批次更新失敗: {e}")
-                    # 降級為單行更新
-                    for row_index, row_vals in sheet_updates_batch:
-                        try:
-                            rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
-                            self.sheet.update(rng, [row_vals])
-                            time.sleep(0.1)
-                        except Exception as single_e:
-                            logger.error(f"單行更新失敗 (行 {row_index}): {single_e}")
+                        })
+                        logger.info(f"批次更新成功：{len(all_updates)} 行")
+                        time.sleep(0.3)
+                    except Exception as e:
+                logger.error(f"設定 Sheet sync_flag 失敗: {e}")
 
-            # 批次新增（尾端追加）
-            if sheet_appends_batch:
-                logger.info(f"批次新增新行：{len(sheet_appends_batch)}")
+    def reset_all_sync_flags(self):
+        """重設所有同步標記為 'N'"""
+        logger.info("🔄 重設所有同步標記")
+        
+        db_count = self.reset_db_sync_flags()
+        sheet_count = self.reset_sheet_sync_flags()
+        
+        logger.info(f"已重設 DB: {db_count} 筆, Sheet: {sheet_count} 筆")
+        return db_count + sheet_count
+
+    # -------------------------
+    # 相容性方法（保留舊版同步）
+    # -------------------------
+    def bidirectional_sync(self):
+        """原有的雙向同步（基於時間戳），現在建議使用 flag_based_sync()"""
+        logger.warning("⚠️ 使用舊版時間戳同步，建議改用 flag_based_sync()")
+        # 這裡可以保留原來的實現，或者直接調用新版
+        self.flag_based_sync()
+
+
+# -------------------------
+# 測試與便利函數
+# -------------------------
+def test_flag_sync():
+    """測試基於標記的同步功能"""
+    CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0"
+    DB_FILE = "user_data.db"
+    
+    syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
+    
+    # 檢查當前標記狀態
+    syncer.debug_sync_flags()
+    
+    # 新增一個測試記錄到 DB 並標記為需要同步
+    test_data = {
+        "user_id": "test_flag_123",
+        "username": "標記測試用戶",
+        "email": "test_flag@example.com",
+        "created_at": int(time.time()) - 3600,
+        "last_updated": int(time.time()),
+        "status": "active",
+        "sync_flag": "Y"  # 標記需要同步
+    }
+    
+    print(f"\n插入測試資料到 DB 並標記同步: {test_data}")
+    syncer.update_db_row(test_data)
+    
+    # 也可以測試設定現有記錄的標記
+    # syncer.set_test_sync_flags(["existing_user_id"], "db")
+    
+    # 執行基於標記的同步
+    print("\n執行基於標記的同步...")
+    syncer.flag_based_sync()
+    
+    # 再次檢查標記狀態
+    print("\n同步後檢查:")
+    syncer.debug_sync_flags()
+
+
+def reset_all_flags():
+    """重設所有同步標記的便利函數"""
+    CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0"
+    DB_FILE = "user_data.db"
+    
+    syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
+    syncer.reset_all_sync_flags()
+
+
+def main():
+    # === 依你的實際檔名/URL 調整 ===
+    CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0"
+    DB_FILE = "user_data.db"
+
+    syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
+    
+    # 檢查同步標記狀態
+    syncer.debug_sync_flags()
+    
+    # 執行基於標記的同步（推薦）
+    syncer.flag_based_sync()
+
+    # 查看最近同步記錄
+    hist = syncer.get_sync_history(10)
+    if hist:
+        print("\n最近同步記錄：")
+        for t, d, u, a, msg in hist:
+            ts = datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S")
+            print(f"  {ts} - {d} - {u} - {a} - {msg}")
+
+
+if __name__ == "__main__":
+    # 選擇要執行的功能
+    # test_flag_sync()      # 測試標記同步
+    # reset_all_flags()     # 重設所有標記
+    main()                  # 正常執行同步 as e:
+                        logger.error(f"批次更新失敗: {e}")
+                        # 降級為單行更新
+                        for row_index, row_vals in all_updates:
+                            try:
+                                rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
+                                self.sheet.update(rng, [row_vals])
+                                time.sleep(0.1)
+                            except Exception as single_e:
+                                logger.error(f"單行更新失敗 (行 {row_index}): {single_e}")
+
+            # 處理新增
+            if batch_appends:
+                logger.info(f"批次新增 Sheet：{len(batch_appends)} 行")
                 try:
                     current_all_values = self.sheet.get_all_values()
                     start_row = len(current_all_values) + 1
-                    end_row = start_row + len(sheet_appends_batch) - 1
+                    end_row = start_row + len(batch_appends) - 1
                     rng = f"A{start_row}:{rowcol_to_a1(end_row, len(headers))}"
-                    self.sheet.update(rng, sheet_appends_batch)
-                    logger.info(f"批次新增成功：{len(sheet_appends_batch)} 行")
+                    self.sheet.update(rng, batch_appends)
+                    logger.info(f"批次新增成功：{len(batch_appends)} 行")
                     time.sleep(0.3)
                 except Exception as e:
                     logger.error(f"批次新增失敗: {e}")
                     # 降級為單行新增
-                    for row_vals in sheet_appends_batch:
+                    for row_vals in batch_appends:
                         try:
                             current_all_values = self.sheet.get_all_values()
                             next_row = len(current_all_values) + 1
@@ -536,54 +699,22 @@ class DCDBSheetSync:
 
             # ===== 統計輸出 =====
             logger.info("=" * 60)
-            logger.info("🎯 雙向同步完成")
-            logger.info(f"   Sheet → DB  新增: {stats['sheet_to_db_insert']}  更新: {stats['sheet_to_db_update']}")
-            logger.info(f"   DB → Sheet  新增: {stats['db_to_sheet_insert']}  更新: {stats['db_to_sheet_update']}")
+            logger.info("🎯 基於標記的同步完成")
+            logger.info(f"   Sheet → DB: {stats['sheet_to_db']} 筆")
+            logger.info(f"   DB → Sheet: {stats['db_to_sheet']} 筆")
+            logger.info(f"   標記重設: {stats['flags_reset']} 筆")
             logger.info("=" * 60)
 
         except Exception as e:
-            logger.exception(f"雙向同步失敗: {e}")
+            logger.exception(f"基於標記的同步失敗: {e}")
             raise
 
-    def force_db_to_sheet(self):
-        """
-        慎用：清空 Sheet，完全以 DB 覆蓋（單向寫入，最省配額）
-        """
-        logger.info("⚠️ 開始強制 DB → Sheet（清空重寫）")
-        cols, rows = self.get_db_data()
-        if not cols:
-            logger.warning("DB 沒資料或讀取失敗")
-            return
-
-        headers = self.get_sheet_headers()
-        # 重新鋪資料（一次性大範圍 update）
-        values = [headers]
-        for r in rows:
-            d = dict(zip(cols, r))
-            values.append(
-                [
-                    str(d.get("user_id", "")),
-                    str(d.get("username", "")),
-                    str(d.get("email", "")),
-                    timestamp_to_iso_string(d.get("created_at") or 0),
-                    timestamp_to_iso_string(d.get("last_updated") or 0),
-                    str(d.get("status", "")),
-                ]
-            )
-
-        end_row = len(values)
-        end_col = len(headers)
-        rng = f"A1:{rowcol_to_a1(end_row, end_col)}"
-        self.sheet.clear()
-        self.sheet.update(rng, values)
-        logger.info(f"已重寫 {end_row-1} 筆資料到 Sheet")
-
     # -------------------------
-    # 新增：調試用方法（修正版）
+    # 調試與工具方法
     # -------------------------
-    def debug_sync_status(self):
-        """調試用：比較 DB 和 Sheet 的資料差異"""
-        logger.info("🔍 開始調試同步狀態")
+    def debug_sync_flags(self):
+        """調試：檢查同步標記狀態"""
+        logger.info("🔍 檢查同步標記狀態")
         
         try:
             cols, db_rows = self.get_db_data()
@@ -592,204 +723,63 @@ class DCDBSheetSync:
             db_dict = {}
             for r in db_rows:
                 d = dict(zip(cols, r))
-                d["created_at"] = int(d.get("created_at") or 0)
-                d["last_updated"] = int(d.get("last_updated") or 0)
                 db_dict[str(d["user_id"])] = d
             
             sheet_dict = {str(d["user_id"]): d for d in sheet_rows}
             
-            print("\n=== 調試報告 ===")
+            print("\n=== 同步標記狀態報告 ===")
             print(f"DB 總數: {len(db_dict)}")
             print(f"Sheet 總數: {len(sheet_dict)}")
             
-            # 檢查只在 DB 存在的記錄
-            db_only = set(db_dict.keys()) - set(sheet_dict.keys())
-            if db_only:
-                print(f"\n只在 DB 存在的 user_id: {list(db_only)}")
-                for uid in list(db_only)[:5]:  # 只顯示前5個
-                    d = db_dict[uid]
-                    print(f"  {uid}: last_updated={d['last_updated']} ({timestamp_to_iso_string(d['last_updated'])})")
+            # 檢查 DB 中的 Y 標記
+            db_y_flags = [uid for uid, d in db_dict.items() if str(d.get("sync_flag", "")).upper() == "Y"]
+            if db_y_flags:
+                print(f"\nDB 中標記為 'Y' 的記錄: {db_y_flags}")
             
-            # 檢查只在 Sheet 存在的記錄
-            sheet_only = set(sheet_dict.keys()) - set(db_dict.keys())
-            if sheet_only:
-                print(f"\n只在 Sheet 存在的 user_id: {list(sheet_only)}")
-                for uid in list(sheet_only)[:5]:  # 只顯示前5個
-                    d = sheet_dict[uid]
-                    print(f"  {uid}: last_updated={d.get('last_updated', 0)} ({timestamp_to_iso_string(d.get('last_updated', 0))})")
-            
-            # 檢查時間戳差異（安全存取）
-            common_users = set(db_dict.keys()) & set(sheet_dict.keys())
-            if common_users:
-                print(f"\n共同 user_id 的時間戳比較 (前5個):")
-                for uid in list(common_users)[:5]:
-                    db_ts = db_dict[uid].get("last_updated", 0)
-                    sheet_ts = sheet_dict[uid].get("last_updated", 0)
-                    print(f"  {uid}: DB={db_ts} ({timestamp_to_iso_string(db_ts)}) vs Sheet={sheet_ts} ({timestamp_to_iso_string(sheet_ts)})")
-                    if db_ts > sheet_ts:
-                        print(f"    -> DB 較新，應該更新到 Sheet")
-                    elif sheet_ts > db_ts:
-                        print(f"    -> Sheet 較新，應該更新到 DB")
-                    else:
-                        print(f"    -> 時間戳相同，無需同步")
-            
-            # 檢查 Sheet 中的行號映射
-            print(f"\n檢查 user_id 到行號的映射 (前5個):")
-            for uid in list(db_dict.keys())[:5]:
-                row_num = self.find_sheet_row_by_user_id(uid)
-                print(f"  {uid}: 行號 = {row_num}")
+            # 檢查 Sheet 中的 Y 標記
+            sheet_y_flags = [uid for uid, d in sheet_dict.items() if str(d.get("sync_flag", "")).upper() == "Y"]
+            if sheet_y_flags:
+                print(f"\nSheet 中標記為 'Y' 的記錄: {sheet_y_flags}")
+                
+            if not db_y_flags and not sheet_y_flags:
+                print("\n✅ 沒有發現需要同步的標記 (sync_flag='Y')")
                 
         except Exception as e:
-            logger.error(f"調試檢查失敗: {e}")
-            print(f"調試檢查失敗: {e}")
+            logger.error(f"檢查同步標記失敗: {e}")
+            print(f"檢查同步標記失敗: {e}")
 
-    def fix_missing_timestamps(self):
-        """
-        修復工具：為缺少時間戳的記錄補上當前時間
-        """
-        logger.info("🔧 開始修復缺少的時間戳")
+    def set_test_sync_flags(self, user_ids: List[str], location: str = "db"):
+        """測試用：設定指定 user_id 的 sync_flag 為 'Y'"""
+        logger.info(f"🧪 設定測試同步標記: {user_ids} (位置: {location})")
         
-        # 修復 DB
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cur = conn.cursor()
-            now_ts = self._now_ts()
-            
-            # 修復 created_at
-            cur.execute(
-                "UPDATE users SET created_at = ? WHERE created_at IS NULL OR created_at = 0",
-                (now_ts,)
-            )
-            created_fixed = cur.rowcount
-            
-            # 修復 last_updated
-            cur.execute(
-                "UPDATE users SET last_updated = ? WHERE last_updated IS NULL OR last_updated = 0",
-                (now_ts,)
-            )
-            updated_fixed = cur.rowcount
-            
-            conn.commit()
-            conn.close()
-            
-            logger.info(f"DB 修復完成: created_at 修復 {created_fixed} 筆, last_updated 修復 {updated_fixed} 筆")
-            
-        except Exception as e:
-            logger.error(f"DB 時間戳修復失敗: {e}")
+        if location.lower() == "db":
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cur = conn.cursor()
+                for uid in user_ids:
+                    cur.execute(
+                        "UPDATE users SET sync_flag = 'Y', last_updated = ? WHERE user_id = ?",
+                        (self._now_ts(), uid)
+                    )
+                    if cur.rowcount > 0:
+                        logger.info(f"DB 中設定 {uid} sync_flag = 'Y'")
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"設定 DB sync_flag 失敗: {e}")
         
-        # 修復 Sheet（讀取並重寫有問題的行）
-        try:
-            sheet_data = self.get_sheet_data()
-            headers = self.get_sheet_headers()
-            user_id_to_row = {}
-            all_values = self.sheet.get_all_values()
-            
-            for row_idx, row in enumerate(all_values[1:], start=2):
-                if row and len(row) > 0 and row[0].strip():
-                    user_id_to_row[str(row[0]).strip()] = row_idx
-            
-            sheet_fixes = 0
-            for data in sheet_data:
-                uid = data["user_id"]
-                needs_fix = False
-                
-                if not data.get("created_at") or data["created_at"] == 0:
-                    data["created_at"] = now_ts
-                    needs_fix = True
-                    
-                if not data.get("last_updated") or data["last_updated"] == 0:
-                    data["last_updated"] = now_ts
-                    needs_fix = True
-                
-                if needs_fix:
-                    row_index = user_id_to_row.get(uid)
-                    if row_index:
-                        row_vals = []
-                        for h in headers:
-                            if h in ("created_at", "last_updated"):
-                                row_vals.append(timestamp_to_iso_string(data[h]))
-                            else:
-                                row_vals.append(str(data.get(h, "")))
-                        
-                        rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
-                        self.sheet.update(rng, [row_vals])
-                        sheet_fixes += 1
-                        time.sleep(0.1)
-            
-            logger.info(f"Sheet 修復完成: {sheet_fixes} 筆記錄")
-            
-        except Exception as e:
-            logger.error(f"Sheet 時間戳修復失敗: {e}")
-
-
-# 新增測試用的便利方法
-def test_single_update():
-    """測試單一記錄的 DB → Sheet 更新"""
-    CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
-    SHEET_URL = "https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0"
-    DB_FILE = "user_data.db"
-    
-    syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
-    
-    # 先看看調試資訊
-    syncer.debug_sync_status()
-    
-    # 手動更新一個測試記錄到 DB
-    test_data = {
-        "user_id": "test_user_123",
-        "username": "測試用戶",
-        "email": "test@example.com",
-        "created_at": int(time.time()) - 3600,  # 1小時前建立
-        "last_updated": int(time.time()),       # 現在更新
-        "status": "active"
-    }
-    
-    print(f"\n插入測試資料到 DB: {test_data}")
-    syncer.update_db_row(test_data)
-    
-    # 執行同步
-    print("\n執行同步...")
-    syncer.bidirectional_sync()
-
-
-def fix_timestamps_only():
-    """只修復時間戳的便利函數"""
-    CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
-    SHEET_URL = "https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0"
-    DB_FILE = "user_data.db"
-    
-    syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
-    syncer.fix_missing_timestamps()
-
-
-def main():
-    # === 依你的實際檔名/URL 調整 ===
-    CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
-    SHEET_URL = "https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0"
-    DB_FILE = "user_data.db"
-
-    syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
-    
-    # 先執行調試檢查
-    syncer.debug_sync_status()
-    
-    # 修復缺少的時間戳
-    syncer.fix_missing_timestamps()
-    
-    # 常用：雙向同步
-    syncer.bidirectional_sync()
-
-    # 若你想看最近歷史：
-    hist = syncer.get_sync_history(10)
-    if hist:
-        print("\n最近同步記錄：")
-        for t, d, u, a, msg in hist:
-            ts = datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S")
-            print(f"  {ts} - {d} - {u} - {a} - {msg}")
-
-
-if __name__ == "__main__":
-    # 可以選擇執行測試或正常同步
-    # test_single_update()  # 取消註解來執行測試
-    # fix_timestamps_only()  # 取消註解來只修復時間戳
-    main()
+        elif location.lower() == "sheet":
+            try:
+                headers = self.get_sheet_headers()
+                if "sync_flag" in headers:
+                    sync_flag_col = headers.index("sync_flag") + 1
+                    for uid in user_ids:
+                        row_index = self.find_sheet_row_by_user_id(uid)
+                        if row_index:
+                            self.sheet.update(
+                                f"{rowcol_to_a1(row_index, sync_flag_col)}",
+                                "Y"
+                            )
+                            logger.info(f"Sheet 中設定 {uid} sync_flag = 'Y'")
+                            time.sleep(0.1)
+            except Exception
