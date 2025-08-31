@@ -1,15 +1,66 @@
+#!/usr/bin/env python3
+"""
+自動更新和重啟腳本
+功能：
+1. 檢查並拉取 git 更新
+2. 關閉指定的機器人進程
+3. 發送更新通知到 Discord
+4. 讓 systemd 自動重啟服務
+"""
+
 import os
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 import subprocess
-import threading
 import time
-import socket
+import signal
+import psutil
+import asyncio
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_SYS_CHANNEL_ID = os.getenv("DISCORD_SYS_CHANNEL_ID")
+
+# 需要關閉的機器人腳本名稱
+BOT_SCRIPTS = ["bot.py", "shopbot.py", "uibot.py"]
+
+def check_git_updates():
+    """檢查是否有新的 git 更新"""
+    try:
+        # 先 fetch 遠端更新
+        subprocess.run(["git", "fetch"], cwd="/home/e193752468/kkgroup", check=True)
+        
+        # 比較本地和遠端的差異
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD..origin/main"],
+            cwd="/home/e193752468/kkgroup",
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        commits_behind = int(result.stdout.strip())
+        return commits_behind > 0
+    except Exception as e:
+        print(f"❌ 檢查更新失敗: {e}")
+        return False
+
+def pull_git_updates():
+    """拉取 git 更新"""
+    try:
+        result = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            cwd="/home/e193752468/kkgroup",
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        print("✅ Git 更新完成")
+        return True
+    except Exception as e:
+        print(f"❌ Git 更新失敗: {e}")
+        return False
 
 def get_last_commit():
     """抓取最後一次 git commit 訊息"""
@@ -22,59 +73,82 @@ def get_last_commit():
     except Exception as e:
         return f"⚠️ 無法取得更新內容: {e}"
 
-def wait_for_network(host="discord.com", port=443, retries=5, delay=5):
-    """等待網路可用：試著解析 discord.com DNS"""
-    for i in range(retries):
+def find_bot_processes():
+    """找到所有指定的機器人進程"""
+    bot_processes = []
+    
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
-            socket.create_connection((host, port), timeout=3)
-            print(f"✅ 網路已連通：{host}:{port}")
-            return True
-        except OSError:
-            print(f"⏳ DNS 尚未就緒，等待 {delay} 秒...（第 {i+1}/{retries} 次）")
-            time.sleep(delay)
-    print(f"❌ 無法連線到 {host}:{port}，可能會造成 Discord bot 啟動失敗")
-    return False
+            cmdline = proc.info['cmdline']
+            if not cmdline:
+                continue
+                
+            # 檢查是否是 Python 進程且執行我們的機器人腳本
+            if len(cmdline) >= 2 and 'python' in cmdline[0].lower():
+                script_name = os.path.basename(cmdline[1]) if len(cmdline) > 1 else ""
+                if script_name in BOT_SCRIPTS:
+                    bot_processes.append({
+                        'pid': proc.info['pid'],
+                        'script': script_name,
+                        'process': proc
+                    })
+        except (psutil.NoSuchProcess, psutil.AccessDenied, IndexError):
+            continue
+    
+    return bot_processes
 
-def run_process(command, delay=0):
-    """執行子程式，並可延遲執行"""
-    if delay > 0:
-        print(f"⏳ 等待 {delay} 秒再啟動: {command}")
-        time.sleep(delay)
-    print(f"🚀 啟動進程: {command}")
-    try:
-        process = subprocess.Popen(command, shell=True, cwd="/home/e193752468/kkgroup")
-        process.wait()
-        print(f"✅ 進程結束: {command}")
-    except Exception as e:
-        print(f"❌ 執行失敗: {command} - {e}")
+def stop_bot_processes():
+    """優雅地停止所有機器人進程"""
+    print("🔍 尋找機器人進程...")
+    bot_processes = find_bot_processes()
+    
+    if not bot_processes:
+        print("ℹ️ 沒有找到運行中的機器人進程")
+        return True
+    
+    print(f"📍 找到 {len(bot_processes)} 個機器人進程")
+    
+    # 先嘗試優雅關閉 (SIGTERM)
+    for bot in bot_processes:
+        try:
+            print(f"🛑 正在關閉 {bot['script']} (PID: {bot['pid']})")
+            bot['process'].terminate()
+        except psutil.NoSuchProcess:
+            print(f"✅ {bot['script']} 已經停止")
+        except Exception as e:
+            print(f"⚠️ 無法關閉 {bot['script']}: {e}")
+    
+    # 等待進程優雅退出
+    print("⏳ 等待進程優雅退出...")
+    time.sleep(5)
+    
+    # 檢查是否還有未關閉的進程，強制終止
+    remaining_processes = find_bot_processes()
+    if remaining_processes:
+        print("💀 強制終止剩餘進程...")
+        for bot in remaining_processes:
+            try:
+                bot['process'].kill()
+                print(f"💀 強制終止 {bot['script']} (PID: {bot['pid']})")
+            except psutil.NoSuchProcess:
+                print(f"✅ {bot['script']} 已經停止")
+            except Exception as e:
+                print(f"❌ 無法強制終止 {bot['script']}: {e}")
+        time.sleep(2)
+    
+    # 最終檢查
+    final_check = find_bot_processes()
+    if final_check:
+        print("❌ 仍有機器人進程未能停止:")
+        for bot in final_check:
+            print(f"  - {bot['script']} (PID: {bot['pid']})")
+        return False
+    else:
+        print("✅ 所有機器人進程已成功停止")
+        return True
 
-def start_all_bots():
-    """啟動所有BOT服務"""
-    print("🚀 準備啟動所有BOT服務...")
-    
-    # 等待網路（避免 Discord DNS 問題）
-    wait_for_network()
-    
-    # 定義所有要啟動的服務（命令, 延遲秒數）
-    services = [
-        ("python bot.py", 5),        # 主 bot 延遲 5 秒
-        ("python uibot.py", 10),     # UI bot 延遲 10 秒
-        ("python web.py", 0),        # Flask 後台不用延遲
-        ("python shopbot.py", 7),    # 黑市 bot 延遲 7 秒
-    ]
-    
-    threads = []
-    for command, delay in services:
-        t = threading.Thread(target=run_process, args=(command, delay))
-        t.daemon = True  # 設為 daemon thread，主程式結束時會自動結束
-        t.start()
-        threads.append(t)
-    
-    print("🎯 所有BOT服務已在背景啟動")
-    return threads
-
-async def send_restart_notification():
-    """發送重啟通知到Discord"""
+async def send_update_notification(update_content):
+    """發送更新通知到Discord"""
     intents = discord.Intents.default()
     notification_bot = commands.Bot(command_prefix="!", intents=intents)
     
@@ -83,8 +157,7 @@ async def send_restart_notification():
         try:
             channel = notification_bot.get_channel(int(DISCORD_SYS_CHANNEL_ID))
             if channel:
-                last_update = get_last_commit()
-                await channel.send(f"✅ BOT 已更新並重啟完成！\n📌 更新內容：{last_update}")
+                await channel.send(f"🔄 BOT 正在更新重啟中...\n📌 更新內容：{update_content}")
                 print("📢 更新通知已發送")
             else:
                 print("❌ 找不到指定的Discord頻道")
@@ -98,36 +171,73 @@ async def send_restart_notification():
     except Exception as e:
         print(f"❌ Discord通知BOT啟動失敗: {e}")
 
+def restart_systemd_services():
+    """重啟 systemd 服務 (如果有配置的話)"""
+    # 這裡假設你的 systemd 服務名稱，你需要根據實際情況調整
+    services = ["discord-bot", "discord-shopbot", "discord-uibot"]
+    
+    for service in services:
+        try:
+            # 檢查服務是否存在
+            check_result = subprocess.run(
+                ["systemctl", "is-enabled", service],
+                capture_output=True,
+                text=True
+            )
+            
+            if check_result.returncode == 0:
+                print(f"🔄 重啟服務: {service}")
+                subprocess.run(["systemctl", "restart", service], check=True)
+                print(f"✅ 服務 {service} 重啟成功")
+            else:
+                print(f"ℹ️ 服務 {service} 不存在或未啟用")
+                
+        except subprocess.CalledProcessError as e:
+            print(f"❌ 重啟服務 {service} 失敗: {e}")
+        except Exception as e:
+            print(f"❌ 處理服務 {service} 時發生錯誤: {e}")
+
+async def main():
+    """主要執行流程"""
+    print("🔍 開始檢查更新...")
+    
+    # 檢查是否有更新
+    if not check_git_updates():
+        print("ℹ️ 沒有新的更新，程式結束")
+        return
+    
+    print("📥 發現新更新，開始更新流程...")
+    
+    # 獲取更新內容
+    update_content = get_last_commit()
+    
+    # 發送開始更新的通知
+    try:
+        await send_update_notification(update_content)
+        await asyncio.sleep(3)  # 等待通知發送完成
+    except Exception as e:
+        print(f"⚠️ 發送開始通知失敗: {e}")
+    
+    # 停止機器人進程
+    if not stop_bot_processes():
+        print("❌ 無法停止所有機器人進程，取消更新")
+        return
+    
+    # 拉取更新
+    if not pull_git_updates():
+        print("❌ Git 更新失敗")
+        return
+    
+    # 重啟 systemd 服務 (如果配置了的話)
+    restart_systemd_services()
+    
+    print("✅ 更新流程完成！")
+    print("ℹ️ systemd 將自動重啟機器人服務")
+
 if __name__ == "__main__":
-    print("🔄 開始更新流程...")
-    
-    # 步驟1：發送更新通知
-    import asyncio
     try:
-        asyncio.run(send_restart_notification())
-    except Exception as e:
-        print(f"⚠️ 通知發送過程中出現問題: {e}")
-    
-    # 步驟2：等待一下讓通知發送完成
-    print("⏳ 等待通知發送完成...")
-    time.sleep(3)
-    
-    # 步驟3：啟動所有BOT服務
-    bot_threads = start_all_bots()
-    
-    # 步驟4：保持主程式運行（可選）
-    try:
-        print("🔄 所有服務運行中... 按 Ctrl+C 停止")
-        while True:
-            time.sleep(60)
-            # 檢查所有線程是否還活著
-            alive_threads = [t for t in bot_threads if t.is_alive()]
-            if not alive_threads:
-                print("⚠️ 所有BOT服務已停止")
-                break
+        asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n🛑 收到停止信號，正在結束...")
+        print("\n🛑 收到中斷信號，程式結束")
     except Exception as e:
-        print(f"❌ 主程式異常: {e}")
-    
-    print("🔚 程式結束")
+        print(f"❌ 程式執行異常: {e}")
