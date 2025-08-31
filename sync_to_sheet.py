@@ -284,10 +284,22 @@ class DCDBSheetSync:
             return []
 
     def find_sheet_row_by_user_id(self, user_id: str) -> Optional[int]:
+        """改進版：使用 findall 來處理重複 user_id 的情況"""
         try:
-            cell = self.sheet.find(str(user_id))
-            return cell.row if cell else None
-        except Exception:
+            # 修正 1：使用 findall 而不是 find，避免找到 header 行
+            cells = self.sheet.findall(str(user_id))
+            if not cells:
+                return None
+            
+            # 修正 2：排除第一行 (header)，找到正確的資料行
+            for cell in cells:
+                if cell.row > 1:  # 跳過標題行
+                    # 修正 3：確認這個 cell 確實在 user_id 欄位 (A欄)
+                    if cell.col == 1:  # A欄是第1欄
+                        return cell.row
+            return None
+        except Exception as e:
+            logger.error(f"查找 Sheet 行號失敗 (user_id={user_id}): {e}")
             return None
 
     def update_sheet_row(self, data: Dict, row_index: Optional[int] = None) -> bool:
@@ -309,7 +321,9 @@ class DCDBSheetSync:
 
             if row_index is None:
                 # append
-                rng = f"A{len(self.sheet.get_all_values()) + 1}:{rowcol_to_a1(1, len(row_data)).replace('1', str(len(self.sheet.get_all_values()) + 1))}"
+                all_values = self.sheet.get_all_values()
+                next_row = len(all_values) + 1
+                rng = f"A{next_row}:{rowcol_to_a1(next_row, len(row_data))}"
             else:
                 rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_data))}"
 
@@ -384,27 +398,39 @@ class DCDBSheetSync:
 
             # ===== DB → Sheet =====
             logger.info("📤 DB → Sheet 同步中...")
-            all_values_count = len(self.sheet.get_all_values())
-            next_append_row = max(all_values_count, 1) + 1  # 目前最後一列之後
+            
+            # 修正 4：重新讀取當前 Sheet 狀態，因為可能在上一步中有更新
+            current_sheet_data = self.get_sheet_data()
+            current_sheet_dict = {str(d["user_id"]): d for d in current_sheet_data}
+            
+            # 修正 5：建立 user_id 到行號的映射
+            user_id_to_row = {}
+            all_values = self.sheet.get_all_values()
+            for row_idx, row in enumerate(all_values[1:], start=2):  # 從第2行開始
+                if row and len(row) > 0 and row[0].strip():  # 確保有 user_id
+                    user_id_to_row[str(row[0]).strip()] = row_idx
+
+            # 轉出寫入 Sheet 的列資料（ISO 字串）
+            def to_sheet_row_values(row_dict: Dict) -> List[str]:
+                out: List[str] = []
+                for h in headers:
+                    if h in ("created_at", "last_updated"):
+                        out.append(timestamp_to_iso_string(row_dict.get(h) or 0))
+                    else:
+                        out.append(str(row_dict.get(h, "")))
+                return out
 
             for uid, drow in db_dict.items():
-                srow = sheet_dict.get(uid)
+                srow = current_sheet_dict.get(uid)  # 使用更新後的 sheet 資料
+                
+                # 修正 6：確保 DB 記錄有 last_updated
                 if not drow.get("last_updated"):
                     drow["last_updated"] = self._now_ts()
                     self.update_db_row(drow)
 
-                # 轉出寫入 Sheet 的列資料（ISO 字串）
-                def to_sheet_row_values(row_dict: Dict) -> List[str]:
-                    out: List[str] = []
-                    for h in headers:
-                        if h in ("created_at", "last_updated"):
-                            out.append(timestamp_to_iso_string(row_dict.get(h) or 0))
-                        else:
-                            out.append(str(row_dict.get(h, "")))
-                    return out
-
                 if not srow:
-                    # 需要插入
+                    # 需要插入新行
+                    logger.info(f"準備新增到 Sheet: {uid}")
                     row_vals = to_sheet_row_values(drow)
                     sheet_appends_batch.append(row_vals)
                     stats["db_to_sheet_insert"] += 1
@@ -412,40 +438,75 @@ class DCDBSheetSync:
                 else:
                     dt = int(drow.get("last_updated") or 0)
                     st = int(srow.get("last_updated") or 0)
+                    
+                    # 修正 7：添加調試信息
+                    logger.debug(f"比較時間戳 {uid}: DB={dt}, Sheet={st}")
+                    
                     if dt > st:
-                        row_index = self.find_sheet_row_by_user_id(uid)
+                        # DB 比較新，需要更新 Sheet
+                        row_index = user_id_to_row.get(uid)
                         if row_index:
+                            logger.info(f"準備更新 Sheet 第 {row_index} 行: {uid}")
                             row_vals = to_sheet_row_values(drow)
                             sheet_updates_batch.append((row_index, row_vals))
                             stats["db_to_sheet_update"] += 1
                             self.log_sync_action("DB→Sheet", uid, "UPDATE", f"DB:{dt} > Sheet:{st}")
+                        else:
+                            logger.warning(f"找不到 {uid} 在 Sheet 中的行號")
 
             # ===== 批次寫入 Sheet（合併請求，降低配額）=====
             # 批次更新（現有行）
             if sheet_updates_batch:
                 logger.info(f"批次更新現有行：{len(sheet_updates_batch)}")
-                data = []
-                ranges = []
-                for row_index, row_vals in sheet_updates_batch:
-                    rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
-                    ranges.append({"range": rng, "values": [row_vals]})
-                # 使用 batch_update
-                self.sheet.spreadsheet.values_batch_update(
-                    {
-                        "value_input_option": "RAW",
-                        "data": ranges,
-                    }
-                )
-                time.sleep(0.2)
+                try:
+                    ranges = []
+                    for row_index, row_vals in sheet_updates_batch:
+                        rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
+                        ranges.append({"range": rng, "values": [row_vals]})
+                    
+                    # 使用 batch_update
+                    self.sheet.spreadsheet.values_batch_update(
+                        {
+                            "value_input_option": "RAW",
+                            "data": ranges,
+                        }
+                    )
+                    logger.info(f"批次更新成功：{len(sheet_updates_batch)} 行")
+                    time.sleep(0.3)  # 增加延遲避免配額問題
+                except Exception as e:
+                    logger.error(f"批次更新失敗: {e}")
+                    # 降級為單行更新
+                    for row_index, row_vals in sheet_updates_batch:
+                        try:
+                            rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
+                            self.sheet.update(rng, [row_vals])
+                            time.sleep(0.1)
+                        except Exception as single_e:
+                            logger.error(f"單行更新失敗 (行 {row_index}): {single_e}")
 
             # 批次新增（尾端追加）
             if sheet_appends_batch:
                 logger.info(f"批次新增新行：{len(sheet_appends_batch)}")
-                start_row = len(self.sheet.get_all_values()) + 1
-                end_row = start_row + len(sheet_appends_batch) - 1
-                rng = f"A{start_row}:{rowcol_to_a1(end_row, len(headers))}"
-                self.sheet.update(rng, sheet_appends_batch)
-                time.sleep(0.2)
+                try:
+                    current_all_values = self.sheet.get_all_values()
+                    start_row = len(current_all_values) + 1
+                    end_row = start_row + len(sheet_appends_batch) - 1
+                    rng = f"A{start_row}:{rowcol_to_a1(end_row, len(headers))}"
+                    self.sheet.update(rng, sheet_appends_batch)
+                    logger.info(f"批次新增成功：{len(sheet_appends_batch)} 行")
+                    time.sleep(0.3)
+                except Exception as e:
+                    logger.error(f"批次新增失敗: {e}")
+                    # 降級為單行新增
+                    for row_vals in sheet_appends_batch:
+                        try:
+                            current_all_values = self.sheet.get_all_values()
+                            next_row = len(current_all_values) + 1
+                            rng = f"A{next_row}:{rowcol_to_a1(next_row, len(row_vals))}"
+                            self.sheet.update(rng, [row_vals])
+                            time.sleep(0.1)
+                        except Exception as single_e:
+                            logger.error(f"單行新增失敗: {single_e}")
 
             # ===== 統計輸出 =====
             logger.info("=" * 60)
@@ -491,6 +552,84 @@ class DCDBSheetSync:
         self.sheet.update(rng, values)
         logger.info(f"已重寫 {end_row-1} 筆資料到 Sheet")
 
+    # -------------------------
+    # 新增：調試用方法
+    # -------------------------
+    def debug_sync_status(self):
+        """調試用：比較 DB 和 Sheet 的資料差異"""
+        logger.info("🔍 開始調試同步狀態")
+        
+        cols, db_rows = self.get_db_data()
+        sheet_rows = self.get_sheet_data()
+        
+        db_dict = {}
+        for r in db_rows:
+            d = dict(zip(cols, r))
+            d["created_at"] = int(d.get("created_at") or 0)
+            d["last_updated"] = int(d.get("last_updated") or 0)
+            db_dict[str(d["user_id"])] = d
+        
+        sheet_dict = {str(d["user_id"]): d for d in sheet_rows}
+        
+        print("\n=== 調試報告 ===")
+        print(f"DB 總數: {len(db_dict)}")
+        print(f"Sheet 總數: {len(sheet_dict)}")
+        
+        # 檢查只在 DB 存在的記錄
+        db_only = set(db_dict.keys()) - set(sheet_dict.keys())
+        if db_only:
+            print(f"\n只在 DB 存在的 user_id: {list(db_only)}")
+            for uid in db_only:
+                d = db_dict[uid]
+                print(f"  {uid}: last_updated={d['last_updated']} ({timestamp_to_iso_string(d['last_updated'])})")
+        
+        # 檢查時間戳差異
+        common_users = set(db_dict.keys()) & set(sheet_dict.keys())
+        if common_users:
+            print(f"\n共同 user_id 的時間戳比較 (前5個):")
+            for uid in list(common_users)[:5]:
+                db_ts = db_dict[uid]["last_updated"]
+                sheet_ts = sheet_dict[uid]["last_updated"]
+                print(f"  {uid}: DB={db_ts} ({timestamp_to_iso_string(db_ts)}) vs Sheet={sheet_ts} ({timestamp_to_iso_string(sheet_ts)})")
+                if db_ts > sheet_ts:
+                    print(f"    -> DB 較新，應該更新到 Sheet")
+        
+        # 檢查 Sheet 中的行號映射
+        print(f"\n檢查 user_id 到行號的映射 (前5個):")
+        for uid in list(db_dict.keys())[:5]:
+            row_num = self.find_sheet_row_by_user_id(uid)
+            print(f"  {uid}: 行號 = {row_num}")
+
+
+# 新增測試用的便利方法
+def test_single_update():
+    """測試單一記錄的 DB → Sheet 更新"""
+    CREDENTIALS_JSON = "kkgroup-0441c30231b7.json"
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM/edit#gid=0"
+    DB_FILE = "user_data.db"
+    
+    syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
+    
+    # 先看看調試資訊
+    syncer.debug_sync_status()
+    
+    # 手動更新一個測試記錄到 DB
+    test_data = {
+        "user_id": "test_user_123",
+        "username": "測試用戶",
+        "email": "test@example.com",
+        "created_at": int(time.time()) - 3600,  # 1小時前建立
+        "last_updated": int(time.time()),       # 現在更新
+        "status": "active"
+    }
+    
+    print(f"\n插入測試資料到 DB: {test_data}")
+    syncer.update_db_row(test_data)
+    
+    # 執行同步
+    print("\n執行同步...")
+    syncer.bidirectional_sync()
+
 
 def main():
     # === 依你的實際檔名/URL 調整 ===
@@ -499,6 +638,10 @@ def main():
     DB_FILE = "user_data.db"
 
     syncer = DCDBSheetSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
+    
+    # 先執行調試檢查
+    syncer.debug_sync_status()
+    
     # 常用：雙向同步
     syncer.bidirectional_sync()
 
@@ -512,4 +655,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # 可以選擇執行測試或正常同步
+    # test_single_update()  # 取消註解來執行測試
     main()
