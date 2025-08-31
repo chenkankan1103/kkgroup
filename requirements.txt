@@ -10,3 +10,5 @@ discord.py
 flask
 pytz
 psutil
+gspread
+oauth2client
