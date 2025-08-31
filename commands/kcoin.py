@@ -151,106 +151,80 @@ class KKCoin(commands.Cog):
 
     @app_commands.command(name="kkcoin_rank", description="顯示 KK 幣排行榜")
     async def kkcoin_rank(self, interaction: discord.Interaction):
-        await interaction.response.defer()  # 先延遲回應，避免超時
-        
         guild = interaction.guild
 
         # 確保設置 row_factory 為 sqlite3.Row
         with sqlite3.connect(DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
-            members_data = []
-            for row in conn.execute("SELECT user_id FROM users ORDER BY kkcoin DESC"):
-                member = guild.get_member(int(row["user_id"]))
-                if member:
-                    balance = get_user_balance(row["user_id"])
-                    members_data.append((member, balance))
+            members_data = [
+                (guild.get_member(int(row["user_id"])), get_user_balance(row["user_id"]))
+                for row in conn.execute("SELECT user_id FROM users")
+                if guild.get_member(int(row["user_id"]))
+            ]
 
-        # 限制前 20 名
+        members_data.sort(key=lambda x: x[1], reverse=True)
         members_data = members_data[:20]
 
-        if not members_data:
-            await interaction.followup.send("❌ 沒有找到任何用戶數據", ephemeral=True)
-            return
+        image = await make_leaderboard_image(members_data)
+        with io.BytesIO() as img_bytes:
+            image.save(img_bytes, format="PNG")
+            img_bytes.seek(0)
+            file = discord.File(img_bytes, filename="kkcoin_rank.png")
+            msg = await interaction.channel.send(file=file)
 
-        try:
-            image = await make_leaderboard_image(members_data)
-            with io.BytesIO() as img_bytes:
-                image.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                file = discord.File(img_bytes, filename="kkcoin_rank.png")
-                msg = await interaction.channel.send(file=file)
+        # 保存排行榜訊息到 .env
+        save_to_env("KKCOIN_RANK_CHANNEL_ID", interaction.channel.id)
+        save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
+        self.rank_channel_id = interaction.channel.id
+        self.rank_message_id = msg.id
 
-            # 保存排行榜訊息到 .env
-            save_to_env("KKCOIN_RANK_CHANNEL_ID", interaction.channel.id)
-            save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
-            self.rank_channel_id = interaction.channel.id
-            self.rank_message_id = msg.id
-
-            await interaction.followup.send("✅ 排行榜已建立", ephemeral=True)
-        except Exception as e:
-            print(f"❌ 建立排行榜失敗: {e}")
-            await interaction.followup.send("❌ 建立排行榜時發生錯誤", ephemeral=True)
+        await interaction.response.send_message("✅ 排行榜已建立", ephemeral=True)
 
     async def update_leaderboard(self):
-        """更新排行榜"""
         if not self.rank_channel_id or not self.rank_message_id:
-            print("⚠️ 排行榜訊息 ID 或頻道 ID 未設置")
             return
 
-        # 降低更新頻率，每10次訊息才更新一次排行榜
+        # 降低更新頻率，每5次訊息才更新一次排行榜
         self.update_counter += 1
-        if self.update_counter % 10 != 0:
+        if self.update_counter % 5 != 0:
             return
 
         try:
             channel = self.bot.get_channel(self.rank_channel_id)
             if not channel:
-                print(f"⚠️ 找不到頻道 ID: {self.rank_channel_id}")
                 return
 
-            try:
-                msg = await channel.fetch_message(self.rank_message_id)
-            except discord.NotFound:
-                print("⚠️ 排行榜訊息已被刪除，清除設置")
-                self.rank_channel_id = 0
-                self.rank_message_id = 0
-                save_to_env("KKCOIN_RANK_CHANNEL_ID", 0)
-                save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
-                return
-            except discord.Forbidden:
-                print("⚠️ 沒有權限獲取排行榜訊息")
-                return
+            msg = await channel.fetch_message(self.rank_message_id)
 
             guild = channel.guild
             with sqlite3.connect(DB_FILE) as conn:
                 conn.row_factory = sqlite3.Row
-                members_data = []
-                for row in conn.execute("SELECT user_id FROM users ORDER BY kkcoin DESC LIMIT 20"):
-                    member = guild.get_member(int(row["user_id"]))
-                    if member:
-                        balance = get_user_balance(row["user_id"])
-                        members_data.append((member, balance))
+                members_data = [
+                    (guild.get_member(int(row["user_id"])), get_user_balance(row["user_id"]))
+                    for row in conn.execute("SELECT user_id FROM users")
+                    if guild.get_member(int(row["user_id"]))
+                ]
 
-            if not members_data:
-                print("⚠️ 沒有用戶數據可更新")
-                return
+            members_data.sort(key=lambda x: x[1], reverse=True)
+            members_data = members_data[:20]
 
-            image = await make_leaderboard_image(members_data)
-            with io.BytesIO() as img_bytes:
-                image.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                await msg.edit(attachments=[discord.File(img_bytes, filename="kkcoin_rank.png")])
-            
-            print(f"✅ 排行榜更新成功 (第 {self.update_counter} 次)")
+            if members_data:  # 只有當有數據時才更新
+                image = await make_leaderboard_image(members_data)
+                with io.BytesIO() as img_bytes:
+                    image.save(img_bytes, format="PNG")
+                    img_bytes.seek(0)
+                    await msg.edit(attachments=[discord.File(img_bytes, filename="kkcoin_rank.png")])
 
-        except discord.HTTPException as e:
-            print(f"❌ Discord HTTP 錯誤更新排行榜: {e}")
+        except discord.NotFound:
+            # 訊息被刪除，重置設置
+            self.rank_channel_id = 0
+            self.rank_message_id = 0
         except Exception as e:
-            print(f"❌ 更新排行榜失敗: {e}")
+            # 靜默處理其他錯誤，避免 crash
+            print(f"Update leaderboard error: {e}")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """訊息監聽器，用於發放 KK 幣"""
         if message.author.bot:
             return
 
@@ -258,7 +232,6 @@ class KKCoin(commands.Cog):
         user_id = str(message.author.id)
         now = time.time()
 
-        # 檢查訊息長度、冷卻時間和重複訊息
         if (
             len(content) < 10 or
             now - self.last_kkcoin_time[user_id] < USER_COOLDOWN_SECONDS or
@@ -266,26 +239,19 @@ class KKCoin(commands.Cog):
         ):
             return
 
-        # 計算獎勵
-        if len(content) >= 50:
-            reward = 3
-        elif len(content) >= 25:
-            reward = 2
-        else:
-            reward = 1
+        reward = 3 if len(content) >= 50 else 2 if len(content) >= 25 else 1
 
-        # 更新用戶數據
         self.last_kkcoin_time[user_id] = now
         self.last_message_cache[user_id] = content
         update_user_balance(user_id, reward)
 
-        print(f"💰 {message.author.display_name} 獲得了 {reward} KK幣！")
+        print(f"{message.author} earned {reward} KKcoin!")
         
-        # 異步更新排行榜，不阻塞訊息處理
+        # 異步更新排行榜，並捕獲所有錯誤
         try:
             await self.update_leaderboard()
-        except Exception as e:
-            print(f"❌ 更新排行榜時發生錯誤: {e}")
+        except Exception:
+            pass  # 靜默處理，避免影響主要功能
 
     @app_commands.command(name="reset_rank", description="重置排行榜設置（管理員專用）")
     @app_commands.default_permissions(administrator=True)
