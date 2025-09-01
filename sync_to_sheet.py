@@ -292,18 +292,57 @@ class GameUserSync:
                     converted_data[field] = self._convert_value_for_db(field, data[field])
                 elif field == "sync_flag":
                     converted_data[field] = "N"
+                else:
+                    # 為缺少的欄位設定預設值
+                    if field in self.numeric_fields:
+                        converted_data[field] = 0
+                    elif field in self.boolean_fields:
+                        converted_data[field] = 0
+                    elif field in self.json_fields:
+                        converted_data[field] = "{}"
+                    else:
+                        converted_data[field] = ""
             
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
-            cols = list(converted_data.keys())
-            placeholders = ", ".join(["?"] * len(cols))
-            q = f"REPLACE INTO game_users ({', '.join(cols)}) VALUES ({placeholders})"
-            cur.execute(q, [converted_data[c] for c in cols])
+            
+            # 檢查記錄是否存在
+            user_id = converted_data.get("user_id")
+            if not user_id:
+                logger.error("缺少 user_id，無法更新 DB")
+                return False
+                
+            cur.execute("SELECT COUNT(*) FROM game_users WHERE user_id = ?", (user_id,))
+            exists = cur.fetchone()[0] > 0
+            
+            if exists:
+                # 更新現有記錄，但保留 sync_flag 為 'N'（除非明確設定）
+                if data.get("sync_flag", "").upper() != "Y":
+                    converted_data["sync_flag"] = "N"
+                    
+                set_clause = ", ".join([f"{col} = ?" for col in converted_data.keys() if col != "user_id"])
+                values = [converted_data[col] for col in converted_data.keys() if col != "user_id"]
+                values.append(user_id)
+                
+                q = f"UPDATE game_users SET {set_clause} WHERE user_id = ?"
+                cur.execute(q, values)
+                logger.info(f"更新用戶 {user_id} 成功")
+            else:
+                # 插入新記錄
+                cols = list(converted_data.keys())
+                placeholders = ", ".join(["?"] * len(cols))
+                q = f"INSERT INTO game_users ({', '.join(cols)}) VALUES ({placeholders})"
+                cur.execute(q, [converted_data[c] for c in cols])
+                logger.info(f"新增用戶 {user_id} 成功")
+            
             conn.commit()
             conn.close()
             return True
+            
         except Exception as e:
-            logger.error(f"更新 DB 失敗: {e}")
+            logger.error(f"更新 DB 失敗 (user_id={data.get('user_id', 'unknown')}): {e}")
+            if 'conn' in locals():
+                conn.close()
             return False
 
     def get_sheet_data(self) -> List[Dict]:
@@ -402,13 +441,19 @@ class GameUserSync:
                 if str(srow.get("sync_flag", "")).upper() == "Y":
                     logger.info(f"同步 Sheet → DB: {uid}")
                     
-                    if self.update_db_row(srow):
+                    # 設定 sync_flag 為 N，避免重複同步
+                    srow_for_db = srow.copy()
+                    srow_for_db["sync_flag"] = "N"
+                    
+                    if self.update_db_row(srow_for_db):
                         stats["sheet_to_db"] += 1
-                        self.log_sync_action("Sheet→DB", uid, "SYNC", "遊戲資料同步")
+                        self.log_sync_action("Sheet→DB", uid, "SYNC", "從 Sheet 同步遊戲資料")
                         
                         row_index = self.find_sheet_row_by_user_id(uid)
                         if row_index:
                             sheet_updates_to_reset.append((row_index, uid))
+                    else:
+                        logger.error(f"Sheet → DB 同步失敗: {uid}")
 
             # ===== DB → Sheet 同步 =====
             logger.info("📤 處理 DB → Sheet (sync_flag = 'Y')")
