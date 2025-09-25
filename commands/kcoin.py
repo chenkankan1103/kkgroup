@@ -138,13 +138,14 @@ async def make_leaderboard_image(members_data):
     draw.line([(MARGIN, desc_y - 10), (WIDTH - MARGIN, desc_y - 10)], fill=(200,200,200), width=1)
     
     # 說明標題
-    draw.text((MARGIN, desc_y), "💡 獲得 KK幣的方法：", fill=(80,80,80), font=FONT_SMALL)
+    draw.text((MARGIN, desc_y), " 獲得 KK幣的方法：", fill=(80,80,80), font=FONT_SMALL)
     
     # 說明內容
     descriptions = [
-        "📝 發送訊息：10字以上 +1 KK幣，25字以上 +2 KK幣，50字以上 +3 KK幣",
-        "⏰ 冷卻時間：每位使用者需間隔 30 秒才能再次獲得 KK幣",
-        "🚫 限制條件：重複訊息、純表情符號訊息不會獲得獎勵"
+        "發送訊息：10字以上 +1 KK幣，25字以上 +2 KK幣，50字以上 +3 KK幣",
+        "冷卻時間：每位使用者需間隔 30 秒才能再次獲得 KK幣",
+        "限制條件：重複訊息、純表情符號訊息不會獲得獎勵",
+        "掛機領取：點擊語音機房開始詐騙，成立小組，組員越多更有機會領取越多"
     ]
     
     for i, desc in enumerate(descriptions):
