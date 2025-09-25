@@ -67,7 +67,9 @@ async def fetch_avatar(session, url):
         return None
 
 async def make_leaderboard_image(members_data):
-    WIDTH, HEIGHT = 900, 75 + 60 * len(members_data)
+    # 增加高度以容納說明文字
+    DESCRIPTION_HEIGHT = 120  # 說明區域高度
+    WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
     AVATAR_SIZE = 48
     MARGIN = 20
     BG_COLOR = (255,255,255)
@@ -76,11 +78,13 @@ async def make_leaderboard_image(members_data):
         FONT_BIG = ImageFont.truetype(FONT_PATH, 28)
         FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
         FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 24)
+        FONT_DESC = ImageFont.truetype(FONT_PATH, 18)  # 說明文字字體
     except Exception as e:
         print(f"❌ 載入字體失敗: {e}")
         FONT_BIG = ImageFont.load_default()
         FONT_SMALL = ImageFont.load_default()
         FONT_KKCOIN = ImageFont.load_default()
+        FONT_DESC = ImageFont.load_default()
     try:
         trophy_img = Image.open(TROPHY_PATH).convert("RGBA")
     except Exception as e:
@@ -126,6 +130,27 @@ async def make_leaderboard_image(members_data):
             draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
             # KK幣
             draw.text((WIDTH-180, y+8), f"{kkcoin} KK幣", fill=(50,110,210), font=FONT_KKCOIN)
+    
+    # 添加獲得 KKCoin 管道說明
+    desc_y = 75 + len(members_data) * 60 + 20  # 排行榜下方
+    
+    # 分隔線
+    draw.line([(MARGIN, desc_y - 10), (WIDTH - MARGIN, desc_y - 10)], fill=(200,200,200), width=1)
+    
+    # 說明標題
+    draw.text((MARGIN, desc_y), "💡 獲得 KK幣的方法：", fill=(80,80,80), font=FONT_SMALL)
+    
+    # 說明內容
+    descriptions = [
+        "📝 發送訊息：10字以上 +1 KK幣，25字以上 +2 KK幣，50字以上 +3 KK幣",
+        "⏰ 冷卻時間：每位使用者需間隔 30 秒才能再次獲得 KK幣",
+        "🚫 限制條件：重複訊息、純表情符號訊息不會獲得獎勵"
+    ]
+    
+    for i, desc in enumerate(descriptions):
+        desc_text_y = desc_y + 30 + i * 25
+        draw.text((MARGIN + 10, desc_text_y), desc, fill=(100,100,100), font=FONT_DESC)
+    
     return img
 
 def is_only_emojis(text):
@@ -194,6 +219,59 @@ class KKCoin(commands.Cog):
         except Exception as e:
             print(f"❌ 建立排行榜時發生錯誤: {e}")
             await interaction.followup.send("❌ 建立排行榜時發生錯誤", ephemeral=True)
+
+    @app_commands.command(name="kkcoin_admin", description="管理用戶的 KK 幣（管理員專用）")
+    @app_commands.describe(
+        member="要修改 KK 幣的用戶",
+        action="操作類型",
+        amount="數量"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="增加", value="add"),
+        app_commands.Choice(name="減少", value="subtract"),
+        app_commands.Choice(name="設定為", value="set")
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def kkcoin_admin(self, interaction: discord.Interaction, member: discord.Member, action: str, amount: int):
+        """管理用戶的 KK 幣"""
+        if amount < 0:
+            await interaction.response.send_message("❌ 數量不能為負數", ephemeral=True)
+            return
+            
+        user_id = str(member.id)
+        current_balance = get_user_balance(user_id)
+        
+        if action == "add":
+            new_balance = current_balance + amount
+            update_user_balance(user_id, amount)
+            action_text = f"增加了 {amount}"
+        elif action == "subtract":
+            if current_balance < amount:
+                await interaction.response.send_message(f"❌ {member.display_name} 目前只有 {current_balance} KK幣，不足扣除 {amount} KK幣", ephemeral=True)
+                return
+            new_balance = current_balance - amount
+            update_user_balance(user_id, -amount)
+            action_text = f"減少了 {amount}"
+        else:  # set
+            difference = amount - current_balance
+            update_user_balance(user_id, difference)
+            new_balance = amount
+            action_text = f"設定為 {amount}"
+        
+        await interaction.response.send_message(
+            f"✅ 已為 {member.display_name} {action_text} KK幣\n"
+            f"💰 變更前：{current_balance} KK幣\n"
+            f"💰 變更後：{new_balance} KK幣",
+            ephemeral=True
+        )
+        
+        print(f"🔧 管理員 {interaction.user.display_name} 為 {member.display_name} {action_text} KK幣 ({current_balance} → {new_balance})")
+        
+        # 異步更新排行榜
+        try:
+            await self.update_leaderboard()
+        except Exception as e:
+            print(f"❌ 更新排行榜時發生錯誤: {e}")
 
     def get_current_leaderboard_data(self):
         """取得當前排行榜資料"""
