@@ -1,11 +1,11 @@
 import discord
 from discord.ui import Button, View, Modal, TextInput, Select
 import asyncio
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import os
 import random
 
-load_dotenv()
+load_dotenv(find_dotenv())  # 自動往上層目錄找 .env
 
 RAINBOW_ROLE_ID = int(os.getenv("RAINBOW_ROLE_ID", 0))
 VIP_ROLE_ID = int(os.getenv("VIP_ROLE_ID", 0))
