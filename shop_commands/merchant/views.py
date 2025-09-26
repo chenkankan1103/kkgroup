@@ -147,7 +147,7 @@ class ExploreView(View):
     async def buy_equipment_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.get_merchant_response(interaction.user, "購買裝備", interaction)
 
-    @discord.ui.button(label="搶劫商人", style=discord.ButtonStyle.red, custom_id="persistent_rob")
+    @discord.ui.button(label="🔫 搶劫商人 (30%機率)", style=discord.ButtonStyle.red, custom_id="persistent_rob")
     async def rob_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_rob_action(interaction)
 
