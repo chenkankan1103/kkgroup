@@ -67,8 +67,8 @@ async def fetch_avatar(session, url):
         return None
 
 async def make_leaderboard_image(members_data):
-    # 增加高度以容納說明文字
-    DESCRIPTION_HEIGHT = 120  # 說明區域高度
+    # 減少說明區域高度
+    DESCRIPTION_HEIGHT = 80  # 從 120 減少到 80
     WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
     AVATAR_SIZE = 48
     MARGIN = 20
@@ -78,7 +78,7 @@ async def make_leaderboard_image(members_data):
         FONT_BIG = ImageFont.truetype(FONT_PATH, 28)
         FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
         FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 24)
-        FONT_DESC = ImageFont.truetype(FONT_PATH, 18)  # 說明文字字體
+        FONT_DESC = ImageFont.truetype(FONT_PATH, 16)  # 從 18 減小到 16
     except Exception as e:
         print(f"❌ 載入字體失敗: {e}")
         FONT_BIG = ImageFont.load_default()
@@ -131,25 +131,23 @@ async def make_leaderboard_image(members_data):
             # KK幣
             draw.text((WIDTH-180, y+8), f"{kkcoin} KK幣", fill=(50,110,210), font=FONT_KKCOIN)
     
-    # 添加獲得 KKCoin 管道說明
-    desc_y = 75 + len(members_data) * 60 + 20  # 排行榜下方
+    # 簡化的說明文字
+    desc_y = 75 + len(members_data) * 60 + 15  # 稍微縮短間距
     
     # 分隔線
-    draw.line([(MARGIN, desc_y - 10), (WIDTH - MARGIN, desc_y - 10)], fill=(200,200,200), width=1)
+    draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200,200,200), width=1)
     
-    # 說明標題
-    draw.text((MARGIN, desc_y), " 獲得 KK幣的方法：", fill=(80,80,80), font=FONT_SMALL)
-    
-    # 說明內容
+    # 簡化說明內容 - 改為兩行顯示
     descriptions = [
-        "發送訊息：10字以上 +1 KK幣，25字以上 +2 KK幣，50字以上 +3 KK幣",
-        "冷卻時間：每位使用者需間隔 30 秒才能再次獲得 KK幣",
-        "限制條件：重複訊息、純表情符號訊息不會獲得獎勵",
-        "掛機領取：點擊語音機房開始詐騙，成立小組，組員越多更有機會領取越多"
+        " 發送訊息獲得KK幣：10字+1幣 | 25字+2幣 | 50字+3幣 （冷卻30秒）",
+        " 限制：重複訊息、純表情不給幣 |  語音掛機可獲得額外獎勵"
     ]
     
+    # 說明標題
+    draw.text((MARGIN, desc_y), "📋 獲得方法：", fill=(80,80,80), font=FONT_SMALL)
+    
     for i, desc in enumerate(descriptions):
-        desc_text_y = desc_y + 30 + i * 25
+        desc_text_y = desc_y + 25 + i * 22  # 減少行距
         draw.text((MARGIN + 10, desc_text_y), desc, fill=(100,100,100), font=FONT_DESC)
     
     return img
