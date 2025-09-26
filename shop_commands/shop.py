@@ -7,6 +7,7 @@ import aiohttp
 import json
 import io
 import os
+import random  # 添加 random 模組
 from dotenv import load_dotenv
 
 # 導入按鈕視圖
@@ -395,29 +396,79 @@ class ButtonInteraction(commands.Cog):
             print(f"移除角色失敗: {e}")
 
     async def handle_rob_action(self, interaction):
-        """處理搶劫行為"""
+        """處理搶劫行為 - 新增30%成功機率，成功獲得100-200 KKcoin"""
         await interaction.response.defer(ephemeral=True)
         member = interaction.user
         mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
         member_role = interaction.guild.get_role(MEMBER_ROLE_ID)
 
+        # 檢查是否已經被禁閉
         if mute_role in member.roles:
-            embed = discord.Embed(title="搶劫失敗", description="你已經被禁閉，無法再次搶劫。")
+            embed = discord.Embed(
+                title="🚫 搶劫失敗", 
+                description="你已經被禁閉，無法再次搶劫。",
+                color=discord.Color.red()
+            )
             await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed)
             return
 
-        await member.remove_roles(member_role)
-        await member.add_roles(mute_role)
+        # 30% 成功機率
+        success_rate = 30
+        is_success = random.randint(1, 100) <= success_rate
         
-        embed = discord.Embed(title="搶劫失敗", description="你被黑市商人反制，被丟進禁閉室！將在5分鐘後釋放。")
+        if is_success:
+            # 搶劫成功：獲得 100-200 KKcoin
+            stolen_amount = random.randint(100, 200)
+            await update_user_kkcoin(member.id, stolen_amount)
+            new_kkcoin = await get_user_kkcoin(member.id)
+            
+            embed = discord.Embed(
+                title="💰 搶劫成功！",
+                description=f"你成功從黑市商人那裡搶到了 **{stolen_amount} KKcoin**！\n\n"
+                           f"黑市商人驚慌失措地看著你逃跑...\n"
+                           f"💰 目前擁有：{new_kkcoin} KKcoin",
+                color=discord.Color.green()
+            )
+        else:
+            # 搶劫失敗：被抓到並禁閉
+            await member.remove_roles(member_role)
+            await member.add_roles(mute_role)
+            
+            embed = discord.Embed(
+                title="🚫 搶劫失敗！",
+                description="你被黑市商人反制，被丟進禁閉室！\n\n"
+                           "黑市商人冷笑道：「想搶劫我？太嫩了！」\n"
+                           "⏰ 將在5分鐘後釋放你。",
+                color=discord.Color.red()
+            )
+            
+            # 5分鐘後自動釋放
+            self.bot.loop.create_task(self.release_from_mute(member, mute_role, member_role))
+
         await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed)
 
-        await asyncio.sleep(300)
+    async def release_from_mute(self, member, mute_role, member_role):
+        """5分鐘後自動釋放被禁閉的用戶"""
+        await asyncio.sleep(300)  # 5分鐘 = 300秒
         try:
-            await member.remove_roles(mute_role)
-            await member.add_roles(member_role)
+            if mute_role in member.roles:
+                await member.remove_roles(mute_role)
+                await member.add_roles(member_role)
+                
+                # 可以選擇發送私訊通知用戶已被釋放
+                try:
+                    embed = discord.Embed(
+                        title="🔓 禁閉期滿",
+                        description="你已經從禁閉室中被釋放了！\n記住，搶劫是有風險的...",
+                        color=discord.Color.blue()
+                    )
+                    await member.send(embed=embed)
+                except:
+                    # 如果無法發送私訊就忽略
+                    pass
+                    
         except Exception as e:
-            print(f"解除禁閉失敗：{e}")
+            print(f"自動解除禁閉失敗：{e}")
 
     async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int):
         """處理賭博邏輯"""
