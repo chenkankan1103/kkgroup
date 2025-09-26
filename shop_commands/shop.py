@@ -8,7 +8,7 @@ import json
 import io
 import os
 import random  # 添加 random 模組
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 # 導入按鈕視圖
 from shop_commands.merchant.views import (
@@ -21,7 +21,7 @@ from shop_commands.merchant.database import (
 )
 from shop_commands.merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID
 
-load_dotenv()
+load_dotenv(find_dotenv())  # 自動往上層目錄找 .env
 
 class ButtonInteraction(commands.Cog):
     def __init__(self, bot):
