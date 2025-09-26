@@ -1,16 +1,4 @@
 import os
-from dotenv import load_dotenv, find_dotenv
-
-# 修正：明確指定 .env 檔案路徑
-# 從當前檔案位置往上找到 kkgroup 資料夾中的 .env
-current_dir = os.path.dirname(os.path.abspath(__file__))
-env_path = os.path.join(current_dir, '..', '..', '.env')
-
-# 如果找不到，使用 find_dotenv() 作為備用方案
-if os.path.exists(env_path):
-    load_dotenv(env_path)
-else:
-    load_dotenv(find_dotenv())
 
 # 資料庫配置
 DB_PATH = os.getenv("DB_PATH", "user_data.db")
