@@ -144,7 +144,7 @@ async def make_leaderboard_image(members_data):
     ]
     
     # 說明標題
-    draw.text((MARGIN, desc_y), "📋 獲得方法：", fill=(80,80,80), font=FONT_SMALL)
+    draw.text((MARGIN, desc_y), " KKcoin獲得方法：", fill=(80,80,80), font=FONT_SMALL)
     
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22  # 減少行距
