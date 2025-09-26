@@ -7,10 +7,10 @@ load_dotenv(find_dotenv())  # 自動往上層目錄找 .env
 DB_PATH = os.getenv("DB_PATH", "user_data.db")
 
 # 角色ID配置
-MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", 0))
-MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID", 0))
-VIP_ROLE_ID = int(os.getenv("VIP_ROLE_ID", 0))
-RAINBOW_ROLE_ID = int(os.getenv("RAINBOW_ROLE_ID", 0))
+MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", 1363507802609422357))
+MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID", 1133462727742996582))
+VIP_ROLE_ID = int(os.getenv("VIP_ROLE_ID", 1369561759777689610))
+RAINBOW_ROLE_ID = int(os.getenv("RAINBOW_ROLE_ID", 1369373373498658877))
 
 # 商店配置
 try:
