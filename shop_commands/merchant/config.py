@@ -15,16 +15,24 @@ else:
 # 資料庫配置
 DB_PATH = os.getenv("DB_PATH", "user_data.db")
 
-# 角色ID配置
+# 角色ID配置 - 添加調試資訊
 MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", 0))
 MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID", 0))
 VIP_ROLE_ID = int(os.getenv("VIP_ROLE_ID", 0))
 RAINBOW_ROLE_ID = int(os.getenv("RAINBOW_ROLE_ID", 0))
 
+# 調試：印出載入的角色ID（可選）
+print(f"[Config] RAINBOW_ROLE_ID: {RAINBOW_ROLE_ID}")
+print(f"[Config] VIP_ROLE_ID: {VIP_ROLE_ID}")
+print(f"[Config] MUTE_ROLE_ID: {MUTE_ROLE_ID}")
+print(f"[Config] MEMBER_ROLE_ID: {MEMBER_ROLE_ID}")
+
 # 商店配置
 try:
     from shop_config import EQUIPMENT_SHOP, ROLE_SHOP
+    print("[Config] 成功載入 shop_config")
 except ImportError:
+    print("[Config] shop_config 不存在，使用預設配置")
     # 預設商店配置
     EQUIPMENT_SHOP = {}
     ROLE_SHOP = {
@@ -32,9 +40,14 @@ except ImportError:
         "進階組員": {"price": 75, "role_id": VIP_ROLE_ID, "duration": 604800},
     }
 
-# 遊戲配置
-# config.py 或 shop_config.py 中的拉霸機配置
+# 確保角色ID不為0
+if RAINBOW_ROLE_ID == 0 or VIP_ROLE_ID == 0:
+    print(f"[警告] 角色ID設定可能有問題:")
+    print(f"  RAINBOW_ROLE_ID: {RAINBOW_ROLE_ID}")
+    print(f"  VIP_ROLE_ID: {VIP_ROLE_ID}")
+    print(f"  請檢查 .env 檔案是否正確載入")
 
+# 遊戲配置
 SLOT_MACHINE_CONFIG = {
     "weights": {
         "💎": 2,    # 鑽石 - 最稀有
@@ -55,13 +68,3 @@ SLOT_MACHINE_CONFIG = {
         # 🍊🍉🍇 三連都是1.5倍在邏輯中處理
     }
 }
-
-# 期望值計算說明:
-# 基於權重計算，大約的機率分布：
-# - 三連大獎 (💎/⭐/🔔): 極低機率，高回報
-# - 三連小獎 (🍋/🍒/🍊/🍉/🍇): 低機率，中等回報  
-# - 兩個相同: 中等機率，小回報 (+10%)
-# - 單星星: 中等機率，保本 (0%)
-# - 無獎: 高機率，小虧損 (-5%)
-# 
-# 整體期望值約為99%，讓玩家感受到贏多輸少的體驗
