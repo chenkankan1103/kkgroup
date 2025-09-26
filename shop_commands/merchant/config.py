@@ -1,7 +1,7 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv())  # 自動往上層目錄找 .env
 
 # 資料庫配置
 DB_PATH = os.getenv("DB_PATH", "user_data.db")
