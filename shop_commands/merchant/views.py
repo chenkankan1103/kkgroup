@@ -1,24 +1,20 @@
 import discord
 from discord.ui import Button, View, Modal, TextInput, Select
 import asyncio
-from dotenv import load_dotenv, find_dotenv
 import os
 import random
 
-load_dotenv(find_dotenv())  # 自動往上層目錄找 .env
+# 修正：從相對路徑導入 config
+from .config import RAINBOW_ROLE_ID, VIP_ROLE_ID, EQUIPMENT_SHOP, ROLE_SHOP
 
-RAINBOW_ROLE_ID = int(os.getenv("RAINBOW_ROLE_ID", 0))
-VIP_ROLE_ID = int(os.getenv("VIP_ROLE_ID", 0))
+# 或者如果 config.py 在同層目錄
+# from shop_commands.merchant.config import RAINBOW_ROLE_ID, VIP_ROLE_ID, EQUIPMENT_SHOP, ROLE_SHOP
 
-try:
-    from shop_config import EQUIPMENT_SHOP, ROLE_SHOP
-except ImportError:
-    EQUIPMENT_SHOP = {}
-    ROLE_SHOP = {
-        "七彩披風": {"price": 50, "role_id": RAINBOW_ROLE_ID, "duration": 86400},
-        "進階組員": {"price": 75, "role_id": VIP_ROLE_ID, "duration": 604800},
-    }
+# 調試：確認角色ID是否正確載入
+print(f"[Views] 載入的角色ID - RAINBOW: {RAINBOW_ROLE_ID}, VIP: {VIP_ROLE_ID}")
 
+# 移除重複的環境變數載入和配置定義
+# 因為已經在 config.py 中處理了
 
 class CustomAmountModal(Modal):
     def __init__(self, slot_machine_view):
