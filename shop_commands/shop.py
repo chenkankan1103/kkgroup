@@ -402,6 +402,15 @@ class ButtonInteraction(commands.Cog):
         mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
         member_role = interaction.guild.get_role(MEMBER_ROLE_ID)
 
+        # 檢查角色是否存在
+        if not mute_role:
+            await interaction.followup.send("❌ 找不到禁閉角色，請聯絡管理員設定。", ephemeral=True)
+            return
+            
+        if not member_role:
+            await interaction.followup.send("❌ 找不到會員角色，請聯絡管理員設定。", ephemeral=True)
+            return
+
         # 檢查是否已經被禁閉
         if mute_role in member.roles:
             embed = discord.Embed(
@@ -431,44 +440,96 @@ class ButtonInteraction(commands.Cog):
             )
         else:
             # 搶劫失敗：被抓到並禁閉
-            await member.remove_roles(member_role)
-            await member.add_roles(mute_role)
-            
-            embed = discord.Embed(
-                title="🚫 搶劫失敗！",
-                description="你被黑市商人反制，被丟進禁閉室！\n\n"
-                           "黑市商人冷笑道：「想搶劫我？太嫩了！」\n"
-                           "⏰ 將在5分鐘後釋放你。",
-                color=discord.Color.red()
-            )
-            
-            # 5分鐘後自動釋放
-            self.bot.loop.create_task(self.release_from_mute(member, mute_role, member_role))
+            try:
+                # 先移除會員角色，再添加禁閉角色
+                if member_role in member.roles:
+                    await member.remove_roles(member_role, reason="搶劫失敗被禁閉")
+                await member.add_roles(mute_role, reason="搶劫失敗被禁閉")
+                
+                embed = discord.Embed(
+                    title="🚫 搶劫失敗！",
+                    description="你被黑市商人反制，被丟進禁閉室！\n\n"
+                               "黑市商人冷笑道：「想搶劫我？太嫩了！」\n"
+                               "⏰ 將在5分鐘後釋放你。",
+                    color=discord.Color.red()
+                )
+                
+                # 5分鐘後自動釋放
+                self.bot.loop.create_task(self.release_from_mute(member, mute_role, member_role))
+                
+            except discord.Forbidden:
+                embed = discord.Embed(
+                    title="❌ 權限不足",
+                    description="機器人沒有足夠權限來管理角色，請聯絡管理員檢查權限設定。",
+                    color=discord.Color.red()
+                )
+            except Exception as e:
+                print(f"角色管理錯誤: {e}")
+                embed = discord.Embed(
+                    title="❌ 系統錯誤",
+                    description="處理搶劫時發生錯誤，請稍後再試。",
+                    color=discord.Color.red()
+                )
 
         await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed)
 
     async def release_from_mute(self, member, mute_role, member_role):
         """5分鐘後自動釋放被禁閉的用戶"""
-        await asyncio.sleep(300)  # 5分鐘 = 300秒
         try:
-            if mute_role in member.roles:
-                await member.remove_roles(mute_role)
-                await member.add_roles(member_role)
+            print(f"[禁閉系統] 開始為 {member.display_name} 計時 5 分鐘...")
+            await asyncio.sleep(300)  # 5分鐘 = 300秒
+            
+            # 重新獲取成員對象，防止成員離開伺服器等情況
+            guild = member.guild
+            member = guild.get_member(member.id)
+            
+            if not member:
+                print(f"[禁閉系統] 成員已離開伺服器，取消釋放任務")
+                return
                 
-                # 可以選擇發送私訊通知用戶已被釋放
+            # 重新獲取角色對象
+            mute_role = guild.get_role(MUTE_ROLE_ID)
+            member_role = guild.get_role(MEMBER_ROLE_ID)
+            
+            if not mute_role or not member_role:
+                print(f"[禁閉系統] 找不到角色，MUTE_ROLE_ID: {MUTE_ROLE_ID}, MEMBER_ROLE_ID: {MEMBER_ROLE_ID}")
+                return
+            
+            # 檢查用戶是否還在禁閉中
+            if mute_role in member.roles:
+                print(f"[禁閉系統] 正在釋放 {member.display_name}...")
+                
+                # 移除禁閉角色
+                await member.remove_roles(mute_role, reason="禁閉期滿自動釋放")
+                
+                # 添加會員角色
+                if member_role not in member.roles:
+                    await member.add_roles(member_role, reason="禁閉期滿恢復會員身份")
+                
+                print(f"[禁閉系統] {member.display_name} 已成功釋放")
+                
+                # 嘗試發送私訊通知用戶已被釋放
                 try:
                     embed = discord.Embed(
                         title="🔓 禁閉期滿",
-                        description="你已經從禁閉室中被釋放了！\n記住，搶劫是有風險的...",
-                        color=discord.Color.blue()
+                        description="你已經從禁閉室中被釋放了！\n記住，搶劫是有風險的...\n\n現在你可以重新參與伺服器活動了！",
+                        color=discord.Color.green()
                     )
                     await member.send(embed=embed)
-                except:
-                    # 如果無法發送私訊就忽略
-                    pass
+                    print(f"[禁閉系統] 已向 {member.display_name} 發送釋放通知")
+                except discord.Forbidden:
+                    print(f"[禁閉系統] 無法向 {member.display_name} 發送私訊 (DM關閉)")
+                except Exception as dm_error:
+                    print(f"[禁閉系統] 發送私訊失敗: {dm_error}")
                     
+            else:
+                print(f"[禁閉系統] {member.display_name} 已不在禁閉狀態，可能已被手動釋放")
+                    
+        except discord.Forbidden:
+            print(f"[禁閉系統] 權限不足，無法管理 {member.display_name} 的角色")
         except Exception as e:
-            print(f"自動解除禁閉失敗：{e}")
+            print(f"[禁閉系統] 自動釋放過程中發生錯誤: {e}")
+            print(f"[禁閉系統] 錯誤詳情 - Member: {member}, Mute Role: {mute_role}, Member Role: {member_role}")
 
     async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int):
         """處理賭博邏輯"""
