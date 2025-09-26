@@ -1,4 +1,6 @@
 import aiosqlite
+import sqlite3
+from datetime import datetime, timedelta
 from .config import DB_PATH
 
 async def get_user_kkcoin(user_id: int) -> int:
@@ -58,3 +60,55 @@ async def get_user_equipment(user_id: int) -> dict:
                 'bottom': 1060096, 
                 'shoes': 1072288
             }
+async def create_temp_roles_table():
+    """創建臨時角色追蹤表"""
+    async with aiosqlite.connect('./user_data.db') as db:
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS temp_roles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        await db.commit()
+
+async def add_temp_role(user_id: int, role_id: int, guild_id: int, duration_seconds: int):
+    """添加臨時角色記錄"""
+    expires_at = datetime.now() + timedelta(seconds=duration_seconds)
+    
+    async with aiosqlite.connect('./user_data.db') as db:
+        await db.execute('''
+            INSERT INTO temp_roles (user_id, role_id, guild_id, expires_at)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, role_id, guild_id, expires_at))
+        await db.commit()
+
+async def get_expired_roles():
+    """獲取已過期的角色"""
+    now = datetime.now()
+    async with aiosqlite.connect('./user_data.db') as db:
+        cursor = await db.execute('''
+            SELECT id, user_id, role_id, guild_id 
+            FROM temp_roles 
+            WHERE expires_at <= ?
+        ''', (now,))
+        return await cursor.fetchall()
+
+async def remove_temp_role_record(record_id: int):
+    """移除臨時角色記錄"""
+    async with aiosqlite.connect('./user_data.db') as db:
+        await db.execute('DELETE FROM temp_roles WHERE id = ?', (record_id,))
+        await db.commit()
+
+async def get_user_temp_roles(user_id: int):
+    """獲取用戶的所有臨時角色"""
+    async with aiosqlite.connect('./user_data.db') as db:
+        cursor = await db.execute('''
+            SELECT id, role_id, guild_id, expires_at 
+            FROM temp_roles 
+            WHERE user_id = ? AND expires_at > ?
+        ''', (user_id, datetime.now()))
+        return await cursor.fetchall()
