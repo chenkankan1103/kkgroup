@@ -4,17 +4,7 @@ import asyncio
 import os
 import random
 
-# 修正：從相對路徑導入 config
 from .config import RAINBOW_ROLE_ID, VIP_ROLE_ID, EQUIPMENT_SHOP, ROLE_SHOP
-
-# 或者如果 config.py 在同層目錄
-# from shop_commands.merchant.config import RAINBOW_ROLE_ID, VIP_ROLE_ID, EQUIPMENT_SHOP, ROLE_SHOP
-
-# 調試：確認角色ID是否正確載入
-print(f"[Views] 載入的角色ID - RAINBOW: {RAINBOW_ROLE_ID}, VIP: {VIP_ROLE_ID}")
-
-# 移除重複的環境變數載入和配置定義
-# 因為已經在 config.py 中處理了
 
 class CustomAmountModal(Modal):
     def __init__(self, slot_machine_view):
