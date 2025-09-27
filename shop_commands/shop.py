@@ -18,8 +18,7 @@ from shop_commands.merchant.views import (
 from shop_commands.merchant.database import (
     get_user_kkcoin, update_user_kkcoin, update_user_equipment, get_user_equipment
 )
-from shop_commands.merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID
-
+from shop_commands.merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID, VIP_ROLE_ID, RAINBOW_ROLE_ID
 
 class ButtonInteraction(commands.Cog):
     def __init__(self, bot):
