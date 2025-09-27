@@ -36,18 +36,100 @@ print(f"[Config] VIP_ROLE_ID: {VIP_ROLE_ID} ({'從環境變數' if os.getenv('VI
 print(f"[Config] MUTE_ROLE_ID: {MUTE_ROLE_ID} ({'從環境變數' if os.getenv('MUTE_ROLE_ID') else '使用預設值'})")
 print(f"[Config] MEMBER_ROLE_ID: {MEMBER_ROLE_ID} ({'從環境變數' if os.getenv('MEMBER_ROLE_ID') else '使用預設值'})")
 
-# 商店配置
-try:
-    from shop_config import EQUIPMENT_SHOP, ROLE_SHOP
-    print("[Config] 成功載入 shop_config")
-except ImportError:
-    print("[Config] shop_config 不存在，使用預設配置")
-    # 預設商店配置
-    EQUIPMENT_SHOP = {}
-    ROLE_SHOP = {
-        "七彩披風": {"price": 50, "role_id": RAINBOW_ROLE_ID, "duration": 86400},
-        "進階組員": {"price": 75, "role_id": VIP_ROLE_ID, "duration": 604800},
+# 裝備商店配置 - 移動到這裡避免循環導入
+EQUIPMENT_SHOP = {
+    "hair": {
+        "清新短髮": {
+            "id": 30000,
+            "price": 100,
+            "description": "清新自然的短髮造型"
+        },
+        "時尚長捲髮": {
+            "id": 30010,
+            "price": 150,
+            "description": "優雅的長捲髮造型"
+        },
+        "活力馬尾": {
+            "id": 30020,
+            "price": 120,
+            "description": "充滿活力的馬尾辮"
+        }
+    },
+    "face": {
+        "溫和表情": {
+            "id": 20000,
+            "price": 80,
+            "description": "溫和友善的面部表情"
+        },
+        "活潑表情": {
+            "id": 20010,
+            "price": 90,
+            "description": "活潑開朗的面部表情"
+        }
+    },
+    "skin": {
+        "自然膚色": {
+            "id": 12000,
+            "price": 50,
+            "description": "自然健康的膚色"
+        },
+        "白皙膚色": {
+            "id": 12001,
+            "price": 60,
+            "description": "白皙透亮的膚色"
+        }
+    },
+    "top": {
+        "休閒T恤": {
+            "id": 1040010,
+            "price": 200,
+            "description": "舒適的休閒T恤"
+        },
+        "正式襯衫": {
+            "id": 1040020,
+            "price": 300,
+            "description": "正式場合的襯衫"
+        }
+    },
+    "bottom": {
+        "牛仔褲": {
+            "id": 1060096,
+            "price": 250,
+            "description": "經典的牛仔褲"
+        },
+        "休閒短褲": {
+            "id": 1060100,
+            "price": 180,
+            "description": "舒適的休閒短褲"
+        }
+    },
+    "shoes": {
+        "運動鞋": {
+            "id": 1072288,
+            "price": 300,
+            "description": "舒適的運動鞋"
+        },
+        "正式皮鞋": {
+            "id": 1072300,
+            "price": 400,
+            "description": "正式的皮鞋"
+        }
     }
+}
+
+# 角色商店配置 - 直接在這裡定義，不使用外部檔案
+ROLE_SHOP = {
+    "七彩披風": {
+        "price": 50, 
+        "role_id": RAINBOW_ROLE_ID, 
+        "duration": 86400  # 1天 = 86400秒
+    },
+    "進階組員": {
+        "price": 75, 
+        "role_id": VIP_ROLE_ID, 
+        "duration": 604800  # 1週 = 604800秒
+    }
+}
 
 # 驗證關鍵角色ID
 critical_roles = {
@@ -61,6 +143,14 @@ if missing_roles:
     print("請檢查 .env 檔案或環境變數設定")
 else:
     print("[Config] 所有關鍵角色ID已正確載入")
+
+# 驗證角色商店配置
+print("[Config] 角色商店配置:")
+for role_name, config in ROLE_SHOP.items():
+    role_id = config["role_id"]
+    price = config["price"]
+    duration = config.get("duration", "永久")
+    print(f"  - {role_name}: 價格={price}, 角色ID={role_id}, 時長={duration}秒")
 
 # 遊戲配置
 SLOT_MACHINE_CONFIG = {
