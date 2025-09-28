@@ -503,22 +503,8 @@ class ButtonInteraction(commands.Cog):
                 if member_role not in member.roles:
                     await member.add_roles(member_role, reason="禁閉期滿恢復會員身份")
                 
-                print(f"[禁閉系統] {member.display_name} 已成功釋放")
-                
-                # 嘗試發送私訊通知用戶已被釋放
-                try:
-                    embed = discord.Embed(
-                        title="🔓 禁閉期滿",
-                        description="你已經從禁閉室中被釋放了！\n記住，搶劫是有風險的...\n\n現在你可以重新參與伺服器活動了！",
-                        color=discord.Color.green()
-                    )
-                    await member.send(embed=embed)
-                    print(f"[禁閉系統] 已向 {member.display_name} 發送釋放通知")
-                except discord.Forbidden:
-                    print(f"[禁閉系統] 無法向 {member.display_name} 發送私訊 (DM關閉)")
-                except Exception as dm_error:
-                    print(f"[禁閉系統] 發送私訊失敗: {dm_error}")
-                    
+                print(f"[禁閉系統] {member.display_name} 已成功釋放"
+                      
             else:
                 print(f"[禁閉系統] {member.display_name} 已不在禁閉狀態，可能已被手動釋放")
                     
