@@ -13,6 +13,7 @@ from PIL import Image
 import time
 import hashlib
 from pathlib import Path
+import datetime
 
 load_dotenv()
 
@@ -293,10 +294,165 @@ class UserPanel(commands.Cog):
             print("❌ 找不到論壇頻道")
         
         await self.create_threads_for_existing_members()
-        self.weekly_summary.start()
+        
+        # 啟動週統計任務
+        if not self.weekly_summary.is_running():
+            self.weekly_summary.start()
+            print("✅ 週統計任務已啟動")
 
     def cog_unload(self):
-        self.weekly_summary.cancel()
+        if self.weekly_summary.is_running():
+            self.weekly_summary.cancel()
+            print("✅ 週統計任務已停止")
+
+    @tasks.loop(minutes=1)  # 每分鐘檢查一次
+    async def weekly_summary(self):
+        """每週日晚上 23:59 執行週統計"""
+        try:
+            # 獲取當前時間（使用台灣時區 UTC+8）
+            now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+            
+            # 檢查是否為週日 23:59
+            if now.weekday() != 6:  # 6 = 週日 (0=週一, 6=週日)
+                return
+                
+            if now.hour != 23 or now.minute != 59:
+                return
+            
+            print(f"🕐 開始執行週統計 - {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                print("❌ 論壇頻道不存在或類型錯誤")
+                return
+
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT user_id, thread_id, kkcoin, xp, level, 
+                       last_kkcoin_snapshot, last_xp_snapshot, last_level_snapshot 
+                FROM users WHERE thread_id != 0
+            ''')
+            users_data = cursor.fetchall()
+            
+            processed_count = 0
+            
+            for user_id, thread_id, current_kkcoin, current_xp, current_level, last_kkcoin, last_xp, last_level in users_data:
+                try:
+                    thread = forum_channel.get_thread(thread_id)
+                    member = forum_channel.guild.get_member(user_id)
+                    
+                    if not thread or not member:
+                        print(f"⏭️ 跳過不存在的文章或成員: {user_id}")
+                        continue
+                    
+                    # 計算週增長量
+                    kkcoin_change = (current_kkcoin or 0) - (last_kkcoin or 0)
+                    xp_change = (current_xp or 0) - (last_xp or 0)
+                    level_change = (current_level or 1) - (last_level or 1)
+                    
+                    # 只有當有變化時才發送統計
+                    if kkcoin_change > 0 or xp_change > 0 or level_change > 0:
+                        print(f"📊 為 {member.name} 生成週統計 - KKC:{kkcoin_change} XP:{xp_change} LV:{level_change}")
+                        
+                        # 生成 AI 評論
+                        ai_comment = await self.generate_ai_comment(member, kkcoin_change, xp_change, level_change)
+                        
+                        # 創建統計嵌入
+                        embed = discord.Embed(
+                            title=f"📊 {member.display_name or member.name} 的本週統計",
+                            description=f"統計週期：{(now - datetime.timedelta(days=7)).strftime('%m/%d')} - {now.strftime('%m/%d')}",
+                            color=0x00ff88,
+                            timestamp=discord.utils.utcnow()
+                        )
+                        embed.set_thumbnail(url=member.display_avatar.url)
+                        
+                        if kkcoin_change > 0:
+                            embed.add_field(name="💰 KKCoin 增長", value=f"+{kkcoin_change}", inline=True)
+                        if xp_change > 0:
+                            embed.add_field(name="✨ 經驗值 增長", value=f"+{xp_change}", inline=True)
+                        if level_change > 0:
+                            embed.add_field(name="⭐ 等級 提升", value=f"+{level_change}", inline=True)
+                        
+                        if ai_comment:
+                            embed.add_field(name="🤖 AI 評論", value=ai_comment, inline=False)
+                        
+                        embed.set_footer(text="🔄 每週日 23:59 自動統計")
+                        
+                        # 創建更新按鈕
+                        view = UpdatePanelView(self, user_id)
+                        
+                        # 發送統計訊息
+                        await thread.send(embed=embed, view=view)
+                        processed_count += 1
+                        
+                        # 避免過於頻繁的發送
+                        await asyncio.sleep(1)
+                    else:
+                        print(f"⏭️ {member.name} 本週無變化，跳過統計")
+                    
+                    # 更新快照數據（無論是否有變化都要更新，避免累積誤差）
+                    cursor.execute('''
+                        UPDATE users 
+                        SET last_kkcoin_snapshot = ?, last_xp_snapshot = ?, last_level_snapshot = ?
+                        WHERE user_id = ?
+                    ''', (current_kkcoin, current_xp, current_level, user_id))
+                    
+                except Exception as e:
+                    print(f"❌ 處理使用者 {user_id} 週統計時發生錯誤: {e}")
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"✅ 週統計完成 - 處理了 {processed_count} 位有變化的使用者")
+            
+        except Exception as e:
+            print(f"❌ 生成週統計時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @weekly_summary.before_loop
+    async def before_weekly_summary(self):
+        await self.bot.wait_until_ready()
+        print("⏰ 週統計任務等待機器人準備完成")
+
+    async def generate_ai_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
+        try:
+            if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
+                return None
+            
+            prompt = f"""你是一個友善的遊戲助手，請為玩家 {member.display_name or member.name} 本週的表現寫一段鼓勵性的評論。
+
+本週數據：
+- KKCoin 增長: {kkcoin_change}
+- 經驗值 增長: {xp_change}
+- 等級 提升: {level_change}
+
+請用繁體中文回應，語氣要活潑友善，長度控制在50字以內，可以適當使用表情符號。
+"""
+            
+            headers = {
+                'Authorization': f'Bearer {self.AI_API_KEY}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                'model': self.AI_API_MODEL,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 100,
+                'temperature': 0.8
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.AI_API_URL, headers=headers, json=data, timeout=10) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result['choices'][0]['message']['content'].strip()
+            
+        except Exception as e:
+            print(f"生成 AI 評論時發生錯誤: {e}")
+        
+        return f"本週表現不錯！繼續保持這個節奏 💪"
 
     def ensure_user_exists(self, user_id: int) -> bool:
         """確保使用者在資料庫中存在，如果不存在則創建"""
@@ -439,109 +595,6 @@ class UserPanel(commands.Cog):
             print(f"❌ 為現有會員創建文章時發生錯誤: {e}")
             import traceback
             traceback.print_exc()
-
-    @tasks.loop(hours=168)
-    async def weekly_summary(self):
-        try:
-            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
-            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
-                return
-
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('SELECT user_id, thread_id, kkcoin, xp, level, last_kkcoin_snapshot, last_xp_snapshot, last_level_snapshot FROM users WHERE thread_id != 0')
-            users_data = cursor.fetchall()
-            
-            for user_id, thread_id, current_kkcoin, current_xp, current_level, last_kkcoin, last_xp, last_level in users_data:
-                try:
-                    thread = forum_channel.get_thread(thread_id)
-                    member = forum_channel.guild.get_member(user_id)
-                    
-                    if not thread or not member:
-                        continue
-                    
-                    kkcoin_change = (current_kkcoin or 0) - (last_kkcoin or 0)
-                    xp_change = (current_xp or 0) - (last_xp or 0)
-                    level_change = (current_level or 1) - (last_level or 1)
-                    
-                    if kkcoin_change > 0 or xp_change > 0 or level_change > 0:
-                        ai_comment = await self.generate_ai_comment(member, kkcoin_change, xp_change, level_change)
-                        
-                        embed = discord.Embed(
-                            title=f"📊 {member.display_name or member.name} 的本週統計",
-                            color=0x00ff88,
-                            timestamp=discord.utils.utcnow()
-                        )
-                        embed.set_thumbnail(url=member.display_avatar.url)
-                        
-                        if kkcoin_change > 0:
-                            embed.add_field(name="💰 KKCoin 增長", value=f"+{kkcoin_change}", inline=True)
-                        if xp_change > 0:
-                            embed.add_field(name="✨ 經驗值 增長", value=f"+{xp_change}", inline=True)
-                        if level_change > 0:
-                            embed.add_field(name="⭐ 等級 提升", value=f"+{level_change}", inline=True)
-                        
-                        if ai_comment:
-                            embed.add_field(name="🤖 AI 評論", value=ai_comment, inline=False)
-                        
-                        embed.set_footer(text="🔄 每週自動更新統計")
-                        
-                        view = UpdatePanelView(self, user_id)
-                        await thread.send(embed=embed, view=view)
-                        await asyncio.sleep(0.5)
-                    
-                    cursor.execute('''
-                        UPDATE users 
-                        SET last_kkcoin_snapshot = ?, last_xp_snapshot = ?, last_level_snapshot = ?
-                        WHERE user_id = ?
-                    ''', (current_kkcoin, current_xp, current_level, user_id))
-                    
-                except Exception as e:
-                    print(f"處理使用者 {user_id} 週報時發生錯誤: {e}")
-            
-            conn.commit()
-            conn.close()
-            
-        except Exception as e:
-            print(f"生成週報時發生錯誤: {e}")
-
-    async def generate_ai_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
-        try:
-            if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
-                return None
-            
-            prompt = f"""你是一個友善的遊戲助手，請為玩家 {member.display_name or member.name} 本週的表現寫一段鼓勵性的評論。
-
-本週數據：
-- KKCoin 增長: {kkcoin_change}
-- 經驗值 增長: {xp_change}
-- 等級 提升: {level_change}
-
-請用繁體中文回應，語氣要活潑友善，長度控制在50字以內，可以適當使用表情符號。
-"""
-            
-            headers = {
-                'Authorization': f'Bearer {self.AI_API_KEY}',
-                'Content-Type': 'application/json'
-            }
-            
-            data = {
-                'model': self.AI_API_MODEL,
-                'messages': [{'role': 'user', 'content': prompt}],
-                'max_tokens': 100,
-                'temperature': 0.8
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.AI_API_URL, headers=headers, json=data, timeout=10) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        return result['choices'][0]['message']['content'].strip()
-            
-        except Exception as e:
-            print(f"生成 AI 評論時發生錯誤: {e}")
-        
-        return f"本週表現不錯！繼續保持這個節奏 💪"
 
     def get_user_data(self, user_id: int) -> Optional[dict]:
         try:
@@ -982,6 +1035,170 @@ class UserPanel(commands.Cog):
             
         except Exception as e:
             await interaction.followup.send(f"❌ 清理緩存時發生錯誤: {str(e)}")
+
+    @app_commands.command(name="手動週統計", description="管理員指令：手動執行週統計")
+    @app_commands.default_permissions(administrator=True)
+    async def manual_weekly_stats(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.followup.send("📊 開始手動執行週統計...", ephemeral=True)
+            
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                await interaction.followup.send("❌ 論壇頻道不存在或類型錯誤", ephemeral=True)
+                return
+
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT user_id, thread_id, kkcoin, xp, level, 
+                       last_kkcoin_snapshot, last_xp_snapshot, last_level_snapshot 
+                FROM users WHERE thread_id != 0
+            ''')
+            users_data = cursor.fetchall()
+            
+            processed_count = 0
+            
+            for user_id, thread_id, current_kkcoin, current_xp, current_level, last_kkcoin, last_xp, last_level in users_data:
+                try:
+                    thread = forum_channel.get_thread(thread_id)
+                    member = forum_channel.guild.get_member(user_id)
+                    
+                    if not thread or not member:
+                        continue
+                    
+                    # 計算週增長量
+                    kkcoin_change = (current_kkcoin or 0) - (last_kkcoin or 0)
+                    xp_change = (current_xp or 0) - (last_xp or 0)
+                    level_change = (current_level or 1) - (last_level or 1)
+                    
+                    # 只有當有變化時才發送統計
+                    if kkcoin_change > 0 or xp_change > 0 or level_change > 0:
+                        # 生成 AI 評論
+                        ai_comment = await self.generate_ai_comment(member, kkcoin_change, xp_change, level_change)
+                        
+                        # 創建統計嵌入
+                        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+                        embed = discord.Embed(
+                            title=f"📊 {member.display_name or member.name} 的本週統計",
+                            description=f"統計週期：{(now - datetime.timedelta(days=7)).strftime('%m/%d')} - {now.strftime('%m/%d')} (手動)",
+                            color=0x00ff88,
+                            timestamp=discord.utils.utcnow()
+                        )
+                        embed.set_thumbnail(url=member.display_avatar.url)
+                        
+                        if kkcoin_change > 0:
+                            embed.add_field(name="💰 KKCoin 增長", value=f"+{kkcoin_change}", inline=True)
+                        if xp_change > 0:
+                            embed.add_field(name="✨ 經驗值 增長", value=f"+{xp_change}", inline=True)
+                        if level_change > 0:
+                            embed.add_field(name="⭐ 等級 提升", value=f"+{level_change}", inline=True)
+                        
+                        if ai_comment:
+                            embed.add_field(name="🤖 AI 評論", value=ai_comment, inline=False)
+                        
+                        embed.set_footer(text="🔧 手動執行週統計")
+                        
+                        # 創建更新按鈕
+                        view = UpdatePanelView(self, user_id)
+                        
+                        # 發送統計訊息
+                        await thread.send(embed=embed, view=view)
+                        processed_count += 1
+                        
+                        # 避免過於頻繁的發送
+                        await asyncio.sleep(1)
+                    
+                    # 更新快照數據
+                    cursor.execute('''
+                        UPDATE users 
+                        SET last_kkcoin_snapshot = ?, last_xp_snapshot = ?, last_level_snapshot = ?
+                        WHERE user_id = ?
+                    ''', (current_kkcoin, current_xp, current_level, user_id))
+                    
+                except Exception as e:
+                    print(f"❌ 處理使用者 {user_id} 手動週統計時發生錯誤: {e}")
+            
+            conn.commit()
+            conn.close()
+            
+            await interaction.followup.send(f"✅ 手動週統計完成，處理了 {processed_count} 位有變化的使用者", ephemeral=True)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ 手動週統計時發生錯誤：{str(e)}", ephemeral=True)
+
+    @app_commands.command(name="查看週統計狀態", description="管理員指令：查看週統計任務狀態")
+    @app_commands.default_permissions(administrator=True)
+    async def check_weekly_stats_status(self, interaction: discord.Interaction):
+        try:
+            # 獲取當前時間（使用台灣時區 UTC+8）
+            now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+            
+            embed = discord.Embed(
+                title="⏰ 週統計任務狀態",
+                color=0x00ff88,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="📅 當前時間",
+                value=f"{now.strftime('%Y-%m-%d %H:%M:%S')} (UTC+8)",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🔄 任務狀態",
+                value="✅ 運行中" if self.weekly_summary.is_running() else "❌ 已停止",
+                inline=True
+            )
+            
+            # 計算下次執行時間
+            days_until_sunday = (6 - now.weekday()) % 7
+            if days_until_sunday == 0 and now.hour >= 23 and now.minute >= 59:
+                days_until_sunday = 7
+            
+            next_run = now.replace(hour=23, minute=59, second=0, microsecond=0) + datetime.timedelta(days=days_until_sunday)
+            
+            embed.add_field(
+                name="⏭️ 下次執行時間",
+                value=f"{next_run.strftime('%Y-%m-%d %H:%M:%S')} (週日)",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="📊 執行條件",
+                value="每週日 23:59 (UTC+8)",
+                inline=False
+            )
+            
+            # 檢查有多少使用者會被統計
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COUNT(*) FROM users 
+                WHERE thread_id != 0 AND (
+                    (kkcoin - last_kkcoin_snapshot) > 0 OR 
+                    (xp - last_xp_snapshot) > 0 OR 
+                    (level - last_level_snapshot) > 0
+                )
+            ''')
+            users_with_changes = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM users WHERE thread_id != 0')
+            total_users_with_threads = cursor.fetchone()[0]
+            
+            conn.close()
+            
+            embed.add_field(
+                name="📈 預計統計範圍",
+                value=f"{users_with_changes}/{total_users_with_threads} 位使用者有變化",
+                inline=True
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 查看狀態時發生錯誤：{str(e)}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(UserPanel(bot))
