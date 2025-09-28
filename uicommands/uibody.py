@@ -21,13 +21,15 @@ class UpdatePanelView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
         self.user_id = user_id
-        self.last_update = {}  # 儲存每個使用者的最後更新時間
+        # 使用類級別的字典來儲存冷卻時間
+        if not hasattr(UpdatePanelView, 'last_update'):
+            UpdatePanelView.last_update = {}
         
-    @discord.ui.button(label="更新面板", style=discord.ButtonStyle.primary, emoji="🔄")
+    @discord.ui.button(label="更新面板", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="update_panel_button")
     async def update_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
         # 檢查冷卻時間（5秒）
         current_time = time.time()
-        last_update_time = self.last_update.get(interaction.user.id, 0)
+        last_update_time = UpdatePanelView.last_update.get(interaction.user.id, 0)
         
         if current_time - last_update_time < 5:
             remaining_time = 5 - (current_time - last_update_time)
@@ -46,7 +48,7 @@ class UpdatePanelView(discord.ui.View):
             await interaction.response.defer()
             
             # 更新最後更新時間
-            self.last_update[interaction.user.id] = current_time
+            UpdatePanelView.last_update[interaction.user.id] = current_time
             
             user_data = self.cog.get_user_data(interaction.user.id)
             if not user_data:
@@ -61,8 +63,23 @@ class UpdatePanelView(discord.ui.View):
                 files.append(character_image)
                 embed.set_image(url="attachment://character.gif")
             
-            # 更新原始訊息
-            await interaction.edit_original_response(embed=embed, attachments=files, view=self)
+            # 找到原始的面板訊息並更新它
+            async for message in interaction.channel.history(limit=50):
+                if message.embeds and message.author == self.cog.bot.user:
+                    # 檢查是否是面板訊息
+                    if f"{interaction.user.display_name or interaction.user.name} 的面板資訊" in message.embeds[0].title:
+                        try:
+                            await message.edit(embed=embed, attachments=files)
+                            await interaction.followup.send("✅ 面板已更新！", ephemeral=True)
+                            return
+                        except discord.NotFound:
+                            break
+                        except Exception as e:
+                            print(f"更新面板訊息時發生錯誤: {e}")
+                            break
+            
+            # 如果沒找到原始訊息，發送新的
+            await interaction.followup.send(embed=embed, files=files)
             
         except Exception as e:
             print(f"更新面板時發生錯誤: {e}")
@@ -160,6 +177,8 @@ class UserPanel(commands.Cog):
     async def cog_load(self):
         """當 Cog 加載時啟動任務"""
         await self.bot.wait_until_ready()
+        # 註冊持久化 View
+        self.bot.add_view(UpdatePanelView(self, 0))  # 0 是佔位符，實際使用時會重新創建
         await self.create_threads_for_existing_members()
         self.weekly_summary.start()
         print("✅ 已為現有會員創建文章並開始每週統計任務")
@@ -493,12 +512,13 @@ class UserPanel(commands.Cog):
             thread_name = f"📊 {user.display_name or user.name} 的個人面板"
             
             # 創建文章（包含初始訊息）
-            thread = await forum_channel.create_thread(
+            thread, message = await forum_channel.create_thread(
                 name=thread_name,
-                content=f"歡迎來到 {user.mention} 的個人面板！",
-                embed=embed,
-                files=files
+                content=f"歡迎來到 {user.mention} 的個人面板！"
             )
+
+            # 發送面板 embed
+            panel_message = await thread.send(embed=embed, files=files)
 
             # 更新資料庫中的 thread_id
             conn = sqlite3.connect(self.db_path)
@@ -513,7 +533,7 @@ class UserPanel(commands.Cog):
 
             # 添加更新按鈕到文章中
             view = UpdatePanelView(self, user.id)
-            await thread.send("使用下方按鈕來更新你的面板資訊：", view=view)
+            await thread.send("🔄 使用下方按鈕來更新你的面板資訊：", view=view)
 
             print(f"✅ 為使用者 {user.name} 創建了新的個人文章")
             return thread
