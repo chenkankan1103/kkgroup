@@ -1,4 +1,9 @@
-import discord
+@tasks.loop(minutes=1)  # 每分鐘執行一次
+    async def auto_update_top_users(self):
+        """每分鐘自動更新排行榜前10名使用者的面板"""
+        try:
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel orimport discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import sqlite3
@@ -63,10 +68,10 @@ class UpdatePanelView(discord.ui.View):
                 files.append(character_image)
                 embed.set_image(url="attachment://character.gif")
             
-            # 找到原始的面板訊息並更新它
-            async for message in interaction.channel.history(limit=50):
+            # 找到文章的第一則訊息並更新它
+            async for message in interaction.channel.history(limit=50, oldest_first=True):
                 if message.embeds and message.author == self.cog.bot.user:
-                    # 檢查是否是面板訊息
+                    # 檢查是否是面板訊息（第一則包含面板的訊息）
                     if f"{interaction.user.display_name or interaction.user.name} 的面板資訊" in message.embeds[0].title:
                         try:
                             await message.edit(embed=embed, attachments=files)
@@ -78,8 +83,8 @@ class UpdatePanelView(discord.ui.View):
                             print(f"更新面板訊息時發生錯誤: {e}")
                             break
             
-            # 如果沒找到原始訊息，發送新的
-            await interaction.followup.send(embed=embed, files=files)
+            # 如果沒找到原始訊息，發送錯誤訊息
+            await interaction.followup.send("❌ 找不到面板訊息，請聯繫管理員！", ephemeral=True)
             
         except Exception as e:
             print(f"更新面板時發生錯誤: {e}")
@@ -177,8 +182,6 @@ class UserPanel(commands.Cog):
     async def cog_load(self):
         """當 Cog 加載時啟動任務"""
         await self.bot.wait_until_ready()
-        # 註冊持久化 View
-        self.bot.add_view(UpdatePanelView(self, 0))  # 0 是佔位符，實際使用時會重新創建
         await self.create_threads_for_existing_members()
         self.weekly_summary.start()
         print("✅ 已為現有會員創建文章並開始每週統計任務")
@@ -199,22 +202,45 @@ class UserPanel(commands.Cog):
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # 獲取所有已註冊但沒有文章的使用者
-            cursor.execute('SELECT user_id FROM users WHERE thread_id = 0')
-            users_without_threads = cursor.fetchall()
+            # 獲取所有已註冊的使用者
+            cursor.execute('SELECT user_id, thread_id FROM users')
+            all_users = cursor.fetchall()
             
             created_count = 0
-            for (user_id,) in users_without_threads:
+            validated_count = 0
+            
+            for user_id, thread_id in all_users:
                 member = guild.get_member(user_id)
-                if member:  # 確保成員還在伺服器中
+                if not member:  # 成員不在伺服器中，跳過
+                    continue
+                
+                # 如果沒有 thread_id，創建新文章
+                if not thread_id or thread_id == 0:
                     thread = await self.get_or_create_user_thread(member)
                     if thread:
                         created_count += 1
                         # 避免 API 限制，每創建一個文章後稍微等待
                         await asyncio.sleep(1)
+                else:
+                    # 如果有 thread_id，驗證文章是否還存在
+                    try:
+                        thread = forum_channel.get_thread(thread_id)
+                        if thread:
+                            validated_count += 1
+                        else:
+                            # 文章不存在，清除記錄並重新創建
+                            cursor.execute('UPDATE users SET thread_id = 0 WHERE user_id = ?', (user_id,))
+                            conn.commit()
+                            
+                            thread = await self.get_or_create_user_thread(member)
+                            if thread:
+                                created_count += 1
+                                await asyncio.sleep(1)
+                    except Exception as e:
+                        print(f"驗證使用者 {user_id} 的文章時發生錯誤: {e}")
             
             conn.close()
-            print(f"✅ 為 {created_count} 位現有會員創建了個人文章")
+            print(f"✅ 驗證了 {validated_count} 個現有文章，為 {created_count} 位會員創建了新文章")
             
         except Exception as e:
             print(f"為現有會員創建文章時發生錯誤: {e}")
@@ -274,9 +300,10 @@ class UserPanel(commands.Cog):
                         
                         embed.set_footer(text="🔄 每週自動更新統計")
                         
-                        # 發送到使用者的個人文章
-                        await thread.send(embed=embed)
-                        print(f"✅ 已為 {member.name} 發布週報")
+                        # 發送到使用者的個人文章，並附上更新按鈕
+                        view = UpdatePanelView(self, user_id)
+                        await thread.send(embed=embed, view=view)
+                        print(f"✅ 已為 {member.name} 發布週報並提供更新按鈕")
                         
                         # 稍微等待避免 API 限制
                         await asyncio.sleep(0.5)
@@ -429,7 +456,13 @@ class UserPanel(commands.Cog):
             color=0x00ff88,
             timestamp=discord.utils.utcnow()
         )
-        embed.set_thumbnail(url=user.display_avatar.url)
+        
+        # 嘗試使用使用者頭像作為縮圖，如果失敗則使用角色圖片
+        try:
+            embed.set_thumbnail(url=user.display_avatar.url)
+        except:
+            pass
+            
         embed.add_field(name="🆔 使用者ID", value=f"`{user_data['user_id']}`", inline=True)
         embed.add_field(name="⭐ 等級", value=f"**{user_data['level'] or 1}**", inline=True)
         embed.add_field(name="✨ 經驗值", value=f"{user_data['xp'] or 0} XP", inline=True)
@@ -511,14 +544,12 @@ class UserPanel(commands.Cog):
             # 創建文章標題
             thread_name = f"📊 {user.display_name or user.name} 的個人面板"
             
-            # 創建文章（包含初始訊息）
+            # 創建文章並直接在第一則訊息中包含面板資訊
             thread, message = await forum_channel.create_thread(
                 name=thread_name,
-                content=f"歡迎來到 {user.mention} 的個人面板！"
+                embed=embed,
+                files=files
             )
-
-            # 發送面板 embed
-            panel_message = await thread.send(embed=embed, files=files)
 
             # 更新資料庫中的 thread_id
             conn = sqlite3.connect(self.db_path)
@@ -530,10 +561,6 @@ class UserPanel(commands.Cog):
             ''', (thread.id, user.id))
             conn.commit()
             conn.close()
-
-            # 添加更新按鈕到文章中
-            view = UpdatePanelView(self, user.id)
-            await thread.send("🔄 使用下方按鈕來更新你的面板資訊：", view=view)
 
             print(f"✅ 為使用者 {user.name} 創建了新的個人文章")
             return thread
@@ -693,9 +720,65 @@ class UserPanel(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ 創建文章時發生錯誤：{str(e)}")
 
-    @app_commands.command(name="論壇統計", description="查看論壇文章統計")
+    @app_commands.command(name="重置文章", description="管理員指令：清除所有文章記錄（不刪除實際文章）")
     @app_commands.default_permissions(administrator=True)
-    async def forum_stats(self, interaction: discord.Interaction):
+    async def reset_threads(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('UPDATE users SET thread_id = 0')
+            conn.commit()
+            conn.close()
+            
+            await interaction.followup.send("✅ 已清除所有文章記錄！下次重啟機器人時會重新檢查並創建缺少的文章。")
+        except Exception as e:
+            await interaction.followup.send(f"❌ 重置時發生錯誤：{str(e)}")
+
+    @app_commands.command(name="檢查文章", description="管理員指令：檢查並修復文章狀態")
+    @app_commands.default_permissions(administrator=True)
+    async def check_threads(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        
+        try:
+            await self.create_threads_for_existing_members()
+            await interaction.followup.send("✅ 已完成文章狀態檢查和修復！")
+        except Exception as e:
+            await interaction.followup.send(f"❌ 檢查時發生錯誤：{str(e)}")
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 統計資料
+            cursor.execute('SELECT COUNT(*) FROM users')
+            total_users = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM users WHERE thread_id != 0')
+            users_with_threads = cursor.fetchone()[0]
+            
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if forum_channel and isinstance(forum_channel, discord.ForumChannel):
+                total_threads = len(forum_channel.threads)
+            else:
+                total_threads = 0
+            
+            conn.close()
+            
+            embed = discord.Embed(
+                title="📊 論壇統計資訊",
+                color=0x00ff88,
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(name="👥 總註冊使用者", value=f"{total_users} 人", inline=True)
+            embed.add_field(name="📝 擁有個人文章", value=f"{users_with_threads} 人", inline=True)
+            embed.add_field(name="🏷️ 論壇總文章數", value=f"{total_threads} 個", inline=True)
+            
+            if forum_channel:
+                embed.add_field(name="📍 論壇頻道", value=forum_channel.mention, inline=False)
+            
+            await interaction.response.send_message(embed=embed)
+            
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
