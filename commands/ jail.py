@@ -302,12 +302,12 @@ class Ai(commands.Cog):
         )
         
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_footer(text="此為管理員通知 | 僅管理層可見")
+        embed.set_footer(text="禁閉室收容通知")
         
         return embed
 
     def create_punishment_embed(self, member: discord.Member, user_data: dict, damage_info: dict, attack_message: str, theft_info: dict = None) -> discord.Embed:
-        """創建懲罰狀態的 Embed（僅使用者可見）"""
+        """創建懲罰狀態的 Embed"""
         # 根據HP狀態決定顏色
         if damage_info.get('hp', 100) <= 0:
             color = 0xff0000  # 紅色 - 重傷
@@ -320,7 +320,7 @@ class Ai(commands.Cog):
 
         embed = discord.Embed(
             title="🚨 禁閉懲罰進行中 🚨",
-            description=f"**{member.display_name}** 正在私下接受幹部的制裁...\n*此訊息僅你可見*",
+            description=f"**{member.display_name}** 正在接受幹部的制裁...",
             color=color
         )
 
@@ -399,7 +399,7 @@ class Ai(commands.Cog):
                 inline=False
             )
         
-        embed.set_footer(text=f"禁閉室私人懲罰：每分鐘更新 | {member.display_name} 的末日")
+        embed.set_footer(text=f"禁閉室懲罰：每分鐘更新 | {member.display_name}")
         
         return embed
 
@@ -498,7 +498,7 @@ class Ai(commands.Cog):
                 )
                 
                 release_embed.set_thumbnail(url=member.display_avatar.url)
-                release_embed.set_footer(text="釋放通知 | 管理層可見")
+                release_embed.set_footer(text="釋放通知")
                 
                 await admin_message.edit(embed=release_embed)
                 
@@ -519,7 +519,7 @@ class Ai(commands.Cog):
                 
                 recovery_embed = discord.Embed(
                     title="✨ 懲罰結束",
-                    description=f"**{member.display_name}** 已從禁閉中釋放，恢復正常狀態！\n*此訊息僅當事人可見*",
+                    description=f"**{member.display_name}** 已從禁閉中釋放，恢復正常狀態！",
                     color=0x00ff00
                 )
                 
