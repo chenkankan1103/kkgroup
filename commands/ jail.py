@@ -24,10 +24,11 @@ class Ai(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.punishment_tasks = {}
-        self.punishment_messages = {}  # 存储惩罚消息ID
+        self.punishment_messages = {}  # 存储用戶專屬的懲罰消息ID
+        self.admin_notification_messages = {}  # 存储管理員通知消息ID
         self.cached_punishment_images = {}  # 缓存惩罚状态图片
         
-        # 预设的眩晕状态图片配置
+        # 預設的眩晕状态图片配置
         self.punishment_presets = {
             'male_stunned': {
                 'skin': 12000, 'face': 20005, 'hair': 30120,
@@ -274,8 +275,39 @@ class Ai(commands.Cog):
         
         return None
 
+    def create_admin_notification_embed(self, member: discord.Member) -> discord.Embed:
+        """創建管理員通知 Embed"""
+        embed = discord.Embed(
+            title="🚨 禁閉室收容通知",
+            description=f"**{member.display_name}** (`{member.mention}`) 已被幹部抓進禁閉室",
+            color=0xff4444
+        )
+        
+        embed.add_field(
+            name="👤 收容對象",
+            value=f"{member.display_name}\n`ID: {member.id}`",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📅 收容時間",
+            value=f"<t:{int(asyncio.get_event_loop().time())}:F>",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="⚡ 狀態",
+            value="🔴 **正在進行私人制裁**\n懲罰進度將持續更新",
+            inline=False
+        )
+        
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_footer(text="此為管理員通知 | 僅管理層可見")
+        
+        return embed
+
     def create_punishment_embed(self, member: discord.Member, user_data: dict, damage_info: dict, attack_message: str, theft_info: dict = None) -> discord.Embed:
-        """創建懲罰狀態的 Embed"""
+        """創建懲罰狀態的 Embed（僅使用者可見）"""
         # 根據HP狀態決定顏色
         if damage_info.get('hp', 100) <= 0:
             color = 0xff0000  # 紅色 - 重傷
@@ -367,7 +399,7 @@ class Ai(commands.Cog):
                 inline=False
             )
         
-        embed.set_footer(text=f"私人懲罰：每分鐘更新 | {member.display_name} 的末日")
+        embed.set_footer(text=f"禁閉室私人懲罰：每分鐘更新 | {member.display_name} 的末日")
         
         return embed
 
@@ -408,6 +440,13 @@ class Ai(commands.Cog):
         conn.commit()
         conn.close()
         
+        # 在禁閉室頻道發送管理員通知
+        punishment_channel = self.bot.get_channel(PUNISHMENT_CHANNEL_ID)
+        if punishment_channel:
+            admin_embed = self.create_admin_notification_embed(member)
+            admin_message = await punishment_channel.send(embed=admin_embed)
+            self.admin_notification_messages[member.id] = admin_message.id
+        
         self.punishment_tasks[member.id] = self.bot.loop.create_task(self.send_punishment(member))
 
     async def stop_punishment(self, member: discord.Member):
@@ -423,41 +462,81 @@ class Ai(commands.Cog):
         conn.commit()
         conn.close()
         
-        # 清理懲罰訊息
+        punishment_channel = self.bot.get_channel(PUNISHMENT_CHANNEL_ID)
+        if not punishment_channel:
+            return
+        
+        # 更新管理員通知訊息
+        if member.id in self.admin_notification_messages:
+            try:
+                admin_message_id = self.admin_notification_messages[member.id]
+                admin_message = await punishment_channel.fetch_message(admin_message_id)
+                
+                # 更新管理員通知為釋放狀態
+                release_embed = discord.Embed(
+                    title="✅ 禁閉室釋放通知",
+                    description=f"**{member.display_name}** 已從禁閉室釋放",
+                    color=0x00ff00
+                )
+                
+                release_embed.add_field(
+                    name="👤 釋放對象",
+                    value=f"{member.display_name}\n`ID: {member.id}`",
+                    inline=True
+                )
+                
+                release_embed.add_field(
+                    name="📅 釋放時間",
+                    value=f"<t:{int(asyncio.get_event_loop().time())}:F>",
+                    inline=True
+                )
+                
+                release_embed.add_field(
+                    name="⚡ 狀態",
+                    value="🟢 **已恢復正常**\n懲罰已結束",
+                    inline=False
+                )
+                
+                release_embed.set_thumbnail(url=member.display_avatar.url)
+                release_embed.set_footer(text="釋放通知 | 管理層可見")
+                
+                await admin_message.edit(embed=release_embed)
+                
+            except discord.NotFound:
+                pass
+            
+            del self.admin_notification_messages[member.id]
+        
+        # 清理用戶懲罰訊息
         if member.id in self.punishment_messages:
             try:
-                message_id = self.punishment_messages[member.id]
-                user = await self.bot.fetch_user(member.id)
-                dm_channel = user.dm_channel or await user.create_dm()
+                punishment_message_id = self.punishment_messages[member.id]
+                punishment_message = await punishment_channel.fetch_message(punishment_message_id)
                 
-                try:
-                    message = await dm_channel.fetch_message(message_id)
-                    
-                    # 發送恢復訊息
-                    user_data = self.get_user_data(member.id)
-                    recovery_image_url = await self.generate_punishment_character_image(user_data, is_stunned=False)
-                    
-                    recovery_embed = discord.Embed(
-                        title="✨ 懲罰結束",
-                        description="你已從禁閉中釋放，恢復正常狀態！",
-                        color=0x00ff00
-                    )
-                    
-                    if recovery_image_url:
-                        recovery_embed.set_image(url=recovery_image_url)
-                    
-                    await message.edit(embed=recovery_embed)
-                    
-                except discord.NotFound:
-                    pass
-            except Exception as e:
-                print(f"清理懲罰訊息錯誤: {e}")
+                # 發送恢復訊息
+                user_data = self.get_user_data(member.id)
+                recovery_image_url = await self.generate_punishment_character_image(user_data, is_stunned=False)
+                
+                recovery_embed = discord.Embed(
+                    title="✨ 懲罰結束",
+                    description=f"**{member.display_name}** 已從禁閉中釋放，恢復正常狀態！\n*此訊息僅當事人可見*",
+                    color=0x00ff00
+                )
+                
+                recovery_embed.set_footer(text=f"禁閉室釋放通知 | {member.display_name}")
+                
+                if recovery_image_url:
+                    recovery_embed.set_image(url=recovery_image_url)
+                
+                await punishment_message.edit(embed=recovery_embed)
+                
+            except discord.NotFound:
+                pass
             
             del self.punishment_messages[member.id]
 
     async def send_punishment(self, member: discord.Member):
-        """發送私人懲罰訊息並定期更新"""
-        user = member
+        """在禁閉室頻道發送懲罰訊息並定期更新"""
         persona_prompt = build_persona_prompt(bot_name="KK園區中控室", tone="嚴厲")
         
         # 預設的羞辱話語模板
@@ -469,12 +548,13 @@ class Ai(commands.Cog):
             f"請用一句嘲諷且帶點瞧不起的話，告誡 {member.display_name} 這種行為的代價就是私下持續受傷。"
         ]
 
+        punishment_channel = self.bot.get_channel(PUNISHMENT_CHANNEL_ID)
+        if not punishment_channel:
+            return
+
         punishment_message = None
         
         try:
-            # 創建DM頻道
-            dm_channel = user.dm_channel or await user.create_dm()
-            
             async with aiohttp.ClientSession() as session:
                 while MUTE_ROLE_ID in [role.id for role in member.roles]:
                     try:
@@ -526,7 +606,7 @@ class Ai(commands.Cog):
                             ]
                             attack_message = random.choice(backup_responses)
 
-                        # 創建 Embed
+                        # 創建用戶專屬 Embed（僅當事人可見）
                         embed = self.create_punishment_embed(member, user_data, damage_info, attack_message, theft_info)
                         
                         # 獲取眩暈狀態角色圖片
@@ -537,28 +617,25 @@ class Ai(commands.Cog):
                         
                         # 第一次發送或編輯現有訊息
                         if punishment_message is None:
-                            punishment_message = await dm_channel.send(embed=embed)
+                            punishment_message = await punishment_channel.send(f"{member.mention}", embed=embed)
                             self.punishment_messages[member.id] = punishment_message.id
                         else:
                             try:
-                                await punishment_message.edit(embed=embed)
+                                await punishment_message.edit(content=f"{member.mention}", embed=embed)
                             except discord.NotFound:
                                 # 如果訊息被刪除，重新發送
-                                punishment_message = await dm_channel.send(embed=embed)
+                                punishment_message = await punishment_channel.send(f"{member.mention}", embed=embed)
                                 self.punishment_messages[member.id] = punishment_message.id
                         
                         # 等待一分鐘
                         await asyncio.sleep(60)
 
-                    except discord.Forbidden:
-                        print(f"無法發送私訊給 {member.display_name}")
-                        break
                     except Exception as e:
-                        print(f"私人精神訓話錯誤：{e}")
+                        print(f"禁閉室懲罰錯誤：{e}")
                         break
 
         except Exception as e:
-            print(f"創建DM頻道錯誤: {e}")
+            print(f"禁閉室懲罰系統錯誤: {e}")
         finally:
             # 清理任務
             if member.id in self.punishment_tasks:
@@ -579,6 +656,9 @@ class Ai(commands.Cog):
         
         if member.id in self.punishment_messages:
             del self.punishment_messages[member.id]
+            
+        if member.id in self.admin_notification_messages:
+            del self.admin_notification_messages[member.id]
 
 async def setup(bot):
     await bot.add_cog(Ai(bot))
