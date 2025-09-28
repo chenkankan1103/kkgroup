@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import sqlite3
 import json
@@ -11,15 +11,73 @@ import asyncio
 from typing import Optional
 from dotenv import load_dotenv
 from PIL import Image
+import time
+from datetime import datetime, timedelta
 
 load_dotenv()
+
+class UpdatePanelView(discord.ui.View):
+    def __init__(self, cog, user_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.user_id = user_id
+        self.last_update = {}  # 儲存每個使用者的最後更新時間
+        
+    @discord.ui.button(label="更新面板", style=discord.ButtonStyle.primary, emoji="🔄")
+    async def update_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 檢查冷卻時間（5秒）
+        current_time = time.time()
+        last_update_time = self.last_update.get(interaction.user.id, 0)
+        
+        if current_time - last_update_time < 5:
+            remaining_time = 5 - (current_time - last_update_time)
+            await interaction.response.send_message(
+                f"⏰ 請等待 {remaining_time:.1f} 秒後再更新面板！", 
+                ephemeral=True
+            )
+            return
+            
+        # 只允許房間擁有者更新自己的面板
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 你只能更新自己的面板！", ephemeral=True)
+            return
+            
+        try:
+            await interaction.response.defer()
+            
+            # 更新最後更新時間
+            self.last_update[interaction.user.id] = current_time
+            
+            user_data = self.cog.get_user_data(interaction.user.id)
+            if not user_data:
+                await interaction.followup.send("❌ 沒有找到你的資料！", ephemeral=True)
+                return
+            
+            embed = await self.cog.create_user_embed(user_data, interaction.user)
+            character_image = await self.cog.fetch_character_image(user_data)
+            
+            files = []
+            if character_image:
+                files.append(character_image)
+                embed.set_image(url="attachment://character.gif")
+            
+            # 更新原始訊息
+            await interaction.edit_original_response(embed=embed, attachments=files, view=self)
+            
+        except Exception as e:
+            print(f"更新面板時發生錯誤: {e}")
+            await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
 
 class UserPanel(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db_path = './user_data.db'
-        self.INTRODUCE_CHANNEL_ID = int(os.getenv('INTRODUCE_CHANNEL_ID', '0'))
-        self.user_embed_messages = {}
+        self.FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID', '0'))
+        
+        # AI 設定
+        self.AI_API_KEY = os.getenv('AI_API_KEY')
+        self.AI_API_URL = os.getenv('AI_API_URL')
+        self.AI_API_MODEL = os.getenv('AI_API_MODEL')
         
         self.assets_path = './assets'
         self.equipment_path = os.path.join(self.assets_path, 'equipment')
@@ -34,25 +92,63 @@ class UserPanel(commands.Cog):
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            cursor.execute("PRAGMA table_info(users)")
-            columns = [column[1] for column in cursor.fetchall()]
-            
-            new_columns = [
-                ("face", "INTEGER DEFAULT 20000"),
-                ("hair", "INTEGER DEFAULT 30000"), 
-                ("skin", "INTEGER DEFAULT 12000"),
-                ("top", "INTEGER DEFAULT 1040010"),
-                ("bottom", "INTEGER DEFAULT 1060096"),
-                ("shoes", "INTEGER DEFAULT 1072288")
-            ]
-            
-            for column_name, column_def in new_columns:
-                if column_name not in columns:
-                    try:
-                        cursor.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}")
-                        print(f"✅ 添加欄位: {column_name}")
-                    except Exception as e:
-                        print(f"添加欄位 {column_name} 時發生錯誤: {e}")
+            # 檢查是否存在 users 表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if not cursor.fetchone():
+                # 如果表不存在，創建它
+                cursor.execute('''
+                    CREATE TABLE users (
+                        user_id INTEGER PRIMARY KEY,
+                        level INTEGER DEFAULT 1,
+                        xp INTEGER DEFAULT 0,
+                        kkcoin INTEGER DEFAULT 0,
+                        title TEXT DEFAULT '新手',
+                        hp INTEGER DEFAULT 100,
+                        stamina INTEGER DEFAULT 100,
+                        inventory TEXT DEFAULT '[]',
+                        character_config TEXT DEFAULT '{}',
+                        face INTEGER DEFAULT 20000,
+                        hair INTEGER DEFAULT 30000,
+                        skin INTEGER DEFAULT 12000,
+                        top INTEGER DEFAULT 1040010,
+                        bottom INTEGER DEFAULT 1060096,
+                        shoes INTEGER DEFAULT 1072288,
+                        is_stunned INTEGER DEFAULT 0,
+                        gender TEXT DEFAULT 'male',
+                        thread_id INTEGER DEFAULT 0,
+                        last_kkcoin_snapshot INTEGER DEFAULT 0,
+                        last_xp_snapshot INTEGER DEFAULT 0,
+                        last_level_snapshot INTEGER DEFAULT 1
+                    )
+                ''')
+                print("✅ 創建 users 表")
+            else:
+                # 表存在，檢查並添加缺少的欄位
+                cursor.execute("PRAGMA table_info(users)")
+                columns = [column[1] for column in cursor.fetchall()]
+                
+                new_columns = [
+                    ("face", "INTEGER DEFAULT 20000"),
+                    ("hair", "INTEGER DEFAULT 30000"), 
+                    ("skin", "INTEGER DEFAULT 12000"),
+                    ("top", "INTEGER DEFAULT 1040010"),
+                    ("bottom", "INTEGER DEFAULT 1060096"),
+                    ("shoes", "INTEGER DEFAULT 1072288"),
+                    ("is_stunned", "INTEGER DEFAULT 0"),
+                    ("gender", "TEXT DEFAULT 'male'"),
+                    ("thread_id", "INTEGER DEFAULT 0"),
+                    ("last_kkcoin_snapshot", "INTEGER DEFAULT 0"),
+                    ("last_xp_snapshot", "INTEGER DEFAULT 0"),
+                    ("last_level_snapshot", "INTEGER DEFAULT 1")
+                ]
+                
+                for column_name, column_def in new_columns:
+                    if column_name not in columns:
+                        try:
+                            cursor.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}")
+                            print(f"✅ 添加欄位: {column_name}")
+                        except Exception as e:
+                            print(f"添加欄位 {column_name} 時發生錯誤: {e}")
             
             conn.commit()
             conn.close()
@@ -61,6 +157,170 @@ class UserPanel(commands.Cog):
         except Exception as e:
             print(f"資料庫初始化錯誤: {e}")
 
+    async def cog_load(self):
+        """當 Cog 加載時啟動任務"""
+        await self.bot.wait_until_ready()
+        await self.create_threads_for_existing_members()
+        self.weekly_summary.start()
+        print("✅ 已為現有會員創建文章並開始每週統計任務")
+
+    def cog_unload(self):
+        """當 Cog 卸載時停止任務"""
+        self.weekly_summary.cancel()
+
+    async def create_threads_for_existing_members(self):
+        """為所有現有會員創建個人文章"""
+        try:
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                print(f"論壇頻道 {self.FORUM_CHANNEL_ID} 不存在或不是論壇頻道")
+                return
+
+            guild = forum_channel.guild
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 獲取所有已註冊但沒有文章的使用者
+            cursor.execute('SELECT user_id FROM users WHERE thread_id = 0')
+            users_without_threads = cursor.fetchall()
+            
+            created_count = 0
+            for (user_id,) in users_without_threads:
+                member = guild.get_member(user_id)
+                if member:  # 確保成員還在伺服器中
+                    thread = await self.get_or_create_user_thread(member)
+                    if thread:
+                        created_count += 1
+                        # 避免 API 限制，每創建一個文章後稍微等待
+                        await asyncio.sleep(1)
+            
+            conn.close()
+            print(f"✅ 為 {created_count} 位現有會員創建了個人文章")
+            
+        except Exception as e:
+            print(f"為現有會員創建文章時發生錯誤: {e}")
+
+    @tasks.loop(hours=168)  # 每週執行一次 (168小時 = 7天)
+    async def weekly_summary(self):
+        """每週發布統計總結"""
+        try:
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                return
+
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 獲取所有有文章的使用者
+            cursor.execute('SELECT user_id, thread_id, kkcoin, xp, level, last_kkcoin_snapshot, last_xp_snapshot, last_level_snapshot FROM users WHERE thread_id != 0')
+            users_data = cursor.fetchall()
+            
+            for user_id, thread_id, current_kkcoin, current_xp, current_level, last_kkcoin, last_xp, last_level in users_data:
+                try:
+                    thread = forum_channel.get_thread(thread_id)
+                    member = forum_channel.guild.get_member(user_id)
+                    
+                    if not thread or not member:
+                        continue
+                    
+                    # 計算本週變化
+                    kkcoin_change = (current_kkcoin or 0) - (last_kkcoin or 0)
+                    xp_change = (current_xp or 0) - (last_xp or 0)
+                    level_change = (current_level or 1) - (last_level or 1)
+                    
+                    # 只為有變化的使用者發布統計（活躍篩選）
+                    if kkcoin_change > 0 or xp_change > 0 or level_change > 0:
+                        # 生成 AI 評論
+                        ai_comment = await self.generate_ai_comment(member, kkcoin_change, xp_change, level_change)
+                        
+                        # 創建週報 embed
+                        embed = discord.Embed(
+                            title=f"📊 {member.display_name or member.name} 的本週統計",
+                            color=0x00ff88,
+                            timestamp=discord.utils.utcnow()
+                        )
+                        embed.set_thumbnail(url=member.display_avatar.url)
+                        
+                        # 添加統計欄位
+                        if kkcoin_change > 0:
+                            embed.add_field(name="💰 KKCoin 增長", value=f"+{kkcoin_change}", inline=True)
+                        if xp_change > 0:
+                            embed.add_field(name="✨ 經驗值 增長", value=f"+{xp_change}", inline=True)
+                        if level_change > 0:
+                            embed.add_field(name="⭐ 等級 提升", value=f"+{level_change}", inline=True)
+                        
+                        # 添加 AI 評論
+                        if ai_comment:
+                            embed.add_field(name="🤖 AI 評論", value=ai_comment, inline=False)
+                        
+                        embed.set_footer(text="🔄 每週自動更新統計")
+                        
+                        # 發送到使用者的個人文章
+                        await thread.send(embed=embed)
+                        print(f"✅ 已為 {member.name} 發布週報")
+                        
+                        # 稍微等待避免 API 限制
+                        await asyncio.sleep(0.5)
+                    
+                    # 更新快照數據
+                    cursor.execute('''
+                        UPDATE users 
+                        SET last_kkcoin_snapshot = ?, last_xp_snapshot = ?, last_level_snapshot = ?
+                        WHERE user_id = ?
+                    ''', (current_kkcoin, current_xp, current_level, user_id))
+                    
+                except Exception as e:
+                    print(f"處理使用者 {user_id} 週報時發生錯誤: {e}")
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"生成週報時發生錯誤: {e}")
+
+    async def generate_ai_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
+        """使用 AI 生成個性化評論"""
+        try:
+            if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
+                return None
+            
+            # 構建提示詞
+            prompt = f"""你是一個友善的遊戲助手，請為玩家 {member.display_name or member.name} 本週的表現寫一段鼓勵性的評論。
+
+本週數據：
+- KKCoin 增長: {kkcoin_change}
+- 經驗值 增長: {xp_change}
+- 等級 提升: {level_change}
+
+請用繁體中文回應，語氣要活潑友善，長度控制在50字以內，可以適當使用表情符號。
+"""
+            
+            headers = {
+                'Authorization': f'Bearer {self.AI_API_KEY}',
+                'Content-Type': 'application/json'
+            }
+            
+            data = {
+                'model': self.AI_API_MODEL,
+                'messages': [
+                    {'role': 'user', 'content': prompt}
+                ],
+                'max_tokens': 100,
+                'temperature': 0.8
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.AI_API_URL, headers=headers, json=data, timeout=10) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result['choices'][0]['message']['content'].strip()
+            
+        except Exception as e:
+            print(f"生成 AI 評論時發生錯誤: {e}")
+        
+        # 如果 AI 失敗，返回預設評論
+        return f"本週表現不錯！繼續保持這個節奏 💪"
+
     def get_user_data(self, user_id: int) -> Optional[dict]:
         try:
             conn = sqlite3.connect(self.db_path)
@@ -68,7 +328,7 @@ class UserPanel(commands.Cog):
             query = """
                 SELECT user_id, level, xp, kkcoin, title, hp, stamina, 
                 inventory, character_config, face, hair, skin, 
-                top, bottom, shoes, is_stunned, gender
+                top, bottom, shoes, is_stunned, gender, thread_id
                 FROM users 
                 WHERE user_id = ?
             """
@@ -92,8 +352,9 @@ class UserPanel(commands.Cog):
                     'top': row[12] or 1040010,
                     'bottom': row[13] or 1060096,
                     'shoes': row[14] or 1072288,
-                    'is_stunned': row[15] or 0,  # 修復：索引錯誤
-                    'gender': row[16] or 'male'   # 修復：索引錯誤
+                    'is_stunned': row[15] or 0,
+                    'gender': row[16] or 'male',
+                    'thread_id': row[17] or 0
                 }
             return None
         except Exception as e:
@@ -142,27 +403,6 @@ class UserPanel(commands.Cog):
         except Exception as e:
             print(f"獲取角色圖片錯誤: {e}")
         return None
-
-    async def test_api_request(self):
-        """測試 API 請求是否正常工作"""
-        test_data = {
-            'face': 20000,
-            'hair': 30000,
-            'skin': 12000,
-            'top': 1040010,
-            'bottom': 1060096,
-            'shoes': 1072288
-        }
-        
-        print("🧪 開始測試 MapleStory API...")
-        result = await self.fetch_character_image(test_data)
-        
-        if result:
-            print("✅ API 測試成功！")
-            return True
-        else:
-            print("❌ API 測試失敗！")
-            return False
 
     async def create_user_embed(self, user_data: dict, user: discord.User) -> discord.Embed:
         embed = discord.Embed(
@@ -213,19 +453,35 @@ class UserPanel(commands.Cog):
         
         return embed
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.channel.id != self.INTRODUCE_CHANNEL_ID:
-            return
-        if message.author.bot:
-            return
+    async def get_or_create_user_thread(self, user: discord.User) -> Optional[discord.Thread]:
+        """獲取或創建使用者的個人文章"""
         try:
-            user_data = self.get_user_data(message.author.id)
-            if not user_data:
-                print(f"沒有找到使用者 {message.author.id} 的資料")
-                return
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                print(f"論壇頻道 {self.FORUM_CHANNEL_ID} 不存在或不是論壇頻道")
+                return None
 
-            embed = await self.create_user_embed(user_data, message.author)
+            user_data = self.get_user_data(user.id)
+            if not user_data:
+                print(f"沒有找到使用者 {user.id} 的資料")
+                return None
+
+            # 檢查是否已有文章
+            thread_id = user_data.get('thread_id', 0)
+            if thread_id:
+                thread = forum_channel.get_thread(thread_id)
+                if thread:
+                    return thread
+                else:
+                    # 文章不存在，清除資料庫中的記錄
+                    conn = sqlite3.connect(self.db_path)
+                    cursor = conn.cursor()
+                    cursor.execute('UPDATE users SET thread_id = 0 WHERE user_id = ?', (user.id,))
+                    conn.commit()
+                    conn.close()
+
+            # 創建新文章
+            embed = await self.create_user_embed(user_data, user)
             character_image = await self.fetch_character_image(user_data)
             
             files = []
@@ -233,44 +489,86 @@ class UserPanel(commands.Cog):
                 files.append(character_image)
                 embed.set_image(url="attachment://character.gif")
 
-            existing_message_id = self.user_embed_messages.get(message.author.id)
-            if existing_message_id:
-                try:
-                    existing_message = await message.channel.fetch_message(existing_message_id)
-                    await existing_message.edit(embed=embed, attachments=files)
-                    print(f"更新了使用者 {message.author.name} 的面板資訊")
-                except discord.NotFound:
-                    sent_message = await message.reply(embed=embed, files=files)
-                    self.user_embed_messages[message.author.id] = sent_message.id
-                    print(f"發送了使用者 {message.author.name} 的新面板資訊")
-                except Exception as e:
-                    print(f"編輯訊息時發生錯誤: {e}")
-            else:
-                sent_message = await message.reply(embed=embed, files=files)
-                self.user_embed_messages[message.author.id] = sent_message.id
-                print(f"發送了使用者 {message.author.name} 的面板資訊")
+            # 創建文章標題
+            thread_name = f"📊 {user.display_name or user.name} 的個人面板"
+            
+            # 創建文章（包含初始訊息）
+            thread = await forum_channel.create_thread(
+                name=thread_name,
+                content=f"歡迎來到 {user.mention} 的個人面板！",
+                embed=embed,
+                files=files
+            )
 
-        except Exception as error:
-            print(f"處理使用者面板時發生錯誤: {error}")
+            # 更新資料庫中的 thread_id
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users 
+                SET thread_id = ? 
+                WHERE user_id = ?
+            ''', (thread.id, user.id))
+            conn.commit()
+            conn.close()
 
-    @app_commands.command(name="面板", description="查看自己或指定使用者的面板資訊")
-    @app_commands.describe(user="要查看的使用者 (可不填，預設自己)")
-    async def show_panel(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
-        target_user = user or interaction.user
-        user_data = self.get_user_data(target_user.id)
+            # 添加更新按鈕到文章中
+            view = UpdatePanelView(self, user.id)
+            await thread.send("使用下方按鈕來更新你的面板資訊：", view=view)
+
+            print(f"✅ 為使用者 {user.name} 創建了新的個人文章")
+            return thread
+
+        except Exception as e:
+            print(f"創建或獲取使用者文章時發生錯誤: {e}")
+            return None
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member):
+        """當成員離開伺服器時刪除其文章"""
+        try:
+            user_data = self.get_user_data(member.id)
+            if not user_data or not user_data.get('thread_id'):
+                return
+
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                return
+
+            thread_id = user_data['thread_id']
+            try:
+                thread = forum_channel.get_thread(thread_id)
+                if thread:
+                    await thread.delete()
+                    print(f"🗑️ 已刪除離開成員 {member.name} 的個人文章")
+            except discord.NotFound:
+                pass  # 文章已經不存在
+            except Exception as e:
+                print(f"刪除離開成員文章時發生錯誤: {e}")
+
+            # 清除資料庫中的 thread_id
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('UPDATE users SET thread_id = 0 WHERE user_id = ?', (member.id,))
+            conn.commit()
+            conn.close()
+
+        except Exception as e:
+            print(f"處理成員離開事件時發生錯誤: {e}")
+
+    @app_commands.command(name="面板", description="在論壇頻道中查看或創建你的個人面板")
+    async def show_panel(self, interaction: discord.Interaction):
+        user_data = self.get_user_data(interaction.user.id)
         if not user_data:
-            await interaction.response.send_message(f"沒有找到 {target_user.mention} 的資料！", ephemeral=True)
+            await interaction.response.send_message("❌ 沒有找到你的資料！請先註冊。", ephemeral=True)
             return
         
-        embed = await self.create_user_embed(user_data, target_user)
-        character_image = await self.fetch_character_image(user_data)
+        await interaction.response.defer(ephemeral=True)
         
-        files = []
-        if character_image:
-            files.append(character_image)
-            embed.set_image(url="attachment://character.gif")
-        
-        await interaction.response.send_message(embed=embed, files=files)
+        thread = await self.get_or_create_user_thread(interaction.user)
+        if thread:
+            await interaction.followup.send(f"✅ 你的個人面板：{thread.mention}", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ 創建或獲取個人面板時發生錯誤！", ephemeral=True)
 
     @app_commands.command(name="設定外觀", description="設定角色外觀")
     @app_commands.describe(
@@ -352,6 +650,67 @@ class UserPanel(commands.Cog):
         except Exception as e:
             print(f"設定外觀時發生錯誤: {e}")
             await interaction.response.send_message("❌ 設定外觀時發生錯誤！", ephemeral=True)
+
+    @app_commands.command(name="手動週報", description="管理員指令：手動觸發週報生成")
+    @app_commands.default_permissions(administrator=True)
+    async def manual_weekly_summary(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        
+        try:
+            await self.weekly_summary()
+            await interaction.followup.send("✅ 已完成週報生成！")
+        except Exception as e:
+            await interaction.followup.send(f"❌ 生成週報時發生錯誤：{str(e)}")
+
+    @app_commands.command(name="初始化文章", description="管理員指令：為所有現有會員創建個人文章")
+    @app_commands.default_permissions(administrator=True)
+    async def initialize_threads(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        
+        try:
+            await self.create_threads_for_existing_members()
+            await interaction.followup.send("✅ 已為所有現有會員創建個人文章！")
+        except Exception as e:
+            await interaction.followup.send(f"❌ 創建文章時發生錯誤：{str(e)}")
+
+    @app_commands.command(name="論壇統計", description="查看論壇文章統計")
+    @app_commands.default_permissions(administrator=True)
+    async def forum_stats(self, interaction: discord.Interaction):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 統計資料
+            cursor.execute('SELECT COUNT(*) FROM users')
+            total_users = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM users WHERE thread_id != 0')
+            users_with_threads = cursor.fetchone()[0]
+            
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if forum_channel and isinstance(forum_channel, discord.ForumChannel):
+                total_threads = len(forum_channel.threads)
+            else:
+                total_threads = 0
+            
+            conn.close()
+            
+            embed = discord.Embed(
+                title="📊 論壇統計資訊",
+                color=0x00ff88,
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(name="👥 總註冊使用者", value=f"{total_users} 人", inline=True)
+            embed.add_field(name="📝 擁有個人文章", value=f"{users_with_threads} 人", inline=True)
+            embed.add_field(name="🏷️ 論壇總文章數", value=f"{total_threads} 個", inline=True)
+            
+            if forum_channel:
+                embed.add_field(name="📍 論壇頻道", value=forum_channel.mention, inline=False)
+            
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 獲取統計時發生錯誤：{str(e)}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(UserPanel(bot))
