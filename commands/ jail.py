@@ -597,13 +597,16 @@ class Ai(commands.Cog):
         """監聽成員更新事件（角色變化）"""
         try:
             if MUTE_ROLE_ID == 0:
+                logger.warning("MUTE_ROLE_ID 未設置或為0，跳過角色檢查")
                 return
                 
             # 檢查是否被添加了禁言角色
             if MUTE_ROLE_ID in [role.id for role in after.roles] and MUTE_ROLE_ID not in [role.id for role in before.roles]:
+                logger.info(f"檢測到 {after.display_name} 被添加禁言角色，開始懲罰")
                 await self.start_punishment(after)
             # 檢查是否被移除了禁言角色  
             elif MUTE_ROLE_ID not in [role.id for role in after.roles] and MUTE_ROLE_ID in [role.id for role in before.roles]:
+                logger.info(f"檢測到 {after.display_name} 被移除禁言角色，停止懲罰")
                 await self.stop_punishment(after)
         except Exception as e:
             logger.error(f"成員更新事件錯誤: {e}")
@@ -612,23 +615,41 @@ class Ai(commands.Cog):
         """開始懲罰流程"""
         try:
             if member.id in self.punishment_tasks:
+                logger.info(f"{member.display_name} 的懲罰任務已存在，跳過")
+                return
+            
+            logger.info(f"開始為 {member.display_name} 設置懲罰")
+            
+            # 檢查配置
+            if PUNISHMENT_CHANNEL_ID == 0:
+                logger.error("PUNISHMENT_CHANNEL_ID 未設置，無法發送懲罰訊息")
                 return
                 
             # 先設置眩暈狀態
-            conn = sqlite3.connect('user_data.db')
-            cursor = conn.cursor()
-            cursor.execute("UPDATE users SET is_stunned = 1 WHERE user_id = ?", (member.id,))
-            conn.commit()
-            conn.close()
+            try:
+                conn = sqlite3.connect('user_data.db')
+                cursor = conn.cursor()
+                cursor.execute("UPDATE users SET is_stunned = 1 WHERE user_id = ?", (member.id,))
+                conn.commit()
+                conn.close()
+                logger.info(f"已設置 {member.display_name} 的眩暈狀態")
+            except Exception as e:
+                logger.error(f"設置眩暈狀態失敗: {e}")
             
             # 在禁閉室頻道發送管理員通知
-            if PUNISHMENT_CHANNEL_ID != 0:
-                punishment_channel = self.bot.get_channel(PUNISHMENT_CHANNEL_ID)
-                if punishment_channel:
+            punishment_channel = self.bot.get_channel(PUNISHMENT_CHANNEL_ID)
+            if punishment_channel:
+                try:
                     admin_embed = self.create_admin_notification_embed(member)
                     admin_message = await punishment_channel.send(embed=admin_embed)
                     self.admin_notification_messages[member.id] = admin_message.id
+                    logger.info(f"已發送管理員通知給 {member.display_name}")
+                except Exception as e:
+                    logger.error(f"發送管理員通知失敗: {e}")
+            else:
+                logger.error(f"找不到懲罰頻道 ID: {PUNISHMENT_CHANNEL_ID}")
             
+            # 創建懲罰任務
             self.punishment_tasks[member.id] = self.bot.loop.create_task(self.send_punishment(member))
             logger.info(f"開始懲罰任務：{member.display_name} ({member.id})")
             
@@ -644,11 +665,15 @@ class Ai(commands.Cog):
                 logger.info(f"停止懲罰任務：{member.display_name} ({member.id})")
             
             # 恢復正常狀態
-            conn = sqlite3.connect('user_data.db')
-            cursor = conn.cursor()
-            cursor.execute("UPDATE users SET is_stunned = 0 WHERE user_id = ?", (member.id,))
-            conn.commit()
-            conn.close()
+            try:
+                conn = sqlite3.connect('user_data.db')
+                cursor = conn.cursor()
+                cursor.execute("UPDATE users SET is_stunned = 0 WHERE user_id = ?", (member.id,))
+                conn.commit()
+                conn.close()
+                logger.info(f"已恢復 {member.display_name} 的正常狀態")
+            except Exception as e:
+                logger.error(f"恢復正常狀態失敗: {e}")
             
             if PUNISHMENT_CHANNEL_ID == 0:
                 return
@@ -952,65 +977,6 @@ class Ai(commands.Cog):
             logger.error(f"查看懲罰狀態錯誤: {e}")
             await ctx.send("查看懲罰狀態時發生錯誤。")
 
-    @commands.command(name="test_steal")
-    @commands.has_permissions(administrator=True)
-    async def test_steal(self, ctx, member: discord.Member):
-        """測試偷取功能（管理員測試指令）"""
-        try:
-            user_data = self.get_user_data(member.id)
-            if not user_data:
-                await ctx.send(f"找不到 {member.display_name} 的資料。")
-                return
-            
-            theft_info = self.steal_user_items(member.id)
-            if theft_info:
-                result_text = f"**偷取測試結果 - {member.display_name}:**\n"
-                result_text += f"💰 偷取金幣: {theft_info.get('stolen_coins', 0)} KKCoin\n"
-                result_text += f"🎒 偷取物品: {len(theft_info.get('stolen_items', []))} 個\n"
-                result_text += f"💸 剩餘金錢: {theft_info.get('remaining_coins', 0)} KKCoin\n"
-                
-                if theft_info.get('stolen_items', []):
-                    items_str = ', '.join(str(item) for item in theft_info['stolen_items'][:5])
-                    result_text += f"📦 被偷物品: {items_str}\n"
-                
-                await ctx.send(result_text)
-            else:
-                await ctx.send("偷取測試失敗。")
-                
-        except Exception as e:
-            logger.error(f"測試偷取功能錯誤: {e}")
-            await ctx.send(f"測試偷取功能時發生錯誤: {e}")
-
-    @commands.command(name="check_user_data")
-    @commands.has_permissions(administrator=True)
-    async def check_user_data(self, ctx, member: discord.Member):
-        """檢查使用者資料（管理員測試指令）"""
-        try:
-            user_data = self.get_user_data(member.id)
-            if user_data:
-                result_text = f"**{member.display_name} 的資料:**\n"
-                for key, value in user_data.items():
-                    if key == 'inventory':
-                        try:
-                            if isinstance(value, str):
-                                inventory = json.loads(value)
-                            else:
-                                inventory = value
-                            result_text += f"📦 {key}: {len(inventory) if isinstance(inventory, list) else 0} 個物品\n"
-                        except:
-                            result_text += f"📦 {key}: 解析失敗\n"
-                    else:
-                        result_text += f"📊 {key}: {value}\n"
-                
-                # 截斷過長的訊息
-                if len(result_text) > 1900:
-                    result_text = result_text[:1900] + "...\n(資料過長，已截斷)"
-                
-                await ctx.send(result_text)
-            else:
-                await ctx.send(f"找不到 {member.display_name} 的資料。")
-                
-        except Exception as e:
     @commands.command(name="stop_punishment")
     @commands.has_permissions(administrator=True)
     async def manual_stop_punishment(self, ctx, member: discord.Member):
