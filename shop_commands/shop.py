@@ -551,7 +551,14 @@ class ButtonInteraction(commands.Cog):
                 await interaction.response.defer(ephemeral=True)
             
             # 檢查用戶 KKcoin
-            kkcoin = await get_user_kkcoin(user_id)
+            try:
+                kkcoin = await get_user_kkcoin(user_id)
+            except Exception as e:
+                print(f"獲取 KKcoin 失敗: {e}")
+                traceback.print_exc()
+                await interaction.followup.send("❌ 無法獲取你的 KKcoin 餘額，請稍後再試。", ephemeral=True)
+                return
+            
             if kkcoin < bet_amount:
                 await interaction.followup.send(
                     f"❌ 你的 KKcoin 不足！\n💰 當前擁有：{kkcoin} KKcoin\n💸 需要：{bet_amount} KKcoin", 
@@ -560,13 +567,32 @@ class ButtonInteraction(commands.Cog):
                 return
             
             # 處理賭博邏輯
-            from shop_commands.merchant.gambling import process_slot_machine_bet
-            
-            result, net_change, msg = await process_slot_machine_bet(bet_amount)
+            try:
+                from shop_commands.merchant.gambling import process_slot_machine_bet
+                result, net_change, msg = await process_slot_machine_bet(bet_amount)
+            except ImportError as e:
+                print(f"導入 gambling 模組失敗: {e}")
+                traceback.print_exc()
+                await interaction.followup.send(
+                    "❌ 拉霸機模組載入失敗！\n請確認 `shop_commands/merchant/gambling.py` 文件存在。", 
+                    ephemeral=True
+                )
+                return
+            except Exception as e:
+                print(f"拉霸機邏輯處理失敗: {e}")
+                traceback.print_exc()
+                await interaction.followup.send("❌ 拉霸機運算失敗，請稍後再試。", ephemeral=True)
+                return
             
             # 更新用戶 KKcoin
-            await update_user_kkcoin(user_id, net_change)
-            new_kkcoin = await get_user_kkcoin(user_id)
+            try:
+                await update_user_kkcoin(user_id, net_change)
+                new_kkcoin = await get_user_kkcoin(user_id)
+            except Exception as e:
+                print(f"更新 KKcoin 失敗: {e}")
+                traceback.print_exc()
+                await interaction.followup.send("❌ 無法更新你的 KKcoin，請聯絡管理員。", ephemeral=True)
+                return
 
             # 構建結果顯示
             result_display = " ".join(result)
@@ -601,13 +627,19 @@ class ButtonInteraction(commands.Cog):
             embed.set_footer(text="想再試試手氣嗎？選擇下注金額繼續遊戲！")
             
             # 創建新的拉霸機 View（讓用戶可以繼續玩）
-            view = SlotMachineView(self)
-            
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            try:
+                view = SlotMachineView(self)
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            except Exception as e:
+                print(f"發送結果失敗: {e}")
+                traceback.print_exc()
+                # 即使 View 失敗，也要顯示結果
+                await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
+            print(f"handle_bet 主錯誤: {e}")
             traceback.print_exc()
-            error_msg = "❌ 拉霸機處理失敗，請稍後再試。"
+            error_msg = f"❌ 拉霸機處理失敗：{str(e)[:100]}"
             
             try:
                 if not interaction.response.is_done():
