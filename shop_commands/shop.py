@@ -7,7 +7,8 @@ import aiohttp
 import json
 import io
 import os
-import random  # 添加 random 模組
+import random
+import traceback  # 添加用於錯誤追蹤
 
 # 導入按鈕視圖
 from shop_commands.merchant.views import (
@@ -26,56 +27,92 @@ class ButtonInteraction(commands.Cog):
 
     async def cog_load(self):
         """在 cog 加載時添加持久化視圖"""
-        self.bot.add_view(PersistentView(self))
-        self.bot.add_view(ExploreView(self))
-        self.bot.add_view(RoleShopView(self))
-        self.bot.add_view(EquipmentShopView(self))
+        try:
+            self.bot.add_view(PersistentView(self))
+            self.bot.add_view(ExploreView(self))
+            self.bot.add_view(RoleShopView(self))
+            self.bot.add_view(EquipmentShopView(self))
+            print("✅ 持久化視圖已成功加載")
+        except Exception as e:
+            print(f"❌ 加載持久化視圖時出錯: {e}")
 
     @app_commands.command(name="shopping", description="開始神秘的黑市探索")
     async def start_interaction(self, interaction: discord.Interaction):
         """開啟黑市商人界面 - 僅管理員可用"""
-        if not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("只有管理員可以開啟黑市商人。", ephemeral=True)
-            return
-        
-        embed = discord.Embed(
-            title="你走進了這個神秘的角落", 
-            description="是否要一探究竟？進入後，將會面對更多隱藏的選擇和可能。"
-        )
-        await interaction.response.send_message(embed=embed, view=PersistentView(self))
+        try:
+            # 檢查權限
+            if not interaction.user.guild_permissions.manage_guild:
+                await interaction.response.send_message("只有管理員可以開啟黑市商人。", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="你走進了這個神秘的角落", 
+                description="是否要一探究竟？進入後，將會面對更多隱藏的選擇和可能。"
+            )
+            
+            # 確保視圖正確初始化
+            view = PersistentView(self)
+            await interaction.response.send_message(embed=embed, view=view)
+            
+        except Exception as e:
+            print(f"❌ start_interaction 錯誤: {e}")
+            traceback.print_exc()
+            # 如果已經回應過，使用 followup
+            if interaction.response.is_done():
+                await interaction.followup.send("❌ 發生錯誤，請稍後再試。", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ 發生錯誤，請稍後再試。", ephemeral=True)
 
     @app_commands.command(name="paperdoll", description="開啟紙娃娃試衣間")
     async def start_paperdoll(self, interaction: discord.Interaction):
         """開啟紙娃娃試衣間"""
-        await interaction.response.defer()
-        
-        # 獲取用戶數據
-        user_data = await self.get_user_data(interaction.user.id)
-        if not user_data:
-            await interaction.followup.send("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
-            return
-        
-        embed = discord.Embed(
-            title="👗 紙娃娃試衣間",
-            description=f"歡迎來到試衣間，{interaction.user.mention}！\n在這裡你可以預覽不同裝備的搭配效果。",
-            color=discord.Color.purple()
-        )
-        
-        # 生成當前角色預覽
-        character_image = await self.fetch_character_image(user_data)
-        files = []
-        if character_image:
-            files.append(character_image)
-            embed.set_image(url="attachment://character.png")
-        
-        view = PaperDollPreviewView(self, user_data)
-        await interaction.followup.send(embed=embed, view=view, files=files)
+        try:
+            await interaction.response.defer()
+            
+            # 獲取用戶數據
+            user_data = await self.get_user_data(interaction.user.id)
+            if not user_data:
+                await interaction.followup.send("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="👗 紙娃娃試衣間",
+                description=f"歡迎來到試衣間，{interaction.user.mention}！\n在這裡你可以預覽不同裝備的搭配效果。",
+                color=discord.Color.purple()
+            )
+            
+            # 生成當前角色預覽
+            character_image = await self.fetch_character_image(user_data)
+            files = []
+            if character_image:
+                files.append(character_image)
+                embed.set_image(url="attachment://character.png")
+            
+            view = PaperDollPreviewView(self, user_data)
+            await interaction.followup.send(embed=embed, view=view, files=files)
+            
+        except Exception as e:
+            print(f"❌ start_paperdoll 錯誤: {e}")
+            traceback.print_exc()
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 紙娃娃功能暫時無法使用，請稍後再試。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 紙娃娃功能暫時無法使用，請稍後再試。", ephemeral=True)
+            except:
+                pass
 
     async def get_user_data(self, user_id: int) -> dict:
         """獲取用戶數據 - 與 UserPanel 中的方法一致"""
         try:
             import sqlite3
             db_path = './user_data.db'
+            
+            # 檢查數據庫文件是否存在
+            if not os.path.exists(db_path):
+                print(f"❌ 數據庫文件不存在: {db_path}")
+                return None
+                
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             query = """
@@ -109,9 +146,12 @@ class ButtonInteraction(commands.Cog):
                     'is_stunned': row[15] or 0,
                     'gender': row[16] or 'male'
                 }
-            return None
+            else:
+                print(f"❌ 找不到用戶數據: {user_id}")
+                return None
         except Exception as e:
-            print(f"獲取用戶數據錯誤: {e}")
+            print(f"❌ 獲取用戶數據錯誤: {e}")
+            traceback.print_exc()
             return None
 
     async def fetch_character_image(self, user_data: dict) -> discord.File:
@@ -143,9 +183,14 @@ class ButtonInteraction(commands.Cog):
                         image_data = await response.read()
                         if len(image_data) > 100:
                             return discord.File(io.BytesIO(image_data), filename='character.png')
+                    else:
+                        print(f"❌ API 請求失敗，狀態碼: {response.status}")
 
+        except asyncio.TimeoutError:
+            print("❌ API 請求超時")
         except Exception as e:
-            print(f"獲取角色圖片錯誤: {e}")
+            print(f"❌ 獲取角色圖片錯誤: {e}")
+            traceback.print_exc()
         return None
 
     def get_category_name(self, category):
@@ -162,115 +207,163 @@ class ButtonInteraction(commands.Cog):
 
     async def get_merchant_response(self, user, action: str, interaction: discord.Interaction):
         """處理商人回應"""
-        await interaction.response.defer(ephemeral=True)
-        kkcoin = await get_user_kkcoin(user.id)
-        
-        if action == "購買身份":
-            embed = discord.Embed(
-                title="黑市商人的身份商品", 
-                description=f"你目前擁有: {kkcoin} KKcoin\n請選擇以下身份商品", 
-                color=discord.Color.gold()
-            )
-            await interaction.followup.edit_message(
-                message_id=interaction.message.id, 
-                embed=embed, 
-                view=RoleShopView(self)
-            )
-        elif action == "購買裝備":
-            embed = discord.Embed(
-                title="🛍️ 裝備商店 - 髮型", 
-                description=f"你目前擁有: {kkcoin} KKcoin\n選擇類別來瀏覽裝備！", 
-                color=discord.Color.blue()
-            )
-            await interaction.followup.edit_message(
-                message_id=interaction.message.id, 
-                embed=embed, 
-                view=EquipmentShopView(self)
-            )
+        try:
+            # 檢查交互是否已經回應過
+            if interaction.response.is_done():
+                print("❌ 交互已經被回應過了")
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            kkcoin = await get_user_kkcoin(user.id)
+            
+            if action == "購買身份":
+                embed = discord.Embed(
+                    title="黑市商人的身份商品", 
+                    description=f"你目前擁有: {kkcoin} KKcoin\n請選擇以下身份商品", 
+                    color=discord.Color.gold()
+                )
+                view = RoleShopView(self)
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                
+            elif action == "購買裝備":
+                embed = discord.Embed(
+                    title="🛍️ 裝備商店 - 髮型", 
+                    description=f"你目前擁有: {kkcoin} KKcoin\n選擇類別來瀏覽裝備！", 
+                    color=discord.Color.blue()
+                )
+                view = EquipmentShopView(self)
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                
+        except Exception as e:
+            print(f"❌ get_merchant_response 錯誤: {e}")
+            traceback.print_exc()
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 處理請求時發生錯誤。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 處理請求時發生錯誤。", ephemeral=True)
+            except:
+                pass
 
     async def handle_role_purchase(self, interaction, role_name, price, role_id, duration=None):
         """處理身份購買"""
-        await interaction.response.defer(ephemeral=True)
-        member = interaction.user
-        kkcoin = await get_user_kkcoin(member.id)
+        try:
+            if interaction.response.is_done():
+                print("❌ 交互已經被回應過了 (handle_role_purchase)")
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            member = interaction.user
+            kkcoin = await get_user_kkcoin(member.id)
 
-        if kkcoin < price:
-            await interaction.followup.send(f"你沒有足夠的 KKcoin 購買 {role_name}！", ephemeral=True)
-            return
+            if kkcoin < price:
+                await interaction.followup.send(f"你沒有足夠的 KKcoin 購買 {role_name}！", ephemeral=True)
+                return
 
-        role = interaction.guild.get_role(role_id)
-        if not role:
-            await interaction.followup.send("找不到對應角色，請聯絡管理員。", ephemeral=True)
-            return
+            role = interaction.guild.get_role(role_id)
+            if not role:
+                await interaction.followup.send("找不到對應角色，請聯絡管理員。", ephemeral=True)
+                return
 
-        await update_user_kkcoin(member.id, -price)
-        await member.add_roles(role)
-        
-        if duration:
-            self.bot.loop.create_task(self.remove_role_after_delay(member, role, duration))
+            await update_user_kkcoin(member.id, -price)
+            await member.add_roles(role)
+            
+            if duration:
+                self.bot.loop.create_task(self.remove_role_after_delay(member, role, duration))
 
-        kkcoin_new = await get_user_kkcoin(member.id)
-        embed = discord.Embed(
-            title="購買成功", 
-            description=f"你成功購買了 {role_name}，花費了 {price} KKcoin！\n剩餘：{kkcoin_new} KKcoin"
-        )
-        await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed)
+            kkcoin_new = await get_user_kkcoin(member.id)
+            embed = discord.Embed(
+                title="購買成功", 
+                description=f"你成功購買了 {role_name}，花費了 {price} KKcoin！\n剩餘：{kkcoin_new} KKcoin"
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ handle_role_purchase 錯誤: {e}")
+            traceback.print_exc()
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 購買處理失敗。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 購買處理失敗。", ephemeral=True)
+            except:
+                pass
 
     async def handle_equipment_purchase(self, interaction, item_name: str, item_data: dict, category: str):
         """處理裝備購買"""
-        await interaction.response.defer(ephemeral=True)
-        member = interaction.user
-        kkcoin = await get_user_kkcoin(member.id)
-        price = item_data["price"]
-        item_id = item_data["id"]
+        try:
+            if interaction.response.is_done():
+                print("❌ 交互已經被回應過了 (handle_equipment_purchase)")
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            member = interaction.user
+            kkcoin = await get_user_kkcoin(member.id)
+            price = item_data["price"]
+            item_id = item_data["id"]
 
-        if kkcoin < price:
-            await interaction.followup.send(f"你沒有足夠的 KKcoin 購買 {item_name}！需要 {price} KKcoin", ephemeral=True)
-            return
+            if kkcoin < price:
+                await interaction.followup.send(f"你沒有足夠的 KKcoin 購買 {item_name}！需要 {price} KKcoin", ephemeral=True)
+                return
 
-        await update_user_kkcoin(member.id, -price)
-        await update_user_equipment(member.id, category, item_id)
+            await update_user_kkcoin(member.id, -price)
+            await update_user_equipment(member.id, category, item_id)
 
-        kkcoin_new = await get_user_kkcoin(member.id)
-        embed = discord.Embed(
-            title="✅ 購買成功",
-            description=f"你成功購買了 **{item_name}**！\n💰 花費：{price} KKcoin\n💰 剩餘：{kkcoin_new} KKcoin\n🎭 裝備已自動穿戴！",
-            color=discord.Color.green()
-        )
-        
-        if "effects" in item_data:
-            effect_messages = []
-            for effect in item_data["effects"]:
-                effect_msg = await self.apply_equipment_effect(member.id, effect)
-                if effect_msg:
-                    effect_messages.append(effect_msg)
+            kkcoin_new = await get_user_kkcoin(member.id)
+            embed = discord.Embed(
+                title="✅ 購買成功",
+                description=f"你成功購買了 **{item_name}**！\n💰 花費：{price} KKcoin\n💰 剩餘：{kkcoin_new} KKcoin\n🎭 裝備已自動穿戴！",
+                color=discord.Color.green()
+            )
             
-            if effect_messages:
-                embed.add_field(name="✨ 特殊效果", value="\n".join(effect_messages), inline=False)
+            if "effects" in item_data:
+                effect_messages = []
+                for effect in item_data["effects"]:
+                    effect_msg = await self.apply_equipment_effect(member.id, effect)
+                    if effect_msg:
+                        effect_messages.append(effect_msg)
+                
+                if effect_messages:
+                    embed.add_field(name="✨ 特殊效果", value="\n".join(effect_messages), inline=False)
 
-        await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ handle_equipment_purchase 錯誤: {e}")
+            traceback.print_exc()
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 購買處理失敗。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 購買處理失敗。", ephemeral=True)
+            except:
+                pass
 
     async def handle_equipment_preview(self, interaction, item_name: str, item_data: dict, category: str):
         """處理裝備預覽試穿 - 合併預覽和試穿功能"""
-        await interaction.response.defer(ephemeral=True)
-        
-        # 獲取用戶當前裝備數據
-        user_data = await self.get_user_data(interaction.user.id)
-        if not user_data:
-            await interaction.followup.send("❌ 找不到你的角色數據！", ephemeral=True)
-            return
-        
-        # 顯示加載中的訊息
-        loading_embed = discord.Embed(
-            title="👗 正在生成試穿效果...",
-            description=f"請稍等，正在為 {interaction.user.mention} 生成 **{item_name}** 的試穿效果！\n\n⏳ 這將需要幾秒鐘時間...",
-            color=discord.Color.orange()
-        )
-        loading_embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        
-        await interaction.edit_original_response(embed=loading_embed)
-        
         try:
+            if interaction.response.is_done():
+                print("❌ 交互已經被回應過了 (handle_equipment_preview)")
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            
+            # 獲取用戶當前裝備數據
+            user_data = await self.get_user_data(interaction.user.id)
+            if not user_data:
+                await interaction.followup.send("❌ 找不到你的角色數據！", ephemeral=True)
+                return
+            
+            # 顯示加載中的訊息
+            loading_embed = discord.Embed(
+                title="👗 正在生成試穿效果...",
+                description=f"請稍等，正在為 {interaction.user.mention} 生成 **{item_name}** 的試穿效果！\n\n⏳ 這將需要幾秒鐘時間...",
+                color=discord.Color.orange()
+            )
+            loading_embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            
+            await interaction.followup.send(embed=loading_embed, ephemeral=True)
+            
             # 創建試穿數據 - 替換指定類別的裝備
             preview_data = user_data.copy()
             preview_data[category] = item_data.get("id", item_data.get("item_id", 0))
@@ -335,22 +428,16 @@ class ButtonInteraction(commands.Cog):
             can_afford = user_kkcoin >= item_data['price']
             view = EquipmentPreviewView(self, item_name, item_data, category, can_afford)
             
-            # 發送結果
-            if files:
-                await interaction.followup.send(
-                    embed=embed,
-                    view=view,
-                    files=files,
-                    ephemeral=True
-                )
-            else:
-                await interaction.edit_original_response(
-                    embed=embed,
-                    view=view
-                )
+            # 發送結果 - 編輯原始消息而不是發送新消息
+            await interaction.edit_original_response(
+                embed=embed,
+                view=view,
+                attachments=files if files else []
+            )
                             
         except Exception as e:
-            print(f"預覽功能錯誤: {e}")
+            print(f"❌ handle_equipment_preview 錯誤: {e}")
+            traceback.print_exc()
             
             # 錯誤處理
             error_embed = discord.Embed(
@@ -359,116 +446,140 @@ class ButtonInteraction(commands.Cog):
                 color=discord.Color.red()
             )
             
-            # 返回到商品詳情頁面
-            kkcoin = await get_user_kkcoin(interaction.user.id)
-            can_afford = kkcoin >= item_data['price']
-            
-            view = ItemDetailView(self, item_name, item_data, category, can_afford)
-            
-            await interaction.edit_original_response(
-                embed=error_embed,
-                view=view
-            )
+            try:
+                # 返回到商品詳情頁面
+                kkcoin = await get_user_kkcoin(interaction.user.id)
+                can_afford = kkcoin >= item_data['price']
+                
+                view = ItemDetailView(self, item_name, item_data, category, can_afford)
+                
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(embed=error_embed, view=view, ephemeral=True)
+                else:
+                    await interaction.edit_original_response(embed=error_embed, view=view)
+            except:
+                pass
 
     async def apply_equipment_effect(self, user_id: int, effect: dict) -> str:
         """應用裝備特殊效果"""
-        effect_type = effect.get("type")
-        value = effect.get("value", 0)
-        
-        if effect_type == "kkcoin_bonus":
-            await update_user_kkcoin(user_id, value)
-            return f"💰 獲得額外 {value} KKcoin！"
-        elif effect_type == "daily_bonus":
-            return f"📅 每日將額外獲得 {value} KKcoin！"
+        try:
+            effect_type = effect.get("type")
+            value = effect.get("value", 0)
+            
+            if effect_type == "kkcoin_bonus":
+                await update_user_kkcoin(user_id, value)
+                return f"💰 獲得額外 {value} KKcoin！"
+            elif effect_type == "daily_bonus":
+                return f"📅 每日將額外獲得 {value} KKcoin！"
+            
+        except Exception as e:
+            print(f"❌ apply_equipment_effect 錯誤: {e}")
         
         return None
 
     async def remove_role_after_delay(self, member, role, duration):
         """延遲移除角色"""
-        await asyncio.sleep(duration)
         try:
+            await asyncio.sleep(duration)
             if role in member.roles:
                 await member.remove_roles(role)
+                print(f"✅ 成功移除 {member.display_name} 的 {role.name} 角色")
         except Exception as e:
-            print(f"移除角色失敗: {e}")
+            print(f"❌ 移除角色失敗: {e}")
 
     async def handle_rob_action(self, interaction):
         """處理搶劫行為 - 新增30%成功機率，成功獲得100-200 KKcoin"""
-        await interaction.response.defer(ephemeral=True)
-        member = interaction.user
-        mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
-        member_role = interaction.guild.get_role(MEMBER_ROLE_ID)
+        try:
+            if interaction.response.is_done():
+                print("❌ 交互已經被回應過了 (handle_rob_action)")
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            member = interaction.user
+            mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
+            member_role = interaction.guild.get_role(MEMBER_ROLE_ID)
 
-        # 檢查角色是否存在
-        if not mute_role:
-            await interaction.followup.send("❌ 找不到禁閉角色，請聯絡管理員設定。", ephemeral=True)
-            return
+            # 檢查角色是否存在
+            if not mute_role:
+                await interaction.followup.send("❌ 找不到禁閉角色，請聯絡管理員設定。", ephemeral=True)
+                return
+                
+            if not member_role:
+                await interaction.followup.send("❌ 找不到會員角色，請聯絡管理員設定。", ephemeral=True)
+                return
+
+            # 檢查是否已經被禁閉
+            if mute_role in member.roles:
+                embed = discord.Embed(
+                    title="🚫 搶劫失敗", 
+                    description="你已經被禁閉，無法再次搶劫。",
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+
+            # 30% 成功機率
+            success_rate = 30
+            is_success = random.randint(1, 100) <= success_rate
             
-        if not member_role:
-            await interaction.followup.send("❌ 找不到會員角色，請聯絡管理員設定。", ephemeral=True)
-            return
+            if is_success:
+                # 搶劫成功：獲得 100-200 KKcoin
+                stolen_amount = random.randint(100, 200)
+                await update_user_kkcoin(member.id, stolen_amount)
+                new_kkcoin = await get_user_kkcoin(member.id)
+                
+                embed = discord.Embed(
+                    title="💰 搶劫成功！",
+                    description=f"你成功從黑市商人那裡搶到了 **{stolen_amount} KKcoin**！\n\n"
+                               f"黑市商人驚慌失措地看著你逃跑...\n"
+                               f"💰 目前擁有：{new_kkcoin} KKcoin",
+                    color=discord.Color.green()
+                )
+            else:
+                # 搶劫失敗：被抓到並禁閉
+                try:
+                    # 先移除會員角色，再添加禁閉角色
+                    if member_role in member.roles:
+                        await member.remove_roles(member_role, reason="搶劫失敗被禁閉")
+                    await member.add_roles(mute_role, reason="搶劫失敗被禁閉")
+                    
+                    embed = discord.Embed(
+                        title="🚫 搶劫失敗！",
+                        description="你被黑市商人反制，被丟進禁閉室！\n\n"
+                                   "黑市商人冷笑道：「想搶劫我？太嫩了！」\n"
+                                   "⏰ 將在5分鐘後釋放你。",
+                        color=discord.Color.red()
+                    )
+                    
+                    # 5分鐘後自動釋放
+                    self.bot.loop.create_task(self.release_from_mute(member, mute_role, member_role))
+                    
+                except discord.Forbidden:
+                    embed = discord.Embed(
+                        title="❌ 權限不足",
+                        description="機器人沒有足夠權限來管理角色，請聯絡管理員檢查權限設定。",
+                        color=discord.Color.red()
+                    )
+                except Exception as e:
+                    print(f"❌ 角色管理錯誤: {e}")
+                    embed = discord.Embed(
+                        title="❌ 系統錯誤",
+                        description="處理搶劫時發生錯誤，請稍後再試。",
+                        color=discord.Color.red()
+                    )
 
-        # 檢查是否已經被禁閉
-        if mute_role in member.roles:
-            embed = discord.Embed(
-                title="🚫 搶劫失敗", 
-                description="你已經被禁閉，無法再次搶劫。",
-                color=discord.Color.red()
-            )
-            await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed)
-            return
-
-        # 30% 成功機率
-        success_rate = 30
-        is_success = random.randint(1, 100) <= success_rate
-        
-        if is_success:
-            # 搶劫成功：獲得 100-200 KKcoin
-            stolen_amount = random.randint(100, 200)
-            await update_user_kkcoin(member.id, stolen_amount)
-            new_kkcoin = await get_user_kkcoin(member.id)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             
-            embed = discord.Embed(
-                title="💰 搶劫成功！",
-                description=f"你成功從黑市商人那裡搶到了 **{stolen_amount} KKcoin**！\n\n"
-                           f"黑市商人驚慌失措地看著你逃跑...\n"
-                           f"💰 目前擁有：{new_kkcoin} KKcoin",
-                color=discord.Color.green()
-            )
-        else:
-            # 搶劫失敗：被抓到並禁閉
+        except Exception as e:
+            print(f"❌ handle_rob_action 錯誤: {e}")
+            traceback.print_exc()
             try:
-                # 先移除會員角色，再添加禁閉角色
-                if member_role in member.roles:
-                    await member.remove_roles(member_role, reason="搶劫失敗被禁閉")
-                await member.add_roles(mute_role, reason="搶劫失敗被禁閉")
-                
-                embed = discord.Embed(
-                    title="🚫 搶劫失敗！",
-                    description="你被黑市商人反制，被丟進禁閉室！\n\n"
-                               "黑市商人冷笑道：「想搶劫我？太嫩了！」\n"
-                               "⏰ 將在5分鐘後釋放你。",
-                    color=discord.Color.red()
-                )
-                
-                # 5分鐘後自動釋放
-                self.bot.loop.create_task(self.release_from_mute(member, mute_role, member_role))
-                
-            except discord.Forbidden:
-                embed = discord.Embed(
-                    title="❌ 權限不足",
-                    description="機器人沒有足夠權限來管理角色，請聯絡管理員檢查權限設定。",
-                    color=discord.Color.red()
-                )
-            except Exception as e:
-                print(f"角色管理錯誤: {e}")
-                embed = discord.Embed(
-                    title="❌ 系統錯誤",
-                    description="處理搶劫時發生錯誤，請稍後再試。",
-                    color=discord.Color.red()
-                )
-
-        await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 搶劫處理失敗。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 搶劫處理失敗。", ephemeral=True)
+            except:
+                pass
 
     async def release_from_mute(self, member, mute_role, member_role):
         """5分鐘後自動釋放被禁閉的用戶"""
@@ -503,7 +614,7 @@ class ButtonInteraction(commands.Cog):
                 if member_role not in member.roles:
                     await member.add_roles(member_role, reason="禁閉期滿恢復會員身份")
                 
-                print(f"[禁閉系統] {member.display_name} 已成功釋放"
+                print(f"[禁閉系統] {member.display_name} 已成功釋放")
                       
             else:
                 print(f"[禁閉系統] {member.display_name} 已不在禁閉狀態，可能已被手動釋放")
@@ -516,26 +627,68 @@ class ButtonInteraction(commands.Cog):
 
     async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int):
         """處理賭博邏輯"""
-        from shop_commands.merchant.gambling import process_slot_machine_bet
-        
-        kkcoin = await get_user_kkcoin(user_id)
-        if kkcoin < bet_amount:
-            await interaction.followup.send(f"你的 KKcoin 不足，無法下注 {bet_amount}！", ephemeral=True)
-            return
+        try:
+            if interaction.response.is_done():
+                print("❌ 交互已經被回應過了 (handle_bet)")
+                return
+                
+            from shop_commands.merchant.gambling import process_slot_machine_bet
+            
+            kkcoin = await get_user_kkcoin(user_id)
+            if kkcoin < bet_amount:
+                await interaction.response.send_message(f"你的 KKcoin 不足，無法下注 {bet_amount}！", ephemeral=True)
+                return
 
-        result, net_change, msg = await process_slot_machine_bet(bet_amount)
-        await update_user_kkcoin(user_id, net_change)
-        new_kkcoin = await get_user_kkcoin(user_id)
+            await interaction.response.defer(ephemeral=True)
+            
+            result, net_change, msg = await process_slot_machine_bet(bet_amount)
+            await update_user_kkcoin(user_id, net_change)
+            new_kkcoin = await get_user_kkcoin(user_id)
 
-        result_display = "".join(result)
-        embed = discord.Embed(
-            title="🎰 拉霸結果", 
-            description=f"**{result_display}**\n\n{msg}\n剩餘 KKcoin: {new_kkcoin}", 
-            color=discord.Color.green() if net_change > 0 else discord.Color.red()
-        )
-        
-        await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed)
+            result_display = "".join(result)
+            embed = discord.Embed(
+                title="🎰 拉霸結果", 
+                description=f"**{result_display}**\n\n{msg}\n剩餘 KKcoin: {new_kkcoin}", 
+                color=discord.Color.green() if net_change > 0 else discord.Color.red()
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ handle_bet 錯誤: {e}")
+            traceback.print_exc()
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 賭博處理失敗。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 賭博處理失敗。", ephemeral=True)
+            except:
+                pass
+
+# 錯誤處理裝飾器
+def error_handler(func):
+    """為交互函數添加通用錯誤處理"""
+    async def wrapper(self, interaction, *args, **kwargs):
+        try:
+            return await func(self, interaction, *args, **kwargs)
+        except Exception as e:
+            print(f"❌ {func.__name__} 發生錯誤: {e}")
+            traceback.print_exc()
+            
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 發生未預期的錯誤，請稍後再試。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 發生未預期的錯誤，請稍後再試。", ephemeral=True)
+            except:
+                pass
+    return wrapper
 
 # 重要：添加 setup 函數
 async def setup(bot):
-    await bot.add_cog(ButtonInteraction(bot))
+    try:
+        await bot.add_cog(ButtonInteraction(bot))
+        print("✅ ButtonInteraction Cog 已成功加載")
+    except Exception as e:
+        print(f"❌ 加載 ButtonInteraction Cog 失敗: {e}")
+        traceback.print_exc()
