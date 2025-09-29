@@ -626,107 +626,44 @@ class ButtonInteraction(commands.Cog):
             print(f"[禁閉系統] 錯誤詳情 - Member: {member}, Mute Role: {mute_role}, Member Role: {member_role}")
 
     async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int):
-    """處理賭博邏輯 - 修復版"""
-    try:
-        # 先檢查 interaction 狀態
-        print(f"[拉霸] 開始處理下注 - 用戶: {user_id}, 金額: {bet_amount}")
-        print(f"[拉霸] interaction.response.is_done(): {interaction.response.is_done()}")
-        
-        # 導入賭博模組
-        from shop_commands.merchant.gambling import process_slot_machine_bet
-        
-        # 檢查餘額
-        kkcoin = await get_user_kkcoin(user_id)
-        print(f"[拉霸] 當前餘額: {kkcoin}")
-        
-        if kkcoin < bet_amount:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"❌ 你的 KKcoin 不足！\n💰 當前擁有: {kkcoin} KKcoin\n💸 需要: {bet_amount} KKcoin", 
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    f"❌ 你的 KKcoin 不足！\n💰 當前擁有: {kkcoin} KKcoin\n💸 需要: {bet_amount} KKcoin", 
-                    ephemeral=True
-                )
-            return
-
-        # Defer 交互（如果還沒回應）
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
-            print("[拉霸] 已 defer 交互")
-        
-        # 處理拉霸邏輯
-        print("[拉霸] 開始處理拉霸邏輯...")
-        result, net_change, msg = await process_slot_machine_bet(bet_amount)
-        print(f"[拉霸] 結果: {result}, 淨變化: {net_change}, 訊息: {msg}")
-        
-        # 更新用戶餘額
-        await update_user_kkcoin(user_id, net_change)
-        new_kkcoin = await get_user_kkcoin(user_id)
-        print(f"[拉霸] 更新後餘額: {new_kkcoin}")
-
-        # 構建結果顯示
-        result_display = "".join(result)
-        
-        # 根據結果選擇顏色
-        if net_change > 0:
-            color = discord.Color.green()
-            title = "🎉 拉霸中獎！"
-        elif net_change == 0:
-            color = discord.Color.gold()
-            title = "⭐ 拉霸結果"
-        else:
-            color = discord.Color.red()
-            title = "💸 拉霸結果"
-        
-        # 創建 embed
-        embed = discord.Embed(
-            title=title,
-            description=f"```\n{result_display}\n```\n\n{msg}",
-            color=color
-        )
-        
-        # 添加詳細資訊
-        embed.add_field(name="💰 下注金額", value=f"{bet_amount} KKcoin", inline=True)
-        embed.add_field(name="📊 淨變化", value=f"{net_change:+d} KKcoin", inline=True)
-        embed.add_field(name="💵 剩餘餘額", value=f"{new_kkcoin} KKcoin", inline=True)
-        
-        # 添加提示
-        if net_change > bet_amount:
-            embed.set_footer(text="🎊 恭喜大獲全勝！")
-        elif net_change > 0:
-            embed.set_footer(text="✨ 小賺一筆，繼續加油！")
-        elif net_change == 0:
-            embed.set_footer(text="😌 至少沒有虧損...")
-        else:
-            embed.set_footer(text="😢 運氣不佳，下次再來！")
-        
-        print("[拉霸] 準備發送結果 embed...")
-        
-        # 發送結果
-        await interaction.followup.send(embed=embed, ephemeral=True)
-        print("[拉霸] 結果 embed 已成功發送")
-        
-    except Exception as e:
-        print(f"❌ handle_bet 錯誤: {e}")
-        traceback.print_exc()
-        
-        # 錯誤處理
-        error_embed = discord.Embed(
-            title="❌ 拉霸機故障",
-            description="抱歉，拉霸機暫時出現故障，你的 KKcoin 並未被扣除。\n請稍後再試！",
-            color=discord.Color.red()
-        )
-        
+        """處理賭博邏輯"""
         try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            else:
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
-        except Exception as send_error:
-            print(f"❌ 發送錯誤訊息失敗: {send_error}")
+            if interaction.response.is_done():
+                print("❌ 交互已經被回應過了 (handle_bet)")
+                return
+                
+            from shop_commands.merchant.gambling import process_slot_machine_bet
+            
+            kkcoin = await get_user_kkcoin(user_id)
+            if kkcoin < bet_amount:
+                await interaction.response.send_message(f"你的 KKcoin 不足，無法下注 {bet_amount}！", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            
+            result, net_change, msg = await process_slot_machine_bet(bet_amount)
+            await update_user_kkcoin(user_id, net_change)
+            new_kkcoin = await get_user_kkcoin(user_id)
+
+            result_display = "".join(result)
+            embed = discord.Embed(
+                title="🎰 拉霸結果", 
+                description=f"**{result_display}**\n\n{msg}\n剩餘 KKcoin: {new_kkcoin}", 
+                color=discord.Color.green() if net_change > 0 else discord.Color.red()
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ handle_bet 錯誤: {e}")
+            traceback.print_exc()
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 賭博處理失敗。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 賭博處理失敗。", ephemeral=True)
+            except:
+                pass
 
 # 錯誤處理裝飾器
 def error_handler(func):
