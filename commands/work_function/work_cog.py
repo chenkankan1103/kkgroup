@@ -19,68 +19,68 @@ class CheckInButton(discord.ui.Button):
         super().__init__(label="打卡上班", style=discord.ButtonStyle.success, custom_id="work:checkin")
 
     async def callback(self, interaction: discord.Interaction):
-    try:
-        await interaction.response.defer(ephemeral=True)
-        
-        user = get_user(interaction.user.id)
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        last_work_date = user.get('last_work_date', None)
-
-        if last_work_date == today:
-            await interaction.followup.send("你今天已經打過卡囉！", ephemeral=True)
-            return
-
-        # 檢查介紹論壇
-        introduce_check_result = await self.check_introduction_async(interaction)
-        if not introduce_check_result:
-            return
-
-        # ⭐ 修改這裡：傳入 guild 參數
-        embeds_tuple, updated_user = await process_checkin(
-            interaction.user.id, 
-            interaction.user,
-            interaction.guild  # 新增這個參數
-        )
-        
-        if embeds_tuple and updated_user:
-            work_view = WorkActionView(updated_user)
-            
-            # 如果有多個 embed（升級情況）
-            if len(embeds_tuple) == 2:
-                # 先發送升級特效（公開）
-                await interaction.followup.send(
-                    content=f"## 🎊 {interaction.user.mention} 升級了！", 
-                    embed=embeds_tuple[0], 
-                    ephemeral=False
-                )
-                # 再發送工作記錄卡（私密）
-                await interaction.followup.send(
-                    embed=embeds_tuple[1], 
-                    view=work_view, 
-                    ephemeral=True
-                )
-            else:
-                # 一般打卡
-                await interaction.followup.send(
-                    embed=embeds_tuple[0], 
-                    view=work_view, 
-                    ephemeral=True
-                )
-        else:
-            await interaction.followup.send(
-                "❌ 處理打卡失敗，請稍後再試或聯絡管理員", 
-                ephemeral=True
-            )
-
-    except Exception as e:
-        traceback.print_exc()
         try:
-            await interaction.followup.send(
-                "❌ 發生錯誤，請稍後再試或聯絡管理員。", 
-                ephemeral=True
+            await interaction.response.defer(ephemeral=True)
+            
+            user = get_user(interaction.user.id)
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            last_work_date = user.get('last_work_date', None)
+
+            if last_work_date == today:
+                await interaction.followup.send("你今天已經打過卡囉！", ephemeral=True)
+                return
+
+            # 檢查介紹論壇
+            introduce_check_result = await self.check_introduction_async(interaction)
+            if not introduce_check_result:
+                return
+
+            # ⭐ 修改這裡：傳入 guild 參數
+            embeds_tuple, updated_user = await process_checkin(
+                interaction.user.id, 
+                interaction.user,
+                interaction.guild  # 新增這個參數
             )
-        except:
-            pass
+            
+            if embeds_tuple and updated_user:
+                work_view = WorkActionView(updated_user)
+                
+                # 如果有多個 embed（升級情況）
+                if len(embeds_tuple) == 2:
+                    # 先發送升級特效（公開）
+                    await interaction.followup.send(
+                        content=f"## 🎊 {interaction.user.mention} 升級了！", 
+                        embed=embeds_tuple[0], 
+                        ephemeral=False
+                    )
+                    # 再發送工作記錄卡（私密）
+                    await interaction.followup.send(
+                        embed=embeds_tuple[1], 
+                        view=work_view, 
+                        ephemeral=True
+                    )
+                else:
+                    # 一般打卡
+                    await interaction.followup.send(
+                        embed=embeds_tuple[0], 
+                        view=work_view, 
+                        ephemeral=True
+                    )
+            else:
+                await interaction.followup.send(
+                    "❌ 處理打卡失敗，請稍後再試或聯絡管理員", 
+                    ephemeral=True
+                )
+
+        except Exception as e:
+            traceback.print_exc()
+            try:
+                await interaction.followup.send(
+                    "❌ 發生錯誤，請稍後再試或聯絡管理員。", 
+                    ephemeral=True
+                )
+            except:
+                pass
 
     async def check_introduction_async(self, interaction):
         """異步檢查用戶是否在介紹論壇發過文章"""
@@ -455,56 +455,56 @@ class WorkCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
         
             if action == "deploy":
-    embed = discord.Embed(
-        title="👷‍♀️【KK園區值勤系統】",
-        description=(
-            "## 歡迎來到詐騙園區！\n"
-            "請選擇今日行動，開始你的詐騙生涯！\n\n"
-            "💰 **高薪誘惑**：日薪最低 200 KK幣起跳！\n"
-            "📈 **快速晉升**：持續出勤即可升職加薪！\n"
-            "🎁 **豐厚獎勵**：升級可獲得額外紅包！"
-        ),
-        color=0xf39c12
-    )
-    
-    # 等級薪資展示
-    salary_info = "\n".join([
-        f"**Lv.{lvl} {info['title']}**：{info['salary']:,} KK幣/天"
-        for lvl, info in LEVELS.items()
-    ])
-    
-    embed.add_field(
-        name="💼 職位薪資表",
-        value=salary_info,
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎯 每日行動",
-        value=(
-            "**打卡上班**：領取日薪 + 經驗值 + 維持連勤\n"
-            "**休息一天**：重置連勤（不影響等級）\n"
-            "**執行任務**：打卡後可執行額外行動賺更多！"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="⚠️ 重要提示",
-        value=(
-            "• 需先在<#1338443519383179304>發文才能打卡\n"
-            "• 升級需同時滿足**連續出勤**和**經驗值**\n"
-            "• 升級可獲得專屬身分組和升級紅包\n"
-            "• 等級越高，日薪和行動收益越高！"
-        ),
-        inline=False
-    )
-    
-    embed.set_footer(text="💡 提示：持續出勤是致富關鍵！")
-    embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1234567890.png")  # 可選：加入縮圖
-    
-    await interaction.followup.send(embed=embed, view=CheckInView())
-    await interaction.followup.send("✅ 值勤系統已部署成功！", ephemeral=True)
+                embed = discord.Embed(
+                    title="👷‍♀️【KK園區值勤系統】",
+                    description=(
+                        "## 歡迎來到詐騙園區！\n"
+                        "請選擇今日行動，開始你的詐騙生涯！\n\n"
+                        "💰 **高薪誘惑**：日薪最低 200 KK幣起跳！\n"
+                        "📈 **快速晉升**：持續出勤即可升職加薪！\n"
+                        "🎁 **豐厚獎勵**：升級可獲得額外紅包！"
+                    ),
+                    color=0xf39c12
+                )
+                
+                # 等級薪資展示
+                salary_info = "\n".join([
+                    f"**Lv.{lvl} {info['title']}**：{info['salary']:,} KK幣/天"
+                    for lvl, info in LEVELS.items()
+                ])
+                
+                embed.add_field(
+                    name="💼 職位薪資表",
+                    value=salary_info,
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="🎯 每日行動",
+                    value=(
+                        "**打卡上班**：領取日薪 + 經驗值 + 維持連勤\n"
+                        "**休息一天**：重置連勤（不影響等級）\n"
+                        "**執行任務**：打卡後可執行額外行動賺更多！"
+                    ),
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="⚠️ 重要提示",
+                    value=(
+                        "• 需先在<#1338443519383179304>發文才能打卡\n"
+                        "• 升級需同時滿足**連續出勤**和**經驗值**\n"
+                        "• 升級可獲得專屬身分組和升級紅包\n"
+                        "• 等級越高，日薪和行動收益越高！"
+                    ),
+                    inline=False
+                )
+                
+                embed.set_footer(text="💡 提示：持續出勤是致富關鍵！")
+                embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/1234567890.png")  # 可選：加入縮圖
+                
+                await interaction.followup.send(embed=embed, view=CheckInView())
+                await interaction.followup.send("✅ 值勤系統已部署成功！", ephemeral=True)
 
     async def test_user_introduction(self, interaction):
         """測試用戶是否在介紹論壇發過文章（管理員專用）"""
