@@ -544,11 +544,11 @@ class ButtonInteraction(commands.Cog):
             pass
 
     async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int, 
-                         history: list = None, original_message = None):
+                         history = None, original_message = None):
         """處理拉霸機下注 - 統一 Embed 版本"""
         try:
-            # 初始化歷史記錄
-            if history is None:
+            # 初始化歷史記錄 - 確保一定是列表
+            if history is None or not isinstance(history, list):
                 history = []
             
             # 檢查並處理 response
@@ -689,7 +689,8 @@ class ButtonInteraction(commands.Cog):
             
             # 發送或更新訊息
             try:
-                view = SlotMachineView(self, history=history)
+                # 確保傳入正確的 history 列表
+                view = SlotMachineView(self, history=history.copy() if isinstance(history, list) else [])
                 
                 if original_message:
                     # 更新原有訊息
