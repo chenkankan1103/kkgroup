@@ -301,16 +301,14 @@ class WorkCog(commands.Cog):
             
             # 檢查頻道是否已有工作系統訊息
             has_system = False
-            async for message in channel.history(limit=50):
+            async for message in channel.history(limit=100):
                 if message.author == self.bot.user and message.embeds:
                     for embed in message.embeds:
-                        if embed.title and "詐騙園區" in embed.title:
+                        if embed.title and ("KK園區值勤系統" in embed.title or "詐騙園區" in embed.title):
                             has_system = True
-                            print(f"✅ 工作系統已存在於頻道 #{channel.name}")
-                            break
-                if has_system:
-                    break
-            
+                            print(f"✅ 工作系統已存在於頻道 #{channel.name}，跳過部署")
+                            return  # 直接返回，不繼續執行
+                
             if not has_system:
                 embed = self.create_work_system_embed()
                 await channel.send(embed=embed, view=CheckInView())
