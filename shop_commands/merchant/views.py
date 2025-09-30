@@ -37,139 +37,170 @@ class SlotMachineView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.cog = cog
         self.history = history if history is not None else []
-        self.message = None
+        self.message = None  # 儲存原始訊息的引用
     
     @discord.ui.button(label="下注 10 KKcoin", style=discord.ButtonStyle.primary, custom_id="bet_10")
     async def bet_10(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.message = await self.cog.handle_bet(
+        # 第一次點擊時，使用 interaction.message 作為原始訊息
+        if self.message is None:
+            self.message = interaction.message
+        
+        result_message = await self.cog.handle_bet(
             interaction, 
             interaction.user.id, 
             10,
             history=self.history,
-            original_message=self.message or interaction.message
+            original_message=self.message
         )
+        
+        # 更新訊息引用（通常會是同一個訊息）
+        if result_message:
+            self.message = result_message
     
     @discord.ui.button(label="下注 50 KKcoin", style=discord.ButtonStyle.primary, custom_id="bet_50")
     async def bet_50(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.message = await self.cog.handle_bet(
+        if self.message is None:
+            self.message = interaction.message
+        
+        result_message = await self.cog.handle_bet(
             interaction, 
             interaction.user.id, 
             50,
             history=self.history,
-            original_message=self.message or interaction.message
+            original_message=self.message
         )
+        
+        if result_message:
+            self.message = result_message
     
     @discord.ui.button(label="下注 100 KKcoin", style=discord.ButtonStyle.success, custom_id="bet_100")
     async def bet_100(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.message = await self.cog.handle_bet(
+        if self.message is None:
+            self.message = interaction.message
+        
+        result_message = await self.cog.handle_bet(
             interaction, 
             interaction.user.id, 
             100,
             history=self.history,
-            original_message=self.message or interaction.message
+            original_message=self.message
         )
+        
+        if result_message:
+            self.message = result_message
     
     @discord.ui.button(label="下注 500 KKcoin", style=discord.ButtonStyle.danger, custom_id="bet_500")
     async def bet_500(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.message = await self.cog.handle_bet(
+        if self.message is None:
+            self.message = interaction.message
+        
+        result_message = await self.cog.handle_bet(
             interaction, 
             interaction.user.id, 
             500,
             history=self.history,
-            original_message=self.message or interaction.message
+            original_message=self.message
         )
+        
+        if result_message:
+            self.message = result_message
     
     @discord.ui.button(label="🛑 結束遊戲", style=discord.ButtonStyle.secondary, custom_id="end_game", row=1)
     async def end_game(self, interaction: discord.Interaction, button: discord.ui.Button):
         """結束遊戲並顯示最終統計"""
         if not self.history:
-            await interaction.response.send_message("還沒有進行任何遊戲！", ephemeral=True)
+            await interaction.response.send_message("❌ 還沒有進行任何遊戲！", ephemeral=True)
             return
         
-        # 計算最終統計
-        total_bet = sum(h['bet'] for h in self.history)
-        total_change = sum(h['change'] for h in self.history)
-        win_count = sum(1 for h in self.history if h['change'] > 0)
-        lose_count = sum(1 for h in self.history if h['change'] < 0)
-        draw_count = sum(1 for h in self.history if h['change'] == 0)
-        
-        # 判斷最終結果
-        if total_change > 0:
-            final_color = discord.Color.green()
-            final_title = "🎉 恭喜！本輪遊戲獲利！"
-        elif total_change < 0:
-            final_color = discord.Color.red()
-            final_title = "💸 本輪遊戲虧損..."
-        else:
-            final_color = discord.Color.gold()
-            final_title = "⚖️ 本輪遊戲不賺不賠"
-        
-        embed = discord.Embed(
-            title=final_title,
-            description=f"遊戲已結束，感謝 {interaction.user.mention} 的參與！",
-            color=final_color
-        )
-        
-        embed.add_field(
-            name="📊 最終統計",
-            value=(
-                f"🎮 總場數：{len(self.history)} 場\n"
-                f"✅ 勝場：{win_count} ({win_count/len(self.history)*100:.1f}%)\n"
-                f"❌ 敗場：{lose_count} ({lose_count/len(self.history)*100:.1f}%)\n"
-                f"⚪ 平手：{draw_count} ({draw_count/len(self.history)*100:.1f}%)"
-            ),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="💰 財務統計",
-            value=(
-                f"💸 總下注：{total_bet} KKcoin\n"
-                f"💰 淨損益：{'+' if total_change >= 0 else ''}{total_change} KKcoin\n"
-                f"📈 投資報酬率：{'+' if total_change >= 0 else ''}{(total_change/total_bet*100):.1f}%"
-            ),
-            inline=False
-        )
-        
-        # 顯示完整歷史
-        if len(self.history) > 0:
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # 計算最終統計
+            total_bet = sum(h['bet'] for h in self.history)
+            total_change = sum(h['change'] for h in self.history)
+            win_count = sum(1 for h in self.history if h['change'] > 0)
+            lose_count = sum(1 for h in self.history if h['change'] < 0)
+            draw_count = sum(1 for h in self.history if h['change'] == 0)
+            
+            # 計算勝率
+            win_rate = (win_count / len(self.history) * 100) if len(self.history) > 0 else 0
+            
+            # 判斷整體結果
+            if total_change > 0:
+                result_emoji = "🎉"
+                result_text = "恭喜！你是今天的贏家！"
+                color = discord.Color.green()
+            elif total_change < 0:
+                result_emoji = "😢"
+                result_text = "運氣欠佳，下次再接再厲！"
+                color = discord.Color.red()
+            else:
+                result_emoji = "🤝"
+                result_text = "不虧不賺，平手收場！"
+                color = discord.Color.gold()
+            
+            # 建立最終統計 Embed
+            final_embed = discord.Embed(
+                title=f"{result_emoji} 遊戲結束 - 最終結算",
+                description=result_text,
+                color=color
+            )
+            
+            # 歷史記錄
             history_text = []
             for i, h in enumerate(self.history, 1):
                 history_text.append(
-                    f"{i}. {h['emoji']} `[ {h['result']} ]` - {h['bet']} → {h['change_text']}"
+                    f"{i}. {h['emoji']} `[ {h['result']} ]` - 下注 {h['bet']} → {h['change_text']}"
                 )
             
-            # 如果記錄太多，分段顯示
-            if len(history_text) <= 10:
-                embed.add_field(
-                    name="📜 完整記錄",
-                    value="\n".join(history_text),
+            final_embed.add_field(
+                name=f"📜 完整記錄（共 {len(self.history)} 場）",
+                value="\n".join(history_text) if len(history_text) <= 10 else "\n".join(history_text[-10:]) + f"\n... (僅顯示最後 10 場)",
+                inline=False
+            )
+            
+            # 最終統計
+            final_embed.add_field(
+                name="📊 最終統計",
+                value=(
+                    f"🎮 總場數：{len(self.history)} 場\n"
+                    f"✅ 勝場：{win_count} ({win_rate:.1f}%)\n"
+                    f"❌ 敗場：{lose_count}\n"
+                    f"⚪ 平手：{draw_count}\n"
+                    f"💸 總下注：{total_bet} KKcoin\n"
+                    f"💰 **最終損益：{'+' if total_change >= 0 else ''}{total_change} KKcoin**"
+                ),
+                inline=False
+            )
+            
+            # 獲取當前餘額
+            try:
+                current_kkcoin = await self.cog.bot.get_cog('ButtonInteraction').get_user_kkcoin(interaction.user.id)
+                final_embed.add_field(
+                    name="💼 當前狀態",
+                    value=f"💰 餘額：{current_kkcoin} KKcoin",
                     inline=False
                 )
+            except:
+                pass
+            
+            final_embed.set_footer(text="感謝遊玩！祝你下次好運 🍀")
+            
+            # 更新原訊息並移除按鈕
+            if self.message:
+                try:
+                    await self.message.edit(embed=final_embed, view=None)
+                except:
+                    await interaction.followup.send(embed=final_embed, ephemeral=True)
             else:
-                # 分成兩欄顯示
-                mid = len(history_text) // 2
-                embed.add_field(
-                    name="📜 完整記錄（前半）",
-                    value="\n".join(history_text[:mid]),
-                    inline=True
-                )
-                embed.add_field(
-                    name="📜 完整記錄（後半）",
-                    value="\n".join(history_text[mid:]),
-                    inline=True
-                )
-        
-        embed.set_footer(text="期待下次再見！")
-        
-        # 禁用所有按鈕並更新訊息
-        for item in self.children:
-            item.disabled = True
-        
-        try:
-            await interaction.response.edit_message(embed=embed, view=self)
+                await interaction.followup.send(embed=final_embed, ephemeral=True)
+            
+            # 停止 View
+            self.stop()
+            
         except Exception as e:
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            traceback.print_exc()
+            await interaction.followup.send("❌ 結束遊戲時發生錯誤。", ephemeral=True)
     
     async def on_gamble(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
