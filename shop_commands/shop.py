@@ -543,41 +543,38 @@ class ButtonInteraction(commands.Cog):
         except Exception as e:
             pass
 
-    async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int):
-        """處理拉霸機下注 - 完整修復版"""
+    async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int, 
+                         history: list = None, original_message = None):
+        """處理拉霸機下注 - 統一 Embed 版本"""
         try:
-            # === 第一步：檢查並處理 response（最關鍵）===
+            # 初始化歷史記錄
+            if history is None:
+                history = []
+            
+            # 檢查並處理 response
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
             
-            print(f"[拉霸機] 用戶 {user_id} 下注 {bet_amount} KKcoin")
-            
-            # === 第二步：檢查用戶 KKcoin ===
+            # 檢查用戶 KKcoin
             try:
                 kkcoin = await get_user_kkcoin(user_id)
-                print(f"[拉霸機] 用戶當前餘額：{kkcoin} KKcoin")
             except Exception as e:
-                print(f"[拉霸機錯誤] 獲取 KKcoin 失敗: {e}")
                 traceback.print_exc()
                 await interaction.followup.send("❌ 無法獲取你的 KKcoin 餘額，請稍後再試。", ephemeral=True)
                 return
             
             if kkcoin < bet_amount:
-                print(f"[拉霸機] 餘額不足：需要 {bet_amount}，只有 {kkcoin}")
                 await interaction.followup.send(
                     f"❌ 你的 KKcoin 不足！\n💰 當前擁有：{kkcoin} KKcoin\n💸 需要：{bet_amount} KKcoin", 
                     ephemeral=True
                 )
                 return
             
-            # === 第三步：處理賭博邏輯 ===
+            # 處理賭博邏輯
             try:
                 from shop_commands.merchant.gambling import process_slot_machine_bet
-                print(f"[拉霸機] 開始執行 process_slot_machine_bet")
                 result, net_change, msg = await process_slot_machine_bet(bet_amount)
-                print(f"[拉霸機] 結果：{result}, 變化：{net_change}, 訊息：{msg}")
             except ImportError as e:
-                print(f"[拉霸機錯誤] 導入 gambling 模組失敗: {e}")
                 traceback.print_exc()
                 await interaction.followup.send(
                     "❌ 拉霸機模組載入失敗！\n請確認 `shop_commands/merchant/gambling.py` 文件存在。", 
@@ -585,7 +582,6 @@ class ButtonInteraction(commands.Cog):
                 )
                 return
             except KeyError as e:
-                print(f"[拉霸機錯誤] Config 配置缺失: {e}")
                 traceback.print_exc()
                 await interaction.followup.send(
                     f"❌ 拉霸機配置錯誤：缺少 {e}\n請檢查 config.py 中的 SLOT_MACHINE_CONFIG", 
@@ -593,73 +589,147 @@ class ButtonInteraction(commands.Cog):
                 )
                 return
             except Exception as e:
-                print(f"[拉霸機錯誤] 拉霸機邏輯處理失敗: {e}")
                 traceback.print_exc()
                 await interaction.followup.send(f"❌ 拉霸機運算失敗：{str(e)[:100]}", ephemeral=True)
                 return
             
-            # === 第四步：更新用戶 KKcoin ===
+            # 更新用戶 KKcoin
             try:
-                print(f"[拉霸機] 更新 KKcoin，變化：{net_change}")
                 await update_user_kkcoin(user_id, net_change)
                 new_kkcoin = await get_user_kkcoin(user_id)
-                print(f"[拉霸機] 更新後餘額：{new_kkcoin} KKcoin")
             except Exception as e:
-                print(f"[拉霸機錯誤] 更新 KKcoin 失敗: {e}")
                 traceback.print_exc()
                 await interaction.followup.send("❌ 無法更新你的 KKcoin，請聯絡管理員。", ephemeral=True)
                 return
 
-            # === 第五步：構建結果顯示 ===
+            # 記錄本次結果到歷史
             result_display = " ".join(result) if isinstance(result, list) else str(result)
             
-            # 根據結果選擇顏色和標題
+            # 判斷結果類型
             if net_change > 0:
-                color = discord.Color.green()
-                title = "🎰 恭喜中獎！"
+                result_emoji = "✅"
                 change_text = f"+{net_change}"
             elif net_change < 0:
-                color = discord.Color.red()
-                title = "🎰 很遺憾..."
+                result_emoji = "❌"
                 change_text = f"{net_change}"
             else:
-                color = discord.Color.gold()
-                title = "🎰 保本！"
+                result_emoji = "⚪"
                 change_text = "±0"
             
+            # 添加到歷史記錄（最多保留最近 5 次）
+            history.append({
+                'result': result_display,
+                'bet': bet_amount,
+                'change': net_change,
+                'change_text': change_text,
+                'emoji': result_emoji,
+                'msg': msg
+            })
+            
+            # 只保留最近 5 次記錄
+            if len(history) > 5:
+                history = history[-5:]
+            
+            # 計算統計數據
+            total_bet = sum(h['bet'] for h in history)
+            total_change = sum(h['change'] for h in history)
+            win_count = sum(1 for h in history if h['change'] > 0)
+            lose_count = sum(1 for h in history if h['change'] < 0)
+            draw_count = sum(1 for h in history if h['change'] == 0)
+            
+            # 構建統一的 Embed
+            # 根據本次結果選擇主色調
+            if net_change > 0:
+                color = discord.Color.green()
+            elif net_change < 0:
+                color = discord.Color.red()
+            else:
+                color = discord.Color.gold()
+            
             embed = discord.Embed(
-                title=title,
-                description=(
-                    f"**[ {result_display} ]**\n\n"
-                    f"{msg}\n\n"
-                    f"💸 下注金額：{bet_amount} KKcoin\n"
-                    f"💰 獲得/損失：{change_text} KKcoin\n"
-                    f"💼 剩餘：{new_kkcoin} KKcoin"
-                ),
+                title="🎰 拉霸機遊戲",
+                description=f"**最新結果：[ {result_display} ]**\n{msg}",
                 color=color
             )
             
-            # 添加繼續遊戲的提示
-            embed.set_footer(text="想再試試手氣嗎？選擇下注金額繼續遊戲！")
+            # 顯示歷史記錄
+            if len(history) > 0:
+                history_text = []
+                for i, h in enumerate(reversed(history), 1):
+                    history_text.append(
+                        f"{h['emoji']} `[ {h['result']} ]` - 下注 {h['bet']} → {h['change_text']}"
+                    )
+                
+                embed.add_field(
+                    name=f"📜 歷史記錄（最近 {len(history)} 場）",
+                    value="\n".join(history_text),
+                    inline=False
+                )
             
-            # === 第六步：發送結果 ===
+            # 統計數據
+            embed.add_field(
+                name="📊 本輪統計",
+                value=(
+                    f"🎮 總場數：{len(history)} 場\n"
+                    f"✅ 勝場：{win_count} | ❌ 敗場：{lose_count} | ⚪ 平手：{draw_count}\n"
+                    f"💸 總下注：{total_bet} KKcoin\n"
+                    f"💰 淨損益：{'+' if total_change >= 0 else ''}{total_change} KKcoin"
+                ),
+                inline=False
+            )
+            
+            # 當前狀態
+            embed.add_field(
+                name="💼 當前狀態",
+                value=f"💰 餘額：{new_kkcoin} KKcoin",
+                inline=False
+            )
+            
+            embed.set_footer(text="選擇下注金額繼續遊戲，或點擊「結束遊戲」查看最終結果")
+            
+            # 發送或更新訊息
             try:
-                print(f"[拉霸機] 嘗試創建 SlotMachineView")
-                view = SlotMachineView(self)
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-                print(f"[拉霸機] 成功發送結果（含 View）")
-            except NameError as e:
-                print(f"[拉霸機警告] SlotMachineView 未定義，發送無按鈕版本: {e}")
-                # SlotMachineView 未定義，發送無按鈕版本
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                view = SlotMachineView(self, history=history)
+                
+                if original_message:
+                    # 更新原有訊息
+                    try:
+                        await original_message.edit(embed=embed, view=view)
+                    except discord.NotFound:
+                        # 如果原訊息找不到，發送新的
+                        new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                        return new_msg
+                    except Exception as e:
+                        traceback.print_exc()
+                        # 如果更新失敗，發送新的
+                        new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                        return new_msg
+                    
+                    return original_message
+                else:
+                    # 第一次遊戲，發送新訊息
+                    new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                    return new_msg
+                    
+            except ImportError as e:
+                # 發送無按鈕版本
+                if original_message:
+                    await original_message.edit(embed=embed)
+                    return original_message
+                else:
+                    new_msg = await interaction.followup.send(embed=embed, ephemeral=True)
+                    return new_msg
             except Exception as e:
-                print(f"[拉霸機警告] 發送結果失敗: {e}")
                 traceback.print_exc()
                 # 即使 View 失敗，也要顯示結果
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                if original_message:
+                    await original_message.edit(embed=embed)
+                    return original_message
+                else:
+                    new_msg = await interaction.followup.send(embed=embed, ephemeral=True)
+                    return new_msg
             
         except Exception as e:
-            print(f"[拉霸機錯誤] handle_bet 主錯誤: {e}")
             traceback.print_exc()
             error_msg = f"❌ 拉霸機處理失敗：{str(e)[:100]}"
             
@@ -669,7 +739,9 @@ class ButtonInteraction(commands.Cog):
                 else:
                     await interaction.followup.send(error_msg, ephemeral=True)
             except Exception as send_error:
-                print(f"[拉霸機錯誤] 無法發送錯誤訊息: {send_error}")
+                pass
+            
+            return None
 
 async def setup(bot):
     try:
