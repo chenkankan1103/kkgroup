@@ -337,14 +337,15 @@ class WorkCog(commands.Cog):
         self.bot = bot
         init_db()
         self.work_channel_id = int(os.getenv("WORK_CHANNEL_ID", 0))
-        
-        # 註冊持久化 CheckInView
-        self.bot.add_view(CheckInView())
 
     async def cog_load(self):
         print("WorkCog 已載入")
         
-        # 註冊所有持久化 View
+        # 先註冊持久化 View，這很重要！
+        self.bot.add_view(CheckInView())
+        print("✅ CheckInView 已註冊（持久化）")
+        
+        # 註冊今日的工作 View
         await self.register_persistent_views()
         
         if self.work_channel_id:
@@ -353,14 +354,13 @@ class WorkCog(commands.Cog):
     async def register_persistent_views(self):
         """註冊並重建所有持久化 View"""
         try:
-            print("🔄 開始註冊持久化 View...")
+            print("🔄 開始重建今日工作 View...")
             
             # 從資料庫讀取所有有今日打卡紀錄的用戶
-            # 為他們重建 WorkActionView
             from commands.work_function.database import get_all_users
             
             today = datetime.utcnow().strftime("%Y-%m-%d")
-            all_users = get_all_users()  # 你需要實作這個函數
+            all_users = get_all_users()
             
             registered_count = 0
             for user in all_users:
@@ -374,7 +374,7 @@ class WorkCog(commands.Cog):
             print(f"✅ 已註冊 {registered_count} 個今日工作 View")
             
         except Exception as e:
-            print(f"⚠️ 註冊持久化 View 時發生錯誤: {e}")
+            print(f"⚠️ 註冊工作 View 時發生錯誤: {e}")
             traceback.print_exc()
 
     async def deploy_work_system(self):
