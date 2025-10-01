@@ -248,6 +248,18 @@ class WorkActionButton(discord.ui.Button):
                 await interaction.followup.send("你不能使用別人的工作按鈕！", ephemeral=True)
                 return
             
+            # 先取得當前用戶資料，檢查按鈕是否過期
+            current_user = get_user(interaction.user.id)
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            last_work_date = current_user.get('last_work_date', None)
+            
+            if last_work_date != today:
+                await interaction.followup.send(
+                    "⚠️ 此工作按鈕已過期，請重新打卡領取今日任務！", 
+                    ephemeral=True
+                )
+                return
+            
             embeds_tuple, updated_user, message = await process_work_action(
                 interaction.user.id, 
                 interaction.user, 
@@ -265,9 +277,19 @@ class WorkActionButton(discord.ui.Button):
                 view.update_button_states(actions_used)
                 
                 try:
-                    original_message = await interaction.original_response()
-                    await original_message.edit(embed=embeds_tuple[1], view=view)
-                except:
+                    # 嘗試編輯原始訊息
+                    original_message = interaction.message
+                    if original_message:
+                        await original_message.edit(embed=embeds_tuple[1], view=view)
+                except discord.NotFound:
+                    # 如果找不到原始訊息，發送新訊息
+                    await interaction.followup.send(
+                        embed=embeds_tuple[1],
+                        view=view,
+                        ephemeral=True
+                    )
+                except discord.HTTPException as e:
+                    print(f"編輯訊息失敗: {e}")
                     await interaction.followup.send(
                         embed=embeds_tuple[1],
                         view=view,
@@ -282,13 +304,21 @@ class WorkActionButton(discord.ui.Button):
                 else:
                     await interaction.followup.send("❌ 處理失敗", ephemeral=True)
                 
+        except discord.errors.NotFound:
+            await interaction.followup.send(
+                "❌ 交互已過期，請重新打卡以獲取新的工作按鈕", 
+                ephemeral=True
+            )
         except Exception as e:
             traceback.print_exc()
-            await interaction.followup.send("❌ 處理失敗", ephemeral=True)
+            try:
+                await interaction.followup.send("❌ 處理失敗，請稍後再試", ephemeral=True)
+            except:
+                pass
 
 class WorkActionView(discord.ui.View):
     def __init__(self, user):
-        super().__init__(timeout=3600)  # 延長至 1 小時
+        super().__init__(timeout=None)  # 設為持久化 View
         self.user_id = user['user_id']
         
         level = user['level']
