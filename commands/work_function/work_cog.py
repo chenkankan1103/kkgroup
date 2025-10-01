@@ -1,22 +1,4 @@
-# 傳入 guild 參數
-            embeds_tuple, updated_user, salary_multiplier, daily_story = await process_checkin(
-                interaction.user.id, 
-                interaction.user,
-                interaction.guild
-            )
-            
-            if embeds_tuple and updated_user:
-                work_view = WorkActionView(updated_user)
-                
-                # 計算實際薪資
-                base_salary = LEVELS[updated_user['level']]["salary"]
-                actual_salary = int(base_salary * salary_multiplier)
-                
-                # 打卡成功訊息 - 加入 AI 生成的情境
-                checkin_msg = (
-                    f"✅ **打卡成功！**\n\n"
-                    f"📖 *{daily_story}*\n\n"
-                    ffrom discord.ext import commands
+from discord.ext import commands
 import discord
 import os
 import json
@@ -379,12 +361,77 @@ class WorkCog(commands.Cog):
                 
             if not has_system:
                 embed = self.create_work_system_embed()
-            await interaction.channel.send(embed=embed, view=CheckInView())
-            await interaction.followup.send("✅ 工作系統已部署到此頻道！", ephemeral=True)
-            
+                await channel.send(embed=embed, view=CheckInView())
+                print(f"✅ 工作系統已自動部署到 #{channel.name}")
+        
         except Exception as e:
+            print(f"❌ 自動部署工作系統失敗: {e}")
             traceback.print_exc()
-            await interaction.followup.send(f"❌ 部署失敗: {str(e)}", ephemeral=True)
+
+    def create_work_system_embed(self):
+        """創建工作系統 embed"""
+        embed = discord.Embed(
+            title="👷‍♀️【KK園區值勤系統】",
+            description=(
+                "## 歡迎來到詐騙園區！\n"
+                "這裡是高風險高報酬的世界，選擇你的道路！\n\n"
+                "💰 **浮動薪資**：每日打卡薪資 0-100% 隨機，看你運氣！\n"
+                "📈 **快速晉升**：持續出勤 + 累積經驗即可升職！\n"
+                "🎲 **風險報酬**：行動有成功率，風險越高報酬越大！\n"
+                "🎁 **豐厚獎勵**：升級可獲得額外紅包和新行動！"
+            ),
+            color=0xf39c12
+        )
+        
+        # 等級薪資展示
+        salary_info = ""
+        for lvl, info in LEVELS.items():
+            weeks_needed = required_days_for_level(lvl) // 7 if lvl > 1 else 0
+            salary_info += (
+                f"**Lv.{lvl} {info['title']}**\n"
+                f"├ 薪資：0-{info['salary']:,} KK幣/天\n"
+                f"├ 升級：{'起始' if lvl == 1 else f'{weeks_needed}周 + {info['xp_required']:,} XP'}\n"
+                f"└ 行動：{len(info['actions'])} 種\n\n"
+            )
+        
+        embed.add_field(
+            name="💼 職位階級表",
+            value=salary_info,
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🎯 每日流程",
+            value=(
+                "**1️⃣ 打卡上班**\n"
+                "領取浮動日薪 (0-100%) + 經驗值\n"
+                "維持連續出勤紀錄\n\n"
+                "**2️⃣ 執行行動**\n"
+                "選擇工作任務，有成功/失敗機率\n"
+                "🟢低風險 🟡中風險 🔴高風險\n\n"
+                "**3️⃣ 累積升級**\n"
+                "達到連續出勤周數 + 經驗值即可升級"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⚠️ 重要規則",
+            value=(
+                "• 需先在介紹論壇發文才能開始工作\n"
+                "• 打卡薪資每天隨機 0-100%\n"
+                "• 行動有成功率，失敗不給錢但給少量經驗\n"
+                "• 升級需**連續出勤指定周數** + **累積經驗值**\n"
+                "• 選擇「休息」會重置連勤，影響升級進度\n"
+                "• 風險越高的行動，報酬越大但失敗率也高"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="💡 詐騙不是穩賺，但敢拼才會贏！")
+        embed.timestamp = datetime.utcnow()
+        
+        return embed
 
     @discord.app_commands.command(name="work_info", description="查看詳細的工作行動資訊")
     async def work_info(self, interaction: discord.Interaction):
@@ -538,90 +585,6 @@ class WorkCog(commands.Cog):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 查詢失敗: {str(e)}", ephemeral=True)
 
-async def setup(bot):
-    await bot.add_cog(WorkCog(bot))
-
-
-def required_days_for_level(level):
-    """輔助函數：返回升級所需天數"""
-    from commands.work_function.work_system import FIB_WEEKS
-    try:
-        weeks = FIB_WEEKS[level - 1] if level <= len(FIB_WEEKS) else 999
-        return weeks * 7
-    except:
-        return 999work_system_embed()
-                await channel.send(embed=embed, view=CheckInView())
-                print(f"✅ 工作系統已自動部署到 #{channel.name}")
-        
-        except Exception as e:
-            print(f"❌ 自動部署工作系統失敗: {e}")
-            traceback.print_exc()
-
-    def create_work_system_embed(self):
-        """創建工作系統 embed"""
-        embed = discord.Embed(
-            title="👷‍♀️【KK園區值勤系統】",
-            description=(
-                "## 歡迎來到詐騙園區！\n"
-                "這裡是高風險高報酬的世界，選擇你的道路！\n\n"
-                "💰 **浮動薪資**：每日打卡薪資 0-100% 隨機，看你運氣！\n"
-                "📈 **快速晉升**：持續出勤 + 累積經驗即可升職！\n"
-                "🎲 **風險報酬**：行動有成功率，風險越高報酬越大！\n"
-                "🎁 **豐厚獎勵**：升級可獲得額外紅包和新行動！"
-            ),
-            color=0xf39c12
-        )
-        
-        # 等級薪資展示
-        salary_info = ""
-        for lvl, info in LEVELS.items():
-            weeks_needed = required_days_for_level(lvl) // 7 if lvl > 1 else 0
-            salary_info += (
-                f"**Lv.{lvl} {info['title']}**\n"
-                f"├ 薪資：0-{info['salary']:,} KK幣/天\n"
-                f"├ 升級：{'起始' if lvl == 1 else f'{weeks_needed}周 + {info['xp_required']:,} XP'}\n"
-                f"└ 行動：{len(info['actions'])} 種\n\n"
-            )
-        
-        embed.add_field(
-            name="💼 職位階級表",
-            value=salary_info,
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🎯 每日流程",
-            value=(
-                "**1️⃣ 打卡上班**\n"
-                "領取浮動日薪 (0-100%) + 經驗值\n"
-                "維持連續出勤紀錄\n\n"
-                "**2️⃣ 執行行動**\n"
-                "選擇工作任務，有成功/失敗機率\n"
-                "🟢低風險 🟡中風險 🔴高風險\n\n"
-                "**3️⃣ 累積升級**\n"
-                "達到連續出勤周數 + 經驗值即可升級"
-            ),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="⚠️ 重要規則",
-            value=(
-                "• 需先在介紹論壇發文才能開始工作\n"
-                "• 打卡薪資每天隨機 0-100%\n"
-                "• 行動有成功率，失敗不給錢但給少量經驗\n"
-                "• 升級需**連續出勤指定周數** + **累積經驗值**\n"
-                "• 選擇「休息」會重置連勤，影響升級進度\n"
-                "• 風險越高的行動，報酬越大但失敗率也高"
-            ),
-            inline=False
-        )
-        
-        embed.set_footer(text="💡 詐騙不是穩賺，但敢拼才會贏！")
-        embed.timestamp = datetime.utcnow()
-        
-        return embed
-
     @commands.Cog.listener()
     async def on_ready(self):
         """當機器人準備就緒時同步命令"""
@@ -651,3 +614,15 @@ def required_days_for_level(level):
 
 async def setup(bot):
     await bot.add_cog(WorkCog(bot))
+
+
+def required_days_for_level(level):
+    """輔助函數：返回升級所需天數"""
+    from commands.work_function.work_system import FIB_WEEKS
+    try:
+        weeks = FIB_WEEKS[level - 1] if level <= len(FIB_WEEKS) else 999
+        return weeks * 7
+    except:
+        return 999
+
+# 你還需要確保 check_level_up 函數有正確導入
