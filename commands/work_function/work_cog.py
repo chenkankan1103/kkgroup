@@ -26,7 +26,6 @@ class CheckInButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         try:
-            # 立即回應，避免超時
             await interaction.response.defer(ephemeral=True)
             
             user = get_user(interaction.user.id)
@@ -37,20 +36,17 @@ class CheckInButton(discord.ui.Button):
                 await interaction.followup.send("你今天已經打過卡囉！", ephemeral=True)
                 return
 
-            # 使用 asyncio.wait_for 避免檢查介紹論壇時超時
             try:
                 introduce_check_result = await asyncio.wait_for(
                     self.check_introduction_async(interaction),
-                    timeout=8.0  # 8 秒超時
+                    timeout=8.0
                 )
                 if not introduce_check_result:
                     return
             except asyncio.TimeoutError:
                 print("⚠️ 介紹論壇檢查超時，跳過檢查")
-                # 超時就跳過檢查，允許打卡
                 pass
 
-            # 處理打卡
             embeds_tuple, updated_user, salary_multiplier, daily_story = await process_checkin(
                 interaction.user.id, 
                 interaction.user,
@@ -115,7 +111,6 @@ class CheckInButton(discord.ui.Button):
                 pass
 
     async def check_introduction_async(self, interaction):
-        """優化的介紹論壇檢查"""
         try:
             introduce_channel_id = int(os.getenv("INTRODUCE_CHANNEL_ID", 0))
             if not introduce_channel_id:
@@ -123,7 +118,7 @@ class CheckInButton(discord.ui.Button):
             
             introduce_channel = interaction.guild.get_channel(introduce_channel_id)
             if not introduce_channel:
-                return True  # 找不到頻道就跳過檢查
+                return True
 
             if not isinstance(introduce_channel, discord.ForumChannel):
                 return True
@@ -141,15 +136,13 @@ class CheckInButton(discord.ui.Button):
             return True
         except asyncio.TimeoutError:
             print("⚠️ 介紹論壇檢查超時")
-            return True  # 超時就允許通過
+            return True
         except Exception as e:
             print(f"⚠️ 檢查介紹論壇時發生錯誤：{e}")
             return True
 
     async def check_user_posts_optimized(self, forum_channel, user_id):
-        """更快速的發文檢查"""
         try:
-            # 只檢查活躍討論串
             active_threads_response = await asyncio.wait_for(
                 forum_channel.guild.active_threads(),
                 timeout=3.0
@@ -159,11 +152,9 @@ class CheckInButton(discord.ui.Button):
                 if thread.parent_id != forum_channel.id:
                     continue
                 
-                # 快速檢查創建者
                 if hasattr(thread, 'owner_id') and thread.owner_id == user_id:
                     return True
                 
-                # 檢查初始訊息
                 try:
                     starter_message = await asyncio.wait_for(
                         thread.fetch_message(thread.id),
@@ -178,7 +169,7 @@ class CheckInButton(discord.ui.Button):
                 
         except asyncio.TimeoutError:
             print("⚠️ 發文檢查超時")
-            return True  # 超時就允許通過
+            return True
         except Exception as e:
             print(f"⚠️ 檢查時發生錯誤：{e}")
             return True
@@ -248,7 +239,6 @@ class WorkActionButton(discord.ui.Button):
                 await interaction.followup.send("你不能使用別人的工作按鈕！", ephemeral=True)
                 return
             
-            # 先取得當前用戶資料，檢查按鈕是否過期
             current_user = get_user(interaction.user.id)
             today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = current_user.get('last_work_date', None)
@@ -272,17 +262,15 @@ class WorkActionButton(discord.ui.Button):
                     ephemeral=True
                 )
                 
+                # 創建新的 View 並更新按鈕狀態
                 view = WorkActionView(updated_user)
                 actions_used = json.loads(updated_user.get('actions_used', '{}'))
                 view.update_button_states(actions_used)
                 
                 try:
-                    # 嘗試編輯原始訊息
-                    original_message = interaction.message
-                    if original_message:
-                        await original_message.edit(embed=embeds_tuple[1], view=view)
+                    # 編輯原始訊息的 embed 和 view
+                    await interaction.message.edit(embed=embeds_tuple[1], view=view)
                 except discord.NotFound:
-                    # 如果找不到原始訊息，發送新訊息
                     await interaction.followup.send(
                         embed=embeds_tuple[1],
                         view=view,
@@ -318,7 +306,7 @@ class WorkActionButton(discord.ui.Button):
 
 class WorkActionView(discord.ui.View):
     def __init__(self, user):
-        super().__init__(timeout=None)  # 設為持久化 View
+        super().__init__(timeout=None)
         self.user_id = user['user_id']
         
         level = user['level']
@@ -348,13 +336,30 @@ class WorkCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         init_db()
-        self.bot.add_view(CheckInView())
         self.work_channel_id = int(os.getenv("WORK_CHANNEL_ID", 0))
+        
+        # 註冊持久化 View - 這是關鍵！
+        self.bot.add_view(CheckInView())
+        
+        # 為所有可能的用戶 ID 註冊 WorkActionView（動態註冊）
+        # 由於無法預知所有用戶，我們需要在機器人啟動時重建 View
 
     async def cog_load(self):
         print("WorkCog 已載入")
+        # 註冊所有持久化 View
+        await self.register_persistent_views()
+        
         if self.work_channel_id:
             await self.deploy_work_system()
+
+    async def register_persistent_views(self):
+        """註冊所有可能需要的持久化 View"""
+        try:
+            # CheckInView 已在 __init__ 中註冊
+            print("✅ 持久化 View 已註冊")
+        except Exception as e:
+            print(f"⚠️ 註冊持久化 View 失敗: {e}")
+            traceback.print_exc()
 
     async def deploy_work_system(self):
         """自動部署工作系統，會刪除舊的並部署新的"""
@@ -366,7 +371,6 @@ class WorkCog(commands.Cog):
                 print(f"❌ 找不到工作頻道 ID: {self.work_channel_id}")
                 return
             
-            # 刪除所有舊的工作系統訊息
             deleted_count = 0
             async for message in channel.history(limit=100):
                 if message.author == self.bot.user and message.embeds:
@@ -384,9 +388,8 @@ class WorkCog(commands.Cog):
             
             if deleted_count > 0:
                 print(f"✅ 已刪除 {deleted_count} 個舊的工作系統訊息")
-                await asyncio.sleep(1)  # 等待一秒確保刪除完成
+                await asyncio.sleep(1)
             
-            # 部署新的工作系統
             embed = self.create_work_system_embed()
             await channel.send(embed=embed, view=CheckInView())
             print(f"✅ 工作系統已部署到 #{channel.name}")
@@ -613,7 +616,6 @@ class WorkCog(commands.Cog):
             
             await interaction.response.defer(ephemeral=True)
             
-            # 先刪除舊的工作系統訊息
             deleted_count = 0
             async for message in interaction.channel.history(limit=100):
                 if message.author == self.bot.user and message.embeds:
@@ -626,7 +628,6 @@ class WorkCog(commands.Cog):
                                 pass
                             break
             
-            # 部署新的工作系統
             embed = self.create_work_system_embed()
             await interaction.channel.send(embed=embed, view=CheckInView())
             
