@@ -6,7 +6,13 @@ import traceback
 import asyncio
 from datetime import datetime
 from commands.work_function.database import init_db, get_user, update_user
-from commands.work_function.work_system import LEVELS, process_checkin, process_work_action
+from commands.work_function.work_system import (
+    LEVELS, 
+    process_checkin, 
+    process_work_action,
+    check_level_up,
+    required_days_for_level
+)
 
 class CheckInView(discord.ui.View):
     def __init__(self):
@@ -20,6 +26,7 @@ class CheckInButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         try:
+            # 立即回應，避免超時
             await interaction.response.defer(ephemeral=True)
             
             user = get_user(interaction.user.id)
@@ -30,12 +37,20 @@ class CheckInButton(discord.ui.Button):
                 await interaction.followup.send("你今天已經打過卡囉！", ephemeral=True)
                 return
 
-            # 檢查介紹論壇
-            introduce_check_result = await self.check_introduction_async(interaction)
-            if not introduce_check_result:
-                return
+            # 使用 asyncio.wait_for 避免檢查介紹論壇時超時
+            try:
+                introduce_check_result = await asyncio.wait_for(
+                    self.check_introduction_async(interaction),
+                    timeout=8.0  # 8 秒超時
+                )
+                if not introduce_check_result:
+                    return
+            except asyncio.TimeoutError:
+                print("⚠️ 介紹論壇檢查超時，跳過檢查")
+                # 超時就跳過檢查，允許打卡
+                pass
 
-            # 傳入 guild 參數
+            # 處理打卡
             embeds_tuple, updated_user, salary_multiplier, daily_story = await process_checkin(
                 interaction.user.id, 
                 interaction.user,
@@ -45,11 +60,9 @@ class CheckInButton(discord.ui.Button):
             if embeds_tuple and updated_user:
                 work_view = WorkActionView(updated_user)
                 
-                # 計算實際薪資
                 base_salary = LEVELS[updated_user['level']]["salary"]
                 actual_salary = int(base_salary * salary_multiplier)
                 
-                # 打卡成功訊息 - 加入 AI 生成的情境
                 checkin_msg = (
                     f"✅ **打卡成功！**\n\n"
                     f"📖 *{daily_story}*\n\n"
@@ -58,22 +71,18 @@ class CheckInButton(discord.ui.Button):
                     f"📊 業績評價：{'🔥大豐收！' if salary_multiplier > 0.8 else '✅普通' if salary_multiplier > 0.5 else '⚠️不太順利...'}"
                 )
                 
-                # 如果有多個 embed（升級情況）- 改為全部私密
                 if len(embeds_tuple) == 2:
-                    # 升級特效也改為私密
                     await interaction.followup.send(
                         content=f"## 🎊 恭喜升級！\n{checkin_msg}", 
                         embed=embeds_tuple[0], 
-                        ephemeral=True  # 改為 True
+                        ephemeral=True
                     )
-                    # 工作記錄卡（私密）
                     await interaction.followup.send(
                         embed=embeds_tuple[1], 
                         view=work_view, 
                         ephemeral=True
                     )
                 else:
-                    # 一般打卡
                     await interaction.followup.send(
                         content=checkin_msg,
                         embed=embeds_tuple[0], 
@@ -86,6 +95,15 @@ class CheckInButton(discord.ui.Button):
                     ephemeral=True
                 )
 
+        except asyncio.TimeoutError:
+            print("❌ 打卡處理超時")
+            try:
+                await interaction.followup.send(
+                    "❌ 處理超時，請稍後再試", 
+                    ephemeral=True
+                )
+            except:
+                pass
         except Exception as e:
             traceback.print_exc()
             try:
@@ -97,7 +115,7 @@ class CheckInButton(discord.ui.Button):
                 pass
 
     async def check_introduction_async(self, interaction):
-        """異步檢查用戶是否在介紹論壇發過文章"""
+        """優化的介紹論壇檢查"""
         try:
             introduce_channel_id = int(os.getenv("INTRODUCE_CHANNEL_ID", 0))
             if not introduce_channel_id:
@@ -105,8 +123,7 @@ class CheckInButton(discord.ui.Button):
             
             introduce_channel = interaction.guild.get_channel(introduce_channel_id)
             if not introduce_channel:
-                await interaction.followup.send("❌ 找不到介紹論壇頻道，請聯絡管理員", ephemeral=True)
-                return False
+                return True  # 找不到頻道就跳過檢查
 
             if not isinstance(introduce_channel, discord.ForumChannel):
                 return True
@@ -122,69 +139,46 @@ class CheckInButton(discord.ui.Button):
                 return False
             
             return True
+        except asyncio.TimeoutError:
+            print("⚠️ 介紹論壇檢查超時")
+            return True  # 超時就允許通過
         except Exception as e:
             print(f"⚠️ 檢查介紹論壇時發生錯誤：{e}")
             return True
 
     async def check_user_posts_optimized(self, forum_channel, user_id):
-        """優化的用戶發文檢查"""
+        """更快速的發文檢查"""
         try:
-            print(f"🔍 檢查用戶 {user_id} 的發文狀態")
+            # 只檢查活躍討論串
+            active_threads_response = await asyncio.wait_for(
+                forum_channel.guild.active_threads(),
+                timeout=3.0
+            )
             
-            all_threads = []
-            thread_ids_seen = set()
-            
-            # 方法1: 獲取活躍討論串
-            try:
-                active_threads_response = await forum_channel.guild.active_threads()
-                for thread in active_threads_response.threads:
-                    if thread.parent_id == forum_channel.id and thread.id not in thread_ids_seen:
-                        all_threads.append(thread)
-                        thread_ids_seen.add(thread.id)
-            except Exception as e:
-                print(f"⚠️ 獲取活躍討論串失敗: {e}")
-            
-            # 方法2: 獲取已封存的討論串
-            try:
-                async for thread in forum_channel.archived_threads(limit=50):
-                    if thread.id not in thread_ids_seen:
-                        all_threads.append(thread)
-                        thread_ids_seen.add(thread.id)
-            except Exception as e:
-                print(f"⚠️ 獲取已封存討論串失敗: {e}")
-            
-            if not all_threads:
-                print("⚠️ 沒有找到任何討論串")
-                return True
-            
-            # 批次檢查討論串
-            for thread in all_threads[:30]:  # 限制檢查數量
+            for thread in active_threads_response.threads:
+                if thread.parent_id != forum_channel.id:
+                    continue
+                
+                # 快速檢查創建者
+                if hasattr(thread, 'owner_id') and thread.owner_id == user_id:
+                    return True
+                
+                # 檢查初始訊息
                 try:
-                    # 檢查創建者
-                    if hasattr(thread, 'owner_id') and thread.owner_id == user_id:
-                        print(f"✅ 用戶是討論串創建者")
+                    starter_message = await asyncio.wait_for(
+                        thread.fetch_message(thread.id),
+                        timeout=1.0
+                    )
+                    if starter_message and starter_message.author.id == user_id:
                         return True
-                    
-                    # 檢查初始訊息
-                    try:
-                        starter_message = await thread.fetch_message(thread.id)
-                        if starter_message and starter_message.author.id == user_id:
-                            print(f"✅ 用戶是初始訊息作者")
-                            return True
-                    except:
-                        pass
-                    
-                    # 檢查訊息歷史
-                    async for message in thread.history(limit=20):
-                        if message.author.id == user_id:
-                            print(f"✅ 在討論串中找到用戶訊息")
-                            return True
-                except Exception as e:
+                except:
                     continue
             
-            print(f"❌ 未找到用戶發文")
             return False
                 
+        except asyncio.TimeoutError:
+            print("⚠️ 發文檢查超時")
+            return True  # 超時就允許通過
         except Exception as e:
             print(f"⚠️ 檢查時發生錯誤：{e}")
             return True
@@ -199,7 +193,6 @@ class RestButton(discord.ui.Button):
             
             user = get_user(interaction.user.id)
             today = datetime.utcnow().strftime("%Y-%m-%d")
-            
             last_work_date = user.get('last_work_date', None)
             
             if last_work_date == today:
@@ -226,13 +219,12 @@ class RestButton(discord.ui.Button):
 
 class WorkActionButton(discord.ui.Button):
     def __init__(self, label, custom_id, risk_level):
-        # 根據風險等級設定按鈕顏色
         if risk_level <= 0.2:
-            style = discord.ButtonStyle.success  # 綠色 - 低風險
+            style = discord.ButtonStyle.success
         elif risk_level <= 0.4:
-            style = discord.ButtonStyle.primary  # 藍色 - 中風險
+            style = discord.ButtonStyle.primary
         else:
-            style = discord.ButtonStyle.danger   # 紅色 - 高風險
+            style = discord.ButtonStyle.danger
             
         super().__init__(
             label=label,
@@ -245,6 +237,10 @@ class WorkActionButton(discord.ui.Button):
             await interaction.response.defer(ephemeral=True)
             
             parts = self.custom_id.split(':')
+            if len(parts) < 4:
+                await interaction.followup.send("❌ 按鈕 ID 格式錯誤", ephemeral=True)
+                return
+                
             action = parts[2]
             user_id = parts[3]
             
@@ -259,31 +255,25 @@ class WorkActionButton(discord.ui.Button):
             )
             
             if embeds_tuple and updated_user:
-                # 發送行動結果（私密）
                 await interaction.followup.send(
-                    embed=embeds_tuple[0],  # 行動結果 embed
+                    embed=embeds_tuple[0],
                     ephemeral=True
                 )
                 
-                # 更新工作記錄卡
                 view = WorkActionView(updated_user)
                 actions_used = json.loads(updated_user.get('actions_used', '{}'))
                 view.update_button_states(actions_used)
                 
-                # 編輯原訊息，更新工作記錄卡
                 try:
-                    # 獲取原始互動的訊息
                     original_message = await interaction.original_response()
                     await original_message.edit(embed=embeds_tuple[1], view=view)
                 except:
-                    # 如果無法編輯，就發送新的
                     await interaction.followup.send(
                         embed=embeds_tuple[1],
                         view=view,
                         ephemeral=True
                     )
                 
-                # 如果有升級提示，額外發送
                 if message:
                     await interaction.followup.send(message, ephemeral=True)
             else:
@@ -298,7 +288,7 @@ class WorkActionButton(discord.ui.Button):
 
 class WorkActionView(discord.ui.View):
     def __init__(self, user):
-        super().__init__(timeout=180)
+        super().__init__(timeout=3600)  # 延長至 1 小時
         self.user_id = user['user_id']
         
         level = user['level']
@@ -332,15 +322,11 @@ class WorkCog(commands.Cog):
         self.work_channel_id = int(os.getenv("WORK_CHANNEL_ID", 0))
 
     async def cog_load(self):
-        """當 Cog 載入時執行"""
         print("WorkCog 已載入")
-        
-        # 自動發送工作系統 embed 到指定頻道
         if self.work_channel_id:
             await self.deploy_work_system()
 
     async def deploy_work_system(self):
-        """自動部署工作系統到指定頻道"""
         try:
             await self.bot.wait_until_ready()
             
@@ -349,14 +335,13 @@ class WorkCog(commands.Cog):
                 print(f"❌ 找不到工作頻道 ID: {self.work_channel_id}")
                 return
             
-            # 檢查頻道是否已有工作系統訊息
             has_system = False
             async for message in channel.history(limit=100):
                 if message.author == self.bot.user and message.embeds:
                     for embed in message.embeds:
                         if embed.title and ("KK園區值勤系統" in embed.title or "詐騙園區" in embed.title):
                             has_system = True
-                            print(f"✅ 工作系統已存在於頻道 #{channel.name}，跳過部署")
+                            print(f"✅ 工作系統已存在於頻道 #{channel.name}")
                             return
                 
             if not has_system:
@@ -369,7 +354,6 @@ class WorkCog(commands.Cog):
             traceback.print_exc()
 
     def create_work_system_embed(self):
-        """創建工作系統 embed"""
         embed = discord.Embed(
             title="👷‍♀️【KK園區值勤系統】",
             description=(
@@ -383,7 +367,6 @@ class WorkCog(commands.Cog):
             color=0xf39c12
         )
         
-        # 等級薪資展示
         salary_info = ""
         for lvl, info in LEVELS.items():
             weeks_needed = required_days_for_level(lvl) // 7 if lvl > 1 else 0
@@ -435,7 +418,6 @@ class WorkCog(commands.Cog):
 
     @discord.app_commands.command(name="work_info", description="查看詳細的工作行動資訊")
     async def work_info(self, interaction: discord.Interaction):
-        """顯示所有職位的詳細行動資訊"""
         try:
             await interaction.response.defer(ephemeral=True)
             
@@ -491,7 +473,6 @@ class WorkCog(commands.Cog):
 
     @discord.app_commands.command(name="work_stats", description="查看你的工作統計資料")
     async def work_stats(self, interaction: discord.Interaction):
-        """顯示用戶的詳細工作統計"""
         try:
             await interaction.response.defer(ephemeral=True)
             
@@ -506,7 +487,6 @@ class WorkCog(commands.Cog):
             
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
             
-            # 基本資料
             embed.add_field(
                 name="👤 基本資料",
                 value=(
@@ -518,7 +498,6 @@ class WorkCog(commands.Cog):
                 inline=True
             )
             
-            # 財務狀況
             embed.add_field(
                 name="💰 財務狀況",
                 value=(
@@ -529,7 +508,6 @@ class WorkCog(commands.Cog):
                 inline=True
             )
             
-            # 升級進度
             if level < 5:
                 can_level_up, info = check_level_up(user)
                 
@@ -563,7 +541,6 @@ class WorkCog(commands.Cog):
                     inline=False
                 )
             
-            # 今日行動狀態
             actions_used = json.loads(user.get('actions_used', '{}'))
             if actions_used:
                 actions_status = "\n".join([f"✅ {action}" for action in actions_used.keys()])
@@ -585,18 +562,8 @@ class WorkCog(commands.Cog):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 查詢失敗: {str(e)}", ephemeral=True)
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """當機器人準備就緒時同步命令"""
-        try:
-            synced = await self.bot.tree.sync()
-            print(f"已同步 {len(synced)} 個斜杠命令")
-        except Exception as e:
-            print(f"同步命令失敗: {e}")
-
     @discord.app_commands.command(name="work_deploy", description="手動部署工作系統（管理員專用）")
     async def work_deploy(self, interaction: discord.Interaction):
-        """手動部署工作系統到當前頻道"""
         try:
             if not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message("❌ 需要管理員權限！", ephemeral=True)
@@ -614,15 +581,3 @@ class WorkCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(WorkCog(bot))
-
-
-def required_days_for_level(level):
-    """輔助函數：返回升級所需天數"""
-    from commands.work_function.work_system import FIB_WEEKS
-    try:
-        weeks = FIB_WEEKS[level - 1] if level <= len(FIB_WEEKS) else 999
-        return weeks * 7
-    except:
-        return 999
-
-# 你還需要確保 check_level_up 函數有正確導入
