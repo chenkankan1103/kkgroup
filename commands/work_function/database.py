@@ -59,6 +59,22 @@ def get_user(user_id):
         traceback.print_exc()
         return None
 
+def get_all_users():
+    """取得所有用戶資料（用於重建持久化 View）"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM users")
+        users = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        return users
+    except Exception as e:
+        traceback.print_exc()
+        return []
+
 def update_user(user_id, **kwargs):
     try:
         conn = sqlite3.connect(DB_PATH)
