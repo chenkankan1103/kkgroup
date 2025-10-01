@@ -338,14 +338,12 @@ class WorkCog(commands.Cog):
         init_db()
         self.work_channel_id = int(os.getenv("WORK_CHANNEL_ID", 0))
         
-        # 註冊持久化 View - 這是關鍵！
+        # 註冊持久化 CheckInView
         self.bot.add_view(CheckInView())
-        
-        # 為所有可能的用戶 ID 註冊 WorkActionView（動態註冊）
-        # 由於無法預知所有用戶，我們需要在機器人啟動時重建 View
 
     async def cog_load(self):
         print("WorkCog 已載入")
+        
         # 註冊所有持久化 View
         await self.register_persistent_views()
         
@@ -353,12 +351,30 @@ class WorkCog(commands.Cog):
             await self.deploy_work_system()
 
     async def register_persistent_views(self):
-        """註冊所有可能需要的持久化 View"""
+        """註冊並重建所有持久化 View"""
         try:
-            # CheckInView 已在 __init__ 中註冊
-            print("✅ 持久化 View 已註冊")
+            print("🔄 開始註冊持久化 View...")
+            
+            # 從資料庫讀取所有有今日打卡紀錄的用戶
+            # 為他們重建 WorkActionView
+            from commands.work_function.database import get_all_users
+            
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            all_users = get_all_users()  # 你需要實作這個函數
+            
+            registered_count = 0
+            for user in all_users:
+                last_work_date = user.get('last_work_date', None)
+                if last_work_date == today:
+                    # 為今天打過卡的用戶註冊 View
+                    view = WorkActionView(user)
+                    self.bot.add_view(view)
+                    registered_count += 1
+            
+            print(f"✅ 已註冊 {registered_count} 個今日工作 View")
+            
         except Exception as e:
-            print(f"⚠️ 註冊持久化 View 失敗: {e}")
+            print(f"⚠️ 註冊持久化 View 時發生錯誤: {e}")
             traceback.print_exc()
 
     async def deploy_work_system(self):
