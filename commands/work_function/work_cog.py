@@ -641,4 +641,13 @@ def required_days_for_level(level):
             
             await interaction.response.defer(ephemeral=True)
             
-            embed = self.create_
+            embed = self.create_work_system_embed()
+            await interaction.channel.send(embed=embed, view=CheckInView())
+            await interaction.followup.send("✅ 工作系統已部署到此頻道！", ephemeral=True)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 部署失敗: {str(e)}", ephemeral=True)
+
+async def setup(bot):
+    await bot.add_cog(WorkCog(bot))
