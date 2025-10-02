@@ -70,7 +70,7 @@ class UpdatePanelView(discord.ui.View):
             await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
 
 class UserPanel(commands.Cog):
-    def __init__(self, bot):
+def __init__(self, bot):
         self.bot = bot
         self.db_path = './user_data.db'
         self.FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID', '0'))
@@ -85,6 +85,9 @@ class UserPanel(commands.Cog):
         # 圖片緩存設定
         self.cache_dir = Path('./character_images')
         self.cache_dir.mkdir(exist_ok=True)
+        
+        # 註冊永久視圖
+        self.bot.add_view(UpdatePanelView(self, 0))
         
         self.init_database()
 
@@ -320,7 +323,7 @@ class UserPanel(commands.Cog):
                     if not thread or not member:
                         continue
                     
-                    # 計算週增長量
+# 計算週增長量
                     kkcoin_change = (current_kkcoin or 0) - (last_kkcoin or 0)
                     xp_change = (current_xp or 0) - (last_xp or 0)
                     level_change = (current_level or 1) - (last_level or 1)
@@ -351,13 +354,10 @@ class UserPanel(commands.Cog):
                         
                         embed.set_footer(text="🔄 每週日 23:59 自動統計")
                         
-                        # 創建更新按鈕
-                        view = UpdatePanelView(self, user_id)
-                        
                         # 發送統計訊息
-                        await thread.send(embed=embed, view=view)
+                        await thread.send(embed=embed)
                         await asyncio.sleep(1)
-                    
+                        
                     # 更新快照數據（無論是否有變化都要更新，避免累積誤差）
                     cursor.execute('''
                         UPDATE users 
