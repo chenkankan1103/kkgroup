@@ -12,6 +12,14 @@ DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1423172112763584573/4esY
 # ✅ 自動偵測目前是執行哪一隻 bot
 BOT_NAME = os.path.basename(sys.argv[0]).replace(".py", "").upper()
 
+# ✅ 根據不同 bot 設定不同的啟動延遲
+BOT_DELAYS = {
+    "BOT": 5,
+    "SHOPBOT": 8,
+    "UIBOT": 11
+}
+STARTUP_WAIT_TIME = BOT_DELAYS.get(BOT_NAME, 5 + random.uniform(0, 5))
+
 # ✅ 防洗頻機制
 MAX_QUEUE_SIZE = 50
 message_queue = deque(maxlen=MAX_QUEUE_SIZE)
@@ -22,10 +30,6 @@ startup_mode = True
 startup_buffer = []
 startup_timer = None
 
-# ✅ 給每支 bot 不同的啟動時間,避免衝突
-BASE_STARTUP_WAIT = 8
-STARTUP_WAIT_TIME = BASE_STARTUP_WAIT + random.uniform(0, 4)  # 8-12 秒隨機
-
 def send_with_retry(content, max_retries=3):
     """帶重試機制的發送函數"""
     for attempt in range(max_retries):
@@ -33,22 +37,24 @@ def send_with_retry(content, max_retries=3):
             response = requests.post(
                 DISCORD_WEBHOOK_URL,
                 json={"content": content},
-                timeout=10  # 增加 timeout
+                timeout=10
             )
             
             if response.status_code == 204:
                 return True
             elif response.status_code == 429:
                 # 被限流,等待後重試
-                retry_after = float(response.headers.get('Retry-After', 2))
+                retry_after = float(response.headers.get('Retry-After', 3))
                 print(f"[Discord] 被限流,等待 {retry_after} 秒...", file=sys.__stderr__)
                 time.sleep(retry_after)
             else:
                 print(f"[Discord] 發送失敗: {response.status_code}", file=sys.__stderr__)
-                time.sleep(1)
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # 指數退避: 1秒, 2秒, 4秒
         except Exception as e:
             print(f"[Discord Error] 嘗試 {attempt + 1}/{max_retries}: {e}", file=sys.__stderr__)
-            time.sleep(2)
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
     
     return False
 
@@ -64,14 +70,18 @@ def send_startup_messages():
             return
         
         # 組合所有啟動訊息
-        header = f"{'='*50}\n[{BOT_NAME}] 啟動訊息 (延遲 {STARTUP_WAIT_TIME:.1f}秒)\n{'='*50}"
+        header = f"{'='*50}\n[{BOT_NAME}] 啟動訊息\n{'='*50}"
         content = "\n".join(startup_buffer)
         footer = f"{'='*50}"
         
         full_message = f"```\n{header}\n{content}\n{footer}\n```"
         
-        # 複製 buffer 後清空
-        buffer_copy = startup_buffer.copy()
+        # 檢查長度,如果超過 1900 就截斷
+        if len(full_message) > 1900:
+            max_content_length = 1900 - len(header) - len(footer) - 20
+            content = content[:max_content_length] + "\n... (已截斷)"
+            full_message = f"```\n{header}\n{content}\n{footer}\n```"
+        
         startup_buffer.clear()
     
     # 在鎖外發送,避免阻塞
@@ -84,9 +94,9 @@ def send_startup_messages():
         print(f"[Discord] {BOT_NAME} 啟動訊息發送失敗", file=sys.__stderr__)
 
 def discord_sender():
-    """背景執行緒:每 2 秒批次發送訊息"""
+    """背景執行緒:每 3 秒批次發送訊息 (降低頻率避免限流)"""
     while True:
-        time.sleep(2)
+        time.sleep(3)  # 從 2 秒改成 3 秒
         
         # 啟動模式下不發送
         if startup_mode:
@@ -96,13 +106,13 @@ def discord_sender():
             if not message_queue:
                 continue
             
-            # 一次最多取訊息(限制在 1900 字元內)
+            # 一次最多取訊息(限制在 1800 字元內)
             batch = []
             total_length = 0
             
             while message_queue and len(batch) < 100:
                 msg = message_queue.popleft()
-                if total_length + len(msg) > 1900:
+                if total_length + len(msg) > 1800:
                     message_queue.appendleft(msg)
                     break
                 batch.append(msg)
@@ -120,7 +130,7 @@ def discord_sender():
 thread = threading.Thread(target=discord_sender, daemon=True)
 thread.start()
 
-# 啟動計時器(隨機延遲後發送啟動訊息)
+# 啟動計時器(不同 bot 不同延遲)
 print(f"[Discord] {BOT_NAME} 將在 {STARTUP_WAIT_TIME:.1f} 秒後發送啟動訊息", file=sys.__stderr__)
 startup_timer = threading.Timer(STARTUP_WAIT_TIME, send_startup_messages)
 startup_timer.start()
