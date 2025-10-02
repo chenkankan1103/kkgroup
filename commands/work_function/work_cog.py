@@ -677,8 +677,8 @@ class WorkCog(commands.Cog):
             
             # 檢查註冊的 View 數量
             try:
-                view_count = len([v for v in self.bot._connection._view_store._views.values() 
-                                  if isinstance(v, WorkActionView)])
+                all_views = list(self.bot._connection._view_store._views.values())
+                view_count = len([v for v in all_views if isinstance(v, WorkActionView)])
             except:
                 view_count = "無法取得"
             
