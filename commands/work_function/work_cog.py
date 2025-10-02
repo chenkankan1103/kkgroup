@@ -59,12 +59,20 @@ class CheckInButton(discord.ui.Button):
                 base_salary = LEVELS[updated_user['level']]["salary"]
                 actual_salary = int(base_salary * salary_multiplier)
                 
+                salary_percent = int(salary_multiplier * 100)
+                if salary_multiplier > 0.8:
+                    performance = "🔥大豐收！"
+                elif salary_multiplier > 0.5:
+                    performance = "✅普通"
+                else:
+                    performance = "⚠️不太順利..."
+                
                 checkin_msg = (
                     f"✅ **打卡成功！**\n\n"
                     f"📖 *{daily_story}*\n\n"
                     f"💰 今日薪資：{actual_salary:,} / {base_salary:,} KK幣 "
-                    f"({int(salary_multiplier*100)}%)\n"
-                    f"📊 業績評價：{'🔥大豐收！' if salary_multiplier > 0.8 else '✅普通' if salary_multiplier > 0.5 else '⚠️不太順利...'}"
+                    f"({salary_percent}%)\n"
+                    f"📊 業績評價：{performance}"
                 )
                 
                 if len(embeds_tuple) == 2:
@@ -466,11 +474,20 @@ class WorkCog(commands.Cog):
         salary_info = ""
         for lvl, info in LEVELS.items():
             weeks_needed = required_days_for_level(lvl) // 7 if lvl > 1 else 0
+            xp_req = info["xp_required"]
+            salary = info['salary']
+            actions_count = len(info['actions'])
+            
+            if lvl == 1:
+                upgrade_text = "起始"
+            else:
+                upgrade_text = f"{weeks_needed}周 + {xp_req:,} XP"
+            
             salary_info += (
                 f"**Lv.{lvl} {info['title']}**\n"
-                f"├ 薪資：0-{info['salary']:,} KK幣/天\n"
-                f"├ 升級：{'起始' if lvl == 1 else f'{weeks_needed}周 + {info[\"xp_required\"]:,} XP'}\n"
-                f"└ 行動：{len(info['actions'])} 種\n\n"
+                f"├ 薪資：0-{salary:,} KK幣/天\n"
+                f"├ 升級：{upgrade_text}\n"
+                f"└ 行動：{actions_count} 種\n\n"
             )
         
         embed.add_field(
@@ -530,13 +547,18 @@ class WorkCog(commands.Cog):
                 actions_text = ""
                 for action in info['actions']:
                     risk_emoji = "🟢" if action['risk'] <= 0.2 else "🟡" if action['risk'] <= 0.4 else "🔴"
+                    success_rate = int(action['success_rate'] * 100)
+                    base_reward = action['base_reward']
+                    xp = action['xp']
+                    xp_fail = xp // 4
+                    risk_percent = int(action['risk'] * 100)
                     
                     actions_text += (
                         f"{risk_emoji} **{action['name']}**\n"
-                        f"  ├ 成功率：{int(action['success_rate']*100)}%\n"
-                        f"  ├ 報酬：0-{action['base_reward']:,} KK幣\n"
-                        f"  ├ 經驗：{action['xp']} XP (失敗 {action['xp']//4} XP)\n"
-                        f"  └ 風險：{int(action['risk']*100)}%\n\n"
+                        f"  ├ 成功率：{success_rate}%\n"
+                        f"  ├ 報酬：0-{base_reward:,} KK幣\n"
+                        f"  ├ 經驗：{xp} XP (失敗 {xp_fail} XP)\n"
+                        f"  └ 風險：{risk_percent}%\n\n"
                     )
                 
                 level_marker = " 🔹 **你在這裡**" if lvl == current_level else ""
@@ -583,13 +605,19 @@ class WorkCog(commands.Cog):
             
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
             
+            xp_val = user.get('xp', 0)
+            streak_val = user.get('streak', 0)
+            kkcoin_val = user.get('kkcoin', 0)
+            salary_val = level_info['salary']
+            actions_count = len(level_info['actions'])
+            
             embed.add_field(
                 name="👤 基本資料",
                 value=(
                     f"**職稱**：{level_info['title']}\n"
                     f"**等級**：Lv.{level}\n"
-                    f"**經驗值**：{user.get('xp', 0):,} XP\n"
-                    f"**連續出勤**：{user.get('streak', 0)} 天"
+                    f"**經驗值**：{xp_val:,} XP\n"
+                    f"**連續出勤**：{streak_val} 天"
                 ),
                 inline=True
             )
@@ -597,9 +625,9 @@ class WorkCog(commands.Cog):
             embed.add_field(
                 name="💰 財務狀況",
                 value=(
-                    f"**帳戶餘額**：{user.get('kkcoin', 0):,} KK幣\n"
-                    f"**日薪範圍**：0-{level_info['salary']:,} KK幣\n"
-                    f"**可用行動**：{len(level_info['actions'])} 種"
+                    f"**帳戶餘額**：{kkcoin_val:,} KK幣\n"
+                    f"**日薪範圍**：0-{salary_val:,} KK幣\n"
+                    f"**可用行動**：{actions_count} 種"
                 ),
                 inline=True
             )
@@ -616,17 +644,23 @@ class WorkCog(commands.Cog):
                     days_status = "✅" if info['days_met'] else "⏳"
                     xp_status = "✅" if info['xp_met'] else "⏳"
                     
+                    current_days_text = f"{info['current_days']}/{info['required_days']} 天"
+                    weeks_text = f"({current_weeks}/{required_weeks} 周)"
+                    xp_text = f"{info['current_xp']:,}/{info['required_xp']:,} XP"
+                    days_met_text = "✅ 出勤達標！" if info['days_met'] else "⏳ 還需連續出勤"
+                    xp_met_text = "✅ 經驗達標！" if info['xp_met'] else "⏳ 還需累積經驗"
+                    
                     progress_text = (
-                        f"{days_status} **出勤進度**：{info['current_days']}/{info['required_days']} 天 "
-                        f"({current_weeks}/{required_weeks} 周)\n"
-                        f"{xp_status} **經驗進度**：{info['current_xp']:,}/{info['required_xp']:,} XP\n\n"
-                        f"{'✅ 出勤達標！' if info['days_met'] else '⏳ 還需連續出勤'}\n"
-                        f"{'✅ 經驗達標！' if info['xp_met'] else '⏳ 還需累積經驗'}"
+                        f"{days_status} **出勤進度**：{current_days_text} {weeks_text}\n"
+                        f"{xp_status} **經驗進度**：{xp_text}\n\n"
+                        f"{days_met_text}\n"
+                        f"{xp_met_text}"
                     )
                 
                 next_level_info = LEVELS[level + 1]
+                next_level_title = next_level_info['title']
                 embed.add_field(
-                    name=f"🔼 升級進度 → Lv.{level + 1} {next_level_info['title']}",
+                    name=f"🔼 升級進度 → Lv.{level + 1} {next_level_title}",
                     value=progress_text,
                     inline=False
                 )
@@ -639,7 +673,8 @@ class WorkCog(commands.Cog):
             
             actions_used = json.loads(user.get('actions_used', '{}'))
             if actions_used:
-                actions_status = "\n".join([f"✅ {action}" for action in actions_used.keys()])
+                actions_list = [f"✅ {action}" for action in actions_used.keys()]
+                actions_status = "\n".join(actions_list)
             else:
                 actions_status = "尚未執行任何行動"
             
@@ -678,7 +713,8 @@ class WorkCog(commands.Cog):
             # 檢查註冊的 View 數量
             try:
                 all_views = list(self.bot._connection._view_store._views.values())
-                view_count = len([v for v in all_views if isinstance(v, WorkActionView)])
+                work_action_views = [v for v in all_views if isinstance(v, WorkActionView)]
+                view_count = len(work_action_views)
             except:
                 view_count = "無法取得"
             
@@ -726,9 +762,10 @@ class WorkCog(commands.Cog):
                 warnings.append("• 今日無人打卡但昨日有多人，可能系統異常")
             
             if warnings:
+                warnings_text = "\n".join(warnings)
                 embed.add_field(
                     name="⚠️ 警告",
-                    value="\n".join(warnings),
+                    value=warnings_text,
                     inline=False
                 )
             
