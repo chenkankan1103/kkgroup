@@ -774,9 +774,10 @@ class WorkCog(commands.Cog):
             
             active_count = sum(1 for u in all_users if u.get('last_work_date') in [today, yesterday])
             
+            rebuild_stats = f"已為 **{active_count}** 位近期活躍用戶重建 View"
             embed.add_field(
                 name="📊 重建統計",
-                value=f"已為 **{active_count}** 位近期活躍用戶重建 View",
+                value=rebuild_stats,
                 inline=False
             )
             
