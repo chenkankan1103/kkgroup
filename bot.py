@@ -7,6 +7,7 @@ from discord import app_commands
 from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from logger import print
 
 # === 載入環境變數 ===
 load_dotenv()
