@@ -3,6 +3,7 @@ from discord.ext import commands
 import os
 from dotenv import load_dotenv
 import logging
+from logger import print
 
 # 載入環境變數
 load_dotenv()
