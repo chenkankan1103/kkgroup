@@ -39,8 +39,8 @@ def discord_print(*args, **kwargs):
     local_output = f"[{BOT_NAME}] {message}"
 
     # ✅ 本地輸出（給 journalctl 看）
-    print(local_output, **kwargs)
-    sys.stdout.flush()
+    sys.__stdout__.write(local_output + "\n")
+    sys.__stdout__.flush()
 
     # ✅ 放進 queue 準備給 Discord
     with lock:
