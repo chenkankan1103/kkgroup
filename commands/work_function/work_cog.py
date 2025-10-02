@@ -410,7 +410,7 @@ class WorkCog(commands.Cog):
             traceback.print_exc()
 
     async def deploy_work_system(self):
-        """部署工作系統到指定頻道"""
+        """部署工作系統到指定頻道（優先編輯現有訊息）"""
         try:
             channel = self.bot.get_channel(self.work_channel_id)
             if not channel:
@@ -421,32 +421,35 @@ class WorkCog(commands.Cog):
             
             print(f"✅ 找到工作頻道: #{channel.name} (ID: {channel.id})")
             
-            # 刪除舊的工作系統訊息
-            deleted_count = 0
-            async for message in channel.history(limit=100):
+            # 尋找現有的工作系統訊息
+            existing_message = None
+            async for message in channel.history(limit=50):
                 if message.author == self.bot.user and message.embeds:
                     for embed in message.embeds:
                         if embed.title and ("KK園區值勤系統" in embed.title or "詐騙園區" in embed.title):
-                            try:
-                                await message.delete()
-                                deleted_count += 1
-                                print(f"🗑️ 已刪除舊的工作系統訊息 (ID: {message.id})")
-                            except discord.Forbidden:
-                                print(f"⚠️ 沒有權限刪除訊息 (ID: {message.id})")
-                            except discord.HTTPException as e:
-                                print(f"⚠️ 刪除訊息時發生錯誤: {e}")
+                            existing_message = message
+                            print(f"📝 找到現有工作系統訊息 (ID: {message.id})")
                             break
+                    if existing_message:
+                        break
             
-            if deleted_count > 0:
-                print(f"✅ 已刪除 {deleted_count} 個舊的工作系統訊息")
-                await asyncio.sleep(1)
+            # 建立新的 embed 和 view
+            new_embed = self.create_work_system_embed()
+            new_view = CheckInView()
+            
+            if existing_message:
+                # 編輯現有訊息
+                try:
+                    await existing_message.edit(embed=new_embed, view=new_view)
+                    print(f"✅ 已更新現有工作系統訊息 (ID: {existing_message.id})")
+                except discord.HTTPException as e:
+                    print(f"⚠️ 編輯訊息失敗，將發送新訊息: {e}")
+                    sent_message = await channel.send(embed=new_embed, view=new_view)
+                    print(f"✅ 工作系統已部署到 #{channel.name} (訊息ID: {sent_message.id})")
             else:
-                print("ℹ️ 沒有找到舊的工作系統訊息")
-            
-            # 發送新的工作系統訊息
-            embed = self.create_work_system_embed()
-            sent_message = await channel.send(embed=embed, view=CheckInView())
-            print(f"✅ 工作系統已部署到 #{channel.name} (訊息ID: {sent_message.id})")
+                # 沒有現有訊息，發送新的
+                sent_message = await channel.send(embed=new_embed, view=new_view)
+                print(f"✅ 工作系統已部署到 #{channel.name} (訊息ID: {sent_message.id})")
         
         except discord.Forbidden:
             print(f"❌ 沒有權限在頻道 {self.work_channel_id} 發送訊息")
@@ -838,26 +841,42 @@ class WorkCog(commands.Cog):
             
             await interaction.response.defer(ephemeral=True)
             
-            deleted_count = 0
-            async for message in interaction.channel.history(limit=100):
+            # 尋找現有的工作系統訊息
+            existing_message = None
+            async for message in interaction.channel.history(limit=50):
                 if message.author == self.bot.user and message.embeds:
                     for embed in message.embeds:
                         if embed.title and ("KK園區值勤系統" in embed.title or "詐騙園區" in embed.title):
-                            try:
-                                await message.delete()
-                                deleted_count += 1
-                            except:
-                                pass
+                            existing_message = message
                             break
+                    if existing_message:
+                        break
             
-            embed = self.create_work_system_embed()
-            await interaction.channel.send(embed=embed, view=CheckInView())
+            new_embed = self.create_work_system_embed()
+            new_view = CheckInView()
             
-            result_msg = "✅ 工作系統已部署到此頻道！"
-            if deleted_count > 0:
-                result_msg += f"\n🗑️ 已刪除 {deleted_count} 個舊的工作系統訊息"
-            
-            await interaction.followup.send(result_msg, ephemeral=True)
+            if existing_message:
+                # 編輯現有訊息
+                try:
+                    await existing_message.edit(embed=new_embed, view=new_view)
+                    await interaction.followup.send(
+                        f"✅ 已更新現有的工作系統訊息！\n📝 訊息ID: {existing_message.id}",
+                        ephemeral=True
+                    )
+                except discord.HTTPException as e:
+                    # 編輯失敗，發送新的
+                    await interaction.channel.send(embed=new_embed, view=new_view)
+                    await interaction.followup.send(
+                        f"⚠️ 無法編輯現有訊息，已發送新的工作系統！\n錯誤: {str(e)}",
+                        ephemeral=True
+                    )
+            else:
+                # 沒有現有訊息，發送新的
+                sent_message = await interaction.channel.send(embed=new_embed, view=new_view)
+                await interaction.followup.send(
+                    f"✅ 工作系統已部署到此頻道！\n📝 訊息ID: {sent_message.id}",
+                    ephemeral=True
+                )
             
         except Exception as e:
             traceback.print_exc()
