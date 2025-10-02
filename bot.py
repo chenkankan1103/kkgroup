@@ -12,7 +12,7 @@ from logger import print
 # === 載入環境變數 ===
 load_dotenv()
 STAGE = os.getenv("STAGE", "dev")
-version = "0.15.0 (開發階段)" if STAGE != "prod" else "0.15.0"
+version = "1.0.0 (開發階段)" if STAGE != "prod" else "0.15.0"
 
 # === 系統路徑 ===
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'utils'))
