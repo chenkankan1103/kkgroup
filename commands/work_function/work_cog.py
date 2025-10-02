@@ -4,8 +4,8 @@ import os
 import json
 import traceback
 import asyncio
-from datetime import datetime
-from commands.work_function.database import init_db, get_user, update_user
+from datetime import datetime, timedelta
+from commands.work_function.database import init_db, get_user, update_user, get_all_users
 from commands.work_function.work_system import (
     LEVELS, 
     process_checkin, 
@@ -243,7 +243,10 @@ class WorkActionButton(discord.ui.Button):
             today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = current_user.get('last_work_date', None)
             
-            if last_work_date != today:
+            # 改善日期檢查：允許當天和前一天（處理跨日邊界）
+            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            if last_work_date not in [today, yesterday]:
                 await interaction.followup.send(
                     "⚠️ 此工作按鈕已過期，請重新打卡領取今日任務！", 
                     ephemeral=True
@@ -294,9 +297,12 @@ class WorkActionButton(discord.ui.Button):
                 
         except discord.errors.NotFound:
             await interaction.followup.send(
-                "❌ 交互已過期，請重新打卡以獲取新的工作按鈕", 
+                "❌ 交互已過期或機器人剛重啟，請重新打卡以獲取新的工作按鈕", 
                 ephemeral=True
             )
+        except discord.errors.InteractionResponded:
+            # 交互已被回應（可能是重複點擊），靜默處理
+            pass
         except Exception as e:
             traceback.print_exc()
             try:
@@ -341,37 +347,40 @@ class WorkCog(commands.Cog):
     async def cog_load(self):
         print("WorkCog 已載入")
         
-        # 先註冊持久化 View，這很重要！
+        # 先註冊持久化 CheckInView
         self.bot.add_view(CheckInView())
         print("✅ CheckInView 已註冊（持久化）")
         
-        # 註冊今日的工作 View
+        # 註冊工作 View（包含今天和昨天的，處理跨日邊界）
         await self.register_persistent_views()
         
         if self.work_channel_id:
             await self.deploy_work_system()
 
     async def register_persistent_views(self):
-        """註冊並重建所有持久化 View"""
+        """註冊並重建所有持久化 View - 改善版"""
         try:
-            print("🔄 開始重建今日工作 View...")
-            
-            # 從資料庫讀取所有有今日打卡紀錄的用戶
-            from commands.work_function.database import get_all_users
+            print("🔄 開始重建工作 View...")
             
             today = datetime.utcnow().strftime("%Y-%m-%d")
+            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            
             all_users = get_all_users()
             
             registered_count = 0
             for user in all_users:
                 last_work_date = user.get('last_work_date', None)
-                if last_work_date == today:
-                    # 為今天打過卡的用戶註冊 View
-                    view = WorkActionView(user)
-                    self.bot.add_view(view)
-                    registered_count += 1
+                # 為今天和昨天打卡的用戶都註冊（防止跨日問題）
+                if last_work_date in [today, yesterday]:
+                    try:
+                        view = WorkActionView(user)
+                        self.bot.add_view(view)
+                        registered_count += 1
+                    except Exception as e:
+                        print(f"⚠️ 註冊用戶 {user.get('user_id')} 的 View 失敗: {e}")
+                        continue
             
-            print(f"✅ 已註冊 {registered_count} 個今日工作 View")
+            print(f"✅ 已註冊 {registered_count} 個工作 View")
             
         except Exception as e:
             print(f"⚠️ 註冊工作 View 時發生錯誤: {e}")
@@ -622,6 +631,127 @@ class WorkCog(commands.Cog):
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 查詢失敗: {str(e)}", ephemeral=True)
+
+    @discord.app_commands.command(name="work_health", description="檢查工作系統狀態（管理員專用）")
+    async def work_health(self, interaction: discord.Interaction):
+        try:
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message("❌ 需要管理員權限！", ephemeral=True)
+                return
+            
+            await interaction.response.defer(ephemeral=True)
+            
+            # 檢查今天打卡的用戶數
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            all_users = get_all_users()
+            
+            active_today = sum(1 for u in all_users if u.get('last_work_date') == today)
+            active_yesterday = sum(1 for u in all_users if u.get('last_work_date') == yesterday)
+            
+            # 檢查註冊的 View 數量
+            try:
+                view_count = len([v for v in self.bot._connection._view_store._views.values() 
+                                  if isinstance(v, WorkActionView)])
+            except:
+                view_count = "無法取得"
+            
+            embed = discord.Embed(
+                title="🏥 工作系統健康檢查",
+                color=0x00ff00
+            )
+            
+            embed.add_field(
+                name="📊 用戶統計",
+                value=(
+                    f"**今日打卡**：{active_today} 人\n"
+                    f"**昨日打卡**：{active_yesterday} 人\n"
+                    f"**總用戶數**：{len(all_users)} 人"
+                ),
+                inline=True
+            )
+            
+            embed.add_field(
+                name="🔧 系統狀態",
+                value=(
+                    f"**註冊的 View**：{view_count}\n"
+                    f"**預期 View 數**：至少 {active_today}\n"
+                    f"**狀態**：{'✅ 正常' if isinstance(view_count, int) and view_count >= active_today else '⚠️ 可能需要重啟'}"
+                ),
+                inline=True
+            )
+            
+            # 檢查是否有異常
+            warnings = []
+            if isinstance(view_count, int) and view_count < active_today:
+                warnings.append("• View 數量少於今日打卡用戶，部分按鈕可能失效")
+            if active_today == 0 and active_yesterday > 5:
+                warnings.append("• 今日無人打卡但昨日有多人，可能系統異常")
+            
+            if warnings:
+                embed.add_field(
+                    name="⚠️ 警告",
+                    value="\n".join(warnings),
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="💡 建議",
+                value=(
+                    "• 如果 View 數量不足，使用 `/work_rebuild` 重建\n"
+                    "• 定期檢查此狀態以確保系統正常運作\n"
+                    "• 機器人重啟後會自動重建 View"
+                ),
+                inline=False
+            )
+            
+            embed.set_footer(text="系統健康檢查")
+            embed.timestamp = datetime.utcnow()
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 健康檢查失敗: {str(e)}", ephemeral=True)
+
+    @discord.app_commands.command(name="work_rebuild", description="重建工作系統 View（管理員專用，用於修復按鈕失效）")
+    async def work_rebuild(self, interaction: discord.Interaction):
+        try:
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message("❌ 需要管理員權限！", ephemeral=True)
+                return
+            
+            await interaction.response.defer(ephemeral=True)
+            
+            # 重新註冊所有 View
+            await self.register_persistent_views()
+            
+            embed = discord.Embed(
+                title="🔄 系統重建完成",
+                description="已重新註冊所有工作 View，用戶的按鈕應該恢復正常。",
+                color=0x00ff00
+            )
+            
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            all_users = get_all_users()
+            
+            active_count = sum(1 for u in all_users if u.get('last_work_date') in [today, yesterday])
+            
+            embed.add_field(
+                name="📊 重建統計",
+                value=f"已為 **{active_count}** 位近期活躍用戶重建 View",
+                inline=False
+            )
+            
+            embed.set_footer(text="如問題持續，請聯絡開發人員")
+            embed.timestamp = datetime.utcnow()
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 重建失敗: {str(e)}", ephemeral=True)
 
     @discord.app_commands.command(name="work_deploy", description="手動部署工作系統（管理員專用）")
     async def work_deploy(self, interaction: discord.Interaction):
