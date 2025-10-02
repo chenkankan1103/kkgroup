@@ -354,8 +354,23 @@ class WorkCog(commands.Cog):
         # 註冊工作 View（包含今天和昨天的，處理跨日邊界）
         await self.register_persistent_views()
         
+        # 使用 task 來確保機器人完全準備好後才部署
         if self.work_channel_id:
+            self.bot.loop.create_task(self.deploy_work_system_when_ready())
+    
+    async def deploy_work_system_when_ready(self):
+        """等待機器人完全準備好後再部署工作系統"""
+        try:
+            await self.bot.wait_until_ready()
+            print(f"🤖 機器人已準備好，開始檢查工作頻道 ID: {self.work_channel_id}")
+            
+            # 額外等待一下確保快取建立
+            await asyncio.sleep(2)
+            
             await self.deploy_work_system()
+        except Exception as e:
+            print(f"❌ deploy_work_system_when_ready 失敗: {e}")
+            traceback.print_exc()
 
     async def register_persistent_views(self):
         """註冊並重建所有持久化 View - 改善版"""
