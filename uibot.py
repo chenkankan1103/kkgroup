@@ -15,7 +15,7 @@ BOT_NAME = "UI"  # 可改為 "Shop" 或 "UI"
 BOT_PREFIX = "UI_DISCORD"  # 環境變數前綴: DISCORD / SHOP_DISCORD / UI_DISCORD
 COMMANDS_DIR = "uicommands"  # 指令目錄: commands / shop_commands / uicommands
 VERSION = "1.0.0"
-EMOJI = "�"  # Bot 代表符號: 🤖 / 🛒 / 🎨
+EMOJI = "🎨"  # Bot 代表符號: 🤖 / 🛒 / 🎨
 
 # ============================================================
 # 環境變數載入
