@@ -70,7 +70,7 @@ class UpdatePanelView(discord.ui.View):
             await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
 
 class UserPanel(commands.Cog):
-def __init__(self, bot):
+    def __init__(self, bot):
         self.bot = bot
         self.db_path = './user_data.db'
         self.FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID', '0'))
@@ -323,7 +323,7 @@ def __init__(self, bot):
                     if not thread or not member:
                         continue
                     
-# 計算週增長量
+                    # 計算週增長量
                     kkcoin_change = (current_kkcoin or 0) - (last_kkcoin or 0)
                     xp_change = (current_xp or 0) - (last_xp or 0)
                     level_change = (current_level or 1) - (last_level or 1)
@@ -357,7 +357,7 @@ def __init__(self, bot):
                         # 發送統計訊息
                         await thread.send(embed=embed)
                         await asyncio.sleep(1)
-                        
+                    
                     # 更新快照數據（無論是否有變化都要更新，避免累積誤差）
                     cursor.execute('''
                         UPDATE users 
