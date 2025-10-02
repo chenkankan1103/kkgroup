@@ -402,15 +402,18 @@ class WorkCog(commands.Cog):
             traceback.print_exc()
 
     async def deploy_work_system(self):
-        """自動部署工作系統，會刪除舊的並部署新的"""
+        """部署工作系統到指定頻道"""
         try:
-            await self.bot.wait_until_ready()
-            
             channel = self.bot.get_channel(self.work_channel_id)
             if not channel:
                 print(f"❌ 找不到工作頻道 ID: {self.work_channel_id}")
+                print(f"   請檢查環境變數 WORK_CHANNEL_ID 是否正確設定")
+                print(f"   當前值: {self.work_channel_id}")
                 return
             
+            print(f"✅ 找到工作頻道: #{channel.name} (ID: {channel.id})")
+            
+            # 刪除舊的工作系統訊息
             deleted_count = 0
             async for message in channel.history(limit=100):
                 if message.author == self.bot.user and message.embeds:
@@ -429,13 +432,21 @@ class WorkCog(commands.Cog):
             if deleted_count > 0:
                 print(f"✅ 已刪除 {deleted_count} 個舊的工作系統訊息")
                 await asyncio.sleep(1)
+            else:
+                print("ℹ️ 沒有找到舊的工作系統訊息")
             
+            # 發送新的工作系統訊息
             embed = self.create_work_system_embed()
-            await channel.send(embed=embed, view=CheckInView())
-            print(f"✅ 工作系統已部署到 #{channel.name}")
+            sent_message = await channel.send(embed=embed, view=CheckInView())
+            print(f"✅ 工作系統已部署到 #{channel.name} (訊息ID: {sent_message.id})")
         
+        except discord.Forbidden:
+            print(f"❌ 沒有權限在頻道 {self.work_channel_id} 發送訊息")
+        except discord.HTTPException as e:
+            print(f"❌ 發送訊息時發生 HTTP 錯誤: {e}")
+            traceback.print_exc()
         except Exception as e:
-            print(f"❌ 自動部署工作系統失敗: {e}")
+            print(f"❌ 部署工作系統失敗: {e}")
             traceback.print_exc()
 
     def create_work_system_embed(self):
@@ -676,23 +687,33 @@ class WorkCog(commands.Cog):
                 color=0x00ff00
             )
             
+            user_stats = (
+                f"**今日打卡**：{active_today} 人\n"
+                f"**昨日打卡**：{active_yesterday} 人\n"
+                f"**總用戶數**：{len(all_users)} 人"
+            )
             embed.add_field(
                 name="📊 用戶統計",
-                value=(
-                    f"**今日打卡**：{active_today} 人\n"
-                    f"**昨日打卡**：{active_yesterday} 人\n"
-                    f"**總用戶數**：{len(all_users)} 人"
-                ),
+                value=user_stats,
                 inline=True
             )
             
+            # 判斷狀態
+            if isinstance(view_count, int):
+                status = "✅ 正常" if view_count >= active_today else "⚠️ 可能需要重啟"
+                expected_views = f"至少 {active_today}"
+            else:
+                status = "⚠️ 無法判斷"
+                expected_views = "無法取得"
+            
+            system_stats = (
+                f"**註冊的 View**：{view_count}\n"
+                f"**預期 View 數**：{expected_views}\n"
+                f"**狀態**：{status}"
+            )
             embed.add_field(
                 name="🔧 系統狀態",
-                value=(
-                    f"**註冊的 View**：{view_count}\n"
-                    f"**預期 View 數**：至少 {active_today}\n"
-                    f"**狀態**：{'✅ 正常' if isinstance(view_count, int) and view_count >= active_today else '⚠️ 可能需要重啟'}"
-                ),
+                value=system_stats,
                 inline=True
             )
             
