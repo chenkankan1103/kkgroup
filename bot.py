@@ -3,32 +3,35 @@ import sys
 import asyncio
 import discord
 from discord.ext import commands
-from discord import app_commands
 from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from logger import print
 
-# === 載入環境變數 ===
+# ============================================================
+# 配置區 - 根據不同 BOT 修改此區域
+# ============================================================
+BOT_NAME = "Bot"  # 可改為 "Shop" 或 "UI"
+BOT_PREFIX = "DISCORD"  # 環境變數前綴: DISCORD / SHOP_DISCORD / UI_DISCORD
+COMMANDS_DIR = "commands"  # 指令目錄: commands / shop_commands / uicommands
+VERSION = "1.0.0"
+EMOJI = "🤖"  # Bot 代表符號: 🤖 / 🛒 / 🎨
+
+# ============================================================
+# 環境變數載入
+# ============================================================
 load_dotenv()
 STAGE = os.getenv("STAGE", "dev")
-version = "1.0.0 (開發階段)" if STAGE != "prod" else "0.15.0"
-
-# === 系統路徑 ===
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'utils'))
-
-# === 自訂工具載入 ===
-from utils.env import update_env_file
-from utils.scam_status import build_discord_activity, SCAM_THEMES
-
-# === Discord Bot 設定 ===
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-GUILD_ID = os.getenv("DISCORD_GUILD_ID")
-SYS_CHANNEL_ID = int(os.getenv("DISCORD_SYS_CHANNEL_ID", 0))
+TOKEN = os.getenv(f"{BOT_PREFIX}_BOT_TOKEN")
+GUILD_ID = os.getenv(f"{BOT_PREFIX}_GUILD_ID")
+SYS_CHANNEL_ID = int(os.getenv(f"{BOT_PREFIX}_SYS_CHANNEL_ID", 0))
 
 if not TOKEN:
-    raise RuntimeError("❌ DISCORD_BOT_TOKEN 未在 .env 中設定")
+    raise RuntimeError(f"❌ {BOT_PREFIX}_BOT_TOKEN 未在 .env 中設定")
 
+# ============================================================
+# Discord 客戶端初始化
+# ============================================================
 guild = discord.Object(id=GUILD_ID) if GUILD_ID else None
 intents = discord.Intents.default()
 intents.message_content = True
@@ -39,83 +42,63 @@ intents.members = True
 
 client = commands.Bot(command_prefix="!", help_command=None, intents=intents)
 
-
-# === 狀態背景任務 ===
-async def change_status_task():
-    await client.wait_until_ready()
-    last_activity_name = None
-    while not client.is_closed():
-        activity = build_discord_activity()
-        if activity.name != last_activity_name:
-            await client.change_presence(status=discord.Status.online, activity=activity)
-            last_activity_name = activity.name
-        await asyncio.sleep(60)
-
-# === 遞歸載入模組（修復版本）===
+# ============================================================
+# 模組載入系統
+# ============================================================
 async def find_and_load_extensions(base_path, package_prefix="", client=None):
     """遞歸搜尋並載入所有 Python 擴展"""
     loaded_extensions = []
     
-    for item in os.listdir(base_path):
+    for item in sorted(os.listdir(base_path)):
         item_path = os.path.join(base_path, item)
         
-        # 如果是目錄且包含 __init__.py，則遞歸搜尋
         if os.path.isdir(item_path) and os.path.exists(os.path.join(item_path, "__init__.py")):
             sub_package = f"{package_prefix}.{item}" if package_prefix else item
             sub_extensions = await find_and_load_extensions(item_path, sub_package, client)
             loaded_extensions.extend(sub_extensions)
         
-        # 如果是 Python 文件且不是 __init__.py
         elif item.endswith(".py") and item != "__init__.py":
-            module_name = item[:-3]  # 移除 .py 擴展名
+            module_name = item[:-3]
             ext_name = f"{package_prefix}.{module_name}" if package_prefix else module_name
             
             try:
                 await client.load_extension(ext_name)
                 loaded_extensions.append(ext_name)
-                print(f"✅ 已載入 {ext_name}")
             except Exception as e:
-                print(f"❌ 載入 {ext_name} 失敗: {e}")
+                print(f"❌ 載入失敗: {ext_name} - {e}")
     
     return loaded_extensions
 
-async def setup_modules(tree, client, module_dirs):
-    """設置模組（修復版本）"""
-    all_loaded = []
+async def setup_modules(client):
+    """載入所有模組"""
+    full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
-    for module_dir, prefix in module_dirs:
-        full_path = os.path.join(os.path.dirname(__file__), module_dir)
-        
-        if not os.path.exists(full_path):
-            print(f"⚠️ 目錄不存在: {full_path}")
-            continue
-            
-        print(f"🔍 搜尋模組目錄: {full_path}")
-        loaded = await find_and_load_extensions(full_path, prefix, client)
-        all_loaded.extend(loaded)
+    if not os.path.exists(full_path):
+        os.makedirs(full_path)
+        init_file = os.path.join(full_path, "__init__.py")
+        with open(init_file, 'w', encoding='utf-8') as f:
+            f.write(f"# {BOT_NAME} Bot Commands Module\n")
+        return []
     
-    return all_loaded
+    return await find_and_load_extensions(full_path, COMMANDS_DIR, client)
 
 async def reload_extension_on_change(ext_name):
+    """熱重載擴展"""
     try:
         await client.reload_extension(ext_name)
-        print(f"🔄 已自動 reload: {ext_name}")
+        print(f"🔄 已重載: {ext_name}")
         
-        # 重新同步命令
-        try:
-            synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
-            print(f"🔄 命令重新同步完成: {len(synced)} 個命令")
-        except Exception as sync_e:
-            print(f"⚠️ 命令同步失敗: {sync_e}")
-            
+        synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
+        print(f"✓ 同步完成: {len(synced)} 個指令")
     except Exception as e:
-        print(f"❌ reload {ext_name} 失敗: {e}")
+        print(f"❌ 重載失敗: {ext_name} - {e}")
 
-# === 增強的熱重載用的檔案監控器 ===
+# ============================================================
+# 檔案監控系統
+# ============================================================
 class FileEventHandler(FileSystemEventHandler):
-    def __init__(self, loop, prefix):
+    def __init__(self, loop):
         self.loop = loop
-        self.prefix = prefix
 
     def on_modified(self, event): self.handle(event)
     def on_created(self, event): self.handle(event)
@@ -127,104 +110,167 @@ class FileEventHandler(FileSystemEventHandler):
             if filename == "__init__.py":
                 return
             
-            # 計算正確的擴展名稱
-            rel_path = os.path.relpath(event.src_path, os.path.join(os.path.dirname(__file__), "commands"))
-            module_path = rel_path.replace(os.sep, ".")[:-3]  # 移除 .py 並轉換路徑分隔符
-            ext_name = f"commands.{module_path}"
+            rel_path = os.path.relpath(
+                event.src_path, 
+                os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
+            )
+            module_path = rel_path.replace(os.sep, ".")[:-3]
+            ext_name = f"{COMMANDS_DIR}.{module_path}"
             
-            print(f"📂 檢測到模組變動: {event.src_path}")
-            print(f"🔄 嘗試 reload: {ext_name}")
-            asyncio.run_coroutine_threadsafe(reload_extension_on_change(ext_name), self.loop)
+            asyncio.run_coroutine_threadsafe(
+                reload_extension_on_change(ext_name), 
+                self.loop
+            )
 
-# === Bot 事件處理 ===
+# ============================================================
+# Bot 事件處理
+# ============================================================
 @client.event
 async def on_ready():
-    print(f"🚀 Bot 正在初始化... (版本: {version})")
+    """Bot 啟動完成"""
+    stage_text = "DEV" if STAGE != "prod" else "PROD"
+    
+    print("=" * 60)
+    print(f"{EMOJI} {BOT_NAME} Bot 啟動中...")
+    print(f"版本: {VERSION} ({stage_text})")
+    print("=" * 60)
+    
     try:
-        if STAGE != "prod":
-            print("⚠️ 正在開發環境執行，僅同步至指定 GUILD")
-
-        if guild:
+        # 清除舊指令
+        if guild and STAGE != "prod":
             await client.tree.clear_commands(guild=guild)
-            print("🧹 已清除指定伺服器的所有已註冊指令")
-
-        # 載入所有模組
-        loaded_extensions = await setup_modules(client.tree, client, [
-            ("commands", "commands")
-        ])
         
-        print(f"📦 總共載入了 {len(loaded_extensions)} 個擴展:")
-        for ext in loaded_extensions:
-            print(f"  - {ext}")
+        # 載入模組
+        loaded_extensions = await setup_modules(client)
         
-        # 同步命令
+        # 格式化顯示載入的擴展
+        if loaded_extensions:
+            print(f"\n📦 已載入擴展 ({len(loaded_extensions)}):")
+            for i, ext in enumerate(loaded_extensions, 1):
+                print(f"  {i:2d}. {ext}")
+        else:
+            print("\n⚠️  未載入任何擴展")
+        
+        # 同步指令
         synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
-        print(f"✅ 指令同步完成: {[cmd.name for cmd in synced]}")
-
-        print(f"🤖 登入成功: {client.user}（ID: {client.user.id}）")
-        print(f"📦 當前版本: {version}")
-
-        # 列出所有指令      
-        print("🟦 Slash 指令列表：")
-        for cmd in client.tree.get_commands():
-            print(f"  /{cmd.name} - {cmd.description}")
-        print("🟧 前綴指令列表：")
-        for cmd in client.commands:
-            print(f"  !{cmd.name} - {cmd.help or '無說明'}")
-
+        
+        # 格式化顯示指令
+        if synced:
+            print(f"\n⚡ 已註冊指令 ({len(synced)}):")
+            for i, cmd in enumerate(synced, 1):
+                print(f"  {i:2d}. /{cmd.name:<20s} - {cmd.description}")
+        else:
+            print("\n⚠️  未註冊任何 Slash 指令")
+        
+        # 前綴指令
+        prefix_cmds = list(client.commands)
+        if prefix_cmds:
+            print(f"\n🔧 前綴指令 ({len(prefix_cmds)}):")
+            for i, cmd in enumerate(prefix_cmds, 1):
+                help_text = cmd.help or "無說明"
+                print(f"  {i:2d}. !{cmd.name:<20s} - {help_text}")
+        
+        print("\n" + "=" * 60)
+        print(f"✅ {client.user.name} 已就緒")
+        print("=" * 60 + "\n")
+        
+        # 發送啟動通知到系統頻道
         if STAGE == "prod" and SYS_CHANNEL_ID:
             channel = client.get_channel(SYS_CHANNEL_ID)
             if channel:
-                await channel.send(
-                    f"🤖 Bot 已啟動\n"
-                    f"📦 當前版本: {version}\n"
-                    f"🔧 載入擴展: {len(loaded_extensions)} 個\n"
-                    f"🟦 Slash 指令: {', '.join(f'/{cmd.name}' for cmd in client.tree.get_commands())}\n"
-                    f"🟧 前綴指令: {', '.join(f'!{cmd.name}' for cmd in client.commands)}\n"
-                    f"🟢 狀態將每 60 秒自動變更一次，共 {len(SCAM_THEMES)} 種"
+                embed = discord.Embed(
+                    title=f"{EMOJI} {BOT_NAME} Bot 已啟動",
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow()
                 )
+                embed.add_field(
+                    name="📦 版本",
+                    value=f"`{VERSION}`",
+                    inline=True
+                )
+                embed.add_field(
+                    name="🔧 擴展",
+                    value=f"`{len(loaded_extensions)}`",
+                    inline=True
+                )
+                embed.add_field(
+                    name="⚡ 指令",
+                    value=f"`{len(synced)}`",
+                    inline=True
+                )
+                
+                if loaded_extensions:
+                    ext_list = "\n".join([f"• {ext.split('.')[-1]}" for ext in loaded_extensions[:10]])
+                    if len(loaded_extensions) > 10:
+                        ext_list += f"\n...及其他 {len(loaded_extensions) - 10} 個"
+                    embed.add_field(
+                        name="📦 已載入擴展",
+                        value=ext_list,
+                        inline=False
+                    )
+                
+                if synced:
+                    cmd_list = "\n".join([f"• `/{cmd.name}`" for cmd in synced[:10]])
+                    if len(synced) > 10:
+                        cmd_list += f"\n...及其他 {len(synced) - 10} 個"
+                    embed.add_field(
+                        name="⚡ 註冊指令",
+                        value=cmd_list,
+                        inline=False
+                    )
+                
+                await channel.send(embed=embed)
+                
     except Exception as e:
         print(f"❌ 初始化失敗: {e}")
         import traceback
         traceback.print_exc()
 
 @client.event
-async def on_connect():
-    if not hasattr(client, "status_task_started"):
-        client.loop.create_task(change_status_task())
-        client.status_task_started = True
+async def on_command_error(ctx, error):
+    """錯誤處理"""
+    if isinstance(error, commands.CommandNotFound):
+        return
+    elif isinstance(error, commands.MissingPermissions):
+        pass  # 靜默處理權限錯誤
+    elif isinstance(error, commands.BotMissingPermissions):
+        pass  # 靜默處理 Bot 權限錯誤
+    else:
+        print(f"❌ 指令錯誤: {error}")
 
-# === 調試指令 ===
+# ============================================================
+# 管理指令
+# ============================================================
 @client.command(name="reload_all")
 @commands.is_owner()
 async def reload_all(ctx):
-    """重新載入所有擴展（僅擁有者可用）"""
+    """重新載入所有擴展"""
     try:
-        # 獲取所有已載入的擴展
         extensions = list(client.extensions.keys())
-        
-        reloaded = []
-        failed = []
+        reloaded, failed = [], []
         
         for ext in extensions:
             try:
                 await client.reload_extension(ext)
                 reloaded.append(ext)
             except Exception as e:
-                failed.append(f"{ext}: {str(e)}")
+                failed.append(f"{ext}: {str(e)[:50]}")
         
-        # 重新同步命令
         synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
         
-        result = f"🔄 重新載入完成:\n"
-        result += f"✅ 成功: {len(reloaded)} 個\n"
-        if failed:
-            result += f"❌ 失敗: {len(failed)} 個\n"
-            for fail in failed[:5]:  # 只顯示前5個失敗
-                result += f"  - {fail}\n"
-        result += f"🔄 重新同步了 {len(synced)} 個命令"
+        embed = discord.Embed(title="🔄 重新載入完成", color=discord.Color.blue())
+        embed.add_field(name="✅ 成功", value=f"`{len(reloaded)}`", inline=True)
+        embed.add_field(name="❌ 失敗", value=f"`{len(failed)}`", inline=True)
+        embed.add_field(name="⚡ 同步", value=f"`{len(synced)}`", inline=True)
         
-        await ctx.send(result)
+        if failed:
+            embed.add_field(
+                name="失敗清單",
+                value="\n".join([f"• {f}" for f in failed[:5]]),
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
         
     except Exception as e:
         await ctx.send(f"❌ 重新載入失敗: {e}")
@@ -234,36 +280,76 @@ async def reload_all(ctx):
 async def list_extensions(ctx):
     """列出所有已載入的擴展"""
     extensions = list(client.extensions.keys())
-    if extensions:
-        result = f"📦 已載入 {len(extensions)} 個擴展:\n"
-        for i, ext in enumerate(extensions, 1):
-            result += f"{i}. {ext}\n"
-    else:
-        result = "❌ 沒有載入任何擴展"
     
-    await ctx.send(f"```{result}```")
+    if not extensions:
+        await ctx.send("❌ 沒有載入任何擴展")
+        return
+    
+    embed = discord.Embed(
+        title=f"📦 已載入擴展 ({len(extensions)})",
+        color=discord.Color.blue()
+    )
+    
+    ext_list = "\n".join([f"{i}. `{ext}`" for i, ext in enumerate(extensions, 1)])
+    
+    # 分頁處理
+    if len(ext_list) > 1024:
+        chunks = [extensions[i:i+10] for i in range(0, len(extensions), 10)]
+        for i, chunk in enumerate(chunks, 1):
+            chunk_list = "\n".join([f"{j}. `{ext}`" for j, ext in enumerate(chunk, (i-1)*10+1)])
+            embed.add_field(
+                name=f"第 {i} 頁",
+                value=chunk_list,
+                inline=False
+            )
+    else:
+        embed.description = ext_list
+    
+    await ctx.send(embed=embed)
 
-# === 主程序入口 ===
+# ============================================================
+# 主程序入口
+# ============================================================
 async def main():
+    """主程序"""
     loop = asyncio.get_event_loop()
     observer = Observer()
     
-    # 監視 commands 目錄（遞歸監視所有子目錄）
-    commands_path = os.path.join(os.path.dirname(__file__), "commands")
-    observer.schedule(FileEventHandler(loop, "commands"),
-                      path=commands_path,
-                      recursive=True)  # 設為 True 以監視子目錄
+    commands_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
+    if not os.path.exists(commands_path):
+        os.makedirs(commands_path)
+        init_file = os.path.join(commands_path, "__init__.py")
+        with open(init_file, 'w', encoding='utf-8') as f:
+            f.write(f"# {BOT_NAME} Bot Commands Module\n")
+    
+    observer.schedule(
+        FileEventHandler(loop),
+        path=commands_path,
+        recursive=True
+    )
     observer.start()
-    print(f"👀 開始監視目錄: {commands_path} (遞歸)")
 
     try:
         async with client:
             await client.start(TOKEN)
+    except KeyboardInterrupt:
+        print(f"\n👋 {BOT_NAME} Bot 已停止")
+    except discord.LoginFailure:
+        print("❌ Discord Token 無效")
+    except Exception as e:
+        print(f"❌ 運行失敗: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         observer.stop()
         observer.join()
 
 if __name__ == "__main__":
-    print("=== 準備啟動 Discord Bot ===")
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"❌ 啟動失敗: {e}")
+        sys.exit(1)
