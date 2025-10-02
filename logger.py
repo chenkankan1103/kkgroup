@@ -32,7 +32,7 @@ def discord_sender():
             batch = []
             total_length = 0
             
-            while message_queue and len(batch) < 15:
+            while message_queue and len(batch) < 100:
                 msg = message_queue.popleft()
                 if total_length + len(msg) > 1900:  # 預留安全邊界
                     message_queue.appendleft(msg)  # 放回去
