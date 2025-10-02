@@ -469,7 +469,7 @@ class WorkCog(commands.Cog):
             salary_info += (
                 f"**Lv.{lvl} {info['title']}**\n"
                 f"├ 薪資：0-{info['salary']:,} KK幣/天\n"
-                f"├ 升級：{'起始' if lvl == 1 else f'{weeks_needed}周 + {info['xp_required']:,} XP'}\n"
+                f"├ 升級：{'起始' if lvl == 1 else f'{weeks_needed}周 + {info[\"xp_required\"]:,} XP'}\n"
                 f"└ 行動：{len(info['actions'])} 種\n\n"
             )
         
@@ -687,10 +687,11 @@ class WorkCog(commands.Cog):
                 color=0x00ff00
             )
             
+            total_users = len(all_users)
             user_stats = (
                 f"**今日打卡**：{active_today} 人\n"
                 f"**昨日打卡**：{active_yesterday} 人\n"
-                f"**總用戶數**：{len(all_users)} 人"
+                f"**總用戶數**：{total_users} 人"
             )
             embed.add_field(
                 name="📊 用戶統計",
@@ -772,7 +773,8 @@ class WorkCog(commands.Cog):
             yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
             all_users = get_all_users()
             
-            active_count = sum(1 for u in all_users if u.get('last_work_date') in [today, yesterday])
+            active_dates = [today, yesterday]
+            active_count = sum(1 for u in all_users if u.get('last_work_date') in active_dates)
             
             rebuild_stats = f"已為 **{active_count}** 位近期活躍用戶重建 View"
             embed.add_field(
@@ -814,7 +816,7 @@ class WorkCog(commands.Cog):
             embed = self.create_work_system_embed()
             await interaction.channel.send(embed=embed, view=CheckInView())
             
-            result_msg = f"✅ 工作系統已部署到此頻道！"
+            result_msg = "✅ 工作系統已部署到此頻道！"
             if deleted_count > 0:
                 result_msg += f"\n🗑️ 已刪除 {deleted_count} 個舊的工作系統訊息"
             
