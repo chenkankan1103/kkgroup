@@ -59,7 +59,7 @@ def send_with_retry(content, max_retries=3):
     return False
 
 def send_startup_messages():
-    """統一發送啟動訊息"""
+    """統一發送啟動訊息 (支援分段發送)"""
     global startup_mode, startup_buffer
     
     with lock:
@@ -69,29 +69,59 @@ def send_startup_messages():
             print(f"[Discord] {BOT_NAME} 沒有啟動訊息", file=sys.__stderr__)
             return
         
-        # 組合所有啟動訊息
-        header = f"{'='*50}\n[{BOT_NAME}] 啟動訊息\n{'='*50}"
-        content = "\n".join(startup_buffer)
-        footer = f"{'='*50}"
-        
-        full_message = f"```\n{header}\n{content}\n{footer}\n```"
-        
-        # 檢查長度,如果超過 1900 就截斷
-        if len(full_message) > 1900:
-            max_content_length = 1900 - len(header) - len(footer) - 20
-            content = content[:max_content_length] + "\n... (已截斷)"
-            full_message = f"```\n{header}\n{content}\n{footer}\n```"
-        
+        buffer_copy = startup_buffer.copy()
         startup_buffer.clear()
     
-    # 在鎖外發送,避免阻塞
-    print(f"[Discord] 正在發送 {BOT_NAME} 的啟動訊息...", file=sys.__stderr__)
-    success = send_with_retry(full_message)
+    # 分段發送邏輯
+    header = f"{'='*50}\n[{BOT_NAME}] 啟動訊息\n{'='*50}"
+    footer = f"{'='*50}"
     
-    if success:
-        print(f"[Discord] {BOT_NAME} 啟動訊息發送成功", file=sys.__stderr__)
-    else:
-        print(f"[Discord] {BOT_NAME} 啟動訊息發送失敗", file=sys.__stderr__)
+    # 計算每段可用空間 (2000 - code block - header/footer - 安全邊界)
+    max_content_length = 1700
+    
+    # 將內容分段
+    segments = []
+    current_segment = []
+    current_length = 0
+    
+    for line in buffer_copy:
+        line_length = len(line) + 1  # +1 for newline
+        
+        if current_length + line_length > max_content_length:
+            # 當前段已滿,保存並開始新段
+            segments.append("\n".join(current_segment))
+            current_segment = [line]
+            current_length = line_length
+        else:
+            current_segment.append(line)
+            current_length += line_length
+    
+    # 添加最後一段
+    if current_segment:
+        segments.append("\n".join(current_segment))
+    
+    # 發送所有段落
+    total_segments = len(segments)
+    print(f"[Discord] 正在發送 {BOT_NAME} 的啟動訊息 (共 {total_segments} 段)...", file=sys.__stderr__)
+    
+    for i, segment in enumerate(segments, 1):
+        if total_segments > 1:
+            part_header = f"{header} (第 {i}/{total_segments} 部分)"
+        else:
+            part_header = header
+        
+        message = f"```\n{part_header}\n{segment}\n{footer}\n```"
+        
+        success = send_with_retry(message)
+        
+        if not success:
+            print(f"[Discord] {BOT_NAME} 第 {i} 段發送失敗", file=sys.__stderr__)
+        
+        # 段落之間間隔 1 秒,避免限流
+        if i < total_segments:
+            time.sleep(1)
+    
+    print(f"[Discord] {BOT_NAME} 啟動訊息發送完成", file=sys.__stderr__)
 
 def discord_sender():
     """背景執行緒:每 3 秒批次發送訊息 (降低頻率避免限流)"""
