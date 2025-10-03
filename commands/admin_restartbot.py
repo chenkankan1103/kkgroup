@@ -1,7 +1,5 @@
 import os
 import subprocess
-import asyncio
-from datetime import datetime
 from discord import app_commands, Interaction
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -34,7 +32,7 @@ class AdminBot(commands.Cog):
             )
             commits_behind = int(result.stdout.strip())
             return commits_behind > 0, commits_behind
-        except Exception as e:
+        except Exception:
             return False, 0
 
     async def pull_git_updates(self):
@@ -80,18 +78,42 @@ class AdminBot(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
+        results = []
+        for svc in SERVICES:
+            try:
+                result = subprocess.run(
+                    ["/home/e193752468/restart_bot.sh", svc],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                output = (result.stdout + "\n" + result.stderr).strip()
+                results.append(f"{output[:1900]}")
+            except Exception as e:
+                results.append(f"❌ {svc} 重啟失敗: {e}")
+
+        await interaction.followup.send("🔄 全部服務重啟完成:\n" + "\n".join(results))
+
+    @app_commands.command(name="restart", description="重啟指定服務")
+    @app_commands.choices(service=[app_commands.Choice(name=s, value=s) for s in SERVICES])
+    async def restart(self, interaction: Interaction, service: app_commands.Choice[str]):
+        if interaction.user.id != ADMIN_USER_ID:
+            await interaction.response.send_message("❌ 你沒有權限使用此指令", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        svc_name = service.value
         try:
-            # 呼叫 restart_bot.sh 腳本
             result = subprocess.run(
-                ["/home/e193752468/restart_bot.sh"],
+                ["/home/e193752468/restart_bot.sh", svc_name],
                 capture_output=True,
                 text=True,
                 check=True
             )
-            output = result.stdout[:1900]  # Discord 發訊息限制 2000 字
-            await interaction.followup.send(f"🔄 全部服務重啟完成:\n```\n{output}\n```")
+            output = (result.stdout + "\n" + result.stderr).strip()
+            await interaction.followup.send(f"🔄 {svc_name} 重啟完成:\n```\n{output[:1900]}\n```")
         except Exception as e:
-            await interaction.followup.send(f"❌ 重啟失敗: {e}")
+            await interaction.followup.send(f"❌ {svc_name} 重啟失敗: {e}")
 
 
 async def setup(bot):
