@@ -174,11 +174,6 @@ async def on_ready():
     """Bot 啟動完成"""
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     
-    print("=" * 60)
-    print(f"{EMOJI} {BOT_NAME} Bot 啟動中...")
-    print(f"版本: {VERSION} ({stage_text})")
-    print("=" * 60)
-    
     try:
         # 清除舊指令
         if guild and STAGE != "prod":
@@ -187,36 +182,55 @@ async def on_ready():
         # 載入模組
         loaded_extensions = await setup_modules(client)
         
-        # 格式化顯示載入的擴展
-        if loaded_extensions:
-            print(f"\n📦 已載入擴展 ({len(loaded_extensions)}):")
-            for i, ext in enumerate(loaded_extensions, 1):
-                print(f"  {i:2d}. {ext}")
-        else:
-            print("\n⚠️  未載入任何擴展")
-        
         # 同步指令
         synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
         
-        # 格式化顯示指令
-        if synced:
-            print(f"\n⚡ 已註冊指令 ({len(synced)}):")
-            for i, cmd in enumerate(synced, 1):
-                print(f"  {i:2d}. /{cmd.name:<20s} - {cmd.description}")
-        else:
-            print("\n⚠️  未註冊任何 Slash 指令")
-        
         # 前綴指令
         prefix_cmds = list(client.commands)
-        if prefix_cmds:
-            print(f"\n🔧 前綴指令 ({len(prefix_cmds)}):")
-            for i, cmd in enumerate(prefix_cmds, 1):
-                help_text = cmd.help or "無說明"
-                print(f"  {i:2d}. !{cmd.name:<20s} - {help_text}")
         
-        print("\n" + "=" * 60)
-        print(f"✅ {client.user.name} 已就緒")
-        print("=" * 60 + "\n")
+        # ============================================================
+        # 合併輸出 - 所有信息一次性顯示
+        # ============================================================
+        output_lines = []
+        output_lines.append("=" * 60)
+        output_lines.append(f"{EMOJI} {BOT_NAME} Bot 啟動完成 | 版本: {VERSION} ({stage_text})")
+        output_lines.append("=" * 60)
+        
+        # 摘要信息（單行）
+        output_lines.append(f"📦 擴展: {len(loaded_extensions)} | ⚡ Slash指令: {len(synced)} | 🔧 前綴指令: {len(prefix_cmds)}")
+        output_lines.append("")
+        
+        # 已載入擴展（精簡顯示）
+        if loaded_extensions:
+            output_lines.append(f"📦 已載入擴展:")
+            for ext in loaded_extensions:
+                short_name = ext.split('.')[-1]
+                output_lines.append(f"  • {short_name}")
+        
+        # Slash 指令（精簡顯示，只顯示名稱）
+        if synced:
+            output_lines.append("")
+            output_lines.append(f"⚡ Slash 指令:")
+            # 每行顯示 4 個指令，節省空間
+            cmd_names = [f"/{cmd.name}" for cmd in synced]
+            for i in range(0, len(cmd_names), 4):
+                line_cmds = cmd_names[i:i+4]
+                output_lines.append(f"  {', '.join(line_cmds)}")
+        
+        # 前綴指令
+        if prefix_cmds:
+            output_lines.append("")
+            output_lines.append(f"🔧 前綴指令:")
+            cmd_names = [f"!{cmd.name}" for cmd in prefix_cmds]
+            output_lines.append(f"  {', '.join(cmd_names)}")
+        
+        output_lines.append("")
+        output_lines.append("=" * 60)
+        output_lines.append(f"✅ {client.user.name} 已就緒")
+        output_lines.append("=" * 60)
+        
+        # 一次性輸出所有內容
+        print("\n".join(output_lines))
         
         # 設定初始狀態
         activity = build_discord_activity(BOT_TYPE)
@@ -226,150 +240,55 @@ async def on_ready():
         if not update_status.is_running():
             update_status.start()
         
-        # 發送啟動通知到系統頻道
+        # 發送啟動通知到系統頻道（單一訊息）
         if STAGE == "prod" and SYS_CHANNEL_ID:
             channel = client.get_channel(SYS_CHANNEL_ID)
             if channel:
                 embed = discord.Embed(
                     title=f"{EMOJI} {BOT_NAME} Bot 已啟動",
+                    description=f"版本 `{VERSION}` | 環境: **{stage_text}**",
                     color=discord.Color.green(),
                     timestamp=discord.utils.utcnow()
                 )
-                embed.add_field(
-                    name="📦 版本",
-                    value=f"`{VERSION}`",
-                    inline=True
-                )
-                embed.add_field(
-                    name="🔧 擴展",
-                    value=f"`{len(loaded_extensions)}`",
-                    inline=True
-                )
-                embed.add_field(
-                    name="⚡ 指令",
-                    value=f"`{len(synced)}`",
-                    inline=True
-                )
                 
+                # 統計信息（使用內聯字段）
+                embed.add_field(name="📦 擴展", value=f"`{len(loaded_extensions)}`", inline=True)
+                embed.add_field(name="⚡ Slash", value=f"`{len(synced)}`", inline=True)
+                embed.add_field(name="🔧 前綴", value=f"`{len(prefix_cmds)}`", inline=True)
+                
+                # 擴展列表（精簡版，最多顯示15個）
                 if loaded_extensions:
-                    ext_list = "\n".join([f"• {ext.split('.')[-1]}" for ext in loaded_extensions[:10]])
-                    if len(loaded_extensions) > 10:
-                        ext_list += f"\n...及其他 {len(loaded_extensions) - 10} 個"
+                    ext_display = [ext.split('.')[-1] for ext in loaded_extensions[:15]]
+                    ext_text = ", ".join([f"`{e}`" for e in ext_display])
+                    if len(loaded_extensions) > 15:
+                        ext_text += f" +{len(loaded_extensions) - 15} 個"
                     embed.add_field(
-                        name="📦 已載入擴展",
-                        value=ext_list,
+                        name="📦 已載入模組",
+                        value=ext_text,
                         inline=False
                     )
                 
+                # 指令列表（精簡版，最多顯示20個）
                 if synced:
-                    cmd_list = "\n".join([f"• `/{cmd.name}`" for cmd in synced[:10]])
-                    if len(synced) > 10:
-                        cmd_list += f"\n...及其他 {len(synced) - 10} 個"
+                    cmd_display = [f"`/{cmd.name}`" for cmd in synced[:20]]
+                    cmd_text = ", ".join(cmd_display)
+                    if len(synced) > 20:
+                        cmd_text += f" +{len(synced) - 20} 個"
                     embed.add_field(
-                        name="⚡ 註冊指令",
-                        value=cmd_list,
+                        name="⚡ 可用指令",
+                        value=cmd_text,
                         inline=False
                     )
                 
+                embed.set_footer(text=f"🟢 系統運行正常")
+                
+                # 單一訊息發送
                 await channel.send(embed=embed)
                 
     except Exception as e:
         print(f"❌ 初始化失敗: {e}")
         import traceback
         traceback.print_exc()
-
-@client.event
-async def on_command_error(ctx, error):
-    """錯誤處理"""
-    if isinstance(error, commands.CommandNotFound):
-        return
-    elif isinstance(error, commands.MissingPermissions):
-        pass  # 靜默處理權限錯誤
-    elif isinstance(error, commands.BotMissingPermissions):
-        pass  # 靜默處理 Bot 權限錯誤
-    else:
-        print(f"❌ 指令錯誤: {error}")
-
-# ============================================================
-# 管理指令
-# ============================================================
-@client.command(name="reload_all")
-@commands.is_owner()
-async def reload_all(ctx):
-    """重新載入所有擴展"""
-    try:
-        async with _reload_lock:
-            extensions = list(client.extensions.keys())
-            reloaded, failed = [], []
-            
-            for ext in extensions:
-                try:
-                    await client.reload_extension(ext)
-                    reloaded.append(ext)
-                except Exception as e:
-                    failed.append(f"{ext}: {str(e)[:50]}")
-            
-            synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
-        
-        embed = discord.Embed(title="🔄 重新載入完成", color=discord.Color.blue())
-        embed.add_field(name="✅ 成功", value=f"`{len(reloaded)}`", inline=True)
-        embed.add_field(name="❌ 失敗", value=f"`{len(failed)}`", inline=True)
-        embed.add_field(name="⚡ 同步", value=f"`{len(synced)}`", inline=True)
-        
-        if failed:
-            embed.add_field(
-                name="失敗清單",
-                value="\n".join([f"• {f}" for f in failed[:5]]),
-                inline=False
-            )
-        
-        await ctx.send(embed=embed)
-        
-    except Exception as e:
-        await ctx.send(f"❌ 重新載入失敗: {e}")
-
-@client.command(name="list_extensions")
-@commands.is_owner()
-async def list_extensions(ctx):
-    """列出所有已載入的擴展"""
-    extensions = list(client.extensions.keys())
-    
-    if not extensions:
-        await ctx.send("❌ 沒有載入任何擴展")
-        return
-    
-    embed = discord.Embed(
-        title=f"📦 已載入擴展 ({len(extensions)})",
-        color=discord.Color.blue()
-    )
-    
-    ext_list = "\n".join([f"{i}. `{ext}`" for i, ext in enumerate(extensions, 1)])
-    
-    # 分頁處理
-    if len(ext_list) > 1024:
-        chunks = [extensions[i:i+10] for i in range(0, len(extensions), 10)]
-        for i, chunk in enumerate(chunks, 1):
-            chunk_list = "\n".join([f"{j}. `{ext}`" for j, ext in enumerate(chunk, (i-1)*10+1)])
-            embed.add_field(
-                name=f"第 {i} 頁",
-                value=chunk_list,
-                inline=False
-            )
-    else:
-        embed.description = ext_list
-    
-    await ctx.send(embed=embed)
-
-@client.command(name="change_status")
-@commands.is_owner()
-async def change_status(ctx):
-    """手動更新 Bot 狀態"""
-    try:
-        activity = build_discord_activity(BOT_TYPE)
-        await client.change_presence(activity=activity)
-        await ctx.send(f"✅ 狀態已更新: {activity.name}")
-    except Exception as e:
-        await ctx.send(f"❌ 狀態更新失敗: {e}")
 
 # ============================================================
 # 主程序入口
