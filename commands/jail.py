@@ -952,45 +952,5 @@ class Ai(commands.Cog):
         except Exception as e:
             logger.error(f"處理成員離開事件錯誤: {e}")
 
-    @commands.command(name="punishment_status")
-    @commands.has_permissions(administrator=True)
-    async def punishment_status(self, ctx):
-        """查看當前懲罰狀態（管理員指令）"""
-        try:
-            if not self.punishment_tasks:
-                await ctx.send("目前沒有正在進行的懲罰。")
-                return
-            
-            status_text = "**當前懲罰狀態:**\n"
-            for user_id in self.punishment_tasks:
-                try:
-                    member = ctx.guild.get_member(user_id)
-                    if member:
-                        status_text += f"• {member.display_name} (ID: {user_id})\n"
-                    else:
-                        status_text += f"• 未知使用者 (ID: {user_id})\n"
-                except:
-                    status_text += f"• 錯誤使用者 (ID: {user_id})\n"
-            
-            await ctx.send(status_text)
-        except Exception as e:
-            logger.error(f"查看懲罰狀態錯誤: {e}")
-            await ctx.send("查看懲罰狀態時發生錯誤。")
-
-    @commands.command(name="stop_punishment")
-    @commands.has_permissions(administrator=True)
-    async def manual_stop_punishment(self, ctx, member: discord.Member):
-        """手動停止特定使用者的懲罰（管理員指令）"""
-        try:
-            if member.id not in self.punishment_tasks:
-                await ctx.send(f"{member.display_name} 目前沒有在接受懲罰。")
-                return
-            
-            await self.stop_punishment(member)
-            await ctx.send(f"已手動停止 {member.display_name} 的懲罰。")
-        except Exception as e:
-            logger.error(f"手動停止懲罰錯誤: {e}")
-            await ctx.send("手動停止懲罰時發生錯誤。")
-
 async def setup(bot):
     await bot.add_cog(Ai(bot))
