@@ -1,6 +1,13 @@
+"""
+機器人狀態管理模組
+提供不同主題的狀態訊息供各個 Bot 使用
+"""
 import random
 import discord
 
+# ============================================================
+# 詐騙園區監控 Bot 狀態
+# ============================================================
 SCAM_THEMES = [
     "正在監控詐騙訊息",
     "風控檢查中",
@@ -35,10 +42,131 @@ SCAM_THEMES = [
     "智能預警升級",
 ]
 
-def get_scam_status():
-    """隨機選出一個詐騙園區主題狀態"""
-    return random.choice(SCAM_THEMES)
+# ============================================================
+# 黑市商人 Bot 狀態
+# ============================================================
+SHOP_THEMES = [
+    "盤點黑市庫存",
+    "等待交易訂單",
+    "計算商品價格",
+    "檢查稀有貨物",
+    "暗網供應鏈監控",
+    "新品上架中",
+    "處理地下交易",
+    "追蹤物流動態",
+    "清點非法商品",
+    "暗市情報收集",
+    "匿名支付處理中",
+    "黑市行情更新",
+    "檢查走私貨物",
+    "地下倉庫管理",
+    "違禁品清單核對",
+    "黑吃黑風險評估",
+    "追蹤買家信用",
+    "暗網訂單配對",
+    "非法交易監控",
+    "地下經濟分析",
+    "贓物鑑定中",
+    "黑市熱賣榜更新",
+    "秘密競標進行中",
+    "走私路線規劃",
+    "違禁品報價中",
+    "暗市客戶服務",
+    "交易安全檢查",
+    "地下金流追蹤",
+    "黑市促銷活動",
+    "非法商品評級",
+]
 
-def build_discord_activity():
-    """回傳 Discord Activity 物件，可直接給 change_presence"""
-    return discord.Activity(type=discord.ActivityType.watching, name=get_scam_status())
+# ============================================================
+# UI 面板管理 Bot 狀態
+# ============================================================
+UI_THEMES = [
+    "渲染介面元件",
+    "優化使用者體驗",
+    "按鈕互動測試中",
+    "面板佈局調整",
+    "選單設計進行中",
+    "顏色配置分析",
+    "響應式設計檢查",
+    "互動元件載入中",
+    "表單驗證處理",
+    "視覺效果調校",
+    "下拉選單優化",
+    "彈窗設計修正",
+    "頁面載入優化",
+    "使用者流程分析",
+    "介面一致性檢查",
+    "無障礙設計審查",
+    "按鈕狀態管理",
+    "動畫效果調整",
+    "版面配置計算中",
+    "元件庫更新中",
+    "主題切換準備",
+    "互動回饋優化",
+    "輸入框驗證中",
+    "介面效能監控",
+    "使用者偏好設定",
+    "視覺層級調整",
+    "通知系統設計",
+    "導航結構優化",
+    "卡片佈局處理",
+    "模組化元件建構",
+]
+
+# ============================================================
+# 狀態管理函數
+# ============================================================
+def get_status(bot_type="scam"):
+    """
+    根據 Bot 類型回傳隨機狀態
+    
+    Args:
+        bot_type: Bot 類型 ("scam", "shop", "ui")
+    
+    Returns:
+        str: 隨機選擇的狀態訊息
+    """
+    theme_map = {
+        "scam": SCAM_THEMES,
+        "shop": SHOP_THEMES,
+        "ui": UI_THEMES,
+    }
+    
+    themes = theme_map.get(bot_type.lower(), SCAM_THEMES)
+    return random.choice(themes)
+
+def build_discord_activity(bot_type="scam", activity_type=None):
+    """
+    建立 Discord Activity 物件
+    
+    Args:
+        bot_type: Bot 類型 ("scam", "shop", "ui")
+        activity_type: Discord 活動類型，預設為 watching
+    
+    Returns:
+        discord.Activity: Discord 狀態物件
+    """
+    if activity_type is None:
+        activity_type = discord.ActivityType.watching
+    
+    status_text = get_status(bot_type)
+    return discord.Activity(type=activity_type, name=status_text)
+
+def get_all_statuses(bot_type="scam"):
+    """
+    取得指定 Bot 類型的所有狀態列表
+    
+    Args:
+        bot_type: Bot 類型 ("bot", "shop", "ui")
+    
+    Returns:
+        list: 狀態訊息列表
+    """
+    theme_map = {
+        "scam": SCAM_THEMES,
+        "shop": SHOP_THEMES,
+        "ui": UI_THEMES,
+    }
+    
+    return theme_map.get(bot_type.lower(), SCAM_THEMES)
