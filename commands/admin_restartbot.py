@@ -5,6 +5,7 @@ from datetime import datetime
 from discord import app_commands, Interaction
 from discord.ext import commands
 from dotenv import load_dotenv
+import discord
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -82,7 +83,8 @@ class AdminBot(commands.Cog):
         results = []
         for svc in SERVICES:
             try:
-                subprocess.run(["sudo", "systemctl", "restart", svc], check=True)
+                # 直接用 systemctl，不用 sudo
+                subprocess.run(["systemctl", "restart", svc], check=True)
                 results.append(f"✅ {svc} 重啟成功")
             except Exception as e:
                 results.append(f"❌ {svc} 重啟失敗: {e}")
@@ -99,7 +101,7 @@ class AdminBot(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         svc_name = service.value
         try:
-            subprocess.run(["sudo", "systemctl", "restart", svc_name], check=True)
+            subprocess.run(["systemctl", "restart", svc_name], check=True)
             await interaction.followup.send(f"✅ {svc_name} 重啟成功")
         except Exception as e:
             await interaction.followup.send(f"❌ {svc_name} 重啟失敗: {e}")
