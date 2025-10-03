@@ -80,31 +80,19 @@ class AdminBot(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        results = []
-        for svc in SERVICES:
-            try:
-                # 直接用 systemctl，不用 sudo
-                subprocess.run(["systemctl", "restart", svc], check=True)
-                results.append(f"✅ {svc} 重啟成功")
-            except Exception as e:
-                results.append(f"❌ {svc} 重啟失敗: {e}")
-
-        await interaction.followup.send("\n".join(results))
-
-    @app_commands.command(name="restart", description="重啟指定服務")
-    @app_commands.choices(service=[app_commands.Choice(name=s, value=s) for s in SERVICES])
-    async def restart(self, interaction: Interaction, service: app_commands.Choice[str]):
-        if interaction.user.id != ADMIN_USER_ID:
-            await interaction.response.send_message("❌ 你沒有權限使用此指令", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        svc_name = service.value
         try:
-            subprocess.run(["systemctl", "restart", svc_name], check=True)
-            await interaction.followup.send(f"✅ {svc_name} 重啟成功")
+            # 呼叫 restart_bot.sh 腳本
+            result = subprocess.run(
+                ["/home/e193752468/restart_bot.sh"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            output = result.stdout[:1900]  # Discord 發訊息限制 2000 字
+            await interaction.followup.send(f"🔄 全部服務重啟完成:\n```\n{output}\n```")
         except Exception as e:
-            await interaction.followup.send(f"❌ {svc_name} 重啟失敗: {e}")
+            await interaction.followup.send(f"❌ 重啟失敗: {e}")
+
 
 async def setup(bot):
     await bot.add_cog(AdminBot(bot))
