@@ -189,48 +189,53 @@ async def on_ready():
         prefix_cmds = list(client.commands)
         
         # ============================================================
-        # 合併輸出 - 所有信息一次性顯示
+        # 構建單一完整輸出（避免多次調用 print）
         # ============================================================
-        output_lines = []
-        output_lines.append("=" * 60)
-        output_lines.append(f"{EMOJI} {BOT_NAME} Bot 啟動完成 | 版本: {VERSION} ({stage_text})")
-        output_lines.append("=" * 60)
+        lines = [
+            "=" * 60,
+            f"{EMOJI} {BOT_NAME} Bot 啟動完成 | v{VERSION} ({stage_text})",
+            "=" * 60,
+            f"📊 統計: 📦 {len(loaded_extensions)} 擴展 | ⚡ {len(synced)} Slash指令 | 🔧 {len(prefix_cmds)} 前綴指令"
+        ]
         
-        # 摘要信息（單行）
-        output_lines.append(f"📦 擴展: {len(loaded_extensions)} | ⚡ Slash指令: {len(synced)} | 🔧 前綴指令: {len(prefix_cmds)}")
-        output_lines.append("")
+        # 載入失敗的擴展（如果有）
+        failed_extensions = []
         
-        # 已載入擴展（精簡顯示）
+        # 已載入擴展（緊湊格式）
         if loaded_extensions:
-            output_lines.append(f"📦 已載入擴展:")
-            for ext in loaded_extensions:
-                short_name = ext.split('.')[-1]
-                output_lines.append(f"  • {short_name}")
+            lines.append("")
+            lines.append("📦 已載入擴展:")
+            ext_names = [ext.split('.')[-1] for ext in loaded_extensions]
+            # 每行顯示 5 個擴展
+            for i in range(0, len(ext_names), 5):
+                batch = ext_names[i:i+5]
+                lines.append(f"   {' | '.join(batch)}")
         
-        # Slash 指令（精簡顯示，只顯示名稱）
+        # Slash 指令（緊湊格式）
         if synced:
-            output_lines.append("")
-            output_lines.append(f"⚡ Slash 指令:")
-            # 每行顯示 4 個指令，節省空間
+            lines.append("")
+            lines.append("⚡ Slash 指令:")
             cmd_names = [f"/{cmd.name}" for cmd in synced]
-            for i in range(0, len(cmd_names), 4):
-                line_cmds = cmd_names[i:i+4]
-                output_lines.append(f"  {', '.join(line_cmds)}")
+            # 每行顯示 6 個指令
+            for i in range(0, len(cmd_names), 6):
+                batch = cmd_names[i:i+6]
+                lines.append(f"   {' '.join(batch)}")
         
-        # 前綴指令
+        # 前綴指令（緊湊格式）
         if prefix_cmds:
-            output_lines.append("")
-            output_lines.append(f"🔧 前綴指令:")
+            lines.append("")
+            lines.append("🔧 前綴指令:")
             cmd_names = [f"!{cmd.name}" for cmd in prefix_cmds]
-            output_lines.append(f"  {', '.join(cmd_names)}")
+            lines.append(f"   {' '.join(cmd_names)}")
         
-        output_lines.append("")
-        output_lines.append("=" * 60)
-        output_lines.append(f"✅ {client.user.name} 已就緒")
-        output_lines.append("=" * 60)
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append(f"✅ {client.user.name} 已就緒")
+        lines.append("=" * 60)
         
-        # 一次性輸出所有內容
-        print("\n".join(output_lines))
+        # ⚠️ 重要：使用單一 print 調用輸出所有內容
+        # 這樣 logger.py 只會產生一條日誌記錄
+        print("\n".join(lines))
         
         # 設定初始狀態
         activity = build_discord_activity(BOT_TYPE)
@@ -240,56 +245,73 @@ async def on_ready():
         if not update_status.is_running():
             update_status.start()
         
-        # 發送啟動通知到系統頻道（單一訊息）
+        # ============================================================
+        # Discord 系統頻道通知（單一 Embed）
+        # ============================================================
         if STAGE == "prod" and SYS_CHANNEL_ID:
             channel = client.get_channel(SYS_CHANNEL_ID)
             if channel:
                 embed = discord.Embed(
                     title=f"{EMOJI} {BOT_NAME} Bot 已啟動",
-                    description=f"版本 `{VERSION}` | 環境: **{stage_text}**",
+                    description=f"🟢 版本 `{VERSION}` | 環境: **{stage_text}**",
                     color=discord.Color.green(),
                     timestamp=discord.utils.utcnow()
                 )
                 
-                # 統計信息（使用內聯字段）
-                embed.add_field(name="📦 擴展", value=f"`{len(loaded_extensions)}`", inline=True)
-                embed.add_field(name="⚡ Slash", value=f"`{len(synced)}`", inline=True)
-                embed.add_field(name="🔧 前綴", value=f"`{len(prefix_cmds)}`", inline=True)
+                # 統計摘要（內聯字段）
+                embed.add_field(
+                    name="📊 系統狀態",
+                    value=f"📦 `{len(loaded_extensions)}` 擴展\n⚡ `{len(synced)}` Slash\n🔧 `{len(prefix_cmds)}` 前綴",
+                    inline=True
+                )
                 
-                # 擴展列表（精簡版，最多顯示15個）
+                # 快速資訊
+                embed.add_field(
+                    name="⚙️ 運行資訊",
+                    value=f"🤖 {client.user.mention}\n🆔 `{client.user.id}`\n⏰ <t:{int(discord.utils.utcnow().timestamp())}:R>",
+                    inline=True
+                )
+                
+                # 擴展列表（緊湊顯示，最多12個）
                 if loaded_extensions:
-                    ext_display = [ext.split('.')[-1] for ext in loaded_extensions[:15]]
-                    ext_text = ", ".join([f"`{e}`" for e in ext_display])
-                    if len(loaded_extensions) > 15:
-                        ext_text += f" +{len(loaded_extensions) - 15} 個"
+                    ext_short = [f"`{ext.split('.')[-1]}`" for ext in loaded_extensions[:12]]
+                    ext_text = " ".join(ext_short)
+                    if len(loaded_extensions) > 12:
+                        ext_text += f"\n*...還有 {len(loaded_extensions) - 12} 個*"
                     embed.add_field(
-                        name="📦 已載入模組",
+                        name=f"📦 已載入模組 ({len(loaded_extensions)})",
                         value=ext_text,
                         inline=False
                     )
                 
-                # 指令列表（精簡版，最多顯示20個）
+                # 指令列表（超緊湊顯示）
                 if synced:
-                    cmd_display = [f"`/{cmd.name}`" for cmd in synced[:20]]
-                    cmd_text = ", ".join(cmd_display)
-                    if len(synced) > 20:
-                        cmd_text += f" +{len(synced) - 20} 個"
+                    # 只顯示前 24 個指令名稱
+                    cmd_short = [f"`/{cmd.name}`" for cmd in synced[:24]]
+                    # 每 6 個換行
+                    cmd_lines = []
+                    for i in range(0, len(cmd_short), 6):
+                        cmd_lines.append(" ".join(cmd_short[i:i+6]))
+                    cmd_text = "\n".join(cmd_lines)
+                    if len(synced) > 24:
+                        cmd_text += f"\n*...還有 {len(synced) - 24} 個指令*"
                     embed.add_field(
-                        name="⚡ 可用指令",
+                        name=f"⚡ 可用指令 ({len(synced)})",
                         value=cmd_text,
                         inline=False
                     )
                 
-                embed.set_footer(text=f"🟢 系統運行正常")
+                embed.set_footer(text=f"🟢 系統運行正常 | {BOT_NAME} Bot")
                 
-                # 單一訊息發送
+                # 單一訊息發送，不再有多段提示
                 await channel.send(embed=embed)
                 
     except Exception as e:
-        print(f"❌ 初始化失敗: {e}")
+        # 錯誤也使用單一 print
+        error_msg = f"❌ 初始化失敗: {e}\n{'=' * 60}"
+        print(error_msg)
         import traceback
         traceback.print_exc()
-
 # ============================================================
 # 主程序入口
 # ============================================================
