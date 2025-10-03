@@ -5,51 +5,95 @@ from discord.ext import commands
 import discord
 
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))
+
 SERVICES = [
-    ("shopbot", "/home/e193752468/kkgroup/shopbot.py"),
-    ("uibot", "/home/e193752468/kkgroup/uibot.py"),
-    ("bot", "/home/e193752468/kkgroup/bot.py"),
+    ("shopbot", "shopbot.service"),
+    ("uibot", "uibot.service"),
+    ("bot", "bot.service"),
 ]
 
 class AdminBot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    def kill_process_by_path(self, path: str):
-        """用 ps + grep 找到對應 Python 進程並 kill"""
+    
+    def restart_service(self, service_name: str):
+        """使用 systemctl 重啟服務"""
         try:
-            result = subprocess.run(["ps", "aux"], capture_output=True, text=True)
-            lines = result.stdout.splitlines()
-            killed = []
-            for line in lines:
-                if path in line and "grep" not in line:
-                    pid = int(line.split()[1])
-                    subprocess.run(["kill", "-9", str(pid)])
-                    killed.append(pid)
-            return killed
+            result = subprocess.run(
+                ["sudo", "systemctl", "restart", service_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                return True, f"✅ {service_name} 重啟成功"
+            else:
+                return False, f"❌ {service_name} 重啟失敗: {result.stderr}"
+        except subprocess.TimeoutExpired:
+            return False, f"⏱️ {service_name} 重啟超時"
         except Exception as e:
-            print(f"Kill error for {path}: {e}")
-            return []
-
+            return False, f"❌ {service_name} 重啟錯誤: {str(e)}"
+    
+    def get_service_status(self, service_name: str):
+        """獲取服務狀態"""
+        try:
+            result = subprocess.run(
+                ["sudo", "systemctl", "is-active", service_name],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            return result.stdout.strip()
+        except:
+            return "unknown"
+    
     @app_commands.command(name="restart_all", description="全部重啟 bot 服務")
     async def restart_all(self, interaction: Interaction):
         if interaction.user.id != ADMIN_USER_ID:
             await interaction.response.send_message("❌ 你沒有權限使用此指令", ephemeral=True)
             return
-
+        
         await interaction.response.defer(ephemeral=True)
         results = []
-
-        # 依序 kill 其他服務，最後 kill 自己
-        for name, path in SERVICES:
-            killed = self.kill_process_by_path(path)
-            if killed:
-                results.append(f"✅ {name} 已被殺掉 (PID: {', '.join(map(str, killed))})")
-            else:
-                results.append(f"⚠️ {name} 沒有找到進程，可能已經停止")
         
-        results.append("ℹ️ Systemd 若設定了 Restart=always，應會自動重啟服務")
-        await interaction.followup.send("🔄 全部服務重啟完成:\n" + "\n".join(results))
+        # 重啟所有服務
+        for name, service in SERVICES:
+            success, message = self.restart_service(service)
+            results.append(message)
+        
+        await interaction.followup.send("🔄 重啟結果:\n" + "\n".join(results))
+    
+    @app_commands.command(name="restart", description="重啟指定的 bot 服務")
+    @app_commands.describe(service="選擇要重啟的服務")
+    @app_commands.choices(service=[
+        app_commands.Choice(name="ShopBot", value="shopbot.service"),
+        app_commands.Choice(name="UIBot", value="uibot.service"),
+        app_commands.Choice(name="Bot", value="bot.service"),
+    ])
+    async def restart(self, interaction: Interaction, service: str):
+        if interaction.user.id != ADMIN_USER_ID:
+            await interaction.response.send_message("❌ 你沒有權限使用此指令", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        success, message = self.restart_service(service)
+        await interaction.followup.send(message)
+    
+    @app_commands.command(name="status", description="查看所有 bot 服務狀態")
+    async def status(self, interaction: Interaction):
+        if interaction.user.id != ADMIN_USER_ID:
+            await interaction.response.send_message("❌ 你沒有權限使用此指令", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        results = []
+        
+        for name, service in SERVICES:
+            status = self.get_service_status(service)
+            emoji = "🟢" if status == "active" else "🔴"
+            results.append(f"{emoji} {name}: {status}")
+        
+        await interaction.followup.send("📊 服務狀態:\n" + "\n".join(results))
 
 async def setup(bot):
     await bot.add_cog(AdminBot(bot))
