@@ -77,22 +77,19 @@ class AdminBot(commands.Cog):
             await interaction.response.send_message("❌ 你沒有權限使用此指令", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
-        results = []
-        for svc in SERVICES:
-            try:
-                result = subprocess.run(
-                    ["/home/e193752468/restart_bot.sh", svc],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                output = (result.stdout + "\n" + result.stderr).strip()
-                results.append(f"{output[:1900]}")
-            except Exception as e:
-                results.append(f"❌ {svc} 重啟失敗: {e}")
+        # ✅ 先回覆使用者，避免 bot 斷線造成「正在思考...」
+        await interaction.response.send_message("🔄 已接收指令，正在重啟所有服務...")
 
-        await interaction.followup.send("🔄 全部服務重啟完成:\n" + "\n".join(results))
+        # ✅ 先重啟別的服務
+        for svc in ["shopbot.service", "uibot.service"]:
+            subprocess.run(["/home/e193752468/restart_bot.sh", svc])
+
+        # ✅ 延遲一秒，確保前面訊息送出
+        await asyncio.sleep(1)
+
+        # ✅ 最後重啟自己（bot.service）
+        subprocess.run(["/home/e193752468/restart_bot.sh", "bot.service"])
+
 
     @app_commands.command(name="restart", description="重啟指定服務")
     @app_commands.choices(service=[app_commands.Choice(name=s, value=s) for s in SERVICES])
