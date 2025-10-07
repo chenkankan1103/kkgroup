@@ -34,8 +34,22 @@ class UpdatePanelView(discord.ui.View):
             remaining_time = 5 - (current_time - last_update_time)
             await interaction.response.send_message(f"⏰ 請等待 {remaining_time:.1f} 秒後再更新面板！", ephemeral=True)
             return
-            
-        if interaction.user.id != self.user_id:
+        
+        # 從訊息的 embed 中提取 user_id（從標題或描述中）
+        panel_owner_id = self.user_id
+        if panel_owner_id == 0 and interaction.message and interaction.message.embeds:
+            embed = interaction.message.embeds[0]
+            # 嘗試從 embed 的 field 中找到使用者 ID
+            for field in embed.fields:
+                if field.name == "🆔 使用者ID":
+                    try:
+                        panel_owner_id = int(field.value.strip('`'))
+                        break
+                    except:
+                        pass
+        
+        # 檢查是否為面板擁有者
+        if panel_owner_id != 0 and interaction.user.id != panel_owner_id:
             await interaction.response.send_message("❌ 你只能更新自己的面板！", ephemeral=True)
             return
             
@@ -370,7 +384,7 @@ class UserPanel(commands.Cog):
                         await thread.send(embed=embed)
                         await asyncio.sleep(1)
                     
-                    # 更新快照數據（無論是否有變化都要更新，避免累積誤差）
+                    # 快照數據（無論是否有變化都要，避免累積誤差）
                     cursor.execute('''
                         UPDATE users 
                         SET last_kkcoin_snapshot = ?, last_xp_snapshot = ?, last_level_snapshot = ?
