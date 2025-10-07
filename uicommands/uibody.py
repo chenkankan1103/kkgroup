@@ -40,7 +40,7 @@ class UpdatePanelView(discord.ui.View):
             return
             
         try:
-            await interaction.response.defer()
+            await interaction.response.defer(ephemeral=True)
             UpdatePanelView.last_update[interaction.user.id] = current_time
             
             user_data = self.cog.get_user_data(interaction.user.id)
@@ -54,20 +54,32 @@ class UpdatePanelView(discord.ui.View):
             if character_image_url:
                 embed.set_image(url=character_image_url)
             
-            async for message in interaction.channel.history(limit=50, oldest_first=True):
-                if (message.embeds and message.author == self.cog.bot.user and
-                    f"{interaction.user.display_name or interaction.user.name} 的置物櫃" in message.embeds[0].title):
-                    try:
-                        await message.edit(embed=embed)
-                        await interaction.followup.send("✅ 面板已更新！", ephemeral=True)
-                        return
-                    except (discord.NotFound, Exception):
-                        break
+            # 修改搜尋邏輯：直接更新當前訊息
+            try:
+                await interaction.message.edit(embed=embed, view=self)
+                await interaction.followup.send("✅ 面板已更新！", ephemeral=True)
+                return
+            except Exception as e:
+                # 如果直接更新失敗，嘗試搜尋訊息
+                async for message in interaction.channel.history(limit=100):
+                    if (message.embeds and message.author == self.cog.bot.user and
+                        message.embeds[0].title and 
+                        "置物櫃" in message.embeds[0].title and
+                        str(interaction.user.id) in str(message.embeds[0].description or "")):
+                        try:
+                            await message.edit(embed=embed, view=self)
+                            await interaction.followup.send("✅ 面板已更新！", ephemeral=True)
+                            return
+                        except:
+                            continue
             
             await interaction.followup.send("❌ 找不到面板訊息，請聯繫管理員！", ephemeral=True)
             
         except Exception as e:
-            await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
+            try:
+                await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
+            except:
+                pass
 
 class UserPanel(commands.Cog):
     def __init__(self, bot):
@@ -658,7 +670,12 @@ class UserPanel(commands.Cog):
             
             # 嘗試創建文章
             try:
-                thread, message = await forum_channel.create_thread(name=thread_name, embed=embed, view=view)
+                thread, message = await forum_channel.create_thread(
+                    name=thread_name, 
+                    embed=embed, 
+                    view=view,
+                    content=f"👋 嗨 {user.mention}！這是你的專屬置物櫃～"
+                )
             except discord.HTTPException as http_e:
                 if http_e.status == 400:
                     # 可能是 embed 或 view 問題，嘗試只用基本內容
@@ -667,7 +684,11 @@ class UserPanel(commands.Cog):
                         description="正在載入使用者資料...",
                         color=0x00ff88
                     )
-                    thread, message = await forum_channel.create_thread(name=thread_name, embed=simple_embed)
+                    thread, message = await forum_channel.create_thread(
+                        name=thread_name, 
+                        embed=simple_embed,
+                        content=f"👋 嗨 {user.mention}！這是你的專屬置物櫃～"
+                    )
                     # 然後更新為完整內容
                     await message.edit(embed=embed, view=view)
                 else:
