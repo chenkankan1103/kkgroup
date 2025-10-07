@@ -102,7 +102,6 @@ def send_startup_messages():
     
     # 發送所有段落
     total_segments = len(segments)
-    print(f"[Discord] 正在發送 {BOT_NAME} 的啟動訊息 (共 {total_segments} 段)...", file=sys.__stderr__)
     
     for i, segment in enumerate(segments, 1):
         if total_segments > 1:
@@ -114,14 +113,9 @@ def send_startup_messages():
         
         success = send_with_retry(message)
         
-        if not success:
-            print(f"[Discord] {BOT_NAME} 第 {i} 段發送失敗", file=sys.__stderr__)
-        
         # 段落之間間隔 1 秒,避免限流
         if i < total_segments:
             time.sleep(1)
-    
-    print(f"[Discord] {BOT_NAME} 啟動訊息發送完成", file=sys.__stderr__)
 
 def discord_sender():
     """背景執行緒:每 3 秒批次發送訊息 (降低頻率避免限流)"""
