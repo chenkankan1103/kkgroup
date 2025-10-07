@@ -24,8 +24,8 @@ class ScamParkEvents(commands.Cog):
         
         # 事件設定
         self.event_cooldown = {}  # 使用者事件冷卻 {user_id: last_event_timestamp}
-        self.min_event_interval = 43200  # 最少12小時 (43200秒)
-        self.max_event_interval = 259200  # 最多3天 (259200秒)
+        self.min_event_interval = 21600  # 最少6小時 (秒)
+        self.max_event_interval = 86400  # 最多1天 (秒)
         
         # 事件訊息追蹤
         self.event_messages = {}  # 存儲使用者的事件訊息ID {user_id: message_id}
