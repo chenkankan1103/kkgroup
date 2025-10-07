@@ -3,7 +3,7 @@ from discord.ui import Button, View, Modal, TextInput, Select
 import asyncio
 import os
 import random
-
+import traceback
 from .config import RAINBOW_ROLE_ID, VIP_ROLE_ID, EQUIPMENT_SHOP, ROLE_SHOP
 
 class CustomAmountModal(Modal):
@@ -33,33 +33,39 @@ class CustomAmountModal(Modal):
 
 
 class SlotMachineView(discord.ui.View):
-    def __init__(self, cog, history=None):
+    def __init__(self, cog, history=None, original_message=None):
         super().__init__(timeout=300)
         self.cog = cog
-        self.history = history if history else []
-        self.original_message = None  # 儲存原始訊息
+        self.history = history if isinstance(history, list) else []
+        self.original_message = original_message  # 接收並保留原始訊息
     
     @discord.ui.button(label="下注 50 KKcoin", style=discord.ButtonStyle.primary, emoji="💰")
     async def bet_50(self, interaction: discord.Interaction, button: discord.ui.Button):
         """下注 50 KKcoin"""
         try:
-            # 獲取當前訊息（如果還沒設定）
             if self.original_message is None:
                 self.original_message = interaction.message
             
-            # 呼叫 handle_bet 並更新 original_message
-            self.original_message = await self.cog.handle_bet(
+            # 關鍵修正：將返回的訊息重新賦值
+            result_message = await self.cog.handle_bet(
                 interaction, 
                 interaction.user.id, 
                 50, 
                 history=self.history,
-                original_message=self.original_message  # 傳遞當前訊息
+                original_message=self.original_message
             )
+            
+            # 更新 original_message 為最新的訊息
+            if result_message:
+                self.original_message = result_message
+                
         except Exception as e:
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("❌ 下注處理失敗", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 下注處理失敗", ephemeral=True)
             except:
                 pass
     
@@ -70,18 +76,24 @@ class SlotMachineView(discord.ui.View):
             if self.original_message is None:
                 self.original_message = interaction.message
             
-            self.original_message = await self.cog.handle_bet(
+            result_message = await self.cog.handle_bet(
                 interaction, 
                 interaction.user.id, 
                 100, 
                 history=self.history,
                 original_message=self.original_message
             )
+            
+            if result_message:
+                self.original_message = result_message
+                
         except Exception as e:
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("❌ 下注處理失敗", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 下注處理失敗", ephemeral=True)
             except:
                 pass
     
@@ -92,18 +104,24 @@ class SlotMachineView(discord.ui.View):
             if self.original_message is None:
                 self.original_message = interaction.message
             
-            self.original_message = await self.cog.handle_bet(
+            result_message = await self.cog.handle_bet(
                 interaction, 
                 interaction.user.id, 
                 200, 
                 history=self.history,
                 original_message=self.original_message
             )
+            
+            if result_message:
+                self.original_message = result_message
+                
         except Exception as e:
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("❌ 下注處理失敗", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 下注處理失敗", ephemeral=True)
             except:
                 pass
     
@@ -189,16 +207,25 @@ class SlotMachineView(discord.ui.View):
                 item.disabled = True
             
             # 更新原始訊息
-            if self.original_message:
-                await self.original_message.edit(embed=embed, view=self)
-            else:
-                await interaction.message.edit(embed=embed, view=self)
+            try:
+                if self.original_message:
+                    await self.original_message.edit(embed=embed, view=self)
+                else:
+                    await interaction.message.edit(embed=embed, view=self)
+            except discord.NotFound:
+                # 如果訊息被刪除，發送新訊息
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except Exception as e:
+                traceback.print_exc()
+                await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("❌ 結束遊戲時發生錯誤", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 結束遊戲時發生錯誤", ephemeral=True)
             except:
                 pass
     
@@ -242,7 +269,7 @@ class PersistentView(View):
 
 class ExploreView(View):
     def __init__(self, cog):
-        super().__init__(timeout=None)  # 持久化視圖
+        super().__init__(timeout=None)
         self.cog = cog
 
     @discord.ui.button(label="購買身份", style=discord.ButtonStyle.green, custom_id="persistent_buy_roles")
@@ -257,33 +284,46 @@ class ExploreView(View):
     async def rob_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_rob_action(interaction)
 
-    @discord.ui.button(label="賭博一把", style=discord.ButtonStyle.secondary, custom_id="persistent_gamble")
+    @discord.ui.button(label="🎰 拉霸機", style=discord.ButtonStyle.secondary, custom_id="persistent_gamble")
     async def gamble_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        rules_embed = discord.Embed(
-            title="🎰 拉霸機規則",
-            description=(
-                "下注 KKcoin，挑戰你的運氣！\n\n"
-                "🎯 三個相同圖案可獲得以下獎勵：\n"
-                "💎💎💎：x15\n"
-                "⭐⭐⭐：x8\n"
-                "🔔🔔🔔：x5\n"
-                "🍋🍋🍋：x3\n"
-                "🍒🍒🍒：x2.5\n"
-                "🍊🍊🍊 / 🍉🍉🍉 / 🍇🍇🍇：x1.5\n\n"
-                "🌀 兩個圖案相同：獲得 110% 賭金 (賺10%)\n"
-                "⭐ 僅出現一顆星星：保本回收 100% 賭金\n"
-                "💸 沒有任何中獎條件：損失 5% 賭金\n\n"
-            ),
-            color=discord.Color.red()
-        )
-        view = SlotMachineView(self.cog, interaction.user.id)
-        await interaction.followup.send(embed=rules_embed, view=view, ephemeral=True)
-
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            rules_embed = discord.Embed(
+                title="🎰 拉霸機規則",
+                description=(
+                    "下注 KKcoin，挑戰你的運氣！\n\n"
+                    "🎯 三個相同圖案可獲得以下獎勵：\n"
+                    "💎💎💎：x15\n"
+                    "⭐⭐⭐：x8\n"
+                    "🔔🔔🔔：x5\n"
+                    "🍋🍋🍋：x3\n"
+                    "🍒🍒🍒：x2.5\n"
+                    "🍊🍊🍊 / 🍉🍉🍉 / 🍇🍇🍇：x1.5\n\n"
+                    "🌀 兩個圖案相同：獲得 110% 賭金 (賺10%)\n"
+                    "⭐ 僅出現一顆星星：保本回收 100% 賭金\n"
+                    "💸 沒有任何中獎條件：損失 5% 賭金\n\n"
+                    "選擇下注金額開始遊戲！"
+                ),
+                color=discord.Color.gold()
+            )
+            
+            view = SlotMachineView(self.cog, history=[])
+            message = await interaction.followup.send(embed=rules_embed, view=view, ephemeral=True)
+            
+            # 設定初始訊息
+            view.original_message = message
+            
+        except Exception as e:
+            traceback.print_exc()
+            try:
+                await interaction.followup.send("❌ 拉霸機啟動失敗", ephemeral=True)
+            except:
+                pass
 
 class RoleShopView(View):
     def __init__(self, cog):
-        super().__init__(timeout=None)  # 持久化視圖
+        super().__init__(timeout=None)
         self.cog = cog
 
     @discord.ui.button(label="七彩披風 (50 KKcoin/1天)", style=discord.ButtonStyle.blurple, custom_id="persistent_buy_rainbow")
