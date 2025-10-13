@@ -39,17 +39,32 @@ class ContextManager:
             self.conversation_history[user_id].pop(0)
     
     def build_context_prompt(self, user_id: int, new_message: str) -> str:
-        """構建包含上下文的完整提示"""
+        """構建包含上下文的簡化提示（控制長度以避免 API 限制）"""
         history = self.conversation_history.get(user_id, [])
         
-        context = "最近的對話記錄：\n"
-        for i, exchange in enumerate(history[-3:], 1):
-            context += f"\n--- 對話 {i} ---\n"
-            context += f"使用者: {exchange['user']}\n"
-            context += f"機器人: {exchange['bot']}\n"
+        # 從最近3條開始，如果太長就逐步減少
+        for num_exchanges in [3, 2, 1, 0]:
+            context = ""
+            if num_exchanges > 0:
+                context = "最近的對話記錄：\n"
+                for i, exchange in enumerate(history[-num_exchanges:], 1):
+                    # 截斷過長的訊息
+                    user_msg = exchange['user'][:200]
+                    bot_msg = exchange['bot'][:200]
+                    context += f"\n--- 對話 {i} ---\n"
+                    context += f"使用者: {user_msg}\n"
+                    context += f"機器人: {bot_msg}\n"
+                context += f"\n--- 新訊息 ---\n"
+            
+            context += f"使用者: {new_message}\n"
+            
+            # 如果總長度在合理範圍內（Groq 限制），就使用這個版本
+            if len(context) < 2000:
+                return context
         
-        context += f"\n--- 新訊息 ---\n使用者: {new_message}\n"
-        return context
+        # 如果實在太長，只返回當前訊息
+        logger.warning(f"對話上下文過長，只使用當前訊息")
+        return f"使用者: {new_message}\n"
     
     def get_last_bot_response(self, user_id: int) -> Optional[str]:
         """獲取機器人最後的回應"""
