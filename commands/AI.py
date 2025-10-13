@@ -79,8 +79,8 @@ class AIResponse(commands.Cog):
         self.bot = bot
         self.context_manager = ContextManager(max_history=10)
     
-    async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """通用 API 調用函數"""
+async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        """通用 API 調用函數 - 改進版"""
         if not AI_API_KEY or not AI_API_URL:
             logger.error("AI API 配置不完整")
             return None
@@ -101,18 +101,37 @@ class AIResponse(commands.Cog):
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
                 async with session.post(AI_API_URL, headers=headers, json=payload) as resp:
                     if resp.status == 200:
-                        data = await resp.json()
+                        # 先獲取原始文本，便於調試
+                        response_text = await resp.text()
+                        logger.info(f"API 原始響應 ({len(response_text)} chars): {response_text[:500]}")
+                        
+                        try:
+                            data = await resp.json()
+                        except Exception as json_error:
+                            logger.error(f"JSON 解析失敗: {json_error}")
+                            logger.error(f"響應文本: {response_text[:1000]}")
+                            return None
+                        
+                        # 根據 API 類型調整解析方式
                         if "choices" in data and len(data["choices"]) > 0:
                             return data["choices"][0]["message"]["content"].strip()
+                        elif "result" in data:  # 某些 API 的響應格式
+                            return data["result"].strip()
+                        elif "content" in data:
+                            return data["content"].strip()
+                        else:
+                            logger.error(f"未知的 API 響應格式: {data}")
+                            return None
                     else:
-                        logger.error(f"API 請求失敗: {resp.status}")
+                        response_text = await resp.text()
+                        logger.error(f"API 請求失敗: {resp.status}, 響應: {response_text[:500]}")
         except asyncio.TimeoutError:
             logger.error("AI API 請求超時")
         except Exception as e:
             logger.error(f"AI API 錯誤: {e}")
         
         return None
-
+    
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """處理提及機器人的訊息 - 使用上下文感知"""
