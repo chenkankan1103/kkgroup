@@ -80,7 +80,7 @@ class AIResponse(commands.Cog):
         self.context_manager = ContextManager(max_history=10)
     
     async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """通用 API 調用函數 - 改進版"""
+        """通用 API 調用函數 - 改進版，處理多個 JSON 對象"""
         if not AI_API_KEY or not AI_API_URL:
             logger.error("AI API 配置不完整")
             return None
@@ -101,34 +101,68 @@ class AIResponse(commands.Cog):
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
                 async with session.post(AI_API_URL, headers=headers, json=payload) as resp:
                     if resp.status == 200:
-                        # 先獲取原始文本，便於調試
                         response_text = await resp.text()
-                        logger.info(f"API 原始響應 ({len(response_text)} chars): {response_text[:500]}")
+                        logger.info(f"API 原始響應長度: {len(response_text)} chars")
+                        logger.debug(f"響應前 500 字符: {response_text[:500]}")
+                        logger.debug(f"響應後 200 字符: {response_text[-200:]}")
                         
+                        data = None
                         try:
                             data = await resp.json()
                         except Exception as json_error:
-                            logger.error(f"JSON 解析失敗: {json_error}")
-                            logger.error(f"響應文本: {response_text[:1000]}")
-                            return None
+                            logger.warning(f"JSON 解析失敗: {json_error}，嘗試提取第一個 JSON 對象...")
+                            
+                            # 嘗試提取第一個完整的 JSON 對象
+                            import json
+                            cleaned_text = response_text.strip()
+                            
+                            # 尋找第一個 { 和對應的 }
+                            start_idx = cleaned_text.find('{')
+                            if start_idx != -1:
+                                brace_count = 0
+                                for i in range(start_idx, len(cleaned_text)):
+                                    if cleaned_text[i] == '{':
+                                        brace_count += 1
+                                    elif cleaned_text[i] == '}':
+                                        brace_count -= 1
+                                        if brace_count == 0:
+                                            json_str = cleaned_text[start_idx:i+1]
+                                            try:
+                                                data = json.loads(json_str)
+                                                logger.info("成功提取第一個 JSON 對象")
+                                                break
+                                            except:
+                                                pass
+                            
+                            if data is None:
+                                logger.error(f"無法解析 JSON，完整響應文本: {response_text[:2000]}")
+                                return None
                         
                         # 根據 API 類型調整解析方式
                         if "choices" in data and len(data["choices"]) > 0:
-                            return data["choices"][0]["message"]["content"].strip()
+                            content = data["choices"][0]["message"]["content"].strip()
+                            logger.info(f"成功獲取回應: {len(content)} 字符")
+                            return content
                         elif "result" in data:
-                            return data["result"].strip()
+                            content = data["result"].strip() if isinstance(data["result"], str) else str(data["result"])
+                            logger.info(f"成功獲取回應 (result): {len(content)} 字符")
+                            return content
                         elif "content" in data:
-                            return data["content"].strip()
+                            content = data["content"].strip() if isinstance(data["content"], str) else str(data["content"])
+                            logger.info(f"成功獲取回應 (content): {len(content)} 字符")
+                            return content
                         else:
-                            logger.error(f"未知的 API 響應格式: {data}")
+                            logger.error(f"未知的 API 響應格式: {data.keys() if isinstance(data, dict) else type(data)}")
+                            logger.error(f"完整數據: {str(data)[:500]}")
                             return None
                     else:
                         response_text = await resp.text()
-                        logger.error(f"API 請求失敗: {resp.status}, 響應: {response_text[:500]}")
+                        logger.error(f"API 請求失敗: {resp.status}")
+                        logger.error(f"響應: {response_text[:500]}")
         except asyncio.TimeoutError:
             logger.error("AI API 請求超時")
         except Exception as e:
-            logger.error(f"AI API 錯誤: {e}")
+            logger.error(f"AI API 錯誤: {e}", exc_info=True)
         
         return None
 
