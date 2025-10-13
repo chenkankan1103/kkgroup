@@ -103,45 +103,45 @@ class AIResponse(commands.Cog):
                     if resp.status == 200:
                         response_text = await resp.text()
                         logger.info(f"API 原始響應長度: {len(response_text)} chars")
-                        logger.debug(f"響應前 500 字符: {response_text[:500]}")
-                        logger.debug(f"響應後 200 字符: {response_text[-200:]}")
+                        logger.info(f"響應前 300 字符: {response_text[:300]}")
+                        logger.info(f"響應後 300 字符: {response_text[-300:]}")
                         
+                        import json
                         data = None
-                        try:
-                            data = await resp.json()
-                        except Exception as json_error:
-                            logger.warning(f"JSON 解析失敗: {json_error}，嘗試提取第一個 JSON 對象...")
+                        
+                        # 方法 1: 直接提取第一個完整的 JSON 對象（處理多個 JSON 連接的情況）
+                        cleaned_text = response_text.strip()
+                        start_idx = cleaned_text.find('{')
+                        
+                        if start_idx != -1:
+                            brace_count = 0
+                            end_idx = -1
+                            for i in range(start_idx, len(cleaned_text)):
+                                if cleaned_text[i] == '{':
+                                    brace_count += 1
+                                elif cleaned_text[i] == '}':
+                                    brace_count -= 1
+                                    if brace_count == 0:
+                                        end_idx = i
+                                        break
                             
-                            # 嘗試提取第一個完整的 JSON 對象
-                            import json
-                            cleaned_text = response_text.strip()
-                            
-                            # 尋找第一個 { 和對應的 }
-                            start_idx = cleaned_text.find('{')
-                            if start_idx != -1:
-                                brace_count = 0
-                                for i in range(start_idx, len(cleaned_text)):
-                                    if cleaned_text[i] == '{':
-                                        brace_count += 1
-                                    elif cleaned_text[i] == '}':
-                                        brace_count -= 1
-                                        if brace_count == 0:
-                                            json_str = cleaned_text[start_idx:i+1]
-                                            try:
-                                                data = json.loads(json_str)
-                                                logger.info("成功提取第一個 JSON 對象")
-                                                break
-                                            except:
-                                                pass
-                            
-                            if data is None:
-                                logger.error(f"無法解析 JSON，完整響應文本: {response_text[:2000]}")
-                                return None
+                            if end_idx != -1:
+                                json_str = cleaned_text[start_idx:end_idx+1]
+                                try:
+                                    data = json.loads(json_str)
+                                    logger.info(f"成功提取 JSON 對象 (長度: {len(json_str)})")
+                                except json.JSONDecodeError as e:
+                                    logger.error(f"JSON 解析失敗: {e}")
+                                    logger.error(f"嘗試解析的字符串: {json_str[:500]}")
+                        
+                        if data is None:
+                            logger.error(f"無法解析任何 JSON 對象，完整響應: {response_text[:1000]}")
+                            return None
                         
                         # 根據 API 類型調整解析方式
                         if "choices" in data and len(data["choices"]) > 0:
                             content = data["choices"][0]["message"]["content"].strip()
-                            logger.info(f"成功獲取回應: {len(content)} 字符")
+                            logger.info(f"成功獲取回應 (choices): {len(content)} 字符")
                             return content
                         elif "result" in data:
                             content = data["result"].strip() if isinstance(data["result"], str) else str(data["result"])
@@ -152,7 +152,7 @@ class AIResponse(commands.Cog):
                             logger.info(f"成功獲取回應 (content): {len(content)} 字符")
                             return content
                         else:
-                            logger.error(f"未知的 API 響應格式: {data.keys() if isinstance(data, dict) else type(data)}")
+                            logger.error(f"未知的 API 響應格式。數據鍵: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
                             logger.error(f"完整數據: {str(data)[:500]}")
                             return None
                     else:
