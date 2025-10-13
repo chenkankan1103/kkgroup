@@ -79,7 +79,7 @@ class AIResponse(commands.Cog):
         self.bot = bot
         self.context_manager = ContextManager(max_history=10)
     
-async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+    async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
         """通用 API 調用函數 - 改進版"""
         if not AI_API_KEY or not AI_API_URL:
             logger.error("AI API 配置不完整")
@@ -115,7 +115,7 @@ async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[st
                         # 根據 API 類型調整解析方式
                         if "choices" in data and len(data["choices"]) > 0:
                             return data["choices"][0]["message"]["content"].strip()
-                        elif "result" in data:  # 某些 API 的響應格式
+                        elif "result" in data:
                             return data["result"].strip()
                         elif "content" in data:
                             return data["content"].strip()
@@ -131,7 +131,7 @@ async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[st
             logger.error(f"AI API 錯誤: {e}")
         
         return None
-    
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """處理提及機器人的訊息 - 使用上下文感知"""
