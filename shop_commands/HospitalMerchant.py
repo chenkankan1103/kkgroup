@@ -18,7 +18,7 @@ class StaminaItemView(discord.ui.View):
         self.merchant_cog = merchant_cog
         self.user_id = user_id
 
-    @discord.ui.button(label="小份 +5體力", style=discord.ButtonStyle.blurple, emoji="🧪")
+    @discord.ui.button(label="維他命C軟糖 +5體力", style=discord.ButtonStyle.blurple, emoji="🍬")
     async def buy_small(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id != self.user_id:
@@ -26,7 +26,7 @@ class StaminaItemView(discord.ui.View):
             return
         await self.merchant_cog.process_purchase(interaction, self.user_id, "small")
 
-    @discord.ui.button(label="中份 +10體力", style=discord.ButtonStyle.green, emoji="💊")
+    @discord.ui.button(label="紅牛能量飲 +10體力", style=discord.ButtonStyle.green, emoji="🥛")
     async def buy_medium(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id != self.user_id:
@@ -34,7 +34,7 @@ class StaminaItemView(discord.ui.View):
             return
         await self.merchant_cog.process_purchase(interaction, self.user_id, "medium")
 
-    @discord.ui.button(label="大份 +20體力", style=discord.ButtonStyle.danger, emoji="⚗️")
+    @discord.ui.button(label="靈芝人蔘燉雞湯 +20體力", style=discord.ButtonStyle.danger, emoji="🍲")
     async def buy_large(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id != self.user_id:
@@ -49,17 +49,17 @@ class PersistentStaminaView(discord.ui.View):
         super().__init__(timeout=None)  # 永不過期
         self.merchant_cog = merchant_cog
 
-    @discord.ui.button(label="小份 +5體力", style=discord.ButtonStyle.blurple, emoji="🧪", custom_id="stamina_small")
+    @discord.ui.button(label="維他命C軟糖 +5體力", style=discord.ButtonStyle.blurple, emoji="🍬", custom_id="stamina_small")
     async def buy_small(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         await self.merchant_cog.process_purchase(interaction, interaction.user.id, "small")
 
-    @discord.ui.button(label="中份 +10體力", style=discord.ButtonStyle.green, emoji="💊", custom_id="stamina_medium")
+    @discord.ui.button(label="紅牛能量飲 +10體力", style=discord.ButtonStyle.green, emoji="🥛", custom_id="stamina_medium")
     async def buy_medium(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         await self.merchant_cog.process_purchase(interaction, interaction.user.id, "medium")
 
-    @discord.ui.button(label="大份 +20體力", style=discord.ButtonStyle.danger, emoji="⚗️", custom_id="stamina_large")
+    @discord.ui.button(label="靈芝人蔘燉雞湯 +20體力", style=discord.ButtonStyle.danger, emoji="🍲", custom_id="stamina_large")
     async def buy_large(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         await self.merchant_cog.process_purchase(interaction, interaction.user.id, "large")
@@ -78,9 +78,9 @@ class HospitalMerchant(commands.Cog):
         
         # 商品定義
         self.products = {
-            "small": {"stamina": 5, "price": 500, "name": "小份恢復劑", "emoji": "🧪"},
-            "medium": {"stamina": 10, "price": 1000, "name": "中份強化劑", "emoji": "💊"},
-            "large": {"stamina": 20, "price": 2000, "name": "大份神秘藥劑", "emoji": "⚗️"}
+            "small": {"stamina": 5, "price": 500, "name": "維他命 C 軟糖", "emoji": "🍬"},
+            "medium": {"stamina": 10, "price": 1000, "name": "紅牛能量飲", "emoji": "🥛"},
+            "large": {"stamina": 20, "price": 2000, "name": "靈芝人蔘燉雞湯", "emoji": "🍲"}
         }
         
         # 儲存醫院訊息 ID
