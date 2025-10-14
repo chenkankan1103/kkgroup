@@ -180,12 +180,13 @@ class HospitalMerchant(commands.Cog):
         
         embed.add_field(
             name="⚠️ 注意事項",
-            value="• 購買即視為同意可能的副作用\n• 恢復體力後將自動出院\n• 逾期未購買將被強制轉院",
+            value="• 購買即視為同意可能的副作用\n• 恢復體力後將自動出院",
             inline=False
         )
         
         embed.set_footer(text="🔐 交易需要謹慎，但活著總是第一優先")
-        embed.set_thumbnail(url="https://cdn-icons-png.flaticon.com/512/2912/2912515.png")
+        # 使用商人圖片作為大圖
+        embed.set_image(url="https://cdn.discordapp.com/attachments/1275688788806467635/1427730328792989788/image.png")
         
         return embed
 
@@ -418,20 +419,36 @@ class HospitalMerchant(commands.Cog):
             if member_role and member_role in member.roles:
                 await member.remove_roles(member_role, reason="進入傷病狀態")
             
-            # 在醫院頻道發送通知
+            # 在醫院頻道發送僅個人可見的住院通知
             channel = self.bot.get_channel(self.hospital_channel_id)
             if channel:
-                injury_embed = discord.Embed(
-                    title="🚑 新患者入院",
-                    description=f"{member.mention} 被送入醫院",
-                    color=0xFF0000
+                personal_embed = discord.Embed(
+                    title="🏥 住院通知",
+                    description=f"{member.mention} 你好，歡迎來到醫院",
+                    color=0xFF6B6B
                 )
                 
-                injury_embed.add_field(name="狀態", value="💫 已擊暈\n❤️ HP: 0\n⚡ 體力: 0", inline=False)
-                injury_embed.add_field(name="需要治療", value="正在等待治療...", inline=False)
-                injury_embed.set_thumbnail(url=member.display_avatar.url)
+                personal_embed.add_field(
+                    name="📋 當前狀態",
+                    value="💫 已擊暈\n❤️ HP: 0/100\n⚡ 體力: 0/100",
+                    inline=False
+                )
                 
-                await channel.send(embed=injury_embed)
+                personal_embed.add_field(
+                    name="⏱️ 自然恢復",
+                    value="• 每小時恢復 **25 點體力**\n• 需達到 **100 點體力**才能出院\n• 預計需要 **4 小時**完全恢復",
+                    inline=False
+                )
+                
+                personal_embed.add_field(
+                    name="💊 快速出院",
+                    value="若想及早出院，請使用上方按鈕購買恢復產品",
+                    inline=False
+                )
+                
+                personal_embed.set_footer(text="💡 購買產品可立即恢復體力並出院")
+                
+                await channel.send(embed=personal_embed, content=member.mention, delete_after=None)
             
             logging.info(f"用戶 {user_id} 已進入傷病狀態")
             
