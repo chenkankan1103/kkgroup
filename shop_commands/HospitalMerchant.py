@@ -256,7 +256,7 @@ class HospitalMerchant(commands.Cog):
         try:
             product = self.products.get(product_type)
             if not product:
-                await interaction.followup.send("❌ 商品不存在！")
+                await interaction.followup.send("❌ 商品不存在！", ephemeral=True)
                 return
             
             # 檢查用戶金錢和狀態
@@ -267,7 +267,7 @@ class HospitalMerchant(commands.Cog):
             result = cursor.fetchone()
             
             if not result:
-                await interaction.followup.send("❌ 無法找到你的資料！")
+                await interaction.followup.send("❌ 無法找到你的資料！", ephemeral=True)
                 conn.close()
                 return
             
@@ -282,7 +282,8 @@ class HospitalMerchant(commands.Cog):
                     f"❌ 金錢不足！\n"
                     f"你有: {kkcoin} KKCoin\n"
                     f"所需: {price} KKCoin\n"
-                    f"差額: {deficit} KKCoin"
+                    f"差額: {deficit} KKCoin",
+                    ephemeral=True
                 )
                 conn.close()
                 return
@@ -330,7 +331,8 @@ class HospitalMerchant(commands.Cog):
                 )
                 purchase_embed.color = 0xFFD700
             
-            await interaction.followup.send(embed=purchase_embed)
+            # 購買通知僅個人可見
+            await interaction.followup.send(embed=purchase_embed, ephemeral=True)
             
             # 如果體力已滿，觸發恢復完成事件
             if new_stamina >= 100:
@@ -338,7 +340,7 @@ class HospitalMerchant(commands.Cog):
             
         except Exception as e:
             logging.error(f"處理購買錯誤: {e}")
-            await interaction.followup.send(f"❌ 購買過程中發生錯誤: {e}")
+            await interaction.followup.send(f"❌ 購買過程中發生錯誤: {e}", ephemeral=True)
 
     async def complete_hospital_recovery(self, interaction: discord.Interaction, user_id: int):
         """完成醫院恢復，移除身分組並恢復紙娃娃"""
@@ -372,7 +374,7 @@ class HospitalMerchant(commands.Cog):
             conn.commit()
             conn.close()
             
-            # 發送出院通知
+            # 發送出院通知（僅個人可見）
             recovery_embed = discord.Embed(
                 title="✨ 恭喜出院！",
                 description=f"{member.mention} 已成功出院",
@@ -387,7 +389,7 @@ class HospitalMerchant(commands.Cog):
             
             channel = self.bot.get_channel(self.hospital_channel_id)
             if channel:
-                await channel.send(embed=recovery_embed)
+                await channel.send(embed=recovery_embed, content=member.mention, delete_after=None)
             
             logging.info(f"用戶 {user_id} 已完成醫院恢復")
             
