@@ -174,17 +174,38 @@ class HospitalMerchant(commands.Cog):
         for key, product in self.products.items():
             embed.add_field(
                 name=f"{product['emoji']} {product['name']}",
-                value=f"體力恢復: **+{product['stamina']}**\n價格: **{product['price']} KKCoin**",
+                value=(
+                    f"📊 **規格說明**\n"
+                    f"• 體力恢復: **+{product['stamina']} 點**\n"
+                    f"• 價格: **{product['price']} KKCoin**\n"
+                    f"• 效果: 立即恢復體力並出院"
+                ),
                 inline=False
             )
         
         embed.add_field(
-            name="⚠️ 注意事項",
-            value="• 購買即視為同意可能的副作用\n• 恢復體力後將自動出院",
+            name="⏰ 自然恢復選項",
+            value=(
+                "**不想花錢？沒關係！**\n"
+                "• 每小時自動恢復 **25 點體力**\n"
+                "• 等待 **4 小時**即可免費出院\n"
+                "• 無需購買任何產品"
+            ),
             inline=False
         )
         
-        embed.set_footer(text="🔐 交易需要謹慎，但活著總是第一優先")
+        embed.add_field(
+            name="⚠️ 重要提醒",
+            value=(
+                "• 購買前請確認商品規格\n"
+                "• 購買即視為同意可能的副作用\n"
+                "• 恢復體力達 100 點將自動出院\n"
+                "• **可選擇等待自然恢復，不強制購買**"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="💡 提示：購買是選擇性的，您可以選擇免費等待自然恢復")
         # 使用商人圖片作為大圖
         embed.set_image(url="https://cdn.discordapp.com/attachments/1275688788806467635/1427730328792989788/image.png")
         
@@ -487,6 +508,7 @@ class HospitalMerchant(commands.Cog):
             conn.commit()
             conn.close()
             
+            # 發送自然恢復通知（僅個人可見）
             channel = self.bot.get_channel(self.hospital_channel_id)
             if channel:
                 recovery_embed = discord.Embed(
@@ -495,7 +517,7 @@ class HospitalMerchant(commands.Cog):
                     color=0x00FF00
                 )
                 recovery_embed.add_field(name="狀態", value="✅ 已出院\n✅ 恢復正式成員身分", inline=False)
-                await channel.send(embed=recovery_embed)
+                await channel.send(embed=recovery_embed, content=member.mention, delete_after=None)
             
             logging.info(f"用戶 {user_id} 已通過自然恢復完成")
             
