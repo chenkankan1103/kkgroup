@@ -21,13 +21,16 @@ class ScamParkEvents(commands.Cog):
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_API_MODEL = os.getenv('AI_API_MODEL')
         
-        # 事件設定 - 調整為8小時常態分佈
+        # 事件設定 - 調整為24小時常態分佈
         self.event_cooldown = {}  # 使用者事件冷卻 {user_id: last_event_timestamp}
-        self.min_event_interval = 28800   # 最少8小時 (秒)
-        self.max_event_interval = 57600   # 最多16小時 (秒)
+        self.min_event_interval = 86400   # 最少24小時 (秒)
+        self.max_event_interval = 129600  # 最多36小時 (秒)
         
         # 事件訊息追蹤
         self.event_messages = {}  # 存儲使用者的事件訊息ID {user_id: message_id}
+        
+        # 機器人啟動標記
+        self.bot_ready = False
         
         # 初始化資料庫表格
         self.init_event_database()
@@ -184,7 +187,59 @@ class ScamParkEvents(commands.Cog):
     @random_event_trigger.before_loop
     async def before_random_event_trigger(self):
         await self.bot.wait_until_ready()
+        
+        # 檢查並清理已刪除的訊息
+        await self.cleanup_deleted_messages()
+        
+        self.bot_ready = True
         print("🎲 隨機事件系統已啟動")
+
+    async def cleanup_deleted_messages(self):
+        """清理已刪除的事件訊息記錄"""
+        try:
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                return
+
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT user_id, last_message_id FROM event_history WHERE last_message_id IS NOT NULL')
+            records = cursor.fetchall()
+            
+            cleaned_count = 0
+            for user_id, message_id in records:
+                # 獲取用戶的討論串
+                cursor.execute('SELECT thread_id FROM users WHERE user_id = ?', (user_id,))
+                result = cursor.fetchone()
+                if not result or result[0] == 0:
+                    continue
+                
+                thread_id = result[0]
+                thread = forum_channel.get_thread(thread_id)
+                
+                if thread:
+                    try:
+                        # 嘗試獲取訊息
+                        message = await thread.fetch_message(message_id)
+                        # 如果訊息存在，更新內存記錄
+                        self.event_messages[user_id] = message_id
+                    except discord.NotFound:
+                        # 訊息已被刪除，清理記錄
+                        if user_id in self.event_messages:
+                            del self.event_messages[user_id]
+                        cursor.execute('UPDATE event_history SET last_message_id = NULL WHERE user_id = ?', (user_id,))
+                        cleaned_count += 1
+                    except Exception:
+                        pass
+            
+            if cleaned_count > 0:
+                conn.commit()
+                print(f"🧹 已清理 {cleaned_count} 筆無效的事件訊息記錄")
+            
+            conn.close()
+            
+        except Exception as e:
+            print(f"❌ 清理訊息記錄錯誤: {e}")
 
     async def generate_pollinations_image(self, prompt: str, is_negative_event: bool = True, scene_variety: int = None) -> str:
         """使用 Pollinations.ai 生成圖片"""
@@ -318,6 +373,21 @@ class ScamParkEvents(commands.Cog):
                                    kkcoin: int, level: int, hp: int, stamina: int):
         """觸發隨機事件"""
         try:
+            # 檢查是否已有未處理的事件訊息
+            if member.id in self.event_messages:
+                old_message_id = self.event_messages[member.id]
+                try:
+                    old_message = await thread.fetch_message(old_message_id)
+                    # 如果訊息存在且是最近的（24小時內），則跳過
+                    if old_message.created_at.timestamp() > (datetime.datetime.now().timestamp() - 86400):
+                        print(f"⏭️ 用戶 {member.name} 已有近期事件訊息，跳過觸發")
+                        return
+                except discord.NotFound:
+                    # 訊息已被刪除，清除記錄
+                    del self.event_messages[member.id]
+                except Exception:
+                    pass
+            
             possible_events = self.get_possible_events(kkcoin, level, hp, stamina)
             
             if not possible_events:
@@ -397,7 +467,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_major_confiscation(self, member, thread, kkcoin, level, hp, stamina):
         """大額沒收"""
-        confiscated = min(kkcoin, random.randint(150, 300))
+        confiscated = min(kkcoin, random.randint(75, 150))
         
         ai_desc = await self.generate_ai_event_description(
             "大額沒收", 
@@ -432,7 +502,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_protection_fee(self, member, thread, kkcoin, level, hp, stamina):
         """保護費"""
-        fee = min(kkcoin, random.randint(100, 200))
+        fee = min(kkcoin, random.randint(50, 100))
         
         ai_desc = await self.generate_ai_event_description("保護費", {"金額": fee})
         
@@ -523,7 +593,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_bribe_demand(self, member, thread, kkcoin, level, hp, stamina):
         """賄賂要求"""
-        bribe = min(kkcoin, random.randint(75, 175))
+        bribe = min(kkcoin, random.randint(38, 88))
         embed = discord.Embed(
             title="🤝 主管「建議」", 
             description=f"主管拍了拍你的肩膀：「最近查得很嚴啊，要不要意思意思？」", 
@@ -538,7 +608,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_gambling_trap(self, member, thread, kkcoin, level, hp, stamina):
         """賭博陷阱"""
-        loss = min(kkcoin, random.randint(50, 150))
+        loss = min(kkcoin, random.randint(25, 75))
         embed = discord.Embed(
             title="🎲 地下賭局", 
             description="「來玩一把吧！」結果...莊家和荷官都是自己人。", 
@@ -553,7 +623,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_fine_penalty(self, member, thread, kkcoin, level, hp, stamina):
         """罰款"""
-        fine = min(kkcoin, random.randint(40, 100))
+        fine = min(kkcoin, random.randint(20, 50))
         reasons = ["業績不達標", "遲到5分鐘", "說話太大聲", "上廁所超時", "態度不佳"]
         reason = random.choice(reasons)
         embed = discord.Embed(
@@ -570,7 +640,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_equipment_fee(self, member, thread, kkcoin, level, hp, stamina):
         """設備使用費"""
-        fee = min(kkcoin, random.randint(25, 75))
+        fee = min(kkcoin, random.randint(13, 38))
         items = ["電腦", "手機", "椅子", "桌子", "網路"]
         item = random.choice(items)
         embed = discord.Embed(
@@ -587,7 +657,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_kkcoin_confiscation(self, member, thread, kkcoin, level, hp, stamina):
         """KKCoin沒收"""
-        confiscated = min(kkcoin, random.randint(50, 125))
+        confiscated = min(kkcoin, random.randint(25, 63))
         embed = discord.Embed(
             title="🚨 突襲搜查", 
             description="管理員突襲檢查你的房間！", 
@@ -619,7 +689,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_medical_extortion(self, member, thread, kkcoin, level, hp, stamina):
         """醫療勒索"""
-        cost = min(kkcoin, random.randint(50, 125))
+        cost = min(kkcoin, random.randint(25, 63))
         hp_restore = random.randint(15, 30)
         embed = discord.Embed(
             title="🏥 園區醫療室", 
@@ -636,7 +706,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_cell_search(self, member, thread, kkcoin, level, hp, stamina):
         """牢房搜查"""
-        loss = min(kkcoin, random.randint(25, 75))
+        loss = min(kkcoin, random.randint(13, 38))
         embed = discord.Embed(
             title="🔍 牢房搜查", 
             description="安全人員突襲檢查所有牢房...", 
@@ -651,7 +721,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_blackmail(self, member, thread, kkcoin, level, hp, stamina):
         """勒索"""
-        amount = min(kkcoin, random.randint(40, 100))
+        amount = min(kkcoin, random.randint(20, 50))
         embed = discord.Embed(
             title="😈 勒索", 
             description="「我看到你藏東西了...想要我保密嗎？」", 
@@ -764,7 +834,7 @@ class ScamParkEvents(commands.Cog):
 
     async def event_random_inspection(self, member, thread, kkcoin, level, hp, stamina):
         """例行檢查"""
-        lost_kkcoin = min(kkcoin, random.randint(50, 150))
+        lost_kkcoin = min(kkcoin, random.randint(25, 75))
         embed = discord.Embed(
             title="👮 例行檢查", 
             description="主管進行突擊檢查...", 
