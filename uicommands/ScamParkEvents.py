@@ -21,10 +21,10 @@ class ScamParkEvents(commands.Cog):
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_API_MODEL = os.getenv('AI_API_MODEL')
         
-        # 事件設定 - 調整為24小時常態分佈
+        # 事件設定 - 調整為12小時常態分佈
         self.event_cooldown = {}  # 使用者事件冷卻 {user_id: last_event_timestamp}
-        self.min_event_interval = 86400   # 最少24小時 (秒)
-        self.max_event_interval = 129600  # 最多36小時 (秒)
+        self.min_event_interval = 43200   # 最少12小時 (秒)
+        self.max_event_interval = 86400   # 最多24小時 (秒)
         
         # 事件訊息追蹤
         self.event_messages = {}  # 存儲使用者的事件訊息ID {user_id: message_id}
@@ -63,6 +63,8 @@ class ScamParkEvents(commands.Cog):
             conn.commit()
             conn.close()
             print("✅ 事件資料庫初始化完成")
+        except sqlite3.Error as e:
+            print(f"❌ 初始化事件資料庫SQL錯誤: {e}")
         except Exception as e:
             print(f"❌ 初始化事件資料庫錯誤: {e}")
 
@@ -82,6 +84,8 @@ class ScamParkEvents(commands.Cog):
             
             conn.close()
             print(f"✅ 載入 {len(records)} 筆事件歷史記錄")
+        except sqlite3.Error as e:
+            print(f"❌ 載入事件歷史資料庫錯誤: {e}")
         except Exception as e:
             print(f"❌ 載入事件歷史錯誤: {e}")
 
@@ -199,6 +203,7 @@ class ScamParkEvents(commands.Cog):
         try:
             forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                print("⚠️ 找不到論壇頻道，跳過清理")
                 return
 
             conn = sqlite3.connect(self.db_path)
@@ -208,38 +213,48 @@ class ScamParkEvents(commands.Cog):
             
             cleaned_count = 0
             for user_id, message_id in records:
-                # 獲取用戶的討論串
-                cursor.execute('SELECT thread_id FROM users WHERE user_id = ?', (user_id,))
-                result = cursor.fetchone()
-                if not result or result[0] == 0:
+                try:
+                    # 獲取用戶的討論串
+                    cursor.execute('SELECT thread_id FROM users WHERE user_id = ?', (user_id,))
+                    result = cursor.fetchone()
+                    if not result or result[0] == 0:
+                        continue
+                    
+                    thread_id = result[0]
+                    thread = forum_channel.get_thread(thread_id)
+                    
+                    if thread:
+                        try:
+                            # 嘗試獲取訊息
+                            message = await thread.fetch_message(message_id)
+                            # 如果訊息存在，更新內存記錄
+                            self.event_messages[user_id] = message_id
+                        except discord.NotFound:
+                            # 訊息已被刪除，清理記錄
+                            if user_id in self.event_messages:
+                                del self.event_messages[user_id]
+                            cursor.execute('UPDATE event_history SET last_message_id = NULL WHERE user_id = ?', (user_id,))
+                            cleaned_count += 1
+                        except discord.Forbidden:
+                            print(f"⚠️ 無權限讀取訊息: {message_id}")
+                        except Exception as e:
+                            print(f"⚠️ 檢查訊息錯誤: {e}")
+                except Exception as e:
+                    print(f"⚠️ 處理用戶 {user_id} 時發生錯誤: {e}")
                     continue
-                
-                thread_id = result[0]
-                thread = forum_channel.get_thread(thread_id)
-                
-                if thread:
-                    try:
-                        # 嘗試獲取訊息
-                        message = await thread.fetch_message(message_id)
-                        # 如果訊息存在，更新內存記錄
-                        self.event_messages[user_id] = message_id
-                    except discord.NotFound:
-                        # 訊息已被刪除，清理記錄
-                        if user_id in self.event_messages:
-                            del self.event_messages[user_id]
-                        cursor.execute('UPDATE event_history SET last_message_id = NULL WHERE user_id = ?', (user_id,))
-                        cleaned_count += 1
-                    except Exception:
-                        pass
             
             if cleaned_count > 0:
                 conn.commit()
                 print(f"🧹 已清理 {cleaned_count} 筆無效的事件訊息記錄")
+            else:
+                print("✅ 所有事件訊息記錄正常")
             
             conn.close()
             
         except Exception as e:
             print(f"❌ 清理訊息記錄錯誤: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def generate_pollinations_image(self, prompt: str, is_negative_event: bool = True, scene_variety: int = None) -> str:
         """使用 Pollinations.ai 生成圖片"""
@@ -378,19 +393,22 @@ class ScamParkEvents(commands.Cog):
                 old_message_id = self.event_messages[member.id]
                 try:
                     old_message = await thread.fetch_message(old_message_id)
-                    # 如果訊息存在且是最近的（24小時內），則跳過
-                    if old_message.created_at.timestamp() > (datetime.datetime.now().timestamp() - 86400):
+                    # 如果訊息存在且是最近的（12小時內），則跳過
+                    if old_message.created_at.timestamp() > (datetime.datetime.now().timestamp() - 43200):
                         print(f"⏭️ 用戶 {member.name} 已有近期事件訊息，跳過觸發")
                         return
                 except discord.NotFound:
                     # 訊息已被刪除，清除記錄
                     del self.event_messages[member.id]
-                except Exception:
-                    pass
+                except discord.Forbidden:
+                    print(f"⚠️ 無權限讀取用戶 {member.name} 的舊訊息")
+                except Exception as e:
+                    print(f"⚠️ 檢查舊訊息時發生錯誤: {e}")
             
             possible_events = self.get_possible_events(kkcoin, level, hp, stamina)
             
             if not possible_events:
+                print(f"⚠️ 用戶 {member.name} 沒有可觸發的事件")
                 return
 
             event = random.choice(possible_events)
