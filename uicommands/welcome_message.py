@@ -119,18 +119,25 @@ class WelcomeFlow(commands.Cog):
         # 圖片緩存
         self.cache_dir = Path('./character_images')
         self.cache_dir.mkdir(exist_ok=True)
-        self.discord_url_cache = {}
         
         self.init_database()
-        # 啟動時預載入圖片
-        asyncio.create_task(self.preload_preset_images())
+        # 啟動時預載入圖片 - 延遲啟動避免阻塞
+        self.bot.loop.create_task(self.delayed_preload())
+
+    async def delayed_preload(self):
+        """延遲預載入以避免阻塞機器人啟動"""
+        try:
+            await asyncio.sleep(5)  # 等待機器人完全啟動
+            await self.preload_preset_images()
+        except Exception as e:
+            print(f"⚠️ 預載入圖片時發生錯誤（不影響主功能）: {e}")
 
     def init_database(self):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # 創建完整的 users 表（包含 thread_id）
+            # 創建 users 表
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
@@ -154,6 +161,7 @@ class WelcomeFlow(commands.Cog):
                 )
             ''')
             
+            # 創建 image_cache 表
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS image_cache (
                     cache_key TEXT PRIMARY KEY,
@@ -177,9 +185,10 @@ class WelcomeFlow(commands.Cog):
                 if col_name not in columns:
                     try:
                         cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}")
-                        print(f"✅ 已添加缺失的欄位: {col_name}")
+                        print(f"✅ 已添加欄位: {col_name}")
                     except sqlite3.OperationalError as e:
-                        print(f"⚠️ 添加欄位 {col_name} 時發生錯誤: {e}")
+                        if "duplicate column name" not in str(e).lower():
+                            print(f"⚠️ 添加欄位 {col_name} 時發生錯誤: {e}")
             
             conn.commit()
             conn.close()
@@ -192,7 +201,6 @@ class WelcomeFlow(commands.Cog):
 
     async def preload_preset_images(self):
         """預載入 4 張預設角色圖片"""
-        await asyncio.sleep(2)  # 等待 bot 完全啟動
         print("🖼️ 開始預載入角色圖片...")
         
         for preset_name, config in self.preset_characters.items():
@@ -206,13 +214,16 @@ class WelcomeFlow(commands.Cog):
                 # 檢查本地緩存
                 cache_path = self.cache_dir / f"{preset_name}.png"
                 if cache_path.exists():
-                    with open(cache_path, 'rb') as f:
-                        image_data = f.read()
-                    
-                    discord_url = await self.upload_image_to_discord_storage(image_data, preset_name)
-                    if discord_url:
-                        print(f"✅ {preset_name} 從本地緩存上傳到 Discord")
-                        continue
+                    try:
+                        with open(cache_path, 'rb') as f:
+                            image_data = f.read()
+                        
+                        discord_url = await self.upload_image_to_discord_storage(image_data, preset_name)
+                        if discord_url:
+                            print(f"✅ {preset_name} 從本地緩存上傳到 Discord")
+                            continue
+                    except Exception as e:
+                        print(f"⚠️ 讀取本地緩存 {preset_name} 失敗: {e}")
                 
                 # 從 API 獲取圖片
                 discord_url = await self.generate_and_cache_preset_image(preset_name, config)
@@ -283,7 +294,7 @@ class WelcomeFlow(commands.Cog):
             conn.close()
             return None
         except Exception as e:
-            print(f"❌ 資料庫錯誤: {e}")
+            print(f"❌ 獲取用戶資料錯誤: {e}")
             return None
 
     def create_user_data(self, user_id: int):
@@ -309,7 +320,7 @@ class WelcomeFlow(commands.Cog):
             print(f"✅ 創建用戶資料: {user_id}")
         
         except Exception as e:
-            print(f"❌ 創建使用者資料錯誤: {e}")
+            print(f"❌ 創建用戶資料錯誤: {e}")
             import traceback
             traceback.print_exc()
 
@@ -335,7 +346,7 @@ class WelcomeFlow(commands.Cog):
             conn.close()
             
         except Exception as e:
-            print(f"❌ 更新使用者資料錯誤: {e}")
+            print(f"❌ 更新用戶資料錯誤: {e}")
 
     async def remove_items_from_inventory(self, user_id: int, items_to_remove: list):
         try:
@@ -375,7 +386,7 @@ class WelcomeFlow(commands.Cog):
             return f"{gender}_normal"
 
     async def save_image_to_cache(self, image_data: bytes, cache_key: str) -> bool:
-        """將圖片數據保存到緩存"""
+        """將圖片數據保存到本地緩存"""
         try:
             cache_path = self.cache_dir / f"{cache_key}.png"
             
@@ -396,7 +407,7 @@ class WelcomeFlow(commands.Cog):
                     return False
                     
         except Exception as e:
-            print(f"❌ 保存緩存圖片錯誤: {e}")
+            print(f"❌ 保存本地緩存錯誤: {e}")
             return False
 
     def get_cached_discord_url(self, cache_key: str) -> Optional[str]:
@@ -463,9 +474,9 @@ class WelcomeFlow(commands.Cog):
                     self.save_discord_url_cache(cache_key, discord_url, temp_msg.id)
                     
                     try:
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.5)
                         await temp_msg.delete()
-                    except discord.NotFound:
+                    except (discord.NotFound, discord.Forbidden):
                         pass
                     
                     return discord_url
@@ -482,8 +493,6 @@ class WelcomeFlow(commands.Cog):
             
         except Exception as e:
             print(f"❌ 上傳圖片到 Discord 錯誤: {e}")
-            import traceback
-            traceback.print_exc()
         
         return None
 
@@ -496,7 +505,7 @@ class WelcomeFlow(commands.Cog):
         if cached_url:
             return cached_url
         
-        # 如果沒有緩存，嘗試生成（通常不會發生，因為已預載入）
+        # 如果沒有緩存，嘗試生成
         if preset_key in self.preset_characters:
             config = self.preset_characters[preset_key]
             return await self.generate_and_cache_preset_image(preset_key, config)
@@ -585,7 +594,7 @@ class WelcomeFlow(commands.Cog):
 
             embed = await self.create_welcome_embed(user_data, user)
             
-            # 獲取角色圖片 URL (使用預設圖片)
+            # 獲取角色圖片 URL
             character_image_url = await self.get_character_image_url(user_data)
             
             if character_image_url:
@@ -642,14 +651,14 @@ class WelcomeFlow(commands.Cog):
             
             embed = await self.create_welcome_embed(user_data, member)
             
-            # 獲取角色圖片 URL (使用預設圖片)
+            # 獲取角色圖片 URL
             character_image_url = await self.get_character_image_url(user_data)
             
             if character_image_url:
                 embed.set_image(url=character_image_url)
                 print(f"✅ 已設置角色圖片")
             else:
-                print(f"⚠️ 無法獲取角色圖片")
+                print(f"⚠️ 無法獲取角色圖片（將不影響主功能）")
 
             combined_view = discord.ui.View(timeout=600)
             gender_view = GenderSelectView(self, member.id)
@@ -727,7 +736,7 @@ class WelcomeFlow(commands.Cog):
             await interaction.followup.send(embed=embed_response)
 
             # 5分鐘後移除臨時身分組並完成處理
-            await asyncio.sleep(300)  # 5分鐘
+            await asyncio.sleep(300)
             await self.remove_temp_role_and_cleanup(member.id)
             
         except Exception as e:
@@ -764,7 +773,7 @@ class WelcomeFlow(commands.Cog):
                     if channel:
                         msg = await channel.fetch_message(stun_data['message_id'])
                         await msg.delete()
-                except discord.NotFound:
+                except (discord.NotFound, discord.Forbidden):
                     pass
 
             # 發送完成通知
@@ -791,7 +800,7 @@ class WelcomeFlow(commands.Cog):
                 await asyncio.sleep(300)
                 try:
                     await completion_msg.delete()
-                except discord.NotFound:
+                except (discord.NotFound, discord.Forbidden):
                     pass
 
             # 清理記錄
@@ -878,7 +887,7 @@ class WelcomeFlow(commands.Cog):
                         failed_presets.append(preset_name)
                         print(f"❌ {preset_name} 重新載入失敗")
                     
-                    await asyncio.sleep(1)  # 避免請求過於頻繁
+                    await asyncio.sleep(1)
                     
                 except Exception as e:
                     failed_presets.append(preset_name)
@@ -1030,7 +1039,7 @@ class WelcomeFlow(commands.Cog):
             
             embed.add_field(
                 name="📋 現有欄位",
-                value=f"共 {len(column_names)} 個欄位\n" + ", ".join(column_names[:10]) + "...",
+                value=f"共 {len(column_names)} 個欄位",
                 inline=False
             )
             
