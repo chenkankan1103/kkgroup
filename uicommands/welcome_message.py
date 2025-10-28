@@ -130,6 +130,7 @@ class WelcomeFlow(commands.Cog):
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # 創建完整的 users 表（包含 thread_id）
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
@@ -148,7 +149,8 @@ class WelcomeFlow(commands.Cog):
                     bottom INTEGER DEFAULT 1060096,
                     shoes INTEGER DEFAULT 1072005,
                     gender TEXT DEFAULT 'male',
-                    is_stunned INTEGER DEFAULT 0
+                    is_stunned INTEGER DEFAULT 0,
+                    thread_id INTEGER DEFAULT 0
                 )
             ''')
             
@@ -165,21 +167,33 @@ class WelcomeFlow(commands.Cog):
             cursor.execute("PRAGMA table_info(users)")
             columns = [column[1] for column in cursor.fetchall()]
             
-            if "gender" not in columns:
-                cursor.execute("ALTER TABLE users ADD COLUMN gender TEXT DEFAULT 'male'")
-            if "is_stunned" not in columns:
-                cursor.execute("ALTER TABLE users ADD COLUMN is_stunned INTEGER DEFAULT 0")
+            missing_columns = {
+                "gender": "TEXT DEFAULT 'male'",
+                "is_stunned": "INTEGER DEFAULT 0",
+                "thread_id": "INTEGER DEFAULT 0"
+            }
+            
+            for col_name, col_def in missing_columns.items():
+                if col_name not in columns:
+                    try:
+                        cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}")
+                        print(f"✅ 已添加缺失的欄位: {col_name}")
+                    except sqlite3.OperationalError as e:
+                        print(f"⚠️ 添加欄位 {col_name} 時發生錯誤: {e}")
             
             conn.commit()
             conn.close()
+            print("✅ 資料庫初始化完成")
             
         except Exception as e:
-            print(f"資料庫初始化錯誤: {e}")
+            print(f"❌ 資料庫初始化錯誤: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def preload_preset_images(self):
         """預載入 4 張預設角色圖片"""
         await asyncio.sleep(2)  # 等待 bot 完全啟動
-        print("開始預載入角色圖片...")
+        print("🖼️ 開始預載入角色圖片...")
         
         for preset_name, config in self.preset_characters.items():
             try:
@@ -211,9 +225,9 @@ class WelcomeFlow(commands.Cog):
                 await asyncio.sleep(1)
                 
             except Exception as e:
-                print(f"預載入 {preset_name} 時發生錯誤: {e}")
+                print(f"❌ 預載入 {preset_name} 時發生錯誤: {e}")
         
-        print("角色圖片預載入完成")
+        print("✅ 角色圖片預載入完成")
 
     async def generate_and_cache_preset_image(self, preset_name: str, config: dict) -> Optional[str]:
         """生成並緩存預設角色圖片"""
@@ -250,7 +264,7 @@ class WelcomeFlow(commands.Cog):
                             return await self.upload_image_to_discord_storage(image_data, preset_name)
 
         except Exception as e:
-            print(f"生成預設圖片 {preset_name} 錯誤: {e}")
+            print(f"❌ 生成預設圖片 {preset_name} 錯誤: {e}")
         
         return None
 
@@ -260,14 +274,16 @@ class WelcomeFlow(commands.Cog):
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
-            conn.close()
             
             if row:
                 columns = [desc[0] for desc in cursor.description]
+                conn.close()
                 return dict(zip(columns, row))
+            
+            conn.close()
             return None
         except Exception as e:
-            print(f"資料庫錯誤: {e}")
+            print(f"❌ 資料庫錯誤: {e}")
             return None
 
     def create_user_data(self, user_id: int):
@@ -280,19 +296,22 @@ class WelcomeFlow(commands.Cog):
             cursor.execute('''
                 INSERT OR REPLACE INTO users (
                     user_id, inventory, face, hair, skin, top, bottom, shoes, gender,
-                    level, xp, kkcoin, title, hp, stamina, is_stunned
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    level, xp, kkcoin, title, hp, stamina, is_stunned, thread_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 user_id, default_inventory,
                 20005, 30120, 12000, 1040014, 1060096, 1072005, 'male',
-                1, 0, 0, '新手', 100, 100, 0
+                1, 0, 0, '新手', 100, 100, 0, 0
             ))
             
             conn.commit()
             conn.close()
+            print(f"✅ 創建用戶資料: {user_id}")
         
         except Exception as e:
-            print(f"創建使用者資料錯誤: {e}")
+            print(f"❌ 創建使用者資料錯誤: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def update_user_data(self, user_id: int, data: dict):
         try:
@@ -303,7 +322,7 @@ class WelcomeFlow(commands.Cog):
             params = []
             
             for key, value in data.items():
-                if key in ['face', 'hair', 'skin', 'top', 'bottom', 'shoes', 'gender', 'hp', 'stamina', 'is_stunned']:
+                if key in ['face', 'hair', 'skin', 'top', 'bottom', 'shoes', 'gender', 'hp', 'stamina', 'is_stunned', 'thread_id']:
                     updates.append(f"{key} = ?")
                     params.append(value)
             
@@ -316,7 +335,7 @@ class WelcomeFlow(commands.Cog):
             conn.close()
             
         except Exception as e:
-            print(f"更新使用者資料錯誤: {e}")
+            print(f"❌ 更新使用者資料錯誤: {e}")
 
     async def remove_items_from_inventory(self, user_id: int, items_to_remove: list):
         try:
@@ -338,7 +357,7 @@ class WelcomeFlow(commands.Cog):
             conn.close()
             
         except Exception as e:
-            print(f"移除物品錯誤: {e}")
+            print(f"❌ 移除物品錯誤: {e}")
 
     def create_progress_bar(self, current: int, maximum: int, length: int = 10) -> str:
         percentage = max(0, min(1, current / maximum)) if maximum > 0 else 0
@@ -377,7 +396,7 @@ class WelcomeFlow(commands.Cog):
                     return False
                     
         except Exception as e:
-            print(f"保存緩存圖片錯誤: {e}")
+            print(f"❌ 保存緩存圖片錯誤: {e}")
             return False
 
     def get_cached_discord_url(self, cache_key: str) -> Optional[str]:
@@ -399,7 +418,7 @@ class WelcomeFlow(commands.Cog):
             return result[0] if result else None
             
         except Exception as e:
-            print(f"獲取 Discord URL 緩存錯誤: {e}")
+            print(f"❌ 獲取 Discord URL 緩存錯誤: {e}")
             return None
 
     def save_discord_url_cache(self, cache_key: str, discord_url: str, message_id: int = None):
@@ -419,7 +438,7 @@ class WelcomeFlow(commands.Cog):
             conn.close()
             
         except Exception as e:
-            print(f"保存 Discord URL 緩存錯誤: {e}")
+            print(f"❌ 保存 Discord URL 緩存錯誤: {e}")
 
     async def upload_image_to_discord_storage(self, image_data: bytes, cache_key: str) -> Optional[str]:
         """將圖片上傳到 Discord 儲存頻道"""
@@ -428,6 +447,7 @@ class WelcomeFlow(commands.Cog):
             channel = self.bot.get_channel(storage_channel_id)
             
             if not channel:
+                print(f"❌ 找不到儲存頻道: {storage_channel_id}")
                 return None
             
             file_obj = discord.File(
@@ -461,7 +481,9 @@ class WelcomeFlow(commands.Cog):
                     return discord_url
             
         except Exception as e:
-            print(f"上傳圖片到 Discord 錯誤: {e}")
+            print(f"❌ 上傳圖片到 Discord 錯誤: {e}")
+            import traceback
+            traceback.print_exc()
         
         return None
 
@@ -584,25 +606,40 @@ class WelcomeFlow(commands.Cog):
                 await interaction.edit_original_response(embed=embed, view=combined_view)
 
         except Exception as e:
-            print(f"更新歡迎訊息錯誤: {e}")
+            print(f"❌ 更新歡迎訊息錯誤: {e}")
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        guild = member.guild
+        try:
+            print(f"🎯 檢測到新成員加入: {member.name} (ID: {member.id})")
+            
+            guild = member.guild
 
-        if self.temp_role1_id:
-            temp_role1 = guild.get_role(self.temp_role1_id)
-            if temp_role1:
-                await member.add_roles(temp_role1, reason="初步驗證角色")
+            # 添加臨時身分組
+            if self.temp_role1_id:
+                temp_role1 = guild.get_role(self.temp_role1_id)
+                if temp_role1:
+                    await member.add_roles(temp_role1, reason="初步驗證角色")
+                    print(f"✅ 已添加臨時身分組給 {member.name}")
+                else:
+                    print(f"⚠️ 找不到臨時身分組 ID: {self.temp_role1_id}")
 
-        self.create_user_data(member.id)
-        user_data = self.get_user_data(member.id)
-        
-        if not user_data:
-            return
+            # 創建用戶資料
+            self.create_user_data(member.id)
+            user_data = self.get_user_data(member.id)
+            
+            if not user_data:
+                print(f"❌ 無法獲取用戶資料: {member.name}")
+                return
 
-        channel = self.bot.get_channel(self.welcome_channel_id)
-        if channel:
+            # 發送歡迎訊息
+            channel = self.bot.get_channel(self.welcome_channel_id)
+            if not channel:
+                print(f"❌ 找不到歡迎頻道 ID: {self.welcome_channel_id}")
+                return
+                
+            print(f"📢 準備發送歡迎訊息到頻道: {channel.name}")
+            
             embed = await self.create_welcome_embed(user_data, member)
             
             # 獲取角色圖片 URL (使用預設圖片)
@@ -610,6 +647,9 @@ class WelcomeFlow(commands.Cog):
             
             if character_image_url:
                 embed.set_image(url=character_image_url)
+                print(f"✅ 已設置角色圖片")
+            else:
+                print(f"⚠️ 無法獲取角色圖片")
 
             combined_view = discord.ui.View(timeout=600)
             gender_view = GenderSelectView(self, member.id)
@@ -621,66 +661,79 @@ class WelcomeFlow(commands.Cog):
 
             welcome_msg = await channel.send(embed=embed, view=combined_view)
             self.welcome_messages.setdefault(guild.id, {})[member.id] = welcome_msg.id
+            
+            print(f"✅ 成功發送歡迎訊息給 {member.name}")
+            
+        except Exception as e:
+            print(f"❌ on_member_join 錯誤: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def handle_final_verification(self, interaction: discord.Interaction, member: discord.Member):
-        guild = member.guild
-        temp_role1 = guild.get_role(self.temp_role1_id)
-        member_role = guild.get_role(self.member_role_id) 
-
-        # 設置擊暈狀態
-        await self.update_user_data(member.id, {
-            'is_stunned': 1,
-            'hp': 10,
-            'stamina': 10
-        })
-
-        # 立即添加正式成員身分
-        if member_role:
-            await member.add_roles(member_role, reason="進入園區成為正式成員")
-
-        scam_id = f"{random.randint(1, 99999):05d}"
-        nickname = f"NO.{scam_id} {member.display_name}"
         try:
-            await member.edit(nick=nickname, reason="設定園編")
-        except discord.Forbidden:
-            pass
+            guild = member.guild
+            temp_role1 = guild.get_role(self.temp_role1_id)
+            member_role = guild.get_role(self.member_role_id) 
 
-        # 更新歡迎訊息為擊暈狀態
-        user_data = self.get_user_data(member.id)
-        embed = await self.create_welcome_embed(user_data, member)
-        
-        # 獲取擊暈狀態的圖片 URL
-        character_image_url = await self.get_character_image_url(user_data)
-        if character_image_url:
-            embed.set_image(url=character_image_url)
+            # 設置擊暈狀態
+            await self.update_user_data(member.id, {
+                'is_stunned': 1,
+                'hp': 10,
+                'stamina': 10
+            })
 
-        await interaction.edit_original_response(embed=embed, view=None)
+            # 立即添加正式成員身分
+            if member_role:
+                await member.add_roles(member_role, reason="進入園區成為正式成員")
 
-        # 記錄擊暈用戶資訊
-        self.stunned_users[member.id] = {
-            'guild_id': guild.id,
-            'temp_role1': temp_role1,
-            'message_id': self.welcome_messages.get(guild.id, {}).get(member.id)
-        }
+            scam_id = f"{random.randint(1, 99999):05d}"
+            nickname = f"NO.{scam_id} {member.display_name}"
+            try:
+                await member.edit(nick=nickname, reason="設定園編")
+            except discord.Forbidden:
+                pass
 
-        embed_response = discord.Embed(
-            title="💫 擊暈成功！",
-            description=(
-                f"園編：**{nickname}**\n"
-                "💫 已被成功擊暈！\n"
-                "✅ 已獲得正式成員身分\n"
-                "⏰ 5分鐘後將移除臨時身分組\n"
-                "🏥 血量和體力已降至10"
-            ),
-            color=0x696969
-        )
-        embed_response.set_thumbnail(url=member.display_avatar.url)
+            # 更新歡迎訊息為擊暈狀態
+            user_data = self.get_user_data(member.id)
+            embed = await self.create_welcome_embed(user_data, member)
+            
+            # 獲取擊暈狀態的圖片 URL
+            character_image_url = await self.get_character_image_url(user_data)
+            if character_image_url:
+                embed.set_image(url=character_image_url)
 
-        await interaction.followup.send(embed=embed_response)
+            await interaction.edit_original_response(embed=embed, view=None)
 
-        # 5分鐘後移除臨時身分組並完成處理
-        await asyncio.sleep(300)  # 5分鐘
-        await self.remove_temp_role_and_cleanup(member.id)
+            # 記錄擊暈用戶資訊
+            self.stunned_users[member.id] = {
+                'guild_id': guild.id,
+                'temp_role1': temp_role1,
+                'message_id': self.welcome_messages.get(guild.id, {}).get(member.id)
+            }
+
+            embed_response = discord.Embed(
+                title="💫 擊暈成功！",
+                description=(
+                    f"園編：**{nickname}**\n"
+                    "💫 已被成功擊暈！\n"
+                    "✅ 已獲得正式成員身分\n"
+                    "⏰ 5分鐘後將移除臨時身分組\n"
+                    "🏥 血量和體力已降至10"
+                ),
+                color=0x696969
+            )
+            embed_response.set_thumbnail(url=member.display_avatar.url)
+
+            await interaction.followup.send(embed=embed_response)
+
+            # 5分鐘後移除臨時身分組並完成處理
+            await asyncio.sleep(300)  # 5分鐘
+            await self.remove_temp_role_and_cleanup(member.id)
+            
+        except Exception as e:
+            print(f"❌ handle_final_verification 錯誤: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def remove_temp_role_and_cleanup(self, user_id: int):
         """5分鐘後移除臨時身分組並清理歡迎訊息"""
@@ -750,7 +803,7 @@ class WelcomeFlow(commands.Cog):
                 del guild_messages[user_id]
 
         except Exception as e:
-            print(f"移除臨時身分組錯誤: {e}")
+            print(f"❌ 移除臨時身分組錯誤: {e}")
 
     @app_commands.command(name="測試歡迎", description="測試歡迎訊息功能")
     async def test_welcome(self, interaction: discord.Interaction):
@@ -948,6 +1001,70 @@ class WelcomeFlow(commands.Cog):
             
         except Exception as e:
             await interaction.followup.send(f"❌ 清理緩存時發生錯誤: {str(e)}")
+
+    @app_commands.command(name="測試資料庫", description="測試資料庫結構（管理員專用）")
+    @app_commands.default_permissions(administrator=True)
+    async def test_database(self, interaction: discord.Interaction):
+        """測試資料庫結構"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 檢查表結構
+            cursor.execute("PRAGMA table_info(users)")
+            columns = cursor.fetchall()
+            
+            embed = discord.Embed(
+                title="🗄️ 資料庫結構檢查",
+                color=0x0099FF
+            )
+            
+            column_names = [col[1] for col in columns]
+            required_columns = ['user_id', 'level', 'xp', 'kkcoin', 'title', 'hp', 'stamina', 
+                              'inventory', 'face', 'hair', 'skin', 'top', 'bottom', 'shoes', 
+                              'gender', 'is_stunned', 'thread_id']
+            
+            missing_columns = [col for col in required_columns if col not in column_names]
+            
+            embed.add_field(
+                name="📋 現有欄位",
+                value=f"共 {len(column_names)} 個欄位\n" + ", ".join(column_names[:10]) + "...",
+                inline=False
+            )
+            
+            if missing_columns:
+                embed.add_field(
+                    name="❌ 缺少的欄位",
+                    value=", ".join(missing_columns),
+                    inline=False
+                )
+                embed.color = 0xFF0000
+            else:
+                embed.add_field(
+                    name="✅ 資料庫結構",
+                    value="所有必要欄位都存在",
+                    inline=False
+                )
+                embed.color = 0x00FF00
+            
+            # 測試查詢
+            cursor.execute("SELECT COUNT(*) FROM users")
+            user_count = cursor.fetchone()[0]
+            
+            embed.add_field(
+                name="👥 用戶數量",
+                value=f"{user_count} 位用戶",
+                inline=True
+            )
+            
+            conn.close()
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ 測試資料庫時發生錯誤: {str(e)}")
 
 async def setup(bot):
     await bot.add_cog(WelcomeFlow(bot))
