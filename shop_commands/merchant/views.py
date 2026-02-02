@@ -62,10 +62,11 @@ class SlotMachineView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             try:
+                err_text = str(e)[:200]
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 下注處理失敗", ephemeral=True)
+                    await interaction.response.send_message(f"❌ 下注處理失敗: {err_text}", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 下注處理失敗", ephemeral=True)
+                    await interaction.followup.send(f"❌ 下注處理失敗: {err_text}", ephemeral=True)
             except:
                 pass
     
@@ -90,10 +91,11 @@ class SlotMachineView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             try:
+                err_text = str(e)[:200]
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 下注處理失敗", ephemeral=True)
+                    await interaction.response.send_message(f"❌ 下注處理失敗: {err_text}", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 下注處理失敗", ephemeral=True)
+                    await interaction.followup.send(f"❌ 下注處理失敗: {err_text}", ephemeral=True)
             except:
                 pass
     
@@ -118,10 +120,11 @@ class SlotMachineView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             try:
+                err_text = str(e)[:200]
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 下注處理失敗", ephemeral=True)
+                    await interaction.response.send_message(f"❌ 下注處理失敗: {err_text}", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 下注處理失敗", ephemeral=True)
+                    await interaction.followup.send(f"❌ 下注處理失敗: {err_text}", ephemeral=True)
             except:
                 pass
     

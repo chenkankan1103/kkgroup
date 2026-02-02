@@ -44,23 +44,25 @@ async def process_slot_machine_bet(bet_amount: int) -> tuple:
         else:  # result[0] == result[2]
             pair_icon = result[0]
             third_icon = result[1]
-        
-        # 兩個相同輕微虧損 2%
-        net_change = int(-bet_amount * 0.02)
+
+        # 計算返還與淨變化（確保一致性）
         returned = int(bet_amount * 0.98)
-        msg = f"👍 {pair_icon}{pair_icon}+ 配對！返還 {returned} KKcoin（虧損 {int(bet_amount * 0.02)}）"
+        net_change = returned - bet_amount
+        loss_amount = bet_amount - returned
+        msg = f"👍 {pair_icon}{pair_icon}+ 配對！返還 {returned} KKcoin（虧損 {loss_amount}）"
     
     # ========== 優先級3：單個星星（保本效果） ==========
     elif "⭐" in result and result.count("⭐") == 1:
-        net_change = int(-bet_amount * 0.03)  # 虧損 3%
         returned = int(bet_amount * 0.97)
-        msg = f"⭐ 幸運星！返還 {returned} KKcoin（虧損 {int(bet_amount * 0.03)}）"
+        net_change = returned - bet_amount
+        loss_amount = bet_amount - returned
+        msg = f"⭐ 幸運星！返還 {returned} KKcoin（虧損 {loss_amount}）"
     
     # ========== 優先級4：沒有任何中獎 ==========
     else:
         # 正常虧損 8%（補償大獎的虧損）
-        net_change = int(-bet_amount * 0.08)
         loss = int(bet_amount * 0.08)
+        net_change = -loss
         msg = f"💸 遺憾沒中獎，損失 {loss} KKcoin。加油再試！"
     
     return result, net_change, msg
