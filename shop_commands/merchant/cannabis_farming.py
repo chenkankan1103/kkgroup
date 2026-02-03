@@ -105,58 +105,78 @@ async def init_cannabis_tables():
 # ==================== 庫存管理 ====================
 async def add_inventory(user_id: int, item_type: str, item_name: str, quantity: int = 1):
     """增加庫存"""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            INSERT INTO cannabis_inventory (user_id, item_type, item_name, quantity)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(user_id, item_type, item_name) 
-            DO UPDATE SET quantity = quantity + ?
-        """, (user_id, item_type, item_name, quantity, quantity))
-        await db.commit()
+    try:
+        # 確保表存在
+        await init_cannabis_tables()
+        
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                INSERT INTO cannabis_inventory (user_id, item_type, item_name, quantity)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, item_type, item_name) 
+                DO UPDATE SET quantity = quantity + ?
+            """, (user_id, item_type, item_name, quantity, quantity))
+            await db.commit()
+    except Exception as e:
+        print(f"❌ 添加庫存時出錯：{e}", file=__import__('sys').stderr)
 
 
 async def remove_inventory(user_id: int, item_type: str, item_name: str, quantity: int = 1) -> bool:
     """移除庫存，若數量不足返回 False"""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT quantity FROM cannabis_inventory WHERE user_id = ? AND item_type = ? AND item_name = ?",
-            (user_id, item_type, item_name)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if not row or row[0] < quantity:
-                return False
-            
-            if row[0] == quantity:
-                await db.execute(
-                    "DELETE FROM cannabis_inventory WHERE user_id = ? AND item_type = ? AND item_name = ?",
-                    (user_id, item_type, item_name)
-                )
-            else:
-                await db.execute(
-                    "UPDATE cannabis_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_type = ? AND item_name = ?",
-                    (quantity, user_id, item_type, item_name)
-                )
-            
-            await db.commit()
-            return True
+    try:
+        # 確保表存在
+        await init_cannabis_tables()
+        
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT quantity FROM cannabis_inventory WHERE user_id = ? AND item_type = ? AND item_name = ?",
+                (user_id, item_type, item_name)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row or row[0] < quantity:
+                    return False
+                
+                if row[0] == quantity:
+                    await db.execute(
+                        "DELETE FROM cannabis_inventory WHERE user_id = ? AND item_type = ? AND item_name = ?",
+                        (user_id, item_type, item_name)
+                    )
+                else:
+                    await db.execute(
+                        "UPDATE cannabis_inventory SET quantity = quantity - ? WHERE user_id = ? AND item_type = ? AND item_name = ?",
+                        (quantity, user_id, item_type, item_name)
+                    )
+                
+                await db.commit()
+                return True
+    except Exception as e:
+        print(f"❌ 移除庫存時出錯：{e}", file=__import__('sys').stderr)
+        return False
 
 
 async def get_inventory(user_id: int) -> dict:
     """獲取用戶所有庫存"""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT item_type, item_name, quantity FROM cannabis_inventory WHERE user_id = ?",
-            (user_id,)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            
-            inventory = {}
-            for item_type, item_name, quantity in rows:
-                if item_type not in inventory:
-                    inventory[item_type] = {}
-                inventory[item_type][item_name] = quantity
-            
-            return inventory
+    try:
+        # 確保表存在
+        await init_cannabis_tables()
+        
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT item_type, item_name, quantity FROM cannabis_inventory WHERE user_id = ?",
+                (user_id,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                
+                inventory = {}
+                for item_type, item_name, quantity in rows:
+                    if item_type not in inventory:
+                        inventory[item_type] = {}
+                    inventory[item_type][item_name] = quantity
+                
+                return inventory
+    except Exception as e:
+        print(f"❌ 獲取庫存時出錯：{e}", file=__import__('sys').stderr)
+        return {}
 
 
 # ==================== 種植管理 ====================
