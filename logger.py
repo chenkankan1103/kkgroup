@@ -64,26 +64,48 @@ def should_report_error(error_hash):
     return True
 
 def send_with_retry(content, max_retries=3, is_error=False):
-    """帶重試機制的發送函數"""
+    """帶重試機制的發送函數（自動截斷超長內容）"""
     color = "ff0000" if is_error else "0000ff"  # 紅色=錯誤, 藍色=正常
     
-    # ⚠️ 重要：Discord Embed description 最多 2048 字符
-    # 留 100 字符的安全邊界用於時間戳等其他信息
-    max_content_length = 1900
-    
-    if len(content) > max_content_length:
-        content = content[:max_content_length] + "\n...(內容已截斷)"
-    
+    # ⚠️ Discord Embed description 最多 2048 字符，留 100 字符安全邊界
+    if len(content) > 1950:
+        # 超長內容分段發送
+        lines = content.split('\n')
+        current = []
+        current_len = 0
+        
+        for line in lines:
+            if current_len + len(line) + 1 > 1900:
+                if current:
+                    # 發送當前段
+                    segment = '\n'.join(current) + "\n..."
+                    _send_embed(segment, color, is_error, max_retries)
+                    current = [line]
+                    current_len = len(line)
+                else:
+                    # 單行超長，截斷
+                    _send_embed(line[:1900] + "...", color, is_error, max_retries)
+            else:
+                current.append(line)
+                current_len += len(line) + 1
+        
+        # 發送最後一段
+        if current:
+            _send_embed('\n'.join(current), color, is_error, max_retries)
+        return True
+    else:
+        return _send_embed(content, color, is_error, max_retries)
+
+def _send_embed(content, color, is_error, max_retries=3):
+    """實際發送 Embed 的函數"""
     for attempt in range(max_retries):
         try:
-            # 使用 Embed 格式以區分錯誤和正常訊息
             payload = {
                 "embeds": [{
-                    "title": f"❌ {BOT_NAME} 錯誤" if is_error else f"ℹ️ {BOT_NAME} 訊息",
+                    "title": f"❌ {BOT_NAME}" if is_error else f"ℹ️ {BOT_NAME}",
                     "description": content,
                     "color": int(color, 16),
-                    "timestamp": datetime.now().isoformat(),
-                    "footer": {"text": f"時間戳: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+                    "timestamp": datetime.now().isoformat()
                 }]
             }
             
@@ -96,23 +118,19 @@ def send_with_retry(content, max_retries=3, is_error=False):
             if response.status_code == 204:
                 return True
             elif response.status_code == 429:
-                # 被限流,等待後重試
-                retry_after = float(response.headers.get('Retry-After', 3))
-                print(f"[Discord] 被限流,等待 {retry_after} 秒...", file=sys.__stderr__)
-                time.sleep(retry_after)
+                retry_after = float(response.headers.get('Retry-After', 1))
+                time.sleep(min(retry_after, 5))
             else:
-                print(f"[Discord] 發送失敗: {response.status_code}", file=sys.__stderr__)
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # 指數退避: 1秒, 2秒, 4秒
+                    time.sleep(2 ** attempt)
         except Exception as e:
-            print(f"[Discord Error] 嘗試 {attempt + 1}/{max_retries}: {e}", file=sys.__stderr__)
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)
     
     return False
 
 def send_startup_messages():
-    """統一發送啟動訊息 (支援分段發送)"""
+    """統一發送啟動訊息 (簡潔格式)"""
     global startup_mode, startup_buffer
     
     with lock:
@@ -125,50 +143,43 @@ def send_startup_messages():
         buffer_copy = startup_buffer.copy()
         startup_buffer.clear()
     
-    # 分段發送邏輯
-    header = f"{'='*50}\n[{BOT_NAME}] 啟動訊息\n{'='*50}"
-    footer = f"{'='*50}"
+    # 簡潔格式：只發送關鍵訊息
+    # 分離錯誤和正常訊息
+    errors = [line for line in buffer_copy if "❌" in line or "❌" in line]
+    success = [line for line in buffer_copy if "✅" in line]
+    normal = [line for line in buffer_copy if line not in errors and line not in success]
     
-    # 計算每段可用空間 (2000 - code block - header/footer - 安全邊界)
-    max_content_length = 1700
+    # 構建簡潔訊息
+    message_parts = []
     
-    # 將內容分段
-    segments = []
-    current_segment = []
-    current_length = 0
+    # 1. 錯誤（最重要）
+    if errors:
+        message_parts.append("❌ **錯誤信息：**")
+        message_parts.extend(errors[-5:])  # 只顯示最後 5 個錯誤
+        if len(errors) > 5:
+            message_parts.append(f"... 及其他 {len(errors) - 5} 個錯誤")
     
-    for line in buffer_copy:
-        line_length = len(line) + 1  # +1 for newline
-        
-        if current_length + line_length > max_content_length:
-            # 當前段已滿,保存並開始新段
-            segments.append("\n".join(current_segment))
-            current_segment = [line]
-            current_length = line_length
-        else:
-            current_segment.append(line)
-            current_length += line_length
+    # 2. 成功訊息
+    if success:
+        message_parts.append("")
+        message_parts.append("✅ **已載入：**")
+        # 只顯示關鍵成功訊息（模組數量等）
+        key_success = [s for s in success if "擴展" in s or "指令" in s or "已就緒" in s]
+        message_parts.extend(key_success[:3])
     
-    # 添加最後一段
-    if current_segment:
-        segments.append("\n".join(current_segment))
+    # 3. 其他訊息（統計信息）
+    if normal:
+        message_parts.append("")
+        message_parts.append("📊 **統計：**")
+        # 只顯示統計行
+        stat_lines = [n for n in normal if "統計" in n or "Slash" in n or "前綴" in n]
+        message_parts.extend(stat_lines)
     
-    # 發送所有段落
-    total_segments = len(segments)
+    final_message = "\n".join(message_parts)
     
-    for i, segment in enumerate(segments, 1):
-        if total_segments > 1:
-            part_header = f"{header} (第 {i}/{total_segments} 部分)"
-        else:
-            part_header = header
-        
-        message = f"```\n{part_header}\n{segment}\n{footer}\n```"
-        
-        success = send_with_retry(message)
-        
-        # 段落之間間隔 1 秒,避免限流
-        if i < total_segments:
-            time.sleep(1)
+    # 發送簡潔訊息
+    if final_message.strip():
+        send_with_retry(final_message)
 
 def discord_sender():
     """背景執行緒:發送訊息 (錯誤優先, 正常訊息次之)"""
@@ -222,16 +233,24 @@ startup_timer.start()
 def discord_print(*args, **kwargs):
     """模擬 print(),加上 BOT 標籤,同時送出"""
     message = " ".join(map(str, args))
-    local_output = f"[{BOT_NAME}] {message}"
     
-    # ✅ 本地輸出(給 journalctl 看)
+    # 簡化輸出格式：只在關鍵信息前加標籤
+    if any(kw in message for kw in ["❌", "✅", "🤖", "⚡", "📊", "==="]):
+        local_output = f"[{BOT_NAME}] {message}"
+    else:
+        # 普通訊息只輸出不加標籤
+        local_output = message
+    
+    # 本地輸出
     sys.__stdout__.write(local_output + "\n")
     sys.__stdout__.flush()
     
-    # ✅ 啟動模式:收集訊息到 buffer
+    # 啟動模式：只收集錯誤和關鍵訊息
     with lock:
         if startup_mode:
-            startup_buffer.append(local_output)
+            # 只收集有實際信息的行（跳過純分隔線）
+            if message.strip() and not message.startswith("="):
+                startup_buffer.append(message)
         else:
             # 正常模式:放進 queue
             message_queue.append(local_output)
