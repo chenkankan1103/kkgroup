@@ -181,8 +181,7 @@ class SeedSelectView(View):
     async def seed_selected(self, interaction: discord.Interaction):
         """種子選擇完成"""
         try:
-            await interaction.response.defer(ephemeral=True)
-            
+            # 不 defer，直接編輯原始 message
             seed_name = interaction.data['values'][0].replace("buy_seed_", "")
             
             from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
@@ -203,11 +202,13 @@ class SeedSelectView(View):
                 f"buy_seed_{seed_name}",
                 seed_config['price']
             )
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 在同一個 message 中編輯而不是發送新消息
+            await interaction.response.edit_message(embed=embed, view=view)
             
         except Exception as e:
             report_interaction_error(interaction, e, "種子選擇")
             try:
+                await interaction.response.defer(ephemeral=True)
                 await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
             except:
                 pass
@@ -272,17 +273,18 @@ class QuantitySelectView(View):
     def _create_qty_callback(self, qty):
         async def callback(interaction: discord.Interaction):
             try:
-                await interaction.response.defer(ephemeral=True)
-                
                 # 計算成本
                 total_cost = qty * self.price_per_unit
                 user_kkcoin = await get_user_kkcoin(interaction.user.id)
                 
                 if user_kkcoin < total_cost:
-                    await interaction.followup.send(
-                        f"❌ KKcoin 不足\n需要：{total_cost}\n擁有：{user_kkcoin}",
-                        ephemeral=True
+                    # KKcoin 不足，顯示錯誤並編輯 message
+                    error_embed = discord.Embed(
+                        title="❌ KKcoin 不足",
+                        description=f"需要：{total_cost}\n擁有：{user_kkcoin}",
+                        color=discord.Color.red()
                     )
+                    await interaction.response.edit_message(embed=error_embed, view=None)
                     return
                 
                 # 扣除 KKcoin 並添加庫存
@@ -297,6 +299,7 @@ class QuantitySelectView(View):
                 
                 emoji = config.get('emoji', '')
                 
+                # 成功購買 - 編輯同一個 message
                 embed = discord.Embed(
                     title="✅ 購買成功",
                     description=f"成功購買了 {qty} 個 {emoji} {self.item_name}",
@@ -307,11 +310,20 @@ class QuantitySelectView(View):
                 embed.add_field(name="總花費", value=f"{total_cost} KKcoin", inline=False)
                 embed.add_field(name="剩餘 KKcoin", value=f"{user_kkcoin - total_cost}", inline=False)
                 
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                # 在同一個 message 中編輯（移除按鈕）
+                await interaction.response.edit_message(embed=embed, view=None)
                 
             except Exception as e:
                 report_interaction_error(interaction, e, f"購買{self.item_type}數量選擇")
-                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+                try:
+                    error_embed = discord.Embed(
+                        title="❌ 發生錯誤",
+                        description=f"```\n{str(e)[:150]}\n```",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.edit_message(embed=error_embed, view=None)
+                except:
+                    pass
         
         return callback
 
@@ -336,11 +348,18 @@ class FertilizerSelectView(View):
     async def fertilizer_selected(self, interaction: discord.Interaction):
         """肥料選擇完成"""
         try:
-            await interaction.response.defer(ephemeral=True)
-            
+            # 不 defer，直接編輯原始 message
             fert_name = interaction.data['values'][0].replace("buy_fert_", "")
             fert_config = CANNABIS_SHOP["肥料"].get(fert_name, {})
             price = fert_config.get('price', 0)
+            
+            # 構建新的 embed
+            embed = discord.Embed(
+                title=f"購買 {fert_name}",
+                description=f"{fert_config.get('emoji', '💧')} 肥料\n\n請選擇購買數量",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="單價", value=f"{price} KKcoin", inline=False)
             
             # 使用通用數量選擇
             view = QuantitySelectView(
@@ -351,11 +370,16 @@ class FertilizerSelectView(View):
                 price
             )
             
-            await interaction.followup.send("選擇購買數量", view=view, ephemeral=True)
+            # 在同一個 message 中編輯而不是發送新消息
+            await interaction.response.edit_message(embed=embed, view=view)
             
         except Exception as e:
             report_interaction_error(interaction, e, "肥料選擇")
-            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+            try:
+                await interaction.response.defer(ephemeral=True)
+                await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+            except:
+                pass
 
 
 
@@ -390,8 +414,7 @@ class SellSelectView(View):
     async def sell_selected(self, interaction: discord.Interaction):
         """確認出售"""
         try:
-            await interaction.response.defer(ephemeral=True)
-            
+            # 不 defer，直接編輯 message
             seed_name = interaction.data['values'][0].replace("sell_", "")
             quantity = self.inventory[seed_name]
             price = CANNABIS_HARVEST_PRICES.get(seed_name, 100)
@@ -416,8 +439,17 @@ class SellSelectView(View):
             embed.add_field(name="合計", value=f"{total_reward} KKcoin", inline=True)
             embed.add_field(name="目前 KKcoin", value=f"{new_kkcoin}", inline=False)
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            # 在同一個 message 中編輯（移除按鈕）
+            await interaction.response.edit_message(embed=embed, view=None)
         
         except Exception as e:
             report_interaction_error(interaction, e, "出售大麻")
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            try:
+                error_embed = discord.Embed(
+                    title="❌ 發生錯誤",
+                    description=f"```\n{str(e)[:150]}\n```",
+                    color=discord.Color.red()
+                )
+                await interaction.response.edit_message(embed=error_embed, view=None)
+            except:
+                pass
