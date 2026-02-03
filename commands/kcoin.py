@@ -171,12 +171,58 @@ class KKCoin(commands.Cog):
         if not self.rank_channel_id:
             return
             
-        # 如果沒有訊息 ID，嘗試創建排行榜
+        # 如果沒有訊息 ID，嘗試創建排行榜（只創建一次）
         if not self.rank_message_id:
-            await self.create_leaderboard()
+            print("⚠️ 排行榜訊息 ID 未找到，嘗試查找或創建...")
+            await self.create_or_find_leaderboard()
         else:
             # 否則更新現有排行榜
             await self.update_leaderboard(min_interval=0)
+
+    async def create_or_find_leaderboard(self):
+        """查找現有排行榜或創建新的（防止重複創建）"""
+        if not self.rank_channel_id:
+            print("❌ 未設定排行榜頻道 ID")
+            return
+        
+        try:
+            channel = self.bot.get_channel(self.rank_channel_id)
+            if not channel:
+                print(f"❌ 找不到頻道 {self.rank_channel_id}")
+                return
+            
+            # 嘗試查找現有的排行榜訊息
+            if self.rank_message_id:
+                try:
+                    msg = await channel.fetch_message(self.rank_message_id)
+                    print(f"✅ 找到現有排行榜訊息: {self.rank_message_id}")
+                    return
+                except discord.NotFound:
+                    print(f"⚠️ 訊息 {self.rank_message_id} 不存在，將重新創建")
+                    self.rank_message_id = 0
+                    save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
+            
+            # 在頻道中查找所有訊息，看是否有舊的排行榜
+            print("🔍 在頻道中查找舊排行榜訊息...")
+            found_count = 0
+            async for msg in channel.history(limit=50):
+                if msg.author.id == self.bot.user.id and msg.attachments:
+                    for attachment in msg.attachments:
+                        if "kkcoin_rank" in attachment.filename:
+                            print(f"✅ 找到舊排行榜訊息: {msg.id}")
+                            self.rank_message_id = msg.id
+                            save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
+                            found_count += 1
+                            break
+                    if found_count > 0:
+                        break
+            
+            if found_count == 0:
+                # 沒有找到舊訊息，創建新的
+                await self.create_leaderboard()
+        
+        except Exception as e:
+            print(f"❌ 查找/創建排行榜時發生錯誤: {e}")
 
     @auto_update_leaderboard.before_loop
     async def before_auto_update(self):
@@ -185,9 +231,14 @@ class KKCoin(commands.Cog):
         print("✅ 排行榜自動更新任務已啟動")
 
     async def create_leaderboard(self):
-        """自動創建排行榜訊息"""
+        """自動創建排行榜訊息（防止重複創建）"""
         if not self.rank_channel_id:
             print("❌ 未設定排行榜頻道 ID")
+            return
+        
+        # 防止同時創建多個排行榜
+        if self.rank_message_id:
+            print(f"⚠️ 排行榜已存在 (訊息 ID: {self.rank_message_id})，跳過創建")
             return
             
         try:
@@ -196,7 +247,6 @@ class KKCoin(commands.Cog):
                 print(f"❌ 找不到頻道 {self.rank_channel_id}")
                 return
             
-            guild = channel.guild
             members_data = self.get_current_leaderboard_data()
             
             if not members_data:
@@ -204,6 +254,7 @@ class KKCoin(commands.Cog):
                 return
             
             # 創建圖片
+            print("🎨 生成排行榜圖片...")
             image = await make_leaderboard_image(members_data)
             with io.BytesIO() as img_bytes:
                 image.save(img_bytes, format="PNG")
@@ -211,7 +262,7 @@ class KKCoin(commands.Cog):
                 file = discord.File(img_bytes, filename="kkcoin_rank.png")
                 msg = await channel.send(file=file)
             
-            # 儲存訊息 ID
+            # 立即儲存訊息 ID（防止重複創建）
             self.rank_message_id = msg.id
             save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
             
@@ -219,10 +270,10 @@ class KKCoin(commands.Cog):
             self.last_leaderboard_data = members_data.copy()
             self.last_update_time = time.time()
             
-            print(f"✅ 排行榜已自動創建在頻道 {channel.name}，訊息 ID: {msg.id}")
+            print(f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
             
         except Exception as e:
-            print(f"❌ 自動創建排行榜失敗: {e}")
+            print(f"❌ 創建排行榜失敗: {e}")
             import traceback
             traceback.print_exc()
 
