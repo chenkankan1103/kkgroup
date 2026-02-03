@@ -52,8 +52,15 @@ _reload_lock = asyncio.Lock()
 _pending_reloads = set()
 
 async def find_and_load_extensions(base_path, package_prefix="", client=None):
-    """遞歸搜尋並載入所有 Python 擴展"""
+    """遞歸搜尋並載入所有 Python 擴展（只加載有效的 Cog）"""
     loaded_extensions = []
+    
+    # 列出不應該被加載為 Cog 的模組
+    excluded_modules = {
+        'cannabis_farming', 'cannabis_merchant_view', 'cannabis_merchant_view_v2',
+        'cannabis_config', 'database', 'config', 'views_base',
+        'paperdoll_system', 'gambling', 'role_expiry_manager'
+    }
     
     for item in sorted(os.listdir(base_path)):
         item_path = os.path.join(base_path, item)
@@ -65,6 +72,11 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
         
         elif item.endswith(".py") and item != "__init__.py":
             module_name = item[:-3]
+            
+            # 跳過不應該被加載為 Cog 的模組
+            if module_name in excluded_modules:
+                continue
+            
             ext_name = f"{package_prefix}.{module_name}" if package_prefix else module_name
             
             try:
