@@ -1,7 +1,66 @@
-user_data.db
-memory.json
+# 數據庫文件
 *.db
+user_data.db
+user_data.db.*
+game_users.db
+
+# 環境配置
+.env
+.env.local
+.env.backup
+memory.json
+memory.json.backup
+
+# Python 快取
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# 虛擬環境
+venv/
+env/
+ENV/
+
+# IDE 和編輯器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
+
+# 日誌文件
+*.log
+*.log.*
+update.log
+update_cron.log
+sync_cron.log
+game_sync.log
+sync.log
+
+# 日誌備份
+*.log.1
+*.log.2
+*.log.3
+
+# 臨時文件
+*.backup
+*.tmp
+*.bak
+*.save
+
+# 備份和緩存
+*.backup
+backup.sh
+path/
+how/
+aux
+
+# 系統文件
+.DS_Store
+Thumbs.db
