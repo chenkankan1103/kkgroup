@@ -14,7 +14,7 @@ class GoogleSheetsSync(commands.Cog):
     
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
     SHEET_ID = "1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM"
-    SHEET_NAME = "玩家資料"
+    SHEET_NAME = "玩家資料"  # Google Sheet 的實際分頁名稱
     
     def __init__(self, bot):
         self.bot = bot
