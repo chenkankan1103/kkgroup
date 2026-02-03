@@ -191,11 +191,28 @@ class AutoReload(commands.Cog):
         try:
             async with self.bot._reload_lock if hasattr(self.bot, '_reload_lock') else asyncio.Lock():
                 extensions = list(self.bot.extensions.keys())
+                
+                # 定義不應該重載的模塊（非 Cog）
+                excluded_modules = {
+                    'cannabis_farming', 'cannabis_config', 'database', 
+                    'config', 'views', 'views_base', 'paperdoll_system', 
+                    'gambling', 'role_expiry_manager', 'cannabis_merchant_view',
+                    'cannabis_merchant_view_v2'  # ⚠️ 這不是 Cog，無法重載
+                }
+                
+                # 過濾掉不應該重載的模塊
+                extensions_to_reload = [
+                    ext for ext in extensions 
+                    if not any(excluded in ext for excluded in excluded_modules)
+                ]
+                
                 reloaded, failed = [], []
                 
-                print(f"📦 [{self.bot_name}] 開始重載 {len(extensions)} 個擴展...")
+                print(f"📦 [{self.bot_name}] 開始重載 {len(extensions_to_reload)}/{len(extensions)} 個擴展...")
+                if len(extensions_to_reload) < len(extensions):
+                    print(f"   ⏭️  跳過 {len(extensions) - len(extensions_to_reload)} 個非 Cog 模塊")
                 
-                for ext in extensions:
+                for ext in extensions_to_reload:
                     try:
                         await self.bot.reload_extension(ext)
                         reloaded.append(ext)
