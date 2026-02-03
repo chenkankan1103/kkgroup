@@ -4,12 +4,12 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import traceback
 from datetime import datetime, timedelta
-from .cannabis_farming import (
+from .merchant.cannabis_farming import (
     init_cannabis_tables, plant_cannabis, get_user_plants, apply_fertilizer, 
     harvest_plant, get_inventory, remove_inventory, add_inventory
 )
-from .cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from .database import get_user_kkcoin, update_user_kkcoin
+from .merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from .merchant.database import get_user_kkcoin, update_user_kkcoin
 
 
 class CannabisCog(commands.Cog):

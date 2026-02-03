@@ -67,6 +67,13 @@ def send_with_retry(content, max_retries=3, is_error=False):
     """帶重試機制的發送函數"""
     color = "ff0000" if is_error else "0000ff"  # 紅色=錯誤, 藍色=正常
     
+    # ⚠️ 重要：Discord Embed description 最多 2048 字符
+    # 留 100 字符的安全邊界用於時間戳等其他信息
+    max_content_length = 1900
+    
+    if len(content) > max_content_length:
+        content = content[:max_content_length] + "\n...(內容已截斷)"
+    
     for attempt in range(max_retries):
         try:
             # 使用 Embed 格式以區分錯誤和正常訊息

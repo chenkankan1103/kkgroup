@@ -58,7 +58,7 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
     # 列出不應該被加載為 Cog 的模組
     excluded_modules = {
         'cannabis_farming', 'cannabis_merchant_view', 'cannabis_merchant_view_v2',
-        'cannabis_config', 'database', 'config', 'views_base',
+        'cannabis_config', 'database', 'config', 'views', 'views_base',
         'paperdoll_system', 'gambling', 'role_expiry_manager'
     }
     
