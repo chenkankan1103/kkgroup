@@ -127,36 +127,49 @@ class GoogleSheetsSync(commands.Cog):
                     is_locked = 1 if row.get('is_locked', 'FALSE').upper() == 'TRUE' else 0
                     last_recovery = row.get('last_recovery', None)
                     
+                    # 建立字典，只包含要同步的欄位
+                    user_data = {
+                        'user_id': user_id,
+                        'level': level,
+                        'xp': xp,
+                        'kkcoin': kkcoin,
+                        'title': title,
+                        'hp': hp,
+                        'stamina': stamina,
+                        'inventory': inventory,
+                        'character_config': character_config,
+                        'face': face,
+                        'hair': hair,
+                        'skin': skin,
+                        'top': top,
+                        'bottom': bottom,
+                        'shoes': shoes,
+                        'streak': streak,
+                        'last_work_date': last_work_date,
+                        'last_action_date': last_action_date,
+                        'actions_used': actions_used,
+                        'gender': gender,
+                        'is_stunned': is_stunned,
+                        'is_locked': is_locked,
+                        'last_recovery': last_recovery
+                    }
+                    
                     cursor.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
                     exists = cursor.fetchone()
                     
                     if exists:
-                        cursor.execute("""
-                            UPDATE users SET
-                            level=?, xp=?, kkcoin=?, title=?, hp=?, stamina=?,
-                            inventory=?, character_config=?, face=?, hair=?, skin=?,
-                            top=?, bottom=?, shoes=?, streak=?, last_work_date=?,
-                            last_action_date=?, actions_used=?, gender=?, is_stunned=?,
-                            is_locked=?, last_recovery=?
-                            WHERE user_id=?
-                        """, (level, xp, kkcoin, title, hp, stamina, inventory,
-                              character_config, face, hair, skin, top, bottom, shoes,
-                              streak, last_work_date, last_action_date, actions_used,
-                              gender, is_stunned, is_locked, last_recovery, user_id))
+                        # UPDATE：只更新 Google Sheet 有的欄位
+                        set_clause = ', '.join([f"{k}=?" for k in user_data.keys() if k != 'user_id'])
+                        values = [v for k, v in user_data.items() if k != 'user_id']
+                        values.append(user_id)
+                        cursor.execute(f"UPDATE users SET {set_clause} WHERE user_id=?", values)
                         updated += 1
                     else:
-                        cursor.execute("""
-                            INSERT INTO users (
-                            user_id, level, xp, kkcoin, title, hp, stamina,
-                            inventory, character_config, face, hair, skin,
-                            top, bottom, shoes, streak, last_work_date,
-                            last_action_date, actions_used, gender, is_stunned,
-                            is_locked, last_recovery
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (user_id, level, xp, kkcoin, title, hp, stamina,
-                              inventory, character_config, face, hair, skin, top,
-                              bottom, shoes, streak, last_work_date, last_action_date,
-                              actions_used, gender, is_stunned, is_locked, last_recovery))
+                        # INSERT：使用字典方式，缺少的欄位使用預設值
+                        columns = ', '.join(user_data.keys())
+                        placeholders = ', '.join(['?' for _ in user_data.keys()])
+                        values = list(user_data.values())
+                        cursor.execute(f"INSERT INTO users ({columns}) VALUES ({placeholders})", values)
                         inserted += 1
                 
                 except ValueError as e:
@@ -165,6 +178,9 @@ class GoogleSheetsSync(commands.Cog):
                 except Exception as e:
                     errors += 1
                     print(f"❌ 同步錯誤 (user_id: {row.get('user_id')}): {e}")
+                    # 詳細日誌用於除錯
+                    import traceback
+                    traceback.print_exc()
             
             conn.commit()
             conn.close()
