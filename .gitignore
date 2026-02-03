@@ -1,1 +1,7 @@
 user_data.db
+memory.json
+*.db
+__pycache__/
+*.pyc
+.env
+.DS_Store
