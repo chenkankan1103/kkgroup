@@ -2,9 +2,25 @@
 import discord
 from discord.ui import View, Button, Select, TextInput, Modal
 import traceback
+import logging
 from shop_commands.merchant.database import get_user_kkcoin, update_user_kkcoin
 from shop_commands.merchant.cannabis_farming import add_inventory, remove_inventory, get_inventory
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+
+# 取得 logger 用於上報錯誤
+logger = logging.getLogger(__name__)
+
+def report_interaction_error(interaction: discord.Interaction, error: Exception, context: str = ""):
+    """上報用戶交互中的錯誤到 logging 系統（會自動轉發到 Discord）"""
+    error_msg = f"""
+🔴 用戶交互錯誤
+用戶: {interaction.user.name} ({interaction.user.id})
+命令: {interaction.command.name if interaction.command else '未知'}
+上下文: {context}
+錯誤: {str(error)[:200]}
+"""
+    logger.error(error_msg)
+    traceback.print_exc()
 
 
 class CannabisMerchantViewV2(View):
@@ -39,8 +55,11 @@ class CannabisMerchantViewV2(View):
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         
         except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            report_interaction_error(interaction, e, "購買種子菜單")
+            try:
+                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(label="購買肥料", style=discord.ButtonStyle.primary, emoji="💧", custom_id="cannabis_buy_fertilizer_v2")
     async def buy_fertilizer(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -66,8 +85,11 @@ class CannabisMerchantViewV2(View):
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         
         except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            report_interaction_error(interaction, e, "購買肥料菜單")
+            try:
+                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(label="出售大麻", style=discord.ButtonStyle.danger, emoji="💰", custom_id="cannabis_sell_v2")
     async def sell_cannabis(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -80,6 +102,7 @@ class CannabisMerchantViewV2(View):
                 inventory = await get_inventory(user_id)
             except Exception as e:
                 # 如果表不存在，返回錯誤
+                report_interaction_error(interaction, e, "出售大麻 - 獲取庫存")
                 await interaction.followup.send(f"❌ 數據庫錯誤，請稍後重試：{str(e)[:100]}", ephemeral=True)
                 return
             
@@ -118,8 +141,11 @@ class CannabisMerchantViewV2(View):
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         
         except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            report_interaction_error(interaction, e, "出售大麻菜單")
+            try:
+                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(label="返回", style=discord.ButtonStyle.grey, custom_id="cannabis_back_v2")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -132,7 +158,7 @@ class CannabisMerchantViewV2(View):
             )
             await interaction.response.edit_message(embed=embed, view=ExploreView(self.cog))
         except Exception as e:
-            traceback.print_exc()
+            report_interaction_error(interaction, e, "返回按鈕")
 
 
 class SeedSelectView(View):
@@ -180,7 +206,7 @@ class SeedSelectView(View):
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
-            traceback.print_exc()
+            report_interaction_error(interaction, e, "種子選擇")
             try:
                 await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
             except:
@@ -284,7 +310,7 @@ class QuantitySelectView(View):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 
             except Exception as e:
-                traceback.print_exc()
+                report_interaction_error(interaction, e, f"購買{self.item_type}數量選擇")
                 await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
         
         return callback
@@ -328,7 +354,7 @@ class FertilizerSelectView(View):
             await interaction.followup.send("選擇購買數量", view=view, ephemeral=True)
             
         except Exception as e:
-            traceback.print_exc()
+            report_interaction_error(interaction, e, "肥料選擇")
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
 
@@ -393,5 +419,5 @@ class SellSelectView(View):
             await interaction.followup.send(embed=embed, ephemeral=True)
         
         except Exception as e:
-            traceback.print_exc()
+            report_interaction_error(interaction, e, "出售大麻")
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
