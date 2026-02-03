@@ -324,6 +324,16 @@ class ExploreView(View):
             except:
                 pass
 
+    @discord.ui.button(label="🌱 種植大麻", style=discord.ButtonStyle.success, custom_id="persistent_cannabis")
+    async def cannabis_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from shop_commands.merchant.cannabis_merchant_view import CannabisMerchantView
+        embed = discord.Embed(
+            title="🌱 大麻商店",
+            description="歡迎來到大麻商店！",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed, view=CannabisMerchantView(self.cog), ephemeral=True)
+
 class RoleShopView(View):
     def __init__(self, cog):
         super().__init__(timeout=None)
