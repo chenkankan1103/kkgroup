@@ -121,26 +121,70 @@ def get_git_update_details():
         }
 
 def pull_git_updates():
-    """拉取 git 更新"""
+    """拉取 git 更新（保留本地 user_data.db）"""
     try:
-        log("📥 拉取 Git 更新...")
+        log("📥 準備拉取 Git 更新...")
         
-        result = subprocess.run(
-            ["git", "pull", "origin", "main"],
-            cwd=PROJECT_DIR,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        db_file = PROJECT_DIR / "user_data.db"
+        db_backup = PROJECT_DIR / "user_data.db.update_backup"
         
-        log("✅ Git 更新完成")
-        return True, result.stdout
+        # 1️⃣ 備份本地 user_data.db（最重要！）
+        if db_file.exists():
+            log("💾 備份本地 user_data.db...")
+            import shutil
+            shutil.copy2(db_file, db_backup)
+            log(f"✅ 已備份到 {db_backup.name}")
+        
+        # 2️⃣ 清潔未追蹤的文件（除了 venv 和 character_images）
+        log("🧹 清潔工作目錄...")
+        try:
+            subprocess.run(
+                ["git", "clean", "-fd", "-e", "venv", "-e", "character_images"],
+                cwd=PROJECT_DIR,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            log("✅ 已清潔未追蹤文件")
+        except Exception as e:
+            log(f"⚠️ 清潔文件時出錯（繼續）: {e}")
+        
+        # 3️⃣ 強制重置本地修改到 origin/main
+        log("🔄 強制重置到 origin/main...")
+        try:
+            result = subprocess.run(
+                ["git", "reset", "--hard", "origin/main"],
+                cwd=PROJECT_DIR,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=60
+            )
+            log("✅ 已強制重置")
+        except subprocess.CalledProcessError as e:
+            log(f"❌ 強制重置失敗: {e.stderr}")
+            return False, f"重置失敗: {e.stderr}"
+        
+        # 4️⃣ 恢復本地 user_data.db（覆蓋 GitHub 上的舊版本）
+        if db_backup.exists():
+            log("📂 恢復本地 user_data.db...")
+            import shutil
+            shutil.copy2(db_backup, db_file)
+            log(f"✅ 已恢復本地數據庫")
+            
+            # 清理備份
+            db_backup.unlink()
+        
+        log("✅ Git 更新完成（保留了本地數據庫）")
+        return True, "更新成功並保留本地 user_data.db"
         
     except subprocess.CalledProcessError as e:
-        log(f"❌ Git 更新失敗: {e.stderr}")
+        log(f"❌ Git 操作失敗: {e.stderr}")
         return False, str(e)
     except Exception as e:
         log(f"❌ Git 更新過程發生錯誤: {e}")
+        import traceback
+        traceback.print_exc()
         return False, str(e)
 
 def restart_systemd_services():
