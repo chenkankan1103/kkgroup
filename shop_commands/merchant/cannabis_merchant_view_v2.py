@@ -155,33 +155,36 @@ class SeedSelectView(View):
     async def seed_selected(self, interaction: discord.Interaction):
         """種子選擇完成"""
         try:
-            await interaction.response.show_modal(BuySeedQuantityModal(self.cog, interaction.data['values'][0]))
+            await interaction.response.defer(ephemeral=True)
+            
+            seed_name = interaction.data['values'][0].replace("buy_seed_", "")
+            
+            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+            seed_config = CANNABIS_SHOP["種子"][seed_name]
+            
+            embed = discord.Embed(
+                title=f"購買 {seed_name}",
+                description=f"{seed_config['emoji']} 種子\n\n請選擇購買數量",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="單價", value=f"{seed_config['price']} KKcoin", inline=False)
+            
+            # 使用通用數量選擇
+            view = QuantitySelectView(
+                self.cog,
+                "種子",
+                seed_name,
+                f"buy_seed_{seed_name}",
+                seed_config['price']
+            )
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
         except Exception as e:
             traceback.print_exc()
-            await interaction.response.send_message(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-
-
-class BuySeedQuantityModal(Modal):
-    """購買種子數量輸入"""
-    
-    def __init__(self, cog, seed_value):
-        super().__init__(title="購買種子")
-        self.cog = cog
-        self.seed_name = seed_value.replace("buy_seed_", "")
-        
-        self.quantity_input = TextInput(
-            label="購買數量",
-            placeholder="輸入要購買的數量 (1-99)",
-            min_length=1,
-            max_length=2,
-            required=True
-        )
-        self.add_item(self.quantity_input)
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        """提交購買"""
-        try:
-            await interaction.response.defer(ephemeral=True)
+            try:
+                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            except:
+                pass
             
             quantity = int(self.quantity_input.value)
             if quantity <= 0 or quantity > 99:
@@ -223,6 +226,70 @@ class BuySeedQuantityModal(Modal):
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
+class QuantitySelectView(View):
+    """通用數量選擇按鈕"""
+    
+    def __init__(self, cog, item_type, item_name, buy_type, price_per_unit):
+        super().__init__(timeout=30)
+        self.cog = cog
+        self.item_type = item_type  # "種子" or "肥料"
+        self.item_name = item_name
+        self.buy_type = buy_type    # "buy_seed_..." or "buy_fert_..."
+        self.price_per_unit = price_per_unit
+        
+        # 數量按鈕
+        for qty in [1, 5, 10, 25, 50]:
+            button = Button(label=str(qty), style=discord.ButtonStyle.primary)
+            button.callback = self._create_qty_callback(qty)
+            self.add_item(button)
+    
+    def _create_qty_callback(self, qty):
+        async def callback(interaction: discord.Interaction):
+            try:
+                await interaction.response.defer(ephemeral=True)
+                
+                # 計算成本
+                total_cost = qty * self.price_per_unit
+                user_kkcoin = await get_user_kkcoin(interaction.user.id)
+                
+                if user_kkcoin < total_cost:
+                    await interaction.followup.send(
+                        f"❌ KKcoin 不足\n需要：{total_cost}\n擁有：{user_kkcoin}",
+                        ephemeral=True
+                    )
+                    return
+                
+                # 扣除 KKcoin 並添加庫存
+                await update_user_kkcoin(interaction.user.id, -total_cost)
+                await add_inventory(interaction.user.id, self.item_type, self.item_name, qty)
+                
+                # 取得配置（用於 emoji）
+                if self.item_type == "種子":
+                    config = CANNABIS_SHOP["種子"].get(self.item_name, {})
+                else:
+                    config = CANNABIS_SHOP["肥料"].get(self.item_name, {})
+                
+                emoji = config.get('emoji', '')
+                
+                embed = discord.Embed(
+                    title="✅ 購買成功",
+                    description=f"成功購買了 {qty} 個 {emoji} {self.item_name}",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="單位價格", value=f"{self.price_per_unit} KKcoin", inline=True)
+                embed.add_field(name="數量", value=f"{qty}", inline=True)
+                embed.add_field(name="總花費", value=f"{total_cost} KKcoin", inline=False)
+                embed.add_field(name="剩餘 KKcoin", value=f"{user_kkcoin - total_cost}", inline=False)
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                
+            except Exception as e:
+                traceback.print_exc()
+                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+        
+        return callback
+
+
 class FertilizerSelectView(View):
     """肥料選擇菜單"""
     
@@ -243,72 +310,27 @@ class FertilizerSelectView(View):
     async def fertilizer_selected(self, interaction: discord.Interaction):
         """肥料選擇完成"""
         try:
-            await interaction.response.show_modal(BuyFertilizerQuantityModal(self.cog, interaction.data['values'][0]))
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.response.send_message(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-
-
-class BuyFertilizerQuantityModal(Modal):
-    """購買肥料數量輸入"""
-    
-    def __init__(self, cog, fert_value):
-        super().__init__(title="購買肥料")
-        self.cog = cog
-        self.fert_name = fert_value.replace("buy_fert_", "")
-        
-        self.quantity_input = TextInput(
-            label="購買數量",
-            placeholder="輸入要購買的數量 (1-99)",
-            min_length=1,
-            max_length=2,
-            required=True
-        )
-        self.add_item(self.quantity_input)
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        """提交購買"""
-        try:
             await interaction.response.defer(ephemeral=True)
             
-            quantity = int(self.quantity_input.value)
-            if quantity <= 0 or quantity > 99:
-                await interaction.followup.send("❌ 數量必須在 1-99 之間", ephemeral=True)
-                return
+            fert_name = interaction.data['values'][0].replace("buy_fert_", "")
+            fert_config = CANNABIS_SHOP["肥料"].get(fert_name, {})
+            price = fert_config.get('price', 0)
             
-            fert_config = CANNABIS_SHOP["肥料"][self.fert_name]
-            total_cost = fert_config["price"] * quantity
-            
-            # 檢查 KKcoin
-            user_kkcoin = await get_user_kkcoin(interaction.user.id)
-            if user_kkcoin < total_cost:
-                await interaction.followup.send(
-                    f"❌ KKcoin 不足\n需要：{total_cost}\n擁有：{user_kkcoin}",
-                    ephemeral=True
-                )
-                return
-            
-            # 扣除 KKcoin
-            await update_user_kkcoin(interaction.user.id, -total_cost)
-            
-            # 添加到庫存
-            await add_inventory(interaction.user.id, "肥料", self.fert_name, quantity)
-            
-            embed = discord.Embed(
-                title="✅ 購買成功",
-                description=f"成功購買了 {quantity} 個 {fert_config['emoji']} {self.fert_name}",
-                color=discord.Color.green()
+            # 使用通用數量選擇
+            view = QuantitySelectView(
+                self.cog,
+                "肥料",
+                fert_name,
+                f"buy_fert_{fert_name}",
+                price
             )
-            embed.add_field(name="花費", value=f"{total_cost} KKcoin", inline=False)
-            embed.add_field(name="剩餘 KKcoin", value=f"{user_kkcoin - total_cost}", inline=False)
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
-        
-        except ValueError:
-            await interaction.followup.send("❌ 請輸入有效的數字", ephemeral=True)
+            await interaction.followup.send("選擇購買數量", view=view, ephemeral=True)
+            
         except Exception as e:
             traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
 
 
 class SellSelectView(View):
