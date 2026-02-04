@@ -165,6 +165,19 @@ class KKCoin(commands.Cog):
         """當 Cog 卸載時停止定時任務"""
         self.auto_update_leaderboard.cancel()
 
+    @tasks.loop(minutes=5)
+    async def auto_update_leaderboard(self):
+        """每 5 分鐘自動更新排行榜"""
+        if not self.rank_channel_id:
+            return
+            
+        # 如果沒有訊息 ID，嘗試創建排行榜（只有在 before_loop 失敗時才會執行）
+        if not self.rank_message_id:
+            await self.create_leaderboard()
+        else:
+            # 否則更新現有排行榜
+            await self.update_leaderboard(min_interval=0)
+
     @auto_update_leaderboard.before_loop
     async def before_auto_update(self):
         """等待 bot 準備完成，並在啟動時查找/創建排行榜"""
@@ -211,19 +224,6 @@ class KKCoin(commands.Cog):
             print(f"❌ 初始化排行榜時發生錯誤: {e}")
             import traceback
             traceback.print_exc()
-
-    @tasks.loop(minutes=5)
-    async def auto_update_leaderboard(self):
-        """每 5 分鐘自動更新排行榜"""
-        if not self.rank_channel_id:
-            return
-            
-        # 如果沒有訊息 ID，嘗試創建排行榜（只有在 before_loop 失敗時才會執行）
-        if not self.rank_message_id:
-            await self.create_leaderboard()
-        else:
-            # 否則更新現有排行榜
-            await self.update_leaderboard(min_interval=0)
 
     async def create_leaderboard(self):
         """自動創建排行榜訊息（防止重複創建）"""
