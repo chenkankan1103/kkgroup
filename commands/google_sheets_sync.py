@@ -112,31 +112,43 @@ class GoogleSheetsSync(commands.Cog):
             
             for row in all_records:
                 try:
-                    # 清理欄位值：移除前導單引號和空格
+                    # 清理欄位值：移除前導單引號、空格、並轉換為正確的數據類型
                     def clean_value(val):
                         if isinstance(val, str):
-                            return val.strip().lstrip("'")
+                            val = val.strip().lstrip("'").strip()  # 移除前導單引號和空格
                         return val
                     
-                    user_id = int(clean_value(row.get('user_id', 0)))
+                    def to_int(val):
+                        """安全地轉換為整數"""
+                        val = clean_value(val)
+                        if isinstance(val, int):
+                            return val
+                        if isinstance(val, float):
+                            return int(val)
+                        try:
+                            return int(float(val))  # 先轉 float 再轉 int，避免 "100.0" 轉換失敗
+                        except (ValueError, TypeError):
+                            return 0
+                    
+                    user_id = to_int(row.get('user_id', 0))
                     if user_id == 0:
                         continue
                     
-                    level = int(clean_value(row.get('level', 1)))
-                    xp = int(clean_value(row.get('xp', 0)))
-                    kkcoin = int(clean_value(row.get('kkcoin', 0)))
+                    level = to_int(row.get('level', 1))
+                    xp = to_int(row.get('xp', 0))
+                    kkcoin = to_int(row.get('kkcoin', 0))
                     title = clean_value(row.get('title', '新手'))
-                    hp = int(clean_value(row.get('hp', 100)))
-                    stamina = int(clean_value(row.get('stamina', 100)))
+                    hp = to_int(row.get('hp', 100))
+                    stamina = to_int(row.get('stamina', 100))
                     inventory = clean_value(row.get('inventory', '[]'))
                     character_config = clean_value(row.get('character_config', '{}'))
-                    face = int(clean_value(row.get('face', 20000)))
-                    hair = int(clean_value(row.get('hair', 30000)))
-                    skin = int(clean_value(row.get('skin', 12000)))
-                    top = int(clean_value(row.get('top', 1040010)))
-                    bottom = int(clean_value(row.get('bottom', 1060096)))
-                    shoes = int(clean_value(row.get('shoes', 1072288)))
-                    streak = int(clean_value(row.get('streak', 0)))
+                    face = to_int(row.get('face', 20000))
+                    hair = to_int(row.get('hair', 30000))
+                    skin = to_int(row.get('skin', 12000))
+                    top = to_int(row.get('top', 1040010))
+                    bottom = to_int(row.get('bottom', 1060096))
+                    shoes = to_int(row.get('shoes', 1072288))
+                    streak = to_int(row.get('streak', 0))
                     last_work_date = clean_value(row.get('last_work_date', None))
                     last_action_date = clean_value(row.get('last_action_date', None))
                     actions_used = clean_value(row.get('actions_used', '{}'))
@@ -250,18 +262,20 @@ class GoogleSheetsSync(commands.Cog):
                     user = self.bot.get_user(row[0])
                     nickname = user.display_name if user else f"Unknown_{row[0]}"
                     
+                    # 直接寫數字，不要轉成字符串，讓 Google Sheets 自動判斷格式
                     data.append([
-                        str(row[0]), nickname, str(row[1]), str(row[2]), str(row[3]),
-                        row[4], str(row[5]), str(row[6]), row[7], row[8],
-                        str(row[9]), str(row[10]), str(row[11]), str(row[12]),
-                        str(row[13]), str(row[14]), str(row[15]),
+                        int(row[0]), nickname, int(row[1]), int(row[2]), int(row[3]),
+                        row[4], int(row[5]), int(row[6]), row[7], row[8],
+                        int(row[9]), int(row[10]), int(row[11]), int(row[12]),
+                        int(row[13]), int(row[14]), int(row[15]),
                         row[16] or '', row[17] or '', row[18], row[19],
                         'TRUE' if row[20] else 'FALSE', 'TRUE' if row[21] else 'FALSE',
                         row[22] or ''
                     ])
                 
                 self.sheet.clear()
-                self.sheet.append_rows(data, value_input_option='RAW')
+                # 使用 USER_ENTERED 讓 Google Sheets 自動判斷數據類型（數字、文本等）
+                self.sheet.append_rows(data, value_input_option='USER_ENTERED')
                 
                 return len(rows)
             
