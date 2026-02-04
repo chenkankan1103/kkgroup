@@ -25,6 +25,8 @@ class GoogleSheetsSync(commands.Cog):
         # ⚠️ 不在 __init__ 中進行同步操作，改用 before_loop
         if not self.auto_sync_loop.is_running():
             self.auto_sync_loop.start()
+        if not self.auto_export_loop.is_running():
+            self.auto_export_loop.start()
     
     def _init_gspread(self):
         """初始化 Google Sheets 連接（同步版本，用於非異步上下文）"""
@@ -50,9 +52,9 @@ class GoogleSheetsSync(commands.Cog):
         if not self.gc or not self.sheet:
             self._init_gspread()
     
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=1)
     async def auto_sync_loop(self):
-        """每 5 分鐘自動同步一次（先檢查 Sheet 更新，再匯出資料庫）"""
+        """每 1 分鐘檢查 SHEET 是否有手動編輯，若有則同步到資料庫"""
         try:
             # 使用 loop executor 以避免阻塞事件迴圈
             loop = asyncio.get_event_loop()
@@ -63,7 +65,7 @@ class GoogleSheetsSync(commands.Cog):
             if not self.sheet:
                 return
             
-            # 1. 先讀取 Sheet 當前狀態，檢查是否有手動編輯（重要：要在匯出前做）
+            # 檢查 Sheet 是否有更新（例如手動編輯）
             all_records = await loop.run_in_executor(None, self.sheet.get_all_records)
             current_hash = hashlib.md5(str(all_records).encode()).hexdigest()
             
@@ -71,19 +73,36 @@ class GoogleSheetsSync(commands.Cog):
             if current_hash != self.last_sheet_hash:
                 self.last_sheet_hash = current_hash
                 await self._sync_from_sheet_internal()
-                print(f"✅ [自動同步] Google Sheet → 資料庫（檢測到手動編輯）({datetime.now().strftime('%H:%M:%S')})")
+                print(f"✅ [1分鐘同步] Google Sheet → 資料庫（檢測到手動編輯）({datetime.now().strftime('%H:%M:%S')})")
+            else:
+                self.last_sheet_hash = current_hash
+        
+        except Exception as e:
+            print(f"❌ 同步失敗: {e}")
+    
+    @tasks.loop(minutes=5)
+    async def auto_export_loop(self):
+        """每 5 分鐘將資料庫匯出到 SHEET（供管理員查閱）"""
+        try:
+            loop = asyncio.get_event_loop()
             
-            # 2. 最後才匯出資料庫 → Google Sheet（這樣才不會造成 hash 循環）
+            # 確保連接
+            await loop.run_in_executor(None, self._ensure_connection)
+            
+            if not self.sheet:
+                return
+            
+            # 匯出資料庫 → Google Sheet
             await self._export_to_sheet_internal()
             
-            # 3. 匯出後更新 hash，確保下次比對時是基於匯出後的狀態
+            # 匯出後更新 hash，確保下次檢查時不會誤以為有編輯
             all_records_after = await loop.run_in_executor(None, self.sheet.get_all_records)
             self.last_sheet_hash = hashlib.md5(str(all_records_after).encode()).hexdigest()
             
-            print(f"✅ [自動同步] 資料庫 → Google Sheet ({datetime.now().strftime('%H:%M:%S')})")
+            print(f"✅ [5分鐘更新] 資料庫 → Google Sheet ({datetime.now().strftime('%H:%M:%S')})")
         
         except Exception as e:
-            print(f"❌ 自動同步失敗: {e}")
+            print(f"❌ 匯出失敗: {e}")
     
     @auto_sync_loop.before_loop
     async def before_auto_sync_loop(self):
@@ -92,6 +111,18 @@ class GoogleSheetsSync(commands.Cog):
         # 在異步上下文中初始化（使用 executor 以避免阻塞）
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._init_gspread)
+    
+    @auto_export_loop.before_loop
+    async def before_auto_export_loop(self):
+        """等待 bot 完全啟動"""
+        await self.bot.wait_until_ready()
+    
+    def cog_unload(self):
+        """卸載 Cog 時停止所有任務"""
+        if self.auto_sync_loop.is_running():
+            self.auto_sync_loop.cancel()
+        if self.auto_export_loop.is_running():
+            self.auto_export_loop.cancel()
     
     async def _sync_from_sheet_internal(self):
         """內部同步方法：Google Sheet → 資料庫"""
@@ -378,7 +409,9 @@ class GoogleSheetsSync(commands.Cog):
                 f"🗄️ 資料庫玩家數: {db_count}\n"
                 f"💰 資料庫總 KKCOIN: {total_kkcoin}\n"
                 f"📑 Google Sheet 記錄數: {len(sheet_records)}\n"
-                f"🔄 自動同步: 每 5 分鐘一次\n"
+                f"🔄 同步策略:\n"
+                f"   📥 SHEET → 資料庫: 每 1 分鐘\n"
+                f"   📤 資料庫 → SHEET: 每 5 分鐘\n"
                 f"⏰ 最後更新: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             )
         except Exception as e:
