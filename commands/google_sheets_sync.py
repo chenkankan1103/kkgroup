@@ -38,11 +38,24 @@ class GoogleSheetsSync(commands.Cog):
                 scopes=self.SCOPES
             )
             self.gc = gspread.authorize(creds)
-            self.sheet = self.gc.open_by_key(self.SHEET_ID).worksheet(self.SHEET_NAME)
+            spreadsheet = self.gc.open_by_key(self.SHEET_ID)
+            print(f"📑 打開試算表，工作表清單: {[ws.title for ws in spreadsheet.worksheets()]}")
+            
+            self.sheet = spreadsheet.worksheet(self.SHEET_NAME)
+            
+            # 驗證連接
+            all_rows = self.sheet.get_all_records()
+            all_values = self.sheet.get_all_values()
+            print(f"✅ Google Sheets 連接成功")
+            print(f"   - 工作表名稱: {self.SHEET_NAME}")
+            print(f"   - 行數: {len(all_values)}, 列數: {len(all_values[0]) if all_values else 0}")
+            print(f"   - get_all_records() 返回: {len(all_rows)} 筆記錄")
+            
             self._initialized = True
-            print("✅ Google Sheets 連接成功")
         except Exception as e:
             print(f"❌ Google Sheets 連接失敗: {e}")
+            import traceback
+            traceback.print_exc()
             self.gc = None
             self.sheet = None
             self._initialized = False
