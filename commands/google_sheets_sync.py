@@ -176,16 +176,36 @@ class GoogleSheetsSync(commands.Cog):
                         return val
                     
                     def to_int(val):
-                        """安全地轉換為整數"""
+                        """安全地轉換為整數，支持科學記數法"""
                         val = clean_value(val)
+                        
+                        # 處理空值
+                        if val == '' or val is None:
+                            return 0
+                        
+                        # 如果已經是 int 直接返回
                         if isinstance(val, int):
                             return val
+                        
+                        # 如果是 float，直接轉 int
                         if isinstance(val, float):
                             return int(val)
-                        try:
-                            return int(float(val))  # 先轉 float 再轉 int，避免 "100.0" 轉換失敗
-                        except (ValueError, TypeError):
-                            return 0
+                        
+                        # 字符串處理
+                        if isinstance(val, str):
+                            try:
+                                # 嘗試直接轉換
+                                return int(val)
+                            except ValueError:
+                                try:
+                                    # 嘗試先轉 float 再轉 int（處理 "100.0" 和科學記數法 "1E+17"）
+                                    return int(float(val))
+                                except ValueError:
+                                    # 如果全失敗，返回 0
+                                    print(f"⚠️ 無法轉換 '{val}' 為整數，使用預設值 0")
+                                    return 0
+                        
+                        return 0
                     
                     user_id = to_int(row.get('user_id', 0))
                     if user_id == 0:
