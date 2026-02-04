@@ -511,6 +511,55 @@ class WeeklySummaryCannabisPanelView(discord.ui.View):
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
 
+class SelectSeedView(discord.ui.View):
+    """選擇要種植的種子"""
+    
+    def __init__(self, bot, user_id, seeds):
+        super().__init__(timeout=60)
+        self.bot = bot
+        self.user_id = user_id
+        
+        for idx, (seed_name, qty) in enumerate(seeds.items(), 1):
+            if qty > 0:
+                config = CANNABIS_SHOP["種子"][seed_name]
+                button = Button(
+                    label=f"種植 {seed_name}",
+                    style=discord.ButtonStyle.success,
+                    emoji=config["emoji"],
+                    custom_id=f"plant_seed_{seed_name.replace(' ', '_')}"
+                )
+                button.callback = self.make_plant_callback(seed_name)
+                self.add_item(button)
+    
+    async def make_plant_callback(self, seed_name):
+        async def callback(interaction: discord.Interaction):
+            try:
+                await interaction.response.defer(ephemeral=True)
+                
+                # 種植
+                result = await plant_cannabis(self.user_id, seed_name)
+                
+                if result:
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    embed = discord.Embed(
+                        title="🌱 種植成功",
+                        description=f"已種植 {seed_name}",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(name="成長時間", value=f"{config['growth_time']//3600} 小時", inline=False)
+                    embed.add_field(name="種子品質", value=f"產量：{config['yield_amount']}個", inline=False)
+                    
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 種植失敗（可能沒有種子或其他原因）", ephemeral=True)
+                
+            except Exception as e:
+                traceback.print_exc()
+                await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+        
+        return callback
+
+
 async def setup(bot):
     """載入 Cog"""
     await bot.add_cog(PersonalLockerCog(bot))
