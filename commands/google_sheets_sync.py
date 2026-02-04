@@ -176,7 +176,11 @@ class GoogleSheetsSync(commands.Cog):
             # 第 1 行是分組標題，第 2 行是真實的欄位名稱
             headers = all_values[1]  # 使用第 2 行作為標題
             print(f"📊 同步前診斷: 行數={len(all_values)}, 列數={len(headers)}")
-            print(f"📋 標題行（第2行）: {headers[:5]}...")  # 只顯示前 5 個標題
+            print(f"📋 標題行（第2行）: {headers}")  # 打印完整標題行
+            
+            # Debug：也打印第 1 和 3 行看看內容
+            print(f"🔍 第1行（分組標題）: {all_values[0][:5]}...")
+            print(f"🔍 第3行（第一筆數據）: {all_values[2][:5]}...")
             
             # 將數據行轉換為字典列表（從第 3 行開始）
             all_records = []
@@ -212,7 +216,7 @@ class GoogleSheetsSync(commands.Cog):
                         return val
                     
                     def to_int(val):
-                        """安全地轉換為整數，支持科學記數法"""
+                        """安全地轉換為整數，支持科學記數法和各種格式"""
                         val = clean_value(val)
                         
                         # 處理空值
@@ -229,14 +233,26 @@ class GoogleSheetsSync(commands.Cog):
                         
                         # 字符串處理
                         if isinstance(val, str):
+                            # 移除可能的空格
+                            val = val.strip()
+                            if val == '':
+                                return 0
+                            
                             try:
-                                # 嘗試直接轉換
+                                # 嘗試直接轉換（包括科學記號如 "1E+17"）
                                 return int(val)
                             except ValueError:
                                 try:
-                                    # 嘗試先轉 float 再轉 int（處理 "100.0" 和科學記數法 "1E+17"）
-                                    return int(float(val))
+                                    # 嘗試先轉 float 再轉 int（處理 "100.0" 和科學記號 "1E+17"）
+                                    float_val = float(val)
+                                    return int(float_val)
                                 except ValueError:
+                                    # 試著找出科學記號的模式
+                                    if 'e' in val.lower():
+                                        try:
+                                            return int(float(val))
+                                        except:
+                                            pass
                                     # 如果全失敗，返回 0
                                     return 0
                         
@@ -245,9 +261,8 @@ class GoogleSheetsSync(commands.Cog):
                     user_id = to_int(row.get('user_id', 0))
                     if user_id == 0:
                         # Debug: 顯示哪些行被跳過
-                        print(f"⏭️ 行 {idx+2} 被跳過：user_id 為空或無效 (raw: {row.get('user_id', 'EMPTY')})")
-                        skipped += 1
-                        continue
+                        raw_user_id = row.get('user_id', 'MISSING')
+                        print(f"⏭️ 行 {idx+3} 被跳過：user_id 無效 (raw: '{raw_user_id}'，轉換後: {user_id})")
                     
                     level = to_int(row.get('level', 1))
                     xp = to_int(row.get('xp', 0))
