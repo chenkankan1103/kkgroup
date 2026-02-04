@@ -165,22 +165,13 @@ class KKCoin(commands.Cog):
         """當 Cog 卸載時停止定時任務"""
         self.auto_update_leaderboard.cancel()
 
-    @tasks.loop(minutes=5)
-    async def auto_update_leaderboard(self):
-        """每 5 分鐘自動更新排行榜"""
-        if not self.rank_channel_id:
-            return
-            
-        # 如果沒有訊息 ID，嘗試查找或創建排行榜（只創建一次）
-        if not self.rank_message_id:
-            print("⚠️ 排行榜訊息 ID 未找到，嘗試查找或創建...")
-            await self.create_or_find_leaderboard()
-        else:
-            # 否則更新現有排行榜
-            await self.update_leaderboard(min_interval=0)
-
-    async def create_or_find_leaderboard(self):
-        """查找現有排行榜或創建新的（防止重複創建）"""
+    @auto_update_leaderboard.before_loop
+    async def before_auto_update(self):
+        """等待 bot 準備完成，並在啟動時查找/創建排行榜"""
+        await self.bot.wait_until_ready()
+        print("✅ 排行榜自動更新任務已啟動，正在查找舊訊息...")
+        
+        # 在 bot 啟動時立即查找或創建排行榜
         if not self.rank_channel_id:
             print("❌ 未設定排行榜頻道 ID")
             return
@@ -195,49 +186,44 @@ class KKCoin(commands.Cog):
             if self.rank_message_id:
                 try:
                     msg = await channel.fetch_message(self.rank_message_id)
-                    print(f"✅ 使用現有排行榜訊息: {self.rank_message_id}")
-                    # 更新現有訊息
-                    await self.update_leaderboard(min_interval=0)
+                    print(f"✅ 找到並重用排行榜訊息 ID: {self.rank_message_id}")
                     return
                 except discord.NotFound:
                     print(f"⚠️ 訊息 {self.rank_message_id} 不存在，嘗試重新查找...")
                     self.rank_message_id = 0
                     save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
             
-            # 在頻道中查找所有訊息，看是否有舊的排行榜訊息
+            # 在頻道中查找所有訊息，尋找舊的排行榜訊息
             print("🔍 在頻道中查找舊排行榜訊息...")
-            found_old_message = False
-            try:
-                # 查詢頻道歷史記錄（限制 100 條以提高效率）
-                async for msg in channel.history(limit=100):
-                    if msg.author.id == self.bot.user.id and msg.attachments:
-                        for attachment in msg.attachments:
-                            if "kkcoin_rank" in attachment.filename:
-                                print(f"✅ 找到舊排行榜訊息 ID: {msg.id}")
-                                self.rank_message_id = msg.id
-                                save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
-                                found_old_message = True
-                                # 立即更新找到的舊消息
-                                await self.update_leaderboard(min_interval=0)
-                                return
-            except Exception as e:
-                print(f"❌ 查詢頻道歷史時出錯: {e}")
+            async for msg in channel.history(limit=100):
+                if msg.author.id == self.bot.user.id and msg.attachments:
+                    for attachment in msg.attachments:
+                        if "kkcoin_rank" in attachment.filename:
+                            print(f"✅ 找到舊排行榜訊息 ID: {msg.id}，將重用此訊息")
+                            self.rank_message_id = msg.id
+                            save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
+                            return
             
-            # 如果沒有找到舊訊息，創建新的
-            if not found_old_message:
-                print("📝 未找到舊訊息，創建新排行榜...")
-                await self.create_leaderboard()
+            # 如果沒有找到舊訊息，等待第一次循環自動創建
+            print("📝 未找到舊訊息，將在第一次循環時創建...")
         
         except Exception as e:
-            print(f"❌ 查找/創建排行榜時發生錯誤: {e}")
+            print(f"❌ 初始化排行榜時發生錯誤: {e}")
             import traceback
             traceback.print_exc()
 
-    @auto_update_leaderboard.before_loop
-    async def before_auto_update(self):
-        """等待 bot 準備完成"""
-        await self.bot.wait_until_ready()
-        print("✅ 排行榜自動更新任務已啟動")
+    @tasks.loop(minutes=5)
+    async def auto_update_leaderboard(self):
+        """每 5 分鐘自動更新排行榜"""
+        if not self.rank_channel_id:
+            return
+            
+        # 如果沒有訊息 ID，嘗試創建排行榜（只有在 before_loop 失敗時才會執行）
+        if not self.rank_message_id:
+            await self.create_leaderboard()
+        else:
+            # 否則更新現有排行榜
+            await self.update_leaderboard(min_interval=0)
 
     async def create_leaderboard(self):
         """自動創建排行榜訊息（防止重複創建）"""
