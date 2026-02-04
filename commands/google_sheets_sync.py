@@ -166,17 +166,31 @@ class GoogleSheetsSync(commands.Cog):
                 print("❌ SHEET 連接失敗")
                 return 0, 0, 0
             
-            # 診斷訊息
+            # 用 get_all_values 讀取原始數據
             all_values = self.sheet.get_all_values()
-            print(f"📊 同步前診斷: 行數={len(all_values)}, 列數={len(all_values[0]) if all_values else 0}")
             
-            all_records = self.sheet.get_all_records()
+            if not all_values or len(all_values) < 3:
+                print(f"❌ SHEET 數據不足 (行數: {len(all_values)})")
+                return 0, 0, 0
+            
+            # 第 1 行是分組標題，第 2 行是真實的欄位名稱
+            headers = all_values[1]  # 使用第 2 行作為標題
+            print(f"📊 同步前診斷: 行數={len(all_values)}, 列數={len(headers)}")
+            print(f"📋 標題行（第2行）: {headers[:5]}...")  # 只顯示前 5 個標題
+            
+            # 將數據行轉換為字典列表（從第 3 行開始）
+            all_records = []
+            for row_idx, row_values in enumerate(all_values[2:], start=3):
+                record = {}
+                for col_idx, header in enumerate(headers):
+                    if col_idx < len(row_values):
+                        record[header] = row_values[col_idx]
+                    else:
+                        record[header] = ''
+                all_records.append(record)
             
             if not all_records:
-                print(f"❌ SHEET 中沒有任何記錄 (get_all_records() 返回空列表)")
-                print(f"   但 get_all_values() 返回 {len(all_values)} 行")
-                if len(all_values) > 0:
-                    print(f"   第一行內容: {all_values[0]}")
+                print(f"❌ 沒有數據記錄")
                 return 0, 0, 0
             
             print(f"📖 SHEET 中共有 {len(all_records)} 筆記錄，開始同步...")
