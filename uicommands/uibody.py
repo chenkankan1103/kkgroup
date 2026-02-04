@@ -122,25 +122,30 @@ class LockerPanelView(discord.ui.View):
             await interaction.response.defer(ephemeral=True)
             LockerPanelView.last_update[interaction.user.id] = current_time
             
-            user_data = self.cog.get_user_data(interaction.user.id)
+            # 重新獲取最新的用戶資料（確保數據是最新的）
+            user_data = self.cog.get_user_data(self.user_id)
             if not user_data:
                 await interaction.followup.send("❌ 沒有找到你的資料！", ephemeral=True)
                 return
             
-            embed = await self.cog.create_user_embed(user_data, interaction.user)
+            # 使用 interaction.user 而非從數據中提取用戶信息
+            user = self.cog.bot.get_user(self.user_id) or await self.cog.bot.fetch_user(self.user_id)
+            embed = await self.cog.create_user_embed(user_data, user)
             character_image_url = await self.cog.get_character_image_url(user_data)
             
             if character_image_url:
                 embed.set_image(url=character_image_url)
             
-            # 在原消息中編輯
+            # 直接編輯當前消息
             try:
                 await interaction.message.edit(embed=embed, view=self)
                 await interaction.followup.send("✅ 面板已更新！", ephemeral=True)
-            except Exception:
+            except Exception as e:
+                print(f"❌ 編輯消息失敗: {e}")
                 await interaction.followup.send("❌ 更新失敗，請聯繫管理員！", ephemeral=True)
                 
         except Exception as e:
+            print(f"❌ 更新面板出錯: {e}")
             try:
                 await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
             except:
