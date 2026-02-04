@@ -150,6 +150,7 @@ class GoogleSheetsSync(commands.Cog):
             self._ensure_connection()
             
             if not self.sheet:
+                print("❌ SHEET 連接失敗")
                 return 0, 0, 0
             
             all_records = self.sheet.get_all_records()
@@ -166,8 +167,9 @@ class GoogleSheetsSync(commands.Cog):
             updated = 0
             inserted = 0
             errors = 0
+            skipped = 0  # 新增：追蹤被跳過的記錄
             
-            for row in all_records:
+            for idx, row in enumerate(all_records):
                 try:
                     # 清理欄位值：移除前導單引號、空格、並轉換為正確的數據類型
                     def clean_value(val):
@@ -202,13 +204,15 @@ class GoogleSheetsSync(commands.Cog):
                                     return int(float(val))
                                 except ValueError:
                                     # 如果全失敗，返回 0
-                                    print(f"⚠️ 無法轉換 '{val}' 為整數，使用預設值 0")
                                     return 0
                         
                         return 0
                     
                     user_id = to_int(row.get('user_id', 0))
                     if user_id == 0:
+                        # Debug: 顯示哪些行被跳過
+                        print(f"⏭️ 行 {idx+2} 被跳過：user_id 為空或無效 (raw: {row.get('user_id', 'EMPTY')})")
+                        skipped += 1
                         continue
                     
                     level = to_int(row.get('level', 1))
@@ -295,10 +299,16 @@ class GoogleSheetsSync(commands.Cog):
             
             conn.commit()
             conn.close()
+            
+            # 打印最終統計
+            print(f"📊 同步統計: 更新={updated}, 新增={inserted}, 錯誤={errors}, 跳過={skipped}")
+            
             return updated, inserted, errors
         
         except Exception as e:
             print(f"❌ 內部同步失敗: {e}")
+            import traceback
+            traceback.print_exc()
             return 0, 0, 1
     
     async def _export_to_sheet_internal(self):
