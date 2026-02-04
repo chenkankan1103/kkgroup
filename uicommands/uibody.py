@@ -140,6 +140,50 @@ class LockerPanelView(discord.ui.View):
             except:
                 pass
     
+    @discord.ui.button(label="種植", style=discord.ButtonStyle.success, emoji="🌱", custom_id="locker_plant")
+    async def plant_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """選擇種子種植"""
+        try:
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            
+            from shop_commands.merchant.cannabis_farming import get_inventory, plant_cannabis
+            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+            
+            inventory = await get_inventory(self.user_id)
+            seeds = inventory.get("種子", {})
+            
+            if not seeds:
+                await interaction.followup.send("❌ 你沒有種子！", ephemeral=True)
+                return
+            
+            # 顯示種子列表
+            embed = discord.Embed(
+                title="🌱 選擇要種植的種子",
+                color=discord.Color.green()
+            )
+            
+            for idx, (seed_name, qty) in enumerate(seeds.items(), 1):
+                if qty > 0:
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    embed.add_field(
+                        name=f"#{idx} {config['emoji']} {seed_name}",
+                        value=f"擁有：{qty} 粒\n成長時間：{config['growth_time']//3600}h",
+                        inline=False
+                    )
+            
+            from uicommands.cannabis_locker import SelectSeedView
+            view = SelectSeedView(self.cog.bot, self.user_id, seeds)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+    
     @discord.ui.button(label="施肥加速", style=discord.ButtonStyle.success, emoji="💧", custom_id="locker_fertilize")
     async def fertilize_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """施肥加速"""
