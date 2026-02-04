@@ -51,34 +51,62 @@ cd /path/to/kkgroup
 git pull
 ```
 
-2. 在後台啟動 Flask API（使用 gunicorn 或 supervisor）：
-
-**選項 A：使用 Gunicorn（推薦）**
+2. **建立虛擬環境**（因為系統 Python 受限）：
 ```bash
+# 建立虛擬環境
+python3 -m venv venv
+
+# 啟用虛擬環境
+source venv/bin/activate
+
+# 升級 pip
+pip install --upgrade pip
+
+# 安裝依賴
+pip install -r requirements.txt
 pip install gunicorn
+```
+
+3. **啟動 Flask API**
+
+**選項 A：測試運行（前台，用於調試）**
+```bash
+source venv/bin/activate
 gunicorn -w 4 -b 0.0.0.0:5000 sheet_sync_api:app
 ```
 
-**選項 B：使用 Supervisor（永久服務）**
+**選項 B：使用 Supervisor（後台，生產推薦）**
+
 編輯 `/etc/supervisor/conf.d/sheet-sync-api.conf`：
+```bash
+sudo nano /etc/supervisor/conf.d/sheet-sync-api.conf
+```
+
+複製下面的內容（**重要**：改 `/path/to/kkgroup` 為實際路徑，改 `ubuntu` 為你的用戶名）：
 ```ini
 [program:sheet-sync-api]
 directory=/path/to/kkgroup
-command=python sheet_sync_api.py
+command=/path/to/kkgroup/venv/bin/gunicorn -w 4 -b 0.0.0.0:5000 sheet_sync_api:app
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/sheet-sync-api.err.log
-stdout_logfile=/var/log/sheet-sync-api.out.log
+redirect_stderr=true
+stdout_logfile=/var/log/sheet-sync-api.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=5
+user=ubuntu
+environment=PATH="/path/to/kkgroup/venv/bin",PYTHONUNBUFFERED=1
+startsecs=10
+stopwaitsecs=10
 ```
 
-啟動：
+保存後啟動：
 ```bash
 sudo supervisorctl reread
 sudo supervisorctl update
 sudo supervisorctl start sheet-sync-api
 ```
 
-3. 驗證 API 在生產環境運行：
+4. 驗證 API 在生產環境運行：
 ```bash
 curl http://localhost:5000/api/health
 ```
