@@ -21,13 +21,15 @@ class GoogleSheetsSync(commands.Cog):
         self.gc = None
         self.sheet = None
         self.last_sheet_hash = None
-        self._init_gspread()
-        # 啟動自動同步
+        self._initialized = False
+        # ⚠️ 不在 __init__ 中進行同步操作，改用 before_loop
         if not self.auto_sync_loop.is_running():
             self.auto_sync_loop.start()
     
     def _init_gspread(self):
-        """初始化 Google Sheets 連接"""
+        """初始化 Google Sheets 連接（同步版本，用於非異步上下文）"""
+        if self._initialized:
+            return
         try:
             creds = Credentials.from_service_account_file(
                 'google_credentials.json',
@@ -35,14 +37,16 @@ class GoogleSheetsSync(commands.Cog):
             )
             self.gc = gspread.authorize(creds)
             self.sheet = self.gc.open_by_key(self.SHEET_ID).worksheet(self.SHEET_NAME)
+            self._initialized = True
             print("✅ Google Sheets 連接成功")
         except Exception as e:
             print(f"❌ Google Sheets 連接失敗: {e}")
             self.gc = None
             self.sheet = None
+            self._initialized = False
     
     def _ensure_connection(self):
-        """確保連接存活"""
+        """確保連接存活（同步版本）"""
         if not self.gc or not self.sheet:
             self._init_gspread()
     
@@ -50,7 +54,12 @@ class GoogleSheetsSync(commands.Cog):
     async def auto_sync_loop(self):
         """每 5 分鐘自動同步一次（資料庫 → Google Sheet，然後檢查 Sheet 更新）"""
         try:
-            self._ensure_connection()
+            # 使用 loop executor 以避免阻塞事件迴圈
+            loop = asyncio.get_event_loop()
+            
+            # 確保連接
+            await loop.run_in_executor(None, self._ensure_connection)
+            
             if not self.sheet:
                 return
             
@@ -59,7 +68,7 @@ class GoogleSheetsSync(commands.Cog):
             print(f"✅ [自動同步] 資料庫 → Google Sheet ({datetime.now().strftime('%H:%M:%S')})")
             
             # 2. 再檢查 Sheet 是否有更新（例如手動編輯）
-            all_records = self.sheet.get_all_records()
+            all_records = await loop.run_in_executor(None, self.sheet.get_all_records)
             current_hash = hashlib.md5(str(all_records).encode()).hexdigest()
             
             # 如果 Sheet 資料有改變（例如手動編輯 KKCOIN 欄位），同步回資料庫
@@ -75,8 +84,11 @@ class GoogleSheetsSync(commands.Cog):
     
     @auto_sync_loop.before_loop
     async def before_auto_sync_loop(self):
-        """等待 bot 完全啟動"""
+        """等待 bot 完全啟動，然後初始化 Google Sheets 連接"""
         await self.bot.wait_until_ready()
+        # 在異步上下文中初始化（使用 executor 以避免阻塞）
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._init_gspread)
     
     async def _sync_from_sheet_internal(self):
         """內部同步方法：Google Sheet → 資料庫"""
@@ -199,55 +211,62 @@ class GoogleSheetsSync(commands.Cog):
     async def _export_to_sheet_internal(self):
         """內部匯出方法：資料庫 → Google Sheet"""
         try:
-            self._ensure_connection()
+            loop = asyncio.get_event_loop()
             
-            if not self.sheet:
-                return 0
-            
-            conn = sqlite3.connect('user_data.db')
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT user_id, level, xp, kkcoin, title, hp, stamina,
-                inventory, character_config, face, hair, skin,
-                top, bottom, shoes, streak, last_work_date,
-                last_action_date, actions_used, gender, is_stunned,
-                is_locked, last_recovery
-                FROM users ORDER BY kkcoin DESC
-            """)
-            
-            rows = cursor.fetchall()
-            conn.close()
-            
-            if not rows:
-                return 0
-            
-            headers = [
-                'user_id', 'nickname', 'level', 'xp', 'kkcoin', 'title', 'hp', 'stamina',
-                'inventory', 'character_config', 'face', 'hair', 'skin',
-                'top', 'bottom', 'shoes', 'streak', 'last_work_date',
-                'last_action_date', 'actions_used', 'gender', 'is_stunned',
-                'is_locked', 'last_recovery'
-            ]
-            
-            data = [headers]
-            for row in rows:
-                user = self.bot.get_user(row[0])
-                nickname = user.display_name if user else f"Unknown_{row[0]}"
+            # 在 executor 中執行同步操作以避免阻塞事件迴圈
+            def do_export():
+                self._ensure_connection()
                 
-                data.append([
-                    str(row[0]), nickname, str(row[1]), str(row[2]), str(row[3]),
-                    row[4], str(row[5]), str(row[6]), row[7], row[8],
-                    str(row[9]), str(row[10]), str(row[11]), str(row[12]),
-                    str(row[13]), str(row[14]), str(row[15]),
-                    row[16] or '', row[17] or '', row[18], row[19],
-                    'TRUE' if row[20] else 'FALSE', 'TRUE' if row[21] else 'FALSE',
-                    row[22] or ''
-                ])
+                if not self.sheet:
+                    return 0
+                
+                conn = sqlite3.connect('user_data.db')
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT user_id, level, xp, kkcoin, title, hp, stamina,
+                    inventory, character_config, face, hair, skin,
+                    top, bottom, shoes, streak, last_work_date,
+                    last_action_date, actions_used, gender, is_stunned,
+                    is_locked, last_recovery
+                    FROM users ORDER BY kkcoin DESC
+                """)
+                
+                rows = cursor.fetchall()
+                conn.close()
+                
+                if not rows:
+                    return 0
+                
+                headers = [
+                    'user_id', 'nickname', 'level', 'xp', 'kkcoin', 'title', 'hp', 'stamina',
+                    'inventory', 'character_config', 'face', 'hair', 'skin',
+                    'top', 'bottom', 'shoes', 'streak', 'last_work_date',
+                    'last_action_date', 'actions_used', 'gender', 'is_stunned',
+                    'is_locked', 'last_recovery'
+                ]
+                
+                data = [headers]
+                for row in rows:
+                    user = self.bot.get_user(row[0])
+                    nickname = user.display_name if user else f"Unknown_{row[0]}"
+                    
+                    data.append([
+                        str(row[0]), nickname, str(row[1]), str(row[2]), str(row[3]),
+                        row[4], str(row[5]), str(row[6]), row[7], row[8],
+                        str(row[9]), str(row[10]), str(row[11]), str(row[12]),
+                        str(row[13]), str(row[14]), str(row[15]),
+                        row[16] or '', row[17] or '', row[18], row[19],
+                        'TRUE' if row[20] else 'FALSE', 'TRUE' if row[21] else 'FALSE',
+                        row[22] or ''
+                    ])
+                
+                self.sheet.clear()
+                self.sheet.append_rows(data, value_input_option='RAW')
+                
+                return len(rows)
             
-            self.sheet.clear()
-            self.sheet.append_rows(data, value_input_option='RAW')
-            
-            return len(rows)
+            # 在 executor 中執行
+            return await loop.run_in_executor(None, do_export)
         
         except Exception as e:
             print(f"❌ 匯出失敗: {e}")
@@ -278,7 +297,8 @@ class GoogleSheetsSync(commands.Cog):
         await interaction.response.defer()
         
         try:
-            self._ensure_connection()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._ensure_connection)
             
             if not self.sheet:
                 await interaction.followup.send("❌ Google Sheets 連接失敗")
