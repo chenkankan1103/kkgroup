@@ -171,7 +171,7 @@ class KKCoin(commands.Cog):
         if not self.rank_channel_id:
             return
             
-        # 如果沒有訊息 ID，嘗試創建排行榜（只創建一次）
+        # 如果沒有訊息 ID，嘗試查找或創建排行榜（只創建一次）
         if not self.rank_message_id:
             print("⚠️ 排行榜訊息 ID 未找到，嘗試查找或創建...")
             await self.create_or_find_leaderboard()
@@ -191,38 +191,47 @@ class KKCoin(commands.Cog):
                 print(f"❌ 找不到頻道 {self.rank_channel_id}")
                 return
             
-            # 嘗試查找現有的排行榜訊息
+            # 優先嘗試使用已保存的 rank_message_id
             if self.rank_message_id:
                 try:
                     msg = await channel.fetch_message(self.rank_message_id)
-                    print(f"✅ 找到現有排行榜訊息: {self.rank_message_id}")
+                    print(f"✅ 使用現有排行榜訊息: {self.rank_message_id}")
+                    # 更新現有訊息
+                    await self.update_leaderboard(min_interval=0)
                     return
                 except discord.NotFound:
-                    print(f"⚠️ 訊息 {self.rank_message_id} 不存在，將重新創建")
+                    print(f"⚠️ 訊息 {self.rank_message_id} 不存在，嘗試重新查找...")
                     self.rank_message_id = 0
                     save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
             
-            # 在頻道中查找所有訊息，看是否有舊的排行榜
+            # 在頻道中查找所有訊息，看是否有舊的排行榜訊息
             print("🔍 在頻道中查找舊排行榜訊息...")
-            found_count = 0
-            async for msg in channel.history(limit=50):
-                if msg.author.id == self.bot.user.id and msg.attachments:
-                    for attachment in msg.attachments:
-                        if "kkcoin_rank" in attachment.filename:
-                            print(f"✅ 找到舊排行榜訊息: {msg.id}")
-                            self.rank_message_id = msg.id
-                            save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
-                            found_count += 1
-                            break
-                    if found_count > 0:
-                        break
+            found_old_message = False
+            try:
+                # 查詢頻道歷史記錄（限制 100 條以提高效率）
+                async for msg in channel.history(limit=100):
+                    if msg.author.id == self.bot.user.id and msg.attachments:
+                        for attachment in msg.attachments:
+                            if "kkcoin_rank" in attachment.filename:
+                                print(f"✅ 找到舊排行榜訊息 ID: {msg.id}")
+                                self.rank_message_id = msg.id
+                                save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
+                                found_old_message = True
+                                # 立即更新找到的舊消息
+                                await self.update_leaderboard(min_interval=0)
+                                return
+            except Exception as e:
+                print(f"❌ 查詢頻道歷史時出錯: {e}")
             
-            if found_count == 0:
-                # 沒有找到舊訊息，創建新的
+            # 如果沒有找到舊訊息，創建新的
+            if not found_old_message:
+                print("📝 未找到舊訊息，創建新排行榜...")
                 await self.create_leaderboard()
         
         except Exception as e:
             print(f"❌ 查找/創建排行榜時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
 
     @auto_update_leaderboard.before_loop
     async def before_auto_update(self):
