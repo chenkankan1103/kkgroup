@@ -88,6 +88,224 @@ class UpdatePanelView(discord.ui.View):
                             continue
             
             await interaction.followup.send("❌ 找不到面板訊息，請聯繫管理員！", ephemeral=True)
+
+class LockerPanelView(discord.ui.View):
+    """置物櫃面板 - 包含更新和大麻系統按鈕"""
+    def __init__(self, cog, user_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.user_id = user_id
+        if not hasattr(LockerPanelView, 'last_update'):
+            LockerPanelView.last_update = {}
+        
+    @discord.ui.button(label="更新面板", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="locker_update_panel")
+    async def update_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current_time = time.time()
+        last_update_time = LockerPanelView.last_update.get(interaction.user.id, 0)
+        
+        if current_time - last_update_time < 5:
+            remaining_time = 5 - (current_time - last_update_time)
+            await interaction.response.send_message(f"⏰ 請等待 {remaining_time:.1f} 秒後再更新面板！", ephemeral=True)
+            return
+        
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 你只能更新自己的面板！", ephemeral=True)
+            return
+            
+        try:
+            await interaction.response.defer(ephemeral=True)
+            LockerPanelView.last_update[interaction.user.id] = current_time
+            
+            user_data = self.cog.get_user_data(interaction.user.id)
+            if not user_data:
+                await interaction.followup.send("❌ 沒有找到你的資料！", ephemeral=True)
+                return
+            
+            embed = await self.cog.create_user_embed(user_data, interaction.user)
+            character_image_url = await self.cog.get_character_image_url(user_data)
+            
+            if character_image_url:
+                embed.set_image(url=character_image_url)
+            
+            # 在原消息中編輯
+            try:
+                await interaction.message.edit(embed=embed, view=self)
+                await interaction.followup.send("✅ 面板已更新！", ephemeral=True)
+            except Exception:
+                await interaction.followup.send("❌ 更新失敗，請聯繫管理員！", ephemeral=True)
+                
+        except Exception as e:
+            try:
+                await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
+            except:
+                pass
+    
+    @discord.ui.button(label="施肥加速", style=discord.ButtonStyle.success, emoji="💧", custom_id="locker_fertilize")
+    async def fertilize_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """施肥加速"""
+        try:
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            
+            from shop_commands.merchant.cannabis_farming import get_user_plants, get_inventory
+            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+            
+            plants = await get_user_plants(self.user_id)
+            growing_plants = [p for p in plants if p["status"] != "harvested"]
+            
+            if not growing_plants:
+                await interaction.followup.send("❌ 沒有成長中的植物！", ephemeral=True)
+                return
+            
+            inventory = await get_inventory(self.user_id)
+            if not inventory.get("肥料"):
+                await interaction.followup.send("❌ 你沒有肥料！", ephemeral=True)
+                return
+            
+            # 顯示植物列表
+            embed = discord.Embed(
+                title="💧 選擇要施肥的植物",
+                color=discord.Color.blue()
+            )
+            
+            for idx, plant in enumerate(growing_plants[:5], 1):
+                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                embed.add_field(
+                    name=f"#{idx} {config['emoji']} {plant['seed_type']}",
+                    value=f"已施肥：{plant['fertilizer_applied']}次",
+                    inline=False
+                )
+            
+            from uicommands.cannabis_locker import SelectPlantForFertilizerView
+            view = SelectPlantForFertilizerView(self.cog.bot, self.user_id, growing_plants)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+    
+    @discord.ui.button(label="收割成熟", style=discord.ButtonStyle.success, emoji="✂️", custom_id="locker_harvest")
+    async def harvest_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """收割成熟植物"""
+        try:
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            
+            from shop_commands.merchant.cannabis_farming import get_user_plants
+            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+            
+            plants = await get_user_plants(self.user_id)
+            harvestable = [p for p in plants if p["status"] == "harvested"]
+            
+            if not harvestable:
+                await interaction.followup.send("❌ 沒有已成熟的植物！", ephemeral=True)
+                return
+            
+            # 顯示可收割的植物
+            embed = discord.Embed(
+                title="🔪 選擇要收割的植物",
+                color=discord.Color.gold()
+            )
+            
+            for idx, plant in enumerate(harvestable[:5], 1):
+                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                yield_amount = plant.get("harvested_amount", 0)
+                embed.add_field(
+                    name=f"#{idx} {config['emoji']} {plant['seed_type']}",
+                    value=f"產量：{yield_amount}",
+                    inline=False
+                )
+            
+            from uicommands.cannabis_locker import SelectPlantForHarvestView
+            view = SelectPlantForHarvestView(self.cog.bot, self.user_id, harvestable)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+    
+    @discord.ui.button(label="查看狀態", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="locker_view_plants")
+    async def view_plants_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """查看植物狀態"""
+        try:
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            
+            from shop_commands.merchant.cannabis_farming import get_user_plants
+            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+            
+            plants = await get_user_plants(self.user_id)
+            
+            if not plants:
+                await interaction.followup.send("❌ 你還沒有種植任何植物！", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="🌱 我的植物狀態",
+                color=discord.Color.green()
+            )
+            
+            for idx, plant in enumerate(plants, 1):
+                seed_config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                
+                # 計算進度
+                if plant["status"] == "harvested":
+                    progress_text = "✅ 已成熟 100%"
+                else:
+                    planted_time = plant["planted_at"] if isinstance(plant["planted_at"], float) else plant["planted_at"]
+                    matured_time = plant["matured_at"] if isinstance(plant["matured_at"], float) else plant["matured_at"]
+                    
+                    if isinstance(planted_time, str):
+                        from datetime import datetime
+                        planted_time = datetime.fromisoformat(planted_time).timestamp()
+                    if isinstance(matured_time, str):
+                        from datetime import datetime
+                        matured_time = datetime.fromisoformat(matured_time).timestamp()
+                    
+                    from datetime import datetime
+                    now = datetime.now().timestamp()
+                    elapsed = now - planted_time
+                    total = matured_time - planted_time
+                    progress = min(100, (elapsed / total * 100)) if total > 0 else 0
+                    
+                    filled = int(progress / 5)
+                    empty = 20 - filled
+                    progress_text = f"{'█' * filled}{'░' * empty} {progress:.0f}%"
+                    
+                    remaining = max(0, matured_time - now)
+                    if remaining > 0:
+                        hours = int(remaining // 3600)
+                        mins = int((remaining % 3600) // 60)
+                        status_info = f"剩餘 {hours}h {mins}m"
+                    else:
+                        status_info = "✅ 已成熟"
+                    
+                    progress_text += f"\n{status_info}"
+                
+                value = (
+                    f"🌾 種類：{plant['seed_type']}\n"
+                    f"📊 進度：{progress_text}\n"
+                    f"💧 施肥：{plant['fertilizer_applied']}次"
+                )
+                embed.add_field(name=f"#{idx} {seed_config['emoji']}", value=value, inline=False)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
             
         except Exception as e:
             try:
@@ -114,6 +332,7 @@ class UserPanel(commands.Cog):
         
         # 註冊永久視圖
         self.bot.add_view(UpdatePanelView(self, 0))
+        self.bot.add_view(LockerPanelView(self, 0))
         
         self.init_database()
 
@@ -309,10 +528,16 @@ class UserPanel(commands.Cog):
         # 啟動週統計任務
         if not self.weekly_summary.is_running():
             self.weekly_summary.start()
+        
+        # 啟動論壇帖子清理檢查任務
+        if not self.check_member_threads.is_running():
+            self.check_member_threads.start()
 
     def cog_unload(self):
         if self.weekly_summary.is_running():
             self.weekly_summary.cancel()
+        if self.check_member_threads.is_running():
+            self.check_member_threads.cancel()
 
     @tasks.loop(minutes=1)
     async def weekly_summary(self):
@@ -433,6 +658,60 @@ class UserPanel(commands.Cog):
 
     @weekly_summary.before_loop
     async def before_weekly_summary(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=1)
+    async def check_member_threads(self):
+        """每小時檢查一次：驗證論壇帖子對應的成員是否仍在服務器
+        如果成員已離開，自動刪除該帖子並清空記錄"""
+        try:
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                return
+            
+            guild = forum_channel.guild
+            
+            # 從資料庫獲取所有有帖子的成員
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT user_id, thread_id FROM users WHERE thread_id != 0')
+            threads_data = cursor.fetchall()
+            
+            deleted_count = 0
+            for user_id, thread_id in threads_data:
+                try:
+                    # 檢查成員是否仍在伺服器
+                    member = guild.get_member(user_id)
+                    
+                    if not member:
+                        # 成員已離開，刪除帖子
+                        thread = forum_channel.get_thread(thread_id)
+                        if thread:
+                            try:
+                                await thread.delete()
+                                deleted_count += 1
+                                print(f"🗑️ 已刪除已離開成員 {user_id} 的帖子 (thread_id: {thread_id})")
+                            except discord.NotFound:
+                                pass
+                        
+                        # 清空資料庫記錄
+                        cursor.execute('UPDATE users SET thread_id = 0 WHERE user_id = ?', (user_id,))
+                
+                except Exception as e:
+                    print(f"❌ 檢查帖子 {thread_id} 時出錯: {e}")
+            
+            if deleted_count > 0:
+                print(f"📊 論壇帖子清理完成：已刪除 {deleted_count} 個已離開成員的帖子")
+            
+            conn.commit()
+            conn.close()
+        
+        except Exception as e:
+            print(f"❌ 論壇帖子檢查失敗: {e}")
+
+    @check_member_threads.before_loop
+    async def before_check_member_threads(self):
+        """等待 bot 準備好後再開始檢查"""
         await self.bot.wait_until_ready()
 
     async def generate_ai_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
@@ -710,8 +989,8 @@ class UserPanel(commands.Cog):
             # 創建文章標題
             thread_name = f"📦 {user.display_name or user.name} 的置物櫃"
             
-            # 創建 View
-            view = UpdatePanelView(self, user.id)
+            # 創建 View - 使用 LockerPanelView 包含大麻系統按鈕
+            view = LockerPanelView(self, user.id)
             
             # 嘗試創建文章
             try:
