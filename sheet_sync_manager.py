@@ -32,7 +32,7 @@ class SheetSyncManager:
     }
     
     # 欄位排除列表（SHEET 中有但 DB 不需要的）
-    EXCLUDE_FIELDS = {'nickname'}  # nickname 只在 SHEET 中，不同步到 DB
+    EXCLUDE_FIELDS = set()  # 改為空集合，讓 nickname 被存儲以便追蹤虛擬帳號
     
     def __init__(self, db_path='user_data.db'):
         self.db_path = db_path
@@ -195,12 +195,18 @@ class SheetSyncManager:
                 print(f"⏭️ 行 {row_idx} 跳過: user_id 無效")
                 continue
             
+            # 檢查是否為虛擬帳號（Unknown_XXXX）
+            nickname = record.get('nickname', '')
+            if nickname.startswith('Unknown_'):
+                print(f"⏭️ 行 {row_idx} 跳過: 虛擬帳號 ({nickname})")
+                continue
+            
             records.append(record)
         
         return records
     
     def _to_int(self, val):
-        """安全地轉換為整數"""
+        """安全地轉換為整數（支援科學記號）"""
         if isinstance(val, int):
             return val
         if isinstance(val, float):
@@ -211,11 +217,17 @@ class SheetSyncManager:
             return 0
         
         try:
+            # 直接轉換字符串整數
             return int(val_str)
         except ValueError:
             try:
-                return int(float(val_str))
+                # 嘗試轉為浮點數（處理科學記號）再轉整數
+                f = float(val_str)
+                result = int(f)
+                print(f"   📊 將科學記號轉換: {val_str} → {result}")
+                return result
             except ValueError:
+                print(f"   ⚠️ 無法轉換: {val_str}")
                 return 0
 
     def _detect_user_id_col(self, headers, data_rows):
@@ -272,6 +284,50 @@ class SheetSyncManager:
 
         print(f"   ❌ 最高分欄位未達門檻")
         return None
+    
+    def clean_virtual_accounts(self):
+        """
+        清理數據庫中的虛擬帳號（Unknown_XXXX）
+        返回：(刪除數量, 錯誤數)
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        deleted = 0
+        errors = 0
+        
+        try:
+            # 查找所有虛擬帳號
+            cursor.execute("""
+                SELECT user_id, nickname FROM users 
+                WHERE nickname LIKE 'Unknown_%' 
+            """)
+            virtual_accounts = cursor.fetchall()
+            
+            print(f"\n🧹 檢測到 {len(virtual_accounts)} 個虛擬帳號：")
+            for user_id, nickname in virtual_accounts:
+                print(f"   - {user_id}: {nickname}")
+            
+            if virtual_accounts:
+                # 刪除虛擬帳號
+                cursor.execute("""
+                    DELETE FROM users 
+                    WHERE nickname LIKE 'Unknown_%'
+                """)
+                deleted = cursor.rowcount
+                conn.commit()
+                print(f"\n✅ 已刪除 {deleted} 個虛擬帳號")
+            else:
+                print("   （無虛擬帳號）")
+        
+        except Exception as e:
+            errors += 1
+            print(f"❌ 清理失敗: {e}")
+        
+        finally:
+            conn.close()
+        
+        return deleted, errors
     
     def sync_records(self, records):
         """
