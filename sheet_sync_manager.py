@@ -156,6 +156,13 @@ class SheetSyncManager:
         4. 排除 EXCLUDE_FIELDS
         """
         records = []
+
+        # 如果 headers 中沒有明確的 'user_id' 欄位，嘗試自動偵測一個可能的 user_id 欄位（例如標題為 '第 1 欄' 的情況）
+        if 'user_id' not in headers:
+            detected_idx = self._detect_user_id_col(headers, data_rows)
+            if detected_idx is not None:
+                print(f"🔎 偵測到 user_id 欄位在第 {detected_idx+1} 列（原標題: {headers[detected_idx]})，將其映射為 'user_id'")
+                headers[detected_idx] = 'user_id'
         
         for row_idx, row_values in enumerate(data_rows, start=3):
             record = {}
@@ -205,6 +212,53 @@ class SheetSyncManager:
                 return int(float(val_str))
             except ValueError:
                 return 0
+
+    def _detect_user_id_col(self, headers, data_rows):
+        """
+        以啟發式方法偵測哪一欄最有可能是 Discord 的 user_id。
+
+        檢查樣本列（最多前 200 列），統計每欄符合「長數字」或「科學記號且數值很大」的次數，
+        返回得分最高且超過門檻的欄位索引，否則返回 None。
+        """
+        if not data_rows or not headers:
+            return None
+
+        col_count = len(headers)
+        scores = [0] * col_count
+        sample = data_rows[:200]
+
+        for row in sample:
+            for i in range(col_count):
+                val = row[i] if i < len(row) else ''
+                s = str(val).strip()
+                if not s:
+                    continue
+
+                # 移除非數字字元以評估純數字長度
+                digits = ''.join(ch for ch in s if ch.isdigit())
+                if len(digits) >= 16:
+                    scores[i] += 1
+                    continue
+
+                # 處理科學計數法或浮點數表示
+                try:
+                    f = float(s)
+                    if f >= 1e15:
+                        scores[i] += 1
+                except Exception:
+                    pass
+
+        # 選擇分數最高欄位，並要求命中至少 30% 的樣本行
+        max_score = max(scores)
+        if max_score == 0:
+            return None
+
+        max_idx = scores.index(max_score)
+        threshold = max(1, int(len(sample) * 0.3))
+        if max_score >= threshold:
+            return max_idx
+
+        return None
     
     def sync_records(self, records):
         """
