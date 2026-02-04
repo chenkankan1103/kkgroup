@@ -185,6 +185,11 @@ class GoogleSheetsSync(commands.Cog):
             # 將數據行轉換為字典列表（從第 3 行開始）
             all_records = []
             for row_idx, row_values in enumerate(all_values[2:], start=3):
+                # 跳過完全空的行
+                if not any(row_values):
+                    print(f"⏭️ 行 {row_idx} 是空行，跳過")
+                    continue
+                
                 record = {}
                 for col_idx, header in enumerate(headers):
                     if col_idx < len(row_values):
@@ -198,6 +203,10 @@ class GoogleSheetsSync(commands.Cog):
                 return 0, 0, 0
             
             print(f"📖 SHEET 中共有 {len(all_records)} 筆記錄，開始同步...")
+            
+            # Debug：打印前 3 筆記錄看看
+            for i in range(min(3, len(all_records))):
+                print(f"🔍 記錄 {i+1}: user_id='{all_records[i].get('user_id')}', nickname='{all_records[i].get('nickname')}'")
             
             conn = sqlite3.connect('user_data.db')
             cursor = conn.cursor()
@@ -262,7 +271,11 @@ class GoogleSheetsSync(commands.Cog):
                     if user_id == 0:
                         # Debug: 顯示哪些行被跳過
                         raw_user_id = row.get('user_id', 'MISSING')
-                        print(f"⏭️ 行 {idx+3} 被跳過：user_id 無效 (raw: '{raw_user_id}'，轉換後: {user_id})")
+                        skipped += 1
+                        # 只打印前 5 個被跳過的記錄，避免日誌過多
+                        if skipped <= 5:
+                            print(f"⏭️ 被跳過：user_id 無效 (raw: '{raw_user_id}'，轉換後: {user_id})")
+                        continue
                     
                     level = to_int(row.get('level', 1))
                     xp = to_int(row.get('xp', 0))
