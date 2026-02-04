@@ -88,6 +88,12 @@ class UpdatePanelView(discord.ui.View):
                             continue
             
             await interaction.followup.send("❌ 找不到面板訊息，請聯繫管理員！", ephemeral=True)
+            
+        except Exception as e:
+            try:
+                await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
+            except:
+                pass
 
 class LockerPanelView(discord.ui.View):
     """置物櫃面板 - 包含更新和大麻系統按鈕"""
