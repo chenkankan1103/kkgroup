@@ -299,12 +299,14 @@ class GoogleSheetsSync(commands.Cog):
                     is_stunned = 1 if clean_value(row.get('is_stunned', 'FALSE')).upper() == 'TRUE' else 0
                     is_locked = 1 if clean_value(row.get('is_locked', 'FALSE')).upper() == 'TRUE' else 0
                     last_recovery = clean_value(row.get('last_recovery', None))
+                    # ⚠️ 注意: nickname 在 SHEET 中是從 Discord 帶入的，不應該寫回 DB（DB 沒有此欄位）
+                    # 我們只是讀取它用於驗證，但不會存儲
                     
                     # Debug: 打印讀取的資料（只在第一次執行時打印）
                     if updated == 0 and inserted == 0:
                         print(f"📝 [Debug] 讀取 SHEET 資料範例 - user_id: {user_id}, kkcoin: {kkcoin}, level: {level}")
                     
-                    # 建立字典，只包含要同步的欄位
+                    # 建立字典，只包含要同步的欄位（不包括 nickname）
                     user_data = {
                         'user_id': user_id,
                         'level': level,
