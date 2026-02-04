@@ -67,18 +67,38 @@ class GoogleSheetsSync(commands.Cog):
             
             # 檢查 Sheet 是否有更新（例如手動編輯）
             all_records = await loop.run_in_executor(None, self.sheet.get_all_records)
-            current_hash = hashlib.md5(str(all_records).encode()).hexdigest()
+            
+            # 只計算關鍵欄位的 hash（user_id 和 kkcoin），不計算整個記錄
+            # 這樣可以避免因為格式或空值的微小變化導致 hash 不同
+            key_data = []
+            for record in all_records:
+                # 只提取重要欄位來判斷是否有編輯
+                key_data.append({
+                    'user_id': record.get('user_id', ''),
+                    'kkcoin': record.get('kkcoin', ''),
+                    'level': record.get('level', ''),
+                    'xp': record.get('xp', ''),
+                    'title': record.get('title', ''),
+                    'hp': record.get('hp', ''),
+                    'stamina': record.get('stamina', ''),
+                })
+            
+            current_hash = hashlib.md5(str(key_data).encode()).hexdigest()
             
             # 如果 Sheet 資料有改變（例如手動編輯 KKCOIN 欄位），同步回資料庫
             if current_hash != self.last_sheet_hash:
                 self.last_sheet_hash = current_hash
-                await self._sync_from_sheet_internal()
-                print(f"✅ [1分鐘同步] Google Sheet → 資料庫（檢測到手動編輯）({datetime.now().strftime('%H:%M:%S')})")
+                print(f"🔍 [1分鐘檢查] 檢測到 SHEET 內容變化，準備同步...")
+                updated, inserted, errors = await self._sync_from_sheet_internal()
+                print(f"✅ [1分鐘同步] Google Sheet → 資料庫 (更新: {updated}, 新增: {inserted}, 錯誤: {errors}) ({datetime.now().strftime('%H:%M:%S')})")
             else:
-                self.last_sheet_hash = current_hash
+                # Debug: 顯示一下目前的 hash 狀態
+                print(f"⏸️ [1分鐘檢查] SHEET 內容未變化，無需同步 ({datetime.now().strftime('%H:%M:%S')})")
         
         except Exception as e:
             print(f"❌ 同步失敗: {e}")
+            import traceback
+            traceback.print_exc()
     
     @tasks.loop(minutes=5)
     async def auto_export_loop(self):
@@ -135,7 +155,10 @@ class GoogleSheetsSync(commands.Cog):
             all_records = self.sheet.get_all_records()
             
             if not all_records:
+                print("❌ SHEET 中沒有任何記錄")
                 return 0, 0, 0
+            
+            print(f"📖 SHEET 中共有 {len(all_records)} 筆記錄，開始同步...")
             
             conn = sqlite3.connect('user_data.db')
             cursor = conn.cursor()
@@ -190,6 +213,10 @@ class GoogleSheetsSync(commands.Cog):
                     is_stunned = 1 if clean_value(row.get('is_stunned', 'FALSE')).upper() == 'TRUE' else 0
                     is_locked = 1 if clean_value(row.get('is_locked', 'FALSE')).upper() == 'TRUE' else 0
                     last_recovery = clean_value(row.get('last_recovery', None))
+                    
+                    # Debug: 打印讀取的資料（只在第一次執行時打印）
+                    if updated == 0 and inserted == 0:
+                        print(f"📝 [Debug] 讀取 SHEET 資料範例 - user_id: {user_id}, kkcoin: {kkcoin}, level: {level}")
                     
                     # 建立字典，只包含要同步的欄位
                     user_data = {
