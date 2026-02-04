@@ -263,6 +263,18 @@ class GoogleSheetsSync(commands.Cog):
                 if not rows:
                     return 0
                 
+                # SHEET 結構：
+                # Row 1: 分組標題【# 第1欄】【第2欄】...（保留不覆蓋）
+                # Row 2: 實際標題 user_id, nickname, level, ...
+                # Row 3+: 數據
+                
+                # 首先讀取現有的 Row 1（分組標題），避免覆蓋
+                try:
+                    all_values = self.sheet.get_all_values()
+                    group_headers = all_values[0] if all_values else None
+                except:
+                    group_headers = None
+                
                 headers = [
                     'user_id', 'nickname', 'level', 'xp', 'kkcoin', 'title', 'hp', 'stamina',
                     'inventory', 'character_config', 'face', 'hair', 'skin',
@@ -271,14 +283,25 @@ class GoogleSheetsSync(commands.Cog):
                     'is_locked', 'last_recovery'
                 ]
                 
-                data = [headers]
+                # 構建數據：保留 Row 1（分組標題），覆蓋 Row 2+（表頭和數據）
+                data = []
+                if group_headers:
+                    data.append(group_headers)  # Row 1: 分組標題
+                else:
+                    # 如果沒有分組標題，創建一個
+                    data.append(['【# 第1欄】'] + ['【第' + str(i+2) + '欄】' for i in range(len(headers)-1)])
+                
+                data.append(headers)  # Row 2: 實際標題
                 for row in rows:
                     user = self.bot.get_user(row[0])
                     nickname = user.display_name if user else f"Unknown_{row[0]}"
                     
-                    # 直接寫數字，不要轉成字符串，讓 Google Sheets 自動判斷格式
+                    # 重要：user_id 必須以文本格式寫入，否則 Google Sheets 會轉成科學記號
+                    # 例如：123456789012345678 → 1.23456789012E+17
                     data.append([
-                        int(row[0]), nickname, int(row[1]), int(row[2]), int(row[3]),
+                        f"{int(row[0])}",  # ✅ user_id 轉成字符串，防止科學記號
+                        nickname, 
+                        int(row[1]), int(row[2]), int(row[3]),
                         row[4], int(row[5]), int(row[6]), row[7], row[8],
                         int(row[9]), int(row[10]), int(row[11]), int(row[12]),
                         int(row[13]), int(row[14]), int(row[15]),
@@ -287,9 +310,15 @@ class GoogleSheetsSync(commands.Cog):
                         row[22] or ''
                     ])
                 
-                self.sheet.clear()
-                # 使用 USER_ENTERED 讓 Google Sheets 自動判斷數據類型（數字、文本等）
+                self.sheet.clear()  # 清空整個 SHEET
+                # 使用 USER_ENTERED 讓 Google Sheets 自動判斷數據類型
+                # 但 user_id 已經轉成字符串，所以不會被轉成科學記號
                 self.sheet.append_rows(data, value_input_option='USER_ENTERED')
+                
+                print(f"✅ 導出完成: 保留 Row 1（分組標題），更新 Row 2+（表頭和數據）")
+                print(f"   - Row 1: 分組標題（保留）")
+                print(f"   - Row 2: 實際表頭")
+                print(f"   - Row 3+: {len(rows)} 筆玩家數據")
                 
                 return len(rows)
             
