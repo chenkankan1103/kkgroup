@@ -159,10 +159,15 @@ class SheetSyncManager:
 
         # 如果 headers 中沒有明確的 'user_id' 欄位，嘗試自動偵測一個可能的 user_id 欄位（例如標題為 '第 1 欄' 的情況）
         if 'user_id' not in headers:
+            print(f"⚠️ 沒有找到 'user_id' 欄位，開始自動偵測... (表頭: {headers})")
             detected_idx = self._detect_user_id_col(headers, data_rows)
             if detected_idx is not None:
                 print(f"🔎 偵測到 user_id 欄位在第 {detected_idx+1} 列（原標題: {headers[detected_idx]})，將其映射為 'user_id'")
                 headers[detected_idx] = 'user_id'
+            else:
+                print(f"❌ 無法自動偵測 user_id 欄位！檢查 SHEET 格式是否正確")
+        else:
+            print(f"✅ 找到 'user_id' 欄位在表頭中")
         
         for row_idx, row_values in enumerate(data_rows, start=3):
             record = {}
@@ -227,6 +232,8 @@ class SheetSyncManager:
         scores = [0] * col_count
         sample = data_rows[:200]
 
+        print(f"🔍 開始偵測 user_id 欄位... 檢查 {len(sample)} 行，{col_count} 列")
+
         for row in sample:
             for i in range(col_count):
                 val = row[i] if i < len(row) else ''
@@ -248,16 +255,22 @@ class SheetSyncManager:
                 except Exception:
                     pass
 
-        # 選擇分數最高欄位，並要求命中至少 30% 的樣本行
-        max_score = max(scores)
+        # 選擇分數最高欄位，並要求命中至少 20% 的樣本行（放寬門檻）
+        max_score = max(scores) if scores else 0
         if max_score == 0:
+            print(f"   ❌ 沒有欄位包含長數字或大科學記號 (scores: {scores})")
             return None
 
         max_idx = scores.index(max_score)
-        threshold = max(1, int(len(sample) * 0.3))
+        threshold = max(1, int(len(sample) * 0.2))  # 放寬為 20%
+        
+        print(f"   📊 欄位得分: {[(i, scores[i], headers[i]) for i in range(col_count)]}")
+        print(f"   🏆 最高分欄位: 索引 {max_idx}（'{headers[max_idx]}'），得分 {max_score}，門檻 {threshold}")
+        
         if max_score >= threshold:
             return max_idx
 
+        print(f"   ❌ 最高分欄位未達門檻")
         return None
     
     def sync_records(self, records):
