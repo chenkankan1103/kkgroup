@@ -166,10 +166,17 @@ class GoogleSheetsSync(commands.Cog):
                 print("❌ SHEET 連接失敗")
                 return 0, 0, 0
             
+            # 診斷訊息
+            all_values = self.sheet.get_all_values()
+            print(f"📊 同步前診斷: 行數={len(all_values)}, 列數={len(all_values[0]) if all_values else 0}")
+            
             all_records = self.sheet.get_all_records()
             
             if not all_records:
-                print("❌ SHEET 中沒有任何記錄")
+                print(f"❌ SHEET 中沒有任何記錄 (get_all_records() 返回空列表)")
+                print(f"   但 get_all_values() 返回 {len(all_values)} 行")
+                if len(all_values) > 0:
+                    print(f"   第一行內容: {all_values[0]}")
                 return 0, 0, 0
             
             print(f"📖 SHEET 中共有 {len(all_records)} 筆記錄，開始同步...")
