@@ -100,32 +100,38 @@ class GoogleSheetsSync(commands.Cog):
             
             for row in all_records:
                 try:
-                    user_id = int(row.get('user_id', 0))
+                    # 清理欄位值：移除前導單引號和空格
+                    def clean_value(val):
+                        if isinstance(val, str):
+                            return val.strip().lstrip("'")
+                        return val
+                    
+                    user_id = int(clean_value(row.get('user_id', 0)))
                     if user_id == 0:
                         continue
                     
-                    level = int(row.get('level', 1))
-                    xp = int(row.get('xp', 0))
-                    kkcoin = int(row.get('kkcoin', 0))
-                    title = row.get('title', '新手')
-                    hp = int(row.get('hp', 100))
-                    stamina = int(row.get('stamina', 100))
-                    inventory = row.get('inventory', '[]')
-                    character_config = row.get('character_config', '{}')
-                    face = int(row.get('face', 20000))
-                    hair = int(row.get('hair', 30000))
-                    skin = int(row.get('skin', 12000))
-                    top = int(row.get('top', 1040010))
-                    bottom = int(row.get('bottom', 1060096))
-                    shoes = int(row.get('shoes', 1072288))
-                    streak = int(row.get('streak', 0))
-                    last_work_date = row.get('last_work_date', None)
-                    last_action_date = row.get('last_action_date', None)
-                    actions_used = row.get('actions_used', '{}')
-                    gender = row.get('gender', 'male')
-                    is_stunned = 1 if row.get('is_stunned', 'FALSE').upper() == 'TRUE' else 0
-                    is_locked = 1 if row.get('is_locked', 'FALSE').upper() == 'TRUE' else 0
-                    last_recovery = row.get('last_recovery', None)
+                    level = int(clean_value(row.get('level', 1)))
+                    xp = int(clean_value(row.get('xp', 0)))
+                    kkcoin = int(clean_value(row.get('kkcoin', 0)))
+                    title = clean_value(row.get('title', '新手'))
+                    hp = int(clean_value(row.get('hp', 100)))
+                    stamina = int(clean_value(row.get('stamina', 100)))
+                    inventory = clean_value(row.get('inventory', '[]'))
+                    character_config = clean_value(row.get('character_config', '{}'))
+                    face = int(clean_value(row.get('face', 20000)))
+                    hair = int(clean_value(row.get('hair', 30000)))
+                    skin = int(clean_value(row.get('skin', 12000)))
+                    top = int(clean_value(row.get('top', 1040010)))
+                    bottom = int(clean_value(row.get('bottom', 1060096)))
+                    shoes = int(clean_value(row.get('shoes', 1072288)))
+                    streak = int(clean_value(row.get('streak', 0)))
+                    last_work_date = clean_value(row.get('last_work_date', None))
+                    last_action_date = clean_value(row.get('last_action_date', None))
+                    actions_used = clean_value(row.get('actions_used', '{}'))
+                    gender = clean_value(row.get('gender', 'male'))
+                    is_stunned = 1 if clean_value(row.get('is_stunned', 'FALSE')).upper() == 'TRUE' else 0
+                    is_locked = 1 if clean_value(row.get('is_locked', 'FALSE')).upper() == 'TRUE' else 0
+                    last_recovery = clean_value(row.get('last_recovery', None))
                     
                     # 建立字典，只包含要同步的欄位
                     user_data = {
