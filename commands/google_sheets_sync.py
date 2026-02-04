@@ -8,6 +8,12 @@ import json
 import asyncio
 from datetime import datetime
 import hashlib
+import sys
+import os
+
+# 導入 SHEET 同步管理器
+sys.path.insert(0, os.path.dirname(__file__) + '/..')
+from sheet_sync_manager import SheetSyncManager
 
 class GoogleSheetsSync(commands.Cog):
     """Google Sheets 與 SQLite 資料庫雙向同步工具 (Slash 指令版本)"""
@@ -22,6 +28,7 @@ class GoogleSheetsSync(commands.Cog):
         self.sheet = None
         self.last_sheet_hash = None
         self._initialized = False
+        self.sync_manager = SheetSyncManager('user_data.db')  # ✅ 使用新的管理器
         # ⚠️ 不在 __init__ 中進行同步操作，改用 before_loop
         if not self.auto_sync_loop.is_running():
             self.auto_sync_loop.start()
@@ -158,7 +165,14 @@ class GoogleSheetsSync(commands.Cog):
             self.auto_export_loop.cancel()
     
     async def _sync_from_sheet_internal(self):
-        """內部同步方法：Google Sheet → 資料庫"""
+        """
+        內部同步方法：Google Sheet → 資料庫（SHEET 主導）
+        
+        使用 SheetSyncManager 自動化：
+        1. 讀取 SHEET 表頭（第 2 行）
+        2. 自動同步 DB schema（添加缺失的欄位）
+        3. 解析和同步記錄
+        """
         try:
             self._ensure_connection()
             
@@ -173,201 +187,46 @@ class GoogleSheetsSync(commands.Cog):
                 print(f"❌ SHEET 數據不足 (行數: {len(all_values)})")
                 return 0, 0, 0
             
-            # 第 1 行是分組標題，第 2 行是真實的欄位名稱
-            headers = all_values[1]  # 使用第 2 行作為標題
-            print(f"📊 同步前診斷: 行數={len(all_values)}, 列數={len(headers)}")
-            print(f"📋 標題行（第2行）: {headers}")  # 打印完整標題行
-            
-            # Debug：也打印第 1 和 3 行看看內容
-            print(f"🔍 第1行（分組標題）: {all_values[0][:5]}...")
-            print(f"🔍 第3行（第一筆數據）: {all_values[2][:5]}...")
-            
-            # 將數據行轉換為字典列表（從第 3 行開始）
-            all_records = []
-            for row_idx, row_values in enumerate(all_values[2:], start=3):
-                # 跳過完全空的行
-                if not any(row_values):
-                    print(f"⏭️ 行 {row_idx} 是空行，跳過")
-                    continue
+            # 使用 SheetSyncManager 處理
+            try:
+                # 1. 提取表頭
+                headers = self.sync_manager.get_sheet_headers(all_values)
+                print(f"📋 SHEET 表頭 (第 2 行，共 {len(headers)} 列): {headers[:5]}...")
                 
-                record = {}
-                for col_idx, header in enumerate(headers):
-                    if col_idx < len(row_values):
-                        record[header] = row_values[col_idx]
-                    else:
-                        record[header] = ''
-                all_records.append(record)
-            
-            if not all_records:
-                print(f"❌ 沒有數據記錄")
-                return 0, 0, 0
-            
-            print(f"📖 SHEET 中共有 {len(all_records)} 筆記錄，開始同步...")
-            
-            # Debug：打印前 3 筆記錄看看
-            for i in range(min(3, len(all_records))):
-                print(f"🔍 記錄 {i+1}: user_id='{all_records[i].get('user_id')}', nickname='{all_records[i].get('nickname')}'")
-            
-            conn = sqlite3.connect('user_data.db')
-            cursor = conn.cursor()
-            
-            updated = 0
-            inserted = 0
-            errors = 0
-            skipped = 0  # 新增：追蹤被跳過的記錄
-            
-            for idx, row in enumerate(all_records):
-                try:
-                    # 清理欄位值：移除前導單引號、空格、並轉換為正確的數據類型
-                    def clean_value(val):
-                        if isinstance(val, str):
-                            val = val.strip().lstrip("'").strip()  # 移除前導單引號和空格
-                        return val
-                    
-                    def to_int(val):
-                        """安全地轉換為整數，支持科學記數法和各種格式"""
-                        val = clean_value(val)
-                        
-                        # 處理空值
-                        if val == '' or val is None:
-                            return 0
-                        
-                        # 如果已經是 int 直接返回
-                        if isinstance(val, int):
-                            return val
-                        
-                        # 如果是 float，直接轉 int
-                        if isinstance(val, float):
-                            return int(val)
-                        
-                        # 字符串處理
-                        if isinstance(val, str):
-                            # 移除可能的空格
-                            val = val.strip()
-                            if val == '':
-                                return 0
-                            
-                            try:
-                                # 嘗試直接轉換（包括科學記號如 "1E+17"）
-                                return int(val)
-                            except ValueError:
-                                try:
-                                    # 嘗試先轉 float 再轉 int（處理 "100.0" 和科學記號 "1E+17"）
-                                    float_val = float(val)
-                                    return int(float_val)
-                                except ValueError:
-                                    # 試著找出科學記號的模式
-                                    if 'e' in val.lower():
-                                        try:
-                                            return int(float(val))
-                                        except:
-                                            pass
-                                    # 如果全失敗，返回 0
-                                    return 0
-                        
-                        return 0
-                    
-                    user_id = to_int(row.get('user_id', 0))
-                    if user_id == 0:
-                        # Debug: 顯示哪些行被跳過
-                        raw_user_id = row.get('user_id', 'MISSING')
-                        skipped += 1
-                        # 只打印前 5 個被跳過的記錄，避免日誌過多
-                        if skipped <= 5:
-                            print(f"⏭️ 被跳過：user_id 無效 (raw: '{raw_user_id}'，轉換後: {user_id})")
-                        continue
-                    
-                    level = to_int(row.get('level', 1))
-                    xp = to_int(row.get('xp', 0))
-                    kkcoin = to_int(row.get('kkcoin', 0))
-                    title = clean_value(row.get('title', '新手'))
-                    hp = to_int(row.get('hp', 100))
-                    stamina = to_int(row.get('stamina', 100))
-                    inventory = clean_value(row.get('inventory', '[]'))
-                    character_config = clean_value(row.get('character_config', '{}'))
-                    face = to_int(row.get('face', 20000))
-                    hair = to_int(row.get('hair', 30000))
-                    skin = to_int(row.get('skin', 12000))
-                    top = to_int(row.get('top', 1040010))
-                    bottom = to_int(row.get('bottom', 1060096))
-                    shoes = to_int(row.get('shoes', 1072288))
-                    streak = to_int(row.get('streak', 0))
-                    last_work_date = clean_value(row.get('last_work_date', None))
-                    last_action_date = clean_value(row.get('last_action_date', None))
-                    actions_used = clean_value(row.get('actions_used', '{}'))
-                    gender = clean_value(row.get('gender', 'male'))
-                    is_stunned = 1 if clean_value(row.get('is_stunned', 'FALSE')).upper() == 'TRUE' else 0
-                    is_locked = 1 if clean_value(row.get('is_locked', 'FALSE')).upper() == 'TRUE' else 0
-                    last_recovery = clean_value(row.get('last_recovery', None))
-                    # ⚠️ 注意: nickname 在 SHEET 中是從 Discord 帶入的，不應該寫回 DB（DB 沒有此欄位）
-                    # 我們只是讀取它用於驗證，但不會存儲
-                    
-                    # Debug: 打印讀取的資料（只在第一次執行時打印）
-                    if updated == 0 and inserted == 0:
-                        print(f"📝 [Debug] 讀取 SHEET 資料範例 - user_id: {user_id}, kkcoin: {kkcoin}, level: {level}")
-                    
-                    # 建立字典，只包含要同步的欄位（不包括 nickname）
-                    user_data = {
-                        'user_id': user_id,
-                        'level': level,
-                        'xp': xp,
-                        'kkcoin': kkcoin,
-                        'title': title,
-                        'hp': hp,
-                        'stamina': stamina,
-                        'inventory': inventory,
-                        'character_config': character_config,
-                        'face': face,
-                        'hair': hair,
-                        'skin': skin,
-                        'top': top,
-                        'bottom': bottom,
-                        'shoes': shoes,
-                        'streak': streak,
-                        'last_work_date': last_work_date,
-                        'last_action_date': last_action_date,
-                        'actions_used': actions_used,
-                        'gender': gender,
-                        'is_stunned': is_stunned,
-                        'is_locked': is_locked,
-                        'last_recovery': last_recovery
-                    }
-                    
-                    cursor.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
-                    exists = cursor.fetchone()
-                    
-                    if exists:
-                        # UPDATE：只更新 Google Sheet 有的欄位
-                        set_clause = ', '.join([f"{k}=?" for k in user_data.keys() if k != 'user_id'])
-                        values = [v for k, v in user_data.items() if k != 'user_id']
-                        values.append(user_id)
-                        cursor.execute(f"UPDATE users SET {set_clause} WHERE user_id=?", values)
-                        updated += 1
-                    else:
-                        # INSERT：使用字典方式，缺少的欄位使用預設值
-                        columns = ', '.join(user_data.keys())
-                        placeholders = ', '.join(['?' for _ in user_data.keys()])
-                        values = list(user_data.values())
-                        cursor.execute(f"INSERT INTO users ({columns}) VALUES ({placeholders})", values)
-                        inserted += 1
+                # 2. 自動同步 DB schema（添加缺失的欄位）
+                print(f"🔧 檢查並自動同步 DB schema...")
+                self.sync_manager.ensure_db_schema(headers)
                 
-                except ValueError as e:
-                    errors += 1
-                    print(f"❌ 數值轉換錯誤 (user_id: {row.get('user_id')}): {e}")
-                except Exception as e:
-                    errors += 1
-                    print(f"❌ 同步錯誤 (user_id: {row.get('user_id')}): {e}")
-                    # 詳細日誌用於除錯
-                    import traceback
-                    traceback.print_exc()
+                # 3. 提取數據行
+                data_rows = self.sync_manager.get_sheet_data_rows(all_values)
+                print(f"📊 SHEET 數據行: {len(data_rows)} 筆")
+                
+                if not data_rows:
+                    print(f"❌ 沒有數據記錄")
+                    return 0, 0, 0
+                
+                # 4. 解析記錄
+                records = self.sync_manager.parse_records(headers, data_rows)
+                print(f"✅ 解析完成: {len(records)} 筆有效記錄")
+                
+                # Debug：打印前 3 筆
+                for i in range(min(3, len(records))):
+                    user_id = records[i].get('user_id')
+                    kkcoin = records[i].get('kkcoin')
+                    level = records[i].get('level')
+                    print(f"🔍 記錄 {i+1}: user_id={user_id}, kkcoin={kkcoin}, level={level}")
+                
+                # 5. 同步到 DB
+                updated, inserted, errors = self.sync_manager.sync_records(records)
+                
+                print(f"✅ [SHEET→DB 同步] 更新={updated}, 新增={inserted}, 錯誤={errors} ({datetime.now().strftime('%H:%M:%S')})")
+                return updated, inserted, errors
             
-            conn.commit()
-            conn.close()
-            
-            # 打印最終統計
-            print(f"📊 同步統計: 更新={updated}, 新增={inserted}, 錯誤={errors}, 跳過={skipped}")
-            
-            return updated, inserted, errors
+            except Exception as e:
+                print(f"❌ SheetSyncManager 處理失敗: {e}")
+                import traceback
+                traceback.print_exc()
+                return 0, 0, 1
         
         except Exception as e:
             print(f"❌ 內部同步失敗: {e}")
