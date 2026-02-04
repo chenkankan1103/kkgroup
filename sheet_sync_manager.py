@@ -107,11 +107,12 @@ class SheetSyncManager:
             
             # 使用預定義的類型，如果沒有則使用 TEXT
             col_type = self.FIELD_TYPES.get(header, 'TEXT')
-            columns.append(f"{header} {col_type}")
+            # ✅ 對欄位名稱進行 SQL 轉義（用雙引號包圍）
+            columns.append(f'"{header}" {col_type}')
         
         # 確保 user_id 是 PRIMARY KEY
         if 'user_id' not in [h.split()[0] for h in columns]:
-            columns.insert(0, "user_id INTEGER PRIMARY KEY")
+            columns.insert(0, '"user_id" INTEGER PRIMARY KEY')
         
         sql = f"CREATE TABLE users ({', '.join(columns)})"
         print(f"📝 SQL: {sql[:100]}...")
@@ -132,7 +133,8 @@ class SheetSyncManager:
             if header not in existing_columns:
                 # 添加新欄位
                 col_type = self.FIELD_TYPES.get(header, 'TEXT')
-                sql = f"ALTER TABLE users ADD COLUMN {header} {col_type}"
+                # ✅ 對欄位名稱進行 SQL 轉義（用雙引號包圍）
+                sql = f'ALTER TABLE users ADD COLUMN "{header}" {col_type}'
                 print(f"➕ 添加欄位: {header}")
                 try:
                     cursor.execute(sql)
@@ -227,14 +229,16 @@ class SheetSyncManager:
                 
                 if exists:
                     # UPDATE：只更新 record 中有的欄位
-                    set_clause = ', '.join([f"{k}=?" for k in record.keys() if k != 'user_id'])
+                    # ✅ 對欄位名稱進行 SQL 轉義（用雙引號包圍）
+                    set_clause = ', '.join([f'"{k}"=?' for k in record.keys() if k != 'user_id'])
                     values = [v for k, v in record.items() if k != 'user_id']
                     values.append(user_id)
-                    cursor.execute(f"UPDATE users SET {set_clause} WHERE user_id=?", values)
+                    cursor.execute(f'UPDATE users SET {set_clause} WHERE "user_id"=?', values)
                     updated += 1
                 else:
                     # INSERT：創建新記錄
-                    columns = ', '.join(record.keys())
+                    # ✅ 對欄位名稱進行 SQL 轉義（用雙引號包圍）
+                    columns = ', '.join([f'"{k}"' for k in record.keys()])
                     placeholders = ', '.join(['?' for _ in record.keys()])
                     values = list(record.values())
                     cursor.execute(f"INSERT INTO users ({columns}) VALUES ({placeholders})", values)
