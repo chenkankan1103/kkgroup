@@ -52,7 +52,7 @@ class GoogleSheetsSync(commands.Cog):
     
     @tasks.loop(minutes=5)
     async def auto_sync_loop(self):
-        """每 5 分鐘自動同步一次（資料庫 → Google Sheet，然後檢查 Sheet 更新）"""
+        """每 5 分鐘自動同步一次（先檢查 Sheet 更新，再匯出資料庫）"""
         try:
             # 使用 loop executor 以避免阻塞事件迴圈
             loop = asyncio.get_event_loop()
@@ -63,11 +63,7 @@ class GoogleSheetsSync(commands.Cog):
             if not self.sheet:
                 return
             
-            # 1. 先同步資料庫 → Google Sheet
-            await self._export_to_sheet_internal()
-            print(f"✅ [自動同步] 資料庫 → Google Sheet ({datetime.now().strftime('%H:%M:%S')})")
-            
-            # 2. 再檢查 Sheet 是否有更新（例如手動編輯）
+            # 1. 先讀取 Sheet 當前狀態，檢查是否有手動編輯（重要：要在匯出前做）
             all_records = await loop.run_in_executor(None, self.sheet.get_all_records)
             current_hash = hashlib.md5(str(all_records).encode()).hexdigest()
             
@@ -76,8 +72,15 @@ class GoogleSheetsSync(commands.Cog):
                 self.last_sheet_hash = current_hash
                 await self._sync_from_sheet_internal()
                 print(f"✅ [自動同步] Google Sheet → 資料庫（檢測到手動編輯）({datetime.now().strftime('%H:%M:%S')})")
-            else:
-                self.last_sheet_hash = current_hash
+            
+            # 2. 最後才匯出資料庫 → Google Sheet（這樣才不會造成 hash 循環）
+            await self._export_to_sheet_internal()
+            
+            # 3. 匯出後更新 hash，確保下次比對時是基於匯出後的狀態
+            all_records_after = await loop.run_in_executor(None, self.sheet.get_all_records)
+            self.last_sheet_hash = hashlib.md5(str(all_records_after).encode()).hexdigest()
+            
+            print(f"✅ [自動同步] 資料庫 → Google Sheet ({datetime.now().strftime('%H:%M:%S')})")
         
         except Exception as e:
             print(f"❌ 自動同步失敗: {e}")
