@@ -353,14 +353,14 @@ class SheetDrivenDB:
     
     def sync_from_sheet(self, headers: List[str], rows: List[List[str]]) -> Dict[str, int]:
         """
-        從 SHEET 數據同步到數據庫
+        從 SHEET 數據同步到數據庫（支持去重和增量同步）
         
         Args:
             headers: SHEET 表頭 (Row 1)
             rows: SHEET 數據行 (Row 2+)
             
         Returns:
-            統計信息 {'inserted': n, 'updated': n, 'errors': n}
+            統計信息 {'inserted': n, 'updated': n, 'errors': n, 'duplicates': n}
         """
         print(f"\n🔄 開始同步 SHEET 到數據庫...")
         print(f"   表頭數: {len(headers)}")
@@ -369,13 +369,14 @@ class SheetDrivenDB:
         # 1. 確保所有欄位存在
         self.ensure_columns(headers)
         
-        # 2. 解析並同步記錄
-        stats = {'inserted': 0, 'updated': 0, 'errors': 0}
+        # 2. 解析並同步記錄 (去重)
+        stats = {'inserted': 0, 'updated': 0, 'errors': 0, 'duplicates': 0}
+        seen_user_ids = set()  # 追蹤本次同步中的用戶 ID (去重)
         
         for i, row in enumerate(rows):
             try:
-                # 跳過空行
-                if not any(row):
+                # 過濾空行 (更嚴格的檢查)
+                if not row or not any(cell and str(cell).strip() for cell in row):
                     continue
                 
                 # 構建記錄字典
@@ -391,25 +392,43 @@ class SheetDrivenDB:
                     stats['errors'] += 1
                     continue
                 
-                user_id = int(record['user_id'])
+                try:
+                    user_id = int(record['user_id'])
+                except (ValueError, TypeError):
+                    print(f"⚠️ 第 {i+2} 行: user_id 無效 '{record.get('user_id')}'")
+                    stats['errors'] += 1
+                    continue
                 
-                # 檢查用戶是否存在
-                if self.get_user(user_id):
+                # 檢查本次同步中的重複
+                if user_id in seen_user_ids:
+                    print(f"⚠️ 第 {i+2} 行: 在本次同步中有重複的 user_id {user_id} (已跳過)")
+                    stats['duplicates'] += 1
+                    continue
+                
+                seen_user_ids.add(user_id)
+                
+                # 檢查用戶是否已存在於數據庫
+                existing_user = self.get_user(user_id)
+                if existing_user:
                     stats['updated'] += 1
+                    action = "更新"
                 else:
                     stats['inserted'] += 1
+                    action = "新增"
                 
-                # 保存用戶
+                # 保存用戶 (INSERT OR REPLACE)
                 self.set_user(user_id, record)
+                print(f"   ✓ [{action}] 用戶 {user_id}")
             
             except Exception as e:
-                print(f"⚠️ 第 {i+1} 行錯誤: {e}")
+                print(f"⚠️ 第 {i+2} 行錯誤: {e}")
                 stats['errors'] += 1
         
-        print(f"✅ 同步完成:")
-        print(f"   新增: {stats['inserted']}")
-        print(f"   更新: {stats['updated']}")
-        print(f"   錯誤: {stats['errors']}")
+        print(f"\n✅ 同步完成:")
+        print(f"   新增: {stats['inserted']} 個用戶")
+        print(f"   更新: {stats['updated']} 個用戶")
+        print(f"   重複: {stats['duplicates']} 行 (已移除)")
+        print(f"   錯誤: {stats['errors']} 行")
         
         return stats
     
