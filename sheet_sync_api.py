@@ -142,8 +142,14 @@ def api_sync_sheet():
         print(f"\n{'='*60}")
         print(f"📥 [API 同步請求] 時間: {datetime.now().strftime('%H:%M:%S')}")
         print(f"{'='*60}")
-        print(f"📋 表頭 ({len(headers)} 列): {headers[:5]}...")
+        print(f"📋 表頭 ({len(headers)} 列): {headers}")
         print(f"📊 資料行: {len(rows)} 筆")
+        
+        # 🔍 詳細記錄前 3 行
+        if rows:
+            print(f"\n📋 前 3 行數據預覽:")
+            for i, row in enumerate(rows[:3], 1):
+                print(f"   [行 {i}] {row}")
         
         if not headers:
             return jsonify({
