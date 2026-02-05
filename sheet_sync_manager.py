@@ -230,6 +230,7 @@ class SheetSyncManager:
             try:
                 user_id = record.get('user_id')
                 if not user_id:
+                    print(f"⚠️ 記錄 {i}: user_id 為空")
                     stats['errors'] += 1
                     continue
                 
@@ -253,17 +254,25 @@ class SheetSyncManager:
                 
                 if existing_user:
                     stats['updated'] += 1
-                    print(f"   ✓ [更新] 用戶 {user_id}")
+                    action = "更新"
                 else:
                     stats['inserted'] += 1
-                    print(f"   ✓ [新增] 用戶 {user_id}")
+                    action = "新增"
                 
                 # 保存用戶 (db.set_user 會自動 INSERT 或 REPLACE)
-                self.db.set_user(user_id, record)
+                print(f"   ✓ 記錄 {i}: [{action}] user_id={user_id}, nickname={record.get('user_name', 'N/A')}")
+                success = self.db.set_user(user_id, record)
+                
+                if not success:
+                    print(f"   ❌ 記錄 {i}: set_user 返回失敗！")
+                    stats['errors'] += 1
+                    stats[action] -= 1  # 撤銷計數
             
             except Exception as e:
                 stats['errors'] += 1
                 print(f"❌ 記錄 {i} 同步失敗: {e}")
+                import traceback
+                traceback.print_exc()
         
         # 打印統計信息
         print(f"\n✅ 同步記錄完成:")

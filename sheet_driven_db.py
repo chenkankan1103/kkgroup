@@ -210,10 +210,11 @@ class SheetDrivenDB:
         user_id = int(user_id)
         
         try:
+            # 🔑 第一步：確保所有列存在（在獨立的連接中完成）
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            # 先獲取現有用戶數據
+            # 先獲取現有用戶數據和確定需要的列
             cursor.execute(f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,))
             existing_row = cursor.fetchone()
             
@@ -227,8 +228,14 @@ class SheetDrivenDB:
                 existing_data = {'user_id': user_id, '_updated_at': datetime.now().isoformat()}
                 existing_data.update(data)
             
-            # 確保所有列都存在
+            conn.close()  # ✅ 關閉原連接，避免 ALTER TABLE 時的連接狀態問題
+            
+            # 🔑 第二步：確保所有列都存在（在獨立連接中）
             self.ensure_columns(list(existing_data.keys()))
+            
+            # 🔑 第三步：執行 INSERT OR REPLACE（在新連接中）
+            conn = self._get_connection()
+            cursor = conn.cursor()
             
             # 構建 SQL INSERT OR REPLACE
             columns = list(existing_data.keys())
@@ -243,13 +250,24 @@ class SheetDrivenDB:
                 if isinstance(values[i], (dict, list)):
                     values[i] = json.dumps(values[i], ensure_ascii=False)
             
+            print(f"📝 執行 SQL: {sql}")
+            print(f"📊 值: {values[:3]}...")  # 只打印前 3 個值便於診斷
+            
             cursor.execute(sql, values)
             conn.commit()
+            
+            # ✅ 驗證寫入
+            cursor.execute(f"SELECT COUNT(*) FROM {self.table_name} WHERE user_id = ?", (user_id,))
+            count = cursor.fetchone()[0]
+            print(f"✅ 寫入驗證: user_id {user_id} 現在有 {count} 筆記錄")
+            
             conn.close()
             
             return True
         except Exception as e:
             print(f"❌ 更新用戶失敗: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def get_user_field(self, user_id: Union[int, str], field: str, default: Any = None) -> Any:
