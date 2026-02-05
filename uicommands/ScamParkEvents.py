@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands, tasks
-import sqlite3
 import random
 import asyncio
 from typing import Optional
@@ -9,7 +8,7 @@ import os
 import aiohttp
 import urllib.parse
 import math
-from db_adapter import get_user, set_user_field, get_user_field
+from db_adapter import get_user, set_user_field, get_user_field, get_all_users
 
 class ScamParkEvents(commands.Cog):
     def __init__(self, bot):
@@ -44,73 +43,52 @@ class ScamParkEvents(commands.Cog):
             self.random_event_trigger.start()
 
     def init_event_database(self):
-        """初始化事件追蹤資料表"""
+        """初始化事件追蹤資料表（使用記憶體字典）"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # 創建事件歷史表
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS event_history (
-                    user_id INTEGER PRIMARY KEY,
-                    last_event_time REAL NOT NULL,
-                    last_message_id INTEGER,
-                    event_count INTEGER DEFAULT 0,
-                    last_event_type TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            conn.commit()
-            conn.close()
+            # Initialize in-memory event history
+            # Format: {user_id: {'last_event_time': float, 'last_message_id': int, 'event_count': int, 'last_event_type': str}}
+            if not hasattr(self, 'event_history'):
+                self.event_history = {}
             print("✅ 事件資料庫初始化完成")
-        except sqlite3.Error as e:
-            print(f"❌ 初始化事件資料庫SQL錯誤: {e}")
         except Exception as e:
             print(f"❌ 初始化事件資料庫錯誤: {e}")
 
     def load_last_event_times(self):
-        """從資料庫載入上次事件時間"""
+        """從記憶體載入上次事件時間"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            # Load event history from memory dictionary
+            # Note: Since we're using in-memory storage, this mainly initializes from self.event_cooldown
+            # which is already populated by init
+            for user_id, last_time in self.event_cooldown.items():
+                if user_id not in self.event_history:
+                    self.event_history[user_id] = {
+                        'last_event_time': last_time,
+                        'last_message_id': self.event_messages.get(user_id),
+                        'event_count': 0,
+                        'last_event_type': None
+                    }
             
-            cursor.execute('SELECT user_id, last_event_time, last_message_id FROM event_history')
-            records = cursor.fetchall()
-            
-            for user_id, last_time, msg_id in records:
-                self.event_cooldown[user_id] = last_time
-                if msg_id:
-                    self.event_messages[user_id] = msg_id
-            
-            conn.close()
-            print(f"✅ 載入 {len(records)} 筆事件歷史記錄")
-        except sqlite3.Error as e:
-            print(f"❌ 載入事件歷史資料庫錯誤: {e}")
+            print(f"✅ 載入 {len(self.event_history)} 筆事件歷史記錄")
         except Exception as e:
             print(f"❌ 載入事件歷史錯誤: {e}")
 
     def save_event_time(self, user_id: int, message_id: int = None, event_type: str = None):
-        """儲存事件觸發時間到資料庫"""
+        """儲存事件觸發時間到記憶體"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
             current_time = datetime.datetime.now().timestamp()
             
-            cursor.execute('''
-                INSERT INTO event_history (user_id, last_event_time, last_message_id, event_count, last_event_type)
-                VALUES (?, ?, ?, 1, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    last_event_time = excluded.last_event_time,
-                    last_message_id = excluded.last_message_id,
-                    event_count = event_count + 1,
-                    last_event_type = excluded.last_event_type,
-                    updated_at = CURRENT_TIMESTAMP
-            ''', (user_id, current_time, message_id, event_type))
-            
-            conn.commit()
-            conn.close()
+            if user_id in self.event_history:
+                self.event_history[user_id]['last_event_time'] = current_time
+                self.event_history[user_id]['last_message_id'] = message_id
+                self.event_history[user_id]['event_count'] = self.event_history[user_id].get('event_count', 0) + 1
+                self.event_history[user_id]['last_event_type'] = event_type
+            else:
+                self.event_history[user_id] = {
+                    'last_event_time': current_time,
+                    'last_message_id': message_id,
+                    'event_count': 1,
+                    'last_event_type': event_type
+                }
         except Exception as e:
             print(f"❌ 儲存事件時間錯誤: {e}")
 
@@ -126,19 +104,20 @@ class ScamParkEvents(commands.Cog):
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
                 return
 
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT user_id, thread_id, kkcoin, level, hp, stamina 
-                FROM users 
-                WHERE thread_id != 0
-            ''')
-            all_users = cursor.fetchall()
-            conn.close()
-
+            # Use db_adapter to get all users
+            all_users = get_all_users()
             current_time = datetime.datetime.now().timestamp()
             
-            for user_id, thread_id, kkcoin, level, hp, stamina in all_users:
+            for user_data in all_users:
+                user_id = user_data.get('user_id')
+                thread_id = user_data.get('thread_id', 0)
+                kkcoin = user_data.get('kkcoin', 0)
+                level = user_data.get('level', 1)
+                hp = user_data.get('hp', 100)
+                stamina = user_data.get('stamina', 100)
+                
+                if not thread_id or thread_id == 0:
+                    continue
                 # 檢查冷卻時間
                 last_event = self.event_cooldown.get(user_id, 0)
                 time_since_last = current_time - last_event
@@ -207,32 +186,32 @@ class ScamParkEvents(commands.Cog):
                 print("⚠️ 找不到論壇頻道，跳過清理")
                 return
 
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('SELECT user_id, last_message_id FROM event_history WHERE last_message_id IS NOT NULL')
-            records = cursor.fetchall()
-            
+            # Clean up expired entries from memory
             cleaned_count = 0
-            for user_id, message_id in records:
+            for user_id in list(self.event_history.keys()):
                 try:
-                    # 獲取用戶的討論串 - 使用 db_adapter
+                    # Get user's thread from db_adapter
                     thread_id = get_user_field(user_id, 'thread_id', default=0)
                     if not thread_id or thread_id == 0:
+                        continue
+                    
+                    message_id = self.event_history[user_id].get('last_message_id')
+                    if not message_id:
                         continue
                     
                     thread = forum_channel.get_thread(thread_id)
                     
                     if thread:
                         try:
-                            # 嘗試獲取訊息
+                            # Try to fetch message
                             message = await thread.fetch_message(message_id)
-                            # 如果訊息存在，更新內存記錄
+                            # Message exists, update memory record
                             self.event_messages[user_id] = message_id
                         except discord.NotFound:
-                            # 訊息已被刪除，清理記錄
+                            # Message was deleted, clean up record
                             if user_id in self.event_messages:
                                 del self.event_messages[user_id]
-                            cursor.execute('UPDATE event_history SET last_message_id = NULL WHERE user_id = ?', (user_id,))
+                            self.event_history[user_id]['last_message_id'] = None
                             cleaned_count += 1
                         except discord.Forbidden:
                             print(f"⚠️ 無權限讀取訊息: {message_id}")
@@ -243,12 +222,9 @@ class ScamParkEvents(commands.Cog):
                     continue
             
             if cleaned_count > 0:
-                conn.commit()
                 print(f"🧹 已清理 {cleaned_count} 筆無效的事件訊息記錄")
             else:
                 print("✅ 所有事件訊息記錄正常")
-            
-            conn.close()
             
         except Exception as e:
             print(f"❌ 清理訊息記錄錯誤: {e}")
@@ -927,25 +903,24 @@ class ScamParkEvents(commands.Cog):
     async def event_stats(self, ctx):
         """查看事件統計（管理員專用）"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            if not self.event_history:
+                await ctx.send("📊 目前沒有事件統計數據")
+                return
             
-            cursor.execute('''
-                SELECT COUNT(*), AVG(event_count), MAX(event_count)
-                FROM event_history
-            ''')
-            total_users, avg_events, max_events = cursor.fetchone()
+            # Calculate stats from memory
+            total_users = len(self.event_history)
+            event_counts = [data.get('event_count', 0) for data in self.event_history.values()]
+            avg_events = sum(event_counts) / total_users if total_users > 0 else 0
+            max_events = max(event_counts) if event_counts else 0
             
-            cursor.execute('''
-                SELECT last_event_type, COUNT(*) as count
-                FROM event_history
-                GROUP BY last_event_type
-                ORDER BY count DESC
-                LIMIT 10
-            ''')
-            top_events = cursor.fetchall()
+            # Count event types
+            event_type_counts = {}
+            for data in self.event_history.values():
+                event_type = data.get('last_event_type')
+                if event_type:
+                    event_type_counts[event_type] = event_type_counts.get(event_type, 0) + 1
             
-            conn.close()
+            top_events = sorted(event_type_counts.items(), key=lambda x: x[1], reverse=True)[:10]
             
             embed = discord.Embed(
                 title="📊 園區事件統計",
@@ -978,21 +953,17 @@ class ScamParkEvents(commands.Cog):
                 if user_id in self.event_cooldown:
                     del self.event_cooldown[user_id]
                 
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                cursor.execute('DELETE FROM event_history WHERE user_id = ?', (user_id,))
-                conn.commit()
-                conn.close()
+                if user_id in self.event_history:
+                    del self.event_history[user_id]
+                
+                if user_id in self.event_messages:
+                    del self.event_messages[user_id]
                 
                 await ctx.send(f"✅ 已重置用戶 {user_id} 的事件冷卻")
             else:
                 self.event_cooldown.clear()
-                
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                cursor.execute('DELETE FROM event_history')
-                conn.commit()
-                conn.close()
+                self.event_history.clear()
+                self.event_messages.clear()
                 
                 await ctx.send("✅ 已重置所有用戶的事件冷卻")
                 
@@ -1007,21 +978,22 @@ class ScamParkEvents(commands.Cog):
             if not member:
                 member = ctx.author
             
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT thread_id, kkcoin, level, hp, stamina
-                FROM users
-                WHERE user_id = ?
-            ''', (member.id,))
-            result = cursor.fetchone()
-            conn.close()
+            # Use db_adapter to get user data
+            user_data = get_user(member.id)
+            if not user_data:
+                await ctx.send("❌ 無法找到該用戶的數據")
+                return
             
-            if not result or result[0] == 0:
+            thread_id = user_data.get('thread_id', 0)
+            kkcoin = user_data.get('kkcoin', 0)
+            level = user_data.get('level', 1)
+            hp = user_data.get('hp', 100)
+            stamina = user_data.get('stamina', 100)
+            
+            if not thread_id or thread_id == 0:
                 await ctx.send("❌ 該用戶沒有登記的討論串")
                 return
             
-            thread_id, kkcoin, level, hp, stamina = result
             thread = ctx.guild.get_thread(thread_id)
             
             if not thread:

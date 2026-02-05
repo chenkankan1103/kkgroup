@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 import os
 import random
 import asyncio
-import sqlite3
 import json
 import aiohttp
 import io
@@ -139,22 +138,10 @@ class WelcomeFlow(commands.Cog):
         Schema is automatically managed by db_adapter via SHEET Row 1.
         """
         try:
-            # Create image_cache table (local cache only, not in SHEET)
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Create image_cache table for Discord URL caching
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS image_cache (
-                    cache_key TEXT PRIMARY KEY,
-                    discord_url TEXT NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    message_id INTEGER
-                )
-            ''')
-            
-            conn.commit()
-            conn.close()
+            # Initialize in-memory image cache (replaces SQLite table)
+            # Format: {cache_key: {'discord_url': str, 'created_at': int, 'message_id': int}}
+            if not hasattr(self, 'image_cache'):
+                self.image_cache = {}
             print("✅ 資料庫初始化完成 (使用 Sheet-Driven 架構)")
             
         except Exception as e:
@@ -355,42 +342,33 @@ class WelcomeFlow(commands.Cog):
             return False
 
     def get_cached_discord_url(self, cache_key: str) -> Optional[str]:
-        """從資料庫獲取 Discord URL 緩存"""
+        """從記憶體獲取 Discord URL 緩存"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
             # 清理過期的緩存 (超過30天)
             thirty_days_ago = int(time.time()) - (30 * 24 * 60 * 60)
-            cursor.execute("DELETE FROM image_cache WHERE created_at < ?", (thirty_days_ago,))
+            expired_keys = [key for key, data in self.image_cache.items() 
+                           if data.get('created_at', 0) < thirty_days_ago]
+            for key in expired_keys:
+                del self.image_cache[key]
             
-            cursor.execute("SELECT discord_url FROM image_cache WHERE cache_key = ?", (cache_key,))
-            result = cursor.fetchone()
-            
-            conn.commit()
-            conn.close()
-            
-            return result[0] if result else None
+            # 獲取緩存
+            if cache_key in self.image_cache:
+                return self.image_cache[cache_key].get('discord_url')
+            return None
             
         except Exception as e:
             print(f"❌ 獲取 Discord URL 緩存錯誤: {e}")
             return None
 
     def save_discord_url_cache(self, cache_key: str, discord_url: str, message_id: int = None):
-        """保存 Discord URL 到資料庫緩存"""
+        """保存 Discord URL 到記憶體緩存"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
             current_time = int(time.time())
-            cursor.execute('''
-                INSERT OR REPLACE INTO image_cache 
-                (cache_key, discord_url, created_at, message_id) 
-                VALUES (?, ?, ?, ?)
-            ''', (cache_key, discord_url, current_time, message_id))
-            
-            conn.commit()
-            conn.close()
+            self.image_cache[cache_key] = {
+                'discord_url': discord_url,
+                'created_at': current_time,
+                'message_id': message_id
+            }
             
         except Exception as e:
             print(f"❌ 保存 Discord URL 緩存錯誤: {e}")
@@ -810,12 +788,9 @@ class WelcomeFlow(commands.Cog):
             
             for preset_name, config in self.preset_characters.items():
                 try:
-                    # 清除現有緩存
-                    conn = sqlite3.connect(self.db_path)
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM image_cache WHERE cache_key = ?", (preset_name,))
-                    conn.commit()
-                    conn.close()
+                    # 清除現有緩存 (記憶體)
+                    if preset_name in self.image_cache:
+                        del self.image_cache[preset_name]
                     
                     # 刪除本地緩存
                     cache_path = self.cache_dir / f"{preset_name}.png"
@@ -931,14 +906,9 @@ class WelcomeFlow(commands.Cog):
                 except:
                     pass
             
-            # 清理資料庫緩存
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM image_cache")
-            deleted_db_records = cursor.fetchone()[0]
-            cursor.execute("DELETE FROM image_cache")
-            conn.commit()
-            conn.close()
+            # 清理記憶體緩存
+            deleted_db_records = len(self.image_cache)
+            self.image_cache.clear()
             
             embed = discord.Embed(
                 title="🗑️ 緩存清理完成",

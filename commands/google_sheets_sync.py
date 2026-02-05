@@ -3,7 +3,6 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import gspread
 from google.oauth2.service_account import Credentials
-import sqlite3
 import json
 import asyncio
 from datetime import datetime
@@ -14,6 +13,7 @@ import os
 # 導入 SHEET 同步管理器
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 from sheet_sync_manager import SheetSyncManager
+from db_adapter import get_all_users
 
 class GoogleSheetsSync(commands.Cog):
     """Google Sheets 與 SQLite 資料庫雙向同步工具 (Slash 指令版本)"""
@@ -247,21 +247,13 @@ class GoogleSheetsSync(commands.Cog):
                 if not self.sheet:
                     return 0
                 
-                conn = sqlite3.connect('user_data.db')
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT user_id, level, xp, kkcoin, title, hp, stamina,
-                    inventory, character_config, face, hair, skin,
-                    top, bottom, shoes, streak, last_work_date,
-                    last_action_date, actions_used, gender, is_stunned,
-                    is_locked, last_recovery
-                    FROM users ORDER BY kkcoin DESC
-                """)
+                # ✅ 使用 db_adapter 替代直接 sqlite3.connect
+                users = get_all_users()
                 
-                rows = cursor.fetchall()
-                conn.close()
+                # 按 kkcoin DESC 排序
+                users_sorted = sorted(users, key=lambda u: u.get('kkcoin', 0), reverse=True)
                 
-                if not rows:
+                if not users_sorted:
                     return 0
                 
                 # SHEET 結構：
@@ -293,22 +285,28 @@ class GoogleSheetsSync(commands.Cog):
                     data.append(['【# 第1欄】'] + ['【第' + str(i+2) + '欄】' for i in range(len(headers)-1)])
                 
                 data.append(headers)  # Row 2: 實際標題
-                for row in rows:
-                    user = self.bot.get_user(row[0])
-                    nickname = user.display_name if user else f"Unknown_{row[0]}"
+                for user in users_sorted:
+                    user_id = user.get('user_id')
+                    bot_user = self.bot.get_user(user_id)
+                    nickname = bot_user.display_name if bot_user else f"Unknown_{user_id}"
                     
                     # 重要：user_id 必須以文本格式寫入，否則 Google Sheets 會轉成科學記號
                     # 例如：123456789012345678 → 1.23456789012E+17
                     data.append([
-                        f"{int(row[0])}",  # ✅ user_id 轉成字符串，防止科學記號
+                        f"{int(user_id)}",  # ✅ user_id 轉成字符串，防止科學記號
                         nickname, 
-                        int(row[1]), int(row[2]), int(row[3]),
-                        row[4], int(row[5]), int(row[6]), row[7], row[8],
-                        int(row[9]), int(row[10]), int(row[11]), int(row[12]),
-                        int(row[13]), int(row[14]), int(row[15]),
-                        row[16] or '', row[17] or '', row[18], row[19],
-                        'TRUE' if row[20] else 'FALSE', 'TRUE' if row[21] else 'FALSE',
-                        row[22] or ''
+                        int(user.get('level', 1)), int(user.get('xp', 0)), int(user.get('kkcoin', 0)),
+                        user.get('title', '新手'), int(user.get('hp', 100)), int(user.get('stamina', 100)), 
+                        user.get('inventory', ''), user.get('character_config', ''),
+                        int(user.get('face', 20000)), int(user.get('hair', 30000)), 
+                        int(user.get('skin', 12000)), int(user.get('top', 1040010)),
+                        int(user.get('bottom', 1060096)), int(user.get('shoes', 1072288)), 
+                        int(user.get('streak', 0)),
+                        user.get('last_work_date', '') or '', user.get('last_action_date', '') or '', 
+                        user.get('actions_used', 0), user.get('gender', ''),
+                        'TRUE' if user.get('is_stunned', 0) else 'FALSE', 
+                        'TRUE' if user.get('is_locked', 0) else 'FALSE',
+                        user.get('last_recovery', '') or ''
                     ])
                 
                 self.sheet.clear()  # 清空整個 SHEET
@@ -319,9 +317,9 @@ class GoogleSheetsSync(commands.Cog):
                 print(f"✅ 導出完成: 保留 Row 1（分組標題），更新 Row 2+（表頭和數據）")
                 print(f"   - Row 1: 分組標題（保留）")
                 print(f"   - Row 2: 實際表頭")
-                print(f"   - Row 3+: {len(rows)} 筆玩家數據")
+                print(f"   - Row 3+: {len(users_sorted)} 筆玩家數據")
                 
-                return len(rows)
+                return len(users_sorted)
             
             # 在 executor 中執行
             return await loop.run_in_executor(None, do_export)
@@ -404,13 +402,10 @@ class GoogleSheetsSync(commands.Cog):
         await interaction.response.defer()
         
         try:
-            conn = sqlite3.connect('user_data.db')
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM users")
-            db_count = cursor.fetchone()[0]
-            cursor.execute("SELECT SUM(kkcoin) FROM users")
-            total_kkcoin = cursor.fetchone()[0] or 0
-            conn.close()
+            # ✅ 使用 db_adapter 替代直接 sqlite3.connect
+            users = get_all_users()
+            db_count = len(users)
+            total_kkcoin = sum(user.get('kkcoin', 0) for user in users)
             
             sheet_records = self.sheet.get_all_records() if self.sheet else []
             
