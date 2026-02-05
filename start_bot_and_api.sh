@@ -10,6 +10,18 @@ echo "🚀 Bot + Flask API 自動重啟"
 echo "=================================================="
 echo ""
 
+# 0. 拉取最新代碼
+echo "0️⃣ 拉取最新代碼..."
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    echo "   📍 當前分支: $CURRENT_BRANCH"
+    git pull origin "$CURRENT_BRANCH" || true
+    echo "✅ 代碼已更新"
+else
+    echo "⚠️ 不在 Git 倉庫中，跳過 git pull"
+fi
+echo ""
+
 # 1. 停止舊進程
 echo "1️⃣ 停止舊進程..."
 
