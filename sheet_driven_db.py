@@ -501,6 +501,66 @@ class SheetDrivenDB:
         
         return headers, rows
     
+    def export_to_sheet_format_ordered(self, desired_headers: List[str]) -> Tuple[List[str], List[List[str]]]:
+        """
+        按指定的表頭順序導出數據庫數據（以 SHEET 為主）
+        
+        Args:
+            desired_headers: SHEET 的表頭順序 (例如 ['user_id', 'nickname', 'level', ...])
+            
+        Returns:
+            (headers, rows) 元組，其中列的順序與 desired_headers 相同
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # 先取得所有用戶數據（原始順序）
+        cursor.execute(f"PRAGMA table_info({self.table_name})")
+        all_db_columns = [row[1] for row in cursor.fetchall()]
+        
+        # 過濾出實際存在於 DB 中的列（排除系統列）
+        db_headers = [col for col in all_db_columns if not col.startswith('_')]
+        
+        # 確定要導出的列（按 SHEET 的順序）
+        headers_to_export = []
+        for header in desired_headers:
+            if header in db_headers:
+                headers_to_export.append(header)
+        
+        # 也要包含在 SHEET 中但 DB 中沒有的列（用空值填充）
+        missing_headers = [h for h in desired_headers if h not in db_headers]
+        for header in missing_headers:
+            headers_to_export.append(header)
+        
+        # 獲取所有數據，按所需的欄位順序排列
+        quoted_headers = [f'"{col}"' for col in db_headers]
+        columns_str = ', '.join(quoted_headers)
+        cursor.execute(f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id")
+        
+        rows = []
+        for db_row in cursor.fetchall():
+            # 將 DB 行轉換為字典
+            row_dict = {}
+            for col, val in zip(db_headers, db_row):
+                row_dict[col] = val
+            
+            # 按 SHEET 的表頭順序重新排列
+            row_list = []
+            for header in headers_to_export:
+                val = row_dict.get(header, '')  # 如果欄位不存在於 DB，使用空值
+                
+                # 格式化值
+                if isinstance(val, str) and (val.startswith('{') or val.startswith('[')):
+                    row_list.append(val)
+                else:
+                    row_list.append(str(val) if val is not None else '')
+            
+            rows.append(row_list)
+        
+        conn.close()
+        
+        return headers_to_export, rows
+    
     # ============================================================
     # 輔助方法
     # ============================================================
