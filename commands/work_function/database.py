@@ -8,6 +8,7 @@ Work 系統數據庫適配層 - 使用新的 Sheet-Driven DB
 import os
 import traceback
 from typing import Dict, Any, Optional
+from discord.ext import commands
 
 # 匯入統一的數據庫適配層
 from db_adapter import (
