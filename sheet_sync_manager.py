@@ -189,6 +189,11 @@ class SheetSyncManager:
                         # ✅ 關鍵：使用 DB 引擎的類型轉換
                         record[header] = self.db._convert_value(header, value)
                 
+                # 🔄 欄位映射：確保 nickname 有值
+                # 如果 nickname 為空但 user_name 有值，用 user_name 填充 nickname
+                if (not record.get('nickname') or record.get('nickname') == '') and record.get('user_name'):
+                    record['nickname'] = record.get('user_name')
+                
                 # 驗證 user_id
                 user_id_val = record.get('user_id')
                 if user_id_val is None:
