@@ -11,7 +11,8 @@ class MemberSync(commands.Cog):
         # 檢查用戶是否已存在，不存在則創建
         existing_user = get_user(member.id)
         if not existing_user:
-            set_user(member.id, {'user_id': member.id})
+            # user_id will be automatically set by set_user
+            set_user(member.id, {})
             print(f"✅ 已新增用戶 {member} 到資料庫")
         else:
             print(f"ℹ️ 用戶 {member} 已存在於資料庫中")
