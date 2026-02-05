@@ -5,8 +5,8 @@ import json
 import traceback
 import asyncio
 from datetime import datetime, timedelta
-from commands.work_function.database import init_db, get_user, update_user, get_all_users
-from commands.work_function.work_system import (
+from .database import init_db, get_user, update_user, get_all_users
+from .work_system import (
     LEVELS, 
     process_checkin, 
     process_work_action,
