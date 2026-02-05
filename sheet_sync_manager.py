@@ -215,12 +215,13 @@ class SheetSyncManager:
     
     def _sync_records_to_db(self, records: List[Dict[str, Any]]) -> Dict[str, int]:
         """
-        將記錄同步到 DB
+        將記錄同步到 DB（支援去重）
         
         Returns:
-            {'inserted': n, 'updated': n, 'errors': n, 'total_parsed': n}
+            {'inserted': n, 'updated': n, 'errors': n, 'total_parsed': n, 'duplicates': n}
         """
-        stats = {'inserted': 0, 'updated': 0, 'errors': 0, 'total_parsed': len(records)}
+        stats = {'inserted': 0, 'updated': 0, 'errors': 0, 'total_parsed': len(records), 'duplicates': 0}
+        seen_user_ids = set()  # 去重: 追蹤本次同步中的用戶 ID
         
         for i, record in enumerate(records, 1):
             try:
@@ -229,13 +230,30 @@ class SheetSyncManager:
                     stats['errors'] += 1
                     continue
                 
-                # 檢查用戶是否存在
+                try:
+                    user_id = int(user_id)
+                except (ValueError, TypeError):
+                    print(f"❌ 記錄 {i}: user_id 無效 '{record.get('user_id')}'")
+                    stats['errors'] += 1
+                    continue
+                
+                # 檢查本次同步中的重複（去重）
+                if user_id in seen_user_ids:
+                    print(f"⚠️ 記錄 {i}: 在本次同步中有重複的 user_id {user_id} (已跳過)")
+                    stats['duplicates'] += 1
+                    continue
+                
+                seen_user_ids.add(user_id)
+                
+                # 檢查用戶是否在數據庫中存在
                 existing_user = self.db.get_user(user_id)
                 
                 if existing_user:
                     stats['updated'] += 1
+                    print(f"   ✓ [更新] 用戶 {user_id}")
                 else:
                     stats['inserted'] += 1
+                    print(f"   ✓ [新增] 用戶 {user_id}")
                 
                 # 保存用戶 (db.set_user 會自動 INSERT 或 REPLACE)
                 self.db.set_user(user_id, record)
@@ -243,6 +261,13 @@ class SheetSyncManager:
             except Exception as e:
                 stats['errors'] += 1
                 print(f"❌ 記錄 {i} 同步失敗: {e}")
+        
+        # 打印統計信息
+        print(f"\n✅ 同步記錄完成:")
+        print(f"   新增: {stats['inserted']} 個用戶")
+        print(f"   更新: {stats['updated']} 個用戶")
+        print(f"   重複: {stats['duplicates']} 行 (已移除)")
+        print(f"   錯誤: {stats['errors']} 行")
         
         return stats
     

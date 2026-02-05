@@ -72,15 +72,40 @@ function syncToDatabase() {
     Logger.log(`📋 表頭: ${headers.slice(0, 5).join(', ')}...`);
     Logger.log(`📊 資料行數: ${rows.length}`);
     
-    // 過濾空行
-    const validRows = rows.filter(row => {
-      return row.some(cell => cell && cell.toString().trim() !== '');
+    // 找到 user_id 列的索引
+    const userIdIndex = headers.findIndex(h => h && h.toString().toLowerCase() === 'user_id');
+    
+    if (userIdIndex === -1) {
+      SpreadsheetApp.getUi().alert("❌ 找不到 'user_id' 欄位，請確認表頭設置正確");
+      return;
+    }
+    
+    Logger.log(`📍 user_id 列索引: ${userIdIndex}`);
+    
+    // 過濾有效的數據行（必須有非空的 user_id）
+    const validRows = rows.filter((row, rowIndex) => {
+      // 檢查 user_id 單元格是否非空
+      const userIdValue = row[userIdIndex];
+      
+      if (!userIdValue || userIdValue.toString().trim() === '') {
+        Logger.log(`⚠️ 跳過第 ${rowIndex + 2} 行：user_id 為空`);
+        return false;  // 拒絕此行
+      }
+      
+      // 檢查 user_id 是否可轉換為數字
+      const userIdNum = Number(userIdValue);
+      if (isNaN(userIdNum) || userIdNum <= 0) {
+        Logger.log(`⚠️ 跳過第 ${rowIndex + 2} 行：user_id '${userIdValue}' 無效`);
+        return false;  // 拒絕此行
+      }
+      
+      return true;  // 接受此行
     });
     
-    Logger.log(`📊 有效資料行數: ${validRows.length}`);
+    Logger.log(`📊 有效資料行數: ${validRows.length} (從 ${rows.length} 行過濾得出)`);
     
     if (validRows.length === 0) {
-      SpreadsheetApp.getUi().alert("❌ 沒有有效的資料行");
+      SpreadsheetApp.getUi().alert("❌ 沒有有效的資料行（需要有非空且有效的 user_id）");
       return;
     }
     

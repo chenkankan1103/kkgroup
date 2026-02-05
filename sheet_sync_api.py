@@ -190,16 +190,17 @@ def api_sync_sheet():
         
         # 3. 同步到 DB
         print(f"\n📤 同步到 DB...")
-        updated, inserted, errors = get_sync_manager().sync_records(records)
-        logger.info(f"✅ 同步完成: 更新 {updated}, 新增 {inserted}, 錯誤 {errors}")
+        sync_stats = get_sync_manager()._sync_records_to_db(records)
+        logger.info(f"✅ 同步完成: 新增 {sync_stats['inserted']}, 更新 {sync_stats['updated']}, 錯誤 {sync_stats['errors']}, 重複 {sync_stats['duplicates']}")
         
         result = {
             "status": "success",
-            "message": f"同步完成: 更新 {updated} 筆，新增 {inserted} 筆，錯誤 {errors} 筆",
+            "message": f"同步完成: 新增 {sync_stats['inserted']} 筆，更新 {sync_stats['updated']} 筆，重複 {sync_stats['duplicates']} 筆，錯誤 {sync_stats['errors']} 筆",
             "stats": {
-                "updated": updated,
-                "inserted": inserted,
-                "errors": errors,
+                "inserted": sync_stats['inserted'],
+                "updated": sync_stats['updated'],
+                "errors": sync_stats['errors'],
+                "duplicates": sync_stats.get('duplicates', 0),
                 "total_parsed": len(records)
             },
             "timestamp": datetime.now().isoformat()
