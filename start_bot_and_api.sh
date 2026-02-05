@@ -119,8 +119,17 @@ echo ""
 
 python3 bot.py
 
-# 如果 Bot 因錯誤而退出，自動重啟
+# 如果 Bot 因錯誤而退出，自動重啟 API 和 Bot
 echo ""
-echo "⚠️ Bot 已停止，將在 10 秒後自動重啟..."
-sleep 10
+echo "⚠️ Bot 已停止，正在重啟 API 和 Bot..."
+sleep 2
+
+# 停止舊的 API
+echo "   🔴 停止舊的 API 進程..."
+pkill -f "gunicorn.*sheet_sync_api" || true
+pkill -f "python.*sheet_sync_api" || true
+sleep 2
+
+echo "   🔄 重啟中..."
+sleep 8
 exec bash "$0"
