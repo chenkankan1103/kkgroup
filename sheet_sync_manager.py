@@ -278,7 +278,11 @@ class SheetSyncManager:
                     error_msg = f"set_user 返回失敗"
                     print(f"   ❌ 記錄 {i}: {error_msg}")
                     stats['errors'] += 1
-                    stats[action.lower()] -= 1  # 撤銷計數
+                    # 撤銷之前的計數
+                    if action == "更新":
+                        stats['updated'] -= 1
+                    else:
+                        stats['inserted'] -= 1
                     stats['error_details'].append({'record': i, 'user_id': user_id, 'reason': error_msg})
             
             except Exception as e:
