@@ -26,9 +26,27 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# 初始化同步管理器和 DB 引擎
-sync_manager = SheetSyncManager('user_data.db')
-db = SheetDrivenDB('user_data.db')
+# 全局變數 - 延遲初始化（Lazy Initialization）
+_sync_manager = None
+_db = None
+
+def get_sync_manager():
+    """獲取同步管理器（延遲初始化）"""
+    global _sync_manager
+    if _sync_manager is None:
+        logger.info("📥 初始化 SheetSyncManager...")
+        _sync_manager = SheetSyncManager('user_data.db')
+        logger.info("✅ SheetSyncManager 已初始化")
+    return _sync_manager
+
+def get_db():
+    """獲取數據庫引擎（延遲初始化）"""
+    global _db
+    if _db is None:
+        logger.info("📥 初始化 SheetDrivenDB...")
+        _db = SheetDrivenDB('user_data.db')
+        logger.info("✅ SheetDrivenDB 已初始化")
+    return _db
 
 # ============================================================
 # 全局錯誤處理器
@@ -148,12 +166,12 @@ def api_sync_sheet():
         
         # 1. 確保 DB schema（自動新增缺失的欄位）
         print(f"\n🔧 確保 DB schema...")
-        sync_manager.ensure_db_schema(headers)
+        get_sync_manager().ensure_db_schema(headers)
         logger.info("✅ DB schema 已確保")
         
         # 2. 解析記錄
         print(f"\n📝 解析記錄...")
-        records = sync_manager.parse_records(headers, rows)
+        records = get_sync_manager().parse_records(headers, rows)
         logger.info(f"✅ 解析完成: {len(records)} 筆有效記錄")
         print(f"✅ 解析完成: {len(records)} 筆有效記錄")
         
@@ -172,7 +190,7 @@ def api_sync_sheet():
         
         # 3. 同步到 DB
         print(f"\n📤 同步到 DB...")
-        updated, inserted, errors = sync_manager.sync_records(records)
+        updated, inserted, errors = get_sync_manager().sync_records(records)
         logger.info(f"✅ 同步完成: 更新 {updated}, 新增 {inserted}, 錯誤 {errors}")
         
         result = {
@@ -231,7 +249,7 @@ def api_stats():
     """
     try:
         # 使用新的 DB 引擎取得統計
-        db_stats = db.get_stats()
+        db_stats = get_db().get_stats()
         
         return jsonify({
             "status": "ok",
@@ -259,7 +277,7 @@ def api_stats():
 def api_clean_virtual():
     """清理虛擬帳號（Apps Script 呼叫）"""
     try:
-        deleted, errors = sync_manager.clean_virtual_accounts()
+        deleted, errors = get_sync_manager().clean_virtual_accounts()
         
         return jsonify({
             "status": "success" if errors == 0 else "warning",
@@ -281,7 +299,7 @@ def api_clean_virtual():
 def api_get_user(user_id):
     """取得特定用戶的完整資料"""
     try:
-        user = db.get_user(user_id)
+        user = get_db().get_user(user_id)
         
         if user is None:
             return jsonify({
@@ -313,7 +331,7 @@ def api_update_user(user_id):
                 "message": "請求體為空"
             }), 400
         
-        success = db.set_user(user_id, data)
+        success = get_db().set_user(user_id, data)
         
         if success:
             return jsonify({
@@ -337,7 +355,7 @@ def api_update_user(user_id):
 def api_get_field(user_id, field):
     """取得用戶特定欄位的值"""
     try:
-        value = db.get_user_field(user_id, field)
+        value = get_db().get_user_field(user_id, field)
         
         return jsonify({
             "status": "ok",
@@ -360,7 +378,7 @@ def api_set_field(user_id, field):
         data = request.get_json()
         value = data.get('value') if data else None
         
-        success = db.set_user_field(user_id, field, value)
+        success = get_db().set_user_field(user_id, field, value)
         
         if success:
             return jsonify({
@@ -387,10 +405,10 @@ def api_add_field(user_id, field):
         data = request.get_json()
         amount = data.get('amount', 0) if data else 0
         
-        success = db.update_user_field(user_id, field, amount)
+        success = get_db().update_user_field(user_id, field, amount)
         
         if success:
-            new_value = db.get_user_field(user_id, field)
+            new_value = get_db().get_user_field(user_id, field)
             return jsonify({
                 "status": "ok",
                 "message": f"欄位 {field} 已增加 {amount}",
