@@ -13,8 +13,46 @@
 // 設定區
 // ============================================================
 
-// 將此改為你的 Flask API 位址（例如：http://your-server.com:5000）
-const API_ENDPOINT = "http://35.206.126.157:5000";
+// ✅ 已改為動態讀取：從 Google Sheet 的「系統配置」表中讀取 API 端點
+// 不再硬編碼 IP，當浮動 IP 變更時，只需更新 Sheet 中的配置
+const CONFIG_SHEET_NAME = '系統配置';
+const CONFIG_KEY_API_ENDPOINT = 'API_ENDPOINT';
+const DEFAULT_API_ENDPOINT = "http://35.206.126.157:5000";
+
+/**
+ * 動態獲取 API 端點（從 Google Sheet 讀取）
+ */
+function getAPIEndpoint() {
+  try {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const configSheet = spreadsheet.getSheetByName(CONFIG_SHEET_NAME);
+    
+    if (!configSheet) {
+      Logger.log(`⚠️ 找不到「${CONFIG_SHEET_NAME}」工作頁，使用預設值`);
+      return DEFAULT_API_ENDPOINT;
+    }
+    
+    const configData = configSheet.getDataRange().getValues();
+    for (let row = 1; row < configData.length; row++) {
+      const keyCell = configData[row][0];
+      const valueCell = configData[row][1];
+      
+      if (keyCell && keyCell.toString().trim() === CONFIG_KEY_API_ENDPOINT) {
+        const endpoint = valueCell.toString().trim();
+        if (endpoint && endpoint.length > 0) {
+          Logger.log(`✅ 從「${CONFIG_SHEET_NAME}」讀取 API_ENDPOINT: ${endpoint}`);
+          return endpoint;
+        }
+      }
+    }
+    
+    Logger.log(`⚠️ 未找到配置，使用預設值`);
+    return DEFAULT_API_ENDPOINT;
+  } catch (error) {
+    Logger.log(`❌ 讀取配置出錯: ${error.toString()}`);
+    return DEFAULT_API_ENDPOINT;
+  }
+}
 
 // ============================================================
 // 功能列表
@@ -27,13 +65,30 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🔄 同步工具')
     .addItem('📤 同步到資料庫', 'syncToDatabase')
-    .addItem('� 從資料庫同步', 'syncFromDatabase')
-    .addItem('�📊 查看同步狀態', 'showSyncStatus')
+    .addItem('📥 從資料庫同步', 'syncFromDatabase')
+    .addItem('📊 查看同步狀態', 'showSyncStatus')
     .addItem('🧹 清理虛擬帳號', 'cleanVirtualAccounts')
     .addSeparator()
     .addItem('✅ 檢查 API 連接', 'checkAPIHealth')
+    .addItem('⚙️ 系統配置說明', 'showConfigGuide')
     .addToUi();
 }
+
+/**
+ * 顯示系統配置說明
+ */
+function showConfigGuide() {
+  const message = `⚙️ 系統配置說明\n\n` +
+    `1️⃣ 建立「系統配置」工作頁\n` +
+    `   在 Google Sheet 中新增工作頁，命名為「系統配置」\n\n` +
+    `2️⃣ 設置表頭（第 1 行）\n` +
+    `   A1: 設定名稱\n` +
+    `   B1: 設定值\n\n` +
+    `3️⃣ 添加配置（第 2 行）\n` +
+    `   A2: API_ENDPOINT\n` +
+    `   B2: http://你的IP:5000\n\n` +
+    `📌 當 GCP IP 變更時，直接更新 B2 的值！\n` +
+    `不需要修改代碼`;\n  \n  SpreadsheetApp.getUi().alert(message);\n}`
 
 /**
  * 同步 SHEET 資料到資料庫
@@ -117,7 +172,8 @@ function syncToDatabase() {
     };
     
     // 3. 呼叫 API
-    Logger.log(`🌐 呼叫 API: POST ${API_ENDPOINT}/api/sync`);
+    const apiEndpoint = getAPIEndpoint();
+    Logger.log(`🌐 呼叫 API: POST ${apiEndpoint}/api/sync`);
     
     const options = {
       method: 'post',
@@ -126,7 +182,7 @@ function syncToDatabase() {
       muteHttpExceptions: true  // 不拋出 HTTP 錯誤
     };
     
-    const response = UrlFetchApp.fetch(`${API_ENDPOINT}/api/sync`, options);
+    const response = UrlFetchApp.fetch(`${apiEndpoint}/api/sync`, options);
     const result = JSON.parse(response.getContentText());
     
     Logger.log(`📥 API 回應: ${JSON.stringify(result, null, 2)}`);
@@ -177,12 +233,13 @@ function showSyncStatus() {
   try {
     Logger.log("⏳ 取得資料庫狀態...");
     
+    const apiEndpoint = getAPIEndpoint();
     const options = {
       method: 'get',
       muteHttpExceptions: true
     };
     
-    const response = UrlFetchApp.fetch(`${API_ENDPOINT}/api/stats`, options);
+    const response = UrlFetchApp.fetch(`${apiEndpoint}/api/stats`, options);
     const result = JSON.parse(response.getContentText());
     
     if (result.status === 'ok') {
@@ -219,12 +276,13 @@ function cleanVirtualAccounts() {
     
     Logger.log("⏳ 清理虛擬帳號...");
     
+    const apiEndpoint = getAPIEndpoint();
     const options = {
       method: 'post',
       muteHttpExceptions: true
     };
     
-    const result_response = UrlFetchApp.fetch(`${API_ENDPOINT}/api/clean-virtual`, options);
+    const result_response = UrlFetchApp.fetch(`${apiEndpoint}/api/clean-virtual`, options);
     const result = JSON.parse(result_response.getContentText());
     
     if (result.status === 'success' || result.status === 'warning') {
@@ -262,7 +320,8 @@ function syncFromDatabase() {
     
     // 1. 从 API 取得 DB 中的所有数据
     // ✅ 新功能：傳送 SHEET 的表頭，以實現「以 SHEET 為主」
-    Logger.log(`🌐 呼叫 API: POST ${API_ENDPOINT}/api/export`);
+    const apiEndpoint = getAPIEndpoint();
+    Logger.log(`🌐 呼叫 API: POST ${apiEndpoint}/api/export`);
     
     const exportPayload = {};
     if (sheetHeaders && sheetHeaders.length > 0) {
@@ -280,7 +339,7 @@ function syncFromDatabase() {
       options.payload = JSON.stringify(exportPayload);
     }
     
-    const response = UrlFetchApp.fetch(`${API_ENDPOINT}/api/export`, options);
+    const response = UrlFetchApp.fetch(`${apiEndpoint}/api/export`, options);
     const statusCode = response.getResponseCode();
     const result = JSON.parse(response.getContentText());
     
@@ -366,12 +425,13 @@ function checkAPIHealth() {
   try {
     Logger.log("⏳ 檢查 API 連接...");
     
+    const apiEndpoint = getAPIEndpoint();
     const options = {
       method: 'get',
       muteHttpExceptions: true
     };
     
-    const response = UrlFetchApp.fetch(`${API_ENDPOINT}/api/health`, options);
+    const response = UrlFetchApp.fetch(`${apiEndpoint}/api/health`, options);
     const statusCode = response.getResponseCode();
     const responseText = response.getContentText();
     
@@ -397,7 +457,8 @@ function checkAPIHealth() {
     }
   
   } catch (error) {
-    const message = `❌ 無法連接到 API\n\n位址: ${API_ENDPOINT}\n錯誤: ${error.toString()}\n\n請檢查：\n1. API 位址是否正確\n2. Flask 伺服器是否正在運行\n3. 防火牆設定`;
+    const apiEndpoint = getAPIEndpoint();
+    const message = `❌ 無法連接到 API\n\n位址: ${apiEndpoint}\n錯誤: ${error.toString()}\n\n請檢查：\n1. 「系統配置」表中的 API_ENDPOINT 是否正確\n2. Flask 伺服器是否正在運行\n3. 防火牆設定`;
     SpreadsheetApp.getUi().alert(message);
     Logger.log(message);
   }
