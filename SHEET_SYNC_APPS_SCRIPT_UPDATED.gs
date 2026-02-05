@@ -302,9 +302,34 @@ function syncFromDatabase() {
       sheet = spreadsheet.insertSheet('玩家資料');
     }
     
-    // 3. 清空現有數據（保留表頭）
-    if (sheet.getMaxRows() > 1) {
-      sheet.deleteRows(2, sheet.getMaxRows() - 1);
+    // 3. 清空現有數據（保留表頭）- 改用更安全的方式
+    try {
+      if (sheet.getMaxRows() > 1) {
+        // 先獲取當前的行數和列數
+        const lastRow = sheet.getLastRow();
+        const lastCol = sheet.getLastColumn();
+        
+        if (lastRow > 1) {
+          // 安全的刪除方式：一次刪除合理數量的行
+          const rowsToDelete = lastRow - 1;  // 保留標題行
+          if (rowsToDelete > 0) {
+            sheet.deleteRows(2, Math.min(rowsToDelete, 1000));  // 一次最多刪除 1000 行
+            Logger.log(`✓ 已清空 ${Math.min(rowsToDelete, 1000)} 行舊數據`);
+          }
+        }
+      }
+    } catch (e) {
+      // 如果刪除失敗，改用覆蓋策略
+      Logger.log(`⚠️ 刪除行失敗：${e}，改用覆蓋策略`);
+      try {
+        const currentData = sheet.getDataRange().getValues();
+        if (currentData.length > 1) {
+          // 只保留表頭
+          sheet.getRange(1, 1, currentData.length, currentData[0].length).clearContent();
+        }
+      } catch (e2) {
+        Logger.log(`警告：無法清空現有數據: ${e2}`);
+      }
     }
     
     // 4. 寫入 API 返回的數據
