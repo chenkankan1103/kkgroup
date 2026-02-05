@@ -194,7 +194,7 @@ class SheetDrivenDB:
         # JSON 欄位 (用於複雜結構)
         if any(word in header_lower for word in 
                ['config', 'setting', 'data', 'json', 'info', 'inventory']):
-            return 'TEXT DEFAULT \'{}\'  -- JSON格式'
+            return 'TEXT DEFAULT \'{}\''
         
         # 默認為文本
         return 'TEXT DEFAULT \'\''
