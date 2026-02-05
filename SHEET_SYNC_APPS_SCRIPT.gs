@@ -1,5 +1,21 @@
 /**
- * Google Apps Script - SHEET 與資料庫同步工具
+ * ⚠️ 此檔案已棄用 - DEPRECATED ⚠️
+ * 
+ * 此版本使用舊的 Sheet 結構：
+ * - Row 1 = 分組標題行
+ * - Row 2 = 表頭行
+ * - Row 3+ = 資料行
+ * 
+ * 請使用新版本：SHEET_SYNC_APPS_SCRIPT_UPDATED.gs
+ * 新版結構：
+ * - Row 1 = 表頭行
+ * - Row 2+ = 資料行
+ * 
+ * 此檔案保留僅供參考，請勿使用！
+ */
+
+/**
+ * Google Apps Script - SHEET 與資料庫同步工具 (舊版 - 已棄用)
  * 
  * 使用方式：
  * 1. 在 Google Sheets 中，選擇「擴充功能」→「Apps Script」
