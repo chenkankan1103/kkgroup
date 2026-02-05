@@ -568,6 +568,28 @@ class KKCoin(commands.Cog):
         
         await interaction.response.send_message(debug_info, ephemeral=True)
 
+    @app_commands.command(name="kkcoin_force_refresh", description="強制刷新排行榜（管理員專用）")
+    @app_commands.default_permissions(administrator=True)
+    async def kkcoin_force_refresh(self, interaction: discord.Interaction):
+        """強制更新排行榜圖片，忽略快取檢查"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # 清除排行榜快取，強制重新生成
+            self.last_leaderboard_data = None
+            print("🔄 強制刷新排行榜：已清除快取")
+            
+            # 立即強制更新（force=True 會繞過 has_data_changed 檢查）
+            await self.update_leaderboard(min_interval=0, force=True)
+            
+            await interaction.followup.send("✅ 排行榜已強制刷新！", ephemeral=True)
+            print("✅ 排行榜強制刷新完成")
+        except Exception as e:
+            print(f"❌ 強制刷新排行榜失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 刷新失敗: {str(e)}", ephemeral=True)
+
     @app_commands.command(name="set_rank_channel", description="設定排行榜頻道（管理員專用）")
     @app_commands.describe(channel="排行榜要顯示的頻道")
     @app_commands.default_permissions(administrator=True)
