@@ -271,7 +271,7 @@ class SheetSyncManager:
                     action = "新增"
                 
                 # 保存用戶 (db.set_user 會自動 INSERT 或 REPLACE)
-                print(f"   ✓ 記錄 {i}: [{action}] user_id={user_id}, nickname={record.get('user_name', 'N/A')}")
+                print(f"   ✓ 記錄 {i}: [{action}] user_id={user_id}, 欄位數={len(record)}, 數據={record}")
                 success = self.db.set_user(user_id, record)
                 
                 if not success:
