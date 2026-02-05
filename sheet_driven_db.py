@@ -235,6 +235,8 @@ class SheetDrivenDB:
                 self.ensure_columns(list(existing_data.keys()))
             except Exception as col_err:
                 print(f"⚠️ 添加欄位失敗: {col_err}")
+                import traceback
+                traceback.print_exc()
                 # 繼續執行，可能欄位已存在
             
             # 🔑 第三步：執行 INSERT OR REPLACE（在新連接中）
@@ -249,6 +251,9 @@ class SheetDrivenDB:
             sql = f"INSERT OR REPLACE INTO {self.table_name} ({columns_str}) VALUES ({placeholders})"
             values = [existing_data.get(col) for col in columns]
             
+            print(f"📝 [SET_USER] user_id={user_id}, 欄位數={len(columns)}")
+            print(f"   SQL: {sql[:100]}...")
+            
             # 轉換複雜類型為 JSON
             converted_values = []
             for i, col in enumerate(columns):
@@ -260,10 +265,12 @@ class SheetDrivenDB:
             
             cursor.execute(sql, converted_values)
             conn.commit()
+            print(f"   ✅ SQL 執行成功，提交完成")
             
             # ✅ 驗證寫入
             cursor.execute(f"SELECT COUNT(*) FROM {self.table_name} WHERE user_id = ?", (user_id,))
             count = cursor.fetchone()[0]
+            print(f"   📊 驗證：數據庫中的計數 = {count}")
             
             if count > 0:
                 print(f"✅ user_id {user_id} 成功寫入數據庫")
