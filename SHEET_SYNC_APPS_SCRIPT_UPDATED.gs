@@ -249,13 +249,36 @@ function syncFromDatabase() {
   try {
     Logger.log("⏳ 從資料庫同步數據...");
     
+    // 取得當前 SHEET 的表頭（如果存在）
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = spreadsheet.getSheetByName('玩家資料');
+    let sheetHeaders = null;
+    
+    if (sheet && sheet.getLastRow() > 0) {
+      const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      sheetHeaders = headerRow.filter(h => h && h.toString().trim() !== '');  // 過濾空白列
+      Logger.log(`📋 當前 SHEET 表頭: ${sheetHeaders.join(', ')}`);
+    }
+    
     // 1. 从 API 取得 DB 中的所有数据
-    Logger.log(`🌐 呼叫 API: GET ${API_ENDPOINT}/api/export`);
+    // ✅ 新功能：傳送 SHEET 的表頭，以實現「以 SHEET 為主」
+    Logger.log(`🌐 呼叫 API: POST ${API_ENDPOINT}/api/export`);
+    
+    const exportPayload = {};
+    if (sheetHeaders && sheetHeaders.length > 0) {
+      exportPayload.headers = sheetHeaders;
+      Logger.log(`📤 傳送 SHEET 表頭順序到 API（${sheetHeaders.length} 欄位）`);
+    }
     
     const options = {
-      method: 'get',
+      method: sheetHeaders && sheetHeaders.length > 0 ? 'post' : 'get',
+      contentType: 'application/json',
       muteHttpExceptions: true
     };
+    
+    if (sheetHeaders && sheetHeaders.length > 0) {
+      options.payload = JSON.stringify(exportPayload);
+    }
     
     const response = UrlFetchApp.fetch(`${API_ENDPOINT}/api/export`, options);
     const statusCode = response.getResponseCode();
@@ -271,12 +294,9 @@ function syncFromDatabase() {
     const rows = result.rows;
     
     Logger.log(`📥 取得資料: ${headers.length} 欄位, ${rows.length} 行`);
-    Logger.log(`📋 表頭: ${headers.join(', ')}`);
+    Logger.log(`📋 返回表頭: ${headers.slice(0, 10).join(', ')}${headers.length > 10 ? '...' : ''}`);
     
     // 2. 取得或創建「玩家資料」工作頁
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = spreadsheet.getSheetByName('玩家資料');
-    
     if (!sheet) {
       Logger.log("⚠️ 找不到「玩家資料」工作頁，創建新工作頁...");
       sheet = spreadsheet.insertSheet('玩家資料');

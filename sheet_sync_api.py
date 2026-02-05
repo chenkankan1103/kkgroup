@@ -297,18 +297,26 @@ def api_clean_virtual():
         }), 500
 
 
-@app.route('/api/export', methods=['GET'])
+@app.route('/api/export', methods=['GET', 'POST'])
 def api_export_db():
     """
     反向同步：將數據庫數據導出為 Google Sheets 格式
     
     用途：定期從 DB 導出數據，更新 Google Sheet 上的遊戲數據（如 KK幣、等級等變化）
     
+    支援按 SHEET 表頭順序導出（以 SHEET 為主）
+    
+    Request (可選):
+    POST /api/export
+    {
+        "headers": ["user_id", "nickname", "level", ...]  // SHEET 的表頭順序
+    }
+    
     Returns:
     {
         "status": "success",
-        "headers": [...],
-        "rows": [...],
+        "headers": [...],  // 按 SHEET 表頭順序
+        "rows": [...],     // 按 SHEET 表頭順序排列的數據
         "stats": {
             "total_rows": int,
             "exported_at": timestamp
@@ -322,9 +330,28 @@ def api_export_db():
         print(f"📤 [DB 導出] 時間: {datetime.now().strftime('%H:%M:%S')}")
         print(f"{'='*60}")
         
-        # 取得所有用戶數據（按 user_id 排序）
+        # 獲取 SHEET 的表頭順序（如果有提供）
+        sheet_headers = None
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            sheet_headers = data.get('headers')
+            if sheet_headers:
+                logger.info(f"📋 使用提供的 SHEET 表頭順序（{len(sheet_headers)} 欄位）")
+                print(f"📋 使用 SHEET 表頭順序: {sheet_headers[:5]}...")
+        
+        # 取得數據庫中的所有用戶數據
         db = get_db()
-        headers, rows = db.export_to_sheet_format()
+        
+        if sheet_headers:
+            # ✅ 新方式：按 SHEET 表頭順序導出
+            logger.info("🔄 按 SHEET 表頭順序重新排列數據...")
+            headers, rows = db.export_to_sheet_format_ordered(sheet_headers)
+            print(f"✅ 按 SHEET 表頭順序導出完成")
+        else:
+            # ❌ 舊方式：按 DB 順序導出（向後相容）
+            logger.warning("⚠️ 未提供 SHEET 表頭，使用 DB 順序導出（建議提供表頭以保持對齊）")
+            headers, rows = db.export_to_sheet_format()
+            print(f"⚠️ 按 DB 順序導出（需要提供 SHEET 表頭以防止欄位錯位）")
         
         logger.info(f"✅ 導出完成: {len(headers)} 欄位, {len(rows)} 行資料")
         
@@ -334,7 +361,7 @@ def api_export_db():
         
         result = {
             "status": "success",
-            "message": f"導出 {len(rows)} 筆用戶資料",
+            "message": f"導出 {len(rows)} 筆用戶資料（按 {'SHEET' if sheet_headers else 'DB'} 順序）",
             "headers": headers,
             "rows": rows,
             "stats": {
