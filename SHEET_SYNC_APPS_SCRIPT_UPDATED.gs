@@ -88,7 +88,10 @@ function showConfigGuide() {
     `   A2: API_ENDPOINT\n` +
     `   B2: http://你的IP:5000\n\n` +
     `📌 當 GCP IP 變更時，直接更新 B2 的值！\n` +
-    `不需要修改代碼`;\n  \n  SpreadsheetApp.getUi().alert(message);\n}`
+    `不需要修改代碼`;
+  
+  SpreadsheetApp.getUi().alert(message);
+}`
 
 /**
  * 同步 SHEET 資料到資料庫
