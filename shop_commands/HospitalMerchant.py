@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 from typing import Optional
+from db_adapter import get_user, set_user_field, get_all_users
 
 load_dotenv()
 
@@ -281,18 +282,15 @@ class HospitalMerchant(commands.Cog):
                 return
             
             # 檢查用戶金錢和狀態
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            user_data = get_user(user_id)
             
-            cursor.execute("SELECT kkcoin, stamina, is_stunned FROM users WHERE user_id = ?", (user_id,))
-            result = cursor.fetchone()
-            
-            if not result:
+            if not user_data:
                 await interaction.followup.send("❌ 無法找到你的資料！", ephemeral=True)
-                conn.close()
                 return
             
-            kkcoin, current_stamina, is_stunned = result
+            kkcoin = user_data.get('kkcoin', 0)
+            current_stamina = user_data.get('stamina', 0)
+            is_stunned = user_data.get('is_stunned', 0)
             price = product['price']
             stamina_gain = product['stamina']
             
@@ -306,7 +304,6 @@ class HospitalMerchant(commands.Cog):
                     f"差額: {deficit} KKCoin",
                     ephemeral=True
                 )
-                conn.close()
                 return
             
             # 執行購買
@@ -314,21 +311,20 @@ class HospitalMerchant(commands.Cog):
             new_kkcoin = kkcoin - price
             new_is_stunned = 0 if new_stamina >= 100 else is_stunned
             
-            # 更新資料庫
-            cursor.execute('''
-                UPDATE users 
-                SET kkcoin = ?, stamina = ?, is_stunned = ?
-                WHERE user_id = ?
-            ''', (new_kkcoin, new_stamina, new_is_stunned, user_id))
+            # 更新資料庫用戶表
+            set_user_field(user_id, 'kkcoin', new_kkcoin)
+            set_user_field(user_id, 'stamina', new_stamina)
+            set_user_field(user_id, 'is_stunned', new_is_stunned)
             
             # 記錄交易
             current_time = int(datetime.now().timestamp())
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO merchant_transactions 
                 (user_id, product_type, cost, stamina_gained, transaction_time)
                 VALUES (?, ?, ?, ?, ?)
             ''', (user_id, product_type, price, stamina_gain, current_time))
-            
             conn.commit()
             conn.close()
             
@@ -383,17 +379,7 @@ class HospitalMerchant(commands.Cog):
                 await member.add_roles(member_role, reason="體力完全恢復，恢復正式成員身分")
             
             # 恢復紙娃娃狀態 (hp 和 stamina 已在資料庫更新為 100)
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                UPDATE users 
-                SET is_stunned = 0
-                WHERE user_id = ?
-            ''', (user_id,))
-            
-            conn.commit()
-            conn.close()
+            set_user_field(user_id, 'is_stunned', 0)
             
             # 發送出院通知（僅個人可見）
             recovery_embed = discord.Embed(
@@ -502,11 +488,7 @@ class HospitalMerchant(commands.Cog):
             if member_role and member_role not in member.roles:
                 await member.add_roles(member_role, reason="體力完全恢復")
             
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("UPDATE users SET is_stunned = 0 WHERE user_id = ?", (user_id,))
-            conn.commit()
-            conn.close()
+            set_user_field(user_id, 'is_stunned', 0)
             
             # 發送自然恢復通知（僅個人可見）
             channel = self.bot.get_channel(self.hospital_channel_id)
@@ -531,17 +513,10 @@ class HospitalMerchant(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                SELECT user_id, hp, stamina, injury_recovery_time 
-                FROM users 
-                WHERE is_stunned = 1
-            ''')
-            
-            injured_users = cursor.fetchall()
-            conn.close()
+            # 從 db_adapter 獲取所有用戶並過濾傷病用戶
+            all_users = get_all_users()
+            injured_users = [(u['user_id'], u.get('hp', 0), u.get('stamina', 0), u.get('injury_recovery_time', 0)) 
+                             for u in all_users if u.get('is_stunned', 0) == 1]
             
             if not injured_users:
                 await interaction.followup.send("✅ 醫院目前沒有傷病患者")

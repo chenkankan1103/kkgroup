@@ -373,16 +373,21 @@ class KKCoin(commands.Cog):
             
         guild = channel.guild
         
-        with sqlite3.connect(DB_FILE) as conn:
-            conn.row_factory = sqlite3.Row
-            members_data = []
-            users = conn.execute("SELECT user_id, kkcoin FROM users WHERE kkcoin > 0 ORDER BY kkcoin DESC LIMIT 20").fetchall()
-            
-            for row in users:
-                member = guild.get_member(int(row["user_id"]))
-                if member:
-                    members_data.append((member, row["kkcoin"]))
-            
+        from db_adapter import get_all_users
+        
+        members_data = []
+        all_users = get_all_users()
+        
+        # 篩選 kkcoin > 0，排序，取前 20
+        users = [u for u in all_users if u.get('kkcoin', 0) > 0]
+        users.sort(key=lambda x: x.get('kkcoin', 0), reverse=True)
+        users = users[:20]
+        
+        for user in users:
+            member = guild.get_member(int(user["user_id"]))
+            if member:
+                members_data.append((member, user["kkcoin"]))
+        
         return members_data
 
     def has_data_changed(self, new_data):

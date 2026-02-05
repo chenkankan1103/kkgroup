@@ -99,68 +99,28 @@ class Ai(commands.Cog):
     def steal_user_items(self, user_id: int) -> dict:
         """偷取使用者財物 - 包含 KKCoin 和物品"""
         try:
-            conn = sqlite3.connect('user_data.db')
-            cursor = conn.cursor()
-            
-            # 獲取當前資料 - 確保欄位存在
-            cursor.execute("PRAGMA table_info(users)")
-            columns = [column[1] for column in cursor.fetchall()]
-            
-            # 檢查必要欄位是否存在
-            has_kkcoin = 'kkcoin' in columns
-            has_inventory = 'inventory' in columns
-            
-            if not has_kkcoin and not has_inventory:
-                conn.close()
-                logger.warning(f"使用者 {user_id} 沒有 kkcoin 或 inventory 欄位")
-                return {}
-            
-            # 構建查詢語句
-            select_fields = []
-            if has_kkcoin:
-                select_fields.append('kkcoin')
-            if has_inventory:
-                select_fields.append('inventory')
-            
-            if not select_fields:
-                conn.close()
-                return {}
-            
-            query = f"SELECT {', '.join(select_fields)} FROM users WHERE user_id = ?"
-            cursor.execute(query, (user_id,))
-            result = cursor.fetchone()
-            
-            if not result:
-                conn.close()
+            # 使用新的 DB 適配層
+            user_data = get_user(user_id)
+            if not user_data:
                 logger.warning(f"找不到使用者 {user_id} 的資料")
                 return {}
             
-            # 解析資料
-            current_coins = 0
+            # 獲取當前資料
+            current_coins = user_data.get('kkcoin', 0)
+            inventory_raw = user_data.get('inventory', [])
+            
+            # 安全解析 inventory
             inventory = []
-            
-            if has_kkcoin and has_inventory:
-                current_coins, inventory_str = result
-            elif has_kkcoin:
-                current_coins = result[0]
-                inventory_str = None
-            elif has_inventory:
-                current_coins = 0
-                inventory_str = result[0]
-            else:
-                inventory_str = None
-            
-            # 安全解析 inventory JSON
-            if inventory_str:
+            if inventory_raw:
                 try:
-                    if isinstance(inventory_str, str):
-                        inventory = json.loads(inventory_str)
-                    elif isinstance(inventory_str, list):
-                        inventory = inventory_str
+                    if isinstance(inventory_raw, str):
+                        inventory = json.loads(inventory_raw)
+                    elif isinstance(inventory_raw, list):
+                        inventory = inventory_raw
                     else:
                         inventory = []
                 except (json.JSONDecodeError, TypeError) as e:
-                    logger.warning(f"使用者 {user_id} inventory JSON 解析失敗: {e}, 原始資料: {inventory_str}")
+                    logger.warning(f"使用者 {user_id} inventory JSON 解析失敗: {e}, 原始資料: {inventory_raw}")
                     inventory = []
             
             # 確保 inventory 是列表
@@ -171,7 +131,7 @@ class Ai(commands.Cog):
             stolen_coins = 0
             
             # 偷取 KKCoin (5-10%)
-            if has_kkcoin and current_coins > 0:
+            if current_coins > 0:
                 try:
                     steal_percentage = random.uniform(0.05, 0.1)
                     stolen_coins = max(1, int(current_coins * steal_percentage))  # 至少偷 1 個
@@ -184,7 +144,7 @@ class Ai(commands.Cog):
                 new_coins = current_coins
             
             # 偷取物品 (隨機0-2個，避免空列表錯誤)
-            if has_inventory and inventory and len(inventory) > 0:
+            if inventory and len(inventory) > 0:
                 try:
                     # 過濾掉空值和無效項目
                     valid_inventory = [item for item in inventory if item and str(item).strip()]
@@ -201,30 +161,15 @@ class Ai(commands.Cog):
                     logger.warning(f"偷取物品錯誤: {e}")
                     stolen_items = []
             
-            # 更新資料庫 - 只更新存在的欄位
-            update_fields = []
-            update_values = []
+            # 更新資料庫
+            try:
+                inventory_json = json.dumps(inventory, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"序列化 inventory 失敗: {e}")
+                inventory_json = json.dumps([])
             
-            if has_kkcoin:
-                update_fields.append("kkcoin = ?")
-                update_values.append(new_coins)
-            
-            if has_inventory:
-                update_fields.append("inventory = ?")
-                try:
-                    inventory_json = json.dumps(inventory, ensure_ascii=False)
-                    update_values.append(inventory_json)
-                except Exception as e:
-                    logger.warning(f"序列化 inventory 失敗: {e}")
-                    update_values.append(json.dumps([]))
-            
-            if update_fields:
-                update_query = f"UPDATE users SET {', '.join(update_fields)} WHERE user_id = ?"
-                update_values.append(user_id)
-                cursor.execute(update_query, tuple(update_values))
-                conn.commit()
-            
-            conn.close()
+            set_user_field(user_id, 'kkcoin', new_coins)
+            set_user_field(user_id, 'inventory', inventory_json)
             
             result = {
                 'stolen_coins': stolen_coins,
@@ -236,11 +181,8 @@ class Ai(commands.Cog):
             logger.info(f"偷取完成 - 使用者: {user_id}, 偷取金幣: {stolen_coins}, 偷取物品: {len(stolen_items)}個")
             return result
             
-        except sqlite3.Error as e:
-            logger.error(f"偷取物品資料庫錯誤: {e}")
-            return {}
         except Exception as e:
-            logger.error(f"偷取物品未知錯誤: {e}")
+            logger.error(f"偷取物品錯誤: {e}")
             return {}
 
     async def generate_punishment_character_image(self, user_data: dict, is_stunned: bool = True) -> Optional[str]:
@@ -816,7 +758,6 @@ class Ai(commands.Cog):
             
             # 恢復正常狀態
             try:
-                conn = sqlite3.connect('user_data.db')
                 set_user_field(member.id, 'is_stunned', 0)
             except Exception as e:
                 logger.error(f"恢復使用者狀態錯誤: {e}")

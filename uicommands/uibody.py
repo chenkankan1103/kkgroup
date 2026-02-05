@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import sqlite3
 import json
 import os
 import aiohttp
@@ -13,7 +12,7 @@ from PIL import Image
 import time
 import hashlib
 from pathlib import Path
-from db_adapter import get_user, set_user_field, get_user_field
+from db_adapter import get_user, set_user_field, get_user_field, get_all_users
 import datetime
 
 load_dotenv()
@@ -395,23 +394,9 @@ class UserPanel(commands.Cog):
     def init_database(self):
         """Initialize database - only image_cache table needed (users managed by db_adapter)"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Only create image_cache table (local cache)
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='image_cache'")
-            if not cursor.fetchone():
-                cursor.execute('''
-                    CREATE TABLE image_cache (
-                        cache_key TEXT PRIMARY KEY,
-                        discord_url TEXT NOT NULL,
-                        created_at INTEGER NOT NULL,
-                        message_id INTEGER
-                    )
-                ''')
-            
-            conn.commit()
-            conn.close()
+            # Initialize in-memory image cache (replaces SQLite table)
+            if not hasattr(self, 'image_cache'):
+                self.image_cache = {}
             
         except Exception:
             pass
@@ -428,35 +413,29 @@ class UserPanel(commands.Cog):
 
     def get_cached_discord_url(self, cache_key: str) -> Optional[str]:
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
+            # Clean up expired cache entries
             thirty_days_ago = int(time.time()) - (30 * 24 * 60 * 60)
-            cursor.execute("DELETE FROM image_cache WHERE created_at < ?", (thirty_days_ago,))
-            cursor.execute("SELECT discord_url FROM image_cache WHERE cache_key = ?", (cache_key,))
-            result = cursor.fetchone()
+            expired_keys = [key for key, data in self.image_cache.items() 
+                           if data.get('created_at', 0) < thirty_days_ago]
+            for key in expired_keys:
+                del self.image_cache[key]
             
-            conn.commit()
-            conn.close()
-            return result[0] if result else None
+            # Retrieve cached URL
+            if cache_key in self.image_cache:
+                return self.image_cache[cache_key].get('discord_url')
+            return None
             
         except Exception:
             return None
 
     def save_discord_url_cache(self, cache_key: str, discord_url: str, message_id: int = None):
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
             current_time = int(time.time())
-            cursor.execute('''
-                INSERT OR REPLACE INTO image_cache 
-                (cache_key, discord_url, created_at, message_id) 
-                VALUES (?, ?, ?, ?)
-            ''', (cache_key, discord_url, current_time, message_id))
-            
-            conn.commit()
-            conn.close()
+            self.image_cache[cache_key] = {
+                'discord_url': discord_url,
+                'created_at': current_time,
+                'message_id': message_id
+            }
             
         except Exception:
             pass
@@ -568,16 +547,21 @@ class UserPanel(commands.Cog):
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
                 return
 
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT user_id, thread_id, kkcoin, xp, level, 
-                       last_kkcoin_snapshot, last_xp_snapshot, last_level_snapshot 
-                FROM users WHERE thread_id != 0
-            ''')
-            users_data = cursor.fetchall()
+            # Use db_adapter to get all users with thread
+            all_users = get_all_users()
             
-            for user_id, thread_id, current_kkcoin, current_xp, current_level, last_kkcoin, last_xp, last_level in users_data:
+            for user_data in all_users:
+                user_id = user_data.get('user_id')
+                thread_id = user_data.get('thread_id', 0)
+                current_kkcoin = user_data.get('kkcoin', 0)
+                current_xp = user_data.get('xp', 0)
+                current_level = user_data.get('level', 1)
+                last_kkcoin = user_data.get('last_kkcoin_snapshot', 0)
+                last_xp = user_data.get('last_xp_snapshot', 0)
+                last_level = user_data.get('last_level_snapshot', 1)
+                
+                if not thread_id or thread_id == 0:
+                    continue
                 try:
                     thread = forum_channel.get_thread(thread_id)
                     member = forum_channel.guild.get_member(user_id)
@@ -817,14 +801,12 @@ class UserPanel(commands.Cog):
             if not permissions.send_messages or not permissions.create_public_threads:
                 return
             
-            # 獲取資料庫中的所有使用者
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('SELECT user_id, thread_id FROM users')
-            all_users = cursor.fetchall()
-            conn.close()
+            # Get all users using db_adapter
+            all_users = get_all_users()
             
-            for user_id, thread_id in all_users:
+            for user_data in all_users:
+                user_id = user_data.get('user_id')
+                thread_id = user_data.get('thread_id', 0)
                 try:
                     member = guild.get_member(user_id)
                     if not member:
@@ -868,31 +850,31 @@ class UserPanel(commands.Cog):
 
     def get_user_data(self, user_id: int) -> Optional[dict]:
         try:
-            # 先確保使用者存在
-            if not self.ensure_user_exists(user_id):
+            # Use db_adapter to get user data
+            user = get_user(user_id)
+            if not user:
                 return None
-                
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT user_id, level, xp, kkcoin, title, hp, stamina, 
-                inventory, character_config, face, hair, skin, 
-                top, bottom, shoes, is_stunned, gender, thread_id
-                FROM users WHERE user_id = ?
-            """, (user_id,))
-            row = cursor.fetchone()
-            conn.close()
             
-            if row:
-                return {
-                    'user_id': row[0], 'level': row[1], 'xp': row[2], 'kkcoin': row[3],
-                    'title': row[4], 'hp': row[5], 'stamina': row[6], 'inventory': row[7],
-                    'character_config': row[8], 'face': row[9] or 20000, 'hair': row[10] or 30000,
-                    'skin': row[11] or 12000, 'top': row[12] or 1040010, 'bottom': row[13] or 1060096,
-                    'shoes': row[14] or 1072288, 'is_stunned': row[15] or 0, 'gender': row[16] or 'male',
-                    'thread_id': row[17] or 0
-                }
-            return None
+            return {
+                'user_id': user.get('user_id') or user_id,
+                'level': user.get('level', 1),
+                'xp': user.get('xp', 0),
+                'kkcoin': user.get('kkcoin', 0),
+                'title': user.get('title', '新手'),
+                'hp': user.get('hp', 100),
+                'stamina': user.get('stamina', 100),
+                'inventory': user.get('inventory', '{}'),
+                'character_config': user.get('character_config', '{}'),
+                'face': user.get('face', 20000),
+                'hair': user.get('hair', 30000),
+                'skin': user.get('skin', 12000),
+                'top': user.get('top', 1040010),
+                'bottom': user.get('bottom', 1060096),
+                'shoes': user.get('shoes', 1072288),
+                'is_stunned': user.get('is_stunned', 0),
+                'gender': user.get('gender', 'male'),
+                'thread_id': user.get('thread_id', 0)
+            }
         except Exception:
             return None
 
