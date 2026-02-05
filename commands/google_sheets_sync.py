@@ -29,11 +29,12 @@ class GoogleSheetsSync(commands.Cog):
         self.last_sheet_hash = None
         self._initialized = False
         self.sync_manager = SheetSyncManager('user_data.db')  # ✅ 使用新的管理器
-        # ⚠️ 不在 __init__ 中進行同步操作，改用 before_loop
-        if not self.auto_sync_loop.is_running():
-            self.auto_sync_loop.start()
-        if not self.auto_export_loop.is_running():
-            self.auto_export_loop.start()
+        # ⚠️ 已停用自動同步循環，改由 Flask API + Google Apps Script 方案統一管理
+        # ❌ 停用自動同步，讓 Apps Script 全權負責同步管理
+        # if not self.auto_sync_loop.is_running():
+        #     self.auto_sync_loop.start()
+        # if not self.auto_export_loop.is_running():
+        #     self.auto_export_loop.start()
     
     def _init_gspread(self):
         """初始化 Google Sheets 連接（同步版本，用於非異步上下文）"""

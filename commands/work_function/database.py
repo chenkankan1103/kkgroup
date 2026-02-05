@@ -1,118 +1,124 @@
-import sqlite3
+"""
+Work 系統數據庫適配層 - 使用新的 Sheet-Driven DB
+
+該模塊提供了工作系統所需的所有數據庫操作，
+使用新的 db_adapter (基於 Sheet-Driven DB 引擎)
+"""
+
 import os
 import traceback
-import discord
-from discord.ext import commands
+from typing import Dict, Any, Optional
+
+# 匯入統一的數據庫適配層
+from db_adapter import (
+    get_user as db_get_user,
+    set_user,
+    get_user_field,
+    set_user_field,
+    add_user_field,
+    delete_user as db_delete_user,
+    get_all_users as db_get_all_users,
+)
 
 DB_PATH = os.getenv("DB_PATH", "user_data.db")
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            kkcoin INTEGER DEFAULT 0,
-            xp INTEGER DEFAULT 0,
-            last_checkin TEXT DEFAULT NULL
-        )
-    """)
-    conn.commit()
-    
-    cursor.execute("PRAGMA table_info(users)")
-    existing_columns = [col[1] for col in cursor.fetchall()]
-    
-    if "streak" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN streak INTEGER DEFAULT 0")
-    if "level" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN level INTEGER DEFAULT 1")
-    if "title" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN title TEXT DEFAULT '車手'")
-    if "last_work_date" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN last_work_date TEXT DEFAULT NULL")
-    if "last_action_date" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN last_action_date TEXT DEFAULT NULL")
-    if "actions_used" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN actions_used TEXT DEFAULT '{}'")
-    if "is_locked" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN is_locked INTEGER DEFAULT 0")
-    
-    conn.commit()
-    conn.close()
 
-def get_user(user_id):
+def init_db():
+    """
+    初始化數據庫 (已遷移到 Sheet-Driven 系統)
+    
+    Schema 現在從 SHEET Row 1 自動讀取，無需手動管理
+    """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE user_id = ?", (str(user_id),))
-        user = c.fetchone()
+        from db_adapter import get_db
+        db = get_db()
+        stats = db.get_stats()
+        print(f"✅ 數據庫已就緒: {stats['total_users']} 個用戶，{stats['total_columns']} 個欄位")
+        return True
+    except Exception as e:
+        print(f"❌ 數據庫初始化失敗: {e}")
+        traceback.print_exc()
+        return False
+
+
+def get_user(user_id) -> Optional[Dict[str, Any]]:
+    """
+    獲取用戶完整資料
+    
+    Args:
+        user_id: 用戶 ID
+        
+    Returns:
+        用戶資料字典，或 None
+    """
+    try:
+        user = db_get_user(user_id)
+        
         if not user:
-            c.execute("INSERT INTO users (user_id) VALUES (?)", (str(user_id),))
-            conn.commit()
-            c.execute("SELECT * FROM users WHERE user_id = ?", (str(user_id),))
-            user = c.fetchone()
-        conn.close()
-        return dict(user) if user else None
+            # 新用戶，自動建立
+            set_user(user_id, {'user_id': int(user_id)})
+            user = db_get_user(user_id)
+        
+        return user
     except Exception as e:
         traceback.print_exc()
         return None
 
+
 def get_all_users():
     """取得所有用戶資料（用於重建持久化 View）"""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM users")
-        users = [dict(row) for row in cursor.fetchall()]
-        
-        conn.close()
-        return users
+        return db_get_all_users()
     except Exception as e:
         traceback.print_exc()
         return []
 
+
 def update_user(user_id, **kwargs):
+    """
+    更新用戶多個欄位
+    
+    示例:
+        update_user(user_id, xp=100, level=5, title='武士')
+    """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        for key, value in kwargs.items():
-            c.execute(f"UPDATE users SET {key} = ? WHERE user_id = ?", (value, str(user_id)))
-        conn.commit()
-        conn.close()
+        if kwargs:
+            set_user(user_id, kwargs)
+        return True
     except Exception as e:
         traceback.print_exc()
+        return False
+
 
 def delete_user(user_id):
+    """刪除用戶"""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM users WHERE user_id = ?", (str(user_id),))
-        conn.commit()
-        conn.close()
+        return db_delete_user(user_id)
     except Exception as e:
         traceback.print_exc()
+        return False
+
 
 def reset_user(user_id):
+    """
+    重置用戶資料（重置為初始狀態）
+    """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('''UPDATE users SET
-                        level = 1,
-                        xp = 0,
-                        kkcoin = 0,
-                        last_work_date = NULL,
-                        streak = 0,
-                        is_locked = 0,
-                        actions_used = '{}'
-                     WHERE user_id = ?''', (str(user_id),))
-        conn.commit()
-        conn.close()
+        reset_data = {
+            'level': 1,
+            'xp': 0,
+            'kkcoin': 0,
+            'last_work_date': None,
+            'streak': 0,
+            'is_locked': 0,
+            'actions_used': '{}',
+            'hp': 100,
+            'stamina': 100,
+        }
+        return set_user(user_id, reset_data)
     except Exception as e:
         traceback.print_exc()
+        return False
 
 class DatabaseCog(commands.Cog):
     def __init__(self, bot):
