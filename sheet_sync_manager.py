@@ -159,7 +159,7 @@ class SheetSyncManager:
         流程：
         1. 自動偵測 user_id 欄位 (如果尚未識別)
         2. 逐行處理，跳過無效 user_id 和虛擬帳號
-        3. 使用 DB 引擎的類型轉換
+        3. 使用 DB 引擎的類型轉換（重要！）
         """
         records = []
         
@@ -181,31 +181,34 @@ class SheetSyncManager:
                 if not any(row_values):
                     continue
                 
-                # 構建記錄字典
+                # 構建記錄字典（使用類型轉換！）
                 record = {}
                 for col_idx, header in enumerate(headers):
                     if col_idx < len(row_values):
                         value = row_values[col_idx]
-                        record[header] = value
+                        # ✅ 關鍵：使用 DB 引擎的類型轉換
+                        record[header] = self.db._convert_value(header, value)
                 
                 # 驗證 user_id
                 user_id_val = record.get('user_id')
-                if not user_id_val or str(user_id_val).strip() == '':
+                if user_id_val is None:
                     continue
                 
-                # 轉換 user_id 為整數
-                try:
-                    user_id = int(float(str(user_id_val)))
-                    record['user_id'] = user_id
-                except:
-                    continue
+                # user_id 應該已經被轉換為整數
+                if not isinstance(user_id_val, int):
+                    try:
+                        user_id = int(float(str(user_id_val)))
+                        record['user_id'] = user_id
+                    except:
+                        continue
                 
                 # 跳過虛擬帳號 (nickname 為 Unknown_*)
                 nickname = record.get('nickname', '')
-                if str(nickname).startswith('Unknown_'):
+                if nickname and str(nickname).startswith('Unknown_'):
                     print(f"⏭️ 行 {row_idx} 跳過虛擬帳號: {nickname}")
                     continue
                 
+                print(f"   ✓ 行 {row_idx}: user_id={record['user_id']}, nickname={nickname}")
                 records.append(record)
             
             except Exception as e:
