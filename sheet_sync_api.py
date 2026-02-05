@@ -13,6 +13,8 @@ import json
 import sys
 import os
 from datetime import datetime
+import traceback
+import logging
 
 # 匯入同步管理器和 DB 引擎
 from sheet_sync_manager import SheetSyncManager
@@ -20,9 +22,48 @@ from sheet_driven_db import SheetDrivenDB
 
 app = Flask(__name__)
 
+# 設置日誌
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 # 初始化同步管理器和 DB 引擎
 sync_manager = SheetSyncManager('user_data.db')
 db = SheetDrivenDB('user_data.db')
+
+# ============================================================
+# 全局錯誤處理器
+# ============================================================
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """捕捉所有未處理的異常，返回 JSON"""
+    logger.error(f"❌ 未捕捉的異常: {e}")
+    logger.error(traceback.format_exc())
+    
+    return jsonify({
+        "status": "error",
+        "message": f"服務器內部錯誤: {str(e)}",
+        "error_type": type(e).__name__,
+        "timestamp": datetime.now().isoformat()
+    }), 500
+
+@app.errorhandler(400)
+def handle_bad_request(e):
+    """處理 400 錯誤"""
+    return jsonify({
+        "status": "error",
+        "message": f"請求格式錯誤: {str(e)}",
+        "timestamp": datetime.now().isoformat()
+    }), 400
+
+@app.errorhandler(404)
+def handle_not_found(e):
+    """處理 404 錯誤"""
+    return jsonify({
+        "status": "error",
+        "message": f"端點不存在: {request.path}",
+        "timestamp": datetime.now().isoformat()
+    }), 404
 
 # ============================================================
 # API 端點
@@ -56,16 +97,29 @@ def api_sync_sheet():
     }
     """
     try:
-        data = request.get_json()
+        logger.info("📥 [API 同步請求] 開始處理")
+        
+        # 安全地取得 JSON
+        try:
+            data = request.get_json(force=True, silent=False)
+        except Exception as json_err:
+            logger.error(f"❌ JSON 解析失敗: {json_err}")
+            return jsonify({
+                "status": "error",
+                "message": f"請求體不是有效的 JSON: {str(json_err)}",
+                "timestamp": datetime.now().isoformat()
+            }), 400
         
         if not data:
             return jsonify({
                 "status": "error",
-                "message": "請求體為空或不是有效的 JSON"
+                "message": "請求體為空"
             }), 400
         
         headers = data.get('headers', [])
         rows = data.get('rows', [])
+        
+        logger.info(f"📋 表頭: {len(headers)} 列, 數據: {len(rows)} 筆")
         
         print(f"\n{'='*60}")
         print(f"📥 [API 同步請求] 時間: {datetime.now().strftime('%H:%M:%S')}")
@@ -80,6 +134,7 @@ def api_sync_sheet():
             }), 400
         
         if not rows:
+            logger.info("⚠️ 沒有資料行要同步")
             return jsonify({
                 "status": "success",
                 "message": "沒有資料行要同步",
@@ -94,15 +149,31 @@ def api_sync_sheet():
         # 1. 確保 DB schema（自動新增缺失的欄位）
         print(f"\n🔧 確保 DB schema...")
         sync_manager.ensure_db_schema(headers)
+        logger.info("✅ DB schema 已確保")
         
         # 2. 解析記錄
         print(f"\n📝 解析記錄...")
         records = sync_manager.parse_records(headers, rows)
+        logger.info(f"✅ 解析完成: {len(records)} 筆有效記錄")
         print(f"✅ 解析完成: {len(records)} 筆有效記錄")
+        
+        if len(records) == 0:
+            logger.warning("⚠️ 沒有有效的記錄（所有記錄都被過濾）")
+            return jsonify({
+                "status": "success",
+                "message": "沒有有效的記錄",
+                "stats": {
+                    "updated": 0,
+                    "inserted": 0,
+                    "errors": 0,
+                    "total_parsed": 0
+                }
+            }), 200
         
         # 3. 同步到 DB
         print(f"\n📤 同步到 DB...")
         updated, inserted, errors = sync_manager.sync_records(records)
+        logger.info(f"✅ 同步完成: 更新 {updated}, 新增 {inserted}, 錯誤 {errors}")
         
         result = {
             "status": "success",
@@ -112,7 +183,8 @@ def api_sync_sheet():
                 "inserted": inserted,
                 "errors": errors,
                 "total_parsed": len(records)
-            }
+            },
+            "timestamp": datetime.now().isoformat()
         }
         
         print(f"\n✅ API 同步完成")
@@ -121,20 +193,23 @@ def api_sync_sheet():
         return jsonify(result), 200
     
     except Exception as e:
+        logger.error(f"❌ API 同步失敗: {e}")
+        logger.error(traceback.format_exc())
         print(f"\n❌ API 同步失敗: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"{traceback.format_exc()}")
         print(f"{'='*60}\n")
         
         return jsonify({
             "status": "error",
             "message": f"同步失敗: {str(e)}",
+            "error_type": type(e).__name__,
             "stats": {
                 "updated": 0,
                 "inserted": 0,
                 "errors": 1,
                 "total_parsed": 0
-            }
+            },
+            "timestamp": datetime.now().isoformat()
         }), 500
 
 
