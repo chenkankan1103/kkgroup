@@ -203,6 +203,7 @@ def api_sync_sheet():
                 "duplicates": sync_stats.get('duplicates', 0),
                 "total_parsed": len(records)
             },
+            "error_details": sync_stats.get('error_details', [])[:20],  # 只返回前 20 個錯誤
             "timestamp": datetime.now().isoformat()
         }
         
