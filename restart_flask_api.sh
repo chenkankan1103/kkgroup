@@ -46,14 +46,32 @@ timeout 5 python3 test_flask_simple.py 2>&1 || true
 
 echo ""
 
-# 6. 直接啟動 gunicorn（前景運行，便於查看日誌）
+# 6. 啟動 gunicorn（使用虛擬環境中的 gunicorn）
 echo "6️⃣ 啟動 gunicorn..."
 echo ""
-echo "   命令: gunicorn -w 4 -b 0.0.0.0:5000 --timeout 120 sheet_sync_api:app"
+
+# 確保虛擬環境存在
+if [ -f "venv/bin/gunicorn" ]; then
+    GUNICORN="./venv/bin/gunicorn"
+    echo "   使用虛擬環境 gunicorn: $GUNICORN"
+elif [ -f "venv/bin/python" ]; then
+    # 如果找不到 gunicorn，使用 python -m gunicorn
+    GUNICORN="./venv/bin/python -m gunicorn"
+    echo "   使用 python -m gunicorn"
+else
+    echo "❌ 虛擬環境不存在！"
+    echo "   請在項目根目錄中創建虛擬環境："
+    echo "   python3 -m venv venv"
+    echo "   source venv/bin/activate"
+    echo "   pip install flask gspread oauth2client gunicorn"
+    exit 1
+fi
+
+echo "   命令: $GUNICORN -w 4 -b 0.0.0.0:5000 --timeout 120 sheet_sync_api:app"
 echo ""
 
-# 使用 nohup 在後台運行，並保存日誌
-nohup gunicorn -w 4 -b 0.0.0.0:5000 --timeout 120 --access-logfile - --error-logfile - sheet_sync_api:app > gunicorn.log 2>&1 &
+# 使用虛擬環境中的 gunicorn 或 python -m gunicorn
+nohup $GUNICORN -w 4 -b 0.0.0.0:5000 --timeout 120 --access-logfile - --error-logfile - sheet_sync_api:app > gunicorn.log 2>&1 &
 GUNICORN_PID=$!
 echo "✅ gunicorn 已啟動 (PID: $GUNICORN_PID)"
 
@@ -89,12 +107,24 @@ echo ""
 
 # 9. 檯面顯示狀態
 echo "9️⃣ 最終狀態檢查..."
-echo "   gunicorn 進程︰"
-ps aux | grep gunicorn | grep -v grep
+echo "   gunicorn/Python 進程︰"
+ps aux | grep -E "gunicorn|python.*sheet_sync" | grep -v grep || echo "   (未找到進程)"
 
 echo ""
 echo "   監聽端口︰"
-lsof -i :5000 || echo "   (沒有進程監聽 5000 端口)"
+# 使用 ss 而不是 lsof（lsof 可能不可用）
+if command -v ss &> /dev/null; then
+    ss -tlnp 2>/dev/null | grep 5000 || echo "   (沒有進程監聽 5000 端口)"
+elif command -v netstat &> /dev/null; then
+    netstat -tlnp 2>/dev/null | grep 5000 || echo "   (沒有進程監聽 5000 端口)"
+else
+    # 最後的備選方案：直接檢查 /proc
+    if [ -f "/proc/net/tcp" ]; then
+        awk '$2 ~ /:1388$/ {next} NR>1 {print}' /proc/net/tcp | awk '$2 ~ /:1388$/ || $2 ~ /:07d0$/ {print "   監聽在 5000 端口"}' || echo "   (無法檢查端口)"
+    else
+        echo "   (無法檢查端口)"
+    fi
+fi
 
 echo ""
 echo "======================================"
