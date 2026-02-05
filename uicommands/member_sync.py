@@ -1,9 +1,6 @@
 import discord
 from discord.ext import commands
-import sqlite3
-import os
-
-DB_PATH = "user_data.db"
+from db_adapter import set_user, delete_user, get_user
 
 class MemberSync(commands.Cog):
     def __init__(self, bot):
@@ -11,22 +8,17 @@ class MemberSync(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM users WHERE user_id = ?", (str(member.id),))
-        if not c.fetchone():
-            c.execute('''INSERT INTO users (user_id) VALUES (?)''', (str(member.id),))
-            conn.commit()
-        conn.close()
-        print(f"✅ 已新增用戶 {member} 到資料庫")
+        # 檢查用戶是否已存在，不存在則創建
+        existing_user = get_user(member.id)
+        if not existing_user:
+            set_user(member.id, {'user_id': member.id})
+            print(f"✅ 已新增用戶 {member} 到資料庫")
+        else:
+            print(f"ℹ️ 用戶 {member} 已存在於資料庫中")
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM users WHERE user_id = ?", (str(member.id),))
-        conn.commit()
-        conn.close()
+        delete_user(member.id)
         print(f"❌ 已從資料庫刪除用戶 {member}")
 
 async def setup(bot):
