@@ -221,24 +221,35 @@ class SheetSyncManager:
         將記錄同步到 DB（支援去重）
         
         Returns:
-            {'inserted': n, 'updated': n, 'errors': n, 'total_parsed': n, 'duplicates': n}
+            {'inserted': n, 'updated': n, 'errors': n, 'total_parsed': n, 'duplicates': n, 'error_details': [...]}
         """
-        stats = {'inserted': 0, 'updated': 0, 'errors': 0, 'total_parsed': len(records), 'duplicates': 0}
+        stats = {
+            'inserted': 0, 
+            'updated': 0, 
+            'errors': 0, 
+            'total_parsed': len(records), 
+            'duplicates': 0,
+            'error_details': []  # 記錄每個錯誤的詳細信息
+        }
         seen_user_ids = set()  # 去重: 追蹤本次同步中的用戶 ID
         
         for i, record in enumerate(records, 1):
             try:
                 user_id = record.get('user_id')
                 if not user_id:
-                    print(f"⚠️ 記錄 {i}: user_id 為空")
+                    error_msg = f"用戶ID為空"
+                    print(f"⚠️ 記錄 {i}: {error_msg}")
                     stats['errors'] += 1
+                    stats['error_details'].append({'record': i, 'reason': error_msg})
                     continue
                 
                 try:
                     user_id = int(user_id)
-                except (ValueError, TypeError):
-                    print(f"❌ 記錄 {i}: user_id 無效 '{record.get('user_id')}'")
+                except (ValueError, TypeError) as e:
+                    error_msg = f"user_id 無效或無法轉換: '{record.get('user_id')}' ({str(e)})"
+                    print(f"❌ 記錄 {i}: {error_msg}")
                     stats['errors'] += 1
+                    stats['error_details'].append({'record': i, 'reason': error_msg})
                     continue
                 
                 # 檢查本次同步中的重複（去重）
@@ -264,13 +275,17 @@ class SheetSyncManager:
                 success = self.db.set_user(user_id, record)
                 
                 if not success:
-                    print(f"   ❌ 記錄 {i}: set_user 返回失敗！")
+                    error_msg = f"set_user 返回失敗"
+                    print(f"   ❌ 記錄 {i}: {error_msg}")
                     stats['errors'] += 1
-                    stats[action] -= 1  # 撤銷計數
+                    stats[action.lower()] -= 1  # 撤銷計數
+                    stats['error_details'].append({'record': i, 'user_id': user_id, 'reason': error_msg})
             
             except Exception as e:
+                error_msg = str(e)
                 stats['errors'] += 1
-                print(f"❌ 記錄 {i} 同步失敗: {e}")
+                print(f"❌ 記錄 {i} 同步失敗: {error_msg}")
+                stats['error_details'].append({'record': i, 'reason': error_msg})
                 import traceback
                 traceback.print_exc()
         
@@ -280,6 +295,14 @@ class SheetSyncManager:
         print(f"   更新: {stats['updated']} 個用戶")
         print(f"   重複: {stats['duplicates']} 行 (已移除)")
         print(f"   錯誤: {stats['errors']} 行")
+        
+        # 如果有錯誤，打印詳細信息
+        if stats['error_details']:
+            print(f"\n📋 錯誤詳情:")
+            for err in stats['error_details'][:10]:  # 只顯示前 10 個錯誤
+                print(f"   - 記錄 {err.get('record')}: {err['reason']}")
+            if len(stats['error_details']) > 10:
+                print(f"   ... 還有 {len(stats['error_details']) - 10} 個錯誤")
         
         return stats
     

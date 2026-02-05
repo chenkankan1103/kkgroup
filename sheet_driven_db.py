@@ -231,7 +231,11 @@ class SheetDrivenDB:
             conn.close()  # ✅ 關閉原連接，避免 ALTER TABLE 時的連接狀態問題
             
             # 🔑 第二步：確保所有列都存在（在獨立連接中）
-            self.ensure_columns(list(existing_data.keys()))
+            try:
+                self.ensure_columns(list(existing_data.keys()))
+            except Exception as col_err:
+                print(f"⚠️ 添加欄位失敗: {col_err}")
+                # 繼續執行，可能欄位已存在
             
             # 🔑 第三步：執行 INSERT OR REPLACE（在新連接中）
             conn = self._get_connection()
@@ -246,26 +250,38 @@ class SheetDrivenDB:
             values = [existing_data.get(col) for col in columns]
             
             # 轉換複雜類型為 JSON
+            converted_values = []
             for i, col in enumerate(columns):
-                if isinstance(values[i], (dict, list)):
-                    values[i] = json.dumps(values[i], ensure_ascii=False)
+                val = values[i]
+                if isinstance(val, (dict, list)):
+                    converted_values.append(json.dumps(val, ensure_ascii=False))
+                else:
+                    converted_values.append(val)
             
-            print(f"📝 執行 SQL: {sql}")
-            print(f"📊 值: {values[:3]}...")  # 只打印前 3 個值便於診斷
-            
-            cursor.execute(sql, values)
+            cursor.execute(sql, converted_values)
             conn.commit()
             
             # ✅ 驗證寫入
             cursor.execute(f"SELECT COUNT(*) FROM {self.table_name} WHERE user_id = ?", (user_id,))
             count = cursor.fetchone()[0]
-            print(f"✅ 寫入驗證: user_id {user_id} 現在有 {count} 筆記錄")
             
-            conn.close()
+            if count > 0:
+                print(f"✅ user_id {user_id} 成功寫入數據庫")
+                conn.close()
+                return True
+            else:
+                print(f"❌ user_id {user_id} 寫入驗證失敗（計數為 0）")
+                conn.close()
+                return False
             
-            return True
+        except sqlite3.IntegrityError as ie:
+            print(f"❌ 數據完整性錯誤 (user_id {user_id}): {ie}")
+            return False
+        except sqlite3.OperationalError as oe:
+            print(f"❌ 操作錯誤 (user_id {user_id}): {oe}")
+            return False
         except Exception as e:
-            print(f"❌ 更新用戶失敗: {e}")
+            print(f"❌ 未預期的錯誤 (user_id {user_id}): {e}")
             import traceback
             traceback.print_exc()
             return False

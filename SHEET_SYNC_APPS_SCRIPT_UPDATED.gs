@@ -134,7 +134,27 @@ function syncToDatabase() {
     // 4. 顯示結果
     if (result.status === 'success') {
       const stats = result.stats;
-      const message = `✅ 同步完成！\n\n更新: ${stats.updated} 筆\n新增: ${stats.inserted} 筆\n錯誤: ${stats.errors} 筆\n\n訊息: ${result.message}`;
+      
+      // 基本信息
+      let message = `✅ 同步完成！\n\n`;
+      message += `新增: ${stats.inserted} 筆\n`;
+      message += `更新: ${stats.updated} 筆\n`;
+      message += `重複: ${stats.duplicates || 0} 筆\n`;
+      message += `錯誤: ${stats.errors} 筆\n`;
+      
+      // 如果有錯誤，顯示詳細信息
+      if (stats.errors > 0 && result.error_details && result.error_details.length > 0) {
+        message += `\n🔍 錯誤詳情（前 5 筆）:\n`;
+        for (let i = 0; i < Math.min(5, result.error_details.length); i++) {
+          const err = result.error_details[i];
+          message += `  ❌ 記錄 ${err.record}: ${err.reason}\n`;
+        }
+        if (result.error_details.length > 5) {
+          message += `  ... 還有 ${result.error_details.length - 5} 個錯誤\n`;
+        }
+        message += `\n檢查 Google Sheet 中的資料格式\n`;
+      }
+      
       SpreadsheetApp.getUi().alert(message);
       Logger.log(`✅ ${message}`);
     } else {
