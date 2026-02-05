@@ -551,6 +551,11 @@ class SheetDrivenDB:
             for col, val in zip(db_headers, db_row):
                 row_dict[col] = val
             
+            # 🔄 欄位映射：確保 nickname 有值
+            # 如果 nickname 為空但 user_name 有值，用 user_name 填充 nickname
+            if (not row_dict.get('nickname') or row_dict.get('nickname') == '') and row_dict.get('user_name'):
+                row_dict['nickname'] = row_dict.get('user_name')
+            
             # 按 SHEET 的表頭順序重新排列
             row_list = []
             for header in headers_to_export:
