@@ -27,7 +27,8 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🔄 同步工具')
     .addItem('📤 同步到資料庫', 'syncToDatabase')
-    .addItem('📊 查看同步狀態', 'showSyncStatus')
+    .addItem('� 從資料庫同步', 'syncFromDatabase')
+    .addItem('�📊 查看同步狀態', 'showSyncStatus')
     .addItem('🧹 清理虛擬帳號', 'cleanVirtualAccounts')
     .addSeparator()
     .addItem('✅ 檢查 API 連接', 'checkAPIHealth')
@@ -216,6 +217,80 @@ function cleanVirtualAccounts() {
   
   } catch (error) {
     SpreadsheetApp.getUi().alert(`❌ 錯誤: ${error.toString()}`);
+  }
+}
+
+/**
+ * 從資料庫同步數據到 SHEET（反向同步）
+ * 
+ * 用途：將資料庫中的遊戲數據（如 KK幣、等級等變化）同步回 Google Sheet
+ */
+function syncFromDatabase() {
+  try {
+    Logger.log("⏳ 從資料庫同步數據...");
+    
+    // 1. 从 API 取得 DB 中的所有数据
+    Logger.log(`🌐 呼叫 API: GET ${API_ENDPOINT}/api/export`);
+    
+    const options = {
+      method: 'get',
+      muteHttpExceptions: true
+    };
+    
+    const response = UrlFetchApp.fetch(`${API_ENDPOINT}/api/export`, options);
+    const statusCode = response.getResponseCode();
+    const result = JSON.parse(response.getContentText());
+    
+    if (statusCode !== 200 || result.status !== 'success') {
+      Logger.log(`❌ API 錯誤: ${result.message}`);
+      SpreadsheetApp.getUi().alert(`❌ 同步失敗\n\n錯誤: ${result.message}`);
+      return;
+    }
+    
+    const headers = result.headers;
+    const rows = result.rows;
+    
+    Logger.log(`📥 取得資料: ${headers.length} 欄位, ${rows.length} 行`);
+    Logger.log(`📋 表頭: ${headers.join(', ')}`);
+    
+    // 2. 取得或創建「玩家資料」工作頁
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = spreadsheet.getSheetByName('玩家資料');
+    
+    if (!sheet) {
+      Logger.log("⚠️ 找不到「玩家資料」工作頁，創建新工作頁...");
+      sheet = spreadsheet.insertSheet('玩家資料');
+    }
+    
+    // 3. 清空現有數據（保留表頭）
+    if (sheet.getMaxRows() > 1) {
+      sheet.deleteRows(2, sheet.getMaxRows() - 1);
+    }
+    
+    // 4. 寫入 API 返回的數據
+    if (rows.length > 0) {
+      const allData = [headers, ...rows];
+      sheet.getRange(1, 1, allData.length, headers.length).setValues(allData);
+      Logger.log(`✅ 已寫入 ${rows.length} 行數據`);
+    } else {
+      // 只寫表頭
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      Logger.log("⚠️ 資料庫中沒有用戶數據");
+    }
+    
+    // 5. 顯示結果
+    const message = `✅ 同步完成！\n\n` +
+      `欄位: ${headers.length} 個\n` +
+      `玩家: ${rows.length} 個\n\n` +
+      `訊息: ${result.message}`;
+    
+    SpreadsheetApp.getUi().alert(message);
+    Logger.log(`✅ ${message}`);
+  
+  } catch (error) {
+    const message = `❌ 執行錯誤: ${error.toString()}\n\n請檢查 API 伺服器是否正常運行`;
+    SpreadsheetApp.getUi().alert(message);
+    Logger.log(`❌ ${message}`);
   }
 }
 

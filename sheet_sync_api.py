@@ -296,6 +296,70 @@ def api_clean_virtual():
         }), 500
 
 
+@app.route('/api/export', methods=['GET'])
+def api_export_db():
+    """
+    反向同步：將數據庫數據導出為 Google Sheets 格式
+    
+    用途：定期從 DB 導出數據，更新 Google Sheet 上的遊戲數據（如 KK幣、等級等變化）
+    
+    Returns:
+    {
+        "status": "success",
+        "headers": [...],
+        "rows": [...],
+        "stats": {
+            "total_rows": int,
+            "exported_at": timestamp
+        }
+    }
+    """
+    try:
+        logger.info("📤 [DB 導出] 開始導出數據庫...")
+        
+        print(f"\n{'='*60}")
+        print(f"📤 [DB 導出] 時間: {datetime.now().strftime('%H:%M:%S')}")
+        print(f"{'='*60}")
+        
+        # 取得所有用戶數據（按 user_id 排序）
+        db = get_db()
+        headers, rows = db.export_to_sheet_format()
+        
+        logger.info(f"✅ 導出完成: {len(headers)} 欄位, {len(rows)} 行資料")
+        
+        print(f"✅ 導出完成:")
+        print(f"   表頭: {headers[:5]}...")
+        print(f"   行數: {len(rows)}")
+        
+        result = {
+            "status": "success",
+            "message": f"導出 {len(rows)} 筆用戶資料",
+            "headers": headers,
+            "rows": rows,
+            "stats": {
+                "total_rows": len(rows),
+                "total_columns": len(headers),
+                "exported_at": datetime.now().isoformat()
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        print(f"{'='*60}\n")
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        logger.error(f"❌ 導出失敗: {e}")
+        logger.error(traceback.format_exc())
+        
+        return jsonify({
+            "status": "error",
+            "message": f"導出失敗: {str(e)}",
+            "error_type": type(e).__name__,
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+
 @app.route('/api/user/<int:user_id>', methods=['GET'])
 def api_get_user(user_id):
     """取得特定用戶的完整資料"""
@@ -436,16 +500,22 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("🚀 Sheet Sync API 啟動中...")
     print("="*60)
-    print("📍 端點列表:")
+    print("📍 API 端點列表:")
+    print("   === 同步功能 ===")
     print("   POST   /api/sync                    - 同步 SHEET → DB")
+    print("   GET    /api/export                  - 同步 DB → SHEET（反向）")
+    print("   ")
+    print("   === 查詢功能 ===")
     print("   GET    /api/health                  - 健康檢查")
     print("   GET    /api/stats                   - DB 統計資訊")
-    print("   POST   /api/clean-virtual           - 清理虛擬帳號")
     print("   GET    /api/user/<user_id>          - 取得用戶資料")
-    print("   PUT    /api/user/<user_id>          - 更新用戶資料")
     print("   GET    /api/user/<user_id>/<field>  - 取得用戶欄位")
+    print("   ")
+    print("   === 修改功能 ===")
+    print("   PUT    /api/user/<user_id>          - 更新用戶資料")
     print("   PUT    /api/user/<user_id>/<field>  - 設置用戶欄位")
     print("   POST   /api/user/<user_id>/<field>/add - 增加用戶欄位")
+    print("   POST   /api/clean-virtual           - 清理虛擬帳號")
     print("="*60 + "\n")
     
     # 開發模式：監聽 0.0.0.0:5000（允許遠端存取）
