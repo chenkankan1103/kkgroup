@@ -592,7 +592,7 @@ class SheetDrivenDB:
         
         Args:
             header: 欄位名
-            value: 字符串值
+            value: 字符串值（可能是 JavaScript Date、JSON、或普通字符串）
             
         Returns:
             轉換後的值
@@ -600,7 +600,38 @@ class SheetDrivenDB:
         if not value or value == '':
             return None
         
+        # 處理 None 字符串
+        if isinstance(value, str) and value.lower() == 'none':
+            return None
+        
         header_lower = header.lower()
+        
+        # 轉換 JavaScript Date 字符串為時間戳（如 "Wed Feb 04 2026 00:00:00 GMT+0800 (Taiwan Standard Time)"）
+        if any(word in header_lower for word in ['date', 'time', 'recovery']):
+            if isinstance(value, str):
+                # 嘗試解析 JavaScript Date 字符串
+                try:
+                    from datetime import datetime
+                    # JavaScript Date 字符串通常可以被 datetime.fromisoformat() 解析
+                    # 或者嘗試從 Unix 時間戳解析
+                    if str(value).startswith('Wed ') or str(value).startswith('Thu ') or str(value).startswith('Fri '):
+                        # 這是一個 JavaScript Date.toString() 的格式，嘗試轉為時間戳
+                        # 通常 Google Sheets 會轉換為毫秒時間戳
+                        try:
+                            timestamp = int(float(str(value)))
+                            if timestamp > 1000000000:  # 看起來像秒級時間戳
+                                return timestamp
+                            return None
+                        except:
+                            return None
+                    else:
+                        # 嘗試作為浮點數（秒級或毫秒級時間戳）
+                        timestamp = int(float(value))
+                        if timestamp > 1000000000:  # 秒級時間戳
+                            return timestamp
+                        return None
+                except:
+                    return None
         
         # 整數型
         if any(word in header_lower for word in 
@@ -624,8 +655,8 @@ class SheetDrivenDB:
             except:
                 return 0.0
         
-        # 默認為字符串
-        return str(value)
+        # 默認為字符串（保留原值，包括 JSON 字符串）
+        return str(value) if value is not None else None
     
     # ============================================================
     # 統計查詢
