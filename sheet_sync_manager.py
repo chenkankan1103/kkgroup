@@ -277,7 +277,13 @@ class SheetSyncManager:
                 
                 # 保存用戶 (db.set_user 會自動 INSERT 或 REPLACE)
                 print(f"   ✓ 記錄 {i}: [{action}] user_id={user_id}, 欄位數={len(record)}, 數據={record}")
-                success = self.db.set_user(user_id, record)
+                try:
+                    success = self.db.set_user(user_id, record)
+                except Exception as set_user_exc:
+                    success = False
+                    print(f"   ❌ set_user 拋出異常: {set_user_exc}")
+                    import traceback
+                    traceback.print_exc()
                 
                 if not success:
                     error_msg = f"set_user 返回失敗"
@@ -288,7 +294,7 @@ class SheetSyncManager:
                         stats['updated'] -= 1
                     else:
                         stats['inserted'] -= 1
-                    stats['error_details'].append({'record': i, 'user_id': user_id, 'reason': error_msg})
+                    stats['error_details'].append({'record': i, 'user_id': user_id, 'reason': error_msg, 'data_keys': list(record.keys())})
             
             except Exception as e:
                 error_msg = str(e)

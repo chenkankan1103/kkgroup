@@ -78,6 +78,30 @@ class SheetDrivenDB:
         conn.row_factory = sqlite3.Row
         return conn
     
+    def _ensure_system_columns(self):
+        """
+        確保系統列 (_created_at, _updated_at) 存在
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # 獲取現有的欄位
+        cursor.execute(f"PRAGMA table_info({self.table_name})")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        
+        # 確保系統欄位存在（SQLite 不允許 CURRENT_TIMESTAMP 作為 ALTER TABLE DEFAULT，所以不設置 DEFAULT）
+        for col_name in ['_created_at', '_updated_at']:
+            if col_name not in existing_cols:
+                try:
+                    sql = f'ALTER TABLE {self.table_name} ADD COLUMN "{col_name}" TIMESTAMP'
+                    cursor.execute(sql)
+                    print(f"✅ 添加系統欄位: {col_name}")
+                except sqlite3.OperationalError as e:
+                    print(f"⚠️ 添加系統欄位失敗: {col_name} - {e}")
+        
+        conn.commit()
+        conn.close()
+    
     # ============================================================
     # Schema 管理
     # ============================================================
@@ -129,7 +153,16 @@ class SheetDrivenDB:
                 print(f"⚠️ 添加欄位失敗: {header} - {e}")
         
         if added_count > 0:
-            cursor.execute(f'UPDATE {self.table_name} SET _updated_at = CURRENT_TIMESTAMP')
+            # 檢查 _updated_at 欄位是否存在
+            cursor.execute(f"PRAGMA table_info({self.table_name})")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            
+            if '_updated_at' in existing_cols:
+                try:
+                    cursor.execute(f'UPDATE {self.table_name} SET _updated_at = CURRENT_TIMESTAMP')
+                except sqlite3.OperationalError as e:
+                    print(f"⚠️ 更新 _updated_at 失敗: {e}")
+            
             print(f"✅ 新增 {added_count} 個欄位")
         
         conn.commit()
@@ -210,6 +243,9 @@ class SheetDrivenDB:
         user_id = int(user_id)
         
         try:
+            # 🔑 第 0 步：確保系統欄位存在
+            self._ensure_system_columns()
+            
             # 🔑 第一步：確保所有列存在（在獨立的連接中完成）
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -225,7 +261,7 @@ class SheetDrivenDB:
                 existing_data['_updated_at'] = datetime.now().isoformat()
             else:
                 # 創建新用戶
-                existing_data = {'user_id': user_id, '_updated_at': datetime.now().isoformat()}
+                existing_data = {'user_id': user_id, '_created_at': datetime.now().isoformat(), '_updated_at': datetime.now().isoformat()}
                 existing_data.update(data)
             
             conn.close()  # ✅ 關閉原連接，避免 ALTER TABLE 時的連接狀態問題
@@ -278,6 +314,8 @@ class SheetDrivenDB:
                 return True
             else:
                 print(f"❌ user_id {user_id} 寫入驗證失敗（計數為 0）")
+                print(f"   📝 嘗試的欄位: {list(existing_data.keys())}")
+                print(f"   📝 嘗試的值類型: {[(col, type(existing_data.get(col)).__name__) for col in list(existing_data.keys())[:5]]}")
                 conn.close()
                 return False
             
