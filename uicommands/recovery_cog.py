@@ -6,7 +6,7 @@ import traceback
 import discord
 import aiohttp
 import json
-from db_adapter import get_user, get_user_field, set_user_field, get_all_users
+from db_adapter import get_user, set_user, get_user_field, set_user_field, get_all_users
 
 class UserRecoveryCog(commands.Cog):
     def __init__(self, bot):
@@ -135,19 +135,23 @@ class UserRecoveryCog(commands.Cog):
                             if new_stamina >= 100:
                                 # 體力滿了，恢復原狀態
                                 logging.info(f"用戶 {user_id} 體力完全恢復，恢復原始狀態")
-                                set_user_field(user_id, 'hp', 100)
-                                set_user_field(user_id, 'stamina', 100)
-                                set_user_field(user_id, 'is_stunned', 0)
-                                set_user_field(user_id, 'injury_recovery_time', None)
-                                set_user_field(user_id, 'last_recovery', current_timestamp)
+                                set_user(user_id, {
+                                    'hp': 100,
+                                    'stamina': 100,
+                                    'is_stunned': 0,
+                                    'injury_recovery_time': None,
+                                    'last_recovery': current_timestamp
+                                })
                                 
                                 # 發送信號給醫院 cog 以移除身分組
                                 await self.notify_recovery_complete(user_id)
                                 recovered_count += 1
                             else:
                                 # 還在恢復中
-                                set_user_field(user_id, 'stamina', new_stamina)
-                                set_user_field(user_id, 'injury_recovery_time', current_timestamp)
+                                set_user(user_id, {
+                                    'stamina': new_stamina,
+                                    'injury_recovery_time': current_timestamp
+                                })
                                 
                                 logging.info(f"用戶 {user_id} 體力恢復: {stamina}→{new_stamina} (週期: {recovery_cycles})")
                                 recovered_count += 1
@@ -174,19 +178,23 @@ class UserRecoveryCog(commands.Cog):
                                 new_hp = 0
                                 # 觸發擊暈狀態
                                 logging.warning(f"用戶 {user_id} 血量歸零，進入傷病狀態")
-                                set_user_field(user_id, 'hp', 0)
-                                set_user_field(user_id, 'stamina', 0)
-                                set_user_field(user_id, 'is_stunned', 1)
-                                set_user_field(user_id, 'injury_recovery_time', current_timestamp)
-                                set_user_field(user_id, 'last_recovery', current_timestamp)
+                                set_user(user_id, {
+                                    'hp': 0,
+                                    'stamina': 0,
+                                    'is_stunned': 1,
+                                    'injury_recovery_time': current_timestamp,
+                                    'last_recovery': current_timestamp
+                                })
                                 
                                 # 發送信號移除會員身分組
                                 await self.notify_injury_status(user_id)
                                 recovered_count += 1
                             elif new_hp != hp or new_stamina != stamina:
-                                set_user_field(user_id, 'hp', new_hp)
-                                set_user_field(user_id, 'stamina', new_stamina)
-                                set_user_field(user_id, 'last_recovery', current_timestamp)
+                                set_user(user_id, {
+                                    'hp': new_hp,
+                                    'stamina': new_stamina,
+                                    'last_recovery': current_timestamp
+                                })
                                 
                                 recovered_count += 1
                                 logging.info(f"用戶 {user_id} 回復成功: HP {hp}→{new_hp} (+{new_hp-hp}), Stamina {stamina}→{new_stamina} (+{new_stamina-stamina})")
@@ -258,17 +266,16 @@ class UserRecoveryCog(commands.Cog):
                 return False
             
             current_timestamp = int(datetime.now().timestamp())
+            update_data = {'last_recovery': current_timestamp}
             
             if hp is not None:
-                hp_clamped = max(0, min(hp, 100))
-                set_user_field(user_id, 'hp', hp_clamped)
+                update_data['hp'] = max(0, min(hp, 100))
             
             if stamina is not None:
-                stamina_clamped = max(0, min(stamina, 100))
-                set_user_field(user_id, 'stamina', stamina_clamped)
+                update_data['stamina'] = max(0, min(stamina, 100))
             
-            # 更新最後回復時間
-            set_user_field(user_id, 'last_recovery', current_timestamp)
+            # Batch update all fields at once
+            set_user(user_id, update_data)
             
             logging.info(f"成功更新用戶 {user_id} 狀態")
             return True
