@@ -91,7 +91,7 @@ function showConfigGuide() {
     `不需要修改代碼`;
   
   SpreadsheetApp.getUi().alert(message);
-}`
+}
 
 /**
  * 同步 SHEET 資料到資料庫
