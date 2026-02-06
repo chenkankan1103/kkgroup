@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import json
@@ -876,7 +876,7 @@ class UserPanel(commands.Cog):
                 # 遍歷需要創建的線程
                 for member in threads_to_create:
                     try:
-                        thread = await self.get_or_create_user_thread(member)
+                        thread = await self.get_or_create_user_thread(member, skip_image_on_startup=True)
                         if thread:
                             await asyncio.sleep(1)  # 降低速率，減少 API 壓力
                     except discord.HTTPException as e:
@@ -885,8 +885,7 @@ class UserPanel(commands.Cog):
                             await asyncio.sleep(30)
                             # 重試一次
                             try:
-                                await self.get_or_create_user_thread(member)
-                                await asyncio.sleep(3)
+                                await self.get_or_create_user_thread(member, skip_image_on_startup=True)`n                                await asyncio.sleep(3)
                             except Exception:
                                 pass
                     except Exception:
@@ -985,7 +984,7 @@ class UserPanel(commands.Cog):
         embed.set_footer(text="💫 由 MapleStory.io API 提供角色外觀")
         return embed
 
-    async def get_or_create_user_thread(self, user: discord.User) -> Optional[discord.Thread]:
+    async def get_or_create_user_thread(self, user: discord.User, skip_image_on_startup: bool = False) -> Optional[discord.Thread]:
         try:
             forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
@@ -1020,9 +1019,14 @@ class UserPanel(commands.Cog):
             # 創建面板
             embed = await self.create_user_embed(user_data, user)
             
-            # 獲取角色圖片（非阻塞）
+            # 獲取角色圖片 - 重啟時跳過 API 調用
             try:
-                character_image_url = await self.get_character_image_url(user_data)
+                if skip_image_on_startup:
+                    # 只使用快取，不調用 API
+                    cache_key = self.generate_character_cache_key(user_data)
+                    character_image_url = self.get_cached_discord_url(cache_key)
+                else:
+                    character_image_url = await self.get_character_image_url(user_data)
                 if character_image_url:
                     embed.set_image(url=character_image_url)
             except Exception:
@@ -1111,3 +1115,4 @@ class UserPanel(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(UserPanel(bot))
+
