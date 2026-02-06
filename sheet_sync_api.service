@@ -1,0 +1,31 @@
+[Unit]
+Description=Sheet Sync API (Flask)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=e193752468
+Group=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment="PATH=/home/e193752468/kkgroup/venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/home/e193752468/kkgroup/venv/bin/gunicorn \
+    -w 4 \
+    -b 0.0.0.0:5000 \
+    --timeout 120 \
+    --access-logfile - \
+    --error-logfile - \
+    sheet_sync_api:app
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sheet-api
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

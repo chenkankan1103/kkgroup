@@ -1,21 +1,218 @@
-"""個人置物櫃 - 大麻種植管理 UI"""
+"""個人置物櫃 - 大麻種植管理 UI + 實時面板"""
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.ui import View, Button
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
+import json
+import aiosqlite
+from collections import deque
 from shop_commands.merchant.cannabis_farming import (
     get_user_plants, plant_cannabis, apply_fertilizer, harvest_plant, get_inventory, remove_inventory
 )
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 from shop_commands.merchant.database import update_user_kkcoin, get_user_kkcoin
 
+# 配置
+DB_PATH = './shop_commands/merchant/cannabis.db'
+PANEL_DATA_FILE = './shop_commands/locker_panel_data.json'
+
 
 class PersonalLockerCog(commands.Cog):
-    """個人置物櫃 - 大麻種植管理"""
+    """個人置物櫃 - 大麻種植管理 + 伺服器面板"""
     
     def __init__(self, bot):
         self.bot = bot
+        # 面板相關
+        self.panel_message_id = None
+        self.panel_channel_id = None
+        self.recent_events = deque(maxlen=5)  # 最近5個事件
+        self.load_panel_data()
+        # 啟動面板更新任務
+        self.update_panel_task.start()
+    
+    def cog_unload(self):
+        """Cog 卸載時停止任務"""
+        self.update_panel_task.cancel()
+    
+    def load_panel_data(self):
+        """載入持久化的面板數據"""
+        try:
+            if Path(PANEL_DATA_FILE).exists():
+                with open(PANEL_DATA_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.panel_message_id = data.get('message_id')
+                    self.panel_channel_id = data.get('channel_id')
+                    self.recent_events = deque(data.get('events', []), maxlen=5)
+        except Exception as e:
+            print(f"⚠️  載入面板數據失敗: {e}")
+    
+    def save_panel_data(self):
+        """保存面板數據"""
+        try:
+            Path(PANEL_DATA_FILE).parent.mkdir(parents=True, exist_ok=True)
+            with open(PANEL_DATA_FILE, 'w', encoding='utf-8') as f:
+                data = {
+                    'message_id': self.panel_message_id,
+                    'channel_id': self.panel_channel_id,
+                    'events': list(self.recent_events)
+                }
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"❌ 保存面板數據失敗: {e}")
+    
+    async def record_event(self, event_type: str, user: discord.User, details: str = ""):
+        """記錄事件到面板"""
+        try:
+            event = {
+                'type': event_type,
+                'user_id': user.id,
+                'user_name': user.display_name,
+                'details': details,
+                'timestamp': datetime.now().isoformat()
+            }
+            self.recent_events.append(event)
+            self.save_panel_data()
+        except Exception as e:
+            print(f"❌ 記錄事件失敗: {e}")
+    
+    @tasks.loop(minutes=30)
+    async def update_panel_task(self):
+        """每30分鐘更新面板"""
+        try:
+            if not self.panel_message_id or not self.panel_channel_id:
+                return
+            
+            # 計算統計
+            stats = await self.get_locker_stats()
+            embed = await self.create_panel_embed(stats)
+            
+            # 嘗試編輯訊息
+            try:
+                channel = self.bot.get_channel(self.panel_channel_id)
+                if channel:
+                    message = await channel.fetch_message(self.panel_message_id)
+                    await message.edit(embed=embed)
+                    print(f"✅ 置物櫃面板已更新")
+            except discord.NotFound:
+                print(f"⚠️  面板訊息已被刪除")
+                self.panel_message_id = None
+        except Exception as e:
+            print(f"❌ 面板更新失敗: {e}")
+    
+    @update_panel_task.before_loop
+    async def before_update_panel(self):
+        """等待機器人準備"""
+        await self.bot.wait_until_ready()
+    
+    async def get_locker_stats(self) -> dict:
+        """獲取置物櫃統計"""
+        stats = {
+            'total_plants': 0,
+            'growing_plants': 0,
+            'ready_plants': 0,
+            'unique_users': 0,
+            'total_inventory_items': 0
+        }
+        
+        if not Path(DB_PATH).exists():
+            return stats
+        
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                # 植物統計
+                async with db.execute(
+                    "SELECT COUNT(*), COUNT(CASE WHEN status='harvested' THEN 1 END) FROM cannabis_plants"
+                ) as cursor:
+                    result = await cursor.fetchone()
+                    if result:
+                        stats['total_plants'] = result[0]
+                        stats['ready_plants'] = result[1]
+                        stats['growing_plants'] = stats['total_plants'] - stats['ready_plants']
+                
+                # 用戶統計
+                async with db.execute(
+                    "SELECT COUNT(DISTINCT user_id) FROM cannabis_plants"
+                ) as cursor:
+                    result = await cursor.fetchone()
+                    if result:
+                        stats['unique_users'] = result[0]
+                
+                # 庫存統計
+                async with db.execute(
+                    "SELECT COUNT(*) FROM cannabis_inventory"
+                ) as cursor:
+                    result = await cursor.fetchone()
+                    if result:
+                        stats['total_inventory_items'] = result[0]
+        except Exception as e:
+            print(f"❌ 獲取統計失敗: {e}")
+        
+        return stats
+    
+    async def create_panel_embed(self, stats: dict) -> discord.Embed:
+        """生成面板embed"""
+        embed = discord.Embed(
+            title="📦 置物櫃概況面板",
+            description="實時伺服器統計",
+            color=discord.Color.green(),
+            timestamp=datetime.now()
+        )
+        
+        # 統計字段
+        embed.add_field(
+            name="📊 統計數據",
+            value=(
+                f"🌱 總植物: **{stats['total_plants']}**\n"
+                f"  ├─ 生長中: {stats['growing_plants']}\n"
+                f"  └─ 可收割: {stats['ready_plants']}\n"
+                f"👥 活躍用戶: **{stats['unique_users']}**\n"
+                f"📦 庫存項目: **{stats['total_inventory_items']}**"
+            ),
+            inline=False
+        )
+        
+        # 最近事件
+        if self.recent_events:
+            events_text = ""
+            for idx, event in enumerate(reversed(self.recent_events), 1):
+                time_ago = self.get_time_ago(
+                    datetime.fromisoformat(event['timestamp'])
+                )
+                detail_str = f" - {event['details']}" if event['details'] else ""
+                events_text += f"{idx}. **{event['user_name']}** {time_ago}{detail_str}\n"
+            
+            embed.add_field(
+                name="🎯 最近事件",
+                value=events_text.strip(),
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🎯 最近事件",
+                value="暫無事件",
+                inline=False
+            )
+        
+        embed.set_footer(text="每30分鐘自動更新")
+        return embed
+    
+    def get_time_ago(self, dt: datetime) -> str:
+        """計算時間差"""
+        delta = datetime.now() - dt
+        
+        if delta.total_seconds() < 60:
+            return "剛剛"
+        elif delta.total_seconds() < 3600:
+            mins = int(delta.total_seconds() / 60)
+            return f"{mins}分鐘前"
+        elif delta.total_seconds() < 86400:
+            hours = int(delta.total_seconds() / 3600)
+            return f"{hours}小時前"
+        else:
+            days = int(delta.total_seconds() / 86400)
+            return f"{days}天前"
     
     @commands.Cog.listener()
     async def on_ready(self):
@@ -121,20 +318,51 @@ class PersonalLockerCog(commands.Cog):
                 )
             
             # 添加按鈕
-            view = PersonalLockerView(self.bot, user_id, plants)
+            view = PersonalLockerView(self.bot, self, user_id, plants)
             await ctx.send(embed=embed, view=view)
             
         except Exception as e:
             traceback.print_exc()
             await ctx.send(f"❌ 發生錯誤：{str(e)[:100]}")
+    
+    @commands.command(name="建置物櫃面板", description="🔧 在此頻道建立置物櫃概況面板")
+    async def create_panel(self, ctx):
+        """建立置物櫃概況面板"""
+        try:
+            if not ctx.author.guild_permissions.administrator:
+                await ctx.send("❌ 需要管理員權限", ephemeral=True)
+                return
+            
+            # 計算統計
+            stats = await self.get_locker_stats()
+            embed = await self.create_panel_embed(stats)
+            
+            # 發送訊息
+            panel_message = await ctx.send(embed=embed)
+            
+            # 保存訊息信息
+            self.panel_message_id = panel_message.id
+            self.panel_channel_id = ctx.channel.id
+            self.save_panel_data()
+            
+            await ctx.send(
+                f"✅ 置物櫃面板已建立！\n"
+                f"📍 訊息ID: {panel_message.id}\n"
+                f"🔄 每30分鐘自動更新一次"
+            )
+        
+        except Exception as e:
+            await ctx.send(f"❌ 建立面板失敗: {str(e)[:100]}")
+            traceback.print_exc()
 
 
 class PersonalLockerView(discord.ui.View):
     """個人置物櫃交互菜單"""
     
-    def __init__(self, bot, user_id, plants):
+    def __init__(self, bot, cog, user_id, plants):
         super().__init__(timeout=300)
         self.bot = bot
+        self.cog = cog
         self.user_id = user_id
         self.plants = plants
     
@@ -305,6 +533,15 @@ class SelectFertilizerView(discord.ui.View):
                     )
                     embed.add_field(name="加速", value=f"{config['growth_boost']*100:.0f}%", inline=False)
                     
+                    # 記錄事件
+                    if hasattr(self, 'cog'):
+                        user = await self.bot.fetch_user(self.user_id)
+                        await self.cog.record_event(
+                            'fertilize',
+                            user,
+                            f"為{self.plant['seed_type']}施肥"
+                        )
+                    
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 施肥失敗", ephemeral=True)
@@ -352,6 +589,15 @@ class SelectPlantForHarvestView(discord.ui.View):
                         color=discord.Color.green()
                     )
                     embed.add_field(name="產量", value=f"{yield_amount}個", inline=False)
+                    
+                    # 記錄事件
+                    if hasattr(self, 'cog'):
+                        user = await self.bot.fetch_user(self.user_id)
+                        await self.cog.record_event(
+                            'harvest',
+                            user,
+                            f"收割{plant['seed_type']} - {yield_amount}個"
+                        )
                     
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
@@ -548,6 +794,15 @@ class SelectSeedView(discord.ui.View):
                     )
                     embed.add_field(name="成長時間", value=f"{config['growth_time']//3600} 小時", inline=False)
                     embed.add_field(name="種子品質", value=f"產量：{config['yield_amount']}個", inline=False)
+                    
+                    # 記錄事件
+                    if hasattr(self, 'cog'):
+                        user = await self.bot.fetch_user(self.user_id)
+                        await self.cog.record_event(
+                            'plant',
+                            user,
+                            f"種植{seed_name}"
+                        )
                     
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:

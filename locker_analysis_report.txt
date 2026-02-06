@@ -1,0 +1,58 @@
+=== UIBOT 置物櫃功能分析報告 ===
+
+【問題 1】幽靈成員/浮點數錯位的 ID 刪除
+🔍 檢查結果：❌ 沒有檢測邏輯
+
+現狀：
+- uicommands/cannabis_locker.py 的 personal_locker() 函數
+- 直接使用 user_id = ctx.author.id 
+- 無任何驗證該 user_id 是否存在於資料庫
+- 無任何刪除不存在用戶的邏輯
+
+在哪裡應該加：
+  位置：uicommands/cannabis_locker.py 第 28-30 行
+  
+建議修復：
+  在 personal_locker() 函數開頭加入：
+  ```python
+  # 驗證用戶是否存在
+  c.execute('SELECT user_id FROM users WHERE user_id = ?', (user_id,))
+  if not c.fetchone():
+      await ctx.send(f"❌ 用戶 {user_id} 不存在資料庫中，可能是幽靈成員")
+      return
+  ```
+
+【問題 2】第一則 embed 缺少紙娃娃圖片
+🔍 檢查結果：❌ 沒有圖片設置代碼
+
+現狀（32-125 行）：
+- 只有 title, description, color 和 add_field
+- 沒有調用 embed.set_thumbnail() 或 embed.set_image()
+- 沒有任何圖片 URL
+
+在哪裡應該加：
+  位置：uicommands/cannabis_locker.py 第 37 行後
+  
+建議修復：
+  ```python
+  embed.set_thumbnail(url="楓之谷紙娃娃圖片 URL")
+  ```
+
+【問題 3】未來若加入紙娃娃系統，圖片會自動更新嗎?
+🔍 檢查結果：🟡 目前無法看出（未有實現）
+
+分析：
+- 當前代碼沒有紙娃娃 API 調用
+- embed.set_thumbnail() 一旦設定就固定了
+- 如果要動態更新需要：
+  1. API 返回圖片 URL
+  2. 在每次 personal_locker() 執行時重新生成 embed
+
+建議實現方式：
+  ```python
+  # 獲取動態紙娃娃圖片 URL
+  paperdoll_url = await get_paperdoll_render(user_id)  # 調用 API
+  embed.set_thumbnail(url=paperdoll_url)
+  ```
+  
+  這樣每次打開置物櫃都會顯示最新的紙娃娃圖片
