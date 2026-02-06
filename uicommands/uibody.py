@@ -885,7 +885,8 @@ class UserPanel(commands.Cog):
                             await asyncio.sleep(30)
                             # 重試一次
                             try:
-                                await self.get_or_create_user_thread(member, skip_image_on_startup=True)`n                                await asyncio.sleep(3)
+                                await self.get_or_create_user_thread(member, skip_image_on_startup=True)
+                                await asyncio.sleep(3)
                             except Exception:
                                 pass
                     except Exception:
