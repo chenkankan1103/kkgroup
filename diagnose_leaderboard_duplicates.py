@@ -80,7 +80,7 @@ def diagnose_database(db_path: str = 'user_data.db'):
             nickname = row['nickname'] or f"User {user_id}"
             kkcoin = row['kkcoin']
             user_ids_in_leaderboard.append(user_id)
-            print(f"{i:2d}. ID={user_id:18s} | {nickname:15s} | {kkcoin:6d} coins")
+            print(f"{i:2d}. ID={user_id:18d} | {nickname:15s} | {kkcoin:6d} coins")
         
         # 5️⃣ 檢查排行榜中是否有重複的 user_id
         print("\n🔎 檢查排行榜前 20 名中的重複：")
