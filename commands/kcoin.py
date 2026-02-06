@@ -54,14 +54,20 @@ def save_to_env(variable_name, value):
 
 # 取得 Discord 使用者頭像
 async def fetch_avatar(session, url):
+    """嘗試加載用戶頭像，失敗時返回 None"""
+    if not url:
+        return None
     try:
-        async with session.get(url) as resp:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
                 return None
             data = await resp.read()
+            if len(data) == 0:
+                return None
             return Image.open(io.BytesIO(data)).convert("RGBA")
-    except Exception as e:
-        print(f"❌ 取得頭像失敗: {e}")
+    except asyncio.TimeoutError:
+        return None
+    except Exception:
         return None
 
 async def make_leaderboard_image(members_data):
@@ -113,10 +119,20 @@ async def make_leaderboard_image(members_data):
             else:
                 rank_x = MARGIN
             draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
-            avatar = await fetch_avatar(session, member.display_avatar.url)
+            
+            # 嘗試加載頭像，失敗則跳過
+            avatar = None
+            try:
+                avatar_url = getattr(member.display_avatar, 'url', None) if hasattr(member, 'display_avatar') else None
+                if avatar_url:
+                    avatar = await fetch_avatar(session, avatar_url)
+            except Exception:
+                pass
+            
             if avatar:
                 avatar = avatar.resize((AVATAR_SIZE, AVATAR_SIZE))
                 img.paste(avatar, (rank_x + 40, y), avatar)
+            
             name_x = rank_x + 100
             name_y = y+8
             draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
@@ -399,14 +415,13 @@ class KKCoin(commands.Cog):
                     def __init__(self, user_id, nickname):
                         self.id = user_id
                         self.display_name = nickname or f"Unknown ({user_id})"
-                        self.display_avatar = type('obj', (object,), {'url': 'https://cdn.discordapp.com/embed/avatars/0.png'})()
+                        self.display_avatar = type('obj', (object,), {'url': None})()
                 
                 fallback = FallbackMember(
                     user_id,
                     user.get('nickname', user.get('user_name', f'User {user_id}'))
                 )
                 members_data.append((fallback, user["kkcoin"]))
-                print(f"⚠️  用戶 {user['nickname']} (ID: {user_id}) 不在 Guild 中，使用備用方案")
         
         return members_data
 
