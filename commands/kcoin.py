@@ -158,28 +158,38 @@ async def make_leaderboard_image(members_data):
                 # 優先順序：display_avatar → avatar → default_avatar
                 avatar_url = None
                 
-                # 1️⃣ 嘗試 display_avatar（用戶自訂頭像）
+                # 1️⃣ 嘗試 display_avatar（用戶自訂頭像或 FallbackMember 的代理）
                 if hasattr(member, 'display_avatar') and member.display_avatar:
-                    avatar_url = member.display_avatar.url
+                    try:
+                        avatar_url = member.display_avatar.url
+                    except AttributeError:
+                        pass
                 
                 # 2️⃣ 如果沒有，嘗試 avatar（個人頭像）
-                elif hasattr(member, 'avatar') and member.avatar:
-                    avatar_url = member.avatar.url
+                if not avatar_url and hasattr(member, 'avatar') and member.avatar:
+                    try:
+                        avatar_url = member.avatar.url
+                    except AttributeError:
+                        pass
                 
                 # 3️⃣ 最後使用 default_avatar（Discord 默認頭像）
-                elif hasattr(member, 'default_avatar') and member.default_avatar:
-                    avatar_url = member.default_avatar.url
+                if not avatar_url and hasattr(member, 'default_avatar') and member.default_avatar:
+                    try:
+                        avatar_url = member.default_avatar.url
+                    except AttributeError:
+                        pass
                 
                 # 4️⃣ 嘗試加載圖片
                 if avatar_url:
                     avatar = await fetch_avatar(session, avatar_url)
                     if not avatar:
-                        print(f"⚠️ 無法加載頭像（可能已過期）: {member.display_name}")
+                        print(f"⚠️ 無法加載頭像 URL（可能已過期）: {member.display_name}")
+                        print(f"   URL: {avatar_url}")
                 else:
                     print(f"⚠️ 找不到頭像 URL: {member.display_name}")
                     
             except Exception as e:
-                print(f"❌ 頭像加載異常 ({member.display_name}): {e}")
+                print(f"❌ 頭像加載異常 ({member.display_name}): {type(e).__name__}: {e}")
             
             # 使用實際頭像或灰色占位圖
             display_avatar = avatar if avatar else placeholder_avatar
@@ -463,14 +473,25 @@ class KKCoin(commands.Cog):
                 members_data.append((member, user["kkcoin"]))
             else:
                 # ⚠️ Guild 中沒有該成員，使用備用方案
-                # 創建一個簡單的對象來存儲用戶信息
+                # 創建一個簡單的對象來存儲用戶信息，包括 Discord 默認頭像
                 class FallbackMember:
-                    """當玩家不在 Guild 中時使用的备用成員對象"""
+                    """當玩家不在 Guild 中時使用的備用成員對象"""
                     def __init__(self, user_id, nickname):
                         self.id = user_id
                         self.display_name = nickname or f"未知玩家 ({user_id})"
-                        # 不設置 display_avatar，讓代碼使用 hasattr 檢查
-                        # self.display_avatar 不存在 → avatar_url 為 None → 使用灰色 placeholder
+                        
+                        # 為 FallbackMember 構造一個虛擬的 display_avatar 對象
+                        # Discord 默認頭像 URL: https://cdn.discordapp.com/embed/avatars/{color}.png
+                        # color 是 0-5 之間的顏色索引（根據用戶 ID 計算）
+                        avatar_color = user_id % 6  # 0-5 之間
+                        default_avatar_url = f"https://cdn.discordapp.com/embed/avatars/{avatar_color}.png"
+                        
+                        # 構造一個類似 display_avatar 的對象
+                        class AvatarProxy:
+                            def __init__(self, url):
+                                self.url = url
+                        
+                        self.display_avatar = AvatarProxy(default_avatar_url)
                 
                 fallback = FallbackMember(
                     user_id,

@@ -441,34 +441,33 @@ class UserPanel(commands.Cog):
             pass
 
     async def upload_image_to_discord_storage(self, image_data: bytes, cache_key: str) -> Optional[str]:
+        """上傳圖片到 Discord 存儲頻道 - 只使用臨時訊息方式避免持續積累"""
         try:
-            storage_channel_id = self.image_storage_channel_id or self.welcome_channel_id
+            # ⚠️ 重要：永遠只使用歡迎頻道的臨時訊息方式
+            # 這樣可以獲得 Discord 圖片 URL，並在發送後立即刪除訊息
+            # 避免在其他頻道積累大量紙娃娃圖片
+            storage_channel_id = self.welcome_channel_id
             channel = self.bot.get_channel(storage_channel_id)
             if not channel:
                 return None
             
             file_obj = discord.File(io.BytesIO(image_data), filename=f'{cache_key}.png')
             
-            if storage_channel_id == self.welcome_channel_id:
-                temp_msg = await channel.send(file=file_obj)
-                if temp_msg.attachments:
-                    discord_url = temp_msg.attachments[0].url
-                    self.save_discord_url_cache(cache_key, discord_url, temp_msg.id)
-                    try:
-                        await asyncio.sleep(0.1)
-                        await temp_msg.delete()
-                    except discord.NotFound:
-                        pass
-                    return discord_url
-            else:
-                storage_msg = await channel.send(content=f"🖼️ **角色圖片** - {cache_key}", file=file_obj)
-                if storage_msg.attachments:
-                    discord_url = storage_msg.attachments[0].url
-                    self.save_discord_url_cache(cache_key, discord_url, storage_msg.id)
-                    return discord_url
+            # 發送臨時訊息
+            temp_msg = await channel.send(file=file_obj)
+            if temp_msg.attachments:
+                discord_url = temp_msg.attachments[0].url
+                self.save_discord_url_cache(cache_key, discord_url, temp_msg.id)
+                try:
+                    # 等待一下以確保 URL 已生效，然後立即刪除訊息
+                    await asyncio.sleep(0.2)
+                    await temp_msg.delete()
+                except discord.NotFound:
+                    pass
+                return discord_url
             
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"❌ 上傳圖片失敗: {e}")
         return None
 
     async def get_character_image_url(self, user_data: dict) -> Optional[str]:
