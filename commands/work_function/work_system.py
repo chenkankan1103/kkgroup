@@ -356,6 +356,12 @@ async def process_checkin(user_id, user_obj, guild):
     """處理打卡邏輯 - 加入 AI 生成的每日情境"""
     try:
         user = get_user(user_id)
+        
+        # 檢查用戶是否成功取得
+        if not user:
+            print(f"❌ 無法找到或建立用戶: {user_id}")
+            return None, None, None, None
+        
         today = datetime.utcnow().strftime("%Y-%m-%d")
         
         level = user.get('level', 1)
@@ -778,6 +784,12 @@ async def process_work_action(user_id, user_obj, action):
     """處理工作行動 - 使用 AI 生成故事"""
     try:
         user = get_user(user_id)
+        
+        # 檢查用戶是否成功取得
+        if not user:
+            print(f"❌ 無法找到或建立用戶: {user_id}")
+            return None, None, "❌ 無法獲取用戶資料"
+        
         today = datetime.utcnow().strftime("%Y-%m-%d")
         
         actions_used = json.loads(user.get('actions_used', '{}'))
@@ -833,6 +845,11 @@ async def process_work_action(user_id, user_obj, action):
         )
         
         updated_user = get_user(user_id)
+        
+        # 檢查更新後的用戶資料
+        if not updated_user:
+            print(f"⚠️ 無法重新取得用戶 {user_id} 的資料")
+            return None, None, "⚠️ 資料同步異常"
         
         # 創建結果 embed
         result_embed = discord.Embed(

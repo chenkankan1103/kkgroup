@@ -53,15 +53,24 @@ def get_user(user_id) -> Optional[Dict[str, Any]]:
         用戶資料字典，或 None
     """
     try:
+        # 確保 user_id 是整數
+        user_id = int(user_id)
+        
         user = db_get_user(user_id)
         
         if not user:
             # 新用戶，自動建立
-            set_user(user_id, {'user_id': int(user_id)})
+            print(f"🆕 建立新用戶: {user_id}")
+            set_user(user_id, {'user_id': user_id})
             user = db_get_user(user_id)
+            
+            if not user:
+                print(f"⚠️ 無法建立用戶 {user_id}")
+                return None
         
         return user
     except Exception as e:
+        print(f"❌ get_user({user_id}) 失敗: {e}")
         traceback.print_exc()
         return None
 

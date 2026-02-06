@@ -29,6 +29,12 @@ class CheckInButton(discord.ui.Button):
             await interaction.response.defer(ephemeral=True)
             
             user = get_user(interaction.user.id)
+            
+            # 檢查用戶是否成功取得
+            if not user:
+                await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
+                return
+            
             today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = user.get('last_work_date', None)
 
@@ -191,6 +197,12 @@ class RestButton(discord.ui.Button):
             await interaction.response.defer(ephemeral=True)
             
             user = get_user(interaction.user.id)
+            
+            # 檢查用戶是否成功取得
+            if not user:
+                await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
+                return
+            
             today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = user.get('last_work_date', None)
             
@@ -248,6 +260,12 @@ class WorkActionButton(discord.ui.Button):
                 return
             
             current_user = get_user(interaction.user.id)
+            
+            # 檢查用戶是否成功取得
+            if not current_user:
+                await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
+                return
+            
             today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = current_user.get('last_work_date', None)
             
@@ -538,6 +556,12 @@ class WorkCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             
             user = get_user(interaction.user.id)
+            
+            # 檢查用戶是否成功取得
+            if not user:
+                await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
+                return
+            
             current_level = user.get('level', 1)
             
             embed = discord.Embed(
@@ -598,6 +622,12 @@ class WorkCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             
             user = get_user(interaction.user.id)
+            
+            # 檢查用戶是否成功取得
+            if not user:
+                await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
+                return
+            
             level = user.get('level', 1)
             level_info = LEVELS[level]
             
