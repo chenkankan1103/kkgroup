@@ -21,6 +21,9 @@ class ScamParkEvents(commands.Cog):
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_API_MODEL = os.getenv('AI_API_MODEL')
         
+        # 判斷是否使用 Google API
+        self.use_google_api = 'generativelanguage.googleapis.com' in (self.AI_API_URL or '')
+        
         # 事件設定 - 調整為12小時常態分佈
         self.event_cooldown = {}  # 使用者事件冷卻 {user_id: last_event_timestamp}
         self.min_event_interval = 43200   # 最少12小時 (秒)
@@ -290,7 +293,56 @@ class ScamParkEvents(commands.Cog):
             return None
 
     async def translate_to_english(self, chinese_text: str) -> str:
-        """將中文提示詞翻譯成英文"""
+        """將中文提示詞翻譯成英文（支援 Google API 和 Groq API）"""
+        try:
+            if self.use_google_api:
+                # 使用 Google Generative AI API
+                return await self._translate_google(chinese_text)
+            else:
+                # 使用 Groq / OpenAI 相容 API
+                return await self._translate_groq(chinese_text)
+            
+        except Exception as e:
+            print(f"❌ 翻譯錯誤: {e}")
+            return chinese_text
+    
+    async def _translate_google(self, chinese_text: str) -> str:
+        """使用 Google Generative AI 翻譯"""
+        try:
+            url = f"{self.AI_API_URL}?key={self.AI_API_KEY}"
+            
+            data = {
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": f"You are a translator. Translate Chinese to English for image generation prompts. Keep it concise and descriptive.\n\nTranslate this to English for image generation: {chinese_text}"
+                            }
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 100
+                }
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get('candidates'):
+                            content = result['candidates'][0].get('content', {})
+                            if content.get('parts'):
+                                return content['parts'][0].get('text', chinese_text).strip()
+        except Exception as e:
+            print(f"❌ Google 翻譯失敗: {e}")
+        
+        return chinese_text
+    
+    async def _translate_groq(self, chinese_text: str) -> str:
+        """使用 Groq / OpenAI 相容 API 翻譯"""
         try:
             if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
                 return chinese_text
@@ -315,14 +367,65 @@ class ScamParkEvents(commands.Cog):
                     if response.status == 200:
                         result = await response.json()
                         return result['choices'][0]['message']['content'].strip()
-            
         except Exception as e:
-            print(f"❌ 翻譯錯誤: {e}")
+            print(f"❌ Groq 翻譯失敗: {e}")
+        
+        return chinese_text
         
         return chinese_text
 
     async def generate_ai_event_description(self, event_type: str, details: dict) -> str:
-        """使用AI生成事件描述"""
+        """使用AI生成事件描述（支援 Google API 和 Groq API）"""
+        try:
+            if self.use_google_api:
+                return await self._generate_google_description(event_type, details)
+            else:
+                return await self._generate_groq_description(event_type, details)
+        except Exception as e:
+            print(f"❌ AI生成錯誤: {e}")
+            return None
+    
+    async def _generate_google_description(self, event_type: str, details: dict) -> str:
+        """使用 Google Generative AI 生成描述"""
+        try:
+            prompt = f"""你是一個詐騙園區的旁白，請用生動的方式描述以下事件：
+
+事件類型：{event_type}
+事件詳情：{details}
+
+請用繁體中文回應，語氣要帶有黑色幽默和諷刺，描述要生動且有畫面感，控制在80字以內。
+要讓人感受到詐騙園區的壓迫感和絕望氛圍。"""
+            
+            url = f"{self.AI_API_URL}?key={self.AI_API_KEY}"
+            
+            data = {
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [{"text": prompt}]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.9,
+                    "maxOutputTokens": 150
+                }
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get('candidates'):
+                            content = result['candidates'][0].get('content', {})
+                            if content.get('parts'):
+                                return content['parts'][0].get('text', '').strip()
+        except Exception as e:
+            print(f"❌ Google AI 生成失敗: {e}")
+        
+        return None
+    
+    async def _generate_groq_description(self, event_type: str, details: dict) -> str:
+        """使用 Groq / OpenAI 相容 API 生成描述"""
         try:
             if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
                 return None
@@ -352,9 +455,8 @@ class ScamParkEvents(commands.Cog):
                     if response.status == 200:
                         result = await response.json()
                         return result['choices'][0]['message']['content'].strip()
-            
         except Exception as e:
-            print(f"❌ AI生成錯誤: {e}")
+            print(f"❌ Groq AI 生成失敗: {e}")
         
         return None
 
