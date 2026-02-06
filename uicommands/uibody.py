@@ -472,11 +472,34 @@ class UserPanel(commands.Cog):
         return None
 
     async def get_character_image_url(self, user_data: dict) -> Optional[str]:
+        """獲取角色圖片 URL（優先使用快取，再用 API）"""
         cache_key = self.generate_character_cache_key(user_data)
+        user_id = user_data.get('user_id')
+        
+        # 1️⃣ 先檢查記憶體快取
         cached_url = self.get_cached_discord_url(cache_key)
         if cached_url:
             return cached_url
         
+        # 2️⃣ 檢查數據庫中是否有已存儲的圖片 URL（持久化快取）
+        try:
+            cached_char_data = get_user_field(user_id, 'cached_character_image', default=None)
+            if cached_char_data:
+                try:
+                    char_cache = json.loads(cached_char_data)
+                    # 驗證快取有效性（配置沒有改變）
+                    current_key = self.generate_character_cache_key(user_data)
+                    if char_cache.get('cache_key') == current_key and char_cache.get('discord_url'):
+                        stored_url = char_cache['discord_url']
+                        # 同步到記憶體快取
+                        self.save_discord_url_cache(cache_key, stored_url)
+                        return stored_url
+                except json.JSONDecodeError:
+                    pass
+        except Exception:
+            pass
+        
+        # 3️⃣ 調用 API 獲取圖片（帶超時保護）
         try:
             items = [
                 {"itemId": 2000, "region": "GMS", "version": "217"},
@@ -495,17 +518,30 @@ class UserPanel(commands.Cog):
             pose = "prone" if user_data.get('is_stunned', 0) == 1 else "stand1"
             url = f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&resize=2&flipX=true"
 
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:  # 降低超時到 10 秒
                 async with session.get(url) as response:
                     if response.status == 200:
                         image_data = await response.read()
                         if len(image_data) > 100:
                             discord_url = await self.upload_image_to_discord_storage(image_data, cache_key)
                             if discord_url:
+                                # 🔒 保存到數據庫以供持久化快取
+                                char_cache = {
+                                    'cache_key': cache_key,
+                                    'discord_url': discord_url,
+                                    'timestamp': int(time.time())
+                                }
+                                try:
+                                    set_user_field(user_id, 'cached_character_image', json.dumps(char_cache))
+                                except Exception:
+                                    pass
                                 return discord_url
 
-        except Exception:
-            pass
+        except asyncio.TimeoutError:
+            print(f"⏱️ 楓之谷 API 超時 (用戶 {user_id})")
+        except Exception as e:
+            print(f"❌ 獲取角色圖片失敗: {e}")
+        
         return None
 
     async def cog_load(self):
@@ -804,6 +840,10 @@ class UserPanel(commands.Cog):
             # Get all users using db_adapter
             all_users = get_all_users()
             
+            # 統計：有效/需要創建的線程
+            threads_to_create = []
+            existing_threads = 0
+            
             for user_data in all_users:
                 user_id = user_data.get('user_id')
                 thread_id = user_data.get('thread_id', 0)
@@ -812,38 +852,47 @@ class UserPanel(commands.Cog):
                     if not member:
                         continue
                     
-                    needs_thread = not thread_id or thread_id == 0
-                    
-                    # 檢查現有文章是否仍然存在
+                    # 檢查現有文章是否存在
                     if thread_id and thread_id != 0:
                         thread = forum_channel.get_thread(thread_id)
                         if thread:
-                            continue
+                            existing_threads += 1
+                            continue  # ✅ 線程已存在，跳過不重新創建
                         else:
-                            # 重置 thread_id - 使用 db_adapter
+                            # 線程已被刪除，重置 thread_id
                             set_user_field(user_id, 'thread_id', 0)
-                            needs_thread = True
-                    
-                    # 需要創建新文章
-                    if needs_thread:
-                        try:
-                            thread = await self.get_or_create_user_thread(member)
-                            if thread:
-                                await asyncio.sleep(2)
-                        except discord.HTTPException as e:
-                            if e.status == 429:  # Rate limit
-                                await asyncio.sleep(30)
-                                # 重試一次
-                                try:
-                                    await self.get_or_create_user_thread(member)
-                                    await asyncio.sleep(5)
-                                except Exception:
-                                    pass
-                        except Exception:
-                            continue
+                            threads_to_create.append(member)
+                    else:
+                        # 用戶從未創建線程
+                        threads_to_create.append(member)
                             
                 except Exception:
                     continue
+            
+            # 【優化】只在確實需要時才創建線程
+            if threads_to_create:
+                print(f"🔧 發現需要創建的線程: {len(threads_to_create)} 個 (已有線程: {existing_threads})")
+                
+                # 遍歷需要創建的線程
+                for member in threads_to_create:
+                    try:
+                        thread = await self.get_or_create_user_thread(member)
+                        if thread:
+                            await asyncio.sleep(1)  # 降低速率，減少 API 壓力
+                    except discord.HTTPException as e:
+                        if e.status == 429:  # Rate limit
+                            print(f"⚠️ 遇到速率限制，稍候 30 秒...")
+                            await asyncio.sleep(30)
+                            # 重試一次
+                            try:
+                                await self.get_or_create_user_thread(member)
+                                await asyncio.sleep(3)
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
+            else:
+                print(f"✅ 所有線程已存在 ({existing_threads} 個)")
             
         except Exception:
             pass
