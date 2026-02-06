@@ -1440,8 +1440,13 @@ class UserPanel(commands.Cog):
                     name=thread_name, 
                     embed=embed, 
                     view=view,
-                    content=f"👋 嗨 {user.mention}！這是你的專屬置物櫃～"
+                    content="👋 這是你的專屬置物櫃～"
                 )
+                # 強制將用戶加入線程
+                try:
+                    await thread.add_user(user)
+                except Exception as e:
+                    print(f"⚠️ 將用戶加入線程失敗 {user.id}: {e}")
             except discord.HTTPException as http_e:
                 if http_e.status == 400:
                     # 可能是 embed 或 view 問題，嘗試只用基本內容
@@ -1453,8 +1458,13 @@ class UserPanel(commands.Cog):
                     thread, message = await forum_channel.create_thread(
                         name=thread_name, 
                         embed=simple_embed,
-                        content=f"👋 嗨 {user.mention}！這是你的專屬置物櫃～"
+                        content="👋 這是你的專屬置物櫃～"
                     )
+                    # 強制將用戶加入線程
+                    try:
+                        await thread.add_user(user)
+                    except Exception as e:
+                        print(f"⚠️ 將用戶加入線程失敗 {user.id}: {e}")
                     # 然後更新為完整內容
                     await message.edit(embed=embed, view=view)
                 else:
