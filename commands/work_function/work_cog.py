@@ -494,7 +494,7 @@ class WorkCog(commands.Cog):
         
         salary_info = ""
         for lvl, info in LEVELS.items():
-            weeks_needed = required_days_for_level(lvl) // 7 if lvl > 1 else 0
+            weeks_needed = required_days_for_level(lvl) if lvl > 0 else 0
             xp_req = info["xp_required"]
             salary = info['salary']
             actions_count = len(info['actions'])
@@ -562,7 +562,7 @@ class WorkCog(commands.Cog):
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
-            current_level = user.get('level', 1)
+            current_level = user.get('level', 0)
             
             embed = discord.Embed(
                 title="📚【詐騙園區 • 行動資料庫】",
@@ -628,7 +628,7 @@ class WorkCog(commands.Cog):
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
-            level = user.get('level', 1)
+            level = user.get('level', 0)
             level_info = LEVELS[level]
             
             embed = discord.Embed(

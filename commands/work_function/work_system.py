@@ -13,96 +13,142 @@ AI_API_KEY = os.getenv("AI_API_KEY", "")
 AI_API_URL = os.getenv("AI_API_URL", "")
 AI_API_MODEL = os.getenv("AI_API_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
-# 等級配置 - 改為周為單位
+# 等級配置 - Lv.0 至 Lv.6
 LEVELS = {
+    0: {
+        "title": "待宰豬仔",
+        "actions": [
+            {"name": "領錢", "risk": 0.1, "base_reward": 50, "success_rate": 0.95, "xp": 10}
+        ],
+        "salary": 25,
+        "days_required": 0,
+        "xp_required": 0,
+        "role_id": 0,
+        "salary_boost": 1.0,
+        "xp_boost": 1.0,
+        "description": "起始身份。"
+    },
     1: {
-        "title": "車手", 
+        "title": "基層狗推(車手)",
         "actions": [
             {"name": "領錢", "risk": 0.1, "base_reward": 100, "success_rate": 0.9, "xp": 20}
-        ], 
-        "salary": 200,
-        "xp_required": 0,
+        ],
+        "salary": 150,
+        "days_required": 7,
+        "xp_required": 500,
         "role_id": int(os.getenv("ROLE_CAR", 0)),
-        "description": "園區新人，負責基礎領錢工作"
+        "salary_boost": 1.0,
+        "xp_boost": 1.0,
+        "description": "基層執行人員。"
     },
     2: {
-        "title": "收水手", 
+        "title": "一線聊手",
         "actions": [
             {"name": "領錢", "risk": 0.1, "base_reward": 100, "success_rate": 0.9, "xp": 20},
-            {"name": "收水", "risk": 0.2, "base_reward": 200, "success_rate": 0.85, "xp": 35},
-            {"name": "偷A錢", "risk": 0.3, "base_reward": 300, "success_rate": 0.75, "xp": 50}
-        ], 
-        "salary": 350,
-        "xp_required": 500,
-        "role_id": int(os.getenv("ROLE_MONEY_COLLECTOR", 0)),
-        "description": "經驗豐富的收款員，開始接觸資金流動"
+            {"name": "詐騙", "risk": 0.2, "base_reward": 200, "success_rate": 0.85, "xp": 35},
+            {"name": "談判", "risk": 0.3, "base_reward": 300, "success_rate": 0.75, "xp": 50}
+        ],
+        "salary": 275,
+        "days_required": 14,
+        "xp_required": 1500,
+        "role_id": int(os.getenv("ROLE_CHAT_WORKER", 0)),
+        "salary_boost": 1.0,
+        "xp_boost": 1.0,
+        "description": "資深文案撰寫。"
     },
     3: {
-        "title": "水房", 
+        "title": "收水/車頭",
         "actions": [
             {"name": "領錢", "risk": 0.1, "base_reward": 100, "success_rate": 0.9, "xp": 20},
             {"name": "收水", "risk": 0.2, "base_reward": 200, "success_rate": 0.85, "xp": 35},
             {"name": "轉移陣地", "risk": 0.25, "base_reward": 400, "success_rate": 0.8, "xp": 60},
             {"name": "洗錢", "risk": 0.4, "base_reward": 600, "success_rate": 0.7, "xp": 80}
-        ], 
-        "salary": 500,
-        "xp_required": 1500,
-        "role_id": int(os.getenv("ROLE_WATER_ROOM", 0)),
-        "description": "負責資金轉移與清洗，風險與報酬提升"
+        ],
+        "salary": 450,
+        "days_required": 28,
+        "xp_required": 4000,
+        "role_id": int(os.getenv("ROLE_TEAM_LEAD", 0)),
+        "salary_boost": 1.0,
+        "xp_boost": 1.0,
+        "description": "負責調度車手提款。"
     },
     4: {
-        "title": "帳房", 
+        "title": "水房會計",
         "actions": [
             {"name": "領錢", "risk": 0.1, "base_reward": 100, "success_rate": 0.9, "xp": 20},
             {"name": "算帳", "risk": 0.2, "base_reward": 350, "success_rate": 0.85, "xp": 45},
             {"name": "偷A錢", "risk": 0.3, "base_reward": 300, "success_rate": 0.75, "xp": 50},
             {"name": "做假帳", "risk": 0.5, "base_reward": 800, "success_rate": 0.65, "xp": 100},
             {"name": "挪用公款", "risk": 0.6, "base_reward": 1000, "success_rate": 0.6, "xp": 120}
-        ], 
+        ],
         "salary": 750,
-        "xp_required": 3500,
+        "days_required": 42,
+        "xp_required": 8500,
         "role_id": int(os.getenv("ROLE_ACCOUNTING", 0)),
-        "description": "管理財務的高階職位，掌握金流命脈"
+        "salary_boost": 1.1,
+        "xp_boost": 1.0,
+        "description": "掌管金流。特權：薪資加成 +10%。"
     },
     5: {
-        "title": "詐騙機房", 
+        "title": "機房主任",
         "actions": [
             {"name": "詐騙", "risk": 0.35, "base_reward": 700, "success_rate": 0.75, "xp": 90},
             {"name": "挖虛擬幣", "risk": 0.15, "base_reward": 400, "success_rate": 0.88, "xp": 55},
             {"name": "培訓新人", "risk": 0.1, "base_reward": 300, "success_rate": 0.92, "xp": 40},
             {"name": "開發話術", "risk": 0.25, "base_reward": 500, "success_rate": 0.82, "xp": 70},
             {"name": "大單詐騙", "risk": 0.7, "base_reward": 1500, "success_rate": 0.5, "xp": 150}
-        ], 
-        "salary": 1000,
-        "xp_required": 7000,
+        ],
+        "salary": 1250,
+        "days_required": 60,
+        "xp_required": 18000,
         "role_id": int(os.getenv("ROLE_SCAM_ROOM", 0)),
-        "description": "頂尖詐騙專家，高風險高報酬的頂端"
+        "salary_boost": 1.0,
+        "xp_boost": 1.2,
+        "description": "帶領整個分隊。特權：每日經驗 +20%。"
+    },
+    6: {
+        "title": "小區代理人",
+        "actions": [
+            {"name": "詐騙", "risk": 0.35, "base_reward": 700, "success_rate": 0.75, "xp": 90},
+            {"name": "挖虛擬幣", "risk": 0.15, "base_reward": 400, "success_rate": 0.88, "xp": 55},
+            {"name": "培訓新人", "risk": 0.1, "base_reward": 300, "success_rate": 0.92, "xp": 40},
+            {"name": "開發話術", "risk": 0.25, "base_reward": 500, "success_rate": 0.82, "xp": 70},
+            {"name": "大單詐騙", "risk": 0.7, "base_reward": 1500, "success_rate": 0.5, "xp": 150}
+        ],
+        "salary": 2100,
+        "days_required": 90,
+        "xp_required": 40000,
+        "role_id": int(os.getenv("ROLE_REGIONAL_DIRECTOR", 0)),
+        "salary_boost": 1.0,
+        "xp_boost": 1.0,
+        "description": "半管理層，可擁有自訂職稱。特權：解鎖高風險任務。"
     }
 }
 
-# 改用周為單位的費氏數列 (1, 2, 3, 5, 8 周)
-FIB_WEEKS = [1, 2, 3, 5, 8]
+# 升級所需天數 (Lv.0 不升級，Lv.1-6 分別需要 7, 14, 28, 42, 60, 90 天)
+REQUIRED_DAYS = [0, 7, 14, 28, 42, 60, 90]
 
 def required_days_for_level(level):
-    """返回升級所需的連續出勤天數（周 × 7）"""
+    """返回升級所需的連續出勤天數"""
     try:
-        weeks = FIB_WEEKS[level - 1] if level <= len(FIB_WEEKS) else 999
-        return weeks * 7  # 轉換為天數
+        if level < 0 or level >= len(REQUIRED_DAYS):
+            return 999
+        return REQUIRED_DAYS[level]
     except Exception as e:
         traceback.print_exc()
         return 999
 
 def check_level_up(user):
     """檢查是否滿足升級條件（連續出勤 + 經驗值）"""
-    level = user.get('level', 1)
-    if level >= 5:
+    level = user.get('level', 0)
+    if level >= 6:
         return False, None
     
     streak = user.get('streak', 0)
     xp = user.get('xp', 0)
     
     next_level = level + 1
-    required_days = required_days_for_level(next_level)
+    required_days = LEVELS[next_level]["days_required"]
     required_xp = LEVELS[next_level]["xp_required"]
     
     days_met = streak >= required_days
@@ -134,7 +180,7 @@ def create_work_embed(user, user_obj):
         level = user['level']
         level_info = LEVELS[level]
         
-        colors = {1: 0x95a5a6, 2: 0x3498db, 3: 0x9b59b6, 4: 0xe74c3c, 5: 0xf39c12}
+        colors = {0: 0x7f8c8d, 1: 0x95a5a6, 2: 0x3498db, 3: 0x9b59b6, 4: 0xe74c3c, 5: 0xf39c12, 6: 0xdaa520}
         embed = discord.Embed(
             title="🎴【詐騙園區 • 勞動記錄卡】", 
             color=colors.get(level, 0x2f3136)
@@ -170,7 +216,7 @@ def create_work_embed(user, user_obj):
             inline=True
         )
         
-        if level < 5:
+        if level < 6:
             can_level_up, info = check_level_up(user)
             
             if can_level_up:
@@ -191,12 +237,9 @@ def create_work_embed(user, user_obj):
                 next_level_info = LEVELS[level + 1]
                 salary_increase = next_level_info['salary'] - level_info['salary']
                 
-                required_weeks = info['required_days'] // 7
-                current_weeks = info['current_days'] // 7
-                
                 progress_text = (
                     f"**下一階段：{next_level_info['title']}** (Lv.{level + 1})\n\n"
-                    f"📅 **連續出勤**：{info['current_days']}/{info['required_days']} 天 ({current_weeks}/{required_weeks} 周)\n"
+                    f"📅 **連續出勤**：{info['current_days']}/{info['required_days']} 天\n"
                     f"{days_progress}\n\n"
                     f"📈 **經驗累積**：{info['current_xp']:,}/{info['required_xp']:,} XP\n"
                     f"{xp_progress}\n\n"
@@ -209,11 +252,11 @@ def create_work_embed(user, user_obj):
                 embed.add_field(name="🔼 升級進度", value=progress_text, inline=False)
         else:
             embed.add_field(
-                name="👑 最高等級", 
+                name="👑 最高等級 - 小區代理人", 
                 value=(
                     "```yaml\n"
-                    "你已達到詐騙機房等級！\n"
-                    "享受最高薪資和全部權限！\n"
+                    "恭喜！你已達到園區最高層級！\n"
+                    "享受最高薪資和全部管理權限！\n"
                     "```"
                 ),
                 inline=False
@@ -295,10 +338,12 @@ def create_level_up_embed(user_obj, old_level, new_level, bonus_coins):
         )
     
     level_messages = {
+        1: "🆙 你已晉升至園區正式員工！開始你的詐騙之旅吧！",
         2: "🎉 你已經不再是菜鳥了！開始接觸資金流動！",
         3: "💪 你的詐騙技能越來越熟練了！解鎖洗錢功能！",
         4: "🏆 你已經是園區的高階管理了！掌握金流命脈！",
-        5: "👑 登峰造極！你已成為詐騙機房的頂尖專家！"
+        5: "👑 登峰造極！你已成為詐騙機房的頂尖專家！",
+        6: "💎 恭喜！你已成為園區代理人，擁有最高決策權！"
     }
     
     embed.add_field(
@@ -364,16 +409,19 @@ async def process_checkin(user_id, user_obj, guild):
         
         today = datetime.utcnow().strftime("%Y-%m-%d")
         
-        level = user.get('level', 1)
+        level = user.get('level', 0)
         streak = user.get('streak', 0) + 1
         
-        # 隨機經驗值
+        # 隨機經驗值 + 經驗倍數加成
         xp_gain = random.randint(20, 60)
+        xp_boost = LEVELS[level].get("xp_boost", 1.0)
+        xp_gain = int(xp_gain * xp_boost)
         
-        # 浮動薪資 (0-100%)
+        # 浮動薪資 (0-100%) + 薪資倍數加成
         base_salary = LEVELS[level]["salary"]
         salary_multiplier = random.uniform(0, 1)
-        kkcoin_gain = int(base_salary * salary_multiplier)
+        salary_boost = LEVELS[level].get("salary_boost", 1.0)
+        kkcoin_gain = int(base_salary * salary_multiplier * salary_boost)
 
         leveled_up = False
         bonus_coins = 0
@@ -385,7 +433,7 @@ async def process_checkin(user_id, user_obj, guild):
         
         can_level_up, _ = check_level_up(temp_user)
         
-        if can_level_up and level < 5:
+        if can_level_up and level < 6:
             level += 1
             streak = 0
             bonus_coins = 300 * level
