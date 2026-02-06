@@ -272,6 +272,14 @@ class SheetSyncManager:
                 
                 seen_user_ids.add(user_id)
                 
+                # 🔧 清理記錄：移除 NULL 值，允許 DB DEFAULT 被使用
+                # 這防止虛擬人物記錄（空的 kkcoin、level 等）
+                cleaned_record = {}
+                for key, value in record.items():
+                    if value is not None:
+                        cleaned_record[key] = value
+                    # 移除 None 值，讓 DB DEFAULT 值被使用
+                
                 # 檢查用戶是否在數據庫中存在
                 existing_user = self.db.get_user(user_id)
                 
@@ -283,9 +291,9 @@ class SheetSyncManager:
                     action = "新增"
                 
                 # 保存用戶 (db.set_user 會自動 INSERT 或 REPLACE)
-                print(f"   ✓ 記錄 {i}: [{action}] user_id={user_id}, 欄位數={len(record)}, 數據={record}")
+                print(f"   ✓ 記錄 {i}: [{action}] user_id={user_id}, 欄位數={len(cleaned_record)}, 數據={cleaned_record}")
                 try:
-                    success = self.db.set_user(user_id, record)
+                    success = self.db.set_user(user_id, cleaned_record)
                 except Exception as set_user_exc:
                     success = False
                     print(f"   ❌ set_user 拋出異常: {set_user_exc}")
