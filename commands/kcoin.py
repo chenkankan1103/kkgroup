@@ -379,14 +379,34 @@ class KKCoin(commands.Cog):
         all_users = get_all_users()
         
         # 篩選 kkcoin > 0，排序，取前 20
-        users = [u for u in all_users if u.get('kkcoin', 0) > 0]
-        users.sort(key=lambda x: x.get('kkcoin', 0), reverse=True)
+        # 修正：處理 kkcoin 為 None 的情況
+        users = [u for u in all_users if (u.get('kkcoin') or 0) > 0]
+        users.sort(key=lambda x: (x.get('kkcoin') or 0), reverse=True)
         users = users[:20]
         
+        # 嘗試獲取 Discord member，若失敗則使用 DB 數據
         for user in users:
-            member = guild.get_member(int(user["user_id"]))
+            user_id = int(user["user_id"])
+            member = guild.get_member(user_id)
+            
             if member:
+                # ✅ 成功找到 Discord member
                 members_data.append((member, user["kkcoin"]))
+            else:
+                # ⚠️ Guild 中沒有該成員，使用備用方案
+                # 創建一個簡單的對象來存儲用戶信息
+                class FallbackMember:
+                    def __init__(self, user_id, nickname):
+                        self.id = user_id
+                        self.display_name = nickname or f"Unknown ({user_id})"
+                        self.display_avatar = type('obj', (object,), {'url': 'https://cdn.discordapp.com/embed/avatars/0.png'})()
+                
+                fallback = FallbackMember(
+                    user_id,
+                    user.get('nickname', user.get('user_name', f'User {user_id}'))
+                )
+                members_data.append((fallback, user["kkcoin"]))
+                print(f"⚠️  用戶 {user['nickname']} (ID: {user_id}) 不在 Guild 中，使用備用方案")
         
         return members_data
 
@@ -407,12 +427,16 @@ class KKCoin(commands.Cog):
                 
             old_member, old_kkcoin = self.last_leaderboard_data[i]
             
+            # 安全比較 KK幣 (處理 None 值)
+            new_kk = kkcoin or 0
+            old_kk = old_kkcoin or 0
+            
             if member.id != old_member.id:
                 print(f"🔍 排名變化：位置 {i+1} 從 {old_member.display_name} 變成 {member.display_name}")
                 return True
                 
-            if kkcoin != old_kkcoin:
-                print(f"🔍 KK幣變化：{member.display_name} 從 {old_kkcoin} 變成 {kkcoin}")
+            if new_kk != old_kk:
+                print(f"🔍 KK幣變化：{member.display_name} 從 {old_kk} 變成 {new_kk}")
                 return True
         
         print("🔍 資料沒有變化，跳過更新")
