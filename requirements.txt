@@ -3,6 +3,8 @@ python-dotenv
 aiohttp
 watchdog
 pillow
+matplotlib
+numpy
 regex
 huggingface_hub
 aiosqlite
