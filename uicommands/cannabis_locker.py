@@ -777,7 +777,7 @@ class SelectSeedView(discord.ui.View):
                 button.callback = self.make_plant_callback(seed_name)
                 self.add_item(button)
     
-    async def make_plant_callback(self, seed_name):
+    def make_plant_callback(self, seed_name):
         async def callback(interaction: discord.Interaction):
             try:
                 await interaction.response.defer(ephemeral=True)

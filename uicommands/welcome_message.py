@@ -119,10 +119,36 @@ class WelcomeFlow(commands.Cog):
         # 圖片緩存
         self.cache_dir = Path('./character_images')
         self.cache_dir.mkdir(exist_ok=True)
+        self.cache_file = Path('./character_images/discord_url_cache.json')
         
         self.init_database()
+        # 啟動時加載持久化緩存
+        self.load_persistent_cache()
         # 啟動時預載入圖片 - 延遲啟動避免阻塞
         self.bot.loop.create_task(self.delayed_preload())
+
+    def load_persistent_cache(self):
+        """從文件加載持久化的 Discord URL 緩存"""
+        try:
+            if self.cache_file.exists():
+                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                    cache_data = json.load(f)
+                    # 轉換回內存格式
+                    for cache_key, url_data in cache_data.items():
+                        if isinstance(url_data, dict) and 'discord_url' in url_data:
+                            self.image_cache[cache_key] = url_data
+                    print(f"✅ 已加載 {len(self.image_cache)} 個圖片緩存 (從文件)")
+        except Exception as e:
+            print(f"⚠️ 加載持久化緩存失敗: {e}")
+    
+    def save_persistent_cache(self):
+        """保存 Discord URL 緩存到文件"""
+        try:
+            self.cache_dir.mkdir(exist_ok=True)
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(self.image_cache, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"⚠️ 保存持久化緩存失敗: {e}")
 
     async def delayed_preload(self):
         """延遲預載入以避免阻塞機器人啟動"""
@@ -150,15 +176,15 @@ class WelcomeFlow(commands.Cog):
             traceback.print_exc()
 
     async def preload_preset_images(self):
-        """預載入 4 張預設角色圖片"""
-        print("🖼️ 開始預載入角色圖片...")
+        """預載入 4 張預設角色圖片（如果緩存不存在）"""
+        print("🖼️ 開始檢查角色圖片緩存...")
         
         for preset_name, config in self.preset_characters.items():
             try:
-                # 檢查是否已有緩存
+                # 檢查是否已有緩存（優先從文件快取）
                 cached_url = self.get_cached_discord_url(preset_name)
                 if cached_url:
-                    print(f"✅ {preset_name} 已有緩存")
+                    print(f"✅ {preset_name} 使用已存在的緩存 (跳過上傳)")
                     continue
                 
                 # 檢查本地緩存
@@ -361,7 +387,7 @@ class WelcomeFlow(commands.Cog):
             return None
 
     def save_discord_url_cache(self, cache_key: str, discord_url: str, message_id: int = None):
-        """保存 Discord URL 到記憶體緩存"""
+        """保存 Discord URL 到記憶體緩存並持久化到文件"""
         try:
             current_time = int(time.time())
             self.image_cache[cache_key] = {
@@ -369,6 +395,8 @@ class WelcomeFlow(commands.Cog):
                 'created_at': current_time,
                 'message_id': message_id
             }
+            # 同時保存到文件實現持久化
+            self.save_persistent_cache()
             
         except Exception as e:
             print(f"❌ 保存 Discord URL 緩存錯誤: {e}")
