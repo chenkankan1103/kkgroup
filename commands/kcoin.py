@@ -52,22 +52,51 @@ def get_from_env(variable_name, default=None):
 def save_to_env(variable_name, value):
     set_key(".env", variable_name, str(value))
 
+# 生成灰色占位頭像（當頭像加載失敗時使用）
+def create_placeholder_avatar():
+    """創建灰色占位圖像"""
+    placeholder = Image.new('RGBA', (48, 48), (200, 200, 200, 255))
+    return placeholder
+
 # 取得 Discord 使用者頭像
 async def fetch_avatar(session, url):
-    """嘗試加載用戶頭像，失敗時返回 None"""
+    """
+    嘗試加載用戶頭像
+    成功: 返回 Image 對象
+    失敗: 返回 None（調用者應使用 placeholder）
+    """
     if not url:
         return None
+    
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+        # 增加超時時間，避免網路波動導致下載失敗
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            # 驗證 HTTP 狀態碼
             if resp.status != 200:
+                print(f"⚠️ 頭像 URL 返回 {resp.status}: {url[:50]}...")
                 return None
+            
+            # 讀取圖片數據
             data = await resp.read()
             if len(data) == 0:
+                print(f"⚠️ 頭像數據為空: {url[:50]}...")
                 return None
-            return Image.open(io.BytesIO(data)).convert("RGBA")
+            
+            # 嘗試加載圖片
+            img = Image.open(io.BytesIO(data)).convert("RGBA")
+            
+            # 檢查圖片尺寸（避免 1x1 的空白圖）
+            if img.size[0] < 16 or img.size[1] < 16:
+                print(f"⚠️ 頭像尺寸過小: {img.size}")
+                return None
+            
+            return img
+    
     except asyncio.TimeoutError:
+        print(f"⏱️ 頭像加載超時: {url[:50]}...")
         return None
-    except Exception:
+    except Exception as e:
+        print(f"❌ 頭像加載失敗 ({type(e).__name__}): {url[:50]}...")
         return None
 
 async def make_leaderboard_image(members_data):
@@ -110,6 +139,9 @@ async def make_leaderboard_image(members_data):
         title_x = MARGIN
     draw.text((title_x, 18), "KK幣排行榜（前20名）", fill=(60,60,60), font=FONT_BIG)
 
+    # 預先創建占位頭像
+    placeholder_avatar = create_placeholder_avatar()
+    
     async with aiohttp.ClientSession() as session:
         for i, (member, kkcoin) in enumerate(members_data):
             y = 75 + i*60
@@ -120,18 +152,19 @@ async def make_leaderboard_image(members_data):
                 rank_x = MARGIN
             draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
             
-            # 嘗試加載頭像，失敗則跳過
+            # 嘗試加載頭像，失敗則使用灰色占位圖
             avatar = None
             try:
                 avatar_url = getattr(member.display_avatar, 'url', None) if hasattr(member, 'display_avatar') else None
                 if avatar_url:
                     avatar = await fetch_avatar(session, avatar_url)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"❌ 頭像加載異常: {e}")
             
-            if avatar:
-                avatar = avatar.resize((AVATAR_SIZE, AVATAR_SIZE))
-                img.paste(avatar, (rank_x + 40, y), avatar)
+            # 使用實際頭像或灰色占位圖
+            display_avatar = avatar if avatar else placeholder_avatar
+            display_avatar = display_avatar.resize((AVATAR_SIZE, AVATAR_SIZE))
+            img.paste(display_avatar, (rank_x + 40, y), display_avatar)
             
             name_x = rank_x + 100
             name_y = y+8
@@ -412,10 +445,12 @@ class KKCoin(commands.Cog):
                 # ⚠️ Guild 中沒有該成員，使用備用方案
                 # 創建一個簡單的對象來存儲用戶信息
                 class FallbackMember:
+                    """當玩家不在 Guild 中時使用的备用成員對象"""
                     def __init__(self, user_id, nickname):
                         self.id = user_id
-                        self.display_name = nickname or f"Unknown ({user_id})"
-                        self.display_avatar = type('obj', (object,), {'url': None})()
+                        self.display_name = nickname or f"未知玩家 ({user_id})"
+                        # 不設置 display_avatar，讓代碼使用 hasattr 檢查
+                        # self.display_avatar 不存在 → avatar_url 為 None → 使用灰色 placeholder
                 
                 fallback = FallbackMember(
                     user_id,
