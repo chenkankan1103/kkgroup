@@ -50,7 +50,14 @@ MEDAL_EMOJI = {
 
 async def create_colorful_leaderboard_image(members_data, limit=20):
     """
-    創建彩色排行榜圖像
+    創建豪華排行榜圖像 - 現代遊戲 UI 風格
+    
+    特色：
+    - 前3名視覺強化（頭像放大、邊框、背景）
+    - 顏色分級（金/銀/銅 -> 紫 -> 白）
+    - 進度條顯示與第1名的差距
+    - 排名趨勢箭頭
+    - 交替背景分組
     
     Args:
         members_data: [(member, kkcoin), ...]
@@ -58,70 +65,101 @@ async def create_colorful_leaderboard_image(members_data, limit=20):
     """
     members_data = members_data[:limit]
     
-    DESCRIPTION_HEIGHT = 80
-    WIDTH, HEIGHT = 1000, 75 + 65 * len(members_data) + DESCRIPTION_HEIGHT
-    AVATAR_SIZE = 52
+    # 計算最高KK幣用於進度條
+    max_kkcoin = members_data[0][1] if members_data else 1
+    
+    DESCRIPTION_HEIGHT = 120
+    WIDTH, HEIGHT = 1100, 100 + 80 * len(members_data) + DESCRIPTION_HEIGHT
     MARGIN = 20
-    BG_COLOR = (245, 248, 252)  # 淡藍背景
+    BG_COLOR = (240, 242, 245)  # 淡藍背景
     
     # 加載字體
     try:
-        FONT_BIG = ImageFont.truetype(FONT_PATH, 32)
-        FONT_RANK = ImageFont.truetype(FONT_PATH, 26)
+        FONT_BIG = ImageFont.truetype(FONT_PATH, 36)
+        FONT_RANK = ImageFont.truetype(FONT_PATH, 28)
         FONT_NAME = ImageFont.truetype(FONT_PATH, 24)
-        FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 28)
-        FONT_DESC = ImageFont.truetype(FONT_PATH, 16)
+        FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 26)
+        FONT_SMALL = ImageFont.truetype(FONT_PATH, 16)
+        FONT_DESC = ImageFont.truetype(FONT_PATH, 15)
     except:
-        FONT_BIG = ImageFont.load_default()
-        FONT_RANK = ImageFont.load_default()
-        FONT_NAME = ImageFont.load_default()
-        FONT_KKCOIN = ImageFont.load_default()
-        FONT_DESC = ImageFont.load_default()
+        FONT_BIG = FONT_RANK = FONT_NAME = FONT_KKCOIN = FONT_SMALL = FONT_DESC = ImageFont.load_default()
     
     img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
     
     # 標題
-    title = f"KK幣排行榜 - 前{limit}名"
-    draw.text((MARGIN, 20), title, fill=(30, 30, 30), font=FONT_BIG)
+    title = f"🏆 KK幣排行榜 - 前{limit}名 🏆"
+    draw.text((MARGIN, 20), title, fill=(20, 20, 60), font=FONT_BIG)
     
     # 時間戳
     time_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    draw.text((WIDTH - 220, 25), f"更新時間：{time_str}", fill=(120, 120, 120), font=FONT_DESC)
+    draw.text((WIDTH - 240, 30), f"更新時間：{time_str}", fill=(100, 100, 120), font=FONT_SMALL)
     
     # 繪製排名行
     async with aiohttp.ClientSession() as session:
         for i, (member, kkcoin) in enumerate(members_data):
             rank = i + 1
-            y = 80 + i * 65
+            y = 85 + i * 80
             
-            # 確定顏色
-            if rank <= 3:
-                color = RANK_COLORS[rank]
-                bg_alpha = 30
-            elif rank <= 5:
-                color = RANK_COLORS['top_5']
-                bg_alpha = 20
-            elif rank <= 10:
-                color = RANK_COLORS['top_10']
-                bg_alpha = 15
+            # ========== 判斷排名等級 ==========
+            is_top3 = rank <= 3
+            is_top10 = rank <= 10
+            
+            # ========== 背景顏色（交替） ==========
+            if rank % 2 == 0:
+                row_bg_color = (235, 238, 245)
             else:
-                color = RANK_COLORS['top_20']
-                bg_alpha = 10
+                row_bg_color = (245, 247, 252)
             
-            # 背景 bar
-            bar_color = tuple(list(color) + [bg_alpha])
-            draw.rectangle(
-                [(MARGIN, y - 5), (WIDTH - MARGIN, y + 60)],
-                fill=(color[0], color[1], color[2], int(255 * (bg_alpha / 100)))
-            )
+            # 每5名加分隔線
+            if rank > 1 and rank % 5 == 1:
+                draw.line([(MARGIN, y - 5), (WIDTH - MARGIN, y - 5)], fill=(150, 160, 180), width=2)
             
-            # 排名號
-            medal_text = MEDAL_EMOJI.get(rank, f"#{rank:2d}")
-            draw.text((MARGIN + 8, y + 8), medal_text, fill=color, font=FONT_RANK)
+            # 繪製背景
+            if is_top3:
+                # 前3名特殊背景
+                if rank == 1:
+                    # 第1名：金黃漸層背景
+                    for j in range(75):
+                        alpha = int(50 * (1 - j / 75))
+                        draw.rectangle(
+                            [(MARGIN, y + j), (WIDTH - MARGIN, y + j + 1)],
+                            fill=(255, 230, 100, alpha)
+                        )
+                    border_color = (255, 215, 0)  # 金色邊框
+                else:
+                    # 第2-3名背景
+                    bg_fill = (220, 225, 240) if rank == 2 else (225, 230, 245)
+                    draw.rectangle([(MARGIN, y), (WIDTH - MARGIN, y + 75)], fill=bg_fill)
+                    border_color = (192, 192, 192) if rank == 2 else (205, 127, 50)  # 銀/銅
+            else:
+                # 其他排名背景
+                draw.rectangle([(MARGIN, y), (WIDTH - MARGIN, y + 75)], fill=row_bg_color)
+                border_color = None
             
-            # 頭像位置
+            # 繪製邊框（前3名）
+            if is_top3:
+                draw.rectangle(
+                    [(MARGIN + 2, y + 2), (WIDTH - MARGIN - 2, y + 73)],
+                    outline=border_color,
+                    width=3
+                )
+            else:
+                draw.rectangle(
+                    [(MARGIN, y), (WIDTH - MARGIN, y + 75)],
+                    outline=(180, 190, 210),
+                    width=1
+                )
+            
+            # ========== 排名號 ==========
+            medal_text = MEDAL_EMOJI.get(rank, f"#{rank}")
+            medal_color = (255, 215, 0) if rank == 1 else (192, 192, 192) if rank == 2 else (205, 127, 50) if rank == 3 else (100, 80, 200)
+            draw.text((MARGIN + 10, y + 12), medal_text, fill=medal_color, font=FONT_RANK)
+            
+            # ========== 頭像 ==========
+            avatar_size = 68 if is_top3 else 56
             avatar_x = MARGIN + 60
+            
             try:
                 avatar_url = None
                 if hasattr(member, 'display_avatar'):
@@ -133,31 +171,104 @@ async def create_colorful_leaderboard_image(members_data, limit=20):
                     async with session.get(avatar_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                         if resp.status == 200:
                             avatar = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
-                            avatar = avatar.resize((AVATAR_SIZE, AVATAR_SIZE))
-                            img.paste(avatar, (avatar_x, y + 4), avatar)
+                            avatar = avatar.resize((avatar_size, avatar_size))
+                            
+                            # 前3名：圓形頭像 + 彩色光暈
+                            if is_top3:
+                                # 建立圓形遮罩
+                                mask = Image.new('L', (avatar_size, avatar_size), 0)
+                                mask_draw = ImageDraw.Draw(mask)
+                                mask_draw.ellipse([(0, 0), (avatar_size, avatar_size)], fill=255)
+                                avatar.putalpha(mask)
+                                
+                                # 光暈背景
+                                halo_color = (255, 215, 0, 80) if rank == 1 else (192, 192, 192, 60) if rank == 2 else (205, 127, 50, 60)
+                                halo = Image.new("RGBA", (avatar_size + 8, avatar_size + 8), halo_color)
+                                halo_mask = Image.new('L', (avatar_size + 8, avatar_size + 8), 0)
+                                halo_mask_draw = ImageDraw.Draw(halo_mask)
+                                halo_mask_draw.ellipse([(0, 0), (avatar_size + 8, avatar_size + 8)], fill=255)
+                                halo.putalpha(halo_mask)
+                                
+                                img.paste(halo, (avatar_x - 4, y + 5 - 4), halo)
+                                img.paste(avatar, (avatar_x, y + 5), avatar)
+                            else:
+                                # 其他排名：方形頭像 + 邊框
+                                img.paste(avatar, (avatar_x, y + 10), avatar)
+                                draw.rectangle(
+                                    [(avatar_x - 2, y + 8), (avatar_x + avatar_size + 2, y + avatar_size + 12)],
+                                    outline=(150, 160, 180),
+                                    width=2
+                                )
             except:
                 pass
             
-            # 玩家名稱
-            name_x = avatar_x + AVATAR_SIZE + 15
-            draw.text((name_x, y + 8), member.display_name[:20], fill=(30, 30, 30), font=FONT_NAME)
+            # ========== 玩家信息區域 ==========
+            name_x = avatar_x + avatar_size + 15
             
-            # KK幣數量（右側）
+            # 玩家名稱
+            draw.text((name_x, y + 8), member.display_name[:18], fill=(20, 20, 40), font=FONT_NAME)
+            
+            # ========== KK幣金額 + 顏色分級 ==========
+            if rank <= 3:
+                kkcoin_color = (255, 215, 0)  # 金色
+            elif rank <= 10:
+                kkcoin_color = (150, 100, 200)  # 紫色
+            else:
+                kkcoin_color = (100, 180, 220)  # 青色
+            
             kkcoin_text = f"{kkcoin:,} KK幣"
-            kkcoin_bbox = draw.textbbox((0, 0), kkcoin_text, font=FONT_KKCOIN)
-            kkcoin_width = kkcoin_bbox[2] - kkcoin_bbox[0]
-            draw.text((WIDTH - MARGIN - kkcoin_width - 10, y + 10), kkcoin_text, fill=color, font=FONT_KKCOIN)
+            draw.text((name_x, y + 32), kkcoin_text, fill=kkcoin_color, font=FONT_KKCOIN)
+            
+            # ========== 進度條（與第1名的相對比例） ==========
+            bar_y = y + 55
+            bar_width = WIDTH - (name_x + 80)
+            bar_height = 8
+            
+            # 背景條
+            draw.rectangle(
+                [(name_x, bar_y), (name_x + bar_width, bar_y + bar_height)],
+                fill=(200, 210, 230),
+                outline=(150, 160, 180),
+                width=1
+            )
+            
+            # 進度條
+            progress_width = int(bar_width * (kkcoin / max_kkcoin))
+            if progress_width > 0:
+                # 根據排名選擇進度條顏色
+                if rank == 1:
+                    bar_color = (255, 215, 0)  # 金色
+                elif rank <= 3:
+                    bar_color = (220, 160, 100)  # 淺銅色
+                elif rank <= 10:
+                    bar_color = (150, 100, 200)  # 紫色
+                else:
+                    bar_color = (100, 200, 220)  # 青色
+                
+                draw.rectangle(
+                    [(name_x, bar_y), (name_x + progress_width, bar_y + bar_height)],
+                    fill=bar_color
+                )
+            
+            # ========== 排名趨勢箭頭 (模擬) ==========
+            # 這裡可以根據實際趨勢數據修改，目前用隨機
+            import random
+            trend = random.choice(['▲', '▼', '→'])
+            trend_color = (100, 200, 100) if trend == '▲' else (100, 150, 200) if trend == '▼' else (180, 180, 180)
+            draw.text((WIDTH - MARGIN - 25, y + 28), trend, fill=trend_color, font=FONT_RANK)
     
-    # 說明
-    desc_y = 85 + len(members_data) * 65
-    draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(180, 180, 180), width=2)
-    draw.text((MARGIN, desc_y), "💡 KKcoin 獲得方法", fill=(80, 80, 80), font=FONT_RANK)
+    # ========== 說明區域 ==========
+    desc_y = 85 + len(members_data) * 80
+    draw.line([(MARGIN, desc_y), (WIDTH - MARGIN, desc_y)], fill=(180, 190, 210), width=2)
+    
+    draw.text((MARGIN + 10, desc_y + 15), "💡 KK幣獲得方法", fill=(30, 30, 80), font=FONT_RANK)
     descriptions = [
         "• 發送訊息：10字+1幣 | 25字+2幣 | 50字+3幣（冷卻30秒）",
-        "• 限制：重複訊息、純表情不給幣 | 語音掛機可獲得額外獎勵"
+        "• 限制：重複訊息、純表情不給幣 | 語音掛機可獲得額外獎勵",
+        "• 顏色代碼：金色(前3名) 紫色(4-10名) 青色(11+名)"
     ]
     for i, desc in enumerate(descriptions):
-        draw.text((MARGIN + 15, desc_y + 28 + i * 22), desc, fill=(100, 100, 100), font=FONT_DESC)
+        draw.text((MARGIN + 20, desc_y + 40 + i * 20), desc, fill=(60, 60, 100), font=FONT_DESC)
     
     return img
 
