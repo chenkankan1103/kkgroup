@@ -248,3 +248,15 @@ def get_adapter() -> CannabisFarmingAdapter:
     if _adapter is None:
         _adapter = CannabisFarmingAdapter()
     return _adapter
+
+
+# ==================== Discord Bot 集成 ====================
+async def setup(bot):
+    """
+    Discord 應用程序空 setup 函數
+    
+    此模組不提供任何 Cog，只是提供工具函數。
+    由於加載系統會自動檢測並加載所有 Python 模組，
+    因此需要此函數以防止加載錯誤。
+    """
+    pass

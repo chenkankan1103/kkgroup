@@ -14,6 +14,11 @@ import hashlib
 from pathlib import Path
 from db_adapter import get_user, set_user_field, get_user_field, get_all_users
 import datetime
+from shop_commands.merchant.cannabis_farming import (
+    get_inventory, plant_cannabis, get_user_plants, apply_fertilizer, 
+    harvest_plant, remove_inventory, add_inventory
+)
+from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 
 load_dotenv()
 
@@ -161,9 +166,6 @@ class LockerPanelView(discord.ui.View):
                 
             await interaction.response.defer(ephemeral=True)
             
-            from shop_commands.merchant.cannabis_farming import get_inventory, plant_cannabis
-            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
-            
             inventory = await get_inventory(self.user_id)
             seeds = inventory.get("種子", {})
             
@@ -204,9 +206,6 @@ class LockerPanelView(discord.ui.View):
                 return
                 
             await interaction.response.defer(ephemeral=True)
-            
-            from shop_commands.merchant.cannabis_farming import get_user_plants, get_inventory
-            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
             
             plants = await get_user_plants(self.user_id)
             growing_plants = [p for p in plants if p["status"] != "harvested"]
@@ -253,9 +252,6 @@ class LockerPanelView(discord.ui.View):
                 
             await interaction.response.defer(ephemeral=True)
             
-            from shop_commands.merchant.cannabis_farming import get_user_plants
-            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
-            
             plants = await get_user_plants(self.user_id)
             harvestable = [p for p in plants if p["status"] == "harvested"]
             
@@ -296,9 +292,6 @@ class LockerPanelView(discord.ui.View):
                 return
                 
             await interaction.response.defer(ephemeral=True)
-            
-            from shop_commands.merchant.cannabis_farming import get_user_plants
-            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
             
             plants = await get_user_plants(self.user_id)
             
