@@ -35,8 +35,6 @@ class CannabisMerchantViewV2(View):
     async def buy_seeds(self, interaction: discord.Interaction, button: discord.ui.Button):
         """購買種子 - 使用 Select Menu"""
         try:
-            await interaction.response.defer(ephemeral=True)
-            
             # 構建種子選擇菜單
             options = []
             for seed_name, config in CANNABIS_SHOP["種子"].items():
@@ -52,12 +50,17 @@ class CannabisMerchantViewV2(View):
                 description="從下方選擇要購買的種子類型",
                 color=discord.Color.green()
             )
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
         
         except Exception as e:
             report_interaction_error(interaction, e, "購買種子菜單")
             try:
-                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+                error_embed = discord.Embed(
+                    title="❌ 發生錯誤",
+                    description=f"```\n{str(e)[:100]}\n```",
+                    color=discord.Color.red()
+                )
+                await interaction.response.edit_message(embed=error_embed, view=None)
             except:
                 pass
     
@@ -65,8 +68,6 @@ class CannabisMerchantViewV2(View):
     async def buy_fertilizer(self, interaction: discord.Interaction, button: discord.ui.Button):
         """購買肥料 - 使用 Select Menu"""
         try:
-            await interaction.response.defer(ephemeral=True)
-            
             # 構建肥料選擇菜單
             options = []
             for fert_name, config in CANNABIS_SHOP["肥料"].items():
@@ -82,12 +83,17 @@ class CannabisMerchantViewV2(View):
                 description="從下方選擇要購買的肥料類型",
                 color=discord.Color.blue()
             )
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
         
         except Exception as e:
             report_interaction_error(interaction, e, "購買肥料菜單")
             try:
-                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+                error_embed = discord.Embed(
+                    title="❌ 發生錯誤",
+                    description=f"```\n{str(e)[:100]}\n```",
+                    color=discord.Color.red()
+                )
+                await interaction.response.edit_message(embed=error_embed, view=None)
             except:
                 pass
     
@@ -95,33 +101,29 @@ class CannabisMerchantViewV2(View):
     async def sell_cannabis(self, interaction: discord.Interaction, button: discord.ui.Button):
         """出售大麻 - 使用 Select Menu"""
         try:
-            await interaction.response.defer(ephemeral=True)
-            
             user_id = interaction.user.id
             try:
                 inventory = await get_inventory(user_id)
             except Exception as e:
                 # 如果表不存在，返回錯誤
                 report_interaction_error(interaction, e, "出售大麻 - 獲取庫存")
-                await interaction.followup.send(f"❌ 數據庫錯誤，請稍後重試：{str(e)[:100]}", ephemeral=True)
+                error_embed = discord.Embed(
+                    title="❌ 數據庫錯誤",
+                    description=f"```\n{str(e)[:100]}\n```",
+                    color=discord.Color.red()
+                )
+                await interaction.response.edit_message(embed=error_embed, view=None)
                 return
             
             if "大麻" not in inventory or not inventory["大麻"]:
-                await interaction.followup.send("❌ 你沒有大麻可以出售！", ephemeral=True)
+                error_embed = discord.Embed(
+                    title="❌ 無大麻可出售",
+                    description="你的庫存裡沒有大麻",
+                    color=discord.Color.red()
+                )
+                await interaction.response.edit_message(embed=error_embed, view=None)
                 return
             
-            # 構建大麻選擇菜單
-            options = []
-            for seed_name, quantity in inventory["大麻"].items():
-                price = CANNABIS_HARVEST_PRICES.get(seed_name, 100)
-                total = price * quantity
-                options.append(discord.SelectOption(
-                    label=f"{seed_name} x{quantity}",
-                    value=f"sell_{seed_name}_{quantity}",
-                    description=f"單價：{price} KKcoin | 總計：{total} KKcoin"
-                ))
-            
-            view = SellSelectView(self.cog, inventory["大麻"])
             embed = discord.Embed(
                 title="💰 出售大麻",
                 description="選擇要出售的大麻類型",
@@ -138,12 +140,17 @@ class CannabisMerchantViewV2(View):
                 )
             
             view = SellSelectView(self.cog, inventory["大麻"])
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
         
         except Exception as e:
             report_interaction_error(interaction, e, "出售大麻菜單")
             try:
-                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+                error_embed = discord.Embed(
+                    title="❌ 發生錯誤",
+                    description=f"```\n{str(e)[:100]}\n```",
+                    color=discord.Color.red()
+                )
+                await interaction.response.edit_message(embed=error_embed, view=None)
             except:
                 pass
     
