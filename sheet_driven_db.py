@@ -183,7 +183,7 @@ class SheetDrivenDB:
         # 整數型欄位
         if any(word in header_lower for word in 
                ['id', 'level', 'xp', 'coin', 'kkcoin', 'hp', 'stamina', 
-                'streak', 'count', 'num', 'amount', 'is_', 'unlocked']):
+                'streak', 'count', 'num', 'amount', 'is_', 'unlocked', 'enabled']):
             return 'INTEGER DEFAULT 0'
         
         # 時間戳欄位
