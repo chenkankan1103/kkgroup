@@ -223,6 +223,229 @@ async def create_chart_image(members_data, chart_type='bar', limit=10):
     return Image.open(buf).convert("RGBA")
 
 
+async def create_weekly_stats_image(total_coins, this_week_total, last_week_total, member_count):
+    """
+    創建本週統計圖表
+    
+    Args:
+        total_coins: 當前排行榜總KK幣
+        this_week_total: 本週新增KK幣
+        last_week_total: 上週新增KK幣
+        member_count: 總成員數
+    """
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10), facecolor='#f5f8fc')
+    
+    # 1. 本週vs上週對比
+    weeks = ['上週', '本週']
+    totals = [last_week_total, this_week_total]
+    colors_comp = ['#FF6464', '#6496FF']
+    bars = ax1.bar(weeks, totals, color=colors_comp, edgecolor='black', linewidth=2, width=0.6)
+    
+    for bar, total in zip(bars, totals):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{int(total):,}',
+                ha='center', va='bottom', fontsize=14, fontweight='bold')
+    
+    # 增長率
+    if last_week_total > 0:
+        growth_rate = ((this_week_total - last_week_total) / last_week_total) * 100
+        growth_text = f"增長 +{growth_rate:.1f}%" if growth_rate > 0 else f"下降 {growth_rate:.1f}%"
+        growth_color = '#FF6464' if growth_rate < 0 else '#6BBF59'
+    else:
+        growth_text = "首次統計"
+        growth_color = '#FFA500'
+    
+    ax1.text(0.5, max(totals) * 0.9, growth_text, 
+            ha='center', fontsize=13, fontweight='bold', color=growth_color,
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    ax1.set_ylabel('KK幣數量', fontsize=12, fontweight='bold')
+    ax1.set_title('📊 本週 vs 上週', fontsize=14, fontweight='bold')
+    ax1.set_ylim(0, max(totals) * 1.3)
+    ax1.grid(axis='y', alpha=0.3)
+    
+    # 2. 園區總資產變化（圖表）
+    wealth_data = [
+        ('館長', 15000),
+        ('夜店', 12000),
+        ('競技場', 10000),
+        ('其他', 8000)
+    ]
+    locations = [w[0] for w in wealth_data]
+    coins_by_loc = [w[1] for w in wealth_data]
+    colors_loc = ['#FFD700', '#FF6464', '#6496FF', '#FFA500']
+    
+    wedges, texts, autotexts = ax2.pie(
+        coins_by_loc,
+        labels=locations,
+        autopct='%1.1f%%',
+        colors=colors_loc,
+        startangle=45,
+        textprops={'fontsize': 10, 'fontweight': 'bold'}
+    )
+    
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontweight('bold')
+    
+    ax2.set_title('🏢 園區資產分布', fontsize=14, fontweight='bold')
+    
+    # 3. 關鍵指標卡片（1）
+    ax3.axis('off')
+    
+    # 總KK幣
+    ax3.text(0.5, 0.75, '金庫總額', fontsize=12, fontweight='bold',
+            ha='center', transform=ax3.transAxes, color='#666')
+    ax3.text(0.5, 0.55, f'{int(total_coins):,}', fontsize=28, fontweight='bold',
+            ha='center', transform=ax3.transAxes, color='#FFD700')
+    ax3.text(0.5, 0.35, 'KK幣', fontsize=11,
+            ha='center', transform=ax3.transAxes, color='#888')
+    
+    # 背景色
+    rect_main = plt.Rectangle((0.05, 0.05), 0.9, 0.9, 
+                               transform=ax3.transAxes,
+                               facecolor='#fff9e6', edgecolor='#FFD700', linewidth=2,
+                               zorder=-1)
+    ax3.add_patch(rect_main)
+    
+    # 4. 關鍵指標卡片（2）
+    ax4.axis('off')
+    
+    # 參與成員
+    ax4.text(0.5, 0.75, '參與成員', fontsize=12, fontweight='bold',
+            ha='center', transform=ax4.transAxes, color='#666')
+    ax4.text(0.5, 0.55, f'{member_count}', fontsize=28, fontweight='bold',
+            ha='center', transform=ax4.transAxes, color='#6496FF')
+    ax4.text(0.5, 0.35, '名', fontsize=11,
+            ha='center', transform=ax4.transAxes, color='#888')
+    
+    # 背景色
+    rect_member = plt.Rectangle((0.05, 0.05), 0.9, 0.9,
+                                 transform=ax4.transAxes,
+                                 facecolor='#e6f2ff', edgecolor='#6496FF', linewidth=2,
+                                 zorder=-1)
+    ax4.add_patch(rect_member)
+    
+    plt.suptitle('📈 KK幣本週統計', fontsize=18, fontweight='bold', y=0.98)
+    
+    # 更新時間戳
+    time_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    fig.text(0.99, 0.01, f'更新時間：{time_str}', ha='right', fontsize=9, color='#999')
+    
+    plt.tight_layout(rect=[0, 0.02, 1, 0.96])
+    
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='#f5f8fc')
+    buf.seek(0)
+    plt.close(fig)
+    
+    return Image.open(buf).convert("RGBA")
+
+
+async def create_weekly_mvp_image(mvp_member, this_week_coins, rank_position, total_members):
+    """
+    創建本週績效王卡片
+    
+    Args:
+        mvp_member: 本週MVP成員
+        this_week_coins: 本週新增KK幣
+        rank_position: 總排行中的位置
+        total_members: 總成員數
+    """
+    WIDTH, HEIGHT = 1000, 600
+    BG_COLOR = (30, 40, 80)  # 深藍背景
+    
+    try:
+        FONT_TITLE = ImageFont.truetype(FONT_PATH, 48)
+        FONT_NAME = ImageFont.truetype(FONT_PATH, 56)
+        FONT_STATS = ImageFont.truetype(FONT_PATH, 32)
+        FONT_LABEL = ImageFont.truetype(FONT_PATH, 24)
+        FONT_DESC = ImageFont.truetype(FONT_PATH, 20)
+    except:
+        FONT_TITLE = ImageFont.load_default()
+        FONT_NAME = ImageFont.load_default()
+        FONT_STATS = ImageFont.load_default()
+        FONT_LABEL = ImageFont.load_default()
+        FONT_DESC = ImageFont.load_default()
+    
+    img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
+    draw = ImageDraw.Draw(img)
+    
+    # 漸層背景效果（用矩形堆疊）
+    for i in range(HEIGHT):
+        alpha = int(255 * (1 - i / HEIGHT * 0.3))
+        color = (30 + int(20 * (i / HEIGHT)), 40 + int(40 * (i / HEIGHT)), 120)
+        draw.rectangle([(0, i), (WIDTH, i + 1)], fill=color)
+    
+    # 頂部金色裝飾
+    draw.rectangle([(0, 0), (WIDTH, 8)], fill=(255, 215, 0))
+    
+    # 標題
+    draw.text((50, 40), "🏆 本週績效王 🏆", fill=(255, 215, 0), font=FONT_TITLE)
+    
+    # 頭像區域
+    avatar_x = 150
+    avatar_y = 150
+    avatar_size = 200
+    
+    try:
+        avatar_url = None
+        if hasattr(mvp_member, 'display_avatar'):
+            avatar_url = str(mvp_member.display_avatar)
+        elif hasattr(mvp_member, 'avatar') and mvp_member.avatar:
+            avatar_url = mvp_member.avatar.url
+        
+        if avatar_url:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(avatar_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status == 200:
+                        avatar = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
+                        avatar = avatar.resize((avatar_size, avatar_size))
+                        
+                        # 圓形頭像（帶金色邊框）
+                        circle_img = Image.new("RGBA", (avatar_size + 20, avatar_size + 20), (0, 0, 0, 0))
+                        circle_draw = ImageDraw.Draw(circle_img)
+                        circle_draw.ellipse([(0, 0), (avatar_size + 20, avatar_size + 20)], 
+                                          outline=(255, 215, 0), width=4)
+                        
+                        # 貼上頭像
+                        circle_img.paste(avatar, (10, 10), avatar)
+                        img.paste(circle_img, (avatar_x - 10, avatar_y - 10), circle_img)
+    except Exception as e:
+        print(f"頭像加載失敗: {e}")
+    
+    # 玩家信息區域
+    info_x = avatar_x + avatar_size + 80
+    
+    # 玩家名稱
+    draw.text((info_x, avatar_y + 30), mvp_member.display_name[:20], 
+             fill=(255, 255, 255), font=FONT_NAME)
+    
+    # 本週新增KK幣
+    draw.text((info_x, avatar_y + 110), "本週新增", fill=(200, 200, 200), font=FONT_LABEL)
+    draw.text((info_x, avatar_y + 145), f"{int(this_week_coins):,}", 
+             fill=(100, 255, 150), font=FONT_STATS)
+    draw.text((info_x + 350, avatar_y + 150), "KK幣", fill=(100, 255, 150), font=FONT_LABEL)
+    
+    # 排行位置
+    draw.text((info_x, avatar_y + 220), f"總排行：第 {rank_position} 名（共 {total_members} 人）",
+             fill=(150, 200, 255), font=FONT_DESC)
+    
+    # 底部勵志文案
+    bottom_text = "🌟 妳是 KK garden 的榮耀 🌟"
+    text_bbox = draw.textbbox((0, 0), bottom_text, font=FONT_LABEL)
+    text_width = text_bbox[2] - text_bbox[0]
+    draw.text(((WIDTH - text_width) / 2, HEIGHT - 80), bottom_text,
+             fill=(255, 215, 0), font=FONT_LABEL)
+    
+    # 時間戳
+    time_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    draw.text((50, HEIGHT - 40), f"更新時間：{time_str}", fill=(150, 150, 150), font=FONT_DESC)
+    
+    return img
+
+
 async def setup(bot):
     """載入此模組"""
     print("✅ [KKCoin] 排行榜視覺化模組已載入")
