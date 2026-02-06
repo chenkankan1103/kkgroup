@@ -552,8 +552,52 @@ class UserPanel(commands.Cog):
         
         return None
 
+    async def restore_image_cache_from_storage(self):
+        """🔄 啟動時掃描存儲頻道，恢復快取 URL（避免重新上傳）"""
+        try:
+            if not self.image_storage_channel_id:
+                return
+            
+            channel = self.bot.get_channel(self.image_storage_channel_id)
+            if not channel:
+                print(f"⚠️ 無法找到存儲頻道: {self.image_storage_channel_id}")
+                return
+            
+            print(f"🔄 正在掃描存儲頻道以恢復圖片快取...")
+            recovered_count = 0
+            
+            # 掃描最近的訊息（限制 500 條以避免超時）
+            async for message in channel.history(limit=500):
+                try:
+                    # 檢查訊息是否有附件
+                    if not message.attachments:
+                        continue
+                    
+                    for attachment in message.attachments:
+                        # 從檔名中提取 cache_key（例如：20001520000...png）
+                        filename = attachment.filename or ""
+                        if filename.endswith('.png') and len(filename) > 10:
+                            cache_key = filename.replace('.png', '')
+                            
+                            # 驗證格式（cache_key 應該都是數字和逗號）
+                            if cache_key.replace(',', '').isdigit():
+                                discord_url = attachment.url
+                                self.save_discord_url_cache(cache_key, discord_url, message.id)
+                                recovered_count += 1
+                
+                except Exception as e:
+                    continue
+            
+            print(f"✅ 成功恢復 {recovered_count} 個圖片快取")
+        
+        except Exception as e:
+            print(f"⚠️ 恢復快取時出錯: {e}")
+
     async def cog_load(self):
         await self.bot.wait_until_ready()
+        
+        # 👇 新增：啟動時恢復圖片快取（避免重新上傳）
+        await self.restore_image_cache_from_storage()
         
         forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
         if forum_channel and isinstance(forum_channel, discord.ForumChannel):
