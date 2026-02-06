@@ -11,11 +11,21 @@ import aiohttp
 from PIL import Image, ImageDraw, ImageFont
 import os
 from datetime import datetime
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('Agg')
-import numpy as np
 from io import BytesIO
+
+# 延迟导入 matplotlib（用于图表生成）
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # 设置非交互后端（必须在 pyplot 导入前）
+    import matplotlib.pyplot as plt
+    import numpy as np
+    MATPLOTLIB_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ [警告] matplotlib/numpy 未安装: {e}")
+    print("   请运行: pip install matplotlib numpy")
+    MATPLOTLIB_AVAILABLE = False
+    plt = None
+    np = None
 
 # 配置
 FONT_PATH = os.path.join(os.path.dirname(__file__), "..", "fonts", "NotoSansCJKtc-Regular.otf")
@@ -161,6 +171,9 @@ async def create_chart_image(members_data, chart_type='bar', limit=10):
         chart_type: 'bar' or 'pie'
         limit: 顯示數量
     """
+    if not MATPLOTLIB_AVAILABLE:
+        raise RuntimeError("matplotlib 未安裝，無法生成圖表。請執行: pip install matplotlib numpy")
+    
     members_data = members_data[:limit]
     names = [m[0].display_name[:15] for m in members_data]
     coins = [m[1] for m in members_data]
@@ -233,6 +246,9 @@ async def create_weekly_stats_image(total_coins, this_week_total, last_week_tota
         last_week_total: 上週新增KK幣
         member_count: 總成員數
     """
+    if not MATPLOTLIB_AVAILABLE:
+        raise RuntimeError("matplotlib 未安裝，無法生成圖表。請執行: pip install matplotlib numpy")
+    
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10), facecolor='#f5f8fc')
     
     # 1. 本週vs上週對比
