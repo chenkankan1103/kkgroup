@@ -155,11 +155,31 @@ async def make_leaderboard_image(members_data):
             # 嘗試加載頭像，失敗則使用灰色占位圖
             avatar = None
             try:
-                avatar_url = getattr(member.display_avatar, 'url', None) if hasattr(member, 'display_avatar') else None
+                # 優先順序：display_avatar → avatar → default_avatar
+                avatar_url = None
+                
+                # 1️⃣ 嘗試 display_avatar（用戶自訂頭像）
+                if hasattr(member, 'display_avatar') and member.display_avatar:
+                    avatar_url = member.display_avatar.url
+                
+                # 2️⃣ 如果沒有，嘗試 avatar（個人頭像）
+                elif hasattr(member, 'avatar') and member.avatar:
+                    avatar_url = member.avatar.url
+                
+                # 3️⃣ 最後使用 default_avatar（Discord 默認頭像）
+                elif hasattr(member, 'default_avatar') and member.default_avatar:
+                    avatar_url = member.default_avatar.url
+                
+                # 4️⃣ 嘗試加載圖片
                 if avatar_url:
                     avatar = await fetch_avatar(session, avatar_url)
+                    if not avatar:
+                        print(f"⚠️ 無法加載頭像（可能已過期）: {member.display_name}")
+                else:
+                    print(f"⚠️ 找不到頭像 URL: {member.display_name}")
+                    
             except Exception as e:
-                print(f"❌ 頭像加載異常: {e}")
+                print(f"❌ 頭像加載異常 ({member.display_name}): {e}")
             
             # 使用實際頭像或灰色占位圖
             display_avatar = avatar if avatar else placeholder_avatar

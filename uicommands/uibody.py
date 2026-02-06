@@ -1077,15 +1077,15 @@ class UserPanel(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """當有新成員加入時自動創建資料庫記錄和文章"""
+        """當有新成員加入時自動創建資料庫記錄和文章 - 重啟期間跳過圖片加載"""
         try:
             # 確保使用者在資料庫中存在
             if self.ensure_user_exists(member.id):
                 # 等待一下讓成員完全加入
                 await asyncio.sleep(2)
                 
-                # 嘗試創建文章
-                await self.get_or_create_user_thread(member)
+                # 嘗試創建文章 - 避免重啟期間重複上傳圖片
+                await self.get_or_create_user_thread(member, skip_image_on_startup=True)
                 
         except Exception:
             pass
