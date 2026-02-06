@@ -332,54 +332,50 @@ class LockerPanelView(discord.ui.View):
                 await interaction.followup.send("❌ 你還沒有種植任何植物！", ephemeral=True)
                 return
             
+            # 計算統計信息
+            total_slots = 5  # 假設最多5個位置
+            harvested = [p for p in plants if p["status"] == "harvested"]
+            growing = [p for p in plants if p["status"] != "harvested"]
+            
             embed = discord.Embed(
-                title="🌱 我的植物狀態",
+                title="🏠 我的置物櫃",
+                description=f"已使用 {len(plants)}/{total_slots} 個位置",
                 color=discord.Color.green()
             )
             
-            for idx, plant in enumerate(plants, 1):
-                seed_config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-                
-                # 計算進度
-                if plant["status"] == "harvested":
-                    progress_text = "✅ 已成熟 100%"
-                else:
-                    planted_time = plant["planted_at"] if isinstance(plant["planted_at"], float) else plant["planted_at"]
-                    matured_time = plant["matured_at"] if isinstance(plant["matured_at"], float) else plant["matured_at"]
+            # 生成格子視圖
+            grid = self._generate_locker_grid(plants, total_slots)
+            embed.add_field(name="📍 置物柜布局", value=grid, inline=False)
+            
+            # 按進度分類顯示
+            if growing:
+                embed.add_field(name="🌱 成長中的植物", value="━" * 25, inline=False)
+                for idx, plant in enumerate(growing, 1):
+                    seed_config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                    progress_info = await self.cog.get_plant_progress_info(plant)
                     
-                    if isinstance(planted_time, str):
-                        from datetime import datetime
-                        planted_time = datetime.fromisoformat(planted_time).timestamp()
-                    if isinstance(matured_time, str):
-                        from datetime import datetime
-                        matured_time = datetime.fromisoformat(matured_time).timestamp()
-                    
-                    from datetime import datetime
-                    now = datetime.now().timestamp()
-                    elapsed = now - planted_time
-                    total = matured_time - planted_time
-                    progress = min(100, (elapsed / total * 100)) if total > 0 else 0
-                    
-                    filled = int(progress / 5)
-                    empty = 20 - filled
-                    progress_text = f"{'█' * filled}{'░' * empty} {progress:.0f}%"
-                    
-                    remaining = max(0, matured_time - now)
-                    if remaining > 0:
-                        hours = int(remaining // 3600)
-                        mins = int((remaining % 3600) // 60)
-                        status_info = f"剩餘 {hours}h {mins}m"
-                    else:
-                        status_info = "✅ 已成熟"
-                    
-                    progress_text += f"\n{status_info}"
-                
-                value = (
-                    f"🌾 種類：{plant['seed_type']}\n"
-                    f"📊 進度：{progress_text}\n"
-                    f"💧 施肥：{plant['fertilizer_applied']}次"
-                )
-                embed.add_field(name=f"#{idx} {seed_config['emoji']}", value=value, inline=False)
+                    stage_emoji = self._get_growth_stage_emoji(progress_info['progress'])
+                    value = (
+                        f"{stage_emoji} {progress_info['stage_name']}\n"
+                        f"進度：{progress_info['progress_bar']}\n"
+                        f"時間：{progress_info['time_left']}\n"
+                        f"施肥：{plant['fertilizer_applied']}次"
+                    )
+                    embed.add_field(name=f"#{idx} {seed_config['emoji']} {plant['seed_type']}", value=value, inline=True)
+            
+            if harvested:
+                embed.add_field(name="✂️ 已成熟可收割", value="━" * 25, inline=False)
+                for idx, plant in enumerate(harvested, 1):
+                    seed_config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                    yield_amount = plant.get('harvested_amount', 0)
+                    value = (
+                        f"📊 產量：{yield_amount}\n"
+                        f"準備好收割! 🎉"
+                    )
+                    embed.add_field(name=f"#{idx} {seed_config['emoji']} {plant['seed_type']}", value=value, inline=True)
+            
+            # 添加快速提示
+            embed.set_footer(text="💡 點擊 [種植/施肥/收割] 按鈕進行操作 | 用 /置物櫃 指令或點擊置物柜按鈕進行管理")
             
             await interaction.followup.send(embed=embed, ephemeral=True)
             
@@ -1062,6 +1058,133 @@ class UserPanel(commands.Cog):
         
         embed.set_footer(text="💫 由 MapleStory.io API 提供角色外觀")
         return embed
+
+    def _generate_locker_grid(self, plants, total_slots: int = 5) -> str:
+        """生成置物櫃格子視圖"""
+        grid_rows = []
+        
+        # 轉換植物為網格位置
+        plant_positions = {}
+        for idx, plant in enumerate(plants):
+            if idx < total_slots:
+                plant_positions[idx] = plant
+        
+        # 生成置物櫃視圖
+        grid = ""
+        for i in range(total_slots):
+            if i in plant_positions:
+                plant = plant_positions[i]
+                progress_percent = self._calculate_plant_progress(plant)
+                stage_emoji = self._get_growth_stage_emoji(progress_percent)
+                grid += f"[{stage_emoji}]  "
+            else:
+                grid += "[⬜]  "
+        
+        return f"`{grid}`\n位置 1-5"
+
+    def _get_growth_stage_emoji(self, progress: float) -> str:
+        """根據進度返回生長階段emoji"""
+        if progress >= 95:
+            return "🌾"  # 成熟/即將收割
+        elif progress >= 75:
+            return "🌿"  # 茁壯期
+        elif progress >= 50:
+            return "🌱"  # 發芽期
+        elif progress >= 25:
+            return "🌱"  # 嫩芽期
+        else:
+            return "⚪"  # 初始階段
+
+    def _calculate_plant_progress(self, plant: dict) -> float:
+        """計算植物的成長進度百分比"""
+        if plant.get("status") == "harvested":
+            return 100.0
+        
+        try:
+            from datetime import datetime
+            planted_time = plant.get("planted_at", 0)
+            matured_time = plant.get("matured_at", 0)
+            
+            if isinstance(planted_time, str):
+                planted_time = datetime.fromisoformat(planted_time).timestamp()
+            if isinstance(matured_time, str):
+                matured_time = datetime.fromisoformat(matured_time).timestamp()
+            
+            now = datetime.now().timestamp()
+            elapsed = now - planted_time
+            total = matured_time - planted_time
+            
+            progress = min(100, (elapsed / total * 100)) if total > 0 else 0
+            return progress
+        except Exception:
+            return 0.0
+
+    async def get_plant_progress_info(self, plant: dict) -> dict:
+        """獲取植物的進度詳細信息"""
+        from datetime import datetime
+        import asyncio
+        
+        try:
+            if plant.get("status") == "harvested":
+                return {
+                    'progress': 100.0,
+                    'stage_name': '已成熟',
+                    'progress_bar': '█████████████████████ 100%',
+                    'time_left': '準備收割',
+                    'fertilizer': plant.get('fertilizer_applied', 0)
+                }
+            
+            planted_time = plant.get("planted_at", 0)
+            matured_time = plant.get("matured_at", 0)
+            
+            if isinstance(planted_time, str):
+                planted_time = datetime.fromisoformat(planted_time).timestamp()
+            if isinstance(matured_time, str):
+                matured_time = datetime.fromisoformat(matured_time).timestamp()
+            
+            now = datetime.now().timestamp()
+            elapsed = now - planted_time
+            total = matured_time - planted_time
+            progress = min(100, (elapsed / total * 100)) if total > 0 else 0
+            
+            # 生成進度條
+            filled = int(progress / 5)
+            empty = 20 - filled
+            progress_bar_text = f"{'█' * filled}{'░' * empty} {progress:.0f}%"
+            
+            # 計算剩餘時間
+            remaining = max(0, matured_time - now)
+            if remaining > 0:
+                hours = int(remaining // 3600)
+                mins = int((remaining % 3600) // 60)
+                time_left = f"剩餘 {hours}h {mins}m"
+            else:
+                time_left = "✅ 已成熟"
+            
+            # 確定生長階段名稱
+            if progress >= 75:
+                stage_name = "茁壯中 🌿"
+            elif progress >= 40:
+                stage_name = "發芽中 🌱"
+            else:
+                stage_name = "嫩芽期 🌱"
+            
+            return {
+                'progress': progress,
+                'stage_name': stage_name,
+                'progress_bar': progress_bar_text,
+                'time_left': time_left,
+                'fertilizer': plant.get('fertilizer_applied', 0)
+            }
+        except Exception as e:
+            print(f"⚠️ 計算植物進度失敗: {e}")
+            return {
+                'progress': 0.0,
+                'stage_name': '未知',
+                'progress_bar': '░░░░░░░░░░░░░░░░░░░░ 0%',
+                'time_left': '未知',
+                'fertilizer': 0
+            }
 
     async def get_or_create_user_thread(self, user: discord.User, skip_image_on_startup: bool = False) -> Optional[discord.Thread]:
         try:
