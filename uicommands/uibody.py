@@ -108,6 +108,29 @@ class LockerPanelView(discord.ui.View):
         self.user_id = user_id
         if not hasattr(LockerPanelView, 'last_update'):
             LockerPanelView.last_update = {}
+    
+    async def get_owner_user_id(self, interaction: discord.Interaction) -> int:
+        """根據 thread_id 從資料庫獲取論壇帖子的所有者 user_id"""
+        try:
+            import sqlite3
+            conn = sqlite3.connect('./user_data.db')
+            cursor = conn.cursor()
+            
+            # 如果在 thread 中，使用 thread 的 id
+            thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
+            if thread:
+                cursor.execute('SELECT user_id FROM users WHERE thread_id = ?', (thread.id,))
+                row = cursor.fetchone()
+                conn.close()
+                if row:
+                    return row[0]
+            
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ 查詢 thread 所有者失敗: {e}")
+        
+        # 後備方案：使用 self.user_id（可能不準確，但至少不會都是 0）
+        return self.user_id if self.user_id != 0 else interaction.user.id
         
     @discord.ui.button(label="更新面板", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="locker_update_panel")
     async def update_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -119,7 +142,9 @@ class LockerPanelView(discord.ui.View):
             await interaction.response.send_message(f"⏰ 請等待 {remaining_time:.1f} 秒後再更新面板！", ephemeral=True)
             return
         
-        if interaction.user.id != self.user_id:
+        # 根據 thread_id 獲取正確的所有者 user_id
+        owner_user_id = await self.get_owner_user_id(interaction)
+        if interaction.user.id != owner_user_id:
             await interaction.response.send_message("❌ 你只能更新自己的面板！", ephemeral=True)
             return
             
@@ -128,13 +153,13 @@ class LockerPanelView(discord.ui.View):
             LockerPanelView.last_update[interaction.user.id] = current_time
             
             # 重新獲取最新的用戶資料（確保數據是最新的）
-            user_data = self.cog.get_user_data(self.user_id)
+            user_data = self.cog.get_user_data(owner_user_id)
             if not user_data:
                 await interaction.followup.send("❌ 沒有找到你的資料！", ephemeral=True)
                 return
             
             # 使用 interaction.user 而非從數據中提取用戶信息
-            user = self.cog.bot.get_user(self.user_id) or await self.cog.bot.fetch_user(self.user_id)
+            user = self.cog.bot.get_user(owner_user_id) or await self.cog.bot.fetch_user(owner_user_id)
             embed = await self.cog.create_user_embed(user_data, user)
             character_image_url = await self.cog.get_character_image_url(user_data)
             
@@ -160,13 +185,15 @@ class LockerPanelView(discord.ui.View):
     async def plant_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """選擇種子種植"""
         try:
-            if interaction.user.id != self.user_id:
+            # 根據 thread_id 獲取正確的所有者 user_id
+            owner_user_id = await self.get_owner_user_id(interaction)
+            if interaction.user.id != owner_user_id:
                 await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
                 
             await interaction.response.defer(ephemeral=True)
             
-            inventory = await get_inventory(self.user_id)
+            inventory = await get_inventory(owner_user_id)
             seeds = inventory.get("種子", {})
             
             if not seeds:
@@ -189,7 +216,7 @@ class LockerPanelView(discord.ui.View):
                     )
             
             from uicommands.cannabis_locker import SelectSeedView
-            view = SelectSeedView(self.cog.bot, self.user_id, seeds)
+            view = SelectSeedView(self.cog.bot, owner_user_id, seeds)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
@@ -201,20 +228,22 @@ class LockerPanelView(discord.ui.View):
     async def fertilize_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """施肥加速"""
         try:
-            if interaction.user.id != self.user_id:
+            # 根據 thread_id 獲取正確的所有者 user_id
+            owner_user_id = await self.get_owner_user_id(interaction)
+            if interaction.user.id != owner_user_id:
                 await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
                 
             await interaction.response.defer(ephemeral=True)
             
-            plants = await get_user_plants(self.user_id)
+            plants = await get_user_plants(owner_user_id)
             growing_plants = [p for p in plants if p["status"] != "harvested"]
             
             if not growing_plants:
                 await interaction.followup.send("❌ 沒有成長中的植物！", ephemeral=True)
                 return
             
-            inventory = await get_inventory(self.user_id)
+            inventory = await get_inventory(owner_user_id)
             if not inventory.get("肥料"):
                 await interaction.followup.send("❌ 你沒有肥料！", ephemeral=True)
                 return
@@ -234,7 +263,7 @@ class LockerPanelView(discord.ui.View):
                 )
             
             from uicommands.cannabis_locker import SelectPlantForFertilizerView
-            view = SelectPlantForFertilizerView(self.cog.bot, self.user_id, growing_plants)
+            view = SelectPlantForFertilizerView(self.cog.bot, owner_user_id, growing_plants)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
@@ -246,13 +275,15 @@ class LockerPanelView(discord.ui.View):
     async def harvest_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """收割成熟植物"""
         try:
-            if interaction.user.id != self.user_id:
+            # 根據 thread_id 獲取正確的所有者 user_id
+            owner_user_id = await self.get_owner_user_id(interaction)
+            if interaction.user.id != owner_user_id:
                 await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
                 
             await interaction.response.defer(ephemeral=True)
             
-            plants = await get_user_plants(self.user_id)
+            plants = await get_user_plants(owner_user_id)
             harvestable = [p for p in plants if p["status"] == "harvested"]
             
             if not harvestable:
@@ -275,7 +306,7 @@ class LockerPanelView(discord.ui.View):
                 )
             
             from uicommands.cannabis_locker import SelectPlantForHarvestView
-            view = SelectPlantForHarvestView(self.cog.bot, self.user_id, harvestable)
+            view = SelectPlantForHarvestView(self.cog.bot, owner_user_id, harvestable)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
@@ -287,13 +318,15 @@ class LockerPanelView(discord.ui.View):
     async def view_plants_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """查看植物狀態"""
         try:
-            if interaction.user.id != self.user_id:
+            # 根據 thread_id 獲取正確的所有者 user_id
+            owner_user_id = await self.get_owner_user_id(interaction)
+            if interaction.user.id != owner_user_id:
                 await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
                 
             await interaction.response.defer(ephemeral=True)
             
-            plants = await get_user_plants(self.user_id)
+            plants = await get_user_plants(owner_user_id)
             
             if not plants:
                 await interaction.followup.send("❌ 你還沒有種植任何植物！", ephemeral=True)
