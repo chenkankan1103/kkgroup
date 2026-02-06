@@ -115,7 +115,7 @@ def reset_user(user_id):
     """
     try:
         reset_data = {
-            'level': 1,
+            'level': 0,
             'xp': 0,
             'kkcoin': 0,
             'last_work_date': None,
