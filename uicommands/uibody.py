@@ -329,11 +329,10 @@ class LockerPanelView(discord.ui.View):
             except:
                 pass
     
-    @discord.ui.button(label="種植", style=discord.ButtonStyle.success, emoji="🌱", custom_id="locker_plant")
-    async def plant_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """選擇種子種植"""
+    @discord.ui.button(label="作物資訊", style=discord.ButtonStyle.success, emoji="🌾", custom_id="locker_crop_info")
+    async def crop_info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """作物資訊 - 整合種植、施肥、收割、查看狀態"""
         try:
-            # 根據 thread_id 獲取正確的所有者 user_id
             owner_user_id = await self.get_owner_user_id(interaction)
             if interaction.user.id != owner_user_id:
                 await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
@@ -341,159 +340,28 @@ class LockerPanelView(discord.ui.View):
                 
             await interaction.response.defer(ephemeral=True)
             
+            plants = await get_user_plants(owner_user_id)
             inventory = await get_inventory(owner_user_id)
             seeds = inventory.get("種子", {})
             
-            if not seeds:
-                await interaction.followup.send("❌ 你沒有種子！", ephemeral=True)
-                return
-            
-            # 顯示種子列表
-            embed = discord.Embed(
-                title="🌱 選擇要種植的種子",
-                color=discord.Color.green()
-            )
-            
-            for idx, (seed_name, qty) in enumerate(seeds.items(), 1):
-                if qty > 0:
-                    config = CANNABIS_SHOP["種子"][seed_name]
-                    embed.add_field(
-                        name=f"#{idx} {config['emoji']} {seed_name}",
-                        value=f"擁有：{qty} 粒\n成長時間：{config['growth_time']//3600}h",
-                        inline=False
-                    )
-            
-            from uicommands.cannabis_locker import SelectSeedView
-            view = SelectSeedView(self.cog.bot, owner_user_id, seeds)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-    
-    @discord.ui.button(label="施肥加速", style=discord.ButtonStyle.success, emoji="💧", custom_id="locker_fertilize")
-    async def fertilize_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """施肥加速"""
-        try:
-            # 根據 thread_id 獲取正確的所有者 user_id
-            owner_user_id = await self.get_owner_user_id(interaction)
-            if interaction.user.id != owner_user_id:
-                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
-                return
-                
-            await interaction.response.defer(ephemeral=True)
-            
-            plants = await get_user_plants(owner_user_id)
-            growing_plants = [p for p in plants if p["status"] != "harvested"]
-            
-            if not growing_plants:
-                await interaction.followup.send("❌ 沒有成長中的植物！", ephemeral=True)
-                return
-            
-            inventory = await get_inventory(owner_user_id)
-            if not inventory.get("肥料"):
-                await interaction.followup.send("❌ 你沒有肥料！", ephemeral=True)
-                return
-            
-            # 顯示植物列表
-            embed = discord.Embed(
-                title="💧 選擇要施肥的植物",
-                color=discord.Color.blue()
-            )
-            
-            for idx, plant in enumerate(growing_plants[:5], 1):
-                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-                embed.add_field(
-                    name=f"#{idx} {config['emoji']} {plant['seed_type']}",
-                    value=f"已施肥：{plant['fertilizer_applied']}次",
-                    inline=False
-                )
-            
-            from uicommands.cannabis_locker import SelectPlantForFertilizerView
-            view = SelectPlantForFertilizerView(self.cog.bot, owner_user_id, growing_plants)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-    
-    @discord.ui.button(label="收割成熟", style=discord.ButtonStyle.success, emoji="✂️", custom_id="locker_harvest")
-    async def harvest_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """收割成熟植物"""
-        try:
-            # 根據 thread_id 獲取正確的所有者 user_id
-            owner_user_id = await self.get_owner_user_id(interaction)
-            if interaction.user.id != owner_user_id:
-                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
-                return
-                
-            await interaction.response.defer(ephemeral=True)
-            
-            plants = await get_user_plants(owner_user_id)
-            harvestable = [p for p in plants if p["status"] == "harvested"]
-            
-            if not harvestable:
-                await interaction.followup.send("❌ 沒有已成熟的植物！", ephemeral=True)
-                return
-            
-            # 顯示可收割的植物
-            embed = discord.Embed(
-                title="🔪 選擇要收割的植物",
-                color=discord.Color.gold()
-            )
-            
-            for idx, plant in enumerate(harvestable[:5], 1):
-                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-                yield_amount = plant.get("harvested_amount", 0)
-                embed.add_field(
-                    name=f"#{idx} {config['emoji']} {plant['seed_type']}",
-                    value=f"產量：{yield_amount}",
-                    inline=False
-                )
-            
-            from uicommands.cannabis_locker import SelectPlantForHarvestView
-            view = SelectPlantForHarvestView(self.cog.bot, owner_user_id, harvestable)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-    
-    @discord.ui.button(label="查看狀態", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="locker_view_plants")
-    async def view_plants_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """查看植物狀態"""
-        try:
-            # 根據 thread_id 獲取正確的所有者 user_id
-            owner_user_id = await self.get_owner_user_id(interaction)
-            if interaction.user.id != owner_user_id:
-                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
-                return
-                
-            await interaction.response.defer(ephemeral=True)
-            
-            plants = await get_user_plants(owner_user_id)
-            
             if not plants:
-                await interaction.followup.send("❌ 你還沒有種植任何植物！", ephemeral=True)
+                await interaction.followup.send("❌ 你還沒有種植任何植物！\n點擊操作按鈕開始種植。", ephemeral=True)
                 return
             
             # 計算統計信息
-            total_slots = 5  # 假設最多5個位置
+            total_slots = 5
             harvested = [p for p in plants if p["status"] == "harvested"]
             growing = [p for p in plants if p["status"] != "harvested"]
             
             embed = discord.Embed(
-                title="🏠 我的置物櫃",
+                title="🌾 作物資訊",
                 description=f"已使用 {len(plants)}/{total_slots} 個位置",
                 color=discord.Color.green()
             )
             
             # 生成格子視圖
             grid = self._generate_locker_grid(plants, total_slots)
-            embed.add_field(name="📍 置物柜布局", value=grid, inline=False)
+            embed.add_field(name="📍 置物櫃布局", value=grid, inline=False)
             
             # 按進度分類顯示
             if growing:
@@ -522,19 +390,26 @@ class LockerPanelView(discord.ui.View):
                     )
                     embed.add_field(name=f"#{idx} {seed_config['emoji']} {plant['seed_type']}", value=value, inline=True)
             
-            # 添加快速提示
-            embed.set_footer(text="💡 點擊 [種植/施肥/收割] 按鈕進行操作 | 用 /置物櫃 指令或點擊置物柜按鈕進行管理")
+            # 添加操作按鈕
+            from uicommands.cannabis_locker import CropOperationView
+            view = CropOperationView(self.cog.bot, owner_user_id, seeds, plants, growing, harvested)
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            embed.set_footer(text="💡 使用下方按鈕進行種植、施肥或收割操作")
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
             
         except Exception as e:
             import traceback
             traceback.print_exc()
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
     
-    @discord.ui.button(label="領取員工證", style=discord.ButtonStyle.primary, emoji="🎫", custom_id="locker_work_card")
+    @discord.ui.button(label="領取員工證", style=discord.ButtonStyle.danger, emoji="🎫", custom_id="locker_work_card")
     async def work_card_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """領取或修改員工證"""
+        """領取或修改員工證（紅色按鈕）"""
         try:
             owner_user_id = await self.get_owner_user_id(interaction)
             if interaction.user.id != owner_user_id:
@@ -545,9 +420,9 @@ class LockerPanelView(discord.ui.View):
             
             # 檢查是否已填寫工作證信息（pre_job 存在表示已領取）
             if user_data and user_data.get('pre_job'):
-                # 已有工作證，顯示修改選項
+                # 已有工作證，顯示修改選項並移除按鈕
                 view = WorkCardActionView(self.cog, owner_user_id, user_data)
-                await interaction.response.send_message("你已經有員工證了！", view=view, ephemeral=True)
+                await interaction.response.send_message("✅ 你已經有員工證了！", view=view, ephemeral=True)
             else:
                 # 首次領取，顯示表單
                 await interaction.response.send_modal(WorkCardModal(self.cog, owner_user_id))

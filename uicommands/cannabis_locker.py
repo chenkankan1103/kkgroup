@@ -757,6 +757,143 @@ class WeeklySummaryCannabisPanelView(discord.ui.View):
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
 
+class CropOperationView(discord.ui.View):
+    """作物操作視圖 - 整合種植、施肥、收割按鈕"""
+    
+    def __init__(self, bot, user_id, seeds, plants, growing, harvested):
+        super().__init__(timeout=60)
+        self.bot = bot
+        self.user_id = user_id
+        self.seeds = seeds
+        self.plants = plants
+        self.growing = growing
+        self.harvested = harvested
+        
+        # 種植按鈕（只要有種子）
+        if seeds:
+            plant_button = Button(
+                label="🌱 種植",
+                style=discord.ButtonStyle.success,
+                custom_id="crop_op_plant"
+            )
+            plant_button.callback = self.plant_callback
+            self.add_item(plant_button)
+        
+        # 施肥按鈕（只要有成長中的植物和肥料）
+        if growing:
+            fertilize_button = Button(
+                label="💧 施肥",
+                style=discord.ButtonStyle.primary,
+                custom_id="crop_op_fertilize"
+            )
+            fertilize_button.callback = self.fertilize_callback
+            self.add_item(fertilize_button)
+        
+        # 收割按鈕（只要有已成熟的植物）
+        if harvested:
+            harvest_button = Button(
+                label="✂️ 收割",
+                style=discord.ButtonStyle.danger,
+                custom_id="crop_op_harvest"
+            )
+            harvest_button.callback = self.harvest_callback
+            self.add_item(harvest_button)
+    
+    async def plant_callback(self, interaction: discord.Interaction):
+        """種植 - 顯示種子選擇"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            if not self.seeds:
+                await interaction.followup.send("❌ 你沒有種子！", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="🌱 選擇要種植的種子",
+                color=discord.Color.green()
+            )
+            
+            for idx, (seed_name, qty) in enumerate(self.seeds.items(), 1):
+                if qty > 0:
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    embed.add_field(
+                        name=f"#{idx} {config['emoji']} {seed_name}",
+                        value=f"擁有：{qty} 粒\n成長時間：{config['growth_time']//3600}h",
+                        inline=False
+                    )
+            
+            view = SelectSeedView(self.bot, self.user_id, self.seeds)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+    
+    async def fertilize_callback(self, interaction: discord.Interaction):
+        """施肥 - 顯示植物選擇"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            if not self.growing:
+                await interaction.followup.send("❌ 沒有成長中的植物！", ephemeral=True)
+                return
+            
+            inventory = await get_inventory(self.user_id)
+            if not inventory.get("肥料"):
+                await interaction.followup.send("❌ 你沒有肥料！", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="💧 選擇要施肥的植物",
+                color=discord.Color.blue()
+            )
+            
+            for idx, plant in enumerate(self.growing[:5], 1):
+                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                embed.add_field(
+                    name=f"#{idx} {config['emoji']} {plant['seed_type']}",
+                    value=f"已施肥：{plant['fertilizer_applied']}次",
+                    inline=False
+                )
+            
+            view = SelectPlantForFertilizerView(self.bot, self.user_id, self.growing)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+    
+    async def harvest_callback(self, interaction: discord.Interaction):
+        """收割 - 顯示可收割植物選擇"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            if not self.harvested:
+                await interaction.followup.send("❌ 沒有已成熟的植物！", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="🔪 選擇要收割的植物",
+                color=discord.Color.gold()
+            )
+            
+            for idx, plant in enumerate(self.harvested[:5], 1):
+                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                yield_amount = plant.get("harvested_amount", 0)
+                embed.add_field(
+                    name=f"#{idx} {config['emoji']} {plant['seed_type']}",
+                    value=f"產量：{yield_amount}",
+                    inline=False
+                )
+            
+            view = SelectPlantForHarvestView(self.bot, self.user_id, self.harvested)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
+
 class SelectSeedView(discord.ui.View):
     """選擇要種植的種子"""
     
