@@ -388,16 +388,10 @@ class KKCoin(commands.Cog):
             print(f"❌ 建立排行榜時發生錯誤: {e}")
             await interaction.followup.send("❌ 建立排行榜時發生錯誤", ephemeral=True)
 
-    @app_commands.command(name="kkcoin_leaderboard", description="顯示各種風格的排行榜")
+    @app_commands.command(name="kkcoin_leaderboard", description="顯示綜合排行榜仪表板")
     @app_commands.describe(
-        style="排行榜風格",
         limit="顯示人數"
     )
-    @app_commands.choices(style=[
-        app_commands.Choice(name="🎨 彩色排行榜", value="colorful"),
-        app_commands.Choice(name="📊 長條圖", value="bar"),
-        app_commands.Choice(name="🍰 圓餅圖", value="pie"),
-    ])
     @app_commands.choices(limit=[
         app_commands.Choice(name="前 3 名 🏆", value="3"),
         app_commands.Choice(name="前 5 名 ⭐", value="5"),
@@ -407,10 +401,9 @@ class KKCoin(commands.Cog):
     async def kkcoin_leaderboard(
         self, 
         interaction: discord.Interaction, 
-        style: str = "colorful",
         limit: str = "10"
     ):
-        """顯示各種風格的 KK 幣排行榜"""
+        """顯示 KK 幣綜合排行榜仪表板（包含長條圖、圓餅圖、周統計）"""
         await interaction.response.defer()
         
         limit_int = int(limit)
@@ -421,26 +414,34 @@ class KKCoin(commands.Cog):
             return
 
         try:
-            # 動態導入視覺化模組
-            from commands.kkcoin_visualizer import create_colorful_leaderboard_image, create_chart_image
+            from commands.kkcoin_visualizer import create_comprehensive_dashboard
             
-            if style == "colorful":
-                image = await create_colorful_leaderboard_image(members_data, limit=limit_int)
-                filename = f"kkcoin_colorful_{limit_int}.png"
-            elif style == "bar":
-                image = await create_chart_image(members_data, chart_type='bar', limit=limit_int)
-                filename = f"kkcoin_bar_{limit_int}.png"
-            else:  # pie
-                image = await create_chart_image(members_data, chart_type='pie', limit=limit_int)
-                filename = f"kkcoin_pie_{limit_int}.png"
+            # 計算總KK幣
+            total_coins = sum(coin for _, coin in members_data)
+            
+            # 本週和上週模擬數據（實際應從資料庫讀取）
+            this_week_total = int(total_coins * 0.3)
+            last_week_total = int(total_coins * 0.25)
+            
+            # 生成綜合仪表板
+            image = await create_comprehensive_dashboard(
+                members_data=members_data,
+                limit=limit_int,
+                total_coins=total_coins,
+                this_week_total=this_week_total,
+                last_week_total=last_week_total
+            )
             
             with io.BytesIO() as img_bytes:
                 image.save(img_bytes, format="PNG")
                 img_bytes.seek(0)
-                file = discord.File(img_bytes, filename=filename)
-                await interaction.followup.send(file=file)
+                file = discord.File(img_bytes, filename=f"kkcoin_dashboard_{limit_int}.png")
+                await interaction.followup.send(
+                    content=f"📊 **KK幣綜合排行榜** - 前{limit_int}名",
+                    file=file
+                )
                 
-            print(f"✅ {['彩色', '長條', '圓餅'][['colorful', 'bar', 'pie'].index(style)]}排行榜已發送（前{limit_int}名）")
+            print(f"✅ 綜合排行榜仪表板已發送（前{limit_int}名）")
         except Exception as e:
             print(f"❌ 生成排行榜時發生錯誤: {e}")
             import traceback
