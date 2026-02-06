@@ -681,9 +681,15 @@ class SheetDrivenDB:
                ['id', 'level', 'xp', 'coin', 'kkcoin', 'hp', 'stamina', 
                 'streak', 'count', 'num', 'amount', 'unlocked']):
             try:
-                return int(float(value))
+                result = int(float(value))
+                # ⚠️ 修復 bug: user_id 不應該為 0（0 是無效的 ID）
+                if 'id' in header_lower and result == 0:
+                    return None
+                return result
             except:
-                return 0
+                # ⚠️ 修復 bug: 轉換失敗時返回 None 而不是 0
+                # 這防止虛擬人物記錄的產生
+                return None
         
         # 布爾型 (is_stunned, is_locked 等)
         if header_lower.startswith('is_'):

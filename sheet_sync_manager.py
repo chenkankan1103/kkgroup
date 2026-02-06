@@ -248,8 +248,15 @@ class SheetSyncManager:
                     stats['error_details'].append({'record': i, 'reason': error_msg})
                     continue
                 
+                # ✅ 新增驗證: 確保 user_id 有效（不為 0）
                 try:
                     user_id = int(user_id)
+                    if user_id == 0:
+                        error_msg = f"user_id 為 0，無效的用戶"
+                        print(f"⏭️ 記錄 {i}: {error_msg}")
+                        stats['errors'] += 1
+                        stats['error_details'].append({'record': i, 'reason': error_msg})
+                        continue
                 except (ValueError, TypeError) as e:
                     error_msg = f"user_id 無效或無法轉換: '{record.get('user_id')}' ({str(e)})"
                     print(f"❌ 記錄 {i}: {error_msg}")
