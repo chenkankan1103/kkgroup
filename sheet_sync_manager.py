@@ -219,7 +219,41 @@ class SheetSyncManager:
             except Exception as e:
                 print(f"⚠️ 行 {row_idx} 解析失敗: {e}")
         
-        return records
+        # 🔍 去重邏輯：檢測同名異 ID（可能是 ID 精度損失產生的幽靈帳號）
+        print(f"\n🔍 檢測同名異 ID 幽靈帳號...")
+        
+        # 按 nickname 分組
+        nickname_to_records = {}
+        for record in records:
+            nickname = record.get('nickname', '')
+            if nickname:
+                if nickname not in nickname_to_records:
+                    nickname_to_records[nickname] = []
+                nickname_to_records[nickname].append(record)
+        
+        # 去重：每個 nickname 只保留最小 user_id
+        deduped_records = []
+        removed_ghosts = 0
+        
+        for nickname, same_name_recs in nickname_to_records.items():
+            if len(same_name_recs) > 1:
+                # 有多個同名用戶
+                min_record = min(same_name_recs, key=lambda r: int(r.get('user_id', float('inf'))))
+                deduped_records.append(min_record)
+                
+                # 其他都是幽靈帳號
+                for rec in same_name_recs:
+                    if rec['user_id'] != min_record['user_id']:
+                        print(f"   👻 過濾幽靈帳號: {nickname} (user_id {rec['user_id']}) → 保留 {min_record['user_id']}")
+                        removed_ghosts += 1
+            else:
+                # 只有一個
+                deduped_records.append(same_name_recs[0])
+        
+        if removed_ghosts > 0:
+            print(f"✅ 過濾掉 {removed_ghosts} 個同名異 ID 幽靈帳號")
+        
+        return deduped_records
     
     def _sync_records_to_db(self, records: List[Dict[str, Any]]) -> Dict[str, int]:
         """

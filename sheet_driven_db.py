@@ -681,11 +681,41 @@ class SheetDrivenDB:
                ['id', 'level', 'xp', 'coin', 'kkcoin', 'hp', 'stamina', 
                 'streak', 'count', 'num', 'amount', 'unlocked']):
             try:
-                result = int(float(value))
-                # ⚠️ 修復 bug: user_id 不應該為 0（0 是無效的 ID）
-                if 'id' in header_lower and result == 0:
-                    return None
-                return result
+                # 🔑 修復浮點精度損失：對於 ID 類欄位，優先使用字符串直接轉換
+                # 避免通過浮點數中間步驟（Discord ID 需要 18-19 位精度）
+                if 'id' in header_lower and isinstance(value, str):
+                    # 先嘗試直接轉換整數（不通過浮點數）
+                    try:
+                        # 去掉任何科學計數法的標記
+                        clean_str = str(value).strip()
+                        
+                        # 如果包含 'e' 或 'E'（科學計數法），則需要特殊處理
+                        if 'e' in clean_str.lower():
+                            # 科學計數法：使用 Decimal 以保持精度
+                            from decimal import Decimal
+                            d = Decimal(clean_str)
+                            result = int(d)
+                        else:
+                            # 正常整數字符串
+                            result = int(clean_str)
+                        
+                        # 驗證 user_id 不為 0
+                        if 'id' in header_lower and result == 0:
+                            return None
+                        return result
+                    except ValueError:
+                        # 如果字符串轉換失敗，才嘗試浮點數
+                        result = int(float(clean_str))
+                        if 'id' in header_lower and result == 0:
+                            return None
+                        return result
+                else:
+                    # 對於非 ID 欄位或非字符串值，使用浮點中間轉換
+                    result = int(float(value))
+                    # ⚠️ 修復 bug: user_id 不應該為 0（0 是無效的 ID）
+                    if 'id' in header_lower and result == 0:
+                        return None
+                    return result
             except:
                 # ⚠️ 修復 bug: 轉換失敗時返回 None 而不是 0
                 # 這防止虛擬人物記錄的產生
