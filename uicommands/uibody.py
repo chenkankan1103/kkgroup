@@ -117,36 +117,15 @@ class WorkCardModal(discord.ui.Modal):
             max_length=30,
             required=True
         )
-        self.motivation = discord.ui.TextInput(
-            label="黑化動力",
-            placeholder="如：欠債、被背叛、尋求刺激...",
-            max_length=50,
-            required=True
-        )
         self.hobby = discord.ui.TextInput(
             label="業餘愛好",
             placeholder="如：玩遊戲、看動漫、健身...",
             max_length=50,
             required=True
         )
-        self.drama = discord.ui.TextInput(
-            label="喜歡的戲劇/遊戲",
-            placeholder="如：楓之谷、LOST ARK、鬼滅之刃...",
-            max_length=50,
-            required=True
-        )
-        self.game = discord.ui.TextInput(
-            label="遊戲愛好",
-            placeholder="如：RPG、MOB、射擊遊戲...",
-            max_length=50,
-            required=True
-        )
         
         self.add_item(self.pre_job)
-        self.add_item(self.motivation)
         self.add_item(self.hobby)
-        self.add_item(self.drama)
-        self.add_item(self.game)
     
     async def on_submit(self, interaction: discord.Interaction):
         """提交表單"""
@@ -155,10 +134,7 @@ class WorkCardModal(discord.ui.Modal):
             
             # 保存到資料庫
             set_user_field(self.user_id, 'pre_job', str(self.pre_job.value))
-            set_user_field(self.user_id, 'motivation', str(self.motivation.value))
             set_user_field(self.user_id, 'hobby', str(self.hobby.value))
-            set_user_field(self.user_id, 'drama', str(self.drama.value))
-            set_user_field(self.user_id, 'game', str(self.game.value))
             set_user_field(self.user_id, 'work_card_enabled', 1)
             
             # 生成工作證 embed
@@ -204,10 +180,7 @@ class WorkCardModal(discord.ui.Modal):
             name="【 員工背後故事 】",
             value=(
                 f"❖ 入園前身份：{user_data.get('pre_job', 'N/A')}\n"
-                f"❖ 黑化動力：{user_data.get('motivation', 'N/A')}\n"
-                f"❖ 業餘愛好：{user_data.get('hobby', 'N/A')}\n"
-                f"❖ 喜歡看：{user_data.get('drama', 'N/A')}\n"
-                f"❖ 遊戲偏好：{user_data.get('game', 'N/A')}"
+                f"❖ 業餘愛好：{user_data.get('hobby', 'N/A')}"
             ),
             inline=False
         )
