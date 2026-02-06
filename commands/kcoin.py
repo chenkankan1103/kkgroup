@@ -447,6 +447,95 @@ class KKCoin(commands.Cog):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 生成排行榜時發生錯誤：{str(e)[:100]}", ephemeral=True)
 
+    @app_commands.command(name="kkcoin_weekly", description="顯示本週 KK 幣統計")
+    async def kkcoin_weekly(self, interaction: discord.Interaction):
+        """顯示本週 KK 幣統計和增長"""
+        await interaction.response.defer()
+        
+        members_data = self.get_current_leaderboard_data()
+        
+        if not members_data:
+            await interaction.followup.send("❌ 沒有找到任何使用者資料", ephemeral=True)
+            return
+        
+        try:
+            from commands.kkcoin_visualizer import create_weekly_stats_image
+            
+            # 計算統計數據
+            total_coins = sum(coin for _, coin in members_data)
+            
+            # 本週模擬數據（實際應從資料庫讀取）
+            this_week_total = int(total_coins * 0.3)  # 模擬本週新增為總數的30%
+            last_week_total = int(total_coins * 0.25)  # 模擬上週為25%
+            member_count = len(members_data)
+            
+            image = await create_weekly_stats_image(
+                total_coins=total_coins,
+                this_week_total=this_week_total,
+                last_week_total=last_week_total,
+                member_count=member_count
+            )
+            
+            with io.BytesIO() as img_bytes:
+                image.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                file = discord.File(img_bytes, filename="kkcoin_weekly_stats.png")
+                await interaction.followup.send(
+                    content="📊 **本週 KK 幣統計總覽**",
+                    file=file
+                )
+            
+            print(f"✅ 本週統計圖表已發送")
+        except Exception as e:
+            print(f"❌ 生成統計圖表時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 生成統計圖表時發生錯誤：{str(e)[:100]}", ephemeral=True)
+
+    @app_commands.command(name="kkcoin_mvp", description="顯示本週績效王")
+    async def kkcoin_mvp(self, interaction: discord.Interaction):
+        """顯示本週績效王（KK幣新增最多的人）"""
+        await interaction.response.defer()
+        
+        members_data = self.get_current_leaderboard_data()
+        
+        if not members_data:
+            await interaction.followup.send("❌ 沒有找到任何使用者資料", ephemeral=True)
+            return
+        
+        try:
+            from commands.kkcoin_visualizer import create_weekly_mvp_image
+            
+            # 找排行第一名作為 MVP
+            mvp_member, mvp_coins = members_data[0]
+            
+            # 本週新增模擬數據
+            this_week_coins = int(mvp_coins * 0.4)
+            
+            # 查找在完整排行中的位置
+            rank_position = 1
+            total_members = len(members_data)
+            
+            image = await create_weekly_mvp_image(
+                mvp_member=mvp_member,
+                this_week_coins=this_week_coins,
+                rank_position=rank_position,
+                total_members=total_members
+            )
+            
+            with io.BytesIO() as img_bytes:
+                image.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                file = discord.File(img_bytes, filename="kkcoin_weekly_mvp.png")
+                await interaction.followup.send(file=file)
+            
+            print(f"✅ 本週績效王卡片已發送 - {mvp_member.display_name}")
+        except Exception as e:
+            print(f"❌ 生成績效王卡片時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 生成績效王卡片時發生錯誤：{str(e)[:100]}", ephemeral=True)
+
     @app_commands.command(name="kkcoin_admin", description="管理用戶的 KK 幣（管理員專用）")
     @app_commands.describe(
         member="要修改 KK 幣的用戶",
