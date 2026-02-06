@@ -1445,6 +1445,7 @@ class UserPanel(commands.Cog):
                 # 強制將用戶加入線程
                 try:
                     await thread.add_user(user)
+                    print(f"✅ 用戶 {user.id} 已添加到線程 {thread.id}")
                 except Exception as e:
                     print(f"⚠️ 將用戶加入線程失敗 {user.id}: {e}")
             except discord.HTTPException as http_e:
@@ -1463,6 +1464,7 @@ class UserPanel(commands.Cog):
                     # 強制將用戶加入線程
                     try:
                         await thread.add_user(user)
+                        print(f"✅ 用戶 {user.id} 已添加到線程 {thread.id}")
                     except Exception as e:
                         print(f"⚠️ 將用戶加入線程失敗 {user.id}: {e}")
                     # 然後更新為完整內容
@@ -1471,12 +1473,20 @@ class UserPanel(commands.Cog):
                     raise
 
             # 更新資料庫 - 使用 db_adapter
-            set_user_field(user.id, 'thread_id', thread.id)
+            try:
+                set_user_field(user.id, 'thread_id', thread.id)
+                print(f"✅ 已保存 thread_id {thread.id} 給用戶 {user.id}")
+            except Exception as db_err:
+                print(f"⚠️ 保存 thread_id 失敗: {db_err}")
             
             return thread
 
-        except (discord.Forbidden, discord.HTTPException, Exception):
-            pass
+        except discord.Forbidden as perm_err:
+            print(f"⚠️ 權限不足 - 為用戶 {user.id} 創建線程: {perm_err}")
+        except discord.HTTPException as http_err:
+            print(f"⚠️ HTTP 錯誤 - 為用戶 {user.id} 創建線程: {http_err}")
+        except Exception as err:
+            print(f"⚠️ 非預期錯誤 - 為用戶 {user.id}: {err}")
         
         return None
 
