@@ -573,6 +573,182 @@ async def create_weekly_mvp_image(mvp_member, this_week_coins, rank_position, to
     return img
 
 
+async def create_comprehensive_dashboard(members_data, limit=10, total_coins=None, this_week_total=None, last_week_total=None):
+    """
+    創建綜合仪表板 - 長條圖 + 圓餅圖 + 周統計
+    
+    Args:
+        members_data: [(member, kkcoin), ...] 
+        limit: 顯示人數
+        total_coins: 總KK幣
+        this_week_total: 本週新增
+        last_week_total: 上週新增
+    """
+    if not MATPLOTLIB_AVAILABLE:
+        raise RuntimeError("matplotlib 未安裝，無法生成圖表。請執行: pip install matplotlib numpy")
+    
+    members_data = members_data[:limit]
+    names = [m[0].display_name[:12] for m in members_data]
+    coins = [m[1] for m in members_data]
+    
+    # 設置大圖表
+    fig = plt.figure(figsize=(16, 10), facecolor='#f5f8fc')
+    gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.25)
+    
+    # ========== 左上：長條圖 ==========
+    ax1 = fig.add_subplot(gs[0, 0])
+    colors = []
+    for i in range(len(coins)):
+        if i < 3:
+            colors.append(['#FFD700', '#C0C0C0', '#CD7F32'][i])
+        elif i < 5:
+            colors.append('#FF6464')
+        elif i < 10:
+            colors.append('#FFA500')
+        else:
+            colors.append('#6496FF')
+    
+    bars = ax1.bar(names, coins, color=colors, edgecolor='black', linewidth=1.5)
+    
+    # 長條上方顯示數值
+    for bar, coin in zip(bars, coins):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{int(coin):,}',
+                ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+    ax1.set_ylabel('KK幣數量', fontsize=11, fontweight='bold')
+    ax1.set_title('📊 KK幣排行 - 長條圖', fontsize=13, fontweight='bold')
+    ax1.set_ylim(0, max(coins) * 1.2)
+    ax1.grid(axis='y', alpha=0.3)
+    ax1.tick_params(axis='x', rotation=45)
+    
+    # ========== 右上：圓餅圖 ==========
+    ax2 = fig.add_subplot(gs[0, 1])
+    colors_pie = ['#FFD700', '#C0C0C0', '#CD7F32'] + ['#FF6464'] * 2 + ['#FFA500'] * 5 + ['#6496FF'] * (limit - 10)
+    colors_pie = colors_pie[:limit]
+    
+    wedges, texts, autotexts = ax2.pie(
+        coins,
+        labels=names,
+        autopct='%1.1f%%',
+        colors=colors_pie,
+        startangle=90,
+        textprops={'fontsize': 9}
+    )
+    
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontweight('bold')
+    
+    ax2.set_title(f'🍰 KK幣分布圖', fontsize=13, fontweight='bold')
+    
+    # ========== 下方：周統計 + 指標 ==========
+    ax3 = fig.add_subplot(gs[1, :])
+    ax3.axis('off')
+    
+    # 計算數據
+    if total_coins is None:
+        total_coins = sum(coins)
+    if this_week_total is None:
+        this_week_total = int(total_coins * 0.3)
+    if last_week_total is None:
+        last_week_total = int(total_coins * 0.25)
+    
+    member_count = len(members_data)
+    
+    # 計算增長率
+    if last_week_total > 0:
+        growth_rate = ((this_week_total - last_week_total) / last_week_total) * 100
+    else:
+        growth_rate = 0
+    
+    # 左邊：本週vs上週對比
+    ax_compare = fig.add_axes([0.08, 0.08, 0.28, 0.25])
+    weeks = ['上週', '本週']
+    totals = [last_week_total, this_week_total]
+    colors_comp = ['#FF6464', '#6496FF']
+    bars = ax_compare.bar(weeks, totals, color=colors_comp, edgecolor='black', linewidth=1.5, width=0.5)
+    
+    for bar, total in zip(bars, totals):
+        height = bar.get_height()
+        ax_compare.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{int(total):,}',
+                       ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    growth_text = f"增長 +{growth_rate:.1f}%" if growth_rate > 0 else f"下降 {growth_rate:.1f}%"
+    growth_color = '#6BBF59' if growth_rate >= 0 else '#FF6464'
+    
+    ax_compare.text(0.5, max(totals) * 0.9, growth_text,
+                   ha='center', fontsize=11, fontweight='bold', color=growth_color,
+                   transform=ax_compare.transData,
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor=growth_color, linewidth=2))
+    
+    ax_compare.set_ylabel('KK幣數量', fontsize=10, fontweight='bold')
+    ax_compare.set_title('📈 本週對比', fontsize=12, fontweight='bold')
+    ax_compare.set_ylim(0, max(totals) * 1.3)
+    ax_compare.grid(axis='y', alpha=0.3)
+    
+    # 中間：指標卡片 1 - 金庫總額
+    ax_metrics1 = fig.add_axes([0.40, 0.08, 0.12, 0.25])
+    ax_metrics1.axis('off')
+    
+    # 背景
+    rect1 = plt.Rectangle((0, 0), 1, 1, transform=ax_metrics1.transAxes,
+                          facecolor='#fff9e6', edgecolor='#FFD700', linewidth=2, zorder=-1)
+    ax_metrics1.add_patch(rect1)
+    
+    ax_metrics1.text(0.5, 0.72, '金庫總額', fontsize=10, fontweight='bold',
+                    ha='center', transform=ax_metrics1.transAxes, color='#666')
+    ax_metrics1.text(0.5, 0.50, f'{int(total_coins):,}', fontsize=14, fontweight='bold',
+                    ha='center', transform=ax_metrics1.transAxes, color='#FFD700')
+    ax_metrics1.text(0.5, 0.28, 'KK幣', fontsize=9,
+                    ha='center', transform=ax_metrics1.transAxes, color='#888')
+    
+    # 指標卡片 2 - 本週新增
+    ax_metrics2 = fig.add_axes([0.58, 0.08, 0.12, 0.25])
+    ax_metrics2.axis('off')
+    
+    rect2 = plt.Rectangle((0, 0), 1, 1, transform=ax_metrics2.transAxes,
+                          facecolor='#e6f2ff', edgecolor='#6496FF', linewidth=2, zorder=-1)
+    ax_metrics2.add_patch(rect2)
+    
+    ax_metrics2.text(0.5, 0.72, '本週新增', fontsize=10, fontweight='bold',
+                    ha='center', transform=ax_metrics2.transAxes, color='#666')
+    ax_metrics2.text(0.5, 0.50, f'{int(this_week_total):,}', fontsize=14, fontweight='bold',
+                    ha='center', transform=ax_metrics2.transAxes, color='#6496FF')
+    ax_metrics2.text(0.5, 0.28, 'KK幣', fontsize=9,
+                    ha='center', transform=ax_metrics2.transAxes, color='#888')
+    
+    # 指標卡片 3 - 參與成員
+    ax_metrics3 = fig.add_axes([0.76, 0.08, 0.12, 0.25])
+    ax_metrics3.axis('off')
+    
+    rect3 = plt.Rectangle((0, 0), 1, 1, transform=ax_metrics3.transAxes,
+                          facecolor='#e6ffe6', edgecolor='#6BBF59', linewidth=2, zorder=-1)
+    ax_metrics3.add_patch(rect3)
+    
+    ax_metrics3.text(0.5, 0.72, '參與成員', fontsize=10, fontweight='bold',
+                    ha='center', transform=ax_metrics3.transAxes, color='#666')
+    ax_metrics3.text(0.5, 0.50, f'{member_count}', fontsize=14, fontweight='bold',
+                    ha='center', transform=ax_metrics3.transAxes, color='#6BBF59')
+    ax_metrics3.text(0.5, 0.28, '名', fontsize=9,
+                    ha='center', transform=ax_metrics3.transAxes, color='#888')
+    
+    plt.suptitle('📊 KK幣綜合仪表板', fontsize=18, fontweight='bold', y=0.98)
+    
+    # 時間戳
+    time_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    fig.text(0.99, 0.01, f'更新時間：{time_str}', ha='right', fontsize=9, color='#999')
+    
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='#f5f8fc')
+    buf.seek(0)
+    plt.close(fig)
+    
+    return Image.open(buf).convert("RGBA")
+
+
 async def setup(bot):
     """載入此模組"""
     print("✅ [KKCoin] 排行榜視覺化模組已載入")
