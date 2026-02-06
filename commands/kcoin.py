@@ -388,6 +388,65 @@ class KKCoin(commands.Cog):
             print(f"❌ 建立排行榜時發生錯誤: {e}")
             await interaction.followup.send("❌ 建立排行榜時發生錯誤", ephemeral=True)
 
+    @app_commands.command(name="kkcoin_leaderboard", description="顯示各種風格的排行榜")
+    @app_commands.describe(
+        style="排行榜風格",
+        limit="顯示人數"
+    )
+    @app_commands.choices(style=[
+        app_commands.Choice(name="🎨 彩色排行榜", value="colorful"),
+        app_commands.Choice(name="📊 長條圖", value="bar"),
+        app_commands.Choice(name="🍰 圓餅圖", value="pie"),
+    ])
+    @app_commands.choices(limit=[
+        app_commands.Choice(name="前 3 名 🏆", value="3"),
+        app_commands.Choice(name="前 5 名 ⭐", value="5"),
+        app_commands.Choice(name="前 10 名 📈", value="10"),
+        app_commands.Choice(name="前 20 名 📊", value="20"),
+    ])
+    async def kkcoin_leaderboard(
+        self, 
+        interaction: discord.Interaction, 
+        style: str = "colorful",
+        limit: str = "10"
+    ):
+        """顯示各種風格的 KK 幣排行榜"""
+        await interaction.response.defer()
+        
+        limit_int = int(limit)
+        members_data = self.get_current_leaderboard_data()
+
+        if not members_data:
+            await interaction.followup.send("❌ 沒有找到任何使用者資料", ephemeral=True)
+            return
+
+        try:
+            # 動態導入視覺化模組
+            from commands.kkcoin_visualizer import create_colorful_leaderboard_image, create_chart_image
+            
+            if style == "colorful":
+                image = await create_colorful_leaderboard_image(members_data, limit=limit_int)
+                filename = f"kkcoin_colorful_{limit_int}.png"
+            elif style == "bar":
+                image = await create_chart_image(members_data, chart_type='bar', limit=limit_int)
+                filename = f"kkcoin_bar_{limit_int}.png"
+            else:  # pie
+                image = await create_chart_image(members_data, chart_type='pie', limit=limit_int)
+                filename = f"kkcoin_pie_{limit_int}.png"
+            
+            with io.BytesIO() as img_bytes:
+                image.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                file = discord.File(img_bytes, filename=filename)
+                await interaction.followup.send(file=file)
+                
+            print(f"✅ {['彩色', '長條', '圓餅'][['colorful', 'bar', 'pie'].index(style)]}排行榜已發送（前{limit_int}名）")
+        except Exception as e:
+            print(f"❌ 生成排行榜時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 生成排行榜時發生錯誤：{str(e)[:100]}", ephemeral=True)
+
     @app_commands.command(name="kkcoin_admin", description="管理用戶的 KK 幣（管理員專用）")
     @app_commands.describe(
         member="要修改 KK 幣的用戶",
