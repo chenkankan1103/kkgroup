@@ -15,22 +15,27 @@ from .merchant.database import get_user_kkcoin, update_user_kkcoin
 class CannabisCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.init_cannabis_tables_bg.start()
+        # 後台初始化任務已廢棄 (2026-02-10)
+        # 大麻表已統一到 users 表的 JSON 欄位，無需後台創建
+        # self.init_cannabis_tables_bg.start()
     
     def cog_unload(self):
-        self.init_cannabis_tables_bg.cancel()
+        # 後台任務已廢棄
+        # self.init_cannabis_tables_bg.cancel()
+        pass
     
-    @tasks.loop(seconds=10)
-    async def init_cannabis_tables_bg(self):
-        """後台初始化數據庫表"""
-        try:
-            await init_cannabis_tables()
-        except Exception as e:
-            traceback.print_exc()
+    # 已廢棄的後台任務 - 保留註釋供參考
+    # @tasks.loop(seconds=10)
+    # async def init_cannabis_tables_bg(self):
+    #     """後台初始化數據庫表 - 已廢棄"""
+    #     try:
+    #         await init_cannabis_tables()
+    #     except Exception as e:
+    #         traceback.print_exc()
     
-    @init_cannabis_tables_bg.before_loop
-    async def before_init(self):
-        await self.bot.wait_until_ready()
+    # @init_cannabis_tables_bg.before_loop
+    # async def before_init(self):
+    #     await self.bot.wait_until_ready()
     
     # ==================== 主命令 ====================
     @app_commands.command(name="種植", description="🌱 開始種植大麻")
