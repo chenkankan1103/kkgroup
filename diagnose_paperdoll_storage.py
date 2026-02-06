@@ -22,7 +22,10 @@ from pathlib import Path
 # 加載環境變數
 load_dotenv()
 
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+# 支持多個 token 名稱（優先級：DISCORD_TOKEN > UI_DISCORD_BOT_TOKEN > SHOP_DISCORD_BOT_TOKEN）
+DISCORD_TOKEN = (os.getenv('DISCORD_TOKEN') or 
+                 os.getenv('UI_DISCORD_BOT_TOKEN') or 
+                 os.getenv('SHOP_DISCORD_BOT_TOKEN'))
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID', '0'))
 IMAGE_STORAGE_CHANNEL_ID = int(os.getenv('IMAGE_STORAGE_CHANNEL_ID', '0'))
 WELCOME_CHANNEL_ID = int(os.getenv('WELCOME_CHANNEL_ID', '0'))
