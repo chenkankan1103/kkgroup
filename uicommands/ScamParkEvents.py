@@ -358,6 +358,95 @@ class ScamParkEvents(commands.Cog):
         
         return None
 
+    async def send_or_edit_event_message(self, thread: discord.Thread, embed: discord.Embed, 
+                                          user_id: int, event_type: str) -> discord.Message:
+        """
+        發送或編輯事件訊息，並更新事件歷史
+        
+        Args:
+            thread: Discord 線程
+            embed: 事件 embed
+            user_id: 用戶 ID
+            event_type: 事件類型名稱
+            
+        Returns:
+            發送/編輯的訊息
+        """
+        try:
+            # 獲取用戶的事件歷史
+            import json
+            user_data = get_user(user_id)
+            event_history_str = user_data.get('event_history', '[]')
+            
+            try:
+                event_history = json.loads(event_history_str) if isinstance(event_history_str, str) else []
+            except:
+                event_history = []
+            
+            # 添加新事件到歷史（保留前 5 條）
+            current_time = datetime.datetime.now().isoformat()
+            new_event = {
+                'type': event_type,
+                'time': current_time
+            }
+            event_history.insert(0, new_event)  # 新事件放在最前
+            event_history = event_history[:5]  # 只保留前 5 條
+            
+            # 保存事件歷史到數據庫
+            set_user_field(user_id, 'event_history', json.dumps(event_history, ensure_ascii=False))
+            
+            # 生成帶有事件歷史的完整 embed
+            history_text = "📋 【前 5 次事件紀錄】\n"
+            for idx, evt in enumerate(event_history[:5], 1):
+                evt_time = evt.get('time', '')
+                evt_type = evt.get('type', '未知')
+                # 格式化時間
+                try:
+                    dt = datetime.datetime.fromisoformat(evt_time)
+                    time_str = dt.strftime('%m/%d %H:%M')
+                except:
+                    time_str = evt_time[:10]
+                
+                history_text += f"{idx}. {evt_type} ({time_str})\n"
+            
+            # 添加歷史欄位到 embed
+            embed.add_field(
+                name="📊 你的事件歷史",
+                value=history_text,
+                inline=False
+            )
+            
+            # 檢查是否有之前的事件消息
+            last_message_id = get_user_field(user_id, 'last_event_message_id', default=None)
+            message = None
+            
+            if last_message_id:
+                try:
+                    message = await thread.fetch_message(int(last_message_id))
+                    # 編輯現有消息
+                    await message.edit(embed=embed)
+                    print(f"✏️ 編輯事件訊息: {event_type} for user {user_id}")
+                    return message
+                except discord.NotFound:
+                    # 消息已被刪除，發送新消息
+                    print(f"⚠️ 舊消息已被刪除，發送新訊息")
+                except Exception as e:
+                    print(f"⚠️ 編輯消息失敗: {e}，嘗試發送新訊息")
+            
+            # 發送新訊息
+            message = await thread.send(embed=embed)
+            # 保存消息 ID
+            set_user_field(user_id, 'last_event_message_id', message.id)
+            print(f"📤 發送新事件訊息: {event_type} for user {user_id}")
+            return message
+            
+        except Exception as e:
+            print(f"❌ 發送/編輯事件訊息失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            # 降級到簡單發送
+            return await thread.send(embed=embed)
+
     async def trigger_random_event(self, member: discord.Member, thread: discord.Thread, 
                                    kkcoin: int, level: int, hp: int, stamina: int):
         """觸發隨機事件"""
@@ -491,9 +580,7 @@ class ScamParkEvents(commands.Cog):
         
         embed.set_footer(text="園區安全管理處")
 
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "大額沒收")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "大額沒收")
         
         self.update_user_kkcoin(member.id, -confiscated)
 
@@ -521,9 +608,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
 
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "保護費")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "保護費")
         
         self.update_user_kkcoin(member.id, -fee)
 
@@ -559,9 +644,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
 
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "毆打")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "毆打")
         
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
@@ -589,9 +672,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
 
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "警方分贓")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "警方分贓")
         
         self.update_user_kkcoin(member.id, gain)
 
@@ -605,9 +686,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💵 「建議金額」", value=f"-{bribe} KKCoin", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "賄賂要求")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "賄賂要求")
         self.update_user_kkcoin(member.id, -bribe)
 
     async def event_gambling_trap(self, member, thread, kkcoin, level, hp, stamina):
@@ -620,9 +699,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💸 輸掉的錢", value=f"-{loss} KKCoin", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "賭博陷阱")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "賭博陷阱")
         self.update_user_kkcoin(member.id, -loss)
 
     async def event_fine_penalty(self, member, thread, kkcoin, level, hp, stamina):
@@ -637,9 +714,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💰 罰款金額", value=f"-{fine} KKCoin", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "罰款")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "罰款")
         self.update_user_kkcoin(member.id, -fine)
 
     async def event_equipment_fee(self, member, thread, kkcoin, level, hp, stamina):
@@ -654,9 +729,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💳 費用", value=f"-{fee} KKCoin", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "設備費")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "設備費")
         self.update_user_kkcoin(member.id, -fee)
 
     async def event_kkcoin_confiscation(self, member, thread, kkcoin, level, hp, stamina):
@@ -669,9 +742,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💰 沒收", value=f"-{confiscated} KKCoin", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "KKCoin沒收")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "KKCoin沒收")
         self.update_user_kkcoin(member.id, -confiscated)
 
     async def event_forced_overtime(self, member, thread, kkcoin, level, hp, stamina):
@@ -700,9 +771,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
         
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "強制加班")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "強制加班")
         self.update_user_stats(member.id, kkcoin=kkcoin_gain, stamina=-stamina_loss)
 
     async def event_medical_extortion(self, member, thread, kkcoin, level, hp, stamina):
@@ -717,9 +786,7 @@ class ScamParkEvents(commands.Cog):
         )
         embed.add_field(name="❤️ 治療", value=f"+{hp_restore} HP", inline=True)
         embed.add_field(name="💰 費用", value=f"-{cost} KKCoin", inline=True)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "醫療勒索")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "醫療勒索")
         self.update_user_stats(member.id, hp=hp_restore, kkcoin=-cost)
 
     async def event_cell_search(self, member, thread, kkcoin, level, hp, stamina):
@@ -732,9 +799,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💰 沒收物品", value=f"-{loss} KKCoin", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "牢房搜查")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "牢房搜查")
         self.update_user_kkcoin(member.id, -loss)
 
     async def event_blackmail(self, member, thread, kkcoin, level, hp, stamina):
@@ -747,9 +812,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💸 封口費", value=f"-{amount} KKCoin", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "勒索")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "勒索")
         self.update_user_kkcoin(member.id, -amount)
 
     async def event_supervisor_inspection(self, member, thread, kkcoin, level, hp, stamina):
@@ -762,9 +825,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="⚡ 精神壓力", value=f"-{stamina_loss} 體力", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "主管巡視")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "主管巡視")
         self.update_user_stats(member.id, stamina=-stamina_loss)
 
     async def event_quota_pressure(self, member, thread, kkcoin, level, hp, stamina):
@@ -777,9 +838,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="⚡ 心理壓力", value=f"-{stamina_loss} 體力", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "業績壓力")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "業績壓力")
         self.update_user_stats(member.id, stamina=-stamina_loss)
 
     async def event_group_punishment(self, member, thread, kkcoin, level, hp, stamina):
@@ -794,9 +853,7 @@ class ScamParkEvents(commands.Cog):
         )
         embed.add_field(name="❤️ 傷害", value=f"-{hp_loss} HP", inline=True)
         embed.add_field(name="⚡ 體力", value=f"-{stamina_loss}", inline=True)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "連坐處罰")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "連坐處罰")
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
     async def event_work_accident(self, member, thread, kkcoin, level, hp, stamina):
@@ -811,9 +868,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="❤️ 受傷", value=f"-{hp_loss} HP", inline=False)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "工作意外")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "工作意外")
         self.update_user_stats(member.id, hp=-hp_loss)
 
     async def event_training_hell(self, member, thread, kkcoin, level, hp, stamina):
@@ -828,9 +883,7 @@ class ScamParkEvents(commands.Cog):
         )
         embed.add_field(name="❤️ 體能消耗", value=f"-{hp_loss} HP", inline=True)
         embed.add_field(name="⚡ 精力耗盡", value=f"-{stamina_loss} 體力", inline=True)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "地獄訓練")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "地獄訓練")
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
     async def event_isolation_punishment(self, member, thread, kkcoin, level, hp, stamina):
@@ -845,9 +898,7 @@ class ScamParkEvents(commands.Cog):
         )
         embed.add_field(name="❤️ 虛弱", value=f"-{hp_loss} HP", inline=True)
         embed.add_field(name="⚡ 精神崩潰", value=f"-{stamina_loss} 體力", inline=True)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "關禁閉")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "關禁閉")
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
     async def event_random_inspection(self, member, thread, kkcoin, level, hp, stamina):
@@ -862,15 +913,11 @@ class ScamParkEvents(commands.Cog):
         
         if random.random() < 0.5:
             embed.add_field(name="❌ 發現違禁品", value=f"沒收 {lost_kkcoin} KKCoin", inline=False)
-            message = await thread.send(embed=embed)
-            self.event_messages[member.id] = message.id
-            self.save_event_time(member.id, message.id, "例行檢查-沒收")
+            message = await self.send_or_edit_event_message(thread, embed, member.id, "例行檢查-沒收")
             self.update_user_kkcoin(member.id, -lost_kkcoin)
         else:
             embed.add_field(name="✅ 通過檢查", value="這次僥倖逃過...", inline=False)
-            message = await thread.send(embed=embed)
-            self.event_messages[member.id] = message.id
-            self.save_event_time(member.id, message.id, "例行檢查-通過")
+            message = await self.send_or_edit_event_message(thread, embed, member.id, "例行檢查-通過")
 
     async def event_supervisor_favor(self, member, thread, kkcoin, level, hp, stamina):
         """主管恩惠"""
@@ -884,9 +931,7 @@ class ScamParkEvents(commands.Cog):
         )
         embed.add_field(name="💰 獎勵", value=f"+{gain} KKCoin", inline=True)
         embed.add_field(name="❤️ 血量恢復", value=f"+{hp_gain} HP", inline=True)
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "主管恩惠")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "主管恩惠")
         self.update_user_stats(member.id, kkcoin=gain, hp=hp_gain)
 
     # ==================== 新增事件：意外傷害 ====================
@@ -925,9 +970,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
 
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "車禍意外")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "車禍意外")
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
     async def event_food_poisoning(self, member, thread, kkcoin, level, hp, stamina):
@@ -964,9 +1007,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
 
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "食物中毒")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "食物中毒")
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
     async def event_workplace_illness(self, member, thread, kkcoin, level, hp, stamina):
@@ -1003,9 +1044,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
 
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "過勞成疾")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "過勞成疾")
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
     async def event_workplace_accident(self, member, thread, kkcoin, level, hp, stamina):
@@ -1042,9 +1081,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
 
-        message = await thread.send(embed=embed)
-        self.event_messages[member.id] = message.id
-        self.save_event_time(member.id, message.id, "工作意外")
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "工作意外")
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
     # ==================== 資料庫更新函數 ====================
