@@ -54,21 +54,20 @@ class ScamParkEvents(commands.Cog):
             print(f"❌ 初始化事件資料庫錯誤: {e}")
 
     def load_last_event_times(self):
-        """從記憶體載入上次事件時間"""
+        """從數據庫載入上次事件時間"""
         try:
-            # Load event history from memory dictionary
-            # Note: Since we're using in-memory storage, this mainly initializes from self.event_cooldown
-            # which is already populated by init
-            for user_id, last_time in self.event_cooldown.items():
-                if user_id not in self.event_history:
-                    self.event_history[user_id] = {
-                        'last_event_time': last_time,
-                        'last_message_id': self.event_messages.get(user_id),
-                        'event_count': 0,
-                        'last_event_type': None
-                    }
+            all_users = get_all_users()
+            current_time = datetime.datetime.now().timestamp()
             
-            print(f"✅ 載入 {len(self.event_history)} 筆事件歷史記錄")
+            # 初始化所有用戶的冷卻時間
+            for user_data in all_users:
+                user_id = user_data.get('user_id')
+                if user_id:
+                    # 設置冷卻時間為當前時間，避免重啟後立即觸發事件
+                    # 實際上應該從某個字段讀取，但目前先設為現在
+                    self.event_cooldown[user_id] = current_time
+            
+            print(f"✅ 初始化 {len(self.event_cooldown)} 個用戶的事件冷卻時間")
         except Exception as e:
             print(f"❌ 載入事件歷史錯誤: {e}")
 
@@ -421,17 +420,20 @@ class ScamParkEvents(commands.Cog):
                 {'handler': self.event_equipment_fee, 'weight': 2},
             ])
 
-        # 體力/HP事件
+        # 體力/HP事件 - 新增意外傷害和疾病
         if stamina < 50:
             events.extend([
                 {'handler': self.event_forced_overtime, 'weight': 3},
                 {'handler': self.event_quota_pressure, 'weight': 2},
+                {'handler': self.event_workplace_illness, 'weight': 2},
             ])
         
         if hp < 60:
             events.extend([
                 {'handler': self.event_beating, 'weight': 2},
                 {'handler': self.event_medical_extortion, 'weight': 2},
+                {'handler': self.event_car_accident, 'weight': 1},
+                {'handler': self.event_workplace_accident, 'weight': 1},
             ])
 
         # 福利事件
@@ -441,13 +443,15 @@ class ScamParkEvents(commands.Cog):
                 {'handler': self.event_supervisor_favor, 'weight': 1},
             ])
 
-        # 通用事件
+        # 通用事件 - 新增食物中毒
         events.extend([
             {'handler': self.event_supervisor_inspection, 'weight': 2},
             {'handler': self.event_group_punishment, 'weight': 2},
             {'handler': self.event_work_accident, 'weight': 2},
             {'handler': self.event_training_hell, 'weight': 1},
             {'handler': self.event_isolation_punishment, 'weight': 1},
+            {'handler': self.event_food_poisoning, 'weight': 1},
+            {'handler': self.event_car_accident, 'weight': 1},  # 普遍的交通意外
         ])
 
         weighted_events = []
@@ -512,7 +516,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💸 本月保護費", value=f"-{fee} KKCoin", inline=False)
-        embed.add_field(name="🛡️ 效果", value="不交錢的話...後果自負", inline=False)
+        embed.add_field(name="� 保護範圍", value="工作安全、人身安全、不會被欺負", inline=False)
         
         if image_url:
             embed.set_image(url=image_url)
@@ -536,14 +540,21 @@ class ScamParkEvents(commands.Cog):
             is_negative_event=True
         )
         
+        beating_scenarios = [
+            "主管今天心情特別差，你剛好說了一句話觸怒他...",
+            "被主管當眾扇了一巴掌，臉火辣辣地疼...",
+            "因為業績沒達標，被狠狠揍了一頓...",
+        ]
+        
         embed = discord.Embed(
             title="👊 暴力懲罰",
-            description=ai_desc or "主管心情不好，你成了出氣筒...",
+            description=ai_desc or random.choice(beating_scenarios),
             color=0xaa0000,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="❤️ 傷害", value=f"-{hp_loss} HP", inline=True)
-        embed.add_field(name="⚡ 體力", value=f"-{stamina_loss}", inline=True)
+        embed.add_field(name="❤️ 身體傷害", value=f"-{hp_loss} HP", inline=True)
+        embed.add_field(name="⚡ 精神創傷", value=f"-{stamina_loss} 體力", inline=True)
+        embed.add_field(name="💔 後遺症", value="你的尊嚴被狠狠踐踏了...", inline=False)
         
         if image_url:
             embed.set_image(url=image_url)
@@ -667,14 +678,28 @@ class ScamParkEvents(commands.Cog):
         """強制加班"""
         stamina_loss = random.randint(20, 40)
         kkcoin_gain = random.randint(20, 50)
+        
+        ai_desc = await self.generate_ai_event_description("加班", {"損失體力": stamina_loss, "賺得": kkcoin_gain})
+        
+        image_prompt = await self.translate_to_english("員工被迫在辦公室一直工作到天亮，疲勞不堪")
+        image_url = await self.generate_pollinations_image(
+            image_prompt or "employee forced overtime working exhausted at desk until dawn",
+            is_negative_event=True
+        )
+        
         embed = discord.Embed(
             title="⏰ 強制加班", 
-            description="業績不達標，全員加班到天亮！", 
+            description=ai_desc or "業績不達標，全員加班到天亮！",
             color=0x990000,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="⚡ 體力", value=f"-{stamina_loss}", inline=True)
-        embed.add_field(name="💰 收入", value=f"+{kkcoin_gain} KKCoin", inline=True)
+        embed.add_field(name="⚡ 體力消耗", value=f"-{stamina_loss} 體力", inline=True)
+        embed.add_field(name="💰 加班費", value=f"+{kkcoin_gain} KKCoin", inline=True)
+        embed.add_field(name="😫 結果", value="整個人都掏空了，明天可能會很難受...", inline=False)
+        
+        if image_url:
+            embed.set_image(url=image_url)
+        
         message = await thread.send(embed=embed)
         self.event_messages[member.id] = message.id
         self.save_event_time(member.id, message.id, "強制加班")
@@ -863,6 +888,164 @@ class ScamParkEvents(commands.Cog):
         self.event_messages[member.id] = message.id
         self.save_event_time(member.id, message.id, "主管恩惠")
         self.update_user_stats(member.id, kkcoin=gain, hp=hp_gain)
+
+    # ==================== 新增事件：意外傷害 ====================
+
+    async def event_car_accident(self, member, thread, kkcoin, level, hp, stamina):
+        """車禍意外"""
+        hp_loss = random.randint(20, 40)
+        stamina_loss = random.randint(15, 35)
+        
+        accident_scenarios = [
+            ("你騎機車經過十字路口，被一輛轉彎的計程車撞上...", "🏍️ 機車車禍"),
+            ("下班途中，公車突然來個急煞車，你被甩到擋風玻璃...", "🚌 公車車禍"),
+            ("騎自行車逆向超車時，迎面撞上一台小貨車...", "🚲 自行車碰撞"),
+            ("在停車場出口沒注意，被倒車的休旅車刮到...", "🚗 停車場意外"),
+        ]
+        scenario, title_prefix = random.choice(accident_scenarios)
+        
+        ai_desc = await self.generate_ai_event_description("車禍", {"傷害": hp_loss, "體力消耗": stamina_loss})
+        
+        image_prompt = await self.translate_to_english("交通車禍意外，救護車到達現場")
+        image_url = await self.generate_pollinations_image(
+            image_prompt or "car accident, ambulance arriving at scene",
+            is_negative_event=True
+        )
+        
+        embed = discord.Embed(
+            title=f"🚨 {title_prefix}",
+            description=ai_desc or scenario,
+            color=0xff3333,
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="❤️ 身體傷害", value=f"-{hp_loss} HP", inline=True)
+        embed.add_field(name="⚡ 體力消耗", value=f"-{stamina_loss} 體力", inline=True)
+        embed.add_field(name="🏥 狀態", value="痛到不敢走路，得休息好幾天...", inline=False)
+        
+        if image_url:
+            embed.set_image(url=image_url)
+
+        message = await thread.send(embed=embed)
+        self.event_messages[member.id] = message.id
+        self.save_event_time(member.id, message.id, "車禍意外")
+        self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
+
+    async def event_food_poisoning(self, member, thread, kkcoin, level, hp, stamina):
+        """食物中毒"""
+        hp_loss = random.randint(15, 25)
+        stamina_loss = random.randint(30, 50)
+        
+        food_scenarios = [
+            ("公司食堂的便當有點怪味，中午開始肚子就難受...", "盒餐"),
+            ("外面便利商店買的飯糰過期了，才吃兩口肚臍就翻江倒海...", "便利商店飯糰"),
+            ("同事帶的家常菜没放冰箱，吃了一半開始拉肚子...", "家常菜"),
+            ("公司旁邊小餐廳的湯看起來就不新鮮，現在全身無力...", "餐廳湯品"),
+        ]
+        scenario, food_type = random.choice(food_scenarios)
+        
+        ai_desc = await self.generate_ai_event_description("食物中毒", {"症狀": "嚴重腹瀉", "體力": stamina_loss})
+        
+        image_prompt = await self.translate_to_english("食物中毒，在洗手間難受")
+        image_url = await self.generate_pollinations_image(
+            image_prompt or "food poisoning, person in bathroom distressed",
+            is_negative_event=True
+        )
+        
+        embed = discord.Embed(
+            title="🤢 食物中毒",
+            description=ai_desc or scenario,
+            color=0x8b4513,
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="❤️ 身體虛弱", value=f"-{hp_loss} HP", inline=True)
+        embed.add_field(name="⚡ 精力耗盡", value=f"-{stamina_loss} 體力", inline=True)
+        embed.add_field(name="💊 治療", value="得吃止瀉藥和電解質飲料才能恢復...", inline=False)
+        
+        if image_url:
+            embed.set_image(url=image_url)
+
+        message = await thread.send(embed=embed)
+        self.event_messages[member.id] = message.id
+        self.save_event_time(member.id, message.id, "食物中毒")
+        self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
+
+    async def event_workplace_illness(self, member, thread, kkcoin, level, hp, stamina):
+        """工作過勞致病"""
+        hp_loss = random.randint(10, 20)
+        stamina_loss = random.randint(40, 70)
+        
+        illness_scenarios = [
+            ("加班過度導致免疫力下降，感冒了...", "感冒", "🤒"),
+            ("長期睡眠不足，發燒到38度，整個人都燒壞了...", "發燒", "🌡️"),
+            ("過度壓力和疲勞，得了頸椎症候群，脖子痛得不行...", "頸椎病", "😣"),
+            ("連續出差，坐飛機被傳染了流感...", "流感", "🦠"),
+        ]
+        scenario, illness_type, emoji = random.choice(illness_scenarios)
+        
+        ai_desc = await self.generate_ai_event_description("工作病", {"病症": illness_type, "體力下降": stamina_loss})
+        
+        image_prompt = await self.translate_to_english("工作過度導致生病，在床上休息")
+        image_url = await self.generate_pollinations_image(
+            image_prompt or "overworked person sick in bed, exhausted",
+            is_negative_event=True
+        )
+        
+        embed = discord.Embed(
+            title=f"{emoji} 過勞成疾",
+            description=ai_desc or scenario,
+            color=0xcc33cc,
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="❤️ 身體衰弱", value=f"-{hp_loss} HP", inline=True)
+        embed.add_field(name="⚡ 精神崩潰", value=f"-{stamina_loss} 體力", inline=True)
+        embed.add_field(name="🏥 醫囑", value="醫生說得好好休息，不然會更嚴重...", inline=False)
+        
+        if image_url:
+            embed.set_image(url=image_url)
+
+        message = await thread.send(embed=embed)
+        self.event_messages[member.id] = message.id
+        self.save_event_time(member.id, message.id, "過勞成疾")
+        self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
+
+    async def event_workplace_accident(self, member, thread, kkcoin, level, hp, stamina):
+        """工作場所傷害"""
+        hp_loss = random.randint(25, 35)
+        stamina_loss = random.randint(20, 40)
+        
+        accident_scenarios = [
+            ("搬重物時閃到腰，現在站都站不直...", "閃腰"),
+            ("手指被機器夾到，腫得像烤香腸...", "夾傷"),
+            ("從梯子上摔下來，整個左臂都青了...", "摔傷"),
+            ("熱湯潑到身上，燙傷面積不小...", "燙傷"),
+        ]
+        scenario, accident_type = random.choice(accident_scenarios)
+        
+        ai_desc = await self.generate_ai_event_description("工作意外", {"傷害": hp_loss})
+        
+        image_prompt = await self.translate_to_english("工作場所傷害意外，員工受傷")
+        image_url = await self.generate_pollinations_image(
+            image_prompt or "workplace accident, injured worker",
+            is_negative_event=True
+        )
+        
+        embed = discord.Embed(
+            title="⚠️ 工作意外",
+            description=ai_desc or scenario,
+            color=0xff6633,
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="❤️ 重傷", value=f"-{hp_loss} HP", inline=True)
+        embed.add_field(name="⚡ 虛弱", value=f"-{stamina_loss} 體力", inline=True)
+        embed.add_field(name="📋 工傷", value="得去醫院掛號，可能會請病假...", inline=False)
+        
+        if image_url:
+            embed.set_image(url=image_url)
+
+        message = await thread.send(embed=embed)
+        self.event_messages[member.id] = message.id
+        self.save_event_time(member.id, message.id, "工作意外")
+        self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
 
     # ==================== 資料庫更新函數 ====================
 
