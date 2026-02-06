@@ -272,6 +272,7 @@ class WelcomeFlow(commands.Cog):
             user_data = {
                 'user_id': user_id,
                 'inventory': default_inventory,
+                'character_config': '{}',
                 'face': 20005,
                 'hair': 30120,
                 'skin': 12000,
@@ -300,7 +301,7 @@ class WelcomeFlow(commands.Cog):
     async def update_user_data(self, user_id: int, data: dict):
         """Update user data fields in sheet-driven database"""
         try:
-            allowed_fields = {'face', 'hair', 'skin', 'top', 'bottom', 'shoes', 'gender', 'hp', 'stamina', 'is_stunned', 'thread_id', 'inventory'}
+            allowed_fields = {'face', 'hair', 'skin', 'top', 'bottom', 'shoes', 'gender', 'hp', 'stamina', 'is_stunned', 'thread_id', 'inventory', 'character_config'}
             
             for key, value in data.items():
                 if key in allowed_fields:
