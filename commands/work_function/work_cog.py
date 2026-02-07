@@ -35,6 +35,15 @@ class CheckInButton(discord.ui.Button):
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
+            # 檢查是否已領取工作證
+            if not user.get('pre_job'):
+                await interaction.followup.send(
+                    "❌ 你還沒領取工作證！請先到置物櫃申請身份證件。\n"
+                    "使用 `/我的面板` → 選擇「領取工作證」",
+                    ephemeral=True
+                )
+                return
+            
             today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = user.get('last_work_date', None)
 
