@@ -132,16 +132,25 @@ class WorkCardModal(discord.ui.Modal):
         try:
             await interaction.response.defer(ephemeral=True)
             
-            # 保存到資料庫
-            set_user_field(self.user_id, 'pre_job', str(self.pre_job.value))
-            set_user_field(self.user_id, 'hobby', str(self.hobby.value))
-            set_user_field(self.user_id, 'work_card_enabled', 1)
+            # 保存到資料庫 (使用 asyncio.to_thread 避免阻塞事件循環)
+            await asyncio.to_thread(set_user_field, self.user_id, 'pre_job', str(self.pre_job.value))
+            await asyncio.to_thread(set_user_field, self.user_id, 'hobby', str(self.hobby.value))
+            await asyncio.to_thread(set_user_field, self.user_id, 'work_card_enabled', 1)
             
-            # 生成工作證 embed
-            user_data = get_user(self.user_id)
-            user_obj = await self.cog.bot.fetch_user(self.user_id)
+            # 生成工作證 embed (使用異步讀取和 interaction.user)
+            user_data = await asyncio.to_thread(get_user, self.user_id)
+            user_obj = interaction.user  # 使用 interaction.user 而非 fetch_user
             
-            embed = await self.create_work_card_embed(user_data, user_obj)
+            # 添加超時保護，避免 embed 創建卡住
+            try:
+                embed = await asyncio.wait_for(
+                    self.create_work_card_embed(user_data, user_obj),
+                    timeout=3.0
+                )
+            except (asyncio.TimeoutError, Exception) as e:
+                # 超時或錯誤時使用簡化版 embed
+                embed = self.create_simple_work_card_embed(user_data, user_obj)
+            
             view = WorkCardEditView(self.cog, self.user_id)
             
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
@@ -195,6 +204,26 @@ class WorkCardModal(discord.ui.Modal):
         embed.timestamp = datetime.datetime.utcnow()
         
         return embed
+    
+    def create_simple_work_card_embed(self, user_data, user_obj):
+        """生成簡化版工作證卡片 embed (降級方案)"""
+        user_id_suffix = str(self.user_id)[-6:].zfill(6)
+        level = user_data.get('level', 0)
+        
+        embed = discord.Embed(
+            title="【 KK 園區聯合管理處 - 員工通行證 】",
+            color=discord.Color.gold(),
+            description=f"姓名：{user_obj.name}\n" +
+                       f"員工編號：#{user_id_suffix}\n" +
+                       f"職級：Lv.{level}\n" +
+                       f"入園前身份：{user_data.get('pre_job', 'N/A')}\n" +
+                       f"業餘愛好：{user_data.get('hobby', 'N/A')}"
+        )
+        
+        embed.set_footer(text="🎫 此證件為 KK 園區正式員工的象徵")
+        embed.timestamp = datetime.datetime.utcnow()
+        
+        return embed
 
 
 class WorkCardEditView(discord.ui.View):
@@ -230,8 +259,20 @@ class WorkCardActionView(discord.ui.View):
             return
         
         try:
-            user_obj = await self.cog.bot.fetch_user(self.user_id)
-            embed = await WorkCardModal(self.cog, self.user_id).create_work_card_embed(self.user_data, user_obj)
+            # 使用 interaction.user 而非 fetch_user
+            user_obj = interaction.user
+            modal = WorkCardModal(self.cog, self.user_id)
+            
+            # 添加超時保護
+            try:
+                embed = await asyncio.wait_for(
+                    modal.create_work_card_embed(self.user_data, user_obj),
+                    timeout=3.0
+                )
+            except (asyncio.TimeoutError, Exception):
+                # 超時或錯誤時使用簡化版 embed
+                embed = modal.create_simple_work_card_embed(self.user_data, user_obj)
+            
             view = WorkCardEditView(self.cog, self.user_id)
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         except Exception as e:
