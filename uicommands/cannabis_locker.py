@@ -578,10 +578,10 @@ class SelectPlantForHarvestView(discord.ui.View):
                 await interaction.response.defer(ephemeral=True)
                 
                 # 收割
-                result = await harvest_plant(self.user_id, plant["id"])
+                result = await harvest_plant(plant["id"])
                 
-                if result:
-                    yield_amount = plant.get("harvested_amount", 0)
+                if result and result.get("success"):
+                    yield_amount = result.get("yield_amount", 0)
                     
                     embed = discord.Embed(
                         title="✅ 收割成功",
