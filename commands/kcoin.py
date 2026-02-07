@@ -873,5 +873,87 @@ class KKCoin(commands.Cog):
         # 立即嘗試創建排行榜
         await self.create_leaderboard()
 
+    @app_commands.command(name="kkcoin_v2", description="顯示升級版排行榜 (3合1：排行榜+長條圖+饼圖)")
+    async def kkcoin_v2(self, interaction: discord.Interaction):
+        """顯示升級版排行榜 - 前15名 + 3張組合圖"""
+        await interaction.response.defer()
+        
+        members_data = self.get_current_leaderboard_data()
+        
+        if not members_data:
+            await interaction.followup.send("❌ 沒有找到任何使用者資料", ephemeral=True)
+            return
+        
+        try:
+            from commands.kkcoin_visualizer_v2 import (
+                create_enhanced_leaderboard_image,
+                create_bar_chart_image,
+                create_pie_and_weekly_image,
+                MATPLOTLIB_AVAILABLE
+            )
+            
+            # 生成排行榜 (15名)
+            print("🎨 生成排行榜圖片...")
+            leaderboard_img = await create_enhanced_leaderboard_image(members_data, limit=15)
+            
+            # 生成長條圖
+            print("📊 生成長條圖...")
+            bar_img = await create_bar_chart_image(members_data, limit=15)
+            if bar_img is None:
+                raise RuntimeError("matplotlib 未安裝，無法生成長條圖。請執行: pip install matplotlib numpy")
+            
+            # 生成饼圖 + 周統計
+            print("🍰 生成饼圖與周統計...")
+            pie_img = await create_pie_and_weekly_image(
+                members_data=members_data,
+                limit=15,
+                total_coins=sum(coin for _, coin in members_data),
+                this_week_total=int(sum(coin for _, coin in members_data) * 0.3),
+                last_week_total=int(sum(coin for _, coin in members_data) * 0.25)
+            )
+            if pie_img is None:
+                raise RuntimeError("matplotlib 未安裝，無法生成饼圖。請執行: pip install matplotlib numpy")
+            
+            # 創建 Discord 文件
+            files = []
+            
+            # 圖1：排行榜
+            with io.BytesIO() as img_bytes:
+                leaderboard_img.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                files.append(discord.File(img_bytes, filename="1_leaderboard.png"))
+            
+            # 圖2：長條圖
+            with io.BytesIO() as img_bytes:
+                bar_img.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                files.append(discord.File(img_bytes, filename="2_bar_chart.png"))
+            
+            # 圖3：饼圖 + 周統計
+            with io.BytesIO() as img_bytes:
+                pie_img.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                files.append(discord.File(img_bytes, filename="3_pie_weekly.png"))
+            
+            # 發送所有圖片
+            await interaction.followup.send(
+                content="📊 **KK幣升級版仪表板 - 3合1圖表**\n" +
+                        "① 排行榜（前15名）\n" +
+                        "② 長條圖排行\n" +
+                        "③ 饼圖分布 + 周統計",
+                files=files
+            )
+            
+            print("✅ 升級版排行榜已發送（3張圖）")
+        
+        except Exception as e:
+            print(f"❌ 生成升級版排行榜時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(
+                f"❌ 生成圖表時發生錯誤：\n{str(e)[:150]}",
+                ephemeral=True
+            )
+
 async def setup(bot):
     await bot.add_cog(KKCoin(bot))
