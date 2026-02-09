@@ -21,19 +21,19 @@ class ScamParkEvents(commands.Cog):
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_API_MODEL = os.getenv('AI_API_MODEL')
         
-        # Groq 備用 API（優先級更高）
+        # Groq 備用 API（備選方案）
         self.GROQ_API_KEY = os.getenv('GROQ_API_KEY')
         self.GROQ_API_URL = os.getenv('GROQ_API_URL')
         self.GROQ_API_MODEL = os.getenv('GROQ_API_MODEL', 'mixtral-8x7b-32768')
         
-        # 判斷優先使用的 API（Groq > Google）
-        self.use_google_api = False
-        if self.GROQ_API_KEY and self.GROQ_API_URL:
-            # 有 Groq API，使用它而非 Google
-            self.use_google_api = False
-        elif self.AI_API_KEY and 'generativelanguage.googleapis.com' in (self.AI_API_URL or ''):
-            # 沒有 Groq，才使用 Google
+        # 判斷優先使用的 API（Google / Gemini > Groq）
+        self.use_google_api = True
+        if self.AI_API_KEY and 'generativelanguage.googleapis.com' in (self.AI_API_URL or ''):
+            # 有 Google/Gemini API，使用它作為主要 API
             self.use_google_api = True
+        else:
+            # 沒有 Gemini，改用 Groq
+            self.use_google_api = False
         
         # 事件設定 - 調整為12小時常態分佈
         self.event_cooldown = {}  # 使用者事件冷卻 {user_id: last_event_timestamp}
@@ -304,21 +304,27 @@ class ScamParkEvents(commands.Cog):
             return None
 
     async def translate_to_english(self, chinese_text: str) -> str:
-        """將中文提示詞翻譯成英文（支援 Google API 和 Groq API）"""
+        """將中文提示詞翻譯成英文（優先 Google / Gemini，備用 Groq）"""
         try:
-            if self.use_google_api:
-                # 使用 Google Generative AI API
-                return await self._translate_google(chinese_text)
-            else:
-                # 使用 Groq / OpenAI 相容 API
-                return await self._translate_groq(chinese_text)
+            # 優先嘗試 Google
+            if self.AI_API_KEY and self.AI_API_URL:
+                result = await self._translate_google(chinese_text)
+                if result and result != chinese_text:
+                    return result
             
-        except Exception as e:
-            print(f"❌ 翻譯錯誤: {e}")
-            return chinese_text
+            # Google 失敗，降級到 Groq
+            if self.GROQ_API_KEY and self.GROQ_API_URL:
+                result = await self._translate_groq(chinese_text)
+                if result and result != chinese_text:
+                    return result
+            
+        except Exception:
+            pass
+        
+        return chinese_text
     
     async def _translate_google(self, chinese_text: str) -> str:
-        """使用 Google Generative AI 翻譯"""
+        """使用 Google Generative AI 翻譯（若配額超限則無聲返回 None）"""
         try:
             url = f"{self.AI_API_URL}?key={self.AI_API_KEY}"
             
@@ -346,25 +352,29 @@ class ScamParkEvents(commands.Cog):
                         if result.get('candidates'):
                             content = result['candidates'][0].get('content', {})
                             if content.get('parts'):
-                                return content['parts'][0].get('text', chinese_text).strip()
-        except Exception as e:
-            print(f"❌ Google 翻譯失敗: {e}")
+                                return content['parts'][0].get('text', '').strip()
+                    elif response.status == 429:
+                        # 配額超限，無聲返回 None（上層會降級到 Groq）
+                        return None
+        except Exception:
+            # 任何錯誤都無聲返回 None
+            pass
         
-        return chinese_text
+        return None
     
     async def _translate_groq(self, chinese_text: str) -> str:
-        """使用 Groq / OpenAI 相容 API 翻譯"""
+        """使用 Groq API 翻譯（備用方案）"""
         try:
-            if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
-                return chinese_text
+            if not all([self.GROQ_API_KEY, self.GROQ_API_URL, self.GROQ_API_MODEL]):
+                return None
             
             headers = {
-                'Authorization': f'Bearer {self.AI_API_KEY}',
+                'Authorization': f'Bearer {self.GROQ_API_KEY}',
                 'Content-Type': 'application/json'
             }
             
             data = {
-                'model': self.AI_API_MODEL,
+                'model': self.GROQ_API_MODEL,
                 'messages': [
                     {'role': 'system', 'content': 'You are a translator. Translate Chinese to English for image generation prompts. Keep it concise and descriptive.'},
                     {'role': 'user', 'content': f'Translate this to English for image generation: {chinese_text}'}
@@ -374,16 +384,15 @@ class ScamParkEvents(commands.Cog):
             }
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.AI_API_URL, headers=headers, json=data, timeout=10) as response:
+                async with session.post(self.GROQ_API_URL, headers=headers, json=data, timeout=10) as response:
                     if response.status == 200:
                         result = await response.json()
                         return result['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            print(f"❌ Groq 翻譯失敗: {e}")
+        except Exception:
+            # 任何錯誤都無聲返回 None
+            pass
         
-        return chinese_text
-        
-        return chinese_text
+        return None
 
     async def generate_ai_event_description(self, event_type: str, details: dict) -> str:
         """使用AI生成事件描述（支援 Google API 和 Groq API）"""
