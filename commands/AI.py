@@ -9,6 +9,26 @@ from utils.memory import add_to_history, get_history
 from dotenv import load_dotenv
 import logging
 
+# 導入全局記憶系統
+try:
+    from ai_memory import (
+        build_memory_context, 
+        DialogueMemory, 
+        PersonalityMemory,
+        KnowledgeBase,
+        initialize_memory_system
+    )
+except ImportError:
+    # 如果記憶系統不可用，使用 stub
+    def build_memory_context():
+        return {"system_instructions": "", "dialogue_history": "", "knowledge_context": "", "estimated_tokens": 0}
+    class DialogueMemory:
+        @staticmethod
+        def add_dialogue(q, a, importance=0.5): pass
+    class PersonalityMemory: pass
+    class KnowledgeBase: pass
+    def initialize_memory_system(): pass
+
 load_dotenv()
 
 AI_API_KEY = os.getenv("AI_API_KEY")
@@ -93,9 +113,33 @@ class AIResponse(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.context_manager = ContextManager(max_history=10)
+        # 初始化全局記憶系統
+        try:
+            initialize_memory_system()
+        except Exception as e:
+            logger.warning(f"記憶系統初始化失敗: {e}")
     
-    async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """通用 API 調用函數 - 支持 Google Gemini"""
+    async def call_ai_api(self, system_prompt: str, user_prompt: str, include_memory: bool = True) -> Optional[str]:
+        """通用 API 調用函數 - 支持 Google Gemini + 全局記憶"""
+        # 如果需要，添加全局記憶上下文
+        if include_memory:
+            try:
+                memory_context = build_memory_context()
+                # 組合系統提示詞：基礎設定 + 角色記憶 + 對話歷史
+                enhanced_prompt = system_prompt + "\n\n" + memory_context["system_instructions"]
+                
+                # 添加對話歷史（如果有）
+                if memory_context["dialogue_history"]:
+                    enhanced_prompt += f"\n=== 對話歷史參考 ===\n{memory_context['dialogue_history']}\n"
+                
+                # 添加知識庫背景（如果有）
+                if memory_context["knowledge_context"]:
+                    enhanced_prompt += f"\n=== 相關知識背景 ===\n{memory_context['knowledge_context']}\n"
+                
+                system_prompt = enhanced_prompt
+            except Exception as e:
+                logger.warning(f"無法整合記憶上下文: {e}")
+        
         if not AI_API_KEY or not AI_API_URL:
             logger.error("AI API 配置不完整")
             return None
@@ -251,6 +295,18 @@ class AIResponse(commands.Cog):
 
             # 保存此次對話交換
             self.context_manager.add_exchange(user_id, user_input, reply)
+            
+            # 將對話存儲到全局記憶庫（判斷重要性）
+            try:
+                importance = 0.5  # 預設中等重要性
+                if len(user_input) > 50:  # 較長的提問通常更重要
+                    importance = 0.8
+                elif any(keyword in user_input for keyword in ["幫我", "怎麼", "如何", "什麼"]):
+                    importance = 0.7
+                
+                DialogueMemory.add_dialogue(user_input, reply, importance=importance)
+            except Exception as e:
+                logger.warning(f"記憶存儲失敗: {e}")
             
             await message.reply(reply)
 
