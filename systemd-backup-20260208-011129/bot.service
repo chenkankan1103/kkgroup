@@ -1,0 +1,26 @@
+# /etc/systemd/system/discord-bot.service
+[Unit]
+Description=Discord Main Bot
+After=network.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=e193752468
+Group=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment=PATH=/home/e193752468/kkgroup/venv/bin
+ExecStart=/home/e193752468/kkgroup/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=discord-bot
+
+# 當收到 SIGTERM 時等待 30 秒讓程式優雅關閉
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

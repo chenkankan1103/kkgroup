@@ -1,0 +1,25 @@
+# /etc/systemd/system/discord-shopbot.service
+[Unit]
+Description=Discord Shop Bot
+After=network.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=e193752468
+Group=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment=PATH=/home/e193752468/kkgroup/venv/bin
+ExecStart=/home/e193752468/kkgroup/venv/bin/python shopbot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=discord-shopbot
+
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
