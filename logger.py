@@ -190,36 +190,36 @@ def discord_sender():
         if startup_mode:
             continue
         
+        # 只在鎖內提取消息，不在鎖內發送（避免長時間持有鎖）
+        error_msg = None
+        content = None
+        
         with lock:
             # 優先處理錯誤隊列（更重要）
             if error_queue:
                 error_msg = error_queue.popleft()
-                send_with_retry(error_msg, is_error=True)
-                continue
-            
             # 然後處理普通訊息隊列
-            if not message_queue:
-                continue
-            
-            # 一次最多取 20 條訊息(限制在 1500 字元內)
-            batch = []
-            total_length = 0
-            
-            while message_queue and len(batch) < 20:
-                msg = message_queue.popleft()
-                if total_length + len(msg) > 1500:
-                    message_queue.appendleft(msg)
-                    break
-                batch.append(msg)
-                total_length += len(msg) + 1
-            
-            if not batch:
-                continue
-            
-            content = "```\n" + "\n".join(batch) + "\n```"
+            elif message_queue:
+                # 一次最多取 20 條訊息(限制在 1500 字元內)
+                batch = []
+                total_length = 0
+                
+                while message_queue and len(batch) < 20:
+                    msg = message_queue.popleft()
+                    if total_length + len(msg) > 1500:
+                        message_queue.appendleft(msg)
+                        break
+                    batch.append(msg)
+                    total_length += len(msg) + 1
+                
+                if batch:
+                    content = "```\n" + "\n".join(batch) + "\n```"
         
-        # 使用帶重試的發送
-        send_with_retry(content, is_error=False)
+        # 在鎖外發送消息（不會阻塞異步事件循環）
+        if error_msg:
+            send_with_retry(error_msg, is_error=True)
+        elif content:
+            send_with_retry(content, is_error=False)
 
 # 啟動背景發送執行緒
 thread = threading.Thread(target=discord_sender, daemon=True)
