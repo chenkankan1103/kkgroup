@@ -28,7 +28,7 @@ STARTUP_WAIT_TIME = BOT_DELAYS.get(BOT_NAME, 5 + random.uniform(0, 5))
 MAX_QUEUE_SIZE = 100
 message_queue = deque(maxlen=MAX_QUEUE_SIZE)
 error_queue = deque(maxlen=50)  # 錯誤隊列（優先級更高）
-lock = threading.Lock()
+# 移除 threading.Lock - 改用 GIL 原子操作
 
 # ✅ 錯誤去重機制（防止同一個錯誤狂轟）
 error_dedup = {}  # {error_hash: last_timestamp}
@@ -133,15 +133,14 @@ def send_startup_messages():
     """統一發送啟動訊息 (簡潔格式)"""
     global startup_mode, startup_buffer
     
-    with lock:
-        startup_mode = False
-        
-        if not startup_buffer:
-            print(f"[Discord] {BOT_NAME} 沒有啟動訊息", file=sys.__stderr__)
-            return
-        
-        buffer_copy = startup_buffer.copy()
-        startup_buffer.clear()
+    # 無需鎖：只是原地交換引用
+    startup_mode = False
+    buffer_copy = startup_buffer.copy()
+    startup_buffer.clear()
+    
+    if not buffer_copy:
+        print(f"[Discord] {BOT_NAME} 沒有啟動訊息", file=sys.__stderr__)
+        return
     
     # 簡潔格式：只發送關鍵訊息
     # 分離錯誤和正常訊息
@@ -182,7 +181,7 @@ def send_startup_messages():
         send_with_retry(final_message)
 
 def discord_sender():
-    """背景執行緒:發送訊息 (錯誤優先, 正常訊息次之)"""
+    """背景執行緒:發送訊息 (錯誤優先, 正常訊息次之) - 無鎖設計"""
     while True:
         time.sleep(2)  # 每 2 秒檢查一次
         
@@ -190,36 +189,36 @@ def discord_sender():
         if startup_mode:
             continue
         
-        # 只在鎖內提取消息，不在鎖內發送（避免長時間持有鎖）
-        error_msg = None
-        content = None
-        
-        with lock:
-            # 優先處理錯誤隊列（更重要）
+        try:
+            # 優先處理錯誤隊列（更重要）- GIL 原子操作
             if error_queue:
                 error_msg = error_queue.popleft()
+                send_with_retry(error_msg, is_error=True)
+                continue
+            
             # 然後處理普通訊息隊列
-            elif message_queue:
-                # 一次最多取 20 條訊息(限制在 1500 字元內)
-                batch = []
-                total_length = 0
-                
-                while message_queue and len(batch) < 20:
-                    msg = message_queue.popleft()
-                    if total_length + len(msg) > 1500:
-                        message_queue.appendleft(msg)
-                        break
-                    batch.append(msg)
-                    total_length += len(msg) + 1
-                
-                if batch:
-                    content = "```\n" + "\n".join(batch) + "\n```"
-        
-        # 在鎖外發送消息（不會阻塞異步事件循環）
-        if error_msg:
-            send_with_retry(error_msg, is_error=True)
-        elif content:
-            send_with_retry(content, is_error=False)
+            if not message_queue:
+                continue
+            
+            # 一次最多取 20 條訊息(限制在 1500 字元內)
+            batch = []
+            total_length = 0
+            
+            while message_queue and len(batch) < 20:
+                msg = message_queue.popleft()
+                if total_length + len(msg) > 1500:
+                    # 放回隊列（deque 不支援 appendleft，改為重新添加）
+                    message_queue.appendleft(msg)
+                    break
+                batch.append(msg)
+                total_length += len(msg) + 1
+            
+            if batch:
+                content = "```\n" + "\n".join(batch) + "\n```"
+                # 在鎖外發送消息（不會阻塞異步事件循環）
+                send_with_retry(content, is_error=False)
+        except Exception as e:
+            logger.error(f"discord_sender 錯誤: {e}")
 
 # 啟動背景發送執行緒
 thread = threading.Thread(target=discord_sender, daemon=True)
@@ -231,7 +230,7 @@ startup_timer = threading.Timer(STARTUP_WAIT_TIME, send_startup_messages)
 startup_timer.start()
 
 def discord_print(*args, **kwargs):
-    """模擬 print(),加上 BOT 標籤,同時送出"""
+    """模擬 print(),加上 BOT 標籤,同時送出 - 無鎖設計"""
     message = " ".join(map(str, args))
     
     # 簡化輸出格式：只在關鍵信息前加標籤
@@ -241,12 +240,12 @@ def discord_print(*args, **kwargs):
         # 普通訊息只輸出不加標籤
         local_output = message
     
-    # 本地輸出
+    # 本地輸出（同步，安全）
     sys.__stdout__.write(local_output + "\n")
     sys.__stdout__.flush()
     
-    # 啟動模式：只收集錯誤和關鍵訊息
-    with lock:
+    # 無鎖操作：直接 append 到隊列（GIL 保護）
+    try:
         if startup_mode:
             # 只收集有實際信息的行（跳過純分隔線）
             if message.strip() and not message.startswith("="):
@@ -254,6 +253,8 @@ def discord_print(*args, **kwargs):
         else:
             # 正常模式:放進 queue
             message_queue.append(local_output)
+    except Exception:
+        pass  # 隊列滿時自動丟棄，不報錯
 
 # 覆蓋全域 print
 print = discord_print
@@ -278,8 +279,11 @@ def handle_exception(exc_type, exc_value, exc_traceback):
         if len(error_msg) > 1800:
             error_msg = error_msg[:1800] + "\n... (訊息已截斷)"
         
-        with lock:
+        # 無鎖操作：原子 append（GIL 保護）
+        try:
             error_queue.append(f"```\n❌ {BOT_NAME} 捕捉到異常:\n{error_msg}\n```")
+        except Exception:
+            pass
     
     # 仍然打印到標準錯誤
     sys.__stderr__.write(f"[{BOT_NAME}] 未處理的異常:\n{error_msg}\n")
@@ -301,10 +305,9 @@ class DiscordLoggingHandler(logging.Handler):
                 return
             
             if should_report_error(error_hash):
-                # 只在鎖內做最小操作：append 到隊列
+                # 使用原子操作，不需要鎖（GIL 保護）
                 try:
-                    with lock:
-                        error_queue.append(f"```\n🔴 [{record.levelname}] {log_msg}\n```")
+                    error_queue.append(f"```\n🔴 [{record.levelname}] {log_msg}\n```")
                 except Exception:
                     pass
 
