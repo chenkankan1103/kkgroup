@@ -205,7 +205,15 @@ class AIResponse(commands.Cog):
                 full_prompt = user_input
 
             async with message.channel.typing():
-                reply = await self.call_ai_api(persona_prompt, full_prompt)
+                try:
+                    # 添加 45 秒超時保護，確保不會卡住
+                    reply = await asyncio.wait_for(
+                        self.call_ai_api(persona_prompt, full_prompt),
+                        timeout=45
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("AI API 總體超時（45秒）")
+                    reply = None
                 
                 if not reply:
                     reply = "中控室接收不到有意義的訊號，請再問一次。"
