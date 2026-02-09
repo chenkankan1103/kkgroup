@@ -445,6 +445,20 @@ class UserPanel(commands.Cog):
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_API_MODEL = os.getenv('AI_API_MODEL')
         
+        # Groq 備用 API（優先級更高）
+        self.GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+        self.GROQ_API_URL = os.getenv('GROQ_API_URL')
+        self.GROQ_API_MODEL = os.getenv('GROQ_API_MODEL', 'mixtral-8x7b-32768')
+        
+        # 判斷優先使用的 API（Groq > Google）
+        self.use_google_api = False
+        if self.GROQ_API_KEY and self.GROQ_API_URL:
+            # 有 Groq API，使用它而非 Google
+            self.use_google_api = False
+        elif self.AI_API_KEY and 'generativelanguage.googleapis.com' in (self.AI_API_URL or ''):
+            # 沒有 Groq，才使用 Google
+            self.use_google_api = True
+        
         # 圖片緩存設定
         self.cache_dir = Path('./character_images')
         self.cache_dir.mkdir(exist_ok=True)
@@ -862,12 +876,10 @@ class UserPanel(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def generate_ai_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
-        """生成 AI 評論（支援 Google API 和 Groq API）"""
+        """生成 AI 評論（支援 Google API 和 Groq API，優先 Groq）"""
         try:
-            # 判斷是否使用 Google API
-            use_google = 'generativelanguage.googleapis.com' in (self.AI_API_URL or '')
-            
-            if use_google:
+            # 判斷是否使用 Google API（已改為優先 Groq）
+            if self.use_google_api:
                 return await self._generate_google_comment(member, kkcoin_change, xp_change, level_change)
             else:
                 return await self._generate_groq_comment(member, kkcoin_change, xp_change, level_change)
@@ -920,9 +932,14 @@ class UserPanel(commands.Cog):
         return f"本週表現不錯！繼續保持這個節奏 💪"
     
     async def _generate_groq_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
-        """使用 Groq / OpenAI 相容 API 生成評論"""
+        """使用 Groq / OpenAI 相容 API 生成評論（優先使用 Groq）"""
         try:
-            if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
+            # 優先使用 Groq，次選才用 Google
+            api_key = self.GROQ_API_KEY or self.AI_API_KEY
+            api_url = self.GROQ_API_URL or self.AI_API_URL
+            api_model = self.GROQ_API_MODEL or self.AI_API_MODEL
+            
+            if not all([api_key, api_url, api_model]):
                 return None
 
             prompt = f"""你是一個友善的遊戲助手，請為玩家 {member.display_name or member.name} 本週的表現寫一段鼓勵性的評論。
@@ -936,12 +953,12 @@ class UserPanel(commands.Cog):
 """
             
             headers = {
-                'Authorization': f'Bearer {self.AI_API_KEY}',
+                'Authorization': f'Bearer {api_key}',
                 'Content-Type': 'application/json'
             }
             
             data = {
-                'model': self.AI_API_MODEL,
+                'model': api_model,
                 'messages': [{'role': 'user', 'content': prompt}],
                 'max_tokens': 100,
                 'temperature': 0.8
