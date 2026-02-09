@@ -21,8 +21,19 @@ class ScamParkEvents(commands.Cog):
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_API_MODEL = os.getenv('AI_API_MODEL')
         
-        # 判斷是否使用 Google API
-        self.use_google_api = 'generativelanguage.googleapis.com' in (self.AI_API_URL or '')
+        # Groq 備用 API（優先級更高）
+        self.GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+        self.GROQ_API_URL = os.getenv('GROQ_API_URL')
+        self.GROQ_API_MODEL = os.getenv('GROQ_API_MODEL', 'mixtral-8x7b-32768')
+        
+        # 判斷優先使用的 API（Groq > Google）
+        self.use_google_api = False
+        if self.GROQ_API_KEY and self.GROQ_API_URL:
+            # 有 Groq API，使用它而非 Google
+            self.use_google_api = False
+        elif self.AI_API_KEY and 'generativelanguage.googleapis.com' in (self.AI_API_URL or ''):
+            # 沒有 Groq，才使用 Google
+            self.use_google_api = True
         
         # 事件設定 - 調整為12小時常態分佈
         self.event_cooldown = {}  # 使用者事件冷卻 {user_id: last_event_timestamp}
