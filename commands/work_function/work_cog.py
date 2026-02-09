@@ -38,8 +38,7 @@ class CheckInButton(discord.ui.Button):
             # 檢查是否已領取工作證
             if not user.get('pre_job'):
                 await interaction.followup.send(
-                    "❌ 你還沒領取工作證！請先到置物櫃申請身份證件。\n"
-                    "使用 `/我的面板` → 選擇「領取工作證」",
+                    "❌ 你還沒領取工作證！請先到置物櫃申請身份證件。",
                     ephemeral=True
                 )
                 return
@@ -56,11 +55,17 @@ class CheckInButton(discord.ui.Button):
                     self.check_introduction_async(interaction),
                     timeout=8.0
                 )
+                # 修復 #3: 介紹論壇檢查失敗要停止打卡，不要繼續執行
                 if not introduce_check_result:
                     return
             except asyncio.TimeoutError:
-                print("⚠️ 介紹論壇檢查超時，跳過檢查")
-                pass
+                print("⚠️ 介紹論壇檢查超時，無法驗證")
+                # 超時時也應該停止，而不是直接 pass
+                await interaction.followup.send(
+                    "⚠️ 介紹論壇檢查超時，請稍後再試或聯絡管理員",
+                    ephemeral=True
+                )
+                return
 
             embeds_tuple, updated_user, salary_multiplier, daily_story = await process_checkin(
                 interaction.user.id, 

@@ -408,9 +408,22 @@ async def process_checkin(user_id, user_obj, guild):
             return None, None, None, None
         
         today = datetime.utcnow().strftime("%Y-%m-%d")
+        yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        # 修復 #1: 正確計算 streak - 檢查是否跳天（連續性被打破）
+        last_work_date = user.get('last_work_date', None)
+        
+        if last_work_date == yesterday:
+            # 昨天打過卡，今天繼續 → 連續性保持
+            streak = user.get('streak', 0) + 1
+        elif last_work_date is None or last_work_date != today:
+            # 從未打卡或跳天打卡 → 連續性被打破，重新開始
+            streak = 1
+        else:
+            # 其他情況（不應該發生）
+            streak = user.get('streak', 0) + 1
         
         level = user.get('level', 0)
-        streak = user.get('streak', 0) + 1
         
         # 隨機經驗值 + 經驗倍數加成
         xp_gain = random.randint(20, 60)
@@ -444,15 +457,22 @@ async def process_checkin(user_id, user_obj, guild):
             if role_assigned:
                 print(f"✅ 用戶 {user_obj.name} 升級至 Lv.{level}，已授予身分組")
 
-        update_user(
-            user_id,
-            last_work_date=today,
-            streak=streak,
-            level=level,
-            xp=temp_user['xp'],
-            kkcoin=user.get('kkcoin', 0) + kkcoin_gain,
-            actions_used='{}'
-        )
+        # 修復 #2: 升級時不重置 actions_used - 保持每日行動限制
+        # 修復 #2b: 如果 last_work_date 改變（新一天），自動清空 actions_used
+        update_data = {
+            'last_work_date': today,
+            'streak': streak,
+            'level': level,
+            'xp': temp_user['xp'],
+            'kkcoin': user.get('kkcoin', 0) + kkcoin_gain
+        }
+        
+        # 如果日期改變（從昨天或更早改到今天），清空 actions_used
+        # 這樣每個新日子用戶可以重新執行所有行動
+        if last_work_date != today:
+            update_data['actions_used'] = '{}'
+        
+        update_user(user_id, **update_data)
 
         updated_user = get_user(user_id)
         

@@ -23,6 +23,11 @@ MEDAL_PATHS = [
     os.path.join(ASSETS_PATH, "2.png"),  # 銀牌
     os.path.join(ASSETS_PATH, "3.png"),  # 銅牌
 ]
+# V2 排行榜資源
+RANK_V2_BG_PATH = os.path.join(ASSETS_PATH, "kkcoin_rank_v2_bg.png")
+RANK_V2_WIDTH = 1920
+RANK_V2_HEIGHT = 1080
+
 USER_COOLDOWN_SECONDS = 30
 UPDATE_INTERVAL = 10  # 更新間隔改為 10 秒
 
@@ -214,6 +219,250 @@ async def make_leaderboard_image(members_data):
     
     return img
 
+async def make_leaderboard_image_v2(members_data, limit=20):
+    """
+    V2 版排行榜生成器 - 賽博朋克風格
+    還原原始布局，加入賽博朋克視覺元素
+    """
+    WIDTH = RANK_V2_WIDTH
+    HEIGHT = RANK_V2_HEIGHT
+    AVATAR_SIZE = 60
+    MARGIN_LEFT = 400  # 左边距，避开边框左边
+    MARGIN_TOP = 140   # 顶部边距
+    ROW_HEIGHT = 46    # 行高
+    
+    try:
+        FONT_TITLE = ImageFont.truetype(FONT_PATH, 32)
+        FONT_NAME = ImageFont.truetype(FONT_PATH, 22)
+        FONT_RANK = ImageFont.truetype(FONT_PATH, 20)
+        FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 20)
+        FONT_DATE = ImageFont.truetype(FONT_PATH, 16)
+    except Exception as e:
+        print(f"❌ 載入字體失敗: {e}")
+        FONT_TITLE = ImageFont.load_default()
+        FONT_NAME = ImageFont.load_default()
+        FONT_RANK = ImageFont.load_default()
+        FONT_KKCOIN = ImageFont.load_default()
+        FONT_DATE = ImageFont.load_default()
+    
+    # 載入背景圖
+    try:
+        bg_img = Image.open(RANK_V2_BG_PATH).convert("RGBA")
+        if bg_img.size != (WIDTH, HEIGHT):
+            bg_img = bg_img.resize((WIDTH, HEIGHT), Image.LANCZOS)
+        img = bg_img.copy()
+    except:
+        # 使用深色賽博朋克背景
+        img = Image.new("RGBA", (WIDTH, HEIGHT), (10, 12, 20, 255))
+    
+    draw = ImageDraw.Draw(img)
+    
+    # 載入箭頭素材
+    arrow_up = None
+    arrow_down = None
+    try:
+        arrow_up = Image.open(os.path.join(ASSETS_PATH, "cyber_arrow_down_green.png")).convert("RGBA")
+        arrow_up = arrow_up.rotate(180)  # 翻轉為向上
+        arrow_up = arrow_up.resize((24, 24), Image.LANCZOS)
+        
+        arrow_down_img = Image.open(os.path.join(ASSETS_PATH, "cyber_arrow_down_red.png")).convert("RGBA")
+        arrow_down = arrow_down_img.resize((24, 24), Image.LANCZOS)
+    except:
+        print("⚠️ 無法載入箭頭素材")
+    
+    # 绘制标题和时间（标题在边框内居中，时间在右上角）
+    title_x = WIDTH // 2
+    title_y = 85
+    draw.text((title_x, title_y), "⚡ KK幣排行榜 - 前20名 ⚡", fill=(0, 255, 255), font=FONT_TITLE, anchor="mm")
+    
+    from datetime import datetime
+    date_str = f"更新時間：{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    date_x = WIDTH - 320
+    date_y = 23
+    draw.text((date_x, date_y), date_str, fill=(150, 150, 180), font=FONT_DATE, anchor="rt")
+    
+    # 預先創建占位頭像
+    placeholder_avatar = create_placeholder_avatar()
+    
+    # 限制顯示數量
+    display_data = members_data[:limit]
+    
+    # 定義前三名邊框顏色（賽博朋克霓虹色）
+    top3_colors = [
+        (255, 215, 0, 180),    # 金色 #1
+        (192, 192, 192, 180),  # 銀色 #2
+        (255, 140, 0, 180)     # 橙色 #3
+    ]
+    
+    # 定義進度條顏色（賽博朋克漸變）
+    bar_colors = [
+        [(255, 215, 0), (255, 180, 0)],      # 金色漸變 #1
+        [(255, 140, 0), (255, 100, 0)],      # 橙色漸變 #2
+        [(255, 100, 150), (200, 50, 100)],   # 粉橙漸變 #3
+        [(147, 51, 234), (100, 30, 180)],    # 紫色漸變
+        [(59, 130, 246), (30, 100, 220)],    # 藍色漸變
+    ]
+    
+    async with aiohttp.ClientSession() as session:
+        max_kkcoin = max([kk for _, kk in display_data]) if display_data else 1
+        
+        for i, (member, kkcoin) in enumerate(display_data):
+            y = MARGIN_TOP + i * ROW_HEIGHT
+            
+            # 計算進度條寬度
+            bar_width = 600
+            progress = min(kkcoin / max_kkcoin, 1.0)
+            bar_fill_width = int(bar_width * progress)
+            
+            # 繪製行背景和邊框（前三名特殊處理）
+            row_x = MARGIN_LEFT
+            row_width = WIDTH - MARGIN_LEFT * 2
+            
+            if i < 3:
+                # 前三名：發光邊框
+                border_color = top3_colors[i]
+                # 外層發光效果
+                for offset in range(3, 0, -1):
+                    alpha = int(60 / offset)
+                    glow_color = (*border_color[:3], alpha)
+                    draw.rectangle(
+                        [row_x - offset, y - offset, row_x + row_width + offset, y + ROW_HEIGHT - 8 + offset],
+                        outline=glow_color, width=1
+                    )
+                # 主邊框
+                draw.rectangle(
+                    [row_x, y, row_x + row_width, y + ROW_HEIGHT - 8],
+                    outline=border_color, width=2
+                )
+                # 半透明背景
+                overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+                overlay_draw = ImageDraw.Draw(overlay)
+                bg_color = (*border_color[:3], 30)
+                overlay_draw.rectangle(
+                    [row_x + 2, y + 2, row_x + row_width - 2, y + ROW_HEIGHT - 10],
+                    fill=bg_color
+                )
+                img = Image.alpha_composite(img, overlay)
+                draw = ImageDraw.Draw(img)
+            else:
+                # 其他名次：簡單邊框
+                draw.rectangle(
+                    [row_x, y, row_x + row_width, y + ROW_HEIGHT - 8],
+                    outline=(60, 70, 100, 150), width=1
+                )
+            
+            # 繪製排名
+            rank_x = row_x + 15
+            rank_color = top3_colors[i][:3] if i < 3 else (150, 160, 200)
+            draw.text((rank_x, y + 8), f"#{i+1}", fill=rank_color, font=FONT_RANK)
+            
+            # 載入頭像
+            avatar = None
+            try:
+                avatar_url = None
+                if hasattr(member, 'display_avatar') and member.display_avatar:
+                    try:
+                        avatar_url = member.display_avatar.url
+                    except AttributeError:
+                        pass
+                
+                if not avatar_url and hasattr(member, 'avatar') and member.avatar:
+                    try:
+                        avatar_url = member.avatar.url
+                    except AttributeError:
+                        pass
+                
+                if not avatar_url and hasattr(member, 'default_avatar') and member.default_avatar:
+                    try:
+                        avatar_url = member.default_avatar.url
+                    except AttributeError:
+                        pass
+                
+                if avatar_url:
+                    avatar = await fetch_avatar(session, avatar_url)
+            except Exception as e:
+                pass
+            
+            # 使用頭像或占位圖
+            display_avatar = avatar if avatar else placeholder_avatar
+            display_avatar = display_avatar.resize((AVATAR_SIZE - 10, AVATAR_SIZE - 10))
+            
+            # 貼上頭像
+            avatar_x = rank_x + 50
+            img.paste(display_avatar, (avatar_x, y + 5), display_avatar)
+            
+            # 繪製名稱（垂直居中）
+            name_x = avatar_x + AVATAR_SIZE - 5
+            name_y = y + 13
+            name_color = (255, 255, 255) if i >= 3 else (255, 230, 100)
+            draw.text((name_x, name_y), member.display_name, fill=name_color, font=FONT_NAME)
+            
+            # 繪製進度條（更大，可容納内部文字）
+            bar_x = name_x + 250
+            bar_y = y + 9
+            bar_height = 28
+            
+            # 進度條背景（暗色）
+            draw.rectangle(
+                [bar_x, bar_y, bar_x + bar_width, bar_y + bar_height],
+                fill=(30, 35, 50), outline=(60, 70, 90), width=1
+            )
+            
+            # 進度條填充（漸變效果）
+            if bar_fill_width > 0:
+                color_idx = min(i // 4, len(bar_colors) - 1)
+                start_color = bar_colors[color_idx][0]
+                end_color = bar_colors[color_idx][1]
+                
+                # 簡單漸變
+                for x_offset in range(bar_fill_width):
+                    ratio = x_offset / bar_fill_width if bar_fill_width > 0 else 0
+                    r = int(start_color[0] * (1 - ratio) + end_color[0] * ratio)
+                    g = int(start_color[1] * (1 - ratio) + end_color[1] * ratio)
+                    b = int(start_color[2] * (1 - ratio) + end_color[2] * ratio)
+                    draw.line(
+                        [(bar_x + x_offset, bar_y + 1), (bar_x + x_offset, bar_y + bar_height - 1)],
+                        fill=(r, g, b)
+                    )
+            
+            # 在进度条内部显示KK币数量（右侧对齐，带描边）
+            kkcoin_text = f"{kkcoin:,} KK幣"
+            kkcoin_x = bar_x + bar_width - 10
+            kkcoin_y = bar_y + bar_height // 2
+            # 黑色描边增强可读性
+            for offset_x in [-1, 0, 1]:
+                for offset_y in [-1, 0, 1]:
+                    if offset_x != 0 or offset_y != 0:
+                        draw.text((kkcoin_x + offset_x, kkcoin_y + offset_y), kkcoin_text, 
+                                fill=(0, 0, 0), font=FONT_KKCOIN, anchor="rm")
+            # 白色文字
+            draw.text((kkcoin_x, kkcoin_y), kkcoin_text, fill=(255, 255, 255), font=FONT_KKCOIN, anchor="rm")
+            
+            # 繪製箭頭（模擬漲跌）
+            arrow_x = bar_x + bar_width + 15
+            arrow_y = y + 12
+            # 簡單規則：奇數上升，偶數下降
+            if i % 2 == 0 and arrow_up:
+                img.paste(arrow_up, (arrow_x, arrow_y), arrow_up)
+            elif arrow_down:
+                img.paste(arrow_down, (arrow_x, arrow_y), arrow_down)
+    
+    # 繪製底部說明（賽博朋克風格）
+    footer_y = HEIGHT - 80
+    draw.line([(MARGIN_LEFT, footer_y), (WIDTH - MARGIN_LEFT, footer_y)], fill=(60, 80, 120), width=2)
+    
+    footer_text = "⚡ KK幣獲得方法："
+    draw.text((MARGIN_LEFT, footer_y + 10), footer_text, fill=(100, 200, 255), font=FONT_NAME)
+    
+    desc_lines = [
+        "  發送訊息獲得KK幣：10字+1幣 | 25字+2幣 | 50字+3幣（冷卻30秒）",
+        "  顏色代表：金色(前1名) 橙色(前2名) 紫色(前3名)"
+    ]
+    for idx, line in enumerate(desc_lines):
+        draw.text((MARGIN_LEFT + 10, footer_y + 35 + idx * 20), line, fill=(150, 160, 180), font=FONT_DATE)
+    
+    return img
+
 def is_only_emojis(text):
     import regex
     emoji_pattern = regex.compile(r'^\s*(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base}|\p{Emoji_Component})+\s*$')
@@ -233,9 +482,51 @@ class KKCoin(commands.Cog):
         self.last_update_time = 0
         self.last_leaderboard_data = None
         
+        # 命令冷卻時間限制 (訪問上次時間)
+        self.cmd_cooldown = {
+            'kkcoin': defaultdict(lambda: 0),           # 查詢餘額: 10秒
+            'kkcoin_rank': defaultdict(lambda: 0),      # 排行榜: 30秒
+            'kkcoin_rankv2': defaultdict(lambda: 0),    # V2 排行榜: 30秒
+            'kkcoin_weekly': defaultdict(lambda: 0),    # 周統計: 60秒
+            'kkcoin_mvp': defaultdict(lambda: 0),       # MVP: 60秒
+            'kkcoin_v2': defaultdict(lambda: 0),        # V2 排行榜: 60秒
+        }
+        
+        # 冷卻時間設定 (秒數)
+        self.cooldown_times = {
+            'kkcoin': 10,
+            'kkcoin_rank': 30,
+            'kkcoin_rankv2': 30,
+            'kkcoin_weekly': 60,
+            'kkcoin_mvp': 60,
+            'kkcoin_v2': 60,
+        }
+        
         # 啟動定時更新任務
         self.auto_update_leaderboard.start()
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
+        print(f"📋 指令冷卻時間設定已啟用")
+
+    def check_command_cooldown(self, user_id: int, command_name: str) -> tuple[bool, int]:
+        """
+        檢查用戶是否在命令冷卻期內
+        返回: (是否可以執行, 剩餘秒數)
+        """
+        if command_name not in self.cmd_cooldown:
+            return True, 0
+        
+        current_time = time.time()
+        last_time = self.cmd_cooldown[command_name][user_id]
+        cooldown_duration = self.cooldown_times.get(command_name, 10)
+        
+        if current_time - last_time >= cooldown_duration:
+            # 可以執行，更新時間
+            self.cmd_cooldown[command_name][user_id] = current_time
+            return True, 0
+        else:
+            # 在冷卻期內
+            remaining = cooldown_duration - (current_time - last_time)
+            return False, int(remaining)
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
@@ -350,6 +641,15 @@ class KKCoin(commands.Cog):
 
     @app_commands.command(name="kkcoin", description="查詢你的 KK 幣餘額")
     async def kkcoin(self, interaction: discord.Interaction, member: discord.Member = None):
+        # 冷卻時間檢查
+        can_use, remaining = self.check_command_cooldown(interaction.user.id, 'kkcoin')
+        if not can_use:
+            await interaction.response.send_message(
+                f"⏳ 請稍候 {remaining} 秒再使用此命令",
+                ephemeral=True
+            )
+            return
+            
         member = member or interaction.user
         balance = get_user_balance(str(member.id))
         await interaction.response.send_message(f"💰 {member.display_name} 目前擁有 KK 幣：{balance}", ephemeral=True)
@@ -357,6 +657,15 @@ class KKCoin(commands.Cog):
     @app_commands.command(name="kkcoin_rank", description="顯示 KK 幣排行榜")
     async def kkcoin_rank(self, interaction: discord.Interaction):
         """手動創建排行榜（如果需要的話）"""
+        # 冷卻時間檢查
+        can_use, remaining = self.check_command_cooldown(interaction.user.id, 'kkcoin_rank')
+        if not can_use:
+            await interaction.response.send_message(
+                f"⏳ 排行榜生成中，請稍候 {remaining} 秒",
+                ephemeral=True
+            )
+            return
+            
         await interaction.response.defer()
         
         guild = interaction.guild
@@ -388,25 +697,20 @@ class KKCoin(commands.Cog):
             print(f"❌ 建立排行榜時發生錯誤: {e}")
             await interaction.followup.send("❌ 建立排行榜時發生錯誤", ephemeral=True)
 
-    @app_commands.command(name="kkcoin_leaderboard", description="顯示綜合排行榜仪表板")
-    @app_commands.describe(
-        limit="顯示人數"
-    )
-    @app_commands.choices(limit=[
-        app_commands.Choice(name="前 3 名 🏆", value="3"),
-        app_commands.Choice(name="前 5 名 ⭐", value="5"),
-        app_commands.Choice(name="前 10 名 📈", value="10"),
-        app_commands.Choice(name="前 20 名 📊", value="20"),
-    ])
-    async def kkcoin_leaderboard(
-        self, 
-        interaction: discord.Interaction, 
-        limit: str = "10"
-    ):
-        """顯示 KK 幣綜合排行榜仪表板（包含長條圖、圓餅圖、周統計）"""
+    @app_commands.command(name="kkcoin_rankv2", description="顯示 KK 幣排行榜（賽博風格）")
+    async def kkcoin_rankv2(self, interaction: discord.Interaction):
+        """全新賽博朋克風格排行榜 - 1920x1080 高清大圖"""
+        # 冷卻時間檢查
+        can_use, remaining = self.check_command_cooldown(interaction.user.id, 'kkcoin_rankv2')
+        if not can_use:
+            await interaction.response.send_message(
+                f"⏳ 排行榜生成中，請稍候 {remaining} 秒",
+                ephemeral=True
+            )
+            return
+            
         await interaction.response.defer()
         
-        limit_int = int(limit)
         members_data = self.get_current_leaderboard_data()
 
         if not members_data:
@@ -414,36 +718,16 @@ class KKCoin(commands.Cog):
             return
 
         try:
-            from commands.kkcoin_visualizer import create_comprehensive_dashboard
-            
-            # 計算總KK幣
-            total_coins = sum(coin for _, coin in members_data)
-            
-            # 本週和上週模擬數據（實際應從資料庫讀取）
-            this_week_total = int(total_coins * 0.3)
-            last_week_total = int(total_coins * 0.25)
-            
-            # 生成綜合仪表板
-            image = await create_comprehensive_dashboard(
-                members_data=members_data,
-                limit=limit_int,
-                total_coins=total_coins,
-                this_week_total=this_week_total,
-                last_week_total=last_week_total
-            )
-            
+            image = await make_leaderboard_image_v2(members_data, limit=20)
             with io.BytesIO() as img_bytes:
                 image.save(img_bytes, format="PNG")
                 img_bytes.seek(0)
-                file = discord.File(img_bytes, filename=f"kkcoin_dashboard_{limit_int}.png")
-                await interaction.followup.send(
-                    content=f"📊 **KK幣綜合排行榜** - 前{limit_int}名",
-                    file=file
-                )
+                file = discord.File(img_bytes, filename="kkcoin_rankv2.png")
+                await interaction.followup.send(file=file)
                 
-            print(f"✅ 綜合排行榜仪表板已發送（前{limit_int}名）")
+            print(f"✅ V2 排行榜已發送 (1920x1080)")
         except Exception as e:
-            print(f"❌ 生成排行榜時發生錯誤: {e}")
+            print(f"❌ 生成 V2 排行榜時發生錯誤: {e}")
             import traceback
             traceback.print_exc()
             await interaction.followup.send(f"❌ 生成排行榜時發生錯誤：{str(e)[:100]}", ephemeral=True)
@@ -451,6 +735,15 @@ class KKCoin(commands.Cog):
     @app_commands.command(name="kkcoin_weekly", description="顯示本週 KK 幣統計")
     async def kkcoin_weekly(self, interaction: discord.Interaction):
         """顯示本週 KK 幣統計和增長"""
+        # 冷卻時間檢查
+        can_use, remaining = self.check_command_cooldown(interaction.user.id, 'kkcoin_weekly')
+        if not can_use:
+            await interaction.response.send_message(
+                f"⏳ 數據生成中，請稍候 {remaining} 秒",
+                ephemeral=True
+            )
+            return
+            
         await interaction.response.defer()
         
         members_data = self.get_current_leaderboard_data()
@@ -496,6 +789,15 @@ class KKCoin(commands.Cog):
     @app_commands.command(name="kkcoin_mvp", description="顯示本週績效王")
     async def kkcoin_mvp(self, interaction: discord.Interaction):
         """顯示本週績效王（KK幣新增最多的人）"""
+        # 冷卻時間檢查
+        can_use, remaining = self.check_command_cooldown(interaction.user.id, 'kkcoin_mvp')
+        if not can_use:
+            await interaction.response.send_message(
+                f"⏳ 數據生成中，請稍候 {remaining} 秒",
+                ephemeral=True
+            )
+            return
+            
         await interaction.response.defer()
         
         members_data = self.get_current_leaderboard_data()
@@ -876,6 +1178,15 @@ class KKCoin(commands.Cog):
     @app_commands.command(name="kkcoin_v2", description="顯示升級版排行榜 (3合1：排行榜+長條圖+饼圖)")
     async def kkcoin_v2(self, interaction: discord.Interaction):
         """顯示升級版排行榜 - 前15名 + 3張組合圖"""
+        # 冷卻時間檢查
+        can_use, remaining = self.check_command_cooldown(interaction.user.id, 'kkcoin_v2')
+        if not can_use:
+            await interaction.response.send_message(
+                f"⏳ 圖表生成中，請稍候 {remaining} 秒",
+                ephemeral=True
+            )
+            return
+            
         await interaction.response.defer()
         
         members_data = self.get_current_leaderboard_data()

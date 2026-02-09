@@ -1,0 +1,19 @@
+[Unit]
+Description=Discord BOT 監控系統 - 定期檢查
+After=bot-ecosystem.target
+
+[Service]
+Type=oneshot
+User=e193752468
+Group=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+ExecStart=/home/e193752468/kkgroup/venv/bin/python /home/e193752468/kkgroup/bot_monitoring.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bot-monitoring
+
+# 如果監控發現問題並進行了重啟，不要記錄為服務失敗
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -98,6 +98,14 @@ async def setup_modules(client):
             f.write(f"# {BOT_NAME} Bot Commands Module\n")
         return []
     
+    # 先卸載所有已經載入的擴展（防止 "already loaded" 的錯誤）
+    extensions_to_unload = list(client.extensions.keys())
+    for ext_name in extensions_to_unload:
+        try:
+            await client.unload_extension(ext_name)
+        except Exception as e:
+            print(f"⚠️  卸載失敗: {ext_name} - {e}")
+    
     return await find_and_load_extensions(full_path, COMMANDS_DIR, client)
 
 async def reload_extension_on_change(ext_name):
@@ -245,17 +253,35 @@ async def on_ready():
         lines.append(f"✅ {client.user.name} 已就緒")
         lines.append("=" * 60)
         
-        # ⚠️ 重要：使用單一 print 調用輸出所有內容
-        # 這樣 logger.py 只會產生一條日誌記錄
-        print("\n".join(lines))
+        # ⚠️ 將輸出操作改為非阻塞，避免堵塞事件迴圈
+        # on_ready 是異步回調，不應該有耗時的 I/O 或計算
+        output_text = "\n".join(lines)
+        
+        # 使用系統 stdout，不經過被重寫的 print（避免鎖）
+        import sys
+        try:
+            sys.__stdout__.write(output_text + "\n")
+            sys.__stdout__.flush()
+        except:
+            pass  # 忽略輸出錯誤，不影響 bot 運行
         
         # 設定初始狀態
-        activity = build_discord_activity(BOT_TYPE)
-        await client.change_presence(activity=activity)
+        try:
+            activity = build_discord_activity(BOT_TYPE)
+            await client.change_presence(activity=activity)
+            sys.__stdout__.write("🎮 Bot 狀態已更新\n")
+            sys.__stdout__.flush()
+        except Exception as e:
+            sys.__stdout__.write(f"❌ 狀態設置失敗: {e}\n")
+            sys.__stdout__.flush()
         
         # 啟動狀態更新任務
-        if not update_status.is_running():
-            update_status.start()
+        try:
+            if not update_status.is_running():
+                update_status.start()
+        except Exception as e:
+            sys.__stdout__.write(f"❌ 狀態更新任務啟動失敗: {e}\n")
+            sys.__stdout__.flush()
         
         # ============================================================
         # Discord 系統頻道通知（單一 Embed）

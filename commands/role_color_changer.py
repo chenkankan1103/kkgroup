@@ -27,10 +27,7 @@ class RainbowRole(commands.Cog):
 
             members = [m for m in guild.members if role in m.roles]
             if members:
-                print(f"[🌈] 發現成員擁有七彩角色，開始五分鐘變色循環")
                 await self.run_rainbow_cycle(role)
-            else:
-                print(f"[⏸️] 沒有成員擁有七彩角色，暫停變色")
 
     async def run_rainbow_cycle(self, role: discord.Role):
         for _ in range(30):  # 每 10 秒變色，共 5 分鐘

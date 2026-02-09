@@ -98,6 +98,14 @@ async def setup_modules(client):
             f.write(f"# {BOT_NAME} Bot Commands Module\n")
         return []
     
+    # 先卸載所有已經載入的擴展（防止 "already loaded" 的錯誤）
+    extensions_to_unload = list(client.extensions.keys())
+    for ext_name in extensions_to_unload:
+        try:
+            await client.unload_extension(ext_name)
+        except Exception as e:
+            print(f"⚠️  卸載失敗: {ext_name} - {e}")
+    
     return await find_and_load_extensions(full_path, COMMANDS_DIR, client)
 
 async def reload_extension_on_change(ext_name):

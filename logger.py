@@ -190,36 +190,35 @@ def discord_sender():
         if startup_mode:
             continue
         
+        error_msg = None
+        content = None
+        
+        # 只在取出資料時上鎖，避免在持鎖期間做網路請求
         with lock:
             # 優先處理錯誤隊列（更重要）
             if error_queue:
                 error_msg = error_queue.popleft()
-                send_with_retry(error_msg, is_error=True)
-                continue
-            
-            # 然後處理普通訊息隊列
-            if not message_queue:
-                continue
-            
-            # 一次最多取 20 條訊息(限制在 1500 字元內)
-            batch = []
-            total_length = 0
-            
-            while message_queue and len(batch) < 20:
-                msg = message_queue.popleft()
-                if total_length + len(msg) > 1500:
-                    message_queue.appendleft(msg)
-                    break
-                batch.append(msg)
-                total_length += len(msg) + 1
-            
-            if not batch:
-                continue
-            
-            content = "```\n" + "\n".join(batch) + "\n```"
+            elif message_queue:
+                # 一次最多取 20 條訊息(限制在 1500 字元內)
+                batch = []
+                total_length = 0
+                
+                while message_queue and len(batch) < 20:
+                    msg = message_queue.popleft()
+                    if total_length + len(msg) > 1500:
+                        message_queue.appendleft(msg)
+                        break
+                    batch.append(msg)
+                    total_length += len(msg) + 1
+                
+                if batch:
+                    content = "```\n" + "\n".join(batch) + "\n```"
         
-        # 使用帶重試的發送
-        send_with_retry(content, is_error=False)
+        # 鎖外發送，避免阻塞其他執行緒
+        if error_msg:
+            send_with_retry(error_msg, is_error=True)
+        elif content:
+            send_with_retry(content, is_error=False)
 
 # 啟動背景發送執行緒
 thread = threading.Thread(target=discord_sender, daemon=True)
@@ -246,14 +245,20 @@ def discord_print(*args, **kwargs):
     sys.__stdout__.flush()
     
     # 啟動模式：只收集錯誤和關鍵訊息
-    with lock:
-        if startup_mode:
-            # 只收集有實際信息的行（跳過純分隔線）
-            if message.strip() and not message.startswith("="):
-                startup_buffer.append(message)
-        else:
-            # 正常模式:放進 queue
-            message_queue.append(local_output)
+    # ⚠️ 使用 non-blocking 鎖以避免死鎖異步事件循環
+    acquired = lock.acquire(blocking=False)
+    try:
+        if acquired:
+            if startup_mode:
+                # 只收集有實際信息的行（跳過純分隔線）
+                if message.strip() and not message.startswith("="):
+                    startup_buffer.append(message)
+            else:
+                # 正常模式:放進 queue
+                message_queue.append(local_output)
+    finally:
+        if acquired:
+            lock.release()
 
 # 覆蓋全域 print
 print = discord_print

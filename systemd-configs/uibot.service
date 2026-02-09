@@ -1,0 +1,35 @@
+[Unit]
+Description=Discord UI Bot
+After=network.target
+Wants=network-online.target
+After=network-online.target
+PartOf=bot-ecosystem.target
+
+[Service]
+Type=simple
+User=e193752468
+Group=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment=PATH=/home/e193752468/kkgroup/venv/bin
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=/home/e193752468/kkgroup/venv/bin/python uibot.py
+
+# 不需要 ExecStartPost，systemd 會自動管理進程
+# 移除複雜的進程檢查邏輯，以避免不必要的錯誤
+
+Restart=always
+RestartSec=3
+StartLimitInterval=300
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=discord-uibot
+
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=bot-ecosystem.target multi-user.target

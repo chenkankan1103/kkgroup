@@ -131,17 +131,17 @@ echo ""
 
 python3 bot.py
 
-# 如果 Bot 因錯誤而退出，自動重啟 API 和 Bot
+# BOT 退出时的處理（由 systemd/supervisor 負責重啟，不要無限循環！）
+BOT_EXIT_CODE=$?
 echo ""
-echo "⚠️ Bot 已停止，正在重啟 API 和 Bot..."
-sleep 2
+echo "⚠️ Bot 已停止 (代碼: $BOT_EXIT_CODE)"
 
-# 停止舊的 API
-echo "   🔴 停止舊的 API 進程..."
+# 清理舊的 API 進程
+echo "   🔴 停止 Flask API 進程..."
 pkill -f "gunicorn.*sheet_sync_api" || true
 pkill -f "python.*sheet_sync_api" || true
-sleep 2
 
-echo "   🔄 重啟中..."
-sleep 8
-exec bash "$0"
+# 正常退出，讓 systemd/supervisor 處理重啟
+echo "   ✅ 清理完成，等待系統重啟..."
+sleep 2
+exit $BOT_EXIT_CODE

@@ -1,0 +1,19 @@
+[Unit]
+Description=Discord BOT 監控系統 - 定時器
+Requires=bot-monitoring.service
+
+[Timer]
+# 系統啟動後 30 秒開始運行
+OnBootSec=30sec
+
+# 每 5 分鐘運行一次
+OnUnitActiveSec=5min
+
+# 如果錯過了執行時間，立即補檢
+Persistent=true
+
+# 精度：最多延遲 10 秒
+AccuracySec=10sec
+
+[Install]
+WantedBy=timers.target

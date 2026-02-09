@@ -1,0 +1,43 @@
+[Unit]
+Description=Discord BOT Flask API Server
+After=network.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=e193752468
+Group=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment=PATH=/home/e193752468/kkgroup/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONUNBUFFERED=1
+
+# 啟動 Flask API (gunicorn)
+ExecStart=/home/e193752468/kkgroup/venv/bin/gunicorn \
+    -w 4 \
+    -b 0.0.0.0:5000 \
+    --timeout 120 \
+    --access-logfile - \
+    --error-logfile - \
+    --log-level info \
+    sheet_sync_api:app
+
+
+# 重啟策略
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# 日誌設置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=flask-api
+
+# 優雅關閉
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

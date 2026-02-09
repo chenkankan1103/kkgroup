@@ -1,0 +1,13 @@
+[Unit]
+Description=Discord BOT Ecosystem (Flask API + 3 BOTs)
+After=network.target
+Wants=network-online.target
+After=network-online.target
+
+# 定義依賴關係
+# Flask API 必須先啟動
+# 然後是主 BOT (bot.service)
+# 其他 BOT 可以並行啟動
+
+[Install]
+WantedBy=multi-user.target

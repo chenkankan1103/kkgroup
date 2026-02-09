@@ -1,0 +1,41 @@
+[Unit]
+Description=Discord Main Bot Service
+After=network.target network-online.target
+Wants=network-online.target
+PartOf=bot-ecosystem.target
+
+[Service]
+Type=simple
+User=e193752468
+Group=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment=PATH=/home/e193752468/kkgroup/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=STAGE=prod
+
+# 使用新的启动脚本 - 不再有无限循环！
+ExecStart=/bin/bash /home/e193752468/kkgroup/bot-start.sh
+
+# 启动超时（bot初始化可能需要时间）
+TimeoutStartSec=120
+
+# 启动前检查：清理旧进程
+
+# 重启策略（由 systemd 管理，不是脚本本身）
+Restart=always
+RestartSec=3
+StartLimitInterval=300
+StartLimitBurst=10
+
+# 日志设置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=discord-bot
+
+# 优雅关闭
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=bot-ecosystem.target multi-user.target
