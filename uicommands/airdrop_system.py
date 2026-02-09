@@ -27,13 +27,15 @@ GROQ_API_URL = os.getenv("GROQ_API_URL")
 
 MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID", 0))
 
-# 獎品表
+# 獎品表 - KK幣分級（10-500，抽卡式概率）
 REWARD_TYPES = {
-    "kkcoin": {"weight": 40, "range": (1, 500)},
-    "heal": {"weight": 20, "range": (20, 50)},
-    "stamina": {"weight": 20, "range": (20, 50)},
-    "damage": {"weight": 10, "range": (10, 20)},
-    "fatigue": {"weight": 10, "range": (10, 20)},
+    "kkcoin_low": {"weight": 32, "range": (10, 100)},      # 80% - 普通 10-100
+    "kkcoin_mid": {"weight": 6, "range": (101, 300)},       # 15% - 次稀有 101-300
+    "kkcoin_high": {"weight": 2, "range": (301, 450)},      # 5% - 稀有 301-450
+    "heal": {"weight": 20, "range": (20, 50)},             # 補血
+    "stamina": {"weight": 20, "range": (20, 50)},          # 補體力
+    "damage": {"weight": 10, "range": (10, 20)},           # 扣血
+    "fatigue": {"weight": 10, "range": (10, 20)},          # 扣體力
 }
 
 
@@ -111,11 +113,14 @@ class AirdropSystem(commands.Cog):
     
     async def generate_ai_text(self, text_type: str, reward_type: str, value: int) -> str:
         """生成 AI 文本"""
+        # 統一處理 kkcoin 各等級
+        is_kkcoin = "kkcoin" in reward_type
+        
         if text_type == "description" and reward_type in ["heal", "stamina"]:
             prompt = f"生成一句30字內的敘述，描寫發現補充{'生命' if reward_type == 'heal' else '體力'}的東西（真實存在的如：大補丸、能量飲料、人參湯、咖啡等），能恢復{value}點{'HP' if reward_type == 'heal' else '體力'}。只回傳敘述，無需其他文字。"
         elif text_type == "description" and reward_type in ["damage", "fatigue"]:
             prompt = f"生成一句30字內的敘述，描寫打開箱子時發生不幸（如：爆炸、割傷、毒氣、陷阱），失去{value}點{'HP' if reward_type == 'damage' else '體力'}。只回傳敘述，無需其他文字。"
-        elif text_type == "description":  # kkcoin
+        elif text_type == "description" and is_kkcoin:  # 所有 kkcoin 等級
             prompt = f"生成一句20字內的敘述，描寫發現{value}個KK幣。只回傳敘述。"
         elif text_type == "image":
             prompt = "詐騙園區掉落的神秘空投箱，科幻風格，懸念感，高質量"
@@ -133,7 +138,7 @@ class AirdropSystem(commands.Cog):
         
         # 硬編碼備用
         if text_type == "description":
-            if reward_type == "kkcoin":
+            if is_kkcoin:
                 return f"找到了{value}個KK幣！"
             elif reward_type == "heal":
                 return f"發現補血藥水，恢復{value}點HP"
@@ -166,7 +171,8 @@ class AirdropSystem(commands.Cog):
             if not get_user(user_id):
                 return "❌ 用戶不存在"
             
-            if reward_type == "kkcoin":
+            # 統一處理所有 kkcoin 等級
+            if "kkcoin" in reward_type:
                 add_user_field(user_id, "kkcoin", value)
                 new_value = get_user_field(user_id, "kkcoin", 0)
                 return f"💰 獲得 {value} KK幣！（總計：{new_value}）"
