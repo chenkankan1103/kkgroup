@@ -1,0 +1,22 @@
+{
+  "male_normal": {
+    "discord_url": "https://cdn.discordapp.com/attachments/1275688788806467635/1469394416404795605/char_male_normal.png?ex=69877fb0&is=69862e30&hm=c0e49f2dcd6322f27fb9bda61ce879d50e15fb7d4898ab634473f3fc2e47eaba&",
+    "created_at": 1770401329,
+    "message_id": 1469394416308457647
+  },
+  "male_stunned": {
+    "discord_url": "https://cdn.discordapp.com/attachments/1275688788806467635/1469394418766188848/char_male_stunned.png?ex=69877fb1&is=69862e31&hm=0174463b1dab6d80e3a6eae8de1012aece5dc9ac6f523aafd0e8c6f176534d6d&",
+    "created_at": 1770401329,
+    "message_id": 1469394418367725774
+  },
+  "female_normal": {
+    "discord_url": "https://cdn.discordapp.com/attachments/1275688788806467635/1469394420691636354/char_female_normal.png?ex=69877fb1&is=69862e31&hm=65422bc4fe2ad75e06a88f2995c9aa278b3becf0f1762b3a08d536f3e782e14a&",
+    "created_at": 1770401330,
+    "message_id": 1469394420632784977
+  },
+  "female_stunned": {
+    "discord_url": "https://cdn.discordapp.com/attachments/1275688788806467635/1469394422566490172/char_female_stunned.png?ex=69877fb2&is=69862e32&hm=49b62d3f313fed9eea419aa86611f08095f858bd14137204309033ef78617ca1&",
+    "created_at": 1770401330,
+    "message_id": 1469394422507766094
+  }
+}
