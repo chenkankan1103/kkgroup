@@ -95,31 +95,50 @@ class AIResponse(commands.Cog):
         self.context_manager = ContextManager(max_history=10)
     
     async def call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """通用 API 調用函數 - 改進版，處理多個 JSON 對象"""
+        """通用 API 調用函數 - 支持 Google Gemini"""
         if not AI_API_KEY or not AI_API_URL:
             logger.error("AI API 配置不完整")
             return None
         
         try:
-            headers = {
-                "Authorization": f"Bearer {AI_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": AI_API_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            }
+            # Google Gemini API 格式調整
+            if "generativelanguage.googleapis.com" in AI_API_URL:
+                # Google Gemini API
+                url = f"{AI_API_URL}?key={AI_API_KEY}"
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "contents": [{
+                        "parts": [
+                            {
+                                "text": f"{system_prompt}\n\n{user_prompt}"
+                            }
+                        ]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.7,
+                        "maxOutputTokens": 500
+                    }
+                }
+            else:
+                # OpenAI 相容格式（Groq 等）
+                url = AI_API_URL
+                headers = {
+                    "Authorization": f"Bearer {AI_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": AI_API_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                }
             
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                async with session.post(AI_API_URL, headers=headers, json=payload) as resp:
+                async with session.post(url, headers=headers, json=payload) as resp:
                     if resp.status == 200:
                         response_text = await resp.text()
                         logger.info(f"API 原始響應長度: {len(response_text)} chars")
-                        logger.info(f"響應前 300 字符: {response_text[:300]}")
-                        logger.info(f"響應後 300 字符: {response_text[-300:]}")
                         
                         import json
                         data = None
@@ -128,6 +147,7 @@ class AIResponse(commands.Cog):
                         cleaned_text = response_text.strip()
                         start_idx = cleaned_text.find('{')
                         
+
                         if start_idx != -1:
                             brace_count = 0
                             end_idx = -1
@@ -154,10 +174,21 @@ class AIResponse(commands.Cog):
                             return None
                         
                         # 根據 API 類型調整解析方式
-                        if "choices" in data and len(data["choices"]) > 0:
+                        # 1. Google Gemini 格式
+                        if "candidates" in data and len(data["candidates"]) > 0:
+                            candidate = data["candidates"][0]
+                            if "content" in candidate and "parts" in candidate["content"]:
+                                parts = candidate["content"]["parts"]
+                                if len(parts) > 0 and "text" in parts[0]:
+                                    content = parts[0]["text"].strip()
+                                    logger.info(f"成功獲取回應 (Gemini): {len(content)} 字符")
+                                    return content
+                        # 2. OpenAI 格式
+                        elif "choices" in data and len(data["choices"]) > 0:
                             content = data["choices"][0]["message"]["content"].strip()
-                            logger.info(f"成功獲取回應 (choices): {len(content)} 字符")
+                            logger.info(f"成功獲取回應 (OpenAI): {len(content)} 字符")
                             return content
+                        # 3. 其他格式備用
                         elif "result" in data:
                             content = data["result"].strip() if isinstance(data["result"], str) else str(data["result"])
                             logger.info(f"成功獲取回應 (result): {len(content)} 字符")
