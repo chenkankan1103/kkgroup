@@ -293,15 +293,20 @@ class DiscordLoggingHandler(logging.Handler):
     
     def emit(self, record):
         if record.levelno >= logging.ERROR:
-            # 只報告 ERROR 和以上級別
-            log_msg = self.format(record)
-            
-            # 生成哈希用於去重
-            error_hash = hash_error(log_msg)
+            # 在鎖外執行所有格式化操作
+            try:
+                log_msg = self.format(record)
+                error_hash = hash_error(log_msg)
+            except Exception:
+                return
             
             if should_report_error(error_hash):
-                with lock:
-                    error_queue.append(f"```\n🔴 [{record.levelname}] {log_msg}\n```")
+                # 只在鎖內做最小操作：append 到隊列
+                try:
+                    with lock:
+                        error_queue.append(f"```\n🔴 [{record.levelname}] {log_msg}\n```")
+                except Exception:
+                    pass
 
 # 配置 logging
 logging.basicConfig(
