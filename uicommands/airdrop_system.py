@@ -113,7 +113,7 @@ class AirdropSystem(commands.Cog):
         return None
     
     async def generate_ai_text(self, text_type: str, reward_type: str, value: int) -> str:
-        """生成 AI 文本"""
+        """生成 AI 文本（優先 Groq，備用 Gemini）"""
         # 統一處理 kkcoin 各等級
         is_kkcoin = "kkcoin" in reward_type
         
@@ -128,12 +128,12 @@ class AirdropSystem(commands.Cog):
         else:
             return ""
         
-        # 優先 Gemini，備用 Groq
-        result = await self.call_gemini(prompt)
+        # 優先 Groq，備用 Gemini，最後硬編碼備用
+        result = await self.call_groq(prompt)
         if result:
             return result
         
-        result = await self.call_groq(prompt)
+        result = await self.call_gemini(prompt)
         if result:
             return result
         
