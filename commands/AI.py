@@ -145,12 +145,12 @@ class AIResponse(commands.Cog):
             except Exception as e:
                 logger.warning(f"無法整合記憶上下文: {e}")
         
-        # 優先嘗試 Groq，然後備用 Gemini
+        # 優先嘗試 Gemini，然後備用 Groq
         api_attempts = []
-        if GROQ_API_KEY and GROQ_API_URL:
-            api_attempts.append(("Groq", GROQ_API_URL, GROQ_API_KEY, GROQ_API_MODEL, "openai"))
         if AI_API_KEY and AI_API_URL:
             api_attempts.append(("Gemini", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
+        if GROQ_API_KEY and GROQ_API_URL:
+            api_attempts.append(("Groq", GROQ_API_URL, GROQ_API_KEY, GROQ_API_MODEL, "openai"))
         
         if not api_attempts:
             logger.error("沒有可用的 AI API 配置")
@@ -252,8 +252,7 @@ class AIResponse(commands.Cog):
                                     return content
                         
                         elif resp.status == 429:
-                            # 配額超限，嘗試下一個 API
-                            logger.warning(f"⚠️ {api_name} 配額已超限 (429)，嘗試備用 API...")
+                            # 配額超限，無聲地嘗試下一個 API（不記錄警告）
                             continue
                         
                         else:

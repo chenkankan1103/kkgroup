@@ -445,19 +445,19 @@ class UserPanel(commands.Cog):
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_API_MODEL = os.getenv('AI_API_MODEL')
         
-        # Groq 備用 API（優先級更高）
+        # Groq 備用 API（備選方案）
         self.GROQ_API_KEY = os.getenv('GROQ_API_KEY')
         self.GROQ_API_URL = os.getenv('GROQ_API_URL')
         self.GROQ_API_MODEL = os.getenv('GROQ_API_MODEL', 'mixtral-8x7b-32768')
         
-        # 判斷優先使用的 API（Groq > Google）
-        self.use_google_api = False
-        if self.GROQ_API_KEY and self.GROQ_API_URL:
-            # 有 Groq API，使用它而非 Google
-            self.use_google_api = False
-        elif self.AI_API_KEY and 'generativelanguage.googleapis.com' in (self.AI_API_URL or ''):
-            # 沒有 Groq，才使用 Google
+        # 判斷優先使用的 API（Google / Gemini > Groq）
+        self.use_google_api = True
+        if self.AI_API_KEY and 'generativelanguage.googleapis.com' in (self.AI_API_URL or ''):
+            # 有 Google/Gemini API，使用它作為主要 API
             self.use_google_api = True
+        else:
+            # 沒有 Gemini，改用 Groq
+            self.use_google_api = False
         
         # 圖片緩存設定
         self.cache_dir = Path('./character_images')
@@ -876,20 +876,26 @@ class UserPanel(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def generate_ai_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
-        """生成 AI 評論（支援 Google API 和 Groq API，優先 Groq）"""
+        """生成 AI 評論（優先 Google/Gemini，備用 Groq）"""
         try:
-            # 判斷是否使用 Google API（已改為優先 Groq）
-            if self.use_google_api:
-                return await self._generate_google_comment(member, kkcoin_change, xp_change, level_change)
-            else:
-                return await self._generate_groq_comment(member, kkcoin_change, xp_change, level_change)
+            # 優先嘗試 Google/Gemini
+            if self.AI_API_KEY and self.AI_API_URL:
+                comment = await self._generate_google_comment(member, kkcoin_change, xp_change, level_change)
+                if comment:
+                    return comment
+            
+            # Google 失敗（包括 429），降級到 Groq
+            if self.GROQ_API_KEY and self.GROQ_API_URL:
+                comment = await self._generate_groq_comment(member, kkcoin_change, xp_change, level_change)
+                if comment:
+                    return comment
         except Exception:
             pass
         
         return f"本週表現不錯！繼續保持這個節奏 💪"
     
     async def _generate_google_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
-        """使用 Google Generative AI 生成評論"""
+        """使用 Google Generative AI 生成評論（若配額超限則無聲返回 None，上層會自動降級）"""
         try:
             if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
                 return None
@@ -926,20 +932,19 @@ class UserPanel(commands.Cog):
                             content = result['candidates'][0].get('content', {})
                             if content.get('parts'):
                                 return content['parts'][0].get('text', '').strip()
-        except Exception as e:
-            print(f"❌ Google AI 評論生成失敗: {e}")
+                    elif response.status == 429:
+                        # 配額超限（無聲返回 None，上層會降級到 Groq）
+                        return None
+        except Exception:
+            # 任何錯誤都無聲返回 None，讓上層嘗試 Groq
+            pass
         
-        return f"本週表現不錯！繼續保持這個節奏 💪"
+        return None
     
     async def _generate_groq_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
-        """使用 Groq / OpenAI 相容 API 生成評論（優先使用 Groq）"""
+        """使用 Groq API 生成評論（備用方案）"""
         try:
-            # 優先使用 Groq，次選才用 Google
-            api_key = self.GROQ_API_KEY or self.AI_API_KEY
-            api_url = self.GROQ_API_URL or self.AI_API_URL
-            api_model = self.GROQ_API_MODEL or self.AI_API_MODEL
-            
-            if not all([api_key, api_url, api_model]):
+            if not all([self.GROQ_API_KEY, self.GROQ_API_URL, self.GROQ_API_MODEL]):
                 return None
 
             prompt = f"""你是一個友善的遊戲助手，請為玩家 {member.display_name or member.name} 本週的表現寫一段鼓勵性的評論。
@@ -953,26 +958,27 @@ class UserPanel(commands.Cog):
 """
             
             headers = {
-                'Authorization': f'Bearer {api_key}',
+                'Authorization': f'Bearer {self.GROQ_API_KEY}',
                 'Content-Type': 'application/json'
             }
             
             data = {
-                'model': api_model,
+                'model': self.GROQ_API_MODEL,
                 'messages': [{'role': 'user', 'content': prompt}],
                 'max_tokens': 100,
                 'temperature': 0.8
             }
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.AI_API_URL, headers=headers, json=data, timeout=10) as response:
+                async with session.post(self.GROQ_API_URL, headers=headers, json=data, timeout=10) as response:
                     if response.status == 200:
                         result = await response.json()
                         return result['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            print(f"❌ Groq AI 評論生成失敗: {e}")
+        except Exception:
+            # 任何錯誤都無聲返回 None
+            pass
         
-        return f"本週表現不錯！繼續保持這個節奏 💪"
+        return None
 
     def ensure_user_exists(self, user_id: int) -> bool:
         """確保使用者在資料庫中存在，如果不存在則創建"""

@@ -56,7 +56,7 @@ class AirdropSystem(commands.Cog):
     
     # ==================== AI API 調用 ====================
     async def call_gemini(self, prompt: str) -> Optional[str]:
-        """呼叫 Gemini API"""
+        """呼叫 Gemini API（若配額超限則無聲返回 None）"""
         if not GEMINI_API_KEY or not GEMINI_API_URL:
             return None
         
@@ -79,8 +79,12 @@ class AirdropSystem(commands.Cog):
                         data = await resp.json()
                         if "candidates" in data and len(data["candidates"]) > 0:
                             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except Exception as e:
-            print(f"⚠️ Gemini API 失敗: {e}")
+                    elif resp.status == 429:
+                        # 配額超限，無聲返回 None（上層會嘗試 Groq）
+                        return None
+        except Exception:
+            # 任何錯誤都無聲返回 None
+            pass
         
         return None
     
@@ -128,12 +132,12 @@ class AirdropSystem(commands.Cog):
         else:
             return ""
         
-        # 優先 Groq，備用 Gemini，最後硬編碼備用
-        result = await self.call_groq(prompt)
+        # 優先 Gemini，備用 Groq，最後硬編碼備用
+        result = await self.call_gemini(prompt)
         if result:
             return result
         
-        result = await self.call_gemini(prompt)
+        result = await self.call_groq(prompt)
         if result:
             return result
         
