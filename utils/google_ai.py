@@ -13,8 +13,8 @@ class GoogleAIClient:
     
     def __init__(self):
         self.api_key = os.getenv("AI_API_KEY")
-        self.base_url = "https://generativelanguage.googleapis.com/v1"
-        self.model = "gemini-pro"
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"  # 更新為 v1beta
+        self.model = os.getenv("AI_API_MODEL", "gemini-2.0-flash")  # 使用 .env 的模型，預設為 gemini-2.0-flash
         
         if not self.api_key:
             print("❌ AI_API_KEY 未設置")
