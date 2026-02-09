@@ -35,6 +35,11 @@ AI_API_KEY = os.getenv("AI_API_KEY")
 AI_API_URL = os.getenv("AI_API_URL")
 AI_API_MODEL = os.getenv("AI_API_MODEL", "gpt-3.5-turbo")
 
+# Groq 備用 API（優先級更高）
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_URL = os.getenv("GROQ_API_URL")
+GROQ_API_MODEL = os.getenv("GROQ_API_MODEL", "mixtral-8x7b-32768")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -120,7 +125,7 @@ class AIResponse(commands.Cog):
             logger.warning(f"記憶系統初始化失敗: {e}")
     
     async def call_ai_api(self, system_prompt: str, user_prompt: str, include_memory: bool = True) -> Optional[str]:
-        """通用 API 調用函數 - 支持 Google Gemini + 全局記憶"""
+        """通用 API 調用函數 - 優先 Groq，備用 Gemini"""
         # 如果需要，添加全局記憶上下文
         if include_memory:
             try:
@@ -140,120 +145,130 @@ class AIResponse(commands.Cog):
             except Exception as e:
                 logger.warning(f"無法整合記憶上下文: {e}")
         
-        if not AI_API_KEY or not AI_API_URL:
-            logger.error("AI API 配置不完整")
+        # 優先嘗試 Groq，然後備用 Gemini
+        api_attempts = []
+        if GROQ_API_KEY and GROQ_API_URL:
+            api_attempts.append(("Groq", GROQ_API_URL, GROQ_API_KEY, GROQ_API_MODEL, "openai"))
+        if AI_API_KEY and AI_API_URL:
+            api_attempts.append(("Gemini", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
+        
+        if not api_attempts:
+            logger.error("沒有可用的 AI API 配置")
             return None
         
-        try:
-            # Google Gemini API 格式調整
-            if "generativelanguage.googleapis.com" in AI_API_URL:
-                # Google Gemini API
-                url = f"{AI_API_URL}?key={AI_API_KEY}"
-                headers = {"Content-Type": "application/json"}
-                payload = {
-                    "contents": [{
-                        "parts": [
-                            {
-                                "text": f"{system_prompt}\n\n{user_prompt}"
-                            }
-                        ]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.7,
-                        "maxOutputTokens": 500
+        for api_name, url, api_key, model, api_type in api_attempts:
+            try:
+                logger.info(f"⏳ 嘗試使用 {api_name} API...")
+                
+                if api_type == "gemini":
+                    # Google Gemini API
+                    full_url = f"{url}?key={api_key}"
+                    headers = {"Content-Type": "application/json"}
+                    payload = {
+                        "contents": [{
+                            "parts": [
+                                {
+                                    "text": f"{system_prompt}\n\n{user_prompt}"
+                                }
+                            ]
+                        }],
+                        "generationConfig": {
+                            "temperature": 0.7,
+                            "maxOutputTokens": 500
+                        }
                     }
-                }
-            else:
-                # OpenAI 相容格式（Groq 等）
-                url = AI_API_URL
-                headers = {
-                    "Authorization": f"Bearer {AI_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": AI_API_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ]
-                }
-            
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status == 200:
+                else:
+                    # OpenAI 相容格式（Groq 等）
+                    full_url = url
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ]
+                    }
+                
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                    async with session.post(full_url, headers=headers, json=payload) as resp:
                         response_text = await resp.text()
-                        logger.info(f"API 原始響應長度: {len(response_text)} chars")
                         
-                        import json
-                        data = None
-                        
-                        # 方法 1: 直接提取第一個完整的 JSON 對象（處理多個 JSON 連接的情況）
-                        cleaned_text = response_text.strip()
-                        start_idx = cleaned_text.find('{')
-                        
-
-                        if start_idx != -1:
-                            brace_count = 0
-                            end_idx = -1
-                            for i in range(start_idx, len(cleaned_text)):
-                                if cleaned_text[i] == '{':
-                                    brace_count += 1
-                                elif cleaned_text[i] == '}':
-                                    brace_count -= 1
-                                    if brace_count == 0:
-                                        end_idx = i
-                                        break
+                        if resp.status == 200:
+                            # 成功，解析回應
+                            import json
+                            data = None
                             
-                            if end_idx != -1:
-                                json_str = cleaned_text[start_idx:end_idx+1]
-                                try:
-                                    data = json.loads(json_str)
-                                    logger.info(f"成功提取 JSON 對象 (長度: {len(json_str)})")
-                                except json.JSONDecodeError as e:
-                                    logger.error(f"JSON 解析失敗: {e}")
-                                    logger.error(f"嘗試解析的字符串: {json_str[:500]}")
-                        
-                        if data is None:
-                            logger.error(f"無法解析任何 JSON 對象，完整響應: {response_text[:1000]}")
-                            return None
-                        
-                        # 根據 API 類型調整解析方式
-                        # 1. Google Gemini 格式
-                        if "candidates" in data and len(data["candidates"]) > 0:
-                            candidate = data["candidates"][0]
-                            if "content" in candidate and "parts" in candidate["content"]:
-                                parts = candidate["content"]["parts"]
-                                if len(parts) > 0 and "text" in parts[0]:
-                                    content = parts[0]["text"].strip()
-                                    logger.info(f"成功獲取回應 (Gemini): {len(content)} 字符")
+                            # 提取 JSON 對象
+                            cleaned_text = response_text.strip()
+                            start_idx = cleaned_text.find('{')
+                            
+                            if start_idx != -1:
+                                brace_count = 0
+                                end_idx = -1
+                                for i in range(start_idx, len(cleaned_text)):
+                                    if cleaned_text[i] == '{':
+                                        brace_count += 1
+                                    elif cleaned_text[i] == '}':
+                                        brace_count -= 1
+                                        if brace_count == 0:
+                                            end_idx = i
+                                            break
+                                
+                                if end_idx != -1:
+                                    json_str = cleaned_text[start_idx:end_idx+1]
+                                    try:
+                                        data = json.loads(json_str)
+                                    except json.JSONDecodeError as e:
+                                        logger.warning(f"{api_name} JSON 解析失敗: {e}")
+                                        continue
+                            
+                            if data:
+                                # 根據 API 類型解析
+                                content = None
+                                
+                                # Gemini 格式
+                                if "candidates" in data and len(data["candidates"]) > 0:
+                                    candidate = data["candidates"][0]
+                                    if "content" in candidate and "parts" in candidate["content"]:
+                                        parts = candidate["content"]["parts"]
+                                        if len(parts) > 0 and "text" in parts[0]:
+                                            content = parts[0]["text"].strip()
+                                
+                                # OpenAI 格式（Groq）
+                                elif "choices" in data and len(data["choices"]) > 0:
+                                    content = data["choices"][0]["message"]["content"].strip()
+                                
+                                # 其他格式
+                                elif "result" in data:
+                                    content = data["result"].strip() if isinstance(data["result"], str) else str(data["result"])
+                                elif "content" in data:
+                                    content = data["content"].strip() if isinstance(data["content"], str) else str(data["content"])
+                                
+                                if content:
+                                    logger.info(f"✅ {api_name} 成功: {len(content)} 字符")
                                     return content
-                        # 2. OpenAI 格式
-                        elif "choices" in data and len(data["choices"]) > 0:
-                            content = data["choices"][0]["message"]["content"].strip()
-                            logger.info(f"成功獲取回應 (OpenAI): {len(content)} 字符")
-                            return content
-                        # 3. 其他格式備用
-                        elif "result" in data:
-                            content = data["result"].strip() if isinstance(data["result"], str) else str(data["result"])
-                            logger.info(f"成功獲取回應 (result): {len(content)} 字符")
-                            return content
-                        elif "content" in data:
-                            content = data["content"].strip() if isinstance(data["content"], str) else str(data["content"])
-                            logger.info(f"成功獲取回應 (content): {len(content)} 字符")
-                            return content
+                        
+                        elif resp.status == 429:
+                            # 配額超限，嘗試下一個 API
+                            logger.warning(f"⚠️ {api_name} 配額已超限 (429)，嘗試備用 API...")
+                            continue
+                        
                         else:
-                            logger.error(f"未知的 API 響應格式。數據鍵: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
-                            logger.error(f"完整數據: {str(data)[:500]}")
-                            return None
-                    else:
-                        response_text = await resp.text()
-                        logger.error(f"API 請求失敗: {resp.status}")
-                        logger.error(f"響應: {response_text[:500]}")
-        except asyncio.TimeoutError:
-            logger.error("AI API 請求超時")
-        except Exception as e:
-            logger.error(f"AI API 錯誤: {e}", exc_info=True)
+                            logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
+                            continue
+                            
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ {api_name} 請求超時，嘗試備用 API...")
+                continue
+            except Exception as e:
+                logger.warning(f"⚠️ {api_name} 錯誤: {e}，嘗試備用 API...")
+                continue
         
+        # 所有 API 都失敗
+        logger.error("❌ 所有 AI API 都不可用")
         return None
 
     @commands.Cog.listener()
