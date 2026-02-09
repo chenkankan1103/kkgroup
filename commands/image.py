@@ -62,23 +62,37 @@ class ImageHandler:
         try:
             logger.info(f"📸 開始生圖: {prompt[:50]}...")
             
-            # 使用gemini-2.5-flash-image生成
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            # 使用 gemini-2.5-flash-image 模型生成圖片
+            model = genai.GenerativeModel('gemini-2.5-flash-image')
+            
+            # 生成圖片
             response = model.generate_content(prompt)
             
-            if not response.text:
-                return None, "❌ 圖片生成失敗。"
+            # 檢查回應中是否包含圖片
+            if not response.parts:
+                return None, "❌ 圖片生成失敗：未返回圖片。"
+            
+            # 提取第一張圖片
+            image_data = None
+            for part in response.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    image_data = part.inline_data.data
+                    break
+            
+            if not image_data:
+                return None, "❌ 圖片生成失敗：回應中沒有圖片數據。"
             
             # 保存歷史記錄
             await self._save_history(
                 user_id=user_id,
                 action="generate",
                 prompt=prompt,
-                result=response.text[:200]
+                image_size=len(image_data),
+                result="圖片已生成"
             )
             
-            logger.info(f"✅ 生圖成功")
-            return response.text.encode('utf-8'), f"✅ 圖片已生成"
+            logger.info(f"✅ 生圖成功 (大小: {len(image_data)} bytes)")
+            return image_data, f"✅ 圖片已生成"
             
         except Exception as e:
             error_msg = f"❌ 生圖失敗: {str(e)}"
@@ -103,26 +117,38 @@ class ImageHandler:
             # 轉換圖片為PIL Image
             image = Image.open(BytesIO(image_data))
             
-            # 使用gemini-2.5-flash進行編輯
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            # 使用 gemini-2.5-flash-image 模型進行編輯
+            model = genai.GenerativeModel('gemini-2.5-flash-image')
             response = model.generate_content([
                 f"編輯這張圖片：{edit_prompt}",
                 image
             ])
             
-            if not response.text:
-                return None, "❌ 圖片編輯失敗。"
+            # 檢查回應中是否包含圖片
+            if not response.parts:
+                return None, "❌ 圖片編輯失敗：未返回圖片。"
+            
+            # 提取第一張圖片
+            edited_data = None
+            for part in response.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    edited_data = part.inline_data.data
+                    break
+            
+            if not edited_data:
+                return None, "❌ 圖片編輯失敗：回應中沒有圖片數據。"
             
             # 保存歷史記錄
             await self._save_history(
                 user_id=user_id,
                 action="edit",
                 prompt=edit_prompt,
-                result=response.text[:200]
+                image_size=len(edited_data),
+                result="圖片已編輯"
             )
             
-            logger.info(f"✅ 編圖成功")
-            return response.text.encode('utf-8'), f"✅ 圖片已編輯"
+            logger.info(f"✅ 編圖成功 (大小: {len(edited_data)} bytes)")
+            return edited_data, f"✅ 圖片已編輯"
             
         except Exception as e:
             error_msg = f"❌ 編圖失敗: {str(e)}"

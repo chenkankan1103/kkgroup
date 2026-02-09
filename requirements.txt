@@ -14,3 +14,4 @@ pytz
 psutil
 gspread
 oauth2client
+google-generativeai
