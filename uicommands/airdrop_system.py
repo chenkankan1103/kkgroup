@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import logging
 
 from db_adapter import get_user_field, set_user_field, add_user_field, get_user
+from logger import print  # 使用 Discord 連接的 print
 
 load_dotenv()
 logger = logging.getLogger("airdrop_system")
@@ -46,12 +47,12 @@ class AirdropSystem(commands.Cog):
         self.bot = bot
         self.next_airdrop_time = None
         self.airdrop_loop.start()
-        logger.info("✅ 空投系統已初始化")
+        print("✅ 空投系統已初始化")
     
     def cog_unload(self):
         """卸載時停止任務"""
         self.airdrop_loop.cancel()
-        logger.info("❌ 空投系統已卸載")
+        print("❌ 空投系統已卸載")
     
     # ==================== AI API 調用 ====================
     async def call_gemini(self, prompt: str) -> Optional[str]:
@@ -79,7 +80,7 @@ class AirdropSystem(commands.Cog):
                         if "candidates" in data and len(data["candidates"]) > 0:
                             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         except Exception as e:
-            logger.warning(f"Gemini API 失敗: {e}")
+            print(f"⚠️ Gemini API 失敗: {e}")
         
         return None
     
@@ -107,7 +108,7 @@ class AirdropSystem(commands.Cog):
                         if "choices" in data and len(data["choices"]) > 0:
                             return data["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            logger.warning(f"Groq API 失敗: {e}")
+            print(f"⚠️ Groq API 失敗: {e}")
         
         return None
     
@@ -205,7 +206,7 @@ class AirdropSystem(commands.Cog):
             
             return "✅ 獎品已應用"
         except Exception as e:
-            logger.error(f"應用獎品失敗: {e}")
+            print(f"❌ 應用獎品失敗: {e}")
             return f"❌ 錯誤: {e}"
     
     # ==================== Embed 和按鈕 ====================
@@ -245,7 +246,7 @@ class AirdropSystem(commands.Cog):
             if self.next_airdrop_time is None:
                 delay = random.randint(60, 120)  # 1-2 小時
                 self.next_airdrop_time = datetime.utcnow() + timedelta(minutes=delay)
-                logger.info(f"📦 計劃下一次空投時間：{self.next_airdrop_time}")
+                print(f"📦 計劃下一次空投時間：{self.next_airdrop_time}")
                 return
             
             if datetime.utcnow() < self.next_airdrop_time:
@@ -267,7 +268,7 @@ class AirdropSystem(commands.Cog):
                         pass
             
             if not eligible_channels:
-                logger.warning("❌ 沒有可投放的頻道")
+                print("❌ 沒有可投放的頻道")
                 delay = random.randint(60, 120)
                 self.next_airdrop_time = datetime.utcnow() + timedelta(minutes=delay)
                 return
@@ -277,7 +278,7 @@ class AirdropSystem(commands.Cog):
             embed, view = await self.create_airdrop_embed()
             
             message = await channel.send(embed=embed, view=view)
-            logger.info(f"✅ 空投已投放到 #{channel.name}")
+            print(f"✅ 空投已投放到 #{channel.name}")
             
             # 10 分鐘後自動刪除（如果沒被打開）
             await asyncio.sleep(600)
@@ -289,10 +290,10 @@ class AirdropSystem(commands.Cog):
             # 計劃下一次空投
             delay = random.randint(60, 120)
             self.next_airdrop_time = datetime.utcnow() + timedelta(minutes=delay)
-            logger.info(f"📦 計劃下一次空投時間：{self.next_airdrop_time}")
+            print(f"📦 計劃下一次空投時間：{self.next_airdrop_time}")
         
         except Exception as e:
-            logger.error(f"空投循環錯誤: {e}")
+            print(f"❌ 空投循環錯誤: {e}")
             delay = random.randint(60, 120)
             self.next_airdrop_time = datetime.utcnow() + timedelta(minutes=delay)
     
@@ -300,7 +301,7 @@ class AirdropSystem(commands.Cog):
     async def before_airdrop_loop(self):
         """等待 bot 準備"""
         await self.bot.wait_until_ready()
-        logger.info("✅ 空投系統已啟動")
+        print("✅ 空投系統已啟動")
 
 
 class AirdropView(discord.ui.View):
@@ -353,7 +354,7 @@ class AirdropView(discord.ui.View):
             except:
                 pass
         except Exception as e:
-            logger.error(f"編輯消息失敗: {e}")
+            print(f"❌ 編輯消息失敗: {e}")
     
     @discord.ui.button(label="銷毀", style=discord.ButtonStyle.danger, emoji="💣")
     async def destroy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -369,4 +370,4 @@ class AirdropView(discord.ui.View):
 async def setup(bot):
     """設置 cog"""
     await bot.add_cog(AirdropSystem(bot))
-    logger.info("✅ 空投系統已載入")
+    print("✅ 空投系統已載入")
