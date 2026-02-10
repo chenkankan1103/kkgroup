@@ -48,6 +48,9 @@ sync.log
 *.log.2
 *.log.3
 
+# 儀表板日誌
+dashboard_logs.json
+
 # 臨時文件
 *.backup
 *.tmp
