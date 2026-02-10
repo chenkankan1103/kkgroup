@@ -10,6 +10,7 @@
 import discord
 import os
 import sqlite3
+import subprocess
 from datetime import datetime
 from collections import deque
 from typing import Optional, Dict
@@ -41,6 +42,74 @@ BOT_CONFIG = {
 
 # 追蹤當前機器人類型（在初始化時設置）
 current_bot_type = None
+
+
+class DashboardButtons(discord.ui.View):
+    """控制面板按鈕"""
+    
+    def __init__(self, bot_type: str, bot: discord.Client):
+        super().__init__(timeout=None)  # 持久化按鈕
+        self.bot_type = bot_type
+        self.bot = bot
+    
+    @discord.ui.button(label="重啟", emoji="🔄", style=discord.ButtonStyle.danger)
+    async def restart_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """重啟機器人"""
+        await interaction.response.defer(thinking=True)
+        
+        try:
+            service_name = {
+                "bot": "bot.service",
+                "shopbot": "shopbot.service",
+                "uibot": "uibot.service"
+            }.get(self.bot_type)
+            
+            if not service_name:
+                await interaction.followup.send("❌ 未知的機器人類型", ephemeral=True)
+                return
+            
+            # 執行遠端重啟命令
+            result = os.system(f'gcloud compute ssh instance-20250501-142333 --zone=us-central1-c --command="sudo systemctl restart {service_name}" 2>&1 > /dev/null &')
+            
+            await interaction.followup.send(
+                f"✅ {self.bot_type.upper()} 重啟已發送\n將在 10-20 秒內完成",
+                ephemeral=True
+            )
+            
+            # 更新返饋
+            add_log(self.bot_type, f"🔄 機器人正在重啟...")
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ 重啟失敗: {e}", ephemeral=True)
+    
+    @discord.ui.button(label="狀態", emoji="🔍", style=discord.ButtonStyle.gray)
+    async def status_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """查詢機器人狀態"""
+        await interaction.response.defer(thinking=True)
+        
+        try:
+            # 檢查 bot 是否在線
+            if self.bot.user:
+                detail = f"""
+🟢 **在線**
+用戶: {self.bot.user.mention}
+ID: {self.bot.user.id}
+時間: <t:{int(datetime.utcnow().timestamp())}:R>
+                """
+            else:
+                detail = "🔴 離線"
+            
+            embed = discord.Embed(
+                title=f"🔍 {BOT_CONFIG[self.bot_type]['名稱']} 狀態",
+                description=detail,
+                color=discord.Color.green(),
+                timestamp=datetime.utcnow()
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        except Exception as e:
+            await interaction.followup.send(f"❌ 狀態查詢失敗: {e}", ephemeral=True)
 
 
 def set_bot_type(bot_type: str):
@@ -173,11 +242,18 @@ async def initialize_dashboard(bot: discord.Client, bot_type: str):
         # 創建或註冊控制面板
         if not found_dashboard:
             embed = await create_dashboard_embed(bot_type)
-            msg = await channel.send(embed=embed)
+            view = DashboardButtons(bot_type, bot)
+            msg = await channel.send(embed=embed, view=view)
             dashboard_messages["dashboard"] = msg.id
             print(f"✅ 創建 {bot_type} 控制面板: {msg.id}")
         else:
             dashboard_messages["dashboard"] = found_dashboard.id
+            # 重新附加按鈕視圖到舊訊息
+            try:
+                view = DashboardButtons(bot_type, bot)
+                await found_dashboard.edit(view=view)
+            except:
+                pass
             print(f"✅ 找到 {bot_type} 控制面板: {found_dashboard.id}")
         
         # 創建或註冊日誌
@@ -511,15 +587,13 @@ def save_message_ids():
     print("✅ Message ID 已保存到 .env")
 
 
-def load_message_ids():
-    """從 .env 加載 message_id"""
-    for key in dashboard_messages.keys():
-        env_key = f"DASHBOARD_{key.upper()}"
-        msg_id = os.getenv(env_key)
-        if msg_id:
-            dashboard_messages[key] = int(msg_id)
-    print("✅ Message ID 已從 .env 加載")
-
-
-# 初始化時加載
-load_message_ids()
+def load_message_ids(bot_type: str):
+    """從 .env 加載當前機器人的 message_id"""
+    dashboard_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_DASHBOARD")
+    logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
+    
+    if dashboard_id:
+        dashboard_messages["dashboard"] = int(dashboard_id)
+    
+    if logs_id:
+        dashboard_messages["logs"] = int(logs_id)
