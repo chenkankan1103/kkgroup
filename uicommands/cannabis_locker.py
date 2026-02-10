@@ -358,9 +358,15 @@ class PersonalLockerCog(commands.Cog):
             # 添加按鈕
             try:
                 view = PersonalLockerView(self.bot, self, user_id, ctx.guild.id if ctx.guild else 0, ctx.channel.id, plants)
-                # 驗證按鈕是否正確加載
-                if not hasattr(view, 'plant_seed_button'):
-                    print(f"⚠️  [Locker] PersonalLockerView created without plant_seed_button!")
+                # 驗證按鈕是否正確加載到視圖中
+                button_found = False
+                for child in view.children:
+                    if isinstance(child, discord.ui.Button) and child.emoji and child.emoji.name == '🌱':
+                        button_found = True
+                        break
+                
+                if not button_found:
+                    print(f"⚠️  [Locker] PersonalLockerView created without plant seed button!")
                     await ctx.send(embed=embed)  # Send without buttons as fallback
                     await ctx.send("⚠️  置物櫃已開啟，但部分按鈕可能無法使用。請聯繫管理員。", delete_after=10)
                     return
@@ -414,7 +420,7 @@ class PersonalLockerView(discord.ui.View):
     """個人置物櫃交互菜單"""
     
     def __init__(self, bot, cog, user_id, guild_id, channel_id, plants):
-        super().__init__(timeout=None)  # No timeout to prevent button expiration
+        super().__init__(timeout=3600)  # 1 hour timeout to prevent indefinite memory usage
         self.bot = bot
         self.cog = cog
         self.user_id = user_id
