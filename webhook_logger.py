@@ -9,16 +9,21 @@ from dotenv import load_dotenv, set_key
 
 load_dotenv()
 
-# 設定logging
+# 設定logging - 使用絕對路徑
+import os.path
+log_dir = os.path.dirname(os.path.abspath(__file__))
+log_file = os.path.join(log_dir, 'webhook_logger.log')
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('webhook_logger.log'),
+        logging.FileHandler(log_file),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger('WEBHOOK')
+logger.info(f"Webhook logger initialized, log file: {log_file}")
 
 WEBHOOK_URL = os.getenv("STARTUP_WEBHOOK_URL", "")
 webhook_message_id = None
