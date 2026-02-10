@@ -185,19 +185,19 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     return embed
 
 
-async def initialize_dashboard(bot: discord.Client, bot_type: str):
+async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     """
     初始化儀表板 - 每個機器人只初始化自己的面板
     
     Args:
-        bot: Discord bot instance
-        bot_type: "bot", "shopbot", "uibot"
+        bot_instance: Discord bot instance
+        bot_type_str: "bot", "shopbot", "uibot"
     """
     global current_bot_type
-    current_bot_type = bot_type
+    current_bot_type = bot_type_str
     
     try:
-        channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
+        channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
             print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
             return False
@@ -212,12 +212,12 @@ async def initialize_dashboard(bot: discord.Client, bot_type: str):
         
         # 查找現有訊息（只查找由當前 bot 發送的）
         async for msg in channel.history(limit=100):
-            if msg.author.id != bot.user.id:
+            if msg.author.id != bot_instance.user.id:
                 continue  # 跳過其他 bot 的訊息
             
             if msg.embeds:
                 for embed in msg.embeds:
-                    bot_name = BOT_CONFIG[bot_type]["名稱"]
+                    bot_name = BOT_CONFIG[bot_type_str]["名稱"]
                     if "控制面板" in embed.title and bot_name in embed.title:
                         dashboard_count += 1
                         if dashboard_count <= 1:
@@ -235,39 +235,39 @@ async def initialize_dashboard(bot: discord.Client, bot_type: str):
         for msg in old_dashboards + old_logs:
             try:
                 await msg.delete()
-                print(f"✓ 已清理舊的 {bot_type} embed")
+                print(f"✓ 已清理舊的 {bot_type_str} embed")
             except:
                 pass
         
         # 創建或註冊控制面板
         if not found_dashboard:
-            embed = await create_dashboard_embed(bot_type)
-            view = DashboardButtons(bot_type, bot)
+            embed = await create_dashboard_embed(bot_type_str)
+            view = DashboardButtons(bot_type_str, bot_instance)
             msg = await channel.send(embed=embed, view=view)
             dashboard_messages["dashboard"] = msg.id
-            print(f"✅ 創建 {bot_type} 控制面板: {msg.id}")
+            print(f"✅ 創建 {bot_type_str} 控制面板: {msg.id}")
         else:
             dashboard_messages["dashboard"] = found_dashboard.id
             # 重新附加按鈕視圖到舊訊息
             try:
-                view = DashboardButtons(bot_type, bot)
+                view = DashboardButtons(bot_type_str, bot_instance)
                 await found_dashboard.edit(view=view)
             except:
                 pass
-            print(f"✅ 找到 {bot_type} 控制面板: {found_dashboard.id}")
+            print(f"✅ 找到 {bot_type_str} 控制面板: {found_dashboard.id}")
         
         # 創建或註冊日誌
         if not found_logs:
-            embed = await create_logs_embed(bot_type)
+            embed = await create_logs_embed(bot_type_str)
             msg = await channel.send(embed=embed)
             dashboard_messages["logs"] = msg.id
-            print(f"✅ 創建 {bot_type} 日誌: {msg.id}")
+            print(f"✅ 創建 {bot_type_str} 日誌: {msg.id}")
         else:
             dashboard_messages["logs"] = found_logs.id
-            print(f"✅ 找到 {bot_type} 日誌: {found_logs.id}")
+            print(f"✅ 找到 {bot_type_str} 日誌: {found_logs.id}")
         
         # 保存到 .env
-        save_message_ids(bot_type)
+        save_message_ids(bot_type_str)
         return True
         
     except Exception as e:
