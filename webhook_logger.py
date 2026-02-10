@@ -43,6 +43,9 @@ async def send_startup_info(bot_type: str, bot: discord.Client):
             print(f"⚠️ 找不到啟動日誌頻道 {STARTUP_CHANNEL_ID}")
             return
         
+        # 清理該 bot 類型的舊啟動訊息（保留最新的 3 條）
+        await cleanup_old_messages(channel, bot, bot_type)
+        
         # 檢查是否已發送過啟動訊息
         if startup_messages.get(bot_type):
             # 已發送過，嘗試編輯而不是重新發送
@@ -101,3 +104,41 @@ async def send_startup_info(bot_type: str, bot: discord.Client):
         
     except Exception as e:
         print(f"⚠️ 發送啟動資訊失敗: {e}")
+
+
+async def cleanup_old_messages(channel: discord.TextChannel, bot: discord.Client, bot_type: str, keep_count: int = 1):
+    """
+    清理該機器人類型的舊啟動訊息，只保留最新的 keep_count 條
+    
+    Args:
+        channel: 頻道對象
+        bot: Bot 實例
+        bot_type: "bot", "shopbot", "uibot"
+        keep_count: 保留的訊息數量（默認只保留最新的 1 條）
+    """
+    try:
+        bot_name = BOT_NAME_MAP.get(bot_type, bot_type)
+        messages_to_delete = []
+        count = 0
+        
+        async for msg in channel.history(limit=50):
+            # 只查看由任何 bot 發送的訊息
+            if msg.embeds:
+                for embed in msg.embeds:
+                    # 檢查是否是該 bot 類型的啟動訊息
+                    if bot_name in embed.title and ("已啟動" in embed.title or "已啟動 🔄" in embed.title):
+                        count += 1
+                        if count > keep_count:
+                            messages_to_delete.append(msg)
+        
+        # 刪除舊訊息
+        for msg in messages_to_delete:
+            try:
+                await msg.delete()
+                print(f"✓ 已清理舊的 {bot_type} 啟動訊息")
+            except:
+                pass
+    
+    except Exception as e:
+        # 清理失敗不影響主流程
+        pass
