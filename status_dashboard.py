@@ -331,6 +331,9 @@ class DashboardButtons(discord.ui.View):
         self.bot = bot
         
         # 為按鈕設置唯一的 custom_id
+        # 注意: 由於 custom_id 需要根據 bot_type 動態生成，
+        # 我們無法在 @discord.ui.button 裝飾器中直接設置靜態值。
+        # 因此在 __init__ 中遍歷子項目並設置 custom_id。
         for item in self.children:
             if hasattr(item, 'callback'):
                 if item.callback.__name__ == 'restart_button':
