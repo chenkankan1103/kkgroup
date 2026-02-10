@@ -10,7 +10,7 @@ from watchdog.events import FileSystemEventHandler
 from logger import print
 from bot_status import build_discord_activity
 from webhook_logger import update_bot_info, send_or_update_startup_info
-from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons
+from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons, ensure_dashboard_messages
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -287,7 +287,7 @@ async def on_ready():
             await update_bot_info("shopbot", startup_time, cmd_names, ext_names)
             
             # 發送/編輯啟動訊息（所有 bot 的統一訊息）
-            await send_or_update_startup_info(client)
+            await send_or_update_startup_info()
             
             add_log("shopbot", "✅ 啟動資訊已更新到機器人秘書")
         except Exception as e:
@@ -311,6 +311,9 @@ async def on_ready():
                 if not update_logs_task.is_running():
                     update_logs_task.start()
                 print(f"✅ 日誌系統已啟動")
+            
+            # 確保儀表板消息按正確順序存在（bot → shopbot → uibot）
+            await ensure_dashboard_messages(client, "shopbot")
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
         
