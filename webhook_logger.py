@@ -3,13 +3,26 @@
 """
 import os
 import aiohttp
+import logging
 from datetime import datetime
 from dotenv import load_dotenv, set_key
 
 load_dotenv()
 
+# 設定logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('webhook_logger.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('WEBHOOK')
+
 WEBHOOK_URL = os.getenv("STARTUP_WEBHOOK_URL", "")
 webhook_message_id = None
+logger.info(f"WEBHOOK_URL: {WEBHOOK_URL[:50] if WEBHOOK_URL else 'Not Set'}...")
 
 bots_info = {
     "bot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []},
@@ -75,11 +88,11 @@ async def send_or_update_startup_info():
     global webhook_message_id
     
     if not WEBHOOK_URL:
-        print(f"🚫 WEBHOOK_URL 未設定")
+        logger.warning("WEBHOOK_URL 未設定")
         return
     
     try:
-        print(f"🔄 準備發送启動資訊...")
+        logger.info("準備發送啟動資訊...")
         
         embeds = [
             await create_overview_embed(),
@@ -93,40 +106,40 @@ async def send_or_update_startup_info():
         # 嘗試編輯
         if webhook_message_id:
             try:
-                print(f"📝 嘗試編輯訊息 ID={webhook_message_id}")
+                logger.info(f"嘗試編輯訊息 ID={webhook_message_id}")
                 url = f"{WEBHOOK_URL}/messages/{webhook_message_id}"
                 async with aiohttp.ClientSession() as session:
                     async with session.patch(url, json=payload) as resp:
-                        print(f"📝 PATCH 響應碼: {resp.status}")
+                        logger.info(f"PATCH 響應碼: {resp.status}")
                         if resp.status in [200, 204]:
-                            print(f"✅ 啟動資訊已更新 (HTTP {resp.status})")
+                            logger.info(f"✅ 啟動資訊已更新 (HTTP {resp.status})")
                             return
             except Exception as patch_err:
-                print(f"⚠️ 編輯訊息失敗: {patch_err}")
+                logger.warning(f"編輯訊息失敗: {patch_err}")
         
         # 發送新訊息
-        print(f"📨 發送新的啟動訊息...")
+        logger.info("發送新的啟動訊息...")
         async with aiohttp.ClientSession() as session:
             async with session.post(WEBHOOK_URL, json=payload) as resp:
-                print(f"📨 POST 響應碼: {resp.status}")
+                logger.info(f"POST 響應碼: {resp.status}")
                 if resp.status in [200, 204]:
                     if resp.status == 200:
                         data = await resp.json()
                         webhook_message_id = data.get("id")
                         if webhook_message_id:
                             set_key(".env", "WEBHOOK_MESSAGE_ID", str(webhook_message_id))
-                            print(f"✅ 啟動資訊已發送，訊息 ID={webhook_message_id}")
+                            logger.info(f"✅ 啟動資訊已發送，訊息 ID={webhook_message_id}")
                         else:
-                            print(f"⚠️ 無法獲取訊息 ID")
+                            logger.warning("無法獲取訊息 ID")
                     else:
-                        print(f"✅ 啟動資訊已發送 (HTTP {resp.status})")
+                        logger.info(f"✅ 啟動資訊已發送 (HTTP {resp.status})")
                 else:
                     resp_text = await resp.text()
-                    print(f"❌ Webhook 失敗 (HTTP {resp.status}): {resp_text[:200]}")
+                    logger.error(f"Webhook 失敗 (HTTP {resp.status}): {resp_text[:200]}")
     except Exception as e:
         import traceback
-        print(f"❌ 訊息失敗: {e}")
-        traceback.print_exc()
+        logger.error(f"訊息失敗: {e}")
+        logger.error(traceback.format_exc())
 
 
 _stored_msg_id = os.getenv("WEBHOOK_MESSAGE_ID")
