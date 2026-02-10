@@ -9,7 +9,7 @@ from watchdog.events import FileSystemEventHandler
 from logger import print
 from bot_status import build_discord_activity
 from webhook_logger import send_startup_info
-from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type
+from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -283,6 +283,9 @@ async def on_ready():
             dashboard_ready = await initialize_dashboard(client, "bot")
             if dashboard_ready:
                 add_log("bot", "✅ 儀表板已初始化")
+                # 註冊持久化按鈕視圖
+                client.add_view(DashboardButtons("bot", client))
+                print("✅ 控制面板按鈕已註冊")
                 if not update_logs_task.is_running():
                     update_logs_task.start()
                 print(f"✅ 日誌系統已啟動")
@@ -302,67 +305,6 @@ async def on_ready():
         if not update_status.is_running():
             update_status.start()
         
-        # ============================================================
-        # Discord 系統頻道通知（單一 Embed）
-        # ============================================================
-        if STAGE == "prod" and SYS_CHANNEL_ID:
-            channel = client.get_channel(SYS_CHANNEL_ID)
-            if channel:
-                embed = discord.Embed(
-                    title=f"{EMOJI} {BOT_NAME} Bot 已啟動",
-                    description=f"🟢 版本 `{VERSION}` | 環境: **{stage_text}**",
-                    color=discord.Color.green(),
-                    timestamp=discord.utils.utcnow()
-                )
-                
-                # 統計摘要（內聯字段）
-                embed.add_field(
-                    name="📊 系統狀態",
-                    value=f"📦 `{len(loaded_extensions)}` 擴展\n⚡ `{len(synced)}` Slash\n🔧 `{len(prefix_cmds)}` 前綴",
-                    inline=True
-                )
-                
-                # 快速資訊
-                embed.add_field(
-                    name="⚙️ 運行資訊",
-                    value=f"🤖 {client.user.mention}\n🆔 `{client.user.id}`\n⏰ <t:{int(discord.utils.utcnow().timestamp())}:R>",
-                    inline=True
-                )
-                
-                # 擴展列表（緊湊顯示，最多12個）
-                if loaded_extensions:
-                    ext_short = [f"`{ext.split('.')[-1]}`" for ext in loaded_extensions[:12]]
-                    ext_text = " ".join(ext_short)
-                    if len(loaded_extensions) > 12:
-                        ext_text += f"\n*...還有 {len(loaded_extensions) - 12} 個*"
-                    embed.add_field(
-                        name=f"📦 已載入模組 ({len(loaded_extensions)})",
-                        value=ext_text,
-                        inline=False
-                    )
-                
-                # 指令列表（超緊湊顯示）
-                if synced:
-                    # 只顯示前 24 個指令名稱
-                    cmd_short = [f"`/{cmd.name}`" for cmd in synced[:24]]
-                    # 每 6 個換行
-                    cmd_lines = []
-                    for i in range(0, len(cmd_short), 6):
-                        cmd_lines.append(" ".join(cmd_short[i:i+6]))
-                    cmd_text = "\n".join(cmd_lines)
-                    if len(synced) > 24:
-                        cmd_text += f"\n*...還有 {len(synced) - 24} 個指令*"
-                    embed.add_field(
-                        name=f"⚡ 可用指令 ({len(synced)})",
-                        value=cmd_text,
-                        inline=False
-                    )
-                
-                embed.set_footer(text=f"🟢 系統運行正常 | {BOT_NAME} Bot")
-                
-                # 單一訊息發送，不再有多段提示
-                await channel.send(embed=embed)
-                
     except Exception as e:
         # 錯誤也使用單一 print
         error_msg = f"❌ 初始化失敗: {e}\n{'=' * 60}"
