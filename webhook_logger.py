@@ -92,6 +92,17 @@ async def send_or_update_startup_info():
     try:
         log_webhook("🔄 準備發送啟動資訊...")
         
+        # 等待機器人啟動（最多等5秒）- 每1秒檢查一次
+        import asyncio
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < 5:
+            # 檢查是否所有機器人都有啟動時間
+            all_started = all(bots_info[bot]["啟動時間"] for bot in ["bot", "shopbot", "uibot"])
+            if all_started:
+                log_webhook("✅ 所有機器人已啟動，準備發送訊息")
+                break
+            await asyncio.sleep(0.5)
+        
         embeds = [
             await create_overview_embed(),
             await create_bot_detail_embed("bot"),
