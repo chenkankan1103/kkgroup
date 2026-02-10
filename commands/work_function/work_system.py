@@ -404,24 +404,30 @@ async def process_checkin(user_id, user_obj, guild):
         
         # 檢查用戶是否成功取得
         if not user:
-            print(f"❌ 無法找到或建立用戶: {user_id}")
+            print(f"❌ [process_checkin] 無法找到或建立用戶: {user_id}")
             return None, None, None, None
         
         today = datetime.utcnow().strftime("%Y-%m-%d")
         
-        level = user.get('level', 0)
+        level = user.get('level', 1)
+        current_xp = user.get('xp', 0)
+        current_kkcoin = user.get('kkcoin', 0)
         streak = user.get('streak', 0) + 1
+        
+        print(f"  📊 初始數據 - Lv.{level}, XP: {current_xp}, 金幣: {current_kkcoin}, 連勤: {streak-1}")
         
         # 隨機經驗值 + 經驗倍數加成
         xp_gain = random.randint(20, 60)
         xp_boost = LEVELS[level].get("xp_boost", 1.0)
         xp_gain = int(xp_gain * xp_boost)
+        print(f"  📈 XP 獲得: {xp_gain} (基數: {xp_gain//int(xp_boost) if xp_boost else xp_gain}, 倍率: {xp_boost})")
         
         # 浮動薪資 (0-100%) + 薪資倍數加成
         base_salary = LEVELS[level]["salary"]
         salary_multiplier = random.uniform(0, 1)
         salary_boost = LEVELS[level].get("salary_boost", 1.0)
         kkcoin_gain = int(base_salary * salary_multiplier * salary_boost)
+        print(f"  💰 薪資計算: {int(salary_multiplier*100)}% × {base_salary} × {salary_boost} = {kkcoin_gain} KK幣")
 
         leveled_up = False
         bonus_coins = 0
@@ -431,7 +437,7 @@ async def process_checkin(user_id, user_obj, guild):
         temp_user['streak'] = streak
         temp_user['xp'] = user.get('xp', 0) + xp_gain
         
-        can_level_up, _ = check_level_up(temp_user)
+        can_level_up, next_threshold = check_level_up(temp_user)
         
         if can_level_up and level < 6:
             level += 1
@@ -439,11 +445,16 @@ async def process_checkin(user_id, user_obj, guild):
             bonus_coins = 300 * level
             kkcoin_gain += bonus_coins
             leveled_up = True
+            print(f"  🎊 等級提升! Lv.{old_level} → Lv.{level}, 獲得升級獎勵: {bonus_coins} KK幣")
             
             role_assigned = await assign_role(guild, user_obj, level)
             if role_assigned:
-                print(f"✅ 用戶 {user_obj.name} 升級至 Lv.{level}，已授予身分組")
+                print(f"  ✅ 身分組已分配: {user_obj.name} → Lv.{level}")
+        else:
+            progress = temp_user.get('xp', 0)
+            print(f"  📊 升級進度: {progress} / {next_threshold if next_threshold else '計算中'} XP")
 
+        print(f"  💾 保存資料...")
         update_user(
             user_id,
             last_work_date=today,
@@ -453,8 +464,13 @@ async def process_checkin(user_id, user_obj, guild):
             kkcoin=user.get('kkcoin', 0) + kkcoin_gain,
             actions_used='{}'
         )
+        print(f"  ✓ 資料已保存")
 
         updated_user = get_user(user_id)
+        if not updated_user:
+            print(f"  ❌ 獲取更新後的用戶資料失敗")
+            return None, None, None, None
+        print(f"  ✓ 更新後資料: Lv.{updated_user['level']}, XP: {updated_user['xp']}, 金幣: {updated_user['kkcoin']}")
         
         # 使用 AI 生成每日情境描述
         daily_story = await generate_daily_checkin_story(
@@ -465,14 +481,19 @@ async def process_checkin(user_id, user_obj, guild):
         )
         
         if leveled_up:
+            print(f"  🎨 生成升級 Embed...")
             level_up_embed = create_level_up_embed(user_obj, old_level, level, bonus_coins)
             work_embed = create_work_embed(updated_user, user_obj)
+            print(f"  ✅ [process_checkin] 打卡程序完成 (升級 Lv.{old_level}→{level})")
             return (level_up_embed, work_embed), updated_user, salary_multiplier, daily_story
         else:
+            print(f"  🎨 生成打卡 Embed...")
             embed = create_work_embed(updated_user, user_obj)
+            print(f"  ✅ [process_checkin] 打卡程序完成")
             return (embed,), updated_user, salary_multiplier, daily_story
             
     except Exception as e:
+        print(f"  ❌ [process_checkin] 發生例外: {e}")
         traceback.print_exc()
         return None, None, None, None
 

@@ -27,16 +27,24 @@ class CheckInButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=True)
+            user_id = interaction.user.id
+            user_name = interaction.user.name
             
-            user = get_user(interaction.user.id)
+            print(f"\n🕐 【打卡開始】 使用者: {user_name} (ID: {user_id})")
+            
+            user = get_user(user_id)
             
             # 檢查用戶是否成功取得
             if not user:
+                print(f"❌ 打卡失敗: 無法獲取用戶資料")
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
+            print(f"✓ 用戶資料已取得: Lv.{user.get('level')} {user.get('title')}")
+            
             # 檢查是否已領取工作證
             if not user.get('pre_job'):
+                print(f"❌ 打卡失敗: 未領取工作證")
                 await interaction.followup.send(
                     "❌ 你還沒領取工作證！請先到置物櫃申請身份證件。\n"
                     "使用 `/我的面板` → 選擇「領取工作證」",
@@ -48,20 +56,29 @@ class CheckInButton(discord.ui.Button):
             last_work_date = user.get('last_work_date', None)
 
             if last_work_date == today:
+                print(f"⚠️  打卡失敗: 今日已打卡")
                 await interaction.followup.send("你今天已經打過卡囉！", ephemeral=True)
                 return
 
+            print(f"📋 開始檢查介紹論壇身份...")
             try:
                 introduce_check_result = await asyncio.wait_for(
                     self.check_introduction_async(interaction),
                     timeout=8.0
                 )
                 if not introduce_check_result:
+                    print(f"❌ 打卡失敗: 未找到介紹論壇文章")
+                    await interaction.followup.send(
+                        "❌ 找不到你在介紹論壇的文章，請先到介紹論壇發文",
+                        ephemeral=True
+                    )
                     return
+                print(f"✓ 介紹論壇檢查通過")
             except asyncio.TimeoutError:
                 print("⚠️ 介紹論壇檢查超時，跳過檢查")
                 pass
 
+            print(f"💼 開始處理打卡邏輯...")
             embeds_tuple, updated_user, salary_multiplier, daily_story = await process_checkin(
                 interaction.user.id, 
                 interaction.user,
@@ -73,6 +90,8 @@ class CheckInButton(discord.ui.Button):
                 
                 base_salary = LEVELS[updated_user['level']]["salary"]
                 actual_salary = int(base_salary * salary_multiplier)
+                new_level = updated_user.get('level')
+                new_streak = updated_user.get('streak')
                 
                 salary_percent = int(salary_multiplier * 100)
                 if salary_multiplier > 0.8:
@@ -81,6 +100,13 @@ class CheckInButton(discord.ui.Button):
                     performance = "✅普通"
                 else:
                     performance = "⚠️不太順利..."
+                
+                # 記錄打卡成功日誌
+                print(f"✅ 打卡成功!")
+                print(f"   薪資: {actual_salary:,} / {base_salary:,} KK幣 ({salary_percent}%)")
+                print(f"   等級: Lv.{new_level}")
+                print(f"   連勤: {new_streak} 天")
+                print(f"   時間: {today}")
                 
                 checkin_msg = (
                     f"✅ **打卡成功！**\n\n"
@@ -91,6 +117,7 @@ class CheckInButton(discord.ui.Button):
                 )
                 
                 if len(embeds_tuple) == 2:
+                    print(f"🎊 用戶升級到 Lv.{new_level}")
                     await interaction.followup.send(
                         content=f"## 🎊 恭喜升級！\n{checkin_msg}", 
                         embed=embeds_tuple[0], 
@@ -109,13 +136,16 @@ class CheckInButton(discord.ui.Button):
                         ephemeral=True
                     )
             else:
+                print(f"❌ 打卡失敗: process_checkin 返回 None")
+                print(f"   embeds_tuple: {embeds_tuple}")
+                print(f"   updated_user: {updated_user}")
                 await interaction.followup.send(
                     "❌ 處理打卡失敗，請稍後再試或聯絡管理員", 
                     ephemeral=True
                 )
 
         except asyncio.TimeoutError:
-            print("❌ 打卡處理超時")
+            print(f"❌ 打卡處理超時 (user: {user_name})")
             try:
                 await interaction.followup.send(
                     "❌ 處理超時，請稍後再試", 
@@ -124,6 +154,8 @@ class CheckInButton(discord.ui.Button):
             except:
                 pass
         except Exception as e:
+            print(f"❌ 打卡發生例外: {e}")
+            print(f"   User: {user_name} (ID: {user_id})")
             traceback.print_exc()
             try:
                 await interaction.followup.send(
@@ -204,11 +236,16 @@ class RestButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=True)
+            user_id = interaction.user.id
+            user_name = interaction.user.name
             
-            user = get_user(interaction.user.id)
+            print(f"\n🛌 【休息開始】 使用者: {user_name} (ID: {user_id})")
+            
+            user = get_user(user_id)
             
             # 檢查用戶是否成功取得
             if not user:
+                print(f"❌ 休息失敗: 無法獲取用戶資料")
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
@@ -216,10 +253,15 @@ class RestButton(discord.ui.Button):
             last_work_date = user.get('last_work_date', None)
             
             if last_work_date == today:
+                print(f"⚠️ 休息失敗: 今日已打卡/休息")
                 await interaction.followup.send("你今天已經打過卡或選擇休息了！", ephemeral=True)
                 return
             
-            update_user(interaction.user.id, last_work_date=today, streak=0)
+            old_streak = user.get('streak', 0)
+            update_user(user_id, last_work_date=today, streak=0)
+            
+            print(f"✅ 成功休息")
+            print(f"   連勤: {old_streak} → 0")
             
             rest_embed = discord.Embed(
                 title="🛌 休息通知",
@@ -234,6 +276,7 @@ class RestButton(discord.ui.Button):
             await interaction.followup.send(embed=rest_embed, ephemeral=True)
             
         except Exception as e:
+            print(f"❌ 休息發生例外: {e}")
             traceback.print_exc()
             await interaction.followup.send("❌ 處理休息請求失敗", ephemeral=True)
 
@@ -255,25 +298,34 @@ class WorkActionButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=True)
+            user_id = interaction.user.id
+            user_name = interaction.user.name
             
             parts = self.custom_id.split(':')
             if len(parts) < 4:
+                print(f"❌ 工作行動失敗: 按鈕 ID 格式錯誤")
                 await interaction.followup.send("❌ 按鈕 ID 格式錯誤", ephemeral=True)
                 return
                 
             action = parts[2]
-            user_id = parts[3]
+            user_id_check = parts[3]
             
-            if str(interaction.user.id) != user_id:
+            print(f"\n⚙️  【工作行動】 使用者: {user_name} (ID: {user_id}), 行動: {action}")
+            
+            if str(user_id) != user_id_check:
+                print(f"❌ 工作行動失敗: 不是該按鈕的擁有者")
                 await interaction.followup.send("你不能使用別人的工作按鈕！", ephemeral=True)
                 return
             
-            current_user = get_user(interaction.user.id)
+            current_user = get_user(user_id)
             
             # 檢查用戶是否成功取得
             if not current_user:
+                print(f"❌ 工作行動失敗: 無法獲取用戶資料")
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
+            
+            print(f"✓ 使用者資料: Lv.{current_user.get('level')} {current_user.get('title')}")
             
             today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = current_user.get('last_work_date', None)
@@ -282,19 +334,23 @@ class WorkActionButton(discord.ui.Button):
             yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
             
             if last_work_date not in [today, yesterday]:
+                print(f"❌ 工作行動失敗: 按鈕已過期 (last_work_date: {last_work_date})")
                 await interaction.followup.send(
                     "⚠️ 此工作按鈕已過期，請重新打卡領取今日任務！", 
                     ephemeral=True
                 )
                 return
             
+            print(f"💼 處理工作行動: {action}")
             embeds_tuple, updated_user, message = await process_work_action(
-                interaction.user.id, 
+                user_id, 
                 interaction.user, 
                 action
             )
             
             if embeds_tuple and updated_user:
+                print(f"✅ 工作行動成功！")
+                print(f"   訊息: {message}")
                 await interaction.followup.send(
                     embed=embeds_tuple[0],
                     ephemeral=True
@@ -325,20 +381,25 @@ class WorkActionButton(discord.ui.Button):
                 if message:
                     await interaction.followup.send(message, ephemeral=True)
             else:
+                print(f"❌ 工作行動失敗: process_work_action 返回 None")
+                print(f"   訊息: {message}")
                 if message:
                     await interaction.followup.send(message, ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 處理失敗", ephemeral=True)
                 
         except discord.errors.NotFound:
+            print(f"⚠️ 交互已過期")
             await interaction.followup.send(
                 "❌ 交互已過期或機器人剛重啟，請重新打卡以獲取新的工作按鈕", 
                 ephemeral=True
             )
         except discord.errors.InteractionResponded:
             # 交互已被回應（可能是重複點擊），靜默處理
+            print(f"⚠️ 交互已被回應（可能是重複點擊）")
             pass
         except Exception as e:
+            print(f"❌ 工作行動發生例外: {e}")
             traceback.print_exc()
             try:
                 await interaction.followup.send("❌ 處理失敗，請稍後再試", ephemeral=True)
