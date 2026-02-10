@@ -25,6 +25,7 @@ build/
 venv/
 env/
 ENV/
+.local/
 
 # IDE 和編輯器
 .vscode/
