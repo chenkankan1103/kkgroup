@@ -329,6 +329,17 @@ class DashboardButtons(discord.ui.View):
         super().__init__(timeout=None)  # 持久化按鈕
         self.bot_type = bot_type
         self.bot = bot
+        
+        # 為按鈕設置唯一的 custom_id
+        # 注意: 由於 custom_id 需要根據 bot_type 動態生成，
+        # 我們無法在 @discord.ui.button 裝飾器中直接設置靜態值。
+        # 因此在 __init__ 中遍歷子項目並設置 custom_id。
+        for item in self.children:
+            if isinstance(item, discord.ui.Button) and hasattr(item, 'callback'):
+                if item.callback.__name__ == 'restart_button':
+                    item.custom_id = f"restart_{bot_type}"
+                elif item.callback.__name__ == 'status_button':
+                    item.custom_id = f"status_{bot_type}"
     
     @discord.ui.button(label="重啟", emoji="🔄", style=discord.ButtonStyle.danger)
     async def restart_button(self, interaction: discord.Interaction, button: discord.ui.Button):
