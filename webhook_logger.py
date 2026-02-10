@@ -1,30 +1,47 @@
-import requests
-import logging
+import os
+import discord
+from discord.ext import commands
+import asyncio
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+async def delete_old_webhook_message(webhook, old_message_id):
+    try:
+        old_message = await webhook.fetch_message(old_message_id)
+        await old_message.delete()
+    except discord.NotFound:
+        print("Old message not found, it might have been deleted already.")
+    except discord.Forbidden:
+        print("Error: Missing permissions to delete the old message.")
+    except Exception as e:
+        print(f"An error occurred while deleting the old message: {e}")
 
-class WebhookLogger:
-    def __init__(self, webhook_url):
-        self.webhook_url = webhook_url
+async def send_new_webhook_message(webhook, content):
+    try:
+        new_message = await webhook.send(content)
+        return new_message.id
+    except Exception as e:
+        print(f"Failed to send new webhook message: {e}")
+        return None
 
-    def send_message(self, message):
-        try:
-            self.delete_old_message()  # Delete old message before sending a new one
-            response = requests.post(self.webhook_url, json={'content': message})
-            response.raise_for_status()  # Raise an error for bad responses
-            logging.info("Message sent successfully.")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to send message: {e}")
-        except Exception as e:
-            logging.error(f"An unexpected error occurred: {e}")
+async def main():
+    # Load old message ID from .env
+    old_message_id = os.getenv("OLD_MESSAGE_ID")
+    webhook_url = os.getenv("WEBHOOK_URL")
+    content = "New webhook message content"
+    
+    webhook = discord.Webhook.from_url(webhook_url, adapter=discord.RequestsWebhookAdapter())
 
-    def delete_old_message(self):
-        # Logic to delete the old message would be implemented here.
-        logging.info("Old message deleted (mock implementation).")
+    if old_message_id:
+        await delete_old_webhook_message(webhook, old_message_id)
+    
+    new_message_id = await send_new_webhook_message(webhook, content)
+    if new_message_id is not None:
+        # Save new message ID in .env or a file
+        save_new_message_id(new_message_id)
+        print(f"New message sent with ID: {new_message_id}")
+    else:
+        print("Failed to send new message.")
 
-# Example usage
+# Other functionalities (load_bots_info, save_bots_info, update_bot_info, create embeds, etc.) go here.
+
 if __name__ == '__main__':
-    webhook_url = 'YOUR_WEBHOOK_URL'
-    logger = WebhookLogger(webhook_url)
-    logger.send_message("This is a test message.")
+    asyncio.run(main()) 
