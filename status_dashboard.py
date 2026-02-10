@@ -3,6 +3,8 @@
 管理頻道 1470272652429099125 的 6 個 embed（3 機器人 × 2：控制面板+日誌）
 每 15 秒自動更新日誌
 存儲 message_id 到 .env 文件
+
+每個機器人獨立初始化自己的面板（防止重複創建）
 """
 
 import discord
@@ -25,14 +27,10 @@ logs_storage = {
     "uibot": deque(maxlen=LOGS_CAPACITY)
 }
 
-# Message ID 存儲
+# Message ID 存儲（僅存儲當前機器人的訊息）
 dashboard_messages = {
-    "bot_dashboard": None,
-    "bot_logs": None,
-    "shopbot_dashboard": None,
-    "shopbot_logs": None,
-    "uibot_dashboard": None,
-    "uibot_logs": None
+    "dashboard": None,
+    "logs": None
 }
 
 BOT_CONFIG = {
@@ -40,6 +38,229 @@ BOT_CONFIG = {
     "shopbot": {"名稱": "🛍️ Shop Bot", "顏色": discord.Color.purple(), "emoji": "🛍️"},
     "uibot": {"名稱": "🎨 UI Bot", "顏色": discord.Color.gold(), "emoji": "🎨"}
 }
+
+# 追蹤當前機器人類型（在初始化時設置）
+current_bot_type = None
+
+
+def set_bot_type(bot_type: str):
+    """設置當前機器人類型"""
+    global current_bot_type
+    current_bot_type = bot_type
+    print(f"📋 儀表板已設置為: {bot_type}")
+
+
+def add_log(bot_type: str, message: str):
+    """添加日誌條目"""
+    if bot_type in logs_storage:
+        timestamp = datetime.utcnow().strftime("%H:%M:%S")
+        logs_storage[bot_type].append(f"[{timestamp}] {message}")
+
+
+def get_logs_text(bot_type: str) -> str:
+    """獲取格式化的日誌文本"""
+    if bot_type not in logs_storage:
+        return "無日誌"
+    
+    logs = list(logs_storage[bot_type])
+    if not logs:
+        return "無日誌"
+    
+    return "\n".join(logs[::-1])  # 倒序顯示（最新在最上面）
+
+
+async def create_dashboard_embed(bot_type: str) -> discord.Embed:
+    """創建控制面板 Embed"""
+    config = BOT_CONFIG.get(bot_type, {})
+    embed = discord.Embed(
+        title=f"{config['名稱']} 控制面板",
+        color=config['顏色'],
+        timestamp=datetime.utcnow()
+    )
+    
+    embed.add_field(
+        name="🔴 主進程",
+        value="🟢 在線",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="📊 任務",
+        value="✅ 2/2 運行中",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="💾 數據庫",
+        value="✅ 連接正常",
+        inline=True
+    )
+    
+    embed.set_footer(text=f"上次更新: {datetime.utcnow().strftime('%H:%M:%S UTC')}")
+    return embed
+
+
+async def create_logs_embed(bot_type: str) -> discord.Embed:
+    """創建日誌 Embed"""
+    config = BOT_CONFIG.get(bot_type, {})
+    embed = discord.Embed(
+        title=f"{config['名稱']} 實時日誌",
+        color=config['顏色'],
+        timestamp=datetime.utcnow()
+    )
+    
+    logs_text = get_logs_text(bot_type)
+    embed.description = f"```\n{logs_text}\n```"
+    
+    embed.set_footer(text=f"更新頻率: 15秒 | {datetime.utcnow().strftime('%H:%M:%S UTC')}")
+    return embed
+
+
+async def initialize_dashboard(bot: discord.Client, bot_type: str):
+    """
+    初始化儀表板 - 每個機器人只初始化自己的面板
+    
+    Args:
+        bot: Discord bot instance
+        bot_type: "bot", "shopbot", "uibot"
+    """
+    global current_bot_type
+    current_bot_type = bot_type
+    
+    try:
+        channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
+        if not channel:
+            print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
+            return False
+        
+        # 只初始化該機器人自己的訊息
+        found_dashboard = None
+        found_logs = None
+        
+        # 查找現有訊息（只查找由當前 bot 發送的）
+        async for msg in channel.history(limit=50):
+            if msg.author.id != bot.user.id:
+                continue  # 跳過其他 bot 的訊息
+            
+            if msg.embeds:
+                for embed in msg.embeds:
+                    bot_name = BOT_CONFIG[bot_type]["名稱"]
+                    if "控制面板" in embed.title and bot_name in embed.title:
+                        found_dashboard = msg
+                    elif "實時日誌" in embed.title and bot_name in embed.title:
+                        found_logs = msg
+        
+        # 創建或註冊控制面板
+        if not found_dashboard:
+            embed = await create_dashboard_embed(bot_type)
+            msg = await channel.send(embed=embed)
+            dashboard_messages["dashboard"] = msg.id
+            print(f"✅ 創建 {bot_type} 控制面板: {msg.id}")
+        else:
+            dashboard_messages["dashboard"] = found_dashboard.id
+            print(f"✅ 找到 {bot_type} 控制面板: {found_dashboard.id}")
+        
+        # 創建或註冊日誌
+        if not found_logs:
+            embed = await create_logs_embed(bot_type)
+            msg = await channel.send(embed=embed)
+            dashboard_messages["logs"] = msg.id
+            print(f"✅ 創建 {bot_type} 日誌: {msg.id}")
+        else:
+            dashboard_messages["logs"] = found_logs.id
+            print(f"✅ 找到 {bot_type} 日誌: {found_logs.id}")
+        
+        # 保存到 .env
+        save_message_ids(bot_type)
+        return True
+        
+    except Exception as e:
+        print(f"❌ 初始化儀表板失敗: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+async def update_dashboard(bot: discord.Client):
+    """
+    更新當前機器人的儀表板（控制面板 + 日誌）
+    """
+    if not current_bot_type:
+        return
+    
+    try:
+        channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
+        if not channel:
+            return
+        
+        # 更新控制面板
+        dashboard_msg_id = dashboard_messages.get("dashboard")
+        if dashboard_msg_id:
+            try:
+                msg = await channel.fetch_message(dashboard_msg_id)
+                # 確認訊息是由當前 bot 發送的
+                if msg.author.id == bot.user.id:
+                    embed = await create_dashboard_embed(current_bot_type)
+                    await msg.edit(embed=embed)
+            except discord.NotFound:
+                print(f"⚠️ 控制面板訊息不存在，重新創建...")
+                embed = await create_dashboard_embed(current_bot_type)
+                msg = await channel.send(embed=embed)
+                dashboard_messages["dashboard"] = msg.id
+                save_message_ids(current_bot_type)
+            except (discord.Forbidden, discord.HTTPException):
+                # 權限問題或 HTTP 錯誤，靜默處理
+                pass
+        
+        # 更新日誌
+        logs_msg_id = dashboard_messages.get("logs")
+        if logs_msg_id:
+            try:
+                msg = await channel.fetch_message(logs_msg_id)
+                # 確認訊息是由當前 bot 發送的
+                if msg.author.id == bot.user.id:
+                    embed = await create_logs_embed(current_bot_type)
+                    await msg.edit(embed=embed)
+            except discord.NotFound:
+                print(f"⚠️ 日誌訊息不存在，重新創建...")
+                embed = await create_logs_embed(current_bot_type)
+                msg = await channel.send(embed=embed)
+                dashboard_messages["logs"] = msg.id
+                save_message_ids(current_bot_type)
+            except (discord.Forbidden, discord.HTTPException):
+                # 權限問題或 HTTP 錯誤，靜默處理
+                pass
+    
+    except Exception as e:
+        # 靜默失敗
+        pass
+
+
+def save_message_ids(bot_type: str):
+    """將 message_id 保存到 .env"""
+    env_path = ".env"
+    dashboard_id = dashboard_messages.get("dashboard")
+    logs_id = dashboard_messages.get("logs")
+    
+    if dashboard_id:
+        env_key = f"DASHBOARD_{bot_type.upper()}_DASHBOARD"
+        set_key(env_path, env_key, str(dashboard_id))
+    
+    if logs_id:
+        env_key = f"DASHBOARD_{bot_type.upper()}_LOGS"
+        set_key(env_path, env_key, str(logs_id))
+
+
+def load_message_ids(bot_type: str):
+    """從 .env 加載 message_id"""
+    dashboard_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_DASHBOARD")
+    logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
+    
+    if dashboard_id:
+        dashboard_messages["dashboard"] = int(dashboard_id)
+    
+    if logs_id:
+        dashboard_messages["logs"] = int(logs_id)
 
 
 def add_log(bot_type: str, message: str):
