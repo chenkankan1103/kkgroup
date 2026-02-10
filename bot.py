@@ -167,18 +167,7 @@ class FileEventHandler(FileSystemEventHandler):
 # ============================================================
 # 日誌更新任務（每 15 秒更新一次）
 # ============================================================
-@tasks.loop(seconds=15)
-async def update_logs_task():
-    """定期更新儀表板日誌"""
-    try:
-        await update_dashboard(client)
-    except Exception as e:
-        print(f"⚠️ 日誌更新失敗: {e}")
-
-@update_logs_task.before_loop
-async def before_update_logs():
-    """等待 Bot 準備完成"""
-    await client.wait_until_ready()
+# 日誌更新任務現在由 status_dashboard.py 的全域任務處理
 
 # ============================================================
 # 狀態更新任務
