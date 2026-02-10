@@ -51,6 +51,12 @@ sync.log
 # 儀表板日誌
 dashboard_logs.json
 
+# 測試檔案
+test_*.py
+temp_*.py
+add_test_*.py
+WEEKLY_PANEL_DEMO.py
+
 # 臨時文件
 *.backup
 *.tmp
