@@ -578,10 +578,10 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 print(f"✓ 已清理舊的 {bot_type_str} embed")
             except asyncio.TimeoutError:
                 print(f"⚠️ 刪除舊訊息超時")
-            except discord.HTTPException:
-                pass  # 可能已被刪除
-            except Exception:
-                pass
+            except discord.HTTPException as e:
+                print(f"⚠️ 刪除舊訊息失敗（可能已被刪除）: {e}")
+            except Exception as e:
+                print(f"⚠️ 刪除舊訊息時發生錯誤: {e}")
         
         # 創建或註冊控制面板
         if not found_dashboard:
@@ -610,11 +610,11 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                     timeout=10.0
                 )
             except asyncio.TimeoutError:
-                print(f"⚠️ 更新控制面板超時（10秒）")
-            except discord.HTTPException:
-                pass  # 可能權限不足
-            except Exception:
-                pass
+                print(f"⚠️ 更新控制面板視圖超時（10秒）")
+            except discord.HTTPException as e:
+                print(f"⚠️ 更新控制面板視圖失敗（可能權限不足）: {e}")
+            except Exception as e:
+                print(f"⚠️ 更新控制面板視圖時發生錯誤: {e}")
             print(f"✅ 找到 {bot_type_str} 控制面板: {found_dashboard.id}")
         
         # 創建或註冊日誌
