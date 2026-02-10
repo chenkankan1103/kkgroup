@@ -35,6 +35,9 @@ async def update_bot_info(bot_type: str, startup_time: str, commands: list, exte
         bots_info[bot_type]["狀態"] = "🟢 在線"
         bots_info[bot_type]["指令"] = commands
         bots_info[bot_type]["擴展"] = extensions
+        log_webhook(f"✅ {bot_type.upper()} 資訊已更新 - 啟動時間: {startup_time}, 指令: {len(commands)}, 擴展: {len(extensions)}")
+    else:
+        log_webhook(f"❌ {bot_type} 不在 bots_info 中 (可用的: {list(bots_info.keys())})")
 
 
 async def create_overview_embed() -> dict:
