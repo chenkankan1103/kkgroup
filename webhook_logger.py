@@ -101,15 +101,30 @@ async def send_or_update_startup_info(bot_type: str = None):
     try:
         log_webhook("🔄 準備發送啟動資訊...")
         
-        # 等待機器人啟動（最多等5秒）- 每1秒檢查一次
+        # 等待機器人啟動（最少等20秒，最多等40秒，或所有機器人都啟動）
         import asyncio
         start_time = asyncio.get_event_loop().time()
-        while asyncio.get_event_loop().time() - start_time < 5:
-            # 檢查是否所有機器人都有啟動時間
+        min_wait = 20  # 最小等待秒數
+        max_wait = 40  # 最大等待秒數
+        
+        while True:
+            elapsed = asyncio.get_event_loop().time() - start_time
             all_started = all(bots_info[bot]["啟動時間"] for bot in ["bot", "shopbot", "uibot"])
-            if all_started:
-                log_webhook("✅ 所有機器人已啟動，準備發送訊息")
+            
+            # 條件 1: 所有機器人都啟動且滿足最小等待時間
+            if all_started and elapsed >= min_wait:
+                log_webhook(f"✅ 所有機器人已啟動 ({int(elapsed)} 秒)，準備發送訊息")
                 break
+            
+            # 條件 2: 超過最大等待時間
+            if elapsed >= max_wait:
+                if all_started:
+                    log_webhook(f"✅ 所有機器人已啟動，準備發送訊息")
+                else:
+                    missing_bots = [bot for bot in ["bot", "shopbot", "uibot"] if not bots_info[bot]["啟動時間"]]
+                    log_webhook(f"🔴 異常：機器人未在 {max_wait} 秒內啟動 {missing_bots}，強制發送訊息")
+                break
+            
             await asyncio.sleep(0.5)
         
         embeds = [
