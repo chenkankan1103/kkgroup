@@ -34,6 +34,9 @@ dashboard_messages = {
     "logs": None
 }
 
+# 機器人實例存儲
+bot_instances = {}
+
 BOT_CONFIG = {
     "bot": {"名稱": "🤖 Main Bot", "顏色": discord.Color.blue(), "emoji": "🤖"},
     "shopbot": {"名稱": "🛍️ Shop Bot", "顏色": discord.Color.purple(), "emoji": "🛍️"},
@@ -42,6 +45,17 @@ BOT_CONFIG = {
 
 # 追蹤當前機器人類型（在初始化時設置）
 current_bot_type = None
+
+
+def register_bot_instance(bot_type: str, bot_instance):
+    """註冊機器人實例"""
+    bot_instances[bot_type] = bot_instance
+    print(f"[DEBUG] {bot_type} 機器人實例已註冊")
+
+
+def get_bot_instance(bot_type: str):
+    """獲取機器人實例"""
+    return bot_instances.get(bot_type)
 
 
 class DashboardButtons(discord.ui.View):
@@ -124,6 +138,7 @@ def add_log(bot_type: str, message: str):
     if bot_type in logs_storage:
         timestamp = datetime.utcnow().strftime("%H:%M:%S")
         logs_storage[bot_type].append(f"[{timestamp}] {message}")
+        print(f"[LOG] {bot_type}: {message}")  # 調試輸出
 
 
 def get_logs_text(bot_type: str) -> str:

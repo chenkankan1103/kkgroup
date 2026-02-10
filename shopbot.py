@@ -314,6 +314,10 @@ async def on_ready():
             
             # 確保儀表板消息按正確順序存在（bot → shopbot → uibot）
             await ensure_dashboard_messages(client, "shopbot")
+            
+            # 註冊機器人實例供日誌更新使用
+            from status_dashboard import register_bot_instance
+            register_bot_instance("shopbot", client)
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
         
