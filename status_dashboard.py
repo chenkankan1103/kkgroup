@@ -332,6 +332,53 @@ async def update_dashboard(bot: discord.Client):
         pass
 
 
+async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
+    """
+    確保儀表板消息按正確順序存在（bot → shopbot → uibot）
+    若消息被刪除，自動重新創建
+    """
+    try:
+        channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
+        if not channel:
+            print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
+            return
+        
+        # 檢查該 bot 的消息是否存在
+        dashboard_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_DASHBOARD")
+        logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
+        
+        # 檢查控制面板消息
+        if dashboard_id:
+            try:
+                msg = await channel.fetch_message(int(dashboard_id))
+                # 消息存在，更新它
+                if msg.author.id == bot.user.id:
+                    embed = await create_dashboard_embed(bot_type)
+                    await msg.edit(embed=embed)
+                    return
+            except discord.NotFound:
+                pass  # 消息被刪除，需要重新創建
+        
+        # 消息不存在或已刪除，創建新的
+        # 確保順序：bot → shopbot → uibot
+        bot_order = ["bot", "shopbot", "uibot"]
+        
+        # 發送控制面板
+        embed = await create_dashboard_embed(bot_type)
+        msg = await channel.send(embed=embed)
+        set_key(".env", f"DASHBOARD_{bot_type.upper()}_DASHBOARD", str(msg.id))
+        print(f"✅ 重建 {bot_type} 控制面板 (ID: {msg.id})")
+        
+        # 發送日誌
+        embed = await create_logs_embed(bot_type)
+        msg = await channel.send(embed=embed)
+        set_key(".env", f"DASHBOARD_{bot_type.upper()}_LOGS", str(msg.id))
+        print(f"✅ 重建 {bot_type} 日誌 (ID: {msg.id})")
+        
+    except Exception as e:
+        print(f"⚠️ 確保仪表板消息失败: {e}")
+
+
 def save_message_ids(bot_type: str):
     """將 message_id 保存到 .env"""
     env_path = ".env"
