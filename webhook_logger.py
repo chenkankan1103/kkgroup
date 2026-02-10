@@ -138,6 +138,8 @@ async def send_or_update_startup_info(bot: discord.Client):
                 return
             except discord.NotFound:
                 webhook_message_id = None
+                # 存儲更新到環境變數
+                set_key(".env", "WEBHOOK_MESSAGE_ID", "")
                 print("⚠️ 原訊息已刪除，發送新訊息")
         
         # 發送新訊息
