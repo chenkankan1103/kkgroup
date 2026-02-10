@@ -13,7 +13,7 @@ import sys
 import json
 import sqlite3
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import deque
 from typing import Optional, Dict
 from dotenv import load_dotenv, set_key
@@ -21,6 +21,11 @@ from discord.ext import tasks
 import pathlib
 
 load_dotenv()
+
+# 台灣時間輔助函數 (UTC+8)
+def get_taiwan_time():
+    """返回台灣時間 (UTC+8)"""
+    return datetime.utcnow() + timedelta(hours=8)
 
 # 硬編碼的訊息 ID 作為回退值
 HARDCODED_MESSAGE_IDS = {
@@ -60,7 +65,7 @@ def check_environment() -> Dict[str, any]:
         dict: 包含環境診斷信息的字典
     """
     diagnostics = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": get_taiwan_time().isoformat(),
         "working_directory": os.getcwd(),
         "script_path": os.path.abspath(__file__),
         "script_directory": os.path.dirname(os.path.abspath(__file__)),
@@ -294,9 +299,9 @@ async def update_dashboard_logs(bot, bot_type: str):
             title=f"{bot_type.upper()} 實時日誌",
             description=logs_text,
             color=BOT_CONFIG[bot_type]["顏色"],
-            timestamp=datetime.utcnow()
+            timestamp=get_taiwan_time()
         )
-        embed.set_footer(text=f"更新頻率: 15秒 | {datetime.utcnow().strftime('%H:%M:%S UTC')}")
+        embed.set_footer(text=f"更新頻率: 15秒 | {get_taiwan_time().strftime('%H:%M:%S 台灣時間')}")
 
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
@@ -383,7 +388,7 @@ class DashboardButtons(discord.ui.View):
 🟢 **在線**
 用戶: {self.bot.user.mention}
 ID: {self.bot.user.id}
-時間: <t:{int(datetime.utcnow().timestamp())}:R>
+時間: <t:{int(get_taiwan_time().timestamp())}:R>
                 """
             else:
                 detail = "🔴 離線"
@@ -392,7 +397,7 @@ ID: {self.bot.user.id}
                 title=f"🔍 {BOT_CONFIG[self.bot_type]['名稱']} 狀態",
                 description=detail,
                 color=discord.Color.green(),
-                timestamp=datetime.utcnow()
+                timestamp=get_taiwan_time()
             )
             
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -411,7 +416,7 @@ def set_bot_type(bot_type: str):
 def add_log(bot_type: str, message: str):
     """添加日誌條目"""
     if bot_type in logs_storage:
-        timestamp = datetime.utcnow().strftime("%H:%M:%S")
+        timestamp = get_taiwan_time().strftime("%H:%M:%S")
         log_entry = f"[{timestamp}] {message}"
         logs_storage[bot_type].append(log_entry)
         print(f"[LOG] {bot_type}: {message}")  # 調試輸出
@@ -438,7 +443,7 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
     embed = discord.Embed(
         title=f"{config['名稱']} 控制面板",
         color=config['顏色'],
-        timestamp=datetime.utcnow()
+        timestamp=get_taiwan_time()
     )
     
     embed.add_field(
@@ -459,7 +464,7 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
         inline=True
     )
     
-    embed.set_footer(text=f"上次更新: {datetime.utcnow().strftime('%H:%M:%S UTC')}")
+    embed.set_footer(text=f"上次更新: {get_taiwan_time().strftime('%H:%M:%S 台灣時間')}")
     return embed
 
 
@@ -469,13 +474,13 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     embed = discord.Embed(
         title=f"{config['名稱']} 實時日誌",
         color=config['顏色'],
-        timestamp=datetime.utcnow()
+        timestamp=get_taiwan_time()
     )
     
     logs_text = get_logs_text(bot_type)
     embed.description = f"```\n{logs_text}\n```"
     
-    embed.set_footer(text=f"更新頻率: 15秒 | {datetime.utcnow().strftime('%H:%M:%S UTC')}")
+    embed.set_footer(text=f"更新頻率: 15秒 | {get_taiwan_time().strftime('%H:%M:%S 台灣時間')}")
     return embed
 
 
@@ -741,7 +746,7 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
     embed = discord.Embed(
         title=f"{config['名稱']} 控制面板",
         color=config['顏色'],
-        timestamp=datetime.utcnow()
+        timestamp=get_taiwan_time()
     )
     
     embed.add_field(
@@ -762,7 +767,7 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
         inline=True
     )
     
-    embed.set_footer(text=f"上次更新: {datetime.utcnow().strftime('%H:%M:%S UTC')}")
+    embed.set_footer(text=f"上次更新: {get_taiwan_time().strftime('%H:%M:%S 台灣時間')}")
     return embed
 
 
@@ -772,13 +777,13 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     embed = discord.Embed(
         title=f"{config['名稱']} 實時日誌",
         color=config['顏色'],
-        timestamp=datetime.utcnow()
+        timestamp=get_taiwan_time()
     )
     
     logs_text = get_logs_text(bot_type)
     embed.description = f"```\n{logs_text}\n```"
     
-    embed.set_footer(text=f"更新頻率: 15秒 | {datetime.utcnow().strftime('%H:%M:%S UTC')}")
+    embed.set_footer(text=f"更新頻率: 15秒 | {get_taiwan_time().strftime('%H:%M:%S 台灣時間')}")
     return embed
 
 
