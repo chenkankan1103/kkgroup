@@ -62,6 +62,7 @@ async def update_bot_info(bot_type: str, startup_time: str, commands: list, exte
     bots_info = load_bots_info()
 
     if bot_type in bots_info:
+        old_time = bots_info[bot_type]["啟動時間"]
         bots_info[bot_type]["啟動時間"] = startup_time
         bots_info[bot_type]["狀態"] = "🟢 在線"
         bots_info[bot_type]["指令"] = commands
@@ -70,8 +71,8 @@ async def update_bot_info(bot_type: str, startup_time: str, commands: list, exte
         # 保存到文件
         save_bots_info(bots_info)
 
-        log_webhook(f"✅ {bot_type.upper()} 資訊已更新 - 啟動時間: {startup_time}, 指令: {len(commands)}, 擴展: {len(extensions)}")
-        print(f"[DEBUG] {bot_type} bots_info 更新成功")
+        log_webhook(f"✅ {bot_type.upper()} 資訊已更新 - 舊時間: {old_time}, 新時間: {startup_time}, 指令: {len(commands)}, 擴展: {len(extensions)}")
+        print(f"[DEBUG] {bot_type} bots_info 更新成功 - 時間: {startup_time}")
     else:
         log_webhook(f"❌ {bot_type} 不在 bots_info 中 (可用的: {list(bots_info.keys())})")
         print(f"[DEBUG] {bot_type} 更新失敗 - 鍵不存在")
