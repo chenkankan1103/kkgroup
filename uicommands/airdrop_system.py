@@ -258,21 +258,38 @@ class AirdropSystem(commands.Cog):
             
             # 收集可投放的頻道
             eligible_channels = []
+            checked_count = 0
+            
             for guild in self.bot.guilds:
                 member_role = guild.get_role(MEMBER_ROLE_ID)
                 if not member_role:
+                    print(f"⚠️ 伺服器 {guild.name} 中找不到角色 (MEMBER_ROLE_ID={MEMBER_ROLE_ID})")
                     continue
                 
                 for channel in guild.text_channels:
+                    checked_count += 1
                     try:
                         perms = channel.permissions_for(member_role)
-                        if perms.read_messages and not channel.is_forum():
+                        # 檢查讀取和發送權限，排除論壇頻道
+                        if perms.read_messages and perms.send_messages and not channel.is_forum():
                             eligible_channels.append(channel)
-                    except:
-                        pass
+                            print(f"✅ 【可投放】{guild.name} #{channel.name}")
+                        else:
+                            reason = []
+                            if not perms.read_messages:
+                                reason.append("無讀")
+                            if not perms.send_messages:
+                                reason.append("無寫")
+                            if channel.is_forum():
+                                reason.append("論壇")
+                            print(f"🔒 【跳過】{guild.name} #{channel.name} - {', '.join(reason)}")
+                    except Exception as e:
+                        print(f"❌ 【錯誤】{guild.name} #{channel.name} - {e}")
+            
+            print(f"📊 掃描結果：檢查 {checked_count} 個頻道，找到 {len(eligible_channels)} 個可投放頻道")
             
             if not eligible_channels:
-                print("❌ 沒有可投放的頻道")
+                print("❌ 沒有可投放的頻道，將重試...")
                 delay = random.randint(60, 120)
                 self.next_airdrop_time = datetime.utcnow() + timedelta(minutes=delay)
                 return
@@ -281,15 +298,26 @@ class AirdropSystem(commands.Cog):
             channel = random.choice(eligible_channels)
             embed, view = await self.create_airdrop_embed()
             
-            message = await channel.send(embed=embed, view=view)
-            print(f"✅ 空投已投放到 #{channel.name}")
+            try:
+                message = await channel.send(embed=embed, view=view)
+                print(f"✅ 空投已投放到 #{channel.name} (消息ID: {message.id})")
+            except Exception as e:
+                print(f"❌ 投放空投失敗於 #{channel.name}: {e}")
+                delay = random.randint(60, 120)
+                self.next_airdrop_time = datetime.utcnow() + timedelta(minutes=delay)
+                return
             
             # 10 分鐘後自動刪除（如果沒被打開）
             await asyncio.sleep(600)
             try:
                 await message.delete()
-            except:
-                pass
+                print(f"🧹 自動刪除空投消息 (已超時)")
+            except discord.NotFound:
+                print(f"ℹ️ 空投消息已被手動刪除")
+            except discord.Forbidden:
+                print(f"⚠️ 無權限刪除空投消息")
+            except Exception as e:
+                print(f"⚠️ 刪除空投消息失敗: {e}")
             
             # 計劃下一次空投
             delay = random.randint(60, 120)
@@ -306,6 +334,9 @@ class AirdropSystem(commands.Cog):
         """等待 bot 準備"""
         await self.bot.wait_until_ready()
         print("✅ 空投系統已啟動")
+        print(f"📊 空投系統配置：每 60-120 分鐘投放一次")
+        print(f"🔍 搜尋成員角色 ID: {MEMBER_ROLE_ID}")
+        print(f"🤖 機器人加入的伺服器數: {len(self.bot.guilds)}")
 
 
 class AirdropView(discord.ui.View):
@@ -322,8 +353,11 @@ class AirdropView(discord.ui.View):
         """打開按鈕"""
         await interaction.response.defer()
         
+        print(f"📦 用戶 {interaction.user.name} 準備打開空投箱")
+        
         if self.opened:
             await interaction.followup.send("❌ 這個空投箱已經被開啟了", ephemeral=True)
+            print(f"⚠️ 空投箱已被 {self.opened_by} 打開，拒絕 {interaction.user.name}")
             return
         
         self.opened = True
@@ -331,12 +365,15 @@ class AirdropView(discord.ui.View):
         
         # 生成獎品
         reward_type, value = self.cog.generate_reward()
+        print(f"🎁 生成獎品: {reward_type} x{value}")
         
         # 生成 AI 敘述
         description = await self.cog.generate_ai_text("description", reward_type, value)
+        print(f"✅ AI 敘述已生成: {description[:50]}...")
         
         # 應用獎品
         reward_result = await self.cog.apply_reward(interaction.user.id, reward_type, value)
+        print(f"💰 獎品已應用: {reward_result}")
         
         # 創建結果 embed
         result_embed = discord.Embed(
@@ -350,11 +387,13 @@ class AirdropView(discord.ui.View):
         # 編輯原消息
         try:
             await interaction.message.edit(embed=result_embed, view=None)
+            print(f"✅ 空投結果已發送給 {interaction.user.name}")
             
             # 1 分鐘後刪除
             await asyncio.sleep(60)
             try:
                 await interaction.message.delete()
+                print(f"🧹 空投結果已删除")
             except:
                 pass
         except Exception as e:
