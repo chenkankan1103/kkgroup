@@ -3,31 +3,24 @@
 """
 import os
 import aiohttp
-import logging
 from datetime import datetime
 from dotenv import load_dotenv, set_key
 
 load_dotenv()
 
-# 設定logging - 使用絕對路徑
-import os.path
-log_dir = os.path.dirname(os.path.abspath(__file__))
-log_file = os.path.join(log_dir, 'webhook_logger.log')
+# 簡單的文件日誌寫入函數
+log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'webhook_logger.log')
+def log_webhook(msg: str):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, 'a', encoding='utf-8') as f:
+        f.write(f"[{timestamp}] {msg}\n")
+    print(f"[WEBHOOK] {msg}")
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger('WEBHOOK')
-logger.info(f"Webhook logger initialized, log file: {log_file}")
+log_webhook("🔄 Webhook logger started")
 
 WEBHOOK_URL = os.getenv("STARTUP_WEBHOOK_URL", "")
 webhook_message_id = None
-logger.info(f"WEBHOOK_URL: {WEBHOOK_URL[:50] if WEBHOOK_URL else 'Not Set'}...")
+log_webhook(f"WEBHOOK_URL: {WEBHOOK_URL[:50] if WEBHOOK_URL else 'Not Set'}...")
 
 bots_info = {
     "bot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []},
@@ -93,11 +86,11 @@ async def send_or_update_startup_info():
     global webhook_message_id
     
     if not WEBHOOK_URL:
-        logger.warning("WEBHOOK_URL 未設定")
+        log_webhook("❌ WEBHOOK_URL 未設定")
         return
     
     try:
-        logger.info("準備發送啟動資訊...")
+        log_webhook("🔄 準備發送啟動資訊...")
         
         embeds = [
             await create_overview_embed(),
@@ -111,40 +104,40 @@ async def send_or_update_startup_info():
         # 嘗試編輯
         if webhook_message_id:
             try:
-                logger.info(f"嘗試編輯訊息 ID={webhook_message_id}")
+                log_webhook(f"📝 嘗試編輯訊息 ID={webhook_message_id}")
                 url = f"{WEBHOOK_URL}/messages/{webhook_message_id}"
                 async with aiohttp.ClientSession() as session:
                     async with session.patch(url, json=payload) as resp:
-                        logger.info(f"PATCH 響應碼: {resp.status}")
+                        log_webhook(f"📝 PATCH 響應碼: {resp.status}")
                         if resp.status in [200, 204]:
-                            logger.info(f"✅ 啟動資訊已更新 (HTTP {resp.status})")
+                            log_webhook(f"✅ 啟動資訊已更新 (HTTP {resp.status})")
                             return
             except Exception as patch_err:
-                logger.warning(f"編輯訊息失敗: {patch_err}")
+                log_webhook(f"⚠️ 編輯訊息失敗: {patch_err}")
         
         # 發送新訊息
-        logger.info("發送新的啟動訊息...")
+        log_webhook("📨 發送新的啟動訊息...")
         async with aiohttp.ClientSession() as session:
             async with session.post(WEBHOOK_URL, json=payload) as resp:
-                logger.info(f"POST 響應碼: {resp.status}")
+                log_webhook(f"📨 POST 響應碼: {resp.status}")
                 if resp.status in [200, 204]:
                     if resp.status == 200:
                         data = await resp.json()
                         webhook_message_id = data.get("id")
                         if webhook_message_id:
                             set_key(".env", "WEBHOOK_MESSAGE_ID", str(webhook_message_id))
-                            logger.info(f"✅ 啟動資訊已發送，訊息 ID={webhook_message_id}")
+                            log_webhook(f"✅ 啟動資訊已發送，訊息 ID={webhook_message_id}")
                         else:
-                            logger.warning("無法獲取訊息 ID")
+                            log_webhook("⚠️ 無法獲取訊息 ID")
                     else:
-                        logger.info(f"✅ 啟動資訊已發送 (HTTP {resp.status})")
+                        log_webhook(f"✅ 啟動資訊已發送 (HTTP {resp.status})")
                 else:
                     resp_text = await resp.text()
-                    logger.error(f"Webhook 失敗 (HTTP {resp.status}): {resp_text[:200]}")
+                    log_webhook(f"❌ Webhook 失敗 (HTTP {resp.status}): {resp_text[:200]}")
     except Exception as e:
         import traceback
-        logger.error(f"訊息失敗: {e}")
-        logger.error(traceback.format_exc())
+        log_webhook(f"❌ 訊息失敗: {e}")
+        log_webhook(traceback.format_exc())
 
 
 _stored_msg_id = os.getenv("WEBHOOK_MESSAGE_ID")
