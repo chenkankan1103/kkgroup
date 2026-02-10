@@ -8,6 +8,8 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from logger import print
 from bot_status import build_discord_activity
+from webhook_logger import send_startup_info
+from status_dashboard import initialize_dashboard, update_dashboard, add_log
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -162,6 +164,22 @@ class FileEventHandler(FileSystemEventHandler):
             )
 
 # ============================================================
+# 日誌更新任務（每 15 秒更新一次）
+# ============================================================
+@tasks.loop(seconds=15)
+async def update_logs_task():
+    """定期更新儀表板日誌"""
+    try:
+        await update_dashboard(client, "shopbot")
+    except Exception as e:
+        print(f"⚠️ 日誌更新失敗: {e}")
+
+@update_logs_task.before_loop
+async def before_update_logs():
+    """等待 Bot 準備完成"""
+    await client.wait_until_ready()
+
+# ============================================================
 # 狀態更新任務
 # ============================================================
 @tasks.loop(minutes=5)
@@ -252,6 +270,28 @@ async def on_ready():
         # 設定初始狀態
         activity = build_discord_activity(BOT_TYPE)
         await client.change_presence(activity=activity)
+        
+        # ============================================================
+        # 初始化監控儀表板及日誌系統
+        # ============================================================
+        try:
+            dashboard_ready = await initialize_dashboard(client)
+            if dashboard_ready:
+                add_log("shopbot", "✅ 儀表板已初始化")
+                if not update_logs_task.is_running():
+                    update_logs_task.start()
+                print(f"✅ 日誌系統已啟動")
+        except Exception as e:
+            print(f"⚠️ 儀表板初始化失敗: {e}")
+        
+        # ============================================================
+        # 發送啟動資訊到 Webhook
+        # ============================================================
+        try:
+            await send_startup_info("shopbot", client)
+            add_log("shopbot", "✅ 啟動資訊已發送到 Webhook")
+        except Exception as e:
+            print(f"⚠️ Webhook 發送失敗: {e}")
         
         # 啟動狀態更新任務
         if not update_status.is_running():
