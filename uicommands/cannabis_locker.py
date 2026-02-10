@@ -9,7 +9,7 @@ import json
 import aiosqlite
 from collections import deque
 from shop_commands.merchant.cannabis_farming import (
-    get_user_plants, plant_cannabis, apply_fertilizer, harvest_plant, get_inventory, remove_inventory
+    get_user_plants, plant_cannabis, apply_fertilizer, harvest_plant, get_inventory, remove_inventory, add_inventory
 )
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 from shop_commands.merchant.database import update_user_kkcoin, get_user_kkcoin
@@ -318,7 +318,7 @@ class PersonalLockerCog(commands.Cog):
                 )
             
             # 添加按鈕
-            view = PersonalLockerView(self.bot, self, user_id, plants)
+            view = PersonalLockerView(self.bot, self, user_id, ctx.guild.id if ctx.guild else 0, ctx.channel.id, plants)
             await ctx.send(embed=embed, view=view)
             
         except Exception as e:
@@ -359,11 +359,13 @@ class PersonalLockerCog(commands.Cog):
 class PersonalLockerView(discord.ui.View):
     """個人置物櫃交互菜單"""
     
-    def __init__(self, bot, cog, user_id, plants):
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, plants):
         super().__init__(timeout=300)
         self.bot = bot
         self.cog = cog
         self.user_id = user_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
         self.plants = plants
     
     @discord.ui.button(label="施肥", style=discord.ButtonStyle.success, emoji="💧")
@@ -437,6 +439,45 @@ class PersonalLockerView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+    
+    @discord.ui.button(label="種植種子", style=discord.ButtonStyle.success, emoji="🌱")
+    async def plant_seed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """選擇種子進行種植"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # 獲取用戶種子庫存
+            inventory = await get_inventory(self.user_id)
+            seeds = inventory.get("種子", {})
+            
+            # 檢查是否有種子
+            if not seeds or not any(qty > 0 for qty in seeds.values()):
+                await interaction.followup.send("❌ 你沒有種子！請先到商店購買種子。", ephemeral=True)
+                return
+            
+            # 顯示種子選擇界面
+            embed = discord.Embed(
+                title="🌱 選擇要種植的種子",
+                description="選擇一種種子進行種植",
+                color=discord.Color.green()
+            )
+            
+            for seed_name, qty in seeds.items():
+                if qty > 0:
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    embed.add_field(
+                        name=f"{config['emoji']} {seed_name}",
+                        value=f"擁有：{qty} 粒\n成長時間：{config['growth_time']//3600}h\n最大產量：{config['max_yield']}",
+                        inline=True
+                    )
+            
+            view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+
 
 
 class SelectPlantForFertilizerView(discord.ui.View):
@@ -760,10 +801,13 @@ class WeeklySummaryCannabisPanelView(discord.ui.View):
 class CropOperationView(discord.ui.View):
     """作物操作視圖 - 整合種植、施肥、收割按鈕"""
     
-    def __init__(self, bot, user_id, seeds, plants, growing, harvested):
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, seeds, plants, growing, harvested):
         super().__init__(timeout=60)
         self.bot = bot
+        self.cog = cog
         self.user_id = user_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
         self.seeds = seeds
         self.plants = plants
         self.growing = growing
@@ -822,7 +866,7 @@ class CropOperationView(discord.ui.View):
                         inline=False
                     )
             
-            view = SelectSeedView(self.bot, self.user_id, self.seeds)
+            view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.seeds)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
@@ -897,10 +941,13 @@ class CropOperationView(discord.ui.View):
 class SelectSeedView(discord.ui.View):
     """選擇要種植的種子"""
     
-    def __init__(self, bot, user_id, seeds):
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, seeds):
         super().__init__(timeout=60)
         self.bot = bot
+        self.cog = cog
         self.user_id = user_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
         
         for idx, (seed_name, qty) in enumerate(seeds.items(), 1):
             if qty > 0:
@@ -919,10 +966,16 @@ class SelectSeedView(discord.ui.View):
             try:
                 await interaction.response.defer(ephemeral=True)
                 
-                # 種植
-                result = await plant_cannabis(self.user_id, seed_name)
+                # 檢查是否有種子
+                has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
+                if not has_seed:
+                    await interaction.followup.send("❌ 你沒有這種種子！", ephemeral=True)
+                    return
                 
-                if result:
+                # 種植
+                result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
+                
+                if result and not result.get("success") == False:
                     config = CANNABIS_SHOP["種子"][seed_name]
                     embed = discord.Embed(
                         title="🌱 種植成功",
@@ -930,10 +983,10 @@ class SelectSeedView(discord.ui.View):
                         color=discord.Color.green()
                     )
                     embed.add_field(name="成長時間", value=f"{config['growth_time']//3600} 小時", inline=False)
-                    embed.add_field(name="種子品質", value=f"產量：{config['yield_amount']}個", inline=False)
+                    embed.add_field(name="最大產量", value=f"{config['max_yield']} 個", inline=False)
                     
                     # 記錄事件
-                    if hasattr(self, 'cog'):
+                    if self.cog:
                         user = await self.bot.fetch_user(self.user_id)
                         await self.cog.record_event(
                             'plant',
@@ -943,10 +996,18 @@ class SelectSeedView(discord.ui.View):
                     
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 種植失敗（可能沒有種子或其他原因）", ephemeral=True)
+                    # 種植失敗，退還種子
+                    await add_inventory(self.user_id, "種子", seed_name, 1)
+                    reason = result.get("reason", "未知原因") if result else "未知原因"
+                    await interaction.followup.send(f"❌ 種植失敗：{reason}", ephemeral=True)
                 
             except Exception as e:
                 traceback.print_exc()
+                # 如果發生錯誤，嘗試退還種子
+                try:
+                    await add_inventory(self.user_id, "種子", seed_name, 1)
+                except Exception as refund_error:
+                    print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
                 await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
         
         return callback
