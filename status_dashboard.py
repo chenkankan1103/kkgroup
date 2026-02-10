@@ -14,6 +14,7 @@ import json
 import sqlite3
 import subprocess
 import asyncio
+import traceback
 from datetime import datetime, timedelta
 from collections import deque
 from typing import Optional, Dict
@@ -22,6 +23,9 @@ from discord.ext import tasks
 import pathlib
 
 load_dotenv()
+
+# 配置常數
+MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 
 # 台灣時間輔助函數 (UTC+8)
 def get_taiwan_time():
@@ -182,7 +186,6 @@ def load_logs():
         print(f"  嘗試使用不同的編碼讀取文件")
     except Exception as e:
         print(f"[LOGS ERROR] 未預期的錯誤加載日誌: {e}")
-        import traceback
         traceback.print_exc()
 
 
@@ -222,7 +225,6 @@ def save_logs():
         print(f"  詳情: {e}")
     except Exception as e:
         print(f"[LOGS ERROR] 未預期的錯誤保存日誌: {e}")
-        import traceback
         traceback.print_exc()
 
 # 初始化時執行環境檢查並加載日誌
@@ -265,11 +267,9 @@ async def global_update_logs_task():
             except Exception as e:
                 # 捕獲單個機器人的錯誤，不影響其他機器人
                 print(f"[GLOBAL LOG TASK ERROR] {bot_type} 更新失敗: {e}")
-                import traceback
                 traceback.print_exc()
     except Exception as e:
         print(f"[GLOBAL LOG TASK ERROR] 任務執行失敗: {e}")
-        import traceback
         traceback.print_exc()
 
 
@@ -278,9 +278,8 @@ async def before_global_update_logs_task():
     """等待至少一個機器人實例就緒"""
     print("[GLOBAL LOG TASK] 等待機器人就緒...")
     # 等待至少一個機器人實例被註冊且就緒
-    max_retries = 60  # 最多等待 60 秒
     retry_count = 0
-    while retry_count < max_retries:
+    while retry_count < MAX_STARTUP_WAIT_SECONDS:
         for bot_type in ["bot", "shopbot", "uibot"]:
             bot_instance = get_bot_instance(bot_type)
             if bot_instance and hasattr(bot_instance, 'wait_until_ready'):
@@ -362,7 +361,6 @@ async def update_dashboard_logs(bot, bot_type: str):
                     print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
                 except Exception as e:
                     print(f"[UPDATE LOGS ERROR] {bot_type} 日誌更新錯誤: {e}")
-                    import traceback
                     traceback.print_exc()
             else:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 找不到頻道 {DASHBOARD_CHANNEL_ID}")
@@ -371,7 +369,6 @@ async def update_dashboard_logs(bot, bot_type: str):
 
     except Exception as e:
         print(f"[UPDATE LOGS ERROR] {bot_type} 更新日誌時發生未預期錯誤: {e}")
-        import traceback
         traceback.print_exc()
 
 
@@ -630,7 +627,6 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         
     except Exception as e:
         print(f"❌ 初始化儀表板失敗: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -669,7 +665,6 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
             await create_or_update_dashboard(bot, bot_type)
         except Exception as e:
             print(f"[DASHBOARD ERROR] {bot_type} 控制面板創建/更新失敗: {e}")
-            import traceback
             traceback.print_exc()
 
         # 創建或更新日誌訊息
@@ -677,7 +672,6 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
             await create_or_update_logs(bot, bot_type)
         except Exception as e:
             print(f"[DASHBOARD ERROR] {bot_type} 日誌訊息創建/更新失敗: {e}")
-            import traceback
             traceback.print_exc()
 
         # 啟動全域日誌更新任務（只在第一次調用時啟動）
@@ -696,12 +690,10 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
                 else:
                     print(f"[DASHBOARD] ❌ 啟動任務失敗: {e}")
                     add_log("system", f"❌ 任務啟動失敗: {e}")
-                    import traceback
                     traceback.print_exc()
             except Exception as e:
                 print(f"[DASHBOARD] ❌ 啟動任務時發生未預期錯誤: {e}")
                 add_log("system", f"❌ 任務啟動異常: {e}")
-                import traceback
                 traceback.print_exc()
         else:
             print(f"[DASHBOARD] ✅ 全域日誌更新任務已在運行 (is_running={global_update_logs_task.is_running()})")
@@ -710,7 +702,6 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
 
     except Exception as e:
         print(f"[DASHBOARD ERROR] {bot_type} 設置失敗: {e}")
-        import traceback
         traceback.print_exc()
 
 
