@@ -445,7 +445,7 @@ async def update_dashboard(bot: discord.Client, bot_type: str = None):
                 embed = await create_dashboard_embed(bot_type)
                 msg = await channel.send(embed=embed)
                 dashboard_messages[f"{bot_type}_dashboard"] = msg.id
-                save_message_ids()
+                save_message_ids(bot_type)
             except discord.Forbidden:
                 # 沒有權限編輯（訊息來自其他 bot）
                 pass
@@ -467,7 +467,7 @@ async def update_dashboard(bot: discord.Client, bot_type: str = None):
                 embed = await create_logs_embed(bot_type)
                 msg = await channel.send(embed=embed)
                 dashboard_messages[f"{bot_type}_logs"] = msg.id
-                save_message_ids()
+                save_message_ids(bot_type)
             except discord.Forbidden:
                 # 沒有權限編輯（訊息來自其他 bot）
                 pass
@@ -477,16 +477,6 @@ async def update_dashboard(bot: discord.Client, bot_type: str = None):
     
     except Exception as e:
         print(f"❌ 更新儀表板失敗: {e}")
-
-
-def save_message_ids():
-    """將 message_id 保存到 .env"""
-    env_path = ".env"
-    for key, msg_id in dashboard_messages.items():
-        if msg_id:
-            env_key = f"DASHBOARD_{key.upper()}"
-            set_key(env_path, env_key, str(msg_id))
-    print("✅ Message ID 已保存到 .env")
 
 
 def load_message_ids(bot_type: str):
