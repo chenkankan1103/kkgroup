@@ -119,40 +119,65 @@ async def initialize_dashboard(bot: discord.Client):
             print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
             return False
         
-        # 查找或創建訊息
+        # 根據當前 bot 判斷哪個機器人
+        current_bot_type = None
         for bot_type in ["bot", "shopbot", "uibot"]:
-            # 查找現有訊息
-            found_dashboard = None
-            found_logs = None
-            
-            async for msg in channel.history(limit=100):
-                if msg.embeds:
-                    for embed in msg.embeds:
-                        bot_name = BOT_CONFIG[bot_type]["名稱"]
-                        if "控制面板" in embed.title and bot_name in embed.title:
-                            found_dashboard = msg
-                        elif "實時日誌" in embed.title and bot_name in embed.title:
-                            found_logs = msg
-            
-            # 創建控制面板embed
-            if not found_dashboard:
-                embed = await create_dashboard_embed(bot_type)
-                msg = await channel.send(embed=embed)
-                dashboard_messages[f"{bot_type}_dashboard"] = msg.id
-                print(f"✅ 創建 {bot_type} 控制面板: {msg.id}")
-            else:
-                dashboard_messages[f"{bot_type}_dashboard"] = found_dashboard.id
-                print(f"✅ 找到 {bot_type} 控制面板: {found_dashboard.id}")
-            
-            # 創建日誌embed
-            if not found_logs:
-                embed = await create_logs_embed(bot_type)
-                msg = await channel.send(embed=embed)
-                dashboard_messages[f"{bot_type}_logs"] = msg.id
-                print(f"✅ 創建 {bot_type} 日誌: {msg.id}")
-            else:
-                dashboard_messages[f"{bot_type}_logs"] = found_logs.id
-                print(f"✅ 找到 {bot_type} 日誌: {found_logs.id}")
+            config = BOT_CONFIG[bot_type]
+            if config["名稱"][config["名稱"].find(" "):].strip() in str(bot.user.name).lower() or bot_type in str(bot.user.name).lower():
+                current_bot_type = bot_type
+                break
+        
+        if not current_bot_type:
+            current_bot_type = "bot"  # 默認值
+            print(f"⚠️ 無法自動判斷 bot 類型，使用默認值: {current_bot_type}")
+        
+        # 只初始化當前 bot 的訊息（避免權限問題）
+        bot_type = current_bot_type
+        
+        # 查找現有訊息
+        found_dashboard = None
+        found_logs = None
+        
+        async for msg in channel.history(limit=100):
+            if msg.embeds and msg.author.id == bot.user.id:  # 只查看自己發送的訊息
+                for embed in msg.embeds:
+                    bot_name = BOT_CONFIG[bot_type]["名稱"]
+                    if "控制面板" in embed.title and bot_name in embed.title:
+                        found_dashboard = msg
+                    elif "實時日誌" in embed.title and bot_name in embed.title:
+                        found_logs = msg
+        
+        # 創建或更新控制面板 embed
+        if not found_dashboard:
+            embed = await create_dashboard_embed(bot_type)
+            msg = await channel.send(embed=embed)
+            dashboard_messages[f"{bot_type}_dashboard"] = msg.id
+            print(f"✅ 創建 {bot_type} 控制面板: {msg.id}")
+        else:
+            dashboard_messages[f"{bot_type}_dashboard"] = found_dashboard.id
+            # 更新舊訊息
+            embed = await create_dashboard_embed(bot_type)
+            try:
+                await found_dashboard.edit(embed=embed)
+            except:
+                pass
+            print(f"✅ 找到 {bot_type} 控制面板: {found_dashboard.id}")
+        
+        # 創建或更新日誌 embed
+        if not found_logs:
+            embed = await create_logs_embed(bot_type)
+            msg = await channel.send(embed=embed)
+            dashboard_messages[f"{bot_type}_logs"] = msg.id
+            print(f"✅ 創建 {bot_type} 日誌: {msg.id}")
+        else:
+            dashboard_messages[f"{bot_type}_logs"] = found_logs.id
+            # 更新舊訊息
+            embed = await create_logs_embed(bot_type)
+            try:
+                await found_logs.edit(embed=embed)
+            except:
+                pass
+            print(f"✅ 找到 {bot_type} 日誌: {found_logs.id}")
         
         # 保存到 .env
         save_message_ids()
@@ -160,6 +185,8 @@ async def initialize_dashboard(bot: discord.Client):
         
     except Exception as e:
         print(f"❌ 初始化儀表板失敗: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -173,37 +200,61 @@ async def update_dashboard(bot: discord.Client, bot_type: str = None):
         if not channel:
             return
         
-        # 確定要更新的機器人
-        bot_types = [bot_type] if bot_type else ["bot", "shopbot", "uibot"]
+        # 如果沒有指定 bot_type，自動判斷當前機器人
+        if not bot_type:
+            # 根據 bot username 判斷類型
+            username = str(bot.user.name).lower()
+            if "shop" in username:
+                bot_type = "shopbot"
+            elif "ui" in username:
+                bot_type = "uibot"
+            else:
+                bot_type = "bot"
         
-        for btype in bot_types:
-            # 更新控制面板
-            dashboard_msg_id = dashboard_messages.get(f"{btype}_dashboard")
-            if dashboard_msg_id:
-                try:
-                    msg = await channel.fetch_message(dashboard_msg_id)
-                    embed = await create_dashboard_embed(btype)
+        # 只更新該機器人自己的訊息
+        # 更新控制面板
+        dashboard_msg_id = dashboard_messages.get(f"{bot_type}_dashboard")
+        if dashboard_msg_id:
+            try:
+                msg = await channel.fetch_message(dashboard_msg_id)
+                # 確認訊息是由當前 bot 發送的
+                if msg.author.id == bot.user.id:
+                    embed = await create_dashboard_embed(bot_type)
                     await msg.edit(embed=embed)
-                except discord.NotFound:
-                    print(f"⚠️ {btype} 控制面板訊息不存在，重新創建...")
-                    embed = await create_dashboard_embed(btype)
-                    msg = await channel.send(embed=embed)
-                    dashboard_messages[f"{btype}_dashboard"] = msg.id
-                    save_message_ids()
-            
-            # 更新日誌
-            logs_msg_id = dashboard_messages.get(f"{btype}_logs")
-            if logs_msg_id:
-                try:
-                    msg = await channel.fetch_message(logs_msg_id)
-                    embed = await create_logs_embed(btype)
+            except discord.NotFound:
+                print(f"⚠️ {bot_type} 控制面板訊息不存在，重新創建...")
+                embed = await create_dashboard_embed(bot_type)
+                msg = await channel.send(embed=embed)
+                dashboard_messages[f"{bot_type}_dashboard"] = msg.id
+                save_message_ids()
+            except discord.Forbidden:
+                # 沒有權限編輯（訊息來自其他 bot）
+                pass
+            except Exception as e:
+                # 其他錯誤，靜默處理
+                pass
+        
+        # 更新日誌
+        logs_msg_id = dashboard_messages.get(f"{bot_type}_logs")
+        if logs_msg_id:
+            try:
+                msg = await channel.fetch_message(logs_msg_id)
+                # 確認訊息是由當前 bot 發送的
+                if msg.author.id == bot.user.id:
+                    embed = await create_logs_embed(bot_type)
                     await msg.edit(embed=embed)
-                except discord.NotFound:
-                    print(f"⚠️ {btype} 日誌訊息不存在，重新創建...")
-                    embed = await create_logs_embed(btype)
-                    msg = await channel.send(embed=embed)
-                    dashboard_messages[f"{btype}_logs"] = msg.id
-                    save_message_ids()
+            except discord.NotFound:
+                print(f"⚠️ {bot_type} 日誌訊息不存在，重新創建...")
+                embed = await create_logs_embed(bot_type)
+                msg = await channel.send(embed=embed)
+                dashboard_messages[f"{bot_type}_logs"] = msg.id
+                save_message_ids()
+            except discord.Forbidden:
+                # 沒有權限編輯（訊息來自其他 bot）
+                pass
+            except Exception as e:
+                # 其他錯誤，靜默處理
+                pass
     
     except Exception as e:
         print(f"❌ 更新儀表板失敗: {e}")

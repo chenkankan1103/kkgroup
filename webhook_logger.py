@@ -19,7 +19,7 @@ BOT_NAME_MAP = {
 
 async def send_startup_info(bot_type: str, bot: discord.Client):
     """
-    發送統一格式的機器人啟動資訊到 Webhook
+    發送統一格式的機器人啟動資訊到頻道（不使用 Webhook）
     
     Args:
         bot_type: "bot", "shopbot", "uibot"
@@ -34,17 +34,6 @@ async def send_startup_info(bot_type: str, bot: discord.Client):
         if not channel:
             print(f"⚠️ 找不到啟動日誌頻道 {STARTUP_WEBHOOK_CHANNEL_ID}")
             return
-        
-        # 取得或創建 Webhook
-        webhooks = await channel.webhooks()
-        webhook = None
-        for wh in webhooks:
-            if wh.name == "Bot Startup Logger":
-                webhook = wh
-                break
-        
-        if not webhook:
-            webhook = await channel.create_webhook(name="Bot Startup Logger")
         
         # 建立 embed
         bot_name = BOT_NAME_MAP.get(bot_type, bot_type)
@@ -74,10 +63,10 @@ async def send_startup_info(bot_type: str, bot: discord.Client):
         
         embed.set_footer(text=f"機器人類型: {bot_type.upper()}")
         
-        # 通過 Webhook 發送
-        await webhook.send(embed=embed, username=f"{bot_name} Logger")
+        # 直接發送到頻道
+        await channel.send(embed=embed)
         
-        print(f"✅ 啟動資訊已發送到 Webhook: {bot_name}")
+        print(f"✅ 啟動資訊已發送到頻道: {bot_name}")
         
     except Exception as e:
-        print(f"❌ 發送啟動資訊失敗: {e}")
+        print(f"⚠️ 發送啟動資訊失敗: {e}")
