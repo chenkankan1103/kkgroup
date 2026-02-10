@@ -432,6 +432,7 @@ async def process_checkin(user_id, user_obj, guild):
         leveled_up = False
         bonus_coins = 0
         old_level = level
+        original_streak = streak  # 保存升級前的連勤值
         
         temp_user = user.copy()
         temp_user['streak'] = streak
@@ -472,11 +473,11 @@ async def process_checkin(user_id, user_obj, guild):
             return None, None, None, None
         print(f"  ✓ 更新後資料: Lv.{updated_user['level']}, XP: {updated_user['xp']}, 金幣: {updated_user['kkcoin']}")
         
-        # 使用 AI 生成每日情境描述
+        # 使用 AI 生成每日情境描述（升級時使用升級前的 streak）
         daily_story = await generate_daily_checkin_story(
             level_title=LEVELS[updated_user['level']]['title'],
             salary_percent=salary_multiplier,
-            streak=streak,
+            streak=original_streak if leveled_up else streak,  # 升級時用升級前的值
             user_name=user_obj.display_name
         )
         
