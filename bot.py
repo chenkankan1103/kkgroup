@@ -264,6 +264,7 @@ async def on_ready():
         # ============================================================
         # 自動刪除舊訊息
         # ============================================================
+        # 頻道 ID 固定為機器人秘書頻道，用於啟動時清理舊訊息
         CHANNEL_ID_TO_CLEAN = 1470788880805531702
         MAX_MESSAGES_TO_DELETE = 100
         DELETE_DELAY = 0.1  # 每條訊息間隔 0.1 秒，防止 API 限流
@@ -330,6 +331,8 @@ async def on_ready():
                                     # 如果遇到限流，等待更長時間
                                     if e.status == 429:
                                         retry_after = e.retry_after if hasattr(e, 'retry_after') else 5.0
+                                        if not hasattr(e, 'retry_after'):
+                                            print(f"  ⚠️  警告: API 未提供 retry_after，使用預設值 {retry_after} 秒")
                                         print(f"  ⏳ 遇到限流，等待 {retry_after} 秒...")
                                         await asyncio.sleep(retry_after)
                                 except Exception as e:
