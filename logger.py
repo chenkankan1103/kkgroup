@@ -3,13 +3,15 @@ import os
 import logging
 import traceback
 from datetime import datetime
-import builtins
+import builtins as _builtins
 
 # ✅ 自動偵測目前是執行哪一隻 bot
 BOT_NAME = os.path.basename(sys.argv[0]).replace(".py", "").upper()
 
 # 保持標準 print 函數 (原本會被覆蓋用來發送到 Discord，現在只用標準 print)
-print = builtins.print
+def print(*args, **kwargs):
+    """wrapper around builtin print"""
+    return _builtins.print(*args, **kwargs)
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     """全局異常處理器"""
