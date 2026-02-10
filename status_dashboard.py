@@ -13,6 +13,7 @@ import sys
 import json
 import sqlite3
 import subprocess
+import asyncio
 from datetime import datetime, timedelta
 from collections import deque
 from typing import Optional, Dict
@@ -280,7 +281,6 @@ async def before_global_update_logs_task():
                 except Exception as e:
                     print(f"[GLOBAL LOG TASK] 等待 {bot_type} 就緒時出錯: {e}")
         # 如果沒有找到任何已註冊的機器人，等待一秒後重試
-        import asyncio
         await asyncio.sleep(1)
 
 
