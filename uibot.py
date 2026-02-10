@@ -9,7 +9,7 @@ from watchdog.events import FileSystemEventHandler
 from logger import print
 from bot_status import build_discord_activity
 from webhook_logger import send_startup_info
-from status_dashboard import initialize_dashboard, update_dashboard, add_log
+from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -170,7 +170,7 @@ class FileEventHandler(FileSystemEventHandler):
 async def update_logs_task():
     """定期更新儀表板日誌"""
     try:
-        await update_dashboard(client, "uibot")
+        await update_dashboard(client)
     except Exception as e:
         print(f"⚠️ 日誌更新失敗: {e}")
 
@@ -275,7 +275,12 @@ async def on_ready():
         # 初始化監控儀表板及日誌系統
         # ============================================================
         try:
-            dashboard_ready = await initialize_dashboard(client)
+            # 設置當前 bot 類型
+            set_bot_type("uibot")
+            load_message_ids("uibot")
+            
+            # 初始化儀表板（只初始化當前 bot 的面板）
+            dashboard_ready = await initialize_dashboard(client, "uibot")
             if dashboard_ready:
                 add_log("uibot", "✅ 儀表板已初始化")
                 if not update_logs_task.is_running():
