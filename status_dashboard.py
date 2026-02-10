@@ -265,6 +265,13 @@ async def global_update_logs_task():
         print(f"[GLOBAL LOG TASK ERROR] {e}")
 
 
+async def ensure_global_task_running():
+    """確保全域任務運行前的初始化等待"""
+    print("[DASHBOARD INIT] 等待儀表板完全初始化...")
+    await asyncio.sleep(20)
+    print("[DASHBOARD INIT] 儀表板初始化等待完成")
+
+
 @global_update_logs_task.before_loop
 async def before_global_update_logs_task():
     """等待至少一個機器人實例就緒"""
@@ -276,7 +283,10 @@ async def before_global_update_logs_task():
             if bot_instance and hasattr(bot_instance, 'wait_until_ready'):
                 try:
                     await bot_instance.wait_until_ready()
-                    print(f"[GLOBAL LOG TASK] {bot_type} 已就緒，任務即將啟動")
+                    print(f"[GLOBAL LOG TASK] {bot_type} 已就緒，準備初始化")
+                    # 確保儀表板有足夠時間初始化
+                    await ensure_global_task_running()
+                    print(f"[GLOBAL LOG TASK] {bot_type} 初始化完成，任務即將啟動")
                     return
                 except Exception as e:
                     print(f"[GLOBAL LOG TASK] 等待 {bot_type} 就緒時出錯: {e}")
