@@ -82,8 +82,17 @@ async def create_bot_detail_embed(bot_type: str) -> dict:
     }
 
 
-async def send_or_update_startup_info():
+async def send_or_update_startup_info(bot_type: str = None):
+    """
+    統一發送啟動資訊
+    只有 bot 會實際發送訊息，其他機器人只更新資訊
+    """
     global webhook_message_id
+    
+    # 如果指定了 bot_type 且不是 "bot"，就不發送訊息
+    if bot_type and bot_type != "bot":
+        log_webhook(f"ℹ️ {bot_type} 已更新資訊")
+        return
     
     if not WEBHOOK_URL:
         log_webhook("❌ WEBHOOK_URL 未設定")

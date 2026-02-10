@@ -288,8 +288,8 @@ async def on_ready():
             startup_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
             await update_bot_info("bot", startup_time, cmd_names, ext_names)
             
-            # 發送/編輯啟動訊息（所有 bot 的統一訊息）
-            await send_or_update_startup_info()
+            # 發送/編輯啟動訊息（只有 bot 會發送統一訊息）
+            await send_or_update_startup_info("bot")
             
             add_log("bot", "✅ 啟動資訊已更新到機器人秘書")
         except Exception as e:
