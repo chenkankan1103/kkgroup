@@ -255,14 +255,22 @@ async def global_update_logs_task():
     try:
         print("[GLOBAL LOG TASK] 開始更新所有機器人的日誌...")
         for bot_type in ["bot", "shopbot", "uibot"]:
-            bot_instance = get_bot_instance(bot_type)
-            if bot_instance:
-                print(f"[GLOBAL LOG TASK] 更新 {bot_type} 日誌")
-                await update_dashboard_logs(bot_instance, bot_type)
-            else:
-                print(f"[GLOBAL LOG TASK] {bot_type} 實例未找到 - 跳過")
+            try:
+                bot_instance = get_bot_instance(bot_type)
+                if bot_instance:
+                    print(f"[GLOBAL LOG TASK] 更新 {bot_type} 日誌")
+                    await update_dashboard_logs(bot_instance, bot_type)
+                else:
+                    print(f"[GLOBAL LOG TASK] {bot_type} 實例未找到 - 跳過")
+            except Exception as e:
+                # 捕獲單個機器人的錯誤，不影響其他機器人
+                print(f"[GLOBAL LOG TASK ERROR] {bot_type} 更新失敗: {e}")
+                import traceback
+                traceback.print_exc()
     except Exception as e:
-        print(f"[GLOBAL LOG TASK ERROR] {e}")
+        print(f"[GLOBAL LOG TASK ERROR] 任務執行失敗: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @global_update_logs_task.before_loop
@@ -270,7 +278,9 @@ async def before_global_update_logs_task():
     """等待至少一個機器人實例就緒"""
     print("[GLOBAL LOG TASK] 等待機器人就緒...")
     # 等待至少一個機器人實例被註冊且就緒
-    while True:
+    max_retries = 60  # 最多等待 60 秒
+    retry_count = 0
+    while retry_count < max_retries:
         for bot_type in ["bot", "shopbot", "uibot"]:
             bot_instance = get_bot_instance(bot_type)
             if bot_instance and hasattr(bot_instance, 'wait_until_ready'):
@@ -282,6 +292,9 @@ async def before_global_update_logs_task():
                     print(f"[GLOBAL LOG TASK] 等待 {bot_type} 就緒時出錯: {e}")
         # 如果沒有找到任何已註冊的機器人，等待一秒後重試
         await asyncio.sleep(1)
+        retry_count += 1
+    
+    print(f"[GLOBAL LOG TASK WARNING] 等待超時，但任務仍將啟動")
 
 
 def register_bot_instance(bot_type: str, bot_instance):
@@ -311,6 +324,11 @@ async def update_dashboard_logs(bot, bot_type: str):
     try:
         print(f"[UPDATE LOGS] 開始更新 {bot_type} 日誌")
 
+        # 檢查機器人實例
+        if not bot:
+            print(f"[UPDATE LOGS ERROR] {bot_type} 機器人實例為空")
+            return
+
         # 獲取最新的日誌條目
         logs_text = get_logs_text(bot_type)
 
@@ -334,17 +352,27 @@ async def update_dashboard_logs(bot, bot_type: str):
                     print(f"[UPDATE LOGS] {bot_type} 日誌已成功更新")
                 except discord.NotFound:
                     print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
-                    message = await channel.send(embed=embed)
-                    save_message_id(bot_type, "logs", str(message.id))
+                    try:
+                        message = await channel.send(embed=embed)
+                        save_message_id(bot_type, "logs", str(message.id))
+                        print(f"[UPDATE LOGS] {bot_type} 日誌訊息已重新創建: {message.id}")
+                    except Exception as create_error:
+                        print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
+                except discord.Forbidden:
+                    print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
                 except Exception as e:
-                    print(f"[UPDATE LOGS] {bot_type} 日誌更新錯誤: {e}")
+                    print(f"[UPDATE LOGS ERROR] {bot_type} 日誌更新錯誤: {e}")
+                    import traceback
+                    traceback.print_exc()
             else:
-                print(f"[UPDATE LOGS] {bot_type} 找不到頻道")
+                print(f"[UPDATE LOGS ERROR] {bot_type} 找不到頻道 {DASHBOARD_CHANNEL_ID}")
         else:
-            print(f"[UPDATE LOGS] {bot_type} 找不到日誌訊息 ID")
+            print(f"[UPDATE LOGS WARNING] {bot_type} 日誌訊息 ID 未設置")
 
     except Exception as e:
-        print(f"[UPDATE LOGS ERROR] {bot_type}: {e}")
+        print(f"[UPDATE LOGS ERROR] {bot_type} 更新日誌時發生未預期錯誤: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 class DashboardButtons(discord.ui.View):
@@ -615,18 +643,42 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
     try:
         print(f"[DASHBOARD] 開始設置 {bot_type} 儀表板")
 
+        # 檢查機器人實例
+        if not bot:
+            print(f"[DASHBOARD ERROR] {bot_type} 機器人實例為空")
+            return
+
         # 註冊機器人實例
-        register_bot_instance(bot_type, bot)
-        print(f"[DASHBOARD] {bot_type} 實例已註冊")
+        try:
+            register_bot_instance(bot_type, bot)
+            print(f"[DASHBOARD] {bot_type} 實例已註冊")
+        except Exception as e:
+            print(f"[DASHBOARD ERROR] {bot_type} 實例註冊失敗: {e}")
+            return
 
         # 加載訊息 ID（包括硬編碼的回退值）
-        load_message_ids(bot_type)
+        try:
+            load_message_ids(bot_type)
+            print(f"[DASHBOARD] {bot_type} 訊息 ID 已加載")
+        except Exception as e:
+            print(f"[DASHBOARD ERROR] {bot_type} 訊息 ID 加載失敗: {e}")
+            # 繼續執行，因為可能會創建新訊息
 
         # 創建或更新控制面板訊息
-        await create_or_update_dashboard(bot, bot_type)
+        try:
+            await create_or_update_dashboard(bot, bot_type)
+        except Exception as e:
+            print(f"[DASHBOARD ERROR] {bot_type} 控制面板創建/更新失敗: {e}")
+            import traceback
+            traceback.print_exc()
 
         # 創建或更新日誌訊息
-        await create_or_update_logs(bot, bot_type)
+        try:
+            await create_or_update_logs(bot, bot_type)
+        except Exception as e:
+            print(f"[DASHBOARD ERROR] {bot_type} 日誌訊息創建/更新失敗: {e}")
+            import traceback
+            traceback.print_exc()
 
         # 啟動全域日誌更新任務（只在第一次調用時啟動）
         # 檢查任務狀態並在需要時啟動或重啟
@@ -634,7 +686,7 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
             print(f"[DASHBOARD] 全域日誌更新任務未運行，正在啟動...")
             try:
                 global_update_logs_task.start()
-                add_log("system", f"🔄 全域日誌更新任務已啟動")
+                add_log("system", f"🔄 全域日誌更新任務已啟動 (15秒間隔)")
                 print(f"[DASHBOARD] ✅ 全域日誌更新任務啟動成功")
             except RuntimeError as e:
                 # 任務可能已經被啟動但未正確報告狀態
@@ -644,16 +696,22 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
                 else:
                     print(f"[DASHBOARD] ❌ 啟動任務失敗: {e}")
                     add_log("system", f"❌ 任務啟動失敗: {e}")
+                    import traceback
+                    traceback.print_exc()
             except Exception as e:
                 print(f"[DASHBOARD] ❌ 啟動任務時發生未預期錯誤: {e}")
                 add_log("system", f"❌ 任務啟動異常: {e}")
+                import traceback
+                traceback.print_exc()
         else:
             print(f"[DASHBOARD] ✅ 全域日誌更新任務已在運行 (is_running={global_update_logs_task.is_running()})")
 
         print(f"[DASHBOARD] {bot_type} 儀表板設置完成")
 
     except Exception as e:
-        print(f"[DASHBOARD ERROR] {bot_type}: {e}")
+        print(f"[DASHBOARD ERROR] {bot_type} 設置失敗: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 async def create_or_update_dashboard(bot: discord.Client, bot_type: str):
@@ -763,15 +821,6 @@ def load_message_ids(bot_type: str):
         # 使用硬編碼的回退值
         message_ids[bot_type]["logs"] = HARDCODED_MESSAGE_IDS[bot_type]["logs"]
         print(f"[LOAD IDS] 使用硬編碼的 {bot_type} 日誌 ID: {HARDCODED_MESSAGE_IDS[bot_type]['logs']}")
-    """獲取格式化的日誌文本"""
-    if bot_type not in logs_storage:
-        return "無日誌"
-    
-    logs = list(logs_storage[bot_type])
-    if not logs:
-        return "無日誌"
-    
-    return "\n".join(logs[::-1])  # 倒序顯示（最新在最上面）
 
 
 async def create_dashboard_embed(bot_type: str) -> discord.Embed:
