@@ -392,7 +392,9 @@ class LockerPanelView(discord.ui.View):
             
             # 添加操作按鈕
             from uicommands.cannabis_locker import CropOperationView
-            view = CropOperationView(self.cog.bot, owner_user_id, seeds, plants, growing, harvested)
+            guild_id = interaction.guild.id if interaction.guild else 0
+            channel_id = interaction.channel.id
+            view = CropOperationView(self.cog.bot, self.cog, owner_user_id, guild_id, channel_id, seeds, plants, growing, harvested)
             
             embed.set_footer(text="💡 使用下方按鈕進行種植、施肥或收割操作")
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
