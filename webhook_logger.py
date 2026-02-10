@@ -1,144 +1,162 @@
 """
 統一的啟動資訊發送器
-只在啟動資訊頻道發送當前機器人的啟動訊息（不使用webhook）
+機器人秘書頻道：1 個訊息 + 4 個 embeds
+- 1 個總覽 embed（所有 bot 狀態）
+- 3 個詳情 embed（bot、shopbot、uibot 各自的指令和擴展）
+編輯原有訊息，無則新增
 """
 
 import discord
 import os
 from datetime import datetime
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 
 load_dotenv()
 
 STARTUP_CHANNEL_ID = int(os.getenv("STARTUP_WEBHOOK_CHANNEL_ID", "0"))
-BOT_NAME_MAP = {
-    "bot": "🤖 Main Bot",
-    "shopbot": "🛍️ Shop Bot", 
-    "uibot": "🎨 UI Bot"
+BOT_LOGS_CHANNEL = int(os.getenv("DISCORD_SYS_CHANNEL_ID", "0"))  # 機器人秘書
+
+# 存儲每個 bot 的資訊
+bots_info = {
+    "bot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []},
+    "shopbot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []},
+    "uibot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []}
 }
 
-# 追蹤已發送的啟動訊息 ID（防止重複）
-startup_messages = {
-    "bot": None,
-    "shopbot": None,
-    "uibot": None
-}
+# 存儲 webhook 訊息 ID
+webhook_message_id = None
 
 
-async def send_startup_info(bot_type: str, bot: discord.Client):
-    """
-    發送當前機器人的啟動資訊到指定頻道
+async def update_bot_info(bot_type: str, startup_time: str, commands: list, extensions: list):
+    """更新機器人資訊"""
+    if bot_type in bots_info:
+        bots_info[bot_type]["啟動時間"] = startup_time
+        bots_info[bot_type]["狀態"] = "🟢 在線"
+        bots_info[bot_type]["指令"] = commands
+        bots_info[bot_type]["擴展"] = extensions
+
+
+async def create_overview_embed() -> discord.Embed:
+    """創建狀態總覽 embed"""
+    embed = discord.Embed(
+        title="🤖 所有機器人狀態",
+        color=discord.Color.blurple(),
+        timestamp=datetime.utcnow()
+    )
     
-    Args:
-        bot_type: "bot", "shopbot", "uibot"
-        bot: Discord bot instance
+    status_text = ""
+    for bot_name in ["bot", "shopbot", "uibot"]:
+        info = bots_info[bot_name]
+        emoji = "🟢" if info["狀態"] == "🟢 在線" else "🔴"
+        time_text = info["啟動時間"] if info["啟動時間"] else "未啟動"
+        status_text += f"{emoji} **{bot_name.upper()}** - {time_text}\n"
+    
+    embed.description = status_text
+    embed.set_footer(text="機器人監控系統")
+    return embed
+
+
+async def create_bot_detail_embed(bot_type: str) -> discord.Embed:
+    """創建單個 bot 詳情 embed"""
+    bot_name_map = {
+        "bot": "🤖 Main Bot",
+        "shopbot": "🛍️ Shop Bot",
+        "uibot": "🎨 UI Bot"
+    }
+    
+    color_map = {
+        "bot": discord.Color.blue(),
+        "shopbot": discord.Color.purple(),
+        "uibot": discord.Color.gold()
+    }
+    
+    info = bots_info[bot_type]
+    
+    embed = discord.Embed(
+        title=f"{bot_name_map[bot_type]} 詳情",
+        color=color_map[bot_type],
+        timestamp=datetime.utcnow()
+    )
+    
+    # 擴展信息
+    if info["擴展"]:
+        ext_text = " | ".join(info["擴展"][:8])
+        if len(info["擴展"]) > 8:
+            ext_text += f"\n*...還有 {len(info['擴展']) - 8} 個*"
+        embed.add_field(
+            name=f"📦 擴展 ({len(info['擴展'])})",
+            value=ext_text or "無",
+            inline=False
+        )
+    
+    # 指令信息
+    if info["指令"]:
+        cmd_text = " | ".join(info["指令"][:10])
+        if len(info["指令"]) > 10:
+            cmd_text += f"\n*...還有 {len(info['指令']) - 10} 個*"
+        embed.add_field(
+            name=f"⚡ Slash 指令 ({len(info['指令'])})",
+            value=cmd_text or "無",
+            inline=False
+        )
+    
+    embed.set_footer(text=f"狀態: {info['狀態']}")
+    return embed
+
+
+async def send_or_update_startup_info(bot: discord.Client):
     """
+    發送或編輯啟動資訊訊息
+    1 個訊息 + 4 個 embeds（概覽 + bot + shopbot + uibot）
+    """
+    global webhook_message_id
+    
     try:
-        if not STARTUP_CHANNEL_ID or STARTUP_CHANNEL_ID == 0:
-            print(f"⚠️ 未配置 STARTUP_WEBHOOK_CHANNEL_ID，跳過啟動日誌")
+        if not BOT_LOGS_CHANNEL or BOT_LOGS_CHANNEL == 0:
+            print(f"⚠️ 未配置 DISCORD_SYS_CHANNEL_ID (機器人秘書)，跳過啟動日誌")
             return
         
-        channel = bot.get_channel(STARTUP_CHANNEL_ID)
+        channel = bot.get_channel(BOT_LOGS_CHANNEL)
         if not channel:
-            print(f"⚠️ 找不到啟動日誌頻道 {STARTUP_CHANNEL_ID}")
+            print(f"⚠️ 找不到機器人秘書頻道 {BOT_LOGS_CHANNEL}")
             return
         
-        # 清理該 bot 類型的舊啟動訊息（保留最新的 3 條）
-        await cleanup_old_messages(channel, bot, bot_type)
+        # 準備 4 個 embeds
+        embeds = [
+            await create_overview_embed(),
+            await create_bot_detail_embed("bot"),
+            await create_bot_detail_embed("shopbot"),
+            await create_bot_detail_embed("uibot")
+        ]
         
-        # 檢查是否已發送過啟動訊息
-        if startup_messages.get(bot_type):
-            # 已發送過，嘗試編輯而不是重新發送
+        # 嘗試編輯已存在的訊息
+        if webhook_message_id:
             try:
-                msg = await channel.fetch_message(startup_messages[bot_type])
-                bot_name = BOT_NAME_MAP.get(bot_type, bot_type)
-                embed = discord.Embed(
-                    title=f"{bot_name} 已啟動 🔄",
-                    color=discord.Color.green(),
-                    timestamp=datetime.utcnow()
-                )
-                embed.add_field(name="🟢 狀態", value="在線 Online", inline=True)
-                embed.add_field(name="⏰ 時間", value=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"), inline=True)
-                embed.add_field(name="🔧 配置", value="已檢查完成 ✅", inline=True)
-                embed.set_footer(text=f"機器人類型: {bot_type.upper()} | 版本: 1.0.0")
-                await msg.edit(embed=embed)
-                print(f"✅ 啟動資訊已更新: {bot_name}")
+                msg = await channel.fetch_message(webhook_message_id)
+                await msg.edit(embeds=embeds)
+                print(f"✅ 啟動資訊已更新 (訊息 ID: {webhook_message_id})")
                 return
-            except:
-                # 訊息已失效，發送新訊息
-                startup_messages[bot_type] = None
+            except discord.NotFound:
+                webhook_message_id = None
+                print("⚠️ 原訊息已刪除，發送新訊息")
         
-        # 新發送啟動訊息
-        bot_name = BOT_NAME_MAP.get(bot_type, bot_type)
-        embed = discord.Embed(
-            title=f"{bot_name} 已啟動",
-            color=discord.Color.green(),
-            timestamp=datetime.utcnow()
-        )
+        # 發送新訊息
+        msg = await channel.send(embeds=embeds)
+        webhook_message_id = msg.id
         
-        embed.add_field(
-            name="🟢 狀態",
-            value="在線 Online",
-            inline=True
-        )
+        # 存儲到環境變數
+        set_key(".env", "WEBHOOK_MESSAGE_ID", str(webhook_message_id))
         
-        embed.add_field(
-            name="⏰ 時間",
-            value=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-            inline=True
-        )
-        
-        embed.add_field(
-            name="🔧 配置",
-            value="已檢查完成 ✅",
-            inline=True
-        )
-        
-        embed.set_footer(text=f"機器人類型: {bot_type.upper()} | 版本: 1.0.0")
-        
-        # 直接發送到頻道
-        msg = await channel.send(embed=embed)
-        startup_messages[bot_type] = msg.id
-        
-        print(f"✅ 啟動資訊已發送: {bot_name}")
+        print(f"✅ 啟動資訊已發送 (訊息 ID: {webhook_message_id})")
         
     except Exception as e:
         print(f"⚠️ 發送啟動資訊失敗: {e}")
 
 
-async def cleanup_old_messages(channel: discord.TextChannel, bot: discord.Client, bot_type: str, keep_count: int = 1):
-    """
-    清理該機器人類型的舊啟動訊息，只保留最新的 keep_count 條
-    
-    Args:
-        channel: 頻道對象
-        bot: Bot 實例
-        bot_type: "bot", "shopbot", "uibot"
-        keep_count: 保留的訊息數量（默認只保留最新的 1 條）
-    """
+# 初始化時加載已存儲的 message_id
+_stored_msg_id = os.getenv("WEBHOOK_MESSAGE_ID")
+if _stored_msg_id:
     try:
-        bot_name = BOT_NAME_MAP.get(bot_type, bot_type)
-        messages_to_delete = []
-        count = 0
-        
-        async for msg in channel.history(limit=50):
-            # 只查看由任何 bot 發送的訊息
-            if msg.embeds:
-                for embed in msg.embeds:
-                    # 檢查是否是該 bot 類型的啟動訊息
-                    if bot_name in embed.title and ("已啟動" in embed.title or "已啟動 🔄" in embed.title):
-                        count += 1
-                        if count > keep_count:
-                            messages_to_delete.append(msg)
-        
-        # 刪除舊訊息
-        for msg in messages_to_delete:
-            try:
-                await msg.delete()
-                print(f"✓ 已清理舊的 {bot_type} 啟動訊息")
-            except:
-                pass
-    
-    except Exception as e:
-        # 清理失敗不影響主流程
+        webhook_message_id = int(_stored_msg_id)
+    except:
         pass
