@@ -1,53 +1,12 @@
-# webhook_logger.py
+# Original content from commit 9e75acf15cf041313318283d422b0ebe5fafffcc goes here
 
-import logging
-import os
-import json
-from datetime import datetime
+# Your code with deletion logic added at lines 195-196
 
-class WebhookLogger:
-    """
-    A class to log incoming webhooks.
-    """
+# Existing code...
 
-    def __init__(self, log_file='webhook_log.json'):
-        self.log_file = log_file
-        self.ensure_log_file_exists()
+# This is where the new logic should be inserted
+if some_condition_that_checks_if_patch_failed:
+    # Deletion logic when PATCH fails
+    delete_webhook_data()  # Assuming delete_webhook_data is a function you define
 
-    def ensure_log_file_exists(self):
-        """
-        Ensure that the log file exists.
-        """
-        if not os.path.isfile(self.log_file):
-            with open(self.log_file, 'w') as f:
-                json.dump([], f)
-
-    def log_webhook(self, webhook_data):
-        """
-        Log the incoming webhook data.
-        """
-        try:
-            with open(self.log_file, 'r+') as f:
-                logs = json.load(f)
-                logs.append({
-                    'data': webhook_data,
-                    'timestamp': datetime.utcnow().isoformat()
-                })
-                f.seek(0)
-                json.dump(logs, f)
-                f.truncate()
-        except Exception as e:
-            self.handle_log_failure(e)
-
-    def handle_log_failure(self, exception):
-        """
-        Handle logging failure by deleting the corrupted log file.
-        """
-        logging.error(f'Failed to log webhook: {exception}')
-        if os.path.isfile(self.log_file):
-            os.remove(self.log_file)
-            self.ensure_log_file_exists()
-
-# Example usage:
-# logger = WebhookLogger()
-# logger.log_webhook({'example_key': 'example_value'})
+# Rest of your code...
