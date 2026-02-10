@@ -2,6 +2,7 @@
 統一的啟動資訊發送器 - 使用 Webhook
 """
 import os
+import json
 import aiohttp
 from datetime import datetime
 from dotenv import load_dotenv, set_key
@@ -22,19 +23,53 @@ WEBHOOK_URL = os.getenv("STARTUP_WEBHOOK_URL", "")
 webhook_message_id = None
 log_webhook(f"WEBHOOK_URL: {WEBHOOK_URL[:50] if WEBHOOK_URL else 'Not Set'}...")
 
-bots_info = {
-    "bot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []},
-    "shopbot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []},
-    "uibot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []}
-}
+# bots_info 文件路徑
+bots_info_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bots_info.json')
+
+def load_bots_info():
+    """從文件加載 bots_info"""
+    try:
+        if os.path.exists(bots_info_file):
+            with open(bots_info_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log_webhook(f"❌ 加載 bots_info 失敗: {e}")
+
+    # 返回默認值
+    return {
+        "bot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []},
+        "shopbot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []},
+        "uibot": {"啟動時間": None, "狀態": "⏳ 啟動中", "指令": [], "擴展": []}
+    }
+
+def save_bots_info(bots_info):
+    """保存 bots_info 到文件"""
+    try:
+        with open(bots_info_file, 'w', encoding='utf-8') as f:
+            json.dump(bots_info, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log_webhook(f"❌ 保存 bots_info 失敗: {e}")
+
+# 初始化 bots_info
+bots_info = load_bots_info()
+log_webhook(f"✅ 已加載 bots_info: {list(bots_info.keys())}")
 
 
 async def update_bot_info(bot_type: str, startup_time: str, commands: list, extensions: list):
+    global bots_info
+
+    # 從文件重新加載最新狀態
+    bots_info = load_bots_info()
+
     if bot_type in bots_info:
         bots_info[bot_type]["啟動時間"] = startup_time
         bots_info[bot_type]["狀態"] = "🟢 在線"
         bots_info[bot_type]["指令"] = commands
         bots_info[bot_type]["擴展"] = extensions
+
+        # 保存到文件
+        save_bots_info(bots_info)
+
         log_webhook(f"✅ {bot_type.upper()} 資訊已更新 - 啟動時間: {startup_time}, 指令: {len(commands)}, 擴展: {len(extensions)}")
         print(f"[DEBUG] {bot_type} bots_info 更新成功")
     else:
@@ -92,8 +127,12 @@ async def send_or_update_startup_info(bot_type: str = None):
     統一發送啟動資訊
     只有 bot 會實際發送訊息，其他機器人只更新資訊
     """
-    global webhook_message_id
-    
+    global webhook_message_id, bots_info
+
+    # 從文件重新加載最新的 bots_info
+    bots_info = load_bots_info()
+    log_webhook(f"📂 已重新加載 bots_info: bot={bots_info['bot']['啟動時間']}, shopbot={bots_info['shopbot']['啟動時間']}, uibot={bots_info['uibot']['啟動時間']}")
+
     # 如果指定了 bot_type 且不是 "bot"，就不發送訊息
     if bot_type and bot_type != "bot":
         log_webhook(f"ℹ️ {bot_type} 已更新資訊")
