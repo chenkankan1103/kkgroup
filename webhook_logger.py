@@ -1,30 +1,53 @@
+# webhook_logger.py
+
 import logging
+import os
 import json
-from telegram import Update
-from telegram.ext import CallbackContext
+from datetime import datetime
 
 class WebhookLogger:
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
+    """
+    A class to log incoming webhooks.
+    """
 
-    def log_update(self, update: Update):
-        self.logger.info('Received update: %s', update)
+    def __init__(self, log_file='webhook_log.json'):
+        self.log_file = log_file
+        self.ensure_log_file_exists()
 
-    def handle_edit(self, update: Update, context: CallbackContext):
-        message = update.message
+    def ensure_log_file_exists(self):
+        """
+        Ensure that the log file exists.
+        """
+        if not os.path.isfile(self.log_file):
+            with open(self.log_file, 'w') as f:
+                json.dump([], f)
+
+    def log_webhook(self, webhook_data):
+        """
+        Log the incoming webhook data.
+        """
         try:
-            # Assume we are trying to edit a message
-            context.bot.edit_message_text(
-                text='New content',
-                chat_id=message.chat_id,
-                message_id=message.message_id
-            )
+            with open(self.log_file, 'r+') as f:
+                logs = json.load(f)
+                logs.append({
+                    'data': webhook_data,
+                    'timestamp': datetime.utcnow().isoformat()
+                })
+                f.seek(0)
+                json.dump(logs, f)
+                f.truncate()
         except Exception as e:
-            self.logger.error('Failed to edit message: %s', e)
-            try:
-                # Attempt to delete the old message if edit fails
-                context.bot.delete_message(chat_id=message.chat_id, message_id=message.message_id)
-            except Exception as delete_error:
-                self.logger.error('Failed to delete old message: %s', delete_error)
-            # Now send a new message instead
-            context.bot.send_message(chat_id=message.chat_id, text='Fallback: New content')
+            self.handle_log_failure(e)
+
+    def handle_log_failure(self, exception):
+        """
+        Handle logging failure by deleting the corrupted log file.
+        """
+        logging.error(f'Failed to log webhook: {exception}')
+        if os.path.isfile(self.log_file):
+            os.remove(self.log_file)
+            self.ensure_log_file_exists()
+
+# Example usage:
+# logger = WebhookLogger()
+# logger.log_webhook({'example_key': 'example_value'})
