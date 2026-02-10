@@ -997,7 +997,6 @@ class SelectSeedView(discord.ui.View):
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
                     # 種植失敗，退還種子
-                    from shop_commands.merchant.cannabis_farming import add_inventory
                     await add_inventory(self.user_id, "種子", seed_name, 1)
                     reason = result.get("reason", "未知原因") if result else "未知原因"
                     await interaction.followup.send(f"❌ 種植失敗：{reason}", ephemeral=True)
@@ -1006,10 +1005,9 @@ class SelectSeedView(discord.ui.View):
                 traceback.print_exc()
                 # 如果發生錯誤，嘗試退還種子
                 try:
-                    from shop_commands.merchant.cannabis_farming import add_inventory
                     await add_inventory(self.user_id, "種子", seed_name, 1)
-                except:
-                    pass
+                except Exception as refund_error:
+                    print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
                 await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
         
         return callback
