@@ -13,6 +13,7 @@ import sys
 import json
 import sqlite3
 import subprocess
+import asyncio
 from datetime import datetime, timedelta
 from collections import deque
 from typing import Optional, Dict
@@ -262,6 +263,25 @@ async def global_update_logs_task():
                 print(f"[GLOBAL LOG TASK] {bot_type} 實例未找到 - 跳過")
     except Exception as e:
         print(f"[GLOBAL LOG TASK ERROR] {e}")
+
+
+@global_update_logs_task.before_loop
+async def before_global_update_logs_task():
+    """等待至少一個機器人實例就緒"""
+    print("[GLOBAL LOG TASK] 等待機器人就緒...")
+    # 等待至少一個機器人實例被註冊且就緒
+    while True:
+        for bot_type in ["bot", "shopbot", "uibot"]:
+            bot_instance = get_bot_instance(bot_type)
+            if bot_instance and hasattr(bot_instance, 'wait_until_ready'):
+                try:
+                    await bot_instance.wait_until_ready()
+                    print(f"[GLOBAL LOG TASK] {bot_type} 已就緒，任務即將啟動")
+                    return
+                except Exception as e:
+                    print(f"[GLOBAL LOG TASK] 等待 {bot_type} 就緒時出錯: {e}")
+        # 如果沒有找到任何已註冊的機器人，等待一秒後重試
+        await asyncio.sleep(1)
 
 
 def register_bot_instance(bot_type: str, bot_instance):
@@ -609,12 +629,26 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
         await create_or_update_logs(bot, bot_type)
 
         # 啟動全域日誌更新任務（只在第一次調用時啟動）
+        # 檢查任務狀態並在需要時啟動或重啟
         if not global_update_logs_task.is_running():
-            print(f"[DASHBOARD] 啟動全域日誌更新任務")
-            global_update_logs_task.start()
-            add_log("system", f"🔄 全域日誌更新任務已啟動")
+            print(f"[DASHBOARD] 全域日誌更新任務未運行，正在啟動...")
+            try:
+                global_update_logs_task.start()
+                add_log("system", f"🔄 全域日誌更新任務已啟動")
+                print(f"[DASHBOARD] ✅ 全域日誌更新任務啟動成功")
+            except RuntimeError as e:
+                # 任務可能已經被啟動但未正確報告狀態
+                if "already running" in str(e).lower():
+                    print(f"[DASHBOARD] 任務已在運行（狀態同步問題）")
+                    add_log("system", f"⚠️ 任務狀態異常但已在運行")
+                else:
+                    print(f"[DASHBOARD] ❌ 啟動任務失敗: {e}")
+                    add_log("system", f"❌ 任務啟動失敗: {e}")
+            except Exception as e:
+                print(f"[DASHBOARD] ❌ 啟動任務時發生未預期錯誤: {e}")
+                add_log("system", f"❌ 任務啟動異常: {e}")
         else:
-            print(f"[DASHBOARD] 全域日誌更新任務已在運行")
+            print(f"[DASHBOARD] ✅ 全域日誌更新任務已在運行 (is_running={global_update_logs_task.is_running()})")
 
         print(f"[DASHBOARD] {bot_type} 儀表板設置完成")
 
