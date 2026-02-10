@@ -13,6 +13,7 @@ import sys
 import json
 import sqlite3
 import subprocess
+import asyncio
 from datetime import datetime, timedelta
 from collections import deque
 from typing import Optional, Dict
@@ -309,7 +310,6 @@ async def update_dashboard_logs(bot, bot_type: str):
             channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
             if channel:
                 try:
-                    import asyncio
                     message = await asyncio.wait_for(
                         channel.fetch_message(int(message_id)),
                         timeout=10.0
@@ -541,7 +541,6 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         # 查找現有訊息（只查找由當前 bot 發送的）
         # 添加超時保護
         try:
-            import asyncio
             async def fetch_history():
                 nonlocal found_dashboard, found_logs, dashboard_count, logs_count, old_dashboards, old_logs
                 async for msg in channel.history(limit=100):
@@ -687,7 +686,6 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
 
         # 創建或更新控制面板訊息
         try:
-            import asyncio
             await asyncio.wait_for(
                 create_or_update_dashboard(bot, bot_type),
                 timeout=20.0
@@ -699,7 +697,6 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
 
         # 創建或更新日誌訊息
         try:
-            import asyncio
             await asyncio.wait_for(
                 create_or_update_logs(bot, bot_type),
                 timeout=20.0
@@ -744,7 +741,6 @@ async def create_or_update_dashboard(bot: discord.Client, bot_type: str):
 
         if dashboard_id:
             try:
-                import asyncio
                 msg = await asyncio.wait_for(
                     channel.fetch_message(int(dashboard_id)),
                     timeout=10.0
@@ -769,7 +765,6 @@ async def create_or_update_dashboard(bot: discord.Client, bot_type: str):
 
         # 創建新訊息
         try:
-            import asyncio
             embed = await create_dashboard_embed(bot_type)
             view = DashboardButtons(bot_type, bot)
             msg = await asyncio.wait_for(
@@ -803,7 +798,6 @@ async def create_or_update_logs(bot: discord.Client, bot_type: str):
 
         if logs_id:
             try:
-                import asyncio
                 msg = await asyncio.wait_for(
                     channel.fetch_message(int(logs_id)),
                     timeout=10.0
@@ -827,7 +821,6 @@ async def create_or_update_logs(bot: discord.Client, bot_type: str):
 
         # 創建新訊息
         try:
-            import asyncio
             embed = await create_logs_embed(bot_type)
             msg = await asyncio.wait_for(
                 channel.send(embed=embed),
