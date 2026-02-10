@@ -136,9 +136,13 @@ async def initialize_dashboard(bot: discord.Client, bot_type: str):
         # 只初始化該機器人自己的訊息
         found_dashboard = None
         found_logs = None
+        dashboard_count = 0
+        logs_count = 0
+        old_dashboards = []
+        old_logs = []
         
         # 查找現有訊息（只查找由當前 bot 發送的）
-        async for msg in channel.history(limit=50):
+        async for msg in channel.history(limit=100):
             if msg.author.id != bot.user.id:
                 continue  # 跳過其他 bot 的訊息
             
@@ -146,9 +150,25 @@ async def initialize_dashboard(bot: discord.Client, bot_type: str):
                 for embed in msg.embeds:
                     bot_name = BOT_CONFIG[bot_type]["名稱"]
                     if "控制面板" in embed.title and bot_name in embed.title:
-                        found_dashboard = msg
+                        dashboard_count += 1
+                        if dashboard_count <= 1:
+                            found_dashboard = msg
+                        else:
+                            old_dashboards.append(msg)
                     elif "實時日誌" in embed.title and bot_name in embed.title:
-                        found_logs = msg
+                        logs_count += 1
+                        if logs_count <= 1:
+                            found_logs = msg
+                        else:
+                            old_logs.append(msg)
+        
+        # 清理舊 embed
+        for msg in old_dashboards + old_logs:
+            try:
+                await msg.delete()
+                print(f"✓ 已清理舊的 {bot_type} embed")
+            except:
+                pass
         
         # 創建或註冊控制面板
         if not found_dashboard:
