@@ -388,7 +388,7 @@ class DashboardButtons(discord.ui.View):
 🟢 **在線**
 用戶: {self.bot.user.mention}
 ID: {self.bot.user.id}
-時間: <t:{int(get_taiwan_time().timestamp())}:R>
+時間: <t:{int(datetime.utcnow().timestamp())}:R>
                 """
             else:
                 detail = "🔴 離線"
