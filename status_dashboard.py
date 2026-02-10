@@ -357,16 +357,6 @@ def load_message_ids(bot_type: str):
     
     if logs_id:
         dashboard_messages["logs"] = int(logs_id)
-
-
-def add_log(bot_type: str, message: str):
-    """添加日誌條目"""
-    if bot_type in logs_storage:
-        timestamp = datetime.utcnow().strftime("%H:%M:%S")
-        logs_storage[bot_type].append(f"[{timestamp}] {message}")
-
-
-def get_logs_text(bot_type: str) -> str:
     """獲取格式化的日誌文本"""
     if bot_type not in logs_storage:
         return "無日誌"
