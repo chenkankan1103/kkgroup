@@ -35,10 +35,10 @@ class ScamParkEvents(commands.Cog):
             # 沒有 Gemini，改用 Groq
             self.use_google_api = False
         
-        # 事件設定 - 調整為12小時常態分佈
+        # 事件設定 - 調整為2-4小時間隔增加觸發頻率
         self.event_cooldown = {}  # 使用者事件冷卻 {user_id: last_event_timestamp}
-        self.min_event_interval = 43200   # 最少12小時 (秒)
-        self.max_event_interval = 86400   # 最多24小時 (秒)
+        self.min_event_interval = 7200    # 最少2小時 (秒) - 改短以增加觸發頻率
+        self.max_event_interval = 14400   # 最多4小時 (秒) - 改短以增加觸發頻率
         
         # 事件訊息追蹤
         self.event_messages = {}  # 存儲使用者的事件訊息ID {user_id: message_id}
@@ -77,11 +77,11 @@ class ScamParkEvents(commands.Cog):
             for user_data in all_users:
                 user_id = user_data.get('user_id')
                 if user_id:
-                    # 設置冷卻時間為當前時間，避免重啟後立即觸發事件
-                    # 實際上應該從某個字段讀取，但目前先設為現在
-                    self.event_cooldown[user_id] = current_time
+                    # 設置初始冷卻時間為當前時間減去 1 小時，讓重啟後立即有可能觸發事件
+                    # 這樣新用戶或被重置的用戶能更快接到第一個事件
+                    self.event_cooldown[user_id] = current_time - 3600
             
-            print(f"✅ 初始化 {len(self.event_cooldown)} 個用戶的事件冷卻時間")
+            print(f"✅ 初始化 {len(self.event_cooldown)} 個用戶的事件冷卻時間（允許立即觸發）")
         except Exception as e:
             print(f"❌ 載入事件歷史錯誤: {e}")
 
@@ -147,8 +147,8 @@ class ScamParkEvents(commands.Cog):
                 # 使用正態分佈，峰值在中間(0.5位置)
                 bell_curve_factor = math.exp(-((time_progress - 0.5) ** 2) / 0.1)
                 
-                # 基礎觸發機率（降低到2%，配合20分鐘檢查）
-                base_chance = 0.02 * bell_curve_factor
+                # 基礎觸發機率（提高到10%以確保事件能定期發生）
+                base_chance = 0.10 * bell_curve_factor
                 
                 # KKCoin加成（有錢的人更容易被盯上）
                 wealth_bonus = min(0.03, kkcoin / 1500 * 0.02)
@@ -578,8 +578,8 @@ class ScamParkEvents(commands.Cog):
                 old_message_id = self.event_messages[member.id]
                 try:
                     old_message = await thread.fetch_message(old_message_id)
-                    # 如果訊息存在且是最近的（12小時內），則跳過
-                    if old_message.created_at.timestamp() > (datetime.datetime.now().timestamp() - 43200):
+                    # 如果訊息存在且是最近的（4小時內），則跳過
+                    if old_message.created_at.timestamp() > (datetime.datetime.now().timestamp() - 14400):
                         print(f"⏭️ 用戶 {member.name} 已有近期事件訊息，跳過觸發")
                         return
                 except discord.NotFound:
