@@ -9,6 +9,7 @@
 
 import discord
 import os
+import sys
 import json
 import sqlite3
 import subprocess
@@ -17,8 +18,25 @@ from collections import deque
 from typing import Optional, Dict
 from dotenv import load_dotenv, set_key
 from discord.ext import tasks
+import pathlib
 
 load_dotenv()
+
+# 硬編碼的訊息 ID 作為回退值
+HARDCODED_MESSAGE_IDS = {
+    "bot": {
+        "dashboard": 1470781481071808614,
+        "logs": 1470781481868591187
+    },
+    "shopbot": {
+        "dashboard": 1470782649806098483,
+        "logs": 1470782650716389648
+    },
+    "uibot": {
+        "dashboard": 1470782658702344486,
+        "logs": 1470782659843068032
+    }
+}
 
 DASHBOARD_CHANNEL_ID = int(os.getenv("DASHBOARD_CHANNEL_ID", "1470272652429099125"))
 LOGS_CAPACITY = 10  # 保存最近 10 條日誌
@@ -33,8 +51,103 @@ logs_storage = {
 # 日誌持久化文件
 logs_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dashboard_logs.json')
 
+
+def check_environment() -> Dict[str, any]:
+    """
+    環境檢查函數 - 診斷並記錄環境問題
+    
+    Returns:
+        dict: 包含環境診斷信息的字典
+    """
+    diagnostics = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "working_directory": os.getcwd(),
+        "script_path": os.path.abspath(__file__),
+        "script_directory": os.path.dirname(os.path.abspath(__file__)),
+        "python_executable": sys.executable,
+        "python_version": sys.version,
+        "in_virtual_env": False,
+        "virtual_env_path": None,
+        "sys_prefix": sys.prefix,
+        "sys_base_prefix": getattr(sys, 'base_prefix', sys.prefix),
+        "running_under_systemd": False,
+        "systemd_details": None,
+        "logs_file_path": logs_file,
+        "logs_file_exists": os.path.exists(logs_file),
+        "logs_file_writable": False,
+        "logs_dir_writable": False,
+        "env_file_exists": os.path.exists(".env"),
+        "issues": []
+    }
+    
+    # 檢測虛擬環境
+    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        diagnostics["in_virtual_env"] = True
+        diagnostics["virtual_env_path"] = sys.prefix
+    
+    # 檢測 systemd 環境
+    try:
+        # 檢查是否由 systemd 運行
+        ppid = os.getppid()
+        with open(f'/proc/{ppid}/comm', 'r') as f:
+            parent_process = f.read().strip()
+            if parent_process == 'systemd' or os.getenv('INVOCATION_ID'):
+                diagnostics["running_under_systemd"] = True
+                diagnostics["systemd_details"] = {
+                    "parent_process": parent_process,
+                    "invocation_id": os.getenv('INVOCATION_ID'),
+                    "journal_stream": os.getenv('JOURNAL_STREAM')
+                }
+    except Exception as e:
+        diagnostics["issues"].append(f"無法檢測 systemd: {e}")
+    
+    # 檢查日誌文件路徑權限
+    logs_dir = os.path.dirname(logs_file)
+    try:
+        diagnostics["logs_dir_writable"] = os.access(logs_dir, os.W_OK)
+        if os.path.exists(logs_file):
+            diagnostics["logs_file_writable"] = os.access(logs_file, os.W_OK)
+        else:
+            # 嘗試創建測試文件來驗證寫入權限
+            test_file = os.path.join(logs_dir, '.test_write_permission')
+            try:
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+                diagnostics["logs_file_writable"] = True
+            except:
+                diagnostics["logs_file_writable"] = False
+    except Exception as e:
+        diagnostics["issues"].append(f"無法檢查日誌文件權限: {e}")
+    
+    # 檢查工作目錄是否正確
+    expected_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.getcwd() != expected_dir:
+        diagnostics["issues"].append(
+            f"工作目錄不匹配 - 當前: {os.getcwd()}, 預期: {expected_dir}"
+        )
+    
+    # 記錄診斷結果
+    print("[環境診斷] ==================")
+    print(f"  工作目錄: {diagnostics['working_directory']}")
+    print(f"  腳本路徑: {diagnostics['script_path']}")
+    print(f"  Python 執行檔: {diagnostics['python_executable']}")
+    print(f"  虛擬環境: {'是' if diagnostics['in_virtual_env'] else '否'}")
+    if diagnostics['in_virtual_env']:
+        print(f"  虛擬環境路徑: {diagnostics['virtual_env_path']}")
+    print(f"  Systemd 運行: {'是' if diagnostics['running_under_systemd'] else '否'}")
+    print(f"  日誌文件: {diagnostics['logs_file_path']}")
+    print(f"  日誌目錄可寫: {'是' if diagnostics['logs_dir_writable'] else '否'}")
+    print(f"  日誌文件可寫: {'是' if diagnostics['logs_file_writable'] else '否'}")
+    if diagnostics['issues']:
+        print(f"  問題: {', '.join(diagnostics['issues'])}")
+    print("==================")
+    
+    return diagnostics
+
+
 def load_logs():
-    """從文件加載日誌"""
+    """從文件加載日誌 - 改進的錯誤處理"""
     try:
         if os.path.exists(logs_file):
             with open(logs_file, 'r', encoding='utf-8') as f:
@@ -44,19 +157,70 @@ def load_logs():
                         logs_storage[bot_type].clear()
                         logs_storage[bot_type].extend(logs)
                 print(f"[LOGS] 已加載日誌: {list(data.keys())}")
+        else:
+            print(f"[LOGS] 日誌文件不存在: {logs_file}")
+    except PermissionError as e:
+        print(f"[LOGS ERROR] 權限錯誤 - 無法讀取日誌文件: {logs_file}")
+        print(f"  詳情: {e}")
+        print(f"  請檢查文件權限: ls -l {logs_file}")
+    except FileNotFoundError as e:
+        print(f"[LOGS ERROR] 路徑錯誤 - 日誌文件路徑無效: {logs_file}")
+        print(f"  詳情: {e}")
+    except json.JSONDecodeError as e:
+        print(f"[LOGS ERROR] JSON 解碼錯誤 - 日誌文件可能已損壞: {logs_file}")
+        print(f"  詳情: {e}")
+        print(f"  行 {e.lineno}, 列 {e.colno}: {e.msg}")
+    except UnicodeDecodeError as e:
+        print(f"[LOGS ERROR] 編碼錯誤 - 日誌文件編碼問題: {logs_file}")
+        print(f"  詳情: {e}")
+        print(f"  嘗試使用不同的編碼讀取文件")
     except Exception as e:
-        print(f"[LOGS] 加載日誌失敗: {e}")
+        print(f"[LOGS ERROR] 未預期的錯誤加載日誌: {e}")
+        import traceback
+        traceback.print_exc()
+
 
 def save_logs():
-    """保存日誌到文件"""
+    """保存日誌到文件 - 改進的錯誤處理"""
     try:
+        # 確保父目錄存在
+        logs_dir = os.path.dirname(logs_file)
+        if logs_dir and not os.path.exists(logs_dir):
+            try:
+                os.makedirs(logs_dir, exist_ok=True)
+                print(f"[LOGS] 已創建日誌目錄: {logs_dir}")
+            except PermissionError as e:
+                print(f"[LOGS ERROR] 無法創建日誌目錄 - 權限不足: {logs_dir}")
+                print(f"  詳情: {e}")
+                return
+        
+        # 保存日誌數據
         data = {bot_type: list(logs) for bot_type, logs in logs_storage.items()}
         with open(logs_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+            
+    except PermissionError as e:
+        print(f"[LOGS ERROR] 權限錯誤 - 無法寫入日誌文件: {logs_file}")
+        print(f"  詳情: {e}")
+        print(f"  請檢查文件權限: ls -l {logs_file}")
+        print(f"  或檢查目錄權限: ls -ld {os.path.dirname(logs_file)}")
+    except FileNotFoundError as e:
+        print(f"[LOGS ERROR] 路徑錯誤 - 日誌文件路徑無效: {logs_file}")
+        print(f"  詳情: {e}")
+    except OSError as e:
+        print(f"[LOGS ERROR] 系統錯誤 - 無法寫入日誌文件: {logs_file}")
+        print(f"  詳情: {e}")
+        print(f"  磁盤空間: {e.strerror if hasattr(e, 'strerror') else '未知'}")
+    except UnicodeEncodeError as e:
+        print(f"[LOGS ERROR] 編碼錯誤 - 日誌數據包含無法編碼的字符")
+        print(f"  詳情: {e}")
     except Exception as e:
-        print(f"[LOGS] 保存日誌失敗: {e}")
+        print(f"[LOGS ERROR] 未預期的錯誤保存日誌: {e}")
+        import traceback
+        traceback.print_exc()
 
-# 初始化時加載日誌
+# 初始化時執行環境檢查並加載日誌
+env_diagnostics = check_environment()
 load_logs()
 
 # Message ID 存儲（每個機器人獨立）
@@ -315,6 +479,9 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     global current_bot_type
     current_bot_type = bot_type_str
     
+    # 加載訊息 ID（包括硬編碼的回退值）
+    load_message_ids(bot_type_str)
+    
     try:
         channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
@@ -387,6 +554,14 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         
         # 保存到 .env
         save_message_ids(bot_type_str)
+        
+        # 記錄環境信息到日誌
+        if env_diagnostics:
+            env_summary = f"環境: {'虛擬環境' if env_diagnostics['in_virtual_env'] else '系統環境'}"
+            if env_diagnostics['running_under_systemd']:
+                env_summary += " | systemd"
+            add_log(bot_type_str, f"✅ {env_summary}")
+        
         return True
         
     except Exception as e:
@@ -407,6 +582,9 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
         # 註冊機器人實例
         register_bot_instance(bot_type, bot)
         print(f"[DASHBOARD] {bot_type} 實例已註冊")
+
+        # 加載訊息 ID（包括硬編碼的回退值）
+        load_message_ids(bot_type)
 
         # 創建或更新控制面板訊息
         await create_or_update_dashboard(bot, bot_type)
@@ -436,8 +614,11 @@ async def create_or_update_dashboard(bot: discord.Client, bot_type: str):
             print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
             return
 
-        # 檢查現有訊息
+        # 檢查現有訊息（優先從 .env，然後使用硬編碼回退值）
         dashboard_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_DASHBOARD")
+        if not dashboard_id and bot_type in HARDCODED_MESSAGE_IDS:
+            dashboard_id = str(HARDCODED_MESSAGE_IDS[bot_type]["dashboard"])
+            print(f"[DASHBOARD] 使用硬編碼的 {bot_type} 控制面板 ID: {dashboard_id}")
 
         if dashboard_id:
             try:
@@ -445,7 +626,8 @@ async def create_or_update_dashboard(bot: discord.Client, bot_type: str):
                 if msg.author.id == bot.user.id:
                     # 更新現有訊息
                     embed = await create_dashboard_embed(bot_type)
-                    await msg.edit(embed=embed)
+                    view = DashboardButtons(bot_type, bot)
+                    await msg.edit(embed=embed, view=view)
                     print(f"[DASHBOARD] {bot_type} 控制面板已更新")
                     return
             except discord.NotFound:
@@ -453,7 +635,8 @@ async def create_or_update_dashboard(bot: discord.Client, bot_type: str):
 
         # 創建新訊息
         embed = await create_dashboard_embed(bot_type)
-        msg = await channel.send(embed=embed)
+        view = DashboardButtons(bot_type, bot)
+        msg = await channel.send(embed=embed, view=view)
         set_key(".env", f"DASHBOARD_{bot_type.upper()}_DASHBOARD", str(msg.id))
         print(f"[DASHBOARD] {bot_type} 控制面板已創建 (ID: {msg.id})")
 
@@ -469,8 +652,11 @@ async def create_or_update_logs(bot: discord.Client, bot_type: str):
             print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
             return
 
-        # 檢查現有訊息
+        # 檢查現有訊息（優先從 .env，然後使用硬編碼回退值）
         logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
+        if not logs_id and bot_type in HARDCODED_MESSAGE_IDS:
+            logs_id = str(HARDCODED_MESSAGE_IDS[bot_type]["logs"])
+            print(f"[DASHBOARD] 使用硬編碼的 {bot_type} 日誌 ID: {logs_id}")
 
         if logs_id:
             try:
@@ -510,15 +696,23 @@ def save_message_ids(bot_type: str):
 
 
 def load_message_ids(bot_type: str):
-    """從 .env 加載 message_id"""
+    """從 .env 加載 message_id，如果不存在則使用硬編碼的回退值"""
     dashboard_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_DASHBOARD")
     logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
 
     if dashboard_id:
         message_ids[bot_type]["dashboard"] = int(dashboard_id)
+    elif bot_type in HARDCODED_MESSAGE_IDS:
+        # 使用硬編碼的回退值
+        message_ids[bot_type]["dashboard"] = HARDCODED_MESSAGE_IDS[bot_type]["dashboard"]
+        print(f"[LOAD IDS] 使用硬編碼的 {bot_type} 控制面板 ID: {HARDCODED_MESSAGE_IDS[bot_type]['dashboard']}")
 
     if logs_id:
         message_ids[bot_type]["logs"] = int(logs_id)
+    elif bot_type in HARDCODED_MESSAGE_IDS:
+        # 使用硬編碼的回退值
+        message_ids[bot_type]["logs"] = HARDCODED_MESSAGE_IDS[bot_type]["logs"]
+        print(f"[LOAD IDS] 使用硬編碼的 {bot_type} 日誌 ID: {HARDCODED_MESSAGE_IDS[bot_type]['logs']}")
     """獲取格式化的日誌文本"""
     if bot_type not in logs_storage:
         return "無日誌"
