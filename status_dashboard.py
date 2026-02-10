@@ -287,7 +287,7 @@ def save_message_id(bot_type: str, message_type: str, message_id: str):
 
 
 async def update_dashboard_logs(bot, bot_type: str):
-    """更新指定機器人的日誌"""
+    """更新指定機器人的日誌，添加超時保護"""
     try:
         print(f"[UPDATE LOGS] 開始更新 {bot_type} 日誌")
 
@@ -309,13 +309,32 @@ async def update_dashboard_logs(bot, bot_type: str):
             channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
             if channel:
                 try:
-                    message = await channel.fetch_message(int(message_id))
-                    await message.edit(embed=embed)
+                    import asyncio
+                    message = await asyncio.wait_for(
+                        channel.fetch_message(int(message_id)),
+                        timeout=10.0
+                    )
+                    await asyncio.wait_for(
+                        message.edit(embed=embed),
+                        timeout=10.0
+                    )
                     print(f"[UPDATE LOGS] {bot_type} 日誌已成功更新")
+                except asyncio.TimeoutError:
+                    print(f"[UPDATE LOGS] {bot_type} 日誌更新超時（10秒）")
                 except discord.NotFound:
                     print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
-                    message = await channel.send(embed=embed)
-                    save_message_id(bot_type, "logs", str(message.id))
+                    try:
+                        message = await asyncio.wait_for(
+                            channel.send(embed=embed),
+                            timeout=10.0
+                        )
+                        save_message_id(bot_type, "logs", str(message.id))
+                    except asyncio.TimeoutError:
+                        print(f"[UPDATE LOGS] {bot_type} 創建新日誌訊息超時")
+                    except Exception as e:
+                        print(f"[UPDATE LOGS] {bot_type} 創建新日誌訊息失敗: {e}")
+                except discord.HTTPException as e:
+                    print(f"[UPDATE LOGS] {bot_type} Discord API 錯誤: {e}")
                 except Exception as e:
                     print(f"[UPDATE LOGS] {bot_type} 日誌更新錯誤: {e}")
             else:
@@ -487,21 +506,28 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
 async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     """
     初始化儀表板 - 每個機器人只初始化自己的面板
+    添加超時保護，確保網路問題不會導致崩潰
     
     Args:
         bot_instance: Discord bot instance
         bot_type_str: "bot", "shopbot", "uibot"
+    
+    Returns:
+        bool: True if successful, False otherwise
     """
     global current_bot_type
     current_bot_type = bot_type_str
     
     # 加載訊息 ID（包括硬編碼的回退值）
-    load_message_ids(bot_type_str)
+    try:
+        load_message_ids(bot_type_str)
+    except Exception as e:
+        print(f"⚠️ 加載訊息 ID 失敗: {e}")
     
     try:
         channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
-            print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
+            print(f"⚠️ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}，機器人將繼續運行")
             return False
         
         # 只初始化該機器人自己的訊息
@@ -513,75 +539,128 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         old_logs = []
         
         # 查找現有訊息（只查找由當前 bot 發送的）
-        async for msg in channel.history(limit=100):
-            if msg.author.id != bot_instance.user.id:
-                continue  # 跳過其他 bot 的訊息
+        # 添加超時保護
+        try:
+            import asyncio
+            async def fetch_history():
+                nonlocal found_dashboard, found_logs, dashboard_count, logs_count, old_dashboards, old_logs
+                async for msg in channel.history(limit=100):
+                    if msg.author.id != bot_instance.user.id:
+                        continue  # 跳過其他 bot 的訊息
+                    
+                    if msg.embeds:
+                        for embed in msg.embeds:
+                            bot_name = BOT_CONFIG[bot_type_str]["名稱"]
+                            if "控制面板" in embed.title and bot_name in embed.title:
+                                dashboard_count += 1
+                                if dashboard_count <= 1:
+                                    found_dashboard = msg
+                                else:
+                                    old_dashboards.append(msg)
+                            elif "實時日誌" in embed.title and bot_name in embed.title:
+                                logs_count += 1
+                                if logs_count <= 1:
+                                    found_logs = msg
+                                else:
+                                    old_logs.append(msg)
             
-            if msg.embeds:
-                for embed in msg.embeds:
-                    bot_name = BOT_CONFIG[bot_type_str]["名稱"]
-                    if "控制面板" in embed.title and bot_name in embed.title:
-                        dashboard_count += 1
-                        if dashboard_count <= 1:
-                            found_dashboard = msg
-                        else:
-                            old_dashboards.append(msg)
-                    elif "實時日誌" in embed.title and bot_name in embed.title:
-                        logs_count += 1
-                        if logs_count <= 1:
-                            found_logs = msg
-                        else:
-                            old_logs.append(msg)
+            await asyncio.wait_for(fetch_history(), timeout=15.0)
+        except asyncio.TimeoutError:
+            print(f"⚠️ 獲取頻道歷史記錄超時（15秒），將創建新訊息")
+        except discord.HTTPException as e:
+            print(f"⚠️ Discord API 錯誤獲取歷史記錄: {e}")
+        except Exception as e:
+            print(f"⚠️ 獲取歷史記錄失敗: {e}")
         
         # 清理舊 embed
         for msg in old_dashboards + old_logs:
             try:
-                await msg.delete()
+                await asyncio.wait_for(msg.delete(), timeout=5.0)
                 print(f"✓ 已清理舊的 {bot_type_str} embed")
-            except:
+            except asyncio.TimeoutError:
+                print(f"⚠️ 刪除舊訊息超時")
+            except discord.HTTPException:
+                pass  # 可能已被刪除
+            except Exception:
                 pass
         
         # 創建或註冊控制面板
         if not found_dashboard:
-            embed = await create_dashboard_embed(bot_type_str)
-            view = DashboardButtons(bot_type_str, bot_instance)
-            msg = await channel.send(embed=embed, view=view)
-            message_ids[bot_type_str]["dashboard"] = msg.id
-            print(f"✅ 創建 {bot_type_str} 控制面板: {msg.id}")
+            try:
+                embed = await create_dashboard_embed(bot_type_str)
+                view = DashboardButtons(bot_type_str, bot_instance)
+                msg = await asyncio.wait_for(
+                    channel.send(embed=embed, view=view),
+                    timeout=10.0
+                )
+                message_ids[bot_type_str]["dashboard"] = msg.id
+                print(f"✅ 創建 {bot_type_str} 控制面板: {msg.id}")
+            except asyncio.TimeoutError:
+                print(f"⚠️ 創建控制面板超時（10秒）")
+                return False
+            except discord.HTTPException as e:
+                print(f"⚠️ Discord API 錯誤創建控制面板: {e}")
+                return False
         else:
             message_ids[bot_type_str]["dashboard"] = found_dashboard.id
             # 重新附加按鈕視圖到舊訊息
             try:
                 view = DashboardButtons(bot_type_str, bot_instance)
-                await found_dashboard.edit(view=view)
-            except:
+                await asyncio.wait_for(
+                    found_dashboard.edit(view=view),
+                    timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                print(f"⚠️ 更新控制面板超時（10秒）")
+            except discord.HTTPException:
+                pass  # 可能權限不足
+            except Exception:
                 pass
             print(f"✅ 找到 {bot_type_str} 控制面板: {found_dashboard.id}")
         
         # 創建或註冊日誌
         if not found_logs:
-            embed = await create_logs_embed(bot_type_str)
-            msg = await channel.send(embed=embed)
-            message_ids[bot_type_str]["logs"] = msg.id
-            print(f"✅ 創建 {bot_type_str} 日誌: {msg.id}")
+            try:
+                embed = await create_logs_embed(bot_type_str)
+                msg = await asyncio.wait_for(
+                    channel.send(embed=embed),
+                    timeout=10.0
+                )
+                message_ids[bot_type_str]["logs"] = msg.id
+                print(f"✅ 創建 {bot_type_str} 日誌: {msg.id}")
+            except asyncio.TimeoutError:
+                print(f"⚠️ 創建日誌超時（10秒）")
+                return False
+            except discord.HTTPException as e:
+                print(f"⚠️ Discord API 錯誤創建日誌: {e}")
+                return False
         else:
             message_ids[bot_type_str]["logs"] = found_logs.id
             print(f"✅ 找到 {bot_type_str} 日誌: {found_logs.id}")
         
         # 保存到 .env
-        save_message_ids(bot_type_str)
+        try:
+            save_message_ids(bot_type_str)
+        except Exception as e:
+            print(f"⚠️ 保存訊息 ID 到 .env 失敗: {e}")
         
         # 記錄環境信息到日誌
-        if env_diagnostics:
-            env_summary = f"環境: {'虛擬環境' if env_diagnostics['in_virtual_env'] else '系統環境'}"
-            if env_diagnostics['running_under_systemd']:
-                env_summary += " | systemd"
-            add_log(bot_type_str, f"✅ {env_summary}")
+        try:
+            if env_diagnostics:
+                env_summary = f"環境: {'虛擬環境' if env_diagnostics['in_virtual_env'] else '系統環境'}"
+                if env_diagnostics['running_under_systemd']:
+                    env_summary += " | systemd"
+                add_log(bot_type_str, f"✅ {env_summary}")
+        except Exception as e:
+            print(f"⚠️ 記錄環境信息失敗: {e}")
         
         return True
         
+    except discord.HTTPException as e:
+        print(f"⚠️ Discord API 錯誤初始化儀表板: {e}，機器人將繼續運行")
+        return False
     except Exception as e:
-        print(f"❌ 初始化儀表板失敗: {e}")
+        print(f"⚠️ 初始化儀表板失敗: {e}，機器人將繼續運行")
         import traceback
         traceback.print_exc()
         return False
@@ -591,6 +670,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
 async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
     """
     確保儀表板消息存在並啟動全域日誌任務
+    添加超時保護，防止網路問題導致崩潰
     """
     try:
         print(f"[DASHBOARD] 開始設置 {bot_type} 儀表板")
@@ -600,34 +680,60 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
         print(f"[DASHBOARD] {bot_type} 實例已註冊")
 
         # 加載訊息 ID（包括硬編碼的回退值）
-        load_message_ids(bot_type)
+        try:
+            load_message_ids(bot_type)
+        except Exception as e:
+            print(f"[DASHBOARD] 加載訊息 ID 失敗: {e}")
 
         # 創建或更新控制面板訊息
-        await create_or_update_dashboard(bot, bot_type)
+        try:
+            import asyncio
+            await asyncio.wait_for(
+                create_or_update_dashboard(bot, bot_type),
+                timeout=20.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[DASHBOARD] {bot_type} 創建/更新控制面板超時（20秒）")
+        except Exception as e:
+            print(f"[DASHBOARD] {bot_type} 創建/更新控制面板失敗: {e}")
 
         # 創建或更新日誌訊息
-        await create_or_update_logs(bot, bot_type)
+        try:
+            import asyncio
+            await asyncio.wait_for(
+                create_or_update_logs(bot, bot_type),
+                timeout=20.0
+            )
+        except asyncio.TimeoutError:
+            print(f"[DASHBOARD] {bot_type} 創建/更新日誌超時（20秒）")
+        except Exception as e:
+            print(f"[DASHBOARD] {bot_type} 創建/更新日誌失敗: {e}")
 
         # 啟動全域日誌更新任務（只在第一次調用時啟動）
-        if not global_update_logs_task.is_running():
-            print(f"[DASHBOARD] 啟動全域日誌更新任務")
-            global_update_logs_task.start()
-            add_log("system", f"🔄 全域日誌更新任務已啟動")
-        else:
-            print(f"[DASHBOARD] 全域日誌更新任務已在運行")
+        try:
+            if not global_update_logs_task.is_running():
+                print(f"[DASHBOARD] 啟動全域日誌更新任務")
+                global_update_logs_task.start()
+                add_log("system", f"🔄 全域日誌更新任務已啟動")
+            else:
+                print(f"[DASHBOARD] 全域日誌更新任務已在運行")
+        except Exception as e:
+            print(f"[DASHBOARD] 啟動全域日誌更新任務失敗: {e}")
 
         print(f"[DASHBOARD] {bot_type} 儀表板設置完成")
 
     except Exception as e:
-        print(f"[DASHBOARD ERROR] {bot_type}: {e}")
+        print(f"[DASHBOARD ERROR] {bot_type} 儀表板設置失敗，但不影響機器人運行: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 async def create_or_update_dashboard(bot: discord.Client, bot_type: str):
-    """創建或更新控制面板訊息"""
+    """創建或更新控制面板訊息，添加超時保護"""
     try:
         channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
-            print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
+            print(f"⚠️ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
             return
 
         # 檢查現有訊息（優先從 .env，然後使用硬編碼回退值）
@@ -638,34 +744,55 @@ async def create_or_update_dashboard(bot: discord.Client, bot_type: str):
 
         if dashboard_id:
             try:
-                msg = await channel.fetch_message(int(dashboard_id))
+                import asyncio
+                msg = await asyncio.wait_for(
+                    channel.fetch_message(int(dashboard_id)),
+                    timeout=10.0
+                )
                 if msg.author.id == bot.user.id:
                     # 更新現有訊息
                     embed = await create_dashboard_embed(bot_type)
                     view = DashboardButtons(bot_type, bot)
-                    await msg.edit(embed=embed, view=view)
+                    await asyncio.wait_for(
+                        msg.edit(embed=embed, view=view),
+                        timeout=10.0
+                    )
                     print(f"[DASHBOARD] {bot_type} 控制面板已更新")
                     return
+            except asyncio.TimeoutError:
+                print(f"[DASHBOARD] {bot_type} 獲取/更新控制面板訊息超時（10秒）")
             except discord.NotFound:
                 print(f"[DASHBOARD] {bot_type} 控制面板訊息不存在，將重新創建")
+            except discord.HTTPException as e:
+                print(f"[DASHBOARD] {bot_type} Discord API 錯誤: {e}")
+                return
 
         # 創建新訊息
-        embed = await create_dashboard_embed(bot_type)
-        view = DashboardButtons(bot_type, bot)
-        msg = await channel.send(embed=embed, view=view)
-        set_key(".env", f"DASHBOARD_{bot_type.upper()}_DASHBOARD", str(msg.id))
-        print(f"[DASHBOARD] {bot_type} 控制面板已創建 (ID: {msg.id})")
+        try:
+            import asyncio
+            embed = await create_dashboard_embed(bot_type)
+            view = DashboardButtons(bot_type, bot)
+            msg = await asyncio.wait_for(
+                channel.send(embed=embed, view=view),
+                timeout=10.0
+            )
+            set_key(".env", f"DASHBOARD_{bot_type.upper()}_DASHBOARD", str(msg.id))
+            print(f"[DASHBOARD] {bot_type} 控制面板已創建 (ID: {msg.id})")
+        except asyncio.TimeoutError:
+            print(f"[DASHBOARD] {bot_type} 創建控制面板訊息超時（10秒）")
+        except discord.HTTPException as e:
+            print(f"[DASHBOARD] {bot_type} Discord API 錯誤創建控制面板: {e}")
 
     except Exception as e:
-        print(f"[DASHBOARD] {bot_type} 控制面板創建/更新失敗: {e}")
+        print(f"[DASHBOARD] {bot_type} 控制面板創建/更新失敗，但不影響機器人運行: {e}")
 
 
 async def create_or_update_logs(bot: discord.Client, bot_type: str):
-    """創建或更新日誌訊息"""
+    """創建或更新日誌訊息，添加超時保護"""
     try:
         channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
-            print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
+            print(f"⚠️ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
             return
 
         # 檢查現有訊息（優先從 .env，然後使用硬編碼回退值）
@@ -676,24 +803,45 @@ async def create_or_update_logs(bot: discord.Client, bot_type: str):
 
         if logs_id:
             try:
-                msg = await channel.fetch_message(int(logs_id))
+                import asyncio
+                msg = await asyncio.wait_for(
+                    channel.fetch_message(int(logs_id)),
+                    timeout=10.0
+                )
                 if msg.author.id == bot.user.id:
                     # 更新現有訊息
                     embed = await create_logs_embed(bot_type)
-                    await msg.edit(embed=embed)
+                    await asyncio.wait_for(
+                        msg.edit(embed=embed),
+                        timeout=10.0
+                    )
                     print(f"[DASHBOARD] {bot_type} 日誌已更新")
                     return
+            except asyncio.TimeoutError:
+                print(f"[DASHBOARD] {bot_type} 獲取/更新日誌訊息超時（10秒）")
             except discord.NotFound:
                 print(f"[DASHBOARD] {bot_type} 日誌訊息不存在，將重新創建")
+            except discord.HTTPException as e:
+                print(f"[DASHBOARD] {bot_type} Discord API 錯誤: {e}")
+                return
 
         # 創建新訊息
-        embed = await create_logs_embed(bot_type)
-        msg = await channel.send(embed=embed)
-        set_key(".env", f"DASHBOARD_{bot_type.upper()}_LOGS", str(msg.id))
-        print(f"[DASHBOARD] {bot_type} 日誌已創建 (ID: {msg.id})")
+        try:
+            import asyncio
+            embed = await create_logs_embed(bot_type)
+            msg = await asyncio.wait_for(
+                channel.send(embed=embed),
+                timeout=10.0
+            )
+            set_key(".env", f"DASHBOARD_{bot_type.upper()}_LOGS", str(msg.id))
+            print(f"[DASHBOARD] {bot_type} 日誌已創建 (ID: {msg.id})")
+        except asyncio.TimeoutError:
+            print(f"[DASHBOARD] {bot_type} 創建日誌訊息超時（10秒）")
+        except discord.HTTPException as e:
+            print(f"[DASHBOARD] {bot_type} Discord API 錯誤創建日誌: {e}")
 
     except Exception as e:
-        print(f"[DASHBOARD] {bot_type} 日誌創建/更新失敗: {e}")
+        print(f"[DASHBOARD] {bot_type} 日誌創建/更新失敗，但不影響機器人運行: {e}")
 
 
 def save_message_ids(bot_type: str):

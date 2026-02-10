@@ -10,7 +10,7 @@ from watchdog.events import FileSystemEventHandler
 from logger import print
 from bot_status import build_discord_activity
 from webhook_logger import update_bot_info, send_or_update_startup_info
-from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons, ensure_dashboard_messages
+from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons, ensure_dashboard_messages, global_update_logs_task
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -398,24 +398,52 @@ async def on_ready():
             load_message_ids("bot")
             
             # 初始化儀表板（只初始化當前 bot 的面板）
-            dashboard_ready = await initialize_dashboard(client, "bot")
-            if dashboard_ready:
-                add_log("bot", "✅ 儀表板已初始化")
-                # 註冊持久化按鈕視圖
-                client.add_view(DashboardButtons("bot", client))
-                print("✅ 控制面板按鈕已註冊")
-                if not update_logs_task.is_running():
-                    update_logs_task.start()
-                print(f"✅ 日誌系統已啟動")
+            # 使用 asyncio.wait_for 添加超時保護，防止網路問題導致卡死
+            try:
+                dashboard_ready = await asyncio.wait_for(
+                    initialize_dashboard(client, "bot"),
+                    timeout=30.0  # 30 秒超時
+                )
+                if dashboard_ready:
+                    add_log("bot", "✅ 儀表板已初始化")
+                    # 註冊持久化按鈕視圖
+                    client.add_view(DashboardButtons("bot", client))
+                    print("✅ 控制面板按鈕已註冊")
+                    if not global_update_logs_task.is_running():
+                        global_update_logs_task.start()
+                    print(f"✅ 日誌系統已啟動")
+                else:
+                    print("⚠️ 儀表板初始化返回 False，但機器人將繼續運行")
+            except asyncio.TimeoutError:
+                print("⚠️ 儀表板初始化超時（30秒），機器人將繼續運行")
+            except discord.HTTPException as e:
+                print(f"⚠️ Discord API 錯誤，儀表板初始化失敗: {e}")
+            except Exception as e:
+                print(f"⚠️ 儀表板初始化失敗: {e}")
+                import traceback
+                traceback.print_exc()
             
             # 確保儀表板消息按正確順序存在（bot → shopbot → uibot）
-            await ensure_dashboard_messages(client, "bot")
+            try:
+                await asyncio.wait_for(
+                    ensure_dashboard_messages(client, "bot"),
+                    timeout=30.0  # 30 秒超時
+                )
+            except asyncio.TimeoutError:
+                print("⚠️ 確保儀表板消息超時（30秒），機器人將繼續運行")
+            except Exception as e:
+                print(f"⚠️ 確保儀表板消息失敗: {e}")
             
             # 註冊機器人實例供日誌更新使用
-            from status_dashboard import register_bot_instance
-            register_bot_instance("bot", client)
+            try:
+                from status_dashboard import register_bot_instance
+                register_bot_instance("bot", client)
+            except Exception as e:
+                print(f"⚠️ 註冊機器人實例失敗: {e}")
         except Exception as e:
-            print(f"⚠️ 儀表板初始化失敗: {e}")
+            print(f"⚠️ 儀表板系統初始化失敗，但機器人將繼續運行: {e}")
+            import traceback
+            traceback.print_exc()
         
         # ============================================================
         # 發送啟動資訊到 Webhook
