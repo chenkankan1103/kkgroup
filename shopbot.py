@@ -299,16 +299,10 @@ async def on_ready():
                 # 註冊持久化按鈕視圖
                 client.add_view(DashboardButtons("shopbot", client))
                 print("✅ 控制面板按鈕已註冊")
-                if not update_logs_task.is_running():
-                    update_logs_task.start()
-                print(f"✅ 日誌系統已啟動")
             
             # 確保儀表板消息按正確順序存在（bot → shopbot → uibot）
+            # 這個函數會處理：機器人實例註冊、訊息ID加載、全域日誌任務啟動
             await ensure_dashboard_messages(client, "shopbot")
-            
-            # 註冊機器人實例供日誌更新使用
-            from status_dashboard import register_bot_instance
-            register_bot_instance("shopbot", client)
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
         
