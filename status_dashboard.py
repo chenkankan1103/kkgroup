@@ -305,10 +305,6 @@ def create_update_task(bot_type: str):
     task.__name__ = f"update_task_{bot_type}"
 
     return task
-    """確保全域任務運行前的初始化等待"""
-    print("[DASHBOARD INIT] 等待儀表板完全初始化...")
-    await asyncio.sleep(20)
-    print("[DASHBOARD INIT] 儀表板初始化等待完成")
 
 
 def register_bot_instance(bot_type: str, bot_instance):
@@ -454,7 +450,6 @@ class DashboardButtons(discord.ui.View):
 🟢 **在線**
 用戶: {self.bot.user.mention}
 ID: {self.bot.user.id}
-時間: <t:{int(datetime.utcnow().timestamp())}:R>
                 """
             else:
                 detail = "🔴 離線"
@@ -530,7 +525,7 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
         inline=True
     )
     
-    embed.set_footer(text=f"{get_taiwan_time().strftime('%H:%M:%S')}")
+    embed.set_footer(text="KK園區中控室")
     return embed
 
 
@@ -766,7 +761,7 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
         inline=True
     )
     
-    embed.set_footer(text=f"{get_taiwan_time().strftime('%H:%M:%S')}")
+    embed.set_footer(text="KK園區中控室")
     return embed
 
 
