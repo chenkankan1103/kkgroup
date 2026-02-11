@@ -834,14 +834,14 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
     )
     
     embed.add_field(
-        name="🔴 主進程",
+        name="🤖 機器人",
         value="🟢 在線",
         inline=True
     )
     
     embed.add_field(
         name="📊 任務",
-        value="✅ 2/2 運行中",
+        value="✅ 待命中",
         inline=True
     )
     
