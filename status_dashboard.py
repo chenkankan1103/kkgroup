@@ -312,7 +312,7 @@ async def before_global_update_logs_task():
             print(f"[GLOBAL TASK] 等待機器人註冊，還缺少: {missing}")
             await asyncio.sleep(5)  # 每5秒檢查一次
     
-    print("[GLOBAL TASK] 開始運行全域更新任務"))
+    print("[GLOBAL TASK] 開始運行全域更新任務")
 
 
 def register_bot_instance(bot_type: str, bot_instance):
