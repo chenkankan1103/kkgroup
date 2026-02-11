@@ -364,31 +364,40 @@ async def update_dashboard_logs(bot, bot_type: str):
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
         print(f"[UPDATE LOGS] {bot_type} 嘗試更新消息ID: {message_id}")
+        
+        channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
+        if not channel:
+            print(f"[UPDATE LOGS ERROR] {bot_type} 找不到頻道 {DASHBOARD_CHANNEL_ID}")
+            return
+            
         if message_id:
-            channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
-            if channel:
+            try:
+                message = await channel.fetch_message(int(message_id))
+                print(f"[UPDATE LOGS] {bot_type} 成功獲取消息，當前embed數量: {len(message.embeds) if message.embeds else 0}")
+                await message.edit(embed=embed)
+                print(f"[UPDATE LOGS] {bot_type} 日誌已成功更新")
+            except discord.NotFound:
+                print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
                 try:
-                    message = await channel.fetch_message(int(message_id))
-                    print(f"[UPDATE LOGS] {bot_type} 成功獲取消息，當前embed數量: {len(message.embeds) if message.embeds else 0}")
-                    await message.edit(embed=embed)
-                    print(f"[UPDATE LOGS] {bot_type} 日誌已成功更新")
-                except discord.NotFound:
-                    print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
-                    try:
-                        message = await channel.send(embed=embed)
-                        save_message_id(bot_type, "logs", str(message.id))
-                        print(f"[UPDATE LOGS] {bot_type} 日誌訊息已重新創建: {message.id}")
-                    except Exception as create_error:
-                        print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
-                except discord.Forbidden:
-                    print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
-                except Exception as e:
-                    print(f"[UPDATE LOGS ERROR] {bot_type} 日誌更新錯誤: {e}")
-                    traceback.print_exc()
-            else:
-                print(f"[UPDATE LOGS ERROR] {bot_type} 找不到頻道 {DASHBOARD_CHANNEL_ID}")
+                    message = await channel.send(embed=embed)
+                    save_message_id(bot_type, "logs", str(message.id))
+                    print(f"[UPDATE LOGS] {bot_type} 日誌訊息已重新創建: {message.id}")
+                except Exception as create_error:
+                    print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
+            except discord.Forbidden:
+                print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
+            except Exception as e:
+                print(f"[UPDATE LOGS ERROR] {bot_type} 日誌更新錯誤: {e}")
+                traceback.print_exc()
         else:
-            print(f"[UPDATE LOGS WARNING] {bot_type} 日誌訊息 ID 未設置")
+            # 訊息ID不存在，創建新的日誌embed
+            print(f"[UPDATE LOGS] {bot_type} 日誌訊息ID不存在，創建新的embed")
+            try:
+                message = await channel.send(embed=embed)
+                save_message_id(bot_type, "logs", str(message.id))
+                print(f"[UPDATE LOGS] {bot_type} 日誌訊息已創建: {message.id}")
+            except Exception as create_error:
+                print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
 
     except Exception as e:
         print(f"[UPDATE LOGS ERROR] {bot_type} 更新日誌時發生未預期錯誤: {e}")
