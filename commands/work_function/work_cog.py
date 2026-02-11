@@ -361,7 +361,7 @@ class WorkActionButton(discord.ui.Button):
                 
                 # 創建新的 View 並更新按鈕狀態
                 view = WorkActionView(updated_user)
-                actions_used = json.loads(updated_user.get('actions_used', '{}'))
+                actions_used = updated_user.get('actions_used', {})
                 view.update_button_states(actions_used)
                 
                 try:
@@ -417,7 +417,7 @@ class WorkActionView(discord.ui.View):
         
         level = user['level']
         level_info = LEVELS[level]
-        actions_used = json.loads(user.get('actions_used', '{}'))
+        actions_used = user.get('actions_used', {})
         
         for action_data in level_info['actions']:
             button = WorkActionButton(
@@ -774,7 +774,7 @@ class WorkCog(commands.Cog):
                     inline=False
                 )
             
-            actions_used = json.loads(user.get('actions_used', '{}'))
+            actions_used = user.get('actions_used', {})
             if actions_used:
                 actions_list = [f"✅ {action}" for action in actions_used.keys()]
                 actions_status = "\n".join(actions_list)
