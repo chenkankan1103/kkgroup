@@ -5,8 +5,15 @@ import random
 import traceback
 import os
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from .database import get_user, update_user
+
+# 台灣時區（UTC+8）
+TAIWAN_TZ = timezone(timedelta(hours=8))
+
+def get_taiwan_time():
+    """獲取台灣時間"""
+    return datetime.now(TAIWAN_TZ)
 
 # AI API 設定
 AI_API_KEY = os.getenv("AI_API_KEY", "")
@@ -407,7 +414,7 @@ async def process_checkin(user_id, user_obj, guild):
             print(f"❌ [process_checkin] 無法找到或建立用戶: {user_id}")
             return None, None, None, None
         
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = get_taiwan_time().strftime("%Y-%m-%d")
         
         level = user.get('level', 1)
         current_xp = user.get('xp', 0)

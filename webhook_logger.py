@@ -4,8 +4,27 @@
 import os
 import json
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv, set_key
+
+# 台灣時區（UTC+8）
+TAIWAN_TZ = timezone(timedelta(hours=8))
+
+def get_taiwan_time():
+    """獲取台灣時間"""
+    return datetime.now(TAIWAN_TZ)
+
+def format_taiwan_time(dt=None):
+    """格式化台灣時間"""
+    if dt is None:
+        dt = get_taiwan_time()
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+def format_taiwan_time(dt=None):
+    """格式化台灣時間"""
+    if dt is None:
+        dt = get_taiwan_time()
+    return dt.strftime("%Y-%m-%d %H:%M:%S %Z")
 
 load_dotenv()
 
@@ -21,7 +40,25 @@ log_webhook("🔄 Webhook logger started")
 
 WEBHOOK_URL = os.getenv("STARTUP_WEBHOOK_URL", "")
 webhook_message_id = None
-log_webhook(f"WEBHOOK_URL: {WEBHOOK_URL[:50] if WEBHOOK_URL else 'Not Set'}...")
+
+def load_webhook_message_id():
+    """載入 webhook 訊息 ID"""
+    global webhook_message_id
+    load_dotenv()  # 重新載入 .env 文件
+    stored_id = os.getenv("WEBHOOK_MESSAGE_ID")
+    if stored_id:
+        try:
+            webhook_message_id = int(stored_id)
+            log_webhook(f"📝 已載入訊息 ID: {webhook_message_id}")
+        except ValueError:
+            log_webhook(f"⚠️ 無效的訊息 ID: {stored_id}")
+            webhook_message_id = None
+    else:
+        webhook_message_id = None
+        log_webhook("📝 沒有找到訊息 ID，將發送新訊息")
+
+# 初始化時載入訊息 ID
+load_webhook_message_id()
 
 # bots_info 文件路徑
 bots_info_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bots_info.json')
@@ -83,6 +120,7 @@ async def create_overview_embed() -> dict:
     for bot_name in ["bot", "shopbot", "uibot"]:
         info = bots_info[bot_name]
         emoji = "🟢" if info["狀態"] == "🟢 在線" else "🔴"
+        # 啟動時間已是台灣時間格式，直接使用
         time_text = info["啟動時間"] if info["啟動時間"] else "未啟動"
         status_text += f"{emoji} **{bot_name.upper()}** - {time_text}\n"
     
@@ -90,7 +128,7 @@ async def create_overview_embed() -> dict:
         "title": "🤖 所有機器人狀態",
         "description": status_text,
         "color": 3447003,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),  # Discord embeds 需要 UTC 時間戳
         "footer": {"text": "機器人監控系統"}
     }
 
@@ -118,7 +156,7 @@ async def create_bot_detail_embed(bot_type: str) -> dict:
         "title": f"{bot_name_map[bot_type]} 詳情",
         "color": color_map[bot_type],
         "fields": fields,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),  # Discord embeds 需要 UTC 時間戳
         "footer": {"text": f"狀態: {info['狀態']}"}
     }
 
@@ -181,7 +219,10 @@ async def send_or_update_startup_info(bot_type: str = None):
         
         payload = {"embeds": embeds}
         
-        # 嘗試編輯
+        # 確保載入最新的訊息 ID
+        load_webhook_message_id()
+        
+        # 嘗試編輯現有訊息
         if webhook_message_id:
             try:
                 log_webhook(f"📝 嘗試編輯訊息 ID={webhook_message_id}")
@@ -192,8 +233,16 @@ async def send_or_update_startup_info(bot_type: str = None):
                         if resp.status in [200, 204]:
                             log_webhook(f"✅ 啟動資訊已更新 (HTTP {resp.status})")
                             return
+                        else:
+                            # 編輯失敗，清除無效的訊息 ID
+                            log_webhook(f"⚠️ 編輯失敗 (HTTP {resp.status})，將清除訊息 ID")
+                            webhook_message_id = None
+                            set_key(".env", "WEBHOOK_MESSAGE_ID", "")
             except Exception as patch_err:
                 log_webhook(f"⚠️ 編輯訊息失敗: {patch_err}")
+                # 編輯失敗，清除無效的訊息 ID
+                webhook_message_id = None
+                set_key(".env", "WEBHOOK_MESSAGE_ID", "")
         
         # 發送新訊息
         log_webhook("📨 發送新的啟動訊息...")
@@ -203,10 +252,11 @@ async def send_or_update_startup_info(bot_type: str = None):
                 if resp.status in [200, 204]:
                     if resp.status == 200:
                         data = await resp.json()
-                        webhook_message_id = data.get("id")
-                        if webhook_message_id:
-                            set_key(".env", "WEBHOOK_MESSAGE_ID", str(webhook_message_id))
-                            log_webhook(f"✅ 啟動資訊已發送，訊息 ID={webhook_message_id}")
+                        new_message_id = data.get("id")
+                        if new_message_id:
+                            webhook_message_id = new_message_id
+                            set_key(".env", "WEBHOOK_MESSAGE_ID", str(new_message_id))
+                            log_webhook(f"✅ 啟動資訊已發送，訊息 ID={new_message_id}")
                         else:
                             log_webhook("⚠️ 無法獲取訊息 ID")
                     else:
@@ -218,11 +268,3 @@ async def send_or_update_startup_info(bot_type: str = None):
         import traceback
         log_webhook(f"❌ 訊息失敗: {e}")
         log_webhook(traceback.format_exc())
-
-
-_stored_msg_id = os.getenv("WEBHOOK_MESSAGE_ID")
-if _stored_msg_id:
-    try:
-        webhook_message_id = int(_stored_msg_id)
-    except:
-        pass
