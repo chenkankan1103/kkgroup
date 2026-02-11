@@ -366,26 +366,60 @@ async def update_dashboard_logs(bot, bot_type: str):
             try:
                 message = await channel.fetch_message(int(message_id))
                 await message.edit(embed=embed)
+                return  # 成功更新，退出
             except discord.NotFound:
-                # 訊息已被刪除，重新創建
-                print(f"[UPDATE LOGS] {bot_type} 日誌訊息已刪除，重新創建")
-                try:
-                    message = await channel.send(embed=embed)
-                    save_message_id(bot_type, "logs", str(message.id))
-                except Exception as create_error:
-                    print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
+                # 訊息不存在 - 清除無效ID，不要立即創建新的
+                print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在 (ID: {message_id})")
+                print(f"[UPDATE LOGS] {bot_type} 清除無效訊息ID，將在下次更新時重新創建")
+                message_ids[bot_type]["logs"] = None
+                save_message_ids(bot_type)
+                return
             except discord.Forbidden:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
+                return
             except Exception as e:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 日誌更新錯誤: {e}")
-        else:
-            # 訊息ID不存在，創建新的日誌embed
+                return
+        
+        # 只有在沒有訊息ID時才創建新的
+        if not message_id:
             try:
-                message = await channel.send(embed=embed)
-                save_message_id(bot_type, "logs", str(message.id))
-                print(f"[UPDATE LOGS] {bot_type} 日誌訊息已創建: {message.id}")
+                # 在創建前檢查是否已經有現有的日誌embed
+                existing_logs = []
+                async for msg in channel.history(limit=20):
+                    if msg.author.id == bot.user.id and msg.embeds:
+                        for embed in msg.embeds:
+                            if "實時日誌" in embed.title and BOT_CONFIG[bot_type]["名稱"] in embed.title:
+                                existing_logs.append(msg)
+                
+                # 如果有現有的embed，更新最新的，刪除其他的
+                if existing_logs:
+                    # 保留最新的embed，刪除其他的
+                    existing_logs.sort(key=lambda m: m.created_at, reverse=True)
+                    latest_msg = existing_logs[0]
+                    
+                    # 刪除重複的embed
+                    for msg in existing_logs[1:]:
+                        try:
+                            await msg.delete()
+                            print(f"[CLEANUP] 刪除重複日誌embed: {msg.id}")
+                        except Exception as delete_error:
+                            print(f"[CLEANUP ERROR] 刪除重複embed失敗 {msg.id}: {delete_error}")
+                    
+                    # 更新保留的embed
+                    await latest_msg.edit(embed=embed)
+                    message_ids[bot_type]["logs"] = latest_msg.id
+                    save_message_ids(bot_type)
+                    print(f"[UPDATE LOGS] {bot_type} 更新現有日誌embed: {latest_msg.id}")
+                else:
+                    # 真的沒有embed，才創建新的
+                    message = await channel.send(embed=embed)
+                    message_ids[bot_type]["logs"] = message.id
+                    save_message_ids(bot_type)
+                    print(f"[UPDATE LOGS] {bot_type} 創建新日誌embed: {message.id}")
+                    
             except Exception as create_error:
-                print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
+                print(f"[UPDATE LOGS ERROR] {bot_type} 創建/更新日誌embed失敗: {create_error}")
 
     except Exception as e:
         print(f"[UPDATE LOGS ERROR] {bot_type} 更新日誌時發生未預期錯誤: {e}")
