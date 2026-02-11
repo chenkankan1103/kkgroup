@@ -899,10 +899,9 @@ async def update_dashboard(bot: discord.Client, bot_type: str = None):
         if dashboard_msg_id:
             try:
                 msg = await channel.fetch_message(dashboard_msg_id)
-                # 確認訊息是由當前 bot 發送的
-                if msg.author.id == bot.user.id:
-                    embed = await create_dashboard_embed(bot_type)
-                    await msg.edit(embed=embed)
+                # 移除作者檢查 - 每個機器人負責更新自己類型的 embed
+                embed = await create_dashboard_embed(bot_type)
+                await msg.edit(embed=embed)
             except discord.NotFound:
                 print(f"⚠️ {bot_type} 控制面板訊息不存在，重新創建...")
                 embed = await create_dashboard_embed(bot_type)
@@ -911,20 +910,27 @@ async def update_dashboard(bot: discord.Client, bot_type: str = None):
                 save_message_ids(bot_type)
             except discord.Forbidden:
                 # 沒有權限編輯（訊息來自其他 bot）
-                pass
+                print(f"⚠️ {bot_type} 沒有權限編輯控制面板訊息，嘗試重新創建...")
+                try:
+                    embed = await create_dashboard_embed(bot_type)
+                    msg = await channel.send(embed=embed)
+                    message_ids[bot_type]["dashboard"] = msg.id
+                    save_message_ids(bot_type)
+                    print(f"✅ {bot_type} 控制面板重新創建成功")
+                except Exception as e2:
+                    print(f"❌ {bot_type} 控制面板重新創建失敗: {e2}")
             except Exception as e:
                 # 其他錯誤，靜默處理
-                pass
+                print(f"⚠️ {bot_type} 控制面板更新錯誤: {e}")
         
         # 更新日誌
         logs_msg_id = message_ids[bot_type].get("logs")
         if logs_msg_id:
             try:
                 msg = await channel.fetch_message(logs_msg_id)
-                # 確認訊息是由當前 bot 發送的
-                if msg.author.id == bot.user.id:
-                    embed = await create_logs_embed(bot_type)
-                    await msg.edit(embed=embed)
+                # 移除作者檢查 - 每個機器人負責更新自己類型的 embed
+                embed = await create_logs_embed(bot_type)
+                await msg.edit(embed=embed)
             except discord.NotFound:
                 print(f"⚠️ {bot_type} 日誌訊息不存在，重新創建...")
                 embed = await create_logs_embed(bot_type)
@@ -933,10 +939,18 @@ async def update_dashboard(bot: discord.Client, bot_type: str = None):
                 save_message_ids(bot_type)
             except discord.Forbidden:
                 # 沒有權限編輯（訊息來自其他 bot）
-                pass
+                print(f"⚠️ {bot_type} 沒有權限編輯日誌訊息，嘗試重新創建...")
+                try:
+                    embed = await create_logs_embed(bot_type)
+                    msg = await channel.send(embed=embed)
+                    message_ids[bot_type]["logs"] = msg.id
+                    save_message_ids(bot_type)
+                    print(f"✅ {bot_type} 日誌重新創建成功")
+                except Exception as e2:
+                    print(f"❌ {bot_type} 日誌重新創建失敗: {e2}")
             except Exception as e:
                 # 其他錯誤，靜默處理
-                pass
+                print(f"⚠️ {bot_type} 日誌更新錯誤: {e}")
     
     except Exception as e:
         print(f"❌ 更新儀表板失敗: {e}")
