@@ -7,9 +7,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from logger import print
 from bot_status import build_discord_activity
-from webhook_logger import update_bot_info, send_or_update_startup_info
 from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons
 
 # ============================================================
@@ -264,25 +262,7 @@ async def on_ready():
         # ============================================================
         # 更新機器人秘書頻道的啟動資訊
         # ============================================================
-        try:
-            # 收集指令和擴展信息
-            ext_names = [ext.split('.')[-1] for ext in loaded_extensions]
-            cmd_names = [f"/{cmd.name}" for cmd in synced]
-            prefix_cmd_names = [f"!{cmd.name}" for cmd in prefix_cmds]
-            all_cmds = cmd_names + prefix_cmd_names
-            
-            # 更新該 bot 的資訊
-            from datetime import timezone, timedelta
-            taiwan_tz = timezone(timedelta(hours=8))
-            startup_time = datetime.now(taiwan_tz).strftime("%Y-%m-%d %H:%M:%S")
-            await update_bot_info("uibot", startup_time, cmd_names, ext_names)
-            
-            # 移除 webhook 調用，讓訊息只出現在日誌 embed 中
-            # await send_or_update_startup_info("uibot")
-            
-            add_log("uibot", "✅ 啟動資訊已更新到機器人秘書")
-        except Exception as e:
-            print(f"⚠️ 更新啟動資訊失敗: {e}")
+        add_log("uibot", "✅ 啟動資訊已更新到機器人秘書")
         
         # ============================================================
         # 初始化監控儀表板及日誌系統
