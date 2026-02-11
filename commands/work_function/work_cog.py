@@ -14,6 +14,17 @@ from .work_system import (
     check_level_up,
     required_days_for_level
 )
+from status_dashboard import add_log
+
+def get_bot_type(client):
+    """根據機器人用戶名確定bot_type"""
+    username = str(client.user.name).lower()
+    if "shop" in username:
+        return "shopbot"
+    elif "ui" in username:
+        return "uibot"
+    else:
+        return "bot"
 
 # Configure logger for work module
 logger = logging.getLogger(__name__)
@@ -72,6 +83,10 @@ class CheckInButton(discord.ui.Button):
         super().__init__(label="打卡上班", style=discord.ButtonStyle.success, custom_id="work:checkin")
 
     async def callback(self, interaction: discord.Interaction):
+        # 初始化變數以避免異常處理時的NameError
+        user_id = None
+        user_name = None
+        
         try:
             await interaction.response.defer(ephemeral=True)
             user_id = interaction.user.id
@@ -138,6 +153,10 @@ class CheckInButton(discord.ui.Button):
                 logger.info(f"   連勤: {new_streak} 天")
                 logger.info(f"   時間: {today}")
                 
+                # 添加到儀表板日誌
+                bot_type = get_bot_type(interaction.client)
+                add_log(bot_type, f"✅ {user_name} 打卡成功 - 獲得 {actual_salary:,} KK幣 ({performance})")
+                
                 checkin_msg = (
                     f"✅ **打卡成功！**\n\n"
                     f"📖 *{daily_story}*\n\n"
@@ -201,6 +220,10 @@ class RestButton(discord.ui.Button):
         super().__init__(label="休息一天", style=discord.ButtonStyle.secondary, custom_id="work:rest")
 
     async def callback(self, interaction: discord.Interaction):
+        # 初始化變數以避免異常處理時的NameError
+        user_id = None
+        user_name = None
+        
         try:
             await interaction.response.defer(ephemeral=True)
             user_id = interaction.user.id
@@ -264,6 +287,10 @@ class WorkActionButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
+        # 初始化變數以避免異常處理時的NameError
+        user_id = None
+        user_name = None
+        
         try:
             await interaction.response.defer(ephemeral=True)
             user_id = interaction.user.id
@@ -321,6 +348,11 @@ class WorkActionButton(discord.ui.Button):
             if embeds_tuple and updated_user:
                 logger.info(f"✅ 工作行動成功！ (user: {user_name})")
                 logger.info(f"   訊息: {message}")
+                
+                # 添加到儀表板日誌
+                bot_type = get_bot_type(interaction.client)
+                add_log(bot_type, f"⚙️ {user_name} 執行工作行動: {action}")
+                
                 await interaction.followup.send(
                     embed=embeds_tuple[0],
                     ephemeral=True

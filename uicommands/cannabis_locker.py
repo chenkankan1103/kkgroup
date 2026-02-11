@@ -113,20 +113,27 @@ class PersonalLockerCog(commands.Cog):
             self.last_button_check = datetime.now()
             
             # 檢查 PersonalLockerView 類是否正確定義
-            if not hasattr(PersonalLockerView, 'plant_seed_button'):
-                print(f"❌ [Button Health Check] PersonalLockerView.plant_seed_button not found!")
+            if not hasattr(PersonalLockerView, 'crop_planting_callback'):
+                print(f"❌ [Button Health Check] PersonalLockerView.crop_planting_callback not found!")
                 self.button_check_failures += 1
                 return
             
-            # 檢查按鈕裝飾器是否存在
-            button_method = getattr(PersonalLockerView, 'plant_seed_button', None)
-            if not button_method or not hasattr(button_method, '__discord_ui_model_type__'):
-                print(f"⚠️  [Button Health Check] plant_seed_button missing discord.ui.button decorator")
+            # 檢查按鈕是否在初始化中正確添加
+            try:
+                # 創建一個測試實例來檢查按鈕
+                test_view = PersonalLockerView(None, None, 123, 456, 789, [])
+                crop_buttons = [item for item in test_view.children if getattr(item, 'custom_id', None) == 'crop_planting']
+                if not crop_buttons:
+                    print(f"⚠️  [Button Health Check] Crop planting button not found in view")
+                    self.button_check_failures += 1
+                    return
+            except Exception as e:
+                print(f"❌ [Button Health Check] Error creating test view: {e}")
                 self.button_check_failures += 1
                 return
             
             # 檢查成功
-            print(f"✅ [Button Health Check] Plant Seed button is properly configured")
+            print(f"✅ [Button Health Check] Crop planting button is properly configured")
             self.button_check_failures = 0
             
         except Exception as e:
@@ -255,17 +262,156 @@ class PersonalLockerCog(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         print("[PersonalLocker] 個人置物櫃已載入")
+        # 在bot啟動時檢查並更新所有置物櫃視圖
+        await self.update_all_locker_views()
     
-    @commands.command(name="置物櫃", description="📦 打開個人置物櫃查看種植狀態")
-    async def personal_locker(self, ctx):
-        """查看個人置物櫃"""
+    async def update_all_locker_views(self):
+        """在bot啟動時檢查並更新所有置物櫃視圖"""
         try:
-            user_id = ctx.author.id
+            print("🔄 [Locker Update] 開始檢查並更新所有置物櫃視圖...")
+            
+            updated_count = 0
+            
+            # 獲取所有活躍的置物櫃thread
+            for guild in self.bot.guilds:
+                # 查找置物櫃頻道（假設是論壇頻道）
+                locker_channel = None
+                for channel in guild.channels:
+                    if hasattr(channel, 'type') and channel.type == discord.ChannelType.forum:
+                        # 檢查頻道名稱是否包含置物櫃相關關鍵字
+                        if '置物櫃' in channel.name or 'locker' in channel.name.lower():
+                            locker_channel = channel
+                            break
+                
+                if not locker_channel:
+                    continue
+                
+                print(f"📂 [Locker Update] 檢查頻道: {locker_channel.name}")
+                
+                # 獲取活躍的置物櫃threads
+                try:
+                    active_threads = []
+                    
+                    # 獲取活躍的threads
+                    async for thread in locker_channel.active_threads:
+                        if '置物櫃' in thread.name or '的置物櫃' in thread.name:
+                            active_threads.append(thread)
+                    
+                    # 也檢查最近的已歸檔threads
+                    async for thread in locker_channel.archived_threads(limit=20):
+                        if '置物櫃' in thread.name or '的置物櫃' in thread.name:
+                            active_threads.append(thread)
+                    
+                    print(f"🧵 [Locker Update] 找到 {len(active_threads)} 個置物櫃threads")
+                    
+                    for thread in active_threads:
+                        try:
+                            updated = await self.update_single_locker_view(thread)
+                            if updated:
+                                updated_count += 1
+                        except Exception as thread_error:
+                            print(f"❌ [Locker Update] 處理thread {thread.name} 時出錯: {thread_error}")
+                            continue
+                            
+                except Exception as channel_error:
+                    print(f"❌ [Locker Update] 處理頻道 {locker_channel.name} 時出錯: {channel_error}")
+                    continue
+            
+            print(f"✅ [Locker Update] 置物櫃視圖更新完成，共更新 {updated_count} 個threads")
+            
+        except Exception as e:
+            print(f"❌ [Locker Update] 置物櫃視圖更新任務出錯: {e}")
+            traceback.print_exc()
+    
+    async def update_single_locker_view(self, thread):
+        """檢查並更新單個置物櫃thread的視圖"""
+        try:
+            # 從thread名稱提取用戶ID
+            user_id = None
+            if '的置物櫃' in thread.name:
+                try:
+                    # 獲取thread的擁有者
+                    if hasattr(thread, 'owner_id') and thread.owner_id:
+                        user_id = thread.owner_id
+                    else:
+                        print(f"⚠️ [Locker Update] Thread {thread.name} 沒有owner_id")
+                        return False
+                except Exception as parse_error:
+                    print(f"⚠️ [Locker Update] 解析thread名稱失敗 '{thread.name}': {parse_error}")
+                    return False
+            
+            if not user_id:
+                return False
+            
+            # 獲取最新的置物櫃消息
+            try:
+                # 獲取最近的幾條消息
+                messages = []
+                async for msg in thread.history(limit=5):
+                    messages.append(msg)
+                
+                if not messages:
+                    print(f"⚠️ [Locker Update] Thread {thread.name} 沒有消息")
+                    return False
+                
+                # 找到最新的置物櫃embed消息
+                locker_message = None
+                for msg in messages:
+                    if msg.embeds and len(msg.embeds) > 0:
+                        embed = msg.embeds[0]
+                        if '置物櫃' in embed.title or 'Locker' in embed.title:
+                            locker_message = msg
+                            break
+                
+                if not locker_message:
+                    print(f"⚠️ [Locker Update] Thread {thread.name} 沒有找到置物櫃embed")
+                    return False
+                
+                # 檢查當前按鈕數量是否與最新版本匹配
+                current_button_count = 0
+                if locker_message.components:
+                    for component in locker_message.components:
+                        if hasattr(component, 'children'):
+                            current_button_count += len(component.children)
+                
+                # 創建一個測試視圖來比較按鈕數量
+                plants = await get_user_plants(user_id)
+                test_view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants)
+                expected_button_count = len(test_view.children)
+                
+                # 如果按鈕數量不匹配，需要更新
+                if current_button_count != expected_button_count:
+                    print(f"🔄 [Locker Update] Thread {thread.name} 按鈕數量不匹配 ({current_button_count} vs {expected_button_count})，需要更新")
+                    await self.send_updated_locker_embed(thread, user_id)
+                    return True
+                else:
+                    print(f"✅ [Locker Update] Thread {thread.name} 按鈕數量正確 ({current_button_count})")
+                    return False
+                    
+            except Exception as msg_error:
+                print(f"❌ [Locker Update] 檢查thread消息失敗 {thread.name}: {msg_error}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ [Locker Update] 檢查thread失敗 {thread.name}: {e}")
+            return False
+    
+    async def send_updated_locker_embed(self, thread, user_id):
+        """發送更新後的置物櫃embed"""
+        try:
+            # 獲取用戶數據
             plants = await get_user_plants(user_id)
             inventory = await get_inventory(user_id)
             
+            # 創建用戶對象（用於顯示名稱）
+            try:
+                user = await self.bot.fetch_user(user_id)
+                user_name = user.name
+            except:
+                user_name = f"用戶{user_id}"
+            
             embed = discord.Embed(
-                title=f"📦 {ctx.author.name} 的個人置物櫃",
+                title=f"📦 {user_name} 的個人置物櫃",
                 description="你的大麻種植狀態",
                 color=discord.Color.green()
             )
@@ -355,78 +501,38 @@ class PersonalLockerCog(commands.Cog):
                     inline=False
                 )
             
-            # 添加按鈕
-            try:
-                view = PersonalLockerView(self.bot, self, user_id, ctx.guild.id if ctx.guild else 0, ctx.channel.id, plants)
-                # 驗證按鈕是否正確加載到視圖中
-                button_found = False
-                for child in view.children:
-                    if isinstance(child, discord.ui.Button) and child.emoji and child.emoji.name == '🌱':
-                        button_found = True
-                        break
-                
-                if not button_found:
-                    print(f"⚠️  [Locker] PersonalLockerView created without plant seed button!")
-                    await ctx.send(embed=embed)  # Send without buttons as fallback
-                    await ctx.send("⚠️  置物櫃已開啟，但部分按鈕可能無法使用。請聯繫管理員。", delete_after=10)
-                    return
-                
-                await ctx.send(embed=embed, view=view)
-                print(f"✅ [Locker] Personal locker opened for user {user_id} with all buttons")
-            except Exception as view_error:
-                print(f"❌ [Locker] Failed to create view for user {user_id}: {view_error}")
-                traceback.print_exc()
-                # Fallback: send embed without view
-                await ctx.send(embed=embed)
-                await ctx.send("⚠️  置物櫃按鈕載入失敗！請稍後再試或聯繫管理員。", delete_after=15)
+            # 創建按鈕視圖
+            view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants)
+            
+            # 發送更新後的消息
+            await thread.send(embed=embed, view=view)
+            print(f"✅ [Locker Update] 已更新用戶 {user_id} 的置物櫃thread")
             
         except Exception as e:
-            print(f"❌ [Locker] Error in personal_locker command: {e}")
-            traceback.print_exc()
-            await ctx.send(f"❌ 發生錯誤：{str(e)[:100]}")
-    
-    @commands.command(name="建置物櫃面板", description="🔧 在此頻道建立置物櫃概況面板")
-    async def create_panel(self, ctx):
-        """建立置物櫃概況面板"""
-        try:
-            if not ctx.author.guild_permissions.administrator:
-                await ctx.send("❌ 需要管理員權限", ephemeral=True)
-                return
-            
-            # 計算統計
-            stats = await self.get_locker_stats()
-            embed = await self.create_panel_embed(stats)
-            
-            # 發送訊息
-            panel_message = await ctx.send(embed=embed)
-            
-            # 保存訊息信息
-            self.panel_message_id = panel_message.id
-            self.panel_channel_id = ctx.channel.id
-            self.save_panel_data()
-            
-            await ctx.send(
-                f"✅ 置物櫃面板已建立！\n"
-                f"📍 訊息ID: {panel_message.id}\n"
-                f"🔄 每30分鐘自動更新一次"
-            )
-        
-        except Exception as e:
-            await ctx.send(f"❌ 建立面板失敗: {str(e)[:100]}")
+            print(f"❌ [Locker Update] 更新置物櫃embed失敗: {e}")
             traceback.print_exc()
 
 
 class PersonalLockerView(discord.ui.View):
-    """個人置物櫃交互菜單"""
+    """個人置物櫃交互菜單 - 永久視圖"""
     
     def __init__(self, bot, cog, user_id, guild_id, channel_id, plants):
-        super().__init__(timeout=3600)  # 1 hour timeout to prevent indefinite memory usage
+        super().__init__(timeout=None)  # 永久視圖，不會過期
         self.bot = bot
         self.cog = cog
         self.user_id = user_id
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.plants = plants
+        
+        # 添加作物種植按鈕
+        crop_button = discord.ui.Button(
+            label="🌱 作物種植",
+            style=discord.ButtonStyle.success,
+            custom_id="crop_planting"
+        )
+        crop_button.callback = self.crop_planting_callback
+        self.add_item(crop_button)
     
     @discord.ui.button(label="施肥", style=discord.ButtonStyle.success, emoji="💧")
     async def fertilize_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -500,9 +606,8 @@ class PersonalLockerView(discord.ui.View):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
     
-    @discord.ui.button(label="種植種子", style=discord.ButtonStyle.success, emoji="🌱")
-    async def plant_seed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """選擇種子進行種植"""
+    async def crop_planting_callback(self, interaction: discord.Interaction):
+        """作物種植 - 顯示種子選擇介面"""
         try:
             await interaction.response.defer(ephemeral=True)
             
@@ -510,11 +615,11 @@ class PersonalLockerView(discord.ui.View):
             try:
                 inventory = await get_inventory(self.user_id)
                 if not inventory:
-                    print(f"⚠️  [Plant Seed Button] Failed to get inventory for user {self.user_id}")
+                    print(f"⚠️  [Crop Planting] Failed to get inventory for user {self.user_id}")
                     await interaction.followup.send("❌ 無法獲取庫存資料！請稍後再試。", ephemeral=True)
                     return
             except Exception as inv_error:
-                print(f"❌ [Plant Seed Button] Inventory error for user {self.user_id}: {inv_error}")
+                print(f"❌ [Crop Planting] Inventory error for user {self.user_id}: {inv_error}")
                 traceback.print_exc()
                 await interaction.followup.send("❌ 獲取庫存時發生錯誤！請聯繫管理員。", ephemeral=True)
                 return
@@ -528,7 +633,7 @@ class PersonalLockerView(discord.ui.View):
             
             # 顯示種子選擇界面
             embed = discord.Embed(
-                title="🌱 選擇要種植的種子",
+                title="🌱 作物種植 - 選擇種子",
                 description="選擇一種種子進行種植",
                 color=discord.Color.green()
             )
@@ -543,17 +648,69 @@ class PersonalLockerView(discord.ui.View):
                             inline=True
                         )
                     except KeyError:
-                        print(f"⚠️  [Plant Seed Button] Seed type '{seed_name}' not found in CANNABIS_SHOP")
+                        print(f"⚠️  [Crop Planting] Seed type '{seed_name}' not found in CANNABIS_SHOP")
                         continue
             
             view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            print(f"✅ [Plant Seed Button] Seed selection view sent to user {self.user_id}")
+            print(f"✅ [Crop Planting] Seed selection view sent to user {self.user_id}")
             
         except Exception as e:
-            print(f"❌ [Plant Seed Button] Unexpected error for user {self.user_id}: {e}")
+            print(f"❌ [Crop Planting] Unexpected error for user {self.user_id}: {e}")
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+    
+    def make_plant_callback(self, seed_name):
+        """生成種植回調函數"""
+        async def callback(interaction: discord.Interaction):
+            try:
+                await interaction.response.defer(ephemeral=True)
+                
+                # 檢查是否有種子
+                has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
+                if not has_seed:
+                    await interaction.followup.send("❌ 你沒有這種種子！", ephemeral=True)
+                    return
+                
+                # 種植
+                result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
+                
+                if result and not result.get("success") == False:
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    embed = discord.Embed(
+                        title="🌱 種植成功",
+                        description=f"已種植 {seed_name}",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(name="成長時間", value=f"{config['growth_time']//3600} 小時", inline=False)
+                    embed.add_field(name="最大產量", value=f"{config['max_yield']} 個", inline=False)
+                    
+                    # 記錄事件
+                    if self.cog:
+                        user = await self.bot.fetch_user(self.user_id)
+                        await self.cog.record_event(
+                            'plant',
+                            user,
+                            f"種植{seed_name}"
+                        )
+                    
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                else:
+                    # 種植失敗，退還種子
+                    await add_inventory(self.user_id, "種子", seed_name, 1)
+                    reason = result.get("reason", "未知原因") if result else "未知原因"
+                    await interaction.followup.send(f"❌ 種植失敗：{reason}", ephemeral=True)
+                
+            except Exception as e:
+                traceback.print_exc()
+                # 如果發生錯誤，嘗試退還種子
+                try:
+                    await add_inventory(self.user_id, "種子", seed_name, 1)
+                except Exception as refund_error:
+                    print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
+                await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+        
+        return callback
 
 
 

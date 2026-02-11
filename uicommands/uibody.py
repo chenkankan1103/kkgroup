@@ -398,11 +398,46 @@ class LockerPanelView(discord.ui.View):
             
             embed.set_footer(text="💡 使用下方按鈕進行種植、施肥或收割操作")
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
+    
         except Exception as e:
             import traceback
             traceback.print_exc()
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+    
+    @discord.ui.button(label="個人置物櫃", style=discord.ButtonStyle.primary, emoji="📦", custom_id="locker_personal_view")
+    async def personal_locker_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """個人置物櫃 - 打開永久按鈕視圖"""
+        try:
+            owner_user_id = await self.get_owner_user_id(interaction)
+            if interaction.user.id != owner_user_id:
+                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                return
+                
+            await interaction.response.defer(ephemeral=True)
+            
+            # 獲取用戶的植物數據
+            plants = await get_user_plants(owner_user_id)
+            
+            # 創建PersonalLockerView
+            from uicommands.cannabis_locker import PersonalLockerView
+            guild_id = interaction.guild.id if interaction.guild else 0
+            channel_id = interaction.channel.id
+            view = PersonalLockerView(self.cog.bot, self.cog, owner_user_id, guild_id, channel_id, plants)
+            
+            embed = discord.Embed(
+                title="📦 個人置物櫃",
+                description="使用下方按鈕管理你的作物種植、施肥和收割操作。",
+                color=discord.Color.blue()
+            )
+            
+            embed.add_field(
+                name="🌱 作物管理",
+                value="• 作物種植：開始種植新的作物\n• 施肥：為成長中的植物施肥\n• 收割：收割成熟的作物\n• 查看肥料：檢查你的肥料庫存",
+                inline=False
+            )
+            
+            embed.set_footer(text="💡 這個視圖是永久的，按鈕不會過期")
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             import traceback

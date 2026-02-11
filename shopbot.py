@@ -10,7 +10,7 @@ from watchdog.events import FileSystemEventHandler
 from logger import print
 from bot_status import build_discord_activity
 from webhook_logger import update_bot_info, send_or_update_startup_info
-from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons, ensure_dashboard_messages
+from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -299,10 +299,6 @@ async def on_ready():
                 # 註冊持久化按鈕視圖
                 client.add_view(DashboardButtons("shopbot", client))
                 print("✅ 控制面板按鈕已註冊")
-            
-            # 確保儀表板消息按正確順序存在（bot → shopbot → uibot）
-            # 這個函數會處理：機器人實例註冊、訊息ID加載、全域日誌任務啟動
-            await ensure_dashboard_messages(client, "shopbot")
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
         
