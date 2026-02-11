@@ -4,6 +4,7 @@ import json
 import random
 import traceback
 import os
+import asyncio
 import aiohttp
 from datetime import datetime, timedelta, timezone
 from .database import get_user, update_user
@@ -749,6 +750,73 @@ ACTION_STORIES = {
         ]
     }
 }
+
+async def generate_daily_checkin_story(level_title, salary_percent, streak, user_name):
+    """生成每日打卡故事"""
+    try:
+        if not AI_API_KEY or not AI_API_URL:
+            # 如果沒有 AI API，使用簡單的故事
+            salary_desc = "大豐收" if salary_percent > 0.8 else "普通" if salary_percent > 0.5 else "不太順利"
+            return f"今天的工作表現{salary_desc}，連續出勤已達 {streak} 天。"
+        
+        prompt = f"""你是一個詐騙園區的日報編輯。請為員工 {user_name} 生成一段簡短的打卡日誌。
+
+員工資訊：
+- 職稱：{level_title}
+- 今日薪資表現：{int(salary_percent * 100)}% 
+- 連續出勤：{streak} 天
+
+請生成一段 1-2 句的簡短描述，描述這位員工今天的工作表現和心情。要求：
+1. 使用第一人稱「我」來描述員工的視角
+2. 貼合詐騙園區的黑色幽默風格
+3. 提到薪資表現和連續出勤
+4. 保持簡潔，不超過 60 字
+5. 不要有任何多餘的格式
+
+直接輸出故事內容。"""
+
+        headers = {
+            "Authorization": f"Bearer {AI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": AI_API_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是一個詐騙園區的日報編輯，擅長用風趣的文字記錄員工的工作表現。"
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 0.7,
+            "max_tokens": 100
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(AI_API_URL, headers=headers, json=data, timeout=10) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    story = result['choices'][0]['message']['content'].strip()
+                    
+                    # 清理可能的引號
+                    story = story.strip('"').strip("'").strip()
+                    
+                    return story
+                else:
+                    print(f"⚠️ AI API 回應錯誤: {response.status}")
+                    return f"今天的工作表現{int(salary_percent * 100)}%，連續出勤已達 {streak} 天。"
+                    
+    except asyncio.TimeoutError:
+        print("⚠️ AI API 請求超時")
+        return f"今天的工作表現{int(salary_percent * 100)}%，連續出勤已達 {streak} 天。"
+    except Exception as e:
+        print(f"⚠️ AI 生成打卡故事失敗: {e}")
+        traceback.print_exc()
+        return f"今天的工作表現{int(salary_percent * 100)}%，連續出勤已達 {streak} 天。"
 
 async def generate_story_with_ai(action_name, level_title, success, reward, user_name):
     """使用 AI API 生成行動故事"""

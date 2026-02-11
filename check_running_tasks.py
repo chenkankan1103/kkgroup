@@ -12,14 +12,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # 嘗試直接檢查運行中的進程
 print("🔍 檢查運行中的 Discord 機器人任務狀態...")
 
-# 檢查進程
+# 檢查進程 (Windows 兼容)
 import subprocess
-result = subprocess.run(['pgrep', '-f', 'python.*bot.py'], capture_output=True, text=True)
-if result.returncode == 0:
-    pids = result.stdout.strip().split('\n')
-    print(f"找到 {len(pids)} 個機器人進程: {pids}")
-else:
-    print("❌ 沒有找到運行中的機器人進程")
+try:
+    result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq python.exe'], capture_output=True, text=True)
+    if 'python.exe' in result.stdout:
+        print("找到 python.exe 進程")
+        # 檢查是否有 bot.py 相關的進程
+        result2 = subprocess.run(['tasklist', '/FI', 'WINDOWTITLE eq *bot.py*'], capture_output=True, text=True)
+        if result2.stdout.strip():
+            print("找到 bot.py 相關的進程")
+        else:
+            print("沒有找到 bot.py 相關的進程")
+    else:
+        print("❌ 沒有找到 python.exe 進程")
+except Exception as e:
+    print(f"檢查進程時出錯: {e}")
 
 # 嘗試連接到運行中的進程（如果可能的話）
 print("\n嘗試檢查任務狀態...")
