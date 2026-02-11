@@ -17,11 +17,11 @@ import json
 import traceback
 import logging
 
-# 導入新版本的同步管理器
+# 導入同步管理器 (使用 SheetDrivenDB 的版本)
 try:
-    from sheet_sync_manager_v2 import SheetSyncManagerV2
-except ImportError:
     from sheet_sync_manager import SheetSyncManager as SheetSyncManagerV2
+except ImportError:
+    from sheet_sync_manager_v2 import SheetSyncManagerV2
 
 # ============================================================
 # Flask 應用設置
@@ -98,22 +98,11 @@ def sync_from_sheet():
         
         # 2. 自動同步 schema（最重要的改進）
         print(f"🔧 正在同步資料庫 Schema...")
-        sync_manager.ensure_db_schema(headers)
+        sync_manager.db.ensure_columns(headers)
         
-        # 3. 解析記錄
-        print(f"📊 正在解析 {len(rows)} 筆記錄...")
-        records = sync_manager.parse_records(headers, rows)
-        
-        if not records:
-            return jsonify({
-                "status": "warning",
-                "message": "⚠️ 沒有有效的記錄（所有行都被過濾）",
-                "stats": {"updated": 0, "inserted": 0, "errors": len(rows)}
-            }), 200
-        
-        # 4. 插入/更新記錄
-        print(f"💾 正在插入/更新 {len(records)} 筆記錄...")
-        updated, inserted, errors = sync_manager.insert_records(records)
+        # 3. 同步資料
+        print(f"💾 正在同步 {len(rows)} 筆記錄...")
+        stats = sync_manager.sync_sheet_to_db(headers, rows)
         
         # 5. 計算耗時
         duration = (datetime.now() - start_time).total_seconds()
@@ -123,16 +112,16 @@ def sync_from_sheet():
             "status": "success",
             "message": f"✅ 同步完成",
             "stats": {
-                "updated": updated,
-                "inserted": inserted,
-                "errors": errors,
-                "total_processed": updated + inserted + errors,
+                "updated": stats.get('updated', 0),
+                "inserted": stats.get('inserted', 0),
+                "errors": stats.get('errors', 0),
+                "total_processed": stats.get('total_parsed', 0),
                 "duration_seconds": round(duration, 2)
             },
             "timestamp": datetime.now().isoformat()
         }
         
-        print(f"✅ 同步成功: 更新 {updated}, 新增 {inserted}, 錯誤 {errors}")
+        print(f"✅ 同步成功: 更新 {stats.get('updated', 0)}, 新增 {stats.get('inserted', 0)}, 錯誤 {stats.get('errors', 0)}")
         print(f"   耗時: {duration:.2f} 秒\n")
         
         return jsonify(result), 200

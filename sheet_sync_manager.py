@@ -18,6 +18,7 @@ from sheet_driven_db import SheetDrivenDB
 import hashlib
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, Union
+from status_dashboard_gcp import add_log
 
 
 class SheetSyncManager:
@@ -117,32 +118,22 @@ class SheetSyncManager:
         Returns:
             統計信息 {'inserted': n, 'updated': n, 'errors': n, 'total_parsed': n}
         """
-        print(f"\n{'='*60}")
-        print(f"🔄 SHEET → DB 同步開始")
-        print(f"{'='*60}")
-        print(f"📋 表頭: {len(headers)} 列")
-        print(f"📊 數據行: {len(rows)} 筆")
+        add_log("bot", f"🔄 SHEET → DB 同步開始: {len(headers)} 列, {len(rows)} 筆數據")
         
         # 1. 確保所有欄位存在
-        print(f"\n🔧 確保 DB schema...")
+        add_log("bot", f"🔧 確保 DB schema...")
         self.db.ensure_columns(headers)
         
         # 2. 解析並同步記錄
-        print(f"\n📝 解析記錄...")
+        add_log("bot", f"📝 解析記錄...")
         records = self._parse_records(headers, rows)
-        print(f"✅ 解析完成: {len(records)} 筆有效記錄")
+        add_log("bot", f"✅ 解析完成: {len(records)} 筆有效記錄")
         
         # 3. 同步到 DB
-        print(f"\n📤 同步到 DB...")
+        add_log("bot", f"📤 同步到 DB...")
         stats = self._sync_records_to_db(records)
         
-        print(f"\n{'='*60}")
-        print(f"✅ 同步完成:")
-        print(f"   - 新增: {stats['inserted']}")
-        print(f"   - 更新: {stats['updated']}")
-        print(f"   - 錯誤: {stats['errors']}")
-        print(f"   - 總計: {stats['total_parsed']}")
-        print(f"{'='*60}\n")
+        add_log("bot", f"✅ 同步完成: 新增 {stats['inserted']}, 更新 {stats['updated']}, 錯誤 {stats['errors']}, 總計 {stats['total_parsed']}")
         
         return stats
     
@@ -168,10 +159,10 @@ class SheetSyncManager:
         if 'user_id' not in headers:
             detected_idx = self._detect_user_id_col(headers, rows)
             if detected_idx is not None:
-                print(f"🔎 自動偵測 user_id: 第 {detected_idx+1} 列 ('{headers[detected_idx]}')")
+                add_log("bot", f"🔎 自動偵測 user_id: 第 {detected_idx+1} 列 ('{headers[detected_idx]}')")
                 headers[detected_idx] = 'user_id'
             else:
-                print(f"❌ 無法偵測 user_id 欄位，使用第 1 列作為 user_id")
+                add_log("bot", f"❌ 無法偵測 user_id 欄位，使用第 1 列作為 user_id")
                 headers[0] = 'user_id'
         
         # 解析每一行
@@ -210,17 +201,17 @@ class SheetSyncManager:
                 # 跳過虛擬帳號 (nickname 為 Unknown_*)
                 nickname = record.get('nickname', '')
                 if nickname and str(nickname).startswith('Unknown_'):
-                    print(f"⏭️ 行 {row_idx} 跳過虛擬帳號: {nickname}")
+                    add_log("bot", f"⏭️ 行 {row_idx} 跳過虛擬帳號: {nickname}")
                     continue
                 
-                print(f"   ✓ 行 {row_idx}: user_id={record['user_id']}, nickname={nickname}")
+                add_log("bot", f"✓ 行 {row_idx}: user_id={record['user_id']}, nickname={nickname}")
                 records.append(record)
             
             except Exception as e:
-                print(f"⚠️ 行 {row_idx} 解析失敗: {e}")
+                add_log("bot", f"⚠️ 行 {row_idx} 解析失敗: {e}")
         
         # 🔍 去重邏輯：檢測同名異 ID（可能是 ID 精度損失產生的幽靈帳號）
-        print(f"\n🔍 檢測同名異 ID 幽靈帳號...")
+        add_log("bot", f"🔍 檢測同名異 ID 幽靈帳號...")
         
         # 按 nickname 分組
         nickname_to_records = {}
@@ -244,14 +235,14 @@ class SheetSyncManager:
                 # 其他都是幽靈帳號
                 for rec in same_name_recs:
                     if rec['user_id'] != min_record['user_id']:
-                        print(f"   👻 過濾幽靈帳號: {nickname} (user_id {rec['user_id']}) → 保留 {min_record['user_id']}")
+                        add_log("bot", f"👻 過濾幽靈帳號: {nickname} (user_id {rec['user_id']}) → 保留 {min_record['user_id']}")
                         removed_ghosts += 1
             else:
                 # 只有一個
                 deduped_records.append(same_name_recs[0])
         
         if removed_ghosts > 0:
-            print(f"✅ 過濾掉 {removed_ghosts} 個同名異 ID 幽靈帳號")
+            add_log("bot", f"✅ 過濾掉 {removed_ghosts} 個同名異 ID 幽靈帳號")
         
         return deduped_records
     
@@ -277,7 +268,7 @@ class SheetSyncManager:
                 user_id = record.get('user_id')
                 if not user_id:
                     error_msg = f"用戶ID為空"
-                    print(f"⚠️ 記錄 {i}: {error_msg}")
+                    add_log("bot", f"⚠️ 記錄 {i}: {error_msg}")
                     stats['errors'] += 1
                     stats['error_details'].append({'record': i, 'reason': error_msg})
                     continue
@@ -287,20 +278,20 @@ class SheetSyncManager:
                     user_id = int(user_id)
                     if user_id == 0:
                         error_msg = f"user_id 為 0，無效的用戶"
-                        print(f"⏭️ 記錄 {i}: {error_msg}")
+                        add_log("bot", f"⏭️ 記錄 {i}: {error_msg}")
                         stats['errors'] += 1
                         stats['error_details'].append({'record': i, 'reason': error_msg})
                         continue
                 except (ValueError, TypeError) as e:
                     error_msg = f"user_id 無效或無法轉換: '{record.get('user_id')}' ({str(e)})"
-                    print(f"❌ 記錄 {i}: {error_msg}")
+                    add_log("bot", f"❌ 記錄 {i}: {error_msg}")
                     stats['errors'] += 1
                     stats['error_details'].append({'record': i, 'reason': error_msg})
                     continue
                 
                 # 檢查本次同步中的重複（去重）
                 if user_id in seen_user_ids:
-                    print(f"⚠️ 記錄 {i}: 在本次同步中有重複的 user_id {user_id} (已跳過)")
+                    add_log("bot", f"⚠️ 記錄 {i}: 在本次同步中有重複的 user_id {user_id} (已跳過)")
                     stats['duplicates'] += 1
                     continue
                 
@@ -325,18 +316,18 @@ class SheetSyncManager:
                     action = "新增"
                 
                 # 保存用戶 (db.set_user 會自動 INSERT 或 REPLACE)
-                print(f"   ✓ 記錄 {i}: [{action}] user_id={user_id}, 欄位數={len(cleaned_record)}, 數據={cleaned_record}")
+                add_log("bot", f"✓ 記錄 {i}: [{action}] user_id={user_id}, 欄位數={len(cleaned_record)}")
                 try:
                     success = self.db.set_user(user_id, cleaned_record)
                 except Exception as set_user_exc:
                     success = False
-                    print(f"   ❌ set_user 拋出異常: {set_user_exc}")
+                    add_log("bot", f"❌ set_user 拋出異常: {set_user_exc}")
                     import traceback
                     traceback.print_exc()
                 
                 if not success:
                     error_msg = f"set_user 返回失敗"
-                    print(f"   ❌ 記錄 {i}: {error_msg}")
+                    add_log("bot", f"❌ 記錄 {i}: {error_msg}")
                     stats['errors'] += 1
                     # 撤銷之前的計數
                     if action == "更新":
@@ -348,25 +339,21 @@ class SheetSyncManager:
             except Exception as e:
                 error_msg = str(e)
                 stats['errors'] += 1
-                print(f"❌ 記錄 {i} 同步失敗: {error_msg}")
+                add_log("bot", f"❌ 記錄 {i} 同步失敗: {error_msg}")
                 stats['error_details'].append({'record': i, 'reason': error_msg})
                 import traceback
                 traceback.print_exc()
         
         # 打印統計信息
-        print(f"\n✅ 同步記錄完成:")
-        print(f"   新增: {stats['inserted']} 個用戶")
-        print(f"   更新: {stats['updated']} 個用戶")
-        print(f"   重複: {stats['duplicates']} 行 (已移除)")
-        print(f"   錯誤: {stats['errors']} 行")
+        add_log("bot", f"✅ 同步記錄完成: 新增 {stats['inserted']} 個用戶, 更新 {stats['updated']} 個用戶, 重複 {stats['duplicates']} 行, 錯誤 {stats['errors']} 行")
         
         # 如果有錯誤，打印詳細信息
         if stats['error_details']:
-            print(f"\n📋 錯誤詳情:")
-            for err in stats['error_details'][:10]:  # 只顯示前 10 個錯誤
-                print(f"   - 記錄 {err.get('record')}: {err['reason']}")
-            if len(stats['error_details']) > 10:
-                print(f"   ... 還有 {len(stats['error_details']) - 10} 個錯誤")
+            add_log("bot", f"📋 錯誤詳情 ({len(stats['error_details'])} 個):")
+            for err in stats['error_details'][:5]:  # 只顯示前 5 個錯誤
+                add_log("bot", f"   - 記錄 {err.get('record')}: {err['reason']}")
+            if len(stats['error_details']) > 5:
+                add_log("bot", f"   ... 還有 {len(stats['error_details']) - 5} 個錯誤")
         
         return stats
     
@@ -450,23 +437,23 @@ class SheetSyncManager:
             virtual_users = [u for u in all_users if str(u.get('nickname', '')).startswith('Unknown_')]
             
             if virtual_users:
-                print(f"\n🧹 檢測到 {len(virtual_users)} 個虛擬帳號:")
-                for user in virtual_users[:10]:
-                    print(f"   - {user.get('user_id')}: {user.get('nickname')}")
-                if len(virtual_users) > 10:
-                    print(f"   ... 及其他 {len(virtual_users) - 10} 個")
+                add_log("bot", f"🧹 檢測到 {len(virtual_users)} 個虛擬帳號")
+                for user in virtual_users[:5]:
+                    add_log("bot", f"   - {user.get('user_id')}: {user.get('nickname')}")
+                if len(virtual_users) > 5:
+                    add_log("bot", f"   ... 及其他 {len(virtual_users) - 5} 個")
                 
                 for user in virtual_users:
                     self.db.delete_user(user['user_id'])
                 
-                print(f"✅ 已刪除 {len(virtual_users)} 個虛擬帳號")
+                add_log("bot", f"✅ 已刪除 {len(virtual_users)} 個虛擬帳號")
                 return len(virtual_users), 0
             else:
-                print("✅ 沒有虛擬帳號")
+                add_log("bot", "✅ 沒有虛擬帳號")
                 return 0, 0
         
         except Exception as e:
-            print(f"❌ 清理失敗: {e}")
+            add_log("bot", f"❌ 清理失敗: {e}")
             return 0, 1
     
     def get_stats(self) -> Dict[str, Any]:
