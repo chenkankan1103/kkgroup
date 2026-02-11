@@ -272,7 +272,9 @@ async def on_ready():
             all_cmds = cmd_names + prefix_cmd_names
             
             # 更新該 bot 的資訊
-            startup_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+            from datetime import timezone, timedelta
+            taiwan_tz = timezone(timedelta(hours=8))
+            startup_time = datetime.now(taiwan_tz).strftime("%Y-%m-%d %H:%M:%S")
             await update_bot_info("shopbot", startup_time, cmd_names, ext_names)
             
             # 只更新資訊，不發送訊息（避免重複）

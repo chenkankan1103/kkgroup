@@ -4,14 +4,15 @@ import os
 import json
 import traceback
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from .database import init_db, get_user, update_user, get_all_users
 from .work_system import (
     LEVELS, 
     process_checkin, 
     process_work_action,
     check_level_up,
-    required_days_for_level
+    required_days_for_level,
+    get_taiwan_time
 )
 
 class CheckInView(discord.ui.View):
@@ -52,7 +53,7 @@ class CheckInButton(discord.ui.Button):
                 )
                 return
             
-            today = datetime.utcnow().strftime("%Y-%m-%d")
+            today = get_taiwan_time().strftime("%Y-%m-%d")
             last_work_date = user.get('last_work_date', None)
 
             if last_work_date == today:

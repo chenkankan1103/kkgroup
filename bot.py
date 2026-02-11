@@ -192,9 +192,11 @@ async def before_update_status():
 @client.event
 async def on_ready():
     """Bot 啟動完成"""
+    print("🔍 on_ready 事件開始執行")
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     
     try:
+        print("🔍 進入 on_ready try 塊")
         # 清除舊指令
         if guild and STAGE != "prod":
             await client.tree.clear_commands(guild=guild)
@@ -274,7 +276,9 @@ async def on_ready():
             all_cmds = cmd_names + prefix_cmd_names
             
             # 更新該 bot 的資訊
-            startup_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+            from datetime import timezone, timedelta
+            taiwan_tz = timezone(timedelta(hours=8))
+            startup_time = datetime.now(taiwan_tz).strftime("%Y-%m-%d %H:%M:%S")
             await update_bot_info("bot", startup_time, cmd_names, ext_names)
             
             # 發送/編輯啟動訊息（只有 bot 會發送統一訊息）
@@ -288,29 +292,44 @@ async def on_ready():
         # 初始化監控儀表板及日誌系統
         # ============================================================
         try:
+            print("🔍 開始儀表板初始化...")
             # 設置當前 bot 類型
             set_bot_type("bot")
             load_message_ids("bot")
+            print("✅ bot 類型和消息 ID 已設置")
             
             # 初始化儀表板（只初始化當前 bot 的面板）
+            print("🔍 調用 initialize_dashboard...")
             dashboard_ready = await initialize_dashboard(client, "bot")
+            print(f"✅ initialize_dashboard 返回: {dashboard_ready}")
             if dashboard_ready:
+                print("🔍 dashboard_ready 為 True，進入 if 塊")
                 add_log("bot", "✅ 儀表板已初始化")
+                print("✅ 第一個 add_log 完成")
+                add_log("bot", "🔍 [1] 測試日誌")
+                print("✅ 第二個 add_log 完成")
+                add_log("bot", "🔍 [2] 測試日誌")
                 # 註冊持久化按鈕視圖
-                client.add_view(DashboardButtons("bot", client))
-                print("✅ 控制面板按鈕已註冊")
+                # client.add_view(DashboardButtons("bot", client))  # 暫時註釋掉
+                print("✅ client.add_view 跳過")
                 if not update_logs_task.is_running():
                     update_logs_task.start()
                 print(f"✅ 日誌系統已啟動")
+                print("🔍 即將調用 ensure_dashboard_messages...")
             
             # 確保儀表板消息按正確順序存在（bot → shopbot → uibot）
+            print("🔍 即將調用 ensure_dashboard_messages...")
             await ensure_dashboard_messages(client, "bot")
+            print("✅ ensure_dashboard_messages 完成")
             
             # 註冊機器人實例供日誌更新使用
             from status_dashboard import register_bot_instance
             register_bot_instance("bot", client)
+            print("✅ 機器人實例已註冊")
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
+            import traceback
+            traceback.print_exc()
         
         # ============================================================
         # 發送啟動資訊到 Webhook
@@ -328,6 +347,8 @@ async def on_ready():
         # 錯誤也使用單一 print
         error_msg = f"❌ 初始化失敗: {e}\n{'=' * 60}"
         print(error_msg)
+        import traceback
+        traceback.print_exc()
         import traceback
         traceback.print_exc()
 # ============================================================
