@@ -271,7 +271,7 @@ class AirdropSystem(commands.Cog):
                     try:
                         perms = channel.permissions_for(member_role)
                         # 檢查讀取和發送權限，排除論壇頻道
-                        if perms.read_messages and perms.send_messages and not channel.is_forum():
+                        if perms.read_messages and perms.send_messages and not isinstance(channel, discord.ForumChannel):
                             eligible_channels.append(channel)
                             print(f"✅ 【可投放】{guild.name} #{channel.name}")
                         else:
@@ -280,7 +280,7 @@ class AirdropSystem(commands.Cog):
                                 reason.append("無讀")
                             if not perms.send_messages:
                                 reason.append("無寫")
-                            if channel.is_forum():
+                            if isinstance(channel, discord.ForumChannel):
                                 reason.append("論壇")
                             print(f"🔒 【跳過】{guild.name} #{channel.name} - {', '.join(reason)}")
                     except Exception as e:
