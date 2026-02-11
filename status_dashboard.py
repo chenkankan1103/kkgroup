@@ -525,7 +525,7 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
         inline=True
     )
     
-    embed.set_footer(text="KK園區中控室")
+    embed.set_footer(text=get_taiwan_time().strftime('%H:%M'))
     return embed
 
 
@@ -761,7 +761,7 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
         inline=True
     )
     
-    embed.set_footer(text="KK園區中控室")
+    embed.set_footer(text=get_taiwan_time().strftime('%H:%M'))
     return embed
 
 
