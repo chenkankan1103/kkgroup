@@ -689,6 +689,8 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
         if not global_update_logs_task.is_running():
             print(f"[DASHBOARD] 全域日誌更新任務未運行，正在啟動...")
             try:
+                # 延遲啟動任務，確保事件循環完全準備就緒
+                await asyncio.sleep(5)
                 global_update_logs_task.start()
                 add_log("system", f"🔄 全域日誌更新任務已啟動 (15秒間隔)")
                 print(f"[DASHBOARD] ✅ 全域日誌更新任務啟動成功")
