@@ -253,9 +253,9 @@ async def on_ready():
         lines.append(f"✅ {client.user.name} 已就緒")
         lines.append("=" * 60)
         
-        # ⚠️ 重要：使用單一 print 調用輸出所有內容
-        # 這樣 logger.py 只會產生一條日誌記錄
-        print("\n".join(lines))
+        # ⚠️ 重要：將啟動統計添加到日誌 embed
+        # 這樣訊息只會出現在儀表板，不會發送到 webhook
+        add_log("bot", "\n".join(lines))
         
         # 設定初始狀態
         activity = build_discord_activity(BOT_TYPE)
