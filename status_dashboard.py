@@ -684,6 +684,8 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 embed = await create_dashboard_embed(bot_type_str, bot_instance)
                 view = DashboardButtons(bot_type_str, bot_instance)
                 await found_dashboard.edit(embed=embed, view=view)
+                # 成功編輯後保存到 .env（確保 .env 有正確的 ID）
+                save_message_ids(bot_type_str)
             except:
                 pass
             print(f"✅ 編輯 {bot_type_str} 控制面板: {found_dashboard.id}")
@@ -694,6 +696,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         # 創建或確保日誌embed存在（初始化時創建，之後由全域任務更新）
         logs_message_id = get_message_id(bot_type_str, "logs")
         if not logs_message_id:
+            # 沒有ID，直接創建新的
             try:
                 logs_embed = await create_logs_embed(bot_type_str)
                 logs_msg = await channel.send(embed=logs_embed)
@@ -704,8 +707,25 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             except Exception as e:
                 print(f"⚠️ 初始化時創建 {bot_type_str} 日誌embed失敗: {e}")
         else:
-            print(f"✅ {bot_type_str} 日誌embed已存在: {logs_message_id}")
-            add_log(bot_type_str, f"✅ 日誌系統已就緒")
+            # 有ID，嘗試驗證訊息是否存在
+            try:
+                existing_msg = await channel.fetch_message(logs_message_id)
+                print(f"✅ {bot_type_str} 日誌embed已存在並有效: {logs_message_id}")
+                add_log(bot_type_str, f"✅ 日誌系統已就緒")
+            except discord.NotFound:
+                print(f"⚠️ {bot_type_str} 日誌embed ID {logs_message_id} 不存在，重新創建")
+                try:
+                    logs_embed = await create_logs_embed(bot_type_str)
+                    logs_msg = await channel.send(embed=logs_embed)
+                    message_ids[bot_type_str]["logs"] = logs_msg.id
+                    save_message_id(bot_type_str, "logs", str(logs_msg.id))
+                    print(f"✅ 重新創建 {bot_type_str} 日誌embed: {logs_msg.id}")
+                    add_log(bot_type_str, f"✅ 日誌系統已重新初始化")
+                except Exception as e:
+                    print(f"⚠️ 重新創建 {bot_type_str} 日誌embed失敗: {e}")
+            except Exception as e:
+                print(f"⚠️ 驗證 {bot_type_str} 日誌embed失敗: {e}")
+                add_log(bot_type_str, f"✅ 日誌系統已就緒")
         
         # 🔧 初始化時清空日誌，防止重複累積
         # 尤其是在重新啟動時，舊日誌應該被新的一次啟動替換
@@ -763,7 +783,7 @@ def save_message_ids(bot_type: str):
 
 
 def load_message_ids(bot_type: str):
-    """從 .env 加載 message_id"""
+    """從 .env 加載 message_id，如果沒有則使用硬編碼的回退值"""
     dashboard_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_DASHBOARD")
     logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
 
@@ -771,15 +791,27 @@ def load_message_ids(bot_type: str):
         message_ids[bot_type]["dashboard"] = int(dashboard_id)
         print(f"[LOAD IDS] {bot_type} 控制面板 ID: {dashboard_id}")
     else:
-        message_ids[bot_type]["dashboard"] = None
-        print(f"[LOAD IDS] {bot_type} 控制面板 ID 未設置")
+        # 使用硬編碼的回退值
+        fallback_id = HARDCODED_MESSAGE_IDS.get(bot_type, {}).get("dashboard")
+        if fallback_id:
+            message_ids[bot_type]["dashboard"] = fallback_id
+            print(f"[LOAD IDS] {bot_type} 控制面板 ID 使用回退值: {fallback_id}")
+        else:
+            message_ids[bot_type]["dashboard"] = None
+            print(f"[LOAD IDS] {bot_type} 控制面板 ID 未設置")
 
     if logs_id:
         message_ids[bot_type]["logs"] = int(logs_id)
         print(f"[LOAD IDS] {bot_type} 日誌 ID: {logs_id}")
     else:
-        message_ids[bot_type]["logs"] = None
-        print(f"[LOAD IDS] {bot_type} 日誌 ID 未設置")
+        # 使用硬編碼的回退值
+        fallback_id = HARDCODED_MESSAGE_IDS.get(bot_type, {}).get("logs")
+        if fallback_id:
+            message_ids[bot_type]["logs"] = fallback_id
+            print(f"[LOAD IDS] {bot_type} 日誌 ID 使用回退值: {fallback_id}")
+        else:
+            message_ids[bot_type]["logs"] = None
+            print(f"[LOAD IDS] {bot_type} 日誌 ID 未設置")
 
 
 async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> discord.Embed:
