@@ -274,7 +274,7 @@ def create_update_task(bot_type: str):
 
             # 添加系統狀態日誌
             current_time = get_taiwan_time().strftime("%H:%M:%S")
-            add_log(bot_type, f"🔄 系統狀態檢查 - {current_time}")
+            # 移除洗版日誌: add_log(bot_type, f"🔄 系統狀態檢查 - {current_time}")
 
             # 更新自己的面板
             try:
@@ -332,6 +332,8 @@ def save_message_id(bot_type: str, message_type: str, message_id: str):
 async def update_dashboard_logs(bot, bot_type: str):
     """更新指定機器人的日誌"""
     try:
+        print(f"[UPDATE LOGS] 開始更新 {bot_type} 日誌")
+
         # 檢查機器人實例
         if not bot:
             print(f"[UPDATE LOGS ERROR] {bot_type} 機器人實例為空")
@@ -339,10 +341,8 @@ async def update_dashboard_logs(bot, bot_type: str):
 
         # 獲取最新的日誌條目
         logs_text = get_logs_text(bot_type)
-        
-        # 如果沒有日誌，使用預設訊息
-        if not logs_text or logs_text == "無日誌":
-            logs_text = f"[等待日誌...] {get_taiwan_time().strftime('%H:%M')} 機器人已啟動"
+        print(f"[UPDATE LOGS] {bot_type} 日誌內容長度: {len(logs_text)} 字符")
+        print(f"[UPDATE LOGS] {bot_type} 日誌內容預覽: {logs_text[:100] if logs_text else '空'}")
 
         # 創建日誌 embed
         config = BOT_CONFIG.get(bot_type, {})
@@ -352,10 +352,10 @@ async def update_dashboard_logs(bot, bot_type: str):
             color=config["顏色"],
             timestamp=get_taiwan_time()
         )
-        embed.set_footer(text=f"更新頻率: 60秒 | {get_taiwan_time().strftime('%H:%M')}")
 
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
+        print(f"[UPDATE LOGS] {bot_type} 嘗試更新消息ID: {message_id}")
         
         channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
@@ -365,24 +365,25 @@ async def update_dashboard_logs(bot, bot_type: str):
         if message_id:
             try:
                 message = await channel.fetch_message(int(message_id))
+                print(f"[UPDATE LOGS] {bot_type} 成功獲取消息，當前embed數量: {len(message.embeds) if message.embeds else 0}")
                 await message.edit(embed=embed)
-                return  # 成功更新，退出
+                print(f"[UPDATE LOGS] {bot_type} 日誌已成功更新")
             except discord.NotFound:
-                # 訊息不存在 - 清除無效ID，不要立即創建新的
-                print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在 (ID: {message_id})")
-                print(f"[UPDATE LOGS] {bot_type} 清除無效訊息ID，將在下次更新時重新創建")
-                message_ids[bot_type]["logs"] = None
-                save_message_ids(bot_type)
-                return
+                print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
+                try:
+                    message = await channel.send(embed=embed)
+                    save_message_id(bot_type, "logs", str(message.id))
+                    print(f"[UPDATE LOGS] {bot_type} 日誌訊息已重新創建: {message.id}")
+                except Exception as create_error:
+                    print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
             except discord.Forbidden:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
-                return
             except Exception as e:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 日誌更新錯誤: {e}")
-                return
-        
-        # 只有在沒有訊息ID時才創建新的
-        if not message_id:
+                traceback.print_exc()
+        else:
+            # 訊息ID不存在，創建新的日誌embed
+            print(f"[UPDATE LOGS] {bot_type} 日誌訊息ID不存在，創建新的embed")
             try:
                 # 在創建前檢查是否已經有現有的日誌embed
                 existing_logs = []
@@ -391,13 +392,13 @@ async def update_dashboard_logs(bot, bot_type: str):
                         for embed in msg.embeds:
                             if "實時日誌" in embed.title and BOT_CONFIG[bot_type]["名稱"] in embed.title:
                                 existing_logs.append(msg)
-                
+
                 # 如果有現有的embed，更新最新的，刪除其他的
                 if existing_logs:
                     # 保留最新的embed，刪除其他的
                     existing_logs.sort(key=lambda m: m.created_at, reverse=True)
                     latest_msg = existing_logs[0]
-                    
+
                     # 刪除重複的embed
                     for msg in existing_logs[1:]:
                         try:
@@ -405,7 +406,7 @@ async def update_dashboard_logs(bot, bot_type: str):
                             print(f"[CLEANUP] 刪除重複日誌embed: {msg.id}")
                         except Exception as delete_error:
                             print(f"[CLEANUP ERROR] 刪除重複embed失敗 {msg.id}: {delete_error}")
-                    
+
                     # 更新保留的embed
                     await latest_msg.edit(embed=embed)
                     message_ids[bot_type]["logs"] = latest_msg.id
@@ -417,12 +418,13 @@ async def update_dashboard_logs(bot, bot_type: str):
                     message_ids[bot_type]["logs"] = message.id
                     save_message_ids(bot_type)
                     print(f"[UPDATE LOGS] {bot_type} 創建新日誌embed: {message.id}")
-                    
+
             except Exception as create_error:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 創建/更新日誌embed失敗: {create_error}")
 
     except Exception as e:
         print(f"[UPDATE LOGS ERROR] {bot_type} 更新日誌時發生未預期錯誤: {e}")
+        traceback.print_exc()
 
 
 class DashboardButtons(discord.ui.View):
@@ -486,6 +488,7 @@ class DashboardButtons(discord.ui.View):
 🟢 **在線**
 用戶: {self.bot.user.mention}
 ID: {self.bot.user.id}
+時間: <t:{int(datetime.utcnow().timestamp())}:R>
                 """
             else:
                 detail = "🔴 離線"
@@ -506,7 +509,7 @@ ID: {self.bot.user.id}
     async def start_log_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """啟動日誌系統"""
         await interaction.response.defer(thinking=True)
-        
+
         try:
             # 檢查日誌任務是否已經運行
             if self.bot_type in update_tasks and update_tasks[self.bot_type] and not update_tasks[self.bot_type].is_running():
@@ -527,7 +530,7 @@ ID: {self.bot.user.id}
                     f"❌ {BOT_CONFIG[self.bot_type]['名稱']} 日誌系統初始化失敗",
                     ephemeral=True
                 )
-        
+
         except Exception as e:
             await interaction.followup.send(f"❌ 啟動日誌失敗: {e}", ephemeral=True)
 
@@ -590,7 +593,7 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
         inline=True
     )
     
-    embed.set_footer(text=get_taiwan_time().strftime('%H:%M'))
+    embed.set_footer(text=f"{get_taiwan_time().strftime('%H:%M')}")
     return embed
 
 
@@ -604,12 +607,8 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     )
     
     logs_text = get_logs_text(bot_type)
-    
-    # 確保日誌文本不為空
-    if not logs_text or logs_text == "無日誌":
-        logs_text = f"[系統就緒] {get_taiwan_time().strftime('%H:%M')} 等待日誌輸入..."
-    
     embed.description = f"```\n{logs_text}\n```"
+    
     embed.set_footer(text=f"更新頻率: 60秒 | {get_taiwan_time().strftime('%H:%M')}")
     return embed
 
@@ -694,19 +693,16 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         
         # 創建或確保日誌embed存在（初始化時創建，之後由全域任務更新）
         logs_message_id = get_message_id(bot_type_str, "logs")
-        print(f"[DASHBOARD] {bot_type_str} 檢查日誌embed ID: {logs_message_id}")
-        
         if not logs_message_id:
             try:
                 logs_embed = await create_logs_embed(bot_type_str)
                 logs_msg = await channel.send(embed=logs_embed)
                 message_ids[bot_type_str]["logs"] = logs_msg.id
                 save_message_id(bot_type_str, "logs", str(logs_msg.id))
-                add_log(bot_type_str, f"✅ 日誌系統已初始化")
                 print(f"✅ 初始化時創建 {bot_type_str} 日誌embed: {logs_msg.id}")
+                add_log(bot_type_str, f"✅ 日誌系統已初始化")
             except Exception as e:
                 print(f"⚠️ 初始化時創建 {bot_type_str} 日誌embed失敗: {e}")
-                traceback.print_exc()
         else:
             print(f"✅ {bot_type_str} 日誌embed已存在: {logs_message_id}")
             add_log(bot_type_str, f"✅ 日誌系統已就緒")
@@ -741,9 +737,6 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             print(f"[DASHBOARD ERROR] {bot_type_str} 任務啟動失敗: {e}")
             import traceback
             traceback.print_exc()
-        
-        return True
-        
     except Exception as e:
         print(f"❌ 初始化儀表板失敗: {e}")
         traceback.print_exc()
@@ -826,7 +819,7 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
         inline=True
     )
     
-    embed.set_footer(text=get_taiwan_time().strftime('%H:%M'))
+    embed.set_footer(text=f"{get_taiwan_time().strftime('%H:%M')}")
     return embed
 
 
