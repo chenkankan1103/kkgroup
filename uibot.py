@@ -138,6 +138,10 @@ class FileEventHandler(FileSystemEventHandler):
 
     def handle(self, event):
         if not event.is_directory and event.src_path.endswith(".py"):
+            # 排除 __pycache__ 目錄中的文件
+            if "__pycache__" in event.src_path:
+                return
+                
             filename = os.path.basename(event.src_path)
             if filename == "__init__.py":
                 return
@@ -307,22 +311,24 @@ async def on_ready():
 async def main():
     """主程序"""
     loop = asyncio.get_event_loop()
-    observer = Observer()
     
-    commands_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
-    
-    if not os.path.exists(commands_path):
-        os.makedirs(commands_path)
-        init_file = os.path.join(commands_path, "__init__.py")
-        with open(init_file, 'w', encoding='utf-8') as f:
-            f.write(f"# {BOT_NAME} Bot Commands Module\n")
-    
-    observer.schedule(
-        FileEventHandler(loop),
-        path=commands_path,
-        recursive=True
-    )
-    observer.start()
+    # 暫時禁用檔案監控以避免重載問題
+    # observer = Observer()
+    # 
+    # commands_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
+    # 
+    # if not os.path.exists(commands_path):
+    #     os.makedirs(commands_path)
+    #     init_file = os.path.join(commands_path, "__init__.py")
+    #     with open(init_file, 'w', encoding='utf-8') as f:
+    #         f.write(f"# {BOT_NAME} Bot Commands Module\n")
+    # 
+    # observer.schedule(
+    #     FileEventHandler(loop),
+    #     path=commands_path,
+    #     recursive=True
+    # )
+    # observer.start()
 
     try:
         async with client:
@@ -338,8 +344,9 @@ async def main():
     finally:
         if update_status.is_running():
             update_status.stop()
-        observer.stop()
-        observer.join()
+        # if observer is defined:
+        #     observer.stop()
+        #     observer.join()
 
 if __name__ == "__main__":
     try:
