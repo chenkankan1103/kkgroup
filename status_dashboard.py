@@ -637,6 +637,20 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         # 保存到 .env
         save_message_ids(bot_type_str)
         
+        # 創建或確保日誌embed存在（初始化時創建，之後由全域任務更新）
+        logs_message_id = get_message_id(bot_type_str, "logs")
+        if not logs_message_id:
+            try:
+                logs_embed = await create_logs_embed(bot_type_str)
+                logs_msg = await channel.send(embed=logs_embed)
+                message_ids[bot_type_str]["logs"] = logs_msg.id
+                save_message_id(bot_type_str, "logs", str(logs_msg.id))
+                print(f"✅ 初始化時創建 {bot_type_str} 日誌embed: {logs_msg.id}")
+            except Exception as e:
+                print(f"⚠️ 初始化時創建 {bot_type_str} 日誌embed失敗: {e}")
+        else:
+            print(f"✅ {bot_type_str} 日誌embed已存在: {logs_message_id}")
+        
         # 🔧 初始化時清空日誌，防止重複累積
         # 尤其是在重新啟動時，舊日誌應該被新的一次啟動替換
         logs_storage[bot_type_str].clear()
