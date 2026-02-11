@@ -580,11 +580,8 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         
         # 只初始化該機器人自己的訊息
         found_dashboard = None
-        found_logs = None
         dashboard_count = 0
-        logs_count = 0
         old_dashboards = []
-        old_logs = []
         
         # 查找現有訊息（只查找由當前 bot 發送的）
         async for msg in channel.history(limit=100):
@@ -600,18 +597,12 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                             found_dashboard = msg
                         else:
                             old_dashboards.append(msg)
-                    elif "實時日誌" in embed.title and bot_name in embed.title:
-                        logs_count += 1
-                        if logs_count <= 1:
-                            found_logs = msg
-                        else:
-                            old_logs.append(msg)
         
-        # 清理舊 embed
-        for msg in old_dashboards + old_logs:
+        # 清理舊的控制面板 embed
+        for msg in old_dashboards:
             try:
                 await msg.delete()
-                print(f"✓ 已清理舊的 {bot_type_str} embed")
+                print(f"✓ 已清理舊的 {bot_type_str} 控制面板")
             except:
                 pass
         
@@ -633,23 +624,6 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             except:
                 pass
             print(f"✅ 編輯 {bot_type_str} 控制面板: {found_dashboard.id}")
-        
-        # 創建或註冊日誌
-        if not found_logs:
-            embed = await create_logs_embed(bot_type_str)
-            msg = await channel.send(embed=embed)
-            message_ids[bot_type_str]["logs"] = msg.id
-            save_message_id(bot_type_str, "logs", str(msg.id))  # 立即保存到 .env
-            print(f"✅ 創建 {bot_type_str} 日誌: {msg.id}")
-        else:
-            message_ids[bot_type_str]["logs"] = found_logs.id
-            # 編輯舊的日誌embed
-            try:
-                embed = await create_logs_embed(bot_type_str)
-                await found_logs.edit(embed=embed)
-            except:
-                pass
-            print(f"✅ 編輯 {bot_type_str} 日誌: {found_logs.id}")
         
         # 保存到 .env
         save_message_ids(bot_type_str)
