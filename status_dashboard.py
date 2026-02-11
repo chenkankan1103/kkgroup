@@ -255,19 +255,22 @@ current_bot_type = None
 async def global_update_logs_task():
     """全域日誌更新任務 - 每 15 秒更新所有機器人的日誌"""
     try:
-        print("[GLOBAL LOG TASK] 開始更新所有機器人的日誌...")
+        print("[GLOBAL LOG TASK] ===== 開始更新所有機器人的日誌 =====")
         for bot_type in ["bot", "shopbot", "uibot"]:
             try:
                 bot_instance = get_bot_instance(bot_type)
+                print(f"[GLOBAL LOG TASK] 檢查 {bot_type} 實例: {bot_instance is not None}")
                 if bot_instance:
                     print(f"[GLOBAL LOG TASK] 更新 {bot_type} 日誌")
                     await update_dashboard_logs(bot_instance, bot_type)
+                    print(f"[GLOBAL LOG TASK] {bot_type} 日誌更新完成")
                 else:
                     print(f"[GLOBAL LOG TASK] {bot_type} 實例未找到 - 跳過")
             except Exception as e:
                 # 捕獲單個機器人的錯誤，不影響其他機器人
                 print(f"[GLOBAL LOG TASK ERROR] {bot_type} 更新失敗: {e}")
                 traceback.print_exc()
+        print("[GLOBAL LOG TASK] ===== 所有機器人日誌更新完成 =====")
     except Exception as e:
         print(f"[GLOBAL LOG TASK ERROR] 任務執行失敗: {e}")
         traceback.print_exc()
@@ -686,14 +689,21 @@ async def ensure_dashboard_messages(bot: discord.Client, bot_type: str):
 
         # 啟動全域日誌更新任務（只在第一次調用時啟動）
         # 檢查任務狀態並在需要時啟動或重啟
+        print(f"[DASHBOARD] 檢查全域任務狀態 - is_running: {global_update_logs_task.is_running()}")
         if not global_update_logs_task.is_running():
             print(f"[DASHBOARD] 全域日誌更新任務未運行，正在啟動...")
             try:
                 # 延遲啟動任務，確保事件循環完全準備就緒
+                print("[DASHBOARD] 等待 5 秒確保事件循環準備就緒...")
                 await asyncio.sleep(5)
+                print("[DASHBOARD] 開始啟動全域日誌更新任務...")
                 global_update_logs_task.start()
+                print("[DASHBOARD] 任務.start() 調用完成")
                 add_log("system", f"🔄 全域日誌更新任務已啟動 (15秒間隔)")
                 print(f"[DASHBOARD] ✅ 全域日誌更新任務啟動成功")
+                # 立即檢查任務狀態
+                await asyncio.sleep(0.1)
+                print(f"[DASHBOARD] 啟動後任務狀態: {global_update_logs_task.is_running()}")
             except RuntimeError as e:
                 # 任務可能已經被啟動但未正確報告狀態
                 if "already running" in str(e).lower():
