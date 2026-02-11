@@ -240,11 +240,17 @@ async def send_or_update_startup_info(bot_type: str = None):
                 await asyncio.sleep(0.5)
             
             embeds = [
-                await create_overview_embed(),
-                await create_bot_detail_embed("bot"),
-                await create_bot_detail_embed("shopbot"),
-                await create_bot_detail_embed("uibot")
+                # 移除多餘的 embed 創建，日誌功能由 status_dashboard.py 處理
+                # await create_overview_embed(),
+                # await create_bot_detail_embed("bot"),
+                # await create_bot_detail_embed("shopbot"),
+                # await create_bot_detail_embed("uibot")
             ]
+            
+            # 如果沒有 embeds，跳過發送
+            if not embeds:
+                log_webhook("ℹ️ 沒有 embeds 需要發送，跳過 webhook")
+                return
             
             payload = {"embeds": embeds}
             

@@ -555,7 +555,7 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     logs_text = get_logs_text(bot_type)
     embed.description = f"```\n{logs_text}\n```"
     
-    embed.set_footer(text=f"更新頻率: 15秒 | {get_taiwan_time().strftime('%H:%M:%S 台灣時間')}")
+    embed.set_footer(text=f"更新頻率: 60秒 | {get_taiwan_time().strftime('%H:%M:%S')}")
     return embed
 
 
