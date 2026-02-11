@@ -407,6 +407,8 @@ class DashboardButtons(discord.ui.View):
                     item.custom_id = f"restart_{bot_type}"
                 elif item.label == "狀態":
                     item.custom_id = f"status_{bot_type}"
+                elif item.label == "啟動LOG":
+                    item.custom_id = f"start_log_{bot_type}"
     
     @discord.ui.button(label="重啟", emoji="🔄", style=discord.ButtonStyle.danger)
     async def restart_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -465,6 +467,35 @@ ID: {self.bot.user.id}
         
         except Exception as e:
             await interaction.followup.send(f"❌ 狀態查詢失敗: {e}", ephemeral=True)
+    
+    @discord.ui.button(label="啟動LOG", emoji="📝", style=discord.ButtonStyle.primary)
+    async def start_log_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """啟動日誌系統"""
+        await interaction.response.defer(thinking=True)
+        
+        try:
+            # 檢查日誌任務是否已經運行
+            if self.bot_type in update_tasks and update_tasks[self.bot_type] and not update_tasks[self.bot_type].is_running():
+                # 重新啟動任務
+                update_tasks[self.bot_type].start()
+                await interaction.followup.send(
+                    f"✅ {BOT_CONFIG[self.bot_type]['名稱']} 日誌系統已啟動\n將每60秒自動更新日誌",
+                    ephemeral=True
+                )
+                add_log(self.bot_type, f"📝 日誌系統已手動啟動")
+            elif self.bot_type in update_tasks and update_tasks[self.bot_type] and update_tasks[self.bot_type].is_running():
+                await interaction.followup.send(
+                    f"ℹ️ {BOT_CONFIG[self.bot_type]['名稱']} 日誌系統已在運行中",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"❌ {BOT_CONFIG[self.bot_type]['名稱']} 日誌系統初始化失敗",
+                    ephemeral=True
+                )
+        
+        except Exception as e:
+            await interaction.followup.send(f"❌ 啟動日誌失敗: {e}", ephemeral=True)
 
 
 def set_bot_type(bot_type: str):
