@@ -12,7 +12,8 @@ from .work_system import (
     process_checkin, 
     process_work_action,
     check_level_up,
-    required_days_for_level
+    required_days_for_level,
+    get_taiwan_time
 )
 from status_dashboard import add_log
 
@@ -115,7 +116,7 @@ class CheckInButton(discord.ui.Button):
                 )
                 return
             
-            today = datetime.utcnow().strftime("%Y-%m-%d")
+            today = get_taiwan_time().strftime("%Y-%m-%d")
             last_work_date = user.get('last_work_date', None)
 
             if last_work_date == today:
@@ -240,7 +241,7 @@ class RestButton(discord.ui.Button):
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
-            today = datetime.utcnow().strftime("%Y-%m-%d")
+            today = get_taiwan_time().strftime("%Y-%m-%d")
             last_work_date = user.get('last_work_date', None)
             
             if last_work_date == today:
