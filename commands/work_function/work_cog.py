@@ -4,16 +4,62 @@ import os
 import json
 import traceback
 import asyncio
-from datetime import datetime, timedelta, timezone
+import logging
+from datetime import datetime, timedelta
 from .database import init_db, get_user, update_user, get_all_users
 from .work_system import (
     LEVELS, 
     process_checkin, 
     process_work_action,
     check_level_up,
-    required_days_for_level,
-    get_taiwan_time
+    required_days_for_level
 )
+
+# Configure logger for work module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create console handler if not already configured
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(name)s] %(levelname)s: %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+async def log_error(interaction, error_msg, exception=None):
+    """
+    Unified error logging function that logs to both console and Discord channel.
+    
+    Args:
+        interaction: Discord interaction object (can be None for non-interaction errors)
+        error_msg: Error message to log
+        exception: Optional exception object
+    """
+    # Log to console
+    if exception:
+        logger.error(f"{error_msg}: {exception}", exc_info=True)
+    else:
+        logger.error(error_msg)
+    
+    # Try to send to Discord channel where the interaction occurred
+    if interaction and hasattr(interaction, 'channel'):
+        try:
+            # Create an embed for better visibility
+            embed = discord.Embed(
+                title="⚠️ 系統錯誤",
+                description=error_msg,
+                color=discord.Color.red(),
+                timestamp=datetime.utcnow()
+            )
+            if exception:
+                embed.add_field(name="錯誤詳情", value=f"```{str(exception)[:1000]}```", inline=False)
+            
+            # Send to channel (not as ephemeral, so admins can see it)
+            await interaction.channel.send(embed=embed)
+        except Exception as e:
+            # If we can't send to Discord, at least log it
+            logger.error(f"Failed to send error to Discord channel: {e}")
 
 class CheckInView(discord.ui.View):
     def __init__(self):
@@ -31,21 +77,22 @@ class CheckInButton(discord.ui.Button):
             user_id = interaction.user.id
             user_name = interaction.user.name
             
-            print(f"\n🕐 【打卡開始】 使用者: {user_name} (ID: {user_id})")
+            logger.info(f"\n🕐 【打卡開始】 使用者: {user_name} (ID: {user_id})")
             
             user = get_user(user_id)
             
             # 檢查用戶是否成功取得
             if not user:
-                print(f"❌ 打卡失敗: 無法獲取用戶資料")
+                error_msg = f"❌ 打卡失敗: 無法獲取用戶資料 (user: {user_name}, ID: {user_id})"
+                logger.error(error_msg)
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
-            print(f"✓ 用戶資料已取得: Lv.{user.get('level')} {user.get('title')}")
+            logger.info(f"✓ 用戶資料已取得: Lv.{user.get('level')} {user.get('title')} (user: {user_name})")
             
             # 檢查是否已領取工作證
             if not user.get('pre_job'):
-                print(f"❌ 打卡失敗: 未領取工作證")
+                logger.info(f"❌ 打卡失敗: 未領取工作證 (user: {user_name})")
                 await interaction.followup.send(
                     "❌ 你還沒領取工作證！請先到置物櫃申請身份證件。\n"
                     "使用 `/我的面板` → 選擇「領取工作證」",
@@ -53,33 +100,15 @@ class CheckInButton(discord.ui.Button):
                 )
                 return
             
-            today = get_taiwan_time().strftime("%Y-%m-%d")
+            today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = user.get('last_work_date', None)
 
             if last_work_date == today:
-                print(f"⚠️  打卡失敗: 今日已打卡")
+                logger.info(f"⚠️  打卡失敗: 今日已打卡 (user: {user_name})")
                 await interaction.followup.send("你今天已經打過卡囉！", ephemeral=True)
                 return
 
-            print(f"📋 開始檢查介紹論壇身份...")
-            try:
-                introduce_check_result = await asyncio.wait_for(
-                    self.check_introduction_async(interaction),
-                    timeout=8.0
-                )
-                if not introduce_check_result:
-                    print(f"❌ 打卡失敗: 未找到介紹論壇文章")
-                    await interaction.followup.send(
-                        "❌ 找不到你在介紹論壇的文章，請先到介紹論壇發文",
-                        ephemeral=True
-                    )
-                    return
-                print(f"✓ 介紹論壇檢查通過")
-            except asyncio.TimeoutError:
-                print("⚠️ 介紹論壇檢查超時，跳過檢查")
-                pass
-
-            print(f"💼 開始處理打卡邏輯...")
+            logger.info(f"💼 開始處理打卡邏輯 (user: {user_name})...")
             embeds_tuple, updated_user, salary_multiplier, daily_story = await process_checkin(
                 interaction.user.id, 
                 interaction.user,
@@ -103,11 +132,11 @@ class CheckInButton(discord.ui.Button):
                     performance = "⚠️不太順利..."
                 
                 # 記錄打卡成功日誌
-                print(f"✅ 打卡成功!")
-                print(f"   薪資: {actual_salary:,} / {base_salary:,} KK幣 ({salary_percent}%)")
-                print(f"   等級: Lv.{new_level}")
-                print(f"   連勤: {new_streak} 天")
-                print(f"   時間: {today}")
+                logger.info(f"✅ 打卡成功! (user: {user_name})")
+                logger.info(f"   薪資: {actual_salary:,} / {base_salary:,} KK幣 ({salary_percent}%)")
+                logger.info(f"   等級: Lv.{new_level}")
+                logger.info(f"   連勤: {new_streak} 天")
+                logger.info(f"   時間: {today}")
                 
                 checkin_msg = (
                     f"✅ **打卡成功！**\n\n"
@@ -118,7 +147,7 @@ class CheckInButton(discord.ui.Button):
                 )
                 
                 if len(embeds_tuple) == 2:
-                    print(f"🎊 用戶升級到 Lv.{new_level}")
+                    logger.info(f"🎊 用戶升級到 Lv.{new_level} (user: {user_name})")
                     await interaction.followup.send(
                         content=f"## 🎊 恭喜升級！\n{checkin_msg}", 
                         embed=embeds_tuple[0], 
@@ -137,16 +166,18 @@ class CheckInButton(discord.ui.Button):
                         ephemeral=True
                     )
             else:
-                print(f"❌ 打卡失敗: process_checkin 返回 None")
-                print(f"   embeds_tuple: {embeds_tuple}")
-                print(f"   updated_user: {updated_user}")
+                error_msg = f"❌ 打卡失敗: process_checkin 返回 None (user: {user_name})"
+                logger.error(error_msg)
+                logger.error(f"   embeds_tuple: {embeds_tuple}")
+                logger.error(f"   updated_user: {updated_user}")
                 await interaction.followup.send(
                     "❌ 處理打卡失敗，請稍後再試或聯絡管理員", 
                     ephemeral=True
                 )
 
         except asyncio.TimeoutError:
-            print(f"❌ 打卡處理超時 (user: {user_name})")
+            error_msg = f"❌ 打卡處理超時 (user: {user_name})"
+            await log_error(interaction, error_msg)
             try:
                 await interaction.followup.send(
                     "❌ 處理超時，請稍後再試", 
@@ -155,9 +186,8 @@ class CheckInButton(discord.ui.Button):
             except:
                 pass
         except Exception as e:
-            print(f"❌ 打卡發生例外: {e}")
-            print(f"   User: {user_name} (ID: {user_id})")
-            traceback.print_exc()
+            error_msg = f"❌ 打卡發生例外 (User: {user_name}, ID: {user_id})"
+            await log_error(interaction, error_msg, e)
             try:
                 await interaction.followup.send(
                     "❌ 發生錯誤，請稍後再試或聯絡管理員。", 
@@ -165,70 +195,6 @@ class CheckInButton(discord.ui.Button):
                 )
             except:
                 pass
-
-    async def check_introduction_async(self, interaction):
-        try:
-            introduce_channel_id = int(os.getenv("INTRODUCE_CHANNEL_ID", 0))
-            if not introduce_channel_id:
-                return True
-            
-            introduce_channel = interaction.guild.get_channel(introduce_channel_id)
-            if not introduce_channel:
-                return True
-
-            if not isinstance(introduce_channel, discord.ForumChannel):
-                return True
-
-            has_posted = await self.check_user_posts_optimized(introduce_channel, interaction.user.id)
-            
-            if not has_posted:
-                await interaction.followup.send(
-                    "⚠️ 你尚未在介紹論壇發過文章，請先完成介紹再來打卡！\n"
-                    f"📍 介紹論壇：{introduce_channel.mention}", 
-                    ephemeral=True
-                )
-                return False
-            
-            return True
-        except asyncio.TimeoutError:
-            print("⚠️ 介紹論壇檢查超時")
-            return True
-        except Exception as e:
-            print(f"⚠️ 檢查介紹論壇時發生錯誤：{e}")
-            return True
-
-    async def check_user_posts_optimized(self, forum_channel, user_id):
-        try:
-            active_threads_response = await asyncio.wait_for(
-                forum_channel.guild.active_threads(),
-                timeout=3.0
-            )
-            
-            for thread in active_threads_response.threads:
-                if thread.parent_id != forum_channel.id:
-                    continue
-                
-                if hasattr(thread, 'owner_id') and thread.owner_id == user_id:
-                    return True
-                
-                try:
-                    starter_message = await asyncio.wait_for(
-                        thread.fetch_message(thread.id),
-                        timeout=1.0
-                    )
-                    if starter_message and starter_message.author.id == user_id:
-                        return True
-                except:
-                    continue
-            
-            return False
-                
-        except asyncio.TimeoutError:
-            print("⚠️ 發文檢查超時")
-            return True
-        except Exception as e:
-            print(f"⚠️ 檢查時發生錯誤：{e}")
-            return True
 
 class RestButton(discord.ui.Button):
     def __init__(self):
@@ -240,13 +206,14 @@ class RestButton(discord.ui.Button):
             user_id = interaction.user.id
             user_name = interaction.user.name
             
-            print(f"\n🛌 【休息開始】 使用者: {user_name} (ID: {user_id})")
+            logger.info(f"\n🛌 【休息開始】 使用者: {user_name} (ID: {user_id})")
             
             user = get_user(user_id)
             
             # 檢查用戶是否成功取得
             if not user:
-                print(f"❌ 休息失敗: 無法獲取用戶資料")
+                error_msg = f"❌ 休息失敗: 無法獲取用戶資料 (user: {user_name}, ID: {user_id})"
+                logger.error(error_msg)
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
@@ -254,15 +221,15 @@ class RestButton(discord.ui.Button):
             last_work_date = user.get('last_work_date', None)
             
             if last_work_date == today:
-                print(f"⚠️ 休息失敗: 今日已打卡/休息")
+                logger.info(f"⚠️ 休息失敗: 今日已打卡/休息 (user: {user_name})")
                 await interaction.followup.send("你今天已經打過卡或選擇休息了！", ephemeral=True)
                 return
             
             old_streak = user.get('streak', 0)
             update_user(user_id, last_work_date=today, streak=0)
             
-            print(f"✅ 成功休息")
-            print(f"   連勤: {old_streak} → 0")
+            logger.info(f"✅ 成功休息 (user: {user_name})")
+            logger.info(f"   連勤: {old_streak} → 0")
             
             rest_embed = discord.Embed(
                 title="🛌 休息通知",
@@ -277,8 +244,8 @@ class RestButton(discord.ui.Button):
             await interaction.followup.send(embed=rest_embed, ephemeral=True)
             
         except Exception as e:
-            print(f"❌ 休息發生例外: {e}")
-            traceback.print_exc()
+            error_msg = f"❌ 休息發生例外 (user: {user_name})"
+            await log_error(interaction, error_msg, e)
             await interaction.followup.send("❌ 處理休息請求失敗", ephemeral=True)
 
 class WorkActionButton(discord.ui.Button):
@@ -304,17 +271,18 @@ class WorkActionButton(discord.ui.Button):
             
             parts = self.custom_id.split(':')
             if len(parts) < 4:
-                print(f"❌ 工作行動失敗: 按鈕 ID 格式錯誤")
+                error_msg = f"❌ 工作行動失敗: 按鈕 ID 格式錯誤 (user: {user_name})"
+                logger.error(error_msg)
                 await interaction.followup.send("❌ 按鈕 ID 格式錯誤", ephemeral=True)
                 return
                 
             action = parts[2]
             user_id_check = parts[3]
             
-            print(f"\n⚙️  【工作行動】 使用者: {user_name} (ID: {user_id}), 行動: {action}")
+            logger.info(f"\n⚙️  【工作行動】 使用者: {user_name} (ID: {user_id}), 行動: {action}")
             
             if str(user_id) != user_id_check:
-                print(f"❌ 工作行動失敗: 不是該按鈕的擁有者")
+                logger.warning(f"❌ 工作行動失敗: 不是該按鈕的擁有者 (user: {user_name})")
                 await interaction.followup.send("你不能使用別人的工作按鈕！", ephemeral=True)
                 return
             
@@ -322,11 +290,12 @@ class WorkActionButton(discord.ui.Button):
             
             # 檢查用戶是否成功取得
             if not current_user:
-                print(f"❌ 工作行動失敗: 無法獲取用戶資料")
+                error_msg = f"❌ 工作行動失敗: 無法獲取用戶資料 (user: {user_name}, ID: {user_id})"
+                logger.error(error_msg)
                 await interaction.followup.send("❌ 無法獲取用戶資料，請稍後重試。", ephemeral=True)
                 return
             
-            print(f"✓ 使用者資料: Lv.{current_user.get('level')} {current_user.get('title')}")
+            logger.info(f"✓ 使用者資料: Lv.{current_user.get('level')} {current_user.get('title')} (user: {user_name})")
             
             today = datetime.utcnow().strftime("%Y-%m-%d")
             last_work_date = current_user.get('last_work_date', None)
@@ -335,14 +304,14 @@ class WorkActionButton(discord.ui.Button):
             yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
             
             if last_work_date not in [today, yesterday]:
-                print(f"❌ 工作行動失敗: 按鈕已過期 (last_work_date: {last_work_date})")
+                logger.warning(f"❌ 工作行動失敗: 按鈕已過期 (user: {user_name}, last_work_date: {last_work_date})")
                 await interaction.followup.send(
                     "⚠️ 此工作按鈕已過期，請重新打卡領取今日任務！", 
                     ephemeral=True
                 )
                 return
             
-            print(f"💼 處理工作行動: {action}")
+            logger.info(f"💼 處理工作行動: {action} (user: {user_name})")
             embeds_tuple, updated_user, message = await process_work_action(
                 user_id, 
                 interaction.user, 
@@ -350,8 +319,8 @@ class WorkActionButton(discord.ui.Button):
             )
             
             if embeds_tuple and updated_user:
-                print(f"✅ 工作行動成功！")
-                print(f"   訊息: {message}")
+                logger.info(f"✅ 工作行動成功！ (user: {user_name})")
+                logger.info(f"   訊息: {message}")
                 await interaction.followup.send(
                     embed=embeds_tuple[0],
                     ephemeral=True
@@ -372,7 +341,7 @@ class WorkActionButton(discord.ui.Button):
                         ephemeral=True
                     )
                 except discord.HTTPException as e:
-                    print(f"編輯訊息失敗: {e}")
+                    logger.warning(f"編輯訊息失敗 (user: {user_name}): {e}")
                     await interaction.followup.send(
                         embed=embeds_tuple[1],
                         view=view,
@@ -382,26 +351,27 @@ class WorkActionButton(discord.ui.Button):
                 if message:
                     await interaction.followup.send(message, ephemeral=True)
             else:
-                print(f"❌ 工作行動失敗: process_work_action 返回 None")
-                print(f"   訊息: {message}")
+                error_msg = f"❌ 工作行動失敗: process_work_action 返回 None (user: {user_name})"
+                logger.error(error_msg)
+                logger.error(f"   訊息: {message}")
                 if message:
                     await interaction.followup.send(message, ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 處理失敗", ephemeral=True)
                 
         except discord.errors.NotFound:
-            print(f"⚠️ 交互已過期")
+            logger.warning(f"⚠️ 交互已過期 (user: {user_name})")
             await interaction.followup.send(
                 "❌ 交互已過期或機器人剛重啟，請重新打卡以獲取新的工作按鈕", 
                 ephemeral=True
             )
         except discord.errors.InteractionResponded:
             # 交互已被回應（可能是重複點擊），靜默處理
-            print(f"⚠️ 交互已被回應（可能是重複點擊）")
+            logger.info(f"⚠️ 交互已被回應（可能是重複點擊） (user: {user_name})")
             pass
         except Exception as e:
-            print(f"❌ 工作行動發生例外: {e}")
-            traceback.print_exc()
+            error_msg = f"❌ 工作行動發生例外 (user: {user_name})"
+            await log_error(interaction, error_msg, e)
             try:
                 await interaction.followup.send("❌ 處理失敗，請稍後再試", ephemeral=True)
             except:
@@ -442,11 +412,11 @@ class WorkCog(commands.Cog):
         self.work_channel_id = int(os.getenv("WORK_CHANNEL_ID", 0))
 
     async def cog_load(self):
-        print("WorkCog 已載入")
+        logger.info("WorkCog 已載入")
         
         # 先註冊持久化 CheckInView
         self.bot.add_view(CheckInView())
-        print("✅ CheckInView 已註冊（持久化）")
+        logger.info("✅ CheckInView 已註冊（持久化）")
         
         # 註冊工作 View（包含今天和昨天的，處理跨日邊界）
         await self.register_persistent_views()
@@ -459,20 +429,20 @@ class WorkCog(commands.Cog):
         """等待機器人完全準備好後再部署工作系統"""
         try:
             await self.bot.wait_until_ready()
-            print(f"🤖 機器人已準備好，開始檢查工作頻道 ID: {self.work_channel_id}")
+            logger.info(f"🤖 機器人已準備好，開始檢查工作頻道 ID: {self.work_channel_id}")
             
             # 額外等待一下確保快取建立
             await asyncio.sleep(2)
             
             await self.deploy_work_system()
         except Exception as e:
-            print(f"❌ deploy_work_system_when_ready 失敗: {e}")
-            traceback.print_exc()
+            error_msg = "❌ deploy_work_system_when_ready 失敗"
+            logger.error(error_msg, exc_info=True)
 
     async def register_persistent_views(self):
         """註冊並重建所有持久化 View - 改善版"""
         try:
-            print("🔄 開始重建工作 View...")
+            logger.info("🔄 開始重建工作 View...")
             
             today = datetime.utcnow().strftime("%Y-%m-%d")
             yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -489,26 +459,25 @@ class WorkCog(commands.Cog):
                         self.bot.add_view(view)
                         registered_count += 1
                     except Exception as e:
-                        print(f"⚠️ 註冊用戶 {user.get('user_id')} 的 View 失敗: {e}")
+                        logger.warning(f"⚠️ 註冊用戶 {user.get('user_id')} 的 View 失敗: {e}")
                         continue
             
-            print(f"✅ 已註冊 {registered_count} 個工作 View")
+            logger.info(f"✅ 已註冊 {registered_count} 個工作 View")
             
         except Exception as e:
-            print(f"⚠️ 註冊工作 View 時發生錯誤: {e}")
-            traceback.print_exc()
+            logger.error("⚠️ 註冊工作 View 時發生錯誤", exc_info=True)
 
     async def deploy_work_system(self):
         """部署工作系統到指定頻道（優先編輯現有訊息）"""
         try:
             channel = self.bot.get_channel(self.work_channel_id)
             if not channel:
-                print(f"❌ 找不到工作頻道 ID: {self.work_channel_id}")
-                print(f"   請檢查環境變數 WORK_CHANNEL_ID 是否正確設定")
-                print(f"   當前值: {self.work_channel_id}")
+                logger.error(f"❌ 找不到工作頻道 ID: {self.work_channel_id}")
+                logger.error(f"   請檢查環境變數 WORK_CHANNEL_ID 是否正確設定")
+                logger.error(f"   當前值: {self.work_channel_id}")
                 return
             
-            print(f"✅ 找到工作頻道: #{channel.name} (ID: {channel.id})")
+            logger.info(f"✅ 找到工作頻道: #{channel.name} (ID: {channel.id})")
             
             # 尋找現有的工作系統訊息
             existing_message = None
@@ -517,7 +486,7 @@ class WorkCog(commands.Cog):
                     for embed in message.embeds:
                         if embed.title and ("KK園區值勤系統" in embed.title or "詐騙園區" in embed.title):
                             existing_message = message
-                            print(f"📝 找到現有工作系統訊息 (ID: {message.id})")
+                            logger.info(f"📝 找到現有工作系統訊息 (ID: {message.id})")
                             break
                     if existing_message:
                         break
@@ -530,24 +499,22 @@ class WorkCog(commands.Cog):
                 # 編輯現有訊息
                 try:
                     await existing_message.edit(embed=new_embed, view=new_view)
-                    print(f"✅ 已更新現有工作系統訊息 (ID: {existing_message.id})")
+                    logger.info(f"✅ 已更新現有工作系統訊息 (ID: {existing_message.id})")
                 except discord.HTTPException as e:
-                    print(f"⚠️ 編輯訊息失敗，將發送新訊息: {e}")
+                    logger.warning(f"⚠️ 編輯訊息失敗，將發送新訊息: {e}")
                     sent_message = await channel.send(embed=new_embed, view=new_view)
-                    print(f"✅ 工作系統已部署到 #{channel.name} (訊息ID: {sent_message.id})")
+                    logger.info(f"✅ 工作系統已部署到 #{channel.name} (訊息ID: {sent_message.id})")
             else:
                 # 沒有現有訊息，發送新的
                 sent_message = await channel.send(embed=new_embed, view=new_view)
-                print(f"✅ 工作系統已部署到 #{channel.name} (訊息ID: {sent_message.id})")
+                logger.info(f"✅ 工作系統已部署到 #{channel.name} (訊息ID: {sent_message.id})")
         
         except discord.Forbidden:
-            print(f"❌ 沒有權限在頻道 {self.work_channel_id} 發送訊息")
+            logger.error(f"❌ 沒有權限在頻道 {self.work_channel_id} 發送訊息")
         except discord.HTTPException as e:
-            print(f"❌ 發送訊息時發生 HTTP 錯誤: {e}")
-            traceback.print_exc()
+            logger.error(f"❌ 發送訊息時發生 HTTP 錯誤", exc_info=True)
         except Exception as e:
-            print(f"❌ 部署工作系統失敗: {e}")
-            traceback.print_exc()
+            logger.error("❌ 部署工作系統失敗", exc_info=True)
 
     def create_work_system_embed(self):
         embed = discord.Embed(
@@ -606,7 +573,6 @@ class WorkCog(commands.Cog):
         embed.add_field(
             name="⚠️ 重要規則",
             value=(
-                "• 需先在介紹論壇發文才能開始工作\n"
                 "• 打卡薪資每天隨機 0-100%\n"
                 "• 行動有成功率，失敗不給錢但給少量經驗\n"
                 "• 升級需**連續出勤指定周數** + **累積經驗值**\n"

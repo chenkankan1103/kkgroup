@@ -192,11 +192,9 @@ async def before_update_status():
 @client.event
 async def on_ready():
     """Bot 啟動完成"""
-    print("🔍 on_ready 事件開始執行")
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     
     try:
-        print("🔍 進入 on_ready try 塊")
         # 清除舊指令
         if guild and STAGE != "prod":
             await client.tree.clear_commands(guild=guild)
@@ -264,6 +262,111 @@ async def on_ready():
         await client.change_presence(activity=activity)
         
         # ============================================================
+        # 自動刪除舊訊息
+        # ============================================================
+        # 頻道 ID 固定為機器人秘書頻道，用於啟動時清理舊訊息
+        CHANNEL_ID_TO_CLEAN = 1470788880805531702
+        MAX_MESSAGES_TO_DELETE = 100
+        DELETE_DELAY = 0.1  # 每條訊息間隔 0.1 秒，防止 API 限流
+        
+        deleted_count = 0
+        try:
+            print(f"🗑️  開始清理頻道 {CHANNEL_ID_TO_CLEAN} 的舊訊息...")
+            
+            # 嘗試獲取頻道
+            channel = None
+            try:
+                channel = client.get_channel(CHANNEL_ID_TO_CLEAN)
+                if channel is None:
+                    # 如果 get_channel 返回 None，嘗試使用 fetch_channel
+                    try:
+                        channel = await asyncio.wait_for(
+                            client.fetch_channel(CHANNEL_ID_TO_CLEAN),
+                            timeout=10.0
+                        )
+                    except asyncio.TimeoutError:
+                        print(f"⚠️  獲取頻道超時（頻道 ID: {CHANNEL_ID_TO_CLEAN}）")
+                        channel = None
+                    except discord.NotFound:
+                        print(f"⚠️  頻道不存在（頻道 ID: {CHANNEL_ID_TO_CLEAN}）")
+                        channel = None
+                    except discord.Forbidden:
+                        print(f"⚠️  沒有權限訪問頻道（頻道 ID: {CHANNEL_ID_TO_CLEAN}）")
+                        channel = None
+            except Exception as e:
+                print(f"⚠️  獲取頻道時發生錯誤: {type(e).__name__}: {e}")
+                channel = None
+            
+            if channel:
+                print(f"✅ 成功獲取頻道: {channel.name}")
+                
+                # 嘗試獲取並刪除訊息
+                try:
+                    # 使用 asyncio.wait_for 設置整體超時（例如 60 秒）
+                    async def delete_messages():
+                        nonlocal deleted_count
+                        try:
+                            async for message in channel.history(limit=MAX_MESSAGES_TO_DELETE):
+                                try:
+                                    # 嘗試刪除單條訊息
+                                    await message.delete()
+                                    deleted_count += 1
+                                    
+                                    # 日誌輸出（每 10 條輸出一次進度）
+                                    if deleted_count % 10 == 0:
+                                        print(f"  📊 已刪除 {deleted_count} 條訊息")
+                                    
+                                    # API 限流保護 - 每條訊息間隔 0.1 秒
+                                    await asyncio.sleep(DELETE_DELAY)
+                                    
+                                except discord.NotFound:
+                                    # 訊息已經不存在，跳過
+                                    pass
+                                except discord.Forbidden:
+                                    # 權限不足，無法刪除此訊息
+                                    print(f"  ⚠️  權限不足，無法刪除訊息 ID: {message.id}")
+                                except discord.HTTPException as e:
+                                    # HTTP 錯誤（如 429 限流）
+                                    print(f"  ⚠️  HTTP 錯誤刪除訊息 ID {message.id}: {e}")
+                                    # 如果遇到限流，等待更長時間
+                                    if e.status == 429:
+                                        retry_after = e.retry_after if hasattr(e, 'retry_after') else 5.0
+                                        if not hasattr(e, 'retry_after'):
+                                            print(f"  ⚠️  警告: API 未提供 retry_after，使用預設值 {retry_after} 秒")
+                                        print(f"  ⏳ 遇到限流，等待 {retry_after} 秒...")
+                                        await asyncio.sleep(retry_after)
+                                except Exception as e:
+                                    # 其他未預期的錯誤，不中斷迴圈
+                                    print(f"  ⚠️  刪除訊息時發生錯誤 (ID: {message.id}): {type(e).__name__}: {e}")
+                        except discord.Forbidden:
+                            print(f"⚠️  沒有權限讀取頻道歷史訊息")
+                        except discord.HTTPException as e:
+                            print(f"⚠️  讀取訊息歷史時發生 HTTP 錯誤: {e}")
+                        except Exception as e:
+                            print(f"⚠️  讀取訊息歷史時發生錯誤: {type(e).__name__}: {e}")
+                    
+                    # 設置整體超時為 120 秒
+                    await asyncio.wait_for(delete_messages(), timeout=120.0)
+                    
+                except asyncio.TimeoutError:
+                    print(f"⚠️  刪除訊息操作超時（已刪除 {deleted_count} 條）")
+                except Exception as e:
+                    print(f"⚠️  刪除訊息過程中發生未預期錯誤: {type(e).__name__}: {e}")
+                
+                # 最終報告
+                if deleted_count > 0:
+                    print(f"✅ 成功刪除 {deleted_count} 條舊訊息")
+                else:
+                    print(f"ℹ️  沒有訊息需要刪除")
+            else:
+                print(f"⚠️  無法獲取頻道，跳過訊息清理")
+                
+        except Exception as e:
+            # 最外層錯誤捕獲，確保 Bot 不會因此崩潰
+            print(f"⚠️  訊息清理過程發生嚴重錯誤: {type(e).__name__}: {e}")
+            print(f"ℹ️  已刪除 {deleted_count} 條訊息後中止")
+        
+        # ============================================================
         # 更新機器人秘書頻道的啟動資訊
         # ============================================================
         try:
@@ -276,9 +379,7 @@ async def on_ready():
             all_cmds = cmd_names + prefix_cmd_names
             
             # 更新該 bot 的資訊
-            from datetime import timezone, timedelta
-            taiwan_tz = timezone(timedelta(hours=8))
-            startup_time = datetime.now(taiwan_tz).strftime("%Y-%m-%d %H:%M:%S")
+            startup_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
             await update_bot_info("bot", startup_time, cmd_names, ext_names)
             
             # 發送/編輯啟動訊息（只有 bot 會發送統一訊息）
@@ -292,44 +393,23 @@ async def on_ready():
         # 初始化監控儀表板及日誌系統
         # ============================================================
         try:
-            print("🔍 開始儀表板初始化...")
             # 設置當前 bot 類型
             set_bot_type("bot")
             load_message_ids("bot")
-            print("✅ bot 類型和消息 ID 已設置")
             
             # 初始化儀表板（只初始化當前 bot 的面板）
-            print("🔍 調用 initialize_dashboard...")
             dashboard_ready = await initialize_dashboard(client, "bot")
-            print(f"✅ initialize_dashboard 返回: {dashboard_ready}")
             if dashboard_ready:
-                print("🔍 dashboard_ready 為 True，進入 if 塊")
                 add_log("bot", "✅ 儀表板已初始化")
-                print("✅ 第一個 add_log 完成")
-                add_log("bot", "🔍 [1] 測試日誌")
-                print("✅ 第二個 add_log 完成")
-                add_log("bot", "🔍 [2] 測試日誌")
                 # 註冊持久化按鈕視圖
-                # client.add_view(DashboardButtons("bot", client))  # 暫時註釋掉
-                print("✅ client.add_view 跳過")
-                if not update_logs_task.is_running():
-                    update_logs_task.start()
-                print(f"✅ 日誌系統已啟動")
-                print("🔍 即將調用 ensure_dashboard_messages...")
+                client.add_view(DashboardButtons("bot", client))
+                print("✅ 控制面板按鈕已註冊")
             
             # 確保儀表板消息按正確順序存在（bot → shopbot → uibot）
-            print("🔍 即將調用 ensure_dashboard_messages...")
+            # 這個函數會處理：機器人實例註冊、訊息ID加載、全域日誌任務啟動
             await ensure_dashboard_messages(client, "bot")
-            print("✅ ensure_dashboard_messages 完成")
-            
-            # 註冊機器人實例供日誌更新使用
-            from status_dashboard import register_bot_instance
-            register_bot_instance("bot", client)
-            print("✅ 機器人實例已註冊")
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
-            import traceback
-            traceback.print_exc()
         
         # ============================================================
         # 發送啟動資訊到 Webhook
@@ -347,8 +427,6 @@ async def on_ready():
         # 錯誤也使用單一 print
         error_msg = f"❌ 初始化失敗: {e}\n{'=' * 60}"
         print(error_msg)
-        import traceback
-        traceback.print_exc()
         import traceback
         traceback.print_exc()
 # ============================================================

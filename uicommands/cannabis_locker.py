@@ -9,7 +9,7 @@ import json
 import aiosqlite
 from collections import deque
 from shop_commands.merchant.cannabis_farming import (
-    get_user_plants, plant_cannabis, apply_fertilizer, harvest_plant, get_inventory, remove_inventory
+    get_user_plants, plant_cannabis, apply_fertilizer, harvest_plant, get_inventory, remove_inventory, add_inventory
 )
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 from shop_commands.merchant.database import update_user_kkcoin, get_user_kkcoin
@@ -28,13 +28,18 @@ class PersonalLockerCog(commands.Cog):
         self.panel_message_id = None
         self.panel_channel_id = None
         self.recent_events = deque(maxlen=5)  # 最近5個事件
+        # Button check tracking
+        self.button_check_failures = 0
+        self.last_button_check = None
         self.load_panel_data()
         # 啟動面板更新任務
         self.update_panel_task.start()
+        self.button_health_check.start()
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
         self.update_panel_task.cancel()
+        self.button_health_check.cancel()
     
     def load_panel_data(self):
         """載入持久化的面板數據"""
@@ -100,6 +105,39 @@ class PersonalLockerCog(commands.Cog):
                 self.panel_message_id = None
         except Exception as e:
             print(f"❌ 面板更新失敗: {e}")
+    
+    @tasks.loop(minutes=15)
+    async def button_health_check(self):
+        """每15分鐘檢查按鈕健康狀態"""
+        try:
+            self.last_button_check = datetime.now()
+            
+            # 檢查 PersonalLockerView 類是否正確定義
+            if not hasattr(PersonalLockerView, 'plant_seed_button'):
+                print(f"❌ [Button Health Check] PersonalLockerView.plant_seed_button not found!")
+                self.button_check_failures += 1
+                return
+            
+            # 檢查按鈕裝飾器是否存在
+            button_method = getattr(PersonalLockerView, 'plant_seed_button', None)
+            if not button_method or not hasattr(button_method, '__discord_ui_model_type__'):
+                print(f"⚠️  [Button Health Check] plant_seed_button missing discord.ui.button decorator")
+                self.button_check_failures += 1
+                return
+            
+            # 檢查成功
+            print(f"✅ [Button Health Check] Plant Seed button is properly configured")
+            self.button_check_failures = 0
+            
+        except Exception as e:
+            print(f"❌ [Button Health Check] Error during check: {e}")
+            self.button_check_failures += 1
+            traceback.print_exc()
+    
+    @button_health_check.before_loop
+    async def before_button_health_check(self):
+        """等待機器人準備"""
+        await self.bot.wait_until_ready()
     
     @update_panel_task.before_loop
     async def before_update_panel(self):
@@ -318,10 +356,32 @@ class PersonalLockerCog(commands.Cog):
                 )
             
             # 添加按鈕
-            view = PersonalLockerView(self.bot, self, user_id, plants)
-            await ctx.send(embed=embed, view=view)
+            try:
+                view = PersonalLockerView(self.bot, self, user_id, ctx.guild.id if ctx.guild else 0, ctx.channel.id, plants)
+                # 驗證按鈕是否正確加載到視圖中
+                button_found = False
+                for child in view.children:
+                    if isinstance(child, discord.ui.Button) and child.emoji and child.emoji.name == '🌱':
+                        button_found = True
+                        break
+                
+                if not button_found:
+                    print(f"⚠️  [Locker] PersonalLockerView created without plant seed button!")
+                    await ctx.send(embed=embed)  # Send without buttons as fallback
+                    await ctx.send("⚠️  置物櫃已開啟，但部分按鈕可能無法使用。請聯繫管理員。", delete_after=10)
+                    return
+                
+                await ctx.send(embed=embed, view=view)
+                print(f"✅ [Locker] Personal locker opened for user {user_id} with all buttons")
+            except Exception as view_error:
+                print(f"❌ [Locker] Failed to create view for user {user_id}: {view_error}")
+                traceback.print_exc()
+                # Fallback: send embed without view
+                await ctx.send(embed=embed)
+                await ctx.send("⚠️  置物櫃按鈕載入失敗！請稍後再試或聯繫管理員。", delete_after=15)
             
         except Exception as e:
+            print(f"❌ [Locker] Error in personal_locker command: {e}")
             traceback.print_exc()
             await ctx.send(f"❌ 發生錯誤：{str(e)[:100]}")
     
@@ -359,11 +419,13 @@ class PersonalLockerCog(commands.Cog):
 class PersonalLockerView(discord.ui.View):
     """個人置物櫃交互菜單"""
     
-    def __init__(self, bot, cog, user_id, plants):
-        super().__init__(timeout=300)
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, plants):
+        super().__init__(timeout=3600)  # 1 hour timeout to prevent indefinite memory usage
         self.bot = bot
         self.cog = cog
         self.user_id = user_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
         self.plants = plants
     
     @discord.ui.button(label="施肥", style=discord.ButtonStyle.success, emoji="💧")
@@ -437,6 +499,62 @@ class PersonalLockerView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+    
+    @discord.ui.button(label="種植種子", style=discord.ButtonStyle.success, emoji="🌱")
+    async def plant_seed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """選擇種子進行種植"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # 獲取用戶種子庫存
+            try:
+                inventory = await get_inventory(self.user_id)
+                if not inventory:
+                    print(f"⚠️  [Plant Seed Button] Failed to get inventory for user {self.user_id}")
+                    await interaction.followup.send("❌ 無法獲取庫存資料！請稍後再試。", ephemeral=True)
+                    return
+            except Exception as inv_error:
+                print(f"❌ [Plant Seed Button] Inventory error for user {self.user_id}: {inv_error}")
+                traceback.print_exc()
+                await interaction.followup.send("❌ 獲取庫存時發生錯誤！請聯繫管理員。", ephemeral=True)
+                return
+            
+            seeds = inventory.get("種子", {})
+            
+            # 檢查是否有種子
+            if not seeds or not any(qty > 0 for qty in seeds.values()):
+                await interaction.followup.send("❌ 你沒有種子！請先到商店購買種子。", ephemeral=True)
+                return
+            
+            # 顯示種子選擇界面
+            embed = discord.Embed(
+                title="🌱 選擇要種植的種子",
+                description="選擇一種種子進行種植",
+                color=discord.Color.green()
+            )
+            
+            for seed_name, qty in seeds.items():
+                if qty > 0:
+                    try:
+                        config = CANNABIS_SHOP["種子"][seed_name]
+                        embed.add_field(
+                            name=f"{config['emoji']} {seed_name}",
+                            value=f"擁有：{qty} 粒\n成長時間：{config['growth_time']//3600}h\n最大產量：{config['max_yield']}",
+                            inline=True
+                        )
+                    except KeyError:
+                        print(f"⚠️  [Plant Seed Button] Seed type '{seed_name}' not found in CANNABIS_SHOP")
+                        continue
+            
+            view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            print(f"✅ [Plant Seed Button] Seed selection view sent to user {self.user_id}")
+            
+        except Exception as e:
+            print(f"❌ [Plant Seed Button] Unexpected error for user {self.user_id}: {e}")
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+
 
 
 class SelectPlantForFertilizerView(discord.ui.View):
@@ -760,10 +878,13 @@ class WeeklySummaryCannabisPanelView(discord.ui.View):
 class CropOperationView(discord.ui.View):
     """作物操作視圖 - 整合種植、施肥、收割按鈕"""
     
-    def __init__(self, bot, user_id, seeds, plants, growing, harvested):
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, seeds, plants, growing, harvested):
         super().__init__(timeout=60)
         self.bot = bot
+        self.cog = cog
         self.user_id = user_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
         self.seeds = seeds
         self.plants = plants
         self.growing = growing
@@ -822,7 +943,7 @@ class CropOperationView(discord.ui.View):
                         inline=False
                     )
             
-            view = SelectSeedView(self.bot, self.user_id, self.seeds)
+            view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.seeds)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
@@ -897,10 +1018,13 @@ class CropOperationView(discord.ui.View):
 class SelectSeedView(discord.ui.View):
     """選擇要種植的種子"""
     
-    def __init__(self, bot, user_id, seeds):
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, seeds):
         super().__init__(timeout=60)
         self.bot = bot
+        self.cog = cog
         self.user_id = user_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
         
         for idx, (seed_name, qty) in enumerate(seeds.items(), 1):
             if qty > 0:
@@ -919,10 +1043,16 @@ class SelectSeedView(discord.ui.View):
             try:
                 await interaction.response.defer(ephemeral=True)
                 
-                # 種植
-                result = await plant_cannabis(self.user_id, seed_name)
+                # 檢查是否有種子
+                has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
+                if not has_seed:
+                    await interaction.followup.send("❌ 你沒有這種種子！", ephemeral=True)
+                    return
                 
-                if result:
+                # 種植
+                result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
+                
+                if result and not result.get("success") == False:
                     config = CANNABIS_SHOP["種子"][seed_name]
                     embed = discord.Embed(
                         title="🌱 種植成功",
@@ -930,10 +1060,10 @@ class SelectSeedView(discord.ui.View):
                         color=discord.Color.green()
                     )
                     embed.add_field(name="成長時間", value=f"{config['growth_time']//3600} 小時", inline=False)
-                    embed.add_field(name="種子品質", value=f"產量：{config['yield_amount']}個", inline=False)
+                    embed.add_field(name="最大產量", value=f"{config['max_yield']} 個", inline=False)
                     
                     # 記錄事件
-                    if hasattr(self, 'cog'):
+                    if self.cog:
                         user = await self.bot.fetch_user(self.user_id)
                         await self.cog.record_event(
                             'plant',
@@ -943,10 +1073,18 @@ class SelectSeedView(discord.ui.View):
                     
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 種植失敗（可能沒有種子或其他原因）", ephemeral=True)
+                    # 種植失敗，退還種子
+                    await add_inventory(self.user_id, "種子", seed_name, 1)
+                    reason = result.get("reason", "未知原因") if result else "未知原因"
+                    await interaction.followup.send(f"❌ 種植失敗：{reason}", ephemeral=True)
                 
             except Exception as e:
                 traceback.print_exc()
+                # 如果發生錯誤，嘗試退還種子
+                try:
+                    await add_inventory(self.user_id, "種子", seed_name, 1)
+                except Exception as refund_error:
+                    print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
                 await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
         
         return callback

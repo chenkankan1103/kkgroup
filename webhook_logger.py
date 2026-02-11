@@ -4,27 +4,9 @@
 import os
 import json
 import aiohttp
-from datetime import datetime, timezone, timedelta
+import asyncio
+from datetime import datetime
 from dotenv import load_dotenv, set_key
-
-# 台灣時區（UTC+8）
-TAIWAN_TZ = timezone(timedelta(hours=8))
-
-def get_taiwan_time():
-    """獲取台灣時間"""
-    return datetime.now(TAIWAN_TZ)
-
-def format_taiwan_time(dt=None):
-    """格式化台灣時間"""
-    if dt is None:
-        dt = get_taiwan_time()
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-def format_taiwan_time(dt=None):
-    """格式化台灣時間"""
-    if dt is None:
-        dt = get_taiwan_time()
-    return dt.strftime("%Y-%m-%d %H:%M:%S %Z")
 
 load_dotenv()
 
@@ -40,25 +22,7 @@ log_webhook("🔄 Webhook logger started")
 
 WEBHOOK_URL = os.getenv("STARTUP_WEBHOOK_URL", "")
 webhook_message_id = None
-
-def load_webhook_message_id():
-    """載入 webhook 訊息 ID"""
-    global webhook_message_id
-    load_dotenv()  # 重新載入 .env 文件
-    stored_id = os.getenv("WEBHOOK_MESSAGE_ID")
-    if stored_id:
-        try:
-            webhook_message_id = int(stored_id)
-            log_webhook(f"📝 已載入訊息 ID: {webhook_message_id}")
-        except ValueError:
-            log_webhook(f"⚠️ 無效的訊息 ID: {stored_id}")
-            webhook_message_id = None
-    else:
-        webhook_message_id = None
-        log_webhook("📝 沒有找到訊息 ID，將發送新訊息")
-
-# 初始化時載入訊息 ID
-load_webhook_message_id()
+log_webhook(f"WEBHOOK_URL: {WEBHOOK_URL[:50] if WEBHOOK_URL else 'Not Set'}...")
 
 # bots_info 文件路徑
 bots_info_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bots_info.json')
@@ -120,7 +84,6 @@ async def create_overview_embed() -> dict:
     for bot_name in ["bot", "shopbot", "uibot"]:
         info = bots_info[bot_name]
         emoji = "🟢" if info["狀態"] == "🟢 在線" else "🔴"
-        # 啟動時間已是台灣時間格式，直接使用
         time_text = info["啟動時間"] if info["啟動時間"] else "未啟動"
         status_text += f"{emoji} **{bot_name.upper()}** - {time_text}\n"
     
@@ -128,7 +91,7 @@ async def create_overview_embed() -> dict:
         "title": "🤖 所有機器人狀態",
         "description": status_text,
         "color": 3447003,
-        "timestamp": datetime.utcnow().isoformat(),  # Discord embeds 需要 UTC 時間戳
+        "timestamp": datetime.utcnow().isoformat(),
         "footer": {"text": "機器人監控系統"}
     }
 
@@ -156,9 +119,75 @@ async def create_bot_detail_embed(bot_type: str) -> dict:
         "title": f"{bot_name_map[bot_type]} 詳情",
         "color": color_map[bot_type],
         "fields": fields,
-        "timestamp": datetime.utcnow().isoformat(),  # Discord embeds 需要 UTC 時間戳
+        "timestamp": datetime.utcnow().isoformat(),
         "footer": {"text": f"狀態: {info['狀態']}"}
     }
+
+
+async def delete_old_webhook_message(msg_id):
+    """嘗試刪除舊訊息，出錯不崩潰"""
+    try:
+        if not msg_id or not WEBHOOK_URL:
+            return False
+        
+        log_webhook(f"🗑️ 嘗試刪除舊訊息 ID={msg_id}")
+        delete_url = f"{WEBHOOK_URL}/messages/{msg_id}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(delete_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                log_webhook(f"🗑️ DELETE 響應碼: {resp.status}")
+                if resp.status == 204:
+                    log_webhook("✅ 舊訊息已成功刪除")
+                    return True
+                else:
+                    log_webhook(f"⚠️ 刪除訊息返回: {resp.status}（可能訊息已不存在）")
+                    return False
+    except asyncio.TimeoutError:
+        log_webhook("⚠️ 刪除訊息超時（網絡問題）")
+        return False
+    except Exception as e:
+        log_webhook(f"⚠️ 刪除舊訊息失敗（非致命）: {type(e).__name__}: {e}")
+        return False
+
+
+async def send_new_webhook_message(payload):
+    """發送新訊息，出錯不崩潰，返回訊息 ID"""
+    try:
+        log_webhook("📨 發送新的啟動訊息...")
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(WEBHOOK_URL, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                log_webhook(f"📨 POST 響應碼: {resp.status}")
+                
+                if resp.status == 200:
+                    try:
+                        data = await resp.json()
+                        new_msg_id = data.get("id")
+                        if new_msg_id:
+                            log_webhook(f"✅ 啟動資訊已發送，訊息 ID={new_msg_id}")
+                            return new_msg_id
+                        else:
+                            log_webhook("⚠️ 無法從響應中獲取訊息 ID")
+                            return None
+                    except Exception as e:
+                        log_webhook(f"⚠️ 解析 JSON 失敗: {e}")
+                        return None
+                elif resp.status == 204:
+                    log_webhook(f"✅ 啟動資訊已發送 (HTTP {resp.status})")
+                    return None
+                else:
+                    try:
+                        resp_text = await resp.text()
+                        log_webhook(f"❌ Webhook 失敗 (HTTP {resp.status}): {resp_text[:200]}")
+                    except:
+                        log_webhook(f"❌ Webhook 失敗 (HTTP {resp.status})")
+                    return None
+    except asyncio.TimeoutError:
+        log_webhook("❌ 發送訊息超時（網絡問題）")
+        return None
+    except Exception as e:
+        log_webhook(f"❌ 發送訊息出錯（非致命）: {type(e).__name__}: {e}")
+        return None
 
 
 async def send_or_update_startup_info(bot_type: str = None):
@@ -168,103 +197,90 @@ async def send_or_update_startup_info(bot_type: str = None):
     """
     global webhook_message_id, bots_info
 
-    # 從文件重新加載最新的 bots_info
-    bots_info = load_bots_info()
-    log_webhook(f"📂 已重新加載 bots_info: bot={bots_info['bot']['啟動時間']}, shopbot={bots_info['shopbot']['啟動時間']}, uibot={bots_info['uibot']['啟動時間']}")
-
-    # 如果指定了 bot_type 且不是 "bot"，就不發送訊息
-    if bot_type and bot_type != "bot":
-        log_webhook(f"ℹ️ {bot_type} 已更新資訊")
-        return
-    
-    if not WEBHOOK_URL:
-        log_webhook("❌ WEBHOOK_URL 未設定")
-        return
-    
     try:
-        log_webhook("🔄 準備發送啟動資訊...")
+        # 從文件重新加載最新的 bots_info
+        bots_info = load_bots_info()
+        log_webhook(f"📂 已重新加載 bots_info: bot={bots_info['bot']['啟動時間']}, shopbot={bots_info['shopbot']['啟動時間']}, uibot={bots_info['uibot']['啟動時間']}")
+
+        # 如果指定了 bot_type 且不是 "bot"，就不發送訊息
+        if bot_type and bot_type != "bot":
+            log_webhook(f"ℹ️ {bot_type} 已更新資訊")
+            return
         
-        # 等待機器人啟動（最少等20秒，最多等40秒，或所有機器人都啟動）
-        import asyncio
-        start_time = asyncio.get_event_loop().time()
-        min_wait = 20  # 最小等待秒數
-        max_wait = 40  # 最大等待秒數
+        if not WEBHOOK_URL:
+            log_webhook("❌ WEBHOOK_URL 未設定")
+            return
         
-        while True:
-            elapsed = asyncio.get_event_loop().time() - start_time
-            all_started = all(bots_info[bot]["啟動時間"] for bot in ["bot", "shopbot", "uibot"])
+        try:
+            log_webhook("🔄 準備發送啟動資訊...")
             
-            # 條件 1: 所有機器人都啟動且滿足最小等待時間
-            if all_started and elapsed >= min_wait:
-                log_webhook(f"✅ 所有機器人已啟動 ({int(elapsed)} 秒)，準備發送訊息")
-                break
+            # 等待機器人啟動（最少等20秒，最多等40秒，或所有機器人都啟動）
+            start_time = asyncio.get_event_loop().time()
+            min_wait = 20  # 最小等待秒數
+            max_wait = 40  # 最大等待秒數
             
-            # 條件 2: 超過最大等待時間
-            if elapsed >= max_wait:
-                if all_started:
-                    log_webhook(f"✅ 所有機器人已啟動，準備發送訊息")
-                else:
-                    missing_bots = [bot for bot in ["bot", "shopbot", "uibot"] if not bots_info[bot]["啟動時間"]]
-                    log_webhook(f"🔴 異常：機器人未在 {max_wait} 秒內啟動 {missing_bots}，強制發送訊息")
-                break
-            
-            await asyncio.sleep(0.5)
-        
-        embeds = [
-            await create_overview_embed(),
-            await create_bot_detail_embed("bot"),
-            await create_bot_detail_embed("shopbot"),
-            await create_bot_detail_embed("uibot")
-        ]
-        
-        payload = {"embeds": embeds}
-        
-        # 確保載入最新的訊息 ID
-        load_webhook_message_id()
-        
-        # 嘗試編輯現有訊息
-        if webhook_message_id:
-            try:
-                log_webhook(f"📝 嘗試編輯訊息 ID={webhook_message_id}")
-                url = f"{WEBHOOK_URL}/messages/{webhook_message_id}"
-                async with aiohttp.ClientSession() as session:
-                    async with session.patch(url, json=payload) as resp:
-                        log_webhook(f"📝 PATCH 響應碼: {resp.status}")
-                        if resp.status in [200, 204]:
-                            log_webhook(f"✅ 啟動資訊已更新 (HTTP {resp.status})")
-                            return
-                        else:
-                            # 編輯失敗，清除無效的訊息 ID
-                            log_webhook(f"⚠️ 編輯失敗 (HTTP {resp.status})，將清除訊息 ID")
-                            webhook_message_id = None
-                            set_key(".env", "WEBHOOK_MESSAGE_ID", "")
-            except Exception as patch_err:
-                log_webhook(f"⚠️ 編輯訊息失敗: {patch_err}")
-                # 編輯失敗，清除無效的訊息 ID
-                webhook_message_id = None
-                set_key(".env", "WEBHOOK_MESSAGE_ID", "")
-        
-        # 發送新訊息
-        log_webhook("📨 發送新的啟動訊息...")
-        async with aiohttp.ClientSession() as session:
-            async with session.post(WEBHOOK_URL, json=payload) as resp:
-                log_webhook(f"📨 POST 響應碼: {resp.status}")
-                if resp.status in [200, 204]:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        new_message_id = data.get("id")
-                        if new_message_id:
-                            webhook_message_id = new_message_id
-                            set_key(".env", "WEBHOOK_MESSAGE_ID", str(new_message_id))
-                            log_webhook(f"✅ 啟動資訊已發送，訊息 ID={new_message_id}")
-                        else:
-                            log_webhook("⚠️ 無法獲取訊息 ID")
+            while True:
+                elapsed = asyncio.get_event_loop().time() - start_time
+                all_started = all(bots_info[bot]["啟動時間"] for bot in ["bot", "shopbot", "uibot"])
+                
+                # 條件 1: 所有機器人都啟動且滿足最小等待時間
+                if all_started and elapsed >= min_wait:
+                    log_webhook(f"✅ 所有機器人已啟動 ({int(elapsed)} 秒)，準備發送訊息")
+                    break
+                
+                # 條件 2: 超過最大等待時間
+                if elapsed >= max_wait:
+                    if all_started:
+                        log_webhook(f"✅ 所有機器人已啟動，準備發送訊息")
                     else:
-                        log_webhook(f"✅ 啟動資訊已發送 (HTTP {resp.status})")
-                else:
-                    resp_text = await resp.text()
-                    log_webhook(f"❌ Webhook 失敗 (HTTP {resp.status}): {resp_text[:200]}")
+                        missing_bots = [bot for bot in ["bot", "shopbot", "uibot"] if not bots_info[bot]["啟動時間"]]
+                        log_webhook(f"🔴 異常：機器人未在 {max_wait} 秒內啟動 {missing_bots}，強制發送訊息")
+                    break
+                
+                await asyncio.sleep(0.5)
+            
+            embeds = [
+                await create_overview_embed(),
+                await create_bot_detail_embed("bot"),
+                await create_bot_detail_embed("shopbot"),
+                await create_bot_detail_embed("uibot")
+            ]
+            
+            payload = {"embeds": embeds}
+            
+            # 【改進】先刪除舊訊息，然後發送新訊息（確保不會堆積）
+            old_msg_id = webhook_message_id
+            if old_msg_id:
+                # 嘗試刪除舊訊息（出錯不崩潰）
+                await delete_old_webhook_message(old_msg_id)
+            
+            # 發送新訊息（出錯不崩潰）
+            new_msg_id = await send_new_webhook_message(payload)
+            
+            # 更新全局和環境變數
+            if new_msg_id:
+                webhook_message_id = new_msg_id
+                try:
+                    set_key(".env", "WEBHOOK_MESSAGE_ID", str(new_msg_id))
+                except Exception as e:
+                    log_webhook(f"⚠️ 無法保存訊息 ID 到 .env: {e}")
+            
+        except Exception as e:
+            import traceback
+            log_webhook(f"❌ 訊息發送過程出錯（非致命）: {type(e).__name__}: {e}")
+            log_webhook(f"完整堆棧: {traceback.format_exc()[:200]}")
+            # 不重新拋出異常，讓機器人繼續運行
+            
     except Exception as e:
         import traceback
-        log_webhook(f"❌ 訊息失敗: {e}")
-        log_webhook(traceback.format_exc())
+        log_webhook(f"❌ 最高層級錯誤（防止機器人崩潰）: {type(e).__name__}: {e}")
+        log_webhook(f"完整堆棧: {traceback.format_exc()[:200]}")
+        # 不重新拋出異常，讓機器人繼續運行
+
+
+_stored_msg_id = os.getenv("WEBHOOK_MESSAGE_ID")
+if _stored_msg_id:
+    try:
+        webhook_message_id = int(_stored_msg_id)
+    except:
+        pass
