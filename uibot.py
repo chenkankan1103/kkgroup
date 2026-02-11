@@ -277,8 +277,8 @@ async def on_ready():
             startup_time = datetime.now(taiwan_tz).strftime("%Y-%m-%d %H:%M:%S")
             await update_bot_info("uibot", startup_time, cmd_names, ext_names)
             
-            # 只更新資訊，不發送訊息（避免重複）
-            await send_or_update_startup_info("uibot")
+            # 移除 webhook 調用，讓訊息只出現在日誌 embed 中
+            # await send_or_update_startup_info("uibot")
             
             add_log("uibot", "✅ 啟動資訊已更新到機器人秘書")
         except Exception as e:
