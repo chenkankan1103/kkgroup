@@ -24,19 +24,32 @@ import pathlib
 
 load_dotenv()
 
+# 台灣時區（UTC+8）
+TAIWAN_TZ = timezone(timedelta(hours=8))
+
+def get_taiwan_time():
+    """獲取台灣時間"""
+    return datetime.now(TAIWAN_TZ)
+
 # 配置常數
 MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 
-def check_database_connection():
-    """檢查 user_data.db 資料庫連接"""
+async def check_database_connection():
+    """檢查 user_data.db 資料庫連接（異步版本）"""
     try:
-        conn = sqlite3.connect('user_data.db')
-        conn.execute('SELECT 1')  # 簡單的測試查詢
-        conn.close()
-        return True
+        # 使用 asyncio.to_thread 將同步操作移到線程池，避免阻塞事件循環
+        result = await asyncio.to_thread(_sync_check_database)
+        return result
     except Exception as e:
         print(f"[DB CHECK] 資料庫連接檢查失敗: {e}")
         return False
+
+def _sync_check_database():
+    """同步的資料庫檢查函數"""
+    conn = sqlite3.connect('user_data.db')
+    conn.execute('SELECT 1')  # 簡單的測試查詢
+    conn.close()
+    return True
 
 # 硬編碼的訊息 ID 作為回退值
 HARDCODED_MESSAGE_IDS = {
@@ -860,7 +873,7 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
         task_status = "❌ Offline"
     
     # 實際檢查資料庫連接
-    if check_database_connection():
+    if await check_database_connection():
         db_status = "✅ Connected"
     else:
         db_status = "❌ Disconnected"
