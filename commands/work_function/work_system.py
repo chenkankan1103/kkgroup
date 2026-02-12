@@ -938,7 +938,7 @@ async def process_work_action(user_id, user_obj, action):
             print(f"❌ 無法找到或建立用戶: {user_id}")
             return None, None, "❌ 無法獲取用戶資料"
         
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = get_taiwan_time().strftime("%Y-%m-%d")
         
         # 安全地解析 actions_used（可能是字典或JSON字符串）
         actions_used_raw = user.get('actions_used', '{}')
