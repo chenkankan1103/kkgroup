@@ -806,36 +806,6 @@ class UserPanel(commands.Cog):
                         # 發送統計訊息
                         await thread.send(embed=embed)
                         
-                        # 添加大麻系統快速訪問面板
-                        try:
-                            cannabis_embed = discord.Embed(
-                                title="🌱 種植中心快速訪問",
-                                description="點擊按鈕快速管理大麻種植系統",
-                                color=0x2ecc71
-                            )
-                            cannabis_embed.add_field(
-                                name="💧 施肥加速",
-                                value="對成長中的植物施肥",
-                                inline=True
-                            )
-                            cannabis_embed.add_field(
-                                name="✂️ 收割成熟",
-                                value="收割已成熟的植物",
-                                inline=True
-                            )
-                            cannabis_embed.add_field(
-                                name="📊 查看狀態",
-                                value="查看所有植物狀態",
-                                inline=True
-                            )
-                            cannabis_embed.set_footer(text="從統計面板快速訪問種植系統")
-                            
-                            from uicommands.cannabis_locker import WeeklySummaryCannabisPanelView
-                            view = WeeklySummaryCannabisPanelView(self.bot, user_id)
-                            await thread.send(embed=cannabis_embed, view=view)
-                        except Exception as e:
-                            pass  # 如果大麻系統不可用，靜默失敗
-                        
                         await asyncio.sleep(1)
                     
                     # 快照數據（無論是否有變化都要，避免累積誤差）
