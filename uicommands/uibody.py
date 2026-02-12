@@ -253,7 +253,7 @@ class WorkCardActionView(discord.ui.View):
 class LockerPanelView(discord.ui.View):
     """置物櫃面板 - 包含更新和大麻系統按鈕"""
     def __init__(self, cog, user_id: int, thread=None):
-        super().__init__(timeout=60)  # 設置60秒超時
+        super().__init__(timeout=None)  # 永久View
         self.cog = cog
         self.user_id = user_id
         self.thread = thread
@@ -498,6 +498,141 @@ class UserPanel(commands.Cog):
         
         # Groq 備用 API（備選方案）
         self.GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+        
+        # 啟動embed更新任務
+        self.update_embeds_task = self.bot.loop.create_task(self.update_all_locker_embeds())
+    
+    def cog_unload(self):
+        self.update_embeds_task.cancel()
+    
+    async def update_all_locker_embeds(self):
+        """定期更新所有置物櫃embed的View（每小時一次）"""
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+                if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                    await asyncio.sleep(3600)
+                    continue
+                
+                # 獲取所有用戶
+                all_users = get_all_users()
+                updated_count = 0
+                
+                for user_data in all_users:
+                    user_id = user_data.get('user_id')
+                    if not user_id:
+                        continue
+                    
+                    locker_message_id = user_data.get('locker_message_id')
+                    if not locker_message_id:
+                        continue
+                    
+                    try:
+                        # 獲取thread
+                        thread_id = user_data.get('thread_id')
+                        if not thread_id:
+                            continue
+                        
+                        thread = forum_channel.get_thread(thread_id)
+                        if not thread:
+                            continue
+                        
+                        # 獲取訊息
+                        message = await thread.fetch_message(locker_message_id)
+                        if not message:
+                            continue
+                        
+                        # 重新創建embed和view
+                        user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                        embed = await self.create_user_embed(user_data, user)
+                        character_image_url = await self.get_character_image_url(user_data)
+                        
+                        if character_image_url:
+                            embed.set_image(url=character_image_url)
+                        
+                        view = LockerPanelView(self, user_id, thread)
+                        
+                        # 更新訊息
+                        await message.edit(embed=embed, view=view)
+                        updated_count += 1
+                        
+                    except Exception as e:
+                        print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
+                        continue
+                
+                if updated_count > 0:
+                    print(f"✅ 已更新 {updated_count} 個置物櫃embed")
+                
+            except Exception as e:
+                print(f"❌ 更新embed任務出錯: {e}")
+            
+            await asyncio.sleep(3600)  # 每小時更新一次
+    
+    @commands.command(name="update_locker_embeds")
+    @commands.has_permissions(administrator=True)
+    async def update_locker_embeds_command(self, ctx):
+        """手動更新所有置物櫃embed的View（管理員命令）"""
+        await ctx.send("🔄 開始更新所有置物櫃embed...")
+        
+        try:
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                await ctx.send("❌ 找不到論壇頻道")
+                return
+            
+            # 獲取所有用戶
+            all_users = get_all_users()
+            updated_count = 0
+            failed_count = 0
+            
+            for user_data in all_users:
+                user_id = user_data.get('user_id')
+                if not user_id:
+                    continue
+                
+                locker_message_id = user_data.get('locker_message_id')
+                if not locker_message_id:
+                    continue
+                
+                try:
+                    # 獲取thread
+                    thread_id = user_data.get('thread_id')
+                    if not thread_id:
+                        continue
+                    
+                    thread = forum_channel.get_thread(thread_id)
+                    if not thread:
+                        continue
+                    
+                    # 獲取訊息
+                    message = await thread.fetch_message(locker_message_id)
+                    if not message:
+                        continue
+                    
+                    # 重新創建embed和view
+                    user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                    embed = await self.create_user_embed(user_data, user)
+                    character_image_url = await self.get_character_image_url(user_data)
+                    
+                    if character_image_url:
+                        embed.set_image(url=character_image_url)
+                    
+                    view = LockerPanelView(self, user_id, thread)
+                    
+                    # 更新訊息
+                    await message.edit(embed=embed, view=view)
+                    updated_count += 1
+                    
+                except Exception as e:
+                    print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
+                    failed_count += 1
+                    continue
+            
+            await ctx.send(f"✅ 更新完成！成功: {updated_count}, 失敗: {failed_count}")
+            
+        except Exception as e:
+            await ctx.send(f"❌ 更新過程中發生錯誤: {str(e)[:100]}")
         self.GROQ_API_URL = os.getenv('GROQ_API_URL')
         self.GROQ_API_MODEL = os.getenv('GROQ_API_MODEL', 'mixtral-8x7b-32768')
         
@@ -1392,6 +1527,8 @@ class UserPanel(commands.Cog):
                     view=view,
                     content="👋 這是你的專屬置物櫃～"
                 )
+                # 儲存訊息ID
+                set_user_field(user.id, 'locker_message_id', message.id)
                 # 強制將用戶加入線程
                 try:
                     await thread.add_user(user)
