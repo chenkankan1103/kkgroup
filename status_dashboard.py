@@ -548,10 +548,11 @@ def add_log(bot_type: str, message: str):
         timestamp = get_taiwan_time().strftime("%H:%M:%S")
         log_entry = f"[{timestamp}] {message}"
         logs_storage[bot_type].append(log_entry)
-        print(f"[LOG] {bot_type}: {message}")  # 調試輸出
-        
-        # 保存到文件
+        print(f"[LOG-{bot_type}] {message}")  # 確保打印
         save_logs()
+        print(f"[DEBUG] 日誌已保存，當前{len(logs_storage[bot_type])}條")  # 添加調試
+    else:
+        print(f"[ERROR] bot_type '{bot_type}' 不存在於logs_storage")
 
 
 def get_logs_text(bot_type: str) -> str:
