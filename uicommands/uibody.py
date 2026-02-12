@@ -304,6 +304,9 @@ class LockerPanelView(discord.ui.View):
             await interaction.response.defer(ephemeral=True)
             LockerPanelView.last_update[interaction.user.id] = current_time
             
+            # 更新最後活動時間
+            set_user_field(owner_user_id, 'last_activity', int(time.time()))
+            
             # 重新獲取最新的用戶資料（確保數據是最新的）
             user_data = self.cog.get_user_data(owner_user_id)
             if not user_data:
@@ -343,6 +346,9 @@ class LockerPanelView(discord.ui.View):
                 return
                 
             await interaction.response.defer(ephemeral=True)
+            
+            # 更新最後活動時間
+            set_user_field(owner_user_id, 'last_activity', int(time.time()))
             
             plants = await get_user_plants(owner_user_id)
             inventory = await get_inventory(owner_user_id)
@@ -419,6 +425,9 @@ class LockerPanelView(discord.ui.View):
                 
             await interaction.response.defer(ephemeral=True)
             
+            # 更新最後活動時間
+            set_user_field(owner_user_id, 'last_activity', int(time.time()))
+            
             # 獲取用戶的植物數據
             plants = await get_user_plants(owner_user_id)
             
@@ -467,6 +476,9 @@ class LockerPanelView(discord.ui.View):
                 await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
             
+            # 更新最後活動時間
+            set_user_field(owner_user_id, 'last_activity', int(time.time()))
+            
             user_data = get_user(owner_user_id)
             
             # 檢查是否已填寫工作證信息（pre_job 存在表示已領取）
@@ -506,24 +518,40 @@ class UserPanel(commands.Cog):
         self.update_embeds_task.cancel()
     
     async def update_all_locker_embeds(self):
-        """定期更新所有置物櫃embed的View（每小時一次）"""
+        """定期更新所有置物櫃embed的View（每半小時一次，優先活躍用戶，封存狀態不更新）"""
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
             try:
                 forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
                 if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
-                    await asyncio.sleep(3600)
+                    await asyncio.sleep(1800)  # 30分鐘
                     continue
                 
                 # 獲取所有用戶
                 all_users = get_all_users()
-                updated_count = 0
                 
+                # 過濾和排序用戶：優先活躍用戶（基於 last_activity），封存狀態不更新
+                active_users = []
                 for user_data in all_users:
                     user_id = user_data.get('user_id')
-                    if not user_id:
+                    thread_id = user_data.get('thread_id')
+                    if not user_id or not thread_id:
                         continue
                     
+                    thread = forum_channel.get_thread(thread_id)
+                    if not thread or thread.archived:  # 封存狀態不更新
+                        continue
+                    
+                    # 獲取最後活動時間（如果沒有，設為0）
+                    last_activity = get_user_field(user_id, 'last_activity', default=0)
+                    active_users.append((user_data, last_activity))
+                
+                # 按最後活動時間排序（最近活躍的優先）
+                active_users.sort(key=lambda x: x[1], reverse=True)
+                
+                updated_count = 0
+                for user_data, _ in active_users:
+                    user_id = user_data.get('user_id')
                     locker_message_id = user_data.get('locker_message_id')
                     if not locker_message_id:
                         continue
@@ -531,11 +559,8 @@ class UserPanel(commands.Cog):
                     try:
                         # 獲取thread
                         thread_id = user_data.get('thread_id')
-                        if not thread_id:
-                            continue
-                        
                         thread = forum_channel.get_thread(thread_id)
-                        if not thread:
+                        if not thread or thread.archived:
                             continue
                         
                         # 獲取訊息
@@ -557,82 +582,88 @@ class UserPanel(commands.Cog):
                         await message.edit(embed=embed, view=view)
                         updated_count += 1
                         
+                        # 更新最後活動時間（可選：每次更新時刷新）
+                        set_user_field(user_id, 'last_activity', int(time.time()))
+                        
                     except Exception as e:
                         print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
                         continue
+                    
+                    # 每個用戶間隔5秒
+                    await asyncio.sleep(5)
                 
                 if updated_count > 0:
-                    print(f"✅ 已更新 {updated_count} 個置物櫃embed")
+                    print(f"✅ 已更新 {updated_count} 個活躍用戶的置物櫃embed")
                 
             except Exception as e:
                 print(f"❌ 更新embed任務出錯: {e}")
             
-            await asyncio.sleep(3600)  # 每小時更新一次
+            await asyncio.sleep(1800)  # 每半小時更新一次
     
-    @commands.command(name="update_locker_embeds")
-    @commands.has_permissions(administrator=True)
-    async def update_locker_embeds_command(self, ctx):
+    @app_commands.command(name="locker_update_embeds", description="手動更新所有置物櫃embed的View（管理員命令）")
+    @app_commands.default_permissions(administrator=True)
+    async def update_locker_embeds_slash(self, interaction: discord.Interaction):
         """手動更新所有置物櫃embed的View（管理員命令）"""
-        await ctx.send("🔄 開始更新所有置物櫃embed...")
-        
+        await interaction.response.send_message("🔄 開始更新所有置物櫃embed...", ephemeral=True)
+
         try:
             forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
-                await ctx.send("❌ 找不到論壇頻道")
+                await interaction.followup.send("❌ 找不到論壇頻道", ephemeral=True)
                 return
-            
+
             # 獲取所有用戶
             all_users = get_all_users()
             updated_count = 0
             failed_count = 0
-            
+
             for user_data in all_users:
                 user_id = user_data.get('user_id')
                 if not user_id:
                     continue
-                
+
                 locker_message_id = user_data.get('locker_message_id')
                 if not locker_message_id:
                     continue
-                
+
                 try:
                     # 獲取thread
                     thread_id = user_data.get('thread_id')
                     if not thread_id:
                         continue
-                    
+
                     thread = forum_channel.get_thread(thread_id)
                     if not thread:
                         continue
-                    
+
                     # 獲取訊息
                     message = await thread.fetch_message(locker_message_id)
                     if not message:
                         continue
-                    
+
                     # 重新創建embed和view
                     user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
                     embed = await self.create_user_embed(user_data, user)
                     character_image_url = await self.get_character_image_url(user_data)
-                    
+
                     if character_image_url:
                         embed.set_image(url=character_image_url)
-                    
+
                     view = LockerPanelView(self, user_id, thread)
-                    
+
                     # 更新訊息
                     await message.edit(embed=embed, view=view)
                     updated_count += 1
-                    
+
                 except Exception as e:
                     print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
                     failed_count += 1
                     continue
-            
-            await ctx.send(f"✅ 更新完成！成功: {updated_count}, 失敗: {failed_count}")
-            
+
+            await interaction.followup.send(f"✅ 更新完成！成功: {updated_count}, 失敗: {failed_count}", ephemeral=True)
+
         except Exception as e:
-            await ctx.send(f"❌ 更新過程中發生錯誤: {str(e)[:100]}")
+            await interaction.followup.send(f"❌ 更新過程中發生錯誤: {str(e)[:100]}", ephemeral=True)
         self.GROQ_API_URL = os.getenv('GROQ_API_URL')
         self.GROQ_API_MODEL = os.getenv('GROQ_API_MODEL', 'mixtral-8x7b-32768')
         
