@@ -244,40 +244,7 @@ class LockerPanelCog(commands.Cog):
             days = int(delta.total_seconds() / 86400)
             return f"{days}天前"
     
-    @commands.command(name="建置物櫃面板", description="🔧 在此頻道建立置物櫃概況面板")
-    async def create_panel(self, ctx):
-        """建立或重置面板"""
-        try:
-            if not ctx.author.guild_permissions.administrator:
-                await ctx.send("❌ 需要管理員權限", ephemeral=True)
-                return
-            
-            await ctx.defer()
-            
-            # 計算統計數據
-            stats = await self.get_locker_statistics()
-            
-            # 生成embed
-            embed = await self.create_panel_embed(stats)
-            
-            # 發送訊息
-            panel_message = await ctx.channel.send(embed=embed)
-            
-            # 保存信息
-            self.panel_message_id = panel_message.id
-            self.panel_channel_id = ctx.channel.id
-            self.save_panel_data()
-            
-            await ctx.followup.send(
-                f"✅ 置物櫃面板已建立！\n"
-                f"📍 訊息ID: {panel_message.id}\n"
-                f"🔄 每30分鐘自動更新一次",
-                ephemeral=True
-            )
-        
-        except Exception as e:
-            await ctx.followup.send(f"❌ 建立面板失敗: {str(e)[:100]}")
-            traceback.print_exc()
+
 
 
 async def setup(bot):

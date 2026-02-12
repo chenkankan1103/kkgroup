@@ -11,6 +11,7 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
+from status_dashboard import add_log
 
 load_dotenv()
 
@@ -28,20 +29,20 @@ async def refetch_all_lockers():
     
     @bot.event
     async def on_ready():
-        print(f"✅ 機器人已連接: {bot.user}\n")
+        add_log("uibot", f"✅ 機器人已連接: {bot.user}")
         
         channel = bot.get_channel(FORUM_CHANNEL_ID)
         if not channel:
-            print(f"❌ 找不到論壇頻道")
+            add_log("uibot", f"❌ 找不到論壇頻道")
             await bot.close()
             return
         
-        print(f"🔍 論壇: {channel.name}\n")
-        print("【步驟】重新建立所有用戶置物櫃線程...")
+        add_log("uibot", f"🔍 論壇: {channel.name}")
+        add_log("uibot", "【步驟】重新建立所有用戶置物櫃線程...")
         
         try:
             users = get_all_users()
-            print(f"📊 找到 {len(users)} 個用戶\n")
+            add_log("uibot", f"📊 找到 {len(users)} 個用戶")
             
             created_count = 0
             failed_count = 0
@@ -85,25 +86,23 @@ async def refetch_all_lockers():
                     created_count += 1
                     
                 except Exception as e:
-                    print(f"  ❌ [{idx:3d}/{len(users):3d}] 用戶 {user_id} - {str(e)[:50]}")
+                    add_log("uibot", f"  ❌ [{idx:3d}/{len(users):3d}] 用戶 {user_id} - {str(e)[:50]}")
                     failed_count += 1
                 
                 # 避免 API 限流（每 0.5 秒建立一個線程）
                 await asyncio.sleep(0.5)
             
-            print(f"\n{'='*60}")
-            print(f"✅ 成功建立: {created_count}")
+            add_log("uibot", f"✅ 成功建立: {created_count}")
             if failed_count > 0:
-                print(f"❌ 失敗: {failed_count}")
-            print(f"{'='*60}")
+                add_log("uibot", f"❌ 失敗: {failed_count}")
         
         except Exception as e:
-            print(f"❌ 操作失敗: {e}")
+            add_log("uibot", f"❌ 操作失敗: {e}")
         
         await bot.close()
     
     await bot.start(TOKEN)
 
 if __name__ == "__main__":
-    print("🔄 開始重新建立所有用戶置物櫃...\n")
+    add_log("uibot", "🔄 開始重新建立所有用戶置物櫃...")
     asyncio.run(refetch_all_lockers())

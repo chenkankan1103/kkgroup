@@ -192,86 +192,9 @@ class PaperdollMerchantCog(commands.Cog):
         self.bot = bot
         self.merchant = PaperdollMerchantSystem()
     
-    @app_commands.command(name="購買紙娃娃", description="瀏覽和購買楓之谷紙娃娃部位")
-    async def browse_paperdoll(self, interaction: discord.Interaction):
-        """瀏覽紙娃娃商品"""
-        try:
-            await interaction.response.defer()
-            
-            # 創建分類選擇器
-            from .views import PaperdollShopView
-            
-            embed = discord.Embed(
-                title="🎨 紙娃娃商城",
-                description="選擇要瀏覽的裝備分類",
-                color=discord.Color.purple()
-            )
-            
-            for category in self.merchant.PAPERDOLL_SHOP.keys():
-                category_translations = {
-                    "face": "臉型",
-                    "hair": "髮型",
-                    "top": "上衣",
-                    "bottom": "下裝",
-                    "shoes": "鞋子"
-                }
-                embed.add_field(
-                    name=f"📦 {category_translations.get(category, category)}",
-                    value=f"{len(self.merchant.PAPERDOLL_SHOP[category])} 項商品",
-                    inline=True
-                )
-            
-            # 使用現有的 PaperdollShopView（需在 views.py 中實現）
-            view = PaperdollShopView(self.bot, interaction.user.id, self.merchant)
-            await interaction.followup.send(embed=embed, view=view)
-            
-        except Exception as e:
-            await interaction.followup.send(f"❌ 錯誤: {str(e)}", ephemeral=True)
+
     
-    @app_commands.command(name="我的紙娃娃", description="查看和管理你的紙娃娃部位")
-    async def my_paperdoll(self, interaction: discord.Interaction):
-        """查看用戶的紙娃娃庫存"""
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            inventory = self.merchant.get_user_inventory(interaction.user.id)
-            equipped = self.merchant.get_equipped_paperdoll(interaction.user.id)
-            
-            embed = discord.Embed(
-                title="👗 我的紙娃娃",
-                color=discord.Color.purple()
-            )
-            
-            # 顯示已穿著
-            embed.add_field(
-                name="👕 目前穿著",
-                value=(
-                    f"臉型: `{equipped.get('face', '?')}`\n"
-                    f"髮型: `{equipped.get('hair', '?')}`\n"
-                    f"上衣: `{equipped.get('top', '?')}`\n"
-                    f"下裝: `{equipped.get('bottom', '?')}`\n"
-                    f"鞋子: `{equipped.get('shoes', '?')}`"
-                ),
-                inline=False
-            )
-            
-            # 顯示庫存
-            total_owned = sum(len(v) for v in inventory.values())
-            embed.add_field(
-                name="🎒 擁有部位",
-                value=f"總計 {total_owned} 件\n"
-                      f"臉型: {len(inventory.get('face', []))} 件\n"
-                      f"髮型: {len(inventory.get('hair', []))} 件\n"
-                      f"上衣: {len(inventory.get('top', []))} 件\n"
-                      f"下裝: {len(inventory.get('bottom', []))} 件\n"
-                      f"鞋子: {len(inventory.get('shoes', []))} 件",
-                inline=False
-            )
-            
-            await interaction.followup.send(embed=embed)
-            
-        except Exception as e:
-            await interaction.followup.send(f"❌ 錯誤: {str(e)}", ephemeral=True)
+
 
 
 async def setup(bot):
