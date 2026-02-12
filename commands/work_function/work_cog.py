@@ -330,11 +330,11 @@ class WorkActionButton(discord.ui.Button):
             
             logger.info(f"✓ 使用者資料: Lv.{current_user.get('level')} {current_user.get('title')} (user: {user_name})")
             
-            today = datetime.utcnow().strftime("%Y-%m-%d")
+            today = get_taiwan_time().strftime("%Y-%m-%d")
             last_work_date = current_user.get('last_work_date', None)
             
             # 改善日期檢查：允許當天和前一天（處理跨日邊界）
-            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            yesterday = (get_taiwan_time() - timedelta(days=1)).strftime("%Y-%m-%d")
             
             if last_work_date not in [today, yesterday]:
                 logger.warning(f"❌ 工作行動失敗: 按鈕已過期 (user: {user_name}, last_work_date: {last_work_date})")
@@ -493,8 +493,8 @@ class WorkCog(commands.Cog):
         try:
             logger.info("🔄 開始重建工作 View...")
             
-            today = datetime.utcnow().strftime("%Y-%m-%d")
-            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            today = get_taiwan_time().strftime("%Y-%m-%d")
+            yesterday = (get_taiwan_time() - timedelta(days=1)).strftime("%Y-%m-%d")
             
             all_users = get_all_users()
             
@@ -832,8 +832,8 @@ class WorkCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             
             # 檢查今天打卡的用戶數
-            today = datetime.utcnow().strftime("%Y-%m-%d")
-            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            today = get_taiwan_time().strftime("%Y-%m-%d")
+            yesterday = (get_taiwan_time() - timedelta(days=1)).strftime("%Y-%m-%d")
             all_users = get_all_users()
             
             active_today = sum(1 for u in all_users if u.get('last_work_date') == today)
@@ -935,8 +935,8 @@ class WorkCog(commands.Cog):
                 color=0x00ff00
             )
             
-            today = datetime.utcnow().strftime("%Y-%m-%d")
-            yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            today = get_taiwan_time().strftime("%Y-%m-%d")
+            yesterday = (get_taiwan_time() - timedelta(days=1)).strftime("%Y-%m-%d")
             all_users = get_all_users()
             
             active_dates = [today, yesterday]
