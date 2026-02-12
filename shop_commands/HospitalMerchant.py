@@ -506,42 +506,7 @@ class HospitalMerchant(commands.Cog):
         except Exception as e:
             logging.error(f"處理自動恢復完成錯誤: {e}")
 
-    @app_commands.command(name="醫院狀態", description="查看醫院中的傷病用戶")
-    @app_commands.default_permissions(administrator=True)
-    async def hospital_status(self, interaction: discord.Interaction):
-        """查看醫院狀態"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            # 從 db_adapter 獲取所有用戶並過濾傷病用戶
-            all_users = get_all_users()
-            injured_users = [(u['user_id'], u.get('hp', 0), u.get('stamina', 0), u.get('injury_recovery_time', 0)) 
-                             for u in all_users if u.get('is_stunned', 0) == 1]
-            
-            if not injured_users:
-                await interaction.followup.send("✅ 醫院目前沒有傷病患者")
-                return
-            
-            embed = discord.Embed(
-                title="🏥 醫院患者列表",
-                description=f"目前有 {len(injured_users)} 位傷病患者",
-                color=0xFF0000
-            )
-            
-            for user_id, hp, stamina, injury_time in injured_users:
-                member = interaction.guild.get_member(user_id)
-                member_name = member.mention if member else f"用戶 {user_id}"
-                
-                embed.add_field(
-                    name=member_name,
-                    value=f"HP: {hp}/100 | 體力: {stamina}/100",
-                    inline=False
-                )
-            
-            await interaction.followup.send(embed=embed)
-            
-        except Exception as e:
-            await interaction.followup.send(f"❌ 查詢醫院狀態錯誤: {e}")
+
 
 async def setup(bot):
     await bot.add_cog(HospitalMerchant(bot))

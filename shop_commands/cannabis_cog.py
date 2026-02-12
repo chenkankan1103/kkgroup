@@ -38,105 +38,11 @@ class CannabisCog(commands.Cog):
     #     await self.bot.wait_until_ready()
     
     # ==================== 主命令 ====================
-    @app_commands.command(name="種植", description="🌱 開始種植大麻")
-    async def planting_menu(self, interaction: discord.Interaction):
-        """種植菜單 - 購買種子或施肥"""
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            user_id = interaction.user.id
-            kkcoin = await get_user_kkcoin(user_id)
-            
-            embed = discord.Embed(
-                title="🌱 大麻種植系統",
-                description=f"💰 當前餘額：{kkcoin} KKcoin\n\n請選擇操作：",
-                color=discord.Color.green()
-            )
-            
-            view = CannabisBuyView(self.bot)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+
     
-    @app_commands.command(name="我的植物", description="📋 查看你的所有植物")
-    async def my_plants(self, interaction: discord.Interaction):
-        """查看用戶的植物列表"""
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            user_id = interaction.user.id
-            plants = await get_user_plants(user_id)
-            
-            if not plants:
-                embed = discord.Embed(
-                    title="📋 我的植物",
-                    description="你還沒有種過任何植物！\n使用 `/種植` 開始吧！",
-                    color=discord.Color.grey()
-                )
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-            
-            embed = discord.Embed(
-                title=f"📋 我的植物 (共 {len(plants)} 棵)",
-                color=discord.Color.green()
-            )
-            
-            for idx, plant in enumerate(plants, 1):
-                seed_config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-                status_emoji = "✅" if plant["status"] == "harvested" else "🌱"
-                
-                value = (
-                    f"{status_emoji} 狀態：{plant['status']}\n"
-                    f"🌱 種子：{seed_config['name']}\n"
-                    f"📊 成長度：{plant['progress']:.1f}%\n"
-                    f"💧 施肥次數：{plant['fertilizer_applied']}\n"
-                    f"⏰ 種植時間：<t:{int(datetime.fromisoformat(plant['planted_at']).timestamp())}:R>"
-                )
-                
-                embed.add_field(
-                    name=f"植物 #{plant['id']} - {seed_config['emoji']}",
-                    value=value,
-                    inline=False
-                )
-            
-            # 添加按鈕以交互
-            view = CannabisPlantsView(self.bot, plants)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+
     
-    @app_commands.command(name="我的庫存", description="📦 查看你的大麻庫存")
-    async def inventory(self, interaction: discord.Interaction):
-        """查看用戶庫存"""
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            user_id = interaction.user.id
-            inventory = await get_inventory(user_id)
-            
-            embed = discord.Embed(
-                title="📦 我的庫存",
-                color=discord.Color.blue()
-            )
-            
-            if not inventory:
-                embed.description = "你的庫存是空的！"
-            else:
-                for item_type, items in inventory.items():
-                    item_list = "\n".join([f"  • {name} x{qty}" for name, qty in items.items()])
-                    embed.add_field(name=item_type, value=item_list, inline=False)
-            
-            # 販賣按鈕
-            view = CannabisSellView(self.bot, inventory)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+
 
 
 # ==================== 交互界面 ====================

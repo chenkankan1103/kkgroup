@@ -1,5 +1,6 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
+from discord import app_commands, tasks
 import random
 import asyncio
 from typing import Optional
@@ -1240,13 +1241,13 @@ class ScamParkEvents(commands.Cog):
 
     # ==================== 管理指令 ====================
 
-    @commands.command(name='event_stats')
-    @commands.has_permissions(administrator=True)
-    async def event_stats(self, ctx):
+    @app_commands.command(name="event_stats", description="查看園區事件統計（管理員專用）")
+    @app_commands.default_permissions(administrator=True)
+    async def event_stats_slash(self, interaction: discord.Interaction):
         """查看事件統計（管理員專用）"""
         try:
             if not self.event_history:
-                await ctx.send("📊 目前沒有事件統計數據")
+                await interaction.response.send_message("📊 目前沒有事件統計數據", ephemeral=True)
                 return
             
             # Calculate stats from memory
@@ -1281,14 +1282,15 @@ class ScamParkEvents(commands.Cog):
                                        for i, (event_type, count) in enumerate(top_events)])
                 embed.add_field(name="🔝 最常見事件", value=event_list, inline=False)
             
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
-            await ctx.send(f"❌ 查詢統計失敗: {e}")
+            await interaction.response.send_message(f"❌ 查詢統計失敗: {e}", ephemeral=True)
 
-    @commands.command(name='reset_event')
-    @commands.has_permissions(administrator=True)
-    async def reset_event(self, ctx, user_id: int = None):
+    @app_commands.command(name="event_reset", description="重置事件冷卻時間（管理員專用）")
+    @app_commands.describe(user_id="用戶ID（可選，不填則重置所有用戶）")
+    @app_commands.default_permissions(administrator=True)
+    async def event_reset_slash(self, interaction: discord.Interaction, user_id: int = None):
         """重置事件冷卻時間（管理員專用）"""
         try:
             if user_id:
@@ -1301,29 +1303,30 @@ class ScamParkEvents(commands.Cog):
                 if user_id in self.event_messages:
                     del self.event_messages[user_id]
                 
-                await ctx.send(f"✅ 已重置用戶 {user_id} 的事件冷卻")
+                await interaction.response.send_message(f"✅ 已重置用戶 {user_id} 的事件冷卻", ephemeral=True)
             else:
                 self.event_cooldown.clear()
                 self.event_history.clear()
                 self.event_messages.clear()
                 
-                await ctx.send("✅ 已重置所有用戶的事件冷卻")
+                await interaction.response.send_message("✅ 已重置所有用戶的事件冷卻", ephemeral=True)
                 
         except Exception as e:
-            await ctx.send(f"❌ 重置失敗: {e}")
+            await interaction.response.send_message(f"❌ 重置失敗: {e}", ephemeral=True)
 
-    @commands.command(name='force_event')
-    @commands.has_permissions(administrator=True)
-    async def force_event(self, ctx, member: discord.Member = None):
+    @app_commands.command(name="event_force", description="強制觸發事件（管理員專用）")
+    @app_commands.describe(member="目標用戶（可選，不填則使用自己）")
+    @app_commands.default_permissions(administrator=True)
+    async def event_force_slash(self, interaction: discord.Interaction, member: discord.Member = None):
         """強制觸發事件（管理員專用）"""
         try:
             if not member:
-                member = ctx.author
+                member = interaction.user
             
             # Use db_adapter to get user data
             user_data = get_user(member.id)
             if not user_data:
-                await ctx.send("❌ 無法找到該用戶的數據")
+                await interaction.response.send_message("❌ 無法找到該用戶的數據", ephemeral=True)
                 return
             
             thread_id = user_data.get('thread_id', 0)
@@ -1333,20 +1336,20 @@ class ScamParkEvents(commands.Cog):
             stamina = user_data.get('stamina', 100)
             
             if not thread_id or thread_id == 0:
-                await ctx.send("❌ 該用戶沒有登記的討論串")
+                await interaction.response.send_message("❌ 該用戶沒有登記的討論串", ephemeral=True)
                 return
             
-            thread = ctx.guild.get_thread(thread_id)
+            thread = interaction.guild.get_thread(thread_id)
             
             if not thread:
-                await ctx.send("❌ 找不到該討論串")
+                await interaction.response.send_message("❌ 找不到該討論串", ephemeral=True)
                 return
             
             await self.trigger_random_event(member, thread, kkcoin, level, hp, stamina)
-            await ctx.send(f"✅ 已為 {member.mention} 強制觸發隨機事件")
+            await interaction.response.send_message(f"✅ 已為 {member.mention} 強制觸發隨機事件", ephemeral=True)
             
         except Exception as e:
-            await ctx.send(f"❌ 強制觸發失敗: {e}")
+            await interaction.response.send_message(f"❌ 強制觸發失敗: {e}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(ScamParkEvents(bot))

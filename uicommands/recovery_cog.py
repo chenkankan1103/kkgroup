@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import logging
 import traceback
 import discord
+from discord import app_commands
 import aiohttp
 import json
 from db_adapter import get_user, set_user, get_user_field, set_user_field, get_all_users
@@ -284,55 +285,9 @@ class UserRecoveryCog(commands.Cog):
             logging.error(f"更新用戶 {user_id} 狀態時發生錯誤: {e}")
             return False
 
-    @commands.command(name="debug_recovery")
-    @commands.is_owner()
-    async def debug_recovery(self, ctx):
-        """調試回復系統（僅限機器人擁有者）"""
-        try:
-            all_users = get_all_users()
-            total_users = len(all_users)
-            
-            normal_users = sum(1 for u in all_users if u.get('is_stunned', 0) == 0)
-            injured_users = sum(1 for u in all_users if u.get('is_stunned', 0) == 1)
-            
-            sample_users = all_users[:5]
-            
-            status = self.recovery_loop.is_running()
-            
-            embed = discord.Embed(title="回復系統調試信息", color=0x00ff00)
-            embed.add_field(name="資料庫狀態", 
-                          value=f"總用戶數: {total_users}\n正常用戶: {normal_users}\n傷病用戶: {injured_users}", 
-                          inline=False)
-            embed.add_field(name="循環狀態", 
-                          value=f"運行中: {status}", 
-                          inline=False)
-            
-            if sample_users:
-                sample_info = []
-                for user_data in sample_users:
-                    user_id = user_data.get('user_id')
-                    hp = user_data.get('hp', 0)
-                    stamina = user_data.get('stamina', 0)
-                    is_stunned = user_data.get('is_stunned', 0)
-                    state = "傷病中" if is_stunned == 1 else "正常"
-                    sample_info.append(f"用戶{user_id}: HP{hp} 體力{stamina} [{state}]")
-                
-                embed.add_field(name="用戶樣本 (前5位)", 
-                              value="\n".join(sample_info), 
-                              inline=False)
-            
-            await ctx.send(embed=embed)
-            
-        except Exception as e:
-            await ctx.send(f"調試時發生錯誤: {e}")
 
-    @commands.command(name="force_recovery")
-    @commands.is_owner()
-    async def manual_recovery(self, ctx):
-        """手動觸發回復處理"""
-        await ctx.send("開始手動回復處理...")
-        recovered = await self.process_all_users_recovery()
-        await ctx.send(f"手動回復完成，{recovered} 位用戶狀態更新")
+
+
 
 async def setup(bot):
     await bot.add_cog(UserRecoveryCog(bot))

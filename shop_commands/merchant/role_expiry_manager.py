@@ -252,32 +252,32 @@ class RoleExpiryManager(commands.Cog):
             print(f"❌ 取消身份組購買記錄失敗: {e}")
             return False
     
-    @commands.command(name="check_my_roles")
-    async def check_my_roles(self, ctx):
+    @app_commands.command(name="check_my_roles", description="檢查自己購買的身份組狀態")
+    async def check_my_roles_slash(self, interaction: discord.Interaction):
         """檢查自己購買的身份組狀態"""
         try:
-            records = await self.get_user_active_roles(ctx.author.id, ctx.guild.id)
-            
+            records = await self.get_user_active_roles(interaction.user.id, interaction.guild.id)
+
             if not records:
-                await ctx.send("你目前沒有購買任何限時身份組。", ephemeral=True)
+                await interaction.response.send_message("你目前沒有購買任何限時身份組。", ephemeral=True)
                 return
-            
+
             embed = discord.Embed(
                 title="📋 你的限時身份組",
                 description=f"共有 {len(records)} 個活躍的身份組",
                 color=discord.Color.blue(),
                 timestamp=datetime.now()
             )
-            
+
             for role_id, role_name, purchase_time, expire_time in records:
                 expire_dt = datetime.fromisoformat(expire_time)
                 time_left = expire_dt - datetime.now()
-                
+
                 if time_left.total_seconds() > 0:
                     days = time_left.days
                     hours = time_left.seconds // 3600
                     minutes = (time_left.seconds % 3600) // 60
-                    
+
                     time_left_str = []
                     if days > 0:
                         time_left_str.append(f"{days}天")
@@ -285,22 +285,22 @@ class RoleExpiryManager(commands.Cog):
                         time_left_str.append(f"{hours}小時")
                     if minutes > 0:
                         time_left_str.append(f"{minutes}分鐘")
-                    
+
                     time_str = " ".join(time_left_str) if time_left_str else "即將到期"
                 else:
                     time_str = "已到期（等待系統處理）"
-                
+
                 embed.add_field(
                     name=f"🎭 {role_name}",
                     value=f"剩餘時間: {time_str}\n到期時間: {expire_time}",
                     inline=False
                 )
-            
-            await ctx.send(embed=embed, ephemeral=True)
-            
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
         except Exception as e:
             print(f"❌ 檢查身份組狀態失敗: {e}")
-            await ctx.send("檢查身份組狀態時發生錯誤。", ephemeral=True)
+            await interaction.response.send_message("檢查身份組狀態時發生錯誤。", ephemeral=True)
 
 async def setup(bot):
     """Cog 設置函數"""
