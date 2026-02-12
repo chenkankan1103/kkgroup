@@ -604,12 +604,15 @@ class UserPanel(commands.Cog):
     async def _do_locker_embeds_update(self):
         """執行一次置物櫃embed更新（用於重啟後立即更新）"""
         try:
+            print("🔄 開始重啟後初始置物櫃embed更新")
             forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                print("❌ 找不到論壇頻道")
                 return
             
             # 獲取所有用戶
             all_users = get_all_users()
+            print(f"📊 找到 {len(all_users)} 個用戶")
             
             # 過濾和排序用戶：優先活躍用戶（基於 last_activity），封存狀態不更新
             active_users = []
@@ -627,11 +630,13 @@ class UserPanel(commands.Cog):
                 last_activity = get_user_field(user_id, 'last_activity', default=0)
                 active_users.append((user_data, last_activity))
             
+            print(f"🎯 找到 {len(active_users)} 個活躍用戶需要更新")
+            
             # 按最後活動時間排序（最近活躍的優先）
             active_users.sort(key=lambda x: x[1], reverse=True)
             
             updated_count = 0
-            for user_data, _ in active_users:
+            for user_data, _ in active_users[:10]:  # 先測試前10個
                 user_id = user_data.get('user_id')
                 locker_message_id = user_data.get('locker_message_id')
                 if not locker_message_id:
@@ -662,6 +667,7 @@ class UserPanel(commands.Cog):
                     # 更新訊息
                     await message.edit(embed=embed, view=view)
                     updated_count += 1
+                    print(f"✅ 更新用戶 {user_id} 的embed")
                     
                     # 更新最後活動時間
                     set_user_field(user_id, 'last_activity', int(time.time()))
