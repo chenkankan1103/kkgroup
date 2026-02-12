@@ -549,7 +549,7 @@ class PersonalLockerView(discord.ui.View):
     async def fertilize_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """選擇植物施肥"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
             
             growing_plants = [p for p in self.plants if p["status"] != "harvested"]
             if not growing_plants:
@@ -562,7 +562,13 @@ class PersonalLockerView(discord.ui.View):
                 return
             
             view = SelectPlantForFertilizerView(self.bot, self.user_id, growing_plants)
-            await interaction.followup.send("選擇要施肥的植物：", view=view, ephemeral=True)
+            embed = discord.Embed(
+                title="💧 選擇要施肥的植物",
+                description="選擇一棵植物進行施肥",
+                color=discord.Color.blue()
+            )
+            # 更新原來的embed
+            await interaction.message.edit(embed=embed, view=view)
             
         except Exception as e:
             traceback.print_exc()
@@ -572,7 +578,7 @@ class PersonalLockerView(discord.ui.View):
     async def harvest_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """選擇植物收割"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
             
             harvestable = [p for p in self.plants if p["status"] == "harvested"]
             if not harvestable:
@@ -580,7 +586,13 @@ class PersonalLockerView(discord.ui.View):
                 return
             
             view = SelectPlantForHarvestView(self.bot, self.user_id, harvestable)
-            await interaction.followup.send("選擇要收割的植物：", view=view, ephemeral=True)
+            embed = discord.Embed(
+                title="✂️ 選擇要收割的植物",
+                description="選擇一棵成熟的植物進行收割",
+                color=discord.Color.orange()
+            )
+            # 更新原來的embed
+            await interaction.message.edit(embed=embed, view=view)
             
         except Exception as e:
             traceback.print_exc()
@@ -590,7 +602,7 @@ class PersonalLockerView(discord.ui.View):
     async def view_fertilizer(self, interaction: discord.Interaction, button: discord.ui.Button):
         """查看可用肥料"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
             
             inventory = await get_inventory(self.user_id)
             fertilizers = inventory.get("肥料", {})
@@ -611,7 +623,12 @@ class PersonalLockerView(discord.ui.View):
                         inline=True
                     )
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            # 添加返回按鈕
+            view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
+            embed.set_footer(text="點擊下方按鈕返回主選項")
+            
+            # 更新原來的embed
+            await interaction.message.edit(embed=embed, view=view)
             
         except Exception as e:
             traceback.print_exc()
@@ -663,8 +680,9 @@ class PersonalLockerView(discord.ui.View):
                         continue
             
             view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-            add_log("ui", f"[Crop Planting] Seed selection view sent to user {self.user_id}")
+            # 更新原來的embed而不是發送新訊息
+            await interaction.response.edit_message(embed=embed, view=view)
+            add_log("ui", f"[Crop Planting] Seed selection view updated for user {self.user_id}")
             
         except Exception as e:
             add_log("ui", f"[Crop Planting] Unexpected error for user {self.user_id}: {e}")
@@ -729,24 +747,30 @@ class PersonalLockerView(discord.ui.View):
     async def back_to_main_callback(self, interaction: discord.Interaction):
         """返回到主選項"""
         try:
-            if not self.user_panel:
-                await interaction.response.send_message("❌ 無法返回，缺少用戶面板實例。", ephemeral=True)
-                return
-            
             # 創建主選項embed
             embed = discord.Embed(
-                title="🌿 個人置物櫃",
-                description="選擇一個選項：",
-                color=0x00FF00
+                title="📦 個人置物櫃",
+                description="使用下方按鈕管理你的作物種植、施肥和收割操作。",
+                color=discord.Color.blue()
             )
             
-            # 創建LockerPanelView的主選項
-            from uicommands.uibody import LockerPanelView
-            view = LockerPanelView(self.user_panel, self.user_id)
-            view.current_view = "main"
-            view.clear_items()
-            view.add_item(view.secret_cannabis_button)
-            view.add_item(view.personal_items_button)
+            embed.add_field(
+                name="🌱 作物管理",
+                value="• 作物種植：開始種植新的作物\n• 施肥：為成長中的植物施肥\n• 收割：收割成熟的作物\n• 查看肥料：檢查你的肥料庫存",
+                inline=False
+            )
+            
+            embed.set_footer(text="💡 這個視圖是永久的，按鈕不會過期")
+            
+            # 重新創建PersonalLockerView
+            view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
+            
+            # 更新原來的embed
+            await interaction.response.edit_message(embed=embed, view=view)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.response.send_message(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
             
             await interaction.response.edit_message(embed=embed, view=view)
             
