@@ -911,60 +911,6 @@ class PersonalLockerView(discord.ui.View):
 
 
 
-class SelectPlantForFertilizerView(discord.ui.View):
-    """選擇要施肥的植物"""
-    
-    def __init__(self, bot, user_id, plants):
-        super().__init__(timeout=None)  # 永久視圖
-        self.bot = bot
-        self.user_id = user_id
-        
-        for idx, plant in enumerate(plants[:5], 1):  # 限制 5 個
-            seed_config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-            button = Button(
-                label=f"植物 #{plant['id']} - {plant['seed_type']}",
-                style=discord.ButtonStyle.secondary,
-                emoji=seed_config["emoji"],
-                custom_id=f"fert_plant_{plant['id']}"
-            )
-            button.callback = self.make_fert_callback(plant)
-            self.add_item(button)
-    
-    async def make_fert_callback(self, plant):
-        async def callback(interaction: discord.Interaction):
-            try:
-                await interaction.response.defer(ephemeral=True)
-                
-                inventory = await get_inventory(self.user_id)
-                fertilizers = inventory.get("肥料", {})
-                
-                if not fertilizers:
-                    await interaction.followup.send("❌ 你沒有肥料！", ephemeral=True)
-                    return
-                
-                embed = discord.Embed(
-                    title="💧 選擇肥料",
-                    color=discord.Color.blue()
-                )
-                
-                for fert_name, qty in fertilizers.items():
-                    config = CANNABIS_SHOP["肥料"][fert_name]
-                    embed.add_field(
-                        name=f"{config['emoji']} {fert_name} (x{qty})",
-                        value=f"加速：{config['growth_boost']*100:.0f}%",
-                        inline=False
-                    )
-                
-                view = SelectFertilizerView(self.bot, self.user_id, plant, fertilizers)
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-                
-            except Exception as e:
-                traceback.print_exc()
-                await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-        
-        return callback
-
-
 class SelectFertilizerView(discord.ui.View):
     """選擇肥料視圖"""
     
@@ -1017,63 +963,6 @@ class SelectFertilizerView(discord.ui.View):
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 施肥失敗", ephemeral=True)
-                
-            except Exception as e:
-                traceback.print_exc()
-                await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-        
-        return callback
-
-
-class SelectPlantForHarvestView(discord.ui.View):
-    """選擇要收割的植物"""
-    
-    def __init__(self, bot, user_id, plants):
-        super().__init__(timeout=None)  # 永久視圖
-        self.bot = bot
-        self.user_id = user_id
-        
-        for idx, plant in enumerate(plants[:5], 1):  # 限制 5 個
-            seed_config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-            button = Button(
-                label=f"收割植物 #{plant['id']}",
-                style=discord.ButtonStyle.danger,
-                emoji="✂️",
-                custom_id=f"harvest_plant_{plant['id']}"
-            )
-            button.callback = self.make_harvest_callback(plant)
-            self.add_item(button)
-    
-    async def make_harvest_callback(self, plant):
-        async def callback(interaction: discord.Interaction):
-            try:
-                await interaction.response.defer(ephemeral=True)
-                
-                # 收割
-                result = await harvest_plant(plant["id"])
-                
-                if result and result.get("success"):
-                    yield_amount = result.get("yield_amount", 0)
-                    
-                    embed = discord.Embed(
-                        title="✅ 收割成功",
-                        description=f"你收割了 {plant['seed_type']}",
-                        color=discord.Color.green()
-                    )
-                    embed.add_field(name="產量", value=f"{yield_amount}個", inline=False)
-                    
-                    # 記錄事件
-                    if hasattr(self, 'cog'):
-                        user = await self.bot.fetch_user(self.user_id)
-                        await self.cog.record_event(
-                            'harvest',
-                            user,
-                            f"收割{plant['seed_type']} - {yield_amount}個"
-                        )
-                    
-                    await interaction.followup.send(embed=embed, ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 收割失敗", ephemeral=True)
                 
             except Exception as e:
                 traceback.print_exc()
