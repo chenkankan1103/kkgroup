@@ -985,12 +985,16 @@ async def process_work_action(user_id, user_obj, action):
         
         # 更新資料庫
         actions_used[action] = today
-        update_user(
+        success = update_user(
             user_id, 
             xp=user['xp'] + xp_gain, 
             kkcoin=user['kkcoin'] + kk_gain,
             actions_used=json.dumps(actions_used)
         )
+        
+        if not success:
+            print(f"❌ 更新用戶資料失敗: {user_id}")
+            return None, None, "❌ 資料保存失敗，請稍後再試"
         
         updated_user = get_user(user_id)
         
