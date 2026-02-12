@@ -433,7 +433,7 @@ class LockerPanelView(discord.ui.View):
             if not hasattr(locker_cog, 'record_event'):
                 await interaction.followup.send("❌ 置物櫃系統缺少必要方法，請聯繫管理員。", ephemeral=True)
                 return
-            view = PersonalLockerView(self.cog.bot, locker_cog, owner_user_id, guild_id, channel_id, plants)
+            view = PersonalLockerView(self.cog.bot, locker_cog, owner_user_id, guild_id, channel_id, plants, user_panel=self.cog)
             
             embed = discord.Embed(
                 title="📦 個人置物櫃",

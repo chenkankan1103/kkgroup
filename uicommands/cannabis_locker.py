@@ -517,7 +517,7 @@ class PersonalLockerCog(commands.Cog):
 class PersonalLockerView(discord.ui.View):
     """個人置物櫃交互菜單 - 永久視圖"""
     
-    def __init__(self, bot, cog, user_id, guild_id, channel_id, plants):
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, plants, user_panel=None):
         super().__init__(timeout=None)  # 永久視圖，不會過期
         self.bot = bot
         self.cog = cog
@@ -525,6 +525,7 @@ class PersonalLockerView(discord.ui.View):
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.plants = plants
+        self.user_panel = user_panel
         
         # 添加作物種植按鈕
         crop_button = discord.ui.Button(
@@ -534,6 +535,15 @@ class PersonalLockerView(discord.ui.View):
         )
         crop_button.callback = self.crop_planting_callback
         self.add_item(crop_button)
+        
+        # 添加返回按鈕
+        back_button = discord.ui.Button(
+            label="⬅️ 返回",
+            style=discord.ButtonStyle.secondary,
+            custom_id="back_to_main"
+        )
+        back_button.callback = self.back_to_main_callback
+        self.add_item(back_button)
     
     @discord.ui.button(label="施肥", style=discord.ButtonStyle.success, emoji="💧")
     async def fertilize_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -715,6 +725,34 @@ class PersonalLockerView(discord.ui.View):
                 await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
         
         return callback
+
+    async def back_to_main_callback(self, interaction: discord.Interaction):
+        """返回到主選項"""
+        try:
+            if not self.user_panel:
+                await interaction.response.send_message("❌ 無法返回，缺少用戶面板實例。", ephemeral=True)
+                return
+            
+            # 創建主選項embed
+            embed = discord.Embed(
+                title="🌿 個人置物櫃",
+                description="選擇一個選項：",
+                color=0x00FF00
+            )
+            
+            # 創建LockerPanelView的主選項
+            from uicommands.uibody import LockerPanelView
+            view = LockerPanelView(self.user_panel, self.user_id)
+            view.current_view = "main"
+            view.clear_items()
+            view.add_item(view.secret_cannabis_button)
+            view.add_item(view.personal_items_button)
+            
+            await interaction.response.edit_message(embed=embed, view=view)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.response.send_message(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
 
