@@ -30,7 +30,7 @@ MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 # 台灣時間輔助函數 (UTC+8)
 def get_taiwan_time():
     """返回台灣時間 (UTC+8)"""
-    return datetime.utcnow() + timedelta(hours=8)
+    return datetime.now(timezone.utc) + timedelta(hours=8)
 
 # 硬編碼的訊息 ID 作為回退值
 HARDCODED_MESSAGE_IDS = {
@@ -488,7 +488,7 @@ class DashboardButtons(discord.ui.View):
 🟢 **在線**
 用戶: {self.bot.user.mention}
 ID: {self.bot.user.id}
-時間: <t:{int(datetime.utcnow().timestamp())}:R>
+時間: <t:{int(datetime.now(timezone.utc).timestamp())}:R>
                 """
             else:
                 detail = "🔴 離線"
