@@ -350,7 +350,7 @@ async def update_dashboard_logs(bot, bot_type: str):
             title=f"{config['名稱']} 實時日誌",
             description=f"```\n{logs_text}\n```",
             color=config["顏色"],
-            timestamp=get_taiwan_time()
+            timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
         )
 
         # 更新訊息
@@ -573,7 +573,7 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
     embed = discord.Embed(
         title=f"{config['名稱']} 控制面板",
         color=config['顏色'],
-        timestamp=get_taiwan_time()
+        timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
     )
     
     embed.add_field(
@@ -594,7 +594,8 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
         inline=True
     )
     
-    embed.set_footer(text=f"{get_taiwan_time().strftime('%H:%M')}")
+    # 移除 footer 的時間，只保留空 footer
+    embed.set_footer(text="")
     return embed
 
 
@@ -610,7 +611,7 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     logs_text = get_logs_text(bot_type)
     embed.description = f"```\n{logs_text}\n```"
     
-    embed.set_footer(text=f"更新頻率: 60秒 | {get_taiwan_time().strftime('%H:%M')}")
+    embed.set_footer(text="更新頻率: 60秒")
     return embed
 
 
@@ -872,7 +873,8 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
         inline=True
     )
     
-    embed.set_footer(text=f"{get_taiwan_time().strftime('%H:%M')}")
+    # 移除 footer 的時間，只保留空 footer
+    embed.set_footer(text="")
     return embed
 
 
