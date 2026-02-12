@@ -497,6 +497,7 @@ class LockerPanelView(discord.ui.View):
 
 class UserPanel(commands.Cog):
     def __init__(self, bot):
+        print("🚀 UserPanel __init__ 開始")
         self.bot = bot
         self.db_path = './user_data.db'
         self.FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID', '0'))
@@ -512,15 +513,32 @@ class UserPanel(commands.Cog):
         self.GROQ_API_KEY = os.getenv('GROQ_API_KEY')
         
         # 啟動embed更新任務
-        self.update_embeds_task = self.bot.loop.create_task(self.update_all_locker_embeds())
+        print("🔧 初始化 UserPanel，啟動embed更新任務")
+        try:
+            self.update_embeds_task = self.bot.loop.create_task(self.update_all_locker_embeds())
+            print("✅ embed更新任務已創建")
+        except Exception as e:
+            print(f"❌ 創建embed更新任務失敗: {e}")
+            import traceback
+            traceback.print_exc()
     
     def cog_unload(self):
-        self.update_embeds_task.cancel()
+        if hasattr(self, 'update_embeds_task'):
+            self.update_embeds_task.cancel()
+    
+    @app_commands.command(name="test_update", description="測試置物櫃embed更新")
+    async def test_update(self, interaction: discord.Interaction):
+        """手動測試置物櫃embed更新"""
+        await interaction.response.defer()
+        
+        try:
+            await self._do_locker_embeds_update()
+            await interaction.followup.send("✅ 測試更新完成", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ 測試更新失敗: {e}", ephemeral=True)
     
     async def update_all_locker_embeds(self):
         """定期更新所有置物櫃embed的View（重啟後立即執行一次，然後每半小時一次，優先活躍用戶，封存狀態不更新）"""
-        await self.bot.wait_until_ready()
-        
         # 重啟後立即執行一次更新
         await self._do_locker_embeds_update()
         
@@ -606,8 +624,8 @@ class UserPanel(commands.Cog):
     
     async def _do_locker_embeds_update(self):
         """執行一次置物櫃embed更新（用於重啟後立即更新）"""
+        print("🔄 開始重啟後初始置物櫃embed更新")
         try:
-            print("🔄 開始重啟後初始置物櫃embed更新")
             forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
                 print("❌ 找不到論壇頻道")
@@ -687,6 +705,9 @@ class UserPanel(commands.Cog):
             
         except Exception as e:
             print(f"❌ 初始更新embed出錯: {e}")
+            import traceback
+            traceback.print_exc()
+        print("🏁 _do_locker_embeds_update 方法結束")
     
     @app_commands.command(name="locker_update_embeds", description="手動更新所有置物櫃embed的View（管理員命令）")
     @app_commands.default_permissions(administrator=True)
@@ -1736,5 +1757,12 @@ class UserPanel(commands.Cog):
             pass
 
 async def setup(bot):
-    await bot.add_cog(UserPanel(bot))
+    print("🔧 載入 uibody 擴展")
+    try:
+        await bot.add_cog(UserPanel(bot))
+        print("✅ uibody 擴展載入完成")
+    except Exception as e:
+        print(f"❌ uibody 擴展載入失敗: {e}")
+        import traceback
+        traceback.print_exc()
 
