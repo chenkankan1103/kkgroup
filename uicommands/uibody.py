@@ -361,7 +361,7 @@ class LockerPanelView(discord.ui.View):
             )
             
             # 生成格子視圖
-            grid = self._generate_locker_grid(plants, total_slots)
+            grid = self.cog._generate_locker_grid(plants, total_slots)
             embed.add_field(name="📍 置物櫃布局", value=grid, inline=False)
             
             # 按進度分類顯示
