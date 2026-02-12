@@ -15,7 +15,7 @@ import sqlite3
 import subprocess
 import asyncio
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import deque
 from typing import Optional, Dict
 from dotenv import load_dotenv, set_key
@@ -604,7 +604,7 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     embed = discord.Embed(
         title=f"{config['名稱']} 實時日誌",
         color=config['顏色'],
-        timestamp=datetime.utcnow()  # 使用 UTC 時間，讓 Discord 正確處理時區
+        timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
     )
     
     logs_text = get_logs_text(bot_type)
@@ -841,7 +841,7 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
     embed = discord.Embed(
         title=f"{config['名稱']} 控制面板",
         color=config['顏色'],
-        timestamp=datetime.utcnow()  # 使用 UTC 時間，讓 Discord 正確處理時區
+        timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
     )
     
     # 檢查機器人狀態
