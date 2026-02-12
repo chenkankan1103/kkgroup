@@ -9,6 +9,7 @@ import asyncio
 from typing import Optional
 from dotenv import load_dotenv
 from status_dashboard import add_log
+from .personal_items import PersonalItemsView
 from PIL import Image
 import time
 import hashlib
@@ -251,10 +252,12 @@ class WorkCardActionView(discord.ui.View):
 
 class LockerPanelView(discord.ui.View):
     """置物櫃面板 - 包含更新和大麻系統按鈕"""
-    def __init__(self, cog, user_id: int):
-        super().__init__(timeout=None)
+    def __init__(self, cog, user_id: int, thread=None):
+        super().__init__(timeout=60)  # 設置60秒超時
         self.cog = cog
         self.user_id = user_id
+        self.thread = thread
+        self.current_view = "locker"
         if not hasattr(LockerPanelView, 'last_update'):
             LockerPanelView.last_update = {}
     
