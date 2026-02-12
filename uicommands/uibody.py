@@ -526,16 +526,76 @@ class UserPanel(commands.Cog):
         if hasattr(self, 'update_embeds_task'):
             self.update_embeds_task.cancel()
     
-    @app_commands.command(name="test_update", description="測試置物櫃embed更新")
-    async def test_update(self, interaction: discord.Interaction):
-        """手動測試置物櫃embed更新"""
-        await interaction.response.defer()
+    @app_commands.command(name="update_forum_lockers", description="手動更新論壇中所有活躍用戶的置物櫃embed")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def update_forum_lockers(self, interaction: discord.Interaction):
+        """管理員命令：手動更新論壇中所有活躍用戶的置物櫃embed"""
+        await interaction.response.defer(ephemeral=True)
         
         try:
-            await self._do_locker_embeds_update()
-            await interaction.followup.send("✅ 測試更新完成", ephemeral=True)
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                await interaction.followup.send("❌ 找不到論壇頻道", ephemeral=True)
+                return
+            
+            # 獲取所有用戶
+            all_users = get_all_users()
+            updated_count = 0
+            failed_count = 0
+            
+            await interaction.followup.send(f"🔄 開始更新 {len(all_users)} 個用戶的置物櫃...", ephemeral=True)
+            
+            for user_data in all_users:
+                user_id = user_data.get('user_id')
+                thread_id = user_data.get('thread_id')
+                locker_message_id = user_data.get('locker_message_id')
+                
+                if not user_id or not thread_id or not locker_message_id:
+                    continue
+                
+                try:
+                    # 檢查thread是否存在
+                    thread = forum_channel.get_thread(thread_id)
+                    if not thread or thread.archived:
+                        # 清除無效thread
+                        set_user_field(user_id, 'thread_id', None)
+                        set_user_field(user_id, 'locker_message_id', None)
+                        continue
+                    
+                    # 獲取訊息
+                    message = await thread.fetch_message(locker_message_id)
+                    if not message:
+                        continue
+                    
+                    # 重新創建embed和view
+                    user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                    embed = await self.create_user_embed(user_data, user)
+                    character_image_url = await self.get_character_image_url(user_data)
+                    
+                    if character_image_url:
+                        embed.set_image(url=character_image_url)
+                    
+                    view = LockerPanelView(self, user_id, thread)
+                    
+                    # 更新訊息
+                    await message.edit(embed=embed, view=view)
+                    updated_count += 1
+                    
+                    # 更新最後活動時間
+                    set_user_field(user_id, 'last_activity', int(time.time()))
+                    
+                except Exception as e:
+                    print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
+                    failed_count += 1
+                    continue
+                
+                # 每個用戶間隔1秒（管理員命令可以快一點）
+                await asyncio.sleep(1)
+            
+            await interaction.followup.send(f"✅ 更新完成！成功更新 {updated_count} 個置物櫃，失敗 {failed_count} 個", ephemeral=True)
+            
         except Exception as e:
-            await interaction.followup.send(f"❌ 測試更新失敗: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ 更新失敗: {e}", ephemeral=True)
     
     async def update_all_locker_embeds(self):
         """定期更新所有置物櫃embed的View（重啟後立即執行一次，然後每半小時一次，優先活躍用戶，封存狀態不更新）"""
@@ -560,8 +620,18 @@ class UserPanel(commands.Cog):
                     if not user_id or not thread_id:
                         continue
                     
-                    thread = forum_channel.get_thread(thread_id)
-                    if not thread or thread.archived:  # 封存狀態不更新
+                    # 正確檢查thread是否存在
+                    try:
+                        thread = await forum_channel.fetch_thread(thread_id)
+                        if thread.archived:  # 封存狀態不更新
+                            continue
+                    except discord.NotFound:
+                        # thread不存在，清除資料
+                        set_user_field(user_id, 'thread_id', None)
+                        set_user_field(user_id, 'locker_message_id', None)
+                        continue
+                    except Exception as e:
+                        print(f"⚠️ 檢查用戶 {user_id} 的thread失敗: {e}")
                         continue
                     
                     # 獲取最後活動時間（如果沒有，設為0）
@@ -643,8 +713,18 @@ class UserPanel(commands.Cog):
                 if not user_id or not thread_id:
                     continue
                 
-                thread = forum_channel.get_thread(thread_id)
-                if not thread or thread.archived:  # 封存狀態不更新
+                # 正確檢查thread是否存在
+                try:
+                    thread = await forum_channel.fetch_thread(thread_id)
+                    if thread.archived:  # 封存狀態不更新
+                        continue
+                except discord.NotFound:
+                    # thread不存在，清除資料
+                    set_user_field(user_id, 'thread_id', None)
+                    set_user_field(user_id, 'locker_message_id', None)
+                    continue
+                except Exception as e:
+                    print(f"⚠️ 檢查用戶 {user_id} 的thread失敗: {e}")
                     continue
                 
                 # 獲取最後活動時間（如果沒有，設為0）
@@ -664,10 +744,16 @@ class UserPanel(commands.Cog):
                     continue
                 
                 try:
-                    # 獲取thread
+                    # 正確獲取thread
                     thread_id = user_data.get('thread_id')
-                    thread = forum_channel.get_thread(thread_id)
-                    if not thread or thread.archived:
+                    try:
+                        thread = await forum_channel.fetch_thread(thread_id)
+                        if thread.archived:
+                            continue
+                    except discord.NotFound:
+                        # thread不存在，清除資料
+                        set_user_field(user_id, 'thread_id', None)
+                        set_user_field(user_id, 'locker_message_id', None)
                         continue
                     
                     # 獲取訊息
