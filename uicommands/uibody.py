@@ -518,17 +518,18 @@ class UserPanel(commands.Cog):
         self.update_embeds_task.cancel()
     
     async def update_all_locker_embeds(self):
-        """定期更新所有置物櫃embed的View（每半小時一次，優先活躍用戶，封存狀態不更新）"""
+        """定期更新所有置物櫃embed的View（重啟後立即執行一次，然後每半小時一次，優先活躍用戶，封存狀態不更新）"""
         await self.bot.wait_until_ready()
+        
+        # 重啟後立即執行一次更新
+        await self._do_locker_embeds_update()
+        
         while not self.bot.is_closed():
             try:
                 forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
                 if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
                     await asyncio.sleep(1800)  # 30分鐘
                     continue
-                
-                # 獲取所有用戶
-                all_users = get_all_users()
                 
                 # 過濾和排序用戶：優先活躍用戶（基於 last_activity），封存狀態不更新
                 active_users = []
@@ -599,6 +600,84 @@ class UserPanel(commands.Cog):
                 print(f"❌ 更新embed任務出錯: {e}")
             
             await asyncio.sleep(1800)  # 每半小時更新一次
+    
+    async def _do_locker_embeds_update(self):
+        """執行一次置物櫃embed更新（用於重啟後立即更新）"""
+        try:
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                return
+            
+            # 獲取所有用戶
+            all_users = get_all_users()
+            
+            # 過濾和排序用戶：優先活躍用戶（基於 last_activity），封存狀態不更新
+            active_users = []
+            for user_data in all_users:
+                user_id = user_data.get('user_id')
+                thread_id = user_data.get('thread_id')
+                if not user_id or not thread_id:
+                    continue
+                
+                thread = forum_channel.get_thread(thread_id)
+                if not thread or thread.archived:  # 封存狀態不更新
+                    continue
+                
+                # 獲取最後活動時間（如果沒有，設為0）
+                last_activity = get_user_field(user_id, 'last_activity', default=0)
+                active_users.append((user_data, last_activity))
+            
+            # 按最後活動時間排序（最近活躍的優先）
+            active_users.sort(key=lambda x: x[1], reverse=True)
+            
+            updated_count = 0
+            for user_data, _ in active_users:
+                user_id = user_data.get('user_id')
+                locker_message_id = user_data.get('locker_message_id')
+                if not locker_message_id:
+                    continue
+                
+                try:
+                    # 獲取thread
+                    thread_id = user_data.get('thread_id')
+                    thread = forum_channel.get_thread(thread_id)
+                    if not thread or thread.archived:
+                        continue
+                    
+                    # 獲取訊息
+                    message = await thread.fetch_message(locker_message_id)
+                    if not message:
+                        continue
+                    
+                    # 重新創建embed和view
+                    user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                    embed = await self.create_user_embed(user_data, user)
+                    character_image_url = await self.get_character_image_url(user_data)
+                    
+                    if character_image_url:
+                        embed.set_image(url=character_image_url)
+                    
+                    view = LockerPanelView(self, user_id, thread)
+                    
+                    # 更新訊息
+                    await message.edit(embed=embed, view=view)
+                    updated_count += 1
+                    
+                    # 更新最後活動時間
+                    set_user_field(user_id, 'last_activity', int(time.time()))
+                    
+                except Exception as e:
+                    print(f"⚠️ 初始更新用戶 {user_id} 的embed失敗: {e}")
+                    continue
+                
+                # 每個用戶間隔5秒
+                await asyncio.sleep(5)
+            
+            if updated_count > 0:
+                print(f"✅ 重啟後初始更新完成，已更新 {updated_count} 個活躍用戶的置物櫃embed")
+            
+        except Exception as e:
+            print(f"❌ 初始更新embed出錯: {e}")
     
     @app_commands.command(name="locker_update_embeds", description="手動更新所有置物櫃embed的View（管理員命令）")
     @app_commands.default_permissions(administrator=True)
