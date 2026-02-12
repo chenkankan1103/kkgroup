@@ -464,7 +464,7 @@ async def process_checkin(user_id, user_obj, guild):
             print(f"  📊 升級進度: {progress} / {next_threshold if next_threshold else '計算中'} XP")
 
         print(f"  💾 保存資料...")
-        update_user(
+        success = update_user(
             user_id,
             last_work_date=today,
             streak=streak,
@@ -473,6 +473,9 @@ async def process_checkin(user_id, user_obj, guild):
             kkcoin=user.get('kkcoin', 0) + kkcoin_gain,
             actions_used='{}'
         )
+        if not success:
+            print(f"  ❌ 保存用戶資料失敗")
+            return None, None, None, None
         print(f"  ✓ 資料已保存")
 
         updated_user = get_user(user_id)

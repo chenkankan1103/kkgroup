@@ -93,7 +93,7 @@ def update_user(user_id, **kwargs):
     """
     try:
         if kwargs:
-            set_user(user_id, kwargs)
+            return set_user(user_id, kwargs)
         return True
     except Exception as e:
         traceback.print_exc()
