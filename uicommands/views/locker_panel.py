@@ -21,22 +21,22 @@ class LockerPanelView(discord.ui.View):
     async def get_owner_user_id(self, interaction: discord.Interaction) -> int:
         """根據 thread_id 從資料庫獲取論壇帖子的所有者 user_id"""
         try:
-            # 如果在 thread 中，使用 db_adapter 獲取用戶數據
+            # 直接從 interaction.channel 獲取 thread，不依賴 self.thread
             thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
             if thread:
                 # 使用 db_adapter 獲取所有用戶，然後過濾出有匹配 thread_id 的用戶
                 from db_adapter import get_all_users
                 all_users = get_all_users()
-                
+
                 for user_data in all_users:
                     if user_data and user_data.get('thread_id') == thread.id:
                         return user_data['user_id']
-                
+
                 print(f"⚠️ 在資料庫中找不到 thread_id={thread.id} 對應的用戶")
-        
+
         except Exception as e:
             print(f"⚠️ 查詢 thread 所有者失敗: {e}")
-        
+
         # 後備方案：優先使用 interaction.user.id，因為這是最可靠的當前用戶標識
         return interaction.user.id
     

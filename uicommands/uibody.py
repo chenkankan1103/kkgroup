@@ -304,7 +304,7 @@ class UserPanel(commands.Cog):
 
             thread_name = f"📦 {user.display_name or user.name} 的置物櫃"
             
-            view = LockerPanelView(self, user.id)
+            view = LockerPanelView(self, user.id, thread=None)  # thread稍後會設置
             
             try:
                 thread, message = await forum_channel.create_thread(
