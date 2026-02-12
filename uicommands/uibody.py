@@ -424,8 +424,8 @@ class LockerPanelView(discord.ui.View):
             guild_id = interaction.guild.id if interaction.guild else 0
             channel_id = interaction.channel.id
             # 獲取 PersonalLockerCog 實例
-            add_log("ui", f"Available cogs: {list(self.bot.cogs.keys())}")
-            locker_cog = self.bot.get_cog('PersonalLockerCog')
+            add_log("ui", f"Available cogs: {list(self.cog.bot.cogs.keys())}")
+            locker_cog = self.cog.bot.get_cog('PersonalLockerCog')
             add_log("ui", f"locker_cog: {locker_cog}, type: {type(locker_cog)}")
             if not locker_cog:
                 await interaction.followup.send("❌ 置物櫃系統未載入，請聯繫管理員。", ephemeral=True)
@@ -433,7 +433,7 @@ class LockerPanelView(discord.ui.View):
             if not hasattr(locker_cog, 'record_event'):
                 await interaction.followup.send("❌ 置物櫃系統缺少必要方法，請聯繫管理員。", ephemeral=True)
                 return
-            view = PersonalLockerView(self.bot, locker_cog, owner_user_id, guild_id, channel_id, plants)
+            view = PersonalLockerView(self.cog.bot, locker_cog, owner_user_id, guild_id, channel_id, plants)
             
             embed = discord.Embed(
                 title="📦 個人置物櫃",
