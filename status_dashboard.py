@@ -694,9 +694,37 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         save_message_ids(bot_type_str)
         
         # 創建或確保日誌embed存在（初始化時創建，之後由全域任務更新）
-        logs_message_id = get_message_id(bot_type_str, "logs")
-        if not logs_message_id:
-            # 沒有ID，直接創建新的
+        # 類似控制面板邏輯，先檢查現有embed，清理重複的
+        found_logs = None
+        logs_count = 0
+        old_logs = []
+        
+        # 查找現有日誌訊息（只查找由當前 bot 發送的）
+        async for msg in channel.history(limit=50):
+            if msg.author.id != bot_instance.user.id:
+                continue  # 跳過其他 bot 的訊息
+            
+            if msg.embeds:
+                for embed in msg.embeds:
+                    bot_name = BOT_CONFIG[bot_type_str]["名稱"]
+                    if "實時日誌" in embed.title and bot_name in embed.title:
+                        logs_count += 1
+                        if logs_count <= 1:
+                            found_logs = msg
+                        else:
+                            old_logs.append(msg)
+        
+        # 清理舊的日誌 embed
+        for msg in old_logs:
+            try:
+                await msg.delete()
+                print(f"✓ 已清理舊的 {bot_type_str} 日誌embed")
+            except Exception as e:
+                print(f"⚠️ 清理舊日誌embed失敗 {msg.id}: {e}")
+        
+        # 創建或更新日誌embed
+        if not found_logs:
+            # 沒有找到現有的，創建新的
             try:
                 logs_embed = await create_logs_embed(bot_type_str)
                 logs_msg = await channel.send(embed=logs_embed)
@@ -707,24 +735,16 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             except Exception as e:
                 print(f"⚠️ 初始化時創建 {bot_type_str} 日誌embed失敗: {e}")
         else:
-            # 有ID，嘗試驗證訊息是否存在
+            # 有現有的，更新它並保存ID
+            message_ids[bot_type_str]["logs"] = found_logs.id
             try:
-                existing_msg = await channel.fetch_message(logs_message_id)
-                print(f"✅ {bot_type_str} 日誌embed已存在並有效: {logs_message_id}")
+                logs_embed = await create_logs_embed(bot_type_str)
+                await found_logs.edit(embed=logs_embed)
+                save_message_ids(bot_type_str)
+                print(f"✅ 更新現有 {bot_type_str} 日誌embed: {found_logs.id}")
                 add_log(bot_type_str, f"✅ 日誌系統已就緒")
-            except discord.NotFound:
-                print(f"⚠️ {bot_type_str} 日誌embed ID {logs_message_id} 不存在，重新創建")
-                try:
-                    logs_embed = await create_logs_embed(bot_type_str)
-                    logs_msg = await channel.send(embed=logs_embed)
-                    message_ids[bot_type_str]["logs"] = logs_msg.id
-                    save_message_id(bot_type_str, "logs", str(logs_msg.id))
-                    print(f"✅ 重新創建 {bot_type_str} 日誌embed: {logs_msg.id}")
-                    add_log(bot_type_str, f"✅ 日誌系統已重新初始化")
-                except Exception as e:
-                    print(f"⚠️ 重新創建 {bot_type_str} 日誌embed失敗: {e}")
             except Exception as e:
-                print(f"⚠️ 驗證 {bot_type_str} 日誌embed失敗: {e}")
+                print(f"⚠️ 更新現有日誌embed失敗 {found_logs.id}: {e}")
                 add_log(bot_type_str, f"✅ 日誌系統已就緒")
         
         # 🔧 初始化時清空日誌，防止重複累積
