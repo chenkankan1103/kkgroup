@@ -631,6 +631,23 @@ class WelcomeFlow(commands.Cog):
 
     async def handle_final_verification(self, interaction: discord.Interaction, member: discord.Member):
         try:
+            # 檢查是否已繳交手機和身分證
+            user_data = self.get_user_data(member.id)
+            if not user_data:
+                await interaction.followup.send("❌ 無法獲取用戶資料，請聯繫管理員", ephemeral=True)
+                return
+            
+            inventory = json.loads(user_data.get('inventory', '[]')) if user_data.get('inventory') else []
+            
+            if "手機" in inventory or "身分證" in inventory:
+                await interaction.followup.send(
+                    "❌ **入園失敗！**\n\n"
+                    "📱 請先點擊「繳交手機身分證」按鈕繳交所有物品後再確認進入園區。\n"
+                    "園區規定：所有入園者必須繳交個人物品以確保安全。",
+                    ephemeral=True
+                )
+                return
+
             guild = member.guild
             temp_role1 = guild.get_role(self.temp_role1_id)
             member_role = guild.get_role(self.member_role_id) 
