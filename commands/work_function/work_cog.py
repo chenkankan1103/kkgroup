@@ -250,7 +250,12 @@ class RestButton(discord.ui.Button):
                 return
             
             old_streak = user.get('streak', 0)
-            update_user(user_id, last_work_date=today, streak=0)
+            success = update_user(user_id, last_work_date=today, streak=0)
+            
+            if not success:
+                logger.error(f"❌ 休息失敗: 資料保存失敗 (user: {user_name})")
+                await interaction.followup.send("❌ 處理休息請求失敗，請稍後再試", ephemeral=True)
+                return
             
             logger.info(f"✅ 成功休息 (user: {user_name})")
             logger.info(f"   連勤: {old_streak} → 0")
