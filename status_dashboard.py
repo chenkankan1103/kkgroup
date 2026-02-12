@@ -27,10 +27,16 @@ load_dotenv()
 # 配置常數
 MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 
-# 台灣時間輔助函數 (UTC+8)
-def get_taiwan_time():
-    """返回台灣時間 (UTC+8)"""
-    return datetime.now(timezone.utc) + timedelta(hours=8)
+def check_database_connection():
+    """檢查 user_data.db 資料庫連接"""
+    try:
+        conn = sqlite3.connect('user_data.db')
+        conn.execute('SELECT 1')  # 簡單的測試查詢
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[DB CHECK] 資料庫連接檢查失敗: {e}")
+        return False
 
 # 硬編碼的訊息 ID 作為回退值
 HARDCODED_MESSAGE_IDS = {
@@ -849,11 +855,21 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
     if bot and bot.user and bot.is_ready():
         bot_status = "🟢 On"
         task_status = "✅ Ready"
-        db_status = "✅ Connected"
     else:
         bot_status = "🔴 Off"
         task_status = "❌ Offline"
+    
+    # 實際檢查資料庫連接
+    if check_database_connection():
+        db_status = "✅ Connected"
+    else:
         db_status = "❌ Disconnected"
+    
+    # 檢查日誌任務狀態
+    if bot_type in update_tasks and update_tasks[bot_type] and update_tasks[bot_type].is_running():
+        logs_status = "✅ 運行中"
+    else:
+        logs_status = "❌ 停止"
     
     embed.add_field(
         name="🤖 機器人",
@@ -870,6 +886,12 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
     embed.add_field(
         name="💾 數據庫",
         value=db_status,
+        inline=True
+    )
+    
+    embed.add_field(
+        name="📝 日誌",
+        value=logs_status,
         inline=True
     )
     
