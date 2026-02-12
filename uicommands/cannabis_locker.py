@@ -915,7 +915,7 @@ class SelectPlantForFertilizerView(discord.ui.View):
     """選擇要施肥的植物"""
     
     def __init__(self, bot, user_id, plants):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)  # 永久視圖
         self.bot = bot
         self.user_id = user_id
         
@@ -969,7 +969,7 @@ class SelectFertilizerView(discord.ui.View):
     """選擇肥料視圖"""
     
     def __init__(self, bot, user_id, plant, fertilizers):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)  # 永久視圖
         self.bot = bot
         self.user_id = user_id
         self.plant = plant
@@ -1029,7 +1029,7 @@ class SelectPlantForHarvestView(discord.ui.View):
     """選擇要收割的植物"""
     
     def __init__(self, bot, user_id, plants):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)  # 永久視圖
         self.bot = bot
         self.user_id = user_id
         
@@ -1582,7 +1582,7 @@ class SelectSeedView(discord.ui.View):
     """選擇要種植的種子"""
     
     def __init__(self, bot, cog, user_id, guild_id, channel_id, seeds):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)  # 永久視圖
         self.bot = bot
         self.cog = cog
         self.user_id = user_id
