@@ -8,6 +8,7 @@ import io
 import asyncio
 from typing import Optional
 from dotenv import load_dotenv
+from status_dashboard import add_log
 from PIL import Image
 import time
 import hashlib
@@ -423,8 +424,9 @@ class LockerPanelView(discord.ui.View):
             guild_id = interaction.guild.id if interaction.guild else 0
             channel_id = interaction.channel.id
             # 獲取 PersonalLockerCog 實例
+            add_log("ui", f"Available cogs: {list(self.bot.cogs.keys())}")
             locker_cog = self.bot.get_cog('PersonalLockerCog')
-            print(f"[DEBUG] locker_cog: {locker_cog}, type: {type(locker_cog)}")
+            add_log("ui", f"locker_cog: {locker_cog}, type: {type(locker_cog)}")
             if not locker_cog:
                 await interaction.followup.send("❌ 置物櫃系統未載入，請聯繫管理員。", ephemeral=True)
                 return
