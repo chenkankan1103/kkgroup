@@ -531,6 +531,9 @@ class UserPanel(commands.Cog):
                     await asyncio.sleep(1800)  # 30分鐘
                     continue
                 
+                # 獲取所有用戶
+                all_users = get_all_users()
+                
                 # 過濾和排序用戶：優先活躍用戶（基於 last_activity），封存狀態不更新
                 active_users = []
                 for user_data in all_users:
