@@ -8,6 +8,7 @@ from pathlib import Path
 import json
 import aiosqlite
 from collections import deque
+from status_dashboard import add_log
 from shop_commands.merchant.cannabis_farming import (
     get_user_plants, plant_cannabis, apply_fertilizer, harvest_plant, get_inventory, remove_inventory, add_inventory
 )
@@ -80,7 +81,7 @@ class PersonalLockerCog(commands.Cog):
             self.recent_events.append(event)
             self.save_panel_data()
         except Exception as e:
-            print(f"❌ 記錄事件失敗: {e}")
+            add_log("ui", f"記錄事件失敗: {e}")
     
     @tasks.loop(minutes=30)
     async def update_panel_task(self):
@@ -609,26 +610,26 @@ class PersonalLockerView(discord.ui.View):
     async def crop_planting_callback(self, interaction: discord.Interaction):
         """作物種植 - 顯示種子選擇介面"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            # await interaction.response.defer(ephemeral=True)
             
             # 獲取用戶種子庫存
             try:
                 inventory = await get_inventory(self.user_id)
                 if not inventory:
                     print(f"⚠️  [Crop Planting] Failed to get inventory for user {self.user_id}")
-                    await interaction.followup.send("❌ 無法獲取庫存資料！請稍後再試。", ephemeral=True)
+                    await interaction.response.send_message("❌ 無法獲取庫存資料！請稍後再試。", ephemeral=True)
                     return
             except Exception as inv_error:
                 print(f"❌ [Crop Planting] Inventory error for user {self.user_id}: {inv_error}")
                 traceback.print_exc()
-                await interaction.followup.send("❌ 獲取庫存時發生錯誤！請聯繫管理員。", ephemeral=True)
+                await interaction.response.send_message("❌ 獲取庫存時發生錯誤！請聯繫管理員。", ephemeral=True)
                 return
             
             seeds = inventory.get("種子", {})
             
             # 檢查是否有種子
             if not seeds or not any(qty > 0 for qty in seeds.values()):
-                await interaction.followup.send("❌ 你沒有種子！請先到商店購買種子。", ephemeral=True)
+                await interaction.response.send_message("❌ 你沒有種子！請先到商店購買種子。", ephemeral=True)
                 return
             
             # 顯示種子選擇界面
@@ -652,13 +653,16 @@ class PersonalLockerView(discord.ui.View):
                         continue
             
             view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            print(f"✅ [Crop Planting] Seed selection view sent to user {self.user_id}")
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            add_log("ui", f"[Crop Planting] Seed selection view sent to user {self.user_id}")
             
         except Exception as e:
-            print(f"❌ [Crop Planting] Unexpected error for user {self.user_id}: {e}")
+            add_log("ui", f"[Crop Planting] Unexpected error for user {self.user_id}: {e}")
             traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            try:
+                await interaction.response.send_message(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+            except:
+                pass
     
     def make_plant_callback(self, seed_name):
         """生成種植回調函數"""
