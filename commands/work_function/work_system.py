@@ -940,11 +940,25 @@ async def process_work_action(user_id, user_obj, action):
         
         today = datetime.utcnow().strftime("%Y-%m-%d")
         
-        actions_used = json.loads(user.get('actions_used', '{}'))
+        # 安全地解析 actions_used（可能是字典或JSON字符串）
+        actions_used_raw = user.get('actions_used', '{}')
+        try:
+            if isinstance(actions_used_raw, dict):
+                actions_used = actions_used_raw
+            else:
+                actions_used = json.loads(actions_used_raw)
+        except (json.JSONDecodeError, TypeError) as e:
+            print(f"⚠️ 解析 actions_used 失敗: {e}, 使用空字典")
+            actions_used = {}
+        
         if action in actions_used:
             return None, None, "你今天已經執行過這個行動了！"
         
-        level = user['level']
+        level = user.get('level', 1)
+        if level not in LEVELS:
+            print(f"❌ 無效的等級: {level}")
+            return None, None, "❌ 用戶資料有誤"
+        
         level_info = LEVELS[level]
         
         # 找到對應的行動資料

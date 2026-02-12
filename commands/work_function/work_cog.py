@@ -420,9 +420,20 @@ class WorkActionView(discord.ui.View):
         super().__init__(timeout=None)
         self.user_id = user['user_id']
         
-        level = user['level']
+        level = user.get('level', 1)
         level_info = LEVELS[level]
-        actions_used = user.get('actions_used', {})
+        
+        # 安全地解析 actions_used（可能是字典或JSON字符串）
+        actions_used_raw = user.get('actions_used', {})
+        try:
+            if isinstance(actions_used_raw, dict):
+                actions_used = actions_used_raw
+            elif isinstance(actions_used_raw, str):
+                actions_used = json.loads(actions_used_raw) if actions_used_raw else {}
+            else:
+                actions_used = {}
+        except (json.JSONDecodeError, TypeError):
+            actions_used = {}
         
         for action_data in level_info['actions']:
             button = WorkActionButton(
@@ -779,7 +790,17 @@ class WorkCog(commands.Cog):
                     inline=False
                 )
             
-            actions_used = user.get('actions_used', {})
+            actions_used_raw = user.get('actions_used', {})
+            try:
+                if isinstance(actions_used_raw, dict):
+                    actions_used = actions_used_raw
+                elif isinstance(actions_used_raw, str):
+                    actions_used = json.loads(actions_used_raw) if actions_used_raw else {}
+                else:
+                    actions_used = {}
+            except (json.JSONDecodeError, TypeError):
+                actions_used = {}
+            
             if actions_used:
                 actions_list = [f"✅ {action}" for action in actions_used.keys()]
                 actions_status = "\n".join(actions_list)
