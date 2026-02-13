@@ -169,6 +169,14 @@ async def get_user_plants(user_id: int) -> list:
                     elapsed = (now - planted_dt).total_seconds()
                     total = (matured_dt - planted_dt).total_seconds()
                     current_progress = min(100.0, (elapsed / total) * 100 if total > 0 else 0)
+                    
+                    # 如果已經完全成熟但狀態還是growing，自動更新為harvested
+                    if current_progress >= 100.0 and status != "harvested":
+                        try:
+                            await adapter.update_plant(user_id, plant.get('id'), {"status": "harvested"})
+                            status = "harvested"
+                        except Exception as update_error:
+                            print(f"⚠️ 自動更新植物狀態失敗：{update_error}")
                 
                 result.append({
                     "id": plant.get('id'),
