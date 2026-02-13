@@ -785,6 +785,13 @@ class PersonalLockerView(discord.ui.View):
                     else:
                         planted_time = plant["planted_at"]
                         matured_time = plant["matured_at"]
+                        
+                        # 處理時間戳格式（可能是字符串或float）
+                        if isinstance(planted_time, str):
+                            planted_time = datetime.fromisoformat(planted_time).timestamp()
+                        if isinstance(matured_time, str):
+                            matured_time = datetime.fromisoformat(matured_time).timestamp()
+                        
                         now = datetime.now().timestamp()
                         elapsed = now - planted_time
                         total = matured_time - planted_time
