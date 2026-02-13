@@ -173,6 +173,57 @@ class CropOperationView(discord.ui.View):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
+    async def back_to_locker_callback(self, interaction: discord.Interaction):
+        """返回到個人儲物櫃"""
+        try:
+            await interaction.response.defer()
+
+            # 重新獲取用戶數據
+            plants = await get_user_plants(self.user_id)
+            inventory = await get_inventory(self.user_id)
+
+            # 創建PersonalLockerView
+            from .personal_locker import PersonalLockerView
+            view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, plants, None)
+
+            embed = discord.Embed(
+                title="🔒 個人儲物櫃",
+                description="管理您的作物和物品",
+                color=discord.Color.blue()
+            )
+
+            # 顯示作物資訊
+            if plants:
+                growing = [p for p in plants if p["status"] != "harvested"]
+                harvested = [p for p in plants if p["status"] == "harvested"]
+
+                embed.add_field(
+                    name="🌾 作物狀態",
+                    value=f"成長中: {len(growing)} | 已成熟: {len(harvested)} | 總計: {len(plants)}/5",
+                    inline=False
+                )
+
+            # 顯示庫存
+            seeds = inventory.get("種子", {})
+            fertilizers = inventory.get("肥料", {})
+
+            if seeds:
+                seed_info = ", ".join([f"{k}: {v}" for k, v in seeds.items() if v > 0])
+                embed.add_field(name="🌱 種子", value=seed_info[:1000], inline=False)
+
+            if fertilizers:
+                fert_info = ", ".join([f"{k}: {v}" for k, v in fertilizers.items() if v > 0])
+                embed.add_field(name="💧 肥料", value=fert_info[:1000], inline=False)
+
+            embed.set_footer(text="💡 使用下方按鈕管理您的作物")
+
+            # 編輯原始回應
+            await interaction.edit_original_response(embed=embed, view=view)
+
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
+
 
 class CropPlantingView(discord.ui.View):
     """種植作物選擇視圖"""
