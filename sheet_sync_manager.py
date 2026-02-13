@@ -18,7 +18,7 @@ from sheet_driven_db import SheetDrivenDB
 import hashlib
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, Union
-from status_dashboard_gcp import add_log
+from status_dashboard import add_log
 
 
 class SheetSyncManager:
