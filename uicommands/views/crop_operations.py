@@ -80,12 +80,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.green()
             )
 
-            # 嘗試更新原來的embed，如果失敗則發送新訊息
-            try:
-                await interaction.message.edit(embed=embed, view=view)
-            except discord.NotFound:
-                # 如果原訊息無法訪問，發送新訊息
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 發送新的embed和view
+            await interaction.followup.send(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -126,12 +122,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.blue()
             )
 
-            # 嘗試更新原來的embed，如果失敗則發送新訊息
-            try:
-                await interaction.message.edit(embed=embed, view=view)
-            except discord.NotFound:
-                # 如果原訊息無法訪問，發送新訊息
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 發送新的embed和view
+            await interaction.followup.send(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -164,12 +156,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.orange()
             )
 
-            # 嘗試更新原來的embed，如果失敗則發送新訊息
-            try:
-                await interaction.message.edit(embed=embed, view=view)
-            except discord.NotFound:
-                # 如果原訊息無法訪問，發送新訊息
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 發送新的embed和view
+            await interaction.followup.send(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
