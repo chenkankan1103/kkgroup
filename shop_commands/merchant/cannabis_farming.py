@@ -196,47 +196,46 @@ async def get_user_plants(user_id: int) -> list:
         return []
 
 
-async def apply_fertilizer(plant_id: int, fertilizer_type: str) -> bool:
+async def apply_fertilizer(user_id: int, plant_id: int, fertilizer_type: str) -> bool:
     """對植物施肥"""
     try:
         adapter = get_adapter()
-        
-        # 這裡有個問題：我們需要知道 user_id 才能更新植物
-        # 我們需要先查詢所有用戶找到這個植物，然後更新
-        # 為了簡化，返回 False（需要 user_id 作為參數）
-        # 建議調用方提供 user_id
-        
-        # 暫時實現：遍歷所有用戶
-        from sheet_driven_db import SheetDrivenDB
-        db = SheetDrivenDB()
-        users = db.get_all_users()
-        
-        for user in users:
-            plants = await adapter.get_user_plants(user.get('user_id', 0))
-            for plant in plants:
-                if plant.get('id') == plant_id:
-                    # 找到植物，進行施肥
-                    if plant.get('status') != 'growing':
-                        return False
-                    
-                    fertilizer_config = CANNABIS_SHOP["肥料"][fertilizer_type]
-                    boost = fertilizer_config["growth_boost"]
-                    
-                    matured_at = datetime.fromisoformat(plant.get('matured_at', datetime.now().isoformat()))
-                    now = datetime.now()
-                    remaining = (matured_at - now).total_seconds()
-                    new_remaining = remaining * (1 - boost)
-                    new_matured_at = now + timedelta(seconds=max(0, new_remaining))
-                    
-                    # 更新施肥計數
-                    updates = {
-                        "matured_at": new_matured_at.isoformat(),
-                        "fertilizer_applied": plant.get('fertilizer_applied', 0) + 1
-                    }
-                    
-                    return await adapter.update_plant(user.get('user_id', 0), plant_id, updates)
-        
-        return False
+
+        # 獲取用戶的植物
+        plants = await adapter.get_user_plants(user_id)
+
+        # 找到指定的植物
+        plant = None
+        for p in plants:
+            if p.get('id') == plant_id:
+                plant = p
+                break
+
+        if not plant:
+            return False
+
+        # 檢查植物狀態
+        if plant.get('status') != 'growing':
+            return False
+
+        # 計算施肥效果
+        fertilizer_config = CANNABIS_SHOP["肥料"][fertilizer_type]
+        boost = fertilizer_config["growth_boost"]
+
+        matured_at = datetime.fromisoformat(plant.get('matured_at', datetime.now().isoformat()))
+        now = datetime.now()
+        remaining = (matured_at - now).total_seconds()
+        new_remaining = remaining * (1 - boost)
+        new_matured_at = now + timedelta(seconds=max(0, new_remaining))
+
+        # 更新施肥計數
+        updates = {
+            "matured_at": new_matured_at.isoformat(),
+            "fertilizer_applied": plant.get('fertilizer_applied', 0) + 1
+        }
+
+        return await adapter.update_plant(user_id, plant_id, updates)
+
     except Exception as e:
         print(f"❌ 施肥失敗：{e}")
         return False

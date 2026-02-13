@@ -62,13 +62,13 @@ class SelectFertilizerView(discord.ui.View):
                     )
                     embed.add_field(name="加速", value=f"{config['growth_boost']*100:.0f}%", inline=False)
 
-                    # 記錄事件
-                    user = await self.bot.fetch_user(self.user_id)
-                    await self.cog.record_event(
-                        'fertilize',
-                        user,
-                        f"為{self.plant['seed_type']}施肥"
-                    )
+                    # 記錄事件（暫時移除以避免超時）
+                    # user = await self.bot.fetch_user(self.user_id)
+                    # await self.cog.record_event(
+                    #     'fertilize',
+                    #     user,
+                    #     f"為{self.plant['seed_type']}施肥"
+                    # )
 
                     # 編輯原始回應顯示結果
                     await interaction.edit_original_response(embed=embed, view=None)
