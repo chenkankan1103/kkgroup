@@ -45,7 +45,7 @@ class SelectFertilizerView(discord.ui.View):
     async def make_apply_callback(self, fert_name):
         async def callback(interaction: discord.Interaction):
             try:
-                await interaction.response.defer(ephemeral=True)
+                await interaction.response.defer()
 
                 # 施肥
                 result = await apply_fertilizer(self.user_id, self.plant["id"], fert_name)
