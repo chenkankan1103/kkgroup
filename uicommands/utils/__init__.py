@@ -16,6 +16,12 @@ from .plant_utils import (
     ensure_user_exists,
     get_user_data,
 )
+from .crop_utils import (
+    format_plant_progress,
+    create_plant_embed,
+    calculate_harvest_value,
+    validate_plant_operation,
+)
 
 __all__ = [
     'create_progress_bar',
@@ -30,4 +36,8 @@ __all__ = [
     'restore_image_cache_from_storage',
     'ensure_user_exists',
     'get_user_data',
+    'format_plant_progress',
+    'create_plant_embed',
+    'calculate_harvest_value',
+    'validate_plant_operation',
 ]
