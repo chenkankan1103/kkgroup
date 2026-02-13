@@ -260,6 +260,9 @@ async def harvest_plant(plant_id: int) -> dict:
                     seed_type = plant.get('seed_type')
                     matured_at = plant.get('matured_at')
                     
+                    # 檢查是否已經收割過（從列表中移除的植物）
+                    # 注意：這裡我們不檢查狀態，因為get_user_plants會自動更新成熟植物的狀態
+                    
                     # 檢查是否成熟
                     now = datetime.now()
                     matured_dt = datetime.fromisoformat(matured_at)
@@ -276,12 +279,8 @@ async def harvest_plant(plant_id: int) -> dict:
                     max_yield = seed_config["max_yield"]
                     yield_amount = random.randint(int(max_yield * 0.5), max_yield)
                     
-                    # 更新植物狀態
-                    updates = {
-                        "status": "harvested",
-                        "harvested_amount": yield_amount
-                    }
-                    await adapter.update_plant(user_id, plant_id, updates)
+                    # 收割成功 - 從數據庫中移除植物
+                    await adapter.remove_plant(user_id, plant_id)
                     
                     # 添加到庫存
                     await adapter.add_inventory(user_id, "大麻", seed_type, yield_amount)
