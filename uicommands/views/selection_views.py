@@ -117,7 +117,7 @@ class SelectPlantForFertilizerView(discord.ui.View):
                 return
 
             # 應用肥料
-            result = await apply_fertilizer(self.user_id, plant_id)
+            result = await apply_fertilizer(plant_id, fert_name)
 
             if result and result.get("success"):
                 config = CANNABIS_SHOP["種子"][plant["seed_type"]]
@@ -181,7 +181,7 @@ class SelectPlantForHarvestView(discord.ui.View):
                 return
 
             # 收割植物
-            result = await harvest_plant(self.user_id, plant_id)
+            result = await harvest_plant(plant_id)
 
             if result and result.get("success"):
                 config = CANNABIS_SHOP["種子"][plant["seed_type"]]
