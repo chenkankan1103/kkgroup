@@ -209,3 +209,81 @@ class SelectPlantForHarvestView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
+
+class SelectSeedView(discord.ui.View):
+    """選擇種子視圖"""
+
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, seeds):
+        super().__init__(timeout=None)  # 永久視圖
+        self.bot = bot
+        self.cog = cog
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        # 為每個種子添加按鈕
+        for seed_name, qty in seeds.items():
+            if qty > 0:
+                from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                config = CANNABIS_SHOP["種子"][seed_name]
+                button = discord.ui.Button(
+                    label=f"{config['emoji']} {seed_name}",
+                    style=discord.ButtonStyle.primary,
+                    custom_id=f"plant_seed_{seed_name.replace(' ', '_')}"
+                )
+                button.callback = self.make_plant_callback(seed_name)
+                self.add_item(button)
+
+    def make_plant_callback(self, seed_name):
+        """生成種植回調函數"""
+        async def callback(interaction: discord.Interaction):
+            try:
+                await interaction.response.defer(ephemeral=True)
+
+                # 檢查是否有種子
+                has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
+                if not has_seed:
+                    await interaction.followup.send("❌ 你沒有這種種子！", ephemeral=True)
+                    return
+
+                # 種植
+                result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
+
+                if result and not result.get("success") == False:
+                    from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    embed = discord.Embed(
+                        title="🌱 種植成功",
+                        description=f"已種植 {seed_name}",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(name="成長時間", value=f"{config['growth_time']//3600} 小時", inline=False)
+                    embed.add_field(name="最大產量", value=f"{config['max_yield']} 個", inline=False)
+
+                    # 記錄事件
+                    if self.cog:
+                        user = await self.bot.fetch_user(self.user_id)
+                        await self.cog.record_event(
+                            'plant',
+                            user,
+                            f"種植{seed_name}"
+                        )
+
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                else:
+                    # 種植失敗，退還種子
+                    await add_inventory(self.user_id, "種子", seed_name, 1)
+                    reason = result.get("reason", "未知原因") if result else "未知原因"
+                    await interaction.followup.send(f"❌ 種植失敗：{reason}", ephemeral=True)
+
+            except Exception as e:
+                traceback.print_exc()
+                # 如果發生錯誤，嘗試退還種子
+                try:
+                    await add_inventory(self.user_id, "種子", seed_name, 1)
+                except Exception as refund_error:
+                    print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
+                await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
+        return callback
