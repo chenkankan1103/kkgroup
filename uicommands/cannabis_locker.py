@@ -756,7 +756,7 @@ class PersonalLockerView(discord.ui.View):
     async def crop_info_callback(self, interaction: discord.Interaction):
         """作物資訊 - 顯示作物狀態和操作選項"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
 
             plants = await get_user_plants(self.user_id)
             inventory = await get_inventory(self.user_id)
@@ -820,7 +820,8 @@ class PersonalLockerView(discord.ui.View):
             view = CropOperationView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds, plants, growing, harvested)
 
             embed.set_footer(text="💡 使用下方按鈕進行種植、施肥或收割操作")
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 更新原來的embed而不是發送新訊息
+            await interaction.message.edit(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -829,7 +830,7 @@ class PersonalLockerView(discord.ui.View):
     async def personal_items_callback(self, interaction: discord.Interaction):
         """個人物品 - 顯示物品庫存"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
 
             inventory = await get_inventory(self.user_id)
 
@@ -876,7 +877,8 @@ class PersonalLockerView(discord.ui.View):
             view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
             embed.set_footer(text="點擊下方按鈕返回主選項")
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 更新原來的embed而不是發送新訊息
+            await interaction.message.edit(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -1321,7 +1323,7 @@ class CropOperationView(discord.ui.View):
     async def crop_planting_callback(self, interaction: discord.Interaction):
         """種植作物"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
 
             # 創建種子選擇下拉選單
             options = []
@@ -1345,7 +1347,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.green()
             )
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 更新原來的embed而不是發送新訊息
+            await interaction.message.edit(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -1354,7 +1357,7 @@ class CropOperationView(discord.ui.View):
     async def crop_fertilize_callback(self, interaction: discord.Interaction):
         """施肥作物"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
 
             # 檢查是否有肥料
             inventory = await get_inventory(self.user_id)
@@ -1385,7 +1388,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.blue()
             )
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 更新原來的embed而不是發送新訊息
+            await interaction.message.edit(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -1394,7 +1398,7 @@ class CropOperationView(discord.ui.View):
     async def crop_harvest_callback(self, interaction: discord.Interaction):
         """收割作物"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
 
             # 創建植物選擇下拉選單
             options = []
@@ -1417,7 +1421,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.orange()
             )
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 更新原來的embed而不是發送新訊息
+            await interaction.message.edit(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
