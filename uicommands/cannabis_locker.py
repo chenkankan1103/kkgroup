@@ -576,8 +576,12 @@ class PersonalLockerView(discord.ui.View):
                 description="選擇一棵植物進行施肥",
                 color=discord.Color.blue()
             )
-            # 更新原來的embed
-            await interaction.message.edit(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             traceback.print_exc()
@@ -600,8 +604,12 @@ class PersonalLockerView(discord.ui.View):
                 description="選擇一棵成熟的植物進行收割",
                 color=discord.Color.orange()
             )
-            # 更新原來的embed
-            await interaction.message.edit(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             traceback.print_exc()
@@ -636,8 +644,12 @@ class PersonalLockerView(discord.ui.View):
             view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
             embed.set_footer(text="點擊下方按鈕返回主選項")
             
-            # 更新原來的embed
-            await interaction.message.edit(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             traceback.print_exc()
@@ -820,8 +832,12 @@ class PersonalLockerView(discord.ui.View):
             view = CropOperationView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds, plants, growing, harvested)
 
             embed.set_footer(text="💡 使用下方按鈕進行種植、施肥或收割操作")
-            # 更新原來的embed而不是發送新訊息
-            await interaction.message.edit(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
@@ -877,8 +893,12 @@ class PersonalLockerView(discord.ui.View):
             view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
             embed.set_footer(text="點擊下方按鈕返回主選項")
 
-            # 更新原來的embed而不是發送新訊息
-            await interaction.message.edit(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
@@ -905,8 +925,12 @@ class PersonalLockerView(discord.ui.View):
             # 重新創建PersonalLockerView
             view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
             
-            # 更新原來的embed
-            await interaction.response.edit_message(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             traceback.print_exc()
@@ -1347,8 +1371,12 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.green()
             )
 
-            # 更新原來的embed而不是發送新訊息
-            await interaction.message.edit(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
@@ -1388,8 +1416,12 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.blue()
             )
 
-            # 更新原來的embed而不是發送新訊息
-            await interaction.message.edit(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
@@ -1421,8 +1453,12 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.orange()
             )
 
-            # 更新原來的embed而不是發送新訊息
-            await interaction.message.edit(embed=embed, view=view)
+            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            try:
+                await interaction.message.edit(embed=embed, view=view)
+            except discord.NotFound:
+                # 如果原訊息無法訪問，發送新訊息
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
