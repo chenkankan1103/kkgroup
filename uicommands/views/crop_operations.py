@@ -90,8 +90,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.green()
             )
 
-            # 發送新的embed和view
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 編輯原始回應而不是創建新的
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -132,8 +132,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.blue()
             )
 
-            # 發送新的embed和view
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 編輯原始回應而不是創建新的
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -166,8 +166,8 @@ class CropOperationView(discord.ui.View):
                 color=discord.Color.orange()
             )
 
-            # 發送新的embed和view
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 編輯原始回應而不是創建新的
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -280,7 +280,8 @@ class CropPlantingView(discord.ui.View):
                         f"種植{selected_seed}"
                     )
 
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                # 編輯原始回應顯示結果
+                await interaction.edit_original_response(embed=embed, view=None)
             else:
                 # 種植失敗，退還種子
                 await add_inventory(self.user_id, "種子", selected_seed, 1)
