@@ -121,7 +121,7 @@ class LockerPanelView(discord.ui.View):
             plants = await get_user_plants(owner_user_id)
             
             # 創建PersonalLockerView
-            from uicommands.cannabis_locker import PersonalLockerView
+            from .personal_locker import PersonalLockerView
             guild_id = interaction.guild.id if interaction.guild else 0
             channel_id = interaction.channel.id
             # 獲取 PersonalLockerCog 實例
