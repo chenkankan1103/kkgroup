@@ -53,6 +53,16 @@ class CropOperationView(discord.ui.View):
             harvest_button.callback = self.crop_harvest_callback
             self.add_item(harvest_button)
 
+        # 添加返回按鈕
+        back_button = discord.ui.Button(
+            label="返回",
+            style=discord.ButtonStyle.secondary,
+            emoji="⬅️",
+            custom_id="crop_back"
+        )
+        back_button.callback = self.back_to_locker_callback
+        self.add_item(back_button)
+
     async def crop_planting_callback(self, interaction: discord.Interaction):
         """種植作物"""
         try:
@@ -115,7 +125,7 @@ class CropOperationView(discord.ui.View):
                 return
 
             from .selection_views import SelectPlantForFertilizerView
-            view = SelectPlantForFertilizerView(self.bot, self.user_id, self.growing)
+            view = SelectPlantForFertilizerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.growing)
             embed = discord.Embed(
                 title="💧 選擇要施肥的植物",
                 description="選擇一棵植物進行施肥",
@@ -149,7 +159,7 @@ class CropOperationView(discord.ui.View):
                 return
 
             from .selection_views import SelectPlantForHarvestView
-            view = SelectPlantForHarvestView(self.bot, self.user_id, self.harvested)
+            view = SelectPlantForHarvestView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.harvested)
             embed = discord.Embed(
                 title="✂️ 選擇要收割的植物",
                 description="選擇一棵成熟的植物進行收割",
@@ -308,5 +318,36 @@ class SelectSeedView(discord.ui.View):
                 except Exception as refund_error:
                     print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
                 await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
+    async def back_to_locker_callback(self, interaction: discord.Interaction):
+        """返回到個人置物櫃主選項"""
+        try:
+            await interaction.response.defer()
+
+            # 創建PersonalLockerView
+            from .personal_locker import PersonalLockerView
+            plants = await get_user_plants(self.user_id)
+            view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, plants, user_panel=None)
+
+            embed = discord.Embed(
+                title="📦 個人置物櫃",
+                description="使用下方按鈕管理你的作物種植、施肥和收割操作。",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="🌱 作物管理",
+                value="• 作物資訊：查看作物狀態和操作選項\n• 個人物品：查看你的物品庫存\n• 查看肥料：檢查你的肥料庫存",
+                inline=False
+            )
+
+            embed.set_footer(text="💡 這個視圖是永久的，按鈕不會過期")
+
+            # 編輯原始回應
+            await interaction.edit_original_response(embed=embed, view=view)
+
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
 
         return callback
