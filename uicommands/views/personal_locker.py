@@ -22,19 +22,51 @@ class PersonalLockerView(discord.ui.View):
         self.plants = plants
         self.user_panel = user_panel
 
-    @discord.ui.button(label="作物資訊", style=discord.ButtonStyle.primary, emoji="🌾")
-    async def crop_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 動態添加按鈕
+        self.add_buttons()
+
+    def add_buttons(self):
+        """根據用戶物品動態添加按鈕"""
+        # 作物資訊按鈕 - 永遠顯示
+        crop_button = discord.ui.Button(
+            label="作物資訊", 
+            style=discord.ButtonStyle.primary, 
+            emoji="🌾",
+            custom_id="crop_info"
+        )
+        crop_button.callback = self.crop_info_callback
+        self.add_item(crop_button)
+
+        # 個人物品按鈕 - 永遠顯示
+        items_button = discord.ui.Button(
+            label="個人物品", 
+            style=discord.ButtonStyle.secondary, 
+            emoji="🎒",
+            custom_id="personal_items"
+        )
+        items_button.callback = self.personal_items_callback
+        self.add_item(items_button)
+
+        # 查看肥料按鈕 - 永遠顯示，但會根據物品顯示不同信息
+        fertilizer_button = discord.ui.Button(
+            label="查看肥料", 
+            style=discord.ButtonStyle.primary, 
+            emoji="🧂",
+            custom_id="view_fertilizer"
+        )
+        fertilizer_button.callback = self.view_fertilizer_callback_impl
+        self.add_item(fertilizer_button)
+
+    async def crop_info_callback(self, interaction: discord.Interaction):
         """作物資訊"""
-        await self.crop_info_callback(interaction)
+        await self.crop_info_callback_impl(interaction)
 
-    @discord.ui.button(label="個人物品", style=discord.ButtonStyle.secondary, emoji="🎒")
-    async def personal_items(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def personal_items_callback(self, interaction: discord.Interaction):
         """個人物品"""
-        await self.personal_items_callback(interaction)
+        await self.personal_items_callback_impl(interaction)
 
-    @discord.ui.button(label="查看肥料", style=discord.ButtonStyle.primary, emoji="🧂")
-    async def view_fertilizer(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """查看可用肥料"""
+    async def view_fertilizer_callback_impl(self, interaction: discord.Interaction):
+        """查看可用肥料 - 實現"""
         try:
             await interaction.response.defer()
 
@@ -61,12 +93,8 @@ class PersonalLockerView(discord.ui.View):
             view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
             embed.set_footer(text="點擊下方按鈕返回主選項")
 
-            # 嘗試更新原來的embed，如果失敗則發送新訊息
-            try:
-                await interaction.message.edit(embed=embed, view=view)
-            except discord.NotFound:
-                # 如果原訊息無法訪問，發送新訊息
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 編輯原始回應
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -119,7 +147,7 @@ class PersonalLockerView(discord.ui.View):
 
             from .selection_views import SelectSeedView
             view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds)
-            # 更新原來的embed而不是發送新訊息
+            # 編輯原始回應而不是發送新訊息
             await interaction.response.edit_message(embed=embed, view=view)
             add_log("ui", f"[Crop Planting] Seed selection view updated for user {self.user_id}")
 
@@ -183,7 +211,7 @@ class PersonalLockerView(discord.ui.View):
 
         return callback
 
-    async def crop_info_callback(self, interaction: discord.Interaction):
+    async def crop_info_callback_impl(self, interaction: discord.Interaction):
         """作物資訊 - 顯示作物狀態和操作選項"""
         try:
             await interaction.response.defer()
@@ -251,18 +279,14 @@ class PersonalLockerView(discord.ui.View):
             view = CropOperationView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds, plants, growing, harvested)
 
             embed.set_footer(text="💡 使用下方按鈕進行種植、施肥或收割操作")
-            # 嘗試更新原來的embed，如果失敗則發送新訊息
-            try:
-                await interaction.message.edit(embed=embed, view=view)
-            except discord.NotFound:
-                # 如果原訊息無法訪問，發送新訊息
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 編輯原始回應
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
-    async def personal_items_callback(self, interaction: discord.Interaction):
+    async def personal_items_callback_impl(self, interaction: discord.Interaction):
         """個人物品 - 顯示物品庫存"""
         try:
             await interaction.response.defer()
@@ -312,12 +336,8 @@ class PersonalLockerView(discord.ui.View):
             view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
             embed.set_footer(text="點擊下方按鈕返回主選項")
 
-            # 嘗試更新原來的embed，如果失敗則發送新訊息
-            try:
-                await interaction.message.edit(embed=embed, view=view)
-            except discord.NotFound:
-                # 如果原訊息無法訪問，發送新訊息
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 編輯原始回應
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
