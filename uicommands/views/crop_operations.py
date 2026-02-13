@@ -81,7 +81,7 @@ class CropOperationView(discord.ui.View):
             )
 
             # 發送新的embed和view
-            await interaction.followup.send(embed=embed, view=view)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
@@ -123,7 +123,7 @@ class CropOperationView(discord.ui.View):
             )
 
             # 發送新的embed和view
-            await interaction.followup.send(embed=embed, view=view)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
@@ -157,7 +157,7 @@ class CropOperationView(discord.ui.View):
             )
 
             # 發送新的embed和view
-            await interaction.followup.send(embed=embed, view=view)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
