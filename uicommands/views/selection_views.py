@@ -70,7 +70,8 @@ class SelectFertilizerView(discord.ui.View):
                         f"為{self.plant['seed_type']}施肥"
                     )
 
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    # 編輯原始回應顯示結果
+                    await interaction.edit_original_response(embed=embed, view=None)
                 else:
                     await interaction.followup.send("❌ 施肥失敗", ephemeral=True)
 
@@ -149,7 +150,7 @@ class SelectPlantForFertilizerView(discord.ui.View):
     async def select_callback(self, interaction: discord.Interaction):
         """處理植物選擇"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
 
             plant_id = int(interaction.data['values'][0])
             plant = next((p for p in self.plants if p['id'] == plant_id), None)
@@ -175,8 +176,8 @@ class SelectPlantForFertilizerView(discord.ui.View):
                 color=discord.Color.blue()
             )
 
-            # 發送新的embed和view
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 編輯原始回應而不是創建新的
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -304,7 +305,7 @@ class SelectPlantForHarvestView(discord.ui.View):
     async def select_callback(self, interaction: discord.Interaction):
         """處理植物選擇"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
 
             plant_id = int(interaction.data['values'][0])
             plant = next((p for p in self.plants if p['id'] == plant_id), None)
@@ -334,7 +335,8 @@ class SelectPlantForHarvestView(discord.ui.View):
                 # 更新用戶KK幣
                 await update_user_kkcoin(self.user_id, total_value)
 
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                # 編輯原始回應顯示結果
+                await interaction.edit_original_response(embed=embed, view=None)
             else:
                 reason = result.get("reason", "未知原因") if result else "未知原因"
                 await interaction.followup.send(f"❌ 收割失敗：{reason}", ephemeral=True)
