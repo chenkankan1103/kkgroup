@@ -1412,8 +1412,8 @@ class ScamParkEvents(commands.Cog):
                 except Exception as e:
                     print(f"❌ 摧毀植物失敗: {e}")
             
-            # 計算1% KK幣罰款
-            kkcoin_penalty = max(1, int(kkcoin * 0.01))  # 至少罰款1個
+            # 計算5% KK幣罰款
+            kkcoin_penalty = max(1, int(kkcoin * 0.05))  # 至少罰款1個
             
             ai_desc = await self.generate_ai_event_description(
                 "大麻種植摧毀", 
@@ -1444,7 +1444,7 @@ class ScamParkEvents(commands.Cog):
             )
             embed.add_field(
                 name="💰 罰款金額",
-                value=f"**-{kkcoin_penalty} KKCoin** (1%總額)",
+                value=f"**-{kkcoin_penalty} KKCoin** (5%總額)",
                 inline=False
             )
             embed.add_field(
