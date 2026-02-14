@@ -159,7 +159,7 @@ class CropOperationView(discord.ui.View):
                 return
 
             from .selection_views import SelectPlantForHarvestView
-            view = SelectPlantForHarvestView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.harvested)
+            view = SelectPlantForHarvestView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.harvested, self)
             embed = discord.Embed(
                 title="✂️ 選擇要收割的植物",
                 description="選擇一棵成熟的植物進行收割",
