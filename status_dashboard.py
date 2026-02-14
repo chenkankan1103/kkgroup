@@ -99,9 +99,9 @@ async def get_systemd_logs(bot_type: str) -> str:
 
         print(f"[SYSTEMD LOGS] {bot_type} 正在獲取 {service_name} 的日誌...")
 
-        # 構建 journalctl 命令
+        # 構建 journalctl 命令（使用完整路徑）
         cmd = [
-            "journalctl", "-u", service_name,
+            "/usr/bin/journalctl", "-u", service_name,
             "-n", str(lines), "--no-pager", "-o", "short-iso",
             "--since", "2 hours ago"  # 限制時間範圍避免過多數據
         ]
@@ -142,8 +142,8 @@ async def get_systemd_logs(bot_type: str) -> str:
             return f"journalctl 錯誤: {error[:50]}..."
 
     except FileNotFoundError:
-        print(f"[SYSTEMD LOGS ERROR] {bot_type} journalctl 命令未找到")
-        return "journalctl 命令未找到"
+        print(f"[SYSTEMD LOGS ERROR] {bot_type} /usr/bin/journalctl 命令不存在")
+        return "/usr/bin/journalctl 命令不存在，請檢查系統安裝"
     except Exception as e:
         print(f"[SYSTEMD LOGS ERROR] {bot_type} 獲取日誌失敗: {e}")
         return f"獲取日誌失敗: {str(e)[:50]}"
