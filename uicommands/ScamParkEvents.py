@@ -1,6 +1,6 @@
 import discord
-from discord.ext import commands
-from discord import app_commands, tasks
+from discord.ext import commands, tasks
+from discord import app_commands
 import random
 import asyncio
 from typing import Optional
