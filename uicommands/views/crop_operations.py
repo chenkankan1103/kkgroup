@@ -126,7 +126,7 @@ class CropOperationView(discord.ui.View):
                 return
 
             from .selection_views import SelectPlantForFertilizerView
-            view = SelectPlantForFertilizerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.growing)
+            view = SelectPlantForFertilizerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.growing, self)
             embed = discord.Embed(
                 title="💧 選擇要施肥的植物",
                 description="選擇一棵植物進行施肥",
