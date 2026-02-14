@@ -226,19 +226,21 @@ class FertilizerButton(discord.ui.Button):
 
 
 class CannabisPlantsView(discord.ui.View):
-    def __init__(self, bot, plants):
+    def __init__(self, bot, plants, user_id):
         super().__init__(timeout=60)
         self.bot = bot
         self.plants = plants
+        self.user_id = user_id
         
         for plant in plants[:5]:  # 限制 5 個按鈕
-            self.add_item(PlantActionButton(bot, plant))
+            self.add_item(PlantActionButton(bot, plant, user_id))
 
 
 class PlantActionButton(discord.ui.Button):
-    def __init__(self, bot, plant):
+    def __init__(self, bot, plant, user_id):
         self.bot = bot
         self.plant = plant
+        self.user_id = user_id
         seed_config = CANNABIS_SHOP["種子"][plant["seed_type"]]
         
         status = "✅收割" if plant["status"] == "harvested" else f"{plant['progress']:.0f}%"
@@ -253,8 +255,14 @@ class PlantActionButton(discord.ui.Button):
             await interaction.response.defer(ephemeral=True)
             
             if self.plant["status"] == "harvested":
+                # 檢查植物是否屬於當前用戶
+                user_plants = await get_user_plants(interaction.user.id)
+                if not any(p.get('id') == self.plant["id"] for p in user_plants):
+                    await interaction.followup.send("❌ 這不是你的植物！", ephemeral=True)
+                    return
+                
                 # 收割
-                result = await harvest_plant(self.plant["id"])
+                result = await harvest_plant(interaction.user.id, self.plant["id"])
                 if result["success"]:
                     embed = discord.Embed(
                         title="🎉 收割成功！",

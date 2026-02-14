@@ -241,50 +241,53 @@ async def apply_fertilizer(user_id: int, plant_id: int, fertilizer_type: str) ->
         return False
 
 
-async def harvest_plant(plant_id: int) -> dict:
+async def harvest_plant(user_id: int, plant_id: int) -> dict:
     """收割植物"""
     try:
         adapter = get_adapter()
         
-        # 遍歷所有用戶找到該植物
-        from sheet_driven_db import SheetDrivenDB
-        db = SheetDrivenDB()
-        users = db.get_all_users()
+        # 獲取用戶的植物
+        plants = await adapter.get_user_plants(user_id)
         
-        for user in users:
-            plants = await adapter.get_user_plants(user.get('user_id', 0))
-            for plant in plants:
-                if plant.get('id') == plant_id:
-                    user_id = user.get('user_id', 0)
-                    seed_type = plant.get('seed_type')
-                    matured_at = plant.get('matured_at')
-                    
-                    # 檢查是否已經收割過（從列表中移除的植物）
-                    # 注意：這裡我們不檢查狀態，因為get_user_plants會自動更新成熟植物的狀態
-                    
-                    # 檢查是否成熟
-                    now = datetime.now()
-                    matured_dt = datetime.fromisoformat(matured_at)
-                    if now < matured_dt:
-                        remaining_secs = (matured_dt - now).total_seconds()
-                        return {
-                            "success": False, 
-                            "reason": f"植物未成熟，還需 {remaining_secs:.0f} 秒"
-                        }
-                    
-                    # 隨機產出數量
-                    import random
-                    seed_config = CANNABIS_SHOP["種子"][seed_type]
-                    max_yield = seed_config["max_yield"]
-                    yield_amount = random.randint(int(max_yield * 0.5), max_yield)
-                    
-                    # 收割成功 - 從數據庫中移除植物
-                    await adapter.remove_plant(user_id, plant_id)
-                    
-                    # 添加到庫存
-                    await adapter.add_inventory(user_id, "大麻", seed_type, yield_amount)
-                    
-                    return {
+        # 找到指定的植物
+        plant = None
+        for p in plants:
+            if p.get('id') == plant_id:
+                plant = p
+                break
+        
+        if not plant:
+            return {"success": False, "reason": "植物不存在或不屬於你"}
+        
+        seed_type = plant.get('seed_type')
+        matured_at = plant.get('matured_at')
+        
+        # 檢查是否已經收割過（從列表中移除的植物）
+        # 注意：這裡我們不檢查狀態，因為get_user_plants會自動更新成熟植物的狀態
+        
+        # 檢查是否成熟
+        now = datetime.now()
+        matured_dt = datetime.fromisoformat(matured_at)
+        if now < matured_dt:
+            remaining_secs = (matured_dt - now).total_seconds()
+            return {
+                "success": False, 
+                "reason": f"植物未成熟，還需 {remaining_secs:.0f} 秒"
+            }
+        
+        # 隨機產出數量
+        import random
+        seed_config = CANNABIS_SHOP["種子"][seed_type]
+        max_yield = seed_config["max_yield"]
+        yield_amount = random.randint(int(max_yield * 0.5), max_yield)
+        
+        # 收割成功 - 從數據庫中移除植物
+        await adapter.remove_plant(user_id, plant_id)
+        
+        # 添加到庫存
+        await adapter.add_inventory(user_id, "大麻", seed_type, yield_amount)
+        
+        return {
                         "success": True,
                         "user_id": user_id,
                         "seed_type": seed_type,

@@ -22,16 +22,17 @@ class SelectFertilizerView(discord.ui.View):
         self.plant = plant
         self.crop_operation_view = crop_operation_view
 
-        for fert_name in fertilizers.keys():
-            config = CANNABIS_SHOP["肥料"][fert_name]
-            button = Button(
-                label=f"用 {fert_name}",
-                style=discord.ButtonStyle.primary,
-                emoji=config["emoji"],
-                custom_id=f"apply_fert_{fert_name.replace(' ', '_')}"
-            )
-            button.callback = self.make_apply_callback(fert_name)
-            self.add_item(button)
+        for fert_name, quantity in fertilizers.items():
+            if quantity > 0:  # 只為有數量的肥料創建按鈕
+                config = CANNABIS_SHOP["肥料"][fert_name]
+                button = Button(
+                    label=f"用 {fert_name} ({quantity}個)",
+                    style=discord.ButtonStyle.primary,
+                    emoji=config["emoji"],
+                    custom_id=f"apply_fert_{fert_name.replace(' ', '_')}"
+                )
+                button.callback = self.make_apply_callback(fert_name)
+                self.add_item(button)
 
         # 添加返回按鈕
         back_button = discord.ui.Button(
@@ -259,7 +260,7 @@ class SelectPlantForHarvestView(discord.ui.View):
                 return
 
             # 收割植物
-            result = await harvest_plant(plant_id)
+            result = await harvest_plant(self.user_id, plant_id)
 
             if result and result.get("success"):
                 config = CANNABIS_SHOP["種子"][plant["seed_type"]]
