@@ -1,13 +1,13 @@
 """大麻商品配置與種植參數"""
 
-# 大麻商品配置（種子與肥料）
+# 大麻商品配置（種子）
 CANNABIS_SHOP = {
     "種子": {
         "常規種": {
             "name": "常規種子",
             "price": 100,
             "emoji": "🌱",
-            "growth_time": 3600,  # 1小時
+            "growth_time": 18000,  # 5小時
             "max_yield": 5,
             "description": "標準大麻種子，成長快、產量穩定"
         },
@@ -15,7 +15,7 @@ CANNABIS_SHOP = {
             "name": "優質種子",
             "price": 200,
             "emoji": "🌿",
-            "growth_time": 7200,  # 2小時
+            "growth_time": 36000,  # 10小時
             "max_yield": 10,
             "description": "優質大麻種子，成長較慢但產量高"
         },
@@ -23,32 +23,9 @@ CANNABIS_SHOP = {
             "name": "黃金種子",
             "price": 500,
             "emoji": "👑",
-            "growth_time": 10800,  # 3小時
+            "growth_time": 54000,  # 15小時
             "max_yield": 20,
             "description": "稀有黃金種子，回報豐厚"
-        }
-    },
-    "肥料": {
-        "基礎肥料": {
-            "name": "基礎肥料",
-            "price": 50,
-            "emoji": "🧂",
-            "growth_boost": 0.1,  # 加速 10%
-            "description": "基礎肥料，略微加速生長"
-        },
-        "進階肥料": {
-            "name": "進階肥料",
-            "price": 100,
-            "emoji": "💊",
-            "growth_boost": 0.2,  # 加速 20%
-            "description": "進階肥料，顯著加速生長"
-        },
-        "超級肥料": {
-            "name": "超級肥料",
-            "price": 300,
-            "emoji": "💉",
-            "growth_boost": 0.5,  # 加速 50%
-            "description": "超級肥料，大幅加速生長"
         }
     }
 }

@@ -10,7 +10,7 @@ import aiosqlite
 from collections import deque
 from status_dashboard import add_log
 from shop_commands.merchant.cannabis_farming import (
-    get_user_plants, plant_cannabis, apply_fertilizer, harvest_plant, get_inventory, remove_inventory, add_inventory
+    get_user_plants, plant_cannabis, harvest_plant, get_inventory, remove_inventory, add_inventory
 )
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 from shop_commands.merchant.database import update_user_kkcoin, get_user_kkcoin
@@ -18,7 +18,7 @@ from shop_commands.merchant.database import update_user_kkcoin, get_user_kkcoin
 # 导入拆分的View类
 from .views.personal_locker import PersonalLockerView, WeeklySummaryCannabisPanelView
 from .views.crop_operations import CropOperationView, CropPlantingView, SelectSeedView
-from .views.selection_views import SelectPlantForFertilizerView, SelectPlantForHarvestView, SelectFertilizerView
+from .views.selection_views import SelectPlantForHarvestView
 
 # 配置
 DB_PATH = './shop_commands/merchant/cannabis.db'
@@ -465,8 +465,7 @@ class PersonalLockerCog(commands.Cog):
                     field_value = (
                         f"種子：{seed_config['emoji']} {plant['seed_type']}\n"
                         f"進度：{progress_bar}\n"
-                        f"狀態：{status_text}\n"
-                        f"施肥：{plant['fertilizer_applied']} 次"
+                        f"狀態：{status_text}"
                     )
 
                     embed.add_field(

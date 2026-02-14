@@ -4,7 +4,7 @@ from datetime import datetime
 import traceback
 
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, apply_fertilizer, harvest_plant
+from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
 from shop_commands.merchant.database import update_user_kkcoin
 from status_dashboard import add_log
 
@@ -260,7 +260,7 @@ class PersonalLockerView(discord.ui.View):
                         time_left = f"{hours}h {mins}m"
 
                     progress_bar = "█" * int(progress / 10) + "░" * (10 - int(progress / 10))
-                    value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}\n施肥：{plant['fertilizer_applied']}次"
+                    value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}"
                     embed.add_field(name=f"#{idx} {config['emoji']} {plant['seed_type']}", value=value, inline=True)
 
             # 顯示已成熟的植物
@@ -390,46 +390,6 @@ class WeeklySummaryCannabisPanelView(discord.ui.View):
         self.bot = bot
         self.user_id = user_id
 
-    @discord.ui.button(label="施肥加速", style=discord.ButtonStyle.primary, emoji="💧", custom_id="weekly_fertilize")
-    async def fertilize_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """施肥加速"""
-        try:
-            await interaction.response.defer(ephemeral=True)
-
-            plants = await get_user_plants(self.user_id)
-            growing_plants = [p for p in plants if p["status"] != "harvested"]
-
-            if not growing_plants:
-                await interaction.followup.send("❌ 沒有成長中的植物！", ephemeral=True)
-                return
-
-            inventory = await get_inventory(self.user_id)
-            if not inventory.get("肥料"):
-                await interaction.followup.send("❌ 你沒有肥料！", ephemeral=True)
-                return
-
-            # 顯示植物列表
-            embed = discord.Embed(
-                title="💧 選擇要施肥的植物",
-                color=discord.Color.blue()
-            )
-
-            for idx, plant in enumerate(growing_plants[:5], 1):
-                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-                embed.add_field(
-                    name=f"#{idx} {config['emoji']} {plant['seed_type']}",
-                    value=f"已施肥：{plant['fertilizer_applied']}次",
-                    inline=False
-                )
-
-            from .selection_views import SelectPlantForFertilizerView
-            view = SelectPlantForFertilizerView(self.bot, self.user_id, growing_plants)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-
     @discord.ui.button(label="收割成熟", style=discord.ButtonStyle.success, emoji="✂️", custom_id="weekly_harvest")
     async def harvest_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """收割成熟植物"""
@@ -519,8 +479,7 @@ class WeeklySummaryCannabisPanelView(discord.ui.View):
 
                 value = (
                     f"🌾 種類：{plant['seed_type']}\n"
-                    f"📊 進度：{progress_text}\n"
-                    f"💧 施肥：{plant['fertilizer_applied']}次"
+                    f"📊 進度：{progress_text}"
                 )
                 embed.add_field(name=f"#{idx} {seed_config['emoji']}", value=value, inline=False)
 
