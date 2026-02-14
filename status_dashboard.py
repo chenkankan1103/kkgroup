@@ -27,6 +27,13 @@ load_dotenv()
 # 台灣時區（UTC+8）
 TAIWAN_TZ = timezone(timedelta(hours=8))
 
+# Systemd 日誌配置
+SYSTEMD_LOG_CONFIG = {
+    "bot": {"service": "bot.service", "lines": 3, "enabled": True},
+    "shopbot": {"service": "shopbot.service", "lines": 3, "enabled": True},
+    "uibot": {"service": "uibot.service", "lines": 3, "enabled": True}
+}
+
 def get_taiwan_time():
     """獲取台灣時間"""
     return datetime.now(TAIWAN_TZ)
@@ -80,6 +87,59 @@ logs_storage = {
 # 日誌持久化文件
 logs_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dashboard_logs.json')
 
+async def get_systemd_logs(bot_type: str) -> str:
+    """從 systemd journal 獲取指定機器人的日誌"""
+    config = SYSTEMD_LOG_CONFIG.get(bot_type)
+    if not config or not config["enabled"]:
+        return "Systemd 日誌已停用"
+    
+    try:
+        service_name = config["service"]
+        lines = config["lines"]
+        
+        # 構建 journalctl 命令
+        cmd = [
+            "journalctl", "-u", service_name,
+            "-n", str(lines), "--no-pager", "-o", "short-iso",
+            "--since", "2 hours ago"  # 限制時間範圍避免過多數據
+        ]
+        
+        # 異步執行命令
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            logs = stdout.decode('utf-8', errors='ignore').strip()
+            if logs:
+                # 格式化日誌
+                formatted_logs = []
+                for line in logs.split('\n'):
+                    if line.strip():
+                        # 提取時間和訊息，簡化顯示
+                        parts = line.split(' ', 2)
+                        if len(parts) >= 2:
+                            # 時間格式：只保留 HH:MM:SS
+                            timestamp_part = parts[0].split('T')[-1] if 'T' in parts[0] else parts[0]
+                            timestamp = timestamp_part[:8] if len(timestamp_part) > 8 else timestamp_part
+                            message = parts[2] if len(parts) > 2 else parts[1]
+                            formatted_logs.append(f"[{timestamp}] {message}")
+                
+                return '\n'.join(formatted_logs)
+            else:
+                return "無 systemd 日誌"
+        else:
+            error = stderr.decode('utf-8', errors='ignore').strip()
+            return f"journalctl 錯誤: {error[:50]}..."
+            
+    except FileNotFoundError:
+        return "journalctl 命令未找到"
+    except Exception as e:
+        return f"獲取日誌失敗: {str(e)[:50]}"
 
 def check_environment() -> Dict[str, any]:
     """
@@ -174,7 +234,6 @@ def check_environment() -> Dict[str, any]:
     
     return diagnostics
 
-
 def load_logs():
     """從文件加載日誌 - 改進的錯誤處理"""
     try:
@@ -206,7 +265,6 @@ def load_logs():
     except Exception as e:
         print(f"[LOGS ERROR] 未預期的錯誤加載日誌: {e}")
         traceback.print_exc()
-
 
 def save_logs():
     """保存日誌到文件 - 改進的錯誤處理"""
@@ -272,7 +330,6 @@ current_bot_type = None
 # 每個機器人的獨立更新任務存儲
 update_tasks = {}
 
-
 def create_update_task(bot_type: str):
     """為指定機器人創建獨立的更新任務"""
 
@@ -325,28 +382,23 @@ def create_update_task(bot_type: str):
 
     return task
 
-
 def register_bot_instance(bot_type: str, bot_instance):
     """註冊機器人實例"""
     bot_instances[bot_type] = bot_instance
     print(f"[DEBUG] {bot_type} 機器人實例已註冊")
 
-
 def get_bot_instance(bot_type: str):
     """獲取機器人實例"""
     return bot_instances.get(bot_type)
-
 
 def get_message_id(bot_type: str, message_type: str) -> Optional[int]:
     """獲取指定機器人的訊息 ID"""
     return message_ids[bot_type].get(message_type)
 
-
 def save_message_id(bot_type: str, message_type: str, message_id: str):
     """保存指定機器人的訊息 ID"""
     message_ids[bot_type][message_type] = int(message_id)
     save_message_ids(bot_type)
-
 
 async def update_dashboard_logs(bot, bot_type: str):
     """更新指定機器人的日誌"""
@@ -358,8 +410,24 @@ async def update_dashboard_logs(bot, bot_type: str):
             print(f"[UPDATE LOGS ERROR] {bot_type} 機器人實例為空")
             return
 
-        # 獲取最新的日誌條目
-        logs_text = get_logs_text(bot_type)
+        # 獲取應用程序內部日誌
+        internal_logs = get_logs_text(bot_type)
+
+        # 獲取 systemd 日誌
+        systemd_logs = await get_systemd_logs(bot_type)
+
+        # 合併日誌顯示
+        if systemd_logs and systemd_logs not in ["無 systemd 日誌", "Systemd 日誌已停用"]:
+            combined_logs = f"**Systemd 日誌:**\n{systemd_logs}\n\n**應用日誌:**\n{internal_logs}"
+        else:
+            combined_logs = f"**應用日誌:**\n{internal_logs}"
+
+        logs_text = combined_logs
+
+        # 確保總長度不超過 Discord embed 限制 (4000 字符)
+        if len(logs_text) > 4000:
+            logs_text = logs_text[:3997] + "..."
+
         print(f"[UPDATE LOGS] {bot_type} 日誌內容長度: {len(logs_text)} 字符")
         print(f"[UPDATE LOGS] {bot_type} 日誌內容預覽: {logs_text[:100] if logs_text else '空'}")
 
@@ -444,7 +512,6 @@ async def update_dashboard_logs(bot, bot_type: str):
     except Exception as e:
         print(f"[UPDATE LOGS ERROR] {bot_type} 更新日誌時發生未預期錯誤: {e}")
         traceback.print_exc()
-
 
 class DashboardButtons(discord.ui.View):
     """控制面板按鈕"""
@@ -553,13 +620,11 @@ ID: {self.bot.user.id}
         except Exception as e:
             await interaction.followup.send(f"❌ 啟動日誌失敗: {e}", ephemeral=True)
 
-
 def set_bot_type(bot_type: str):
     """設置當前機器人類型"""
     global current_bot_type
     current_bot_type = bot_type
     print(f"📋 儀表板已設置為: {bot_type}")
-
 
 def add_log(bot_type: str, message: str):
     """添加日誌條目"""
@@ -573,7 +638,6 @@ def add_log(bot_type: str, message: str):
     else:
         print(f"[ERROR] bot_type '{bot_type}' 不存在於logs_storage")
 
-
 def get_logs_text(bot_type: str) -> str:
     """獲取格式化的日誌文本"""
     if bot_type not in logs_storage:
@@ -584,7 +648,6 @@ def get_logs_text(bot_type: str) -> str:
         return "無日誌"
     
     return "\n".join(logs[::-1])  # 倒序顯示（最新在最上面）
-
 
 async def create_dashboard_embed(bot_type: str) -> discord.Embed:
     """創建控制面板 Embed"""
@@ -617,7 +680,6 @@ async def create_dashboard_embed(bot_type: str) -> discord.Embed:
     embed.set_footer(text="")
     return embed
 
-
 async def create_logs_embed(bot_type: str) -> discord.Embed:
     """創建日誌 Embed"""
     config = BOT_CONFIG.get(bot_type, {})
@@ -632,7 +694,6 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     
     embed.set_footer(text="更新頻率: 60秒")
     return embed
-
 
 async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     """
@@ -803,11 +864,6 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         traceback.print_exc()
         return False
 
-
-
-
-
-
 def save_message_ids(bot_type: str):
     """將 message_id 保存到 .env"""
     env_path = ".env"
@@ -821,7 +877,6 @@ def save_message_ids(bot_type: str):
     if logs_id:
         env_key = f"DASHBOARD_{bot_type.upper()}_LOGS"
         set_key(env_path, env_key, str(logs_id))
-
 
 def load_message_ids(bot_type: str):
     """從 .env 加載 message_id，如果沒有則使用硬編碼的回退值"""
@@ -853,7 +908,6 @@ def load_message_ids(bot_type: str):
         else:
             message_ids[bot_type]["logs"] = None
             print(f"[LOAD IDS] {bot_type} 日誌 ID 未設置")
-
 
 async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> discord.Embed:
     """創建控制面板 Embed"""
@@ -911,9 +965,6 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
     # 移除 footer 的時間，只保留空 footer
     embed.set_footer(text="")
     return embed
-
-
-
 
 async def update_dashboard(bot: discord.Client, bot_type: str = None):
     """
