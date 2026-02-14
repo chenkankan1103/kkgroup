@@ -127,7 +127,7 @@ class PersonalLockerCog(commands.Cog):
             # 檢查按鈕是否在初始化中正確添加
             try:
                 # 創建一個測試實例來檢查按鈕
-                test_view = PersonalLockerView(None, None, 123, 456, 789, [])
+                test_view = PersonalLockerView(None, None, 123, 456, 789, [], None)
                 crop_buttons = [item for item in test_view.children if getattr(item, 'custom_id', None) == 'crop_planting']
                 if not crop_buttons:
                     print(f"⚠️  [Button Health Check] Crop planting button not found in view")
@@ -382,7 +382,7 @@ class PersonalLockerCog(commands.Cog):
 
                 # 創建一個測試視圖來比較按鈕數量
                 plants = await get_user_plants(user_id)
-                test_view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants)
+                test_view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants, None)
                 expected_button_count = len(test_view.children)
 
                 # 如果按鈕數量不匹配，需要更新
@@ -508,7 +508,7 @@ class PersonalLockerCog(commands.Cog):
                 )
 
             # 創建按鈕視圖
-            view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants)
+            view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants, self)
 
             # 發送更新後的消息
             await thread.send(embed=embed, view=view)
