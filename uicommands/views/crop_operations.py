@@ -4,7 +4,7 @@ import traceback
 from datetime import datetime
 
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, apply_fertilizer, harvest_plant
+from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
 from shop_commands.merchant.database import update_user_kkcoin
 from status_dashboard import add_log
 
@@ -33,16 +33,6 @@ class CropOperationView(discord.ui.View):
             )
             plant_button.callback = self.crop_planting_callback
             self.add_item(plant_button)
-
-        # 添加施肥按鈕（如果有成長中的植物且有肥料）
-        if growing:
-            fertilizer_button = discord.ui.Button(
-                label="💧 施肥",
-                style=discord.ButtonStyle.primary,
-                custom_id="crop_fertilize"
-            )
-            fertilizer_button.callback = self.crop_fertilize_callback
-            self.add_item(fertilizer_button)
 
         # 添加收割按鈕（如果有成熟的植物）
         if harvested:
@@ -89,48 +79,6 @@ class CropOperationView(discord.ui.View):
                 title="🌱 選擇要種植的種子",
                 description="從下方選單選擇一種子進行種植",
                 color=discord.Color.green()
-            )
-
-            # 編輯原始回應而不是創建新的
-            await interaction.edit_original_response(embed=embed, view=view)
-
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
-
-    async def crop_fertilize_callback(self, interaction: discord.Interaction):
-        """施肥作物"""
-        try:
-            await interaction.response.defer()
-
-            # 檢查是否有肥料
-            inventory = await get_inventory(self.user_id)
-            fertilizers = inventory.get("肥料", {})
-
-            if not fertilizers:
-                await interaction.followup.send("❌ 你沒有任何肥料！", ephemeral=True)
-                return
-
-            # 創建植物選擇下拉選單
-            options = []
-            for plant in self.growing:
-                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-                options.append(discord.SelectOption(
-                    label=f"{config['emoji']} {plant['seed_type']}",
-                    description=f"施肥次數: {plant['fertilizer_applied']}",
-                    value=str(plant['id'])
-                ))
-
-            if not options:
-                await interaction.followup.send("❌ 沒有成長中的植物！", ephemeral=True)
-                return
-
-            from .selection_views import SelectPlantForFertilizerView
-            view = SelectPlantForFertilizerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.growing, self)
-            embed = discord.Embed(
-                title="💧 選擇要施肥的植物",
-                description="選擇一棵植物進行施肥",
-                color=discord.Color.blue()
             )
 
             # 編輯原始回應而不是創建新的
@@ -457,7 +405,7 @@ class SelectSeedView(discord.ui.View):
                 time_left = f"{hours}h {mins}m"
                 
                 progress_bar = "█" * int(progress / 10) + "░" * (10 - int(progress / 10))
-                value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}\n施肥：{plant['fertilizer_applied']}次"
+                value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}"
                 embed.add_field(name=f"#{idx} {config['emoji']} {plant['seed_type']}", value=value, inline=True)
         
         # 顯示已成熟的植物

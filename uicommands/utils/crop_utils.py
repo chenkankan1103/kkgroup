@@ -64,8 +64,7 @@ def create_plant_embed(plant, idx=None):
     name = f"#{idx} {seed_config['emoji']}" if idx else f"{seed_config['emoji']}"
     value = (
         f"🌾 種類：{plant['seed_type']}\n"
-        f"📊 進度：{progress_text}\n"
-        f"💧 施肥：{plant['fertilizer_applied']}次"
+        f"📊 進度：{progress_text}"
     )
 
     return {"name": name, "value": value, "inline": False}

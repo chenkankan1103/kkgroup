@@ -4,7 +4,7 @@ import traceback
 from datetime import datetime
 
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, apply_fertilizer, harvest_plant
+from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
 from shop_commands.merchant.database import update_user_kkcoin
 from status_dashboard import add_log
 
@@ -345,7 +345,7 @@ class SelectPlantForHarvestView(discord.ui.View):
                         time_left = f"{hours}h {mins}m"
 
                     progress_bar = "█" * int(progress / 10) + "░" * (10 - int(progress / 10))
-                    value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}\n施肥：{plant['fertilizer_applied']}次"
+                    value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}"
                     embed.add_field(name=f"#{idx} {config['emoji']} {plant['seed_type']}", value=value, inline=True)
 
             # 顯示已成熟的植物
@@ -509,7 +509,7 @@ class SelectSeedView(discord.ui.View):
                         time_left = f"{hours}h {mins}m"
 
                     progress_bar = "█" * int(progress / 10) + "░" * (10 - int(progress / 10))
-                    value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}\n施肥：{plant['fertilizer_applied']}次"
+                    value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}"
                     embed.add_field(name=f"#{idx} {config['emoji']} {plant['seed_type']}", value=value, inline=True)
 
             # 顯示已成熟的植物

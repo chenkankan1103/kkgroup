@@ -5,7 +5,7 @@ from discord.ext import commands, tasks
 import traceback
 from datetime import datetime, timedelta
 from .merchant.cannabis_farming import (
-    init_cannabis_tables, plant_cannabis, get_user_plants, apply_fertilizer, 
+    init_cannabis_tables, plant_cannabis, get_user_plants, 
     harvest_plant, get_inventory, remove_inventory, add_inventory
 )
 from .merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
@@ -170,61 +170,6 @@ class SeedButton(discord.ui.Button):
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
-class FertilizerSelectView(discord.ui.View):
-    def __init__(self, bot, user_id):
-        super().__init__(timeout=60)
-        self.bot = bot
-        self.user_id = user_id
-        
-        for fert_name in CANNABIS_SHOP["肥料"].keys():
-            self.add_item(FertilizerButton(bot, user_id, fert_name))
-
-
-class FertilizerButton(discord.ui.Button):
-    def __init__(self, bot, user_id, fert_name):
-        self.bot = bot
-        self.user_id = user_id
-        self.fert_name = fert_name
-        fert_config = CANNABIS_SHOP["肥料"][fert_name]
-        super().__init__(
-            label=fert_name,
-            style=discord.ButtonStyle.primary,
-            emoji=fert_config["emoji"]
-        )
-    
-    async def callback(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            fert_config = CANNABIS_SHOP["肥料"][self.fert_name]
-            price = fert_config["price"]
-            
-            # 檢查 KKcoin
-            kkcoin = await get_user_kkcoin(self.user_id)
-            if kkcoin < price:
-                await interaction.followup.send(
-                    f"❌ KKcoin 不足！需要 {price}，你有 {kkcoin}",
-                    ephemeral=True
-                )
-                return
-            
-            # 扣費並添加到庫存
-            await update_user_kkcoin(self.user_id, -price)
-            await add_inventory(self.user_id, "肥料", self.fert_name, 1)
-            
-            embed = discord.Embed(
-                title="💧 購買成功！",
-                description=f"{fert_config['emoji']} {self.fert_name} x1 已添加到庫存",
-                color=discord.Color.blue()
-            )
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
-
-
 class CannabisPlantsView(discord.ui.View):
     def __init__(self, bot, plants, user_id):
         super().__init__(timeout=60)
@@ -289,58 +234,6 @@ class PlantActionButton(discord.ui.Button):
                 view = ApplyFertilizerView(self.bot, self.plant["id"], fertilizers)
                 await interaction.followup.send("選擇肥料施用：", view=view, ephemeral=True)
                 return
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
-
-
-class ApplyFertilizerView(discord.ui.View):
-    def __init__(self, bot, plant_id, fertilizers):
-        super().__init__(timeout=60)
-        self.bot = bot
-        self.plant_id = plant_id
-        
-        for fert_name in fertilizers.keys():
-            self.add_item(ApplyFertilizerButton(bot, plant_id, fert_name))
-
-
-class ApplyFertilizerButton(discord.ui.Button):
-    def __init__(self, bot, plant_id, fert_name):
-        self.bot = bot
-        self.plant_id = plant_id
-        self.fert_name = fert_name
-        fert_config = CANNABIS_SHOP["肥料"][fert_name]
-        super().__init__(
-            label=fert_name,
-            style=discord.ButtonStyle.primary,
-            emoji=fert_config["emoji"]
-        )
-    
-    async def callback(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            # 施肥
-            success = await apply_fertilizer(self.plant_id, self.fert_name)
-            
-            if success:
-                # 移除肥料
-                await remove_inventory(interaction.user.id, "肥料", self.fert_name, 1)
-                
-                embed = discord.Embed(
-                    title="💧 施肥成功！",
-                    description=f"已使用 {self.fert_name}，加速了植物成長",
-                    color=discord.Color.blue()
-                )
-            else:
-                embed = discord.Embed(
-                    title="❌ 施肥失敗",
-                    description="植物狀態不適合施肥",
-                    color=discord.Color.red()
-                )
             
             await interaction.followup.send(embed=embed, ephemeral=True)
             
