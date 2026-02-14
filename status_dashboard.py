@@ -122,31 +122,17 @@ async def get_systemd_logs(bot_type: str) -> str:
                 formatted_logs = []
                 for line in logs.split('\n'):
                     if line.strip():
-                        # 解析 journalctl 的 ISO 時間戳並轉換為台灣時間
+                        # 保持 UTC 時間格式，與 GCP 系統時間一致
                         parts = line.split(' ', 2)
                         if len(parts) >= 2:
                             timestamp_str = parts[0]  # ISO 格式時間戳，如 "2026-02-14T07:40:17+0000"
                             message = parts[2] if len(parts) > 2 else parts[1]
                             
-                            # 轉換時間戳為台灣時間
-                            try:
-                                # 解析 ISO 格式時間戳 (通常是 UTC)
-                                if 'T' in timestamp_str:
-                                    # 移除時區信息並解析為 UTC 時間
-                                    dt_utc = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00').replace('+0000', '+00:00'))
-                                    if dt_utc.tzinfo is None:
-                                        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
-                                    
-                                    # 轉換為台灣時間
-                                    dt_taiwan = dt_utc.astimezone(TAIWAN_TZ)
-                                    timestamp = dt_taiwan.strftime("%H:%M:%S")
-                                else:
-                                    # 如果不是 ISO 格式，保持原樣
-                                    timestamp = timestamp_str[:8] if len(timestamp_str) > 8 else timestamp_str
-                            except (ValueError, AttributeError):
-                                # 如果解析失敗，使用原始時間戳
-                                timestamp_part = timestamp_str.split('T')[-1] if 'T' in timestamp_str else timestamp_str
-                                timestamp = timestamp_part[:8] if len(timestamp_part) > 8 else timestamp_part
+                            # 提取時間部分，保持 UTC 格式
+                            if 'T' in timestamp_str:
+                                timestamp = timestamp_str.split('T')[1][:8]  # 提取 HH:MM:SS 部分
+                            else:
+                                timestamp = timestamp_str[:8] if len(timestamp_str) > 8 else timestamp_str
                             
                             formatted_logs.append(f"[{timestamp}] {message}")
 
@@ -655,7 +641,8 @@ def set_bot_type(bot_type: str):
 def add_log(bot_type: str, message: str):
     """添加日誌條目"""
     if bot_type in logs_storage:
-        timestamp = get_taiwan_time().strftime("%H:%M:%S")
+        # 使用 UTC 時間，與 GCP 系統時間一致
+        timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
         log_entry = f"[{timestamp}] {message}"
         logs_storage[bot_type].append(log_entry)
         print(f"[LOG-{bot_type}] {message}")  # 確保打印
