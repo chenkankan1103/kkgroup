@@ -15,7 +15,7 @@ import sqlite3
 import subprocess
 import asyncio
 import traceback
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time
 from collections import deque
 from typing import Optional, Dict
 from dotenv import load_dotenv, set_key
@@ -122,13 +122,32 @@ async def get_systemd_logs(bot_type: str) -> str:
                 formatted_logs = []
                 for line in logs.split('\n'):
                     if line.strip():
-                        # 提取時間和訊息，簡化顯示
+                        # 解析 journalctl 的 ISO 時間戳並轉換為台灣時間
                         parts = line.split(' ', 2)
                         if len(parts) >= 2:
-                            # 時間格式：只保留 HH:MM:SS
-                            timestamp_part = parts[0].split('T')[-1] if 'T' in parts[0] else parts[0]
-                            timestamp = timestamp_part[:8] if len(timestamp_part) > 8 else timestamp_part
+                            timestamp_str = parts[0]  # ISO 格式時間戳，如 "2026-02-14T07:40:17+0000"
                             message = parts[2] if len(parts) > 2 else parts[1]
+                            
+                            # 轉換時間戳為台灣時間
+                            try:
+                                # 解析 ISO 格式時間戳 (通常是 UTC)
+                                if 'T' in timestamp_str:
+                                    # 移除時區信息並解析為 UTC 時間
+                                    dt_utc = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00').replace('+0000', '+00:00'))
+                                    if dt_utc.tzinfo is None:
+                                        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+                                    
+                                    # 轉換為台灣時間
+                                    dt_taiwan = dt_utc.astimezone(TAIWAN_TZ)
+                                    timestamp = dt_taiwan.strftime("%H:%M:%S")
+                                else:
+                                    # 如果不是 ISO 格式，保持原樣
+                                    timestamp = timestamp_str[:8] if len(timestamp_str) > 8 else timestamp_str
+                            except (ValueError, AttributeError):
+                                # 如果解析失敗，使用原始時間戳
+                                timestamp_part = timestamp_str.split('T')[-1] if 'T' in timestamp_str else timestamp_str
+                                timestamp = timestamp_part[:8] if len(timestamp_part) > 8 else timestamp_part
+                            
                             formatted_logs.append(f"[{timestamp}] {message}")
 
                 print(f"[SYSTEMD LOGS] {bot_type} 成功獲取 {len(formatted_logs)} 條 {service_name} 日誌")
