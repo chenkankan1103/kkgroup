@@ -29,9 +29,9 @@ TAIWAN_TZ = timezone(timedelta(hours=8))
 
 # Systemd 日誌配置
 SYSTEMD_LOG_CONFIG = {
-    "bot": {"service": "bot.service", "lines": 3, "enabled": True},
-    "shopbot": {"service": "shopbot.service", "lines": 3, "enabled": True},
-    "uibot": {"service": "uibot.service", "lines": 3, "enabled": True}
+    "bot": {"service": "bot.service", "lines": 5, "enabled": True},
+    "shopbot": {"service": "shopbot.service", "lines": 5, "enabled": True},
+    "uibot": {"service": "uibot.service", "lines": 5, "enabled": True}
 }
 
 def get_taiwan_time():
@@ -91,28 +91,30 @@ async def get_systemd_logs(bot_type: str) -> str:
     """從 systemd journal 獲取指定機器人的日誌"""
     config = SYSTEMD_LOG_CONFIG.get(bot_type)
     if not config or not config["enabled"]:
-        return "Systemd 日誌已停用"
-    
+        return f"Systemd 日誌已停用 ({bot_type})"
+
     try:
         service_name = config["service"]
         lines = config["lines"]
-        
+
+        print(f"[SYSTEMD LOGS] {bot_type} 正在獲取 {service_name} 的日誌...")
+
         # 構建 journalctl 命令
         cmd = [
             "journalctl", "-u", service_name,
             "-n", str(lines), "--no-pager", "-o", "short-iso",
             "--since", "2 hours ago"  # 限制時間範圍避免過多數據
         ]
-        
+
         # 異步執行命令
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        
+
         stdout, stderr = await process.communicate()
-        
+
         if process.returncode == 0:
             logs = stdout.decode('utf-8', errors='ignore').strip()
             if logs:
@@ -128,17 +130,22 @@ async def get_systemd_logs(bot_type: str) -> str:
                             timestamp = timestamp_part[:8] if len(timestamp_part) > 8 else timestamp_part
                             message = parts[2] if len(parts) > 2 else parts[1]
                             formatted_logs.append(f"[{timestamp}] {message}")
-                
+
+                print(f"[SYSTEMD LOGS] {bot_type} 成功獲取 {len(formatted_logs)} 條 {service_name} 日誌")
                 return '\n'.join(formatted_logs)
             else:
-                return "無 systemd 日誌"
+                print(f"[SYSTEMD LOGS] {bot_type} 沒有找到 {service_name} 的日誌")
+                return f"無 {service_name} 日誌"
         else:
             error = stderr.decode('utf-8', errors='ignore').strip()
+            print(f"[SYSTEMD LOGS ERROR] {bot_type} 獲取 {service_name} 日誌失敗: {error}")
             return f"journalctl 錯誤: {error[:50]}..."
-            
+
     except FileNotFoundError:
+        print(f"[SYSTEMD LOGS ERROR] {bot_type} journalctl 命令未找到")
         return "journalctl 命令未找到"
     except Exception as e:
+        print(f"[SYSTEMD LOGS ERROR] {bot_type} 獲取日誌失敗: {e}")
         return f"獲取日誌失敗: {str(e)[:50]}"
 
 def check_environment() -> Dict[str, any]:
