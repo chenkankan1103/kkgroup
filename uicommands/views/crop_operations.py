@@ -1,6 +1,7 @@
 import discord
 from discord.ui import Button
 import traceback
+from datetime import datetime
 
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, apply_fertilizer, harvest_plant
@@ -403,3 +404,76 @@ class SelectSeedView(discord.ui.View):
             await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
 
         return callback
+
+    @classmethod
+    async def create_crop_info_embed_and_view(cls, bot, cog, user_id, guild_id, channel_id):
+        """創建作物資訊embed和view"""
+        # 重新獲取作物數據
+        seeds = await get_inventory(user_id)
+        seeds = seeds.get("種子", {}) if seeds else {}
+        
+        plants_data = await get_user_plants(user_id)
+        plants = plants_data.get("plants", [])
+        growing = [p for p in plants if p.get("status") == "growing"]
+        harvested = [p for p in plants if p.get("status") == "harvested"]
+        
+        # 創建作物資訊embed
+        embed = discord.Embed(
+            title="🌱 作物管理",
+            description="管理你的農場作物",
+            color=discord.Color.green()
+        )
+        
+        # 顯示種子庫存
+        if seeds:
+            seed_list = []
+            for seed_name, qty in seeds.items():
+                if qty > 0:
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    seed_list.append(f"{config['emoji']} {seed_name}: {qty}")
+            if seed_list:
+                embed.add_field(name="🌱 種子庫存", value="\n".join(seed_list), inline=False)
+        
+        # 顯示成長中的植物
+        if growing:
+            embed.add_field(name="🌿 成長中的植物", value="━" * 25, inline=False)
+            for idx, plant in enumerate(growing, 1):
+                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                planted_time = plant.get("planted_at", 0)
+                matured_time = plant.get("matured_at", 0)
+                
+                if isinstance(planted_time, str):
+                    planted_time = datetime.fromisoformat(planted_time).timestamp()
+                if isinstance(matured_time, str):
+                    matured_time = datetime.fromisoformat(matured_time).timestamp()
+                
+                now = datetime.now().timestamp()
+                elapsed = now - planted_time
+                total = matured_time - planted_time
+                progress = min(100, (elapsed / total * 100)) if total > 0 else 0
+                remaining = max(0, matured_time - now)
+                hours = int(remaining // 3600)
+                mins = int((remaining % 3600) // 60)
+                time_left = f"{hours}h {mins}m"
+                
+                progress_bar = "█" * int(progress / 10) + "░" * (10 - int(progress / 10))
+                value = f"進度：{progress_bar} {progress:.0f}%\n時間：{time_left}\n施肥：{plant['fertilizer_applied']}次"
+                embed.add_field(name=f"#{idx} {config['emoji']} {plant['seed_type']}", value=value, inline=True)
+        
+        # 顯示已成熟的植物
+        if harvested:
+            embed.add_field(name="✅ 已成熟的植物", value="━" * 25, inline=False)
+            for idx, plant in enumerate(harvested, 1):
+                config = CANNABIS_SHOP["種子"][plant["seed_type"]]
+                embed.add_field(
+                    name=f"#{idx} {config['emoji']} {plant['seed_type']}",
+                    value="準備收割！✂️",
+                    inline=True
+                )
+        
+        # 創建CropOperationView
+        view = cls(bot, cog, user_id, guild_id, channel_id, seeds, plants, growing, harvested)
+        
+        embed.set_footer(text="💡 使用下方按鈕進行種植、施肥或收割操作")
+        
+        return embed, view
