@@ -660,6 +660,7 @@ class ScamParkEvents(commands.Cog):
             {'handler': self.event_supervisor_inspection, 'weight': 2},
             {'handler': self.event_group_punishment, 'weight': 2},
             {'handler': self.event_work_accident, 'weight': 2},
+            {'handler': self.event_cannabis_confiscation, 'weight': 3},  # 大麻檢查事件
             {'handler': self.event_training_hell, 'weight': 1},
             {'handler': self.event_isolation_punishment, 'weight': 1},
             {'handler': self.event_food_poisoning, 'weight': 1},
@@ -1350,6 +1351,122 @@ class ScamParkEvents(commands.Cog):
             
         except Exception as e:
             await interaction.response.send_message(f"❌ 強制觸發失敗: {e}", ephemeral=True)
+
+    def update_user_kkcoin(self, user_id: int, amount: int):
+        """更新用戶KK幣"""
+        try:
+            add_user_field(user_id, 'kkcoin', amount)
+            print(f"💰 更新用戶 {user_id} KK幣: {amount:+d}")
+        except Exception as e:
+            print(f"❌ 更新KK幣失敗: {e}")
+
+    async def event_cannabis_confiscation(self, member, thread, kkcoin, level, hp, stamina):
+        """大麻沒收事件"""
+        try:
+            # 檢查用戶是否有大麻
+            from shop_commands.merchant.cannabis_farming import get_inventory
+            
+            inventory = await get_inventory(member.id)
+            cannabis_items = {}
+            
+            # 統計所有大麻類物品
+            for item_type, items in inventory.items():
+                if item_type in ['常規種', '優質種', '黃金種']:
+                    cannabis_items[item_type] = items.get(item_type, 0)
+            
+            total_cannabis = sum(cannabis_items.values())
+            
+            if total_cannabis == 0:
+                # 如果沒有大麻，改為一般罰款
+                fine = min(kkcoin, random.randint(25, 75))
+                
+                ai_desc = await self.generate_ai_event_description(
+                    "置物櫃檢查", 
+                    {"發現": "無違禁品", "罰款": fine, "原因": "隨機檢查"}
+                )
+                
+                embed = discord.Embed(
+                    title="🔍 置物櫃例行檢查",
+                    description=ai_desc or "園區主管進行了例行檢查，雖然沒有發現違禁品，但還是處以小額罰款作為警告。",
+                    color=0xffaa00,
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(name="💰 罰款金額", value=f"**-{fine} KKCoin**", inline=False)
+                embed.add_field(name="⚠️ 檢查結果", value="無違禁品，但需注意規範", inline=False)
+                
+                message = await self.send_or_edit_event_message(thread, embed, member.id, "置物櫃檢查")
+                self.update_user_kkcoin(member.id, -fine)
+                return
+            
+            # 有大麻，沒收所有大麻並罰款10% KK幣
+            confiscated_items = []
+            total_confiscated = 0
+            
+            # 沒收所有大麻
+            from shop_commands.merchant.cannabis_farming import remove_inventory
+            for item_type, quantity in cannabis_items.items():
+                if quantity > 0:
+                    success = await remove_inventory(member.id, item_type, item_type, quantity)
+                    if success:
+                        confiscated_items.append(f"{item_type}: {quantity}個")
+                        total_confiscated += quantity
+            
+            # 計算10% KK幣罰款
+            kkcoin_penalty = max(1, int(kkcoin * 0.1))  # 至少罰款1個
+            
+            ai_desc = await self.generate_ai_event_description(
+                "大麻沒收", 
+                {
+                    "沒收物品": confiscated_items,
+                    "罰款": kkcoin_penalty,
+                    "總數": total_confiscated
+                }
+            )
+            
+            image_prompt = await self.translate_to_english("詐騙園區主管沒收大麻，員工被懲罰")
+            image_url = await self.generate_pollinations_image(
+                image_prompt or "scam park supervisor confiscating cannabis, worker being punished",
+                is_negative_event=True
+            )
+            
+            embed = discord.Embed(
+                title="🚨 大麻沒收行動",
+                description=ai_desc or f"園區主管在你的置物櫃中發現了違禁品！所有大麻都被沒收，還要額外罰款{kcoin_penalty}個KK幣。",
+                color=0xcc0000,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="🌿 沒收物品",
+                value="\n".join(confiscated_items) if confiscated_items else "無",
+                inline=False
+            )
+            embed.add_field(
+                name="💰 罰款金額",
+                value=f"**-{kkcoin_penalty} KKCoin** (10%總額)",
+                inline=False
+            )
+            embed.add_field(
+                name="⚠️ 嚴重警告",
+                value="下次再犯將會被關禁閉！",
+                inline=False
+            )
+            
+            if image_url:
+                embed.set_image(url=image_url)
+            
+            embed.set_footer(text="園區安全管理處")
+            
+            message = await self.send_or_edit_event_message(thread, embed, member.id, "大麻沒收")
+            
+            # 更新KK幣
+            self.update_user_kkcoin(member.id, -kkcoin_penalty)
+            
+        except Exception as e:
+            print(f"❌ 大麻沒收事件錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+
 
 async def setup(bot):
     await bot.add_cog(ScamParkEvents(bot))
