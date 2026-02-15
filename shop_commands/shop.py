@@ -846,13 +846,10 @@ class DressingRoomView(discord.ui.View):
             await interaction.response.send_message(f"❌ {chinese_name} 分類目前沒有物品。", ephemeral=True)
             return
 
-        embed = discord.Embed(
-            title=f"✂️ 編輯 {chinese_name}",
-            description=f"選擇 {chinese_name} 物品進行預覽或購買。",
-            color=0x87CEEB
-        )
-
+        # 生成包含物品圖片的embed
         view = EditView(self.cog, self.user_id, selected_category, items, page=0)
+        embed = await view.create_current_embed()
+        
         await interaction.response.edit_message(embed=embed, view=view)
 
     async def back_to_shop(self, interaction: discord.Interaction):
@@ -871,7 +868,7 @@ class EditView(discord.ui.View):
         self.category = category
         self.items = items
         self.page = page
-        self.items_per_page = 5
+        self.items_per_page = 4  # 減少到4個以騰出空間給圖片
         
         # 類別中英對照表（與DressingRoomView保持一致）
         self.category_names = {
@@ -910,10 +907,20 @@ class EditView(discord.ui.View):
         end = start + self.items_per_page
         page_items = self.items[start:end]
 
-        for item in page_items:
-            button = discord.ui.Button(label=f"{item['name'][:20]}", style=discord.ButtonStyle.secondary)
+        # 創建物品按鈕 - 減少數量以騰出空間給圖片
+        for i, item in enumerate(page_items):
+            # 限制按鈕文字長度，並添加編號
+            display_name = f"{i+1}. {item['name'][:15]}"
+            button = discord.ui.Button(label=display_name, style=discord.ButtonStyle.secondary)
             button.callback = self.create_item_callback(item)
             self.add_item(button)
+
+        # 如果物品數量少於items_per_page，添加空按鈕保持佈局
+        empty_slots = self.items_per_page - len(page_items)
+        for _ in range(empty_slots):
+            # 創建disabled的空按鈕
+            empty_button = discord.ui.Button(label="　", style=discord.ButtonStyle.secondary, disabled=True)
+            self.add_item(empty_button)
 
         if self.page > 0:
             prev_button = discord.ui.Button(label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️")
@@ -929,7 +936,51 @@ class EditView(discord.ui.View):
         back_button.callback = self.back_to_dressing_room
         self.add_item(back_button)
 
-    def create_item_callback(self, item):
+    async def create_current_embed(self):
+        """創建當前頁面的embed，包含物品圖片"""
+        chinese_name = self.category_names.get(self.category, self.category)
+        start = self.page * self.items_per_page
+        end = start + self.items_per_page
+        page_items = self.items[start:end]
+        
+        embed = discord.Embed(
+            title=f"✂️ 編輯 {chinese_name}",
+            description=f"第 {self.page+1} 頁，共 {len(self.items)} 個物品\n選擇編號對應的按鈕進行預覽或購買。",
+            color=0x87CEEB
+        )
+        
+        # 為每個物品生成縮圖並添加到embed的fields中
+        for i, item in enumerate(page_items):
+            try:
+                # 生成物品的預覽圖片URL
+                user_data = await self.cog.get_user_data(self.user_id)
+                image_url = await self.cog.generate_character_image_url(user_data, item)
+                
+                if image_url:
+                    embed.add_field(
+                        name=f"{i+1}. {item['name'][:18]}",
+                        value=f"[👀 點擊按鈕{i+1}預覽]",
+                        inline=True
+                    )
+                    
+                    # 如果是第一個物品，設置為主要圖片
+                    if i == 0:
+                        embed.set_image(url=image_url)
+                        embed.set_footer(text=f"顯示第 {i+1} 個物品的預覽圖 | 價格：{self.cog.price} KK幣")
+                else:
+                    embed.add_field(
+                        name=f"{i+1}. {item['name'][:18]}",
+                        value="❌ 圖片載入中...",
+                        inline=True
+                    )
+            except Exception as e:
+                embed.add_field(
+                    name=f"{i+1}. {item['name'][:18]}",
+                    value="❌ 圖片載入失敗",
+                    inline=True
+                )
+        
+        return embed
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
                 await interaction.response.send_message("❌ 這不是你的編輯頁！", ephemeral=True)
@@ -953,12 +1004,14 @@ class EditView(discord.ui.View):
     async def prev_page(self, interaction: discord.Interaction):
         self.page -= 1
         self.update_buttons()
-        await interaction.response.edit_message(view=self)
+        embed = await self.create_current_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def next_page(self, interaction: discord.Interaction):
         self.page += 1
         self.update_buttons()
-        await interaction.response.edit_message(view=self)
+        embed = await self.create_current_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def back_to_dressing_room(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
