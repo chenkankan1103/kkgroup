@@ -485,12 +485,20 @@ async def process_checkin(user_id, user_obj, guild):
         print(f"  ✓ 更新後資料: Lv.{updated_user['level']}, XP: {updated_user['xp']}, 金幣: {updated_user['kkcoin']}")
         
         # 使用 AI 生成每日情境描述（升級時使用升級前的 streak）
-        daily_story = await generate_daily_checkin_story(
-            level_title=LEVELS[updated_user['level']]['title'],
-            salary_percent=salary_multiplier,
-            streak=original_streak if leveled_up else streak,  # 升級時用升級前的值
-            user_name=user_obj.display_name
-        )
+        # 設定超時防止交互令牌過期
+        try:
+            daily_story = await asyncio.wait_for(
+                generate_daily_checkin_story(
+                    level_title=LEVELS[updated_user['level']]['title'],
+                    salary_percent=salary_multiplier,
+                    streak=original_streak if leveled_up else streak,  # 升級時用升級前的值
+                    user_name=user_obj.display_name
+                ),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"⚠️ AI 故事生成超時，使用預設故事")
+            daily_story = get_fallback_checkin_story(salary_multiplier)
         
         if leveled_up:
             print(f"  🎨 生成升級 Embed...")
@@ -989,13 +997,20 @@ async def process_work_action(user_id, user_obj, action):
             result_title = f"❌ {action} - 失敗"
         
         # 使用 AI 生成故事
-        story = await generate_story_with_ai(
-            action_name=action,
-            level_title=level_info['title'],
-            success=success,
-            reward=kk_gain,
-            user_name=user_obj.display_name
-        )
+        try:
+            story = await asyncio.wait_for(
+                generate_story_with_ai(
+                    action_name=action,
+                    level_title=level_info['title'],
+                    success=success,
+                    reward=kk_gain,
+                    user_name=user_obj.display_name
+                ),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(f"⚠️ 工作行動故事生成超時，使用預設故事")
+            story = get_fallback_story(action, success, kk_gain)
         
         # 更新資料庫
         actions_used[action] = today
