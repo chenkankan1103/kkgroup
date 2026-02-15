@@ -846,10 +846,13 @@ class DressingRoomView(discord.ui.View):
             await interaction.response.send_message(f"❌ {chinese_name} 分類目前沒有物品。", ephemeral=True)
             return
 
-        # 生成包含物品圖片的embed
+        embed = discord.Embed(
+            title=f"✂️ 編輯 {chinese_name}",
+            description=f"選擇 {chinese_name} 物品進行預覽或購買。",
+            color=0x87CEEB
+        )
+
         view = EditView(self.cog, self.user_id, selected_category, items, page=0)
-        embed = await view.create_current_embed()
-        
         await interaction.response.edit_message(embed=embed, view=view)
 
     async def back_to_shop(self, interaction: discord.Interaction):
@@ -868,7 +871,7 @@ class EditView(discord.ui.View):
         self.category = category
         self.items = items
         self.page = page
-        self.items_per_page = 4  # 減少到4個以騰出空間給圖片
+        self.items_per_page = 5
         
         # 類別中英對照表（與DressingRoomView保持一致）
         self.category_names = {
@@ -907,20 +910,10 @@ class EditView(discord.ui.View):
         end = start + self.items_per_page
         page_items = self.items[start:end]
 
-        # 創建物品按鈕 - 減少數量以騰出空間給圖片
-        for i, item in enumerate(page_items):
-            # 限制按鈕文字長度，並添加編號
-            display_name = f"{i+1}. {item['name'][:15]}"
-            button = discord.ui.Button(label=display_name, style=discord.ButtonStyle.secondary)
+        for item in page_items:
+            button = discord.ui.Button(label=f"{item['name'][:20]}", style=discord.ButtonStyle.secondary)
             button.callback = self.create_item_callback(item)
             self.add_item(button)
-
-        # 如果物品數量少於items_per_page，添加空按鈕保持佈局
-        empty_slots = self.items_per_page - len(page_items)
-        for _ in range(empty_slots):
-            # 創建disabled的空按鈕
-            empty_button = discord.ui.Button(label="　", style=discord.ButtonStyle.secondary, disabled=True)
-            self.add_item(empty_button)
 
         if self.page > 0:
             prev_button = discord.ui.Button(label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️")
@@ -932,55 +925,24 @@ class EditView(discord.ui.View):
             next_button.callback = self.next_page
             self.add_item(next_button)
 
+        # 添加搜索按鈕
+        search_button = discord.ui.Button(label="🔍 搜索", style=discord.ButtonStyle.primary, emoji="🔍")
+        search_button.callback = self.search_items
+        self.add_item(search_button)
+
         back_button = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
         back_button.callback = self.back_to_dressing_room
         self.add_item(back_button)
 
-    async def create_current_embed(self):
-        """創建當前頁面的embed，包含物品圖片"""
-        chinese_name = self.category_names.get(self.category, self.category)
-        start = self.page * self.items_per_page
-        end = start + self.items_per_page
-        page_items = self.items[start:end]
+    async def search_items(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
         
-        embed = discord.Embed(
-            title=f"✂️ 編輯 {chinese_name}",
-            description=f"第 {self.page+1} 頁，共 {len(self.items)} 個物品\n選擇編號對應的按鈕進行預覽或購買。",
-            color=0x87CEEB
-        )
-        
-        # 為每個物品生成縮圖並添加到embed的fields中
-        for i, item in enumerate(page_items):
-            try:
-                # 生成物品的預覽圖片URL
-                user_data = await self.cog.get_user_data(self.user_id)
-                image_url = await self.cog.generate_character_image_url(user_data, item)
-                
-                if image_url:
-                    embed.add_field(
-                        name=f"{i+1}. {item['name'][:18]}",
-                        value=f"[👀 點擊按鈕{i+1}預覽]",
-                        inline=True
-                    )
-                    
-                    # 如果是第一個物品，設置為主要圖片
-                    if i == 0:
-                        embed.set_image(url=image_url)
-                        embed.set_footer(text=f"顯示第 {i+1} 個物品的預覽圖 | 價格：{self.cog.price} KK幣")
-                else:
-                    embed.add_field(
-                        name=f"{i+1}. {item['name'][:18]}",
-                        value="❌ 圖片載入中...",
-                        inline=True
-                    )
-            except Exception as e:
-                embed.add_field(
-                    name=f"{i+1}. {item['name'][:18]}",
-                    value="❌ 圖片載入失敗",
-                    inline=True
-                )
-        
-        return embed
+        modal = SearchModal(self)
+        await interaction.response.send_modal(modal)
+
+    def create_item_callback(self, item):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
                 await interaction.response.send_message("❌ 這不是你的編輯頁！", ephemeral=True)
@@ -1004,14 +966,12 @@ class EditView(discord.ui.View):
     async def prev_page(self, interaction: discord.Interaction):
         self.page -= 1
         self.update_buttons()
-        embed = await self.create_current_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(view=self)
 
     async def next_page(self, interaction: discord.Interaction):
         self.page += 1
         self.update_buttons()
-        embed = await self.create_current_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(view=self)
 
     async def back_to_dressing_room(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -1113,3 +1073,163 @@ async def setup(bot):
         await bot.add_cog(ButtonInteraction(bot))
     except Exception as e:
         traceback.print_exc()
+
+
+class SearchModal(discord.ui.Modal):
+    def __init__(self, edit_view):
+        super().__init__(title="🔍 搜索物品")
+        self.edit_view = edit_view
+        self.search_input = discord.ui.TextInput(
+            label="輸入搜索關鍵字",
+            placeholder="例如：黑色、粉色、特別、普通...",
+            required=True,
+            max_length=50
+        )
+        self.add_item(self.search_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        search_term = self.search_input.value.strip().lower()
+        
+        if not search_term:
+            await interaction.response.send_message("❌ 請輸入搜索關鍵字！", ephemeral=True)
+            return
+        
+        # 過濾物品
+        filtered_items = [
+            item for item in self.edit_view.items 
+            if search_term in item['name'].lower()
+        ]
+        
+        if not filtered_items:
+            await interaction.response.send_message(f"❌ 找不到包含「{search_term}」的物品！", ephemeral=True)
+            return
+        
+        # 創建搜索結果視圖
+        search_result_view = SearchResultView(
+            self.edit_view.cog, 
+            interaction.user.id, 
+            self.edit_view.category, 
+            filtered_items, 
+            search_term
+        )
+        
+        chinese_name = self.edit_view.category_names.get(self.edit_view.category, self.edit_view.category)
+        embed = discord.Embed(
+            title=f"🔍 搜索結果 - {chinese_name}",
+            description=f"關鍵字：「{search_term}」\n找到 {len(filtered_items)} 個物品",
+            color=0x00FF7F
+        )
+        
+        await interaction.response.send_message(embed=embed, view=search_result_view, ephemeral=True)
+
+
+class SearchResultView(discord.ui.View):
+    def __init__(self, cog, user_id, category, items, search_term):
+        super().__init__(timeout=600)
+        self.cog = cog
+        self.user_id = user_id
+        self.category = category
+        self.items = items
+        self.search_term = search_term
+        self.page = 0
+        self.items_per_page = 5
+        
+        # 類別中英對照表
+        self.category_names = {
+            "Face": "臉型", "Hair": "髮型", "Hat": "帽子", "Face Accessory": "臉部飾品",
+            "Eye Decoration": "眼睛飾品", "Top": "上衣", "Bottom": "下衣", "Shoes": "鞋子",
+            "Gloves": "手套", "Cape": "披風", "Shield": "盾牌", "Weapon": "武器",
+            "Earrings": "耳環", "Necklace": "項鍊", "Ring": "戒指", "Overall": "套裝",
+            "Pet": "寵物", "Mount": "坐騎", "Android": "機器人", "Mechanical Heart": "機械之心",
+            "Badge": "徽章", "Medal": "勳章", "Shoulder": "肩膀裝飾", "Pocket Item": "口袋物品", "Bits": "晶片"
+        }
+        
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.clear_items()
+        start = self.page * self.items_per_page
+        end = start + self.items_per_page
+        page_items = self.items[start:end]
+
+        for item in page_items:
+            button = discord.ui.Button(label=f"{item['name'][:20]}", style=discord.ButtonStyle.secondary)
+            button.callback = self.create_item_callback(item)
+            self.add_item(button)
+
+        if self.page > 0:
+            prev_button = discord.ui.Button(label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️")
+            prev_button.callback = self.prev_page
+            self.add_item(prev_button)
+
+        if end < len(self.items):
+            next_button = discord.ui.Button(label="下一頁", style=discord.ButtonStyle.secondary, emoji="➡️")
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+
+        back_button = discord.ui.Button(label="🔍 新搜索", style=discord.ButtonStyle.primary, emoji="🔍")
+        back_button.callback = self.new_search
+        self.add_item(back_button)
+
+        close_button = discord.ui.Button(label="❌ 關閉", style=discord.ButtonStyle.danger, emoji="❌")
+        close_button.callback = self.close_search
+        self.add_item(close_button)
+
+    def create_item_callback(self, item):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ 這不是你的搜索結果！", ephemeral=True)
+                return
+
+            user_data = await self.cog.get_user_data(self.user_id)
+            image_url = await self.cog.generate_character_image_url(user_data, item)
+
+            embed = discord.Embed(
+                title=f"👀 預覽 {item['name']}",
+                description=f"價格：{self.cog.price} KK幣\n搜索關鍵字：{self.search_term}",
+                color=0x32CD32
+            )
+            if image_url:
+                embed.set_image(url=image_url)
+
+            view = PreviewView(self.cog, self.user_id, item)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        return callback
+
+    async def prev_page(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
+        self.page -= 1
+        self.update_buttons()
+        await interaction.response.edit_message(view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
+        self.page += 1
+        self.update_buttons()
+        await interaction.response.edit_message(view=self)
+
+    async def new_search(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
+        
+        # 返回到原來的物品列表
+        chinese_name = self.category_names.get(self.category, self.category)
+        embed = discord.Embed(
+            title=f"✂️ 編輯 {chinese_name}",
+            description=f"選擇 {chinese_name} 物品進行預覽或購買。",
+            color=0x87CEEB
+        )
+        
+        view = EditView(self.cog, self.user_id, self.category, self.cog.get_items_by_category(self.category))
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def close_search(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
+        await interaction.response.edit_message(content="✅ 已關閉搜索", embed=None, view=None)
