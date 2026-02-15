@@ -28,14 +28,26 @@ class ButtonInteraction(commands.Cog):
         self.bot = bot
         # GCP資料庫路徑（本地測試用本地檔案，上傳後替換為GCP路徑）
         self.db_path = './user_data.db'  # 本地測試路徑；GCP時替換為遠程路徑，如 'gs://bucket/database.db'
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.categories = self.get_categories()
+        try:
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.categories = self.get_categories()
+            print(f"ButtonInteraction initialized with {len(self.categories)} categories")
+        except Exception as e:
+            print(f"Error initializing ButtonInteraction: {e}")
+            self.conn = None
+            self.categories = []  # 設置為空列表，這樣按鈕會顯示錯誤消息
         self.price = 100000
 
     def get_categories(self) -> list:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT DISTINCT category FROM items")
-        return [row[0] for row in cursor.fetchall()]
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT DISTINCT category FROM items")
+            categories = [row[0] for row in cursor.fetchall()]
+            print(f"Found {len(categories)} categories: {categories[:5]}...")
+            return categories
+        except Exception as e:
+            print(f"Error getting categories: {e}")
+            return []
 
     def get_items_by_category(self, category: str) -> list:
         cursor = self.conn.cursor()
