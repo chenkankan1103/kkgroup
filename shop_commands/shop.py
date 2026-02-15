@@ -782,69 +782,87 @@ class ButtonInteraction(commands.Cog):
 
 # ============ 紙娃娃系統View類 ============
 class DressingRoomView(discord.ui.View):
-    def __init__(self, cog, user_id, page=0):
+    def __init__(self, cog, user_id):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
-        self.page = page
-        self.items_per_page = 5
-        self.update_buttons()
+        
+        # 類別中英對照表
+        self.category_names = {
+            "Face": "臉型",
+            "Hair": "髮型", 
+            "Hat": "帽子",
+            "Face Accessory": "臉部飾品",
+            "Eye Decoration": "眼睛飾品",
+            "Top": "上衣",
+            "Bottom": "下衣",
+            "Shoes": "鞋子",
+            "Gloves": "手套",
+            "Cape": "披風",
+            "Shield": "盾牌",
+            "Weapon": "武器",
+            "Earrings": "耳環",
+            "Necklace": "項鍊",
+            "Ring": "戒指",
+            "Overall": "套裝",
+            "Pet": "寵物",
+            "Mount": "坐騎",
+            "Android": "機器人",
+            "Mechanical Heart": "機械之心",
+            "Badge": "徽章",
+            "Medal": "勳章",
+            "Shoulder": "肩膀裝飾",
+            "Pocket Item": "口袋物品",
+            "Bits": "晶片"
+        }
+        
+        # 創建下拉選單
+        self.create_select_menu()
 
-    def update_buttons(self):
-        self.clear_items()
-        start = self.page * self.items_per_page
-        end = start + self.items_per_page
-        categories = self.cog.categories[start:end]
-
-        for category in categories:
-            button = discord.ui.Button(label=category, style=discord.ButtonStyle.secondary)
-            button.callback = self.create_category_callback(category)
-            self.add_item(button)
-
-        if self.page > 0:
-            prev_button = discord.ui.Button(label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️")
-            prev_button.callback = self.prev_page
-            self.add_item(prev_button)
-
-        if end < len(self.cog.categories):
-            next_button = discord.ui.Button(label="下一頁", style=discord.ButtonStyle.secondary, emoji="➡️")
-            next_button.callback = self.next_page
-            self.add_item(next_button)
-
-        back_button = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    def create_select_menu(self):
+        options = []
+        for category in self.cog.categories:
+            chinese_name = self.category_names.get(category, category)
+            options.append(discord.SelectOption(
+                label=f"{chinese_name}",
+                value=category,
+                description=f"選擇 {chinese_name} 進行更換"
+            ))
+        
+        select = discord.ui.Select(
+            placeholder="👗 選擇要更換的部位...",
+            options=options,
+            custom_id="category_select"
+        )
+        select.callback = self.category_selected
+        self.add_item(select)
+        
+        # 返回按鈕
+        back_button = discord.ui.Button(label="返回商店", style=discord.ButtonStyle.secondary, emoji="⬅️")
         back_button.callback = self.back_to_shop
         self.add_item(back_button)
 
-    def create_category_callback(self, category):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.user_id:
-                await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
-                return
+    async def category_selected(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
+            return
 
-            items = self.cog.get_items_by_category(category)
-            if not items:
-                await interaction.response.send_message("❌ 此分類無物品。", ephemeral=True)
-                return
+        selected_category = interaction.data['values'][0]
+        chinese_name = self.category_names.get(selected_category, selected_category)
+        
+        items = self.cog.get_items_by_category(selected_category)
+        if not items:
+            await interaction.response.send_message(f"❌ {chinese_name} 分類目前沒有物品。", ephemeral=True)
+            return
 
-            embed = discord.Embed(
-                title=f"✂️ 編輯 {category}",
-                description="選擇物品進行預覽或購買。",
-                color=0x87CEEB
-            )
+        embed = discord.Embed(
+            title=f"✂️ 編輯 {chinese_name}",
+            description=f"選擇 {chinese_name} 物品進行預覽或購買。",
+            color=0x87CEEB
+        )
 
-            view = EditView(self.cog, self.user_id, category, items, page=0)
-            await interaction.response.edit_message(embed=embed, view=view)
-        return callback
-
-    async def prev_page(self, interaction: discord.Interaction):
-        self.page -= 1
-        self.update_buttons()
-        await interaction.response.edit_message(view=self)
-
-    async def next_page(self, interaction: discord.Interaction):
-        self.page += 1
-        self.update_buttons()
-        await interaction.response.edit_message(view=self)
+        view = EditView(self.cog, self.user_id, selected_category, items, page=0)
+        await interaction.response.edit_message(embed=embed, view=view)
 
     async def back_to_shop(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -863,6 +881,36 @@ class EditView(discord.ui.View):
         self.items = items
         self.page = page
         self.items_per_page = 5
+        
+        # 類別中英對照表（與DressingRoomView保持一致）
+        self.category_names = {
+            "Face": "臉型",
+            "Hair": "髮型", 
+            "Hat": "帽子",
+            "Face Accessory": "臉部飾品",
+            "Eye Decoration": "眼睛飾品",
+            "Top": "上衣",
+            "Bottom": "下衣",
+            "Shoes": "鞋子",
+            "Gloves": "手套",
+            "Cape": "披風",
+            "Shield": "盾牌",
+            "Weapon": "武器",
+            "Earrings": "耳環",
+            "Necklace": "項鍊",
+            "Ring": "戒指",
+            "Overall": "套裝",
+            "Pet": "寵物",
+            "Mount": "坐騎",
+            "Android": "機器人",
+            "Mechanical Heart": "機械之心",
+            "Badge": "徽章",
+            "Medal": "勳章",
+            "Shoulder": "肩膀裝飾",
+            "Pocket Item": "口袋物品",
+            "Bits": "晶片"
+        }
+        
         self.update_buttons()
 
     def update_buttons(self):
@@ -965,7 +1013,19 @@ class PreviewView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
             return
-        embed = discord.Embed(title=f"✂️ 編輯 {self.selected_item['category']}", description="選擇物品進行預覽或購買。", color=0x87CEEB)
+        
+        # 獲取中文類別名稱
+        category_names = {
+            "Face": "臉型", "Hair": "髮型", "Hat": "帽子", "Face Accessory": "臉部飾品",
+            "Eye Decoration": "眼睛飾品", "Top": "上衣", "Bottom": "下衣", "Shoes": "鞋子",
+            "Gloves": "手套", "Cape": "披風", "Shield": "盾牌", "Weapon": "武器",
+            "Earrings": "耳環", "Necklace": "項鍊", "Ring": "戒指", "Overall": "套裝",
+            "Pet": "寵物", "Mount": "坐騎", "Android": "機器人", "Mechanical Heart": "機械之心",
+            "Badge": "徽章", "Medal": "勳章", "Shoulder": "肩膀裝飾", "Pocket Item": "口袋物品", "Bits": "晶片"
+        }
+        chinese_name = category_names.get(self.selected_item['category'], self.selected_item['category'])
+        
+        embed = discord.Embed(title=f"✂️ 編輯 {chinese_name}", description=f"選擇 {chinese_name} 物品進行預覽或購買。", color=0x87CEEB)
         items = self.cog.get_items_by_category(self.selected_item['category'])
         view = EditView(self.cog, self.user_id, self.selected_item['category'], items)
         await interaction.response.edit_message(embed=embed, view=view)
