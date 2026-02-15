@@ -275,13 +275,16 @@ class ExploreView(View):
         super().__init__(timeout=None)
         self.cog = cog
 
-    @discord.ui.button(label="購買身份", style=discord.ButtonStyle.green, custom_id="persistent_buy_roles")
-    async def buy_roles_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.cog.get_merchant_response(interaction.user, "購買身份", interaction)
-
-    @discord.ui.button(label="購買裝備", style=discord.ButtonStyle.blurple, custom_id="persistent_buy_equipment")
-    async def buy_equipment_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.cog.get_merchant_response(interaction.user, "購買裝備", interaction)
+    @discord.ui.button(label="🛒 商品區", style=discord.ButtonStyle.green, custom_id="persistent_products")
+    async def products_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="🛒 商品區",
+            description="選擇您想要的商品類型。",
+            color=discord.Color.blue()
+        )
+        
+        view = ProductCategoryView(self.cog)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="🔫 搶劫商人 (30%機率)", style=discord.ButtonStyle.red, custom_id="persistent_rob")
     async def rob_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -323,16 +326,6 @@ class ExploreView(View):
                 await interaction.followup.send("❌ 拉霸機啟動失敗", ephemeral=True)
             except:
                 pass
-
-    @discord.ui.button(label="🌱 種植大麻", style=discord.ButtonStyle.success, custom_id="persistent_cannabis")
-    async def cannabis_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from shop_commands.merchant.cannabis_merchant_view_v2 import CannabisMerchantViewV2
-        embed = discord.Embed(
-            title="🌱 大麻商店",
-            description="歡迎來到大麻商店！選擇您想要的功能。",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=embed, view=CannabisMerchantViewV2(self.cog), ephemeral=True)
 
     @discord.ui.button(label="👗 進入衣帽間", style=discord.ButtonStyle.primary, custom_id="persistent_paperdoll", emoji="👗")
     async def paperdoll_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -778,3 +771,33 @@ class PurchaseConfirmView(discord.ui.View):
             color=discord.Color.red()
         )
         await interaction.response.edit_message(embed=embed, view=None)
+
+
+class ProductCategoryView(View):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+
+    @discord.ui.button(label="👑 購買身份", style=discord.ButtonStyle.green, custom_id="persistent_buy_roles", emoji="👑")
+    async def buy_roles_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.get_merchant_response(interaction.user, "購買身份", interaction)
+
+    @discord.ui.button(label="🌱 種植大麻", style=discord.ButtonStyle.success, custom_id="persistent_cannabis", emoji="🌱")
+    async def cannabis_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from shop_commands.merchant.cannabis_merchant_view_v2 import CannabisMerchantViewV2
+        embed = discord.Embed(
+            title="🌱 大麻商店",
+            description="歡迎來到大麻商店！選擇您想要的功能。",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed, view=CannabisMerchantViewV2(self.cog), ephemeral=True)
+
+    @discord.ui.button(label="⬅️ 返回", style=discord.ButtonStyle.grey, custom_id="persistent_back_to_main")
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="🏪 神秘的黑市",
+            description="歡迎來到神秘的黑市！選擇您想要的功能。",
+            color=discord.Color.purple()
+        )
+        view = ExploreView(self.cog)
+        await interaction.response.edit_message(embed=embed, view=view)
