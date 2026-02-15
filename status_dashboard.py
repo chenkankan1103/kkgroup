@@ -440,11 +440,11 @@ async def update_dashboard_logs(bot, bot_type: str):
         # 獲取 systemd 日誌
         systemd_logs = await get_systemd_logs(bot_type)
 
-        # 合併日誌顯示
+        # 合併日誌顯示 - 改進格式化
         if systemd_logs and systemd_logs not in ["無 systemd 日誌", "Systemd 日誌已停用"]:
-            combined_logs = f"**Systemd 日誌:**\n{systemd_logs}\n\n**應用日誌:**\n{internal_logs}"
+            combined_logs = f"📊 **Systemd 日誌**\n```\n{systemd_logs}\n```\n\n📝 **應用日誌**\n```\n{internal_logs}\n```"
         else:
-            combined_logs = f"**應用日誌:**\n{internal_logs}"
+            combined_logs = f"📝 **應用日誌**\n```\n{internal_logs}\n```"
 
         logs_text = combined_logs
 
@@ -458,11 +458,13 @@ async def update_dashboard_logs(bot, bot_type: str):
         # 創建日誌 embed
         config = BOT_CONFIG.get(bot_type, {})
         embed = discord.Embed(
-            title=f"{config['名稱']} 實時日誌",
-            description=f"```\n{logs_text}\n```",
+            title=f"{config['emoji']} {config['名稱']} 實時日誌",
+            description=logs_text,
             color=config["顏色"],
-            timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
+            timestamp=get_taiwan_time()  # 使用台灣時間
         )
+
+        embed.set_footer(text="每 60 秒自動更新 | 台灣時間")
 
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
@@ -939,55 +941,64 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
     embed = discord.Embed(
         title=f"{config['名稱']} 控制面板",
         color=config['顏色'],
-        timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
+        timestamp=get_taiwan_time()  # 使用台灣時間
     )
-    
+
     # 檢查機器人狀態
     if bot and bot.user and bot.is_ready():
-        bot_status = "🟢 On"
-        task_status = "✅ Ready"
+        bot_status = "🟢 **在線**"
+        task_status = "✅ **正常**"
     else:
-        bot_status = "🔴 Off"
-        task_status = "❌ Offline"
-    
+        bot_status = "🔴 **離線**"
+        task_status = "❌ **異常**"
+
     # 實際檢查資料庫連接
     if await check_database_connection():
-        db_status = "✅ Connected"
+        db_status = "✅ **連接正常**"
     else:
-        db_status = "❌ Disconnected"
-    
+        db_status = "❌ **連接失敗**"
+
     # 檢查日誌任務狀態
     if bot_type in update_tasks and update_tasks[bot_type] and update_tasks[bot_type].is_running():
-        logs_status = "✅ 運行中"
+        logs_status = "✅ **運行中**"
     else:
-        logs_status = "❌ 停止"
-    
+        logs_status = "❌ **已停止**"
+
+    # 第一行：機器人狀態
     embed.add_field(
-        name="🤖 機器人",
+        name="🤖 機器人狀態",
         value=bot_status,
-        inline=True
+        inline=False
     )
-    
+
+    # 第二行：系統組件狀態
     embed.add_field(
-        name="📊 狀態",
+        name="📊 任務狀態",
         value=task_status,
         inline=True
     )
-    
+
     embed.add_field(
         name="💾 數據庫",
         value=db_status,
         inline=True
     )
-    
+
     embed.add_field(
-        name="📝 日誌",
+        name="📝 日誌系統",
         value=logs_status,
         inline=True
     )
-    
-    # 移除 footer 的時間，只保留空 footer
-    embed.set_footer(text="")
+
+    # 添加分隔線和最後更新時間
+    current_time = get_taiwan_time().strftime("%H:%M:%S")
+    embed.add_field(
+        name="⏰ 最後更新",
+        value=f"`{current_time}`",
+        inline=False
+    )
+
+    embed.set_footer(text="每 60 秒自動更新 | 台灣時間")
     return embed
 
 async def update_dashboard(bot: discord.Client, bot_type: str = None):
