@@ -3,6 +3,47 @@ import datetime
 from db_adapter import set_user_field, get_user
 
 
+class GenderSelectView(discord.ui.View):
+    """性別選擇視圖"""
+    def __init__(self, cog, user_id: int):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.user_id = user_id
+    
+    @discord.ui.select(
+        placeholder="選擇你的性別...",
+        options=[
+            discord.SelectOption(label="男性", value="male", emoji="♂️"),
+            discord.SelectOption(label="女性", value="female", emoji="♀️")
+        ]
+    )
+    async def gender_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer(ephemeral=True)
+        
+        if interaction.user.id != self.user_id:
+            await interaction.followup.send("❌ 這不是你的選項！", ephemeral=True)
+            return
+        
+        # 更新性別
+        gender = select.values[0]
+        set_user_field(self.user_id, 'gender', gender)
+        
+        # 更新外觀數據
+        appearance_updates = {
+            'face': 20005 if gender == "male" else 21731,
+            'hair': 30120 if gender == "male" else 34410,
+            'top': 1040014 if gender == "male" else 1041004,
+            'bottom': 1060096 if gender == "male" else 1061008,
+            'gender': gender
+        }
+        
+        for key, value in appearance_updates.items():
+            set_user_field(self.user_id, key, value)
+        
+        gender_text = "男性" if gender == "male" else "女性"
+        await interaction.followup.send(f"✅ 性別已設定為{gender_text}！", ephemeral=True)
+
+
 class WorkCardModal(discord.ui.Modal):
     """員工證信息表單"""
     title = "領取員工證"
@@ -114,6 +155,17 @@ class WorkCardEditView(discord.ui.View):
             return
         
         await interaction.response.send_modal(WorkCardModal(self.cog, self.user_id))
+    
+    @discord.ui.button(label="修改性別", style=discord.ButtonStyle.secondary, emoji="👤", custom_id="work_card_gender")
+    async def gender_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """修改性別"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的員工證！", ephemeral=True)
+            return
+        
+        # 創建性別選擇視圖
+        gender_view = GenderSelectView(self.cog, self.user_id)
+        await interaction.response.send_message("請選擇你的性別：", view=gender_view, ephemeral=True)
 
 
 class WorkCardActionView(discord.ui.View):
