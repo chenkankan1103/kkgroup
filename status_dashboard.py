@@ -458,7 +458,7 @@ async def update_dashboard_logs(bot, bot_type: str):
         # 創建日誌 embed
         config = BOT_CONFIG.get(bot_type, {})
         embed = discord.Embed(
-            title=f"{config['emoji']} {config['名稱']} 實時日誌",
+            title=f"{config['名稱']} 實時日誌",
             description=logs_text,
             color=config["顏色"],
             timestamp=get_taiwan_time()  # 使用台灣時間
