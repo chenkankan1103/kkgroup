@@ -434,15 +434,6 @@ class ButtonInteraction(commands.Cog):
                 view = RoleShopView(self)
                 await interaction.followup.send(embed=embed, view=view, ephemeral=True)
                 
-            elif action == "購買裝備":
-                embed = discord.Embed(
-                    title="🛍️ 裝備商店 - 髮型", 
-                    description=f"你目前擁有: {kkcoin} KKcoin\n選擇類別來瀏覽裝備！", 
-                    color=discord.Color.blue()
-                )
-                view = EquipmentShopView(self)
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-                
         except Exception as e:
             traceback.print_exc()
             try:
