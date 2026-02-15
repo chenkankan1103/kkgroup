@@ -154,6 +154,14 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
         embed.set_thumbnail(url=user.display_avatar.url)
     except:
         pass
+    
+    # 添加角色圖片
+    try:
+        character_image_url = await cog.get_character_image_url(user_data)
+        if character_image_url:
+            embed.set_image(url=character_image_url)
+    except Exception as e:
+        print(f"獲取角色圖片URL失敗: {e}")
         
     embed.add_field(name="🆔 使用者ID", value=f"`{user_data['user_id']}`", inline=True)
     embed.add_field(name="⭐ 等級", value=f"**{user_data['level'] or 1}**", inline=True)
