@@ -9,6 +9,9 @@ import io
 import os
 import random
 import traceback
+import sqlite3
+from pathlib import Path
+from typing import List, Dict, Optional
 
 from shop_commands.merchant.views import (
     PersistentView, ExploreView, RoleShopView, EquipmentShopView, 
@@ -23,6 +26,55 @@ from shop_commands.merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID, VIP_ROLE
 class ButtonInteraction(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # GCP資料庫路徑（本地測試用本地檔案，上傳後替換為GCP路徑）
+        self.db_path = './user_data.db'  # 本地測試路徑；GCP時替換為遠程路徑，如 'gs://bucket/database.db'
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.categories = self.get_categories()
+        self.price = 100000
+
+    def get_categories(self) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT DISTINCT category FROM items")
+        return [row[0] for row in cursor.fetchall()]
+
+    def get_items_by_category(self, category: str) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, name, category, region, version, image_url FROM items WHERE category = ?", (category,))
+        return [dict(zip(['id', 'name', 'category', 'region', 'version', 'image_url'], row)) for row in cursor.fetchall()]
+
+    async def generate_character_image_url(self, user_data: dict, preview_item: Optional[Dict] = None) -> Optional[str]:
+        try:
+            items = [
+                {"itemId": 2000, "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('skin', 12000), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('face', 20005), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('hair', 30120), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('bottom', 1060096), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"}
+            ]
+
+            if preview_item:
+                category_map = {
+                    "Hair": "hair", "Face": "face", "Hat": "hat", "Top": "top", "Bottom": "bottom", "Shoes": "shoes"
+                }
+                part = category_map.get(preview_item['category'])
+                if part:
+                    for item in items:
+                        if item.get('itemId') == user_data.get(part):
+                            item['itemId'] = preview_item['id']
+                            break
+
+            item_path = ",".join(json.dumps(item, separators=(',', ':')) for item in items)
+            api_url = f"https://maplestory.io/api/character/{item_path}/stand1/0?showears=false&resize=2"
+            return api_url
+        except Exception as e:
+            print(f"❌ 生成圖片URL錯誤: {e}")
+            return None
+
+    async def get_user_data(self, user_id):
+        # 從現有資料庫獲取用戶裝備
+        return await get_user_equipment(user_id)
 
     async def cog_load(self):
         try:
@@ -709,6 +761,229 @@ class ButtonInteraction(commands.Cog):
         except Exception as e:
             pass
 
+
+# ============ 紙娃娃系統View類 ============
+class DressingRoomView(discord.ui.View):
+    def __init__(self, cog, user_id, page=0):
+        super().__init__(timeout=600)
+        self.cog = cog
+        self.user_id = user_id
+        self.page = page
+        self.items_per_page = 5
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.clear_items()
+        start = self.page * self.items_per_page
+        end = start + self.items_per_page
+        categories = self.cog.categories[start:end]
+
+        for category in categories:
+            button = discord.ui.Button(label=category, style=discord.ButtonStyle.secondary)
+            button.callback = self.create_category_callback(category)
+            self.add_item(button)
+
+        if self.page > 0:
+            prev_button = discord.ui.Button(label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️")
+            prev_button.callback = self.prev_page
+            self.add_item(prev_button)
+
+        if end < len(self.cog.categories):
+            next_button = discord.ui.Button(label="下一頁", style=discord.ButtonStyle.secondary, emoji="➡️")
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+
+        back_button = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
+        back_button.callback = self.back_to_shop
+        self.add_item(back_button)
+
+    def create_category_callback(self, category):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
+                return
+
+            items = self.cog.get_items_by_category(category)
+            if not items:
+                await interaction.response.send_message("❌ 此分類無物品。", ephemeral=True)
+                return
+
+            embed = discord.Embed(
+                title=f"✂️ 編輯 {category}",
+                description="選擇物品進行預覽或購買。",
+                color=0x87CEEB
+            )
+
+            view = EditView(self.cog, self.user_id, category, items, page=0)
+            await interaction.response.edit_message(embed=embed, view=view)
+        return callback
+
+    async def prev_page(self, interaction: discord.Interaction):
+        self.page -= 1
+        self.update_buttons()
+        await interaction.response.edit_message(view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        self.page += 1
+        self.update_buttons()
+        await interaction.response.edit_message(view=self)
+
+    async def back_to_shop(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
+        await interaction.response.defer()
+        # 返回商人主頁（由商人代碼處理）
+
+
+class EditView(discord.ui.View):
+    def __init__(self, cog, user_id, category, items, page=0):
+        super().__init__(timeout=600)
+        self.cog = cog
+        self.user_id = user_id
+        self.category = category
+        self.items = items
+        self.page = page
+        self.items_per_page = 5
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.clear_items()
+        start = self.page * self.items_per_page
+        end = start + self.items_per_page
+        page_items = self.items[start:end]
+
+        for item in page_items:
+            button = discord.ui.Button(label=f"{item['name'][:20]}", style=discord.ButtonStyle.secondary)
+            button.callback = self.create_item_callback(item)
+            self.add_item(button)
+
+        if self.page > 0:
+            prev_button = discord.ui.Button(label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️")
+            prev_button.callback = self.prev_page
+            self.add_item(prev_button)
+
+        if end < len(self.items):
+            next_button = discord.ui.Button(label="下一頁", style=discord.ButtonStyle.secondary, emoji="➡️")
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+
+        back_button = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
+        back_button.callback = self.back_to_dressing_room
+        self.add_item(back_button)
+
+    def create_item_callback(self, item):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("❌ 這不是你的編輯頁！", ephemeral=True)
+                return
+
+            user_data = await self.cog.get_user_data(self.user_id)
+            image_url = await self.cog.generate_character_image_url(user_data, item)
+
+            embed = discord.Embed(
+                title=f"👀 預覽 {item['name']}",
+                description=f"價格：{self.cog.price} KK幣",
+                color=0x32CD32
+            )
+            if image_url:
+                embed.set_image(url=image_url)
+
+            view = PreviewView(self.cog, self.user_id, item)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        return callback
+
+    async def prev_page(self, interaction: discord.Interaction):
+        self.page -= 1
+        self.update_buttons()
+        await interaction.response.edit_message(view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        self.page += 1
+        self.update_buttons()
+        await interaction.response.edit_message(view=self)
+
+    async def back_to_dressing_room(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
+        embed = discord.Embed(title="👗 衣帽間", description="選擇要更改的部位。", color=0xFF69B4)
+        view = DressingRoomView(self.cog, self.user_id)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class PreviewView(discord.ui.View):
+    def __init__(self, cog, user_id, selected_item):
+        super().__init__(timeout=600)
+        self.cog = cog
+        self.user_id = user_id
+        self.selected_item = selected_item
+
+    @discord.ui.button(label="購買", style=discord.ButtonStyle.danger, emoji="💰")
+    async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的預覽！", ephemeral=True)
+            return
+
+        user_data = await self.cog.get_user_data(self.user_id)
+        if not user_data or user_data.get('kkcoin', 0) < self.cog.price:
+            await interaction.response.send_message("❌ KK幣不足！", ephemeral=True)
+            return
+
+        image_url = await self.cog.generate_character_image_url(user_data, self.selected_item)
+
+        embed = discord.Embed(
+            title="⚠️ 確認購買",
+            description=f"確定購買 **{self.selected_item['name']}**？\n價格：{self.cog.price} KK幣\n本園區不提供退貨機制。",
+            color=0xFF4500
+        )
+        if image_url:
+            embed.set_image(url=image_url)
+        view = ConfirmView(self.cog, self.user_id, self.selected_item)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
+        embed = discord.Embed(title=f"✂️ 編輯 {self.selected_item['category']}", description="選擇物品進行預覽或購買。", color=0x87CEEB)
+        items = self.cog.get_items_by_category(self.selected_item['category'])
+        view = EditView(self.cog, self.user_id, self.selected_item['category'], items)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ConfirmView(discord.ui.View):
+    def __init__(self, cog, user_id, selected_item):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.user_id = user_id
+        self.selected_item = selected_item
+
+    @discord.ui.button(label="是", style=discord.ButtonStyle.success, emoji="✅")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的確認頁！", ephemeral=True)
+            return
+
+        try:
+            current_kkcoin = await get_user_kkcoin(self.user_id)
+            await update_user_kkcoin(self.user_id, current_kkcoin - self.cog.price)
+            category_map = {"Hair": "hair", "Face": "face", "Hat": "hat", "Top": "top", "Bottom": "bottom", "Shoes": "shoes"}
+            part = category_map.get(self.selected_item['category'])
+            if part:
+                await update_user_equipment(self.user_id, part, self.selected_item['id'])
+
+            await interaction.response.send_message(f"✅ 購買成功！已裝備 {self.selected_item['name']}。", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 購買失敗: {str(e)[:100]}", ephemeral=True)
+
+    @discord.ui.button(label="否", style=discord.ButtonStyle.danger, emoji="❌")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            return
+        await interaction.response.send_message("❌ 取消購買。", ephemeral=True)
 
 
 async def setup(bot):
