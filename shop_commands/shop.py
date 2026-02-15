@@ -32,10 +32,16 @@ class ButtonInteraction(commands.Cog):
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.categories = self.get_categories()
             print(f"ButtonInteraction initialized with {len(self.categories)} categories")
+            # 寫入日誌檔案
+            with open('button_interaction_init.log', 'w') as f:
+                f.write(f"ButtonInteraction initialized with {len(self.categories)} categories\n")
+                f.write(f"Categories: {self.categories[:5]}\n")
         except Exception as e:
             print(f"Error initializing ButtonInteraction: {e}")
             self.conn = None
             self.categories = []  # 設置為空列表，這樣按鈕會顯示錯誤消息
+            with open('button_interaction_init.log', 'w') as f:
+                f.write(f"Error initializing ButtonInteraction: {e}\n")
         self.price = 100000
 
     def get_categories(self) -> list:

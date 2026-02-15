@@ -336,6 +336,10 @@ class ExploreView(View):
 
     @discord.ui.button(label="👗 進入衣帽間", style=discord.ButtonStyle.primary, custom_id="persistent_paperdoll", emoji="👗")
     async def paperdoll_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        with open('paperdoll_button_click.log', 'a') as f:
+            f.write(f"Paperdoll button clicked. Categories count: {len(self.cog.categories)}\n")
+            f.write(f"Categories: {self.cog.categories[:5] if self.cog.categories else 'None'}\n")
+        
         if not self.cog.categories:
             await interaction.response.send_message("❌ 衣帽間暫時無法使用。", ephemeral=True)
             return
