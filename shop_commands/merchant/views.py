@@ -334,6 +334,23 @@ class ExploreView(View):
         )
         await interaction.response.send_message(embed=embed, view=CannabisMerchantViewV2(self.cog), ephemeral=True)
 
+    @discord.ui.button(label="👗 進入衣帽間", style=discord.ButtonStyle.primary, custom_id="persistent_paperdoll", emoji="👗")
+    async def paperdoll_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.cog.categories:
+            await interaction.response.send_message("❌ 衣帽間暫時無法使用。", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="👗 衣帽間",
+            description="選擇要更改的部位。",
+            color=0xFF69B4
+        )
+        
+        # 動態導入View
+        from shop_commands.shop import DressingRoomView
+        view = DressingRoomView(self.cog, interaction.user.id)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
 class RoleShopView(View):
     def __init__(self, cog):
         super().__init__(timeout=None)
