@@ -125,11 +125,24 @@ class CheckInButton(discord.ui.Button):
                 return
 
             logger.info(f"💼 開始處理打卡邏輯 (user: {user_name})...")
-            embeds_tuple, updated_user, salary_multiplier, daily_story = await process_checkin(
-                interaction.user.id, 
-                interaction.user,
-                interaction.guild
-            )
+            
+            # 設定超時以防止交互令牌過期
+            try:
+                embeds_tuple, updated_user, salary_multiplier, daily_story = await asyncio.wait_for(
+                    process_checkin(
+                        interaction.user.id, 
+                        interaction.user,
+                        interaction.guild
+                    ),
+                    timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"❌ 打卡超時: 處理時間過長 (user: {user_name})")
+                await interaction.followup.send(
+                    "❌ 打卡處理超時，請稍後再試", 
+                    ephemeral=True
+                )
+                return
             
             if embeds_tuple and updated_user:
                 work_view = WorkActionView(updated_user)
@@ -197,22 +210,30 @@ class CheckInButton(discord.ui.Button):
 
         except asyncio.TimeoutError:
             error_msg = f"❌ 打卡處理超時 (user: {user_name})"
-            await log_error(interaction, error_msg)
+            logger.error(error_msg)
             try:
                 await interaction.followup.send(
                     "❌ 處理超時，請稍後再試", 
                     ephemeral=True
                 )
+            except discord.errors.InteractionResponded:
+                logger.warning("交互已被回應，無法發送錯誤訊息")
             except:
                 pass
+        
+        except discord.errors.InteractionResponded:
+            logger.warning(f"⚠️ 交互已被回應（可能是重複點擊） (user: {user_name})")
+        
         except Exception as e:
-            error_msg = f"❌ 打卡發生例外 (User: {user_name}, ID: {user_id})"
-            await log_error(interaction, error_msg, e)
+            error_msg = f"❌ 打卡發生例外 (User: {user_name if user_name else 'Unknown'}, ID: {user_id if user_id else 'Unknown'})"
+            logger.error(error_msg, exc_info=True)
             try:
                 await interaction.followup.send(
                     "❌ 發生錯誤，請稍後再試或聯絡管理員。", 
                     ephemeral=True
                 )
+            except discord.errors.InteractionResponded:
+                logger.warning("交互已被回應，無法發送錯誤訊息")
             except:
                 pass
 
