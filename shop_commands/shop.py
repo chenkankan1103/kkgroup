@@ -852,19 +852,13 @@ class DressingRoomView(discord.ui.View):
             color=0x87CEEB
         )
 
-        view = EditView(self.cog, self.user_id, selected_category, items, page=0)
-        await interaction.response.edit_message(embed=embed, view=view)
-
-    async def back_to_shop(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
-            return
+        view = EditView(self.cog, self.user_id, selected_category, items, page=0, embed=embed)
         await interaction.response.defer()
         # 返回商人主頁（由商人代碼處理）
 
 
 class EditView(discord.ui.View):
-    def __init__(self, cog, user_id, category, items, page=0):
+    def __init__(self, cog, user_id, category, items, page=0, embed=None):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
@@ -872,6 +866,7 @@ class EditView(discord.ui.View):
         self.items = items
         self.page = page
         self.items_per_page = 5
+        self.embed = embed
         
         # 類別中英對照表（與DressingRoomView保持一致）
         self.category_names = {
@@ -903,8 +898,9 @@ class EditView(discord.ui.View):
         }
         
         self.update_buttons()
+        self.update_embed_description()
 
-    def update_buttons(self):
+    def update_embed_description(self):
         self.clear_items()
         start = self.page * self.items_per_page
         end = start + self.items_per_page
@@ -933,6 +929,14 @@ class EditView(discord.ui.View):
         back_button = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
         back_button.callback = self.back_to_dressing_room
         self.add_item(back_button)
+
+    def update_embed_description(self):
+        """更新 embed 描述以包含頁數信息"""
+        if self.embed:
+            chinese_name = self.category_names.get(self.category, self.category)
+            total_pages = (len(self.items) + self.items_per_page - 1) // self.items_per_page
+            current_page = self.page + 1
+            self.embed.description = f"選擇 {chinese_name} 物品進行預覽或購買。\n第 {current_page}/{total_pages} 頁"
 
     async def search_items(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -966,12 +970,14 @@ class EditView(discord.ui.View):
     async def prev_page(self, interaction: discord.Interaction):
         self.page -= 1
         self.update_buttons()
-        await interaction.response.edit_message(view=self)
+        self.update_embed_description()
+        await interaction.response.edit_message(embed=self.embed, view=self)
 
     async def next_page(self, interaction: discord.Interaction):
         self.page += 1
         self.update_buttons()
-        await interaction.response.edit_message(view=self)
+        self.update_embed_description()
+        await interaction.response.edit_message(embed=self.embed, view=self)
 
     async def back_to_dressing_room(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -1031,7 +1037,7 @@ class PreviewView(discord.ui.View):
         
         embed = discord.Embed(title=f"✂️ 編輯 {chinese_name}", description=f"選擇 {chinese_name} 物品進行預覽或購買。", color=0x87CEEB)
         items = self.cog.get_items_by_category(self.selected_item['category'])
-        view = EditView(self.cog, self.user_id, self.selected_item['category'], items)
+        view = EditView(self.cog, self.user_id, self.selected_item['category'], items, embed=embed)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -1110,7 +1116,8 @@ class SearchModal(discord.ui.Modal):
             interaction.user.id, 
             self.edit_view.category, 
             filtered_items, 
-            search_term
+            search_term,
+            embed
         )
         
         chinese_name = self.edit_view.category_names.get(self.edit_view.category, self.edit_view.category)
@@ -1119,12 +1126,10 @@ class SearchModal(discord.ui.Modal):
             description=f"關鍵字：「{search_term}」\n找到 {len(filtered_items)} 個物品",
             color=0x00FF7F
         )
-        
-        await interaction.response.send_message(embed=embed, view=search_result_view, ephemeral=True)
 
 
 class SearchResultView(discord.ui.View):
-    def __init__(self, cog, user_id, category, items, search_term):
+    def __init__(self, cog, user_id, category, items, search_term, embed=None):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
@@ -1133,6 +1138,7 @@ class SearchResultView(discord.ui.View):
         self.search_term = search_term
         self.page = 0
         self.items_per_page = 5
+        self.embed = embed
         
         # 類別中英對照表
         self.category_names = {
@@ -1145,6 +1151,15 @@ class SearchResultView(discord.ui.View):
         }
         
         self.update_buttons()
+        self.update_embed_description()
+
+    def update_embed_description(self):
+        """更新 embed 描述以包含頁數信息"""
+        if self.embed:
+            chinese_name = self.category_names.get(self.category, self.category)
+            total_pages = (len(self.items) + self.items_per_page - 1) // self.items_per_page
+            current_page = self.page + 1
+            self.embed.description = f"關鍵字：「{self.search_term}」\n找到 {len(self.items)} 個物品\n第 {current_page}/{total_pages} 頁"
 
     def update_buttons(self):
         self.clear_items()
@@ -1202,7 +1217,8 @@ class SearchResultView(discord.ui.View):
             return
         self.page -= 1
         self.update_buttons()
-        await interaction.response.edit_message(view=self)
+        self.update_embed_description()
+        await interaction.response.edit_message(embed=self.embed, view=self)
 
     async def next_page(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -1210,7 +1226,8 @@ class SearchResultView(discord.ui.View):
             return
         self.page += 1
         self.update_buttons()
-        await interaction.response.edit_message(view=self)
+        self.update_embed_description()
+        await interaction.response.edit_message(embed=self.embed, view=self)
 
     async def new_search(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -1225,7 +1242,7 @@ class SearchResultView(discord.ui.View):
             color=0x87CEEB
         )
         
-        view = EditView(self.cog, self.user_id, self.category, self.cog.get_items_by_category(self.category))
+        view = EditView(self.cog, self.user_id, self.category, self.cog.get_items_by_category(self.category), embed=embed)
         await interaction.response.edit_message(embed=embed, view=view)
 
     async def close_search(self, interaction: discord.Interaction):
