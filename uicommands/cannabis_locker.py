@@ -119,8 +119,8 @@ class PersonalLockerCog(commands.Cog):
             self.last_button_check = datetime.now()
 
             # 檢查 PersonalLockerView 類是否正確定義
-            if not hasattr(PersonalLockerView, 'crop_planting_callback'):
-                print(f"❌ [Button Health Check] PersonalLockerView.crop_planting_callback not found!")
+            if not hasattr(PersonalLockerView, 'crop_info_callback'):
+                print(f"❌ [Button Health Check] PersonalLockerView.crop_info_callback not found!")
                 self.button_check_failures += 1
                 return
 
@@ -128,9 +128,9 @@ class PersonalLockerCog(commands.Cog):
             try:
                 # 創建一個測試實例來檢查按鈕
                 test_view = PersonalLockerView(None, None, 123, 456, 789, [], None)
-                crop_buttons = [item for item in test_view.children if getattr(item, 'custom_id', None) == 'crop_planting']
+                crop_buttons = [item for item in test_view.children if getattr(item, 'custom_id', None) == 'crop_info']
                 if not crop_buttons:
-                    print(f"⚠️  [Button Health Check] Crop planting button not found in view")
+                    print(f"⚠️  [Button Health Check] Crop info button not found in view")
                     self.button_check_failures += 1
                     return
             except Exception as e:
@@ -139,7 +139,7 @@ class PersonalLockerCog(commands.Cog):
                 return
 
             # 檢查成功
-            print(f"✅ [Button Health Check] Crop planting button is properly configured")
+            print(f"✅ [Button Health Check] Crop info button is properly configured")
             self.button_check_failures = 0
 
         except Exception as e:
