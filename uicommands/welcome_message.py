@@ -287,7 +287,11 @@ class WelcomeFlow(commands.Cog):
                 'hp': 100,
                 'stamina': 100,
                 'is_stunned': 0,
-                'thread_id': 0
+                'thread_id': 0,
+                # 初始化週統計快照字段
+                'last_kkcoin_snapshot': 0,
+                'last_xp_snapshot': 0,
+                'last_level_snapshot': 1
             }
             
             set_user(user_id, user_data)

@@ -29,7 +29,11 @@ def ensure_user_exists(user_id: int) -> bool:
             'shoes': 1072288,
             'is_stunned': 0,
             'gender': 'male',
-            'thread_id': 0
+            'thread_id': 0,
+            # 初始化週統計快照字段
+            'last_kkcoin_snapshot': 0,
+            'last_xp_snapshot': 0,
+            'last_level_snapshot': 1
         })
         
         return True
