@@ -36,10 +36,10 @@ class ScamParkEvents(commands.Cog):
             # 沒有 Gemini，改用 Groq
             self.use_google_api = False
         
-        # 事件設定 - 調整為2-4小時間隔增加觸發頻率
+        # 事件設定 - 調整為1-2小時間隔增加觸發頻率
         self.event_cooldown = {}  # 使用者事件冷卻 {user_id: last_event_timestamp}
-        self.min_event_interval = 7200    # 最少2小時 (秒) - 改短以增加觸發頻率
-        self.max_event_interval = 14400   # 最多4小時 (秒) - 改短以增加觸發頻率
+        self.min_event_interval = 3600    # 最少1小時 (秒) - 增加觸發頻率
+        self.max_event_interval = 7200   # 最多2小時 (秒) - 增加觸發頻率
         
         # 事件訊息追蹤
         self.event_messages = {}  # 存儲使用者的事件訊息ID {user_id: message_id}
@@ -148,11 +148,15 @@ class ScamParkEvents(commands.Cog):
                 # 使用正態分佈，峰值在中間(0.5位置)
                 bell_curve_factor = math.exp(-((time_progress - 0.5) ** 2) / 0.1)
                 
-                # 基礎觸發機率（提高到10%以確保事件能定期發生）
-                base_chance = 0.10 * bell_curve_factor
+                # 基礎觸發機率（提高到25%以增加事件頻率）
+                base_chance = 0.25 * bell_curve_factor
                 
-                # KKCoin加成（有錢的人更容易被盯上）
-                wealth_bonus = min(0.03, kkcoin / 1500 * 0.02)
+                # KKCoin加成（活躍用戶更容易遇到事件）
+                # 高KKCoin用戶（活躍種植者）加成更多，低KKCoin用戶加成較少
+                if kkcoin >= 1000:
+                    wealth_bonus = min(0.05, kkcoin / 10000 * 0.03)  # 高KKCoin: 最多5%加成
+                else:
+                    wealth_bonus = min(0.01, kkcoin / 5000 * 0.005)  # 低KKCoin: 最多1%加成
                 
                 # 超過最大間隔後，強制增加機率
                 if time_since_last > self.max_event_interval:
