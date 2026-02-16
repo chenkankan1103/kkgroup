@@ -38,6 +38,10 @@ def get_taiwan_time():
     """獲取台灣時間"""
     return datetime.now(TAIWAN_TZ)
 
+def format_taiwan_time():
+    """格式化台灣時間為 HH:MM"""
+    return get_taiwan_time().strftime("%H:%M")
+
 # 配置常數
 MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 
@@ -126,9 +130,10 @@ async def get_systemd_logs(bot_type: str) -> str:
                         if len(parts) >= 2:
                             timestamp = get_taiwan_time().strftime("%H:%M")
                             message = parts[2] if len(parts) > 2 else parts[1]
+                            # 簡化 UPDATE TASK 的顯示
+                            if message.startswith("UPDATE TASK"):
+                                message = message.replace("UPDATE TASK ", "")
                             formatted_logs.append(f"[{timestamp}] {message}")
-
-                print(f"[SYSTEMD LOGS] {bot_type} 成功獲取 {len(formatted_logs)} 條 {service_name} 日誌")
                 return '\n'.join(formatted_logs)
             else:
                 print(f"[SYSTEMD LOGS] {bot_type} 沒有找到 {service_name} 的日誌")
@@ -444,7 +449,7 @@ async def update_dashboard_logs(bot, bot_type: str):
             timestamp=get_taiwan_time()  # 使用台灣時間
         )
 
-        embed.set_footer(text="每 60 秒自動更新 | 台灣時間")
+        embed.set_footer(text=f"每 60 秒自動更新 | 台灣時間•今天 下午 {format_taiwan_time()}")
 
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
