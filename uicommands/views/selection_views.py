@@ -439,7 +439,10 @@ class SelectSeedView(discord.ui.View):
                             f"種植{seed_name}"
                         )
 
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    # 創建包含返回按鈕的view
+                    result_view = PlantResultView(self.user_id, self.crop_operation_view)
+
+                    await interaction.followup.send(embed=embed, view=result_view, ephemeral=True)
                 else:
                     # 種植失敗，退還種子
                     await add_inventory(self.user_id, "種子", seed_name, 1)
@@ -538,6 +541,39 @@ class HarvestResultView(discord.ui.View):
         super().__init__(timeout=300)
         self.user_id = user_id
         self.plant_id = plant_id
+        self.crop_operation_view = crop_operation_view
+
+    @discord.ui.button(label='返回作物資訊', style=discord.ButtonStyle.secondary, emoji='🔙')
+    async def back_to_crop_info_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message('這不是你的操作！', ephemeral=True)
+            return
+
+        # 立即響應以避免超時
+        await interaction.response.defer()
+
+        try:
+            # 使用CropOperationView的類方法創建embed和view
+            from uicommands.views.crop_operations import CropOperationView
+            embed, view = await CropOperationView.create_crop_info_embed_and_view(
+                self.crop_operation_view.bot,
+                self.crop_operation_view.cog,
+                self.user_id,
+                self.crop_operation_view.guild_id,
+                self.crop_operation_view.channel_id
+            )
+
+            await interaction.edit_original_response(embed=embed, view=view)
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
+
+
+class PlantResultView(discord.ui.View):
+    """種植成功後的返回按鈕視圖"""
+    def __init__(self, user_id, crop_operation_view):
+        super().__init__(timeout=300)
+        self.user_id = user_id
         self.crop_operation_view = crop_operation_view
 
     @discord.ui.button(label='返回作物資訊', style=discord.ButtonStyle.secondary, emoji='🔙')

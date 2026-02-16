@@ -229,8 +229,12 @@ class CropPlantingView(discord.ui.View):
                         f"種植{selected_seed}"
                     )
 
+                # 創建包含返回按鈕的view
+                from .selection_views import PlantResultView
+                result_view = PlantResultView(self.user_id, self)
+
                 # 編輯原始回應顯示結果
-                await interaction.edit_original_response(embed=embed, view=None)
+                await interaction.edit_original_response(embed=embed, view=result_view)
             else:
                 # 種植失敗，退還種子
                 await add_inventory(self.user_id, "種子", selected_seed, 1)
@@ -304,7 +308,11 @@ class SelectSeedView(discord.ui.View):
                             f"種植{seed_name}"
                         )
 
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    # 創建包含返回按鈕的view
+                    from .selection_views import PlantResultView
+                    result_view = PlantResultView(self.user_id, self)
+
+                    await interaction.followup.send(embed=embed, view=result_view, ephemeral=True)
                 else:
                     # 種植失敗，退還種子
                     await add_inventory(self.user_id, "種子", seed_name, 1)
