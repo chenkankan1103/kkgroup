@@ -360,8 +360,7 @@ class SelectSeedView(discord.ui.View):
         seeds = await get_inventory(user_id)
         seeds = seeds.get("種子", {}) if seeds else {}
         
-        plants_data = await get_user_plants(user_id)
-        plants = plants_data.get("plants", [])
+        plants = await get_user_plants(user_id)
         growing = [p for p in plants if p.get("status") == "growing"]
         harvested = [p for p in plants if p.get("status") == "harvested"]
         
