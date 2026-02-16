@@ -622,8 +622,13 @@ class UserPanel(commands.Cog):
                     
                     # 正確檢查thread是否存在
                     try:
-                        thread = await forum_channel.fetch_thread(thread_id)
-                        if thread.archived:  # 封存狀態不更新
+                        # 用 bot.get_channel / fetch_channel 取得 thread（相容不同 discord.py 版本）
+                        thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                        if not thread or not isinstance(thread, discord.Thread):  # 若不是 thread 或不存在，視為遺失
+                            set_user_field(user_id, 'thread_id', None)
+                            set_user_field(user_id, 'locker_message_id', None)
+                            continue
+                        if getattr(thread, 'archived', False):  # 封存狀態不更新
                             continue
                     except discord.NotFound:
                         # thread不存在，清除資料
@@ -715,8 +720,12 @@ class UserPanel(commands.Cog):
                 
                 # 正確檢查thread是否存在
                 try:
-                    thread = await forum_channel.fetch_thread(thread_id)
-                    if thread.archived:  # 封存狀態不更新
+                    thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                    if not thread or not isinstance(thread, discord.Thread):
+                        set_user_field(user_id, 'thread_id', None)
+                        set_user_field(user_id, 'locker_message_id', None)
+                        continue
+                    if getattr(thread, 'archived', False):  # 封存狀態不更新
                         continue
                 except discord.NotFound:
                     # thread不存在，清除資料
@@ -747,8 +756,12 @@ class UserPanel(commands.Cog):
                     # 正確獲取thread
                     thread_id = user_data.get('thread_id')
                     try:
-                        thread = await forum_channel.fetch_thread(thread_id)
-                        if thread.archived:
+                        thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                        if not thread or not isinstance(thread, discord.Thread):
+                            set_user_field(user_id, 'thread_id', None)
+                            set_user_field(user_id, 'locker_message_id', None)
+                            continue
+                        if getattr(thread, 'archived', False):
                             continue
                     except discord.NotFound:
                         # thread不存在，清除資料
