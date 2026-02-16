@@ -94,6 +94,29 @@ async def upload_image_to_discord_storage(bot, image_data: bytes, cache_key: str
     return None
 
 
+def build_maplestory_api_url(user_data: dict, animated: bool = True) -> str:
+    """生成 MapleStory.io API 的請求 URL（僅返回 URL 字串，**不發出網路請求**）"""
+    items = [
+        {"itemId": 2000, "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('skin', 12000), "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('hair', 30120), "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('top', 1040014), "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('bottom', 1060096), "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('shoes', 1072005), "region": "GMS", "version": "217"}
+    ]
+
+    if user_data.get('is_stunned', 0) == 1:
+        items.append({"itemId": 1005411, "region": "GMS", "version": "217"})
+
+    item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
+    pose = "prone" if user_data.get('is_stunned', 0) == 1 else "stand1"
+
+    if animated:
+        return f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&resize=2&flipX=true"
+    return f"https://maplestory.io/api/character/{item_path}/{pose}/0?showears=false&resize=2&flipX=true"
+
+
 async def get_character_image_url(bot, user_data: dict, image_cache: dict, image_storage_channel_id: int, 
                                   welcome_channel_id: int) -> Optional[str]:
     """獲取角色圖片URL（優先使用快取，再用API）"""
