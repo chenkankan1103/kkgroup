@@ -145,7 +145,7 @@ class LockerPanelView(discord.ui.View):
             
             embed.add_field(
                 name="🌱 作物管理",
-                value="• 作物種植：開始種植新的作物\n• 施肥：為成長中的植物施肥\n• 收割：收割成熟的作物\n• 查看肥料：檢查你的肥料庫存",
+                value="• 作物種植：開始種植新的作物\n• 收割：收割成熟的作物\n• 個人物品：查看你的物品庫存",
                 inline=False
             )
             
