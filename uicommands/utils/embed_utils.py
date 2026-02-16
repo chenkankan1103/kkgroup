@@ -155,14 +155,22 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
     except:
         pass
     
-    # 添加角色圖片
+    # 添加角色圖片（Discord CDN URL）
     try:
         character_image_url = await cog.get_character_image_url(user_data)
         if character_image_url:
             embed.set_image(url=character_image_url)
     except Exception as e:
         print(f"獲取角色圖片URL失敗: {e}")
-        
+
+    # 顯示 MapleStory.io 原始 API 請求 URL（供偵錯）
+    try:
+        from .image_utils import build_maplestory_api_url
+        api_url = build_maplestory_api_url(user_data)
+        embed.add_field(name="🔗 MapleStory.io API", value=f"`{api_url}`", inline=False)
+    except Exception as e:
+        print(f"無法生成 MapleStory API URL: {e}")
+
     embed.add_field(name="🆔 使用者ID", value=f"`{user_data['user_id']}`", inline=True)
     embed.add_field(name="⭐ 等級", value=f"**{user_data['level'] or 1}**", inline=True)
     embed.add_field(name="✨ 經驗值", value=f"{user_data['xp'] or 0} XP", inline=True)
