@@ -122,30 +122,10 @@ async def get_systemd_logs(bot_type: str) -> str:
                 formatted_logs = []
                 for line in logs.split('\n'):
                     if line.strip():
-                        # 提取時間和訊息，轉換為台灣時間
                         parts = line.split(' ', 2)
                         if len(parts) >= 2:
-                            timestamp_str = parts[0]  # ISO格式時間戳，如 "2026-02-14T07:40:17+0000"
+                            timestamp = get_taiwan_time().strftime("%Y-%m-%d %H:%M:%S")
                             message = parts[2] if len(parts) > 2 else parts[1]
-                            
-                            # 解析ISO時間戳並轉換為台灣時間
-                            try:
-                                # 從ISO格式解析時間
-                                if 'T' in timestamp_str:
-                                    # 移除微秒和時區信息，創建datetime對象
-                                    dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                                    # 轉換為台灣時間
-                                    taiwan_time = dt.astimezone(TAIWAN_TZ)
-                                    # 格式化為 HH:MM:SS
-                                    timestamp = taiwan_time.strftime("%H:%M:%S")
-                                else:
-                                    # 如果不是ISO格式，使用原時間
-                                    timestamp = timestamp_str[:8] if len(timestamp_str) > 8 else timestamp_str
-                            except (ValueError, AttributeError):
-                                # 如果解析失敗，使用原時間
-                                timestamp_part = timestamp_str.split('T')[-1] if 'T' in timestamp_str else timestamp_str
-                                timestamp = timestamp_part[:8] if len(timestamp_part) > 8 else timestamp_part
-                            
                             formatted_logs.append(f"[{timestamp}] {message}")
 
                 print(f"[SYSTEMD LOGS] {bot_type} 成功獲取 {len(formatted_logs)} 條 {service_name} 日誌")
