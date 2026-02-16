@@ -35,8 +35,14 @@ class LockerTasks:
                         continue
                     
                     try:
-                        thread = await forum_channel.fetch_thread(thread_id)
-                        if thread.archived:
+                        # fetch thread by ID via bot (ForumChannel.fetch_thread isn't available on all discord.py builds)
+                        thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                        if not thread or not isinstance(thread, discord.Thread):
+                            # thread missing / not a Thread -> clear stored thread
+                            set_user_field(user_id, 'thread_id', None)
+                            set_user_field(user_id, 'locker_message_id', None)
+                            continue
+                        if getattr(thread, 'archived', False):
                             continue
                     except discord.NotFound:
                         set_user_field(user_id, 'thread_id', None)
@@ -60,7 +66,10 @@ class LockerTasks:
                         thread_id = user_data.get('thread_id')
                         if thread_id:
                             try:
-                                thread_tmp = await forum_channel.fetch_thread(thread_id)
+                                # use bot.fetch_channel/get_channel to support environments without ForumChannel.fetch_thread
+                                thread_tmp = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                                if not thread_tmp or not isinstance(thread_tmp, discord.Thread):
+                                    continue
                                 async for m in thread_tmp.history(limit=200):
                                     if m.author and m.author.id == self.bot.user.id and m.embeds:
                                         e = m.embeds[0]
@@ -73,7 +82,7 @@ class LockerTasks:
                                             except Exception:
                                                 pass
                                             break
-                            except Exception as _:
+                            except Exception:
                                 # 任何錯誤都跳過回填，之後會繼續下一個使用者
                                 pass
 
@@ -83,8 +92,12 @@ class LockerTasks:
                     try:
                         thread_id = user_data.get('thread_id')
                         try:
-                            thread = await forum_channel.fetch_thread(thread_id)
-                            if thread.archived:
+                            thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                            if not thread or not isinstance(thread, discord.Thread):
+                                set_user_field(user_id, 'thread_id', None)
+                                set_user_field(user_id, 'locker_message_id', None)
+                                continue
+                            if getattr(thread, 'archived', False):
                                 continue
                         except discord.NotFound:
                             set_user_field(user_id, 'thread_id', None)
@@ -144,8 +157,13 @@ class LockerTasks:
                     continue
                 
                 try:
-                    thread = await forum_channel.fetch_thread(thread_id)
-                    if thread.archived:
+                    # fetch thread via bot (more compatible across discord.py builds)
+                    thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                    if not thread or not isinstance(thread, discord.Thread):
+                        set_user_field(user_id, 'thread_id', None)
+                        set_user_field(user_id, 'locker_message_id', None)
+                        continue
+                    if getattr(thread, 'archived', False):
                         continue
                 except discord.NotFound:
                     set_user_field(user_id, 'thread_id', None)
@@ -171,7 +189,9 @@ class LockerTasks:
                     thread_id = user_data.get('thread_id')
                     if thread_id:
                         try:
-                            thread_tmp = await forum_channel.fetch_thread(thread_id)
+                            thread_tmp = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                            if not thread_tmp or not isinstance(thread_tmp, discord.Thread):
+                                continue
                             async for m in thread_tmp.history(limit=200):
                                 if m.author and m.author.id == self.bot.user.id and m.embeds:
                                     e = m.embeds[0]
@@ -193,8 +213,12 @@ class LockerTasks:
                 try:
                     thread_id = user_data.get('thread_id')
                     try:
-                        thread = await forum_channel.fetch_thread(thread_id)
-                        if thread.archived:
+                        thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                        if not thread or not isinstance(thread, discord.Thread):
+                            set_user_field(user_id, 'thread_id', None)
+                            set_user_field(user_id, 'locker_message_id', None)
+                            continue
+                        if getattr(thread, 'archived', False):
                             continue
                     except discord.NotFound:
                         set_user_field(user_id, 'thread_id', None)

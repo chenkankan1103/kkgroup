@@ -47,10 +47,13 @@ class AdminCommands(commands.Cog):
                 
                 try:
                     try:
-                        thread = await forum_channel.fetch_thread(thread_id)
-                        if thread.archived:
-                            set_user_field(user_id, 'thread_id', None)
-                            set_user_field(user_id, 'locker_message_id', None)
+                            # use bot.fetch_channel/get_channel for compatibility
+                            thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                            if not thread or not isinstance(thread, discord.Thread):
+                                set_user_field(user_id, 'thread_id', None)
+                                set_user_field(user_id, 'locker_message_id', None)
+                                continue
+                            if getattr(thread, 'archived', False):
                             continue
                     except discord.NotFound:
                         set_user_field(user_id, 'thread_id', None)
