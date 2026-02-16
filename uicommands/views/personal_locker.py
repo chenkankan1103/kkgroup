@@ -47,16 +47,6 @@ class PersonalLockerView(discord.ui.View):
         items_button.callback = self.personal_items_callback
         self.add_item(items_button)
 
-        # 查看肥料按鈕 - 永遠顯示，但會根據物品顯示不同信息
-        fertilizer_button = discord.ui.Button(
-            label="查看肥料", 
-            style=discord.ButtonStyle.primary, 
-            emoji="🧂",
-            custom_id="view_fertilizer"
-        )
-        fertilizer_button.callback = self.view_fertilizer_callback_impl
-        self.add_item(fertilizer_button)
-
     async def crop_info_callback(self, interaction: discord.Interaction):
         """作物資訊"""
         await self.crop_info_callback_impl(interaction)
@@ -64,41 +54,6 @@ class PersonalLockerView(discord.ui.View):
     async def personal_items_callback(self, interaction: discord.Interaction):
         """個人物品"""
         await self.personal_items_callback_impl(interaction)
-
-    async def view_fertilizer_callback_impl(self, interaction: discord.Interaction):
-        """查看可用肥料 - 實現"""
-        try:
-            await interaction.response.defer()
-
-            inventory = await get_inventory(self.user_id)
-            fertilizers = inventory.get("肥料", {})
-
-            embed = discord.Embed(
-                title="🧂 可用肥料",
-                color=discord.Color.blue()
-            )
-
-            if not fertilizers:
-                embed.description = "你沒有肥料"
-            else:
-                for fert_name, qty in fertilizers.items():
-                    fert_config = CANNABIS_SHOP["肥料"][fert_name]
-                    embed.add_field(
-                        name=f"{fert_config['emoji']} {fert_name}",
-                        value=f"擁有：{qty} 份\n加速：{fert_config['growth_boost']*100:.0f}%",
-                        inline=True
-                    )
-
-            # 添加返回按鈕
-            view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
-            embed.set_footer(text="點擊下方按鈕返回主選項")
-
-            # 編輯原始回應
-            await interaction.edit_original_response(embed=embed, view=view)
-
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
     async def crop_planting_callback(self, interaction: discord.Interaction):
         """作物種植 - 顯示種子選擇介面"""
@@ -309,16 +264,6 @@ class PersonalLockerView(discord.ui.View):
                 if seed_info:
                     embed.add_field(name="🌱 種子", value=seed_info.strip(), inline=True)
 
-            # 顯示肥料
-            if inventory.get("肥料"):
-                fert_info = ""
-                for fert_name, qty in inventory["肥料"].items():
-                    if qty > 0:
-                        config = CANNABIS_SHOP["肥料"][fert_name]
-                        fert_info += f"{config['emoji']} {fert_name}: {qty} 份\n"
-                if fert_info:
-                    embed.add_field(name="💧 肥料", value=fert_info.strip(), inline=True)
-
             # 顯示大麻
             if inventory.get("大麻"):
                 cannabis_info = ""
@@ -355,7 +300,7 @@ class PersonalLockerView(discord.ui.View):
 
             embed.add_field(
                 name="🌱 作物管理",
-                value="• 作物種植：開始種植新的作物\n• 施肥：為成長中的植物施肥\n• 收割：收割成熟的作物\n• 查看肥料：檢查你的肥料庫存",
+                value="• 作物種植：開始種植新的作物\n• 收割：收割成熟的作物\n• 個人物品：查看你的物品庫存",
                 inline=False
             )
 

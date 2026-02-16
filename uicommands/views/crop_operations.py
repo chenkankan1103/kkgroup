@@ -338,7 +338,7 @@ class SelectSeedView(discord.ui.View):
 
             embed.add_field(
                 name="🌱 作物管理",
-                value="• 作物資訊：查看作物狀態和操作選項\n• 個人物品：查看你的物品庫存\n• 查看肥料：檢查你的肥料庫存",
+                value="• 作物資訊：查看作物狀態和操作選項\n• 個人物品：查看你的物品庫存",
                 inline=False
             )
 
