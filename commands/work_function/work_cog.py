@@ -87,9 +87,13 @@ class CheckInButton(discord.ui.Button):
         # 初始化變數以避免異常處理時的NameError
         user_id = None
         user_name = None
+        responded = False
         
         try:
+            # 立即 defer 以保留交互令牌
             await interaction.response.defer(ephemeral=True)
+            responded = True
+            
             user_id = interaction.user.id
             user_name = interaction.user.name
             
@@ -126,23 +130,13 @@ class CheckInButton(discord.ui.Button):
 
             logger.info(f"💼 開始處理打卡邏輯 (user: {user_name})...")
             
-            # 設定超時以防止交互令牌過期
-            try:
-                embeds_tuple, updated_user, salary_multiplier, daily_story = await asyncio.wait_for(
-                    process_checkin(
-                        interaction.user.id, 
-                        interaction.user,
-                        interaction.guild
-                    ),
-                    timeout=10.0
-                )
-            except asyncio.TimeoutError:
-                logger.error(f"❌ 打卡超時: 處理時間過長 (user: {user_name})")
-                await interaction.followup.send(
-                    "❌ 打卡處理超時，請稍後再試", 
-                    ephemeral=True
-                )
-                return
+            # 使用超時保護，但不使用 asyncio.wait_for（會取消任務導致交互失效）
+            # 改為在 process_checkin 內部管理超時
+            embeds_tuple, updated_user, salary_multiplier, daily_story = await process_checkin(
+                interaction.user.id, 
+                interaction.user,
+                interaction.guild
+            )
             
             if embeds_tuple and updated_user:
                 work_view = WorkActionView(updated_user)
@@ -208,34 +202,22 @@ class CheckInButton(discord.ui.Button):
                     ephemeral=True
                 )
 
-        except asyncio.TimeoutError:
-            error_msg = f"❌ 打卡處理超時 (user: {user_name})"
-            logger.error(error_msg)
-            try:
-                await interaction.followup.send(
-                    "❌ 處理超時，請稍後再試", 
-                    ephemeral=True
-                )
-            except discord.errors.InteractionResponded:
-                logger.warning("交互已被回應，無法發送錯誤訊息")
-            except:
-                pass
-        
         except discord.errors.InteractionResponded:
             logger.warning(f"⚠️ 交互已被回應（可能是重複點擊） (user: {user_name})")
         
         except Exception as e:
             error_msg = f"❌ 打卡發生例外 (User: {user_name if user_name else 'Unknown'}, ID: {user_id if user_id else 'Unknown'})"
             logger.error(error_msg, exc_info=True)
-            try:
-                await interaction.followup.send(
-                    "❌ 發生錯誤，請稍後再試或聯絡管理員。", 
-                    ephemeral=True
-                )
-            except discord.errors.InteractionResponded:
-                logger.warning("交互已被回應，無法發送錯誤訊息")
-            except:
-                pass
+            
+            # 只有在已經defer的情況下才嘗試發送followup
+            if responded:
+                try:
+                    await interaction.followup.send(
+                        "❌ 發生錯誤，請稍後再試或聯絡管理員。", 
+                        ephemeral=True
+                    )
+                except:
+                    logger.warning("無法發送錯誤訊息給用戶")
 
 class RestButton(discord.ui.Button):
     def __init__(self):
