@@ -172,13 +172,7 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
     except Exception as e:
         print(f"獲取角色圖片URL失敗: {e}")
 
-    # 顯示 MapleStory.io 原始 API 請求 URL（供偵錯）
-    try:
-        from .image_utils import build_maplestory_api_url
-        api_url = build_maplestory_api_url(user_data)
-        embed.add_field(name="🔗 MapleStory.io API", value=f"`{api_url}`", inline=False)
-    except Exception as e:
-        print(f"無法生成 MapleStory API URL: {e}")
+
 
     embed.add_field(name="🆔 使用者ID", value=f"`{user_data['user_id']}`", inline=True)
     embed.add_field(name="⭐ 等級", value=f"**{user_data['level'] or 1}**", inline=True)
@@ -202,17 +196,56 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
     embed.add_field(name="😊 臉型", value=f"ID: {user_data['face']}", inline=True)
     embed.add_field(name="🎨 膚色", value=f"ID: {user_data['skin']}", inline=True)
 
-    inventory = '空的'
-    if user_data['inventory']:
-        try:
+    # 合併顯示常規庫存與大麻系統庫存（把兩個合併為單一「物品欄」）
+    inventory_lines = []
+
+    # 1) 使用者主庫存（users.inventory，通常是 JSON list）
+    try:
+        if user_data.get('inventory'):
             items = json.loads(user_data['inventory'])
-            if isinstance(items, list) and len(items) > 0:
-                inventory = ', '.join(str(item) for item in items[:5])
+            if isinstance(items, list) and items:
+                inventory_lines.extend(str(i) for i in items[:5])
                 if len(items) > 5:
-                    inventory += f"... 等 {len(items)} 項物品"
-        except json.JSONDecodeError:
-            inventory_str = str(user_data['inventory'])
-            inventory = inventory_str[:50] + '...' if len(inventory_str) > 50 else inventory_str
+                    inventory_lines.append(f"... 等 {len(items)} 項其他物品")
+    except Exception:
+        if user_data.get('inventory'):
+            inventory_lines.append(str(user_data.get('inventory'))[:100])
+
+    # 2) 大麻系統庫存（若存在則合併）
+    try:
+        from shop_commands.merchant.cannabis_farming import get_inventory as _get_cannabis_inventory
+        from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+
+        cannabis_inv = await _get_cannabis_inventory(user_data.get('user_id'))
+        # 種子
+        for seed_name, qty in (cannabis_inv.get('種子') or {}).items():
+            if qty and qty > 0:
+                emoji = CANNABIS_SHOP.get('種子', {}).get(seed_name, {}).get('emoji', '🌱')
+                inventory_lines.append(f"{emoji} {seed_name} x{qty}")
+        # 大麻（收割品）
+        for seed_name, qty in (cannabis_inv.get('大麻') or {}).items():
+            if qty and qty > 0:
+                price = CANNABIS_HARVEST_PRICES.get(seed_name, 0)
+                inventory_lines.append(f"💰 {seed_name} x{qty} ({price}/個)")
+        # 肥料
+        for fert_name, qty in (cannabis_inv.get('肥料') or {}).items():
+            if qty and qty > 0:
+                emoji = CANNABIS_SHOP.get('肥料', {}).get(fert_name, {}).get('emoji', '🧂')
+                inventory_lines.append(f"{emoji} {fert_name} x{qty}")
+    except Exception:
+        # 若取不到 cannabis 庫存則忽略（保持原樣）
+        pass
+
+    # 組合輸出（限制顯示行數以免過長）
+    if not inventory_lines:
+        inventory = '空的'
+    else:
+        max_lines = 10
+        shown = inventory_lines[:max_lines]
+        inventory = '\n'.join(shown)
+        if len(inventory_lines) > max_lines:
+            inventory += '\n...更多'
+
     embed.add_field(name="🎒 物品欄", value=inventory, inline=False)
     
     embed.set_footer(text="💫 由 MapleStory.io API 提供角色外觀")
