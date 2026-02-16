@@ -545,18 +545,22 @@ class HarvestResultView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message('這不是你的操作！', ephemeral=True)
             return
-        
+
         # 立即響應以避免超時
         await interaction.response.defer()
-        
-        # 使用CropOperationView的類方法創建embed和view
-        from uicommands.views.crop_operations import CropOperationView
-        embed, view = await CropOperationView.create_crop_info_embed_and_view(
-            self.crop_operation_view.bot, 
-            self.crop_operation_view.cog, 
-            self.user_id, 
-            self.crop_operation_view.guild_id, 
-            self.crop_operation_view.channel_id
-        )
-        
-        await interaction.edit_original_response(embed=embed, view=view)
+
+        try:
+            # 使用CropOperationView的類方法創建embed和view
+            from uicommands.views.crop_operations import CropOperationView
+            embed, view = await CropOperationView.create_crop_info_embed_and_view(
+                self.crop_operation_view.bot,
+                self.crop_operation_view.cog,
+                self.user_id,
+                self.crop_operation_view.guild_id,
+                self.crop_operation_view.channel_id
+            )
+
+            await interaction.edit_original_response(embed=embed, view=view)
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
