@@ -155,11 +155,20 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
     except:
         pass
     
-    # 添加角色圖片（Discord CDN URL）
+    # 添加角色圖片（優先 Discord CDN URL；若無則回退到 MapleStory.io API）
     try:
         character_image_url = await cog.get_character_image_url(user_data)
         if character_image_url:
+            # Discord-hosted image (cached/uploaded)
             embed.set_image(url=character_image_url)
+        else:
+            # 回退：直接使用 MapleStory.io API 圖片 URL（保證 embed 會顯示圖片）
+            try:
+                from .image_utils import build_maplestory_api_url
+                api_url = build_maplestory_api_url(user_data, animated=True)
+                embed.set_image(url=api_url)
+            except Exception:
+                pass
     except Exception as e:
         print(f"獲取角色圖片URL失敗: {e}")
 
