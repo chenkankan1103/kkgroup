@@ -54,9 +54,32 @@ class LockerTasks:
                 for user_data, _ in active_users:
                     user_id = user_data.get('user_id')
                     locker_message_id = user_data.get('locker_message_id')
+
+                    # 如果 locker_message_id 缺失，嘗試使用 thread_id 在 thread 歷史中尋找置物櫃訊息並回填
+                    if not locker_message_id:
+                        thread_id = user_data.get('thread_id')
+                        if thread_id:
+                            try:
+                                thread_tmp = await forum_channel.fetch_thread(thread_id)
+                                async for m in thread_tmp.history(limit=200):
+                                    if m.author and m.author.id == self.bot.user.id and m.embeds:
+                                        e = m.embeds[0]
+                                        title = e.title or ''
+                                        if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
+                                            locker_message_id = m.id
+                                            try:
+                                                set_user_field(user_id, 'locker_message_id', locker_message_id)
+                                                print(f"🔁 回填 locker_message_id for user {user_id}: {locker_message_id}")
+                                            except Exception:
+                                                pass
+                                            break
+                            except Exception as _:
+                                # 任何錯誤都跳過回填，之後會繼續下一個使用者
+                                pass
+
                     if not locker_message_id:
                         continue
-                    
+
                     try:
                         thread_id = user_data.get('thread_id')
                         try:
@@ -142,9 +165,31 @@ class LockerTasks:
             for user_data, _ in active_users[:10]:
                 user_id = user_data.get('user_id')
                 locker_message_id = user_data.get('locker_message_id')
+
+                # fallback: 若 locker_message_id 不存在，使用 thread_id 在 thread 歷史中搜尋並回填
+                if not locker_message_id:
+                    thread_id = user_data.get('thread_id')
+                    if thread_id:
+                        try:
+                            thread_tmp = await forum_channel.fetch_thread(thread_id)
+                            async for m in thread_tmp.history(limit=200):
+                                if m.author and m.author.id == self.bot.user.id and m.embeds:
+                                    e = m.embeds[0]
+                                    title = e.title or ''
+                                    if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
+                                        locker_message_id = m.id
+                                        try:
+                                            set_user_field(user_id, 'locker_message_id', locker_message_id)
+                                            print(f"🔁 回填 locker_message_id for user {user_id}: {locker_message_id}")
+                                        except Exception:
+                                            pass
+                                        break
+                        except Exception:
+                            pass
+
                 if not locker_message_id:
                     continue
-                
+
                 try:
                     thread_id = user_data.get('thread_id')
                     try:
