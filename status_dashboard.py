@@ -124,7 +124,7 @@ async def get_systemd_logs(bot_type: str) -> str:
                     if line.strip():
                         parts = line.split(' ', 2)
                         if len(parts) >= 2:
-                            timestamp = get_taiwan_time().strftime("%Y-%m-%d %H:%M:%S")
+                            timestamp = get_taiwan_time().strftime("%H:%M")
                             message = parts[2] if len(parts) > 2 else parts[1]
                             formatted_logs.append(f"[{timestamp}] {message}")
 
