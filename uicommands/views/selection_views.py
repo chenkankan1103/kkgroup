@@ -563,10 +563,14 @@ class HarvestResultView(discord.ui.View):
                 self.crop_operation_view.channel_id
             )
 
-            await interaction.edit_original_response(embed=embed, view=view)
+            # 先嘗試編輯原始回應，若失敗則退回到 followup.send（例如原始回應不可編輯時）
+            try:
+                await interaction.edit_original_response(embed=embed, view=view)
+            except Exception:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         except Exception as e:
             traceback.print_exc()
-            await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
+            await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:200]}", ephemeral=True)
 
 
 class PlantResultView(discord.ui.View):
@@ -596,7 +600,10 @@ class PlantResultView(discord.ui.View):
                 self.crop_operation_view.channel_id
             )
 
-            await interaction.edit_original_response(embed=embed, view=view)
+            try:
+                await interaction.edit_original_response(embed=embed, view=view)
+            except Exception:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         except Exception as e:
             traceback.print_exc()
-            await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
+            await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:200]}", ephemeral=True)
