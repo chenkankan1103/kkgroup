@@ -291,17 +291,6 @@ class UserPanel(commands.Cog):
             
             embed = await self.create_user_embed(user_data, user)
             
-            try:
-                if skip_image_on_startup:
-                    cache_key = self.generate_character_cache_key(user_data)
-                    character_image_url = get_cached_discord_url(self.image_cache, cache_key)
-                else:
-                    character_image_url = await self.get_character_image_url(user_data)
-                if character_image_url:
-                    embed.set_image(url=character_image_url)
-            except Exception:
-                pass
-
             thread_name = f"📦 {user.display_name or user.name} 的置物櫃"
             
             view = LockerPanelView(self, user.id, thread=None)  # thread稍後會設置

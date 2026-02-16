@@ -49,10 +49,6 @@ class UpdatePanelView(discord.ui.View):
                 return
             
             embed = await self.cog.create_user_embed(user_data, interaction.user)
-            character_image_url = await self.cog.get_character_image_url(user_data)
-            
-            if character_image_url:
-                embed.set_image(url=character_image_url)
             
             # 修改搜尋邏輯：直接更新當前訊息
             try:

@@ -83,10 +83,6 @@ class LockerPanelView(discord.ui.View):
             # 使用 interaction.user 而非從數據中提取用戶信息
             user = self.cog.bot.get_user(owner_user_id) or await self.cog.bot.fetch_user(owner_user_id)
             embed = await self.cog.create_user_embed(user_data, user)
-            character_image_url = await self.cog.get_character_image_url(user_data)
-            
-            if character_image_url:
-                embed.set_image(url=character_image_url)
             
             # 直接編輯當前消息
             try:
