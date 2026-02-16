@@ -148,7 +148,11 @@ class PersonalLockerView(discord.ui.View):
                             f"種植{seed_name}"
                         )
 
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    # 創建包含返回按鈕的view
+                    from .selection_views import PlantResultView
+                    result_view = PlantResultView(self.user_id, self)
+
+                    await interaction.followup.send(embed=embed, view=result_view, ephemeral=True)
                 else:
                     # 種植失敗，退還種子
                     await add_inventory(self.user_id, "種子", seed_name, 1)
