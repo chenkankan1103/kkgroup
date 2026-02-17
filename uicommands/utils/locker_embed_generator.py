@@ -164,6 +164,83 @@ async def generate_canonical_locker_embed(
     return embed
 
 
+def _has_legacy_button_components(components) -> bool:
+    try:
+        for row in components or []:
+            # row can be ActionRow (discord) or dict (API JSON)
+            children = None
+            if isinstance(row, dict):
+                children = row.get('components', [])
+            else:
+                children = getattr(row, 'children', [])
+
+            for comp in children:
+                cid = None
+                if isinstance(comp, dict):
+                    cid = comp.get('custom_id')
+                else:
+                    cid = getattr(comp, 'custom_id', None)
+                if cid == 'locker_crop_info':
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def message_json_needs_update(msg_json: dict) -> bool:
+    """判斷從 Discord API 取得的 message JSON 是否需要被更新（用於 tools）。"""
+    try:
+        embeds = msg_json.get('embeds') or []
+        current_embed = embeds[0] if embeds else None
+        current_image = None
+        current_footer = ''
+        if current_embed:
+            current_image = (current_embed.get('image') or {}).get('url')
+            current_footer = (current_embed.get('footer') or {}).get('text', '') or ''
+
+        # missing image or missing MapleStory footer -> needs update
+        if not current_image:
+            return True
+        if 'MapleStory' not in (current_footer or ''):
+            return True
+
+        # legacy buttons present -> needs update
+        if _has_legacy_button_components(msg_json.get('components') or []):
+            return True
+
+        return False
+    except Exception:
+        return True
+
+
+def message_needs_update(message: discord.Message) -> bool:
+    """判斷 discord.Message 是否需要更新（用於在 bot 內的檢查）。"""
+    try:
+        current_embed = message.embeds[0] if message.embeds else None
+        current_image = None
+        current_footer = ''
+        if current_embed:
+            img = getattr(current_embed, 'image', None)
+            current_image = getattr(img, 'url', None) if img else None
+            footer = getattr(current_embed, 'footer', None)
+            current_footer = (getattr(footer, 'text', '') or '')
+
+        if not current_image:
+            return True
+        if 'MapleStory' not in (current_footer or ''):
+            return True
+
+        # components: check for legacy custom_id
+        for row in message.components or []:
+            for child in getattr(row, 'children', []):
+                cid = getattr(child, 'custom_id', None) or (child.get('custom_id') if isinstance(child, dict) else None)
+                if cid == 'locker_crop_info':
+                    return True
+
+        return False
+    except Exception:
+        return True
+
 async def update_locker_message(
     thread: discord.Thread,
     user_id: int,

@@ -180,6 +180,16 @@ class LockerTasks:
                             # 無法取得或建立 message -> 跳過
                             continue
 
+                        # Skip edit if message already canonical (prevents regressing fixes)
+                        try:
+                            from uicommands.utils.locker_embed_generator import message_needs_update
+                            if not message_needs_update(message):
+                                # already canonical — skip
+                                continue
+                        except Exception:
+                            # if helper unavailable, fall back to updating to be safe
+                            pass
+
                         user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
                         embed = await self.cog.create_user_embed(user_data, user)
                         character_image_url = await self.cog.get_character_image_url(user_data)
