@@ -70,23 +70,11 @@ class UserPanel(commands.Cog):
         # 初始化任務
         self.locker_tasks = LockerTasks(self)
         
-        # 啟動embed更新任務（已停用；需要顯式允許）
-        # 自動更新預設停用。若要啟用，必須同時設定：
-        #   DISABLE_LOCKER_AUTOMATIC_UPDATE=0 AND ENABLE_LOCKER_AUTOMATIC_UPDATE=1
-        disable_flag = os.getenv('DISABLE_LOCKER_AUTOMATIC_UPDATE', '1') == '1'
-        enable_flag = os.getenv('ENABLE_LOCKER_AUTOMATIC_UPDATE', '0') == '1'
-        if disable_flag or not enable_flag:
-            print("⚠️ 自動更新已停用（需要明確設定 ENABLE_LOCKER_AUTOMATIC_UPDATE=1 才會啟用）。請使用 /update_forum_lockers 手動觸發更新。")
-            self.update_embeds_task = None
-        else:
-            print("🔧 初始化 UserPanel，啟動embed更新任務（已顯式允許）")
-            try:
-                self.update_embeds_task = self.bot.loop.create_task(self.locker_tasks.update_all_locker_embeds())
-                print("✅ embed更新任務已創建")
-            except Exception as e:
-                print(f"❌ 創建embed更新任務失敗: {e}")
-                import traceback
-                traceback.print_exc()
+        # ⏹️ 背景自動更新已完全禁用
+        # 原因：背景任務每 30 分鐘覆蓋置物櫃 embed，會覆蓋 /update_forum_lockers 的高品質動態 API 圖片
+        # 用戶需手動執行 /update_forum_lockers 命令來更新置物櫃
+        self.update_embeds_task = None
+        print("⏹️  置物櫃背景自動更新已禁用。請使用 /update_forum_lockers 命令手動更新。")
     
     def cog_unload(self):
         if hasattr(self, 'update_embeds_task'):
