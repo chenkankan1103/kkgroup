@@ -327,7 +327,7 @@ class ExploreView(View):
             except:
                 pass
 
-    @discord.ui.button(label="👗 進入衣帽間", style=discord.ButtonStyle.primary, custom_id="persistent_paperdoll", emoji="👗")
+    @discord.ui.button(label="進入衣帽間", style=discord.ButtonStyle.primary, custom_id="persistent_paperdoll", emoji="👗")
     async def paperdoll_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         import traceback, time
         ts = int(time.time())
@@ -518,11 +518,11 @@ class ItemDetailView(View):
         self.category = category
         self.can_afford = can_afford
     
-    @discord.ui.button(label="👀 預覽試穿", style=discord.ButtonStyle.secondary, emoji="🔍")
+    @discord.ui.button(label="預覽試穿", style=discord.ButtonStyle.secondary, emoji="🔍")
     async def preview_item(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_equipment_preview(interaction, self.item_name, self.item_data, self.category)
     
-    @discord.ui.button(label="🛒 直接購買", style=discord.ButtonStyle.green, emoji="💰")
+    @discord.ui.button(label="直接購買", style=discord.ButtonStyle.green, emoji="💰")
     async def buy_item(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.can_afford:
             await interaction.response.send_message("❌ 你的 KKcoin 不足，無法購買此商品！", ephemeral=True)
@@ -556,11 +556,11 @@ class EquipmentPreviewView(discord.ui.View):
         self.category = category
         self.can_afford = can_afford
 
-    @discord.ui.button(label="👀 再次試穿", style=discord.ButtonStyle.primary, emoji="👗")
+    @discord.ui.button(label="再次試穿", style=discord.ButtonStyle.primary, emoji="👗")
     async def try_on_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_equipment_preview(interaction, self.item_name, self.item_data, self.category)
 
-    @discord.ui.button(label="💰 立即購買", style=discord.ButtonStyle.success, emoji="🛒")
+    @discord.ui.button(label="立即購買", style=discord.ButtonStyle.success, emoji="🛒")
     async def purchase_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.can_afford:
             await interaction.response.send_message("❌ 你的 KKcoin 不足，無法購買此商品！", ephemeral=True)
@@ -588,7 +588,7 @@ class TryOnResultView(discord.ui.View):
         self.item_data = item_data
         self.category = category
 
-    @discord.ui.button(label="💰 喜歡！立即購買", style=discord.ButtonStyle.success, emoji="❤️")
+    @discord.ui.button(label="喜歡！立即購買", style=discord.ButtonStyle.success, emoji="❤️")
     async def purchase_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_equipment_purchase(interaction, self.item_name, self.item_data, self.category)
 
@@ -801,11 +801,11 @@ class ProductCategoryView(View):
         super().__init__(timeout=300)
         self.cog = cog
 
-    @discord.ui.button(label="👑 購買身份", style=discord.ButtonStyle.green, custom_id="persistent_buy_roles", emoji="👑")
+    @discord.ui.button(label="購買身份", style=discord.ButtonStyle.green, custom_id="persistent_buy_roles", emoji="👑")
     async def buy_roles_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.get_merchant_response(interaction.user, "購買身份", interaction)
 
-    @discord.ui.button(label="🌱 種植大麻", style=discord.ButtonStyle.success, custom_id="persistent_cannabis", emoji="🌱")
+    @discord.ui.button(label="種植大麻", style=discord.ButtonStyle.success, custom_id="persistent_cannabis", emoji="🌱")
     async def cannabis_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         from shop_commands.merchant.cannabis_merchant_view_v2 import CannabisMerchantViewV2
         embed = discord.Embed(

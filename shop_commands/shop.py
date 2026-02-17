@@ -962,7 +962,7 @@ class EditView(discord.ui.View):
             self.add_item(next_button)
 
         # 添加搜索按鈕
-        search_button = discord.ui.Button(label="🔍 搜索", style=discord.ButtonStyle.primary, emoji="🔍")
+        search_button = discord.ui.Button(label="搜索", style=discord.ButtonStyle.primary, emoji="🔍")
         search_button.callback = self.search_items
         self.add_item(search_button)
 
@@ -1226,11 +1226,11 @@ class SearchResultView(discord.ui.View):
             next_button.callback = self.next_page
             self.add_item(next_button)
 
-        back_button = discord.ui.Button(label="🔍 新搜索", style=discord.ButtonStyle.primary, emoji="🔍")
+        back_button = discord.ui.Button(label="新搜索", style=discord.ButtonStyle.primary, emoji="🔍")
         back_button.callback = self.new_search
         self.add_item(back_button)
 
-        close_button = discord.ui.Button(label="❌ 關閉", style=discord.ButtonStyle.danger, emoji="❌")
+        close_button = discord.ui.Button(label="關閉", style=discord.ButtonStyle.danger, emoji="❌")
         close_button.callback = self.close_search
         self.add_item(close_button)
 
