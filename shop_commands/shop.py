@@ -857,6 +857,16 @@ class DressingRoomView(discord.ui.View):
         await interaction.response.defer()
         # 返回商人主頁（由商人代碼處理）
 
+    async def back_to_shop(self, interaction: discord.Interaction):
+        """返回到商人主頁（黑市探索視圖）。"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
+            return
+        # 延遲導入以避免循環引用
+        from shop_commands.merchant.views import ExploreView
+        embed = discord.Embed(title="黑市商人出現了", description="竟然被你發現了，想要買些什麼，還是...")
+        await interaction.response.edit_message(embed=embed, view=ExploreView(self.cog))
+
 
 class EditView(discord.ui.View):
     def __init__(self, cog, user_id, category, items, page=0, embed=None):
