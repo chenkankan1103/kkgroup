@@ -130,6 +130,22 @@ class ScamParkEvents(commands.Cog):
                     kkcoin = int(user_data.get('kkcoin') or 0)
                 except (TypeError, ValueError):
                     kkcoin = 0
+                
+                # 提取其他需要的用戶數據
+                try:
+                    level = int(user_data.get('level') or 0)
+                except (TypeError, ValueError):
+                    level = 1
+                
+                try:
+                    hp = int(user_data.get('hp') or 100)
+                except (TypeError, ValueError):
+                    hp = 100
+                
+                try:
+                    stamina = int(user_data.get('stamina') or 100)
+                except (TypeError, ValueError):
+                    stamina = 100
 
                 if not thread_id or thread_id == 0:
                     continue
