@@ -357,7 +357,9 @@ class ExploreView(View):
             from shop_commands.shop import DressingRoomView
             view = DressingRoomView(self.cog, interaction.user.id)
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 記錄原始訊息以便後續用 edit 更新同一個 embed
+            view.original_message = new_msg
         except Exception as e:
             # 記錄完整 traceback，並嘗試回報錯誤給使用者
             tb = traceback.format_exc()
