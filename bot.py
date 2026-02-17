@@ -197,6 +197,13 @@ async def on_ready():
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     
     try:
+        # 執行 DB migration（置物櫃事件驅動系統）
+        try:
+            from tools.migrate_locker_event_system import migrate_locker_event_columns
+            migrate_locker_event_columns()
+        except Exception as e:
+            print(f"⚠️  DB migration 失敗: {e}")
+        
         # 清除舊指令
         if guild and STAGE != "prod":
             await client.tree.clear_commands(guild=guild)

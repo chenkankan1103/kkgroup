@@ -627,8 +627,14 @@ class UserPanel(commands.Cog):
 async def setup(bot):
     print("🔧 載入 uibody 擴展")
     try:
-        await bot.add_cog(UserPanel(bot))
+        user_panel_cog = UserPanel(bot)
+        await bot.add_cog(user_panel_cog)
         print("✅ uibody 擴展載入完成")
+        
+        # 載入置物櫃事件監聽器 Cog（處理事件驅動 embed 更新）
+        from uicommands.cogs.locker_event_listener import LockerEventListenerCog
+        await bot.add_cog(LockerEventListenerCog(bot, user_panel_cog))
+        print("✅ 置物櫃事件監聽器已載入")
         
         # 也加載管理員命令Cog
         from uicommands.commands.admin_commands import AdminCommands
