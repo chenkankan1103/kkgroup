@@ -180,7 +180,8 @@ class LockerTasks:
             active_users.sort(key=lambda x: x[1], reverse=True)
             
             updated_count = 0
-            for user_data, _ in active_users[:10]:
+            # 更新所有活躍用戶（之前只更新前 10 筆，會導致部分舊版 embed 未被同步）
+            for user_data, _ in active_users:
                 user_id = user_data.get('user_id')
                 locker_message_id = user_data.get('locker_message_id')
 
