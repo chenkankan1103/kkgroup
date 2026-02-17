@@ -70,15 +70,22 @@ class UserPanel(commands.Cog):
         # 初始化任務
         self.locker_tasks = LockerTasks(self)
         
-        # 啟動embed更新任務
-        print("🔧 初始化 UserPanel，啟動embed更新任務")
-        try:
-            self.update_embeds_task = self.bot.loop.create_task(self.locker_tasks.update_all_locker_embeds())
-            print("✅ embed更新任務已創建")
-        except Exception as e:
-            print(f"❌ 創建embed更新任務失敗: {e}")
-            import traceback
-            traceback.print_exc()
+        # 啟動embed更新任務（已停用）
+        # 由於要求將自動更新停用，改為以 slash (/update_forum_lockers) 手動觸發。
+        # 可透過環境變數 DISABLE_LOCKER_AUTOMATIC_UPDATE=0 重新開啟自動更新。
+        if os.getenv('DISABLE_LOCKER_AUTOMATIC_UPDATE', '1') == '1':
+            print("⚠️ 自動更新已停用（DISABLE_LOCKER_AUTOMATIC_UPDATE=1）。請使用 /update_forum_lockers 手動觸發更新。")
+            # 保留屬性以便 cog_unload 或其他檢查不會 crash
+            self.update_embeds_task = None
+        else:
+            print("🔧 初始化 UserPanel，啟動embed更新任務")
+            try:
+                self.update_embeds_task = self.bot.loop.create_task(self.locker_tasks.update_all_locker_embeds())
+                print("✅ embed更新任務已創建")
+            except Exception as e:
+                print(f"❌ 創建embed更新任務失敗: {e}")
+                import traceback
+                traceback.print_exc()
     
     def cog_unload(self):
         if hasattr(self, 'update_embeds_task'):

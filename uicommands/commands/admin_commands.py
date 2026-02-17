@@ -41,10 +41,10 @@ class AdminCommands(commands.Cog):
                 user_id = user_data.get('user_id')
                 thread_id = user_data.get('thread_id')
                 locker_message_id = user_data.get('locker_message_id')
-                
+
                 if not user_id or not thread_id or not locker_message_id:
                     continue
-                
+
                 try:
                     # use bot.fetch_channel/get_channel for compatibility
                     thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
@@ -54,34 +54,30 @@ class AdminCommands(commands.Cog):
                         continue
                     if getattr(thread, 'archived', False):
                         continue
-                except discord.NotFound:
-                    set_user_field(user_id, 'thread_id', None)
-                    set_user_field(user_id, 'locker_message_id', None)
-                    continue
-                    
+
                     message = await thread.fetch_message(locker_message_id)
                     if not message:
                         continue
-                    
+
                     user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
                     embed = await user_panel_cog.create_user_embed(user_data, user)
                     character_image_url = await user_panel_cog.get_character_image_url(user_data)
-                    
+
                     if character_image_url:
                         embed.set_image(url=character_image_url)
-                    
+
                     view = LockerPanelView(user_panel_cog, user_id, thread)
-                    
+
                     await message.edit(embed=embed, view=view)
                     updated_count += 1
-                    
+
                     set_user_field(user_id, 'last_activity', int(datetime.datetime.now().timestamp()))
-                    
+
                 except Exception as e:
                     print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
                     failed_count += 1
                     continue
-                
+
                 await asyncio.sleep(1)
             
             await interaction.followup.send(
