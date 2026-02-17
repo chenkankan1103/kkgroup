@@ -71,15 +71,25 @@ async def refetch_all_lockers():
                     # 保存線程 ID 到資料庫
                     set_user_field(user_id, 'thread_id', thread.id)
                     
-                    # 發送歡迎消息
+                    # 發送歡迎消息（包含紙娃娃預覽）
                     embed = discord.Embed(
                         title=f"👋 {user.name}的個人置物櫃",
                         description="這是你的個人置物櫃 🏠\n所有農耕和收集都在這裡進行。",
                         color=discord.Color.green()
                     )
                     embed.set_thumbnail(url=user.avatar.url if user.avatar else None)
+                    # 嘗試從資料庫產生 MapleStory.io API 圖片 URL，若失敗則省略
+                    try:
+                        from db_adapter import get_user
+                        from uicommands.utils.image_utils import build_maplestory_api_url
+                        user_data_row = get_user(user_id)
+                        if user_data_row:
+                            api_url = build_maplestory_api_url(user_data_row)
+                            embed.set_image(url=api_url)
+                    except Exception:
+                        pass
+
                     embed.set_footer(text=f"線程 ID: {thread.id}")
-                    
                     await thread.send(embed=embed)
                     
                     print(f"  ✅ [{idx:3d}/{len(users):3d}] {user.name}")

@@ -293,42 +293,70 @@ class PersonalLockerView(discord.ui.View):
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
     async def back_to_main_callback(self, interaction: discord.Interaction):
-        """返回到主選項"""
+        """返回到主選項
+
+        - 如果正在編輯的是論壇中的永久置物櫃訊息（DB 中的 locker_message_id），
+          使用 `UserPanel.create_user_embed` 還原完整置物櫃（保留紙娃娃圖片）。
+        - 否則顯示簡化的主選單（ephemeral / 非永久上下文）。
+        """
         try:
-            # 創建主選項embed
-            embed = discord.Embed(
-                title="📦 個人置物櫃",
-                description="使用下方按鈕管理你的作物種植、施肥和收割操作。",
-                color=discord.Color.blue()
-            )
-
-            embed.add_field(
-                name="🌱 作物管理",
-                value="• 作物種植：開始種植新的作物\n• 收割：收割成熟的作物\n• 個人物品：查看你的物品庫存",
-                inline=False
-            )
-
-            embed.set_footer(text="💡 這個視圖是永久的，按鈕不會過期")
-
-            # 重新創建PersonalLockerView
-            view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
-
-            # 嘗試更新原來的embed，如果失敗則發送新訊息
+            # 判斷此訊息是否為該使用者的永久置物櫃訊息
+            is_permanent_locker_msg = False
             try:
-                await interaction.message.edit(embed=embed, view=view)
-            except discord.NotFound:
-                # 如果原訊息無法訪問，發送新訊息
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                from db_adapter import get_user
+                user_row = get_user(self.user_id)
+                locker_msg_id = user_row.get('locker_message_id') if user_row else None
+                if interaction.message and locker_msg_id and interaction.message.id == locker_msg_id:
+                    is_permanent_locker_msg = True
+            except Exception:
+                is_permanent_locker_msg = False
+
+            if is_permanent_locker_msg:
+                # 還原完整置物櫃 embed（確保保留紙娃娃/合併後物品欄）
+                user_panel_cog = self.bot.get_cog('UserPanel')
+                if user_panel_cog:
+                    user_data = user_panel_cog.get_user_data(self.user_id)
+                    user_obj = self.bot.get_user(self.user_id) or await self.bot.fetch_user(self.user_id)
+                    embed = await user_panel_cog.create_user_embed(user_data, user_obj)
+
+                    from uicommands.views import LockerPanelView
+                    view = LockerPanelView(user_panel_cog, self.user_id, interaction.channel)
+
+                    try:
+                        await interaction.message.edit(embed=embed, view=view)
+                    except discord.NotFound:
+                        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                else:
+                    # fallback：當找不到 UserPanel cog 時仍回覆簡化版（但不覆蓋永久訊息）
+                    await interaction.followup.send("❌ 系統暫時無法還原置物櫃內容，請稍後再試。", ephemeral=True)
+
+            else:
+                # 非永久訊息 -> 顯示簡化主選單（ephemeral）
+                embed = discord.Embed(
+                    title="📦 個人置物櫃",
+                    description="使用下方按鈕管理你的作物種植、施肥和收割操作。",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(
+                    name="🌱 作物管理",
+                    value="• 作物種植：開始種植新的作物\n• 收割：收割成熟的作物\n• 個人物品：查看你的物品庫存",
+                    inline=False
+                )
+                embed.set_footer(text="💡 這個視圖是永久的，按鈕不會過期")
+
+                view = PersonalLockerView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, self.plants, self.user_panel)
+                try:
+                    # 優先更新原始互動回覆（若為 ephemeral 會編輯成功）
+                    await interaction.response.edit_message(embed=embed, view=view)
+                except Exception:
+                    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
-            await interaction.response.send_message(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
-
-            await interaction.response.edit_message(embed=embed, view=view)
-
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.response.send_message(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
+            try:
+                await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
+            except:
+                pass
 
 
 class WeeklySummaryCannabisPanelView(discord.ui.View):
