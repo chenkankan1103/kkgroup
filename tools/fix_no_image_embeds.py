@@ -7,7 +7,6 @@
 Run on server where .env contains UI_DISCORD_BOT_TOKEN
 """
 import os, re, sqlite3, requests, json
-from db_adapter import get_user_field
 DB='/home/e193752468/kkgroup/user_data.db'
 ENV='/home/e193752468/kkgroup/.env'
 
@@ -43,7 +42,7 @@ HEADERS = {'Authorization': f'Bot {TOKEN}', 'User-Agent': 'kkgroup-fixer/1.0', '
 conn = sqlite3.connect(DB)
 conn.row_factory = sqlite3.Row
 cur = conn.cursor()
-rows = cur.execute("SELECT user_id, user_name, nickname, thread_id, locker_message_id, face, hair, skin, top, bottom, shoes, is_stunned FROM users WHERE locker_message_id IS NOT NULL AND locker_message_id<>0").fetchall()
+rows = cur.execute("SELECT user_id, user_name, nickname, thread_id, locker_message_id, face, hair, skin, top, bottom, shoes, is_stunned, embed_image_source FROM users WHERE locker_message_id IS NOT NULL AND locker_message_id<>0").fetchall()
 print('checking', len(rows), 'rows')
 fixed = 0
 skipped = 0
@@ -76,8 +75,10 @@ for r in rows:
         skipped += 1
         continue
     # build fallback image url — prefer DB-stored `embed_image_source` if available
+    # prefer embed_image_source column (if present in DB row)
+    db_src = None
     try:
-        db_src = get_user_field(user_id, 'embed_image_source', default=None)
+        db_src = r.get('embed_image_source') if isinstance(r, dict) else r['embed_image_source']
     except Exception:
         db_src = None
 
