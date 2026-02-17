@@ -385,6 +385,25 @@ class PersonalLockerCog(commands.Cog):
                         if hasattr(component, 'children'):
                             current_button_count += len(component.children)
 
+                # 檢查當前 embed 的圖片與 footer 是否為 canonical（MapleStory）
+                current_embed = locker_message.embeds[0] if locker_message.embeds else None
+                current_image = None
+                current_footer = ''
+                try:
+                    if current_embed and getattr(current_embed, 'image', None):
+                        current_image = getattr(current_embed.image, 'url', None)
+                    if current_embed and getattr(current_embed, 'footer', None):
+                        current_footer = (getattr(current_embed.footer, 'text', '') or '')
+                except Exception:
+                    current_image = None
+                    current_footer = ''
+
+                # 如果缺圖或 footer 非 MapleStory，標記需要更新
+                if not current_image or 'MapleStory' not in (current_footer or ''):
+                    print(f"🔄 [Locker Update] Thread {thread.name} 需要更新: missing image or footer")
+                    await self.send_updated_locker_embed(thread, user_id)
+                    return True
+
                 # 創建一個測試視圖來比較按鈕數量
                 plants = await get_user_plants(user_id)
                 test_view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants, None)

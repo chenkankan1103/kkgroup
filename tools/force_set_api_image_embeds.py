@@ -16,16 +16,16 @@ ENV='/home/e193752468/kkgroup/.env'
 # copy of logic from image_utils.build_maplestory_api_url
 def build_maplestory_api_url(user_data: dict, animated: bool = True) -> str:
     items = [
-        {"itemId": 2000, "region": "TWMS", "version": "256"},
-        {"itemId": user_data.get('skin', 12000), "region": "TWMS", "version": "256"},
-        {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "TWMS", "version": "256"},
-        {"itemId": user_data.get('hair', 30120), "region": "TWMS", "version": "256"},
-        {"itemId": user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
-        {"itemId": user_data.get('bottom', 1060096), "region": "TWMS", "version": "256"},
-        {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"}
+        {"itemId": 2000, "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('skin', 12000), "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('hair', 30120), "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('top', 1040014), "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('bottom', 1060096), "region": "GMS", "version": "217"},
+        {"itemId": user_data.get('shoes', 1072005), "region": "GMS", "version": "217"}
     ]
     if user_data.get('is_stunned', 0) == 1:
-        items.append({"itemId": 1005411, "region": "TWMS", "version": "256"})
+        items.append({"itemId": 1005411, "region": "GMS", "version": "217"})
     item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
     pose = "prone" if user_data.get('is_stunned', 0) == 1 else "stand1"
     if animated:
@@ -45,6 +45,13 @@ HEADERS = {'Authorization': f'Bot {TOKEN}', 'User-Agent': 'kkgroup-force-api-ima
 conn = sqlite3.connect(DB)
 conn.row_factory = sqlite3.Row
 cur = conn.cursor()
+import argparse
+
+parser = argparse.ArgumentParser(description='Force all locker embeds to MapleStory API image (skips canonical messages unless --force).')
+parser.add_argument('--force', action='store_true', help='Force update even if message appears canonical')
+args = parser.parse_args()
+FORCE = bool(args.force)
+
 rows = cur.execute("SELECT user_id, thread_id, locker_message_id, face, hair, skin, top, bottom, shoes, is_stunned FROM users WHERE locker_message_id IS NOT NULL AND locker_message_id<>0").fetchall()
 print('found', len(rows), 'users with locker_message_id')
 fixed = 0
@@ -83,6 +90,17 @@ for r in rows:
         skipped += 1
         continue
 
+    # if message already canonical and not forcing, skip
+    try:
+        from uicommands.utils.locker_embed_generator import message_json_needs_update
+        if not FORCE and not message_json_needs_update(msg):
+            print(f"[skip] message for {user_id} already canonical")
+            skipped += 1
+            continue
+    except Exception:
+        # if helper unavailable, fall back to previous behavior
+        pass
+
     e = embeds[0]
     # overwrite/set image to MapleStory API URL
     e['image'] = {'url': api_url}
@@ -110,5 +128,5 @@ for r in rows:
     # small throttle
     time.sleep(0.25)
 
-print('done fixed=', fixed, 'skipped=', skipped, 'failed=', failed)
+print('done fixed=', fixed, 'skipped=', skipped, 'failed=', failed, 'force=', FORCE)
 conn.close()
