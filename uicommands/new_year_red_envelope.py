@@ -670,6 +670,152 @@ class NewYearRedEnvelope(commands.Cog):
 
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
+    @app_commands.command(name="紅包掃描", description="(管理員) 掃描頻道/訊息並回復遺失的紅包 persistent view（會註冊 View 並將訊息加入 storage）")
+    async def red_envelope_scan(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None, message_id: Optional[int] = None, limit: Optional[int] = 200):
+        if not interaction.user.guild_permissions.manage_guild and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("🚫 你沒有權限使用這個指令。", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        target_channel = channel or interaction.channel
+        results = []
+
+        if message_id:
+            status = await self._rescue_message(target_channel, message_id)
+            results.append(f"message={message_id} status={status}")
+        else:
+            try:
+                async for msg in target_channel.history(limit=limit):
+                    # quick check for component
+                    has_red = False
+                    for comp in getattr(msg, 'components', []):
+                        for child in getattr(comp, 'children', []):
+                            cid = getattr(child, 'custom_id', None)
+                            if cid and cid.startswith('red_envelope:'):
+                                has_red = True
+                                break
+                        if has_red:
+                            break
+                    if not has_red:
+                        continue
+
+                    status = await self._rescue_message(target_channel, msg.id)
+                    results.append(f"message={msg.id} status={status}")
+            except Exception:
+                logger.exception("red_envelope.scan: failed to iterate channel history %s", getattr(target_channel, 'id', None))
+
+        if not results:
+            await interaction.followup.send("未找到任何可回復的紅包訊息。", ephemeral=True)
+            return
+
+        await interaction.followup.send("\n".join(results), ephemeral=True)
+
+    async def _parse_claimed_from_embed(self, embed: discord.Embed) -> List[int]:
+        """Extract user ids from the embed field named '已領取' (format: <@id> lines)."""
+        if not embed:
+            return []
+        for f in embed.fields:
+            if f.name == "已領取":
+                text = f.value or ""
+                ids = []
+                for part in text.split():
+                    if part.startswith("<@") and part.endswith(">"):
+                        try:
+                            uid = int(part.strip("<@!>"))
+                            ids.append(uid)
+                        except Exception:
+                            continue
+                return ids
+        return []
+
+    def _parse_expiry_from_footer(self, footer_text: str) -> Optional[float]:
+        """Parse footer like '活動到期時間：YYYY-MM-DD HH:MM:SS' to a timestamp. Return None on failure."""
+        if not footer_text:
+            return None
+        try:
+            if "活動到期時間：" in footer_text:
+                ts_part = footer_text.split("活動到期時間：", 1)[1].strip()
+                # try common format
+                t_struct = time.strptime(ts_part, "%Y-%m-%d %H:%M:%S")
+                return time.mktime(t_struct)
+        except Exception:
+            return None
+        return None
+
+    async def _rescue_message(self, channel: discord.abc.Messageable, message_id: int) -> str:
+        """Attempt to rescue a Discord message that contains a red_envelope component but
+        is not present in storage. Returns a status string for logging/reporting.
+        """
+        try:
+            msg = await channel.fetch_message(message_id)
+        except Exception:
+            return "fetch-failed"
+
+        # find red envelope button
+        found_cid = None
+        for comp in getattr(msg, "components", []):
+            for child in getattr(comp, "children", []):
+                cid = getattr(child, "custom_id", None)
+                if cid and cid.startswith("red_envelope:"):
+                    found_cid = cid
+                    break
+            if found_cid:
+                break
+
+        if not found_cid:
+            return "no-red-envelope-component"
+
+        activity_id = found_cid.split(":", 1)[1]
+
+        # check storage whether message already recorded
+        storage = _load_storage()
+        if str(message_id) in storage.get("messages", {}):
+            # ensure view registered
+            try:
+                info = storage[ str(message_id) ]
+                view = RedEnvelopeView(self, activity_id=info.get("activity_id"), message_id=message_id, expiry_ts=info.get("expiry", 0), claimed=info.get("claimed", []))
+                self.bot.add_view(view, message_id=message_id)
+                try:
+                    self.bot.add_view(view)
+                except Exception:
+                    pass
+                return "already-in-storage-registered-view"
+            except Exception:
+                return "already-in-storage-failed-register"
+
+        # reconstruct claimed and expiry from embed
+        embed = msg.embeds[0] if msg.embeds else None
+        claimed = await self._parse_claimed_from_embed(embed)
+        expiry_ts = None
+        if embed and embed.footer and getattr(embed.footer, 'text', None):
+            expiry_ts = self._parse_expiry_from_footer(embed.footer.text)
+        if not expiry_ts:
+            expiry_ts = time.time() + 24 * 3600
+
+        # save to storage
+        storage.setdefault("messages", {})[str(message_id)] = {
+            "guild_id": getattr(msg.guild, 'id', None) if hasattr(msg, 'guild') else None,
+            "channel_id": getattr(msg.channel, 'id', None),
+            "message_id": message_id,
+            "activity_id": activity_id,
+            "expiry": expiry_ts,
+            "claimed": claimed,
+        }
+        _save_storage(storage)
+
+        # register view
+        try:
+            view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry_ts, claimed=claimed)
+            self.bot.add_view(view, message_id=message_id)
+            try:
+                self.bot.add_view(view)
+            except Exception:
+                pass
+            return "rescued-and-registered"
+        except Exception:
+            logger.exception("red_envelope: failed to register view during rescue message=%s", message_id)
+            return "rescued-but-register-failed"
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
@@ -702,12 +848,28 @@ class NewYearRedEnvelope(commands.Cog):
                     await view._on_claim(interaction)
                     return
 
-            # not found -> user-friendly message
+            # not found in storage — attempt to rescue from the message itself (auto-recover)
+            rescued = False
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message('⚠️ 此活動已失效或找不到。', ephemeral=True)
-                else:
-                    await interaction.followup.send('⚠️ 此活動已失效或找不到。', ephemeral=True)
+                # if interaction.message available, try to rebuild storage + register view
+                msg = getattr(interaction, 'message', None)
+                if msg:
+                    try:
+                        status = await self._rescue_message(msg.channel, msg.id)
+                        logger.info('red_envelope.fallback: rescue attempt for message=%s status=%s', getattr(msg, 'id', None), status)
+                        if status in ('rescued-and-registered', 'already-in-storage-registered-view'):
+                            # now dispatch to claim handler
+                            view = RedEnvelopeView(self, activity_id=activity_id, message_id=msg.id, expiry_ts=_load_storage().get('messages', {}).get(str(msg.id), {}).get('expiry', time.time()), claimed=_load_storage().get('messages', {}).get(str(msg.id), {}).get('claimed', []))
+                            await view._on_claim(interaction)
+                            rescued = True
+                    except Exception:
+                        logger.exception('red_envelope.fallback: rescue inner failure for message=%s', getattr(msg, 'id', None))
+
+                if not rescued:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message('⚠️ 此活動已失效或找不到。', ephemeral=True)
+                    else:
+                        await interaction.followup.send('⚠️ 此活動已失效或找不到。', ephemeral=True)
             except Exception:
                 logger.exception('red_envelope.fallback: failed to inform user activity=%s', activity_id)
         except Exception:
