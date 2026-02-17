@@ -774,10 +774,12 @@ class ButtonInteraction(commands.Cog):
 
 # ============ 紙娃娃系統View類 ============
 class DressingRoomView(discord.ui.View):
-    def __init__(self, cog, user_id):
+    def __init__(self, cog, user_id, original_message=None):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
+        # 如果呼叫者提供 original_message（第一次發送時會有），就保留以便後續 edit
+        self.original_message = original_message
         
         # 類別中英對照表
         self.category_names = {
@@ -873,8 +875,23 @@ class DressingRoomView(discord.ui.View):
                 color=0x87CEEB
             )
 
-            view = EditView(self.cog, self.user_id, selected_category, items, page=0, embed=embed)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 將 original_message 傳給新的 EditView（若存在的話）以便之後能編輯相同訊息
+            view = EditView(self.cog, self.user_id, selected_category, items, page=0, embed=embed, original_message=getattr(self, 'original_message', None))
+
+            # 嘗試編輯原始訊息（如果存在），否則送出新的 followup 並將其設為 original_message
+            if getattr(self, 'original_message', None):
+                try:
+                    await self.original_message.edit(embed=embed, view=view)
+                    return
+                except Exception:
+                    # 若 edit 失敗就 fallback 為發送 followup
+                    pass
+
+            new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            view.original_message = new_msg
+            # 如果 DressingRoomView 尚未持有 original_message，亦一併儲存
+            if not getattr(self, 'original_message', None):
+                self.original_message = new_msg
 
         except Exception:
             tb = traceback.format_exc()
@@ -897,7 +914,7 @@ class DressingRoomView(discord.ui.View):
 
 
 class EditView(discord.ui.View):
-    def __init__(self, cog, user_id, category, items, page=0, embed=None):
+    def __init__(self, cog, user_id, category, items, page=0, embed=None, original_message=None):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
@@ -906,6 +923,8 @@ class EditView(discord.ui.View):
         self.page = page
         self.items_per_page = 5
         self.embed = embed
+        # 原始訊息（如果是從 DressingRoomView 打開，會被傳入），用來執行 edit
+        self.original_message = original_message
         
         # 類別中英對照表（與DressingRoomView保持一致）
         self.category_names = {
@@ -1077,7 +1096,7 @@ class PreviewView(discord.ui.View):
         
         embed = discord.Embed(title=f"✂️ 編輯 {chinese_name}", description=f"選擇 {chinese_name} 物品進行預覽或購買。", color=0x87CEEB)
         items = self.cog.get_items_by_category(self.selected_item['category'])
-        view = EditView(self.cog, self.user_id, self.selected_item['category'], items, embed=embed)
+        view = EditView(self.cog, self.user_id, self.selected_item['category'], items, embed=embed, original_message=interaction.message)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -1166,14 +1185,26 @@ class SearchModal(discord.ui.Modal):
             self.edit_view.category,
             filtered_items,
             search_term,
-            embed
+            embed,
+            original_message=getattr(self.edit_view, 'original_message', None)
         )
 
-        await interaction.followup.send(embed=embed, view=search_result_view, ephemeral=True)
+        # 優先編輯原始衣帽間訊息（若存在），否則回傳新的 followup 訊息
+        orig = getattr(self.edit_view, 'original_message', None)
+        if orig:
+            try:
+                await orig.edit(embed=embed, view=search_result_view)
+                search_result_view.original_message = orig
+                return
+            except Exception:
+                pass
+
+        new_msg = await interaction.followup.send(embed=embed, view=search_result_view, ephemeral=True)
+        search_result_view.original_message = new_msg
 
 
 class SearchResultView(discord.ui.View):
-    def __init__(self, cog, user_id, category, items, search_term, embed=None):
+    def __init__(self, cog, user_id, category, items, search_term, embed=None, original_message=None):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
@@ -1183,6 +1214,8 @@ class SearchResultView(discord.ui.View):
         self.page = 0
         self.items_per_page = 5
         self.embed = embed
+        # 如果此視圖對應到原始衣帽間訊息，保存起來以利後續 edit
+        self.original_message = original_message
         
         # 類別中英對照表
         self.category_names = {
@@ -1286,7 +1319,8 @@ class SearchResultView(discord.ui.View):
             color=0x87CEEB
         )
         
-        view = EditView(self.cog, self.user_id, self.category, self.cog.get_items_by_category(self.category), embed=embed)
+        orig_msg = getattr(self, 'original_message', interaction.message)
+        view = EditView(self.cog, self.user_id, self.category, self.cog.get_items_by_category(self.category), embed=embed, original_message=orig_msg)
         await interaction.response.edit_message(embed=embed, view=view)
 
     async def close_search(self, interaction: discord.Interaction):
