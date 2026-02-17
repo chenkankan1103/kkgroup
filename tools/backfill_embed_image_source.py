@@ -8,7 +8,12 @@ Priority:
 Run on the production VM as the app user:
   sudo -u e193752468 bash -lc "python3 /home/e193752468/kkgroup/tools/backfill_embed_image_source.py"
 """
-import json
+import sys, os, json
+# ensure repository root is on sys.path when script is executed directly
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 from db_adapter import get_all_users, get_user_field, set_user_field
 from uicommands.utils.image_utils import build_maplestory_api_url
 
