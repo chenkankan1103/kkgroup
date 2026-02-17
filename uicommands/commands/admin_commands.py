@@ -125,7 +125,7 @@ class AdminCommands(commands.Cog):
 
                     await message.edit(embed=embed, view=view)
                     updated_count += 1
-
+                except Exception as e:
                     print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
                     failed_count += 1
                     continue
