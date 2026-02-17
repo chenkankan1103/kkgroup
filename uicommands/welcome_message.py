@@ -13,6 +13,7 @@ from typing import Optional
 import hashlib
 from pathlib import Path
 import time
+import re
 from db_adapter import get_user, set_user, get_user_field, set_user_field
 
 load_dotenv()
@@ -81,6 +82,87 @@ class WelcomeActionView(discord.ui.View):
 
         await self.cog.handle_final_verification(interaction, interaction.user)
 
+class PersistentWelcomeView(discord.ui.View):
+    """Persistent view for welcome interactions (cross-restart)."""
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    def _extract_target_user_id(self, message: discord.Message) -> Optional[int]:
+        """從 embed 中解析被歡迎的 user id（fallback: None）"""
+        try:
+            import re
+            if not message or not getattr(message, "embeds", None):
+                return None
+            for embed in message.embeds:
+                desc = getattr(embed, "description", "") or ""
+                m = re.search(r"<@!?(?P<id>\d+)>", desc)
+                if m:
+                    return int(m.group("id"))
+                # 檢查欄位
+                for field in getattr(embed, "fields", []):
+                    m = re.search(r"<@!?(?P<id>\d+)>", field.value or "")
+                    if m:
+                        return int(m.group("id"))
+        except Exception:
+            return None
+        return None
+
+    @discord.ui.select(custom_id="welcome_gender_select",
+                       placeholder="選擇你的性別...",
+                       options=[
+                           discord.SelectOption(label="男性", value="male", emoji="♂️"),
+                           discord.SelectOption(label="女性", value="female", emoji="♀️")
+                       ])
+    async def gender_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer(ephemeral=True)
+        target_user_id = self._extract_target_user_id(interaction.message) or interaction.user.id
+
+        if interaction.user.id != target_user_id:
+            await interaction.followup.send("❌ 這不是你的選項！", ephemeral=True)
+            return
+
+        appearance = {
+            "face": 20005 if select.values[0] == "male" else 21731,
+            "hair": 30120 if select.values[0] == "male" else 34410,
+            "skin": 12000,
+            "top": 1040014 if select.values[0] == "male" else 1041004,
+            "bottom": 1060096 if select.values[0] == "male" else 1061008,
+            "shoes": 1072005,
+            "gender": select.values[0]
+        }
+
+        await self.cog.update_user_data(target_user_id, appearance)
+        await self.cog.update_welcome_message(interaction, target_user_id)
+
+        gender_text = "男性" if select.values[0] == "male" else "女性"
+        await interaction.followup.send(f"✅ 已設定為{gender_text}！", ephemeral=True)
+
+    @discord.ui.button(custom_id="welcome_submit_items", label="繳交手機身分證", style=discord.ButtonStyle.secondary, emoji="📱")
+    async def submit_items(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        target_user_id = self._extract_target_user_id(interaction.message) or interaction.user.id
+
+        if interaction.user.id != target_user_id:
+            await interaction.followup.send("❌ 這不是你的按鈕！", ephemeral=True)
+            return
+
+        await self.cog.remove_items_from_inventory(target_user_id, ["手機", "身分證"])
+        await self.cog.update_welcome_message(interaction, target_user_id)
+        await interaction.followup.send("✅ 已繳交手機和身分證！", ephemeral=True)
+
+    @discord.ui.button(custom_id="welcome_confirm_entry", label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
+    async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        target_user_id = self._extract_target_user_id(interaction.message) or interaction.user.id
+
+        if interaction.user.id != target_user_id:
+            await interaction.followup.send("❌ 這不是你的按鈕！", ephemeral=True)
+            return
+
+        member = interaction.guild.get_member(target_user_id) or interaction.user
+        await self.cog.handle_final_verification(interaction, member)
+
 class WelcomeFlow(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -126,6 +208,14 @@ class WelcomeFlow(commands.Cog):
         self.load_persistent_cache()
         # 啟動時預載入圖片 - 延遲啟動避免阻塞
         self.bot.loop.create_task(self.delayed_preload())
+
+        # 註冊跨重啟的 persistent view（處理 welcome 的按鈕/選單）
+        try:
+            self.persistent_view = PersistentWelcomeView(self)
+            self.bot.add_view(self.persistent_view)
+            print("✅ 已註冊 PersistentWelcomeView (跨重啟互動)")
+        except Exception as e:
+            print(f"⚠️ 註冊 PersistentWelcomeView 失敗: {e}")
 
     def load_persistent_cache(self):
         """從文件加載持久化的 Discord URL 緩存"""
@@ -559,15 +649,8 @@ class WelcomeFlow(commands.Cog):
             if user_data.get('is_stunned', 0) == 1:
                 await interaction.edit_original_response(embed=embed, view=None)
             else:
-                combined_view = discord.ui.View(timeout=600)
-                gender_view = GenderSelectView(self, user_id)
-                action_view = WelcomeActionView(self, user_id)
-                
-                combined_view.add_item(gender_view.children[0])
-                combined_view.add_item(action_view.children[0])
-                combined_view.add_item(action_view.children[1])
-
-                await interaction.edit_original_response(embed=embed, view=combined_view)
+                # 使用跨重啟的 persistent view（已註冊於 Cog.__init__）
+                await interaction.edit_original_response(embed=embed, view=self.persistent_view)
 
         except Exception as e:
             print(f"❌ 更新歡迎訊息錯誤: {e}")
@@ -615,15 +698,8 @@ class WelcomeFlow(commands.Cog):
             else:
                 print(f"⚠️ 無法獲取角色圖片（將不影響主功能）")
 
-            combined_view = discord.ui.View(timeout=600)
-            gender_view = GenderSelectView(self, member.id)
-            action_view = WelcomeActionView(self, member.id)
-            
-            combined_view.add_item(gender_view.children[0])
-            combined_view.add_item(action_view.children[0])
-            combined_view.add_item(action_view.children[1])
-
-            welcome_msg = await channel.send(embed=embed, view=combined_view)
+            # 使用跨重啟的 persistent view（已註冊）
+            welcome_msg = await channel.send(embed=embed, view=self.persistent_view)
             self.welcome_messages.setdefault(guild.id, {})[member.id] = welcome_msg.id
             
             print(f"✅ 成功發送歡迎訊息給 {member.name}")
