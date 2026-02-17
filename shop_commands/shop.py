@@ -837,15 +837,17 @@ class DressingRoomView(discord.ui.View):
         self.add_item(back_button)
 
     async def category_selected(self, interaction: discord.Interaction):
+        """處理衣帽間類別選擇：優先 edit 原始訊息，失敗時 fallback 為 followup.send。"""
         import traceback, time
         ts = int(time.time())
-        # 先 ACK 以避免 3 秒超時（之後使用 followup 發送新視圖）
+
+        # 先 ACK 避免 3 秒超時
         try:
             await interaction.response.defer(ephemeral=True)
         except Exception:
             pass
 
-        # 身份驗證
+        # 驗證使用者
         if interaction.user.id != self.user_id:
             try:
                 await interaction.followup.send("❌ 這不是你的衣帽間！", ephemeral=True)
@@ -862,7 +864,7 @@ class DressingRoomView(discord.ui.View):
             selected_category = values[0]
             chinese_name = self.category_names.get(selected_category, selected_category)
 
-            # 將可能較慢的 DB 查詢移到執行緒，避免阻塞事件迴圈
+            # DB 查詢移到執行緒（可能很慢）
             items = await asyncio.to_thread(self.cog.get_items_by_category, selected_category)
 
             if not items:
@@ -875,38 +877,46 @@ class DressingRoomView(discord.ui.View):
                 color=0x87CEEB
             )
 
-            # 將 original_message 傳給新的 EditView（若存在的話）以便之後能編輯相同訊息
-            view = EditView(self.cog, self.user_id, selected_category, items, page=0, embed=embed, original_message=getattr(self, 'original_message', None))
+            view = EditView(
+                self.cog,
+                self.user_id,
+                selected_category,
+                items,
+                page=0,
+                embed=embed,
+                original_message=getattr(self, 'original_message', None)
+            )
 
-# 優先編輯觸發此互動的訊息（最可靠）
-        try:
-            if getattr(interaction, 'message', None):
-                await interaction.message.edit(embed=embed, view=view)
-                # 更新引用
-                view.original_message = interaction.message
-                self.original_message = interaction.message
-                return
-        except Exception as e:
-            # 記錄失敗原因，繼續嘗試其他編輯方法
-            with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
-                f.write(f"[{ts}] Failed to edit interaction.message in category_selected: {e}\n")
-
-        # 再嘗試編輯先前保存的 original_message
-        orig = getattr(self, 'original_message', None)
-        if orig:
+            # 優先嘗試編輯觸發此互動的訊息（interaction.message）
+            edited = False
             try:
-                await orig.edit(embed=embed, view=view)
-                view.original_message = orig
-                return
+                if getattr(interaction, 'message', None):
+                    await interaction.message.edit(embed=embed, view=view)
+                    view.original_message = interaction.message
+                    self.original_message = interaction.message
+                    edited = True
             except Exception as e:
                 with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
-                    f.write(f"[{ts}] Failed to edit stored original_message in category_selected: {e}\n")
+                    f.write(f"[{ts}] Failed to edit interaction.message in category_selected: {e}\n")
 
-        # 最後 fallback：送出新的 followup 並記錄為 original_message
-        new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-        view.original_message = new_msg
-            if not getattr(self, 'original_message', None):
-                self.original_message = new_msg
+            # 若尚未 edited，嘗試編輯先前儲存的 original_message
+            if not edited:
+                orig = getattr(self, 'original_message', None)
+                if orig:
+                    try:
+                        await orig.edit(embed=embed, view=view)
+                        view.original_message = orig
+                        edited = True
+                    except Exception as e:
+                        with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
+                            f.write(f"[{ts}] Failed to edit stored original_message in category_selected: {e}\n")
+
+            # 若仍未 edited，才發新訊息（fallback）
+            if not edited:
+                new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                view.original_message = new_msg
+                if not getattr(self, 'original_message', None):
+                    self.original_message = new_msg
 
         except Exception:
             tb = traceback.format_exc()
