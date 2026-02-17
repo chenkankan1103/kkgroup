@@ -625,18 +625,30 @@ class UserPanel(commands.Cog):
 
 
 async def setup(bot):
+    """
+    uibody 擴展的統一入口點
+    由 setup_modules() 明確調用，而非自動發現
+    """
     print("🔧 載入 uibody 擴展")
     try:
-        user_panel_cog = UserPanel(bot)
-        await bot.add_cog(user_panel_cog)
-        print("✅ uibody 擴展載入完成")
+        # 檢查 UserPanel 是否已加載（防止重複加載）
+        if 'UserPanel' in bot.cogs:
+            print("⚠️  UserPanel 已存在，跳過重複加載")
+        else:
+            user_panel_cog = UserPanel(bot)
+            await bot.add_cog(user_panel_cog)
+            print("✅ UserPanel Cog 已載入")
         
         # 載入置物櫃事件監聽器 Cog（處理事件驅動 embed 更新）
+        # 注意：此時 UserPanel 應該已存在於 bot.cogs 中
         from uicommands.cogs.locker_event_listener import LockerEventListenerCog
-        await bot.add_cog(LockerEventListenerCog(bot, user_panel_cog))
-        print("✅ 置物櫃事件監聽器已載入")
+        if 'LockerEventListenerCog' not in bot.cogs:
+            user_panel_cog = bot.get_cog('UserPanel')
+            await bot.add_cog(LockerEventListenerCog(bot, user_panel_cog))
+            print("✅ 置物櫃事件監聽器已載入")
+        else:
+            print("⚠️  置物櫃事件監聽器已存在，跳過重複加載")
         
-        # NOTE: AdminCommands 由自動模組載入系統加載，不需要在這裡手動添加
     except Exception as e:
         print(f"❌ uibody 擴展載入失敗: {e}")
         import traceback
