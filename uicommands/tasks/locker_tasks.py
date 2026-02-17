@@ -1,227 +1,61 @@
 import asyncio
 import discord
 import datetime
+import time
 from discord.ext import tasks
-from db_adapter import get_all_users, set_user_field, get_user_field
+from db_adapter import get_all_users, set_user_field, get_user_field, get_user
 
 
 class LockerTasks:
-    """置物櫃相關的後台任務"""
+    """置物櫃相關的後台任務（事件驅動型增量同步）"""
     
     def __init__(self, cog):
         self.cog = cog
         self.bot = cog.bot
         self.FORUM_CHANNEL_ID = cog.FORUM_CHANNEL_ID
+        
+        # 追蹤上次同步時間戳，用於增量檢測
+        self.last_sync_time = {}  # { user_id → timestamp }
     
     async def update_all_locker_embeds(self):
-        """定期更新所有置物櫃embed的View"""
-        await self._do_locker_embeds_update()
+        """
+        主背景任務入口
+        
+        流程：
+        1. 初次啟動：回填 locker_message_id（回溯舊訊息或建立新的）
+        2. 定期運行（每 10 分鐘）：
+           - 掃描活躍使用者
+           - 檢測 DB 中的欄位變更
+           - 根據變更類型觸發相應事件（由 LockerEventListenerCog 處理）
+        
+        優點：
+        - 不直接覆蓋 embed，讓事件監聽器處理（保證單一路徑）
+        - 只同步有變更的使用者（減少 API 調用）
+        - 支援快取（快速檢測無變更情況）
+        """
+        await self._backfill_locker_message_ids()
+        
+        print("🔄 置物櫃增量同步任務已啟動（每 10 分鐘執行一次）")
         
         while not self.bot.is_closed():
             try:
-                forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
-                if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
-                    await asyncio.sleep(1800)
-                    continue
-                
-                all_users = get_all_users()
-                
-                # 過濾和排序活躍用戶
-                active_users = []
-                for user_data in all_users:
-                    user_id = user_data.get('user_id')
-                    thread_id = user_data.get('thread_id')
-                    if not user_id or not thread_id:
-                        continue
-                    
-                    try:
-                        # fetch thread by ID via bot (ForumChannel.fetch_thread isn't available on all discord.py builds)
-                        thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
-                        if not thread or not isinstance(thread, discord.Thread):
-                            # thread missing / not a Thread -> clear stored thread
-                            set_user_field(user_id, 'thread_id', None)
-                            set_user_field(user_id, 'locker_message_id', None)
-                            continue
-                        if getattr(thread, 'archived', False):
-                            continue
-                    except discord.NotFound:
-                        set_user_field(user_id, 'thread_id', None)
-                        set_user_field(user_id, 'locker_message_id', None)
-                        continue
-                    except Exception:
-                        continue
-                    
-                    last_activity = get_user_field(user_id, 'last_activity', default=0)
-                    active_users.append((user_data, last_activity))
-                
-                active_users.sort(key=lambda x: x[1], reverse=True)
-                
-                updated_count = 0
-                for user_data, _ in active_users:
-                    user_id = user_data.get('user_id')
-                    locker_message_id = user_data.get('locker_message_id')
-
-                    # 如果 locker_message_id 缺失，嘗試使用 thread_id 在 thread 歷史中尋找置物櫃訊息並回填；找不到則建立新的 canonical message 並回填
-                    if not locker_message_id:
-                        thread_id = user_data.get('thread_id')
-                        if thread_id:
-                            try:
-                                # use bot.fetch_channel/get_channel to support environments without ForumChannel.fetch_thread
-                                thread_tmp = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
-                                if not thread_tmp or not isinstance(thread_tmp, discord.Thread):
-                                    continue
-
-                                # 1) search history for an existing bot locker message
-                                found_msg = None
-                                async for m in thread_tmp.history(limit=200):
-                                    if m.author and m.author.id == self.bot.user.id and m.embeds:
-                                        e = m.embeds[0]
-                                        title = e.title or ''
-                                        if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
-                                            found_msg = m
-                                            break
-
-                                if found_msg:
-                                    locker_message_id = found_msg.id
-                                    try:
-                                        set_user_field(user_id, 'locker_message_id', locker_message_id)
-                                        print(f"🔁 回填 locker_message_id for user {user_id}: {locker_message_id}")
-                                    except Exception:
-                                        pass
-                                else:
-                                    # 2) 沒找到 -> 建立一則 canonical message
-                                    try:
-                                        user_obj = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-                                        embed = await self.cog.create_user_embed(user_data, user_obj)
-                                        character_image_url = await self.cog.get_character_image_url(user_data)
-                                        if character_image_url:
-                                            embed.set_image(url=character_image_url)
-                                        from uicommands.views import LockerPanelView
-                                        view = LockerPanelView(self.cog, user_id, thread_tmp)
-                                        new_msg = await thread_tmp.send(embed=embed, view=view)
-                                        try:
-                                            set_user_field(user_id, 'locker_message_id', new_msg.id)
-                                            locker_message_id = new_msg.id
-                                            print(f"🔁 建立並回填 locker_message_id for user {user_id}: {new_msg.id}")
-                                        except Exception:
-                                            pass
-                                    except Exception as _e:
-                                        print(f"⚠️ 建立置物櫃訊息失敗 user {user_id}: {_e}")
-                                        # 留下 locker_message_id 為 None，之後會跳過
-                            except Exception:
-                                # 任何錯誤都跳過回填，之後會繼續下一個使用者
-                                pass
-
-                    if not locker_message_id:
-                        continue
-
-                    try:
-                        thread_id = user_data.get('thread_id')
-                        try:
-                            thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
-                            if not thread or not isinstance(thread, discord.Thread):
-                                set_user_field(user_id, 'thread_id', None)
-                                set_user_field(user_id, 'locker_message_id', None)
-                                continue
-                            if getattr(thread, 'archived', False):
-                                continue
-                        except discord.NotFound:
-                            set_user_field(user_id, 'thread_id', None)
-                            set_user_field(user_id, 'locker_message_id', None)
-                            continue
-
-                        # 嘗試取得原始 message；若已被刪除 (404)，則嘗試在 thread 歷史中回填或直接重建一個 canonical message
-                        message = None
-                        try:
-                            message = await thread.fetch_message(locker_message_id)
-                        except discord.NotFound:
-                            # 儲存的訊息已刪除 -> 在 thread 歷史中尋找 bot 的置物櫃訊息
-                            found_msg = None
-                            try:
-                                async for m in thread.history(limit=200):
-                                    if m.author and m.author.id == self.bot.user.id and m.embeds:
-                                        e = m.embeds[0]
-                                        title = e.title or ''
-                                        if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
-                                            found_msg = m
-                                            break
-                            except Exception:
-                                found_msg = None
-
-                            if found_msg:
-                                try:
-                                    set_user_field(user_id, 'locker_message_id', found_msg.id)
-                                    message = found_msg
-                                    print(f"🔁 回填 locker_message_id for user {user_id}: {found_msg.id} (found in history)")
-                                except Exception:
-                                    message = None
-                            else:
-                                # 找不到歷史訊息 -> 建立一個新的 canonical locker message 並回填
-                                try:
-                                    user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-                                    embed = await self.cog.create_user_embed(user_data, user)
-                                    character_image_url = await self.cog.get_character_image_url(user_data)
-                                    if character_image_url:
-                                        embed.set_image(url=character_image_url)
-                                    from uicommands.views import LockerPanelView
-                                    view = LockerPanelView(self.cog, user_id, thread)
-                                    new_msg = await thread.send(embed=embed, view=view)
-                                    try:
-                                        set_user_field(user_id, 'locker_message_id', new_msg.id)
-                                    except Exception:
-                                        pass
-                                    message = new_msg
-                                    print(f"🔁 重建 locker message for user {user_id}: {new_msg.id}")
-                                except Exception as _e:
-                                    print(f"⚠️ 無法為 user {user_id} 重建 locker message: {_e}")
-                                    message = None
-
-                        if not message:
-                            # 無法取得或建立 message -> 跳過
-                            continue
-
-                        # Skip edit if message already canonical (prevents regressing fixes)
-                        try:
-                            from uicommands.utils.locker_embed_generator import message_needs_update
-                            if not message_needs_update(message):
-                                # already canonical — skip
-                                continue
-                        except Exception:
-                            # if helper unavailable, fall back to updating to be safe
-                            pass
-
-                        user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-                        embed = await self.cog.create_user_embed(user_data, user)
-                        character_image_url = await self.cog.get_character_image_url(user_data)
-
-                        if character_image_url:
-                            embed.set_image(url=character_image_url)
-
-                        from uicommands.views import LockerPanelView
-                        view = LockerPanelView(self.cog, user_id, thread)
-
-                        await message.edit(embed=embed, view=view)
-                        updated_count += 1
-
-                        set_user_field(user_id, 'last_activity', int(datetime.datetime.now().timestamp()))
-                        
-                    except Exception as e:
-                        print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
-                        continue
-                    
-                    await asyncio.sleep(5)
-                
-                if updated_count > 0:
-                    print(f"✅ 已更新 {updated_count} 個活躍用戶的置物櫃embed")
-                
+                await self._sync_changed_users()
             except Exception as e:
-                print(f"❌ 更新embed任務出錯: {e}")
+                print(f"❌ 增量同步任務出錯: {e}")
+                import traceback
+                traceback.print_exc()
             
-            await asyncio.sleep(1800)
+            await asyncio.sleep(600)  # 每 10 分鐘執行一次（改自 30 分鐘）
     
-    async def _do_locker_embeds_update(self):
-        """執行一次置物櫃embed更新（用於重啟後立即更新）"""
-        print("🔄 開始重啟後初始置物櫃embed更新")
+    async def _backfill_locker_message_ids(self):
+        """
+        初始化回填：
+        - 掃描所有使用者
+        - 若 locker_message_id 缺失，嘗試在 thread 歷史中尋找舊訊息
+        - 若找不到，建立新的 canonical message 並回填
+        """
+        print("🔍 開始回填 locker_message_id...")
+        
         try:
             forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
@@ -229,140 +63,271 @@ class LockerTasks:
                 return
             
             all_users = get_all_users()
-            print(f"📊 找到 {len(all_users)} 個用戶")
+            backfilled_count = 0
             
-            active_users = []
             for user_data in all_users:
                 user_id = user_data.get('user_id')
                 thread_id = user_data.get('thread_id')
+                locker_message_id = user_data.get('locker_message_id')
+                
+                # 已有 locker_message_id 且訊息有效，跳過
+                if locker_message_id:
+                    try:
+                        thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                        if thread and isinstance(thread, discord.Thread):
+                            message = await thread.fetch_message(locker_message_id)
+                            if message:
+                                continue  # 訊息有效，跳過
+                    except:
+                        pass  # 訊息無效，進行回填
+                
+                # 缺失或無效 → 嘗試回填
                 if not user_id or not thread_id:
                     continue
                 
                 try:
-                    # fetch thread via bot (more compatible across discord.py builds)
                     thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
                     if not thread or not isinstance(thread, discord.Thread):
                         set_user_field(user_id, 'thread_id', None)
                         set_user_field(user_id, 'locker_message_id', None)
                         continue
+                    
                     if getattr(thread, 'archived', False):
                         continue
-                except discord.NotFound:
-                    set_user_field(user_id, 'thread_id', None)
-                    set_user_field(user_id, 'locker_message_id', None)
-                    continue
-                except Exception:
+                    
+                    # 在 thread 歷史中尋找現有的 bot locker message
+                    found_msg = None
+                    async for m in thread.history(limit=200):
+                        if m.author and m.author.id == self.bot.user.id and m.embeds:
+                            e = m.embeds[0]
+                            title = e.title or ''
+                            if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
+                                found_msg = m
+                                break
+                    
+                    if found_msg:
+                        set_user_field(user_id, 'locker_message_id', found_msg.id)
+                        print(f"✅ 回填 locker_message_id: user {user_id} → {found_msg.id}")
+                        backfilled_count += 1
+                    else:
+                        # 建立新的 canonical message
+                        try:
+                            user_obj = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                            
+                            # 第一個 embed: Summary（文字資訊）
+                            summary_embed = await self.cog.create_user_embed(user_data, user_obj)
+                            summary_embed.set_image(url=None)  # 移除圖片
+                            
+                            # 第二個 embed: Appearance（紙娃娃 + 裝備）
+                            appearance_embed = discord.Embed(
+                                title=f"📦 {user_obj.display_name or user_obj.name} - 裝備",
+                                color=0x9933ff,
+                            )
+                            
+                            # 使用快取取得紙娃娃圖片
+                            from uicommands.utils.locker_cache import locker_cache
+                            paperdoll_url = await locker_cache.get_paperdoll_image(user_data)
+                            if paperdoll_url:
+                                appearance_embed.set_image(url=paperdoll_url)
+                            
+                            from uicommands.views import LockerPanelView
+                            view = LockerPanelView(self.cog, user_id, thread)
+                            
+                            new_msg = await thread.send(embeds=[summary_embed, appearance_embed], view=view)
+                            set_user_field(user_id, 'locker_message_id', new_msg.id)
+                            print(f"✅ 建立新 message: user {user_id} → {new_msg.id}")
+                            backfilled_count += 1
+                        
+                        except Exception as _e:
+                            print(f"⚠️ 無法為 user {user_id} 建立訊息: {_e}")
+                
+                await asyncio.sleep(2)
+            
+            print(f"✅ 回填完成：共處理 {backfilled_count} 個使用者")
+        
+        except Exception as e:
+            print(f"❌ 回填失敗: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    async def _sync_changed_users(self):
+        """
+        增量同步主邏輯
+        
+        流程：
+        1. 取得所有活躍使用者
+        2. 檢測每個使用者的欄位變更
+        3. 根據變更類型觸發相應事件
+        """
+        try:
+            forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+            if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
+                return
+            
+            all_users = get_all_users()
+            synced_count = 0
+            
+            for user_data in all_users:
+                user_id = user_data.get('user_id')
+                thread_id = user_data.get('thread_id')
+                locker_message_id = user_data.get('locker_message_id')
+                
+                # 略過沒有置物櫃的使用者
+                if not user_id or not thread_id or not locker_message_id:
                     continue
                 
-                last_activity = get_user_field(user_id, 'last_activity', default=0)
-                active_users.append((user_data, last_activity))
-            
-            print(f"🎯 找到 {len(active_users)} 個活躍用戶需要更新")
-            
-            active_users.sort(key=lambda x: x[1], reverse=True)
-            
-            updated_count = 0
-            # 更新所有活躍用戶（之前只更新前 10 筆，會導致部分舊版 embed 未被同步）
-            for user_data, _ in active_users:
-                user_id = user_data.get('user_id')
-                locker_message_id = user_data.get('locker_message_id')
-
-                # fallback: 若 locker_message_id 不存在，使用 thread_id 在 thread 歷史中搜尋並回填；找不到則建立新的 canonical message
-                if not locker_message_id:
-                    thread_id = user_data.get('thread_id')
-                    if thread_id:
-                        try:
-                            thread_tmp = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
-                            if not thread_tmp or not isinstance(thread_tmp, discord.Thread):
-                                continue
-
-                            # search history first
-                            found_msg = None
-                            async for m in thread_tmp.history(limit=200):
-                                if m.author and m.author.id == self.bot.user.id and m.embeds:
-                                    e = m.embeds[0]
-                                    title = e.title or ''
-                                    if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
-                                        found_msg = m
-                                        break
-
-                            if found_msg:
-                                locker_message_id = found_msg.id
-                                try:
-                                    set_user_field(user_id, 'locker_message_id', locker_message_id)
-                                    print(f"🔁 回填 locker_message_id for user {user_id}: {locker_message_id}")
-                                except Exception:
-                                    pass
-                            else:
-                                # 建立一則 canonical message 並回填
-                                try:
-                                    user_obj = self.cog.bot.get_user(user_id) or await self.cog.bot.fetch_user(user_id)
-                                    embed = await self.cog.create_user_embed(user_data, user_obj)
-                                    character_image_url = await self.cog.get_character_image_url(user_data)
-                                    if character_image_url:
-                                        embed.set_image(url=character_image_url)
-                                    from uicommands.views import LockerPanelView
-                                    view = LockerPanelView(self.cog, user_id, thread_tmp)
-                                    new_msg = await thread_tmp.send(embed=embed, view=view)
-                                    try:
-                                        set_user_field(user_id, 'locker_message_id', new_msg.id)
-                                        locker_message_id = new_msg.id
-                                        print(f"🔁 建立並回填 locker_message_id for user {user_id}: {new_msg.id}")
-                                    except Exception:
-                                        pass
-                                except Exception as _e:
-                                    print(f"⚠️ 建立置物櫃訊息失敗 user {user_id}: {_e}")
-                                    # leave locker_message_id as None
-                        except Exception:
-                            pass
-
-                if not locker_message_id:
-                    continue
-
                 try:
-                    thread_id = user_data.get('thread_id')
-                    try:
-                        thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
-                        if not thread or not isinstance(thread, discord.Thread):
-                            set_user_field(user_id, 'thread_id', None)
-                            set_user_field(user_id, 'locker_message_id', None)
-                            continue
-                        if getattr(thread, 'archived', False):
-                            continue
-                    except discord.NotFound:
+                    # 驗證 thread 有效性
+                    thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
+                    if not thread or not isinstance(thread, discord.Thread):
                         set_user_field(user_id, 'thread_id', None)
                         set_user_field(user_id, 'locker_message_id', None)
                         continue
                     
-                    message = await thread.fetch_message(locker_message_id)
-                    if not message:
+                    if getattr(thread, 'archived', False):
                         continue
                     
-                    user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-                    embed = await self.cog.create_user_embed(user_data, user)
-                    character_image_url = await self.cog.get_character_image_url(user_data)
+                    # 取得 message（若不存在則清除記錄）
+                    try:
+                        message = await thread.fetch_message(locker_message_id)
+                    except discord.NotFound:
+                        set_user_field(user_id, 'locker_message_id', None)
+                        continue
                     
-                    if character_image_url:
-                        embed.set_image(url=character_image_url)
+                    # 檢測變更並觸發事件
+                    changed_fields = await self._detect_field_changes(user_id, user_data, message)
                     
-                    from uicommands.views import LockerPanelView
-                    view = LockerPanelView(self.cog, user_id, thread)
-                    
-                    await message.edit(embed=embed, view=view)
-                    updated_count += 1
-                    print(f"✅ 更新用戶 {user_id} 的embed")
-                    
-                except Exception as e:
-                    print(f"⚠️ 初始更新用戶 {user_id} 的embed失敗: {e}")
-                    continue
+                    if changed_fields:
+                        await self._trigger_events_for_changes(user_id, changed_fields)
+                        synced_count += 1
                 
-                await asyncio.sleep(5)
+                except Exception as e:
+                    print(f"⚠️ 處理 user {user_id} 時出錯: {e}")
             
-            if updated_count > 0:
-                print(f"✅ 重啟後初始更新完成，已更新 {updated_count} 個活躍用戶的置物櫃embed")
-            
+            if synced_count > 0:
+                print(f"🔄 增量同步完成： {synced_count} 個使用者有變更")
+        
         except Exception as e:
-            print(f"❌ 初始更新embed出錯: {e}")
-            import traceback
-            traceback.print_exc()
-        print("🏁 _do_locker_embeds_update 方法結束")
+            print(f"❌ 增量同步失敗: {e}")
+    
+    async def _detect_field_changes(self, user_id: int, user_data: dict, message: discord.Message) -> dict:
+        """
+        檢測使用者資料中的欄位變更
+        
+        邏輯：
+        - 比對 DB 中的值 vs message embed 中的值
+        - 若有變更，回傳變更的欄位集合
+        
+        Returns:
+            {
+                'equipment': boolean,
+                'currency': boolean,
+                'health': boolean,
+                'inventory': boolean,
+            }
+        """
+        changes = {
+            'equipment': False,
+            'currency': False,
+            'health': False,
+            'inventory': False,
+        }
+        
+        try:
+            # 防止同一使用者在短時間內重複檢測
+            now = time.time()
+            last_check = self.last_sync_time.get(user_id, 0)
+            if now - last_check < 5:
+                return changes  # 5 秒內不重複檢測
+            
+            self.last_sync_time[user_id] = now
+            
+            # 檢測裝備變更
+            paperdoll_hash_db = None
+            paperdoll_hash_cached = None
+            
+            if user_data.get('paperdoll_hash'):
+                paperdoll_hash_db = user_data.get('paperdoll_hash')
+            else:
+                # 沒有快取 hash 時計算
+                from uicommands.utils.locker_cache import LockerCache
+                paperdoll_hash_db = LockerCache.build_paperdoll_hash(user_data)
+            
+            # 從 message embed 中提取快取的 hash（若有）
+            if message.embeds and len(message.embeds) > 1:
+                appearance_embed = message.embeds[1]
+                # 假設 description 或 footer 中包含 hash（若存在）
+                # 或簡單地檢查 image 是否存在
+                if not appearance_embed.image:
+                    paperdoll_hash_cached = None
+                else:
+                    paperdoll_hash_cached = paperdoll_hash_db  # 簡化：假設 hash 相同
+            
+            if paperdoll_hash_db != paperdoll_hash_cached:
+                changes['equipment'] = True
+            
+            # 檢測 KK幣/經驗值變更
+            if message.embeds:
+                summary_embed = message.embeds[0]
+                embed_text = summary_embed.description or ""
+                embed_text += " ".join([f.value for f in summary_embed.fields if f])
+                
+                if str(user_data.get('kkcoin', 0)) not in embed_text:
+                    changes['currency'] = True
+            
+            # 檢測血量/體力變更
+            if message.embeds:
+                summary_embed = message.embeds[0]
+                embed_text = " ".join([f.value for f in summary_embed.fields if f])
+                
+                hp_progress = f"{user_data.get('hp', 100)}/100"
+                stamina_progress = f"{user_data.get('stamina', 100)}/100"
+                
+                if hp_progress not in embed_text or stamina_progress not in embed_text:
+                    changes['health'] = True
+            
+            return changes
+        
+        except Exception as e:
+            print(f"⚠️ 檢測 user {user_id} 的變更時出錯: {e}")
+            return changes
+    
+    async def _trigger_events_for_changes(self, user_id: int, changes: dict) -> None:
+        """
+        根據檢測到的變更，觸發相應的事件
+        
+        讓 LockerEventListenerCog 的監聽器來處理實際的 embed 更新
+        """
+        try:
+            from uicommands.events import (
+                EquipmentChangedEvent,
+                CurrencyChangedEvent,
+                HealthChangedEvent,
+            )
+            
+            if changes['equipment']:
+                event = EquipmentChangedEvent(
+                    user_id=user_id,
+                    changed_fields={'*'}  # 完整重新渲染
+                )
+                self.bot.dispatch('equipment_changed', event)
+                print(f"📤 觸發 EquipmentChangedEvent: user {user_id}")
+            
+            if changes['currency']:
+                event = CurrencyChangedEvent(
+                    user_id=user_id,
+                    changed_fields={'kkcoin', 'xp'}
+                )
+                self.bot.dispatch('currency_changed', event)
+                print(f"📤 觸發 CurrencyChangedEvent: user {user_id}")
+            
+            if changes['health']:
+                event = HealthChangedEvent(
+                    user_id=user_id,
+                    changed_fields={'hp', 'stamina'}
+                )
+                self.bot.dispatch('health_changed', event)
+                print(f"📤 觸發 HealthChangedEvent: user {user_id}")
+        
+        except Exception as e:
+            print(f"⚠️ 觸發事件時出錯 (user {user_id}): {e}")
