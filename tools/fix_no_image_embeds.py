@@ -7,6 +7,7 @@
 Run on server where .env contains UI_DISCORD_BOT_TOKEN
 """
 import os, re, sqlite3, requests, json
+from db_adapter import get_user_field
 DB='/home/e193752468/kkgroup/user_data.db'
 ENV='/home/e193752468/kkgroup/.env'
 
@@ -74,9 +75,18 @@ for r in rows:
     if e.get('image') and e['image'].get('url'):
         skipped += 1
         continue
-    # build fallback image url
-    user_data = {k: r[k] for k in ['face','hair','skin','top','bottom','shoes','is_stunned']}
-    api_url = build_maplestory_api_url(user_data, animated=True)
+    # build fallback image url — prefer DB-stored `embed_image_source` if available
+    try:
+        db_src = get_user_field(user_id, 'embed_image_source', default=None)
+    except Exception:
+        db_src = None
+
+    if db_src:
+        api_url = db_src
+    else:
+        user_data = {k: r[k] for k in ['face','hair','skin','top','bottom','shoes','is_stunned']}
+        api_url = build_maplestory_api_url(user_data, animated=True)
+
     # set image on embed
     e['image'] = {'url': api_url}
     # preserve components
