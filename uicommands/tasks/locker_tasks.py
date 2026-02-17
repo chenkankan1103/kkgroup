@@ -61,7 +61,7 @@ class LockerTasks:
                     user_id = user_data.get('user_id')
                     locker_message_id = user_data.get('locker_message_id')
 
-                    # 如果 locker_message_id 缺失，嘗試使用 thread_id 在 thread 歷史中尋找置物櫃訊息並回填
+                    # 如果 locker_message_id 缺失，嘗試使用 thread_id 在 thread 歷史中尋找置物櫃訊息並回填；找不到則建立新的 canonical message 並回填
                     if not locker_message_id:
                         thread_id = user_data.get('thread_id')
                         if thread_id:
@@ -70,18 +70,44 @@ class LockerTasks:
                                 thread_tmp = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
                                 if not thread_tmp or not isinstance(thread_tmp, discord.Thread):
                                     continue
+
+                                # 1) search history for an existing bot locker message
+                                found_msg = None
                                 async for m in thread_tmp.history(limit=200):
                                     if m.author and m.author.id == self.bot.user.id and m.embeds:
                                         e = m.embeds[0]
                                         title = e.title or ''
                                         if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
-                                            locker_message_id = m.id
-                                            try:
-                                                set_user_field(user_id, 'locker_message_id', locker_message_id)
-                                                print(f"🔁 回填 locker_message_id for user {user_id}: {locker_message_id}")
-                                            except Exception:
-                                                pass
+                                            found_msg = m
                                             break
+
+                                if found_msg:
+                                    locker_message_id = found_msg.id
+                                    try:
+                                        set_user_field(user_id, 'locker_message_id', locker_message_id)
+                                        print(f"🔁 回填 locker_message_id for user {user_id}: {locker_message_id}")
+                                    except Exception:
+                                        pass
+                                else:
+                                    # 2) 沒找到 -> 建立一則 canonical message
+                                    try:
+                                        user_obj = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                                        embed = await self.cog.create_user_embed(user_data, user_obj)
+                                        character_image_url = await self.cog.get_character_image_url(user_data)
+                                        if character_image_url:
+                                            embed.set_image(url=character_image_url)
+                                        from uicommands.views import LockerPanelView
+                                        view = LockerPanelView(self.cog, user_id, thread_tmp)
+                                        new_msg = await thread_tmp.send(embed=embed, view=view)
+                                        try:
+                                            set_user_field(user_id, 'locker_message_id', new_msg.id)
+                                            locker_message_id = new_msg.id
+                                            print(f"🔁 建立並回填 locker_message_id for user {user_id}: {new_msg.id}")
+                                        except Exception:
+                                            pass
+                                    except Exception as _e:
+                                        print(f"⚠️ 建立置物櫃訊息失敗 user {user_id}: {_e}")
+                                        # 留下 locker_message_id 為 None，之後會跳過
                             except Exception:
                                 # 任何錯誤都跳過回填，之後會繼續下一個使用者
                                 pass
@@ -231,7 +257,7 @@ class LockerTasks:
                 user_id = user_data.get('user_id')
                 locker_message_id = user_data.get('locker_message_id')
 
-                # fallback: 若 locker_message_id 不存在，使用 thread_id 在 thread 歷史中搜尋並回填
+                # fallback: 若 locker_message_id 不存在，使用 thread_id 在 thread 歷史中搜尋並回填；找不到則建立新的 canonical message
                 if not locker_message_id:
                     thread_id = user_data.get('thread_id')
                     if thread_id:
@@ -239,18 +265,44 @@ class LockerTasks:
                             thread_tmp = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(thread_id)
                             if not thread_tmp or not isinstance(thread_tmp, discord.Thread):
                                 continue
+
+                            # search history first
+                            found_msg = None
                             async for m in thread_tmp.history(limit=200):
                                 if m.author and m.author.id == self.bot.user.id and m.embeds:
                                     e = m.embeds[0]
                                     title = e.title or ''
                                     if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
-                                        locker_message_id = m.id
-                                        try:
-                                            set_user_field(user_id, 'locker_message_id', locker_message_id)
-                                            print(f"🔁 回填 locker_message_id for user {user_id}: {locker_message_id}")
-                                        except Exception:
-                                            pass
+                                        found_msg = m
                                         break
+
+                            if found_msg:
+                                locker_message_id = found_msg.id
+                                try:
+                                    set_user_field(user_id, 'locker_message_id', locker_message_id)
+                                    print(f"🔁 回填 locker_message_id for user {user_id}: {locker_message_id}")
+                                except Exception:
+                                    pass
+                            else:
+                                # 建立一則 canonical message 並回填
+                                try:
+                                    user_obj = self.cog.bot.get_user(user_id) or await self.cog.bot.fetch_user(user_id)
+                                    embed = await self.cog.create_user_embed(user_data, user_obj)
+                                    character_image_url = await self.cog.get_character_image_url(user_data)
+                                    if character_image_url:
+                                        embed.set_image(url=character_image_url)
+                                    from uicommands.views import LockerPanelView
+                                    view = LockerPanelView(self.cog, user_id, thread_tmp)
+                                    new_msg = await thread_tmp.send(embed=embed, view=view)
+                                    try:
+                                        set_user_field(user_id, 'locker_message_id', new_msg.id)
+                                        locker_message_id = new_msg.id
+                                        print(f"🔁 建立並回填 locker_message_id for user {user_id}: {new_msg.id}")
+                                    except Exception:
+                                        pass
+                                except Exception as _e:
+                                    print(f"⚠️ 建立置物櫃訊息失敗 user {user_id}: {_e}")
+                                    # leave locker_message_id as None
                         except Exception:
                             pass
 
