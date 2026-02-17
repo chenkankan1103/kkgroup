@@ -161,12 +161,22 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
         if character_image_url:
             # Discord-hosted image (cached/uploaded)
             embed.set_image(url=character_image_url)
+            # 儲存 image source 到 embed（方便後續檢查或快速還原）
+            try:
+                embed.add_field(name="image_source", value=f"`{character_image_url}`", inline=False)
+            except Exception:
+                pass
         else:
             # 回退：直接使用 MapleStory.io API 圖片 URL（保證 embed 會顯示圖片）
             try:
                 from .image_utils import build_maplestory_api_url
                 api_url = build_maplestory_api_url(user_data, animated=True)
                 embed.set_image(url=api_url)
+                # 把 MapleStory API URL 寫入 embed（便於工具/手動還原）
+                try:
+                    embed.add_field(name="image_source", value=f"`{api_url}`", inline=False)
+                except Exception:
+                    pass
             except Exception:
                 pass
     except Exception as e:
