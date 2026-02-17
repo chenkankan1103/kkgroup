@@ -59,21 +59,73 @@ class AdminCommands(commands.Cog):
                     if not message:
                         continue
 
+                    # Safety check: only update messages that are non-canonical to avoid
+                    # regressing fixes (missing image or legacy buttons).
+                    current_embed = None
+                    try:
+                        current_embed = message.embeds[0] if message.embeds else None
+                    except Exception:
+                        current_embed = None
+
+                    # detect legacy crop-info button (legacy custom_id = 'locker_crop_info')
+                    def has_legacy_button(msg):
+                        try:
+                            for row in msg.components or []:
+                                for comp in row.children:
+                                    cid = getattr(comp, 'custom_id', None) or comp.get('custom_id')
+                                    if cid == 'locker_crop_info':
+                                        return True
+                        except Exception:
+                            pass
+                        return False
+
+                    current_image = None
+                    current_footer = ''
+                    try:
+                        if current_embed and getattr(current_embed, 'image', None):
+                            current_image = getattr(current_embed.image, 'url', None)
+                        if current_embed and getattr(current_embed, 'footer', None):
+                            current_footer = (getattr(current_embed.footer, 'text', '') or '')
+                    except Exception:
+                        current_image = None
+                        current_footer = ''
+
+                    needs_update = False
+                    # missing image or missing MapleStory footer -> update
+                    if not current_image:
+                        needs_update = True
+                    elif 'MapleStory' not in (current_footer or ''):
+                        needs_update = True
+                    # legacy buttons present -> update
+                    elif has_legacy_button(message):
+                        needs_update = True
+
+                    if not needs_update:
+                        # skip — already canonical / safe
+                        continue
+
+                    # Build canonical embed (create_user_embed already applies MapleStory fallback)
                     user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
                     embed = await user_panel_cog.create_user_embed(user_data, user)
-                    character_image_url = await user_panel_cog.get_character_image_url(user_data)
 
-                    if character_image_url:
-                        embed.set_image(url=character_image_url)
+                    # Ensure embed has an image (defensive) — compute MapleStory fallback if necessary
+                    try:
+                        img_url = (embed.image.url if getattr(embed, 'image', None) else None)
+                    except Exception:
+                        img_url = None
+                    if not img_url:
+                        try:
+                            from uicommands.utils.image_utils import build_maplestory_api_url
+                            api_url = build_maplestory_api_url(user_data, animated=True)
+                            embed.set_image(url=api_url)
+                        except Exception:
+                            pass
 
                     view = LockerPanelView(user_panel_cog, user_id, thread)
 
                     await message.edit(embed=embed, view=view)
                     updated_count += 1
 
-                    set_user_field(user_id, 'last_activity', int(datetime.datetime.now().timestamp()))
-
-                except Exception as e:
                     print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
                     failed_count += 1
                     continue

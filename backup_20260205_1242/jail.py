@@ -259,18 +259,18 @@ class Ai(commands.Cog):
             
             # 使用用戶的外觀數據，但應用懲罰狀態的姿勢和面部動畫
             items = [
-                {"itemId": 2000, "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('skin', preset['skin']), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('face', preset['face']), "animationName": preset['face_animation'], "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('hair', preset['hair']), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('top', preset['top']), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('bottom', preset['bottom']), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('shoes', preset['shoes']), "region": "GMS", "version": "217"}
+                {"itemId": 2000, "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('skin', preset['skin']), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('face', preset['face']), "animationName": preset['face_animation'], "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('hair', preset['hair']), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('top', preset['top']), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('bottom', preset['bottom']), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('shoes', preset['shoes']), "region": "TWMS", "version": "256"}
             ]
             
             # 如果是眩晕状态，添加眩晕效果
             if is_stunned:
-                items.append({"itemId": 1005411, "region": "GMS", "version": "217"})
+                items.append({"itemId": 1005411, "region": "TWMS", "version": "256"})
             
             item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
             api_url = f"https://maplestory.io/api/character/{item_path}/{preset['pose']}/animated?showears=false&resize=2&flipX=true"
