@@ -42,7 +42,8 @@ class ButtonInteraction(commands.Cog):
             self.categories = []  # 設置為空列表，這樣按鈕會顯示錯誤消息
             with open('button_interaction_init.log', 'w') as f:
                 f.write(f"Error initializing ButtonInteraction: {e}\n")
-        self.price = 100000
+        # 將預設購買價格從 100000 下調為 5000（管理員要求）
+        self.price = 5000
 
     def get_categories(self) -> list:
         try:
