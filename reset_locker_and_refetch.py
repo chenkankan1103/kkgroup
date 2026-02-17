@@ -100,8 +100,8 @@ class LockerResetter(commands.Cog):
                     # 設置線程所有者
                     await thread.edit(owner_id=user_id)
                     
-                    # 發送歡迎消息
-                    from db_adapter import set_user_field
+                    # 發送歡迎消息（同時儲存 thread_id）
+                    from db_adapter import set_user_field, get_user
                     set_user_field(user_id, 'thread_id', thread.id)
                     
                     embed = discord.Embed(
@@ -110,6 +110,15 @@ class LockerResetter(commands.Cog):
                         color=discord.Color.green()
                     )
                     embed.set_thumbnail(url=user.avatar.url if user.avatar else None)
+                    # 嘗試附上紙娃娃圖（MapleStory.io API）以避免舊版訊息
+                    try:
+                        from uicommands.utils.image_utils import build_maplestory_api_url
+                        user_data_row = get_user(user_id)
+                        if user_data_row:
+                            api_url = build_maplestory_api_url(user_data_row)
+                            embed.set_image(url=api_url)
+                    except Exception:
+                        pass
                     
                     await thread.send(embed=embed)
                     
