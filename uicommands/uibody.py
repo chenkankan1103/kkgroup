@@ -636,10 +636,7 @@ async def setup(bot):
         await bot.add_cog(LockerEventListenerCog(bot, user_panel_cog))
         print("✅ 置物櫃事件監聽器已載入")
         
-        # 也加載管理員命令Cog
-        from uicommands.commands.admin_commands import AdminCommands
-        await bot.add_cog(AdminCommands(bot))
-        print("✅ 管理員命令已載入")
+        # NOTE: AdminCommands 由自動模組載入系統加載，不需要在這裡手動添加
     except Exception as e:
         print(f"❌ uibody 擴展載入失敗: {e}")
         import traceback
