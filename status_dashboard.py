@@ -131,9 +131,11 @@ async def get_systemd_logs(bot_type: str) -> str:
                         if len(parts) >= 2:
                             timestamp = get_taiwan_time().strftime("%H:%M")
                             message = parts[2] if len(parts) > 2 else parts[1]
-                            # 過濾重複的訊息
-                            if message in seen_messages:
+                            # 過濾非必要的訊息
+                            if any(keyword in message for keyword in ["成功獲取消息", "日誌已成功更新", "更新完成"]):
                                 continue
+                            if message.startswith("UPDATE TASK"):
+                                message = message.replace("UPDATE TASK ", "")
                             seen_messages.add(message)
                             formatted_logs.append(f"[{timestamp}] {message}")
                 return '\n'.join(formatted_logs)
