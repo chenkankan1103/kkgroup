@@ -74,19 +74,11 @@ for r in rows:
     if e.get('image') and e['image'].get('url'):
         skipped += 1
         continue
-    # build fallback image url — prefer DB-stored `embed_image_source` if available
-    # prefer embed_image_source column (if present in DB row)
-    db_src = None
-    try:
-        db_src = r.get('embed_image_source') if isinstance(r, dict) else r['embed_image_source']
-    except Exception:
-        db_src = None
-
-    if db_src:
-        api_url = db_src
-    else:
-        user_data = {k: r[k] for k in ['face','hair','skin','top','bottom','shoes','is_stunned']}
-        api_url = build_maplestory_api_url(user_data, animated=True)
+    # build fallback image url — ALWAYS generate from current DB paperdoll IDs
+    # (do NOT prefer `embed_image_source` because it may be stale)
+    user_data = {k: r[k] for k in ['face','hair','skin','top','bottom','shoes','is_stunned']}
+    api_url = build_maplestory_api_url(user_data, animated=True)
+    # If an old embed_image_source exists, ignore it and overwrite with current API URL
 
     # set image on embed
     e['image'] = {'url': api_url}
