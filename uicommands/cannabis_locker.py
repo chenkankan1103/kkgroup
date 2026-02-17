@@ -440,137 +440,62 @@ class PersonalLockerCog(commands.Cog):
     async def send_updated_locker_embed(self, thread, user_id):
         """發送或編輯更新後的置物櫃 embed
 
-        行為：
-        - 優先使用 `UserPanel.create_user_embed`（canonical embed，含紙娃娃與合併後物品欄）。
-        - 在 canonical 訊息（users.locket_message_id）存在時編輯該訊息；否則發新訊息並回寫 locker_message_id。
-        - 在 embed 中附加大麻系統的植物與庫存資訊（保留原有功能）。
+        使用中心化的 locker_embed_generator 確保所有路徑都使用相同的邏輯：
+        - 優先使用 UserPanel.create_user_embed（canonical embed，含紙娃娃與動態 MapleStory API）
+        - 附加大麻系統的植物與庫存資訊
+        - 編輯現有 canonical 訊息（DB 中的 locker_message_id）或發送新訊息
         """
         try:
-            # 基本資料
+            from db_adapter import get_user, set_user_field
+            from uicommands.utils.locker_embed_generator import generate_canonical_locker_embed
+            
             plants = await get_user_plants(user_id)
             inventory = await get_inventory(user_id)
-
-            # 嘗試使用 UserPanel 的 create_user_embed 以取得 canonical embed
-            embed = None
+            user_data = get_user(user_id) or {}
+            user_obj = None
+            
             try:
-                user_panel = self.bot.get_cog('UserPanel')
-                from db_adapter import get_user, set_user_field, get_user_field
-                user_data = get_user(user_id) or {}
-                user_obj = None
-                try:
-                    user_obj = await self.bot.fetch_user(user_id)
-                except Exception:
-                    pass
+                user_obj = await self.bot.fetch_user(user_id) if user_id else None
+            except Exception:
+                pass
 
-                if user_panel and hasattr(user_panel, 'create_user_embed'):
-                    embed = await user_panel.create_user_embed(user_data, user_obj or discord.Object(id=user_id))
-                else:
-                    # fallback: 嘗試使用共享的 util create_user_embed
-                    try:
-                        from uicommands.utils.embed_utils import create_user_embed as util_create
-                        # util_create 需要一個 cog 作為第一個參數 — 傳入 user_panel 或 self
-                        embed = await util_create(user_panel or self, user_data, user_obj or discord.Object(id=user_id))
-                    except Exception:
-                        embed = None
-            except Exception as e:
-                print(f"🔶 [Locker Update] 無法呼叫 create_user_embed: {e}")
+            # 取得或建立 view
+            from uicommands.views import LockerPanelView
+            view = LockerPanelView(self.bot, self, user_id, thread.guild.id, thread.id, plants, self) if hasattr(thread, 'guild') else None
 
-            # 若仍然沒有 embed（極端 fallback），手動建一個基本 embed
-            if not embed:
-                try:
-                    user_name = (await self.bot.fetch_user(user_id)).name
-                except Exception:
-                    user_name = f"用戶{user_id}"
-                embed = discord.Embed(title=f"📦 {user_name} 的個人置物櫃", description="你的大麻種植狀態", color=discord.Color.green())
-
-            # 在 canonical embed 上附加大麻植物/庫存欄位（保留原始資訊）
-            if plants:
-                for plant in plants:
-                    seed_config = CANNABIS_SHOP.get('種子', {}).get(plant.get('seed_type'), {})
-                    # 計算進度與狀態
-                    if plant.get('status') == 'harvested':
-                        status_text = '✅ 已成熟，可以收割！'
-                        progress_bar = '████████████████████ 100%'
-                    else:
-                        planted_time = plant.get('planted_at')
-                        matured_time = plant.get('matured_at')
-                        try:
-                            if isinstance(planted_time, str):
-                                planted_time = datetime.fromisoformat(planted_time).timestamp()
-                            if isinstance(matured_time, str):
-                                matured_time = datetime.fromisoformat(matured_time).timestamp()
-                        except Exception:
-                            planted_time = planted_time or 0
-                            matured_time = matured_time or 0
-                        now = datetime.now().timestamp()
-                        elapsed = max(0, now - (planted_time or now))
-                        total = max(1, (matured_time or now) - (planted_time or now))
-                        progress = min(100, (elapsed / total * 100)) if total > 0 else 0
-                        filled = int(progress / 5)
-                        empty = 20 - filled
-                        progress_bar = '█' * filled + '░' * empty + f" {progress:.0f}%"
-                        remaining = max(0, (matured_time or now) - now)
-                        if remaining > 0:
-                            hours = int(remaining // 3600)
-                            mins = int((remaining % 3600) // 60)
-                            status_text = f"🌱 成長中... 剩餘 {hours}h {mins}m"
-                        else:
-                            status_text = '✅ 已成熟，可以收割！'
-
-                    field_value = (
-                        f"種子：{seed_config.get('emoji','🌱')} {plant.get('seed_type')}\n"
-                        f"進度：{progress_bar}\n"
-                        f"狀態：{status_text}"
-                    )
-                    embed.add_field(name=f"植物 #{plant.get('id')}", value=field_value, inline=False)
-
-            # 若有 cannabis 庫存，也附加
-            if inventory:
-                if inventory.get('種子'):
-                    seeds_info = ''.join(f"  🌱 {k} x{v}\n" for k, v in (inventory.get('種子') or {}).items() if v)
-                    if seeds_info:
-                        embed.add_field(name='🌾 種子庫存', value=seeds_info.strip(), inline=True)
-                if inventory.get('肥料'):
-                    fert_info = ''.join(f"  💧 {k} x{v}\n" for k, v in (inventory.get('肥料') or {}).items() if v)
-                    if fert_info:
-                        embed.add_field(name='💧 肥料庫存', value=fert_info.strip(), inline=True)
-                if inventory.get('大麻'):
-                    cannabis_info = ''.join(f"  💰 {k} x{v} ({CANNABIS_HARVEST_PRICES.get(k,0)}/個)\n" for k, v in (inventory.get('大麻') or {}).items() if v)
-                    if cannabis_info:
-                        embed.add_field(name='📦 大麻庫存', value=cannabis_info.strip(), inline=False)
-
-            # 建立 view
-            view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants, self)
+            # 使用中心化生成器
+            embed = await generate_canonical_locker_embed(
+                cog=self.bot.get_cog('UserPanel') or self,
+                user_data=user_data,
+                user_obj=user_obj,
+                include_cannabis_info=True,
+                plants=plants,
+                inventory=inventory
+            )
 
             # 嘗試編輯 canonical message（若存在）
-            try:
-                from db_adapter import get_user, set_user_field
-                user_row = get_user(user_id)
-                locker_msg_id = user_row.get('locker_message_id') if user_row else None
-                if locker_msg_id:
-                    try:
-                        msg = await thread.fetch_message(locker_msg_id)
-                        await msg.edit(embed=embed, view=view)
-                        print(f"✅ [Locker Update] 已更新用戶 {user_id} 的置物櫃thread (edited existing message)")
-                        return
-                    except Exception as _e:
-                        # 編輯失敗 -> 會嘗試發新訊息並覆寫 locker_message_id
-                        print(f"🔶 [Locker Update] 編輯 canonical message 失敗，將發新訊息: {_e}")
-
-                # 發送新訊息並回填 locker_message_id
-                new_msg = await thread.send(embed=embed, view=view)
+            user_row = get_user(user_id)
+            locker_msg_id = user_row.get('locker_message_id') if user_row else None
+            if locker_msg_id:
                 try:
-                    set_user_field(user_id, 'locker_message_id', new_msg.id)
-                except Exception:
-                    pass
-                print(f"✅ [Locker Update] 已更新用戶 {user_id} 的置物櫃thread (sent new message)")
+                    msg = await thread.fetch_message(locker_msg_id)
+                    await msg.edit(embed=embed, view=view)
+                    print(f"✅ [Locker Update] 已編輯用戶 {user_id} 的置物櫃訊息 (locker_message_id={locker_msg_id})")
+                    return
+                except Exception as _e:
+                    print(f"🔶 [Locker Update] 編輯 canonical message 失敗，將發送新訊息: {_e}")
 
-            except Exception as e:
-                print(f"❌ [Locker Update] 保存或編輯 locker_message_id 失敗: {e}")
-                traceback.print_exc()
+            # 發送新訊息並回填 locker_message_id
+            new_msg = await thread.send(embed=embed, view=view)
+            try:
+                set_user_field(user_id, 'locker_message_id', new_msg.id)
+            except Exception as db_err:
+                print(f"⚠️ [Locker Update] 更新 DB 失敗: {db_err}")
+            
+            print(f"✅ [Locker Update] 已發送新置物櫃訊息給用戶 {user_id} (message_id={new_msg.id})")
 
         except Exception as e:
-            print(f"❌ [Locker Update] 更新置物櫃embed失敗: {e}")
+            print(f"❌ [Locker Update] 更新置物櫃 embed 失敗: {e}")
             traceback.print_exc()
 
 
