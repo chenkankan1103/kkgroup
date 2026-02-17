@@ -47,6 +47,16 @@ class PersonalLockerView(discord.ui.View):
         items_button.callback = self.personal_items_callback
         self.add_item(items_button)
 
+        # 變換性別按鈕 - 永久視圖（將工作證的「修改性別」移到置物櫃）
+        gender_button = discord.ui.Button(
+            label="變換性別",
+            style=discord.ButtonStyle.secondary,
+            emoji="👤",
+            custom_id="locker_change_gender"
+        )
+        gender_button.callback = self.locker_change_gender_callback
+        self.add_item(gender_button)
+
     async def crop_info_callback(self, interaction: discord.Interaction):
         """作物資訊"""
         await self.crop_info_callback_impl(interaction)
@@ -54,6 +64,25 @@ class PersonalLockerView(discord.ui.View):
     async def personal_items_callback(self, interaction: discord.Interaction):
         """個人物品"""
         await self.personal_items_callback_impl(interaction)
+
+    async def locker_change_gender_callback(self, interaction: discord.Interaction):
+        """從置物櫃彈出性別選擇（永久視圖，立即 defer 以避免 3 秒超時）"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+            return
+
+        # 立刻 defer，避免 Discord 判定交互失敗（3 秒限制）
+        await interaction.response.defer(ephemeral=True)
+
+        # 延遲載入以避免循環 import
+        try:
+            from uicommands.views.work_card import GenderSelectView
+        except Exception as e:
+            await interaction.followup.send("❌ 系統錯誤：無法載入性別選擇視圖。", ephemeral=True)
+            return
+
+        gender_view = GenderSelectView(self.cog, self.user_id)
+        await interaction.followup.send("請選擇你的性別：", view=gender_view, ephemeral=True)
 
     async def crop_planting_callback(self, interaction: discord.Interaction):
         """作物種植 - 顯示種子選擇介面"""
