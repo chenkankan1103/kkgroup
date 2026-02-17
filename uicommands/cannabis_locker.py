@@ -385,14 +385,44 @@ class PersonalLockerCog(commands.Cog):
                 test_view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants, None)
                 expected_button_count = len(test_view.children)
 
-                # 如果按鈕數量不匹配，需要更新
+                # 檢查按鈕數量是否不匹配或按鈕 custom_id 有差異（包含舊版 custom_id）
+                # 建立 current_custom_ids 列表
+                current_custom_ids = []
+                if locker_message.components:
+                    for component in locker_message.components:
+                        if hasattr(component, 'children'):
+                            for child in component.children:
+                                cid = getattr(child, 'custom_id', None)
+                                if cid:
+                                    current_custom_ids.append(cid)
+
+                # 預期的 custom_id 列表（來自 PersonalLockerView）
+                expected_custom_ids = [getattr(child, 'custom_id', None) for child in test_view.children if getattr(child, 'custom_id', None)]
+
+                # 簡單的舊版 custom_id 集合（用於快速偵測 legacy 按鈕）
+                legacy_ids = {'locker_crop_info'}
+
+                # 如果按鈕數量不匹配，或 custom_id 列表不相等，或包含舊版 custom_id，則視為需要更新
+                needs_update = False
                 if current_button_count != expected_button_count:
-                    print(f"🔄 [Locker Update] Thread {thread.name} 按鈕數量不匹配 ({current_button_count} vs {expected_button_count})，需要更新")
+                    needs_update = True
+                    reason = f"count mismatch ({current_button_count} vs {expected_button_count})"
+                elif current_custom_ids != expected_custom_ids:
+                    needs_update = True
+                    reason = f"custom_id mismatch (found {current_custom_ids} expected {expected_custom_ids})"
+                elif any(cid in legacy_ids for cid in current_custom_ids):
+                    needs_update = True
+                    reason = f"contains legacy ids {set(current_custom_ids) & legacy_ids}"
+                else:
+                    reason = 'ok'
+
+                if needs_update:
+                    print(f"🔄 [Locker Update] Thread {thread.name} 需要更新: {reason}")
                     await self.send_updated_locker_embed(thread, user_id)
                     return True
-                else:
-                    print(f"✅ [Locker Update] Thread {thread.name} 按鈕數量正確 ({current_button_count})")
-                    return False
+
+                print(f"✅ [Locker Update] Thread {thread.name} 按鈕檢查通過 ({reason})")
+                return False
 
             except Exception as msg_error:
                 print(f"❌ [Locker Update] 檢查thread消息失敗 {thread.name}: {msg_error}")
