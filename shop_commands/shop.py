@@ -1096,37 +1096,41 @@ class SearchModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         search_term = self.search_input.value.strip().lower()
-        
+
         if not search_term:
             await interaction.response.send_message("❌ 請輸入搜索關鍵字！", ephemeral=True)
             return
-        
-        # 過濾物品
-        filtered_items = [
-            item for item in self.edit_view.items 
-            if search_term in item['name'].lower()
-        ]
-        
-        if not filtered_items:
-            await interaction.response.send_message(f"❌ 找不到包含「{search_term}」的物品！", ephemeral=True)
-            return
-        
-        # 創建搜索結果視圖
-        search_result_view = SearchResultView(
-            self.edit_view.cog, 
-            interaction.user.id, 
-            self.edit_view.category, 
-            filtered_items, 
-            search_term,
-            embed
+
+        # 延長互動處理時間並把 CPU 密集型過濾移到執行緒（避免觸發 3 秒超時）
+        await interaction.response.defer(ephemeral=True)
+
+        # 在背景執行過濾（items 可能非常多，例如髮型類別）
+        filtered_items = await asyncio.to_thread(
+            lambda: [item for item in self.edit_view.items if search_term in item['name'].lower()]
         )
-        
+
+        if not filtered_items:
+            await interaction.followup.send(f"❌ 找不到包含「{search_term}」的物品！", ephemeral=True)
+            return
+
         chinese_name = self.edit_view.category_names.get(self.edit_view.category, self.edit_view.category)
         embed = discord.Embed(
             title=f"🔍 搜索結果 - {chinese_name}",
             description=f"關鍵字：「{search_term}」\n找到 {len(filtered_items)} 個物品",
             color=0x00FF7F
         )
+
+        # 創建並回傳搜索結果視圖（embed 已先建立）
+        search_result_view = SearchResultView(
+            self.edit_view.cog,
+            interaction.user.id,
+            self.edit_view.category,
+            filtered_items,
+            search_term,
+            embed
+        )
+
+        await interaction.followup.send(embed=embed, view=search_result_view, ephemeral=True)
 
 
 class SearchResultView(discord.ui.View):
