@@ -370,8 +370,13 @@ class PersonalLockerCog(commands.Cog):
                             break
 
                 if not locker_message:
-                    print(f"⚠️ [Locker Update] Thread {thread.name} 沒有找到置物櫃embed")
-                    return False
+                    print(f"⚠️ [Locker Update] Thread {thread.name} 沒有找到置物櫃embed（將建立新的 canonical 訊息）")
+                    try:
+                        await self.send_updated_locker_embed(thread, user_id)
+                        return True
+                    except Exception as _e:
+                        print(f"❌ [Locker Update] 為 thread {thread.name} 建立置物櫃訊息失敗: {_e}")
+                        return False
 
                 # 檢查當前按鈕數量是否與最新版本匹配
                 current_button_count = 0
