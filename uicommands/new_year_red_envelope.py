@@ -25,6 +25,7 @@ AWARD_RETRY_MAX = 3
 PENDING_RETRY_INTERVAL = 30  # background worker 掃描間隔（秒）
 AWARD_THREAD_TIMEOUT = 2.5   # to_thread 發放 timeout
 AWARD_BALANCE_TIMEOUT = 1.5  # 讀取餘額 timeout
+PERSISTENT_VIEW_WATCHDOG_INTERVAL = 300  # seconds between automatic persistent-view checks/repairs (5 minutes)
 
 
 def _load_storage() -> Dict:
@@ -238,6 +239,8 @@ class NewYearRedEnvelope(commands.Cog):
         self._startup_task = bot.loop.create_task(self._restore_active_envelopes())
         # 啟動 background worker，處理 pending_awards 重試
         self._pending_worker_task = bot.loop.create_task(self._pending_awards_worker())
+        # 啟動 watchdog：定期檢查並自動修復失效的 persistent views
+        self._watchdog_task = bot.loop.create_task(self._persistent_view_watchdog())
 
     async def _fetch_channel_for_message(self, message_id: int) -> Optional[discord.abc.GuildChannel]:
         storage = _load_storage()
@@ -420,6 +423,114 @@ class NewYearRedEnvelope(commands.Cog):
             except Exception:
                 await asyncio.sleep(PENDING_RETRY_INTERVAL)
                 continue
+
+    async def _repair_message(self, message_id: int, info: Dict) -> str:
+        """Attempt to repair a single stored message:
+        - re-register view if button exists but bot lost registration
+        - re-add components (edit message) and register view if button missing
+        - increment missing_count and remove storage after repeated failures
+        Returns a short status string for logging.
+        """
+        now = time.time()
+        expiry = info.get("expiry", 0)
+        if expiry <= now:
+            return "expired"
+
+        channel = await self._fetch_channel_for_message(message_id)
+        if not channel:
+            info["missing_count"] = info.get("missing_count", 0) + 1
+            return "channel-missing"
+
+        try:
+            msg = await channel.fetch_message(message_id)
+        except discord.NotFound:
+            info["missing_count"] = info.get("missing_count", 0) + 1
+            return "message-not-found"
+        except Exception:
+            logger.exception("red_envelope: failed to fetch message=%s during repair", message_id)
+            return "fetch-error"
+
+        # check whether the interactive button component is present
+        button_present = False
+        for comp in getattr(msg, "components", []):
+            for child in getattr(comp, "children", []):
+                cid = getattr(child, "custom_id", None)
+                if cid and cid.startswith("red_envelope:"):
+                    button_present = True
+                    break
+            if button_present:
+                break
+
+        activity_id = info.get("activity_id")
+        claimed = info.get("claimed", [])
+        expiry_ts = info.get("expiry", 0)
+
+        if button_present:
+            # ensure our bot has the view registered so interactions route correctly
+            try:
+                view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry_ts, claimed=claimed)
+                self.bot.add_view(view, message_id=message_id)
+                info.pop("missing_count", None)
+                return "re-registered"
+            except Exception:
+                logger.exception("red_envelope: failed to add_view for message=%s", message_id)
+                return "add-view-failed"
+
+        # button not present -> try to repair message components and re-register
+        try:
+            view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry_ts, claimed=claimed)
+            embed = msg.embeds[0] if msg.embeds else discord.Embed(title="🧧 新年紅包")
+            await msg.edit(embed=embed, view=view)
+            self.bot.add_view(view, message_id=message_id)
+            info.pop("missing_count", None)
+            return "repaired-components"
+        except Exception:
+            logger.exception("red_envelope: failed to repair components for message=%s", message_id)
+            info["missing_count"] = info.get("missing_count", 0) + 1
+            return "repair-failed"
+
+    async def _persistent_view_watchdog(self):
+        """Background watchdog that periodically checks stored messages and attempts
+        automated repairs for missing/expired/mis-registered persistent views.
+        """
+        await self.bot.wait_until_ready()
+        interval = PERSISTENT_VIEW_WATCHDOG_INTERVAL
+        while True:
+            try:
+                storage = _load_storage()
+                now = time.time()
+                for mid_str, info in list(storage.get("messages", {}).items()):
+                    try:
+                        message_id = int(mid_str)
+                        status = await self._repair_message(message_id, info)
+                        if status in ("re-registered", "repaired-components"):
+                            logger.info("red_envelope.watchdog: repaired message=%s status=%s", message_id, status)
+                            _save_storage(storage)
+                        elif status in ("message-not-found", "channel-missing"):
+                            logger.warning("red_envelope.watchdog: message=%s status=%s missing_count=%s", message_id, status, info.get("missing_count"))
+                            # if missing repeatedly, remove storage entry
+                            if info.get("missing_count", 0) >= 3:
+                                logger.info("red_envelope.watchdog: removing message=%s after repeated missing", message_id)
+                                del storage[ mid_str ]
+                                _save_storage(storage)
+                        elif status == "expired":
+                            # schedule expiry cleanup immediately
+                            try:
+                                view = RedEnvelopeView(self, activity_id=info.get("activity_id"), message_id=message_id, expiry_ts=info.get("expiry", 0), claimed=info.get("claimed", []))
+                                await view._expire_message()
+                            except Exception:
+                                pass
+                            # remove storage entry
+                            if mid_str in storage.get("messages", {}):
+                                del storage[ mid_str ]
+                                _save_storage(storage)
+                    except Exception:
+                        logger.exception("red_envelope.watchdog: failure while checking message %s", mid_str)
+                    await asyncio.sleep(0.12)
+            except Exception:
+                logger.exception("red_envelope.watchdog: unexpected error in loop")
+            await asyncio.sleep(interval)
+
     @app_commands.command(name="發紅包", description="(管理員) 發送臨時新年紅包 — 每人限領一次，明天自動停用")
     async def send_red_envelope(self, interaction: discord.Interaction, hours: Optional[int] = 24):
         # 只有管理員可以發
@@ -473,6 +584,30 @@ class NewYearRedEnvelope(commands.Cog):
 
         await interaction.followup.send(f"✅ 已在本頻道發送新年紅包（活動 {hours} 小時）。", ephemeral=True)
 
+    @app_commands.command(name="紅包修復", description="(管理員) 立即檢查並修復所有紅包 persistent view")
+    async def red_envelope_repair(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.manage_guild and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("🚫 你沒有權限使用這個指令。", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        storage = _load_storage()
+        msgs = storage.get("messages", {})
+        if not msgs:
+            await interaction.followup.send("目前沒有正在進行的紅包活動。", ephemeral=True)
+            return
+
+        lines = []
+        for mid_str, info in list(msgs.items()):
+            try:
+                mid = int(mid_str)
+            except Exception:
+                continue
+            status = await self._repair_message(mid, info)
+            lines.append(f"message={mid} status={status} missing_count={info.get('missing_count',0)}")
+
+        _save_storage(storage)
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
     @app_commands.command(name="紅包狀態", description="(管理員) 檢查目前新年紅包活動狀態（檢查 storage + message components）")
     async def red_envelope_status(self, interaction: discord.Interaction):
         """管理員專用：檢查 data/red_envelopes.json 中的活動、嘗試抓取訊息並檢查按鈕 custom_id 是否仍存在。"""
