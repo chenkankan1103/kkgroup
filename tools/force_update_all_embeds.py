@@ -13,25 +13,18 @@ async def main():
     import discord
     from discord.ext import commands
     import sqlite3
-    import re
     from db_adapter import get_all_users, set_user_field
     
-    # 讀取 token
-    ENV = '/home/e193752468/kkgroup/.env'
-    def get_token():
-        try:
-            s = open(ENV, encoding='utf-8').read()
-        except Exception:
-            return None
-        for key in ('UI_DISCORD_BOT_TOKEN', 'DISCORD_BOT_TOKEN', 'SHOP_DISCORD_BOT_TOKEN'):
-            m = re.search(rf'^{key}\s*=\s*([A-Za-z0-9_\-\.]+)', s, flags=re.M)
-            if m:
-                return m.group(1).strip()
-        return None
+    # 從環境變數加載 token（或從 .env）
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except:
+        pass
     
-    token = get_token()
+    token = os.getenv('UI_DISCORD_BOT_TOKEN') or os.getenv('DISCORD_BOT_TOKEN')
     if not token:
-        print("❌ bot token not found")
+        print("❌ bot token not found in environment variables")
         return
     
     # 初始化 bot（無 command_prefix，因為我們只想用 API）
