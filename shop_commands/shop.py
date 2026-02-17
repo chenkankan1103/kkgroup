@@ -878,18 +878,33 @@ class DressingRoomView(discord.ui.View):
             # 將 original_message 傳給新的 EditView（若存在的話）以便之後能編輯相同訊息
             view = EditView(self.cog, self.user_id, selected_category, items, page=0, embed=embed, original_message=getattr(self, 'original_message', None))
 
-            # 嘗試編輯原始訊息（如果存在），否則送出新的 followup 並將其設為 original_message
-            if getattr(self, 'original_message', None):
-                try:
-                    await self.original_message.edit(embed=embed, view=view)
-                    return
-                except Exception:
-                    # 若 edit 失敗就 fallback 為發送 followup
-                    pass
+# 優先編輯觸發此互動的訊息（最可靠）
+        try:
+            if getattr(interaction, 'message', None):
+                await interaction.message.edit(embed=embed, view=view)
+                # 更新引用
+                view.original_message = interaction.message
+                self.original_message = interaction.message
+                return
+        except Exception as e:
+            # 記錄失敗原因，繼續嘗試其他編輯方法
+            with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
+                f.write(f"[{ts}] Failed to edit interaction.message in category_selected: {e}\n")
 
-            new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            view.original_message = new_msg
-            # 如果 DressingRoomView 尚未持有 original_message，亦一併儲存
+        # 再嘗試編輯先前保存的 original_message
+        orig = getattr(self, 'original_message', None)
+        if orig:
+            try:
+                await orig.edit(embed=embed, view=view)
+                view.original_message = orig
+                return
+            except Exception as e:
+                with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
+                    f.write(f"[{ts}] Failed to edit stored original_message in category_selected: {e}\n")
+
+        # 最後 fallback：送出新的 followup 並記錄為 original_message
+        new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        view.original_message = new_msg
             if not getattr(self, 'original_message', None):
                 self.original_message = new_msg
 
