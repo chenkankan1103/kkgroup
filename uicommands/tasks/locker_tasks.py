@@ -103,24 +103,70 @@ class LockerTasks:
                             set_user_field(user_id, 'thread_id', None)
                             set_user_field(user_id, 'locker_message_id', None)
                             continue
-                        
-                        message = await thread.fetch_message(locker_message_id)
+
+                        # 嘗試取得原始 message；若已被刪除 (404)，則嘗試在 thread 歷史中回填或直接重建一個 canonical message
+                        message = None
+                        try:
+                            message = await thread.fetch_message(locker_message_id)
+                        except discord.NotFound:
+                            # 儲存的訊息已刪除 -> 在 thread 歷史中尋找 bot 的置物櫃訊息
+                            found_msg = None
+                            try:
+                                async for m in thread.history(limit=200):
+                                    if m.author and m.author.id == self.bot.user.id and m.embeds:
+                                        e = m.embeds[0]
+                                        title = e.title or ''
+                                        if '置物櫃' in title or '個人置物櫃' in title or title.startswith('📦'):
+                                            found_msg = m
+                                            break
+                            except Exception:
+                                found_msg = None
+
+                            if found_msg:
+                                try:
+                                    set_user_field(user_id, 'locker_message_id', found_msg.id)
+                                    message = found_msg
+                                    print(f"🔁 回填 locker_message_id for user {user_id}: {found_msg.id} (found in history)")
+                                except Exception:
+                                    message = None
+                            else:
+                                # 找不到歷史訊息 -> 建立一個新的 canonical locker message 並回填
+                                try:
+                                    user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                                    embed = await self.cog.create_user_embed(user_data, user)
+                                    character_image_url = await self.cog.get_character_image_url(user_data)
+                                    if character_image_url:
+                                        embed.set_image(url=character_image_url)
+                                    from uicommands.views import LockerPanelView
+                                    view = LockerPanelView(self.cog, user_id, thread)
+                                    new_msg = await thread.send(embed=embed, view=view)
+                                    try:
+                                        set_user_field(user_id, 'locker_message_id', new_msg.id)
+                                    except Exception:
+                                        pass
+                                    message = new_msg
+                                    print(f"🔁 重建 locker message for user {user_id}: {new_msg.id}")
+                                except Exception as _e:
+                                    print(f"⚠️ 無法為 user {user_id} 重建 locker message: {_e}")
+                                    message = None
+
                         if not message:
+                            # 無法取得或建立 message -> 跳過
                             continue
-                        
+
                         user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
                         embed = await self.cog.create_user_embed(user_data, user)
                         character_image_url = await self.cog.get_character_image_url(user_data)
-                        
+
                         if character_image_url:
                             embed.set_image(url=character_image_url)
-                        
+
                         from uicommands.views import LockerPanelView
                         view = LockerPanelView(self.cog, user_id, thread)
-                        
+
                         await message.edit(embed=embed, view=view)
                         updated_count += 1
-                        
+
                         set_user_field(user_id, 'last_activity', int(datetime.datetime.now().timestamp()))
                         
                     except Exception as e:
