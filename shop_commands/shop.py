@@ -835,27 +835,55 @@ class DressingRoomView(discord.ui.View):
         self.add_item(back_button)
 
     async def category_selected(self, interaction: discord.Interaction):
+        import traceback, time
+        ts = int(time.time())
+        # 先 ACK 以避免 3 秒超時（之後使用 followup 發送新視圖）
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
+        # 身份驗證
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
+            try:
+                await interaction.followup.send("❌ 這不是你的衣帽間！", ephemeral=True)
+            except Exception:
+                pass
             return
 
-        selected_category = interaction.data['values'][0]
-        chinese_name = self.category_names.get(selected_category, selected_category)
-        
-        items = self.cog.get_items_by_category(selected_category)
-        if not items:
-            await interaction.response.send_message(f"❌ {chinese_name} 分類目前沒有物品。", ephemeral=True)
-            return
+        try:
+            values = (interaction.data or {}).get('values') or []
+            if not values:
+                await interaction.followup.send("❌ 未選擇任何部位。", ephemeral=True)
+                return
 
-        embed = discord.Embed(
-            title=f"✂️ 編輯 {chinese_name}",
-            description=f"選擇 {chinese_name} 物品進行預覽或購買。",
-            color=0x87CEEB
-        )
+            selected_category = values[0]
+            chinese_name = self.category_names.get(selected_category, selected_category)
 
-        view = EditView(self.cog, self.user_id, selected_category, items, page=0, embed=embed)
-        await interaction.response.defer()
-        # 返回商人主頁（由商人代碼處理）
+            # 將可能較慢的 DB 查詢移到執行緒，避免阻塞事件迴圈
+            items = await asyncio.to_thread(self.cog.get_items_by_category, selected_category)
+
+            if not items:
+                await interaction.followup.send(f"❌ {chinese_name} 分類目前沒有物品。", ephemeral=True)
+                return
+
+            embed = discord.Embed(
+                title=f"✂️ 編輯 {chinese_name}",
+                description=f"選擇 {chinese_name} 物品進行預覽或購買。",
+                color=0x87CEEB
+            )
+
+            view = EditView(self.cog, self.user_id, selected_category, items, page=0, embed=embed)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+        except Exception:
+            tb = traceback.format_exc()
+            with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
+                f.write(f"[{ts}] Exception in category_selected:\n{tb}\n")
+            try:
+                await interaction.followup.send("❌ 無法載入該部位，已記錄錯誤。", ephemeral=True)
+            except Exception:
+                pass
 
     async def back_to_shop(self, interaction: discord.Interaction):
         """返回到商人主頁（黑市探索視圖）。"""
