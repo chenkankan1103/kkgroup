@@ -40,8 +40,10 @@ class LockerPanelCog(commands.Cog):
         # 載入保存的數據
         self.load_panel_data()
         
-        # 啟動定期更新
-        self.update_locker_panel.start()
+        # ⏹️ 背景定期更新已禁用
+        # 原因：cannabis_locker.py 的 CannabisCog 已實現相同的 update_panel_task()
+        # 為避免重複更新，此 Cog 只提供靜態面板生成功能
+        # self.update_locker_panel.start()
     
     def cog_unload(self):
         self.update_locker_panel.cancel()
