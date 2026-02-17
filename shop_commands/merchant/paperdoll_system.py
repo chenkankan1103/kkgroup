@@ -51,20 +51,73 @@ class EnhancedPaperDollSystem:
         return datetime.now() < self.cache_expiry[cache_key]
     
     def _build_character_items(self, user_data: dict) -> List[dict]:
-        """構建角色裝備列表"""
+        """構建角色裝備列表 - 支援所有 25 個部件類別"""
         items = [
-            {"itemId": 2000, "region": "GMS", "version": "217"},  # 基礎身體
-            {"itemId": user_data.get('skin', 12000), "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('hair', 30120), "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('top', 1040014), "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('bottom', 1060096), "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('shoes', 1072005), "region": "GMS", "version": "217"}
+            {"itemId": 2000, "region": "TWMS", "version": "256"},  # 基礎身體
         ]
+        
+        # 定義部件優先順序及預設值（避免衝突，如上衣/連身衣不能同時顯示）
+        equipment_order = [
+            ('skin', 12000),
+            ('face', 20005, 'default'),  # face 有 animationName
+            ('hair', 30120),
+            ('hat', None),               # 帽子（如果有）
+            ('overall', 1040014),        # 連身衣（優先於上衣）
+            ('top', 1040014),            # 上衣（次優先）
+            ('bottom', 1060096),         # 下裝
+            ('glove', None),             # 手套
+            ('cape', None),              # 斗篷
+            ('shoes', 1072005),          # 鞋子
+            ('earrings', None),          # 耳環
+            ('eye_decoration', None),    # 眼睛裝飾
+            ('face_accessory', None),    # 臉部配件
+            ('belt', None),              # 腰帶
+            ('katara', None),            # 卡塔納
+            ('mount', None),             # 坐騎
+            ('one_handed_sword', None),  # 單手劍
+            ('pendant', None),           # 項鍊
+            ('pet_equipment', None),     # 寵物裝備
+            ('pet_use', None),           # 寵物用品
+            ('pole_arm', None),          # 長柄武器
+            ('ring', None),              # 戒指
+            ('shield', None),            # 盾牌
+            ('shoulder_accessory', None), # 肩膀配件
+            ('skill_effect', None),      # 技能效果
+        ]
+        
+        # 構建裝備列表（只包含已設定的項目）
+        skip_alternatives = set()  # 跟蹤跳過的替代項
+        
+        for equipment in equipment_order:
+            field_name = equipment[0]
+            default_value = equipment[1] if len(equipment) > 1 else None
+            item_value = user_data.get(field_name) or default_value
+            
+            # 檢查衝突（上衣/連身衣）
+            if field_name == 'top' and 'overall' in skip_alternatives:
+                continue
+            if field_name == 'overall' and item_value:
+                skip_alternatives.add('top')
+            
+            if item_value:  # 只在有值時添加
+                if field_name == 'face' and len(equipment) > 2:
+                    # face 需要 animationName
+                    items.append({
+                        "itemId": item_value,
+                        "animationName": equipment[2],
+                        "region": "TWMS",
+                        "version": "256"
+                    })
+                else:
+                    items.append({
+                        "itemId": item_value,
+                        "region": "TWMS",
+                        "version": "256"
+                    })
         
         # 檢查是否被擊暈，添加眩暈效果道具
         if user_data.get('is_stunned', 0) == 1:
-            items.append({"itemId": 1005411, "region": "GMS", "version": "217"})
+            items.append({"itemId": 1005411, "region": "TWMS", "version": "256"})
         
         return items
     
@@ -284,12 +337,33 @@ class EnhancedPaperDollSystem:
     def get_category_name(self, category: str) -> str:
         """獲取分類中文名稱"""
         names = {
-            "hair": "髮型", 
-            "face": "臉型", 
-            "skin": "膚色", 
-            "top": "上衣", 
-            "bottom": "下裝", 
-            "shoes": "鞋子"
+            # 基本部件
+            "hair": "💇 髮型", 
+            "face": "😊 臉型", 
+            "skin": "🎨 膚色", 
+            "top": "👔 上衣", 
+            "bottom": "👖 下裝", 
+            "shoes": "👟 鞋子",
+            # 新增部件
+            "belt": "⏱️ 腰帶",
+            "cape": "🌊 斗篷",
+            "earrings": "💎 耳環",
+            "eye_decoration": "👁️ 眼睛裝飾",
+            "face_accessory": "😷 臉部配件",
+            "glove": "🧤 手套",
+            "hat": "🎩 帽子",
+            "katara": "⚔️ 卡塔納",
+            "mount": "🐴 坐騎",
+            "one_handed_sword": "🗡️ 單手劍",
+            "overall": "👗 連身衣",
+            "pendant": "💍 項鍊",
+            "pet_equipment": "🎀 寵物裝備",
+            "pet_use": "🐾 寵物用品",
+            "pole_arm": "🎯 長柄武器",
+            "ring": "💍 戒指",
+            "shield": "🛡️ 盾牌",
+            "shoulder_accessory": "🎒 肩膀配件",
+            "skill_effect": "✨ 技能效果"
         }
         return names.get(category, category)
     

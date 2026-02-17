@@ -207,22 +207,20 @@ class WelcomeFlow(commands.Cog):
         """生成並緩存預設角色圖片"""
         try:
             items = [
-                {"itemId": 2000, "region": "GMS", "version": "217"},
-                {"itemId": config['skin'], "region": "GMS", "version": "217"},
+                {"itemId": 2000, "region": "TWMS", "version": "256"},
+                {"itemId": config['skin'], "region": "TWMS", "version": "256"},
             ]
 
             if config['stunned'] == 1:
-                items.append({"itemId": config['face'], "animationName": "stunned", "region": "GMS", "version": "217"})
+                items.append({"itemId": config['face'], "animationName": "stunned", "region": "TWMS", "version": "256"})
             else:
-                items.append({"itemId": config['face'], "animationName": "default", "region": "GMS", "version": "217"})
-
+                items.append({"itemId": config['face'], "animationName": "default", "region": "TWMS", "version": "256"})
+            
             items.extend([
-                {"itemId": config['hair'], "region": "GMS", "version": "217"},
-                {"itemId": config['top'], "region": "GMS", "version": "217"},
-                {"itemId": config['bottom'], "region": "GMS", "version": "217"},
-                {"itemId": config['shoes'], "region": "GMS", "version": "217"}
-            ])
-
+                {"itemId": config['hair'], "region": "TWMS", "version": "256"},
+                {"itemId": config['top'], "region": "TWMS", "version": "256"},
+                {"itemId": config['bottom'], "region": "TWMS", "version": "256"},
+                {"itemId": config['shoes'], "region": "TWMS", "version": "256"}
             item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
             api_url = f"https://maplestory.io/api/character/{item_path}/{config['pose']}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
 

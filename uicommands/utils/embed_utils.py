@@ -155,41 +155,12 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
     except:
         pass
     
-    # 添加角色圖片（優先順序：DB.embed_image_source -> Discord cached URL -> MapleStory API 回退）
+    # 添加角色圖片（動態生成 MapleStory API URL，即時計算不存儲）
     try:
-        db_src = None
-        try:
-            db_src = get_user_field(user_data.get('user_id'), 'embed_image_source', default=None)
-        except Exception:
-            db_src = None
-
-        if db_src:
-            # 優先使用 DB 中儲存的 image source（避免被 cache/其他更新覆寫）
-            embed.set_image(url=db_src)
-            try:
-                embed.add_field(name="image_source", value=f"`{db_src}`", inline=False)
-            except Exception:
-                pass
-        else:
-            # 原先邏輯：先使用 Discord cached/upload 的 URL，再回退到 MapleStory API
-            character_image_url = await cog.get_character_image_url(user_data)
-            if character_image_url:
-                embed.set_image(url=character_image_url)
-                try:
-                    embed.add_field(name="image_source", value=f"`{character_image_url}`", inline=False)
-                except Exception:
-                    pass
-            else:
-                try:
-                    from .image_utils import build_maplestory_api_url
-                    api_url = build_maplestory_api_url(user_data, animated=True)
-                    embed.set_image(url=api_url)
-                    try:
-                        embed.add_field(name="image_source", value=f"`{api_url}`", inline=False)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+        from .image_utils import build_maplestory_api_url
+        api_url = build_maplestory_api_url(user_data, animated=True)
+        embed.set_image(url=api_url)
+        # 不添加 image_source field 文字顯示，只顯示圖片
     except Exception as e:
         print(f"獲取角色圖片URL失敗: {e}")
 

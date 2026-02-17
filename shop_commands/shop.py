@@ -377,17 +377,17 @@ class ButtonInteraction(commands.Cog):
     async def fetch_character_image(self, user_data: dict) -> discord.File:
         try:
             items = [
-                {"itemId": 2000, "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('skin', 12000), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('hair', 30120), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('top', 1040014), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('bottom', 1060096), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('shoes', 1072005), "region": "GMS", "version": "217"}
+                {"itemId": 2000, "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('skin', 12000), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('hair', 30120), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('bottom', 1060096), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"}
             ]
 
             if user_data.get('is_stunned', 0) == 1:
-                items.append({"itemId": 1005411, "region": "GMS", "version": "217"})
+                items.append({"itemId": 1005411, "region": "TWMS", "version": "256"})
 
             item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
             
@@ -409,12 +409,33 @@ class ButtonInteraction(commands.Cog):
 
     def get_category_name(self, category):
         names = {
-            "hair": "髮型", 
-            "face": "臉型", 
-            "skin": "膚色", 
-            "top": "上衣", 
-            "bottom": "下裝", 
-            "shoes": "鞋子"
+            # 基本部件
+            "hair": "💇 髮型", 
+            "face": "😊 臉型", 
+            "skin": "🎨 膚色", 
+            "top": "👔 上衣", 
+            "bottom": "👖 下裝", 
+            "shoes": "👟 鞋子",
+            # 新增部件
+            "belt": "⏱️ 腰帶",
+            "cape": "🌊 斗篷",
+            "earrings": "💎 耳環",
+            "eye_decoration": "👁️ 眼睛裝飾",
+            "face_accessory": "😷 臉部配件",
+            "glove": "🧤 手套",
+            "hat": "🎩 帽子",
+            "katara": "⚔️ 卡塔納",
+            "mount": "🐴 坐騎",
+            "one_handed_sword": "🗡️ 單手劍",
+            "overall": "👗 連身衣",
+            "pendant": "💍 項鍊",
+            "pet_equipment": "🎀 寵物裝備",
+            "pet_use": "🐾 寵物用品",
+            "pole_arm": "🎯 長柄武器",
+            "ring": "💍 戒指",
+            "shield": "🛡️ 盾牌",
+            "shoulder_accessory": "🎒 肩膀配件",
+            "skill_effect": "✨ 技能效果"
         }
         return names.get(category, category)
 
@@ -1067,7 +1088,11 @@ class EditView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
             return
-        embed = discord.Embed(title="👗 衣帽間", description="選擇要更改的部位。", color=0xFF69B4)
+        embed = discord.Embed(
+            title="👗 衣帽間", 
+            description="選擇要更改的部位。\n\n💡 **網頁版更快速穿著**:\nhttps://maplestory.studio/ (TWMS 256版本)",
+            color=0xFF69B4
+        )
         view = DressingRoomView(self.cog, self.user_id)
         await interaction.response.edit_message(embed=embed, view=view)
 

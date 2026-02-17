@@ -314,17 +314,17 @@ class ButtonInteraction(commands.Cog):
     async def fetch_character_image(self, user_data: dict) -> discord.File:
         try:
             items = [
-                {"itemId": 2000, "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('skin', 12000), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('hair', 30120), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('top', 1040014), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('bottom', 1060096), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('shoes', 1072005), "region": "GMS", "version": "217"}
+                {"itemId": 2000, "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('skin', 12000), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('hair', 30120), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('bottom', 1060096), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"}
             ]
 
             if user_data.get('is_stunned', 0) == 1:
-                items.append({"itemId": 1005411, "region": "GMS", "version": "217"})
+                items.append({"itemId": 1005411, "region": "TWMS", "version": "256"})
 
             item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
             
