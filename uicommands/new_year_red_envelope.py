@@ -6,9 +6,12 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import logging
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+logger = logging.getLogger(__name__)
 
 # 用於更新用戶 KKcoin
 from shop_commands.merchant.database import update_user_kkcoin, get_user_kkcoin
@@ -69,66 +72,108 @@ class RedEnvelopeView(discord.ui.View):
         self.add_item(btn)
 
     async def _on_claim(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        now = time.time()
-        if now >= self.expiry_ts:
-            # 已過期：停用按鈕並回覆
-            await self._expire_message()
-            await interaction.followup.send("⚠️ 活動已結束，無法領取。", ephemeral=True)
+        """Handle button click. This wrapper ensures we always respond to the interaction
+        and logs unexpected errors so production failures can be diagnosed.
+        """
+        start_ts = time.time()
+        user_id = getattr(interaction.user, "id", None)
+        logger.info("red_envelope: claim attempt user=%s message=%s activity=%s", user_id, self.message_id, self.activity_id)
+
+        # Always try to defer first — if that fails, log and try to inform the user.
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            logger.exception("Failed to defer interaction (red_envelope) user=%s message=%s", user_id, self.message_id)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("⚠️ 伺服器忙碌，請稍後再試。", ephemeral=True)
+                else:
+                    await interaction.followup.send("⚠️ 伺服器忙碌，請稍後再試。", ephemeral=True)
+            except Exception:
+                logger.exception("Failed to notify user after defer failure user=%s message=%s", user_id, self.message_id)
             return
 
-        user_id = interaction.user.id
-        async with self.lock:
-            if user_id in self.claimed:
-                await interaction.followup.send("❌ 你已經領過一次紅包了（每人限領一次）。", ephemeral=True)
+        try:
+            now = time.time()
+            if now >= self.expiry_ts:
+                # 已過期：停用按鈕並回覆
+                await self._expire_message()
+                await interaction.followup.send("⚠️ 活動已結束，無法領取。", ephemeral=True)
                 return
 
-            # 記錄領取者
-            self.claimed.append(user_id)
+            async with self.lock:
+                if user_id in self.claimed:
+                    await interaction.followup.send("❌ 你已經領過一次紅包了（每人限領一次）。", ephemeral=True)
+                    return
 
-            # 嘗試發放 2000 KK 幣（帶重試），若短期失敗會加入 pending_awards 由 background worker 重試
-            new_balance = None
-            try:
-                new_balance = await self.cog._award_user_with_retries(user_id, amount=AWARD_AMOUNT)
-            except Exception:
+                # 記錄領取者（儘早寫入記憶以避免 race）
+                self.claimed.append(user_id)
+
+                # 嘗試發放 2000 KK 幣（帶重試），若短期失敗會加入 pending_awards 由 background worker 重試
                 new_balance = None
+                try:
+                    new_balance = await self.cog._award_user_with_retries(user_id, amount=AWARD_AMOUNT)
+                except Exception:
+                    logger.exception("award_user_with_retries failed for user=%s message=%s", user_id, self.message_id)
+                    new_balance = None
 
-            if new_balance is None:
-                # 加入待處理清單，background worker 會自動重試
-                await self.cog._add_pending_award(user_id, self.message_id, AWARD_AMOUNT)
+                if new_balance is None:
+                    # 加入待處理清單，background worker 會自動重試
+                    try:
+                        await self.cog._add_pending_award(user_id, self.message_id, AWARD_AMOUNT)
+                    except Exception:
+                        logger.exception("_add_pending_award failed for user=%s message=%s", user_id, self.message_id)
 
-            # 更新 storage
-            storage = _load_storage()
-            msg_key = str(self.message_id) if self.message_id else None
-            if msg_key and msg_key in storage.get("messages", {}):
-                storage["messages"][msg_key]["claimed"] = self.claimed
-                _save_storage(storage)
+                # 更新 storage
+                try:
+                    storage = _load_storage()
+                    msg_key = str(self.message_id) if self.message_id else None
+                    if msg_key and msg_key in storage.get("messages", {}):
+                        storage["messages"][msg_key]["claimed"] = self.claimed
+                        _save_storage(storage)
+                except Exception:
+                    logger.exception("Failed to persist claimed list user=%s message=%s", user_id, self.message_id)
 
-            # 更新 embed 顯示領取名單（同時顯示已發放獎勵）
+                # 更新 embed 顯示領取名單（同時顯示已發放獎勵）
+                try:
+                    message = interaction.message
+                    embed = discord.Embed(
+                        title="🧧 新年紅包",
+                        description="點擊下方按鈕領取（每人只能領一次）。活動結束後此功能會自動停用並刪除相關資料與程式碼。",
+                        color=0xE74C3C,
+                    )
+                    claimed_mentions = "\n".join(f"<@{uid}>" for uid in self.claimed)
+                    embed.add_field(name="已領取", value=claimed_mentions or "尚未有人領取", inline=False)
+                    if new_balance is not None:
+                        embed.add_field(name="最近領取獎勵", value=f"<@{user_id}> 獲得 +2000 KKcoin（現有 {new_balance} KKcoin）", inline=False)
+                    embed.set_footer(text=f"活動到期時間：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.expiry_ts))}")
+
+                    await message.edit(embed=embed, view=self)
+                except Exception:
+                    logger.exception("Failed to edit red envelope message after claim user=%s message=%s", user_id, self.message_id)
+
+                # 回覆使用者（一定會有一個 followup）
+                try:
+                    if new_balance is not None:
+                        await interaction.followup.send(f"✅ 你已成功領取紅包並獲得 **{AWARD_AMOUNT} KKcoin**，目前餘額：{new_balance} KKcoin。", ephemeral=True)
+                    else:
+                        await interaction.followup.send("✅ 你已成功領取紅包（獎勵已加入重試佇列，稍後會自動發放）。", ephemeral=True)
+                except Exception:
+                    logger.exception("Failed to send followup after claim user=%s message=%s", user_id, self.message_id)
+
+        except Exception:
+            # 捕捉所有未預期的錯誤，並保證使用者看得到錯誤訊息而不是 'This interaction failed'
+            logger.exception("Unhandled exception in RedEnvelopeView._on_claim user=%s message=%s", user_id, self.message_id)
             try:
-                message = interaction.message
-                embed = discord.Embed(
-                    title="🧧 新年紅包",
-                    description="點擊下方按鈕領取（每人只能領一次）。活動結束後此功能會自動停用並刪除相關資料與程式碼。",
-                    color=0xE74C3C,
-                )
-                claimed_mentions = "\n".join(f"<@{uid}>" for uid in self.claimed)
-                embed.add_field(name="已領取", value=claimed_mentions or "尚未有人領取", inline=False)
-                if new_balance is not None:
-                    embed.add_field(name="最近領取獎勵", value=f"<@{user_id}> 獲得 +2000 KKcoin（現有 {new_balance} KKcoin）", inline=False)
-                embed.set_footer(text=f"活動到期時間：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.expiry_ts))}")
-
-                await message.edit(embed=embed, view=self)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 發生內部錯誤，請稍後重試。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 發生內部錯誤，請稍後重試。", ephemeral=True)
             except Exception:
-                # ignore edit errors
-                pass
-
-            # 回覆使用者
-            if new_balance is not None:
-                await interaction.followup.send(f"✅ 你已成功領取紅包並獲得 **2000 KKcoin**，目前餘額：{new_balance} KKcoin。", ephemeral=True)
-            else:
-                await interaction.followup.send("✅ 你已成功領取紅包（獎勵已加入重試佇列，稍後會自動發放）。", ephemeral=True)
-
+                logger.exception("Also failed to notify user after an exception user=%s message=%s", user_id, self.message_id)
+        finally:
+            elapsed = time.time() - start_ts
+            logger.info("red_envelope: claim finished user=%s message=%s elapsed=%.3fs", user_id, self.message_id, elapsed)
     async def _expire_message(self):
         # 停用按鈕（edit message）並從 storage 刪除
         try:
@@ -152,7 +197,7 @@ class RedEnvelopeView(discord.ui.View):
             channel = None
             try:
                 if channel_id:
-                    channel = self.bot.get_channel(channel_id) if hasattr(self.bot, 'get_channel') else await self.cog._fetch_channel_for_message(self.message_id)
+                    channel = self.cog.bot.get_channel(channel_id) if hasattr(self.cog.bot, 'get_channel') else await self.cog._fetch_channel_for_message(self.message_id)
                 else:
                     channel = await self.cog._fetch_channel_for_message(self.message_id)
             except Exception:
@@ -220,8 +265,9 @@ class NewYearRedEnvelope(commands.Cog):
                 # 使用 message_id 讓 discord.py 將互動導回這個 view
                 try:
                     self.bot.add_view(view, message_id=message_id)
+                    logger.info("Restored red envelope view message=%s expiry=%s", message_id, expiry)
                 except Exception:
-                    pass
+                    logger.exception("Failed to add_view for red envelope message=%s", message_id)
 
                 # 同步在到期時間執行清理
                 self.bot.loop.create_task(self._schedule_expiry(message_id, expiry))
@@ -415,8 +461,9 @@ class NewYearRedEnvelope(commands.Cog):
         # 註冊 persistent view（在重啟後仍能接受互動）
         try:
             self.bot.add_view(view, message_id=message.id)
+            logger.info("Registered new red envelope view message=%s activity=%s expiry=%s", message.id, activity_id, expiry_ts)
         except Exception:
-            pass
+            logger.exception("Failed to register view for red envelope message=%s", message.id)
 
         # 安排到期清理
         self.bot.loop.create_task(self._schedule_expiry(message.id, expiry_ts))
