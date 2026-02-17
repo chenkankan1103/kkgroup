@@ -939,7 +939,8 @@ class EditView(discord.ui.View):
         self.update_buttons()
         self.update_embed_description()
 
-    def update_embed_description(self):
+    def update_buttons(self):
+        """更新並（重新）建立本頁的按鈕（名稱、分頁、搜索、返回）。"""
         self.clear_items()
         start = self.page * self.items_per_page
         end = start + self.items_per_page
