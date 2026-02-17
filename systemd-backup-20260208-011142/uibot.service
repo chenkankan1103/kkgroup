@@ -11,6 +11,7 @@ User=e193752468
 Group=e193752468
 WorkingDirectory=/home/e193752468/kkgroup
 Environment=PATH=/home/e193752468/kkgroup/venv/bin
+Environment=DISABLE_LOCKER_AUTOMATIC_UPDATE=1
 ExecStart=/home/e193752468/kkgroup/venv/bin/python uibot.py
 Restart=always
 RestartSec=10
