@@ -329,24 +329,47 @@ class ExploreView(View):
 
     @discord.ui.button(label="👗 進入衣帽間", style=discord.ButtonStyle.primary, custom_id="persistent_paperdoll", emoji="👗")
     async def paperdoll_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        with open('paperdoll_button_click.log', 'a') as f:
-            f.write(f"Paperdoll button clicked. Categories count: {len(self.cog.categories)}\n")
-            f.write(f"Categories: {self.cog.categories[:5] if self.cog.categories else 'None'}\n")
-        
-        if not self.cog.categories:
-            await interaction.response.send_message("❌ 衣帽間暫時無法使用。", ephemeral=True)
-            return
-        
-        embed = discord.Embed(
-            title="👗 衣帽間",
-            description="選擇要更改的部位。",
-            color=0xFF69B4
-        )
-        
-        # 動態導入View
-        from shop_commands.shop import DressingRoomView
-        view = DressingRoomView(self.cog, interaction.user.id)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        import traceback, time
+        ts = int(time.time())
+        # 先 ACK 以避免 3 秒超時
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            # 若已被 ACK 或已回應則忽略
+            pass
+
+        try:
+            with open('paperdoll_button_click.log', 'a') as f:
+                f.write(f"[{ts}] Paperdoll button clicked. Categories count: {len(self.cog.categories)}\n")
+                f.write(f"[{ts}] Categories: {self.cog.categories[:5] if self.cog.categories else 'None'}\n")
+
+            if not self.cog.categories:
+                await interaction.followup.send("❌ 衣帽間暫時無法使用。", ephemeral=True)
+                return
+
+            embed = discord.Embed(
+                title="👗 衣帽間",
+                description="選擇要更改的部位。",
+                color=0xFF69B4
+            )
+
+            # 動態導入View
+            from shop_commands.shop import DressingRoomView
+            view = DressingRoomView(self.cog, interaction.user.id)
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            # 記錄完整 traceback，並嘗試回報錯誤給使用者
+            tb = traceback.format_exc()
+            with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
+                f.write(f"[{ts}] Exception in paperdoll_button:\n{tb}\n")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 衣帽間啟動失敗，已記錄錯誤。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 衣帽間啟動失敗，已記錄錯誤。", ephemeral=True)
+            except Exception:
+                pass
 
 class RoleShopView(View):
     def __init__(self, cog):
