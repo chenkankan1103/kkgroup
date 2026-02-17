@@ -270,7 +270,12 @@ class NewYearRedEnvelope(commands.Cog):
                 view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry, claimed=claimed)
                 # 使用 message_id 讓 discord.py 將互動導回這個 view
                 try:
+                    # register message-specific + global view on restore
                     self.bot.add_view(view, message_id=message_id)
+                    try:
+                        self.bot.add_view(view)
+                    except Exception:
+                        pass
                     logger.info("Restored red envelope view message=%s expiry=%s", message_id, expiry)
                 except Exception:
                     logger.exception("Failed to add_view for red envelope message=%s", message_id)
@@ -574,10 +579,19 @@ class NewYearRedEnvelope(commands.Cog):
 
         # 註冊 persistent view（在重啟後仍能接受互動）
         try:
+            # register both message-specific and global view to reduce risk of transient mapping loss
             self.bot.add_view(view, message_id=message.id)
+            try:
+                self.bot.add_view(view)
+            except Exception:
+                # registering global view may be optional depending on library state
+                pass
             logger.info("Registered new red envelope view message=%s activity=%s expiry=%s", message.id, activity_id, expiry_ts)
         except Exception:
             logger.exception("Failed to register view for red envelope message=%s", message.id)
+
+        # 確認已寫入 storage
+        logger.info("Saved red envelope to storage message=%s activity=%s expiry=%s", message.id, activity_id, expiry_ts)
 
         # 安排到期清理
         self.bot.loop.create_task(self._schedule_expiry(message.id, expiry_ts))
@@ -655,6 +669,49 @@ class NewYearRedEnvelope(commands.Cog):
             lines.append(f"- message={mid} channel={ch_id} expiry={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expiry))} claimed={len(claimed)} fetchable={fetchable} button={button_present}")
 
         await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        """Fallback handler: if a component interaction arrives whose custom_id
+        starts with `red_envelope:` but the library didn't dispatch to our View,
+        catch it here and route to the same claim logic (resilient against
+        transient view-registration loss).
+        """
+        try:
+            data = getattr(interaction, 'data', {}) or {}
+            cid = data.get('custom_id') if isinstance(data, dict) else None
+            if not cid or not isinstance(cid, str) or not cid.startswith('red_envelope:'):
+                return
+
+            # if already handled by discord.py view, do nothing
+            try:
+                if interaction.response.is_done():
+                    return
+            except Exception:
+                pass
+
+            activity_id = cid.split(':', 1)[1]
+            storage = _load_storage()
+            # find message by activity_id
+            for mid_str, info in storage.get('messages', {}).items():
+                if info.get('activity_id') == activity_id:
+                    message_id = int(mid_str)
+                    view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=info.get('expiry', 0), claimed=info.get('claimed', []))
+                    logger.info('red_envelope.fallback: handling interaction activity=%s message=%s', activity_id, message_id)
+                    await view._on_claim(interaction)
+                    return
+
+            # not found -> user-friendly message
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message('⚠️ 此活動已失效或找不到。', ephemeral=True)
+                else:
+                    await interaction.followup.send('⚠️ 此活動已失效或找不到。', ephemeral=True)
+            except Exception:
+                logger.exception('red_envelope.fallback: failed to inform user activity=%s', activity_id)
+        except Exception:
+            logger.exception('red_envelope.fallback: unexpected error')
 
 
 async def setup(bot: commands.Bot):
