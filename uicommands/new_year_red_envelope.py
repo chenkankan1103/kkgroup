@@ -82,6 +82,9 @@ class RedEnvelopeView(discord.ui.View):
         # Always try to defer first — if that fails, log and try to inform the user.
         try:
             await interaction.response.defer(ephemeral=True)
+            # record defer timing to detect Discord 3s ack issues
+            defer_elapsed = time.time() - start_ts
+            logger.info("red_envelope: defer done user=%s message=%s defer_elapsed=%.3fs", user_id, self.message_id, defer_elapsed)
         except Exception:
             logger.exception("Failed to defer interaction (red_envelope) user=%s message=%s", user_id, self.message_id)
             try:
@@ -469,6 +472,54 @@ class NewYearRedEnvelope(commands.Cog):
         self.bot.loop.create_task(self._schedule_expiry(message.id, expiry_ts))
 
         await interaction.followup.send(f"✅ 已在本頻道發送新年紅包（活動 {hours} 小時）。", ephemeral=True)
+
+    @app_commands.command(name="紅包狀態", description="(管理員) 檢查目前新年紅包活動狀態（檢查 storage + message components）")
+    async def red_envelope_status(self, interaction: discord.Interaction):
+        """管理員專用：檢查 data/red_envelopes.json 中的活動、嘗試抓取訊息並檢查按鈕 custom_id 是否仍存在。"""
+        if not interaction.user.guild_permissions.manage_guild and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("🚫 你沒有權限使用這個指令。", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        storage = _load_storage()
+        msgs = storage.get("messages", {})
+        if not msgs:
+            await interaction.followup.send("目前沒有正在進行的紅包活動。", ephemeral=True)
+            return
+
+        lines = []
+        for mid_str, info in msgs.items():
+            try:
+                mid = int(mid_str)
+            except Exception:
+                continue
+            ch_id = info.get("channel_id")
+            expiry = info.get("expiry", 0)
+            claimed = info.get("claimed", [])
+
+            fetchable = False
+            button_present = False
+            try:
+                channel = self.bot.get_channel(ch_id) or await self._fetch_channel_for_message(mid)
+                if channel:
+                    msg = await channel.fetch_message(mid)
+                    fetchable = True
+                    # inspect components for our custom_id prefix
+                    for comp in msg.components:
+                        for child in getattr(comp, "children", []):
+                            cid = getattr(child, "custom_id", "")
+                            if cid and cid.startswith("red_envelope:"):
+                                button_present = True
+                                break
+                        if button_present:
+                            break
+            except Exception:
+                pass
+
+            lines.append(f"- message={mid} channel={ch_id} expiry={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expiry))} claimed={len(claimed)} fetchable={fetchable} button={button_present}")
+
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
