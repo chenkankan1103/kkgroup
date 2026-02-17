@@ -125,11 +125,12 @@ class ScamParkEvents(commands.Cog):
             for user_data in all_users:
                 user_id = user_data.get('user_id')
                 thread_id = user_data.get('thread_id', 0)
-                kkcoin = user_data.get('kkcoin', 0)
-                level = user_data.get('level', 1)
-                hp = user_data.get('hp', 100)
-                stamina = user_data.get('stamina', 100)
-                
+                # Defensive: coerce kkcoin to int and treat None as 0 to avoid TypeError
+                try:
+                    kkcoin = int(user_data.get('kkcoin') or 0)
+                except (TypeError, ValueError):
+                    kkcoin = 0
+
                 if not thread_id or thread_id == 0:
                     continue
                 # 檢查冷卻時間
@@ -596,7 +597,13 @@ class ScamParkEvents(commands.Cog):
                     print(f"⚠️ 無權限讀取用戶 {member.name} 的舊訊息")
                 except Exception as e:
                     print(f"⚠️ 檢查舊訊息時發生錯誤: {e}")
-            
+
+            # Defensive: ensure kkcoin is numeric before using it for event selection
+            try:
+                kkcoin = int(kkcoin or 0)
+            except (TypeError, ValueError):
+                kkcoin = 0
+
             possible_events = self.get_possible_events(kkcoin, level, hp, stamina)
             
             if not possible_events:
@@ -614,6 +621,12 @@ class ScamParkEvents(commands.Cog):
     def get_possible_events(self, kkcoin: int, level: int, hp: int, stamina: int) -> list:
         """根據使用者狀態獲取可能的事件"""
         events = []
+
+        # Defensive: coerce kkcoin to int if None/invalid to avoid comparison errors
+        try:
+            kkcoin = int(kkcoin or 0)
+        except (TypeError, ValueError):
+            kkcoin = 0
 
         # KKCoin相關事件
         if kkcoin > 250:
