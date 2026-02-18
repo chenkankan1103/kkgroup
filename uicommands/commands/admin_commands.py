@@ -64,7 +64,22 @@ class AdminCommands(commands.Cog):
                     try:
                         from uicommands.utils.locker_embed_generator import message_needs_update
                         if not message_needs_update(message):
-                            continue
+                            # message is canonical — but still ensure the new `locker_change_gender`
+                            # button exists. If present, skip; otherwise fall through to update.
+                            def _has_gender_button(msg):
+                                try:
+                                    for row in msg.components or []:
+                                        for comp in row.children:
+                                            cid = getattr(comp, 'custom_id', None) or comp.get('custom_id')
+                                            if cid == 'locker_change_gender':
+                                                return True
+                                except Exception:
+                                    pass
+                                return False
+
+                            if _has_gender_button(message):
+                                continue
+                            # else: proceed to update so the missing button will be added
                     except Exception:
                         # fallback to existing checks if helper not available
                         current_embed = None
@@ -101,6 +116,23 @@ class AdminCommands(commands.Cog):
                         elif 'MapleStory' not in (current_footer or ''):
                             needs_update = True
                         elif has_legacy_button(message):
+                            needs_update = True
+
+                        # if message looks canonical but lacks our new button, force an update
+                        def _has_gender_button(msg):
+                            try:
+                                for row in msg.components or []:
+                                    for comp in row.children:
+                                        cid = getattr(comp, 'custom_id', None) or comp.get('custom_id')
+                                        if cid == 'locker_change_gender':
+                                            return True
+                            except Exception:
+                                pass
+                            return False
+
+                        if not needs_update and _has_gender_button(message):
+                            continue
+                        if not needs_update and not _has_gender_button(message):
                             needs_update = True
 
                         if not needs_update:
