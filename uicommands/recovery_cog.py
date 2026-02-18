@@ -12,15 +12,17 @@ from db_adapter import get_user, set_user, get_user_field, set_user_field, get_a
 class UserRecoveryCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.recovery_loop.start()
+        # 不在這裡啟動，而是在 ready 事件中啟動
+        self._recovery_loop_started = False
 
     def cog_unload(self):
         """Cog 卸載時停止循環任務"""
-        self.recovery_loop.cancel()
+        if self.recovery_loop.is_running():
+            self.recovery_loop.cancel()
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=10)
     async def recovery_loop(self):
-        """每小時執行一次自動回復"""
+        """每10分鐘執行一次自動回復"""
         try:
             logging.info("開始執行自動回復任務...")
             recovered_users = await self.process_all_users_recovery()
@@ -37,6 +39,15 @@ class UserRecoveryCog(commands.Cog):
         """等待 bot 準備完成"""
         await self.bot.wait_until_ready()
         logging.info("機器人已準備就緒，自動回復系統啟動")
+    
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Bot 準備完成時啟動回復循環"""
+        if not self._recovery_loop_started:
+            self._recovery_loop_started = True
+            if not self.recovery_loop.is_running():
+                self.recovery_loop.start()
+                logging.info("✅ 自動回復循環已啟動")
 
     def ensure_database_structure(self):
         """確保資料庫結構正確 - db_adapter 會自動管理欄位"""
