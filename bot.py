@@ -63,7 +63,6 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
         'paperdoll_system', 'gambling', 'role_expiry_manager', 'locker_panel',
         'locker_events',  # 事件定義模組，不是 Cog
         'uibody',  # UserPanel 由 uibody.setup() 統一管理
-        'uibody_backup_old',  # 舊版本，勿載入
     }
     
     for item in sorted(os.listdir(base_path)):
