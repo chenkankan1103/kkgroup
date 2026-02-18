@@ -11,12 +11,12 @@ from db_adapter import set_user_field, get_user_field
 
 
 def generate_character_cache_key(user_data: dict) -> str:
-    """生成角色快取鍵"""
+    """生成角色快取鍵（包含 gender，使性別變更會使快取失效）"""
     key_parts = [
         str(user_data.get('face', 20000)), str(user_data.get('hair', 30000)),
         str(user_data.get('skin', 12000)), str(user_data.get('top', 1040010)),
         str(user_data.get('bottom', 1060096)), str(user_data.get('shoes', 1072288)),
-        str(user_data.get('is_stunned', 0))
+        str(user_data.get('is_stunned', 0)), str(user_data.get('gender', 'male'))
     ]
     key_string = "_".join(key_parts)
     return f"char_{hashlib.md5(key_string.encode()).hexdigest()}"
