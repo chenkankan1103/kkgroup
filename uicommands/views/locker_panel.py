@@ -153,6 +153,35 @@ class LockerPanelView(discord.ui.View):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
     
+    @discord.ui.button(label="變換性別", style=discord.ButtonStyle.secondary, emoji="👤", custom_id="locker_change_gender")
+    async def locker_change_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """從永久置物櫃面板打開性別選擇（立即 defer，避免 3 秒超時）"""
+        try:
+            owner_user_id = await self.get_owner_user_id(interaction)
+            if interaction.user.id != owner_user_id:
+                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                return
+
+            # 立即 defer 避免 Discord 3 秒交互失敗
+            await interaction.response.defer(ephemeral=True)
+
+            # 使用共用的 GenderSelectView
+            try:
+                from .work_card import GenderSelectView
+            except Exception:
+                await interaction.followup.send("❌ 系統錯誤：無法載入性別選擇視圖。", ephemeral=True)
+                return
+
+            gender_view = GenderSelectView(self.cog, owner_user_id)
+            await interaction.followup.send("請選擇你的性別：", view=gender_view, ephemeral=True)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.followup.send("❌ 系統錯誤：無法打開性別選擇。", ephemeral=True)
+            except:
+                pass
+
     @discord.ui.button(label="領取員工證", style=discord.ButtonStyle.danger, emoji="🎫", custom_id="locker_work_card")
     async def work_card_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """領取或修改員工證（紅色按鈕）"""
