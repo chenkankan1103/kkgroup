@@ -168,14 +168,16 @@ class ScamParkEvents(commands.Cog):
                 # 基礎觸發機率（提高到25%以增加事件頻率）
                 base_chance = 0.25 * bell_curve_factor
                 
-                # KKCoin加成（活躍用戶更容易遇到事件）
-                # 高KKCoin用戶（活躍種植者）加成較多，低KKCoin用戶大幅減成
-                if kkcoin >= 1000:
-                    wealth_bonus = min(0.03, kkcoin / 15000 * 0.02)  # 高KKCoin: 最多3%加成
+                # KKCoin加成（活躍用戶優先） — 中等強度調整
+                # 分級加成：>=5000 -> +8%，>=1000 -> +5%，>=100 -> +2%，<100 -> -10%（保留懲罰）
+                if kkcoin >= 5000:
+                    wealth_bonus = 0.08
+                elif kkcoin >= 1000:
+                    wealth_bonus = 0.05
                 elif kkcoin >= 100:
-                    wealth_bonus = 0.0  # 中等KKCoin: 無加成
+                    wealth_bonus = 0.02
                 else:
-                    wealth_bonus = -0.10  # 低KKCoin: -10%減成（大幅降低觸發機率）
+                    wealth_bonus = -0.10  # 低 KKCoin 使用者維持較低觸發率以凸顯優先級
                 
                 # 超過最大間隔後，強制增加機率
                 if time_since_last > self.max_event_interval:
