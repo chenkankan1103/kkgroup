@@ -660,14 +660,11 @@ class PaperDollPreviewView(discord.ui.View):
             files = []
             embed.add_field(name="⚠️ 注意", value="預覽圖片生成失敗，請稍後再試", inline=False)
         
-        # 如果之前已經 defer 或回應過，使用 followup.edit_message
+        # 嘗試透過 response.edit_message 更新；若已回應則捕捉錯誤然後透過 followup
         try:
-            if interaction.response.is_done():
-                await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed, view=self, attachments=files)
-            else:
-                await interaction.response.edit_message(embed=embed, view=self, attachments=files)
-        except Exception:
-            # 最後備援
+            await interaction.response.edit_message(embed=embed, view=self, attachments=files)
+        except Exception as e:
+            # 若該錯誤是 InteractionResponded 就使用 followup
             try:
                 await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed, view=self, attachments=files)
             except Exception:
