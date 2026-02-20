@@ -660,7 +660,18 @@ class PaperDollPreviewView(discord.ui.View):
             files = []
             embed.add_field(name="⚠️ 注意", value="預覽圖片生成失敗，請稍後再試", inline=False)
         
-        await interaction.response.edit_message(embed=embed, view=self, attachments=files)
+        # 如果之前已經 defer 或回應過，使用 followup.edit_message
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed, view=self, attachments=files)
+            else:
+                await interaction.response.edit_message(embed=embed, view=self, attachments=files)
+        except Exception:
+            # 最後備援
+            try:
+                await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed, view=self, attachments=files)
+            except Exception:
+                pass
 
     @discord.ui.select(
         placeholder="選擇要試穿的裝備類別",
