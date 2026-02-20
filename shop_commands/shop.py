@@ -1000,8 +1000,8 @@ class DressingRoomView(discord.ui.View):
             await interaction.followup.send("❌ 這不是你的衣帽間！", ephemeral=True)
             return
 
-        # 取得用戶資料
-        user_data = await self.get_user_data(interaction.user.id)
+        # 取得用戶資料 (透過 cog)
+        user_data = await self.cog.get_user_data(interaction.user.id)
         if not user_data:
             await interaction.followup.send("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
             return
@@ -1018,10 +1018,10 @@ class DressingRoomView(discord.ui.View):
             'Eye Decoration': 'eye_decoration', 'Earrings': 'earrings',
             'Glove': 'glove'
         }
-        # 將資料庫查詢放在執行緒中，以避免阻塞
-        for db_cat in self.ALLOWED_DB_CATEGORIES:
+        # 將資料庫查詢放在執行緒中，以避免阻塞 (透過 cog)
+        for db_cat in self.cog.ALLOWED_DB_CATEGORIES:
             try:
-                items = await asyncio.to_thread(self.get_items_by_category, db_cat)
+                items = await asyncio.to_thread(self.cog.get_items_by_category, db_cat)
             except Exception:
                 items = []
             if items:
