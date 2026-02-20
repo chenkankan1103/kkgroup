@@ -872,6 +872,11 @@ class DressingRoomView(discord.ui.View):
         select.callback = self.category_selected
         self.add_item(select)
         
+        # 隨機搭配按鈕（與返回商店同層）
+        random_button = discord.ui.Button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary, emoji="🎲")
+        random_button.callback = self.random_outfit
+        self.add_item(random_button)
+        
         # 返回按鈕
         back_button = discord.ui.Button(label="返回商店", style=discord.ButtonStyle.secondary, emoji="⬅️")
         back_button.callback = self.back_to_shop
@@ -977,6 +982,41 @@ class DressingRoomView(discord.ui.View):
         from shop_commands.merchant.views import ExploreView
         embed = discord.Embed(title="黑市商人出現了", description="竟然被你發現了，想要買些什麼，還是...")
         await interaction.response.edit_message(embed=embed, view=ExploreView(self.cog))
+
+    async def random_outfit(self, interaction: discord.Interaction):
+        """從允許的類別中隨機挑選一套裝備並直接顯示預覽"""
+        # 驗證使用者
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
+            return
+
+        # 取得用戶資料
+        user_data = await self.get_user_data(interaction.user.id)
+        if not user_data:
+            await interaction.response.send_message("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
+            return
+
+        # 建立預覽視圖並填入隨機選項
+        from shop_commands.merchant.views import PaperDollPreviewView
+        preview_view = PaperDollPreviewView(self.cog, user_data)
+
+        import random
+        mapping = {
+            'Face': 'face', 'Hair': 'hair', 'Hat': 'hat',
+            'Top': 'top', 'Overall': 'overall', 'Bottom': 'bottom',
+            'Shoes': 'shoes', 'Face Accessory': 'face_accessory',
+            'Eye Decoration': 'eye_decoration', 'Earrings': 'earrings',
+            'Glove': 'glove'
+        }
+        for db_cat in self.ALLOWED_DB_CATEGORIES:
+            items = self.get_items_by_category(db_cat)
+            if items:
+                chosen = random.choice(items)
+                key = mapping.get(db_cat)
+                if key:
+                    preview_view.preview_items[key] = chosen['id']
+
+        await preview_view.update_preview(interaction)
 
 
 class EditView(discord.ui.View):
