@@ -985,15 +985,21 @@ class DressingRoomView(discord.ui.View):
 
     async def random_outfit(self, interaction: discord.Interaction):
         """從允許的類別中隨機挑選一套裝備並直接顯示預覽"""
+        # 先延遲回應以避免 3 秒超時
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
         # 驗證使用者
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
+            await interaction.followup.send("❌ 這不是你的衣帽間！", ephemeral=True)
             return
 
         # 取得用戶資料
         user_data = await self.get_user_data(interaction.user.id)
         if not user_data:
-            await interaction.response.send_message("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
+            await interaction.followup.send("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
             return
 
         # 建立預覽視圖並填入隨機選項
@@ -1008,14 +1014,19 @@ class DressingRoomView(discord.ui.View):
             'Eye Decoration': 'eye_decoration', 'Earrings': 'earrings',
             'Glove': 'glove'
         }
+        # 將資料庫查詢放在執行緒中，以避免阻塞
         for db_cat in self.ALLOWED_DB_CATEGORIES:
-            items = self.get_items_by_category(db_cat)
+            try:
+                items = await asyncio.to_thread(self.get_items_by_category, db_cat)
+            except Exception:
+                items = []
             if items:
                 chosen = random.choice(items)
                 key = mapping.get(db_cat)
                 if key:
                     preview_view.preview_items[key] = chosen['id']
 
+        # 最後更新預覽（已經 earlier deferred）
         await preview_view.update_preview(interaction)
 
 
