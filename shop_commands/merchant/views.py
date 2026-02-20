@@ -710,28 +710,19 @@ class PaperDollPreviewView(discord.ui.View):
                     self.preview_items[key] = chosen['id']
         await self.update_preview(interaction)
 
-    @discord.ui.button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary)
-    async def random_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """為所有允許類別隨機挑一件試穿"""
-        import random
-        # 從商店抓取隨機項目
-        for db_cat in self.cog.ALLOWED_DB_CATEGORIES:
-            items = self.cog.get_items_by_category(db_cat)
-            if items:
-                chosen = random.choice(items)
-                # 轉成欄位名
-                key = {
-                    'Face': 'face', 'Hair': 'hair', 'Hat': 'hat',
-                    'Top': 'top', 'Overall': 'overall', 'Bottom': 'bottom',
-                    'Shoes': 'shoes', 'Face Accessory': 'face_accessory',
-                    'Eye Decoration': 'eye_decoration', 'Earrings': 'earrings',
-                    'Glove': 'glove'
-                }.get(db_cat)
-                if key:
-                    self.preview_items[key] = chosen['id']
-        await self.update_preview(interaction)
-
     @discord.ui.button(label="💾 保存搭配", style=discord.ButtonStyle.success)
+    async def save_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.preview_items:
+            await interaction.response.send_message("❌ 沒有試穿任何新裝備！", ephemeral=True)
+            return
+        
+        # 這裡可以實現保存搭配的邏輯
+        embed = discord.Embed(
+            title="💾 搭配已保存",
+            description="你的搭配已保存為預設外觀！\n\n💡 線上版預覽: https://maplestory.studio/ (TWMS 256)",
+            color=discord.Color.green()
+        )
+        await interaction.response.edit_message(embed=embed, view=None)
     async def save_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.preview_items:
             await interaction.response.send_message("❌ 沒有試穿任何新裝備！", ephemeral=True)
