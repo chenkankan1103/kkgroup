@@ -985,6 +985,10 @@ class DressingRoomView(discord.ui.View):
 
     async def random_outfit(self, interaction: discord.Interaction):
         """從允許的類別中隨機挑選一套裝備並直接顯示預覽"""
+        ts = int(__import__('time').time())
+        with open('paperdoll_random.log', 'a', encoding='utf-8') as f:
+            f.write(f"[{ts}] random_outfit triggered by user {interaction.user.id}\n")
+
         # 先延遲回應以避免 3 秒超時
         try:
             await interaction.response.defer(ephemeral=True)

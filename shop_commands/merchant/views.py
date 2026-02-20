@@ -628,6 +628,9 @@ class PaperDollPreviewView(discord.ui.View):
 
     async def update_preview(self, interaction: discord.Interaction):
         """更新紙娃娃預覽"""
+        ts = int(__import__('time').time())
+        with open('paperdoll_random.log', 'a', encoding='utf-8') as f:
+            f.write(f"[{ts}] update_preview called, preview_items={self.preview_items}\n")
         # 合併用戶原有裝備和預覽裝備
         current_equipment = self.user_data.copy()
         current_equipment.update(self.preview_items)
