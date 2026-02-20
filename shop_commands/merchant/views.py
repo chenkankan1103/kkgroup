@@ -792,6 +792,11 @@ class CategoryItemSelectView(discord.ui.View):
         self.parent_view = parent_view
         self.category = category
 
+    @discord.ui.button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary)
+    async def random_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 直接委託父視圖生成一套隨機裝扮
+        await self.parent_view.random_outfit(interaction, button)
+
     @discord.ui.button(label="輸入裝備ID", style=discord.ButtonStyle.primary)
     async def input_item_id(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ItemIDInputModal(self.cog, self.parent_view, self.category)

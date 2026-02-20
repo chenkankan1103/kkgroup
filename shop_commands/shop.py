@@ -158,7 +158,7 @@ class ButtonInteraction(commands.Cog):
             
             embed = discord.Embed(
                 title="👗 紙娃娃試衣間",
-                description=f"歡迎來到試衣間，{interaction.user.mention}！\n在這裡你可以預覽不同裝備的搭配效果。",
+                description=f"歡迎來到試衣間，{interaction.user.mention}！\n在這裡你可以預覽不同裝備的搭配效果。\n\n💡 線上版預覽: https://maplestory.studio/ (TWMS 256)",
                 color=discord.Color.purple()
             )
             
