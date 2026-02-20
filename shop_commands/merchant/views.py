@@ -611,6 +611,12 @@ class TryOnResultView(discord.ui.View):
     async def details_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_equipment_preview(interaction, self.item_name, self.item_data, self.category)
 
+# 內部允許的欄位（對應 users 表）
+ALLOWED_FIELDS = {
+    'face','hair','hat','face_accessory','eye_decoration',
+    'earrings','top','overall','bottom','shoes','glove'
+}
+
 class PaperDollPreviewView(discord.ui.View):
     """紙娃娃預覽視圖 - 支援多部位混搭"""
     def __init__(self, cog, user_data: dict):
@@ -632,10 +638,10 @@ class PaperDollPreviewView(discord.ui.View):
             color=discord.Color.purple()
         )
         
-        # 顯示當前裝備
+        # 顯示當前裝備（只列出允許欄位）
         equipment_info = []
         for category, item_id in current_equipment.items():
-            if category in ['hair', 'face', 'skin', 'top', 'bottom', 'shoes']:
+            if category in ALLOWED_FIELDS and item_id:
                 status = "🆕 試穿中" if category in self.preview_items else "✅ 已擁有"
                 category_name = self.cog.get_category_name(category)
                 equipment_info.append(f"{category_name}: {item_id} {status}")
@@ -658,10 +664,15 @@ class PaperDollPreviewView(discord.ui.View):
         options=[
             discord.SelectOption(label="髮型", value="hair", emoji="💇"),
             discord.SelectOption(label="臉型", value="face", emoji="😊"),
-            discord.SelectOption(label="膚色", value="skin", emoji="🎨"),
+            discord.SelectOption(label="帽子", value="hat", emoji="🎩"),
+            discord.SelectOption(label="臉部飾品", value="face_accessory", emoji="😷"),
+            discord.SelectOption(label="眼睛飾品", value="eye_decoration", emoji="👁️"),
+            discord.SelectOption(label="耳環", value="earrings", emoji="💎"),
             discord.SelectOption(label="上衣", value="top", emoji="👔"),
-            discord.SelectOption(label="下裝", value="bottom", emoji="👖"),
+            discord.SelectOption(label="套裝", value="overall", emoji="👗"),
+            discord.SelectOption(label="下衣", value="bottom", emoji="👖"),
             discord.SelectOption(label="鞋子", value="shoes", emoji="👟"),
+            discord.SelectOption(label="手套", value="glove", emoji="🧤"),
         ]
     )
     async def select_category(self, interaction: discord.Interaction, select: discord.ui.Select):
@@ -677,6 +688,27 @@ class PaperDollPreviewView(discord.ui.View):
         
         view = CategoryItemSelectView(self.cog, self, category)
         await interaction.response.edit_message(embed=embed, view=view)
+
+    @discord.ui.button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary)
+    async def random_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """為所有允許類別隨機挑一件試穿"""
+        import random
+        # 從商店抓取隨機項目
+        for db_cat in self.cog.ALLOWED_DB_CATEGORIES:
+            items = self.cog.get_items_by_category(db_cat)
+            if items:
+                chosen = random.choice(items)
+                # 轉成欄位名
+                key = {
+                    'Face': 'face', 'Hair': 'hair', 'Hat': 'hat',
+                    'Top': 'top', 'Overall': 'overall', 'Bottom': 'bottom',
+                    'Shoes': 'shoes', 'Face Accessory': 'face_accessory',
+                    'Eye Decoration': 'eye_decoration', 'Earrings': 'earrings',
+                    'Glove': 'glove'
+                }.get(db_cat)
+                if key:
+                    self.preview_items[key] = chosen['id']
+        await self.update_preview(interaction)
 
     @discord.ui.button(label="💾 保存搭配", style=discord.ButtonStyle.success)
     async def save_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -697,7 +729,23 @@ class PaperDollPreviewView(discord.ui.View):
         self.preview_items.clear()
         await self.update_preview(interaction)
 
-    @discord.ui.button(label="🛒 購買全套", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="� 購買隨機裝扮", style=discord.ButtonStyle.primary)
+    async def buy_random(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """直接購買當前預覽（若為隨機搭配成本固定）"""
+        if not self.preview_items:
+            await interaction.response.send_message("❌ 沒有試穿任何新裝備！", ephemeral=True)
+            return
+        cost = len(ALLOWED_FIELDS) * self.cog.price
+        # 購買流程與 buy_all 相同
+        embed = discord.Embed(
+            title="🛒 購買確認",
+            description=f"即將購買 {len(self.preview_items)} 件裝備\n總價格: {cost} KKcoin",
+            color=discord.Color.orange()
+        )
+        view = PurchaseConfirmView(self.cog, self.preview_items, cost)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    @discord.ui.button(label="�🛒 購買全套", style=discord.ButtonStyle.primary)
     async def buy_all(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.preview_items:
             await interaction.response.send_message("❌ 沒有試穿任何新裝備！", ephemeral=True)
@@ -779,6 +827,10 @@ class PurchaseConfirmView(discord.ui.View):
         
         # 扣除金錢並更新裝備
         await update_user_kkcoin(interaction.user.id, -self.total_price)
+        # items 里的 key 對應 users 表欄位名稱
+        from shop_commands.merchant.database import update_user_equipment
+        for category, item_id in self.items.items():
+            await update_user_equipment(interaction.user.id, category, item_id)
         
         embed = discord.Embed(
             title="✅ 購買成功！",

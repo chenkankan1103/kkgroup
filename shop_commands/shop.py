@@ -45,12 +45,20 @@ class ButtonInteraction(commands.Cog):
         # 將預設購買價格從 100000 下調為 5000（管理員要求）
         self.price = 5000
 
+    # 允許顯示的資料庫類別（大寫首字母，對應 items.category 欄）
+    ALLOWED_DB_CATEGORIES = {
+        'Face', 'Hair', 'Hat', 'Face Accessory', 'Eye Decoration',
+        'Earrings', 'Top', 'Overall', 'Bottom', 'Shoes', 'Glove'
+    }
+
     def get_categories(self) -> list:
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT DISTINCT category FROM items")
-            categories = [row[0] for row in cursor.fetchall()]
-            print(f"Found {len(categories)} categories: {categories[:5]}...")
+            all_cats = [row[0] for row in cursor.fetchall()]
+            # 只回傳允許的類別
+            categories = [c for c in all_cats if c in self.ALLOWED_DB_CATEGORIES]
+            print(f"Found {len(categories)} categories (filtered): {categories}")
             return categories
         except Exception as e:
             print(f"Error getting categories: {e}")
@@ -63,23 +71,35 @@ class ButtonInteraction(commands.Cog):
 
     async def generate_character_image_url(self, user_data: dict, preview_item: Optional[Dict] = None) -> Optional[str]:
         try:
+# 生成圖片時只用允許的部件，skin 移除
             items = [
                 {"itemId": 2000, "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('skin', 12000), "region": "TWMS", "version": "256"},
                 {"itemId": user_data.get('face', 20005), "region": "TWMS", "version": "256"},
                 {"itemId": user_data.get('hair', 30120), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('hat', 0), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('overall', 0) or user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
                 {"itemId": user_data.get('bottom', 1060096), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"}
+                {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('face_accessory', 0), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('eye_decoration', 0), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('earrings', 0), "region": "TWMS", "version": "256"},
+                {"itemId": user_data.get('glove', 0), "region": "TWMS", "version": "256"}
             ]
+            # 移除 itemId 為 0 的項目
+            items = [it for it in items if it.get('itemId')]
 
             if preview_item:
                 category_map = {
-                    "Hair": "hair", "Face": "face", "Hat": "hat", "Top": "top", "Bottom": "bottom", "Shoes": "shoes"
+                    "Hair": "hair", "Face": "face", "Hat": "hat",
+                    "Top": "top", "Overall": "overall", "Bottom": "bottom",
+                    "Shoes": "shoes", "Face Accessory": "face_accessory",
+                    "Eye Decoration": "eye_decoration", "Earrings": "earrings",
+                    "Glove": "glove"
                 }
                 part = category_map.get(preview_item['category'])
                 if part:
                     for item in items:
+                        # 只替換存在的欄位
                         if item.get('itemId') == user_data.get(part):
                             item['itemId'] = preview_item['id']
                             break

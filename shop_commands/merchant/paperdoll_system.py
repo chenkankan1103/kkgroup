@@ -58,7 +58,7 @@ class EnhancedPaperDollSystem:
         
         # 定義部件優先順序及預設值（避免衝突，如上衣/連身衣不能同時顯示）
         equipment_order = [
-            ('skin', 12000),
+            # skin 已從允許清單移除
             ('face', 20005, 'default'),  # face 有 animationName
             ('hair', 30120),
             ('hat', None),               # 帽子（如果有）
