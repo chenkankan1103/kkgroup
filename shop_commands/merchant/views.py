@@ -634,7 +634,7 @@ class PaperDollPreviewView(discord.ui.View):
         
         embed = discord.Embed(
             title="👗 紙娃娃試衣間",
-            description=f"正在為 {interaction.user.mention} 預覽裝備搭配效果",
+            description=f"正在為 {interaction.user.mention} 預覽裝備搭配效果\n\n💡 線上版預覽: https://maplestory.studio/ (TWMS 256)",
             color=discord.Color.purple()
         )
         
@@ -682,12 +682,33 @@ class PaperDollPreviewView(discord.ui.View):
         # 為了簡化，我們先顯示一個輸入提示
         embed = discord.Embed(
             title=f"🛍️ 選擇{self.cog.get_category_name(category)}",
-            description=f"請使用下方按鈕輸入想要試穿的{self.cog.get_category_name(category)}ID",
+            description=f"請使用下方按鈕輸入想要試穿的{self.cog.get_category_name(category)}ID\n\n💡 線上版預覽: https://maplestory.studio/ (TWMS 256)",
             color=discord.Color.blue()
         )
         
         view = CategoryItemSelectView(self.cog, self, category)
         await interaction.response.edit_message(embed=embed, view=view)
+
+    @discord.ui.button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary)
+    async def random_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """為所有允許類別隨機挑一件試穿"""
+        import random
+        # 從商店抓取隨機項目
+        for db_cat in self.cog.ALLOWED_DB_CATEGORIES:
+            items = self.cog.get_items_by_category(db_cat)
+            if items:
+                chosen = random.choice(items)
+                # 轉成欄位名
+                key = {
+                    'Face': 'face', 'Hair': 'hair', 'Hat': 'hat',
+                    'Top': 'top', 'Overall': 'overall', 'Bottom': 'bottom',
+                    'Shoes': 'shoes', 'Face Accessory': 'face_accessory',
+                    'Eye Decoration': 'eye_decoration', 'Earrings': 'earrings',
+                    'Glove': 'glove'
+                }.get(db_cat)
+                if key:
+                    self.preview_items[key] = chosen['id']
+        await self.update_preview(interaction)
 
     @discord.ui.button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary)
     async def random_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -719,7 +740,7 @@ class PaperDollPreviewView(discord.ui.View):
         # 這裡可以實現保存搭配的邏輯
         embed = discord.Embed(
             title="💾 搭配已保存",
-            description="你的搭配已保存為預設外觀！",
+            description="你的搭配已保存為預設外觀！\n\n💡 線上版預覽: https://maplestory.studio/ (TWMS 256)",
             color=discord.Color.green()
         )
         await interaction.response.edit_message(embed=embed, view=None)
@@ -729,7 +750,7 @@ class PaperDollPreviewView(discord.ui.View):
         self.preview_items.clear()
         await self.update_preview(interaction)
 
-    @discord.ui.button(label="� 購買隨機裝扮", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="💰 購買隨機裝扮", style=discord.ButtonStyle.primary)
     async def buy_random(self, interaction: discord.Interaction, button: discord.ui.Button):
         """直接購買當前預覽（若為隨機搭配成本固定）"""
         if not self.preview_items:
@@ -739,13 +760,13 @@ class PaperDollPreviewView(discord.ui.View):
         # 購買流程與 buy_all 相同
         embed = discord.Embed(
             title="🛒 購買確認",
-            description=f"即將購買 {len(self.preview_items)} 件裝備\n總價格: {cost} KKcoin",
+            description=f"即將購買 {len(self.preview_items)} 件裝備\n總價格: {cost} KKcoin\n\n💡 線上版預覽: https://maplestory.studio/ (TWMS 256)",
             color=discord.Color.orange()
         )
         view = PurchaseConfirmView(self.cog, self.preview_items, cost)
         await interaction.response.edit_message(embed=embed, view=view)
 
-    @discord.ui.button(label="�🛒 購買全套", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="🛒 購買全套", style=discord.ButtonStyle.primary)
     async def buy_all(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.preview_items:
             await interaction.response.send_message("❌ 沒有試穿任何新裝備！", ephemeral=True)
