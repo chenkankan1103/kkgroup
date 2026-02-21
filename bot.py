@@ -198,6 +198,14 @@ async def on_ready():
     """Bot 啟動完成"""
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     
+    # 確保機器人名稱是 uibot，使用者要求 embed 由 uibot 發布
+    try:
+        if client.user and client.user.name != "uibot":
+            await client.user.edit(username="uibot")
+            print("🔧 已將機器人使用者名稱設為 uibot")
+    except Exception as e:
+        print(f"⚠️ 修改機器人名稱失敗: {e}")
+    
     try:
         # 執行 DB migration（置物櫃事件驅動系統）
         try:
