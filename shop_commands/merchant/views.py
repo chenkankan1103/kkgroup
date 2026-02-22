@@ -697,8 +697,25 @@ class PaperDollPreviewView(discord.ui.View):
             color=discord.Color.blue()
         )
         
-        view = CategoryItemSelectView(self.cog, self, category)
-        await interaction.response.edit_message(embed=embed, view=view)
+        try:
+            items = await asyncio.to_thread(self.cog.get_items_by_category, category)
+        except Exception:
+            traceback.print_exc()
+            items = []
+
+        if not items:
+            view = CategoryItemSelectView(self.cog, self, category)
+            await interaction.response.edit_message(embed=embed, view=view)
+            return
+
+        from shop_commands.shop import EditView
+        view = EditView(self.cog, interaction.user.id, category, items, page=0, embed=embed, original_message=getattr(self, 'original_message', interaction.message))
+        try:
+            await interaction.response.edit_message(embed=embed, view=view)
+            view.original_message = interaction.message
+        except (discord.errors.InteractionResponded, discord.errors.HTTPException):
+            new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            view.original_message = new_msg
 
     @discord.ui.button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary)
     async def random_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
