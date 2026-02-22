@@ -1239,14 +1239,25 @@ class ConfirmView(discord.ui.View):
             return
 
         try:
+            # Confirm balance again
             current_kkcoin = await get_user_kkcoin(self.user_id)
-            await update_user_kkcoin(self.user_id, current_kkcoin - self.cog.price)
+            price = self.cog.price
+            if current_kkcoin < price:
+                await interaction.response.send_message("❌ KK幣不足！", ephemeral=True)
+                return
+
+            # Deduct using delta (negative value)
+            await update_user_kkcoin(self.user_id, -price)
+
+            # Update equipment after successful deduction
             category_map = {"Hair": "hair", "Face": "face", "Hat": "hat", "Top": "top", "Bottom": "bottom", "Shoes": "shoes"}
             part = category_map.get(self.selected_item['category'])
             if part:
                 await update_user_equipment(self.user_id, part, self.selected_item['id'])
 
-            await interaction.response.send_message(f"✅ 購買成功！已裝備 {self.selected_item['name']}。", ephemeral=True)
+            # Read back new balance and inform user
+            new_kkcoin = await get_user_kkcoin(self.user_id)
+            await interaction.response.send_message(f"✅ 購買成功！已裝備 {self.selected_item['name']}。剩餘：{new_kkcoin} KKcoin", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"❌ 購買失敗: {str(e)[:100]}", ephemeral=True)
 
