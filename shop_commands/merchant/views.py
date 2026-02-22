@@ -688,17 +688,59 @@ class PaperDollPreviewView(discord.ui.View):
     )
     async def select_category(self, interaction: discord.Interaction, select: discord.ui.Select):
         category = select.values[0]
-        
-        # 這裡可以展示該類別的可用裝備選項
-        # 為了簡化，我們先顯示一個輸入提示
+
         embed = discord.Embed(
             title=f"🛍️ 選擇{self.cog.get_category_name(category)}",
             description=f"請使用下方按鈕輸入想要試穿的{self.cog.get_category_name(category)}ID\n\n💡 線上版預覽: https://maplestory.studio/ (TWMS 256)",
             color=discord.Color.blue()
         )
-        
-        view = CategoryItemSelectView(self.cog, self, category)
-        await interaction.response.edit_message(embed=embed, view=view)
+
+        # fetch items without blocking the event loop
+        try:
+            items = await asyncio.to_thread(self.cog.get_items_by_category, category)
+        except Exception:
+            items = []
+
+        # if no items, fallback to CategoryItemSelectView
+        if not items:
+            view = CategoryItemSelectView(self.cog, self, category)
+            try:
+                await interaction.response.edit_message(embed=embed, view=view)
+            except Exception:
+                try:
+                    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                except Exception:
+                    pass
+            return
+
+        # lazy import EditView to avoid circular import
+        try:
+            from shop_commands.shop import EditView
+        except Exception:
+            view = CategoryItemSelectView(self.cog, self, category)
+            try:
+                await interaction.response.edit_message(embed=embed, view=view)
+            except Exception:
+                try:
+                    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                except Exception:
+                    pass
+            return
+
+        view = EditView(self.cog, interaction.user.id, category, items, page=0, embed=embed,
+                        original_message=getattr(self, 'original_message', getattr(interaction, 'message', None)))
+        try:
+            await interaction.response.edit_message(embed=embed, view=view)
+            if getattr(interaction, 'message', None):
+                view.original_message = interaction.message
+        except Exception:
+            try:
+                new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                view.original_message = new_msg
+                if not getattr(self, 'original_message', None):
+                    self.original_message = new_msg
+            except Exception:
+                pass
 
     @discord.ui.button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary)
     async def random_outfit(self, interaction: discord.Interaction, button: discord.ui.Button):
