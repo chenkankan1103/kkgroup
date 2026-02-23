@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
-from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -274,44 +273,9 @@ async def on_ready():
         lines.append(f"✅ {client.user.name} 已就緒")
         lines.append("=" * 60)
         
-        # ⚠️ 重要：將啟動統計添加到日誌 embed
-        # 這樣訊息只會出現在儀表板，不會發送到 webhook
-        add_log("bot", "\n".join(lines))
-        
         # 設定初始狀態
         activity = build_discord_activity(BOT_TYPE)
         await client.change_presence(activity=activity)
-        
-        # ============================================================
-        # 更新機器人秘書頻道的啟動資訊
-        # ============================================================
-        add_log("bot", "✅ 啟動資訊已更新到機器人秘書")
-        
-        # ============================================================
-        # 初始化監控儀表板及日誌系統
-        # ============================================================
-        try:
-            # 設置當前 bot 類型
-            set_bot_type("bot")
-            load_message_ids("bot")
-            
-            # 初始化儀表板（只初始化當前 bot 的面板）
-            dashboard_ready = await initialize_dashboard(client, "bot")
-            if dashboard_ready:
-                add_log("bot", "✅ 儀表板已初始化")
-                # 註冊持久化按鈕視圖
-                client.add_view(DashboardButtons("bot", client))
-                print("✅ 控制面板按鈕已註冊")
-        except Exception as e:
-            print(f"⚠️ 儀表板初始化失敗: {e}")
-        
-        # ============================================================
-        # 發送啟動資訊到 Webhook
-        # ============================================================
-        try:
-            add_log("bot", "✅ 啟動資訊已發送到 Webhook")
-        except Exception as e:
-            print(f"⚠️ Webhook 發送失敗: {e}")
         
         # 啟動狀態更新任務
         if not update_status.is_running():
