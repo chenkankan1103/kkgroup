@@ -81,7 +81,11 @@ class ScamParkEvents(commands.Cog):
                     # 設置初始冷卻時間為當前時間減去 1 小時，讓重啟後立即有可能觸發事件
                     # 這樣新用戶或被重置的用戶能更快接到第一個事件
                     self.event_cooldown[user_id] = current_time - 3600
-            
+
+            # 確保前四次事件觸發不受冷卻時間限制
+            for user_id in list(self.event_cooldown.keys())[:4]:
+                self.event_cooldown[user_id] = 0
+
             print(f"✅ 初始化 {len(self.event_cooldown)} 個用戶的事件冷卻時間（允許立即觸發）")
         except Exception as e:
             print(f"❌ 載入事件歷史錯誤: {e}")
@@ -1055,7 +1059,7 @@ class ScamParkEvents(commands.Cog):
             color=0x000000,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="❤️ 虛弱", value=f"-{hp_loss} HP", inline=True)
+        embed.add_field(name="❤️ 虚弱", value=f"-{hp_loss} HP", inline=True)
         embed.add_field(name="⚡ 精神崩潰", value=f"-{stamina_loss} 體力", inline=True)
         message = await self.send_or_edit_event_message(thread, embed, member.id, "關禁閉")
         self.update_user_stats(member.id, hp=-hp_loss, stamina=-stamina_loss)
@@ -1234,7 +1238,7 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="❤️ 重傷", value=f"-{hp_loss} HP", inline=True)
-        embed.add_field(name="⚡ 虛弱", value=f"-{stamina_loss} 體力", inline=True)
+        embed.add_field(name="⚡ 虚弱", value=f"-{stamina_loss} 體力", inline=True)
         embed.add_field(name="📋 工傷", value="得去醫院掛號，可能會請病假...", inline=False)
         
         if image_url:
