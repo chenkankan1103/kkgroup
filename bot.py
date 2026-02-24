@@ -213,14 +213,14 @@ async def on_ready():
         loaded_extensions = await setup_modules(client)
         
         # 明確載入 uibody 模組（UserPanel 和 LockerEventListenerCog）
-        try:
-            from uicommands import uibody
-            await uibody.setup(client)
-            print("✅ uibody 模組已明確加載")
-        except Exception as e:
-            print(f"❌ uibody 模組加載失敗: {e}")
-            import traceback
-            traceback.print_exc()
+        # try:
+        #     from uicommands import uibody
+        #     await uibody.setup(client)
+        #     print("✅ uibody 模組已明確加載")
+        # except Exception as e:
+        #     print(f"❌ uibody 模組加載失敗: {e}")
+        #     import traceback
+        #     traceback.print_exc()
         
         # 同步指令
         synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
