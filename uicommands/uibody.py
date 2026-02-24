@@ -500,6 +500,14 @@ class UserPanel(commands.Cog):
                     if not thread or not member:
                         continue
                     
+                    # 刪除上週的 embed
+                    async for message in thread.history(limit=50):
+                        if message.author == self.bot.user and message.embeds:
+                            embed = message.embeds[0]
+                            if "本週統計" in embed.title:
+                                await message.delete()
+                                break
+                    
                     kkcoin_change = (current_kkcoin or 0) - (last_kkcoin or 0)
                     xp_change = (current_xp or 0) - (last_xp or 0)
                     level_change = (current_level or 1) - (last_level or 1)
