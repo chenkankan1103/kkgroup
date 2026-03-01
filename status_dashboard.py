@@ -345,6 +345,7 @@ update_tasks = {}
 
 def create_update_task(bot_type: str):
     """為指定機器人創建獨立的更新任務"""
+    print(f"[DEBUG] 建立更新任務物件 ({bot_type})")
 
     async def individual_update_task():
         """個別機器人的儀表板更新任務 - 只更新自己的面板和日誌"""
@@ -396,9 +397,20 @@ def create_update_task(bot_type: str):
     return task
 
 def register_bot_instance(bot_type: str, bot_instance):
-    """註冊機器人實例"""
+    """註冊機器人實例並確保更新任務啟動"""
     bot_instances[bot_type] = bot_instance
     print(f"[DEBUG] {bot_type} 機器人實例已註冊")
+
+    # 確保對應的更新任務存在並啟動（防止 initialize_dashboard 失敗）
+    if bot_type not in update_tasks:
+        print(f"[DEBUG] {bot_type} 更新任務不存在，register_bot_instance 將建立")
+        try:
+            update_task = create_update_task(bot_type)
+            update_tasks[bot_type] = update_task
+            update_task.start()
+            print(f"[DEBUG] {bot_type} 更新任務已由 register_bot_instance 啟動")
+        except Exception as e:
+            print(f"[ERROR] 無法啟動 {bot_type} 更新任務: {e}")
 
 def get_bot_instance(bot_type: str):
     """獲取機器人實例"""
@@ -738,6 +750,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         bot_instance: Discord bot instance
         bot_type_str: "bot", "shopbot", "uibot"
     """
+    print(f"[INIT] initialize_dashboard called for {bot_type_str}")
     global current_bot_type
     
     # 添加延遲以避免同時初始化
@@ -911,7 +924,20 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
 # 監視任務的守護程序，定期檢測並重啟已停止的更新任務
 @tasks.loop(minutes=5)
 async def update_task_watchdog():
-    for bot_type, task in update_tasks.items():
+    # 如果字典中沒有任何任務，也試著為所有已註冊機器人建立
+    if not update_tasks:
+        print("[WATCHDOG] 尚無任何更新任務，嘗試為已註冊機器人建立")
+        for bot_type in bot_instances.keys():
+            if bot_type not in update_tasks:
+                try:
+                    t = create_update_task(bot_type)
+                    update_tasks[bot_type] = t
+                    t.start()
+                    print(f"[WATCHDOG] 已為 {bot_type} 建立並啟動更新任務")
+                except Exception as e:
+                    print(f"[WATCHDOG ERROR] 建立 {bot_type} 任務失敗: {e}")
+
+    for bot_type, task in list(update_tasks.items()):
         if not task.is_running():
             print(f"[WATCHDOG] {bot_type} 更新任務停止，嘗試重啟")
             try:

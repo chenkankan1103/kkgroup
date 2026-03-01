@@ -12,7 +12,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 DB_PATH = os.getenv("DB_PATH", "user_data.db")
+# 入口語音頻道的 ID，使用者點擊這個頻道時會觸發創建私有語音房間
+# TEMP_VC_CATEGORY_ID is actually the ID of the **voice channel** used for triggering
+# (not a category).
 TEMP_VC_CATEGORY_ID = int(os.getenv("TEMP_VC_CATEGORY_ID", 0))
+if TEMP_VC_CATEGORY_ID == 0:
+    print("⚠️ 環境變數 TEMP_VC_CATEGORY_ID 未設定，請在 .env 或系統環境中指定入口語音頻道的 ID")
+else:
+    print(f"✅ 已讀取 TEMP_VC_CATEGORY_ID = {TEMP_VC_CATEGORY_ID} (trigger channel)")
+
 GUILD_ID = int(os.getenv("GUILD_ID", 0))
 INACTIVE_TIMEOUT = 300  # 5分鐘 = 300秒
 MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID", 0))
@@ -238,17 +246,24 @@ class ScamHub(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
-        # 當用戶加入詐騙機房入口頻道
+        # Debug: 印出當前頻道和 ID
+        if after.channel:
+            print(f"voice_state_update: member={member.display_name}, after_channel={after.channel.name}, id={after.channel.id}")
+        else:
+            print(f"voice_state_update: member={member.display_name}, after_channel=None")
+
+        # 當用戶加入詐騙機房入口頻道（TEMP_VC_CATEGORY_ID 只做為觸發 ID）
         if after.channel and after.channel.id == TEMP_VC_CATEGORY_ID:
             guild = after.channel.guild
-            category = guild.get_channel(TEMP_VC_CATEGORY_ID) or after.channel.category
+            # 使用觸發頻道本身的 category（若有）或不指定
+            category = after.channel.category
 
-            # 創建私人語音頻道
-            new_channel = await guild.create_voice_channel(
-                name=f"詐騙小組:{member.display_name}",
-                category=category,
-                user_limit=99
-            )
+            # 創建私人語音頻道（不需要把 TEMP_VC_CATEGORY_ID 當成 category）
+            kwargs = {"name": f"詐騙小組:{member.display_name}", "user_limit": 99}
+            if category:
+                kwargs["category"] = category
+
+            new_channel = await guild.create_voice_channel(**kwargs)
 
             # 設定頻道權限 - 私人頻道，僅MEMBER_ROLE_ID能看見
             member_role = guild.get_role(MEMBER_ROLE_ID)
