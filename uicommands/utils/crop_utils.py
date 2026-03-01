@@ -83,7 +83,8 @@ def calculate_harvest_value(plant):
     from shop_commands import CANNABIS_HARVEST_PRICES
 
     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-    yield_amount = plant.get("yield", config["max_yield"])
+    # Prefer yield_amount, then harvested_amount, then yield to support multiple naming variants
+    yield_amount = plant.get("yield_amount", plant.get("harvested_amount", plant.get("yield", config["max_yield"])))
     price = CANNABIS_HARVEST_PRICES[plant["seed_type"]]
     total_value = yield_amount * price
 
