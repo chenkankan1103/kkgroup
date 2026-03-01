@@ -41,6 +41,7 @@ intents.guilds = True
 intents.messages = True
 intents.reactions = True
 intents.members = True
+intents.voice_states = True  # needed to receive on_voice_state_update events
 
 client = commands.Bot(command_prefix="!", help_command=None, intents=intents)
 
