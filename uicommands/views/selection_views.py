@@ -221,10 +221,11 @@ class SelectPlantForHarvestView(discord.ui.View):
         options = []
         for plant in plants:
             config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-            yield_amount = plant.get("yield", config["max_yield"])
+            # Prefer yield_amount, then harvested_amount, then yield to support multiple naming variants
+            yield_display = plant.get("yield_amount", plant.get("harvested_amount", plant.get("yield", config["max_yield"])))
             options.append(discord.SelectOption(
                 label=f"{config['emoji']} {plant['seed_type']}",
-                description=f"產量: {yield_amount} 個",
+                description=f"產量: {yield_display} 個",
                 value=str(plant['id'])
             ))
 
@@ -264,7 +265,8 @@ class SelectPlantForHarvestView(discord.ui.View):
 
             if result and result.get("success"):
                 config = CANNABIS_SHOP["種子"][plant["seed_type"]]
-                yield_amount = result.get("yield", 0)
+                # Prefer yield_amount, then harvested_amount, then yield to support multiple naming variants
+                yield_amount = result.get("yield_amount", result.get("harvested_amount", result.get("yield", 0)))
                 price = CANNABIS_HARVEST_PRICES[plant["seed_type"]]
                 total_value = yield_amount * price
 
