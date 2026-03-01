@@ -239,7 +239,7 @@ class ScamHub(commands.Cog):
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         # 當用戶加入詐騙機房入口頻道
-        if after.channel and after.channel.user_limit == 1 and after.channel.name.startswith("詐騙KK幣機房開啟"):
+        if after.channel and after.channel.id == TEMP_VC_CATEGORY_ID:
             guild = after.channel.guild
             category = guild.get_channel(TEMP_VC_CATEGORY_ID) or after.channel.category
 
