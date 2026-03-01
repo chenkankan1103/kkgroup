@@ -664,6 +664,26 @@ def get_logs_text(bot_type: str) -> str:
     
     return "\n".join(logs[::-1])  # 倒序顯示（最新在最上面）
 
+# 調試助手：顯示儀表板 embed 的現有狀態
+async def inspect_dashboard(bot: discord.Client, bot_type: str = "bot") -> None:
+    """直接從 Discord 拉取儀表板和日誌訊息並打印資訊"""
+    channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
+    if not channel:
+        print("[INSPECT] 無法找到儀表板頻道")
+        return
+    ids = message_ids.get(bot_type, {})
+    print(f"[INSPECT] {bot_type} message_ids: {ids}")
+    for typ in ("dashboard", "logs"):
+        msg_id = ids.get(typ)
+        if not msg_id:
+            print(f"[INSPECT] {bot_type} {typ} ID 不存在")
+            continue
+        try:
+            msg = await channel.fetch_message(int(msg_id))
+            print(f"[INSPECT] {bot_type} {typ} embed: {msg.embeds[0] if msg.embeds else '無'}")
+        except Exception as e:
+            print(f"[INSPECT] 無法抓取 {typ} 訊息 {msg_id}: {e}")
+
 async def create_dashboard_embed(bot_type: str) -> discord.Embed:
     """創建控制面板 Embed"""
     config = BOT_CONFIG.get(bot_type, {})
@@ -869,7 +889,16 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 update_task.start()
                 print(f"[DASHBOARD] {bot_type_str} 獨立更新任務已啟動")
             else:
-                print(f"[DASHBOARD] {bot_type_str} 更新任務已在運行")
+                # 如果任務存在但意外停止，重新啟動
+                existing = update_tasks[bot_type_str]
+                if not existing.is_running():
+                    print(f"[DASHBOARD] {bot_type_str} 更新任務存在但已停止，重新啟動")
+                    try:
+                        existing.start()
+                    except Exception as restart_error:
+                        print(f"[DASHBOARD ERROR] 重啟 {bot_type_str} 任務失敗: {restart_error}")
+                else:
+                    print(f"[DASHBOARD] {bot_type_str} 更新任務已在運行")
         except Exception as e:
             print(f"[DASHBOARD ERROR] {bot_type_str} 任務啟動失敗: {e}")
             import traceback
@@ -878,6 +907,25 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         print(f"❌ 初始化儀表板失敗: {e}")
         traceback.print_exc()
         return False
+
+# 監視任務的守護程序，定期檢測並重啟已停止的更新任務
+@tasks.loop(minutes=5)
+async def update_task_watchdog():
+    for bot_type, task in update_tasks.items():
+        if not task.is_running():
+            print(f"[WATCHDOG] {bot_type} 更新任務停止，嘗試重啟")
+            try:
+                task.start()
+            except Exception as e:
+                print(f"[WATCHDOG ERROR] 無法重啟 {bot_type} 任務: {e}")
+
+# 在模組載入時啟動守護程序（不需要機器人實例）
+try:
+    update_task_watchdog.start()
+    print("[WATCHDOG] 更新任務守護程序已啟動")
+except Exception:
+    # 如果在導入時機器人尚未啟動，等初始化時再啟動
+    pass
 
 def save_message_ids(bot_type: str):
     """將 message_id 保存到 .env"""
