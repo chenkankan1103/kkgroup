@@ -350,7 +350,6 @@ QUIET_UPDATE_BOTS = {"bot", "shopbot", "uibot"}
 
 def create_update_task(bot_type: str):
     """為指定機器人創建獨立的更新任務"""
-    print(f"[DEBUG] 建立更新任務物件 ({bot_type})")
 
     # helper that prints only when verbosity is enabled for this bot
     def task_log(message: str):
@@ -420,16 +419,13 @@ def create_update_task(bot_type: str):
 def register_bot_instance(bot_type: str, bot_instance):
     """註冊機器人實例並確保更新任務啟動"""
     bot_instances[bot_type] = bot_instance
-    print(f"[DEBUG] {bot_type} 機器人實例已註冊")
 
     # 確保對應的更新任務存在並啟動（防止 initialize_dashboard 失敗）
     if bot_type not in update_tasks:
-        print(f"[DEBUG] {bot_type} 更新任務不存在，register_bot_instance 將建立")
         try:
             update_task = create_update_task(bot_type)
             update_tasks[bot_type] = update_task
             update_task.start()
-            print(f"[DEBUG] {bot_type} 更新任務已由 register_bot_instance 啟動")
         except Exception as e:
             print(f"[ERROR] 無法啟動 {bot_type} 更新任務: {e}")
 
@@ -464,9 +460,15 @@ async def update_dashboard_logs(bot, bot_type: str):
 
         # 合併日誌顯示 - 改進格式化
         if systemd_logs and systemd_logs not in ["無 systemd 日誌", "Systemd 日誌已停用"]:
-            combined_logs = f"📊 **Systemd 日誌**\n```\n{systemd_logs}\n```\n\n📝 **應用日誌**\n```\n{internal_logs}\n```"
+            combined_logs = f"📊 **Systemd 日誌**\n```\n{systemd_logs}\n```"
+            # 只有應用日誌不為空才加入
+            if internal_logs and internal_logs != "無日誌":
+                combined_logs += f"\n\n📝 **應用日誌**\n```\n{internal_logs}\n```"
         else:
-            combined_logs = f"📝 **應用日誌**\n```\n{internal_logs}\n```"
+            if internal_logs and internal_logs != "無日誌":
+                combined_logs = f"📝 **應用日誌**\n```\n{internal_logs}\n```"
+            else:
+                combined_logs = ""
 
         logs_text = combined_logs
 
@@ -676,7 +678,6 @@ def add_log(bot_type: str, message: str):
         logs_storage[bot_type].append(log_entry)
         print(f"[LOG-{bot_type}] {message}")  # 確保打印
         save_logs()
-        print(f"[DEBUG] 日誌已保存，當前{len(logs_storage[bot_type])}條")  # 添加調試
     else:
         print(f"[ERROR] bot_type '{bot_type}' 不存在於logs_storage")
 
