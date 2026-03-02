@@ -41,6 +41,7 @@ class ScamHub(commands.Cog):
         self.active_rooms = {}
         self.room_messages = {}  # 存储每个语音频道的消息ID
         self.scam_event_task.start()
+        print("[ScamHub] cog initialized, active_rooms cleared")
 
     def cog_unload(self):
         self.scam_event_task.cancel()
@@ -247,6 +248,7 @@ class ScamHub(commands.Cog):
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         # Debug: 印出當前頻道和 ID
+        print(f"[ScamHub] on_voice_state_update triggered: member={member} ({member.id}), before={getattr(before.channel, 'id', None)}, after={getattr(after.channel, 'id', None)}")
         if after.channel:
             print(f"voice_state_update: member={member.display_name}, after_channel={after.channel.name}, id={after.channel.id}")
         else:
