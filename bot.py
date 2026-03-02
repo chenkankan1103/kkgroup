@@ -200,6 +200,7 @@ async def before_update_status():
 async def on_ready():
     """Bot 啟動完成"""
     stage_text = "DEV" if STAGE != "prod" else "PROD"
+    print("[bot] on_ready triggered, guilds:", [(g.id, g.name) for g in client.guilds])
     
     try:
         # 執行 DB migration（置物櫃事件驅動系統）
