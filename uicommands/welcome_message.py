@@ -885,7 +885,8 @@ class WelcomeFlow(commands.Cog):
 
     # ---------- debug helpers (slash commands) ----------
     @app_commands.command(name="debug_welcome")
-    @app_commands.checks.is_owner()
+    @app_commands.describe(member="目標成員（預設自己）")
+    @app_commands.checks.has_permissions(administrator=True)
     async def debug_welcome(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
         """在頻道中顯示目標成員的歡迎 embed，用於本地測試。"""
         target = member or interaction.user
@@ -897,7 +898,8 @@ class WelcomeFlow(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="debug_confirm")
-    @app_commands.checks.is_owner()
+    @app_commands.describe(member="目標成員（預設自己）")
+    @app_commands.checks.has_permissions(administrator=True)
     async def debug_confirm(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
         """模擬按下「確認進入園區」按鈕的流程。"""
         target = member or interaction.user
