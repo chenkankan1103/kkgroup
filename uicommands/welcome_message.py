@@ -49,7 +49,8 @@ class GenderSelectView(discord.ui.View):
         }
 
         await self.cog.update_user_data(self.user_id, appearance)
-        await self.cog.update_welcome_message(interaction, self.user_id)
+        # 不需要更新頻道訊息，僅更新當前互動回應
+        await self.cog.update_welcome_message(interaction, self.user_id, edit_channel=False)
         
         gender_text = "男性" if select.values[0] == "male" else "女性"
         await interaction.followup.send(f"✅ 已設定為{gender_text}！")
@@ -69,7 +70,8 @@ class WelcomeActionView(discord.ui.View):
             return
 
         await self.cog.remove_items_from_inventory(self.user_id, ["手機", "身分證"])
-        await self.cog.update_welcome_message(interaction, self.user_id)
+        # 只更新當前互動回應
+        await self.cog.update_welcome_message(interaction, self.user_id, edit_channel=False)
         await interaction.followup.send("✅ 已繳交手機和身分證！")
 
     @discord.ui.button(label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
@@ -627,7 +629,11 @@ class WelcomeFlow(commands.Cog):
             
         return embed
 
-    async def update_welcome_message(self, interaction: discord.Interaction, user_id: int):
+    async def update_welcome_message(self, interaction: discord.Interaction, user_id: int, edit_channel: bool = False):
+        """更新用戶的歡迎 embed。默認只修改觸發這次互動的回應，
+        如果 edit_channel=True 則也會嘗試修改歡迎頻道中的原始貼文（
+        這要求 welcome_messages 有紀錄）。
+        """
         try:
             user_data = self.get_user_data(user_id)
             if not user_data:
@@ -645,12 +651,27 @@ class WelcomeFlow(commands.Cog):
             if character_image_url:
                 embed.set_image(url=character_image_url)
 
-            # 如果被擊暈，不顯示互動按鈕
+            # 修改互動回應（通常是 ephemeral）
             if user_data.get('is_stunned', 0) == 1:
                 await interaction.edit_original_response(embed=embed, view=None)
             else:
-                # 使用跨重啟的 persistent view（已註冊於 Cog.__init__）
                 await interaction.edit_original_response(embed=embed, view=self.persistent_view)
+
+            # 同步更新歡迎頻道的原始訊息（如果有紀錄）
+            if edit_channel:
+                try:
+                    msg_id = self.welcome_messages.get(interaction.guild.id, {}).get(user_id)
+                    if msg_id:
+                        channel = self.bot.get_channel(self.welcome_channel_id)
+                        if channel:
+                            msg = await channel.fetch_message(msg_id)
+                            if user_data.get('is_stunned', 0) == 1:
+                                await msg.edit(embed=embed, view=None)
+                            else:
+                                await msg.edit(embed=embed, view=self.persistent_view)
+                except Exception:
+                    # 不要因為同步失敗而影響主流程
+                    pass
 
         except Exception as e:
             print(f"❌ 更新歡迎訊息錯誤: {e}")
@@ -861,6 +882,29 @@ class WelcomeFlow(commands.Cog):
 
         except Exception as e:
             print(f"❌ 移除臨時身分組錯誤: {e}")
+
+    # ---------- debug helpers (slash commands) ----------
+    @app_commands.command(name="debug_welcome")
+    @app_commands.checks.is_owner()
+    async def debug_welcome(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
+        """在頻道中顯示目標成員的歡迎 embed，用於本地測試。"""
+        target = member or interaction.user
+        user_data = self.get_user_data(target.id)
+        if not user_data:
+            self.create_user_data(target.id)
+            user_data = self.get_user_data(target.id)
+        embed = await self.create_welcome_embed(user_data, target)
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="debug_confirm")
+    @app_commands.checks.is_owner()
+    async def debug_confirm(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
+        """模擬按下「確認進入園區」按鈕的流程。"""
+        target = member or interaction.user
+        # 可以直接呼叫 handle_final_verification 使用真實 interaction
+        await interaction.response.defer(ephemeral=True)
+        await self.handle_final_verification(interaction, target)
+
 
 
 
