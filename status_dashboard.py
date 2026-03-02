@@ -373,6 +373,10 @@ def create_update_task(bot_type: str):
                 print(f"[UPDATE TASK {bot_type}] 面板更新完成")
             except Exception as e:
                 print(f"[UPDATE TASK {bot_type} ERROR] 面板更新失敗: {e}")
+                # write full traceback to separate file for postmortem
+                with open("update_task_errors.log", "a", encoding="utf-8") as ef:
+                    ef.write(f"[{datetime.now(TAIWAN_TZ)}] 面板更新失敗: {e}\n")
+                    traceback.print_exc(file=ef)
                 traceback.print_exc()
 
             # 更新自己的日誌
@@ -382,12 +386,18 @@ def create_update_task(bot_type: str):
                 print(f"[UPDATE TASK {bot_type}] 日誌更新完成")
             except Exception as e:
                 print(f"[UPDATE TASK {bot_type} ERROR] 日誌更新失敗: {e}")
+                with open("update_task_errors.log", "a", encoding="utf-8") as ef:
+                    ef.write(f"[{datetime.now(TAIWAN_TZ)}] 日誌更新失敗: {e}\n")
+                    traceback.print_exc(file=ef)
                 traceback.print_exc()
 
             print(f"[UPDATE TASK {bot_type}] ===== {bot_type} 更新完成 =====")
 
         except Exception as e:
             print(f"[UPDATE TASK {bot_type} ERROR] 任務執行失敗: {e}")
+            with open("update_task_errors.log", "a", encoding="utf-8") as ef:
+                ef.write(f"[{datetime.now(TAIWAN_TZ)}] 任務執行失敗: {e}\n")
+                traceback.print_exc(file=ef)
             traceback.print_exc()
 
     # 創建任務對象
