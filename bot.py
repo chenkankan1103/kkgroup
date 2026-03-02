@@ -201,6 +201,11 @@ async def on_ready():
     """Bot 啟動完成"""
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     print("[bot] on_ready triggered, guilds:", [(g.id, g.name) for g in client.guilds])
+    # enumerate voice channels in each guild the bot is actually in
+    for g in client.guilds:
+        print(f"[bot] guild {g.id} ({g.name}) voice channels:")
+        for ch in g.voice_channels:
+            print(f"  {ch.id} {ch.name}")
     print("[bot] guild variable type", type(guild), guild)
     # try to resolve real guild object from client cache
     real = None
