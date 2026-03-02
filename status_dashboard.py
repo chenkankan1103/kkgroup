@@ -343,14 +343,22 @@ current_bot_type = None
 # 每個機器人的獨立更新任務存儲
 update_tasks = {}
 
+# list of bots for which we suppress the routine start/finish logs
+QUIET_UPDATE_BOTS = {"shopbot"}
+
 def create_update_task(bot_type: str):
     """為指定機器人創建獨立的更新任務"""
     print(f"[DEBUG] 建立更新任務物件 ({bot_type})")
 
+    # helper that prints only when verbosity is enabled for this bot
+    def task_log(message: str):
+        if bot_type not in QUIET_UPDATE_BOTS:
+            print(message)
+
     async def individual_update_task():
         """個別機器人的儀表板更新任務 - 只更新自己的面板和日誌"""
         try:
-            print(f"[UPDATE TASK {bot_type}] ===== 開始更新 {bot_type} 的儀表板和日誌 =====")
+            task_log(f"[UPDATE TASK {bot_type}] ===== 開始更新 {bot_type} 的儀表板和日誌 =====")
 
             # 檢查機器人實例
             if bot_type not in bot_instances:
@@ -368,9 +376,9 @@ def create_update_task(bot_type: str):
 
             # 更新自己的面板
             try:
-                print(f"[UPDATE TASK {bot_type}] 開始更新面板")
+                task_log(f"[UPDATE TASK {bot_type}] 開始更新面板")
                 await update_dashboard(bot_instance, bot_type)
-                print(f"[UPDATE TASK {bot_type}] 面板更新完成")
+                task_log(f"[UPDATE TASK {bot_type}] 面板更新完成")
             except Exception as e:
                 print(f"[UPDATE TASK {bot_type} ERROR] 面板更新失敗: {e}")
                 # write full traceback to separate file for postmortem
@@ -381,9 +389,9 @@ def create_update_task(bot_type: str):
 
             # 更新自己的日誌
             try:
-                print(f"[UPDATE TASK {bot_type}] 開始更新日誌")
+                task_log(f"[UPDATE TASK {bot_type}] 開始更新日誌")
                 await update_dashboard_logs(bot_instance, bot_type)
-                print(f"[UPDATE TASK {bot_type}] 日誌更新完成")
+                task_log(f"[UPDATE TASK {bot_type}] 日誌更新完成")
             except Exception as e:
                 print(f"[UPDATE TASK {bot_type} ERROR] 日誌更新失敗: {e}")
                 with open("update_task_errors.log", "a", encoding="utf-8") as ef:
@@ -391,9 +399,10 @@ def create_update_task(bot_type: str):
                     traceback.print_exc(file=ef)
                 traceback.print_exc()
 
-            print(f"[UPDATE TASK {bot_type}] ===== {bot_type} 更新完成 =====")
+            task_log(f"[UPDATE TASK {bot_type}] ===== {bot_type} 更新完成 =====")
 
         except Exception as e:
+            # errors should always be visible even for quiet bots
             print(f"[UPDATE TASK {bot_type} ERROR] 任務執行失敗: {e}")
             with open("update_task_errors.log", "a", encoding="utf-8") as ef:
                 ef.write(f"[{datetime.now(TAIWAN_TZ)}] 任務執行失敗: {e}\n")
