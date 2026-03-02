@@ -201,6 +201,11 @@ async def on_ready():
     """Bot 啟動完成"""
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     print("[bot] on_ready triggered, guilds:", [(g.id, g.name) for g in client.guilds])
+    # list voice channels in configured guild
+    if guild:
+        print("[bot] voice channels in guild:")
+        for ch in guild.voice_channels:
+            print(f"  {ch.id} {ch.name}")
     
     try:
         # 執行 DB migration（置物櫃事件驅動系統）
