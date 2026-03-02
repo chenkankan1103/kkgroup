@@ -345,7 +345,8 @@ current_bot_type = None
 update_tasks = {}
 
 # list of bots for which we suppress the routine start/finish logs
-QUIET_UPDATE_BOTS = {"shopbot"}
+# now quiet all of them to eliminate per-minute console noise
+QUIET_UPDATE_BOTS = {"bot", "shopbot", "uibot"}
 
 def create_update_task(bot_type: str):
     """為指定機器人創建獨立的更新任務"""
@@ -473,8 +474,6 @@ async def update_dashboard_logs(bot, bot_type: str):
         if len(logs_text) > 4000:
             logs_text = logs_text[:3997] + "..."
 
-        print(f"[UPDATE LOGS] {bot_type} 日誌內容長度: {len(logs_text)} 字符")
-        print(f"[UPDATE LOGS] {bot_type} 日誌內容預覽: {logs_text[:100] if logs_text else '空'}")
 
         # 創建日誌 embed
         config = BOT_CONFIG.get(bot_type, {})
@@ -489,7 +488,6 @@ async def update_dashboard_logs(bot, bot_type: str):
 
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
-        print(f"[UPDATE LOGS] {bot_type} 嘗試更新消息ID: {message_id}")
         
         channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
@@ -499,9 +497,7 @@ async def update_dashboard_logs(bot, bot_type: str):
         if message_id:
             try:
                 message = await channel.fetch_message(int(message_id))
-                print(f"[UPDATE LOGS] {bot_type} 成功獲取消息，當前embed數量: {len(message.embeds) if message.embeds else 0}")
                 await message.edit(embed=embed)
-                print(f"[UPDATE LOGS] {bot_type} 日誌已成功更新")
             except discord.NotFound:
                 print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
                 try:
@@ -517,8 +513,7 @@ async def update_dashboard_logs(bot, bot_type: str):
                 traceback.print_exc()
         else:
             # 訊息ID不存在，創建新的日誌embed
-            print(f"[UPDATE LOGS] {bot_type} 日誌訊息ID不存在，創建新的embed")
-            try:
+                try:
                 # 在創建前檢查是否已經有現有的日誌embed
                 existing_logs = []
                 async for msg in channel.history(limit=20):
@@ -901,12 +896,6 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         # 尤其是在重新啟動時，舊日誌應該被新的一次啟動替換
         logs_storage[bot_type_str].clear()
         
-        # 記錄環境信息到日誌
-        if env_diagnostics:
-            env_summary = f"環境: {'虛擬環境' if env_diagnostics['in_virtual_env'] else '系統環境'}"
-            if env_diagnostics['running_under_systemd']:
-                env_summary += " | systemd"
-            add_log(bot_type_str, f"✅ {env_summary}")
         
         # 註冊機器人實例並啟動獨立更新任務
         try:
