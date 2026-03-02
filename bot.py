@@ -201,11 +201,18 @@ async def on_ready():
     """Bot 啟動完成"""
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     print("[bot] on_ready triggered, guilds:", [(g.id, g.name) for g in client.guilds])
-    # list voice channels in configured guild
+    print("[bot] guild variable type", type(guild), guild)
+    # try to resolve real guild object from client cache
+    real = None
     if guild:
-        print("[bot] voice channels in guild:")
-        for ch in guild.voice_channels:
+        real = client.get_guild(int(guild.id))
+        print("[bot] real guild from cache:", real)
+    if real:
+        print("[bot] voice channels in real guild:")
+        for ch in real.voice_channels:
             print(f"  {ch.id} {ch.name}")
+    else:
+        print("[bot] real guild not found in cache")
     
     try:
         # 執行 DB migration（置物櫃事件驅動系統）
