@@ -470,7 +470,8 @@ async def update_dashboard_logs(bot, bot_type: str):
             else:
                 combined_logs = ""
 
-        logs_text = combined_logs
+        # 如果沒有任何內容，顯示預設字串以避免空的 code block
+        logs_text = combined_logs if combined_logs else "無日誌"
 
         # 確保總長度不超過 Discord embed 限制 (4000 字符)
         if len(logs_text) > 4000:
@@ -692,6 +693,19 @@ def get_logs_text(bot_type: str) -> str:
     
     return "\n".join(logs[::-1])  # 倒序顯示（最新在最上面）
 
+
+def clear_logs(bot_type: str) -> None:
+    """清空指定機器人的應用日誌並立即儲存。
+
+    用於初始化或手動重置，避免舊日誌在儀表板中殘留。
+    """
+    if bot_type in logs_storage:
+        logs_storage[bot_type].clear()
+        save_logs()
+        print(f"[LOG] {bot_type} 日誌已清空")
+    else:
+        print(f"[LOG WARN] 未找到 {bot_type} 的日誌儲存區")
+
 # 調試助手：顯示儀表板 embed 的現有狀態
 async def inspect_dashboard(bot: discord.Client, bot_type: str = "bot") -> None:
     """直接從 Discord 拉取儀表板和日誌訊息並打印資訊"""
@@ -896,6 +910,8 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         # 🔧 初始化時清空日誌，防止重複累積
         # 尤其是在重新啟動時，舊日誌應該被新的一次啟動替換
         logs_storage[bot_type_str].clear()
+        # 同步儲存，否則磁碟上的日誌會保留舊內容，導致重新啟動後仍顯示
+        save_logs()
         
         
         # 註冊機器人實例並啟動獨立更新任務
