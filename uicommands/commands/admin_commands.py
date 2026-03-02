@@ -32,6 +32,8 @@ class AdminCommands(commands.Cog):
                 return
             
             all_users = get_all_users()
+            # 將擁有非預設紙娃娃（有裝備）的使用者排在前面
+            all_users.sort(key=lambda u: sum(1 for i in range(20) if u.get(f'equip_{i}', 0)), reverse=True)
             updated_count = 0
             failed_count = 0
             
