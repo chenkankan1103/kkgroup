@@ -255,18 +255,9 @@ async def on_ready():
         lines.append(f"✅ {client.user.name} 已就緒")
         lines.append("=" * 60)
         
-        # ⚠️ 重要：將啟動統計添加到日誌 embed
-        # 這樣訊息只會出現在儀表板，不會發送到 webhook
-        add_log("shopbot", "\n".join(lines))
-        
         # 設定初始狀態
         activity = build_discord_activity(BOT_TYPE)
         await client.change_presence(activity=activity)
-        
-        # ============================================================
-        # 更新機器人秘書頻道的啟動資訊
-        # ============================================================
-        add_log("shopbot", "✅ 啟動資訊已更新到機器人秘書")
         
         # ============================================================
         # 初始化監控儀表板及日誌系統
@@ -286,13 +277,6 @@ async def on_ready():
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
         
-        # ============================================================
-        # 發送啟動資訊到 Webhook
-        # ============================================================
-        try:
-            add_log("shopbot", "✅ 啟動資訊已發送到 Webhook")
-        except Exception as e:
-            print(f"⚠️ Webhook 發送失敗: {e}")
         
         # 啟動狀態更新任務
         if not update_status.is_running():

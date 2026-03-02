@@ -28,10 +28,11 @@ load_dotenv()
 TAIWAN_TZ = timezone(timedelta(hours=8))
 
 # Systemd 日誌配置
+# 每個服務預設抓取的 systemd 日誌行數，可調大以便觀察
 SYSTEMD_LOG_CONFIG = {
-    "bot": {"service": "bot.service", "lines": 5, "enabled": True},
-    "shopbot": {"service": "shopbot.service", "lines": 5, "enabled": True},
-    "uibot": {"service": "uibot.service", "lines": 5, "enabled": True}
+    "bot": {"service": "bot.service", "lines": 20, "enabled": True},
+    "shopbot": {"service": "shopbot.service", "lines": 20, "enabled": True},
+    "uibot": {"service": "uibot.service", "lines": 20, "enabled": True}
 }
 
 def get_taiwan_time():
