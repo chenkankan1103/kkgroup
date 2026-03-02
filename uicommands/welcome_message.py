@@ -906,7 +906,32 @@ class WelcomeFlow(commands.Cog):
         # 可以直接呼叫 handle_final_verification 使用真實 interaction
         await interaction.response.defer(ephemeral=True)
         await self.handle_final_verification(interaction, target)
+    @app_commands.command(name="debug_press_buttons")
+    @app_commands.describe(member="要測試的成員(預設自己)", gender="模擬選擇的性別(male/female)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def debug_press_buttons(self, interaction: discord.Interaction, member: Optional[discord.Member] = None, gender: Optional[str] = None):
+        """模擬整個歡迎流程：選性別、繳交物品、確認進入，非常適合測試按鈕順序。"""
+        target = member or interaction.user
+        await interaction.response.defer(ephemeral=True)
 
+        # 1. 設定性別（若提供）
+        if gender in ("male", "female"):
+            appearance = {
+                'face': 20005 if gender == "male" else 21731,
+                'hair': 30120 if gender == "male" else 34410,
+                'skin': 12000,
+                'top': 1040014 if gender == "male" else 1041004,
+                'bottom': 1060096 if gender == "male" else 1061008,
+                'shoes': 1072005,
+                'gender': gender
+            }
+            await self.update_user_data(target.id, appearance)
+
+        # 2. 移除手機和身分證（模擬按下繳交按鈕）
+        await self.remove_items_from_inventory(target.id, ["手機", "身分證"])
+
+        # 3. 呼叫最終驗證
+        await self.handle_final_verification(interaction, target)
 
 
 
