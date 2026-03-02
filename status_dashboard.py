@@ -513,7 +513,7 @@ async def update_dashboard_logs(bot, bot_type: str):
                 traceback.print_exc()
         else:
             # 訊息ID不存在，創建新的日誌embed
-                try:
+            try:
                 # 在創建前檢查是否已經有現有的日誌embed
                 existing_logs = []
                 async for msg in channel.history(limit=20):
