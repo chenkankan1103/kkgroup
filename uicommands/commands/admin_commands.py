@@ -32,8 +32,17 @@ class AdminCommands(commands.Cog):
                 return
             
             all_users = get_all_users()
-            # 將擁有非預設紙娃娃（有裝備）的使用者排在前面
-            all_users.sort(key=lambda u: sum(1 for i in range(20) if u.get(f'equip_{i}', 0)), reverse=True)
+            # 活動較低的用戶先處理，保證活動較高的用戶在最後被更新，
+            # 這樣它們的線程會因為新的消息而被提升至論壇頂端。
+            # 活躍度用 last_activity 欄位（時間戳）。
+            # 若同樣活躍，仍然優先處理有非預設紙娃娃的用戶。
+            def _activity_key(u):
+                last = u.get('last_activity') or 0
+                # 負值次級排序以便裝備多的靠後更新
+                equip_count = sum(1 for i in range(20) if u.get(f'equip_{i}', 0))
+                return (last, -equip_count)
+
+            all_users.sort(key=_activity_key)
             updated_count = 0
             failed_count = 0
             
@@ -161,6 +170,11 @@ class AdminCommands(commands.Cog):
 
                     await message.edit(embed=embed, view=view)
                     updated_count += 1
+                    # 發送短暫消息來提升線程排序（會在 1 秒後自動刪除）
+                    try:
+                        await thread.send(content="🔼 活躍用戶更新", delete_after=1)
+                    except Exception:
+                        pass
                 except Exception as e:
                     print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
                     failed_count += 1

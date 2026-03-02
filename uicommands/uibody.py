@@ -512,31 +512,36 @@ class UserPanel(commands.Cog):
                     xp_change = (current_xp or 0) - (last_xp or 0)
                     level_change = (current_level or 1) - (last_level or 1)
                     
-                    if kkcoin_change > 0 or xp_change > 0 or level_change > 0:
-                        ai_comment = await self.generate_ai_comment(member, kkcoin_change, xp_change, level_change)
-                        
-                        embed = discord.Embed(
-                            title=f"📊 {member.display_name or member.name} 的本週統計",
-                            description=f"統計週期：{(now - datetime.timedelta(days=7)).strftime('%m/%d')} - {now.strftime('%m/%d')}",
-                            color=0x00ff88,
-                            timestamp=discord.utils.utcnow()
-                        )
-                        embed.set_thumbnail(url=member.display_avatar.url)
-                        
-                        if kkcoin_change > 0:
-                            embed.add_field(name="💰 KKCoin 增長", value=f"+{kkcoin_change}", inline=True)
-                        if xp_change > 0:
-                            embed.add_field(name="✨ 經驗值 增長", value=f"+{xp_change}", inline=True)
-                        if level_change > 0:
-                            embed.add_field(name="⭐ 等級 提升", value=f"+{level_change}", inline=True)
-                        
-                        if ai_comment:
-                            embed.add_field(name="🤖 AI 評論", value=ai_comment, inline=False)
-                        
-                        embed.set_footer(text="🔄 每週日 23:59 自動統計")
-                        
-                        await thread.send(embed=embed)
-                        await asyncio.sleep(1)
+                    # 如果本週 KK幣和經驗值都沒有變動，就略過統計
+                    # 否則即使 kkcoin==0 但 xp 有變化，也會產生統計
+                    if kkcoin_change == 0 and xp_change == 0:
+                        continue
+                    
+                    ai_comment = await self.generate_ai_comment(member, kkcoin_change, xp_change, level_change)
+                    
+                    embed = discord.Embed(
+                        title=f"📊 {member.display_name or member.name} 的本週統計",
+                        description=f"統計週期：{(now - datetime.timedelta(days=7)).strftime('%m/%d')} - {now.strftime('%m/%d')}",
+                        color=0x00ff88,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    embed.set_thumbnail(url=member.display_avatar.url)
+                    
+                    # 顯示正/負數變化
+                    if kkcoin_change != 0:
+                        embed.add_field(name="💰 KKCoin 變動", value=f"{kkcoin_change:+}", inline=True)
+                    if xp_change != 0:
+                        embed.add_field(name="✨ 經驗值 變動", value=f"{xp_change:+}", inline=True)
+                    if level_change != 0:
+                        embed.add_field(name="⭐ 等級 變化", value=f"{level_change:+}", inline=True)
+                    
+                    if ai_comment:
+                        embed.add_field(name="🤖 AI 評論", value=ai_comment, inline=False)
+                    
+                    embed.set_footer(text="🔄 每週日 23:59 自動統計")
+                    
+                    await thread.send(embed=embed)
+                    await asyncio.sleep(1)
                     
                     set_user_field(user_id, 'last_kkcoin_snapshot', current_kkcoin)
                     set_user_field(user_id, 'last_xp_snapshot', current_xp)
