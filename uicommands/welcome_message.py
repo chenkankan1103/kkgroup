@@ -165,6 +165,35 @@ class PersistentWelcomeView(discord.ui.View):
         member = interaction.guild.get_member(target_user_id) or interaction.user
         await self.cog.handle_final_verification(interaction, member)
 
+class TestWelcomeView(discord.ui.View):
+    """A copy of the real welcome view that does **not** mutate any state.
+    Used only for simulating button presses during debugging.
+    """
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.select(
+        placeholder="選擇你的性別...",
+        options=[
+            discord.SelectOption(label="男性", value="male", emoji="♂️"),
+            discord.SelectOption(label="女性", value="female", emoji="♀️")
+        ]
+    )
+    async def gender_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.send_message(
+            f"（模擬）已選擇性別：{select.values[0]}",
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="繳交手機身分證", style=discord.ButtonStyle.secondary, emoji="📱")
+    async def submit_items(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("（模擬）已繳交手機和身分證。", ephemeral=True)
+
+    @discord.ui.button(label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
+    async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("（模擬）按下進入園區按鈕，流程結束。", ephemeral=True)
+
+
 class WelcomeFlow(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -910,7 +939,7 @@ class WelcomeFlow(commands.Cog):
     @app_commands.describe(member="要測試的成員(預設自己)", gender="模擬選擇的性別(male/female)")
     @app_commands.checks.has_permissions(administrator=True)
     async def debug_press_buttons(self, interaction: discord.Interaction, member: Optional[discord.Member] = None, gender: Optional[str] = None):
-        """模擬整個歡迎流程：選性別、繳交物品、確認進入，非常適合測試按鈕順序。"""
+        """模擬按鈕流程（會改變資料），保留於此供需要時使用。"""
         target = member or interaction.user
         await interaction.response.defer(ephemeral=True)
 
@@ -932,6 +961,18 @@ class WelcomeFlow(commands.Cog):
 
         # 3. 呼叫最終驗證
         await self.handle_final_verification(interaction, target)
+
+    @app_commands.command(name="debug_simulate_buttons")
+    @app_commands.describe(member="要測試的成員(預設自己)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def debug_simulate_buttons(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
+        """發送一條查看原始按鈕視覺但完全不改變資料的模擬訊息。"""
+        target = member or interaction.user
+        user_data = self.get_user_data(target.id) or {}
+        embed = await self.create_welcome_embed(user_data, target)
+        # 測試用 view，只回復而不修改任何資料
+        view = TestWelcomeView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 
