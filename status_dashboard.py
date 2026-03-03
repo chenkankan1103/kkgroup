@@ -480,8 +480,12 @@ async def update_dashboard_logs(bot, bot_type: str):
             else:
                 combined_logs = ""
 
-        # 如果沒有任何內容，顯示預設字串以避免空的 code block
-        logs_text = combined_logs if combined_logs else "無日誌"
+        # 若合併結果為空，說明兩邊都沒有資料；跳過更新以保留舊內容
+        if not combined_logs:
+            if bot_type not in QUIET_UPDATE_BOTS:
+                print(f"[UPDATE LOGS] {bot_type} 無新日誌，保留現有內容")
+            return
+        logs_text = combined_logs
 
         # 確保總長度不超過 Discord embed 限制 (4000 字符)
         if len(logs_text) > 4000:
