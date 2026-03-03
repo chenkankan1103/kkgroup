@@ -206,6 +206,9 @@ async def on_ready():
         print(f"[bot] guild {g.id} ({g.name}) voice channels:")
         for ch in g.voice_channels:
             print(f"  {ch.id} {ch.name}")
+        print(f"[bot] guild {g.id} ({g.name}) all channels:")
+        for ch in g.channels:
+            print(f"  {ch.id} {ch.name} ({type(ch).__name__})")
     print("[bot] guild variable type", type(guild), guild)
     # try to resolve real guild object from client cache
     real = None
