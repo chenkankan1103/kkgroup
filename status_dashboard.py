@@ -490,26 +490,14 @@ async def update_dashboard_logs(bot, bot_type: str):
 
         # 創建日誌 embed
         config = BOT_CONFIG.get(bot_type, {})
-        # determine a timestamp to display in the footer – the time of the latest
-        # log entry if we can parse one, otherwise fall back to the update time.
-        log_time = extract_log_time(logs_text)
-        if log_time:
-            footer_time = log_time.strftime("%H:%M")
-            footer_label = f"日誌時間 {footer_time}"
-        else:
-            footer_time = format_taiwan_time()
-            footer_label = f"更新時間 {footer_time}"
-
         embed = discord.Embed(
             title=f"{config['名稱']} 實時日誌",
             description=logs_text,
             color=config["顏色"],
-            # keep the embed timestamp equal to *now* (update time).  Discord will
-            # render this as the second time after the bullet.
-            timestamp=get_taiwan_time()
+            timestamp=get_taiwan_time()  # 使用台灣時間
         )
 
-        embed.set_footer(text=f"每 60 秒自動更新 | {footer_label}")
+        embed.set_footer(text=f"每 60 秒自動更新 | 台灣時間•今天 下午 {format_taiwan_time()}")
 
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
@@ -718,31 +706,6 @@ def get_logs_text(bot_type: str) -> str:
         return "無日誌"
     
     return "\n".join(logs[::-1])  # 倒序顯示（最新在最上面）
-
-
-def extract_log_time(log_text: str) -> Optional[datetime.datetime]:
-    """從日誌文本中提取第一個時間戳，回傳 datetime（台灣時區）。
-
-    日誌行格式為 `[HH:MM:SS] message` 或 `[HH:MM] message`。
-    若找不到則回傳 None。
-    """
-    if not log_text:
-        return None
-    # 取第一行即可
-    first_line = log_text.splitlines()[0]
-    m = re.search(r"\[(\d{1,2}:\d{2}(?::\d{2})?)\]", first_line)
-    if not m:
-        return None
-    ts = m.group(1)
-    try:
-        # 解析為時分秒
-        fmt = "%H:%M:%S" if ts.count(":") == 2 else "%H:%M"
-        t = datetime.datetime.strptime(ts, fmt)
-        now = get_taiwan_time()
-        # 替換日期為今天
-        return now.replace(hour=t.hour, minute=t.minute, second=(t.second if fmt.endswith("%S") else 0), microsecond=0)
-    except Exception:
-        return None
 
 
 def clear_logs(bot_type: str) -> None:
@@ -1153,9 +1116,15 @@ async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> d
         inline=True
     )
 
-    # the embed timestamp already indicates when we performed the update, so
-    # there's no need for a separate "最後更新" field.  only keep a simple footer.
-    embed.set_footer(text="每 60 秒自動更新")
+    # 添加分隔線和最後更新時間
+    current_time = get_taiwan_time().strftime("%H:%M:%S")
+    embed.add_field(
+        name="⏰ 最後更新",
+        value=f"`{current_time}`",
+        inline=False
+    )
+
+    embed.set_footer(text="每 60 秒自動更新 | 台灣時間")
     return embed
 
 async def update_dashboard(bot: discord.Client, bot_type: str = None):
