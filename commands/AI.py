@@ -130,6 +130,10 @@ class AIResponse(commands.Cog):
         if include_memory:
             try:
                 memory_context = build_memory_context()
+
+                # 記錄取得的記憶上下文（除錯用）
+                logger.debug(f"[memory_context] {memory_context}")
+
                 # 組合系統提示詞：基礎設定 + 角色記憶 + 對話歷史
                 enhanced_prompt = system_prompt + "\n\n" + memory_context["system_instructions"]
                 
