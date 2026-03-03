@@ -9,7 +9,8 @@ import os
 import aiohttp
 import urllib.parse
 import math
-from db_adapter import get_user, set_user_field, get_user_field, get_all_users
+# add_user_field is needed by update_user_kkcoin
+from db_adapter import get_user, set_user_field, get_user_field, get_all_users, add_user_field
 
 class ScamParkEvents(commands.Cog):
     def __init__(self, bot):
