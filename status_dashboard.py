@@ -986,12 +986,35 @@ async def update_task_watchdog():
                 print(f"[WATCHDOG ERROR] 無法重啟 {bot_type} 任務: {e}")
 
 # 在模組載入時啟動守護程序（不需要機器人實例）
+# Starting a tasks.loop before the event loop is running can trigger
+# a "coroutine 'Loop._loop' was never awaited" warning.  Instead we
+# schedule the start so that it executes on the first iteration of the
+# asyncio loop.  If the loop is already running we start immediately.
+
+def _start_watchdog():
+    try:
+        update_task_watchdog.start()
+        print("[WATCHDOG] 更新任務守護程序已啟動")
+    except Exception as e:
+        # swallow startup errors; they will be retried in bot init
+        print(f"[WATCHDOG ERROR] 無法啟動守護程序: {e}")
+
+# If there is a running loop, start right away; otherwise queue the
+# helper to run when the loop starts.
 try:
-    update_task_watchdog.start()
-    print("[WATCHDOG] 更新任務守護程序已啟動")
-except Exception:
-    # 如果在導入時機器人尚未啟動，等初始化時再啟動
-    pass
+    _loop = asyncio.get_running_loop()
+except RuntimeError:
+    _loop = None
+
+if _loop and _loop.is_running():
+    _start_watchdog()
+else:
+    # schedule for when the event loop begins
+    try:
+        asyncio.get_event_loop().call_soon(_start_watchdog)
+    except Exception:
+        # the very first import may not have a loop yet; ignore silently
+        pass
 
 def save_message_ids(bot_type: str):
     """將 message_id 保存到 .env"""
