@@ -197,6 +197,10 @@ async def before_update_status():
 # Bot 事件處理
 # ============================================================
 @client.event
+async def on_voice_state_update(member, before, after):
+    print(f"[global] voice_state_update member={member.id} before={getattr(before.channel, 'id', None)} after={getattr(after.channel, 'id', None)}")
+
+@client.event
 async def on_ready():
     """Bot 啟動完成"""
     stage_text = "DEV" if STAGE != "prod" else "PROD"
