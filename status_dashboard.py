@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import asyncio
 import traceback
+import re
 from datetime import datetime, timedelta, timezone
 from collections import deque
 from typing import Optional, Dict
@@ -102,7 +103,9 @@ async def get_systemd_logs(bot_type: str) -> str:
         service_name = config["service"]
         lines = config["lines"]
 
-        print(f"[SYSTEMD LOGS] {bot_type} 正在獲取 {service_name} 的日誌...")
+        # 只有在非靜默機器人時才打印進度
+        if bot_type not in QUIET_UPDATE_BOTS:
+            print(f"[SYSTEMD LOGS] {bot_type} 正在獲取 {service_name} 的日誌...")
 
         # 構建 journalctl 命令（使用完整路徑）
         cmd = [
@@ -141,7 +144,8 @@ async def get_systemd_logs(bot_type: str) -> str:
                             formatted_logs.append(f"[{timestamp}] {message}")
                 return '\n'.join(formatted_logs)
             else:
-                print(f"[SYSTEMD LOGS] {bot_type} 沒有找到 {service_name} 的日誌")
+                if bot_type not in QUIET_UPDATE_BOTS:
+                    print(f"[SYSTEMD LOGS] {bot_type} 沒有找到 {service_name} 的日誌")
                 return f"無 {service_name} 日誌"
         else:
             error = stderr.decode('utf-8', errors='ignore').strip()
@@ -445,7 +449,8 @@ def save_message_id(bot_type: str, message_type: str, message_id: str):
 async def update_dashboard_logs(bot, bot_type: str):
     """更新指定機器人的日誌"""
     try:
-        print(f"[UPDATE LOGS] 開始更新 {bot_type} 日誌")
+        if bot_type not in QUIET_UPDATE_BOTS:
+            print(f"[UPDATE LOGS] 開始更新 {bot_type} 日誌")
 
         # 檢查機器人實例
         if not bot:
@@ -502,11 +507,13 @@ async def update_dashboard_logs(bot, bot_type: str):
                 message = await channel.fetch_message(int(message_id))
                 await message.edit(embed=embed)
             except discord.NotFound:
-                print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
+                if bot_type not in QUIET_UPDATE_BOTS:
+                    print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
                 try:
                     message = await channel.send(embed=embed)
                     save_message_id(bot_type, "logs", str(message.id))
-                    print(f"[UPDATE LOGS] {bot_type} 日誌訊息已重新創建: {message.id}")
+                    if bot_type not in QUIET_UPDATE_BOTS:
+                        print(f"[UPDATE LOGS] {bot_type} 日誌訊息已重新創建: {message.id}")
                 except Exception as create_error:
                     print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
             except discord.Forbidden:
@@ -543,13 +550,15 @@ async def update_dashboard_logs(bot, bot_type: str):
                     await latest_msg.edit(embed=embed)
                     message_ids[bot_type]["logs"] = latest_msg.id
                     save_message_ids(bot_type)
-                    print(f"[UPDATE LOGS] {bot_type} 更新現有日誌embed: {latest_msg.id}")
+                    if bot_type not in QUIET_UPDATE_BOTS:
+                        print(f"[UPDATE LOGS] {bot_type} 更新現有日誌embed: {latest_msg.id}")
                 else:
                     # 真的沒有embed，才創建新的
                     message = await channel.send(embed=embed)
                     message_ids[bot_type]["logs"] = message.id
                     save_message_ids(bot_type)
-                    print(f"[UPDATE LOGS] {bot_type} 創建新日誌embed: {message.id}")
+                    if bot_type not in QUIET_UPDATE_BOTS:
+                        print(f"[UPDATE LOGS] {bot_type} 創建新日誌embed: {message.id}")
 
             except Exception as create_error:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 創建/更新日誌embed失敗: {create_error}")
