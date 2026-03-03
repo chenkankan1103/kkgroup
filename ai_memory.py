@@ -12,7 +12,10 @@ from typing import List, Dict, Optional, Tuple
 from logger import print
 
 # ==================== 配置 ====================
-MEMORY_DB_PATH = "./data/ai_memory.db"
+# 使用絕對路徑確保所有執行上下文都指向同一個資料庫
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+MEMORY_DB_PATH = os.path.join(DATA_DIR, "ai_memory.db")
 MAX_TOKENS_FOR_CONTEXT = 1500  # 為上下文預留 token 預算
 MEMORY_RETENTION_DAYS = 7  # 記憶保留 7 天
 
@@ -23,7 +26,11 @@ def estimate_tokens(text: str) -> int:
 
 def ensure_db_exists():
     """確保數據庫和表已創建"""
-    os.makedirs("./data", exist_ok=True)
+    # 這裡使用 DATA_DIR 以對應絕對的資料夾路徑
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
+    # 顯示當前使用的資料庫路徑，便於除錯
+    print(f"🔍 使用 AI 記憶資料庫: {MEMORY_DB_PATH}")
     
     conn = sqlite3.connect(MEMORY_DB_PATH)
     cursor = conn.cursor()
