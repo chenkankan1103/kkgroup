@@ -38,6 +38,8 @@ if not logger.handlers:
     formatter = logging.Formatter('[%(name)s] %(levelname)s: %(message)s')
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
+    # prevent messages bubbling up to root logger (which already outputs to stdout)
+    logger.propagate = False
 
 async def log_error(interaction, error_msg, exception=None):
     """
