@@ -497,11 +497,11 @@ async def update_dashboard_logs(bot, bot_type: str):
         embed = discord.Embed(
             title=f"{config['名稱']} 實時日誌",
             description=logs_text,
-            color=config["顏色"],
-            timestamp=get_taiwan_time()  # 使用台灣時間
+            color=config["顏色"]
+            # 不設定 timestamp 讓時間不出現在 embed 頂部
         )
 
-        embed.set_footer(text=f"每 60 秒自動更新 | 台灣時間•今天 下午 {format_taiwan_time()}")
+        embed.set_footer(text=f"每 60 秒自動更新 | 台灣時間•下午 {format_taiwan_time()}")
 
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
@@ -690,10 +690,13 @@ def set_bot_type(bot_type: str):
     print(f"📋 儀表板已設置為: {bot_type}")
 
 def add_log(bot_type: str, message: str):
-    """添加日誌條目"""
+    """添加日誌條目。
+
+    以前會在訊息前加上時間戳記，現在改為只儲存純文字，
+    以避免 embed 內出現重複時間標籤。
+    """
     if bot_type in logs_storage:
-        timestamp = get_taiwan_time().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}"
+        log_entry = message  # 直接保存文字，不附加時間
         logs_storage[bot_type].append(log_entry)
         print(f"[LOG-{bot_type}] {message}")  # 確保打印
         save_logs()
