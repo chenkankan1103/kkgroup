@@ -135,19 +135,9 @@ def pull_git_updates():
             shutil.copy2(db_file, db_backup)
             log(f"✅ 已備份到 {db_backup.name}")
         
-        # 2️⃣ 清潔未追蹤的文件（除了 venv 和 character_images）
-        log("🧹 清潔工作目錄...")
-        try:
-            subprocess.run(
-                ["git", "clean", "-fd", "-e", "venv", "-e", "character_images"],
-                cwd=PROJECT_DIR,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            log("✅ 已清潔未追蹤文件")
-        except Exception as e:
-            log(f"⚠️ 清潔文件時出錯（繼續）: {e}")
+        # 2️⃣ 清潔未追蹤的文件（原先會刪除無追蹤檔案，這會移除 .env ，已停用）
+        log("🧹 跳過清潔工作目錄以避免刪除 .env")
+        # if you ever need to enable again, make sure to exclude ".env" or backup it first
         
         # 3️⃣ 強制重置本地修改到 origin/main
         log("🔄 強制重置到 origin/main...")
