@@ -704,7 +704,11 @@ def add_log(bot_type: str, message: str):
         print(f"[ERROR] bot_type '{bot_type}' 不存在於logs_storage")
 
 def get_logs_text(bot_type: str) -> str:
-    """獲取格式化的日誌文本"""
+    """獲取格式化的日誌文本
+
+    舊日誌可能含有時間前綴（例如 "[12:00:00] ..."），
+    顯示時會自動移除以保持整潔。
+    """
     if bot_type not in logs_storage:
         return "無日誌"
     
@@ -712,7 +716,12 @@ def get_logs_text(bot_type: str) -> str:
     if not logs:
         return "無日誌"
     
-    return "\n".join(logs[::-1])  # 倒序顯示（最新在最上面）
+    # 移除可能存在的時間戳記前綴
+    cleaned = []
+    for entry in logs[::-1]:  # 最新在最上面
+        # 匹配開頭 [hh:mm:ss] 或 [hh:mm]
+        cleaned.append(re.sub(r"^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*", "", entry))
+    return "\n".join(cleaned)
 
 
 def clear_logs(bot_type: str) -> None:
