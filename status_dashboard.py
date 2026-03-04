@@ -133,7 +133,7 @@ async def get_systemd_logs(bot_type: str) -> str:
                     if line.strip():
                         parts = line.split(' ', 2)
                         if len(parts) >= 2:
-                            timestamp = get_taiwan_time().strftime("%H:%M")
+                            # 直接使用 journalctl 原始時間，不要再插入新的時間
                             message = parts[2] if len(parts) > 2 else parts[1]
                             # 刪除 PID（例如 service[1234]）以縮短行長
                             message = re.sub(r"\[\d+\]", "", message)
@@ -146,7 +146,7 @@ async def get_systemd_logs(bot_type: str) -> str:
                             if message.startswith("UPDATE TASK"):
                                 message = message.replace("UPDATE TASK ", "")
                             seen_messages.add(message)
-                            formatted_logs.append(f"[{timestamp}] {message}")
+                            formatted_logs.append(message)
                 return '\n'.join(formatted_logs)
             else:
                 if bot_type not in QUIET_UPDATE_BOTS:
@@ -451,6 +451,9 @@ def save_message_id(bot_type: str, message_type: str, message_id: str):
     message_ids[bot_type][message_type] = int(message_id)
     save_message_ids(bot_type)
 
+# keep last rendered logs to prevent duplicate edits
+last_logs_text: Dict[str, str] = {}
+
 async def update_dashboard_logs(bot, bot_type: str):
     """更新指定機器人的日誌"""
     try:
@@ -486,6 +489,13 @@ async def update_dashboard_logs(bot, bot_type: str):
                 print(f"[UPDATE LOGS] {bot_type} 無新日誌，保留現有內容")
             return
         logs_text = combined_logs
+
+        # 檢查是否與上次內容相同；若相同則跳過編輯，減少 429
+        if last_logs_text.get(bot_type) == logs_text:
+            if bot_type not in QUIET_UPDATE_BOTS:
+                print(f"[UPDATE LOGS] {bot_type} 日誌內容未變，跳過編輯")
+            return
+        last_logs_text[bot_type] = logs_text
 
         # 確保總長度不超過 Discord embed 限制 (4000 字符)
         if len(logs_text) > 4000:
