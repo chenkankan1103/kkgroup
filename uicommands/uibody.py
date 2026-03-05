@@ -603,11 +603,14 @@ class UserPanel(commands.Cog):
     
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """新成員加入時自動創建資料庫記錄和文章"""
+        """新成員加入時僅建立資料庫記錄。
+
+        置物櫃貼文將改至角色變更時產生（見 on_member_update）。
+        """
         try:
-            if self.ensure_user_exists(member.id):
-                await asyncio.sleep(2)
-                await self.get_or_create_user_thread(member, skip_image_on_startup=True)
+            # 之前這裡會直接建立論壇執行緒，但需求改為
+            # 等到用戶獲得正式會員角色才新增貼文。
+            self.ensure_user_exists(member.id)
         except Exception:
             pass
 
@@ -633,6 +636,26 @@ class UserPanel(commands.Cog):
 
             set_user_field(member.id, 'thread_id', 0)
 
+        except Exception:
+            pass
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        """在用戶獲得正式會員身分組時產生置物櫃貼文"""
+        try:
+            member_role_id = int(os.getenv("MEMBER_ROLE_ID", 0))
+            if not member_role_id:
+                return
+
+            before_ids = {r.id for r in before.roles}
+            after_ids = {r.id for r in after.roles}
+
+            # 檢查是否剛被賦予正式會員身分組
+            if member_role_id not in before_ids and member_role_id in after_ids:
+                # 確保資料庫存在，然後建立或取得執行緒
+                if self.ensure_user_exists(after.id):
+                    await asyncio.sleep(2)
+                    await self.get_or_create_user_thread(after, skip_image_on_startup=True)
         except Exception:
             pass
 
