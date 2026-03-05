@@ -912,17 +912,31 @@ class WelcomeFlow(commands.Cog):
 
     # ---------- debug helpers (slash commands) ----------
     @app_commands.command(name="debug_welcome")
-    @app_commands.describe(member="目標成員（預設自己）")
+    @app_commands.describe(
+        member="目標成員（預設自己）",
+        simulate="是否立刻模擬按下確認按鈕並執行流程"
+    )
     @app_commands.checks.has_permissions(administrator=True)
-    async def debug_welcome(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
-        """在頻道中顯示目標成員的歡迎 embed，用於本地測試。"""
+    async def debug_welcome(self, interaction: discord.Interaction, member: Optional[discord.Member] = None, simulate: Optional[bool] = False):
+        """在頻道中顯示目標成員的歡迎 embed 並附加真實按鈕，用於測試。
+
+        如果選擇 `simulate=True`，機器人會在發送之後自動執行一次
+        `handle_final_verification`（相當於按下「確認進入園區」）。
+        """
         target = member or interaction.user
         user_data = self.get_user_data(target.id)
         if not user_data:
             self.create_user_data(target.id)
             user_data = self.get_user_data(target.id)
         embed = await self.create_welcome_embed(user_data, target)
-        await interaction.response.send_message(embed=embed)
+        # 必須帶上 persistent_view，才能在測試訊息中顯示按鈕
+        await interaction.response.send_message(embed=embed, view=self.persistent_view)
+
+        if simulate:
+            # 略微等候確保前一條訊息已處理
+            await asyncio.sleep(0.5)
+            # 使用原始互動做為模板，產生一個小型假互動
+            await self.handle_final_verification(interaction, target)
 
     @app_commands.command(name="debug_confirm")
     @app_commands.describe(member="目標成員（預設自己）")
