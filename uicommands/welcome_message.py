@@ -155,8 +155,11 @@ class PersistentWelcomeView(discord.ui.View):
 
     @discord.ui.button(custom_id="welcome_confirm_entry", label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
     async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+        # defer with ephemeral so that any followups / edits are private to the user
+        await interaction.response.defer(ephemeral=True)
         target_user_id = self._extract_target_user_id(interaction.message) or interaction.user.id
+
+        print(f"🔘 confirm_entry pressed by {interaction.user.id}, target={target_user_id}")
 
         if interaction.user.id != target_user_id:
             await interaction.followup.send("❌ 這不是你的按鈕！", ephemeral=True)
@@ -770,13 +773,15 @@ class WelcomeFlow(commands.Cog):
             inventory = json.loads(user_data.get('inventory', '[]')) if user_data.get('inventory') else []
             
             if "手機" in inventory or "身分證" in inventory:
+                # 使用者尚未手動上繳，先警告並自動沒收
                 await interaction.followup.send(
-                    "❌ **入園失敗！**\n\n"
-                    "📱 請先點擊「繳交手機身分證」按鈕繳交所有物品後再確認進入園區。\n"
-                    "園區規定：所有入園者必須繳交個人物品以確保安全。",
-                    ephemeral=True
+                    "⚠️ 你尚未上繳手機或身分證，系統已自動強制沒收並繼續入園流程。",
+                    ephemeral=False
                 )
-                return
+                await self.remove_items_from_inventory(member.id, ["手機", "身分證"])
+                # 將 inventory 清空以便之後流程不再檢查
+                inventory = []
+                # 繼續後面的入園狀態設定（不再 return）
 
             guild = member.guild
             temp_role1 = guild.get_role(self.temp_role1_id)
@@ -800,16 +805,8 @@ class WelcomeFlow(commands.Cog):
             except discord.Forbidden:
                 pass
 
-            # 更新歡迎訊息為擊暈狀態
-            user_data = self.get_user_data(member.id)
-            embed = await self.create_welcome_embed(user_data, member)
-            
-            # 獲取擊暈狀態的圖片 URL
-            character_image_url = await self.get_character_image_url(user_data)
-            if character_image_url:
-                embed.set_image(url=character_image_url)
-
-            await interaction.edit_original_response(embed=embed, view=None)
+            # 更新歡迎訊息為擊暈狀態（同時修改頻道內原始貼文）
+            await self.update_welcome_message(interaction, member.id, edit_channel=True)
 
             # 記錄擊暈用戶資訊
             self.stunned_users[member.id] = {
@@ -831,7 +828,8 @@ class WelcomeFlow(commands.Cog):
             )
             embed_response.set_thumbnail(url=member.display_avatar.url)
 
-            await interaction.followup.send(embed=embed_response)
+            # 此訊息採用 ephemereal，以免干擾頻道內容
+            await interaction.followup.send(embed=embed_response, ephemeral=True)
 
             # 5分鐘後移除臨時身分組並完成處理
             await asyncio.sleep(300)
