@@ -711,6 +711,7 @@ async def update_dashboard_metrics(bot):
         traceback.print_exc()
 
 
+class DashboardButtons(discord.ui.View):
     """控制面板按鈕"""
     
     def __init__(self, bot_type: str, bot: discord.Client):
