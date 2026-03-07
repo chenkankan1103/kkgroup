@@ -1107,6 +1107,18 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             print(f"[DASHBOARD ERROR] {bot_type_str} 任務啟動失敗: {e}")
             import traceback
             traceback.print_exc()
+        
+        # 🔧 首次初始化時創建 metrics embed（只在第一個 bot 初始化時）
+        # 這樣後續的定時任務就能直接編輯而不是重複創建
+        if bot_type_str == "bot" and len(bot_instances) == 1:
+            try:
+                print("[METRICS INIT] 首次初始化 Metrics embed...")
+                await update_dashboard_metrics(bot_instance)
+                print("[METRICS INIT] ✓ Metrics embed 已初始化")
+            except Exception as metrics_error:
+                print(f"[METRICS INIT ERROR] 首次初始化 Metrics embed 失敗: {metrics_error}")
+                # 不中斷初始化流程，讓定時任務稍後重試
+                
     except Exception as e:
         print(f"❌ 初始化儀表板失敗: {e}")
         traceback.print_exc()
