@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 import os, io, time, aiohttp
+import asyncio
 from PIL import Image, ImageDraw, ImageFont
 from collections import defaultdict
 from dotenv import load_dotenv, set_key
@@ -99,13 +100,79 @@ async def fetch_avatar(session, url):
         print(f"❌ 頭像加載失敗 ({type(e).__name__}): {url[:50]}...")
         return None
 
+
 async def make_leaderboard_image(members_data):
+    """協程版本的圖片生成流程：
+    1. 非同步地下載所有頭像（非密集型）
+    2. 將所有 CPU 密集型的 PIL 繪製工作扔到 thread pool
+    """
+    # 先收集相關靜態資源，這部分屬於共享且不會每次都重新載入
     DESCRIPTION_HEIGHT = 80
     WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
     AVATAR_SIZE = 48
     MARGIN = 20
     BG_COLOR = (255,255,255)
     RANK_COLOR = (240,200,80)
+
+    # fonts 和圖片都可以在同步函式中載入，因此在 thread 中進行
+    # 先取得每個成員的頭像（或佔位）
+    avatar_images = []
+    placeholder = create_placeholder_avatar()
+    async with aiohttp.ClientSession() as session:
+        for member, _ in members_data:
+            avatar = None
+            try:
+                url = None
+                if hasattr(member, 'display_avatar') and member.display_avatar:
+                    try:
+                        url = member.display_avatar.url
+                    except AttributeError:
+                        pass
+                if not url and hasattr(member, 'avatar') and member.avatar:
+                    try:
+                        url = member.avatar.url
+                    except AttributeError:
+                        pass
+                if not url and hasattr(member, 'default_avatar') and member.default_avatar:
+                    try:
+                        url = member.default_avatar.url
+                    except AttributeError:
+                        pass
+                if url:
+                    avatar = await fetch_avatar(session, url)
+                    if not avatar:
+                        avatar = None  # 之後會替換成 placeholder
+            except Exception as e:
+                print(f"❌ 頭像下載錯誤 ({member.display_name}): {e}")
+            avatar_images.append(avatar or placeholder)
+
+    # 在執行緒中完成剩下的繪製工作
+    return await asyncio.to_thread(
+        _sync_build_leaderboard_image,
+        members_data,
+        avatar_images,
+        WIDTH,
+        HEIGHT,
+        DESCRIPTION_HEIGHT,
+        AVATAR_SIZE,
+        MARGIN,
+        BG_COLOR,
+        RANK_COLOR,
+    )
+
+
+def _sync_build_leaderboard_image(
+    members_data,
+    avatar_images,
+    WIDTH,
+    HEIGHT,
+    DESCRIPTION_HEIGHT,
+    AVATAR_SIZE,
+    MARGIN,
+    BG_COLOR,
+    RANK_COLOR,
+):
+    """純同步版，執行在工作執行緒中，不會阻塞事件循環"""
     try:
         FONT_BIG = ImageFont.truetype(FONT_PATH, 28)
         FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
@@ -139,68 +206,23 @@ async def make_leaderboard_image(members_data):
         title_x = MARGIN
     draw.text((title_x, 18), "KK幣排行榜（前20名）", fill=(60,60,60), font=FONT_BIG)
 
-    # 預先創建占位頭像
-    placeholder_avatar = create_placeholder_avatar()
-    
-    async with aiohttp.ClientSession() as session:
-        for i, (member, kkcoin) in enumerate(members_data):
-            y = 75 + i*60
-            if i < 3 and medal_imgs[i]:
-                img.paste(medal_imgs[i].resize((36,36)), (MARGIN, y+6), medal_imgs[i].resize((36,36)))
-                rank_x = MARGIN + 44
-            else:
-                rank_x = MARGIN
-            draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
-            
-            # 嘗試加載頭像，失敗則使用灰色占位圖
-            avatar = None
-            try:
-                # 優先順序：display_avatar → avatar → default_avatar
-                avatar_url = None
-                
-                # 1️⃣ 嘗試 display_avatar（用戶自訂頭像或 FallbackMember 的代理）
-                if hasattr(member, 'display_avatar') and member.display_avatar:
-                    try:
-                        avatar_url = member.display_avatar.url
-                    except AttributeError:
-                        pass
-                
-                # 2️⃣ 如果沒有，嘗試 avatar（個人頭像）
-                if not avatar_url and hasattr(member, 'avatar') and member.avatar:
-                    try:
-                        avatar_url = member.avatar.url
-                    except AttributeError:
-                        pass
-                
-                # 3️⃣ 最後使用 default_avatar（Discord 默認頭像）
-                if not avatar_url and hasattr(member, 'default_avatar') and member.default_avatar:
-                    try:
-                        avatar_url = member.default_avatar.url
-                    except AttributeError:
-                        pass
-                
-                # 4️⃣ 嘗試加載圖片
-                if avatar_url:
-                    avatar = await fetch_avatar(session, avatar_url)
-                    if not avatar:
-                        print(f"⚠️ 無法加載頭像 URL（可能已過期）: {member.display_name}")
-                        print(f"   URL: {avatar_url}")
-                else:
-                    print(f"⚠️ 找不到頭像 URL: {member.display_name}")
-                    
-            except Exception as e:
-                print(f"❌ 頭像加載異常 ({member.display_name}): {type(e).__name__}: {e}")
-            
-            # 使用實際頭像或灰色占位圖
-            display_avatar = avatar if avatar else placeholder_avatar
-            display_avatar = display_avatar.resize((AVATAR_SIZE, AVATAR_SIZE))
-            img.paste(display_avatar, (rank_x + 40, y), display_avatar)
-            
-            name_x = rank_x + 100
-            name_y = y+8
-            draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
-            draw.text((WIDTH-180, y+8), f"{kkcoin} KK幣", fill=(50,110,210), font=FONT_KKCOIN)
-    
+    # 畫各行
+    for i, ((member, kkcoin), avatar_img) in enumerate(zip(members_data, avatar_images)):
+        y = 75 + i*60
+        if i < 3 and medal_imgs[i]:
+            img.paste(medal_imgs[i].resize((36,36)), (MARGIN, y+6), medal_imgs[i].resize((36,36)))
+            rank_x = MARGIN + 44
+        else:
+            rank_x = MARGIN
+        draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
+
+        display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
+        img.paste(display_avatar, (rank_x + 40, y), display_avatar)
+        name_x = rank_x + 100
+        name_y = y+8
+        draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
+        draw.text((WIDTH-180, y+8), f"{kkcoin} KK幣", fill=(50,110,210), font=FONT_KKCOIN)
+
     desc_y = 75 + len(members_data) * 60 + 15
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200,200,200), width=1)
     descriptions = [
@@ -211,7 +233,7 @@ async def make_leaderboard_image(members_data):
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
         draw.text((MARGIN + 10, desc_text_y), desc, fill=(100,100,100), font=FONT_DESC)
-    
+
     return img
 
 def is_only_emojis(text):
@@ -545,63 +567,68 @@ class KKCoin(commands.Cog):
         min_interval: 最小更新間隔（秒）
         force: 是否強制更新（忽略時間和資料變化檢查）
         """
+        # 簡單節流：10 秒內只能跑一次
         current_time = time.time()
-        
         if not self.rank_channel_id or not self.rank_message_id:
             return
-
         if not force and current_time - self.last_update_time < min_interval:
             return
 
-        try:
-            channel = self.bot.get_channel(self.rank_channel_id)
-            if not channel:
-                print(f"❌ 找不到頻道 {self.rank_channel_id}")
-                return
-
+        # 避免同時多次更新，保證只有一個協程在修改同一張圖片
+        if not hasattr(self, "_leaderboard_update_lock"):
+            self._leaderboard_update_lock = asyncio.Lock()
+        async with self._leaderboard_update_lock:
             try:
-                msg = await channel.fetch_message(self.rank_message_id)
-            except discord.NotFound:
-                print("❌ 排行榜訊息已被刪除，將重新創建")
-                self.rank_message_id = 0
-                save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
-                await self.create_leaderboard()
-                return
-            except Exception as e:
-                print(f"❌ 取得訊息失敗: {e}")
-                return
+                channel = self.bot.get_channel(self.rank_channel_id)
+                if not channel:
+                    print(f"❌ 找不到頻道 {self.rank_channel_id}")
+                    return
 
-            members_data = self.get_current_leaderboard_data()
-            
-            if not members_data:
-                return
+                try:
+                    msg = await channel.fetch_message(self.rank_message_id)
+                except discord.NotFound:
+                    print("❌ 排行榜訊息已被刪除，將重新創建")
+                    self.rank_message_id = 0
+                    save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
+                    await self.create_leaderboard()
+                    return
+                except Exception as e:
+                    print(f"❌ 取得訊息失敗: {e}")
+                    return
 
-            if not force and not self.has_data_changed(members_data):
+                # 將資料擷取與計算移到執行緒，減少事件循環阻塞
+                members_data = await asyncio.to_thread(self.get_current_leaderboard_data)
+                if not members_data:
+                    return
+
+                if not force and not self.has_data_changed(members_data):
+                    self.last_update_time = current_time
+                    return
+
+                print(f"🔄 開始更新排行榜...")
+                # 生成圖片 (內部會在需要時移至執行緒)
+                image = await make_leaderboard_image(members_data)
+
+                with io.BytesIO() as img_bytes:
+                    image.save(img_bytes, format="PNG")
+                    img_bytes.seek(0)
+                    file = discord.File(img_bytes, filename="kkcoin_rank.png")
+                    await msg.edit(attachments=[file])
+
+                self.last_leaderboard_data = members_data.copy()
                 self.last_update_time = current_time
-                return
+                print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者)")
 
-            print(f"🔄 開始更新排行榜...")
-            image = await make_leaderboard_image(members_data)
-            
-            with io.BytesIO() as img_bytes:
-                image.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                file = discord.File(img_bytes, filename="kkcoin_rank.png")
-                await msg.edit(attachments=[file])
-            
-            self.last_leaderboard_data = members_data.copy()
-            self.last_update_time = current_time
-            print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者)")
-
-        except discord.HTTPException as e:
-            print(f"❌ Discord API 錯誤: {e}")
-        except Exception as e:
-            print(f"❌ 更新排行榜時發生錯誤: {e}")
-            import traceback
-            traceback.print_exc()
+            except discord.HTTPException as e:
+                print(f"❌ Discord API 錯誤: {e}")
+            except Exception as e:
+                print(f"❌ 更新排行榜時發生錯誤: {e}")
+                import traceback
+                traceback.print_exc()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        # 這個 listener 只負責處理 KK 幣獲取，所有耗時工作都交給背景任務
         if message.author.bot:
             return
 
@@ -620,14 +647,12 @@ class KKCoin(commands.Cog):
 
         self.last_kkcoin_time[user_id] = now
         self.last_message_cache[user_id] = content
+        # 同步操作寫入資料庫可能較快，但若擔心可改為 to_thread
         update_user_balance(user_id, reward)
-
         print(f"💰 {message.author.display_name} 獲得了 {reward} KK幣! (總計: {get_user_balance(user_id)})")
-        
-        try:
-            await self.update_leaderboard()
-        except Exception as e:
-            print(f"❌ 更新排行榜時發生錯誤: {e}")
+
+        # 排行榜更新不等待，透過 create_task 並靠內部節流控制頻率
+        asyncio.create_task(self.update_leaderboard())
 
 
 

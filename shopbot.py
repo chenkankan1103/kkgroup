@@ -43,7 +43,18 @@ intents.messages = True
 intents.reactions = True
 intents.members = True
 
-client = commands.Bot(command_prefix="!", help_command=None, intents=intents)
+# 如果機器人被加入多個伺服器，使用自動分片可以減少單個 websocket
+# 當出現 "Can't keep up" 警告時，啟用分片是一個常見建議。
+# 可透過 SHARD_COUNT 環境變數手動指定，否則 AutoShardedBot 會自動計算。
+shard_count = os.getenv(f"{BOT_PREFIX}_SHARD_COUNT")
+if shard_count:
+    shard_count = int(shard_count)
+
+client_kwargs = {"command_prefix": "!", "help_command": None, "intents": intents}
+if shard_count:
+    client_kwargs["shard_count"] = shard_count
+
+client = commands.AutoShardedBot(**client_kwargs)
 
 # ============================================================
 # 模組載入系統
