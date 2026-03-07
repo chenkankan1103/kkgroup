@@ -1403,6 +1403,13 @@ class ScamParkEvents(commands.Cog):
     async def event_cannabis_confiscation(self, member, thread, kkcoin, level, hp, stamina):
         """大麻沒收事件 - 檢查正在種植的植物"""
         try:
+            # 12 小時冷卻檢查
+            now_ts = datetime.datetime.now().timestamp()
+            last_ts = get_user_field(member.id, 'last_cannabis_confiscation', default=0)
+            if now_ts - last_ts < 12 * 3600:
+                # 冷卻中，不執行任何動作
+                return
+
             # 檢查用戶是否有正在種植的大麻植物
             from shop_commands.merchant.cannabis_farming import get_user_plants
             
@@ -1429,6 +1436,8 @@ class ScamParkEvents(commands.Cog):
                 
                 message = await self.send_or_edit_event_message(thread, embed, member.id, "置物櫃檢查")
                 self.update_user_kkcoin(member.id, -fine)
+                # 記錄執行時間
+                set_user_field(member.id, 'last_cannabis_confiscation', now_ts)
                 return
             
             # 有正在種植的植物，摧毀所有植物並罰款10% KK幣
@@ -1502,6 +1511,8 @@ class ScamParkEvents(commands.Cog):
             
             # 更新KK幣
             self.update_user_kkcoin(member.id, -kkcoin_penalty)
+            # 記錄執行時間
+            set_user_field(member.id, 'last_cannabis_confiscation', now_ts)
             
         except Exception as e:
             print(f"❌ 大麻種植摧毀事件錯誤: {e}")
