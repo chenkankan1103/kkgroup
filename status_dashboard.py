@@ -371,7 +371,9 @@ def create_update_task(bot_type: str):
         # 首次啟動時隨機延遲 (0~60s)，避免多個 bot 同刻編輯造成 429
         if not hasattr(individual_update_task, "_jittered"):
             individual_update_task._jittered = True
-            jitter = random.uniform(0, 60)
+            # import locally in case the global namespace somehow loses `random`
+            import random as _rand
+            jitter = _rand.uniform(0, 60)
             task_log(f"[UPDATE TASK {bot_type}] 首次更新延遲 {jitter:.1f}s")
             await asyncio.sleep(jitter)
         try:
