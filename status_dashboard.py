@@ -1163,15 +1163,23 @@ async def metrics_update_task():
 
 def _start_watchdog():
     try:
-        update_task_watchdog.start()
-        print("[WATCHDOG] 更新任務守護程序已啟動")
+        # 檢查 update_task_watchdog 是否已在運行
+        if not update_task_watchdog.is_running():
+            update_task_watchdog.start()
+            print("[WATCHDOG] 更新任務守護程序已啟動")
+        else:
+            print("[WATCHDOG] 更新任務守護程序已在運行中")
         
         # 同時啟動 metrics 更新任務
-        metrics_update_task.start()
-        print("[METRICS TASK] GCP Metrics 更新任務已啟動")
+        if not metrics_update_task.is_running():
+            metrics_update_task.start()
+            print("[METRICS TASK] GCP Metrics 更新任務已啟動")
+        else:
+            print("[METRICS TASK] GCP Metrics 更新任務已在運行中")
     except Exception as e:
         # swallow startup errors; they will be retried in bot init
         print(f"[WATCHDOG ERROR] 無法啟動守護程序: {e}")
+        traceback.print_exc()
 
 # If there is a running loop, start right away; otherwise queue the
 # helper to run when the loop starts.
