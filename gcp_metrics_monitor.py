@@ -214,14 +214,15 @@ class GCPMetricsMonitor:
                 "status": f"⚠️ 計費查詢異常"
             }
     
-    async def generate_metrics_chart(self, data_points: List[Dict], ops_data: List[Dict] = None) -> Optional[discord.File]:
+    async def generate_metrics_chart(self, data_points: List[Dict], ops_data: List[Dict] = None, ingress_data: List[Dict] = None) -> Optional[discord.File]:
         """
         生成 metrics 圖表（網路流量趨勢）。
-        可傳入 ops_data 來顯示代理收集的出站 bytes。
+        可傳入 ops_data 來顯示代理收集的出站 bytes，以及 ingress_data 顯示進站 bytes。
         
         Args:
             data_points: 時間序列數據
             ops_data: 可選，由 agent.googleapis.com/network/egress_bytes_count 收集
+            ingress_data: 可選，由 agent.googleapis.com/network/ingress_bytes_count 收集
             
         Returns:
             discord.File: 圖表文件或 None
@@ -246,7 +247,6 @@ class GCPMetricsMonitor:
             if mb_values:
                 max_mb = max(mb_values)
                 if max_mb < 0.1:
-                    # less than about 100KB total -> use KB
                     use_mb = False
             if use_mb:
                 unit = 'MB'
@@ -258,10 +258,10 @@ class GCPMetricsMonitor:
             # convert values to chosen unit
             vals_scaled = [v * scale for v in mb_values]
             neon_color = '#00d4ff'
-            ax.plot(timestamps, vals_scaled, marker='o', linewidth=2.5, markersize=5, color=neon_color)
+            ax.plot(timestamps, vals_scaled, marker='o', linewidth=2.5, markersize=5, color=neon_color, label='monitor egress ('+unit+')')
             ax.fill_between(timestamps, vals_scaled, alpha=0.2, color=neon_color)
 
-            # if agent data provided, plot egress bytes as second line using same scale
+            # if agent egress data provided, plot as red line using same scale
             if ops_data:
                 ops_vals = []
                 for d in ops_data:
@@ -269,10 +269,21 @@ class GCPMetricsMonitor:
                     mb_val = bytes_val / (1024*1024)
                     ops_vals.append(mb_val * scale)
                 ax.plot(timestamps, ops_vals, linestyle='-', linewidth=1.5, color='#ff4d4d', label='agent egress ('+unit+')')
-                ax.legend(loc='upper left')
+
+            # if ingress data provided, plot as neon green line
+            if ingress_data:
+                ingress_vals = []
+                for d in ingress_data:
+                    bytes_val = d.get('bytes', 0)
+                    mb_val = bytes_val / (1024*1024)
+                    ingress_vals.append(mb_val * scale)
+                ax.plot(timestamps, ingress_vals, linestyle='--', linewidth=1.5, color='#39ff14', label='agent ingress ('+unit+')')
+
+            # show legend if any additional lines
+            ax.legend(loc='upper left')
             
             # adjust y-label according to unit
-            ax.set_ylabel(f'出站流量 ({unit})', fontsize=10, color='#e0e0e0')
+            ax.set_ylabel(f'流量 ({unit})', fontsize=10, color='#e0e0e0')
             
             # Set Y-axis from 0, auto-scale based on data
             if mb_values and max(mb_values) > 0:
