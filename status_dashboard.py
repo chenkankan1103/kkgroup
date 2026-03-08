@@ -620,12 +620,16 @@ async def update_dashboard_metrics(bot):
         print("[METRICS] 查詢計費信息...")
         billing_info = await monitor.get_billing_data()
         
+        # 獲取月累積出站流量
+        print("[METRICS] 查詢月累積流量...")
+        monthly_gb = await monitor.get_monthly_egress_data(days=30)
+        
         # 生成圖表
         print("[METRICS] 生成圖表...")
         chart_file = await monitor.generate_metrics_chart(egress_data)
         
-        # 創建 embed
-        embed = monitor.create_metrics_embed(egress_data, billing_info)
+        # 創建 embed（傳入月累積流量）
+        embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb)
         
         # 獲取頻道
         channel = bot.get_channel(DASHBOARD_CHANNEL_ID)

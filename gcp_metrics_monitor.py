@@ -26,6 +26,13 @@ load_dotenv()
 # 台灣時區（UTC+8）
 TAIWAN_TZ = timezone(timedelta(hours=8))
 
+# 設置 matplotlib 支持中文（使用系統可用的字體）
+import platform
+if platform.system() == 'Linux':
+    plt.rcParams['font.sans-serif'] = ['DejaVu Sans']  # Linux 上使用 DejaVu Sans
+else:
+    plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+
 class GCPMetricsMonitor:
     """GCP 指標監控器"""
     
@@ -88,6 +95,57 @@ class GCPMetricsMonitor:
             print(f"[GCP METRICS] 獲取網路流量失敗: {e}")
             return []
     
+    async def get_monthly_egress_data(self, days: int = 30) -> float:
+        """
+        獲取月累積出站流量（單位: GB）
+        
+        Args:
+            days: 查詢天數（默認 30 天）
+            
+        Returns:
+            float: 月累積出站流量（GB）
+        """
+        try:
+            now = datetime.utcnow()
+            start_time = now - timedelta(days=days)
+            
+            start_ts = Timestamp()
+            start_ts.FromDatetime(start_time)
+            end_ts = Timestamp()
+            end_ts.FromDatetime(now)
+            
+            interval = monitoring_v3.TimeInterval(
+                {"start_time": start_ts, "end_time": end_ts}
+            )
+            
+            # 查詢網路出站流量 metric - 使用 delta 以獲得累積值
+            metric_filter = 'metric.type="compute.googleapis.com/instance/network/sent_bytes_count"'
+            
+            request = monitoring_v3.ListTimeSeriesRequest(
+                name=f"projects/{self.project_id}",
+                filter=metric_filter,
+                interval=interval,
+            )
+            
+            results = self.metric_client.list_time_series(request=request)
+            series_list = list(results)
+            
+            total_bytes = 0
+            
+            if series_list:
+                for series in series_list:
+                    for point in series.points:
+                        bytes_value = point.value.double_value if point.value else 0
+                        total_bytes += bytes_value
+            
+            # 轉換為 GB
+            gb_value = total_bytes / (1024 * 1024 * 1024)
+            return gb_value
+            
+        except Exception as e:
+            print(f"[GCP METRICS] 獲取月累積流量失敗: {e}")
+            return 0.0
+    
     async def get_billing_data(self) -> Dict:
         """
         獲取當月計費信息
@@ -146,11 +204,11 @@ class GCPMetricsMonitor:
             ax.fill_between(timestamps, mb_values, alpha=0.3, color='#3498db')
             
             # 設置格式
-            ax.set_xlabel('時間', fontsize=10, fontproperties='SimHei')
-            ax.set_ylabel('出站流量 (MB)', fontsize=10, fontproperties='SimHei')
-            ax.set_title('GCP VM 網路出站流量 (過去 6 小時)', fontsize=12, fontweight='bold', fontproperties='SimHei')
+            ax.set_xlabel('時間', fontsize=10)
+            ax.set_ylabel('出站流量 (MB)', fontsize=10)
+            ax.set_title('GCP VM 網路出站流量 (過去 6 小時)', fontsize=12, fontweight='bold')
             
-            # 格式化 X 軸時間
+            # 格式化 X 軸時間 - 使用台灣時間
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=TAIWAN_TZ))
             ax.xaxis.set_major_locator(mdates.HourLocator(interval=1, tz=TAIWAN_TZ))
             plt.xticks(rotation=45, ha='right')
@@ -164,9 +222,9 @@ class GCPMetricsMonitor:
             avg_egress = sum(mb_values) / len(mb_values)
             
             # 在圖上顯示統計信息
-            stats_text = f"總計: {total_egress:.2f} MB | 最大: {max_egress:.2f} MB | 平均: {avg_egress:.2f} MB"
+            stats_text = f"Total: {total_egress:.2f} MB | Max: {max_egress:.2f} MB | Avg: {avg_egress:.2f} MB"
             ax.text(0.5, 1.05, stats_text, transform=ax.transAxes, 
-                   ha='center', fontsize=9, style='italic', fontproperties='SimHei')
+                   ha='center', fontsize=9, style='italic')
             
             # 緊湊布局
             plt.tight_layout()
@@ -185,17 +243,20 @@ class GCPMetricsMonitor:
             plt.close('all')
             return None
     
-    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict) -> discord.Embed:
+    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0) -> discord.Embed:
         """
         創建 metrics embed
         """
+        # 使用台灣時間作為 embed 的時間戳
+        taiwan_now = datetime.now(TAIWAN_TZ)
+        
         embed = discord.Embed(
             title="📊 GCP 資源監控",
             description="網路流量和計費信息監控",
             color=discord.Color.from_rgb(66, 133, 244),
-            timestamp=datetime.now(TAIWAN_TZ)
         )
         
+        # 網路出站流量 - 過去 6 小時
         if data_points:
             total_mb = sum(p["mb"] for p in data_points)
             max_mb = max(p["mb"] for p in data_points)
@@ -208,15 +269,22 @@ class GCPMetricsMonitor:
             )
         else:
             embed.add_field(
-                name="🌐 網路出站流量",
-                value="無數據",
+                name="🌐 網路出站流量 (過去 6 小時)",
+                value="暫無數據",
                 inline=True
             )
+        
+        # 添加月累積流量
+        embed.add_field(
+            name="📊 月累積出站流量",
+            value=f"**本月**: {monthly_gb:.2f} GB / 200 GB (免費額度)",
+            inline=True
+        )
         
         # 計費信息
         embed.add_field(
             name="💰 計費信息",
-            value=f"**月份**: {billing_info.get('current_month', 'N/A')}\n**成本**: {billing_info.get('total_cost', 'N/A')} {billing_info.get('currency', 'USD')}\n**狀態**: {billing_info.get('status', 'N/A')}",
+            value=f"**月份**: {billing_info.get('current_month', 'N/A')}\n**成本**: {billing_info.get('total_cost', 'N/A')} {billing_info.get('currency', 'USD')}\n**狀態**: {billing_info.get('status', '✓ 正常')}",
             inline=True
         )
         
@@ -230,11 +298,12 @@ class GCPMetricsMonitor:
         # 圖表提示
         embed.add_field(
             name="📈 圖表",
-            value="查看下方的流量趨勢圖",
+            value="查看下方的流量趨勢圖（台灣時間）",
             inline=False
         )
         
-        embed.set_footer(text=f"每 20 分鐘自動更新 | 台灣時間•{datetime.now(TAIWAN_TZ).strftime('%H:%M')}")
+        # 使用台灣時間顯示最後更新時間
+        embed.set_footer(text=f"每 20 分鐘自動更新 | 台灣時間 • {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}")
         embed.set_image(url="attachment://gcp_metrics.png")
         
         return embed
