@@ -144,7 +144,7 @@ class GCPMetricsMonitor:
         return await self._get_agent_metric('agent.googleapis.com/network/ingress_bytes_count', hours)
 
     async def get_system_metric(self, metric_type: str, hours: int = 1) -> Optional[float]:
-        """Query a single-time-interval metric and return average value (fraction or percent).
+        """Query a single-time-interval metric and return its most recent value.
 
         Returns None if no data could be fetched (e.g. metric not reported).
         """
@@ -158,14 +158,18 @@ class GCPMetricsMonitor:
                 name=f"projects/{self.project_id}",
                 filter=f'metric.type="{metric_type}"',
                 interval=interval,
-                aggregation=monitoring_v3.Aggregation(alignment_period=interval, per_series_aligner=monitoring_v3.Aggregation.Aligner.ALIGN_MEAN)
             )
             results = list(self.metric_client.list_time_series(request=request))
-            if results and results[0].points:
-                # take last point's value
-                v = results[0].points[0].value.double_value
-                return v
-            # no points -> signal missing
+            if results:
+                # pick the most recent point across all series
+                latest = None
+                for series in results:
+                    if series.points:
+                        pt = series.points[0]
+                        if latest is None or pt.interval.end_time.seconds > latest.interval.end_time.seconds:
+                            latest = pt
+                if latest:
+                    return latest.value.double_value
             return None
         except Exception as e:
             print(f"[GCP METRICS] system metric {metric_type} failed: {e}")
