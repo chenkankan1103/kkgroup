@@ -199,43 +199,43 @@ class GCPMetricsMonitor:
             timestamps = [point["timestamp"] for point in data_points]
             mb_values = [point["mb"] for point in data_points]
             
-            # 繪製折線圖
+            # Plot line chart
             ax.plot(timestamps, mb_values, marker='o', linewidth=2, markersize=4, color='#3498db')
             ax.fill_between(timestamps, mb_values, alpha=0.3, color='#3498db')
             
-            # 設置格式
-            ax.set_xlabel('時間', fontsize=10)
-            ax.set_ylabel('出站流量 (MB)', fontsize=10)
-            ax.set_title('GCP VM 網路出站流量 (過去 6 小時)', fontsize=12, fontweight='bold')
+            # Set format
+            ax.set_xlabel('Time (Taiwan)', fontsize=10)
+            ax.set_ylabel('Egress Traffic (MB)', fontsize=10)
+            ax.set_title('GCP VM Network Egress (Last 6 Hours)', fontsize=12, fontweight='bold')
             
-            # 格式化 X 軸時間 - 使用台灣時間
+            # Format X-axis time - use Taiwan timezone
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=TAIWAN_TZ))
             ax.xaxis.set_major_locator(mdates.HourLocator(interval=1, tz=TAIWAN_TZ))
             plt.xticks(rotation=45, ha='right')
             
-            # 添加網格
+            # Add grid
             ax.grid(True, alpha=0.3)
             
-            # 計算統計信息
+            # Calculate statistics
             total_egress = sum(mb_values)
             max_egress = max(mb_values)
             avg_egress = sum(mb_values) / len(mb_values)
             
-            # 在圖上顯示統計信息
+            # Display stats on chart
             stats_text = f"Total: {total_egress:.2f} MB | Max: {max_egress:.2f} MB | Avg: {avg_egress:.2f} MB"
             ax.text(0.5, 1.05, stats_text, transform=ax.transAxes, 
                    ha='center', fontsize=9, style='italic')
             
-            # 緊湊布局
+            # Compact layout
             plt.tight_layout()
             
-            # 保存為二進制文件
+            # Save as binary file
             buffer = io.BytesIO()
             plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
             buffer.seek(0)
             plt.close(fig)
             
-            # 轉換為 Discord File
+            # Convert to Discord File
             return discord.File(buffer, filename='gcp_metrics.png')
             
         except Exception as e:
