@@ -629,12 +629,21 @@ async def update_dashboard_metrics(bot):
         print("[METRICS] 查詢月累積流量...")
         monthly_gb = await monitor.get_monthly_egress_data(days=30)
         
+        # system metrics
+        print("[METRICS] 查詢系統狀態...")
+        cpu = await monitor.get_system_metric('agent.googleapis.com/cpu/utilization', hours=1)
+        mem = await monitor.get_system_metric('agent.googleapis.com/memory/percent_used', hours=1)
+        # disk usage percent
+        disk = await monitor.get_system_metric('agent.googleapis.com/disk/percent_used', hours=1)
+        sys_stats = {'cpu': cpu, 'mem': mem, 'disk': disk}
+        
         # 生成圖表
         print("[METRICS] 生成圖表...")
         chart_file = await monitor.generate_metrics_chart(egress_data, ops_egress, ops_ingress)
         
-        # 創建 embed（傳入月累積流量和 agent 數據）
-        embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb, ops_egress, ops_ingress)
+        # 創建 embed（傳入月累積流量、agent 數據、系統狀態）
+        embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb, ops_egress, ops_ingress, sys_stats)
+        # embed now can easily show sys_stats separately below
         
         # 獲取頻道
         channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
