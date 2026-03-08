@@ -30,9 +30,10 @@ TAIWAN_TZ = timezone(timedelta(hours=8))
 import platform
 if platform.system() == 'Linux':
     # Linux 上優先使用開源中文字體，再降級到 DejaVu Sans
-    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Noto Sans CJK JP', 'DejaVu Sans']
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'WenQuanYi Micro Hei', 'DejaVu Sans']
 else:
     plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'WenQuanYi Zen Hei', 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False
 
 class GCPMetricsMonitor:
     """GCP 指標監控器"""
