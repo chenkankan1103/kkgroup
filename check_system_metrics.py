@@ -20,7 +20,7 @@ async def main():
     from google.protobuf.timestamp_pb2 import Timestamp
     start_ts = Timestamp(); start_ts.FromDatetime(start)
     end_ts = Timestamp(); end_ts.FromDatetime(now)
-    interval = m.monitoring_v3.TimeInterval({"start_time": start_ts, "end_time": end_ts})
+    interval = monitoring_v3.TimeInterval({"start_time": start_ts, "end_time": end_ts})
     req = m.monitoring_v3.ListTimeSeriesRequest(
         name=f"projects/{m.project_id}",
         filter='metric.type="agent.googleapis.com"',
