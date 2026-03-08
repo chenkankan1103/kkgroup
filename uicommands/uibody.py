@@ -500,13 +500,15 @@ class UserPanel(commands.Cog):
                     if not thread or not member:
                         continue
                     
-                    # 刪除上週的 embed
-                    async for message in thread.history(limit=50):
+                    # 刪除所有舊的週統計 embed，以免保留舊日期
+                    async for message in thread.history(limit=100):
                         if message.author == self.bot.user and message.embeds:
                             embed = message.embeds[0]
                             if "本週統計" in embed.title:
-                                await message.delete()
-                                break
+                                try:
+                                    await message.delete()
+                                except Exception:
+                                    pass
                     
                     kkcoin_change = (current_kkcoin or 0) - (last_kkcoin or 0)
                     xp_change = (current_xp or 0) - (last_xp or 0)
@@ -540,8 +542,15 @@ class UserPanel(commands.Cog):
                     
                     embed.set_footer(text="🔄 每週日 23:59 自動統計")
                     
+                    # 將新統計發送到該 thread，這會自動把 thread 往上 bump
                     await thread.send(embed=embed)
                     await asyncio.sleep(1)
+                    # 有時候 forum 的排序不太即時，額外寄一條輕量填充訊息可保險
+                    try:
+                        await thread.send("🔄 週統計已更新")
+                    except Exception:
+                        pass
+                    
                     
                     set_user_field(user_id, 'last_kkcoin_snapshot', current_kkcoin)
                     set_user_field(user_id, 'last_xp_snapshot', current_xp)
