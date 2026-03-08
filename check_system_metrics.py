@@ -1,5 +1,6 @@
 import asyncio
 from gcp_metrics_monitor import GCPMetricsMonitor
+from google.cloud import monitoring_v3
 
 async def main():
     m = GCPMetricsMonitor()
