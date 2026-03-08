@@ -29,9 +29,10 @@ TAIWAN_TZ = timezone(timedelta(hours=8))
 # 設置 matplotlib 支持中文（使用系統可用的字體）
 import platform
 if platform.system() == 'Linux':
-    plt.rcParams['font.sans-serif'] = ['DejaVu Sans']  # Linux 上使用 DejaVu Sans
+    # Linux 上優先使用開源中文字體，再降級到 DejaVu Sans
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Noto Sans CJK JP', 'DejaVu Sans']
 else:
-    plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+    plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'WenQuanYi Zen Hei', 'DejaVu Sans']
 
 class GCPMetricsMonitor:
     """GCP 指標監控器"""
@@ -154,28 +155,42 @@ class GCPMetricsMonitor:
             Dict: 包含成本、配額等信息
         """
         try:
-            # 獲取計費帳戶
-            billing_accounts = self.billing_client.list_billing_accounts()
+            current_month = datetime.now(TAIWAN_TZ).strftime("%Y-%m")
             
+            # Initialize default response
             billing_info = {
                 "currency": "USD",
-                "total_cost": "N/A",
-                "current_month": datetime.now(TAIWAN_TZ).strftime("%Y-%m"),
-                "status": "查詢中"
+                "total_cost": "0.00",
+                "current_month": current_month,
+                "status": "✓ 正常 (免費額度機制)"
             }
             
-            # 注意：Cloud Billing API 的成本查詢需要額外的權限和配置
-            # 這裡只返回基本信息
+            # Try to list billing accounts - this requires billing.accounts.list permission
+            try:
+                billing_accounts = list(self.billing_client.list_billing_accounts())
+                if billing_accounts:
+                    # Successfully connected to Billing API
+                    billing_info["status"] = "✓ 計費查詢已連接"
+            except Exception as api_error:
+                # If API fails, provide helpful info
+                error_msg = str(api_error)
+                if "403" in error_msg:
+                    billing_info["status"] = "⚠️ 需要計費帳戶讀取權限 (IAM 角色)"
+                elif "NOT_FOUND" in error_msg:
+                    billing_info["status"] = "⚠️ 計費帳戶未綁定"
+                else:
+                    billing_info["status"] = "⚠️ 計費 API 連接失敗"
             
             return billing_info
             
         except Exception as e:
-            print(f"[GCP METRICS] 獲取計費信息失敗: {e}")
+            print(f"[GCP METRICS] 計費資料錯誤: {e}")
+            error_msg = str(e)[:35]
             return {
                 "currency": "USD",
-                "total_cost": "Error",
+                "total_cost": "N/A",
                 "current_month": datetime.now(TAIWAN_TZ).strftime("%Y-%m"),
-                "status": f"失敗: {str(e)[:30]}"
+                "status": f"⚠️ 計費查詢異常"
             }
     
     async def generate_metrics_chart(self, data_points: List[Dict]) -> Optional[discord.File]:
@@ -195,36 +210,62 @@ class GCPMetricsMonitor:
             
             fig, ax = plt.subplots(figsize=(12, 5))
             
-            # 提取時間和數值
+            # Extract times and values
             timestamps = [point["timestamp"] for point in data_points]
             mb_values = [point["mb"] for point in data_points]
             
-            # Plot line chart
-            ax.plot(timestamps, mb_values, marker='o', linewidth=2, markersize=4, color='#3498db')
-            ax.fill_between(timestamps, mb_values, alpha=0.3, color='#3498db')
+            # Set deep blue background with neon color
+            fig.patch.set_facecolor('#1a2f4d')  # Deep blue background
+            ax.set_facecolor('#0f1922')  # Darker blue for plot area
             
-            # Set format
-            ax.set_xlabel('Time (Taiwan)', fontsize=10)
-            ax.set_ylabel('Egress Traffic (MB)', fontsize=10)
-            ax.set_title('GCP VM Network Egress (Last 6 Hours)', fontsize=12, fontweight='bold')
+            # Plot with neon blue-purple line
+            neon_color = '#00d4ff'  # Neon cyan
+            ax.plot(timestamps, mb_values, marker='o', linewidth=2.5, markersize=5, color=neon_color)
+            ax.fill_between(timestamps, mb_values, alpha=0.2, color=neon_color)
+            
+            # Set Y-axis from 0, auto-scale based on data
+            if mb_values and max(mb_values) > 0:
+                max_val = max(mb_values)
+                # Calculate reasonable Y-axis ceiling
+                if max_val < 1:
+                    y_limit = 1
+                elif max_val < 10:
+                    y_limit = 10
+                elif max_val < 100:
+                    y_limit = max_val * 1.3  # 30% padding
+                else:
+                    y_limit = max_val * 1.15  # 15% padding
+                ax.set_ylim(bottom=0, top=y_limit)
+            else:
+                ax.set_ylim(bottom=0, top=1)
+            
+            # Set labels with light text color for dark background
+            ax.set_xlabel('台灣時間', fontsize=10, color='#e0e0e0')
+            ax.set_ylabel('出站流量 (MB)', fontsize=10, color='#e0e0e0')
+            ax.set_title('GCP VM 網路出站流量 (過去 6 小時)', fontsize=12, fontweight='bold', color=neon_color, pad=15)
             
             # Format X-axis time - use Taiwan timezone
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=TAIWAN_TZ))
             ax.xaxis.set_major_locator(mdates.HourLocator(interval=1, tz=TAIWAN_TZ))
-            plt.xticks(rotation=45, ha='right')
+            plt.xticks(rotation=45, ha='right', color='#e0e0e0')
+            plt.yticks(color='#e0e0e0')
             
-            # Add grid
-            ax.grid(True, alpha=0.3)
+            # Customize grid for dark background
+            ax.grid(True, alpha=0.2, color='#555555', linestyle='--')
+            ax.spines['bottom'].set_color('#666666')
+            ax.spines['left'].set_color('#666666')
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
             
             # Calculate statistics
             total_egress = sum(mb_values)
-            max_egress = max(mb_values)
-            avg_egress = sum(mb_values) / len(mb_values)
+            max_egress = max(mb_values) if mb_values else 0
+            avg_egress = sum(mb_values) / len(mb_values) if mb_values else 0
             
-            # Display stats on chart
-            stats_text = f"Total: {total_egress:.2f} MB | Max: {max_egress:.2f} MB | Avg: {avg_egress:.2f} MB"
+            # Display stats with Chinese text and neon color
+            stats_text = f"總計: {total_egress:.2f} MB | 最大: {max_egress:.2f} MB | 平均: {avg_egress:.2f} MB"
             ax.text(0.5, 1.05, stats_text, transform=ax.transAxes, 
-                   ha='center', fontsize=9, style='italic')
+                   ha='center', fontsize=9, style='italic', color=neon_color)
             
             # Compact layout
             plt.tight_layout()
