@@ -633,8 +633,8 @@ async def update_dashboard_metrics(bot):
         print("[METRICS] 生成圖表...")
         chart_file = await monitor.generate_metrics_chart(egress_data, ops_egress, ops_ingress)
         
-        # 創建 embed（傳入月累積流量）
-        embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb)
+        # 創建 embed（傳入月累積流量和 agent 數據）
+        embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb, ops_egress, ops_ingress)
         
         # 獲取頻道
         channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
