@@ -241,17 +241,38 @@ class GCPMetricsMonitor:
             fig.patch.set_facecolor('#1a2f4d')  # Deep blue background
             ax.set_facecolor('#0f1922')  # Darker blue for plot area
             
-            # Plot with neon blue-purple line for egress
-            neon_color = '#00d4ff'  # Neon cyan
-            ax.plot(timestamps, mb_values, marker='o', linewidth=2.5, markersize=5, color=neon_color)
-            ax.fill_between(timestamps, mb_values, alpha=0.2, color=neon_color)
+            # determine unit (KB or MB) depending on magnitude of bytes
+            use_mb = True
+            if mb_values:
+                max_mb = max(mb_values)
+                if max_mb < 0.1:
+                    # less than about 100KB total -> use KB
+                    use_mb = False
+            if use_mb:
+                unit = 'MB'
+                scale = 1.0
+            else:
+                unit = 'KB'
+                scale = 1024.0
+            
+            # convert values to chosen unit
+            vals_scaled = [v * scale for v in mb_values]
+            neon_color = '#00d4ff'
+            ax.plot(timestamps, vals_scaled, marker='o', linewidth=2.5, markersize=5, color=neon_color)
+            ax.fill_between(timestamps, vals_scaled, alpha=0.2, color=neon_color)
 
-            # if agent data provided, plot egress bytes as second blue line
+            # if agent data provided, plot egress bytes as second line using same scale
             if ops_data:
-                ops_vals = [d.get('mb', d.get('bytes',0)/(1024*1024)) for d in ops_data]
-                ax.plot(timestamps, ops_vals, linestyle='-', linewidth=1.5, color='#ff4d4d', label='agent egress (MB)')
-                # add legend entry
+                ops_vals = []
+                for d in ops_data:
+                    bytes_val = d.get('bytes', 0)
+                    mb_val = bytes_val / (1024*1024)
+                    ops_vals.append(mb_val * scale)
+                ax.plot(timestamps, ops_vals, linestyle='-', linewidth=1.5, color='#ff4d4d', label='agent egress ('+unit+')')
                 ax.legend(loc='upper left')
+            
+            # adjust y-label according to unit
+            ax.set_ylabel(f'出站流量 ({unit})', fontsize=10, color='#e0e0e0')
             
             # Set Y-axis from 0, auto-scale based on data
             if mb_values and max(mb_values) > 0:
@@ -271,7 +292,6 @@ class GCPMetricsMonitor:
             
             # Set labels with light text color for dark background
             ax.set_xlabel('台灣時間', fontsize=10, color='#e0e0e0')
-            ax.set_ylabel('出站流量 (MB)', fontsize=10, color='#e0e0e0')
             ax.set_title('GCP VM 網路出站流量 (過去 6 小時)', fontsize=12, fontweight='bold', color=neon_color, pad=15)
             
             # Format X-axis time - use Taiwan timezone
