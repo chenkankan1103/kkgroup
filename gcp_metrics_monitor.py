@@ -153,40 +153,61 @@ class GCPMetricsMonitor:
         獲取當月計費信息
         
         Returns:
-            Dict: 包含成本、配額等信息
+            Dict: 包含成本、配額等信息（若設置 BIGQUERY 導出，會嘗試查詢）
         """
         try:
             current_month = datetime.now(TAIWAN_TZ).strftime("%Y-%m")
             
-            # Initialize default response
             billing_info = {
                 "currency": "USD",
                 "total_cost": "0.00",
                 "current_month": current_month,
                 "status": "✓ 正常 (免費額度機制)"
             }
-            
-            # Try to list billing accounts - this requires billing.accounts.list permission
+
+            # first, make sure the billing API connection works so we know permission is ok
             try:
-                billing_accounts = list(self.billing_client.list_billing_accounts())
-                if billing_accounts:
-                    # Successfully connected to Billing API
+                accounts = list(self.billing_client.list_billing_accounts())
+                if accounts:
                     billing_info["status"] = "✓ 計費查詢已連接"
             except Exception as api_error:
-                # If API fails, provide helpful info
-                error_msg = str(api_error)
-                if "403" in error_msg:
+                err = str(api_error)
+                if "403" in err:
                     billing_info["status"] = "⚠️ 需要計費帳戶讀取權限 (IAM 角色)"
-                elif "NOT_FOUND" in error_msg:
+                elif "NOT_FOUND" in err:
                     billing_info["status"] = "⚠️ 計費帳戶未綁定"
                 else:
                     billing_info["status"] = "⚠️ 計費 API 連接失敗"
-            
+                return billing_info
+
+            # optional: read actual costs from a BigQuery export table
+            billing_table = os.environ.get("GCP_BILLING_TABLE")
+            if billing_table:
+                try:
+                    from google.cloud import bigquery
+                    bq = bigquery.Client()
+                    query = f"""
+                    SELECT
+                      SUM(cost) AS total_cost,
+                      ANY_VALUE(currency) AS currency
+                    FROM `{billing_table}`
+                    WHERE DATE(_PARTITIONTIME) >= DATE_TRUNC(CURRENT_DATE(), MONTH)
+                    """
+                    job = bq.query(query)
+                    for row in job.result():
+                        if row.total_cost is not None:
+                            billing_info["total_cost"] = f"{row.total_cost:.2f}"
+                        if row.currency:
+                            billing_info["currency"] = row.currency
+                except Exception as bq_err:
+                    print(f"[GCP METRICS] BigQuery 計費查詢失敗: {bq_err}")
+            else:
+                # no export configured, leave cost at default zero
+                billing_info["status"] += " (無 BigQuery 導出)"
+
             return billing_info
-            
         except Exception as e:
             print(f"[GCP METRICS] 計費資料錯誤: {e}")
-            error_msg = str(e)[:35]
             return {
                 "currency": "USD",
                 "total_cost": "N/A",
