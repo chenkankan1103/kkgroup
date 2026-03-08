@@ -143,8 +143,11 @@ class GCPMetricsMonitor:
         """從 Ops Agent 取得 ingress bytes（MB）"""
         return await self._get_agent_metric('agent.googleapis.com/network/ingress_bytes_count', hours)
 
-    async def get_system_metric(self, metric_type: str, hours: int = 1) -> float:
-        """Query a single-time-interval metric and return average value (fraction or percent)."""
+    async def get_system_metric(self, metric_type: str, hours: int = 1) -> Optional[float]:
+        """Query a single-time-interval metric and return average value (fraction or percent).
+
+        Returns None if no data could be fetched (e.g. metric not reported).
+        """
         try:
             now = datetime.utcnow()
             start_time = now - timedelta(hours=hours)
@@ -162,10 +165,11 @@ class GCPMetricsMonitor:
                 # take last point's value
                 v = results[0].points[0].value.double_value
                 return v
-            return 0.0
+            # no points -> signal missing
+            return None
         except Exception as e:
             print(f"[GCP METRICS] system metric {metric_type} failed: {e}")
-            return 0.0
+            return None
 
     def _make_bar(self, ratio: float, length: int = 10) -> str:
         """Create a text bar █ for filled portion and ░ for empty."""
@@ -497,16 +501,26 @@ class GCPMetricsMonitor:
         
         # 系統資源條狀顯示
         if sys_stats:
-            # prepare aligned labels by padding to 3 chars (all are length 3 anyway) and wrap in a code block
-            cpu_bar = self._make_bar(sys_stats.get('cpu',0))
-            mem_bar = self._make_bar(sys_stats.get('mem',0))
-            disk_bar = self._make_bar(sys_stats.get('disk',0))
-            sys_text = (
-                f"CPU {cpu_bar} {sys_stats.get('cpu',0)*100:.0f}%\n"
-                f"MEM {mem_bar} {sys_stats.get('mem',0)*100:.0f}%\n"
-                f"DSK {disk_bar} {sys_stats.get('disk',0)*100:.0f}%"
-            )
-            # use code block for monospaced font so bars align nicely
+            # show values or N/A if None
+            cpu_val = sys_stats.get('cpu')
+            mem_val = sys_stats.get('mem')
+            disk_val = sys_stats.get('disk')
+            if cpu_val is not None:
+                cpu_bar = self._make_bar(cpu_val)
+                cpu_text = f"CPU {cpu_bar} {cpu_val*100:.0f}%"
+            else:
+                cpu_text = "CPU N/A"
+            if mem_val is not None:
+                mem_bar = self._make_bar(mem_val)
+                mem_text = f"MEM {mem_bar} {mem_val*100:.0f}%"
+            else:
+                mem_text = "MEM N/A"
+            if disk_val is not None:
+                disk_bar = self._make_bar(disk_val)
+                disk_text = f"DSK {disk_bar} {disk_val*100:.0f}%"
+            else:
+                disk_text = "DSK N/A"
+            sys_text = f"{cpu_text}\n{mem_text}\n{disk_text}"
             embed.add_field(
                 name="💻 系統資源",
                 value=f"```\n{sys_text}\n```",
