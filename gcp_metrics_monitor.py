@@ -96,6 +96,53 @@ class GCPMetricsMonitor:
             print(f"[GCP METRICS] 獲取網路流量失敗: {e}")
             return []
     
+    async def _get_agent_metric(self, metric_type: str, hours: int = 6) -> List[Dict]:
+        """
+        公用方法用於抓取 agent.googleapis.com 類型的指標。
+        返回結構與 get_network_egress_data 相同。
+        """
+        try:
+            now = datetime.utcnow()
+            start_time = now - timedelta(hours=hours)
+            start_ts = Timestamp()
+            start_ts.FromDatetime(start_time)
+            end_ts = Timestamp()
+            end_ts.FromDatetime(now)
+            interval = monitoring_v3.TimeInterval(
+                {"start_time": start_ts, "end_time": end_ts}
+            )
+            request = monitoring_v3.ListTimeSeriesRequest(
+                name=f"projects/{self.project_id}",
+                filter=f'metric.type="{metric_type}"',
+                interval=interval,
+            )
+            results = self.metric_client.list_time_series(request=request)
+            series_list = list(results)
+            data_points = []
+            if series_list:
+                series = series_list[0]
+                for point in reversed(series.points):
+                    timestamp = point.interval.end_time.timestamp()
+                    bytes_value = point.value.double_value if point.value else 0
+                    mb_value = bytes_value / (1024 * 1024)
+                    data_points.append({
+                        "timestamp": datetime.fromtimestamp(timestamp, tz=TAIWAN_TZ),
+                        "bytes": bytes_value,
+                        "mb": mb_value
+                    })
+            return data_points
+        except Exception as e:
+            print(f"[GCP METRICS] get_agent_metric {metric_type} failed: {e}")
+            return []
+
+    async def get_ops_egress_data(self, hours: int = 6) -> List[Dict]:
+        """從 Ops Agent 取得 egress bytes（MB）"""
+        return await self._get_agent_metric('agent.googleapis.com/network/egress_bytes_count', hours)
+
+    async def get_ops_ingress_data(self, hours: int = 6) -> List[Dict]:
+        """從 Ops Agent 取得 ingress bytes（MB）"""
+        return await self._get_agent_metric('agent.googleapis.com/network/ingress_bytes_count', hours)
+    
     async def get_monthly_egress_data(self, days: int = 30) -> float:
         """
         獲取月累積出站流量（單位: GB）
@@ -345,7 +392,7 @@ class GCPMetricsMonitor:
             plt.close('all')
             return None
     
-    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0) -> discord.Embed:
+    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, ops_egress: List[Dict] = None, ops_ingress: List[Dict] = None) -> discord.Embed:
         """
         創建 metrics embed
         """
@@ -373,6 +420,21 @@ class GCPMetricsMonitor:
             embed.add_field(
                 name="🌐 網路出站流量 (過去 6 小時)",
                 value="暫無數據",
+                inline=True
+            )
+        # Ops agent summaries
+        if ops_egress:
+            tot = sum(p.get("mb",0) for p in ops_egress)
+            embed.add_field(
+                name="📤 Agent Egress (6h)",
+                value=f"{tot:.2f} MB",
+                inline=True
+            )
+        if ops_ingress:
+            tot2 = sum(p.get("mb",0) for p in ops_ingress)
+            embed.add_field(
+                name="📥 Agent Ingress (6h)",
+                value=f"{tot2:.2f} MB",
                 inline=True
             )
         
@@ -434,7 +496,10 @@ async def test_metrics_monitor():
     else:
         print(f"[TEST] 圖表生成失敗")
     
-    embed = monitor.create_metrics_embed(egress_data, billing_info)
+    # include ops agent data just for sanity in test
+    ops_e = await monitor.get_ops_egress_data(hours=6)
+    ops_i = await monitor.get_ops_ingress_data(hours=6)
+    embed = monitor.create_metrics_embed(egress_data, billing_info, ops_egress=ops_e, ops_ingress=ops_i)
     print(f"[TEST] Embed 創建成功")
 
 
