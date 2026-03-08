@@ -497,12 +497,19 @@ class GCPMetricsMonitor:
         
         # 系統資源條狀顯示
         if sys_stats:
+            # prepare aligned labels by padding to 3 chars (all are length 3 anyway) and wrap in a code block
             cpu_bar = self._make_bar(sys_stats.get('cpu',0))
             mem_bar = self._make_bar(sys_stats.get('mem',0))
             disk_bar = self._make_bar(sys_stats.get('disk',0))
+            sys_text = (
+                f"CPU {cpu_bar} {sys_stats.get('cpu',0)*100:.0f}%\n"
+                f"MEM {mem_bar} {sys_stats.get('mem',0)*100:.0f}%\n"
+                f"DSK {disk_bar} {sys_stats.get('disk',0)*100:.0f}%"
+            )
+            # use code block for monospaced font so bars align nicely
             embed.add_field(
                 name="💻 系統資源",
-                value=f"CPU {cpu_bar} {sys_stats.get('cpu',0)*100:.0f}%\nMEM {mem_bar} {sys_stats.get('mem',0)*100:.0f}%\nDSK {disk_bar} {sys_stats.get('disk',0)*100:.0f}%",
+                value=f"```\n{sys_text}\n```",
                 inline=False
             )
         
