@@ -142,6 +142,35 @@ class GCPMetricsMonitor:
     async def get_ops_ingress_data(self, hours: int = 6) -> List[Dict]:
         """從 Ops Agent 取得 ingress bytes（MB）"""
         return await self._get_agent_metric('agent.googleapis.com/network/ingress_bytes_count', hours)
+
+    async def get_system_metric(self, metric_type: str, hours: int = 1) -> float:
+        """Query a single-time-interval metric and return average value (fraction or percent)."""
+        try:
+            now = datetime.utcnow()
+            start_time = now - timedelta(hours=hours)
+            start_ts = Timestamp(); start_ts.FromDatetime(start_time)
+            end_ts = Timestamp(); end_ts.FromDatetime(now)
+            interval = monitoring_v3.TimeInterval({"start_time": start_ts, "end_time": end_ts})
+            request = monitoring_v3.ListTimeSeriesRequest(
+                name=f"projects/{self.project_id}",
+                filter=f'metric.type="{metric_type}"',
+                interval=interval,
+                aggregation=monitoring_v3.Aggregation(alignment_period=interval, per_series_aligner=monitoring_v3.Aggregation.Aligner.ALIGN_MEAN)
+            )
+            results = list(self.metric_client.list_time_series(request=request))
+            if results and results[0].points:
+                # take last point's value
+                v = results[0].points[0].value.double_value
+                return v
+            return 0.0
+        except Exception as e:
+            print(f"[GCP METRICS] system metric {metric_type} failed: {e}")
+            return 0.0
+
+    def _make_bar(self, ratio: float, length: int = 10) -> str:
+        """Create a text bar █ for filled portion and ░ for empty."""
+        filled = int(ratio * length)
+        return '█' * filled + '░' * (length - filled)
     
     async def get_monthly_egress_data(self, days: int = 30) -> float:
         """
@@ -392,7 +421,7 @@ class GCPMetricsMonitor:
             plt.close('all')
             return None
     
-    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, ops_egress: List[Dict] = None, ops_ingress: List[Dict] = None) -> discord.Embed:
+    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, ops_egress: List[Dict] = None, ops_ingress: List[Dict] = None, sys_stats: Dict = None) -> discord.Embed:
         """
         創建 metrics embed
         """
@@ -465,6 +494,17 @@ class GCPMetricsMonitor:
             value="查看下方的流量趨勢圖（台灣時間）；紅線為請求數量",
             inline=False
         )
+        
+        # 系統資源條狀顯示
+        if sys_stats:
+            cpu_bar = self._make_bar(sys_stats.get('cpu',0))
+            mem_bar = self._make_bar(sys_stats.get('mem',0))
+            disk_bar = self._make_bar(sys_stats.get('disk',0))
+            embed.add_field(
+                name="💻 系統資源",
+                value=f"CPU {cpu_bar} {sys_stats.get('cpu',0)*100:.0f}%\nMEM {mem_bar} {sys_stats.get('mem',0)*100:.0f}%\nDSK {disk_bar} {sys_stats.get('disk',0)*100:.0f}%",
+                inline=False
+            )
         
         # 使用台灣時間顯示最後更新時間
         embed.set_footer(text=f"每 20 分鐘自動更新 | 台灣時間 • {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}")
