@@ -81,7 +81,6 @@ class GCPMetricsMonitor:
                 series = series_list[0]
                 for point in reversed(series.points):  # 從早到晚排序
                     timestamp = point.interval.end_time.timestamp()
-                    # 轉換為 MB（字節 / 1024 / 1024）
                     bytes_value = point.value.double_value if point.value else 0
                     mb_value = bytes_value / (1024 * 1024)
                     
@@ -215,12 +214,14 @@ class GCPMetricsMonitor:
                 "status": f"⚠️ 計費查詢異常"
             }
     
-    async def generate_metrics_chart(self, data_points: List[Dict]) -> Optional[discord.File]:
+    async def generate_metrics_chart(self, data_points: List[Dict], ops_data: List[Dict] = None) -> Optional[discord.File]:
         """
-        生成 metrics 圖表（網路流量趨勢）
+        生成 metrics 圖表（網路流量趨勢）。
+        可傳入 ops_data 來顯示代理收集的出站 bytes。
         
         Args:
             data_points: 時間序列數據
+            ops_data: 可選，由 agent.googleapis.com/network/egress_bytes_count 收集
             
         Returns:
             discord.File: 圖表文件或 None
@@ -245,16 +246,12 @@ class GCPMetricsMonitor:
             ax.plot(timestamps, mb_values, marker='o', linewidth=2.5, markersize=5, color=neon_color)
             ax.fill_between(timestamps, mb_values, alpha=0.2, color=neon_color)
 
-            # optionally draw request count (one per sample) as red line
-            request_counts = [1 for _ in timestamps]
-            if request_counts:
-                red_ax = ax.twinx()
-                red_ax.set_ylabel('Requests', color='#ff4d4d', fontsize=10)
-                red_ax.plot(timestamps, request_counts, linestyle='--', linewidth=1.5, color='#ff4d4d', label='req count')
-                red_ax.tick_params(axis='y', labelcolor='#ff4d4d')
-                # hide red axis if counts are trivial
-                max_req = max(request_counts)
-                red_ax.set_ylim(0, max_req * 1.2 if max_req>0 else 1)
+            # if agent data provided, plot egress bytes as second blue line
+            if ops_data:
+                ops_vals = [d.get('mb', d.get('bytes',0)/(1024*1024)) for d in ops_data]
+                ax.plot(timestamps, ops_vals, linestyle='-', linewidth=1.5, color='#ff4d4d', label='agent egress (MB)')
+                # add legend entry
+                ax.legend(loc='upper left')
             
             # Set Y-axis from 0, auto-scale based on data
             if mb_values and max(mb_values) > 0:
