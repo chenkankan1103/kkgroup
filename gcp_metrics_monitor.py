@@ -240,10 +240,21 @@ class GCPMetricsMonitor:
             fig.patch.set_facecolor('#1a2f4d')  # Deep blue background
             ax.set_facecolor('#0f1922')  # Darker blue for plot area
             
-            # Plot with neon blue-purple line
+            # Plot with neon blue-purple line for egress
             neon_color = '#00d4ff'  # Neon cyan
             ax.plot(timestamps, mb_values, marker='o', linewidth=2.5, markersize=5, color=neon_color)
             ax.fill_between(timestamps, mb_values, alpha=0.2, color=neon_color)
+
+            # optionally draw request count (one per sample) as red line
+            request_counts = [1 for _ in timestamps]
+            if request_counts:
+                red_ax = ax.twinx()
+                red_ax.set_ylabel('Requests', color='#ff4d4d', fontsize=10)
+                red_ax.plot(timestamps, request_counts, linestyle='--', linewidth=1.5, color='#ff4d4d', label='req count')
+                red_ax.tick_params(axis='y', labelcolor='#ff4d4d')
+                # hide red axis if counts are trivial
+                max_req = max(request_counts)
+                red_ax.set_ylim(0, max_req * 1.2 if max_req>0 else 1)
             
             # Set Y-axis from 0, auto-scale based on data
             if mb_values and max(mb_values) > 0:
@@ -361,7 +372,7 @@ class GCPMetricsMonitor:
         # 圖表提示
         embed.add_field(
             name="📈 圖表",
-            value="查看下方的流量趨勢圖（台灣時間）",
+            value="查看下方的流量趨勢圖（台灣時間）；紅線為請求數量",
             inline=False
         )
         
