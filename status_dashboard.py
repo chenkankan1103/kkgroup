@@ -616,6 +616,11 @@ async def update_dashboard_metrics(bot):
         print("[METRICS] 查詢網路流量數據...")
         egress_data = await monitor.get_network_egress_data(hours=6)
         
+        # 取得 Ops Agent 進出站數據
+        print("[METRICS] 查詢 Ops Agent 流量...")
+        ops_egress = await monitor.get_ops_egress_data(hours=6)
+        ops_ingress = await monitor.get_ops_ingress_data(hours=6)
+        
         # 獲取計費信息
         print("[METRICS] 查詢計費信息...")
         billing_info = await monitor.get_billing_data()
@@ -626,7 +631,7 @@ async def update_dashboard_metrics(bot):
         
         # 生成圖表
         print("[METRICS] 生成圖表...")
-        chart_file = await monitor.generate_metrics_chart(egress_data)
+        chart_file = await monitor.generate_metrics_chart(egress_data, ops_egress, ops_ingress)
         
         # 創建 embed（傳入月累積流量）
         embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb)
