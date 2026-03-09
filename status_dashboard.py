@@ -24,18 +24,11 @@ from dotenv import load_dotenv, set_key
 from discord.ext import tasks
 import pathlib
 
-# 嘗試導入 GCP Metrics Monitor
+# ⏸️ METRICS 完全禁用 - 等待連線穩定性驗證
+# GCP Metrics Monitor 會導致 matplotlib 事件循環阻塞和心跳超時
+# 已禁用所有 metrics 功能直到進一步診斷
 GCP_METRICS_AVAILABLE = False
-try:
-    from gcp_metrics_monitor import GCPMetricsMonitor
-    GCP_METRICS_AVAILABLE = True
-    print("[DASHBOARD INIT] ✅ GCP Metrics Monitor 已成功導入")
-except ImportError as e:
-    print(f"[DASHBOARD INIT ERROR] 無法導入 GCP Metrics Monitor: {e}")
-    print("[DASHBOARD INIT] ⚠️ Metrics 功能將被禁用")
-except Exception as e:
-    print(f"[DASHBOARD INIT ERROR] 意外錯誤: {e}")
-    print("[DASHBOARD INIT] ⚠️ Metrics 功能將被禁用")
+print("[DASHBOARD INIT] ⏸️ GCP Metrics Monitor COMPLETELY DISABLED for stability testing")
 
 load_dotenv()
 
@@ -700,12 +693,14 @@ async def update_dashboard_metrics(bot):
             print("[METRICS ERROR] 機器人實例為空")
             return
         
+        # ⏸️ METRICS 完全禁用 - 等待連線穩定性驗證
+        print("[METRICS] ⏸️ GCP Metrics 已禁用，跳過更新")
+        return
+        
+        # 以下代碼暫時無法執行（metrics disabled）
         if not GCP_METRICS_AVAILABLE:
             print("[METRICS] ⚠️ GCP Metrics 不可用，跳過更新")
             return
-        
-        # 初始化 GCP Metrics Monitor
-        monitor = GCPMetricsMonitor()
         
         if not monitor.available:
             print("[METRICS] ⚠️ GCP Metrics Monitor 初始化失敗，跳過更新")
