@@ -23,7 +23,19 @@ from typing import Optional, Dict
 from dotenv import load_dotenv, set_key
 from discord.ext import tasks
 import pathlib
-from gcp_metrics_monitor import GCPMetricsMonitor
+
+# 嘗試導入 GCP Metrics Monitor
+GCP_METRICS_AVAILABLE = False
+try:
+    from gcp_metrics_monitor import GCPMetricsMonitor
+    GCP_METRICS_AVAILABLE = True
+    print("[DASHBOARD INIT] ✅ GCP Metrics Monitor 已成功導入")
+except ImportError as e:
+    print(f"[DASHBOARD INIT ERROR] 無法導入 GCP Metrics Monitor: {e}")
+    print("[DASHBOARD INIT] ⚠️ Metrics 功能將被禁用")
+except Exception as e:
+    print(f"[DASHBOARD INIT ERROR] 意外錯誤: {e}")
+    print("[DASHBOARD INIT] ⚠️ Metrics 功能將被禁用")
 
 load_dotenv()
 
@@ -609,8 +621,16 @@ async def update_dashboard_metrics(bot):
             print("[METRICS ERROR] 機器人實例為空")
             return
         
+        if not GCP_METRICS_AVAILABLE:
+            print("[METRICS] ⚠️ GCP Metrics 不可用，跳過更新")
+            return
+        
         # 初始化 GCP Metrics Monitor
         monitor = GCPMetricsMonitor()
+        
+        if not monitor.available:
+            print("[METRICS] ⚠️ GCP Metrics Monitor 初始化失敗，跳過更新")
+            return
         
         # 獲取網路出站流量數據
         print("[METRICS] 查詢網路流量數據...")

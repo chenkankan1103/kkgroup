@@ -14,12 +14,24 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple, Optional
-from google.cloud import monitoring_v3, billing_v1
-from google.protobuf.timestamp_pb2 import Timestamp
 import io
 import discord
 import os
 from dotenv import load_dotenv
+
+# 嘗試導入 Google Cloud 庫
+GOOGLE_CLOUD_AVAILABLE = False
+try:
+    from google.cloud import monitoring_v3, billing_v1
+    from google.protobuf.timestamp_pb2 import Timestamp
+    GOOGLE_CLOUD_AVAILABLE = True
+    print("[GCP] ✅ Google Cloud 庫已成功導入")
+except ImportError as e:
+    print(f"[GCP ERROR] 無法導入 Google Cloud 庫: {e}")
+    print("[GCP] ⚠️ GCP Metrics 將不可用，bot 將繼續運行")
+except Exception as e:
+    print(f"[GCP ERROR] Google Cloud 庫導入異常: {e}")
+    print("[GCP] ⚠️ GCP Metrics 將不可用，bot 將繼續運行")
 
 load_dotenv()
 
@@ -40,8 +52,22 @@ class GCPMetricsMonitor:
     
     def __init__(self, project_id: str = "kkgroup"):
         self.project_id = project_id
-        self.metric_client = monitoring_v3.MetricServiceClient()
-        self.billing_client = billing_v1.CloudBillingClient()
+        self.available = GOOGLE_CLOUD_AVAILABLE
+        
+        if self.available:
+            try:
+                self.metric_client = monitoring_v3.MetricServiceClient()
+                self.billing_client = billing_v1.CloudBillingClient()
+                print(f"[GCP] ✅ GCP Metrics Monitor 已初始化（project={project_id}）")
+            except Exception as e:
+                print(f"[GCP ERROR] 初始化 GCP 客戶端失敗: {e}")
+                self.available = False
+                self.metric_client = None
+                self.billing_client = None
+        else:
+            self.metric_client = None
+            self.billing_client = None
+            print("[GCP] ⚠️ GCP Metrics Monitor 初始化跳過（Google Cloud 庫不可用）")
         
     async def get_network_egress_data(self, hours: int = 6) -> List[Dict]:
         """
@@ -51,6 +77,10 @@ class GCPMetricsMonitor:
         Returns:
             List[Dict]: 包含時間戳和 MB 流量的列表
         """
+        if not self.available:
+            print("[GCP METRICS] ⚠️ GCP 不可用，返回空數據")
+            return []
+        
         try:
             now = datetime.utcnow()
             start_time = now - timedelta(hours=hours)
