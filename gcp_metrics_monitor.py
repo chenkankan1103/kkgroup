@@ -323,11 +323,14 @@ class GCPMetricsMonitor:
                 "status": f"⚠️ 計費查詢異常"
             }
     
-    async def generate_metrics_chart(self, data_points: List[Dict], ops_data: List[Dict] = None, ingress_data: List[Dict] = None, monthly_cost: Optional[float] = None) -> Optional[discord.File]:
+    def generate_metrics_chart(self, data_points: List[Dict], ops_data: List[Dict] = None, ingress_data: List[Dict] = None, monthly_cost: Optional[float] = None) -> Optional[discord.File]:
         """
         生成 metrics 圖表（網路流量趨勢）。
         可傳入 ops_data 來顯示代理收集的出站 bytes，以及 ingress_data 顯示進站 bytes。
         同時可以傳入 monthly_cost 以在折線圖上疊加成本長條（右側 y 軸）。
+        
+        此函數不再是協程，內部全部同步運行，允許外部使用
+        ``asyncio.to_thread`` 來將其移出事件循環。
         
         Args:
             data_points: 時間序列數據
@@ -596,18 +599,5 @@ async def test_metrics_monitor():
     print(f"[TEST] 計費信息: {billing_info}")
     
     print("[TEST] 生成圖表...")
-    chart_file = await monitor.generate_metrics_chart(egress_data)
-    if chart_file:
-        print(f"[TEST] 圖表生成成功")
-    else:
-        print(f"[TEST] 圖表生成失敗")
-    
-    # include ops agent data just for sanity in test
-    ops_e = await monitor.get_ops_egress_data(hours=6)
-    ops_i = await monitor.get_ops_ingress_data(hours=6)
-    embed = monitor.create_metrics_embed(egress_data, billing_info, ops_egress=ops_e, ops_ingress=ops_i)
-    print(f"[TEST] Embed 創建成功")
-
-
-if __name__ == "__main__":
-    asyncio.run(test_metrics_monitor())
+    # note: generate_metrics_chart is synchronous, so no await
+    chart_file = monitor.generate_metrics_chart(egress_data)
