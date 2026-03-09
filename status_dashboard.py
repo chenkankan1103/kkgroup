@@ -652,6 +652,12 @@ async def update_dashboard_metrics(bot):
         
         # 創建 embed（傳入月累積流量、agent 數據、系統狀態）
         embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb, ops_egress, ops_ingress, sys_stats)
+        # debug: ensure embed is not a coroutine
+        print(f"[METRICS DEBUG] created embed object of type {type(embed)}")
+        import asyncio as _asyncio
+        if _asyncio.iscoroutine(embed):
+            print("[METRICS DEBUG] embed is coroutine, awaiting it")
+            embed = await embed
         # embed now can easily show sys_stats separately below
         
         # 獲取頻道
