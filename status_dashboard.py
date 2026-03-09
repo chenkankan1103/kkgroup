@@ -110,12 +110,10 @@ logs_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dashboard_
 # GCP Metrics 追蹤上次的 embed 內容（避免重複更新）
 last_metrics_text = ""
 
-async 
 # keep track of last fetch time for each bot to avoid re-reading the same log
-data
 _last_log_fetch: Dict[str, datetime] = {}
 
-def get_systemd_logs(bot_type: str) -> str:
+async def get_systemd_logs(bot_type: str) -> str:
     """從 systemd journal 獲取指定機器人的日誌
 
     為了降低磁碟 I/O，僅抓取自上次查詢以來的新條目。
