@@ -323,15 +323,17 @@ class GCPMetricsMonitor:
                 "status": f"⚠️ 計費查詢異常"
             }
     
-    async def generate_metrics_chart(self, data_points: List[Dict], ops_data: List[Dict] = None, ingress_data: List[Dict] = None) -> Optional[discord.File]:
+    async def generate_metrics_chart(self, data_points: List[Dict], ops_data: List[Dict] = None, ingress_data: List[Dict] = None, monthly_cost: Optional[float] = None) -> Optional[discord.File]:
         """
         生成 metrics 圖表（網路流量趨勢）。
         可傳入 ops_data 來顯示代理收集的出站 bytes，以及 ingress_data 顯示進站 bytes。
+        同時可以傳入 monthly_cost 以在折線圖上疊加成本長條（右側 y 軸）。
         
         Args:
             data_points: 時間序列數據
             ops_data: 可選，由 agent.googleapis.com/network/egress_bytes_count 收集
             ingress_data: 可選，由 agent.googleapis.com/network/ingress_bytes_count 收集
+            monthly_cost: optional monthly cost (USD) to plot as a bar
             
         Returns:
             discord.File: 圖表文件或 None
@@ -342,6 +344,12 @@ class GCPMetricsMonitor:
                 return None
             
             fig, ax = plt.subplots(figsize=(12, 5))
+            # if monthly cost provided, create secondary axis for bars
+            has_cost = monthly_cost is not None
+            if has_cost:
+                ax2 = ax.twinx()
+                ax2.set_ylabel('成本 (USD)', color='#ffcc00')
+                ax2.tick_params(axis='y', colors='#ffcc00')
             
             # Extract times and values
             timestamps = [point["timestamp"] for point in data_points]
@@ -387,6 +395,14 @@ class GCPMetricsMonitor:
                     mb_val = bytes_val / (1024*1024)
                     ingress_vals.append(mb_val * scale)
                 ax.plot(timestamps, ingress_vals, linestyle='--', linewidth=1.5, color='#39ff14', label='agent ingress ('+unit+')')
+
+            # if monthly cost provided, draw cost bar on secondary axis
+            if has_cost:
+                # width chosen as 10% of timespan to make visible
+                span_seconds = (timestamps[-1] - timestamps[0]).total_seconds()
+                bar_width = span_seconds * 0.1
+                ax2.bar([timestamps[-1]], [monthly_cost], width=bar_width, alpha=0.4, color='#ffcc00', label='月成本 (USD)')
+                ax2.legend(loc='upper right')
 
             # show legend if any additional lines
             ax.legend(loc='upper left')

@@ -639,7 +639,12 @@ async def update_dashboard_metrics(bot):
         
         # 生成圖表
         print("[METRICS] 生成圖表...")
-        chart_file = await monitor.generate_metrics_chart(egress_data, ops_egress, ops_ingress)
+        # 將成本數字轉成 float 方便繪製，如果無法轉則傳 None
+        try:
+            cost_val = float(billing_info.get('total_cost', 0))
+        except Exception:
+            cost_val = None
+        chart_file = await monitor.generate_metrics_chart(egress_data, ops_egress, ops_ingress, monthly_cost=cost_val)
         
         # 創建 embed（傳入月累積流量、agent 數據、系統狀態）
         embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb, ops_egress, ops_ingress, sys_stats)
