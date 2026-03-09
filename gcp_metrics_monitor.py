@@ -46,6 +46,7 @@ class GCPMetricsMonitor:
     async def get_network_egress_data(self, hours: int = 6) -> List[Dict]:
         """
         獲取 GCP 網路出站流量數據（最近 N 小時）
+        嘗試多個 metric type，直至找到可用的數據。
         
         Returns:
             List[Dict]: 包含時間戳和 MB 流量的列表
@@ -63,37 +64,59 @@ class GCPMetricsMonitor:
                 {"start_time": start_ts, "end_time": end_ts}
             )
             
-            # 查詢網路出站流量 metric
-            metric_filter = 'metric.type="compute.googleapis.com/instance/network/sent_bytes_count"'
+            # 嘗試多個 metric type
+            metric_types = [
+                'compute.googleapis.com/instance/network/sent_bytes_count',  # 主要
+                'compute.googleapis.com/instance/network/sent_packets_count', # 替代
+            ]
             
-            request = monitoring_v3.ListTimeSeriesRequest(
-                name=f"projects/{self.project_id}",
-                filter=metric_filter,
-                interval=interval,
-            )
+            print(f"[GCP METRICS] 查詢網路流量 (hours={hours}, 時間: {start_time} ~ {now})")
             
-            results = self.metric_client.list_time_series(request=request)
-            series_list = list(results)
-            
-            data_points = []
-            
-            if series_list:
-                series = series_list[0]
-                for point in reversed(series.points):  # 從早到晚排序
-                    timestamp = point.interval.end_time.timestamp()
-                    bytes_value = point.value.double_value if point.value else 0
-                    mb_value = bytes_value / (1024 * 1024)
+            for metric_type in metric_types:
+                try:
+                    metric_filter = f'metric.type="{metric_type}"'
+                    print(f"[GCP METRICS] 嘗試 metric type: {metric_type}")
                     
-                    data_points.append({
-                        "timestamp": datetime.fromtimestamp(timestamp, tz=TAIWAN_TZ),
-                        "bytes": bytes_value,
-                        "mb": mb_value
-                    })
+                    request = monitoring_v3.ListTimeSeriesRequest(
+                        name=f"projects/{self.project_id}",
+                        filter=metric_filter,
+                        interval=interval,
+                    )
+                    
+                    results = self.metric_client.list_time_series(request=request)
+                    series_list = list(results)
+                    
+                    print(f"[GCP METRICS] 找到 {len(series_list)} 個 time series")
+                    
+                    if series_list:
+                        data_points = []
+                        for series in series_list:
+                            print(f"[GCP METRICS] series 包含 {len(series.points)} 個 points")
+                            for point in reversed(series.points):  # 從早到晚排序
+                                timestamp = point.interval.end_time.timestamp()
+                                bytes_value = point.value.double_value if point.value else 0
+                                mb_value = bytes_value / (1024 * 1024)
+                                
+                                data_points.append({
+                                    "timestamp": datetime.fromtimestamp(timestamp, tz=TAIWAN_TZ),
+                                    "bytes": bytes_value,
+                                    "mb": mb_value
+                                })
+                        
+                        if data_points:
+                            print(f"[GCP METRICS] 成功獲取 {len(data_points)} 個數據點，總流量: {sum(p['mb'] for p in data_points):.2f} MB")
+                            return data_points
+                except Exception as e:
+                    print(f"[GCP METRICS] metric type {metric_type} 失敗: {e}")
+                    continue
             
-            return data_points
+            print(f"[GCP METRICS] 所有 metric type 都無數據")
+            return []
             
         except Exception as e:
-            print(f"[GCP METRICS] 獲取網路流量失敗: {e}")
+            print(f"[GCP METRICS] 獲取網路流量異常: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     async def _get_agent_metric(self, metric_type: str, hours: int = 6) -> List[Dict]:
@@ -154,18 +177,26 @@ class GCPMetricsMonitor:
             start_ts = Timestamp(); start_ts.FromDatetime(start_time)
             end_ts = Timestamp(); end_ts.FromDatetime(now)
             interval = monitoring_v3.TimeInterval({"start_time": start_ts, "end_time": end_ts})
+            
+            metric_filter = f'metric.type="{metric_type}"'
+            print(f"[GCP METRICS] 查詢系統 metric: {metric_type}")
+            
             request = monitoring_v3.ListTimeSeriesRequest(
                 name=f"projects/{self.project_id}",
-                filter=f'metric.type="{metric_type}"',
+                filter=metric_filter,
                 interval=interval,
             )
             results = list(self.metric_client.list_time_series(request=request))
+            
+            print(f"[GCP METRICS] 系統 metric {metric_type} 找到 {len(results)} 個 series")
+            
             if results:
                 # pick the most recent point across all series
                 latest = None
                 latest_ts = None
-                for series in results:
+                for idx, series in enumerate(results):
                     if series.points:
+                        print(f"[GCP METRICS] series {idx} 包含 {len(series.points)} 個 points")
                         pt = series.points[0]
                         ts = pt.interval.end_time
                         # ts may be a protobuf Timestamp or a datetime object
@@ -178,10 +209,16 @@ class GCPMetricsMonitor:
                             latest = pt
                             latest_ts = key
                 if latest:
-                    return latest.value.double_value
+                    value = latest.value.double_value
+                    print(f"[GCP METRICS] 系統 metric {metric_type} 值: {value}")
+                    return value
+            else:
+                print(f"[GCP METRICS] ⚠️ 系統 metric {metric_type} 無數據")
             return None
         except Exception as e:
             print(f"[GCP METRICS] system metric {metric_type} failed: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def _make_bar(self, ratio: float, length: int = 10) -> str:
@@ -212,6 +249,8 @@ class GCPMetricsMonitor:
                 {"start_time": start_ts, "end_time": end_ts}
             )
             
+            print(f"[GCP METRICS] 查詢月累積流量 (days={days}, {start_time} ~ {now})")
+            
             # 查詢網路出站流量 metric - 使用 delta 以獲得累積值
             metric_filter = 'metric.type="compute.googleapis.com/instance/network/sent_bytes_count"'
             
@@ -224,20 +263,28 @@ class GCPMetricsMonitor:
             results = self.metric_client.list_time_series(request=request)
             series_list = list(results)
             
+            print(f"[GCP METRICS] 月累積流量查詢找到 {len(series_list)} 個 series")
+            
             total_bytes = 0
+            point_count = 0
             
             if series_list:
-                for series in series_list:
+                for idx, series in enumerate(series_list):
+                    print(f"[GCP METRICS] series {idx} 包含 {len(series.points)} 個 points")
                     for point in series.points:
                         bytes_value = point.value.double_value if point.value else 0
                         total_bytes += bytes_value
+                        point_count += 1
             
             # 轉換為 GB
             gb_value = total_bytes / (1024 * 1024 * 1024)
+            print(f"[GCP METRICS] 月累積成功: {point_count} 個點，總 {gb_value:.4f} GB")
             return gb_value
             
         except Exception as e:
             print(f"[GCP METRICS] 獲取月累積流量失敗: {e}")
+            import traceback
+            traceback.print_exc()
             return 0.0
     
     async def get_billing_data(self) -> Dict:
@@ -257,19 +304,23 @@ class GCPMetricsMonitor:
                 "status": "✓ 正常 (免費額度機制)"
             }
 
+            print(f"[GCP METRICS] 查詢計費信息 (月份: {current_month})")
+
             # first, make sure the billing API connection works so we know permission is ok
             try:
                 accounts = list(self.billing_client.list_billing_accounts())
+                print(f"[GCP METRICS] 找到 {len(accounts)} 個計費帳戶")
                 if accounts:
                     billing_info["status"] = "✓ 計費查詢已連接"
             except Exception as api_error:
                 err = str(api_error)
+                print(f"[GCP METRICS] 計費 API 連接失敗: {err}")
                 if "403" in err:
                     billing_info["status"] = "⚠️ 需要計費帳戶讀取權限 (IAM 角色)"
                 elif "NOT_FOUND" in err:
                     billing_info["status"] = "⚠️ 計費帳戶未綁定"
                 else:
-                    billing_info["status"] = "⚠️ 計費 API 連接失敗"
+                    billing_info["status"] = f"⚠️ 計費 API 連接失敗: {err[:50]}"
                 return billing_info
 
             # optional: read actual costs from a BigQuery export table.  
@@ -279,6 +330,7 @@ class GCPMetricsMonitor:
             tables = []
             env_table = os.environ.get("GCP_BILLING_TABLE")
             if env_table:
+                print(f"[GCP METRICS] 使用環境變數 table: {env_table}")
                 tables.append(env_table)
             # common names users might see
             tables.extend([
@@ -289,6 +341,7 @@ class GCPMetricsMonitor:
             found = False
             for table in tables:
                 try:
+                    print(f"[GCP METRICS] 嘗試 BigQuery table: {table}")
                     from google.cloud import bigquery
                     bq = bigquery.Client()
                     query = f"""
@@ -299,23 +352,33 @@ class GCPMetricsMonitor:
                     WHERE DATE(_PARTITIONTIME) >= DATE_TRUNC(CURRENT_DATE(), MONTH)
                     """
                     job = bq.query(query)
-                    for row in job.result():
+                    result_list = list(job.result())
+                    print(f"[GCP METRICS] BigQuery query 返回 {len(result_list)} 行")
+                    
+                    for row in result_list:
+                        print(f"[GCP METRICS] row: total_cost={row.total_cost}, currency={row.currency}")
                         if row.total_cost is not None:
                             billing_info["total_cost"] = f"{row.total_cost:.2f}"
                         if row.currency:
                             billing_info["currency"] = row.currency
-                    billing_info["status"] += f" (BigQuery: {table})"
+                    
+                    billing_info["status"] += f" (BigQuery: {table.split('.')[-1][:30]})"
                     found = True
+                    print(f"[GCP METRICS] BigQuery 查詢成功，成本: {billing_info['total_cost']} {billing_info['currency']}")
                     break
                 except Exception as bq_err:
                     # try next table
-                    print(f"[GCP METRICS] BigQuery table {table} query failed: {bq_err}")
+                    print(f"[GCP METRICS] BigQuery table {table} 查詢失敗: {bq_err}")
+            
             if not found:
+                print(f"[GCP METRICS] 所有 BigQuery table 都查詢失敗")
                 billing_info["status"] += " (無可用 BigQuery 導出)"
 
             return billing_info
         except Exception as e:
             print(f"[GCP METRICS] 計費資料錯誤: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 "currency": "USD",
                 "total_cost": "N/A",
