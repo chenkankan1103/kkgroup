@@ -50,6 +50,35 @@ def _save_storage(data: Dict):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+# 異步版本（避免阻塞事件循環）
+async def _async_load_storage(timeout=3.0) -> Dict:
+    """異步加載存儲（使用線程池避免阻塞）"""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_load_storage),
+            timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        logger.warning("[RED ENVELOPE] Timeout loading storage (>3s), returning empty")
+        return {"messages": {}, "pending_awards": []}
+    except Exception as e:
+        logger.error(f"[RED ENVELOPE] Error loading storage: {e}")
+        return {"messages": {}, "pending_awards": []}
+
+
+async def _async_save_storage(data: Dict, timeout=2.0):
+    """異步保存存儲（使用線程池避免阻塞）"""
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(_save_storage, data),
+            timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        logger.warning("[RED ENVELOPE] Timeout saving storage (>2s)")
+    except Exception as e:
+        logger.error(f"[RED ENVELOPE] Error saving storage: {e}")
+
+
 class RedEnvelopeView(discord.ui.View):
     """每個 message 對應一個 View（支援重啟後恢復）。
 
@@ -130,11 +159,12 @@ class RedEnvelopeView(discord.ui.View):
 
                 # 更新 storage
                 try:
-                    storage = _load_storage()
+                    # ⏱️ 使用異步版本避免阻塞
+                    storage = await _async_load_storage()
                     msg_key = str(self.message_id) if self.message_id else None
                     if msg_key and msg_key in storage.get("messages", {}):
                         storage["messages"][msg_key]["claimed"] = self.claimed
-                        _save_storage(storage)
+                        await _async_save_storage(storage)
                 except Exception:
                     logger.exception("Failed to persist claimed list user=%s message=%s", user_id, self.message_id)
 
@@ -183,7 +213,8 @@ class RedEnvelopeView(discord.ui.View):
         try:
             if not self.message_id:
                 return
-            storage = _load_storage()
+            # ⏱️ 使用異步版本避免阻塞
+            storage = await _async_load_storage()
             msg_key = str(self.message_id)
 
             # 先從 storage 取出 channel_id（避免刪除後無法查到 channel）
@@ -195,7 +226,7 @@ class RedEnvelopeView(discord.ui.View):
             # 刪除該活動資料（先備份 channel_id）
             if msg_key in storage.get("messages", {}):
                 del storage["messages"][msg_key]
-                _save_storage(storage)
+                await _async_save_storage(storage)
 
             # 直接使用 channel_id 去抓取訊息（不要再依賴已刪除的 storage）
             channel = None
@@ -347,7 +378,7 @@ class NewYearRedEnvelope(commands.Cog):
 
     async def _add_pending_award(self, user_id: int, message_id: int, amount: int = AWARD_AMOUNT):
         """將未成功的發放加入 storage.pending_awards（避免重複）。"""
-        storage = _load_storage()
+        storage = await _async_load_storage()
         storage.setdefault("pending_awards", [])
         # 避免重複加入
         for p in storage["pending_awards"]:
@@ -363,14 +394,15 @@ class NewYearRedEnvelope(commands.Cog):
             "last_try": None,
             "next_try": time.time() + PENDING_RETRY_INTERVAL,
         })
-        _save_storage(storage)
+        await _async_save_storage(storage)
 
     async def _pending_awards_worker(self):
         """背景工作：定期掃描 pending_awards 並重試發放。"""
         await self.bot.wait_until_ready()
         while True:
             try:
-                storage = _load_storage()
+                # ⏱️ 使用異步版本以避免阻塞事件循環
+                storage = await _async_load_storage()
                 pending = list(storage.get("pending_awards", []))
                 now = time.time()
                 changed = False
@@ -386,9 +418,9 @@ class NewYearRedEnvelope(commands.Cog):
                     new_balance = await self._award_user_with_retries(user_id, amount=amount)
                     if new_balance is not None:
                         # 移除 pending 並更新 embed（若 message 仍存在）
-                        storage = _load_storage()
+                        storage = await _async_load_storage()
                         storage["pending_awards"] = [p for p in storage.get("pending_awards", []) if not (p.get("user_id")==user_id and p.get("message_id")==message_id and p.get("amount")==amount)]
-                        _save_storage(storage)
+                        await _async_save_storage(storage)
                         changed = True
 
                         # 更新訊息 embed（顯示已發放）
@@ -402,7 +434,7 @@ class NewYearRedEnvelope(commands.Cog):
                                     color=0xE74C3C,
                                 )
                                 # 讀取最新 claimed list
-                                storage_after = _load_storage()
+                                storage_after = await _async_load_storage()
                                 claimed = storage_after.get("messages", {}).get(str(message_id), {}).get("claimed", [])
                                 embed.add_field(name="已領取", value="\n".join(f"<@{uid}>" for uid in claimed) or "尚未有人領取", inline=False)
                                 embed.add_field(name="最近領取獎勵", value=f"<@{user_id}> 獲得 +{amount} KKcoin（現有 {new_balance} KKcoin）", inline=False)
@@ -412,7 +444,7 @@ class NewYearRedEnvelope(commands.Cog):
                             pass
                     else:
                         # 更新 attempts/next_try
-                        storage = _load_storage()
+                        storage = await _async_load_storage()
                         for p in storage.get("pending_awards", []):
                             if p.get("user_id") == user_id and p.get("message_id") == message_id and p.get("amount") == amount:
                                 p["attempts"] = p.get("attempts", 0) + 1
@@ -420,7 +452,7 @@ class NewYearRedEnvelope(commands.Cog):
                                 backoff = min(300, PENDING_RETRY_INTERVAL * (2 ** p["attempts"]))
                                 p["next_try"] = time.time() + backoff
                                 break
-                        _save_storage(storage)
+                        await _async_save_storage(storage)
                         changed = True
 
                 # 休息一段時間再繼續掃描
