@@ -1166,8 +1166,8 @@ async def update_task_watchdog():
             except Exception as e:
                 print(f"[WATCHDOG ERROR] 無法重啟 {bot_type} 任務: {e}")
 
-# GCP Metrics 更新任務 - 每 20 分鐘執行一次
-@tasks.loop(minutes=20)
+# GCP Metrics 更新任務 - 每 10 分鐘執行一次（改為較高頻率）
+@tasks.loop(minutes=10)
 async def metrics_update_task():
     """定期更新 GCP Metrics embed"""
     try:
