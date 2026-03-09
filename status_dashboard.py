@@ -206,6 +206,8 @@ def check_environment() -> Dict[str, any]:
         "logs_file_writable": False,
         "logs_dir_writable": False,
         "env_file_exists": os.path.exists(".env"),
+        # track whether we can write to .env, since many components rely on it
+        "env_file_writable": False,
         "issues": []
     }
     
@@ -255,6 +257,14 @@ def check_environment() -> Dict[str, any]:
         diagnostics["issues"].append(
             f"工作目錄不匹配 - 當前: {os.getcwd()}, 預期: {expected_dir}"
         )
+
+    # 檢查 .env 文件可寫
+    try:
+        diagnostics["env_file_writable"] = os.access(".env", os.W_OK)
+        if not diagnostics["env_file_writable"] and diagnostics["env_file_exists"]:
+            diagnostics["issues"].append(".env 文件存在但不可寫，可能導致保存 ID 失敗")
+    except Exception as e:
+        diagnostics["issues"].append(f"無法檢查 .env 權限: {e}")
     
     # 記錄診斷結果
     print("[環境診斷] ==================")
@@ -1170,7 +1180,20 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 print("[METRICS INIT] ✓ Metrics embed 已初始化")
             except Exception as metrics_error:
                 print(f"[METRICS INIT ERROR] 首次初始化 Metrics embed 失敗: {metrics_error}")
-                # 不中斷初始化流程，讓定時任務稍後重試
+                # 若首次初始化失敗（例如 429 或 .env 無法寫入），
+                # 我們安排稍後重試以加快恢復，而不是完全依賴 10 分鐘的任務
+                async def _retry_metrics(attempt=1):
+                    delay = 60 * attempt
+                    print(f"[METRICS INIT RETRY] 將在 {delay}s 後重新嘗試 (attempt={attempt})")
+                    await asyncio.sleep(delay)
+                    try:
+                        await update_dashboard_metrics(bot_instance)
+                        print("[METRICS INIT RETRY] 成功初始化 Metrics embed")
+                    except Exception as e2:
+                        print(f"[METRICS INIT RETRY ERROR] 再次初始化失敗: {e2}")
+                        if attempt < 3:
+                            asyncio.create_task(_retry_metrics(attempt + 1))
+                asyncio.create_task(_retry_metrics())
                 
     except Exception as e:
         print(f"❌ 初始化儀表板失敗: {e}")
@@ -1264,25 +1287,35 @@ else:
         pass
 
 def save_message_ids(bot_type: str):
-    """將 message_id 保存到 .env"""
+    """將 message_id 保存到 .env
+
+    為了避免 .env 權限錯誤導致整個腳本崩潰，
+    任何 write 操作都在 try/except 塊中捕獲異常並記錄。
+    """
     env_path = ".env"
-    
-    if bot_type == "metrics":
-        # 特殊處理 metrics message ID
-        metrics_id = message_ids["metrics"].get("message")
-        if metrics_id:
-            set_key(env_path, "DASHBOARD_METRICS_MESSAGE", str(metrics_id))
-    else:
-        dashboard_id = message_ids[bot_type].get("dashboard")
-        logs_id = message_ids[bot_type].get("logs")
 
-        if dashboard_id:
-            env_key = f"DASHBOARD_{bot_type.upper()}_DASHBOARD"
-            set_key(env_path, env_key, str(dashboard_id))
+    try:
+        if bot_type == "metrics":
+            # 特殊處理 metrics message ID
+            metrics_id = message_ids["metrics"].get("message")
+            if metrics_id:
+                set_key(env_path, "DASHBOARD_METRICS_MESSAGE", str(metrics_id))
+        else:
+            dashboard_id = message_ids[bot_type].get("dashboard")
+            logs_id = message_ids[bot_type].get("logs")
 
-        if logs_id:
-            env_key = f"DASHBOARD_{bot_type.upper()}_LOGS"
-            set_key(env_path, env_key, str(logs_id))
+            if dashboard_id:
+                env_key = f"DASHBOARD_{bot_type.upper()}_DASHBOARD"
+                set_key(env_path, env_key, str(dashboard_id))
+
+            if logs_id:
+                env_key = f"DASHBOARD_{bot_type.upper()}_LOGS"
+                set_key(env_path, env_key, str(logs_id))
+    except Exception as e:
+        # 不讓任何寫入失敗中斷初始化流程
+        print(f"[ENV WRITE ERROR] 無法保存 {bot_type} 訊息 ID 到 .env: {e}")
+        # 若需要檢查權限，可執行一次環境診斷
+        env_diagnostics = check_environment()
 
 def load_message_ids(bot_type: str):
     """從 .env 加載 message_id，如果沒有則使用硬編碼的回退值"""
