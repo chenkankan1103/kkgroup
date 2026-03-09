@@ -43,11 +43,11 @@ load_dotenv()
 TAIWAN_TZ = timezone(timedelta(hours=8))
 
 # Systemd 日誌配置
-# 每個服務預設抓取的 systemd 日誌行數，可調大以便觀察
+# 只抓8行最新日誌以減少磁盤I/O，每行都很重要（最後一行為最新錯誤/狀態）
 SYSTEMD_LOG_CONFIG = {
-    "bot": {"service": "bot.service", "lines": 20, "enabled": True},
-    "shopbot": {"service": "shopbot.service", "lines": 20, "enabled": True},
-    "uibot": {"service": "uibot.service", "lines": 20, "enabled": True}
+    "bot": {"service": "bot.service", "lines": 8, "enabled": True},
+    "shopbot": {"service": "shopbot.service", "lines": 8, "enabled": True},
+    "uibot": {"service": "uibot.service", "lines": 8, "enabled": True}
 }
 
 def get_taiwan_time():
@@ -118,6 +118,7 @@ async def get_systemd_logs(bot_type: str) -> str:
 
     為了降低磁碟 I/O，僅抓取自上次查詢以來的新條目。
     初次呼叫會使用 "2 hours ago" 作為保底，之後視為迭代式。
+    每次查詢有 3s 超時，以避免事件征環被凍結。
     """
     config = SYSTEMD_LOG_CONFIG.get(bot_type)
     if not config or not config["enabled"]:
@@ -134,7 +135,8 @@ async def get_systemd_logs(bot_type: str) -> str:
         # 使用上次查詢時間構造 --since 參數
         since_time = _last_log_fetch.get(bot_type)
         if since_time is None:
-            since_arg = "2 hours ago"  # 第一次查詢用較大的窗口
+            # 第一次查詢：不是手動重來journalctl，仅從 最近 10 分鐘開始
+            since_arg = "10 minutes ago"
         else:
             # journalctl 可以接受 ISO 格式
             since_arg = since_time.isoformat()
@@ -145,6 +147,55 @@ async def get_systemd_logs(bot_type: str) -> str:
             "-n", str(lines), "--no-pager", "-o", "short-iso",
             "--since", since_arg
         ]
+
+        # 異步執行命令，帶 3s 超時
+        try:
+            process = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                ),
+                timeout=3.0
+            )
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=3.0
+            )
+        except asyncio.TimeoutError:
+            if bot_type not in QUIET_UPDATE_BOTS:
+                print(f"[SYSTEMD LOGS] {bot_type} journalctl 查詢超時")
+            return f"journalctl 查詢超時 (3s)"
+
+        if process.returncode == 0:
+            logs = stdout.decode('utf-8', errors='ignore').strip()
+            # 更新 fetch 時間，無論是否有新內容
+            _last_log_fetch[bot_type] = datetime.now(TAIWAN_TZ)
+
+            if logs:
+                # 格式化日誌
+                formatted_logs = []
+                seen_messages = set()  # 用於記錄已處理的訊息
+                for line in logs.split('\n'):
+                    if line.strip():
+                        parts = line.split(' ', 2)
+                        if len(parts) >= 2:
+                            # 直接使用 journalctl 原始時間，不要再插入新的時間
+                            message = parts[2] if len(parts) > 2 else parts[1]
+                            # 刪除 PID（例如 service[1234]）以縮短行長
+                            message = re.sub(r"\[\d+\]", "", message)
+                            # 過濾非必要的訊息
+                            if any(keyword in message for keyword in ["成功獲取消息", "日誌已成功更新", "更新完成"]):
+                                continue
+                            # 排除 systemd 本身的「entries --」或空標頭
+                            if message.strip().lower().startswith("entries --") or message.strip() == "-- reboot --":
+                                continue
+                            if message.startswith("UPDATE TASK"):
+                                message = message.replace("UPDATE TASK ", "")
+                            seen_messages.add(message)
+                            formatted_logs.append(message)
+                return '\n'.join(formatted_logs)
+
 
         # 異步執行命令
         process = await asyncio.create_subprocess_exec(
