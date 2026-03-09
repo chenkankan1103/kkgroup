@@ -163,11 +163,20 @@ class GCPMetricsMonitor:
             if results:
                 # pick the most recent point across all series
                 latest = None
+                latest_ts = None
                 for series in results:
                     if series.points:
                         pt = series.points[0]
-                        if latest is None or pt.interval.end_time.seconds > latest.interval.end_time.seconds:
+                        ts = pt.interval.end_time
+                        # ts may be a protobuf Timestamp or a datetime object
+                        if hasattr(ts, 'seconds'):
+                            key = ts.seconds
+                        else:
+                            # assume datetime-like
+                            key = ts.timestamp()
+                        if latest is None or key > latest_ts:
                             latest = pt
+                            latest_ts = key
                 if latest:
                     return latest.value.double_value
             return None
