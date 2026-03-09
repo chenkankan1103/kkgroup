@@ -10,6 +10,9 @@ import asyncio
 import json
 import matplotlib
 matplotlib.use('Agg')  # 非圖形界面後端
+# 抱止 matplotlib tick warning
+import warnings
+warnings.filterwarnings('ignore', message='Locator attempting to generate')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta, timezone
