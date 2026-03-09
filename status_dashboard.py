@@ -637,14 +637,18 @@ async def update_dashboard_metrics(bot):
         disk = await monitor.get_system_metric('agent.googleapis.com/disk/percent_used', hours=1)
         sys_stats = {'cpu': cpu, 'mem': mem, 'disk': disk}
         
-        # 生成圖表
+        # 生成圖表（放到線程中執行以免阻塞事件循環）
         print("[METRICS] 生成圖表...")
         # 將成本數字轉成 float 方便繪製，如果無法轉則傳 None
         try:
             cost_val = float(billing_info.get('total_cost', 0))
         except Exception:
             cost_val = None
-        chart_file = await monitor.generate_metrics_chart(egress_data, ops_egress, ops_ingress, monthly_cost=cost_val)
+        chart_file = await asyncio.to_thread(
+            monitor.generate_metrics_chart,
+            egress_data, ops_egress, ops_ingress,
+            monthly_cost=cost_val
+        )
         
         # 創建 embed（傳入月累積流量、agent 數據、系統狀態）
         embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb, ops_egress, ops_ingress, sys_stats)
