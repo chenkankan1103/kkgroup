@@ -1276,12 +1276,17 @@ def _start_watchdog():
         else:
             print("[WATCHDOG] 更新任務守護程序已在運行中")
         
-        # 同時啟動 metrics 更新任務
-        if not metrics_update_task.is_running():
-            metrics_update_task.start()
-            print("[METRICS TASK] GCP Metrics 更新任務已啟動")
+        # 只有指定的機器人/實例負責執行 GCP Metrics 任務，
+        # 避免多個進程同時查詢並繪製圖表導致堵塞
+        metrics_master = os.getenv("DASHBOARD_METRICS_MASTER", "bot")
+        if current_bot_type == metrics_master:
+            if not metrics_update_task.is_running():
+                metrics_update_task.start()
+                print("[METRICS TASK] GCP Metrics 更新任務已啟動")
+            else:
+                print("[METRICS TASK] GCP Metrics 更新任務已在運行中")
         else:
-            print("[METRICS TASK] GCP Metrics 更新任務已在運行中")
+            print(f"[METRICS TASK] 當前 bot ({current_bot_type}) 不是 metrics master，跳過啟動")
     except Exception as e:
         # swallow startup errors; they will be retried in bot init
         print(f"[WATCHDOG ERROR] 無法啟動守護程序: {e}")
