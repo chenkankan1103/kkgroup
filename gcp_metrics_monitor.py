@@ -263,9 +263,22 @@ class GCPMetricsMonitor:
                     billing_info["status"] = "⚠️ 計費 API 連接失敗"
                 return billing_info
 
-            # optional: read actual costs from a BigQuery export table
-            billing_table = os.environ.get("GCP_BILLING_TABLE")
-            if billing_table:
+            # optional: read actual costs from a BigQuery export table.  
+            # try the resource-level export first (more detailed), then the
+            # normal v1 export.  the environment variable can specify the
+            # preferred table but we also attempt fallbacks.
+            tables = []
+            env_table = os.environ.get("GCP_BILLING_TABLE")
+            if env_table:
+                tables.append(env_table)
+            # common names users might see
+            tables.extend([
+                "kkgroup.KKgroup.gcp_billing_export_resource_v1_018DDB_53FEDB_852041",
+                "kkgroup.KKgroup.gcp_billing_export_v1_018DDB_53FEDB_852041",
+            ])
+
+            found = False
+            for table in tables:
                 try:
                     from google.cloud import bigquery
                     bq = bigquery.Client()
@@ -273,7 +286,7 @@ class GCPMetricsMonitor:
                     SELECT
                       SUM(cost) AS total_cost,
                       ANY_VALUE(currency) AS currency
-                    FROM `{billing_table}`
+                    FROM `{table}`
                     WHERE DATE(_PARTITIONTIME) >= DATE_TRUNC(CURRENT_DATE(), MONTH)
                     """
                     job = bq.query(query)
@@ -282,11 +295,14 @@ class GCPMetricsMonitor:
                             billing_info["total_cost"] = f"{row.total_cost:.2f}"
                         if row.currency:
                             billing_info["currency"] = row.currency
+                    billing_info["status"] += f" (BigQuery: {table})"
+                    found = True
+                    break
                 except Exception as bq_err:
-                    print(f"[GCP METRICS] BigQuery 計費查詢失敗: {bq_err}")
-            else:
-                # no export configured, leave cost at default zero
-                billing_info["status"] += " (無 BigQuery 導出)"
+                    # try next table
+                    print(f"[GCP METRICS] BigQuery table {table} query failed: {bq_err}")
+            if not found:
+                billing_info["status"] += " (無可用 BigQuery 導出)"
 
             return billing_info
         except Exception as e:
