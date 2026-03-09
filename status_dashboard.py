@@ -110,8 +110,17 @@ logs_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dashboard_
 # GCP Metrics 追蹤上次的 embed 內容（避免重複更新）
 last_metrics_text = ""
 
-async def get_systemd_logs(bot_type: str) -> str:
-    """從 systemd journal 獲取指定機器人的日誌"""
+async 
+# keep track of last fetch time for each bot to avoid re-reading the same log
+data
+_last_log_fetch: Dict[str, datetime] = {}
+
+def get_systemd_logs(bot_type: str) -> str:
+    """從 systemd journal 獲取指定機器人的日誌
+
+    為了降低磁碟 I/O，僅抓取自上次查詢以來的新條目。
+    初次呼叫會使用 "2 hours ago" 作為保底，之後視為迭代式。
+    """
     config = SYSTEMD_LOG_CONFIG.get(bot_type)
     if not config or not config["enabled"]:
         return f"Systemd 日誌已停用 ({bot_type})"
@@ -124,11 +133,19 @@ async def get_systemd_logs(bot_type: str) -> str:
         if bot_type not in QUIET_UPDATE_BOTS:
             print(f"[SYSTEMD LOGS] {bot_type} 正在獲取 {service_name} 的日誌...")
 
+        # 使用上次查詢時間構造 --since 參數
+        since_time = _last_log_fetch.get(bot_type)
+        if since_time is None:
+            since_arg = "2 hours ago"  # 第一次查詢用較大的窗口
+        else:
+            # journalctl 可以接受 ISO 格式
+            since_arg = since_time.isoformat()
+
         # 構建 journalctl 命令（使用完整路徑）
         cmd = [
             "/usr/bin/journalctl", "-u", service_name,
             "-n", str(lines), "--no-pager", "-o", "short-iso",
-            "--since", "2 hours ago"  # 限制時間範圍避免過多數據
+            "--since", since_arg
         ]
 
         # 異步執行命令
@@ -142,6 +159,9 @@ async def get_systemd_logs(bot_type: str) -> str:
 
         if process.returncode == 0:
             logs = stdout.decode('utf-8', errors='ignore').strip()
+            # 更新 fetch 時間，無論是否有新內容
+            _last_log_fetch[bot_type] = datetime.now(TAIWAN_TZ)
+
             if logs:
                 # 格式化日誌
                 formatted_logs = []
