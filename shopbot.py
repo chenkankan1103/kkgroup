@@ -199,6 +199,19 @@ async def before_update_status():
     """等待 Bot 準備完成"""
     await client.wait_until_ready()
 
+# Gateway lifecycle logging
+@client.event
+async def on_connect():
+    print("[DISCORD] gateway connected")
+
+@client.event
+async def on_disconnect():
+    print("[DISCORD] gateway disconnected")
+
+@client.event
+async def on_resumed():
+    print("[DISCORD] session resumed")
+
 # ============================================================
 # Bot 事件處理
 # ============================================================
@@ -303,7 +316,10 @@ async def on_ready():
 # 主程序入口
 # ============================================================
 async def main():
-    """主程序"""
+    """主程序
+
+    使用重試循環以提高連線穩定性，使 systemd/監控不必頻繁介入。
+    """
     loop = asyncio.get_event_loop()
     
     # 暫時禁用檔案監控以避免重載問題
@@ -325,16 +341,22 @@ async def main():
     # observer.start()
 
     try:
-        async with client:
-            await client.start(TOKEN)
-    except KeyboardInterrupt:
-        print(f"\n👋 {BOT_NAME} Bot 已停止")
-    except discord.LoginFailure:
-        print("❌ Discord Token 無效")
-    except Exception as e:
-        print(f"❌ 運行失敗: {e}")
-        import traceback
-        traceback.print_exc()
+        while True:
+            try:
+                async with client:
+                    await client.start(TOKEN)
+            except KeyboardInterrupt:
+                print(f"\n👋 {BOT_NAME} Bot 已停止")
+                break
+            except discord.LoginFailure:
+                print("❌ Discord Token 無效")
+                break
+            except Exception as e:
+                print(f"[MAIN] 運行失敗: {e}")
+                import traceback
+                traceback.print_exc()
+            print("[MAIN] 連線中斷，5秒後重試")
+            await asyncio.sleep(5)
     finally:
         if update_status.is_running():
             update_status.stop()

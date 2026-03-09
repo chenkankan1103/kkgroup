@@ -201,6 +201,18 @@ async def on_voice_state_update(member, before, after):
     print(f"[global] voice_state_update member={member.id} before={getattr(before.channel, 'id', None)} after={getattr(after.channel, 'id', None)}")
 
 @client.event
+async def on_connect():
+    print("[DISCORD] gateway connected")
+
+@client.event
+async def on_disconnect():
+    print("[DISCORD] gateway disconnected")
+
+@client.event
+async def on_resumed():
+    print("[DISCORD] session resumed")
+
+@client.event
 async def on_ready():
     """Bot 啟動完成"""
     stage_text = "DEV" if STAGE != "prod" else "PROD"
@@ -334,7 +346,12 @@ async def on_ready():
 # 主程序入口
 # ============================================================
 async def main():
-    """主程序"""
+    """主程序
+
+    因為網路不穩、Discord 斷線等原因，client.start 可能會在中途拋出
+    例外並退出。將整個啟動包在一個 while 迴圈中，遇到錯誤時等待幾秒
+    再重試；只有遇到 KeyboardInterrupt 或 LoginFailure 才會跳出迴圈。
+    """
     loop = asyncio.get_event_loop()
     
     # 暫時禁用檔案監控以避免重載問題
@@ -356,16 +373,23 @@ async def main():
     # observer.start()
 
     try:
-        async with client:
-            await client.start(TOKEN)
-    except KeyboardInterrupt:
-        print(f"\n👋 {BOT_NAME} Bot 已停止")
-    except discord.LoginFailure:
-        print("❌ Discord Token 無效")
-    except Exception as e:
-        print(f"❌ 運行失敗: {e}")
-        import traceback
-        traceback.print_exc()
+        while True:
+            try:
+                async with client:
+                    await client.start(TOKEN)
+            except KeyboardInterrupt:
+                print(f"\n👋 {BOT_NAME} Bot 已停止")
+                break
+            except discord.LoginFailure:
+                print("❌ Discord Token 無效")
+                break
+            except Exception as e:
+                print(f"[MAIN] 運行失敗: {e}")
+                import traceback
+                traceback.print_exc()
+            # 自動重連
+            print("[MAIN] 連線中斷，5秒後重試")
+            await asyncio.sleep(5)
     finally:
         if update_status.is_running():
             update_status.stop()
