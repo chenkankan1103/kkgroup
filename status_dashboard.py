@@ -36,7 +36,7 @@ import pathlib
 GCP_METRICS_ENABLED = True  # 是否啓用 Metrics 更新
 GCP_METRICS_ONLY_BOT_RESPONSIBLE = "bot"  # 只有這個 bot 負責更新 metrics
 GCP_METRICS_UPDATE_INTERVAL_MINUTES = 5  # 更新間隔（分鐘）
-GCP_METRICS_CHART_DISABLED = True  # ⏸️ 禁用圖表生成以穩定連接（matplotlib 會阻塞事件循環）
+GCP_METRICS_CHART_DISABLED = False  # 繪圖已恢復（之前禁用以排查連線問題）
 print("[DASHBOARD INIT] 📊 GCP Metrics Manager initialized - only 'bot' will update")
 
 load_dotenv()
