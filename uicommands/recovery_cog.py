@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 import aiohttp
 import json
-from db_adapter import get_user, set_user, get_user_field, set_user_field, get_all_users
+from db_adapter import get_user, set_user, get_user_field, set_user_field, get_all_users, async_batch_set_users, async_get_all_users
 
 class UserRecoveryCog(commands.Cog):
     def __init__(self, bot):
@@ -22,14 +22,20 @@ class UserRecoveryCog(commands.Cog):
 
     @tasks.loop(minutes=10)
     async def recovery_loop(self):
-        """每10分鐘執行一次自動回復"""
+        """每10分鐘執行一次自動回復（帶超時控制）"""
         try:
             logging.info("開始執行自動回復任務...")
-            recovered_users = await self.process_all_users_recovery()
+            # 設置 5 分鐘超時，避免阻塞心跳
+            recovered_users = await asyncio.wait_for(
+                self.process_all_users_recovery(),
+                timeout=300.0  # 5 分鐘超時
+            )
             if recovered_users > 0:
                 logging.info(f"自動回復完成，{recovered_users} 位用戶狀態更新")
             else:
                 logging.info("自動回復完成，沒有用戶需要更新")
+        except asyncio.TimeoutError:
+            logging.warning("⏱️ 自動回復任務超時（5分鐘），將在下一個循環重試")
         except Exception as e:
             logging.error(f"自動回復過程發生錯誤: {e}")
             logging.error(f"錯誤詳情: {traceback.format_exc()}")
@@ -94,8 +100,9 @@ class UserRecoveryCog(commands.Cog):
             return datetime.now() - timedelta(hours=2)
 
     async def process_all_users_recovery(self):
-        """處理所有用戶的自動回復"""
+        """處理所有用戶的自動回復（優化版本 - 使用批量操作）"""
         recovered_count = 0
+        batch_updates = {}  # {'user_id': {'field': value, ...}, ...}
         
         try:
             logging.debug("開始處理用戶回復...")
@@ -103,8 +110,8 @@ class UserRecoveryCog(commands.Cog):
             if not self.ensure_database_structure():
                 return 0
             
-            # 使用 db_adapter 獲取所有用戶
-            all_users = get_all_users()
+            # 🔑 使用非同步方式獲取所有用戶，避免阻塞
+            all_users = await async_get_all_users()
             logging.info(f"資料庫中共有 {len(all_users)} 位用戶")
             
             if len(all_users) == 0:
@@ -127,6 +134,7 @@ class UserRecoveryCog(commands.Cog):
             now = datetime.now()
             current_timestamp = int(now.timestamp())
             
+            # ✅ 批量處理用戶，避免每個都個別更新
             for user_id, hp, stamina, last_recovery_value, is_stunned, injury_recovery_time in users:
                 try:
                     # 如果用戶處於傷病狀態，檢查體力恢復
@@ -134,8 +142,6 @@ class UserRecoveryCog(commands.Cog):
                         injury_time = self.parse_recovery_time(injury_recovery_time)
                         time_diff = now - injury_time
                         hours_passed = time_diff.total_seconds() / 3600
-                        
-                        logging.debug(f"用戶 {user_id} 傷病中: Stamina={stamina}, 經過時間={hours_passed:.2f}小時")
                         
                         if hours_passed >= 1.0:
                             # 體力恢復 (每小時 +25)
@@ -146,36 +152,30 @@ class UserRecoveryCog(commands.Cog):
                             # 檢查是否完全恢復
                             if new_stamina >= 100:
                                 # 體力滿了，恢復原狀態
-                                logging.info(f"用戶 {user_id} 體力完全恢復，恢復原始狀態")
-                                set_user(user_id, {
+                                batch_updates[user_id] = {
                                     'hp': 100,
                                     'stamina': 100,
                                     'is_stunned': 0,
                                     'injury_recovery_time': None,
                                     'last_recovery': current_timestamp
-                                })
+                                }
                                 
                                 # 發送信號給醫院 cog 以移除身分組
-                                await self.notify_recovery_complete(user_id)
+                                # ⚠️ 異步操作不等待，避免阻塞
+                                asyncio.create_task(self.notify_recovery_complete(user_id))
                                 recovered_count += 1
                             else:
                                 # 還在恢復中
-                                set_user(user_id, {
+                                batch_updates[user_id] = {
                                     'stamina': new_stamina,
                                     'injury_recovery_time': current_timestamp
-                                })
-                                
-                                logging.info(f"用戶 {user_id} 體力恢復: {stamina}→{new_stamina} (週期: {recovery_cycles})")
+                                }
                                 recovered_count += 1
-                        else:
-                            logging.debug(f"用戶 {user_id} 傷病中，距離上次恢復僅過 {hours_passed:.2f} 小時")
                     else:
                         # 正常狀態下的血量回復邏輯
                         last_recovery = self.parse_recovery_time(last_recovery_value)
                         time_diff = now - last_recovery
                         hours_passed = time_diff.total_seconds() / 3600
-                        
-                        logging.debug(f"用戶 {user_id}: HP={hp}, Stamina={stamina}, 經過時間={hours_passed:.2f}小時")
                         
                         if hours_passed >= 1.0:
                             recovery_cycles = int(hours_passed)
@@ -185,45 +185,59 @@ class UserRecoveryCog(commands.Cog):
                             new_hp = min(hp + hp_recovery, 100)
                             new_stamina = min(stamina + stamina_recovery, 100)
                             
-                            # 檢查血量是否歸零 (只在本次回復檢查中)
+                            # 檢查血量是否歸零
                             if new_hp <= 0:
                                 new_hp = 0
                                 # 觸發擊暈狀態
-                                logging.warning(f"用戶 {user_id} 血量歸零，進入傷病狀態")
-                                set_user(user_id, {
+                                batch_updates[user_id] = {
                                     'hp': 0,
                                     'stamina': 0,
                                     'is_stunned': 1,
                                     'injury_recovery_time': current_timestamp,
                                     'last_recovery': current_timestamp
-                                })
+                                }
                                 
-                                # 發送信號移除會員身分組
-                                await self.notify_injury_status(user_id)
+                                # 發送信號移除會員身分組（非同步，不等待）
+                                asyncio.create_task(self.notify_injury_status(user_id))
                                 recovered_count += 1
                             elif new_hp != hp or new_stamina != stamina:
-                                set_user(user_id, {
+                                batch_updates[user_id] = {
                                     'hp': new_hp,
                                     'stamina': new_stamina,
                                     'last_recovery': current_timestamp
-                                })
-                                
+                                }
                                 recovered_count += 1
-                                logging.info(f"用戶 {user_id} 回復成功: HP {hp}→{new_hp} (+{new_hp-hp}), Stamina {stamina}→{new_stamina} (+{new_stamina-stamina})")
                             else:
-                                set_user_field(user_id, 'last_recovery', current_timestamp)
-                                logging.debug(f"用戶 {user_id} 已滿血滿體力，僅更新回復時間")
-                        else:
-                            logging.debug(f"用戶 {user_id} 距離上次回復僅過 {hours_passed:.2f} 小時，不足1小時，跳過")
+                                batch_updates[user_id] = {
+                                    'last_recovery': current_timestamp
+                                }
                 
                 except Exception as e:
                     logging.error(f"處理用戶 {user_id} 回復時發生錯誤: {e}")
-                    logging.error(f"錯誤詳情: {traceback.format_exc()}")
                     continue
+            
+            # ✅ 批量執行所有數據庫更新（一次性提交）
+            if batch_updates:
+                logging.info(f"批量更新 {len(batch_updates)} 位用戶到數據庫...")
+                try:
+                    # 使用非同步批量更新，避免阻塞
+                    successfully_updated = await async_batch_set_users(batch_updates)
+                    logging.info(f"批量更新完成：{successfully_updated}/{len(batch_updates)} 位用戶成功")
+                except Exception as batch_err:
+                    logging.error(f"批量更新失敗: {batch_err}")
+                    # 回退到逐個更新（會更慢但更安全）
+                    for user_id, data in batch_updates.items():
+                        try:
+                            set_user(user_id, data)
+                        except Exception as e:
+                            logging.error(f"回退更新用戶 {user_id} 失敗: {e}")
             
             logging.info(f"回復處理完成，成功更新 {recovered_count} 位用戶")
             return recovered_count
             
+        except asyncio.TimeoutError:
+            logging.warning("⏱️ 用戶回復處理超時")
+            return 0
         except Exception as e:
             logging.error(f"處理用戶回復時發生未預期錯誤: {e}")
             return 0

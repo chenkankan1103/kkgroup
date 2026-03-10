@@ -102,7 +102,7 @@ async def fetch_avatar(session, url):
 
 
 async def make_leaderboard_image(members_data):
-    """協程版本的圖片生成流程：
+    """協程版本的圖片生成流程（在執行器中運行以避免阻塞）：
     1. 非同步地下載所有頭像（非密集型）
     2. 將所有 CPU 密集型的 PIL 繪製工作扔到 thread pool
     """
@@ -139,15 +139,22 @@ async def make_leaderboard_image(members_data):
                     except AttributeError:
                         pass
                 if url:
-                    avatar = await fetch_avatar(session, url)
+                    avatar = await asyncio.wait_for(
+                        fetch_avatar(session, url),
+                        timeout=5.0  # 每個頭像 5 秒超時
+                    )
                     if not avatar:
                         avatar = None  # 之後會替換成 placeholder
+            except asyncio.TimeoutError:
+                pass  # 頭像下載超時，使用 placeholder
             except Exception as e:
                 print(f"❌ 頭像下載錯誤 ({member.display_name}): {e}")
             avatar_images.append(avatar or placeholder)
 
-    # 在執行緒中完成剩下的繪製工作
-    return await asyncio.to_thread(
+    # ✅ 在執行緒中完成剩下的繪製工作（避免阻塞事件迴圈）
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
         _sync_build_leaderboard_image,
         members_data,
         avatar_images,
