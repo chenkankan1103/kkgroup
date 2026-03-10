@@ -81,17 +81,12 @@ HARDCODED_MESSAGE_IDS = {
 }
 
 DASHBOARD_CHANNEL_ID = int(os.getenv("DASHBOARD_CHANNEL_ID", "1470272652429099125"))
-LOGS_CAPACITY = 10  # 保存最近 10 條日誌
+LOGS_CAPACITY = 10  # 保存最近 10 條日誌（目前未使用）
 
-# 日誌收集容器（每個機器人獨立）
-logs_storage = {
-    "bot": deque(maxlen=LOGS_CAPACITY),
-    "shopbot": deque(maxlen=LOGS_CAPACITY),
-    "uibot": deque(maxlen=LOGS_CAPACITY)
-}
+# 應用日誌功能已移除，保留常數作為註解。
+logs_storage = {}
 
-# 日誌持久化文件
-logs_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dashboard_logs.json')
+logs_file = None  # unused
 
 # GCP Metrics 追蹤上次的 embed 內容（避免重複更新）
 last_metrics_text = ""
@@ -401,23 +396,11 @@ async def update_dashboard_logs(bot, bot_type: str):
             print(f"[UPDATE LOGS ERROR] {bot_type} 機器人實例為空")
             return
 
-        # 獲取應用程序內部日誌
-        internal_logs = get_logs_text(bot_type)
-
-        # 獲取 systemd 日誌
+        # 僅獲取 systemd 日誌
         systemd_logs = await get_systemd_logs(bot_type)
-
-        # 合併日誌顯示 - 改進格式化
+        combined_logs = ""
         if systemd_logs and systemd_logs not in ["無 systemd 日誌", "Systemd 日誌已停用"]:
             combined_logs = f"📊 **Systemd 日誌**\n```\n{systemd_logs}\n```"
-            # 只有應用日誌不為空才加入
-            if internal_logs and internal_logs != "無日誌":
-                combined_logs += f"\n\n📝 **應用日誌**\n```\n{internal_logs}\n```"
-        else:
-            if internal_logs and internal_logs != "無日誌":
-                combined_logs = f"📝 **應用日誌**\n```\n{internal_logs}\n```"
-            else:
-                combined_logs = ""
 
         # 若合併結果為空，說明兩邊都沒有資料；跳過更新以保留舊內容
         if not combined_logs:
@@ -726,56 +709,12 @@ async def create_metrics_update_task(bot_type_str: str):
     task.__name__ = f"metrics_task_{bot_type_str}"
     return task
 
-def add_log(bot_type: str, message: str):
-    """添加日誌條目。
+# 應用日誌功能已移除，不再記錄 embed 日誌
 
-    以前會在訊息前加上時間戳記，現在改為只儲存純文字，
-    以避免 embed 內出現重複時間標籤。
-    """
-    if bot_type in logs_storage:
-        log_entry = message  # 直接保存文字，不附加時間
-        logs_storage[bot_type].append(log_entry)
-        print(f"[LOG-{bot_type}] {message}")  # 確保打印
-        save_logs()
-    else:
-        print(f"[ERROR] bot_type '{bot_type}' 不存在於logs_storage")
-
-def get_logs_text(bot_type: str) -> str:
-    """獲取格式化的日誌文本
-
-    舊日誌可能含有時間前綴（例如 "[12:00:00] ..."），
-    顯示時會自動移除以保持整潔。
-    """
-    if bot_type not in logs_storage:
-        return "無日誌"
-    
-    logs = list(logs_storage[bot_type])
-    if not logs:
-        return "無日誌"
-    
-    # 移除可能存在的時間戳記前綴和控制字符
-    cleaned = []
-    for entry in logs[::-1]:  # 最新在最上面
-        # 匹配開頭 [hh:mm:ss] 或 [hh:mm]
-        text = re.sub(r"^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*", "", entry)
-        # 移除控制字符（不可打印字符），保留中文和常见符号
-        text = ''.join(c for c in text if ord(c) >= 32 or c in '\t\n')
-        if text.strip():  # 只添加非空行
-            cleaned.append(text)
-    return "\n".join(cleaned)
+# application logs removed
 
 
-def clear_logs(bot_type: str) -> None:
-    """清空指定機器人的應用日誌並立即儲存。
-
-    用於初始化或手動重置，避免舊日誌在儀表板中殘留。
-    """
-    if bot_type in logs_storage:
-        logs_storage[bot_type].clear()
-        save_logs()
-        print(f"[LOG] {bot_type} 日誌已清空")
-    else:
-        print(f"[LOG WARN] 未找到 {bot_type} 的日誌儲存區")
+# clear_logs removed - no longer tracking internal logs
 
 # ===== 異步 Metrics 初始化（不阻塞 Bot 啟動）=====
 async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Client):
@@ -960,8 +899,8 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
         timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
     )
     
-    logs_text = get_logs_text(bot_type)
-    embed.description = f"```\n{logs_text}\n```"
+    # 日誌功能已移除，顯示占位文字
+    embed.description = "`日誌功能已停用`"
     
     embed.set_footer(text="更新頻率: 60秒")
     return embed
