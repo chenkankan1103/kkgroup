@@ -457,6 +457,9 @@ update_tasks = {}
 # 每個機器人的 GCP Metrics 更新任務存儲
 metrics_tasks = {}
 
+# lock to prevent concurrent chart generation (serialize requests)
+chart_generation_lock = asyncio.Lock()
+
 # list of bots for which we suppress the routine start/finish logs
 # now quiet all of them to eliminate per-minute console noise
 QUIET_UPDATE_BOTS = {"bot", "shopbot", "uibot"}
@@ -838,11 +841,25 @@ async def create_metrics_update_task(bot_type_str: str):
             )
             embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
-            # 生成圖表（非同步 + 線程執行器避免阻塞）
-            chart_file = await monitor.generate_metrics_chart_async(
-                data_points=data_points,
-                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
-            )
+            # 生成圖表（异步 + 线程池）
+            chart_file = None
+            if not chart_generation_lock.locked():
+                try:
+                    async with chart_generation_lock:
+                        # 为图表生成加上 30 秒整体超时保护
+                        chart_file = await asyncio.wait_for(
+                            monitor.generate_metrics_chart_async(
+                                data_points=data_points,
+                                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
+                            ),
+                            timeout=30.0
+                        )
+                except asyncio.TimeoutError:
+                    print("[METRICS TASK] ⚠️ 图表生成超时 (>30s)，跳过此次图表")
+                except Exception as e:
+                    print(f"[METRICS TASK] 图表生成异常: {e}")
+            else:
+                print("[METRICS TASK] 前一张图仍在生成，跳过重复执行")
             
             # 查找或創建 metrics message
             message_id = message_ids["metrics"]["message"]
@@ -976,10 +993,23 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
             )
             embed.set_footer(text=f"初始化時生成 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
-            chart_file = await monitor.generate_metrics_chart_async(
-                data_points=data_points,
-                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
-            )
+            chart_file = None
+            if not chart_generation_lock.locked():
+                try:
+                    async with chart_generation_lock:
+                        chart_file = await asyncio.wait_for(
+                            monitor.generate_metrics_chart_async(
+                                data_points=data_points,
+                                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
+                            ),
+                            timeout=30.0
+                        )
+                except asyncio.TimeoutError:
+                    print("[METRICS INIT ASYNC] ⚠️ 图表初始化超时 (>30s)")
+                except Exception as e:
+                    print(f"[METRICS INIT ASYNC] 图表初始化异常: {e}")
+            else:
+                print("[METRICS INIT ASYNC] 图表正在生成，跳过重复执行")
             
             # 發送或更新 metrics embed
             metrics_msg_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
