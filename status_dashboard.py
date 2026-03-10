@@ -691,157 +691,14 @@ async def update_dashboard_logs(bot, bot_type: str):
         traceback.print_exc()
 
 async def update_dashboard_metrics(bot):
-    """更新 GCP Metrics embed"""
-    try:
-        print("[METRICS] 開始更新 GCP Metrics")
-        
-        if not bot:
-            print("[METRICS ERROR] 機器人實例為空")
-            return
-        
-        # ⏸️ METRICS 完全禁用 - 等待連線穩定性驗證
-        print("[METRICS] ⏸️ GCP Metrics 已禁用，跳過更新")
-        return
-        
-        # 以下代碼暫時無法執行（metrics disabled）
-        if not GCP_METRICS_AVAILABLE:
-            print("[METRICS] ⚠️ GCP Metrics 不可用，跳過更新")
-            return
-        
-        if not monitor.available:
-            print("[METRICS] ⚠️ GCP Metrics Monitor 初始化失敗，跳過更新")
-            return
-        
-        # 獲取網路出站流量數據
-        print("[METRICS] 查詢網路流量數據...")
-        egress_data = await monitor.get_network_egress_data(hours=6)
-        
-        # 取得 Ops Agent 進出站數據
-        print("[METRICS] 查詢 Ops Agent 流量...")
-        ops_egress = await monitor.get_ops_egress_data(hours=6)
-        ops_ingress = await monitor.get_ops_ingress_data(hours=6)
-        
-        # 獲取計費信息
-        print("[METRICS] 查詢計費信息...")
-        billing_info = await monitor.get_billing_data()
-        
-        # 獲取月累積出站流量
-        print("[METRICS] 查詢月累積流量...")
-        monthly_gb = await monitor.get_monthly_egress_data(days=30)
-        
-        # system metrics
-        print("[METRICS] 查詢系統狀態...")
-        cpu = await monitor.get_system_metric('agent.googleapis.com/cpu/utilization', hours=1)
-        mem = await monitor.get_system_metric('agent.googleapis.com/memory/percent_used', hours=1)
-        # disk usage percent
-        disk = await monitor.get_system_metric('agent.googleapis.com/disk/percent_used', hours=1)
-        sys_stats = {'cpu': cpu, 'mem': mem, 'disk': disk}
-        
-        # 生成圖表（放到線程中執行以免阻塞事件循環）
-        print("[METRICS] 生成圖表...")
-        # 將成本數字轉成 float 方便繪製，如果無法轉則傳 None
-        try:
-            cost_val = float(billing_info.get('total_cost', 0))
-        except Exception:
-            cost_val = None
-        chart_file = await asyncio.to_thread(
-            monitor.generate_metrics_chart,
-            egress_data, ops_egress, ops_ingress,
-            monthly_cost=cost_val
-        )
-        
-        # 創建 embed（傳入月累積流量、agent 數據、系統狀態）
-        embed = monitor.create_metrics_embed(egress_data, billing_info, monthly_gb, ops_egress, ops_ingress, sys_stats)
-        # debug: ensure embed is not a coroutine
-        print(f"[METRICS DEBUG] created embed object of type {type(embed)}")
-        import asyncio as _asyncio
-        if _asyncio.iscoroutine(embed):
-            print("[METRICS DEBUG] embed is coroutine, awaiting it")
-            embed = await embed
-        # embed now can easily show sys_stats separately below
-        
-        # 獲取頻道
-        channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
-        if not channel:
-            print(f"[METRICS ERROR] 找不到頻道 {DASHBOARD_CHANNEL_ID}")
-            return
-        
-        # 獲取或創建 metrics message
-        message_id = message_ids.get("metrics", {}).get("message")
-        
-        if message_id:
-            try:
-                message = await channel.fetch_message(int(message_id))
-                # 編輯現有訊息
-                if chart_file:
-                    await message.edit(embed=embed, attachments=[chart_file])
-                else:
-                    await message.edit(embed=embed)
-                print("[METRICS] Metrics embed 已更新")
-            except discord.NotFound:
-                print("[METRICS] Metrics 訊息不存在，重新創建")
-                try:
-                    if chart_file:
-                        message = await channel.send(embed=embed, file=chart_file)
-                    else:
-                        message = await channel.send(embed=embed)
-                    message_ids["metrics"]["message"] = message.id
-                    save_message_ids("metrics")
-                    print(f"[METRICS] Metrics 訊息已創建: {message.id}")
-                except Exception as create_error:
-                    print(f"[METRICS ERROR] 創建訊息失敗: {create_error}")
-            except discord.Forbidden:
-                print("[METRICS ERROR] 沒有權限編輯訊息")
-            except Exception as e:
-                print(f"[METRICS ERROR] 更新訊息出錯: {e}")
-        else:
-            # 訊息 ID 不存在，創建新的
-            try:
-                # 檢查是否已有現存的 metrics embed
-                existing_metrics = []
-                async for msg in channel.history(limit=50):
-                    if msg.author.id == bot.user.id and msg.embeds:
-                        for embed_item in msg.embeds:
-                            if "GCP 資源監控" in embed_item.title:
-                                existing_metrics.append(msg)
-                
-                if existing_metrics:
-                    # 更新最新的
-                    existing_metrics.sort(key=lambda m: m.created_at, reverse=True)
-                    latest_msg = existing_metrics[0]
-                    
-                    if chart_file:
-                        await latest_msg.edit(embed=embed, attachments=[chart_file])
-                    else:
-                        await latest_msg.edit(embed=embed)
-                    
-                    message_ids["metrics"]["message"] = latest_msg.id
-                    save_message_ids("metrics")
-                    print(f"[METRICS] 更新現有 metrics embed: {latest_msg.id}")
-                    
-                    # 刪除多餘的
-                    for msg in existing_metrics[1:]:
-                        try:
-                            await msg.delete()
-                        except:
-                            pass
-                else:
-                    # 創建新訊息
-                    if chart_file:
-                        message = await channel.send(embed=embed, file=chart_file)
-                    else:
-                        message = await channel.send(embed=embed)
-                    message_ids["metrics"]["message"] = message.id
-                    save_message_ids("metrics")
-                    print(f"[METRICS] 創建新 metrics embed: {message.id}")
-                    
-            except Exception as create_error:
-                print(f"[METRICS ERROR] 創建/更新 metrics embed 失敗: {create_error}")
-                traceback.print_exc()
-    
-    except Exception as e:
-        print(f"[METRICS ERROR] 更新 metrics 時發生未預期錯誤: {e}")
-        traceback.print_exc()
+    """
+    ⏸️ GCP Metrics 監控已全面禁用以解決 CPU 過載問題
+    此函數現在為 NO-OP - 所有 metrics 更新已禁用
+    後續需驗證連線穩定性後再重新啟用
+    """
+    print("[METRICS] ⏸️ GCP Metrics 已禁用，跳過更新")
+    return
+
 
 
 class DashboardButtons(discord.ui.View):
@@ -1241,29 +1098,11 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             import traceback
             traceback.print_exc()
         
-        # 🔧 首次初始化時創建 metrics embed（只在第一個 bot 初始化時）
-        # 這樣後續的定時任務就能直接編輯而不是重複創建
+        # 🔧 METRICS 初始化已禁用以解決 CPU 過載問題
+        # GCP Metrics 監控已全面禁用，直至網路連線穩定性完全驗證
+        # 原因：重試機制累積大量後台任務導致 CPU 飆升
         if bot_type_str == "bot" and len(bot_instances) == 1:
-            try:
-                print("[METRICS INIT] 首次初始化 Metrics embed...")
-                await update_dashboard_metrics(bot_instance)
-                print("[METRICS INIT] ✓ Metrics embed 已初始化")
-            except Exception as metrics_error:
-                print(f"[METRICS INIT ERROR] 首次初始化 Metrics embed 失敗: {metrics_error}")
-                # 若首次初始化失敗（例如 429 或 .env 無法寫入），
-                # 我們安排稍後重試以加快恢復，而不是完全依賴 10 分鐘的任務
-                async def _retry_metrics(attempt=1):
-                    delay = 60 * attempt
-                    print(f"[METRICS INIT RETRY] 將在 {delay}s 後重新嘗試 (attempt={attempt})")
-                    await asyncio.sleep(delay)
-                    try:
-                        await update_dashboard_metrics(bot_instance)
-                        print("[METRICS INIT RETRY] 成功初始化 Metrics embed")
-                    except Exception as e2:
-                        print(f"[METRICS INIT RETRY ERROR] 再次初始化失敗: {e2}")
-                        if attempt < 3:
-                            asyncio.create_task(_retry_metrics(attempt + 1))
-                asyncio.create_task(_retry_metrics())
+            print("[METRICS INIT] ⏸️ GCP Metrics 初始化已禁用 (debug 中)")
                 
     except Exception as e:
         print(f"❌ 初始化儀表板失敗: {e}")
@@ -1294,24 +1133,11 @@ async def update_task_watchdog():
             except Exception as e:
                 print(f"[WATCHDOG ERROR] 無法重啟 {bot_type} 任務: {e}")
 
-# GCP Metrics 更新任務 - 每 10 分鐘執行一次（改為較高頻率）
-@tasks.loop(minutes=10)
-async def metrics_update_task():
-    """定期更新 GCP Metrics embed"""
-    try:
-        # 檢查是否有可用的 bot 實例
-        if not bot_instances:
-            print("[METRICS TASK] 無可用的 bot 實例，跳過更新")
-            return
-        
-        # 使用任何一個 bot 實例來發送訊息
-        bot_instance = next(iter(bot_instances.values()))
-        
-        await update_dashboard_metrics(bot_instance)
-        
-    except Exception as e:
-        print(f"[METRICS TASK ERROR] Metrics 更新失敗: {e}")
-        traceback.print_exc()
+# ⏸️ METRICS 更新任務已禁用以解決 CPU 過載問題
+# @tasks.loop(minutes=10)
+# async def metrics_update_task():
+#     """定期更新 GCP Metrics embed - 已禁用"""
+#     pass
 
 
 # Starting a tasks.loop before the event loop is running can trigger
