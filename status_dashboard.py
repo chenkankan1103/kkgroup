@@ -148,7 +148,7 @@ async def get_systemd_logs(bot_type: str) -> str:
             "--since", since_arg
         ]
 
-        # 異步執行命令，帶 3s 超時
+        # 異步執行命令，帶 10s 超時（改大以避免日誌無效）
         try:
             process = await asyncio.wait_for(
                 asyncio.create_subprocess_exec(
@@ -156,60 +156,20 @@ async def get_systemd_logs(bot_type: str) -> str:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 ),
-                timeout=3.0
+                timeout=10.0
             )
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
-                timeout=3.0
+                timeout=10.0
             )
         except asyncio.TimeoutError:
             if bot_type not in QUIET_UPDATE_BOTS:
                 print(f"[SYSTEMD LOGS] {bot_type} journalctl 查詢超時")
-            return f"journalctl 查詢超時 (3s)"
+            return f"journalctl 查詢超時 (10s)"
 
         if process.returncode == 0:
             # 使用 errors='replace' 而非 'ignore'，以便看到編碼問題（用替代符號表示）
             # 這樣日誌中會出現 U+FFFD '？' 而不是無聲丟棄無效字符
-            logs = stdout.decode('utf-8', errors='replace').strip()
-            # 更新 fetch 時間，無論是否有新內容
-            _last_log_fetch[bot_type] = datetime.now(TAIWAN_TZ)
-
-            if logs:
-                # 格式化日誌
-                formatted_logs = []
-                seen_messages = set()  # 用於記錄已處理的訊息
-                for line in logs.split('\n'):
-                    if line.strip():
-                        parts = line.split(' ', 2)
-                        if len(parts) >= 2:
-                            # 直接使用 journalctl 原始時間，不要再插入新的時間
-                            message = parts[2] if len(parts) > 2 else parts[1]
-                            # 刪除 PID（例如 service[1234]）以縮短行長
-                            message = re.sub(r"\[\d+\]", "", message)
-                            # 過濾非必要的訊息
-                            if any(keyword in message for keyword in ["成功獲取消息", "日誌已成功更新", "更新完成"]):
-                                continue
-                            # 排除 systemd 本身的「entries --」或空標頭
-                            if message.strip().lower().startswith("entries --") or message.strip() == "-- reboot --":
-                                continue
-                            if message.startswith("UPDATE TASK"):
-                                message = message.replace("UPDATE TASK ", "")
-                            seen_messages.add(message)
-                            formatted_logs.append(message)
-                return '\n'.join(formatted_logs)
-
-
-        # 異步執行命令
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await process.communicate()
-
-        if process.returncode == 0:
-            # 使用 errors='replace' 而非 'ignore'，讓編碼錯誤以替代符號顯示
             logs = stdout.decode('utf-8', errors='replace').strip()
             # 更新 fetch 時間，無論是否有新內容
             _last_log_fetch[bot_type] = datetime.now(TAIWAN_TZ)

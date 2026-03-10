@@ -778,23 +778,27 @@ class GCPMetricsMonitor:
             color=discord.Color.from_rgb(66, 133, 244),
         )
         
-        # **1️⃣ 網路出站流量 - 月累計 (以 KB/MB/GB 顯示)**
+        # **1️⃣ 網路出站流量 - 月累計 (以 KB/MB/GB 顯示 + 費用估算)**
         # monthly_gb 透過外部參數傳入，是最近 30 天累積的 GB 值
         formatted = self._format_size(monthly_gb)
+        # 費用估算：約 $0.12/GB (保守估計)
+        egress_cost = monthly_gb * 0.12
         embed.add_field(
             name="🌐 1. 網路出站流量",
-            value=f"總計: {formatted} /200 GB 免費額度",
+            value=f"總計: {formatted}\n估計費用: ${egress_cost:.2f}/月",
             inline=False
         )
         
-        # **2️⃣ CPU 使用時間**
+        # **2️⃣ CPU 使用時間 + 費用估算**
         # 如果無法取得數據則顯示「暫無數據」，提示使用者可能沒有此 metric
         if cpu_seconds is not None and cpu_seconds > 0:
             cpu_minutes = cpu_seconds / 60
             cpu_hours = cpu_minutes / 60
+            # CPU 費用估算：約 $0.04/小時 (e2-medium 的保守估計)
+            cpu_cost = cpu_hours * 0.04
             embed.add_field(
                 name="🖥️ 2. CPU 使用時間",
-                value=f"**過去 6 小時**\n{cpu_seconds:.0f} 秒 = {cpu_minutes:.1f} 分鐘 = {cpu_hours:.2f} 小時\n(若無數據則抓不到此 metric)",
+                value=f"**過去 6 小時**\n{cpu_seconds:.0f} 秒 = {cpu_minutes:.1f} 分鐘 = {cpu_hours:.2f} 小時\n估計費用: ${cpu_cost:.2f}",
                 inline=False
             )
         else:
@@ -803,33 +807,31 @@ class GCPMetricsMonitor:
                 value="暫無數據",
                 inline=False
             )
-        # **3️⃣ 計費信息**
-        # 用三欄 ASCII 球列出近三個月份，並在有成本時標記「X」
+        # **3️⃣ 計費信息 - 全年 1-12 月表格**
+        # 生成全年月份標記表，顯示每個月是否有費用
         now = datetime.now(TAIWAN_TZ)
-        months = []
-        # build list of three consecutive months: two past and current
-        for delta in (2, 1, 0):
-            year = now.year
-            month = now.month - delta
-            while month <= 0:
-                month += 12
-                year -= 1
-            months.append(f"{year:04d}-{month:02d}")
-        # header: show full year-month for first column, then only month numbers
-        header = f"{months[0]}   {months[1].split('-')[1]}   {months[2].split('-')[1]}"
-        marks = []
+        current_year = now.year
         costs = billing_info.get('monthly_costs', {})
-        for m in months:
-            if costs.get(m, 0) and costs.get(m, 0) > 0:
+        
+        # 構建 1-12 月的表格
+        months_header = "  1  2  3  4  5  6  7  8  9 10 11 12"
+        marks = []
+        for month_num in range(1, 13):
+            month_key = f"{current_year:04d}-{month_num:02d}"
+            # 如果該月有記錄成本且成本 > 0 則標記 X，否則顯示當月標記
+            if costs.get(month_key, 0) and costs.get(month_key, 0) > 0:
                 marks.append('X')
+            elif month_num == now.month:
+                # 當月沒有數據時顯示 •
+                marks.append('•')
             else:
                 marks.append(' ')
-        row = "   ".join(marks)
-        # wrap table in a monospace code block to preserve alignment
-        table_block = f"```\n{header}\n{row}\n```"
+        
+        marks_row = " ".join(f"{m:2s}" for m in marks)
+        table_block = f"```\n{months_header}\n{marks_row}\n```"
         embed.add_field(
-            name="💰 3. 計費信息",
-            value=f"{table_block}\n狀態: {billing_info.get('status', '')}",
+            name="💰 3. 計費信息 (12 月概覽)",
+            value=f"{table_block}X = 該月有費用  •  = 當月\n狀態: {billing_info.get('status', '')}",
             inline=False
         )
         
@@ -848,20 +850,6 @@ class GCPMetricsMonitor:
                 value=ops_info,
                 inline=False
             )
-        
-        # 免費額度提示
-        embed.add_field(
-            name="🎁 GCP 免費額度",
-            value="📤 **出站流量**: 200 GB/月\n🔄 **API 請求**: 根據服務而定",
-            inline=False
-        )
-        
-        # 圖表提示
-        embed.add_field(
-            name="📈 圖表",
-            value="查看下方 6 小時流量趨勢圖（台灣時間）；紅線為請求數量",
-            inline=False
-        )
         
         # 系統資源條狀顯示
         if sys_stats:
