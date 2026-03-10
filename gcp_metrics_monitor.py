@@ -411,10 +411,22 @@ class GCPMetricsMonitor:
 
             # first, make sure the billing API connection works so we know permission is ok
             try:
-                accounts = list(self.billing_client.list_billing_accounts())
+                # offload to thread to avoid blocking event loop
+                loop = asyncio.get_event_loop()
+                accounts = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: list(self.billing_client.list_billing_accounts())
+                    ),
+                    timeout=5.0
+                )
                 print(f"[GCP METRICS] 找到 {len(accounts)} 個計費帳戶")
                 if accounts:
                     billing_info["status"] = "✓ 計費查詢已連接"
+            except asyncio.TimeoutError:
+                print(f"[GCP METRICS] ⏱️ 計費 API 連線檢查超時")
+                billing_info["status"] = "⚠️ 計費 API 連線超時"
+                return billing_info
             except Exception as api_error:
                 err = str(api_error)
                 print(f"[GCP METRICS] 計費 API 連接失敗: {err}")
@@ -462,8 +474,14 @@ class GCPMetricsMonitor:
                     GROUP BY month
                     ORDER BY month
                     """
-                    job = bq.query(query)
-                    result_list = list(job.result())
+                    # run BigQuery in executor as well
+                    loop = asyncio.get_event_loop()
+                    job = await loop.run_in_executor(None, lambda: bq.query(query))
+                    # job.result() is blocking, run in executor with timeout
+                    result_list = await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: list(job.result())),
+                        timeout=10.0
+                    )
                     print(f"[GCP METRICS] BigQuery query 返回 {len(result_list)} 行")
                     
                     for row in result_list:
