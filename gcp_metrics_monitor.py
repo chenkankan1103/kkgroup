@@ -38,6 +38,14 @@ except Exception as e:
 
 load_dotenv()
 
+# 導入 metrics_database（用於從本地數據庫讀取數據）
+try:
+    from metrics_database import MetricsDatabase
+    METRICS_DB_AVAILABLE = True
+except ImportError:
+    METRICS_DB_AVAILABLE = False
+    print("[GCP] ⚠️ MetricsDatabase 不可用，將無法從數據庫讀取圖表數據")
+
 # 台灣時區（UTC+8）
 TAIWAN_TZ = timezone(timedelta(hours=8))
 
@@ -56,6 +64,15 @@ class GCPMetricsMonitor:
     def __init__(self, project_id: str = "kkgroup"):
         self.project_id = project_id
         self.available = GOOGLE_CLOUD_AVAILABLE
+        
+        # 初始化本地數據庫
+        self.db = None
+        if METRICS_DB_AVAILABLE:
+            try:
+                self.db = MetricsDatabase()
+                print(f"[GCP] ✅ MetricsDatabase 已初始化")
+            except Exception as e:
+                print(f"[GCP] ⚠️ MetricsDatabase 初始化失敗: {e}")
         
         if self.available:
             try:
@@ -717,6 +734,151 @@ class GCPMetricsMonitor:
         except Exception as e:
             print(f"[GCP METRICS] CPU usage time 查詢失敗: {e}")
             return None, []
+
+    async def generate_chart_from_database(self, hours: int = 6) -> Optional[discord.File]:
+        """
+        從本地數據庫生成圖表（無需查詢 GCP API）
+        
+        Args:
+            hours: 圖表覆蓋的小時數
+            
+        Returns:
+            discord.File: 圖表文件或 None
+        """
+        if not self.db:
+            print("[GCP METRICS] ⚠️ MetricsDatabase 不可用，無法生成圖表")
+            return None
+        
+        try:
+            # 從數據庫讀取數據
+            data_points = self.db.get_egress_data(hours=hours)
+            
+            if not data_points or len(data_points) < 2:
+                print("[GCP METRICS] ⚠️ 數據庫中數據點不足，無法生成圖表")
+                return None
+            
+            print(f"[GCP METRICS] 從數據庫讀取 {len(data_points)} 個數據點")
+            
+            # 使用執行器在線程池中運行圖表生成
+            loop = asyncio.get_event_loop()
+            file_obj = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    self.generate_metrics_chart,
+                    data_points,
+                    None,
+                    None,
+                    None
+                ),
+                timeout=30.0
+            )
+            
+            return file_obj
+            
+        except asyncio.TimeoutError:
+            print("[GCP METRICS] ⏱️ 從數據庫生成圖表超時")
+            return None
+        except Exception as e:
+            print(f"[GCP METRICS] 從數據庫生成圖表失敗: {e}")
+            return None
+    
+    def get_billing_info_from_database(self) -> Dict:
+        """
+        從數據庫讀取計費信息
+        
+        Returns:
+            Dict: 計費信息
+        """
+        if not self.db:
+            return {
+                "currency": "USD",
+                "total_cost": "N/A",
+                "current_month": datetime.now(TAIWAN_TZ).strftime("%Y-%m"),
+                "status": "⚠️ 數據庫不可用",
+                "monthly_costs": {}
+            }
+        
+        try:
+            billing_data = self.db.get_billing_data(months=12)
+            
+            current_month = datetime.now(TAIWAN_TZ).strftime("%Y-%m")
+            current_cost = "0.00"
+            
+            # 找當月的成本
+            for month, data in billing_data.items():
+                if month == current_month:
+                    current_cost = f"{data.get('total_cost', 0):.2f}"
+                    break
+            
+            # 構建返回格式
+            result = {
+                "currency": "USD",
+                "total_cost": current_cost,
+                "current_month": current_month,
+                "status": "✓ 從數據庫讀取",
+                "monthly_costs": {month: data.get('total_cost', 0) for month, data in billing_data.items()}
+            }
+            
+            print(f"[GCP METRICS] 從數據庫讀取計費信息: {current_cost} USD")
+            return result
+            
+        except Exception as e:
+            print(f"[GCP METRICS] 從數據庫讀取計費信息失敗: {e}")
+            return {
+                "currency": "USD",
+                "total_cost": "N/A",
+                "current_month": datetime.now(TAIWAN_TZ).strftime("%Y-%m"),
+                "status": f"⚠️ 數據庫讀取失敗: {str(e)[:30]}",
+                "monthly_costs": {}
+            }
+    
+    def get_monthly_egress_from_database(self) -> float:
+        """
+        從數據庫讀取月累積出站流量
+        
+        Returns:
+            float: 月累積流量（GB）
+        """
+        if not self.db:
+            return 0.0
+        
+        try:
+            current_month = datetime.now(TAIWAN_TZ).strftime("%Y-%m")
+            monthly_data = self.db.get_monthly_egress(months=1)
+            
+            return monthly_data.get(current_month, 0.0)
+            
+        except Exception as e:
+            print(f"[GCP METRICS] 從數據庫讀取月累積流量失敗: {e}")
+            return 0.0
+    
+    def get_system_stats_from_database(self) -> Dict:
+        """
+        從數據庫讀取最新的系統統計
+        
+        Returns:
+            Dict: {'cpu': float or None, 'mem': float or None, 'disk': float or None}
+        """
+        if not self.db:
+            return {'cpu': None, 'mem': None, 'disk': None}
+        
+        try:
+            stats_list = self.db.get_system_stats(hours=1)
+            
+            if stats_list:
+                # 取最新的一個
+                latest = stats_list[-1]
+                return {
+                    'cpu': latest.get('cpu_percent') / 100.0 if latest.get('cpu_percent') else None,
+                    'mem': latest.get('memory_percent') / 100.0 if latest.get('memory_percent') else None,
+                    'disk': latest.get('disk_percent') / 100.0 if latest.get('disk_percent') else None,
+                }
+            
+            return {'cpu': None, 'mem': None, 'disk': None}
+            
+        except Exception as e:
+            print(f"[GCP METRICS] 從數據庫讀取系統統計失敗: {e}")
+            return {'cpu': None, 'mem': None, 'disk': None}
 
     def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, cpu_seconds: Optional[float] = None, sys_stats: Dict = None) -> discord.Embed:
         """
