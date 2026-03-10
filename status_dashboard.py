@@ -100,7 +100,7 @@ last_metrics_text = ""
 # keep track of last fetch time for each bot to avoid re-reading the same log
 _last_log_fetch: Dict[str, datetime] = {}
 
-async def get_systemd_logs(bot_type: str) -> str:
+async def get_systemd_logs(bot_type: str) -> Optional[str]:
     """從 systemd journal 獲取指定機器人的日誌
 
     為了降低磁碟 I/O，僅抓取自上次查詢以來的新條目。
@@ -108,6 +108,9 @@ async def get_systemd_logs(bot_type: str) -> str:
     查詢包含兩個 await，總 timeout 使用 SYSTEMD_FETCH_TIMEOUT（預設 10 秒），
     比先前的 3 秒寬鬆，可避免負載高時卡住，同時 10 秒延遲不會明顯影響
     Discord embed 的顯示 (原始設計預留 20 秒更新間隔)。
+
+    若因超時導致未能成功獲取日誌，會回傳 ``None``；呼叫方通常會
+    保留現有內容，而不是將超時訊息寫入 embed。
     """
     config = SYSTEMD_LOG_CONFIG.get(bot_type)
     if not config or not config["enabled"]:
@@ -154,9 +157,11 @@ async def get_systemd_logs(bot_type: str) -> str:
                 timeout=SYSTEMD_FETCH_TIMEOUT
             )
         except asyncio.TimeoutError:
+            # 查詢超時時只在控制台記錄，讓調用方保持原有內容
             if bot_type not in QUIET_UPDATE_BOTS:
                 print(f"[SYSTEMD LOGS] {bot_type} journalctl 查詢超時")
-            return f"journalctl 查詢超時 ({SYSTEMD_FETCH_TIMEOUT}s)"
+            # 傳回 None 表示沒有新資料，可由上層決定是否保留舊內容
+            return None
 
         if process.returncode == 0:
             # 使用 errors='replace' 而非 'ignore'，以便看到編碼問題（用替代符號表示）
