@@ -771,10 +771,10 @@ async def create_metrics_update_task(bot_type_str: str):
                         monitor.get_monthly_egress_data(days=30),
                         timeout=15.0
                     )
-                    # 嘗試抓 CPU 使用時間
+                    # 嘗試抓 CPU 使用時間（月累計，約 720 小時）
                     try:
                         cpu_seconds, _ = await asyncio.wait_for(
-                            monitor.get_cpu_usage_time(hours=6),
+                            monitor.get_cpu_usage_time(hours=720),
                             timeout=10.0
                         )
                     except Exception as e:
@@ -1148,6 +1148,45 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         # 清空初始日誌，防止重複累積
         logs_storage[bot_type_str].clear()
         save_logs()
+        
+        # 如果是 bot，初始化 metrics 消息（檢查並清理舊消息）
+        if bot_type_str == GCP_METRICS_ONLY_BOT_RESPONSIBLE and GCP_METRICS_ENABLED:
+            print(f"[METRICS INIT] {bot_type_str} 檢查並初始化 metrics 消息...")
+            found_metrics = None
+            metrics_count = 0
+            old_metrics = []
+            
+            # 查找現有 metrics 訊息（只查找由當前 bot 發送的）
+            async for msg in channel.history(limit=100):
+                if msg.author.id != bot_instance.user.id:
+                    continue  # 跳過其他 bot 的訊息
+                
+                if msg.embeds:
+                    for embed in msg.embeds:
+                        if "GCP 成本監控" in embed.title:
+                            metrics_count += 1
+                            if metrics_count <= 1:
+                                found_metrics = msg
+                            else:
+                                old_metrics.append(msg)
+            
+            # 清理舊的 metrics embed
+            for msg in old_metrics:
+                try:
+                    await msg.delete()
+                    print(f"✓ 已清理舊的 metrics 消息: {msg.id}")
+                except Exception as e:
+                    print(f"⚠️ 清理舊 metrics 失敗 {msg.id}: {e}")
+            
+            # 記錄 metrics 消息 ID（供更新任務使用）
+            if found_metrics:
+                message_ids.setdefault("metrics", {})["message"] = found_metrics.id
+                save_message_ids("metrics")
+                set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(found_metrics.id))
+                print(f"✅ 使用現有 metrics 消息: {found_metrics.id}")
+            else:
+                # 如果沒有現有消息，暫不創建（留給更新任務創建）
+                print(f"⚠️ 未找到現有 metrics 消息，將在第一次更新時創建")
         
         # 註冊機器人實例並啟動獨立更新任務
         try:
