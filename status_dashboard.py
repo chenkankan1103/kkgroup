@@ -788,6 +788,7 @@ async def create_metrics_update_task(bot_type_str: str):
             
             # 取監控快取數據
             cached = metrics_cache.get()
+            sys_stats = None
             if cached:
                 if len(cached) == 4:
                     data_points, billing_info, monthly_gb, cpu_seconds = cached
@@ -823,6 +824,19 @@ async def create_metrics_update_task(bot_type_str: str):
                     # 存儲到快取（包含 cpu_seconds）
                     metrics_cache.set((data_points, billing_info, monthly_gb, cpu_seconds))
                     print(f"[METRICS TASK] 成功獲取 metrics 數據（{len(data_points)} 數據點) cpu_seconds={cpu_seconds}")
+                except Exception as e:
+                    # 如果任何一部分失敗，我们记录错误并使用默认值继续
+                    print(f"[METRICS TASK] ⚠️ 取得 metrics 时发生异常: {e}")
+                    data_points, billing_info, monthly_gb, cpu_seconds = [], {}, 0, None
+            # 獲取系統統計以便 embed 顯示
+            try:
+                sys_stats = await asyncio.wait_for(
+                    monitor.get_system_stats(),
+                    timeout=10.0
+                )
+            except Exception as e:
+                print(f"[METRICS TASK] 無法獲取系統資源統計: {e}")
+                sys_stats = None
             # 創建 embed（包含三個重要 metrics）
             embed = monitor.create_metrics_embed(
                 data_points=data_points,
