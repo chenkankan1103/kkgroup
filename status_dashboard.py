@@ -161,7 +161,9 @@ async def get_systemd_logs(bot_type: str) -> str:
             return f"journalctl 查詢超時 (3s)"
 
         if process.returncode == 0:
-            logs = stdout.decode('utf-8', errors='ignore').strip()
+            # 使用 errors='replace' 而非 'ignore'，以便看到編碼問題（用替代符號表示）
+            # 這樣日誌中會出現 U+FFFD '？' 而不是無聲丟棄無效字符
+            logs = stdout.decode('utf-8', errors='replace').strip()
             # 更新 fetch 時間，無論是否有新內容
             _last_log_fetch[bot_type] = datetime.now(TAIWAN_TZ)
 
@@ -200,7 +202,8 @@ async def get_systemd_logs(bot_type: str) -> str:
         stdout, stderr = await process.communicate()
 
         if process.returncode == 0:
-            logs = stdout.decode('utf-8', errors='ignore').strip()
+            # 使用 errors='replace' 而非 'ignore'，讓編碼錯誤以替代符號顯示
+            logs = stdout.decode('utf-8', errors='replace').strip()
             # 更新 fetch 時間，無論是否有新內容
             _last_log_fetch[bot_type] = datetime.now(TAIWAN_TZ)
 
@@ -232,7 +235,8 @@ async def get_systemd_logs(bot_type: str) -> str:
                     print(f"[SYSTEMD LOGS] {bot_type} 沒有找到 {service_name} 的日誌")
                 return f"無 {service_name} 日誌"
         else:
-            error = stderr.decode('utf-8', errors='ignore').strip()
+            # 使用 errors='replace' 讓錯誤訊息中的編碼問題可見
+            error = stderr.decode('utf-8', errors='replace').strip()
             print(f"[SYSTEMD LOGS ERROR] {bot_type} 獲取 {service_name} 日誌失敗: {error}")
             return f"journalctl 錯誤: {error[:50]}..."
 
@@ -841,11 +845,15 @@ def get_logs_text(bot_type: str) -> str:
     if not logs:
         return "無日誌"
     
-    # 移除可能存在的時間戳記前綴
+    # 移除可能存在的時間戳記前綴和控制字符
     cleaned = []
     for entry in logs[::-1]:  # 最新在最上面
         # 匹配開頭 [hh:mm:ss] 或 [hh:mm]
-        cleaned.append(re.sub(r"^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*", "", entry))
+        text = re.sub(r"^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*", "", entry)
+        # 移除控制字符（不可打印字符），保留中文和常见符号
+        text = ''.join(c for c in text if ord(c) >= 32 or c in '\t\n')
+        if text.strip():  # 只添加非空行
+            cleaned.append(text)
     return "\n".join(cleaned)
 
 
