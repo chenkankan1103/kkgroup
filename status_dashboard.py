@@ -36,6 +36,7 @@ import pathlib
 GCP_METRICS_ENABLED = True  # 是否啓用 Metrics 更新
 GCP_METRICS_ONLY_BOT_RESPONSIBLE = "bot"  # 只有這個 bot 負責更新 metrics
 GCP_METRICS_UPDATE_INTERVAL_MINUTES = 5  # 更新間隔（分鐘）
+GCP_METRICS_CHART_DISABLED = True  # ⏸️ 禁用圖表生成以穩定連接（matplotlib 會阻塞事件循環）
 print("[DASHBOARD INIT] 📊 GCP Metrics Manager initialized - only 'bot' will update")
 
 load_dotenv()
@@ -678,7 +679,9 @@ async def create_metrics_update_task(bot_type_str: str):
             
             # 生成圖表（异步 + 线程池）
             chart_file = None
-            if not chart_generation_lock.locked():
+            if GCP_METRICS_CHART_DISABLED:
+                print("[METRICS TASK] ⏸️ 圖表生成已禁用以穩定連接")
+            elif not chart_generation_lock.locked():
                 try:
                     async with chart_generation_lock:
                         # 为图表生成加上 30 秒整体超时保护
@@ -838,7 +841,9 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
             embed.set_footer(text=f"初始化時生成 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
             chart_file = None
-            if not chart_generation_lock.locked():
+            if GCP_METRICS_CHART_DISABLED:
+                print("[METRICS INIT ASYNC] ⏸️ 圖表生成已禁用以穩定連接")
+            elif not chart_generation_lock.locked():
                 try:
                     async with chart_generation_lock:
                         chart_file = await asyncio.wait_for(
