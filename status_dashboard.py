@@ -1012,7 +1012,8 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                 print("[METRICS INIT ASYNC] 图表正在生成，跳过重复执行")
             
             # 發送或更新 metrics embed
-            metrics_msg_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
+            # load from saved message_ids if available
+            metrics_msg_id = message_ids.get("metrics", {}).get("message") or os.getenv("DASHBOARD_METRICS_MESSAGE")
             if metrics_msg_id:
                 try:
                     msg = await channel.fetch_message(int(metrics_msg_id))
@@ -1021,14 +1022,21 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                     else:
                         await msg.edit(embed=embed)
                     print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已更新: {metrics_msg_id}")
+                    # also ensure storage updated
+                    message_ids.setdefault("metrics", {})["message"] = int(metrics_msg_id)
+                    save_message_ids("metrics")
                 except discord.NotFound:
                     print(f"[METRICS INIT ASYNC] 舊消息不存在，創建新的")
                     msg = await channel.send(embed=embed, file=chart_file)
+                    message_ids.setdefault("metrics", {})["message"] = msg.id
+                    save_message_ids("metrics")
                     set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
                     print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已創建: {msg.id}")
             else:
                 # 創建新消息
                 msg = await channel.send(embed=embed, file=chart_file)
+                message_ids.setdefault("metrics", {})["message"] = msg.id
+                save_message_ids("metrics")
                 set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
                 print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已創建: {msg.id}")
             
