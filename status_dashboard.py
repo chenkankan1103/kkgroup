@@ -815,11 +815,26 @@ async def create_metrics_update_task(bot_type_str: str):
                     print(f"[METRICS TASK ERROR] 獲取 metrics 數據失敗: {e}")
                     return
             
-            # 創建 embed
+            # 收集系統信息（不使用快取，每次都更新以保持最新）
+            try:
+                sys_stats = await asyncio.wait_for(
+                    monitor.get_system_stats(),
+                    timeout=10.0
+                )
+                print(f"[METRICS TASK] 系統信息已收集: {sys_stats}")
+            except asyncio.TimeoutError:
+                print("[METRICS TASK] ⏱️ 系統信息獲取超時")
+                sys_stats = {'cpu': None, 'mem': None, 'disk': None}
+            except Exception as e:
+                print(f"[METRICS TASK] 系統信息收集失敗: {e}")
+                sys_stats = {'cpu': None, 'mem': None, 'disk': None}
+            
+            # 創建 embed（包含系統信息）
             embed = monitor.create_metrics_embed(
                 data_points=data_points,
                 billing_info=billing_info,
-                monthly_gb=monthly_gb
+                monthly_gb=monthly_gb,
+                sys_stats=sys_stats
             )
             embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
@@ -955,6 +970,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         bot_type_str: "bot", "shopbot", "uibot"
     """
     print(f"[INIT] initialize_dashboard called for {bot_type_str}")
+    print(f"[DEBUG] GCP_METRICS_ENABLED={GCP_METRICS_ENABLED}, GCP_METRICS_ONLY_BOT_RESPONSIBLE={GCP_METRICS_ONLY_BOT_RESPONSIBLE}")
     global current_bot_type
     
     # 添加延遲以避免同時初始化
@@ -1052,27 +1068,91 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 else:
                     print(f"[DASHBOARD] {bot_type_str} 更新任務已在運行")
             
-            # ===== METRICS 更新任務 (僅限 BOT) =====
-            # 創建動態的 metrics 更新任務
-            # 只有 bot_type_str == "bot" 會實際執行更新；其他實例是 NO-OP
-            if GCP_METRICS_ENABLED:
-                print(f"[DASHBOARD] 正在為 {bot_type_str} 創建 GCP Metrics 任務...")
+            # ===== METRICS 初始化 =====
+            if bot_type_str == GCP_METRICS_ONLY_BOT_RESPONSIBLE and GCP_METRICS_ENABLED:
+                print(f"[METRICS INIT] 為 {bot_type_str} 初始化 metrics")
                 try:
-                    metrics_task = await create_metrics_update_task(bot_type_str)
-                    metrics_tasks[bot_type_str] = metrics_task
-                    print(f"[DASHBOARD] 正在啟動 {bot_type_str} Metrics 任務...")
-                    metrics_task.start()
-                    print(f"[DASHBOARD] {bot_type_str} GCP Metrics 更新任務已啟動")
-                    if bot_type_str == GCP_METRICS_ONLY_BOT_RESPONSIBLE:
-                        print(f"[DASHBOARD] ✅ Metrics 監控已啟用（由 {GCP_METRICS_ONLY_BOT_RESPONSIBLE} 負責）")
+                    # 直接發送一個初始的 metrics embed  
+                    from gcp_metrics_monitor import GCPMetricsMonitor
+                    monitor = GCPMetricsMonitor(project_id="kkgroup")
+                    if monitor.available:
+                        print(f"[METRICS INIT] 嘗試獲取初始 metrics 數據...")
+                        try:
+                            data_points = await asyncio.wait_for(
+                                monitor.get_network_egress_data(hours=6),
+                                timeout=10.0
+                            )
+                            billing_info = await asyncio.wait_for(
+                                monitor.get_billing_data(),
+                                timeout=10.0
+                            )
+                            monthly_gb = await asyncio.wait_for(
+                                monitor.get_monthly_egress_data(days=30),
+                                timeout=15.0
+                            )
+                            
+                            # 收集系統信息
+                            sys_stats = await asyncio.wait_for(
+                                monitor.get_system_stats(),
+                                timeout=10.0
+                            )
+                            print(f"[METRICS INIT] 系統信息已收集: {sys_stats}")
+                            
+                            embed = monitor.create_metrics_embed(
+                                data_points=data_points,
+                                billing_info=billing_info,
+                                monthly_gb=monthly_gb,
+                                sys_stats=sys_stats
+                            )
+                            embed.set_footer(text=f"初始化時生成 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
+                            
+                            chart_file = await monitor.generate_metrics_chart_async(
+                                data_points=data_points,
+                                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
+                            )
+                            
+                            # 發送或更新 metrics embed
+                            metrics_msg_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
+                            if metrics_msg_id:
+                                try:
+                                    msg = await channel.fetch_message(int(metrics_msg_id))
+                                    if chart_file:
+                                        await msg.edit(embed=embed, attachments=[chart_file])
+                                    else:
+                                        await msg.edit(embed=embed)
+                                    print(f"[METRICS INIT] ✅ Metrics embed 已更新: {metrics_msg_id}")
+                                except discord.NotFound:
+                                    print(f"[METRICS INIT] 舊消息不存在，創建新的")
+                                    msg = await channel.send(embed=embed, file=chart_file)
+                                    set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
+                                    print(f"[METRICS INIT] ✅ Metrics embed 已創建: {msg.id}")
+                            else:
+                                # 創建新消息
+                                msg = await channel.send(embed=embed, file=chart_file)
+                                set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
+                                print(f"[METRICS INIT] ✅ Metrics embed 已創建: {msg.id}")
+                            
+                            # 現在啟動定時任務
+                            print(f"[METRICS INIT] 啟動定時 metrics 更新任務...")
+                            metrics_task = await create_metrics_update_task(bot_type_str)
+                            metrics_tasks[bot_type_str] = metrics_task
+                            metrics_task.start()
+                            print(f"[METRICS INIT] ✅ Metrics 任務已啟動")
+                            
+                        except asyncio.TimeoutError:
+                            print(f"[METRICS INIT] ⏱️ 初始 metrics 獲取超時")
+                        except Exception as e:
+                            print(f"[METRICS INIT ERROR] 初始 metrics 生成失敗: {e}")
                     else:
-                        print(f"[DASHBOARD] ℹ️ {bot_type_str} Metrics 任務為 NO-OP（只有 {GCP_METRICS_ONLY_BOT_RESPONSIBLE} 會更新）")
+                        print(f"[METRICS INIT] Monitor 不可用")
+                except ImportError:
+                    print(f"[METRICS INIT] 無法導入 GCPMetricsMonitor")
                 except Exception as e:
-                    print(f"[DASHBOARD ERROR] {bot_type_str} Metrics 任務啟動失敗: {e}")
-                    traceback.print_exc()
+                    print(f"[METRICS INIT ERROR] {e}")
             else:
-                print(f"[DASHBOARD] ⏸️ GCP Metrics 已禁用（GCP_METRICS_ENABLED = False）")
-            
+                if bot_type_str != GCP_METRICS_ONLY_BOT_RESPONSIBLE:
+                    print(f"[METRICS INIT] ⏸️ {bot_type_str} 不負責 metrics（只有 {GCP_METRICS_ONLY_BOT_RESPONSIBLE} 負責）")
+                    
         except Exception as e:
             print(f"[DASHBOARD ERROR] {bot_type_str} 任務啟動失敗: {e}")
             traceback.print_exc()
