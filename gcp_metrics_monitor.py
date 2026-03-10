@@ -637,7 +637,8 @@ class GCPMetricsMonitor:
             
             # Display stats with Chinese text and neon color
             stats_text = f"總計: {total_egress:.2f} MB | 最大: {max_egress:.2f} MB | 平均: {avg_egress:.2f} MB"
-            ax.text(0.5, 1.05, stats_text, transform=ax.transAxes, 
+            # place stats slightly higher for extra padding
+            ax.text(0.5, 1.10, stats_text, transform=ax.transAxes, 
                    ha='center', fontsize=9, style='italic', color=neon_color)
             
             # Compact layout
