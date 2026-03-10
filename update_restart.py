@@ -42,6 +42,15 @@ def check_git_updates():
     try:
         log("🔍 檢查 Git 更新...")
         
+        # remove stale lock if present (prevents fetch/reset failures)
+        lockfile = PROJECT_DIR / ".git/index.lock"
+        if lockfile.exists():
+            try:
+                log("發現 .git/index.lock，移除它以防止阻塞")
+                lockfile.unlink()
+            except Exception as e:
+                log(f"無法刪除鎖檔: {e}")
+
         # 先 fetch 遠端更新
         subprocess.run(
             ["git", "fetch"],
@@ -141,6 +150,14 @@ def pull_git_updates():
         
         # 3️⃣ 強制重置本地修改到 origin/main
         log("🔄 強制重置到 origin/main...")
+        # again ensure no leftover index.lock before reset
+        lockfile = PROJECT_DIR / ".git/index.lock"
+        if lockfile.exists():
+            try:
+                log("移除遺留的 index.lock")
+                lockfile.unlink()
+            except Exception as e:
+                log(f"無法刪除鎖檔: {e}")
         try:
             result = subprocess.run(
                 ["git", "reset", "--hard", "origin/main"],
