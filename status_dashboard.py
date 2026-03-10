@@ -71,18 +71,15 @@ def _sync_check_database():
     conn.close()
     return True
 
-# 硬編碼的訊息 ID 作為回退值
+# 硬編碼的訊息 ID 作為回退值（只保留日誌，控制面板已移除）
 HARDCODED_MESSAGE_IDS = {
     "bot": {
-        "dashboard": 1470781481071808614,
         "logs": 1470781481868591187
     },
     "shopbot": {
-        "dashboard": 1470782649806098483,
         "logs": 1470782650716389648
     },
     "uibot": {
-        "dashboard": 1470782658702344486,
         "logs": 1470782659843068032
     }
 }
@@ -428,10 +425,10 @@ env_diagnostics = check_environment()
 
 # Message ID 存儲（每個機器人獨立）
 message_ids = {
-    "bot": {"dashboard": None, "logs": None},
-    "shopbot": {"dashboard": None, "logs": None},
-    "uibot": {"dashboard": None, "logs": None},
-    "metrics": {"message": None}  # GCP Metrics 使用全域 message ID
+    "bot": {"logs": None},
+    "shopbot": {"logs": None},
+    "uibot": {"logs": None},
+    "metrics": {"message": None}  # GCP Metrics 使用全域 message ID（已禁用）
 }
 
 # 機器人實例存儲（每個機器人獨立）
@@ -488,20 +485,7 @@ def create_update_task(bot_type: str):
             current_time = get_taiwan_time().strftime("%H:%M:%S")
             # 移除洗版日誌: add_log(bot_type, f"🔄 系統狀態檢查 - {current_time}")
 
-            # 更新自己的面板
-            try:
-                task_log(f"[UPDATE TASK {bot_type}] 開始更新面板")
-                await update_dashboard(bot_instance, bot_type)
-                task_log(f"[UPDATE TASK {bot_type}] 面板更新完成")
-            except Exception as e:
-                print(f"[UPDATE TASK {bot_type} ERROR] 面板更新失敗: {e}")
-                # write full traceback to separate file for postmortem
-                with open("update_task_errors.log", "a", encoding="utf-8") as ef:
-                    ef.write(f"[{datetime.now(TAIWAN_TZ)}] 面板更新失敗: {e}\n")
-                    traceback.print_exc(file=ef)
-                traceback.print_exc()
-
-            # 更新自己的日誌
+            # 只更新日誌（控制面板已移除）
             try:
                 task_log(f"[UPDATE TASK {bot_type}] 開始更新日誌")
                 await update_dashboard_logs(bot_instance, bot_type)
@@ -523,8 +507,8 @@ def create_update_task(bot_type: str):
                 traceback.print_exc(file=ef)
             traceback.print_exc()
 
-    # 創建任務對象
-    task = tasks.loop(seconds=60)(individual_update_task)
+    # 創建任務對象 - 優化：每 120 秒更新一次（從 60 秒改為減少 I/O）
+    task = tasks.loop(seconds=120)(individual_update_task)
     task.__name__ = f"update_task_{bot_type}"
 
     return task
@@ -615,7 +599,7 @@ async def update_dashboard_logs(bot, bot_type: str):
             # 不設定 timestamp 讓時間不出現在 embed 頂部
         )
 
-        embed.set_footer(text=f"每 60 秒自動更新 | 台灣時間•下午 {format_taiwan_time()}")
+        embed.set_footer(text=f"每 120 秒自動更新 | 台灣時間•{format_taiwan_time()}")
 
         # 更新訊息
         message_id = get_message_id(bot_type, "logs")
@@ -705,121 +689,6 @@ async def update_dashboard_metrics(bot):
     print("[METRICS] ⏸️ GCP Metrics 已禁用，跳過更新")
     return
 
-
-
-class DashboardButtons(discord.ui.View):
-    """控制面板按鈕"""
-    
-    def __init__(self, bot_type: str, bot: discord.Client):
-        super().__init__(timeout=None)  # 持久化按鈕
-        self.bot_type = bot_type
-        self.bot = bot
-        
-        # 為按鈕設置唯一的 custom_id
-        # 通過按鈕的標籤來識別按鈕類型
-        for item in self.children:
-            if isinstance(item, discord.ui.Button):
-                if item.label == "重啟":
-                    item.custom_id = f"restart_{bot_type}"
-                elif item.label == "狀態":
-                    item.custom_id = f"status_{bot_type}"
-                elif item.label == "啟動LOG":
-                    item.custom_id = f"start_log_{bot_type}"
-    
-    @discord.ui.button(label="重啟", emoji="🔄", style=discord.ButtonStyle.danger)
-    async def restart_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """重啟機器人"""
-        await interaction.response.defer(thinking=True)
-        
-        try:
-            service_name = {
-                "bot": "bot.service",
-                "shopbot": "shopbot.service",
-                "uibot": "uibot.service"
-            }.get(self.bot_type)
-            
-            if not service_name:
-                await interaction.followup.send("❌ 未知的機器人類型", ephemeral=True)
-                return
-            
-            # 執行遠端重啟命令
-            result = os.system(f'gcloud compute ssh instance-20250501-142333 --zone=us-central1-c --command="sudo systemctl restart {service_name}" 2>&1 > /dev/null &')
-            
-            await interaction.followup.send(
-                f"✅ {self.bot_type.upper()} 重啟已發送\n將在 10-20 秒內完成",
-                ephemeral=True
-            )
-            
-            # 更新返饋
-            add_log(self.bot_type, f"🔄 機器人正在重啟...")
-            
-        except Exception as e:
-            await interaction.followup.send(f"❌ 重啟失敗: {e}", ephemeral=True)
-    
-    @discord.ui.button(label="狀態", emoji="🔍", style=discord.ButtonStyle.gray)
-    async def status_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """查詢機器人狀態"""
-        await interaction.response.defer(thinking=True)
-        
-        try:
-            # 檢查 bot 是否在線
-            if self.bot.user:
-                detail = f"""
-🟢 **在線**
-用戶: {self.bot.user.mention}
-ID: {self.bot.user.id}
-時間: <t:{int(datetime.now(timezone.utc).timestamp())}:R>
-                """
-            else:
-                detail = "🔴 離線"
-            
-            embed = discord.Embed(
-                title=f"🔍 {BOT_CONFIG[self.bot_type]['名稱']} 狀態",
-                description=detail,
-                color=discord.Color.green(),
-                timestamp=get_taiwan_time()
-            )
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-        
-        except Exception as e:
-            await interaction.followup.send(f"❌ 狀態查詢失敗: {e}", ephemeral=True)
-    
-    @discord.ui.button(label="啟動LOG", emoji="📝", style=discord.ButtonStyle.primary)
-    async def start_log_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """啟動日誌系統"""
-        await interaction.response.defer(thinking=True)
-
-        try:
-            # 檢查日誌任務是否已經運行
-            if self.bot_type in update_tasks and update_tasks[self.bot_type] and not update_tasks[self.bot_type].is_running():
-                # 重新啟動任務
-                update_tasks[self.bot_type].start()
-                await interaction.followup.send(
-                    f"✅ {BOT_CONFIG[self.bot_type]['名稱']} 日誌系統已啟動\n將每60秒自動更新日誌",
-                    ephemeral=True
-                )
-                add_log(self.bot_type, f"📝 日誌系統已手動啟動")
-            elif self.bot_type in update_tasks and update_tasks[self.bot_type] and update_tasks[self.bot_type].is_running():
-                await interaction.followup.send(
-                    f"ℹ️ {BOT_CONFIG[self.bot_type]['名稱']} 日誌系統已在運行中",
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    f"❌ {BOT_CONFIG[self.bot_type]['名稱']} 日誌系統初始化失敗",
-                    ephemeral=True
-                )
-
-        except Exception as e:
-            await interaction.followup.send(f"❌ 啟動日誌失敗: {e}", ephemeral=True)
-
-def set_bot_type(bot_type: str):
-    """設置當前機器人類型"""
-    global current_bot_type
-    current_bot_type = bot_type
-    print(f"📋 儀表板已設置為: {bot_type}")
-
 def add_log(bot_type: str, message: str):
     """添加日誌條目。
 
@@ -891,37 +760,6 @@ async def inspect_dashboard(bot: discord.Client, bot_type: str = "bot") -> None:
         except Exception as e:
             print(f"[INSPECT] 無法抓取 {typ} 訊息 {msg_id}: {e}")
 
-async def create_dashboard_embed(bot_type: str) -> discord.Embed:
-    """創建控制面板 Embed"""
-    config = BOT_CONFIG.get(bot_type, {})
-    embed = discord.Embed(
-        title=f"{config['名稱']} 控制面板",
-        color=config['顏色'],
-        timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
-    )
-    
-    embed.add_field(
-        name="🤖 機器人",
-        value="🟢 在線",
-        inline=True
-    )
-    
-    embed.add_field(
-        name="📊 任務",
-        value="✅ 已完成",
-        inline=True
-    )
-    
-    embed.add_field(
-        name="💾 數據庫",
-        value="✅ 連接正常",
-        inline=True
-    )
-    
-    # 移除 footer 的時間，只保留空 footer
-    embed.set_footer(text="")
-    return embed
-
 async def create_logs_embed(bot_type: str) -> discord.Embed:
     """創建日誌 Embed"""
     config = BOT_CONFIG.get(bot_type, {})
@@ -939,7 +777,7 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
 
 async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     """
-    初始化儀表板 - 每個機器人只初始化自己的面板
+    初始化儀表板 - 簡化版本，只初始化日誌
     
     Args:
         bot_instance: Discord bot instance
@@ -966,66 +804,13 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             print(f"❌ 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}")
             return False
         
-        # 只初始化該機器人自己的訊息
-        found_dashboard = None
-        dashboard_count = 0
-        old_dashboards = []
-        
-        # 查找現有訊息（只查找由當前 bot 發送的）
-        async for msg in channel.history(limit=100):
-            if msg.author.id != bot_instance.user.id:
-                continue  # 跳過其他 bot 的訊息
-            
-            if msg.embeds:
-                for embed in msg.embeds:
-                    bot_name = BOT_CONFIG[bot_type_str]["名稱"]
-                    if "控制面板" in embed.title and bot_name in embed.title:
-                        dashboard_count += 1
-                        if dashboard_count <= 1:
-                            found_dashboard = msg
-                        else:
-                            old_dashboards.append(msg)
-        
-        # 清理舊的控制面板 embed
-        for msg in old_dashboards:
-            try:
-                await msg.delete()
-                print(f"✓ 已清理舊的 {bot_type_str} 控制面板")
-            except:
-                pass
-        
-        # 創建或註冊控制面板
-        if not found_dashboard:
-            embed = await create_dashboard_embed(bot_type_str, bot_instance)
-            view = DashboardButtons(bot_type_str, bot_instance)
-            msg = await channel.send(embed=embed, view=view)
-            message_ids[bot_type_str]["dashboard"] = msg.id
-            save_message_id(bot_type_str, "dashboard", str(msg.id))  # 立即保存到 .env
-            print(f"✅ 創建 {bot_type_str} 控制面板: {msg.id}")
-        else:
-            message_ids[bot_type_str]["dashboard"] = found_dashboard.id
-            # 編輯舊訊息以更新embed和按鈕視圖
-            try:
-                embed = await create_dashboard_embed(bot_type_str, bot_instance)
-                view = DashboardButtons(bot_type_str, bot_instance)
-                await found_dashboard.edit(embed=embed, view=view)
-                # 成功編輯後保存到 .env（確保 .env 有正確的 ID）
-                save_message_ids(bot_type_str)
-            except:
-                pass
-            print(f"✅ 編輯 {bot_type_str} 控制面板: {found_dashboard.id}")
-        
-        # 保存到 .env
-        save_message_ids(bot_type_str)
-        
-        # 創建或確保日誌embed存在（初始化時創建，之後由全域任務更新）
-        # 類似控制面板邏輯，先檢查現有embed，清理重複的
+        # 清理舊日誌 embed 並初始化新的
         found_logs = None
         logs_count = 0
         old_logs = []
         
         # 查找現有日誌訊息（只查找由當前 bot 發送的）
-        async for msg in channel.history(limit=50):
+        async for msg in channel.history(limit=100):
             if msg.author.id != bot_instance.user.id:
                 continue  # 跳過其他 bot 的訊息
             
@@ -1043,9 +828,9 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         for msg in old_logs:
             try:
                 await msg.delete()
-                print(f"✓ 已清理舊的 {bot_type_str} 日誌embed")
+                print(f"✓ 已清理舊的 {bot_type_str} 日誌")
             except Exception as e:
-                print(f"⚠️ 清理舊日誌embed失敗 {msg.id}: {e}")
+                print(f"⚠️ 清理舊日誌失敗 {msg.id}: {e}")
         
         # 創建或更新日誌embed
         if not found_logs:
@@ -1055,29 +840,21 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 logs_msg = await channel.send(embed=logs_embed)
                 message_ids[bot_type_str]["logs"] = logs_msg.id
                 save_message_id(bot_type_str, "logs", str(logs_msg.id))
-                print(f"✅ 初始化時創建 {bot_type_str} 日誌embed: {logs_msg.id}")
+                print(f"✅ 初始化時創建 {bot_type_str} 日誌: {logs_msg.id}")
                 add_log(bot_type_str, f"✅ 日誌系統已初始化")
             except Exception as e:
-                print(f"⚠️ 初始化時創建 {bot_type_str} 日誌embed失敗: {e}")
+                print(f"⚠️ 初始化時創建日誌失敗: {e}")
+                return False
         else:
-            # 有現有的，更新它並保存ID
+            # 有現有的，保存ID供後續更新
             message_ids[bot_type_str]["logs"] = found_logs.id
-            try:
-                logs_embed = await create_logs_embed(bot_type_str)
-                await found_logs.edit(embed=logs_embed)
-                save_message_ids(bot_type_str)
-                print(f"✅ 更新現有 {bot_type_str} 日誌embed: {found_logs.id}")
-                add_log(bot_type_str, f"✅ 日誌系統已就緒")
-            except Exception as e:
-                print(f"⚠️ 更新現有日誌embed失敗 {found_logs.id}: {e}")
-                add_log(bot_type_str, f"✅ 日誌系統已就緒")
+            save_message_ids(bot_type_str)
+            print(f"✅ 使用現有 {bot_type_str} 日誌: {found_logs.id}")
+            add_log(bot_type_str, f"✅ 日誌系統已就緒")
         
-        # 🔧 初始化時清空日誌，防止重複累積
-        # 尤其是在重新啟動時，舊日誌應該被新的一次啟動替換
+        # 清空初始日誌，防止重複累積
         logs_storage[bot_type_str].clear()
-        # 同步儲存，否則磁碟上的日誌會保留舊內容，導致重新啟動後仍顯示
         save_logs()
-        
         
         # 註冊機器人實例並啟動獨立更新任務
         try:
@@ -1108,11 +885,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             import traceback
             traceback.print_exc()
         
-        # 🔧 METRICS 初始化已禁用以解決 CPU 過載問題
-        # GCP Metrics 監控已全面禁用，直至網路連線穩定性完全驗證
-        # 原因：重試機制累積大量後台任務導致 CPU 飆升
-        if bot_type_str == "bot" and len(bot_instances) == 1:
-            print("[METRICS INIT] ⏸️ GCP Metrics 初始化已禁用 (debug 中)")
+        return True
                 
     except Exception as e:
         print(f"❌ 初始化儀表板失敗: {e}")
@@ -1191,7 +964,7 @@ else:
         pass
 
 def save_message_ids(bot_type: str):
-    """將 message_id 保存到 .env
+    """將訊息 ID 保存到 .env（簡化版本，只保留日誌）
 
     為了避免 .env 權限錯誤導致整個腳本崩潰，
     任何 write 操作都在 try/except 塊中捕獲異常並記錄。
@@ -1200,55 +973,34 @@ def save_message_ids(bot_type: str):
 
     try:
         if bot_type == "metrics":
-            # 特殊處理 metrics message ID
+            # 特殊處理 metrics message ID（已禁用）
             metrics_id = message_ids["metrics"].get("message")
             if metrics_id:
                 set_key(env_path, "DASHBOARD_METRICS_MESSAGE", str(metrics_id))
         else:
-            dashboard_id = message_ids[bot_type].get("dashboard")
+            # 只保存日誌 ID
             logs_id = message_ids[bot_type].get("logs")
-
-            if dashboard_id:
-                env_key = f"DASHBOARD_{bot_type.upper()}_DASHBOARD"
-                set_key(env_path, env_key, str(dashboard_id))
-
             if logs_id:
                 env_key = f"DASHBOARD_{bot_type.upper()}_LOGS"
                 set_key(env_path, env_key, str(logs_id))
     except Exception as e:
         # 不讓任何寫入失敗中斷初始化流程
         print(f"[ENV WRITE ERROR] 無法保存 {bot_type} 訊息 ID 到 .env: {e}")
-        # 若需要檢查權限，可執行一次環境診斷
-        env_diagnostics = check_environment()
 
 def load_message_ids(bot_type: str):
-    """從 .env 加載 message_id，如果沒有則使用硬編碼的回退值"""
+    """從 .env 加載訊息 ID，如果沒有則使用硬編碼的回退值（簡化版本，只加載日誌）"""
     
     if bot_type == "metrics":
-        # 特殊處理 metrics message ID
+        # 特殊處理 metrics message ID（已禁用）
         metrics_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
         if metrics_id:
             message_ids["metrics"]["message"] = int(metrics_id)
             print(f"[LOAD IDS] Metrics 訊息 ID: {metrics_id}")
         else:
             message_ids["metrics"]["message"] = None
-            print(f"[LOAD IDS] Metrics 訊息 ID 未設置")
     else:
-        dashboard_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_DASHBOARD")
+        # 只加載日誌 ID
         logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
-
-        if dashboard_id:
-            message_ids[bot_type]["dashboard"] = int(dashboard_id)
-            print(f"[LOAD IDS] {bot_type} 控制面板 ID: {dashboard_id}")
-        else:
-            # 使用硬編碼的回退值
-            fallback_id = HARDCODED_MESSAGE_IDS.get(bot_type, {}).get("dashboard")
-            if fallback_id:
-                message_ids[bot_type]["dashboard"] = fallback_id
-                print(f"[LOAD IDS] {bot_type} 控制面板 ID 使用回退值: {fallback_id}")
-            else:
-                message_ids[bot_type]["dashboard"] = None
-                print(f"[LOAD IDS] {bot_type} 控制面板 ID 未設置")
 
         if logs_id:
             message_ids[bot_type]["logs"] = int(logs_id)
@@ -1263,127 +1015,4 @@ def load_message_ids(bot_type: str):
                 message_ids[bot_type]["logs"] = None
                 print(f"[LOAD IDS] {bot_type} 日誌 ID 未設置")
 
-async def create_dashboard_embed(bot_type: str, bot: discord.Client = None) -> discord.Embed:
-    """創建控制面板 Embed"""
-    config = BOT_CONFIG.get(bot_type, {})
-    embed = discord.Embed(
-        title=f"{config['名稱']} 控制面板",
-        color=config['顏色'],
-        timestamp=get_taiwan_time()  # 使用台灣時間
-    )
-
-    # 檢查機器人狀態
-    if bot and bot.user and bot.is_ready():
-        bot_status = "🟢 **在線**"
-        task_status = "✅ **正常**"
-    else:
-        bot_status = "🔴 **離線**"
-        task_status = "❌ **異常**"
-
-    # 實際檢查資料庫連接
-    if await check_database_connection():
-        db_status = "✅ **連接正常**"
-    else:
-        db_status = "❌ **連接失敗**"
-
-    # 檢查日誌任務狀態
-    if bot_type in update_tasks and update_tasks[bot_type] and update_tasks[bot_type].is_running():
-        logs_status = "✅ **運行中**"
-    else:
-        logs_status = "❌ **已停止**"
-
-    # 第一行：機器人狀態
-    embed.add_field(
-        name="🤖 機器人狀態",
-        value=bot_status,
-        inline=False
-    )
-
-    # 第二行：系統組件狀態
-    embed.add_field(
-        name="📊 任務狀態",
-        value=task_status,
-        inline=True
-    )
-
-    embed.add_field(
-        name="💾 數據庫",
-        value=db_status,
-        inline=True
-    )
-
-    embed.add_field(
-        name="📝 日誌系統",
-        value=logs_status,
-        inline=True
-    )
-
-    # 添加分隔線和最後更新時間
-    current_time = get_taiwan_time().strftime("%H:%M:%S")
-    embed.add_field(
-        name="⏰ 最後更新",
-        value=f"`{current_time}`",
-        inline=False
-    )
-
-    embed.set_footer(text="每 60 秒自動更新 | 台灣時間")
-    return embed
-
-async def update_dashboard(bot: discord.Client, bot_type: str = None):
-    """
-    更新儀表板（控制面板 + 日誌）
-    如果指定 bot_type，只更新該機器人
-    """
-    try:
-        channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
-        if not channel:
-            return
-        
-        # 如果沒有指定 bot_type，自動判斷當前機器人
-        if not bot_type:
-            # 根據 bot username 判斷類型
-            username = str(bot.user.name).lower()
-            if "shop" in username:
-                bot_type = "shopbot"
-            elif "ui" in username:
-                bot_type = "uibot"
-            else:
-                bot_type = "bot"
-        
-        # 只更新該機器人自己的訊息
-        # 更新控制面板
-        dashboard_msg_id = message_ids[bot_type].get("dashboard")
-        if dashboard_msg_id:
-            try:
-                msg = await channel.fetch_message(dashboard_msg_id)
-                # 移除作者檢查 - 每個機器人負責更新自己類型的 embed
-                embed = await create_dashboard_embed(bot_type, bot)
-                view = DashboardButtons(bot_type, bot)
-                await msg.edit(embed=embed, view=view)
-            except discord.NotFound:
-                print(f"⚠️ {bot_type} 控制面板訊息不存在，重新創建...")
-                embed = await create_dashboard_embed(bot_type, bot)
-                view = DashboardButtons(bot_type, bot)
-                msg = await channel.send(embed=embed, view=view)
-                message_ids[bot_type]["dashboard"] = msg.id
-                save_message_ids(bot_type)
-            except discord.Forbidden:
-                # 沒有權限編輯（訊息來自其他 bot）
-                print(f"⚠️ {bot_type} 沒有權限編輯控制面板訊息，嘗試重新創建...")
-                try:
-                    embed = await create_dashboard_embed(bot_type, bot)
-                    view = DashboardButtons(bot_type, bot)
-                    msg = await channel.send(embed=embed, view=view)
-                    message_ids[bot_type]["dashboard"] = msg.id
-                    save_message_ids(bot_type)
-                    print(f"✅ {bot_type} 控制面板重新創建成功")
-                except Exception as e2:
-                    print(f"❌ {bot_type} 控制面板重新創建失敗: {e2}")
-            except Exception as e:
-                # 其他錯誤，靜默處理
-                print(f"⚠️ {bot_type} 控制面板更新錯誤: {e}")
-        
-        # 日誌由 global_update_logs_task 的 update_dashboard_logs 處理
-    
-    except Exception as e:
-        print(f"❌ 更新儀表板失敗: {e}")
+# REMOVED: update_dashboard 已被移除 - 日誌更新由 update_dashboard_logs 處理
