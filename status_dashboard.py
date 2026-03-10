@@ -623,6 +623,11 @@ async def update_dashboard_logs(bot, bot_type: str):
             try:
                 message = await channel.fetch_message(int(message_id))
                 await message.edit(embed=embed)
+            except asyncio.CancelledError:
+                # network or task cancelled; just log and return so periodic task can retry
+                if bot_type not in QUIET_UPDATE_BOTS:
+                    print(f"[UPDATE LOGS] {bot_type} fetch_message cancelled, skipping this cycle")
+                return
             except discord.NotFound:
                 if bot_type not in QUIET_UPDATE_BOTS:
                     print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
@@ -636,6 +641,7 @@ async def update_dashboard_logs(bot, bot_type: str):
             except discord.Forbidden:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
             except Exception as e:
+                # catch-all for other errors; print traceback
                 print(f"[UPDATE LOGS ERROR] {bot_type} 日誌更新錯誤: {e}")
                 traceback.print_exc()
         else:
