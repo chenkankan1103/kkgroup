@@ -786,12 +786,16 @@ async def create_metrics_update_task(bot_type_str: str):
                 print("[METRICS TASK] 無法導入 GCP Metrics Monitor")
                 return
             
-            # 檢查快取 - 如果有有效的快取數據，跳過 API 調用
+            # 取監控快取數據
             cached = metrics_cache.get()
             if cached:
-                print("[METRICS TASK] 使用快取數據，避免 API 調用")
-                data_points, billing_info, monthly_gb = cached
+                if len(cached) == 4:
+                    data_points, billing_info, monthly_gb, cpu_seconds = cached
+                else:
+                    data_points, billing_info, monthly_gb = cached
+                    cpu_seconds = None
             else:
+                cpu_seconds = None
                 # 從 API 獲取新數據（帶超時保護）
                 try:
                     data_points = await asyncio.wait_for(
@@ -832,11 +836,12 @@ async def create_metrics_update_task(bot_type_str: str):
                 print(f"[METRICS TASK] 系統信息收集失敗: {e}")
                 sys_stats = {'cpu': None, 'mem': None, 'disk': None}
             
-            # 創建 embed（包含系統信息）
+            # 創建 embed（包含三個重要 metrics）
             embed = monitor.create_metrics_embed(
                 data_points=data_points,
                 billing_info=billing_info,
                 monthly_gb=monthly_gb,
+                cpu_seconds=cpu_seconds,
                 sys_stats=sys_stats
             )
             embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -969,6 +974,15 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                 monitor.get_network_egress_data(hours=6),
                 timeout=10.0
             )
+            cpu_seconds = None
+            try:
+                cpu_seconds, _ = await asyncio.wait_for(
+                    monitor.get_cpu_usage_time(hours=6),
+                    timeout=10.0
+                )
+            except Exception as e:
+                print(f"[METRICS INIT ASYNC] CPU metrics失敗: {e}")
+            
             billing_info = await asyncio.wait_for(
                 monitor.get_billing_data(),
                 timeout=10.0
@@ -978,7 +992,6 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                 timeout=15.0
             )
             
-            # 收集系統信息
             sys_stats = await asyncio.wait_for(
                 monitor.get_system_stats(),
                 timeout=10.0
@@ -989,6 +1002,7 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                 data_points=data_points,
                 billing_info=billing_info,
                 monthly_gb=monthly_gb,
+                cpu_seconds=cpu_seconds,
                 sys_stats=sys_stats
             )
             embed.set_footer(text=f"初始化時生成 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")

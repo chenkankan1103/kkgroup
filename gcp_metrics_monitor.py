@@ -658,65 +658,124 @@ class GCPMetricsMonitor:
             plt.close('all')
             return None
     
-    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, ops_egress: List[Dict] = None, ops_ingress: List[Dict] = None, sys_stats: Dict = None) -> discord.Embed:
+    async def get_cpu_usage_time(self, hours: int = 6) -> Tuple[Optional[float], List[Dict]]:
         """
-        創建 metrics embed
+        獲取 CPU 使用時間
+        Returns: (total_cpu_seconds, data_points)
         """
-        # 使用台灣時間作為 embed 的時間戳
-        taiwan_now = datetime.now(TAIWAN_TZ)
+        if not self.available:
+            return None, []
+        
+        try:
+            now = datetime.utcnow()
+            start_time = now - timedelta(hours=hours)
+            start_ts = Timestamp()
+            start_ts.FromDatetime(start_time)
+            end_ts = Timestamp()
+            end_ts.FromDatetime(now)
+            
+            interval = monitoring_v3.TimeInterval(
+                {"start_time": start_ts, "end_time": end_ts}
+            )
+            
+            metric_filter = 'metric.type="compute.googleapis.com/instance/cpu/usage_time"'
+            request = monitoring_v3.ListTimeSeriesRequest(
+                name=f"projects/{self.project_id}",
+                filter=metric_filter,
+                interval=interval,
+            )
+            
+            results = list(self.metric_client.list_time_series(request=request))
+            data_points = []
+            total_seconds = 0.0
+            
+            if results:
+                series = results[0]
+                for point in reversed(series.points):
+                    timestamp = point.interval.end_time.timestamp()
+                    cpu_seconds = point.value.double_value if point.value else 0
+                    total_seconds += cpu_seconds
+                    data_points.append({
+                        "timestamp": datetime.fromtimestamp(timestamp, tz=TAIWAN_TZ),
+                        "cpu_seconds": cpu_seconds
+                    })
+            
+            return total_seconds, data_points
+            
+        except Exception as e:
+            print(f"[GCP METRICS] CPU usage time 查詢失敗: {e}")
+            return None, []
+
+    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, cpu_seconds: Optional[float] = None, ops_egress: List[Dict] = None, ops_ingress: List[Dict] = None, sys_stats: Dict = None) -> discord.Embed:
+        """
+        創建 metrics embed - 追蹤三個重要 metrics：出站流量、CPU時間、計費
+        """
+        # 使用台灣時間作為 embed 的時間戳 - 確保總是使用最新時間
+        taiwan_now = datetime.now(timezone.utc).astimezone(TAIWAN_TZ)
         
         embed = discord.Embed(
-            title="📊 GCP 資源監控",
-            description="網路流量和計費信息監控",
+            title="📊 GCP 成本監控 (重點追蹤",
+            description="監控三項影響費用的關鍵指標",
             color=discord.Color.from_rgb(66, 133, 244),
         )
         
-        # 網路出站流量 - 過去 6 小時
+        # **1️⃣ 網路出站流量 (sent_bytes_count) - 最高優先**
         if data_points:
             total_mb = sum(p["mb"] for p in data_points)
             max_mb = max(p["mb"] for p in data_points)
             avg_mb = sum(p["mb"] for p in data_points) / len(data_points)
+            total_gb = total_mb / 1024  # 轉為 GB
             
             embed.add_field(
-                name="🌐 網路出站流量 (過去 6 小時)",
-                value=f"**總計**: {total_mb:.2f} MB\n**最大**: {max_mb:.2f} MB\n**平均**: {avg_mb:.2f} MB",
-                inline=True
+                name="🌐 1. 網路出站流量 ⭐⭐⭐",
+                value=f"**過去 6 小時**\n總計: {total_mb:.2f} MB ({total_gb:.4f} GB)\n最大: {max_mb:.2f} MB\n平均: {avg_mb:.2f} MB",
+                inline=False
             )
         else:
             embed.add_field(
-                name="🌐 網路出站流量 (過去 6 小時)",
+                name="🌐 1. 網路出站流量 ⭐⭐⭐",
                 value="暫無數據",
-                inline=True
+                inline=False
             )
-        # Ops agent summaries
+        
+        # **2️⃣ CPU 使用時間 - 中等優先**
+        if cpu_seconds is not None and cpu_seconds > 0:
+            cpu_minutes = cpu_seconds / 60
+            cpu_hours = cpu_minutes / 60
+            
+            embed.add_field(
+                name="🖥️ 2. CPU 使用時間 ⭐⭐",
+                value=f"**過去 6 小時**\n{cpu_seconds:.0f} 秒 = {cpu_minutes:.1f} 分鐘 = {cpu_hours:.2f} 小時\n(按 vCPU × 小時計費)",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🖥️ 2. CPU 使用時間 ⭐⭐",
+                value="暫無數據",
+                inline=False
+            )
+        # **3️⃣ 計費信息 - 成本追蹤**
+        embed.add_field(
+            name="💰 3. 計費信息 ⭐",
+            value=f"月份: {billing_info.get('current_month', 'N/A')}\n月累積流量: {monthly_gb:.2f} GB / 200 GB (免費額度)\n當月成本: {billing_info.get('total_cost', 'N/A')} {billing_info.get('currency', 'USD')}\n狀態: {billing_info.get('status', '✓ 正常')}",
+            inline=False
+        )
+        
+        # Ops agent summaries (if available)
+        ops_info = ""
         if ops_egress:
             tot = sum(p.get("mb",0) for p in ops_egress)
-            embed.add_field(
-                name="📤 Agent Egress (6h)",
-                value=f"{tot:.2f} MB",
-                inline=True
-            )
+            ops_info += f"Agent Egress (6h): {tot:.2f} MB\n"
         if ops_ingress:
             tot2 = sum(p.get("mb",0) for p in ops_ingress)
+            ops_info += f"Agent Ingress (6h): {tot2:.2f} MB"
+        
+        if ops_info:
             embed.add_field(
-                name="📥 Agent Ingress (6h)",
-                value=f"{tot2:.2f} MB",
-                inline=True
+                name="📡 代理數據 (可選)",
+                value=ops_info,
+                inline=False
             )
-        
-        # 添加月累積流量
-        embed.add_field(
-            name="📊 月累積出站流量",
-            value=f"**本月**: {monthly_gb:.2f} GB / 200 GB (免費額度)",
-            inline=True
-        )
-        
-        # 計費信息
-        embed.add_field(
-            name="💰 計費信息",
-            value=f"**月份**: {billing_info.get('current_month', 'N/A')}\n**成本**: {billing_info.get('total_cost', 'N/A')} {billing_info.get('currency', 'USD')}\n**狀態**: {billing_info.get('status', '✓ 正常')}",
-            inline=True
-        )
         
         # 免費額度提示
         embed.add_field(
@@ -760,8 +819,9 @@ class GCPMetricsMonitor:
                 inline=False
             )
         
-        # 使用台灣時間顯示最後更新時間
-        embed.set_footer(text=f"每 20 分鐘自動更新 | 台灣時間 • {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}")
+        # 使用台灣時間顯示最後更新時間 - 確保每次都是最新時間
+        current_time = datetime.now(timezone.utc).astimezone(TAIWAN_TZ)  # 重新計算一次確保最新
+        embed.set_footer(text=f"監控三項成本指標 | 台灣時間 {current_time.strftime('%H:%M:%S')} (更新: {current_time.strftime('%m-%d')})")  
         embed.set_image(url="attachment://gcp_metrics.png")
         
         return embed
