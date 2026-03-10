@@ -489,7 +489,7 @@ class GCPMetricsMonitor:
                     ingress_data,
                     monthly_cost
                 ),
-                timeout=10.0  # 10 秒超時
+                timeout=30.0  # 30 秒超时，超过则放弃但不影响机器人
             )
             return file_obj
         except asyncio.TimeoutError:
