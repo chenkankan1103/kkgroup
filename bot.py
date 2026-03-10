@@ -10,7 +10,8 @@ from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
 
 # dashboard helpers
-from status_dashboard import initialize_dashboard, add_log, load_message_ids
+# add_log removed; status_dashboard handles logs internally
+from status_dashboard import initialize_dashboard, load_message_ids
 
 # 全局變量：GCP Metrics 數據採集器
 _metrics_collector = None
