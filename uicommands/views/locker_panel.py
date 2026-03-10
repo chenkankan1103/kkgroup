@@ -102,13 +102,18 @@ class LockerPanelView(discord.ui.View):
     @discord.ui.button(label="個人置物櫃", style=discord.ButtonStyle.primary, emoji="📦", custom_id="locker_personal_view")
     async def personal_locker_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """個人置物櫃 - 打開永久按鈕視圖"""
+        # 立即 defer 以避免 3 秒超時
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception as e:
+            print(f"❌ [Locker] 無法 defer interaction: {e}")
+            return
+            
         try:
             owner_user_id = await self.get_owner_user_id(interaction)
             if interaction.user.id != owner_user_id:
-                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
-                
-            await interaction.response.defer(ephemeral=True)
             
             # 更新最後活動時間
             set_user_field(owner_user_id, 'last_activity', int(time.time()))
@@ -151,7 +156,11 @@ class LockerPanelView(discord.ui.View):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+            print(f"❌ [Locker Personal] 錯誤: {e}")
+            try:
+                await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+            except Exception as follow_e:
+                print(f"❌ [Locker Personal] 無法發送錯誤消息: {follow_e}")
     
     @discord.ui.button(label="變換性別", style=discord.ButtonStyle.secondary, emoji="👤", custom_id="locker_change_gender")
     async def locker_change_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -203,9 +212,18 @@ class LockerPanelView(discord.ui.View):
                 await interaction.response.send_message("✅ 你已經有員工證了！", view=view, ephemeral=True)
             else:
                 # 首次領取，顯示表單
+                # send_modal 會立即響應，不需要額外的 defer
                 await interaction.response.send_modal(WorkCardModal(self.cog, owner_user_id))
         
         except Exception as e:
             import traceback
             traceback.print_exc()
-            await interaction.response.send_message(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+            print(f"❌ [Locker Work Card] 錯誤: {e}")
+            try:
+                # 嘗試回應，如果已被使用則使用 followup
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+            except Exception as follow_e:
+                print(f"❌ [Locker Work Card] 無法發送錯誤消息: {follow_e}")
