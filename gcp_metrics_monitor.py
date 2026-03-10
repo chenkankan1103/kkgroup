@@ -528,6 +528,16 @@ class GCPMetricsMonitor:
             # Extract times and values
             timestamps = [point["timestamp"] for point in data_points]
             mb_values = [point["mb"] for point in data_points]
+            # 若数据点过多，简单降采样避免大量刻度生成
+            max_points = 100
+            if len(timestamps) > max_points:
+                step = len(timestamps) // max_points
+                timestamps = timestamps[::step]
+                mb_values = mb_values[::step]
+                if ops_data:
+                    ops_data = ops_data[::step]
+                if ingress_data:
+                    ingress_data = ingress_data[::step]
             
             # Set deep blue background with neon color
             fig.patch.set_facecolor('#1a2f4d')  # Deep blue background
@@ -606,7 +616,10 @@ class GCPMetricsMonitor:
             
             # Format X-axis time - use Taiwan timezone
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=TAIWAN_TZ))
-            ax.xaxis.set_major_locator(mdates.HourLocator(interval=1, tz=TAIWAN_TZ))
+            # limit ticks using AutoDateLocator with maxticks
+            from matplotlib.dates import AutoDateLocator
+            locator = AutoDateLocator(maxticks=12)
+            ax.xaxis.set_major_locator(locator)
             plt.xticks(rotation=45, ha='right', color='#e0e0e0')
             plt.yticks(color='#e0e0e0')
             
