@@ -807,31 +807,46 @@ class GCPMetricsMonitor:
                 value="暫無數據",
                 inline=False
             )
-        # **3️⃣ 計費信息 - 全年 1-12 月表格**
-        # 生成全年月份標記表，顯示每個月是否有費用
+        # **3️⃣ 計費信息 - 全年 1-12 月費用表格**
+        # 生成年度費用表，上半年(1-6月) + 下半年(7-12月)
         now = datetime.now(TAIWAN_TZ)
         current_year = now.year
         costs = billing_info.get('monthly_costs', {})
         
-        # 構建 1-12 月的表格
-        months_header = "  1  2  3  4  5  6  7  8  9 10 11 12"
-        marks = []
-        for month_num in range(1, 13):
+        # 構建上半年 (1-6月)
+        months_line_1 = ""
+        costs_line_1 = ""
+        for month_num in range(1, 7):
+            month_str = f"{month_num}月"
+            months_line_1 += f"{month_str:>7s}"
+            
             month_key = f"{current_year:04d}-{month_num:02d}"
-            # 如果該月有記錄成本且成本 > 0 則標記 X，否則顯示當月標記
-            if costs.get(month_key, 0) and costs.get(month_key, 0) > 0:
-                marks.append('X')
-            elif month_num == now.month:
-                # 當月沒有數據時顯示 •
-                marks.append('•')
+            cost = costs.get(month_key, 0)
+            if cost and cost > 0:
+                cost_str = f"${cost:.2f}"
             else:
-                marks.append(' ')
+                cost_str = "-"
+            costs_line_1 += f"{cost_str:>7s}"
         
-        marks_row = " ".join(f"{m:2s}" for m in marks)
-        table_block = f"```\n{months_header}\n{marks_row}\n```"
+        # 構建下半年 (7-12月)
+        months_line_2 = ""
+        costs_line_2 = ""
+        for month_num in range(7, 13):
+            month_str = f"{month_num}月"
+            months_line_2 += f"{month_str:>7s}"
+            
+            month_key = f"{current_year:04d}-{month_num:02d}"
+            cost = costs.get(month_key, 0)
+            if cost and cost > 0:
+                cost_str = f"${cost:.2f}"
+            else:
+                cost_str = "-"
+            costs_line_2 += f"{cost_str:>7s}"
+        
+        table_block = f"```\n{months_line_1}\n{costs_line_1}\n\n{months_line_2}\n{costs_line_2}\n```"
         embed.add_field(
-            name="💰 3. 計費信息 (12 月概覽)",
-            value=f"{table_block}X = 該月有費用  •  = 當月\n狀態: {billing_info.get('status', '')}",
+            name="💰 3. 計費信息 (12 月費用表)",
+            value=f"{table_block}狀態: {billing_info.get('status', '')}",
             inline=False
         )
         
