@@ -74,7 +74,7 @@ class CropOperationView(discord.ui.View):
                 await interaction.followup.send("❌ 你沒有任何種子！", ephemeral=True)
                 return
 
-            view = CropPlantingView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, options)
+            view = CropPlantingView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, options, self.seeds, self)
             embed = discord.Embed(
                 title="🌱 選擇要種植的種子",
                 description="從下方選單選擇一種子進行種植",
@@ -249,13 +249,15 @@ class CropOperationView(discord.ui.View):
 class CropPlantingView(discord.ui.View):
     """種植作物選擇視圖"""
 
-    def __init__(self, bot, cog, user_id, guild_id, channel_id, options):
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, options, seeds_dict=None, crop_operation_view=None):
         super().__init__(timeout=None)  # 永久視圖
         self.bot = bot
         self.cog = cog
         self.user_id = user_id
         self.guild_id = guild_id
         self.channel_id = channel_id
+        self.seeds_dict = seeds_dict or {}  # 保留完整種子字典用於一鍵種植
+        self.crop_operation_view = crop_operation_view
 
         # 添加種子選擇下拉選單
         if options:
@@ -266,6 +268,16 @@ class CropPlantingView(discord.ui.View):
             )
             select.callback = self.seed_select_callback
             self.add_item(select)
+
+        # 添加一鍵種植按鈕
+        mass_button = discord.ui.Button(
+            label="一鍵種植",
+            style=discord.ButtonStyle.success,
+            emoji="🌾",
+            custom_id="plant_all_seeds"
+        )
+        mass_button.callback = self.plant_all_callback
+        self.add_item(mass_button)
 
     async def seed_select_callback(self, interaction: discord.Interaction):
         """處理種子選擇"""
@@ -323,17 +335,73 @@ class CropPlantingView(discord.ui.View):
                     print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
+    async def plant_all_callback(self, interaction: discord.Interaction):
+        """一鍵種植：嘗試種植所有持有的種子"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            if not self.seeds_dict:
+                await interaction.followup.send("❌ 沒有可用的種子信息！", ephemeral=True)
+                return
+
+            results = []  # 儲存種植結果
+            # 遍歷所有種子
+            for seed_name, qty in list(self.seeds_dict.items()):
+                for _ in range(qty):
+                    has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
+                    if not has_seed:
+                        results.append((seed_name, False, "庫存不足"))
+                        break
+                    result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
+                    if result and not result.get("success") == False:
+                        # 成功
+                        if self.cog:
+                            user = await self.bot.fetch_user(self.user_id)
+                            await self.cog.record_event('plant', user, f"種植{seed_name}")
+                        results.append((seed_name, True, ""))
+                    else:
+                        # 失敗，退還種子
+                        await add_inventory(self.user_id, "種子", seed_name, 1)
+                        reason = result.get("reason", "未知原因") if result else "未知原因"
+                        results.append((seed_name, False, reason))
+                        continue
+
+            # 建立結果 embed
+            embed = discord.Embed(title="🌱 一鍵種植結果", color=discord.Color.green())
+            for seed_name, success, reason in results:
+                emoji = ""
+                try:
+                    emoji = CANNABIS_SHOP["種子"][seed_name]["emoji"]
+                except Exception:
+                    pass
+                if success:
+                    embed.add_field(name=f"{emoji} {seed_name}", value="種植成功", inline=True)
+                else:
+                    embed.add_field(name=f"{emoji} {seed_name}", value=f"失敗：{reason}", inline=True)
+
+            # 顯示結果，並附帶返回按鈕
+            from .selection_views import PlantResultView
+            result_view = PlantResultView(self.user_id, self.crop_operation_view if self.crop_operation_view else self)
+            await interaction.followup.send(embed=embed, view=result_view, ephemeral=True)
+
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 一鍵種植時發生錯誤：{str(e)[:100]}", ephemeral=True)
+
 
 class SelectSeedView(discord.ui.View):
     """選擇要種植的種子"""
 
-    def __init__(self, bot, cog, user_id, guild_id, channel_id, seeds):
+    def __init__(self, bot, cog, user_id, guild_id, channel_id, seeds, crop_operation_view=None):
         super().__init__(timeout=None)  # 永久視圖
         self.bot = bot
         self.cog = cog
         self.user_id = user_id
         self.guild_id = guild_id
         self.channel_id = channel_id
+        self.crop_operation_view = crop_operation_view
+        # 保留種子快照以便一鍵種植使用
+        self.seeds = dict(seeds)
 
         for idx, (seed_name, qty) in enumerate(seeds.items(), 1):
             if qty > 0:
@@ -346,6 +414,16 @@ class SelectSeedView(discord.ui.View):
                 )
                 button.callback = self.make_plant_callback(seed_name)
                 self.add_item(button)
+
+        # 添加一鍵種植按鈕
+        mass_button = discord.ui.Button(
+            label="一鍵種植",
+            style=discord.ButtonStyle.success,
+            emoji="🌾",
+            custom_id="plant_all_seeds"
+        )
+        mass_button.callback = self.plant_all_callback
+        self.add_item(mass_button)
 
     def make_plant_callback(self, seed_name):
         async def callback(interaction: discord.Interaction):
@@ -399,6 +477,62 @@ class SelectSeedView(discord.ui.View):
                 except Exception as refund_error:
                     print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
                 await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
+        return callback
+
+    async def plant_all_callback(self, interaction: discord.Interaction):
+        """一鍵種植：嘗試種植所有持有的種子"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            # 檢查使用者是否為該視圖的擁有者
+            if interaction.user.id != self.user_id:
+                await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
+                return
+
+            results = []  # 儲存種植結果
+            # 遍歷快照的種子數量
+            for seed_name, qty in list(self.seeds.items()):
+                for _ in range(qty):
+                    has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
+                    if not has_seed:
+                        results.append((seed_name, False, "庫存不足"))
+                        break
+                    result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
+                    if result and not result.get("success") == False:
+                        # 成功
+                        if self.cog:
+                            user = await self.bot.fetch_user(self.user_id)
+                            await self.cog.record_event('plant', user, f"種植{seed_name}")
+                        results.append((seed_name, True, ""))
+                    else:
+                        # 失敗，退還種子
+                        await add_inventory(self.user_id, "種子", seed_name, 1)
+                        reason = result.get("reason", "未知原因") if result else "未知原因"
+                        results.append((seed_name, False, reason))
+                        continue
+
+            # 建立結果 embed
+            embed = discord.Embed(title="🌱 一鍵種植結果", color=discord.Color.green())
+            for seed_name, success, reason in results:
+                emoji = ""
+                try:
+                    emoji = CANNABIS_SHOP["種子"][seed_name]["emoji"]
+                except Exception:
+                    pass
+                if success:
+                    embed.add_field(name=f"{emoji} {seed_name}", value="種植成功", inline=True)
+                else:
+                    embed.add_field(name=f"{emoji} {seed_name}", value=f"失敗：{reason}", inline=True)
+
+            # 顯示結果，並附帶返回按鈕
+            from .selection_views import PlantResultView
+            result_view = PlantResultView(self.user_id, self.crop_operation_view)
+            await interaction.followup.send(embed=embed, view=result_view, ephemeral=True)
+
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 一鍵種植時發生錯誤：{str(e)[:100]}", ephemeral=True)
 
     async def back_to_locker_callback(self, interaction: discord.Interaction):
         """返回到個人置物櫃主選項"""
