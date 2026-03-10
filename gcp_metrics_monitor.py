@@ -20,6 +20,7 @@ from typing import Dict, List, Tuple, Optional
 import io
 import discord
 import os
+import traceback
 from dotenv import load_dotenv
 
 # 嘗試導入 Google Cloud 庫
@@ -74,6 +75,10 @@ class GCPMetricsMonitor:
             except Exception as e:
                 print(f"[GCP] ⚠️ MetricsDatabase 初始化失敗: {e}")
         
+        # 背景圖表產生任務的最新圖表快取
+        self.latest_chart: Optional[discord.File] = None
+        self.chart_generation_in_progress = False
+        
         if self.available:
             try:
                 self.metric_client = monitoring_v3.MetricServiceClient()
@@ -88,6 +93,107 @@ class GCPMetricsMonitor:
             self.metric_client = None
             self.billing_client = None
             print("[GCP] ⚠️ GCP Metrics Monitor 初始化跳過（Google Cloud 庫不可用）")
+    
+    def get_latest_chart(self) -> Optional[discord.File]:
+        """
+        取得最新產生的圖表
+        
+        Returns:
+            Optional[discord.File]: 最新圖表或 None
+        """
+        return self.latest_chart
+    
+    async def background_chart_generation_task(self, interval_minutes: int = 5):
+        """
+        背景圖表產生任務（獨立執行，每 N 分鐘產一次）
+        
+        Args:
+            interval_minutes: 產圖間隔（分鐘），預設 5 分鐘
+        """
+        print(f"[GCP Charting] 🚀 啟動背景產圖任務（間隔: {interval_minutes} 分鐘）")
+        
+        while True:
+            try:
+                await asyncio.sleep(interval_minutes * 60)
+                
+                if self.chart_generation_in_progress:
+                    print("[GCP Charting] ⏳ 前一張圖仍在產生，本次跳過")
+                    continue
+                
+                self.chart_generation_in_progress = True
+                
+                try:
+                    print(f"[GCP Charting] 開始產圖...")
+                    
+                    # 從資料庫讀取數據
+                    if not self.db:
+                        print("[GCP Charting] ⚠️ 資料庫不可用，跳過產圖")
+                        continue
+                    
+                    # 使用執行緒池產圖（不會堵塞事件迴圈）
+                    chart = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self.generate_chart_from_database_sync,
+                            6
+                        ),
+                        timeout=60.0
+                    )
+                    
+                    if chart:
+                        self.latest_chart = chart
+                        print(f"[GCP Charting] ✅ 圖表產生完成")
+                    else:
+                        print(f"[GCP Charting] ⚠️ 圖表產生失敗（返回 None）")
+                    
+                except asyncio.TimeoutError:
+                    print(f"[GCP Charting] ⚠️ 圖表產生超時 (>60s)")
+                except Exception as e:
+                    print(f"[GCP Charting] ❌ 圖表產生異常: {e}")
+                    traceback.print_exc()
+                
+                finally:
+                    self.chart_generation_in_progress = False
+            
+            except Exception as e:
+                print(f"[GCP Charting] ❌ 背景任務異常: {e}")
+                await asyncio.sleep(60)  # 出錯時等待 1 分鐘後重試
+    
+    def generate_chart_from_database_sync(self, hours: int = 6) -> Optional[discord.File]:
+        """
+        從資料庫同步產圖（供背景任務使用，在執行緒池中執行）
+        
+        Args:
+            hours: 圖表時間範圍（小時）
+            
+        Returns:
+            Optional[discord.File]: 圖表文件或 None
+        """
+        if not self.db:
+            return None
+        
+        try:
+            # 讀取所有必要的資料
+            data_points = self.db.get_egress_data(hours=hours)
+            billing_info = self.get_billing_info_from_database()
+            monthly_gb = self.get_monthly_egress_from_database()
+            
+            if not data_points:
+                print("[GCP Charting] ⚠️ 無資料點，無法產圖")
+                return None
+            
+            # 產圖
+            chart = self.generate_metrics_chart(
+                data_points=data_points,
+                monthly_cost=billing_info.get('total_cost') if billing_info else None
+            )
+            
+            return chart
+        
+        except Exception as e:
+            print(f"[GCP Charting] 同步產圖失敗: {e}")
+            traceback.print_exc()
+            return None
+        
         
     async def get_network_egress_data(self, hours: int = 6, timeout_sec: float = 10.0) -> List[Dict]:
         """
