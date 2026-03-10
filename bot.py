@@ -12,6 +12,10 @@ from bot_status import build_discord_activity
 # dashboard helpers
 from status_dashboard import initialize_dashboard, add_log, load_message_ids
 
+# 全局變量：GCP Metrics 數據採集器
+_metrics_collector = None
+_metrics_collector_task = None
+
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
 # ============================================================
@@ -338,6 +342,32 @@ async def on_ready():
                 add_log("bot", "✅ 日誌系統已初始化")
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
+
+        # ============================================================
+        # 啟動 GCP Metrics 數據採集器（如果 BOT_TYPE == "bot"）
+        # ============================================================
+        global _metrics_collector, _metrics_collector_task
+        
+        if BOT_TYPE == "scam" and _metrics_collector is None:  # 只在主 bot 中啟動一次
+            try:
+                from metrics_data_collector import MetricsDataCollector
+                
+                print("[bot] 初始化 GCP Metrics 數據採集器...")
+                _metrics_collector = MetricsDataCollector(project_id="kkgroup")
+                
+                # 啟動後台採集任務（每 30 分鐘運行一次）
+                if _metrics_collector_task is None:
+                    _metrics_collector_task = asyncio.create_task(
+                        _metrics_collector.start_background_collection(interval_minutes=30)
+                    )
+                    print("[bot] ✅ GCP Metrics 數據採集器已啟動（每 30 分鐘採集一次）")
+                
+            except ImportError:
+                print("[bot] ⚠️ MetricsDataCollector 不可用（metrics_data_collector.py 不存在）")
+            except Exception as e:
+                print(f"[bot] ⚠️ 無法啟動 Metrics 數據採集器: {e}")
+                import traceback
+                traceback.print_exc()
 
         # 啟動狀態更新任務
         if not update_status.is_running():

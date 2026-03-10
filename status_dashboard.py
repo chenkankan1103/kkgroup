@@ -609,25 +609,34 @@ async def create_metrics_update_task(bot_type_str: str):
             try:
                 from gcp_metrics_monitor import GCPMetricsMonitor
                 monitor = GCPMetricsMonitor(project_id="kkgroup")
-                if not monitor.available:
-                    print("[METRICS TASK] GCP Monitor 不可用，跳過更新")
-                    return
+                if not monitor.db:
+                    print("[METRICS TASK] ⚠️ MetricsDatabase 不可用，嘗試從 GCP API 獲取數據")
             except ImportError:
                 print("[METRICS TASK] 無法導入 GCP Metrics Monitor")
                 return
             
-            # 取監控快取數據
-            cached = metrics_cache.get()
-            sys_stats = None
-            if cached:
-                if len(cached) == 4:
-                    data_points, billing_info, monthly_gb, cpu_seconds = cached
+            # 優先從數據庫讀取數據（新架構）
+            if monitor.db:
+                print("[METRICS TASK] 從本地數據庫讀取 metrics 數據...")
+                
+                # 從數據庫讀取數據
+                data_points = monitor.db.get_egress_data(hours=6)
+                billing_info = monitor.get_billing_info_from_database()
+                monthly_gb = monitor.get_monthly_egress_from_database()
+                sys_stats = monitor.get_system_stats_from_database()
+                cpu_seconds = None  # 暫不支持從數據庫讀取
+                
+                if len(data_points) < 2:
+                    print("[METRICS TASK] ⚠️ 數據庫中數據點不足，嘗試從 GCP API 獲取...")
                 else:
-                    data_points, billing_info, monthly_gb = cached
-                    cpu_seconds = None
+                    print(f"[METRICS TASK] ✅ 從數據庫成功讀取 {len(data_points)} 個數據點")
             else:
-                cpu_seconds = None
-                # 從 API 獲取新數據（帶超時保護）
+                print("[METRICS TASK] MetricsDatabase 不可用")
+                data_points = []
+            
+            # 如果數據庫數據不足，從 API 獲取（後備方案）
+            if len(data_points) < 2 and monitor.available:
+                print("[METRICS TASK] 從 GCP API 獲取數據（後備方案）...")
                 try:
                     data_points = await asyncio.wait_for(
                         monitor.get_network_egress_data(hours=6),
@@ -641,41 +650,24 @@ async def create_metrics_update_task(bot_type_str: str):
                         monitor.get_monthly_egress_data(days=30),
                         timeout=15.0
                     )
-                    # 嘗試抓 CPU 使用時間（月累計，約 720 小時）
-                    try:
-                        cpu_seconds, _ = await asyncio.wait_for(
-                            monitor.get_cpu_usage_time(hours=720),
-                            timeout=10.0
-                        )
-                    except Exception as e:
-                        print(f"[METRICS TASK] 無法獲取 CPU 時間: {e}")
-                        cpu_seconds = None
-                    
-                    # 存儲到快取（包含 cpu_seconds）
-                    metrics_cache.set((data_points, billing_info, monthly_gb, cpu_seconds))
-                    print(f"[METRICS TASK] 成功獲取 metrics 數據（{len(data_points)} 數據點) cpu_seconds={cpu_seconds}")
+                    sys_stats = await asyncio.wait_for(
+                        monitor.get_system_stats(),
+                        timeout=10.0
+                    )
+                    print(f"[METRICS TASK] 從 GCP API 成功獲取 metrics 數據（{len(data_points)} 數據點)")
                 except Exception as e:
-                    # 如果任何一部分失敗，我们记录错误并使用默认值继续
-                    print(f"[METRICS TASK] ⚠️ 取得 metrics 时发生异常: {e}")
-                    data_points, billing_info, monthly_gb, cpu_seconds = [], {}, 0, None
-            # 獲取系統統計以便 embed 顯示
-            try:
-                sys_stats = await asyncio.wait_for(
-                    monitor.get_system_stats(),
-                    timeout=10.0
-                )
-            except Exception as e:
-                print(f"[METRICS TASK] 無法獲取系統資源統計: {e}")
-                sys_stats = None
+                    print(f"[METRICS TASK] ⚠️ 從 GCP API 獲取失敗: {e}")
+                    data_points, billing_info, monthly_gb, sys_stats = [], {}, 0, None
+            
             # 創建 embed（包含三個重要 metrics）
             embed = monitor.create_metrics_embed(
                 data_points=data_points,
                 billing_info=billing_info,
                 monthly_gb=monthly_gb,
-                cpu_seconds=cpu_seconds,
+                cpu_seconds=None,
                 sys_stats=sys_stats
             )
-            embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
+            embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 資料來源: {'數據庫' if monitor.db else 'GCP API'} | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
             # 生成圖表（异步 + 线程池）
             chart_file = None
@@ -684,14 +676,21 @@ async def create_metrics_update_task(bot_type_str: str):
             elif not chart_generation_lock.locked():
                 try:
                     async with chart_generation_lock:
-                        # 为图表生成加上 30 秒整体超时保护
-                        chart_file = await asyncio.wait_for(
-                            monitor.generate_metrics_chart_async(
-                                data_points=data_points,
-                                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
-                            ),
-                            timeout=30.0
-                        )
+                        # 使用新的數據庫方法生成圖表（不再查詢 GCP API）
+                        if monitor.db and len(data_points) > 0:
+                            chart_file = await asyncio.wait_for(
+                                monitor.generate_chart_from_database(hours=6),
+                                timeout=30.0
+                            )
+                        elif data_points:
+                            # 後備：使用現有數據點生成圖表
+                            chart_file = await asyncio.wait_for(
+                                monitor.generate_metrics_chart_async(
+                                    data_points=data_points,
+                                    monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
+                                ),
+                                timeout=30.0
+                            )
                 except asyncio.TimeoutError:
                     print("[METRICS TASK] ⚠️ 图表生成超时 (>30s)，跳过此次图表")
                 except Exception as e:
@@ -796,39 +795,62 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
         
         from gcp_metrics_monitor import GCPMetricsMonitor
         monitor = GCPMetricsMonitor(project_id="kkgroup")
-        if not monitor.available:
-            print("[METRICS INIT ASYNC] GCP Monitor 不可用")
-            return
         
         print(f"[METRICS INIT ASYNC] 開始異步收集 metrics 數據...")
         
         try:
-            data_points = await asyncio.wait_for(
-                monitor.get_network_egress_data(hours=6),
-                timeout=10.0
-            )
-            cpu_seconds = None
-            try:
-                cpu_seconds, _ = await asyncio.wait_for(
-                    monitor.get_cpu_usage_time(hours=6),
+            # 優先從數據庫讀取
+            if monitor.db:
+                print("[METRICS INIT ASYNC] 嘗試從本地數據庫讀取初始 metrics 數據...")
+                data_points = monitor.db.get_egress_data(hours=6)
+                billing_info = monitor.get_billing_info_from_database()
+                monthly_gb = monitor.get_monthly_egress_from_database()
+                sys_stats = monitor.get_system_stats_from_database()
+                
+                if len(data_points) < 2:
+                    print("[METRICS INIT ASYNC] ⚠️ 數據庫數據不足，嘗試從 GCP API 獲取...")
+                    data_points = await asyncio.wait_for(
+                        monitor.get_network_egress_data(hours=6),
+                        timeout=10.0
+                    )
+                    billing_info = await asyncio.wait_for(
+                        monitor.get_billing_data(),
+                        timeout=10.0
+                    )
+                    monthly_gb = await asyncio.wait_for(
+                        monitor.get_monthly_egress_data(days=30),
+                        timeout=15.0
+                    )
+                    sys_stats = await asyncio.wait_for(
+                        monitor.get_system_stats(),
+                        timeout=10.0
+                    )
+                else:
+                    print(f"[METRICS INIT ASYNC] ✅ 從數據庫成功讀取 {len(data_points)} 個數據點")
+            elif monitor.available:
+                # 後備方案：從 GCP API 獲取
+                print("[METRICS INIT ASYNC] MetricsDatabase 不可用，從 GCP API 獲取...")
+                data_points = await asyncio.wait_for(
+                    monitor.get_network_egress_data(hours=6),
                     timeout=10.0
                 )
-            except Exception as e:
-                print(f"[METRICS INIT ASYNC] CPU metrics失敗: {e}")
+                billing_info = await asyncio.wait_for(
+                    monitor.get_billing_data(),
+                    timeout=10.0
+                )
+                monthly_gb = await asyncio.wait_for(
+                    monitor.get_monthly_egress_data(days=30),
+                    timeout=15.0
+                )
+                sys_stats = await asyncio.wait_for(
+                    monitor.get_system_stats(),
+                    timeout=10.0
+                )
+            else:
+                print("[METRICS INIT ASYNC] ⚠️ GCP Monitor 和數據庫都不可用")
+                return
             
-            billing_info = await asyncio.wait_for(
-                monitor.get_billing_data(),
-                timeout=10.0
-            )
-            monthly_gb = await asyncio.wait_for(
-                monitor.get_monthly_egress_data(days=30),
-                timeout=15.0
-            )
-            
-            sys_stats = await asyncio.wait_for(
-                monitor.get_system_stats(),
-                timeout=10.0
-            )
+            cpu_seconds = None
             print(f"[METRICS INIT ASYNC] 系統信息已收集: {sys_stats}")
             
             embed = monitor.create_metrics_embed(
@@ -838,7 +860,7 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                 cpu_seconds=cpu_seconds,
                 sys_stats=sys_stats
             )
-            embed.set_footer(text=f"初始化時生成 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
+            embed.set_footer(text=f"初始化時生成 | 資料來源: {'數據庫' if monitor.db else 'GCP API'} | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
             chart_file = None
             if GCP_METRICS_CHART_DISABLED:
@@ -846,13 +868,19 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
             elif not chart_generation_lock.locked():
                 try:
                     async with chart_generation_lock:
-                        chart_file = await asyncio.wait_for(
-                            monitor.generate_metrics_chart_async(
-                                data_points=data_points,
-                                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
-                            ),
-                            timeout=30.0
-                        )
+                        if monitor.db and len(data_points) > 0:
+                            chart_file = await asyncio.wait_for(
+                                monitor.generate_chart_from_database(hours=6),
+                                timeout=30.0
+                            )
+                        elif data_points:
+                            chart_file = await asyncio.wait_for(
+                                monitor.generate_metrics_chart_async(
+                                    data_points=data_points,
+                                    monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
+                                ),
+                                timeout=30.0
+                            )
                 except asyncio.TimeoutError:
                     print("[METRICS INIT ASYNC] ⚠️ 图表初始化超时 (>30s)")
                 except Exception as e:
