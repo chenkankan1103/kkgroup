@@ -64,7 +64,13 @@ _reload_lock = asyncio.Lock()
 _pending_reloads = set()
 
 async def find_and_load_extensions(base_path, package_prefix="", client=None):
-    """遞歸搜尋並載入所有 Python 擴展（只加載有效的 Cog）"""
+    """遞歸搜尋並載入所有 Python 擴展（只加載有效的 Cog）。
+
+    跳過任何名為 `views` 的子包，以避免載入僅包含 View/Modal 的檔案。
+    """
+    if package_prefix.split('.')[-1] == 'views':
+        return []
+
     loaded_extensions = []
     
     # 列出不應該被加載為 Cog 的模組

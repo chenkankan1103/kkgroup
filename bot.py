@@ -56,7 +56,17 @@ _reload_lock = asyncio.Lock()
 _pending_reloads = set()
 
 async def find_and_load_extensions(base_path, package_prefix="", client=None):
-    """遞歸搜尋並載入所有 Python 擴展（只加載有效的 Cog）"""
+    """遞歸搜尋並載入所有 Python 擴展（只加載有效的 Cog）。
+
+    為了避免 `views` 目錄被當成 Cog 而引發 “has no setup
+    function” 的錯誤，任何 package_prefix 以 "views" 結尾的
+    目錄都會直接跳過掃描。
+    """
+    # 如果我們已經在某個 views 子包內，就不要繼續遞歸，
+    # views 裡面只含 Discord View/Modal 類，沒有 Cog。
+    if package_prefix.split('.')[-1] == 'views':
+        return []
+
     loaded_extensions = []
     
     # 列出不應該被加載為 Cog 的模組

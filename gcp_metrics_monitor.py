@@ -72,10 +72,14 @@ class GCPMetricsMonitor:
             self.billing_client = None
             print("[GCP] ⚠️ GCP Metrics Monitor 初始化跳過（Google Cloud 庫不可用）")
         
-    async def get_network_egress_data(self, hours: int = 6) -> List[Dict]:
+    async def get_network_egress_data(self, hours: int = 6, timeout_sec: float = 10.0) -> List[Dict]:
         """
         獲取 GCP 網路出站流量數據（最近 N 小時）
         嘗試多個 metric type，直至找到可用的數據。
+        
+        Args:
+            hours: 查詢過去 N 小時
+            timeout_sec: API 調用超時秒數（預設 10 秒，避免掛起）
         
         Returns:
             List[Dict]: 包含時間戳和 MB 流量的列表
@@ -103,7 +107,7 @@ class GCPMetricsMonitor:
                 'compute.googleapis.com/instance/network/sent_packets_count', # 替代
             ]
             
-            print(f"[GCP METRICS] 查詢網路流量 (hours={hours}, 時間: {start_time} ~ {now})")
+            print(f"[GCP METRICS] 查詢網路流量 (hours={hours}, timeout={timeout_sec}s, 時間: {start_time} ~ {now})")
             
             for metric_type in metric_types:
                 try:
@@ -116,7 +120,12 @@ class GCPMetricsMonitor:
                         interval=interval,
                     )
                     
-                    results = self.metric_client.list_time_series(request=request)
+                    # 使用 asyncio.wait_for 強制 10 秒超時
+                    loop = asyncio.get_event_loop()
+                    results = await asyncio.wait_for(
+                        loop.run_in_executor(None, self.metric_client.list_time_series, request),
+                        timeout=timeout_sec
+                    )
                     series_list = list(results)
                     
                     print(f"[GCP METRICS] 找到 {len(series_list)} 個 time series")
@@ -146,8 +155,12 @@ class GCPMetricsMonitor:
             print(f"[GCP METRICS] 所有 metric type 都無數據")
             return []
             
+        except asyncio.TimeoutError:
+            print(f"[GCP METRICS] ⏱️ 網路流量查詢超時（{timeout_sec}s）")
+            return []
         except Exception as e:
-            print(f"[GCP METRICS] 獲取網路流量異常: {e}")
+            err_str = str(e)[:100]
+            print(f"[GCP METRICS] 獲取網路流量異常: {err_str}")
             import traceback
             traceback.print_exc()
             return []
@@ -259,12 +272,13 @@ class GCPMetricsMonitor:
         filled = int(ratio * length)
         return '█' * filled + '░' * (length - filled)
     
-    async def get_monthly_egress_data(self, days: int = 30) -> float:
+    async def get_monthly_egress_data(self, days: int = 30, timeout_sec: float = 15.0) -> float:
         """
         獲取月累積出站流量（單位: GB）
         
         Args:
             days: 查詢天數（默認 30 天）
+            timeout_sec: 超時秒數（預設 15 秒）
             
         Returns:
             float: 月累積出站流量（GB）
@@ -282,7 +296,7 @@ class GCPMetricsMonitor:
                 {"start_time": start_ts, "end_time": end_ts}
             )
             
-            print(f"[GCP METRICS] 查詢月累積流量 (days={days}, {start_time} ~ {now})")
+            print(f"[GCP METRICS] 查詢月累積流量 (days={days}, timeout={timeout_sec}s)")
             
             # 查詢網路出站流量 metric - 使用 delta 以獲得累積值
             metric_filter = 'metric.type="compute.googleapis.com/instance/network/sent_bytes_count"'
@@ -293,7 +307,11 @@ class GCPMetricsMonitor:
                 interval=interval,
             )
             
-            results = self.metric_client.list_time_series(request=request)
+            loop = asyncio.get_event_loop()
+            results = await asyncio.wait_for(
+                loop.run_in_executor(None, self.metric_client.list_time_series, request),
+                timeout=timeout_sec
+            )
             series_list = list(results)
             
             print(f"[GCP METRICS] 月累積流量查詢找到 {len(series_list)} 個 series")
@@ -314,10 +332,12 @@ class GCPMetricsMonitor:
             print(f"[GCP METRICS] 月累積成功: {point_count} 個點，總 {gb_value:.4f} GB")
             return gb_value
             
+        except asyncio.TimeoutError:
+            print(f"[GCP METRICS] ⏱️ 月累積流量查詢超時（{timeout_sec}s）")
+            return 0.0
         except Exception as e:
-            print(f"[GCP METRICS] 獲取月累積流量失敗: {e}")
-            import traceback
-            traceback.print_exc()
+            err_str = str(e)[:100]
+            print(f"[GCP METRICS] 獲取月累積流量失敗: {err_str}")
             return 0.0
     
     async def get_billing_data(self) -> Dict:
@@ -419,14 +439,44 @@ class GCPMetricsMonitor:
                 "status": f"⚠️ 計費查詢異常"
             }
     
+    async def generate_metrics_chart_async(self, data_points: List[Dict], ops_data: List[Dict] = None, ingress_data: List[Dict] = None, monthly_cost: Optional[float] = None) -> Optional[discord.File]:
+        """
+        生成 metrics 圖表（非阻塞版本，委派給執行器）。
+        
+        Args:
+            data_points: 時間序列數據
+            ops_data: 可選，由 agent.googleapis.com/network/egress_bytes_count 收集
+            ingress_data: 可選，由 agent.googleapis.com/network/ingress_bytes_count 收集
+            monthly_cost: optional monthly cost (USD) to plot as a bar
+            
+        Returns:
+            discord.File: 圖表文件或 None
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            # 使用執行器在線程池中運行圖表生成，避免阻塞事件循環
+            file_obj = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    self.generate_metrics_chart,
+                    data_points,
+                    ops_data,
+                    ingress_data,
+                    monthly_cost
+                ),
+                timeout=10.0  # 10 秒超時
+            )
+            return file_obj
+        except asyncio.TimeoutError:
+            print("[GCP METRICS] ⏱️ 圖表生成超時（10s）")
+            return None
+        except Exception as e:
+            print(f"[GCP METRICS] 圖表異步生成失敗: {e}")
+            return None
+
     def generate_metrics_chart(self, data_points: List[Dict], ops_data: List[Dict] = None, ingress_data: List[Dict] = None, monthly_cost: Optional[float] = None) -> Optional[discord.File]:
         """
-        生成 metrics 圖表（網路流量趨勢）。
-        可傳入 ops_data 來顯示代理收集的出站 bytes，以及 ingress_data 顯示進站 bytes。
-        同時可以傳入 monthly_cost 以在折線圖上疊加成本長條（右側 y 軸）。
-        
-        此函數不再是協程，內部全部同步運行，允許外部使用
-        ``asyncio.to_thread`` 來將其移出事件循環。
+        同步版本圖表生成（由執行器調用以避免阻塞事件循環）。
         
         Args:
             data_points: 時間序列數據
