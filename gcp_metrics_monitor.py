@@ -296,6 +296,29 @@ class GCPMetricsMonitor:
         """Create a text bar █ for filled portion and ░ for empty."""
         filled = int(ratio * length)
         return '█' * filled + '░' * (length - filled)
+
+    def _format_size(self, gb_value: float) -> str:
+        """Format a size expressed in **GB** into a human‑friendly string.
+
+        The display automatically switches between KB, MB and GB based on the
+        magnitude of the value.  This is used for the monthly egress total, which
+        is more meaningful when shown in the most appropriate unit.
+        """
+        try:
+            gb = float(gb_value)
+        except Exception:
+            return "0.00 GB"
+        # tiny amounts -> show in KB
+        if gb < 0.001:
+            kb = gb * 1024 * 1024
+            return f"{kb:.2f} KB"
+        # sub‑gigabyte -> show in MB
+        elif gb < 1:
+            mb = gb * 1024
+            return f"{mb:.2f} MB"
+        # gigabytes and above
+        else:
+            return f"{gb:.2f} GB"
     
     async def get_monthly_egress_data(self, days: int = 30, timeout_sec: float = 15.0) -> float:
         """
@@ -379,7 +402,9 @@ class GCPMetricsMonitor:
                 "currency": "USD",
                 "total_cost": "0.00",
                 "current_month": current_month,
-                "status": "✓ 正常 (免費額度機制)"
+                "status": "✓ 正常 (免費額度機制)",
+                # 用於生成月份表格；鍵是 YYYY-MM
+                "monthly_costs": {}
             }
 
             print(f"[GCP METRICS] 查詢計費信息 (月份: {current_month})")
@@ -405,6 +430,10 @@ class GCPMetricsMonitor:
             # try the resource-level export first (more detailed), then the
             # normal v1 export.  the environment variable can specify the
             # preferred table but we also attempt fallbacks.
+            #
+            # We also pull the last three months of costs so that the embed can
+            # render a simple ASCII calendar with X marks indicating which months
+            # have recorded charges.
             tables = []
             env_table = os.environ.get("GCP_BILLING_TABLE")
             if env_table:
@@ -422,21 +451,28 @@ class GCPMetricsMonitor:
                     print(f"[GCP METRICS] 嘗試 BigQuery table: {table}")
                     from google.cloud import bigquery
                     bq = bigquery.Client()
+                    # query last three months of costs grouped by month
                     query = f"""
                     SELECT
+                      FORMAT_DATE('%Y-%m', DATE(_PARTITIONTIME)) AS month,
                       SUM(cost) AS total_cost,
                       ANY_VALUE(currency) AS currency
                     FROM `{table}`
-                    WHERE DATE(_PARTITIONTIME) >= DATE_TRUNC(CURRENT_DATE(), MONTH)
+                    WHERE DATE(_PARTITIONTIME) >= DATE_SUB(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL 2 MONTH)
+                    GROUP BY month
+                    ORDER BY month
                     """
                     job = bq.query(query)
                     result_list = list(job.result())
                     print(f"[GCP METRICS] BigQuery query 返回 {len(result_list)} 行")
                     
                     for row in result_list:
-                        print(f"[GCP METRICS] row: total_cost={row.total_cost}, currency={row.currency}")
+                        print(f"[GCP METRICS] row: month={row.month}, total_cost={row.total_cost}, currency={row.currency}")
                         if row.total_cost is not None:
-                            billing_info["total_cost"] = f"{row.total_cost:.2f}"
+                            billing_info["monthly_costs"][row.month] = float(row.total_cost)
+                            # also update total_cost if this is current month
+                            if row.month == current_month:
+                                billing_info["total_cost"] = f"{row.total_cost:.2f}"
                         if row.currency:
                             billing_info["currency"] = row.currency
                     
@@ -640,6 +676,11 @@ class GCPMetricsMonitor:
             # place stats slightly higher for extra padding
             ax.text(0.5, 1.10, stats_text, transform=ax.transAxes, 
                    ha='center', fontsize=9, style='italic', color=neon_color)
+            # annotate chart with generation time to avoid stale 08:00 issue
+            chart_time = datetime.now(TAIWAN_TZ).strftime('%m-%d %H:%M:%S')
+            ax.text(0.99, -0.15, f"更新 {chart_time} (台灣)",
+                    ha='right', va='top', transform=ax.transAxes,
+                    fontsize=8, color='#e0e0e0')
             
             # Compact layout
             plt.tight_layout()
@@ -719,45 +760,58 @@ class GCPMetricsMonitor:
             color=discord.Color.from_rgb(66, 133, 244),
         )
         
-        # **1️⃣ 網路出站流量 (sent_bytes_count) - 最高優先**
-        if data_points:
-            total_mb = sum(p["mb"] for p in data_points)
-            max_mb = max(p["mb"] for p in data_points)
-            avg_mb = sum(p["mb"] for p in data_points) / len(data_points)
-            total_gb = total_mb / 1024  # 轉為 GB
-            
-            embed.add_field(
-                name="🌐 1. 網路出站流量 ⭐⭐⭐",
-                value=f"**過去 6 小時**\n總計: {total_mb:.2f} MB ({total_gb:.4f} GB)\n最大: {max_mb:.2f} MB\n平均: {avg_mb:.2f} MB",
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="🌐 1. 網路出站流量 ⭐⭐⭐",
-                value="暫無數據",
-                inline=False
-            )
+        # **1️⃣ 網路出站流量 - 月累計 (以 KB/MB/GB 顯示)**
+        # monthly_gb 透過外部參數傳入，是最近 30 天累積的 GB 值
+        formatted = self._format_size(monthly_gb)
+        embed.add_field(
+            name="🌐 1. 網路出站流量",
+            value=f"總計: {formatted} /200 GB 免費額度",
+            inline=False
+        )
         
-        # **2️⃣ CPU 使用時間 - 中等優先**
+        # **2️⃣ CPU 使用時間**
+        # 如果無法取得數據則顯示「暫無數據」，提示使用者可能沒有此 metric
         if cpu_seconds is not None and cpu_seconds > 0:
             cpu_minutes = cpu_seconds / 60
             cpu_hours = cpu_minutes / 60
-            
             embed.add_field(
-                name="🖥️ 2. CPU 使用時間 ⭐⭐",
-                value=f"**過去 6 小時**\n{cpu_seconds:.0f} 秒 = {cpu_minutes:.1f} 分鐘 = {cpu_hours:.2f} 小時\n(按 vCPU × 小時計費)",
+                name="🖥️ 2. CPU 使用時間",
+                value=f"**過去 6 小時**\n{cpu_seconds:.0f} 秒 = {cpu_minutes:.1f} 分鐘 = {cpu_hours:.2f} 小時\n(若無數據則抓不到此 metric)",
                 inline=False
             )
         else:
             embed.add_field(
-                name="🖥️ 2. CPU 使用時間 ⭐⭐",
+                name="🖥️ 2. CPU 使用時間",
                 value="暫無數據",
                 inline=False
             )
-        # **3️⃣ 計費信息 - 成本追蹤**
+        # **3️⃣ 計費信息**
+        # 用三欄 ASCII 球列出近三個月份，並在有成本時標記「X」
+        now = datetime.now(TAIWAN_TZ)
+        months = []
+        # build list of three consecutive months: two past and current
+        for delta in (2, 1, 0):
+            year = now.year
+            month = now.month - delta
+            while month <= 0:
+                month += 12
+                year -= 1
+            months.append(f"{year:04d}-{month:02d}")
+        # header: show full year-month for first column, then only month numbers
+        header = f"{months[0]}   {months[1].split('-')[1]}   {months[2].split('-')[1]}"
+        marks = []
+        costs = billing_info.get('monthly_costs', {})
+        for m in months:
+            if costs.get(m, 0) and costs.get(m, 0) > 0:
+                marks.append('X')
+            else:
+                marks.append(' ')
+        row = "   ".join(marks)
+        # wrap table in a monospace code block to preserve alignment
+        table_block = f"```\n{header}\n{row}\n```"
         embed.add_field(
-            name="💰 3. 計費信息 ⭐",
-            value=f"月份: {billing_info.get('current_month', 'N/A')}\n月累積流量: {monthly_gb:.2f} GB / 200 GB (免費額度)\n當月成本: {billing_info.get('total_cost', 'N/A')} {billing_info.get('currency', 'USD')}\n狀態: {billing_info.get('status', '✓ 正常')}",
+            name="💰 3. 計費信息",
+            value=f"{table_block}\n狀態: {billing_info.get('status', '')}",
             inline=False
         )
         
@@ -787,7 +841,7 @@ class GCPMetricsMonitor:
         # 圖表提示
         embed.add_field(
             name="📈 圖表",
-            value="查看下方的流量趨勢圖（台灣時間）；紅線為請求數量",
+            value="查看下方 6 小時流量趨勢圖（台灣時間）；紅線為請求數量",
             inline=False
         )
         

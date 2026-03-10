@@ -810,32 +810,19 @@ async def create_metrics_update_task(bot_type_str: str):
                         monitor.get_monthly_egress_data(days=30),
                         timeout=15.0
                     )
+                    # 嘗試抓 CPU 使用時間
+                    try:
+                        cpu_seconds, _ = await asyncio.wait_for(
+                            monitor.get_cpu_usage_time(hours=6),
+                            timeout=10.0
+                        )
+                    except Exception as e:
+                        print(f"[METRICS TASK] 無法獲取 CPU 時間: {e}")
+                        cpu_seconds = None
                     
-                    # 存儲到快取
-                    metrics_cache.set((data_points, billing_info, monthly_gb))
-                    print(f"[METRICS TASK] 成功獲取 metrics 數據（{len(data_points)} 數據點)")
-                    
-                except asyncio.TimeoutError:
-                    print("[METRICS TASK] ⏱️ Metrics API 調用超時")
-                    return
-                except Exception as e:
-                    print(f"[METRICS TASK ERROR] 獲取 metrics 數據失敗: {e}")
-                    return
-            
-            # 收集系統信息（不使用快取，每次都更新以保持最新）
-            try:
-                sys_stats = await asyncio.wait_for(
-                    monitor.get_system_stats(),
-                    timeout=10.0
-                )
-                print(f"[METRICS TASK] 系統信息已收集: {sys_stats}")
-            except asyncio.TimeoutError:
-                print("[METRICS TASK] ⏱️ 系統信息獲取超時")
-                sys_stats = {'cpu': None, 'mem': None, 'disk': None}
-            except Exception as e:
-                print(f"[METRICS TASK] 系統信息收集失敗: {e}")
-                sys_stats = {'cpu': None, 'mem': None, 'disk': None}
-            
+                    # 存儲到快取（包含 cpu_seconds）
+                    metrics_cache.set((data_points, billing_info, monthly_gb, cpu_seconds))
+                    print(f"[METRICS TASK] 成功獲取 metrics 數據（{len(data_points)} 數據點) cpu_seconds={cpu_seconds}")
             # 創建 embed（包含三個重要 metrics）
             embed = monitor.create_metrics_embed(
                 data_points=data_points,
