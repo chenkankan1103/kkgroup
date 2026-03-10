@@ -52,6 +52,11 @@ SYSTEMD_LOG_CONFIG = {
     "uibot": {"service": "uibot.service", "lines": 8, "enabled": True}
 }
 
+# 控制 journalctl 查詢超時時間（秒）
+# 原來設定為 3 秒，擔心會跟 dashboard 的延遲機制產生衝突，
+# 提高到 10 秒可允許在繁忙系統中穩定返回日誌。
+SYSTEMD_FETCH_TIMEOUT = 10.0
+
 def get_taiwan_time():
     """獲取台灣時間"""
     return datetime.now(TAIWAN_TZ)
@@ -99,8 +104,10 @@ async def get_systemd_logs(bot_type: str) -> str:
     """從 systemd journal 獲取指定機器人的日誌
 
     為了降低磁碟 I/O，僅抓取自上次查詢以來的新條目。
-    初次呼叫會使用 "2 hours ago" 作為保底，之後視為迭代式。
-    每次查詢有 3s 超時，以避免事件征環被凍結。
+    初次呼叫會使用 "10 minutes ago" 作為保底，之後視為迭代式。
+    查詢包含兩個 await，總 timeout 使用 SYSTEMD_FETCH_TIMEOUT（預設 10 秒），
+    比先前的 3 秒寬鬆，可避免負載高時卡住，同時 10 秒延遲不會明顯影響
+    Discord embed 的顯示 (原始設計預留 20 秒更新間隔)。
     """
     config = SYSTEMD_LOG_CONFIG.get(bot_type)
     if not config or not config["enabled"]:
@@ -132,7 +139,7 @@ async def get_systemd_logs(bot_type: str) -> str:
             "--since", since_arg
         ]
 
-        # 異步執行命令，帶 10s 超時（改大以避免日誌無效）
+        # 異步執行命令，使用 SYSTEMD_FETCH_TIMEOUT 作為超時
         try:
             process = await asyncio.wait_for(
                 asyncio.create_subprocess_exec(
@@ -140,16 +147,16 @@ async def get_systemd_logs(bot_type: str) -> str:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 ),
-                timeout=10.0
+                timeout=SYSTEMD_FETCH_TIMEOUT
             )
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
-                timeout=10.0
+                timeout=SYSTEMD_FETCH_TIMEOUT
             )
         except asyncio.TimeoutError:
             if bot_type not in QUIET_UPDATE_BOTS:
                 print(f"[SYSTEMD LOGS] {bot_type} journalctl 查詢超時")
-            return f"journalctl 查詢超時 (10s)"
+            return f"journalctl 查詢超時 ({SYSTEMD_FETCH_TIMEOUT}s)"
 
         if process.returncode == 0:
             # 使用 errors='replace' 而非 'ignore'，以便看到編碼問題（用替代符號表示）
