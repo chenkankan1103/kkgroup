@@ -165,53 +165,6 @@ class GCPMetricsMonitor:
             traceback.print_exc()
             return []
     
-    async def _get_agent_metric(self, metric_type: str, hours: int = 6) -> List[Dict]:
-        """
-        公用方法用於抓取 agent.googleapis.com 類型的指標。
-        返回結構與 get_network_egress_data 相同。
-        """
-        try:
-            now = datetime.utcnow()
-            start_time = now - timedelta(hours=hours)
-            start_ts = Timestamp()
-            start_ts.FromDatetime(start_time)
-            end_ts = Timestamp()
-            end_ts.FromDatetime(now)
-            interval = monitoring_v3.TimeInterval(
-                {"start_time": start_ts, "end_time": end_ts}
-            )
-            request = monitoring_v3.ListTimeSeriesRequest(
-                name=f"projects/{self.project_id}",
-                filter=f'metric.type="{metric_type}"',
-                interval=interval,
-            )
-            results = self.metric_client.list_time_series(request=request)
-            series_list = list(results)
-            data_points = []
-            if series_list:
-                series = series_list[0]
-                for point in reversed(series.points):
-                    timestamp = point.interval.end_time.timestamp()
-                    bytes_value = point.value.double_value if point.value else 0
-                    mb_value = bytes_value / (1024 * 1024)
-                    data_points.append({
-                        "timestamp": datetime.fromtimestamp(timestamp, tz=TAIWAN_TZ),
-                        "bytes": bytes_value,
-                        "mb": mb_value
-                    })
-            return data_points
-        except Exception as e:
-            print(f"[GCP METRICS] get_agent_metric {metric_type} failed: {e}")
-            return []
-
-    async def get_ops_egress_data(self, hours: int = 6) -> List[Dict]:
-        """從 Ops Agent 取得 egress bytes（MB）"""
-        return await self._get_agent_metric('agent.googleapis.com/network/egress_bytes_count', hours)
-
-    async def get_ops_ingress_data(self, hours: int = 6) -> List[Dict]:
-        """從 Ops Agent 取得 ingress bytes（MB）"""
-        return await self._get_agent_metric('agent.googleapis.com/network/ingress_bytes_count', hours)
-
     async def get_system_metric(self, metric_type: str, hours: int = 1) -> Optional[float]:
         """Query a single-time-interval metric and return its most recent value.
 
@@ -765,7 +718,7 @@ class GCPMetricsMonitor:
             print(f"[GCP METRICS] CPU usage time 查詢失敗: {e}")
             return None, []
 
-    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, cpu_seconds: Optional[float] = None, ops_egress: List[Dict] = None, ops_ingress: List[Dict] = None, sys_stats: Dict = None) -> discord.Embed:
+    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, cpu_seconds: Optional[float] = None, sys_stats: Dict = None) -> discord.Embed:
         """
         創建 metrics embed - 追蹤三個重要 metrics：出站流量、CPU時間、計費
         """
@@ -846,22 +799,6 @@ class GCPMetricsMonitor:
             value=f"{table_block}**狀態**: {billing_info.get('status', '')}",
             inline=False
         )
-        
-        # Ops agent summaries (if available)
-        ops_info = ""
-        if ops_egress:
-            tot = sum(p.get("mb",0) for p in ops_egress)
-            ops_info += f"Agent Egress (6h): {tot:.2f} MB\n"
-        if ops_ingress:
-            tot2 = sum(p.get("mb",0) for p in ops_ingress)
-            ops_info += f"Agent Ingress (6h): {tot2:.2f} MB"
-        
-        if ops_info:
-            embed.add_field(
-                name="📡 代理數據 (可選)",
-                value=ops_info,
-                inline=False
-            )
         
         # 系統資源條狀顯示
         if sys_stats:

@@ -62,23 +62,6 @@ def format_taiwan_time():
 # 配置常數
 MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 
-async def check_database_connection():
-    """檢查 user_data.db 資料庫連接（異步版本）"""
-    try:
-        # 使用 asyncio.to_thread 將同步操作移到線程池，避免阻塞事件循環
-        result = await asyncio.to_thread(_sync_check_database)
-        return result
-    except Exception as e:
-        print(f"[DB CHECK] 資料庫連接檢查失敗: {e}")
-        return False
-
-def _sync_check_database():
-    """同步的資料庫檢查函數"""
-    conn = sqlite3.connect('user_data.db')
-    conn.execute('SELECT 1')  # 簡單的測試查詢
-    conn.close()
-    return True
-
 # 硬編碼的訊息 ID 作為回退值（只保留日誌，控制面板已移除）
 HARDCODED_MESSAGE_IDS = {
     "bot": {
@@ -214,109 +197,6 @@ async def get_systemd_logs(bot_type: str) -> str:
         print(f"[SYSTEMD LOGS ERROR] {bot_type} 獲取日誌失敗: {e}")
         return f"獲取日誌失敗: {str(e)[:50]}"
 
-def check_environment() -> Dict[str, any]:
-    """
-    環境檢查函數 - 診斷並記錄環境問題
-    
-    Returns:
-        dict: 包含環境診斷信息的字典
-    """
-    diagnostics = {
-        "timestamp": get_taiwan_time().isoformat(),
-        "working_directory": os.getcwd(),
-        "script_path": os.path.abspath(__file__),
-        "script_directory": os.path.dirname(os.path.abspath(__file__)),
-        "python_executable": sys.executable,
-        "python_version": sys.version,
-        "in_virtual_env": False,
-        "virtual_env_path": None,
-        "sys_prefix": sys.prefix,
-        "sys_base_prefix": getattr(sys, 'base_prefix', sys.prefix),
-        "running_under_systemd": False,
-        "systemd_details": None,
-        "logs_file_path": logs_file,
-        "logs_file_exists": os.path.exists(logs_file),
-        "logs_file_writable": False,
-        "logs_dir_writable": False,
-        "env_file_exists": os.path.exists(".env"),
-        # track whether we can write to .env, since many components rely on it
-        "env_file_writable": False,
-        "issues": []
-    }
-    
-    # 檢測虛擬環境
-    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
-        diagnostics["in_virtual_env"] = True
-        diagnostics["virtual_env_path"] = sys.prefix
-    
-    # 檢測 systemd 環境
-    try:
-        # 檢查是否由 systemd 運行
-        ppid = os.getppid()
-        with open(f'/proc/{ppid}/comm', 'r') as f:
-            parent_process = f.read().strip()
-            if parent_process == 'systemd' or os.getenv('INVOCATION_ID'):
-                diagnostics["running_under_systemd"] = True
-                diagnostics["systemd_details"] = {
-                    "parent_process": parent_process,
-                    "invocation_id": os.getenv('INVOCATION_ID'),
-                    "journal_stream": os.getenv('JOURNAL_STREAM')
-                }
-    except Exception as e:
-        diagnostics["issues"].append(f"無法檢測 systemd: {e}")
-    
-    # 檢查日誌文件路徑權限
-    logs_dir = os.path.dirname(logs_file)
-    try:
-        diagnostics["logs_dir_writable"] = os.access(logs_dir, os.W_OK)
-        if os.path.exists(logs_file):
-            diagnostics["logs_file_writable"] = os.access(logs_file, os.W_OK)
-        else:
-            # 嘗試創建測試文件來驗證寫入權限
-            test_file = os.path.join(logs_dir, '.test_write_permission')
-            try:
-                with open(test_file, 'w') as f:
-                    f.write('test')
-                os.remove(test_file)
-                diagnostics["logs_file_writable"] = True
-            except:
-                diagnostics["logs_file_writable"] = False
-    except Exception as e:
-        diagnostics["issues"].append(f"無法檢查日誌文件權限: {e}")
-    
-    # 檢查工作目錄是否正確
-    expected_dir = os.path.dirname(os.path.abspath(__file__))
-    if os.getcwd() != expected_dir:
-        diagnostics["issues"].append(
-            f"工作目錄不匹配 - 當前: {os.getcwd()}, 預期: {expected_dir}"
-        )
-
-    # 檢查 .env 文件可寫
-    try:
-        diagnostics["env_file_writable"] = os.access(".env", os.W_OK)
-        if not diagnostics["env_file_writable"] and diagnostics["env_file_exists"]:
-            diagnostics["issues"].append(".env 文件存在但不可寫，可能導致保存 ID 失敗")
-    except Exception as e:
-        diagnostics["issues"].append(f"無法檢查 .env 權限: {e}")
-    
-    # 記錄診斷結果
-    print("[環境診斷] ==================")
-    print(f"  工作目錄: {diagnostics['working_directory']}")
-    print(f"  腳本路徑: {diagnostics['script_path']}")
-    print(f"  Python 執行檔: {diagnostics['python_executable']}")
-    print(f"  虛擬環境: {'是' if diagnostics['in_virtual_env'] else '否'}")
-    if diagnostics['in_virtual_env']:
-        print(f"  虛擬環境路徑: {diagnostics['virtual_env_path']}")
-    print(f"  Systemd 運行: {'是' if diagnostics['running_under_systemd'] else '否'}")
-    print(f"  日誌文件: {diagnostics['logs_file_path']}")
-    print(f"  日誌目錄可寫: {'是' if diagnostics['logs_dir_writable'] else '否'}")
-    print(f"  日誌文件可寫: {'是' if diagnostics['logs_file_writable'] else '否'}")
-    if diagnostics['issues']:
-        print(f"  問題: {', '.join(diagnostics['issues'])}")
-    print("==================")
-    
-    return diagnostics
-
 def load_logs():
     """從文件加載日誌 - 改進的錯誤處理"""
     try:
@@ -386,10 +266,6 @@ def save_logs():
     except Exception as e:
         print(f"[LOGS ERROR] 未預期的錯誤保存日誌: {e}")
         traceback.print_exc()
-
-# 初始化時執行環境檢查
-# 注意: 不在此處加載日誌，防止每次重啟時日誌累積
-env_diagnostics = check_environment()
 
 # Message ID 存儲（每個機器人獨立）
 message_ids = {
@@ -654,14 +530,7 @@ async def update_dashboard_logs(bot, bot_type: str):
         print(f"[UPDATE LOGS ERROR] {bot_type} 更新日誌時發生未預期錯誤: {e}")
         traceback.print_exc()
 
-async def update_dashboard_metrics(bot):
-    """
-    ⏸️ 舊版本已完全禁用
-    新的 metrics 更新邏輯在 create_metrics_update_task() 中實現
-    """
-    return
-
-# ========== 優化的 GCP Metrics 管理系統 ==========
+# ========== GCP Metrics 管理系統 ==========
 
 # 快取管理 - 避免頻繁 API 調用
 class MetricsCache:
