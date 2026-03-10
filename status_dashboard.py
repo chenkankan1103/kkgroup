@@ -230,7 +230,13 @@ def load_logs():
         traceback.print_exc()
 
 def save_logs():
-    """保存日誌到文件 - 改進的錯誤處理"""
+    """保存日誌到文件 - 改進的錯誤處理
+
+    如果 logs_file 尚未設置（None），直接返回，不執行任何操作。
+    """
+    if not logs_file:
+        # 日誌功能已移除，無需保存
+        return
     try:
         # 確保父目錄存在
         logs_dir = os.path.dirname(logs_file)
