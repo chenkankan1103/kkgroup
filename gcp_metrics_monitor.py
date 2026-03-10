@@ -773,80 +773,77 @@ class GCPMetricsMonitor:
         taiwan_now = datetime.now(timezone.utc).astimezone(TAIWAN_TZ)
         
         embed = discord.Embed(
-            title="📊 GCP 成本監控 (重點追蹤",
-            description="監控三項影響費用的關鍵指標",
+            title="📊 GCP 成本監控",
+            description="實時監控三項關鍵成本指標",
             color=discord.Color.from_rgb(66, 133, 244),
         )
         
-        # **1️⃣ 網路出站流量 - 月累計 (以 KB/MB/GB 顯示 + 費用估算)**
-        # monthly_gb 透過外部參數傳入，是最近 30 天累積的 GB 值
+        # 🌐 網路出站流量
         formatted = self._format_size(monthly_gb)
-        # 費用估算：約 $0.12/GB (保守估計)
         egress_cost = monthly_gb * 0.12
         embed.add_field(
-            name="🌐 1. 網路出站流量",
-            value=f"總計: {formatted}\n估計費用: ${egress_cost:.2f}/月",
+            name="🌐 網路出站流量",
+            value=f"**總計**: {formatted}\n**估計費用**: ${egress_cost:.2f}/月",
             inline=False
         )
         
-        # **2️⃣ CPU 使用時間 + 費用估算**
-        # 如果無法取得數據則顯示「暫無數據」，提示使用者可能沒有此 metric
+        # 🖥️ CPU 使用時間（月累計）
         if cpu_seconds is not None and cpu_seconds > 0:
             cpu_minutes = cpu_seconds / 60
             cpu_hours = cpu_minutes / 60
             # CPU 費用估算：約 $0.04/小時 (e2-medium 的保守估計)
             cpu_cost = cpu_hours * 0.04
             embed.add_field(
-                name="🖥️ 2. CPU 使用時間",
-                value=f"**過去 6 小時**\n{cpu_seconds:.0f} 秒 = {cpu_minutes:.1f} 分鐘 = {cpu_hours:.2f} 小時\n估計費用: ${cpu_cost:.2f}",
+                name="🖥️ CPU 使用時間",
+                value=f"**本月累計**: {cpu_hours:.2f} 小時\n**總計**: {cpu_seconds:.0f} 秒\n**估計費用**: ${cpu_cost:.2f}",
                 inline=False
             )
         else:
             embed.add_field(
-                name="🖥️ 2. CPU 使用時間",
+                name="🖥️ CPU 使用時間",
                 value="暫無數據",
                 inline=False
             )
-        # **3️⃣ 計費信息 - 全年 1-12 月費用表格**
-        # 生成年度費用表，上半年(1-6月) + 下半年(7-12月)
+        # 💰 計費信息 - 全年 1-12 月費用表格
         now = datetime.now(TAIWAN_TZ)
         current_year = now.year
         costs = billing_info.get('monthly_costs', {})
         
-        # 構建上半年 (1-6月)
+        # 使用固定寬度格式，確保對齐不受embed寬度影響
+        # 每個月份佔用 8 字符寬度（含空格）
         months_line_1 = ""
         costs_line_1 = ""
         for month_num in range(1, 7):
-            month_str = f"{month_num}月"
-            months_line_1 += f"{month_str:>7s}"
+            month_str = f"{month_num:2d}月"
+            months_line_1 += f"{month_str:<8s}"
             
             month_key = f"{current_year:04d}-{month_num:02d}"
             cost = costs.get(month_key, 0)
             if cost and cost > 0:
-                cost_str = f"${cost:.2f}"
+                cost_str = f"${cost:.1f}"
             else:
                 cost_str = "-"
-            costs_line_1 += f"{cost_str:>7s}"
+            costs_line_1 += f"{cost_str:<8s}"
         
         # 構建下半年 (7-12月)
         months_line_2 = ""
         costs_line_2 = ""
         for month_num in range(7, 13):
-            month_str = f"{month_num}月"
-            months_line_2 += f"{month_str:>7s}"
+            month_str = f"{month_num:2d}月"
+            months_line_2 += f"{month_str:<8s}"
             
             month_key = f"{current_year:04d}-{month_num:02d}"
             cost = costs.get(month_key, 0)
             if cost and cost > 0:
-                cost_str = f"${cost:.2f}"
+                cost_str = f"${cost:.1f}"
             else:
                 cost_str = "-"
-            costs_line_2 += f"{cost_str:>7s}"
+            costs_line_2 += f"{cost_str:<8s}"
         
         table_block = f"```\n{months_line_1}\n{costs_line_1}\n\n{months_line_2}\n{costs_line_2}\n```"
         embed.add_field(
-            name="💰 3. 計費信息 (12 月費用表)",
-            value=f"{table_block}狀態: {billing_info.get('status', '')}",
+            name="💰 計費信息 (12 月費用表)",
+            value=f"{table_block}**狀態**: {billing_info.get('status', '')}",
             inline=False
         )
         
