@@ -41,6 +41,10 @@ class SheetDrivenDB:
         self.db_path = db_path
         self.table_name = 'users'
         
+        # 列構快取（避免每次都查詢 PRAGMA）
+        self._columns_cache = None
+        self._columns_cache_valid = False
+        
         # 初始化數據庫
         self._init_db()
     
@@ -68,9 +72,15 @@ class SheetDrivenDB:
                 )
             """)
             print(f"✅ 創建了表: {self.table_name}")
+        else:
+            # 表已存在，確保系統列存在（只在初始化時檢查）
+            self._ensure_system_columns_once(cursor)
         
         conn.commit()
         conn.close()
+        
+        # 初始化列快取
+        self._refresh_columns_cache()
     
     def _get_connection(self) -> sqlite3.Connection:
         """獲取數據庫連接"""
@@ -78,18 +88,24 @@ class SheetDrivenDB:
         conn.row_factory = sqlite3.Row
         return conn
     
-    def _ensure_system_columns(self):
-        """
-        確保系統列 (_created_at, _updated_at) 存在
-        """
+    def _refresh_columns_cache(self):
+        """刷新列快取"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        
+        cursor.execute(f"PRAGMA table_info({self.table_name})")
+        self._columns_cache = {row[1] for row in cursor.fetchall()}
+        self._columns_cache_valid = True
+        conn.close()
+    
+    def _ensure_system_columns_once(self, cursor):
+        """
+        確保系統列存在（只在初始化時調用，在同一連接中使用）
+        """
         # 獲取現有的欄位
         cursor.execute(f"PRAGMA table_info({self.table_name})")
         existing_cols = {row[1] for row in cursor.fetchall()}
         
-        # 確保系統欄位存在（SQLite 不允許 CURRENT_TIMESTAMP 作為 ALTER TABLE DEFAULT，所以不設置 DEFAULT）
+        # 確保系統欄位存在
         for col_name in ['_created_at', '_updated_at']:
             if col_name not in existing_cols:
                 try:
@@ -98,24 +114,16 @@ class SheetDrivenDB:
                     print(f"✅ 添加系統欄位: {col_name}")
                 except sqlite3.OperationalError as e:
                     print(f"⚠️ 添加系統欄位失敗: {col_name} - {e}")
-        
-        conn.commit()
-        conn.close()
     
     # ============================================================
     # Schema 管理
     # ============================================================
     
     def get_existing_columns(self) -> set:
-        """獲取現有表的所有列名"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(f"PRAGMA table_info({self.table_name})")
-        columns = {row[1] for row in cursor.fetchall()}
-        
-        conn.close()
-        return columns
+        """獲取現有表的所有列名（使用快取）"""
+        if not self._columns_cache_valid:
+            self._refresh_columns_cache()
+        return self._columns_cache
     
     def ensure_columns(self, headers: List[str]):
         """
@@ -164,6 +172,9 @@ class SheetDrivenDB:
                     print(f"⚠️ 更新 _updated_at 失敗: {e}")
             
             print(f"✅ 新增 {added_count} 個欄位")
+            
+            # 🔑 更新列快取
+            self._columns_cache_valid = False
         
         conn.commit()
         conn.close()
@@ -243,14 +254,12 @@ class SheetDrivenDB:
         user_id = int(user_id)
         
         try:
-            # 🔑 第 0 步：確保系統欄位存在
-            self._ensure_system_columns()
+            # ✅ 不再每次都呼叫 _ensure_system_columns() - 只在初始化時調用
             
-            # 🔑 第一步：確保所有列存在（在獨立的連接中完成）
+            # 第一步：獲取現有用戶數據
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            # 先獲取現有用戶數據和確定需要的列
             cursor.execute(f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,))
             existing_row = cursor.fetchone()
             
@@ -264,9 +273,9 @@ class SheetDrivenDB:
                 existing_data = {'user_id': user_id, '_created_at': datetime.now().isoformat(), '_updated_at': datetime.now().isoformat()}
                 existing_data.update(data)
             
-            conn.close()  # ✅ 關閉原連接，避免 ALTER TABLE 時的連接狀態問題
+            conn.close()  # 關閉原連接
             
-            # 🔑 第二步：確保所有列都存在（在獨立連接中）
+            # 第二步：確保所有列都存在
             try:
                 self.ensure_columns(list(existing_data.keys()))
             except Exception as col_err:

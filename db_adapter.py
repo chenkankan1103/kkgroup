@@ -19,6 +19,7 @@ DB 適配層 - 統一的數據庫操作接口
 
 from sheet_driven_db import SheetDrivenDB, get_db_instance
 from typing import Any, Optional, Union, Dict, List
+import asyncio
 
 # 獲取全局 DB 實例
 def get_db() -> SheetDrivenDB:
@@ -228,6 +229,63 @@ def update_user_hp(user_id: Union[int, str], amount: int) -> bool:
 def update_user_stamina(user_id: Union[int, str], amount: int) -> bool:
     """(向後相容) 更新玩家耐力"""
     return add_user_field(user_id, 'stamina', amount)
+
+
+# ============================================================
+# 非同步操作 (用於避免事件迴圈阻塞)
+# ============================================================
+
+async def async_set_user(user_id: Union[int, str], data: Dict[str, Any]) -> bool:
+    """
+    非同步版本的 set_user - 在線程池中執行以避免阻塞事件迴圈
+    
+    Args:
+        user_id: 用戶 ID
+        data: 更新的資料
+        
+    Returns:
+        是否成功
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: set_user(user_id, data))
+
+
+async def async_set_user_field(user_id: Union[int, str], field: str, value: Any) -> bool:
+    """
+    非同步版本的 set_user_field
+    
+    Args:
+        user_id: 用戶 ID
+        field: 欄位名
+        value: 新值
+        
+    Returns:
+        是否成功
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: set_user_field(user_id, field, value))
+
+
+async def async_batch_set_users(updates: Dict[Union[int, str], Dict[str, Any]]) -> int:
+    """
+    非同步批量更新多個用戶，避免事件迴圈阻塞
+    
+    Args:
+        updates: {'user_id': {'field': value, ...}, ...}
+        
+    Returns:
+        成功更新的用戶數
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: batch_set_users(updates))
+
+
+async def async_get_all_users(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    非同步版本的 get_all_users
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: get_all_users(limit))
 
 
 # ============================================================
