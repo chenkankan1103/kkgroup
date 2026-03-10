@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
-from status_dashboard import initialize_dashboard, add_log, load_message_ids
+from status_dashboard import initialize_dashboard, load_message_ids  # add_log removed
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
