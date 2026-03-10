@@ -267,6 +267,31 @@ class GCPMetricsMonitor:
             traceback.print_exc()
             return None
 
+    async def get_system_stats(self) -> Dict[str, Optional[float]]:
+        """
+        收集系統資源統計（CPU、內存、磁盤使用率）
+        
+        Returns:
+            Dict with 'cpu', 'mem', 'disk' keys (0.0-1.0 or None if unavailable)
+        """
+        try:
+            cpu_val = await self.get_system_metric('compute.googleapis.com/instance/cpu/utilization', hours=1)
+            mem_val = await self.get_system_metric('agent.googleapis.com/memory/percent_used', hours=1)
+            disk_val = await self.get_system_metric('agent.googleapis.com/disk/percent_used', hours=1)
+            
+            # normalize to 0-1 range (GCP CPU is already %, memory/disk are 0-100)
+            stats = {
+                'cpu': cpu_val / 100.0 if cpu_val is not None else None,
+                'mem': mem_val / 100.0 if mem_val is not None else None,
+                'disk': disk_val / 100.0 if disk_val is not None else None,
+            }
+            
+            print(f"[GCP METRICS] 系統統計: CPU={cpu_val}%, MEM={mem_val}%, DISK={disk_val}%")
+            return stats
+        except Exception as e:
+            print(f"[GCP METRICS] 收集系統統計失敗: {e}")
+            return {'cpu': None, 'mem': None, 'disk': None}
+
     def _make_bar(self, ratio: float, length: int = 10) -> str:
         """Create a text bar █ for filled portion and ░ for empty."""
         filled = int(ratio * length)
