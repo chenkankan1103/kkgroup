@@ -28,13 +28,14 @@ import pathlib
 # 注意：Metrics 更新必須由 "bot" 單獨負責（不是 shopbot/uibot）
 # 原因：避免並發競爭、重複 API 調用導致 CPU 飙高
 # 特性：
+
 #   - 20 分鐘更新一次（降低 API 呼叫頻率）
 #   - 非同步操作 + 10s 超時保護
 #   - 線程池執行 matplotlib 圖表生成
 #   - 數據緩存避免重複計算
 GCP_METRICS_ENABLED = True  # 是否啓用 Metrics 更新
 GCP_METRICS_ONLY_BOT_RESPONSIBLE = "bot"  # 只有這個 bot 負責更新 metrics
-GCP_METRICS_UPDATE_INTERVAL_MINUTES = 20  # 更新間隔（分鐘）
+GCP_METRICS_UPDATE_INTERVAL_MINUTES = 5  # 更新間隔（分鐘）
 print("[DASHBOARD INIT] 📊 GCP Metrics Manager initialized - only 'bot' will update")
 
 load_dotenv()
