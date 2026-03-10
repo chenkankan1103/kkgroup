@@ -429,9 +429,9 @@ async def update_dashboard_logs(bot, bot_type: str):
             return
         last_logs_text[bot_type] = logs_text
 
-        # 確保總長度不超過 Discord embed 限制 (4000 字符)
-        if len(logs_text) > 4000:
-            logs_text = logs_text[:3997] + "..."
+        # 先前為防止超過 Discord embed 限制而截斷，
+        # 現在 embed 允許達到完整 4000 字符，故不再主動截取。
+        # Discord 在輸入超過限制時會拒絕，因此保留此註解以備未來調整。
 
 
         # 創建日誌 embed
