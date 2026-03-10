@@ -86,6 +86,13 @@ LOGS_CAPACITY = 10  # 保存最近 10 條日誌（目前未使用）
 # 應用日誌功能已移除，保留常數作為註解。
 logs_storage = {}
 
+# add_log used to record application-level logs. 這個功能已經移除，
+# 但部分初始化路徑仍會呼叫它；為避免 NameError，我們保留一個
+# 空實現作為兼容。
+def add_log(bot_type: str, message: str):
+    # no-op placeholder
+    return
+
 logs_file = None  # unused
 
 # GCP Metrics 追蹤上次的 embed 內容（避免重複更新）
