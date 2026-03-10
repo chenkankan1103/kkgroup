@@ -24,11 +24,18 @@ from dotenv import load_dotenv, set_key
 from discord.ext import tasks
 import pathlib
 
-# ⏸️ METRICS 完全禁用 - 等待連線穩定性驗證
-# GCP Metrics Monitor 會導致 matplotlib 事件循環阻塞和心跳超時
-# 已禁用所有 metrics 功能直到進一步診斷
-GCP_METRICS_AVAILABLE = False
-print("[DASHBOARD INIT] ⏸️ GCP Metrics Monitor COMPLETELY DISABLED for stability testing")
+# ⏸️ METRICS 管理 - 優化版本
+# 注意：Metrics 更新必須由 "bot" 單獨負責（不是 shopbot/uibot）
+# 原因：避免並發競爭、重複 API 調用導致 CPU 飙高
+# 特性：
+#   - 20 分鐘更新一次（降低 API 呼叫頻率）
+#   - 非同步操作 + 10s 超時保護
+#   - 線程池執行 matplotlib 圖表生成
+#   - 數據緩存避免重複計算
+GCP_METRICS_ENABLED = True  # 是否啓用 Metrics 更新
+GCP_METRICS_ONLY_BOT_RESPONSIBLE = "bot"  # 只有這個 bot 負責更新 metrics
+GCP_METRICS_UPDATE_INTERVAL_MINUTES = 20  # 更新間隔（分鐘）
+print("[DASHBOARD INIT] 📊 GCP Metrics Manager initialized - only 'bot' will update")
 
 load_dotenv()
 
@@ -446,6 +453,9 @@ current_bot_type = None
 # 每個機器人的獨立更新任務存儲
 update_tasks = {}
 
+# 每個機器人的 GCP Metrics 更新任務存儲
+metrics_tasks = {}
+
 # list of bots for which we suppress the routine start/finish logs
 # now quiet all of them to eliminate per-minute console noise
 QUIET_UPDATE_BOTS = {"bot", "shopbot", "uibot"}
@@ -682,12 +692,172 @@ async def update_dashboard_logs(bot, bot_type: str):
 
 async def update_dashboard_metrics(bot):
     """
-    ⏸️ GCP Metrics 監控已全面禁用以解決 CPU 過載問題
-    此函數現在為 NO-OP - 所有 metrics 更新已禁用
-    後續需驗證連線穩定性後再重新啟用
+    ⏸️ 舊版本已完全禁用
+    新的 metrics 更新邏輯在 create_metrics_update_task() 中實現
     """
-    print("[METRICS] ⏸️ GCP Metrics 已禁用，跳過更新")
     return
+
+# ========== 優化的 GCP Metrics 管理系統 ==========
+
+# 快取管理 - 避免頻繁 API 調用
+class MetricsCache:
+    """Simple metrics data cache to prevent redundant API calls"""
+    def __init__(self):
+        self.data = None
+        self.timestamp = None
+        self.ttl_seconds = 600  # 10 分鐘緩存
+    
+    def is_stale(self):
+        """Check if cache data is stale"""
+        if not self.timestamp:
+            return True
+        elapsed = (datetime.now(TAIWAN_TZ) - self.timestamp).total_seconds()
+        return elapsed > self.ttl_seconds
+    
+    def set(self, data):
+        """Store metrics data"""
+        self.data = data
+        self.timestamp = datetime.now(TAIWAN_TZ)
+    
+    def get(self):
+        """Retrieve metrics data if not stale"""
+        if self.is_stale():
+            return None
+        return self.data
+
+metrics_cache = MetricsCache()
+
+async def create_metrics_update_task(bot_type_str: str):
+    """
+    為指定機器人創建 metrics 更新任務
+    注意：只有 bot 類型會實際執行更新；其他類型是 NO-OP
+    """
+    
+    if bot_type_str != GCP_METRICS_ONLY_BOT_RESPONSIBLE:
+        # 非 bot 類型不執行任何操作
+        async def noop_task():
+            return
+        task = tasks.loop(minutes=GCP_METRICS_UPDATE_INTERVAL_MINUTES)(noop_task)
+        task.__name__ = f"metrics_task_{bot_type_str}_noop"
+        return task
+    
+    if not GCP_METRICS_ENABLED:
+        # Metrics 被禁用
+        async def disabled_task():
+            if False:  # 永不執行
+                pass
+        task = tasks.loop(minutes=GCP_METRICS_UPDATE_INTERVAL_MINUTES)(disabled_task)
+        task.__name__ = f"metrics_task_{bot_type_str}_disabled"
+        return task
+    
+    # 從環境變數加載初始的 metrics message ID
+    if "metrics" not in message_ids:
+        message_ids["metrics"] = {"message": None}
+    
+    if not message_ids["metrics"].get("message"):
+        env_metrics_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
+        if env_metrics_id:
+            message_ids["metrics"]["message"] = env_metrics_id
+            print(f"[METRICS INIT] 從環境變數加載 metrics message ID: {env_metrics_id}")
+    
+    # 實際的 metrics 更新任務
+    async def actual_metrics_task():
+        """每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘更新一次 GCP Metrics embed"""
+        try:
+            print(f"[METRICS TASK] 開始更新 GCP Metrics（{bot_type_str}）")
+            
+            channel = bot_instances[bot_type_str].get_channel(DASHBOARD_CHANNEL_ID)
+            if not channel:
+                print("[METRICS TASK ERROR] 找不到儀表板頻道")
+                return
+            
+            # 嘗試導入 metrics monitor（延遲導入以避免啟動延遲）
+            try:
+                from gcp_metrics_monitor import GCPMetricsMonitor
+                monitor = GCPMetricsMonitor(project_id="kkgroup")
+                if not monitor.available:
+                    print("[METRICS TASK] GCP Monitor 不可用，跳過更新")
+                    return
+            except ImportError:
+                print("[METRICS TASK] 無法導入 GCP Metrics Monitor")
+                return
+            
+            # 檢查快取 - 如果有有效的快取數據，跳過 API 調用
+            cached = metrics_cache.get()
+            if cached:
+                print("[METRICS TASK] 使用快取數據，避免 API 調用")
+                data_points, billing_info, monthly_gb = cached
+            else:
+                # 從 API 獲取新數據（帶超時保護）
+                try:
+                    data_points = await asyncio.wait_for(
+                        monitor.get_network_egress_data(hours=6),
+                        timeout=10.0
+                    )
+                    billing_info = await asyncio.wait_for(
+                        monitor.get_billing_data(),
+                        timeout=10.0
+                    )
+                    monthly_gb = await asyncio.wait_for(
+                        monitor.get_monthly_egress_data(days=30),
+                        timeout=15.0
+                    )
+                    
+                    # 存儲到快取
+                    metrics_cache.set((data_points, billing_info, monthly_gb))
+                    print(f"[METRICS TASK] 成功獲取 metrics 數據（{len(data_points)} 數據點)")
+                    
+                except asyncio.TimeoutError:
+                    print("[METRICS TASK] ⏱️ Metrics API 調用超時")
+                    return
+                except Exception as e:
+                    print(f"[METRICS TASK ERROR] 獲取 metrics 數據失敗: {e}")
+                    return
+            
+            # 創建 embed
+            embed = monitor.create_metrics_embed(
+                data_points=data_points,
+                billing_info=billing_info,
+                monthly_gb=monthly_gb
+            )
+            embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # 生成圖表（非同步 + 線程執行器避免阻塞）
+            chart_file = await monitor.generate_metrics_chart_async(
+                data_points=data_points,
+                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
+            )
+            
+            # 查找或創建 metrics message
+            message_id = message_ids["metrics"]["message"]
+            if message_id:
+                try:
+                    msg = await channel.fetch_message(int(message_id))
+                    # 編輯現有訊息（同時更新 embed 和附件）
+                    if chart_file:
+                        await msg.edit(embed=embed, attachments=[chart_file])
+                    else:
+                        await msg.edit(embed=embed)
+                    print(f"[METRICS TASK] metrics embed 已更新")
+                except discord.NotFound:
+                    print("[METRICS TASK] metrics 訊息不存在，重新發送")
+                    msg = await channel.send(embed=embed, file=chart_file)
+                    message_ids["metrics"]["message"] = msg.id
+                    save_message_ids("metrics")
+            else:
+                # 創建新訊息
+                msg = await channel.send(embed=embed, file=chart_file)
+                message_ids["metrics"]["message"] = msg.id
+                save_message_ids("metrics")
+                print(f"[METRICS TASK] metrics embed 已創建: {msg.id}")
+            
+        except Exception as e:
+            print(f"[METRICS TASK ERROR] 執行失敗: {e}")
+            traceback.print_exc()
+    
+    task = tasks.loop(minutes=GCP_METRICS_UPDATE_INTERVAL_MINUTES)(actual_metrics_task)
+    task.__name__ = f"metrics_task_{bot_type_str}"
+    return task
 
 def add_log(bot_type: str, message: str):
     """添加日誌條目。
@@ -880,9 +1050,30 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                         print(f"[DASHBOARD ERROR] 重啟 {bot_type_str} 任務失敗: {restart_error}")
                 else:
                     print(f"[DASHBOARD] {bot_type_str} 更新任務已在運行")
+            
+            # ===== METRICS 更新任務 (僅限 BOT) =====
+            # 創建動態的 metrics 更新任務
+            # 只有 bot_type_str == "bot" 會實際執行更新；其他實例是 NO-OP
+            if GCP_METRICS_ENABLED:
+                print(f"[DASHBOARD] 正在為 {bot_type_str} 創建 GCP Metrics 任務...")
+                try:
+                    metrics_task = await create_metrics_update_task(bot_type_str)
+                    metrics_tasks[bot_type_str] = metrics_task
+                    print(f"[DASHBOARD] 正在啟動 {bot_type_str} Metrics 任務...")
+                    metrics_task.start()
+                    print(f"[DASHBOARD] {bot_type_str} GCP Metrics 更新任務已啟動")
+                    if bot_type_str == GCP_METRICS_ONLY_BOT_RESPONSIBLE:
+                        print(f"[DASHBOARD] ✅ Metrics 監控已啟用（由 {GCP_METRICS_ONLY_BOT_RESPONSIBLE} 負責）")
+                    else:
+                        print(f"[DASHBOARD] ℹ️ {bot_type_str} Metrics 任務為 NO-OP（只有 {GCP_METRICS_ONLY_BOT_RESPONSIBLE} 會更新）")
+                except Exception as e:
+                    print(f"[DASHBOARD ERROR] {bot_type_str} Metrics 任務啟動失敗: {e}")
+                    traceback.print_exc()
+            else:
+                print(f"[DASHBOARD] ⏸️ GCP Metrics 已禁用（GCP_METRICS_ENABLED = False）")
+            
         except Exception as e:
             print(f"[DASHBOARD ERROR] {bot_type_str} 任務啟動失敗: {e}")
-            import traceback
             traceback.print_exc()
         
         return True
@@ -916,11 +1107,10 @@ async def update_task_watchdog():
             except Exception as e:
                 print(f"[WATCHDOG ERROR] 無法重啟 {bot_type} 任務: {e}")
 
-# ⏸️ METRICS 更新任務已禁用以解決 CPU 過載問題
-# @tasks.loop(minutes=10)
-# async def metrics_update_task():
-#     """定期更新 GCP Metrics embed - 已禁用"""
-#     pass
+# ===== METRICS 更新任務 (動態創建) =====
+# 注意：具體的任務在 initialize_dashboard 中為每個 bot 類型動態創建
+# 只有 bot 類型會實際執行更新；其他類型是 NO-OP
+# 如需手動啟用/禁用，修改 GCP_METRICS_ENABLED 標誌
 
 
 # Starting a tasks.loop before the event loop is running can trigger
