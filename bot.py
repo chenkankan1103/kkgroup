@@ -9,8 +9,8 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
 
-# dashboard helpers (same as in bot_gcp)
-from status_dashboard import initialize_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons
+# dashboard helpers
+from status_dashboard import initialize_dashboard, add_log, load_message_ids
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -329,16 +329,13 @@ async def on_ready():
         await client.change_presence(activity=activity)
         
         # ============================================================
-        # 初始化監控儀表板及日誌系統（移植自 bot_gcp）
+        # 初始化監控儀表板及日誌系統（簡化版本 - 僅日誌）
         # ============================================================
         try:
-            set_bot_type("bot")
             load_message_ids("bot")
             dashboard_ready = await initialize_dashboard(client, "bot")
             if dashboard_ready:
-                add_log("bot", "✅ 儀表板已初始化")
-                client.add_view(DashboardButtons("bot", client))
-                print("✅ 控制面板按鈕已註冊")
+                add_log("bot", "✅ 日誌系統已初始化")
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
 

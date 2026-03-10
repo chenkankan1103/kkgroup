@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
-from status_dashboard import initialize_dashboard, update_dashboard, add_log, load_message_ids, set_bot_type, DashboardButtons
+from status_dashboard import initialize_dashboard, add_log, load_message_ids
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -293,17 +293,11 @@ async def on_ready():
         # 初始化監控儀表板及日誌系統
         # ============================================================
         try:
-            # 設置當前 bot 類型
-            set_bot_type("shopbot")
+            # 初始化儀表板（簡化版本 - 僅日誌）
             load_message_ids("shopbot")
-            
-            # 初始化儀表板（只初始化當前 bot 的面板）
             dashboard_ready = await initialize_dashboard(client, "shopbot")
             if dashboard_ready:
-                add_log("shopbot", "✅ 儀表板已初始化")
-                # 註冊持久化按鈕視圖
-                client.add_view(DashboardButtons("shopbot", client))
-                print("✅ 控制面板按鈕已註冊")
+                add_log("shopbot", "✅ 日誌系統已初始化")
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
         
