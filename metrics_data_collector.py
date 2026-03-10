@@ -113,8 +113,9 @@ class MetricsDataCollector:
                                     dt = datetime.fromtimestamp(timestamp, tz=TAIWAN_TZ)
                                     bytes_value = point.value.double_value if point.value else 0
                                     
-                                    # 存入數據庫
-                                    if self.db.add_egress_point(dt, bytes_value):
+                                    # 存入數據庫（使用 to_thread 避免阻塞）
+                                    added = await asyncio.to_thread(self.db.add_egress_point, dt, bytes_value)
+                                    if added:
                                         total_points += 1
                                 except Exception as e:
                                     print(f"[GCP Collector] 處理數據點異常: {e}")
@@ -208,10 +209,11 @@ class MetricsDataCollector:
                     print(f"[GCP Collector] {key} 查詢失敗: {e}")
                     stats[key] = None
             
-            # 存入數據庫
+            # 存入數據庫（非同步執行）
             dt = datetime.now(TAIWAN_TZ)
-            self.db.add_system_stats(
-                dt, 
+            await asyncio.to_thread(
+                self.db.add_system_stats,
+                dt,
                 stats.get('cpu'),
                 stats.get('memory'),
                 stats.get('disk')
@@ -281,7 +283,7 @@ class MetricsDataCollector:
             
             # 存入數據庫
             current_month = datetime.now(TAIWAN_TZ).strftime("%Y-%m")
-            self.db.add_monthly_egress(current_month, gb_value)
+            await asyncio.to_thread(self.db.add_monthly_egress, current_month, gb_value)
             
             print(f"[GCP Collector] ✅ 月累積流量: {gb_value:.2f} GB")
             return True
@@ -314,8 +316,8 @@ class MetricsDataCollector:
             if skip_if_recent:
                 current_month = datetime.now(TAIWAN_TZ).strftime("%Y-%m")
                 
-                # 從本地數據庫讀取上次更新時間
-                billing_data = self.db.get_billing_data(months=1)
+                # 從本地數據庫讀取上次更新時間（非同步）
+                billing_data = await asyncio.to_thread(self.db.get_billing_data, months=1)
                 if billing_data and current_month in billing_data:
                     print(f"[GCP Collector] 📊 計費數據已有緩存，跳過本次採集（節省 API 配額）")
                     return True  # 本月數據已存在，無需重新採集
