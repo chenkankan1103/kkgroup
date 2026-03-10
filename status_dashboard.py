@@ -991,7 +991,8 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             add_log(bot_type_str, f"✅ 日誌系統已就緒")
         
         # 清空初始日誌，防止重複累積
-        logs_storage[bot_type_str].clear()
+        # logs_storage 可能尚未包含鍵，因此使用 setdefault 保證存在
+        logs_storage.setdefault(bot_type_str, []).clear()
         save_logs()
         
         # 如果是 bot，初始化 metrics 消息（檢查並清理舊消息）
