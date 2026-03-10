@@ -662,34 +662,12 @@ async def create_metrics_update_task(bot_type_str: str):
             )
             embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 資料來源: {'數據庫' if monitor.db else 'GCP API'} | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
-            # 生成圖表（异步 + 线程池）
-            chart_file = None
-            if GCP_METRICS_CHART_DISABLED:
-                print("[METRICS TASK] ⏸️ 圖表生成已禁用以穩定連接")
-            elif not chart_generation_lock.locked():
-                try:
-                    async with chart_generation_lock:
-                        # 使用新的數據庫方法生成圖表（不再查詢 GCP API）
-                        if monitor.db and len(data_points) > 0:
-                            chart_file = await asyncio.wait_for(
-                                monitor.generate_chart_from_database(hours=6),
-                                timeout=30.0
-                            )
-                        elif data_points:
-                            # 後備：使用現有數據點生成圖表
-                            chart_file = await asyncio.wait_for(
-                                monitor.generate_metrics_chart_async(
-                                    data_points=data_points,
-                                    monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
-                                ),
-                                timeout=30.0
-                            )
-                except asyncio.TimeoutError:
-                    print("[METRICS TASK] ⚠️ 图表生成超时 (>30s)，跳过此次图表")
-                except Exception as e:
-                    print(f"[METRICS TASK] 图表生成异常: {e}")
+            # 取得背景產圖任務產生的圖表（不在此處產圖）
+            chart_file = monitor.get_latest_chart()
+            if chart_file:
+                print("[METRICS TASK] 使用背景產生的圖表")
             else:
-                print("[METRICS TASK] 前一张图仍在生成，跳过重复执行")
+                print("[METRICS TASK] ⚠️ 背景圖表尚未可用，embed 將不含圖表")
             
             # 查找或創建 metrics message
             message_id = message_ids["metrics"]["message"]
@@ -870,6 +848,14 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
             print(f"[METRICS INIT ASYNC] 啟動定時 metrics 更新任務...")
             metrics_task = await create_metrics_update_task(bot_type_str)
             metrics_tasks[bot_type_str] = metrics_task
+            
+            # 啟動背景產圖任務（獨立於 embed 更新）
+            if bot_type_str == "bot":  # 只由主 bot 負責產圖
+                print(f"[METRICS INIT ASYNC] 啟動背景圖表產生任務...")
+                charting_task = asyncio.create_task(
+                    monitor.background_chart_generation_task(interval_minutes=5)
+                )
+                print(f"[METRICS INIT ASYNC] ✅ 背景產圖任務已啟動（每 5 分鐘產一次）")
             metrics_task.start()
             print(f"[METRICS INIT ASYNC] ✅ Metrics 任務已啟動")
             
