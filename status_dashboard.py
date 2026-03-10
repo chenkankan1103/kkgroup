@@ -926,6 +926,99 @@ def clear_logs(bot_type: str) -> None:
     else:
         print(f"[LOG WARN] 未找到 {bot_type} 的日誌儲存區")
 
+# ===== 異步 Metrics 初始化（不阻塞 Bot 啟動）=====
+async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Client):
+    """
+    在後台進行 metrics 初始化，不會阻塞 bot 主初始化流程
+    """
+    try:
+        await asyncio.sleep(2)  # 延遲 2 秒，確保 bot 已完全連接
+        
+        channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
+        if not channel:
+            print("[METRICS INIT ASYNC] 無法找到儀表板頻道")
+            return
+        
+        from gcp_metrics_monitor import GCPMetricsMonitor
+        monitor = GCPMetricsMonitor(project_id="kkgroup")
+        if not monitor.available:
+            print("[METRICS INIT ASYNC] GCP Monitor 不可用")
+            return
+        
+        print(f"[METRICS INIT ASYNC] 開始異步收集 metrics 數據...")
+        
+        try:
+            data_points = await asyncio.wait_for(
+                monitor.get_network_egress_data(hours=6),
+                timeout=10.0
+            )
+            billing_info = await asyncio.wait_for(
+                monitor.get_billing_data(),
+                timeout=10.0
+            )
+            monthly_gb = await asyncio.wait_for(
+                monitor.get_monthly_egress_data(days=30),
+                timeout=15.0
+            )
+            
+            # 收集系統信息
+            sys_stats = await asyncio.wait_for(
+                monitor.get_system_stats(),
+                timeout=10.0
+            )
+            print(f"[METRICS INIT ASYNC] 系統信息已收集: {sys_stats}")
+            
+            embed = monitor.create_metrics_embed(
+                data_points=data_points,
+                billing_info=billing_info,
+                monthly_gb=monthly_gb,
+                sys_stats=sys_stats
+            )
+            embed.set_footer(text=f"初始化時生成 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            chart_file = await monitor.generate_metrics_chart_async(
+                data_points=data_points,
+                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
+            )
+            
+            # 發送或更新 metrics embed
+            metrics_msg_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
+            if metrics_msg_id:
+                try:
+                    msg = await channel.fetch_message(int(metrics_msg_id))
+                    if chart_file:
+                        await msg.edit(embed=embed, attachments=[chart_file])
+                    else:
+                        await msg.edit(embed=embed)
+                    print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已更新: {metrics_msg_id}")
+                except discord.NotFound:
+                    print(f"[METRICS INIT ASYNC] 舊消息不存在，創建新的")
+                    msg = await channel.send(embed=embed, file=chart_file)
+                    set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
+                    print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已創建: {msg.id}")
+            else:
+                # 創建新消息
+                msg = await channel.send(embed=embed, file=chart_file)
+                set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
+                print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已創建: {msg.id}")
+            
+            # 啟動定時任務
+            print(f"[METRICS INIT ASYNC] 啟動定時 metrics 更新任務...")
+            metrics_task = await create_metrics_update_task(bot_type_str)
+            metrics_tasks[bot_type_str] = metrics_task
+            metrics_task.start()
+            print(f"[METRICS INIT ASYNC] ✅ Metrics 任務已啟動")
+            
+        except asyncio.TimeoutError:
+            print(f"[METRICS INIT ASYNC] ⏱️ Metrics 獲取超時")
+        except Exception as e:
+            print(f"[METRICS INIT ASYNC ERROR] {e}")
+            traceback.print_exc()
+            
+    except Exception as e:
+        print(f"[METRICS INIT ASYNC ERROR] 異步初始化失敗: {e}")
+        traceback.print_exc()
+
 # 調試助手：顯示儀表板 embed 的現有狀態
 async def inspect_dashboard(bot: discord.Client, bot_type: str = "bot") -> None:
     """直接從 Discord 拉取儀表板和日誌訊息並打印資訊"""
@@ -1070,85 +1163,12 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             
             # ===== METRICS 初始化 =====
             if bot_type_str == GCP_METRICS_ONLY_BOT_RESPONSIBLE and GCP_METRICS_ENABLED:
-                print(f"[METRICS INIT] 為 {bot_type_str} 初始化 metrics")
+                print(f"[METRICS INIT] 為 {bot_type_str} 初始化 metrics（異步進行，不阻塞 bot 啟動）")
+                # 在後台進行 metrics 初始化，不阻塞主初始化流程
                 try:
-                    # 直接發送一個初始的 metrics embed  
-                    from gcp_metrics_monitor import GCPMetricsMonitor
-                    monitor = GCPMetricsMonitor(project_id="kkgroup")
-                    if monitor.available:
-                        print(f"[METRICS INIT] 嘗試獲取初始 metrics 數據...")
-                        try:
-                            data_points = await asyncio.wait_for(
-                                monitor.get_network_egress_data(hours=6),
-                                timeout=10.0
-                            )
-                            billing_info = await asyncio.wait_for(
-                                monitor.get_billing_data(),
-                                timeout=10.0
-                            )
-                            monthly_gb = await asyncio.wait_for(
-                                monitor.get_monthly_egress_data(days=30),
-                                timeout=15.0
-                            )
-                            
-                            # 收集系統信息
-                            sys_stats = await asyncio.wait_for(
-                                monitor.get_system_stats(),
-                                timeout=10.0
-                            )
-                            print(f"[METRICS INIT] 系統信息已收集: {sys_stats}")
-                            
-                            embed = monitor.create_metrics_embed(
-                                data_points=data_points,
-                                billing_info=billing_info,
-                                monthly_gb=monthly_gb,
-                                sys_stats=sys_stats
-                            )
-                            embed.set_footer(text=f"初始化時生成 | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
-                            
-                            chart_file = await monitor.generate_metrics_chart_async(
-                                data_points=data_points,
-                                monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
-                            )
-                            
-                            # 發送或更新 metrics embed
-                            metrics_msg_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
-                            if metrics_msg_id:
-                                try:
-                                    msg = await channel.fetch_message(int(metrics_msg_id))
-                                    if chart_file:
-                                        await msg.edit(embed=embed, attachments=[chart_file])
-                                    else:
-                                        await msg.edit(embed=embed)
-                                    print(f"[METRICS INIT] ✅ Metrics embed 已更新: {metrics_msg_id}")
-                                except discord.NotFound:
-                                    print(f"[METRICS INIT] 舊消息不存在，創建新的")
-                                    msg = await channel.send(embed=embed, file=chart_file)
-                                    set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
-                                    print(f"[METRICS INIT] ✅ Metrics embed 已創建: {msg.id}")
-                            else:
-                                # 創建新消息
-                                msg = await channel.send(embed=embed, file=chart_file)
-                                set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
-                                print(f"[METRICS INIT] ✅ Metrics embed 已創建: {msg.id}")
-                            
-                            # 現在啟動定時任務
-                            print(f"[METRICS INIT] 啟動定時 metrics 更新任務...")
-                            metrics_task = await create_metrics_update_task(bot_type_str)
-                            metrics_tasks[bot_type_str] = metrics_task
-                            metrics_task.start()
-                            print(f"[METRICS INIT] ✅ Metrics 任務已啟動")
-                            
-                        except asyncio.TimeoutError:
-                            print(f"[METRICS INIT] ⏱️ 初始 metrics 獲取超時")
-                        except Exception as e:
-                            print(f"[METRICS INIT ERROR] 初始 metrics 生成失敗: {e}")
-                    else:
-                        print(f"[METRICS INIT] Monitor 不可用")
-                except ImportError:
-                    print(f"[METRICS INIT] 無法導入 GCPMetricsMonitor")
+                    asyncio.create_task(initialize_metrics_async(bot_type_str, bot_instance))
                 except Exception as e:
-                    print(f"[METRICS INIT ERROR] {e}")
+                    print(f"[METRICS INIT ERROR] 無法創建 metrics 初始化任務: {e}")
             else:
                 if bot_type_str != GCP_METRICS_ONLY_BOT_RESPONSIBLE:
                     print(f"[METRICS INIT] ⏸️ {bot_type_str} 不負責 metrics（只有 {GCP_METRICS_ONLY_BOT_RESPONSIBLE} 負責）")
