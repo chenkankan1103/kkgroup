@@ -1,5 +1,5 @@
 import asyncio
-from status_dashboard import update_dashboard_metrics
+from status_dashboard import initialize_dashboard
 
 class DummyBot:
     def get_channel(self, id):
@@ -7,7 +7,8 @@ class DummyBot:
         return None
 
 async def main():
-    await update_dashboard_metrics(DummyBot())
+    # 此脚本已弃用 - metrics 现在通过 status_dashboard 的独立更新任务自动处理
+    print("This script is deprecated. Metrics are now handled by the automatic update task in status_dashboard.")
 
 if __name__ == '__main__':
     asyncio.run(main())
