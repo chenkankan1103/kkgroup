@@ -128,11 +128,13 @@ async def get_systemd_logs(bot_type: str) -> str:
         # 使用上次查詢時間構造 --since 參數
         since_time = _last_log_fetch.get(bot_type)
         if since_time is None:
-            # 第一次查詢：不是手動重來journalctl，仅從 最近 10 分鐘開始
+            # 第一次查詢：從最近 10 分鐘開始
             since_arg = "10 minutes ago"
         else:
-            # journalctl 可以接受 ISO 格式
-            since_arg = since_time.isoformat()
+            # journalctl 不喜歡帶時區或微秒的 ISO 字串，會報 "Failed to parse timestamp"
+            # 使用最簡單的年月日時分秒格式即可
+            # since_time 存的是本地台灣時區時間
+            since_arg = since_time.strftime("%Y-%m-%d %H:%M:%S")
 
         # 構建 journalctl 命令（使用完整路徑）
         cmd = [
