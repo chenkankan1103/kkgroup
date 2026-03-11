@@ -18,8 +18,9 @@ DB 適配層 - 統一的數據庫操作接口
 """
 
 from sheet_driven_db import SheetDrivenDB, get_db_instance
-from typing import Any, Optional, Union, Dict, List
+from typing import Any, Optional, Union, Dict, List, Tuple
 import asyncio
+import json
 
 # 獲取全局 DB 實例
 def get_db() -> SheetDrivenDB:
@@ -350,3 +351,169 @@ def export_to_sheet_format() -> tuple:
         (headers, rows) 元組
     """
     return get_db().export_to_sheet_format()
+
+
+# ============================================================
+# 股票市場系統 (shop_commands/stock_market 專用)
+# ============================================================
+
+def get_user_stocks(user_id: Union[int, str]) -> List[Dict[str, Any]]:
+    """
+    獲取使用者持有的股票列表
+    
+    Args:
+        user_id: 用戶 ID
+        
+    Returns:
+        [{'symbol': '2330.TW', 'shares': 10, 'avg_cost': 500.0}, ...] 或 []
+    """
+    stocks_json = get_user_field(user_id, 'stocks', default='[]')
+    
+    try:
+        if isinstance(stocks_json, str):
+            return json.loads(stocks_json) if stocks_json else []
+        elif isinstance(stocks_json, list):
+            return stocks_json
+        else:
+            return []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def set_user_stocks(user_id: Union[int, str], stocks: List[Dict[str, Any]]) -> bool:
+    """
+    設置使用者的股票列表
+    
+    Args:
+        user_id: 用戶 ID
+        stocks: [{'symbol': '2330.TW', 'shares': 10, 'avg_cost': 500.0}, ...]
+        
+    Returns:
+        是否成功
+    """
+    import json
+    stocks_json = json.dumps(stocks, ensure_ascii=False)
+    return set_user_field(user_id, 'stocks', stocks_json)
+
+
+def add_stock_position(
+    user_id: Union[int, str],
+    symbol: str,
+    shares: int,
+    price: float
+) -> bool:
+    """
+    增加或更新使用者的股票持倉（買入）
+    
+    Args:
+        user_id: 用戶 ID
+        symbol: 股票代號（例如 '2330.TW'）
+        shares: 買入數量
+        price: 買入價格
+        
+    Returns:
+        是否成功
+    """
+    stocks = get_user_stocks(user_id)
+    
+    # 查找是否已有該持倉
+    for position in stocks:
+        if position['symbol'] == symbol:
+            # 更新平均成本與持倉數
+            old_shares = position['shares']
+            old_cost = position['avg_cost']
+            
+            new_total_cost = old_shares * old_cost + shares * price
+            new_total_shares = old_shares + shares
+            new_avg_cost = new_total_cost / new_total_shares
+            
+            position['shares'] = new_total_shares
+            position['avg_cost'] = new_avg_cost
+            break
+    else:
+        # 新增持倉
+        stocks.append({
+            'symbol': symbol,
+            'shares': shares,
+            'avg_cost': price
+        })
+    
+    return set_user_stocks(user_id, stocks)
+
+
+def close_stock_position(
+    user_id: Union[int, str],
+    symbol: str,
+    shares: int,
+    price: float
+) -> Tuple[bool, Optional[float]]:
+    """
+    減少或平掉使用者的股票持倉（賣出）
+    
+    Args:
+        user_id: 用戶 ID
+        symbol: 股票代號
+        shares: 賣出數量
+        price: 賣出價格
+        
+    Returns:
+        (是否成功, 實現損益金額)
+        實現損益 = (賣出價 - 平均成本) * 賣出數量
+    """
+    stocks = get_user_stocks(user_id)
+    
+    for idx, position in enumerate(stocks):
+        if position['symbol'] == symbol:
+            if position['shares'] < shares:
+                return (False, None)  # 持倉不足
+            
+            # 計算實現損益
+            realized_pnl = (price - position['avg_cost']) * shares
+            
+            # 更新持倉
+            position['shares'] -= shares
+            
+            if position['shares'] == 0:
+                # 持倉清空，移除該項
+                stocks.pop(idx)
+            
+            success = set_user_stocks(user_id, stocks)
+            return (success, realized_pnl)
+    
+    return (False, None)  # 找不到該持倉
+
+
+def get_user_total_stock_value(
+    user_id: Union[int, str],
+    current_prices: Dict[str, float]
+) -> Tuple[float, float, float]:
+    """
+    計算使用者股票投資組合的總價值
+    
+    Args:
+        user_id: 用戶 ID
+        current_prices: {'2330.TW': 500.0, ...} 當前價格字典
+        
+    Returns:
+        (總市值, 總成本, 未實現損益)
+    """
+    stocks = get_user_stocks(user_id)
+    
+    total_market_value = 0.0
+    total_cost = 0.0
+    
+    for position in stocks:
+        symbol = position['symbol']
+        shares = position['shares']
+        avg_cost = position['avg_cost']
+        
+        cost = shares * avg_cost
+        total_cost += cost
+        
+        if symbol in current_prices:
+            market_value = shares * current_prices[symbol]
+            total_market_value += market_value
+    
+    unrealized_pnl = total_market_value - total_cost
+    
+    return (total_market_value, total_cost, unrealized_pnl)
