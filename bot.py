@@ -226,6 +226,33 @@ async def on_disconnect():
 @client.event
 async def on_resumed():
     print("[DISCORD] session resumed")
+    # when the gateway reconnects, our periodic tasks may have sent edits
+    # while the connection was down and Discord might not deliver them to
+    # clients.  force an immediate refresh of both log and metrics embeds so
+    # that the dashboard doesn't appear frozen after a disconnect.
+    try:
+        from status_dashboard import update_dashboard_logs, get_bot_instance
+        # bot type is defined at module level
+        bot_type = BOT_TYPE
+        bot_inst = client
+        # update logs embed
+        await update_dashboard_logs(bot_inst, bot_type)
+        print("[on_resumed] forced log embed refresh")
+    except Exception as e:
+        print(f"[on_resumed] log refresh failed: {e}")
+    try:
+        # metrics update task is not directly callable, but we can trigger
+        # a one-shot by creating a temporary loop and running it once.  the
+        # easiest option is to import create_metrics_update_task and run the
+        # underlying function directly.
+        from status_dashboard import create_metrics_update_task
+        loop = await create_metrics_update_task(bot_type)
+        # loop._function is the coroutine that actually does the work
+        if hasattr(loop, '_function'):
+            await loop._function()
+            print("[on_resumed] forced metrics embed refresh")
+    except Exception as e:
+        print(f"[on_resumed] metrics refresh failed: {e}")
 
 @client.event
 async def on_ready():
