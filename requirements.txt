@@ -16,3 +16,5 @@ gspread
 oauth2client
 google-cloud-monitoring
 google-cloud-billing
+yfinance
+pandas
