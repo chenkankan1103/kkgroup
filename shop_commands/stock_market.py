@@ -382,17 +382,32 @@ class StockMarket(commands.Cog):
         if not self.periodic_market_update.is_running():
             self.periodic_market_update.start()
     
+    async def _get_market_channel(self) -> Optional[discord.abc.GuildChannel]:
+        """嘗試取得市場頻道：先用緩存，沒有再發 API 請求"""
+        channel = self.bot.get_channel(self.market_channel_id)
+        if channel:
+            return channel
+
+        try:
+            return await self.bot.fetch_channel(self.market_channel_id)
+        except discord.Forbidden:
+            logger.warning("⚠️ 無法存取市場頻道（權限不足）")
+        except discord.NotFound:
+            logger.warning("⚠️ 找不到市場頻道（ID 可能錯誤）")
+        except Exception as e:
+            logger.warning(f"⚠️ 取得市場頻道失敗: {e}")
+        return None
+
     async def initialize_market_message(self):
         """初始化市場訊息（開機時檢查是否已有訊息）"""
         try:
-            channel = self.bot.get_channel(self.market_channel_id)
+            channel = await self._get_market_channel()
             if not channel:
-                logger.warning("⚠️ 無法找到市場頻道")
                 return
-            
+
             # 檢查是否有保存的 message ID
             message_id = self.market_data.get("message_id")
-            
+
             if message_id:
                 try:
                     self.market_message = await channel.fetch_message(int(message_id))
@@ -403,11 +418,11 @@ class StockMarket(commands.Cog):
                 except Exception as e:
                     logger.warning(f"⚠️ 無法恢復訊息: {e}")
                     self.market_message = None
-            
+
             # 如果沒有訊息，發送新訊息
             if not self.market_message:
                 await self.update_market_embed()
-        
+
         except Exception as e:
             logger.error(f"❌ 初始化市場訊息失敗: {e}")
             traceback.print_exc()
@@ -415,9 +430,8 @@ class StockMarket(commands.Cog):
     async def update_market_embed(self):
         """更新市場主 Embed（編輯現有訊息或發送新訊息）"""
         try:
-            channel = self.bot.get_channel(self.market_channel_id)
+            channel = await self._get_market_channel()
             if not channel:
-                logger.warning("⚠️ 無法找到市場頻道")
                 return
             
             # 計算市場摘要
@@ -443,8 +457,8 @@ class StockMarket(commands.Cog):
                         'shares': total_shares,
                         'realized_pnl': realized_pnl
                     })
-                except:
-                    pass
+                except Exception:
+                    continue
             
             # 建立摘要 Embed
             embed = discord.Embed(
