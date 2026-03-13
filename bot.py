@@ -12,17 +12,30 @@ from bot_status import build_discord_activity
 # ============================================================
 # 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
 # ============================================================
+import sys
+import syslog
+
 LOG_FILE = "/tmp/bot-debug.log"
 
 def file_log(msg):
-    """寫入日誌到檔案並同時調用 print"""
+    """寫入日誌到檔案、syslog 並同時調用 print"""
     try:
+        # 寫入文件
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
             f.flush()
     except:
         pass
-    print(msg, flush=True)  # 強制 flush print
+    
+    # 寫入 syslog
+    try:
+        syslog.syslog(syslog.LOG_INFO, f"[BOT_DEBUG] {msg}")
+    except:
+        pass
+    
+    # 同時 print
+    print(msg, flush=True)
+    sys.stdout.flush()
 
 # dashboard helpers
 # add_log removed; status_dashboard handles logs internally
