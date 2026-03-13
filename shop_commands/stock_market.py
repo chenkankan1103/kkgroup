@@ -370,17 +370,30 @@ class StockMarket(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         """Bot 啟動時的初始化"""
-        logger.info("✅ StockMarket Cog 已載入")
+        print(f"🚀 [STOCK_MARKET] on_ready 被觸發", flush=True)
+        logger.info("🚀 [STOCK_MARKET] on_ready 被觸發")
         
-        # 註冊持久視圖
-        self.bot.add_view(StockEntryView(self))
+        try:
+            # 註冊持久視圖
+            print(f"📌 [STOCK_MARKET] 註冊 StockEntryView...", flush=True)
+            self.bot.add_view(StockEntryView(self))
+            
+            # 嘗試恢復舊訊息或發送新訊息
+            print(f"📡 [STOCK_MARKET] 初始化市場訊息...", flush=True)
+            await self.initialize_market_message()
+            
+            # 啟動定期更新
+            if not self.periodic_market_update.is_running():
+                print(f"⏰ [STOCK_MARKET] 啟動定期更新任務...", flush=True)
+                self.periodic_market_update.start()
+            
+            print("✅ [STOCK_MARKET] StockMarket Cog 完全初始化！", flush=True)
+            logger.info("✅ StockMarket Cog 已載入")
         
-        # 嘗試恢復舊訊息或發送新訊息
-        await self.initialize_market_message()
-        
-        # 啟動定期更新
-        if not self.periodic_market_update.is_running():
-            self.periodic_market_update.start()
+        except Exception as e:
+            print(f"❌ [STOCK_MARKET] on_ready 失敗: {e}", flush=True)
+            logger.error(f"❌ on_ready 失敗: {e}")
+            traceback.print_exc()
     
     async def _get_market_channel(self) -> Optional[discord.abc.GuildChannel]:
         """嘗試取得市場頻道：先用緩存，沒有再發 API 請求"""
@@ -401,64 +414,85 @@ class StockMarket(commands.Cog):
     async def initialize_market_message(self):
         """初始化市場訊息（開機時檢查是否已有訊息）"""
         try:
+            print(f"📍 [STOCK_MARKET] 開始初始化市場訊息，頻道 ID: {self.market_channel_id}", flush=True)
+            
             channel = await self._get_market_channel()
             if not channel:
+                print(f"❌ [STOCK_MARKET] 無法取得市場頻道！", flush=True)
                 return
+
+            print(f"✅ [STOCK_MARKET] 成功取得頻道: {channel.name} (ID: {channel.id})", flush=True)
 
             # 檢查是否有保存的 message ID
             message_id = self.market_data.get("message_id")
+            print(f"💾 [STOCK_MARKET] 保存的 message ID: {message_id}", flush=True)
 
             if message_id:
                 try:
                     self.market_message = await channel.fetch_message(int(message_id))
+                    print(f"✅ [STOCK_MARKET] 恢復舊訊息 ID: {message_id}", flush=True)
                     logger.info(f"✅ 恢復舊訊息 ID: {message_id}")
                 except discord.NotFound:
+                    print(f"⚠️ [STOCK_MARKET] 舊訊息已被刪除，發送新訊息", flush=True)
                     logger.warning(f"⚠️ 舊訊息已被刪除，發送新訊息")
                     self.market_message = None
                 except Exception as e:
+                    print(f"⚠️ [STOCK_MARKET] 無法恢復訊息: {e}", flush=True)
                     logger.warning(f"⚠️ 無法恢復訊息: {e}")
                     self.market_message = None
 
             # 如果沒有訊息，發送新訊息
             if not self.market_message:
+                print(f"📮 [STOCK_MARKET] 沒有現存訊息，正在發送新訊息...", flush=True)
                 await self.update_market_embed()
 
         except Exception as e:
+            print(f"❌ [STOCK_MARKET] 初始化市場訊息失敗: {e}", flush=True)
             logger.error(f"❌ 初始化市場訊息失敗: {e}")
             traceback.print_exc()
     
     async def update_market_embed(self):
         """更新市場主 Embed（編輯現有訊息或發送新訊息）"""
         try:
+            print(f"📊 [STOCK_MARKET] 開始更新市場 Embed...", flush=True)
+            
             channel = await self._get_market_channel()
             if not channel:
+                print(f"❌ [STOCK_MARKET] 無法取得市場頻道！", flush=True)
                 return
             
+            print(f"📈 [STOCK_MARKET] 計算市場摘要...", flush=True)
             # 計算市場摘要
             all_users = get_all_users()
+            print(f"📞 [STOCK_MARKET] 取得用戶數: {len(all_users) if all_users else 0}", flush=True)
+            
             active_traders = []
             
-            for user_data in all_users:
-                stocks = user_data.get('stocks')
-                if not stocks or stocks == '[]':
-                    continue
-                
-                try:
-                    stocks_list = json.loads(stocks) if isinstance(stocks, str) else stocks
-                    if not stocks_list:
+            if all_users:
+                for user_data in all_users:
+                    stocks = user_data.get('stocks')
+                    if not stocks or stocks == '[]':
                         continue
                     
-                    # 簡化：只計算持股數
-                    total_shares = sum(s.get('shares', 0) for s in stocks_list)
-                    realized_pnl = user_data.get(REALIZED_PNL_FIELD, 0)
-                    
-                    active_traders.append({
-                        'user_id': user_data['user_id'],
-                        'shares': total_shares,
-                        'realized_pnl': realized_pnl
-                    })
-                except Exception:
-                    continue
+                    try:
+                        stocks_list = json.loads(stocks) if isinstance(stocks, str) else stocks
+                        if not stocks_list:
+                            continue
+                        
+                        # 簡化：只計算持股數
+                        total_shares = sum(s.get('shares', 0) for s in stocks_list)
+                        realized_pnl = user_data.get(REALIZED_PNL_FIELD, 0)
+                        
+                        active_traders.append({
+                            'user_id': user_data['user_id'],
+                            'shares': total_shares,
+                            'realized_pnl': realized_pnl
+                        })
+                    except Exception as e:
+                        print(f"⚠️ [STOCK_MARKET] 解析用戶數據失敗: {e}", flush=True)
+                        continue
+            
+            print(f"🎯 [STOCK_MARKET] 活躍交易者數: {len(active_traders)}", flush=True)
             
             # 建立摘要 Embed
             embed = discord.Embed(
@@ -489,24 +523,34 @@ class StockMarket(commands.Cog):
             
             embed.set_footer(text="熱門代號: 2330(台積電), 0050(台灣50), 2454(聯發科) 等")
             
+            print(f"✏️ [STOCK_MARKET] Embed 已生成，checking message 狀態...", flush=True)
+            print(f"   - market_message 存在: {self.market_message is not None}", flush=True)
+            
             # 編輯現有訊息或發送新訊息
             if self.market_message:
                 try:
+                    print(f"🔄 [STOCK_MARKET] 編輯現存訊息 ID: {self.market_message.id}", flush=True)
                     await self.market_message.edit(embed=embed, view=StockEntryView(self))
+                    print("✅ [STOCK_MARKET] 市場 Embed 已更新（編輯）", flush=True)
                     logger.info("✅ 市場 Embed 已更新（編輯）")
                 except discord.NotFound:
+                    print("❌ [STOCK_MARKET] 訊息已被刪除，發送新訊息", flush=True)
                     logger.warning("⚠️ 訊息已被刪除，發送新訊息")
                     self.market_message = await channel.send(embed=embed, view=StockEntryView(self))
                     self.market_data["message_id"] = self.market_message.id
                     save_market_message_data(self.market_data)
+                    print(f"✅ [STOCK_MARKET] 新訊息已發送，ID: {self.market_message.id}", flush=True)
             else:
                 # 發送新訊息
+                print(f"📤 [STOCK_MARKET] 發送新的市場 Embed 訊息...", flush=True)
                 self.market_message = await channel.send(embed=embed, view=StockEntryView(self))
                 self.market_data["message_id"] = self.market_message.id
                 save_market_message_data(self.market_data)
+                print(f"✅ [STOCK_MARKET] 市場 Embed 已發送 (Message ID: {self.market_message.id})", flush=True)
                 logger.info(f"✅ 市場 Embed 已發送 (Message ID: {self.market_message.id})")
         
         except Exception as e:
+            print(f"❌ [STOCK_MARKET] 更新市場 Embed 失敗: {e}", flush=True)
             logger.error(f"❌ 更新市場 Embed 失敗: {e}")
             traceback.print_exc()
     
@@ -523,5 +567,16 @@ class StockMarket(commands.Cog):
 
 async def setup(bot: commands.Bot):
     """Cog 載入"""
-    await bot.add_cog(StockMarket(bot))
-    logger.info("✅ StockMarket Cog 已設置")
+    try:
+        print("🔧 [STOCK_MARKET] 開始載入 StockMarket Cog...", flush=True)
+        logger.info("🔧 [STOCK_MARKET] 開始載入 StockMarket Cog...")
+        
+        cog = StockMarket(bot)
+        await bot.add_cog(cog)
+        
+        print("✅ [STOCK_MARKET] StockMarket Cog 已設置！", flush=True)
+        logger.info("✅ [STOCK_MARKET] StockMarket Cog 已設置")
+    except Exception as e:
+        print(f"❌ [STOCK_MARKET] Cog 載入失敗: {e}", flush=True)
+        logger.error(f"❌ [STOCK_MARKET] Cog 載入失敗: {e}")
+        traceback.print_exc()
