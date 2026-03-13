@@ -140,18 +140,33 @@ class StockRoomView(discord.ui.View):
             )
             options.append(option)
         
+        # 添加自訂代號選項
+        options.append(discord.SelectOption(
+            label="📝 自訂代號",
+            value="CUSTOM",
+            emoji="✏️",
+            description="輸入其他股票代號"
+        ))
+        
         select = StockSelectMenu(self, options)
         self.add_item(select)
     
-    async def update_embed(self, interaction: discord.Interaction):
-        """更新操盤室 Embed，顯示選定標的的資訊"""
+    async def update_embed(self, interaction: discord.Interaction, defer_first: bool = True):
+        """更新操盤室 Embed，顯示選定標的的資訊
+        
+        Args:
+            interaction: Discord 交互對象
+            defer_first: 是否需要先 defer (如果已有 defer 則設為 False)
+        """
         
         if not self.selected_symbol:
-            await interaction.response.defer()
+            if defer_first:
+                await interaction.response.defer()
             return
         
         try:
-            await interaction.response.defer()
+            if defer_first:
+                await interaction.response.defer()
             
             # 取得當前價格
             price = await fetch_price(self.selected_symbol)
@@ -241,13 +256,75 @@ class StockSelectMenu(discord.ui.Select):
     
     async def callback(self, interaction: discord.Interaction):
         """選項變更時的回調"""
-        self.parent_view.selected_symbol = self.values[0]
-        await self.parent_view.update_embed(interaction)
+        selected_value = self.values[0]
+        
+        # 如果選擇自訂代號
+        if selected_value == "CUSTOM":
+            await interaction.response.send_modal(CustomStockModal(self.parent_view))
+        else:
+            self.parent_view.selected_symbol = selected_value
+            await self.parent_view.update_embed(interaction)
 
 
 # ============================================================
-# 交易 Modal
+# 自訂股票代號 Modal
 # ============================================================
+
+class CustomStockModal(discord.ui.Modal, title="輸入股票代號"):
+    """自訂股票代號輸入 Modal"""
+    
+    stock_code = discord.ui.TextInput(
+        label="股票代號",
+        placeholder="例如: 2330.TW 或 AAPL",
+        required=True,
+        min_length=2,
+        max_length=10
+    )
+    
+    def __init__(self, parent_view: StockRoomView):
+        super().__init__()
+        self.parent_view = parent_view
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """提交股票代號"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            symbol = self.stock_code.value.strip().upper()
+            
+            # 如果沒有 .TW 後綴，自動添加
+            if not "." in symbol:
+                symbol = f"{symbol}.TW"
+            
+            print(f"🔍 [STOCK_MARKET] 用戶輸入自訂代號: {symbol}", flush=True)
+            
+            # 測試是否能取得該股票的價格
+            price = await fetch_price(symbol)
+            if price is None:
+                print(f"❌ [STOCK_MARKET] 無法取得 {symbol} 的價格", flush=True)
+                await interaction.followup.send(
+                    f"❌ 無法取得 {symbol} 的價格。請檢查:\n"
+                    f"1. 代號是否正確\n"
+                    f"2. 台股請用 .TW 後綴 (如: 2330.TW)\n"
+                    f"3. 確認代號存在",
+                    ephemeral=True
+                )
+                return
+            
+            print(f"✅ [STOCK_MARKET] 成功取得 {symbol} 的價格: ${price:,.2f}", flush=True)
+            
+            # 設置選定的符號
+            self.parent_view.selected_symbol = symbol
+            
+            # 手動調用 update_embed (因為这是 Modal callback，不是 select callback)
+            await self.parent_view.update_embed(interaction, defer_first=False)
+        
+        except Exception as e:
+            print(f"❌ [STOCK_MARKET] 自訂代號處理失敗: {e}", flush=True)
+            logger.error(f"❌ 自訂代號處理失敗: {e}")
+            traceback.print_exc()
+            await interaction.followup.send("❌ 處理失敗，請稍後再試", ephemeral=True)
+
 
 class TradeModal(discord.ui.Modal, title="進行交易"):
     """交易輸入 Modal"""
