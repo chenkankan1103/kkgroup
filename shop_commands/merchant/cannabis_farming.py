@@ -195,6 +195,28 @@ async def get_user_plants(user_id: int) -> list:
             except Exception as e:
                 print(f"❌ 解析植物失敗：{e}")
         
+        # 如果資料庫內植物超過 3 個，則保留最新 3 個（避免舊資料影響種植邏輯）
+        if len(result) > 3:
+            try:
+                # 依照被種植時間排序，最近的保留
+                sorted_plants = sorted(
+                    result,
+                    key=lambda p: datetime.fromisoformat(p.get('planted_at', datetime.now().isoformat())),
+                    reverse=True
+                )
+                to_keep = sorted_plants[:3]
+                to_remove = [p for p in result if p not in to_keep]
+
+                for p in to_remove:
+                    try:
+                        await adapter.remove_plant(user_id, p.get('id'))
+                    except Exception as remove_error:
+                        print(f"⚠️ 無法刪除多餘植物：{remove_error}")
+
+                result = to_keep
+            except Exception as cleanup_error:
+                print(f"⚠️ 清理超額植物失敗：{cleanup_error}")
+
         return result
     except Exception as e:
         print(f"❌ 獲取植物失敗：{e}")
