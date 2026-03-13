@@ -25,7 +25,7 @@ class CropOperationView(discord.ui.View):
         self.harvested = harvested
 
         # 添加種植按鈕（如果有種子且有空位）
-        if seeds and len(plants) < 5:
+        if seeds and len(plants) < 3:
             plant_button = discord.ui.Button(
                 label="🌱 種植",
                 style=discord.ButtonStyle.success,
@@ -148,7 +148,7 @@ class CropOperationView(discord.ui.View):
 
                 embed.add_field(
                     name="🌾 作物狀態",
-                    value=f"成長中: {len(growing)} | 已成熟: {len(harvested)} | 總計: {len(plants)}/5",
+                    value=f"成長中: {len(growing)} | 已成熟: {len(harvested)} | 總計: {len(plants)}/3",
                     inline=False
                 )
 
