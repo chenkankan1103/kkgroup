@@ -127,7 +127,6 @@ class LockerPanelView(discord.ui.View):
             guild_id = interaction.guild.id if interaction.guild else 0
             channel_id = interaction.channel.id
             # 獲取 PersonalLockerCog 實例
-            from status_dashboard import add_log
             add_log("ui", f"Available cogs: {list(self.cog.bot.cogs.keys())}")
             locker_cog = self.cog.bot.get_cog('PersonalLockerCog')
             add_log("ui", f"locker_cog: {locker_cog}, type: {type(locker_cog)}")
