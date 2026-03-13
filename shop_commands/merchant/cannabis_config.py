@@ -5,34 +5,34 @@ CANNABIS_SHOP = {
     "種子": {
         "常規種": {
             "name": "常規種子",
-            "price": 50,
+            "price": 70,
             "emoji": "🌱",
-            "growth_time": 7200,  # 2小時（基礎1小時*2，實際 1-3 小時）
-            "max_yield": 20,
+            "growth_time": 14400,  # 4小時（隨機 ±1 小時）
+            "max_yield": 15,
             "description": "標準大麻種子，容易大豐收"
         },
         "優質種": {
             "name": "優質種子",
-            "price": 100,
+            "price": 90,
             "emoji": "🌿",
-            "growth_time": 14400,  # 4小時（基礎2小時*2，實際 3-5 小時）
-            "max_yield": 20,
-            "description": "優質大麻種子，產量不穩定"
+            "growth_time": 14400,  # 4小時（隨機 ±1 小時）
+            "max_yield": 15,
+            "description": "優質大麻種子，機率中等的高產"
         },
         "黃金種": {
             "name": "黃金種子",
-            "price": 250,
+            "price": 150,
             "emoji": "👑",
-            "growth_time": 21600,  # 6小時（基礎3小時*2，實際 5-7 小時）
-            "max_yield": 20,
-            "description": "稀有黃金種子，常見低產"
+            "growth_time": 14400,  # 4小時（隨機 ±1 小時）
+            "max_yield": 15,
+            "description": "稀有黃金種子，高級但常常低產"
         }
     }
 }
 
 # 大麻出售價格
 CANNABIS_HARVEST_PRICES = {
-    "常規種": 40,       # 每個 40 KKcoin
-    "優質種": 80,       # 每個 80 KKcoin
-    "黃金種": 150       # 每個 150 KKcoin
+    "常規種": 70,      # 每個 70 KKcoin
+    "優質種": 90,      # 每個 90 KKcoin
+    "黃金種": 150      # 每個 150 KKcoin
 }
