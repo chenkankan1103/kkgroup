@@ -73,6 +73,10 @@ client = commands.Bot(command_prefix="!", help_command=None, intents=intents)
 # ============================================================
 # 防止重複載入的鎖
 _reload_lock = asyncio.Lock()
+
+# 追蹤 on_ready 是否被觸發
+_on_ready_called = False
+_on_ready_check_task = None
 _pending_reloads = set()
 
 async def find_and_load_extensions(base_path, package_prefix="", client=None):
@@ -228,6 +232,30 @@ async def before_update_status():
     await client.wait_until_ready()
 
 # ============================================================
+# 事件監視函數
+# ============================================================
+async def _check_ready_timeout():
+    """監視 ready 狀態，如果超時就手動調用 on_ready()"""
+    global _on_ready_called
+    file_log("[READY_MONITOR] 開始監視 ready 狀態（10 秒超時）")
+    
+    for i in range(10):
+        await asyncio.sleep(1)
+        file_log(f"[READY_MONITOR] {i+1}s - ready={client.is_ready()} - on_ready_called={_on_ready_called}")
+        
+        if _on_ready_called:
+            file_log("[READY_MONITOR] on_ready 已被正常觸發")
+            return
+    
+    # 如果 10 秒後 on_ready 還沒被觸發，手動調用
+    if not _on_ready_called:
+        file_log("[READY_MONITOR] 10 秒超時，on_ready 未被觸發，嘗試手動調用")
+        try:
+            await on_ready()
+        except Exception as e:
+            file_log(f"[READY_MONITOR] 手動調用 on_ready 失敗: {e}")
+
+# ============================================================
 # Bot 事件處理
 # ============================================================
 @client.event
@@ -236,8 +264,13 @@ async def on_voice_state_update(member, before, after):
 
 @client.event
 async def on_connect():
+    global _on_ready_check_task
     file_log("=== ON_CONNECT CALLED ===")
     print("[DISCORD] gateway connected", flush=True)
+    
+    # 启动 ready 状态检查
+    if _on_ready_check_task is None:
+        _on_ready_check_task = asyncio.create_task(_check_ready_timeout())
 
 @client.event
 async def on_disconnect():
@@ -278,8 +311,11 @@ async def on_resumed():
 @client.event
 async def on_ready():
     """Bot 啟動完成"""
+    global _on_ready_called
+    
     # 立即寫入標記來驗證 on_ready 被調用
     file_log("=== ON_READY CALLED ===")
+    _on_ready_called = True
     
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     print("[bot] on_ready triggered, guilds:", [(g.id, g.name) for g in client.guilds], flush=True)
