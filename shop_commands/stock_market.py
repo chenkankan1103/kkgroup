@@ -83,15 +83,15 @@ class StockEntryView(discord.ui.View):
             # 檢查使用者 KK 幣餘額
             balance = get_user_kkcoin(interaction.user.id)
             
-            # 建立個人操盤室 Embed
+            # 建立個人操盤室 Embed - 簡潔設計
             embed = discord.Embed(
-                title="📈 個人操盤室",
-                description=f"歡迎 {interaction.user.mention}！\n選擇標的進行虛擬交易。",
-                color=discord.Color.blue()
+                title="📊 私人操盤室",
+                description=f"歡迎 {interaction.user.name}",
+                color=discord.Color.gold()
             )
-            embed.add_field(name="💰 KK 幣餘額", value=f"{balance:,}", inline=False)
-            embed.add_field(name="操作", value="使用下方下拉選單選擇標的，然後點擊買入或賣出。", inline=False)
-            embed.set_footer(text="虛擬交易，不涉及真實金錢")
+            embed.add_field(name="可用資金", value=f"💰 {balance:,} KK", inline=False)
+            embed.add_field(name="　", value="**下方選擇股票開始交易**", inline=False)
+            embed.set_footer(text="✨ 虛擬交易，零風險")
             
             # 建立個人操盤室視圖
             view = StockRoomView(self.cog, interaction.user.id)
@@ -183,25 +183,35 @@ class StockRoomView(discord.ui.View):
             # 取得 KK 幣餘額
             balance = get_user_kkcoin(self.user_id)
             
-            # 建立 Embed
+            # 建立 Embed - 簡潔設計
             embed = discord.Embed(
-                title=f"📈 {self.selected_symbol}",
-                color=discord.Color.green() if price > 0 else discord.Color.red()
+                title=f"{self.selected_symbol}",
+                color=discord.Color.gold()
             )
-            embed.add_field(name="當前價格", value=f"${price:,.2f}", inline=True)
-            embed.add_field(name="💰 可用餘額", value=f"{balance:,} KK", inline=True)
             
+            # 價格信息 (重點突出)
+            price_str = f"💹 {price:,.2f}"
+            embed.add_field(name="現價", value=price_str, inline=True)
+            embed.add_field(name="餘額", value=f"💰 {balance:,}", inline=True)
+            embed.add_field(name="　", value="　", inline=False)  # 空行分隔
+            
+            # 持倉信息
             if position:
+                shares_str = f"📊 {position['shares']} 股"
+                cost_str = f"${position['avg_cost']:.2f}"
                 pnl = (price - position['avg_cost']) * position['shares']
                 pnl_pct = (pnl / (position['avg_cost'] * position['shares'])) * 100 if position['avg_cost'] > 0 else 0
+                pnl_color = "📈" if pnl >= 0 else "📉"
+                pnl_str = f"{pnl_color} {pnl:,.0f} ({pnl_pct:+.1f}%)"
                 
-                embed.add_field(
-                    name="📊 持倉",
-                    value=f"數量: {position['shares']}\n平均成本: ${position['avg_cost']:.2f}\n未實現損益: ${pnl:,.2f} ({pnl_pct:+.1f}%)",
-                    inline=False
-                )
+                embed.add_field(name="持倉", value=shares_str, inline=True)
+                embed.add_field(name="平均成本", value=cost_str, inline=True)
+                embed.add_field(name="未實現損益", value=pnl_str, inline=True)
             else:
-                embed.add_field(name="📊 持倉", value="無持倉", inline=False)
+                embed.add_field(name="持倉", value="無", inline=True)
+                embed.add_field(name="　", value="　", inline=True)
+            
+            embed.set_footer(text="💵 點擊下方按鈕買入或賣出")
             
             # 取得圖表
             chart_url = await fetch_chart(self.selected_symbol, period="1mo")
@@ -592,34 +602,38 @@ class StockMarket(commands.Cog):
             
             print(f"🎯 [STOCK_MARKET] 活躍交易者數: {len(active_traders)}", flush=True)
             
-            # 建立摘要 Embed
+            # 建立摘要 Embed - 簡潔設計
             embed = discord.Embed(
-                title="🏦 台灣虛擬股市 - 操盤中心",
-                description="使用 KK 幣進行台股模擬交易\n\n點擊下方按鈕進入個人操盤室",
+                title="🏦 台灣虛擬股市",
+                description="模擬交易 台股 使用 KK 幣",
                 color=discord.Color.gold(),
                 timestamp=datetime.now()
             )
             
-            # 市場統計
+            # 市場統計 - 簡化格式
+            total_shares = sum(t['shares'] for t in active_traders)
             embed.add_field(
-                name="📊 市場統計",
-                value=f"活躍交易者: {len(active_traders)}\n總持股數: {sum(t['shares'] for t in active_traders)}",
-                inline=False
+                name="📈 市場",
+                value=f"交易者: {len(active_traders)} | 總股數: {total_shares}",
+                inline=True
             )
             
-            # 損益排行（匿名）
+            # 損益排行（前5名）
             if active_traders:
                 sorted_traders = sorted(active_traders, key=lambda x: x['realized_pnl'], reverse=True)
                 leaderboard_lines = []
                 for idx, trader in enumerate(sorted_traders[:5]):
                     pnl = trader['realized_pnl']
+                    emoji = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx+1}."
                     pnl_text = f"+{int(pnl)}" if pnl > 0 else f"{int(pnl)}"
-                    leaderboard_lines.append(f"{idx+1}. 交易者 #{trader['user_id']} - {pnl_text} KK")
+                    leaderboard_lines.append(f"{emoji} {pnl_text} KK")
                 
-                leaderboard = "\n".join(leaderboard_lines) if leaderboard_lines else "暫無排行"
-                embed.add_field(name="🏆 損益排行 (前5名)", value=leaderboard, inline=False)
+                leaderboard = "\n".join(leaderboard_lines)
+                embed.add_field(name="🏆 排行", value=leaderboard, inline=True)
             
-            embed.set_footer(text="熱門代號: 2330(台積電), 0050(台灣50), 2454(聯發科) 等")
+            embed.add_field(name="　", value="**👇 點擊進入你的操盤室**", inline=False)
+            embed.set_footer(text="熱門: 2330 | 0050 | 2454 | 自訂代號 | 無風險交易")
+            
             
             print(f"✏️ [STOCK_MARKET] Embed 已生成，checking message 狀態...", flush=True)
             print(f"   - market_message 存在: {self.market_message is not None}", flush=True)
