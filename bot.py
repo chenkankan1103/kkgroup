@@ -21,7 +21,7 @@ _metrics_collector_task = None
 # 配置區 - 根據不同 BOT 修改此區域
 # ============================================================
 BOT_NAME = "Bot"  # 可改為 "Shop" 或 "UI"
-BOT_TYPE = "scam"  # 狀態主題: scam / shop / ui
+BOT_TYPE = "bot"  # 狀態主題: bot / shopbot / uibot (須與 BOT_CONFIG 匹配)
 BOT_PREFIX = "DISCORD"  # 環境變數前綴: DISCORD / SHOP_DISCORD / UI_DISCORD
 COMMANDS_DIR = "commands"  # 指令目錄: commands / shop_commands / uicommands
 VERSION = "1.0.0"
