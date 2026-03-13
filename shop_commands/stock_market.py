@@ -90,7 +90,7 @@ class StockEntryView(discord.ui.View):
                 color=discord.Color.gold()
             )
             embed.add_field(name="可用資金", value=f"💰 {balance:,} KK", inline=False)
-            embed.add_field(name="　", value="**下方選擇股票開始交易**", inline=False)
+            embed.add_field(name="\u200b", value="**下方選擇股票開始交易**", inline=False)
             embed.set_footer(text="✨ 虛擬交易，零風險")
             
             # 建立個人操盤室視圖
@@ -193,7 +193,7 @@ class StockRoomView(discord.ui.View):
             price_str = f"💹 {price:,.2f}"
             embed.add_field(name="現價", value=price_str, inline=True)
             embed.add_field(name="餘額", value=f"💰 {balance:,}", inline=True)
-            embed.add_field(name="　", value="　", inline=False)  # 空行分隔
+            embed.add_field(name="\u200b", value="\u200b", inline=False)  # 空行分隔
             
             # 持倉信息
             if position:
@@ -209,7 +209,7 @@ class StockRoomView(discord.ui.View):
                 embed.add_field(name="未實現損益", value=pnl_str, inline=True)
             else:
                 embed.add_field(name="持倉", value="無", inline=True)
-                embed.add_field(name="　", value="　", inline=True)
+                embed.add_field(name="\u200b", value="\u200b", inline=True)
             
             embed.set_footer(text="💵 點擊下方按鈕買入或賣出")
             
@@ -631,7 +631,7 @@ class StockMarket(commands.Cog):
                 leaderboard = "\n".join(leaderboard_lines)
                 embed.add_field(name="🏆 排行", value=leaderboard, inline=True)
             
-            embed.add_field(name="　", value="**👇 點擊進入你的操盤室**", inline=False)
+            embed.add_field(name="\u200b", value="**👇 點擊進入你的操盤室**", inline=False)
             embed.set_footer(text="熱門: 2330 | 0050 | 2454 | 自訂代號 | 無風險交易")
             
             
