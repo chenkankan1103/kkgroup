@@ -367,7 +367,7 @@ async def on_ready():
             load_message_ids("bot")
             dashboard_ready = await initialize_dashboard(client, "bot")
             if dashboard_ready:
-                add_log("bot", "✅ 日誌系統已初始化")
+                print("✅ 日誌系統已初始化")
         except Exception as e:
             print(f"⚠️ 儀表板初始化失敗: {e}")
 
