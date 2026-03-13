@@ -110,9 +110,14 @@ async def get_inventory(user_id: int) -> dict:
 async def plant_cannabis(user_id: int, guild_id: int, channel_id: int, seed_type: str) -> dict:
     """種植大麻"""
     try:
+        import random
         seed_config = CANNABIS_SHOP["種子"][seed_type]
         now = datetime.now()
-        matured_at = now + timedelta(seconds=seed_config["growth_time"])
+        
+        # 生長時間 ± 1 小時的隨機波動
+        random_offset = random.randint(-3600, 3600)  # ±1小時
+        actual_growth_time = seed_config["growth_time"] + random_offset
+        matured_at = now + timedelta(seconds=actual_growth_time)
         
         adapter = get_adapter()
         
@@ -141,7 +146,7 @@ async def plant_cannabis(user_id: int, guild_id: int, channel_id: int, seed_type
             "seed_type": seed_type,
             "planted_at": now,
             "matured_at": matured_at,
-            "growth_time": seed_config["growth_time"]
+            "growth_time": actual_growth_time
         }
     except Exception as e:
         print(f"❌ 種植失敗：{e}")
@@ -275,11 +280,21 @@ async def harvest_plant(user_id: int, plant_id: int) -> dict:
                 "reason": f"植物未成熟，還需 {remaining_secs:.0f} 秒"
             }
         
-        # 隨機產出數量
+        # 隨機產出數量 - 基於種子等級的指數分布
         import random
         seed_config = CANNABIS_SHOP["種子"][seed_type]
         max_yield = seed_config["max_yield"]
-        yield_amount = random.randint(int(max_yield * 0.5), max_yield)
+        
+        # 實現指數衰減分布：常規種容易大豐收，高級種常見低產
+        if seed_type == "常規種":
+            # 常規種：均勻分布，容易高產
+            yield_amount = random.randint(1, max_yield)
+        elif seed_type == "優質種":
+            # 優質種：使用指數衰減，偏向較低產量
+            yield_amount = min(max_yield, max(1, int(random.expovariate(0.15))))
+        else:  # 黃金種
+            # 黃金種：陡峭指數衰減，常見 1-5 顆
+            yield_amount = min(max_yield, max(1, int(random.expovariate(0.35))))
         
         # 收割成功 - 從數據庫中移除植物
         await adapter.remove_plant(user_id, plant_id)
