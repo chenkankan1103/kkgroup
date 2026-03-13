@@ -456,13 +456,19 @@ class WelcomeFlow(commands.Cog):
             if not user_data:
                 return
             
-            inventory = json.loads(user_data.get('inventory', '[]')) if user_data.get('inventory') else []
+            # db_adapter 可能已自動反序列化，需要檢查類型
+            inventory_raw = user_data.get('inventory', '[]')
+            if isinstance(inventory_raw, str):
+                inventory = json.loads(inventory_raw) if inventory_raw else []
+            else:
+                inventory = inventory_raw if isinstance(inventory_raw, list) else []
             
             for item in items_to_remove:
                 if item in inventory:
                     inventory.remove(item)
             
             set_user_field(user_id, 'inventory', json.dumps(inventory))
+            print(f"✅ 已移除物品: {items_to_remove}，剩餘: {inventory}")
             
         except Exception as e:
             print(f"❌ 移除物品錯誤: {e}")
