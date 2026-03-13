@@ -155,17 +155,23 @@ class PersistentWelcomeView(discord.ui.View):
 
     @discord.ui.button(custom_id="welcome_confirm_entry", label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
     async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # defer with ephemeral so that any followups / edits are private to the user
         await interaction.response.defer(ephemeral=True)
         target_user_id = self._extract_target_user_id(interaction.message) or interaction.user.id
 
-        print(f"🔘 confirm_entry pressed by {interaction.user.id}, target={target_user_id}")
+        print(f"🔘 【入園按鈕】按下者: {interaction.user.id} ({interaction.user.name}), 目標用戶: {target_user_id}")
 
         if interaction.user.id != target_user_id:
+            print(f"❌ 【入園按鈕】權限檢查失敗：{interaction.user.id} != {target_user_id}")
             await interaction.followup.send("❌ 這不是你的按鈕！", ephemeral=True)
             return
 
-        member = interaction.guild.get_member(target_user_id) or interaction.user
+        member = interaction.guild.get_member(target_user_id)
+        if not member:
+            print(f"❌ 【入園按鈕】找不到成員: {target_user_id}")
+            await interaction.followup.send("❌ 無法找到用戶，請重試", ephemeral=True)
+            return
+            
+        print(f"✅ 【入園按鈕】權限檢查通過，開始處理 {member.name} 的入園流程...")
         await self.cog.handle_final_verification(interaction, member)
 
 class TestWelcomeView(discord.ui.View):
@@ -667,17 +673,20 @@ class WelcomeFlow(commands.Cog):
         return embed
 
     async def update_welcome_message(self, interaction: discord.Interaction, user_id: int, edit_channel: bool = False):
-        """更新用戶的歡迎 embed。默認只修改觸發這次互動的回應，
-        如果 edit_channel=True 則也會嘗試修改歡迎頻道中的原始貼文（
-        這要求 welcome_messages 有紀錄）。
+        """更新用戶的歡迎 embed。
+        - 如果 edit_channel=False（預設），只編輯歡迎頻道的原始訊息
+        - 如果 edit_channel=True，也會編輯歡迎頻道的訊息
+        - 不編輯 ephemeral interaction 的 original response（轉而使用 followup）
         """
         try:
             user_data = self.get_user_data(user_id)
             if not user_data:
+                print(f"⚠️ 無法獲取用戶資料: {user_id}")
                 return
 
             user = interaction.guild.get_member(user_id)
             if not user:
+                print(f"⚠️ 無法獲取成員資料: {user_id}")
                 return
 
             embed = await self.create_welcome_embed(user_data, user)
@@ -688,30 +697,32 @@ class WelcomeFlow(commands.Cog):
             if character_image_url:
                 embed.set_image(url=character_image_url)
 
-            # 修改互動回應（通常是 ephemeral）
-            if user_data.get('is_stunned', 0) == 1:
-                await interaction.edit_original_response(embed=embed, view=None)
-            else:
-                await interaction.edit_original_response(embed=embed, view=self.persistent_view)
-
-            # 同步更新歡迎頻道的原始訊息（如果有紀錄）
-            if edit_channel:
-                try:
-                    msg_id = self.welcome_messages.get(interaction.guild.id, {}).get(user_id)
-                    if msg_id:
-                        channel = self.bot.get_channel(self.welcome_channel_id)
-                        if channel:
-                            msg = await channel.fetch_message(msg_id)
-                            if user_data.get('is_stunned', 0) == 1:
-                                await msg.edit(embed=embed, view=None)
-                            else:
-                                await msg.edit(embed=embed, view=self.persistent_view)
-                except Exception:
-                    # 不要因為同步失敗而影響主流程
-                    pass
+            # 更新歡迎頻道的原始訊息（如果有紀錄）
+            try:
+                msg_id = self.welcome_messages.get(interaction.guild.id, {}).get(user_id)
+                if msg_id:
+                    channel = self.bot.get_channel(self.welcome_channel_id)
+                    if channel:
+                        msg = await channel.fetch_message(msg_id)
+                        if user_data.get('is_stunned', 0) == 1:
+                            await msg.edit(embed=embed, view=None)
+                            print(f"✅ 已更新歡迎訊息為擊暈狀態: {user_id}")
+                        else:
+                            await msg.edit(embed=embed, view=self.persistent_view)
+                            print(f"✅ 已更新歡迎訊息: {user_id}")
+                    else:
+                        print(f"⚠️ 找不到歡迎頻道: {self.welcome_channel_id}")
+                else:
+                    print(f"⚠️ 未找到歡迎訊息 ID for {user_id}")
+            except discord.NotFound:
+                print(f"⚠️ 歡迎訊息已被刪除: {user_id}")
+            except Exception as e:
+                print(f"⚠️ 編輯歡迎訊息失敗: {e}")
 
         except Exception as e:
             print(f"❌ 更新歡迎訊息錯誤: {e}")
+            import traceback
+            traceback.print_exc()
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
@@ -801,9 +812,12 @@ class WelcomeFlow(commands.Cog):
 
     async def handle_final_verification(self, interaction: discord.Interaction, member: discord.Member):
         try:
+            print(f"🚪 開始入園流程: {member.name} (ID: {member.id})")
+            
             # 檢查是否已繳交手機和身分證
             user_data = self.get_user_data(member.id)
             if not user_data:
+                print(f"❌ 無法獲取用戶資料: {member.id}")
                 await interaction.followup.send("❌ 無法獲取用戶資料，請聯繫管理員", ephemeral=True)
                 return
             
@@ -811,20 +825,25 @@ class WelcomeFlow(commands.Cog):
             
             if "手機" in inventory or "身分證" in inventory:
                 # 使用者尚未手動上繳，先警告並自動沒收
+                print(f"⚠️ {member.name} 未上繳物品，系統自動沒收")
                 await interaction.followup.send(
                     "⚠️ 你尚未上繳手機或身分證，系統已自動強制沒收並繼續入園流程。",
                     ephemeral=False
                 )
                 await self.remove_items_from_inventory(member.id, ["手機", "身分證"])
-                # 將 inventory 清空以便之後流程不再檢查
                 inventory = []
-                # 繼續後面的入園狀態設定（不再 return）
 
             guild = member.guild
             temp_role1 = guild.get_role(self.temp_role1_id)
-            member_role = guild.get_role(self.member_role_id) 
+            member_role = guild.get_role(self.member_role_id)
+            
+            if not member_role:
+                print(f"❌ 正式成員身分組不存在: {self.member_role_id}")
+                await interaction.followup.send("❌ 正式成員身分組配置錯誤，請聯繫管理員", ephemeral=True)
+                return
 
             # 設置擊暈狀態
+            print(f"💫 設置 {member.name} 為擊暈狀態")
             await self.update_user_data(member.id, {
                 'is_stunned': 1,
                 'hp': 10,
@@ -832,17 +851,37 @@ class WelcomeFlow(commands.Cog):
             })
 
             # 立即添加正式成員身分
-            if member_role:
+            try:
+                print(f"🎯 嘗試添加正式成員身分給 {member.name}...")
                 await member.add_roles(member_role, reason="進入園區成為正式成員")
+                print(f"✅ 成功添加正式成員身分給 {member.name}")
+            except discord.Forbidden as e:
+                print(f"❌ 權限不足，無法添加身分組: {e}")
+                await interaction.followup.send(
+                    f"❌ 無法添加身分組，可能是權限問題。請檢查機器人角色位置。",
+                    ephemeral=True
+                )
+                return
+            except discord.HTTPException as e:
+                print(f"❌ 添加身分組時出現 HTTP 錯誤: {e}")
+                await interaction.followup.send(
+                    f"❌ 添加身分組失敗，請聯繫管理員。",
+                    ephemeral=True
+                )
+                return
 
             scam_id = f"{random.randint(1, 99999):05d}"
             nickname = f"NO.{scam_id} {member.display_name}"
             try:
+                print(f"📝 設定昵稱: {nickname}")
                 await member.edit(nick=nickname, reason="設定園編")
             except discord.Forbidden:
-                pass
+                print(f"⚠️ 權限不足，無法修改昵稱")
+            except Exception as e:
+                print(f"⚠️ 修改昵稱失敗: {e}")
 
-            # 更新歡迎訊息為擊暈狀態（同時修改頻道內原始貼文）
+            # 更新歡迎訊息為擊暈狀態
+            print(f"📢 更新歡迎訊息...")
             await self.update_welcome_message(interaction, member.id, edit_channel=True)
 
             # 記錄擊暈用戶資訊
@@ -865,10 +904,11 @@ class WelcomeFlow(commands.Cog):
             )
             embed_response.set_thumbnail(url=member.display_avatar.url)
 
-            # 此訊息採用 ephemereal，以免干擾頻道內容
+            print(f"✅ 發送入園成功訊息給 {member.name}")
             await interaction.followup.send(embed=embed_response, ephemeral=True)
 
             # 5分鐘後移除臨時身分組並完成處理
+            print(f"⏱️ 排隊 5 分鐘後的清理任務")
             await asyncio.sleep(300)
             await self.remove_temp_role_and_cleanup(member.id)
             
@@ -876,6 +916,13 @@ class WelcomeFlow(commands.Cog):
             print(f"❌ handle_final_verification 錯誤: {e}")
             import traceback
             traceback.print_exc()
+            try:
+                await interaction.followup.send(
+                    f"❌ 入園流程發生錯誤: {str(e)[:100]}\n請聯繫管理員",
+                    ephemeral=True
+                )
+            except:
+                pass
 
     async def remove_temp_role_and_cleanup(self, user_id: int):
         """5分鐘後移除臨時身分組並清理歡迎訊息"""
