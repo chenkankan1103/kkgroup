@@ -45,7 +45,7 @@ async def fetch_price(symbol: str) -> Optional[float]:
         def _fetch():
             ticker = yf.Ticker(symbol)
             # 使用 fast=True 加速，並取最新收盤價或現價
-            data = ticker.history(period="1d", progress=False)
+            data = ticker.history(period="1d")
             if data.empty:
                 return None
             return float(data['Close'].iloc[-1])
@@ -79,7 +79,7 @@ async def fetch_historical_data(symbol: str, period: str = "1mo") -> Optional[Di
     try:
         def _fetch():
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period=period, progress=False)
+            data = ticker.history(period=period)
             if data.empty:
                 return None
             
