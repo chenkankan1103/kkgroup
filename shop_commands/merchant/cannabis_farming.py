@@ -285,16 +285,17 @@ async def harvest_plant(user_id: int, plant_id: int) -> dict:
         seed_config = CANNABIS_SHOP["種子"][seed_type]
         max_yield = seed_config["max_yield"]
         
-        # 實現指數衰減分布：常規種容易大豐收，高級種常見低產
+        # 實現指數/加權分布：常規種易高產、優質種中等、黃金種多集中低產
         if seed_type == "常規種":
-            # 常規種：均勻分布，容易高產
-            yield_amount = random.randint(1, max_yield)
+            # 常規種：加權均勻（偏向高值）
+            weights = list(range(1, max_yield + 1))  # 1到max_yield，越大機率越高
+            yield_amount = random.choices(range(1, max_yield + 1), weights=weights, k=1)[0]
         elif seed_type == "優質種":
-            # 優質種：使用指數衰減，偏向較低產量
-            yield_amount = min(max_yield, max(1, int(random.expovariate(0.15))))
+            # 優質種：指數衰減，平均值中等
+            yield_amount = min(max_yield, max(1, int(random.expovariate(0.20))))
         else:  # 黃金種
             # 黃金種：陡峭指數衰減，常見 1-5 顆
-            yield_amount = min(max_yield, max(1, int(random.expovariate(0.35))))
+            yield_amount = min(max_yield, max(1, int(random.expovariate(0.25))))
         
         # 收割成功 - 從數據庫中移除植物
         await adapter.remove_plant(user_id, plant_id)
