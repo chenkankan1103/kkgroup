@@ -367,6 +367,27 @@ class StockMarket(commands.Cog):
         self.market_message: Optional[discord.Message] = None
         self.market_data = load_market_message_data()
     
+    async def _setup_market_message(self):
+        """設置市場消息（在 setup() 中由異步任務調用）"""
+        try:
+            print("⏳ [STOCK_MARKET] 等待 bot 就緒...", flush=True)
+            await self.bot.wait_until_ready()
+            print("✅ [STOCK_MARKET] Bot 已就緒，開始初始化", flush=True)
+            
+            # 啟動定期更新
+            if not self.periodic_market_update.is_running():
+                print("⏰ [STOCK_MARKET] 啟動定期更新任務...", flush=True)
+                self.periodic_market_update.start()
+            
+            # 初始化市場消息
+            await self.initialize_market_message()
+            
+            print("✅ [STOCK_MARKET] 市場設置完成", flush=True)
+        except Exception as e:
+            print(f"❌ [STOCK_MARKET] 市場設置失敗: {e}", flush=True)
+            logger.error(f"❌ [STOCK_MARKET] 市場設置失敗: {e}")
+            traceback.print_exc()
+    
     @commands.Cog.listener()
     async def on_ready(self):
         """Bot 啟動時的初始化"""
@@ -576,6 +597,15 @@ async def setup(bot: commands.Bot):
         
         print("✅ [STOCK_MARKET] StockMarket Cog 已設置！", flush=True)
         logger.info("✅ [STOCK_MARKET] StockMarket Cog 已設置")
+        
+        # 立即註冊持久視圖（不等待 on_ready）
+        print("📌 [STOCK_MARKET] 在 setup 中註冊 StockEntryView...", flush=True)
+        bot.add_view(StockEntryView(cog))
+        
+        # 異步初始化市場消息（因為 Cog 被添加後 on_ready listener 不會被觸發）
+        print("⏳ [STOCK_MARKET] 安排市場消息初始化...", flush=True)
+        cog._init_task = asyncio.create_task(cog._setup_market_message())
+        
     except Exception as e:
         print(f"❌ [STOCK_MARKET] Cog 載入失敗: {e}", flush=True)
         logger.error(f"❌ [STOCK_MARKET] Cog 載入失敗: {e}")
