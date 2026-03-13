@@ -290,11 +290,20 @@ async def on_ready():
         lines.append("=" * 60)
         
         # 打印啟動訊息
-        print("\n".join(lines))
+        try:
+            print("\n".join(lines))
+        except Exception as e:
+            print(f"[DEBUG] 打印啟動訊息失敗: {e}")
         
         # 設定初始狀態
-        activity = build_discord_activity(BOT_TYPE)
-        await client.change_presence(activity=activity)
+        try:
+            activity = build_discord_activity(BOT_TYPE)
+            await client.change_presence(activity=activity)
+            print("[DEBUG] 狀態已更新")
+        except Exception as e:
+            print(f"[DEBUG] 狀態更新失敗: {e}")
+            import traceback
+            traceback.print_exc()
         
         # ============================================================
         # 初始化監控儀表板及日誌系統
