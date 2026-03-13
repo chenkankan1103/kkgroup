@@ -279,6 +279,9 @@ async def on_ready():
         lines.append(f"✅ {client.user.name} 已就緒")
         lines.append("=" * 60)
         
+        # 打印啟動訊息
+        print("\n".join(lines))
+        
         # 設定初始狀態
         activity = build_discord_activity(BOT_TYPE)
         await client.change_presence(activity=activity)

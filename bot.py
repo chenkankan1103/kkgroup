@@ -360,6 +360,9 @@ async def on_ready():
         lines.append(f"✅ {client.user.name} 已就緒")
         lines.append("=" * 60)
         
+        # 打印啟動訊息
+        print("\n".join(lines))
+        
         # 設定初始狀態
         activity = build_discord_activity(BOT_TYPE)
         await client.change_presence(activity=activity)
@@ -380,7 +383,7 @@ async def on_ready():
         # ============================================================
         global _metrics_collector, _metrics_collector_task
         
-        if BOT_TYPE == "scam" and _metrics_collector is None:  # 只在主 bot 中啟動一次
+        if BOT_TYPE == "bot" and _metrics_collector is None:  # 只在主 bot 中啟動一次
             try:
                 from metrics_data_collector import MetricsDataCollector
                 
