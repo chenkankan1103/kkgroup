@@ -21,7 +21,7 @@ import traceback
 from pathlib import Path
 
 from db_adapter import (
-    get_user_kkcoin, add_user_kkcoin, 
+    get_user_kkcoin, update_user_kkcoin, 
     get_user_stocks, set_user_stocks, add_stock_position, close_stock_position,
     get_user_total_stock_value, get_user_field, set_user_field, get_all_users
 )
@@ -291,7 +291,7 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                     return
                 
                 # 收取 KK 幣
-                add_user_kkcoin(user_id, -int(total_cost))
+                update_user_kkcoin(user_id, -int(total_cost))
                 
                 # 加入持倉
                 add_stock_position(user_id, self.symbol, qty, self.price)
@@ -314,7 +314,7 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                     return
                 
                 # 增加 KK 幣
-                add_user_kkcoin(user_id, int(total_cost))
+                update_user_kkcoin(user_id, int(total_cost))
                 
                 # 記錄已實現損益
                 realized_total = get_user_field(user_id, REALIZED_PNL_FIELD, default=0.0)
