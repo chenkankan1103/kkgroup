@@ -9,6 +9,27 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
 from status_dashboard import initialize_dashboard, load_message_ids  # add_log removed
+import syslog
+
+# ============================================================
+# 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
+# ============================================================
+LOG_FILE = "/tmp/uibot-debug.log"
+
+def file_log(msg):
+    """寫入日誌到檔案、syslog 並同時調用 print"""
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+            f.flush()
+    except:
+        pass
+    try:
+        syslog.syslog(syslog.LOG_INFO, f"[UIBOT_DEBUG] {msg}")
+    except:
+        pass
+    print(msg, flush=True)
+    sys.stdout.flush()
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
@@ -51,6 +72,33 @@ client = commands.Bot(command_prefix="!", help_command=None, intents=intents)
 # 防止重複載入的鎖
 _reload_lock = asyncio.Lock()
 _pending_reloads = set()
+
+# 追蹤 on_ready 是否被觸發
+_on_ready_called = False
+_on_ready_check_task = None
+
+# ============================================================
+# 事件監視函數
+# ============================================================
+async def _check_ready_timeout():
+    """監視 ready 狀態，如果超時就手動調用 on_ready()"""
+    global _on_ready_called
+    file_log("[READY_MONITOR] 開始監視 ready 狀態（10 秒超時）")
+    
+    for i in range(10):
+        await asyncio.sleep(1)
+        file_log(f"[READY_MONITOR] {i+1}s - ready={client.is_ready()} - on_ready_called={_on_ready_called}")
+        
+        if _on_ready_called:
+            file_log("[READY_MONITOR] on_ready 已被正常觸發")
+            return
+    
+    if not _on_ready_called:
+        file_log("[READY_MONITOR] 10 秒超時，on_ready 未被觸發，嘗試手動調用")
+        try:
+            await on_ready()
+        except Exception as e:
+            file_log(f"[READY_MONITOR] 手動調用 on_ready 失敗: {e}")
 
 async def find_and_load_extensions(base_path, package_prefix="", client=None):
     """遞歸搜尋並載入所有 Python 擴展（只加載有效的 Cog）。
@@ -202,7 +250,12 @@ async def before_update_status():
 # Gateway lifecycle logging
 @client.event
 async def on_connect():
-    print("[DISCORD] gateway connected")
+    global _on_ready_check_task
+    file_log("=== ON_CONNECT CALLED ===")
+    print("[DISCORD] gateway connected", flush=True)
+    
+    if _on_ready_check_task is None:
+        _on_ready_check_task = asyncio.create_task(_check_ready_timeout())
 
 @client.event
 async def on_disconnect():
@@ -218,6 +271,11 @@ async def on_resumed():
 @client.event
 async def on_ready():
     """Bot 啟動完成"""
+    global _on_ready_called
+    
+    file_log("=== ON_READY CALLED ===")
+    _on_ready_called = True
+    
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     
     try:
