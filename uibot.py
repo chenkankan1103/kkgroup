@@ -181,12 +181,16 @@ class FileEventHandler(FileSystemEventHandler):
 # ============================================================
 # 狀態更新任務
 # ============================================================
-@tasks.loop(minutes=5)
+@tasks.loop(minutes=2)
 async def update_status():
-    """定期更新 Bot 狀態"""
+    """定期更新 Bot 狀態和日誌 Embed"""
     try:
         activity = build_discord_activity(BOT_TYPE)
         await client.change_presence(activity=activity)
+        
+        # 每 2 分鐘更新一次日誌 embed
+        from status_dashboard import update_dashboard_logs
+        await update_dashboard_logs(client, BOT_TYPE)
     except Exception as e:
         print(f"❌ 狀態更新失敗: {e}")
 
