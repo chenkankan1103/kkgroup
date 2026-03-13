@@ -313,7 +313,7 @@ class SelectPlantForHarvestView(discord.ui.View):
 
             embed = discord.Embed(
                 title="🌾 作物資訊",
-                description=f"已使用 {len(plants)}/5 個位置",
+                description=f"已使用 {len(plants)}/3 個位置",
                 color=discord.Color.green()
             )
 
@@ -547,7 +547,7 @@ class SelectSeedView(discord.ui.View):
 
             embed = discord.Embed(
                 title="🌾 作物資訊",
-                description=f"已使用 {len(plants)}/5 個位置",
+                description=f"已使用 {len(plants)}/3 個位置",
                 color=discord.Color.green()
             )
 
