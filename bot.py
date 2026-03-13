@@ -9,6 +9,21 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
 
+# ============================================================
+# 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
+# ============================================================
+LOG_FILE = "/tmp/bot-debug.log"
+
+def file_log(msg):
+    """寫入日誌到檔案並同時調用 print"""
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+            f.flush()
+    except:
+        pass
+    print(msg, flush=True)  # 強制 flush print
+
 # dashboard helpers
 # add_log removed; status_dashboard handles logs internally
 from status_dashboard import initialize_dashboard, load_message_ids
@@ -217,19 +232,21 @@ async def before_update_status():
 # ============================================================
 @client.event
 async def on_voice_state_update(member, before, after):
-    print(f"[global] voice_state_update member={member.id} before={getattr(before.channel, 'id', None)} after={getattr(after.channel, 'id', None)}")
+    print(f"[global] voice_state_update member={member.id} before={getattr(before.channel, 'id', None)} after={getattr(after.channel, 'id', None)}", flush=True)
 
 @client.event
 async def on_connect():
-    print("[DISCORD] gateway connected")
+    file_log("=== ON_CONNECT CALLED ===")
+    print("[DISCORD] gateway connected", flush=True)
 
 @client.event
 async def on_disconnect():
-    print("[DISCORD] gateway disconnected")
+    file_log("=== ON_DISCONNECT CALLED ===")
+    print("[DISCORD] gateway disconnected", flush=True)
 
 @client.event
 async def on_resumed():
-    print("[DISCORD] session resumed")
+    file_log("=== ON_RESUMED CALLED ===")
     # when the gateway reconnects, our periodic tasks may have sent edits
     # while the connection was down and Discord might not deliver them to
     # clients.  force an immediate refresh of both log and metrics embeds so
@@ -261,8 +278,11 @@ async def on_resumed():
 @client.event
 async def on_ready():
     """Bot 啟動完成"""
+    # 立即寫入標記來驗證 on_ready 被調用
+    file_log("=== ON_READY CALLED ===")
+    
     stage_text = "DEV" if STAGE != "prod" else "PROD"
-    print("[bot] on_ready triggered, guilds:", [(g.id, g.name) for g in client.guilds])
+    print("[bot] on_ready triggered, guilds:", [(g.id, g.name) for g in client.guilds], flush=True)
     # enumerate voice channels in each guild the bot is actually in
     for g in client.guilds:
         print(f"[bot] guild {g.id} ({g.name}) voice channels:")
@@ -433,6 +453,9 @@ async def main():
     例外並退出。將整個啟動包在一個 while 迴圈中，遇到錯誤時等待幾秒
     再重試；只有遇到 KeyboardInterrupt 或 LoginFailure 才會跳出迴圈。
     """
+    # 立即寫入啟動標記到檔案
+    file_log("=== BOT MAIN START ===")
+    
     loop = asyncio.get_event_loop()
     
     # 暫時禁用檔案監控以避免重載問題
@@ -456,7 +479,9 @@ async def main():
     try:
         while True:
             try:
+                file_log(f"=== STARTING CLIENT WITH TOKEN ===")
                 async with client:
+                    file_log("=== CLIENT CONTEXT OPENED, CALLING client.start() ===")
                     await client.start(TOKEN)
             except KeyboardInterrupt:
                 print(f"\n👋 {BOT_NAME} Bot 已停止")
@@ -480,9 +505,11 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        file_log("=== BOT SCRIPT START ===")
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        print(f"❌ 啟動失敗: {e}")
+        file_log(f"❌ 啟動失敗: {e}")
+        print(f"❌ 啟動失敗: {e}", flush=True)
         sys.exit(1)
