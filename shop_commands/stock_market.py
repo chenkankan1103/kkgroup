@@ -74,7 +74,7 @@ class StockEntryView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
     
-    @discord.ui.button(label="進入操盤室", style=discord.ButtonStyle.primary, emoji="📈")
+    @discord.ui.button(label="進入操盤室", style=discord.ButtonStyle.primary, emoji="📈", custom_id="stock_entry_button")
     async def enter_trading_room(self, interaction: discord.Interaction, button: discord.ui.Button):
         """進入個人專用的操盤室"""
         await interaction.response.defer(ephemeral=True)
