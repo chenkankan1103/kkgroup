@@ -6,6 +6,7 @@
 import yfinance as yf
 import asyncio
 import json
+import requests
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 import logging
@@ -16,6 +17,11 @@ logger = logging.getLogger(__name__)
 _price_cache: Dict[str, Tuple[float, datetime]] = {}
 _chart_cache: Dict[str, Tuple[str, datetime]] = {}
 CACHE_DURATION_SECONDS = 300  # 5 分鐘快取
+
+# QuickChart 短 URL API
+QUICKCHART_SHORT_URL_API = "https://quickchart.io/chart/create"
+QUICKCHART_CREATE_TIMEOUT = 30   # 秒
+QUICKCHART_CREATE_RETRIES = 3    # 重試次數
 
 
 # ============================================================
@@ -196,6 +202,52 @@ def build_quickchart_url(
     return f"https://quickchart.io/chart?bkg=white&w={width}&h={height}&c={encoded}"
 
 
+async def create_quickchart_short_url(chart_config: dict) -> Optional[str]:
+    """
+    透過 POST 請求取得 QuickChart 短 URL
+
+    Args:
+        chart_config: 圖表配置字典
+
+    Returns:
+        短 URL，或 None（失敗時）
+    """
+    loop = asyncio.get_event_loop()
+
+    def _post():
+        payload = {"chart": chart_config, "backgroundColor": "white"}
+        for attempt in range(1, QUICKCHART_CREATE_RETRIES + 1):
+            try:
+                resp = requests.post(
+                    QUICKCHART_SHORT_URL_API,
+                    json=payload,
+                    timeout=QUICKCHART_CREATE_TIMEOUT
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    url = data.get("url")
+                    if url:
+                        logger.info(f"✅ QuickChart 短 URL 已取得: {url}")
+                        return url
+                    logger.warning(f"⚠️ QuickChart 回應缺少 url 欄位: {data}")
+                else:
+                    logger.warning(
+                        f"⚠️ QuickChart POST 失敗 (嘗試 {attempt}/{QUICKCHART_CREATE_RETRIES}): "
+                        f"HTTP {resp.status_code}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ QuickChart POST 異常 (嘗試 {attempt}/{QUICKCHART_CREATE_RETRIES}): {e}"
+                )
+        return None
+
+    try:
+        return await loop.run_in_executor(None, _post)
+    except Exception as e:
+        logger.error(f"❌ create_quickchart_short_url 失敗: {e}")
+        return None
+
+
 async def fetch_chart(
     symbol: str,
     period: str = "3mo",
@@ -229,17 +281,71 @@ async def fetch_chart(
             logger.warning(f"⚠️ {symbol} 在 period={period} interval={interval} 下無歷史數據")
             return None
         
-        # 構建 URL
-        url = build_quickchart_url(
-            symbol=symbol,
-            prices=hist_data['prices'],
-            dates=hist_data['dates']
+        # 構建圖表配置
+        prices = hist_data['prices']
+        dates = hist_data['dates']
+
+        # 對資料進行採樣（最多 60 個點，減少 payload 大小）
+        sample_rate = max(1, len(prices) // 60)
+        sampled_prices = prices[::sample_rate]
+        sampled_dates = dates[::sample_rate]
+
+        color = "green" if len(prices) < 2 or prices[-1] >= prices[-2] else "red"
+
+        chart_config = {
+            "type": "line",
+            "data": {
+                "labels": sampled_dates,
+                "datasets": [
+                    {
+                        "label": symbol,
+                        "data": sampled_prices,
+                        "borderColor": color,
+                        "borderWidth": 2,
+                        "fill": False,
+                        "tension": 0.1,
+                        "pointRadius": 0,
+                    }
+                ]
+            },
+            "options": {
+                "responsive": True,
+                "maintainAspectRatio": True,
+                "scales": {
+                    "y": {"ticks": {"font": {"size": 10}}},
+                    "x": {
+                        "ticks": {
+                            "font": {"size": 9},
+                            "maxRotation": 45,
+                            "minRotation": 0
+                        }
+                    }
+                },
+                "plugins": {
+                    "legend": {"labels": {"font": {"size": 11}}},
+                    "title": {
+                        "display": True,
+                        "text": f"{symbol} - {sampled_dates[-1] if sampled_dates else 'N/A'}"
+                    }
+                }
+            }
+        }
+
+        logger.info(
+            f"📊 正在取得 {symbol} 圖表短 URL "
+            f"(period={period}, interval={interval}, 數據點={len(sampled_prices)})"
         )
+
+        # 使用 POST API 取得短 URL
+        url = await create_quickchart_short_url(chart_config)
+        if not url:
+            logger.warning(f"⚠️ {symbol} 圖表短 URL 取得失敗，嘗試回退至 URL encoding")
+            url = build_quickchart_url(symbol=symbol, prices=prices, dates=dates)
+
+        if url:
+            logger.info(f"✅ 圖表 URL 已生成: {symbol} ({period}/{interval})")
+            _chart_cache[cache_key] = (url, datetime.now())
         
-        logger.info(f"✅ 圖表 URL 已生成: {symbol} ({period}/{interval}), 數據點: {len(hist_data['prices'])}")
-        
-        # 快取
-        _chart_cache[cache_key] = (url, datetime.now())
         return url
     
     except Exception as e:
