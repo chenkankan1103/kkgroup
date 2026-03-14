@@ -15,6 +15,7 @@ from discord.ext import commands, tasks
 import asyncio
 import json
 import logging
+import math
 import time
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
@@ -164,7 +165,7 @@ class UpdateChartButton(discord.ui.Button):
         remaining = self.COOLDOWN_SECONDS - (now - self.room_view.last_chart_update)
         if remaining > 0:
             await interaction.response.send_message(
-                f"⏳ 請等待 **{int(remaining) + 1}** 秒後再更新圖表",
+                f"⏳ 請等待 **{math.ceil(remaining)}** 秒後再更新圖表",
                 ephemeral=True
             )
             return
@@ -427,8 +428,9 @@ class CustomStockModal(discord.ui.Modal, title="輸入股票代號"):
         try:
             symbol = self.stock_code.value.strip().upper()
             
-            # 如果沒有 . 後綴，自動添加 .TW
-            if "." not in symbol:
+            # 如果沒有已知市場後綴，自動添加 .TW
+            known_suffixes = (".TW", ".TWO", ".HK", ".US", ".SS", ".SZ")
+            if not any(symbol.endswith(s) for s in known_suffixes):
                 symbol = f"{symbol}.TW"
             
             print(f"🔍 [STOCK_MARKET] 用戶輸入自訂代號: {symbol}", flush=True)
