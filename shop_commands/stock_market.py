@@ -299,12 +299,9 @@ class StockRoomView(discord.ui.View):
             self.current_message = await interaction.followup.send(
                 embed=embed, view=view, ephemeral=True
             )
-        elif interaction.response.is_done():
-            # 已 defer：透過 edit_original_response 更新
-            await interaction.edit_original_response(embed=embed, view=view)
         else:
-            # 尚未回應（例如按鈕直接觸發同步操作）
-            await interaction.response.edit_message(embed=embed, view=view)
+            # 後續更新：直接編輯已儲存的私人訊息，確保不對外公開
+            await self.current_message.edit(embed=embed, view=view)
     
     async def show_detail_view(self, symbol: str, interaction: discord.Interaction,
                                force_refresh: bool = False):
@@ -337,7 +334,8 @@ class StockRoomView(discord.ui.View):
                     embed=embed, view=view, ephemeral=True
                 )
             else:
-                await interaction.edit_original_response(embed=embed, view=view)
+                # 直接編輯已儲存的私人訊息，確保不對外公開
+                await self.current_message.edit(embed=embed, view=view)
         
         except Exception as e:
             logger.error(f"❌ 顯示股票詳細失敗: {e}")
