@@ -80,24 +80,11 @@ class StockEntryView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # 檢查使用者 KK 幣餘額
-            balance = get_user_kkcoin(interaction.user.id)
-            
-            # 建立個人操盤室 Embed - 簡潔設計
-            embed = discord.Embed(
-                title="📊 私人操盤室",
-                description=f"歡迎 {interaction.user.name}",
-                color=discord.Color.gold()
-            )
-            embed.add_field(name="可用資金", value=f"💰 {balance:,} KK", inline=False)
-            embed.add_field(name="\u200b", value="**下方選擇股票開始交易**", inline=False)
-            embed.set_footer(text="✨ 虛擬交易，零風險")
-            
             # 建立個人操盤室視圖
             view = StockRoomView(self.cog, interaction.user.id)
             
-            # 發送個人專用的 ephemeral Embed
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 顯示選擇股票視圖
+            await view.show_selection_view(interaction)
         
         except Exception as e:
             logger.error(f"❌ 進入操盤室失敗: {e}")
@@ -106,21 +93,15 @@ class StockEntryView(discord.ui.View):
 
 
 # ============================================================
-# 個人操盤室視圖
+# 股票選擇視圖（第一層）
 # ============================================================
 
-class StockRoomView(discord.ui.View):
-    """個人操盤室主視圖"""
+class StockSelectionView(discord.ui.View):
+    """股票選擇視圖 - 只有下拉選單"""
     
-    def __init__(self, cog, user_id: int):
+    def __init__(self, room_view):
         super().__init__(timeout=None)
-        self.cog = cog
-        self.user_id = user_id
-        self.selected_symbol: Optional[str] = None
-        self.current_price: float = 0.0
-        self.current_message: Optional[discord.Message] = None
-        
-        # 填充股票下拉選單
+        self.room_view = room_view
         self._update_stock_select()
     
     def _update_stock_select(self):
@@ -148,44 +129,99 @@ class StockRoomView(discord.ui.View):
             description="輸入其他股票代號"
         ))
         
-        select = StockSelectMenu(self, options)
+        select = StockSelectMenu(self.room_view, options)
         self.add_item(select)
+
+
+class StockDetailView(discord.ui.View):
+    """股票詳細視圖 - 有買入、賣出、返回按鈕"""
     
-    async def update_embed(self, interaction: discord.Interaction, defer_first: bool = True):
-        """更新操盤室 Embed，顯示選定標的的資訊
-        
-        Args:
-            interaction: Discord 交互對象
-            defer_first: 是否需要先 defer (如果已有 defer 則設為 False)
-        """
-        
-        if not self.selected_symbol:
-            if defer_first:
-                await interaction.response.defer()
+    def __init__(self, room_view, symbol: str, price: float):
+        super().__init__(timeout=None)
+        self.room_view = room_view
+        self.symbol = symbol
+        self.price = price
+    
+    @discord.ui.button(label="買入", style=discord.ButtonStyle.green, emoji="📈")
+    async def buy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """買入按鈕"""
+        if not self.symbol or self.price <= 0:
+            await interaction.response.send_message("❌ 請先選擇標的", ephemeral=True)
             return
+        await interaction.response.send_modal(TradeModal(self.room_view, "buy", self.symbol, self.price))
+    
+    @discord.ui.button(label="賣出", style=discord.ButtonStyle.red, emoji="📉")
+    async def sell_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """賣出按鈕"""
+        if not self.symbol or self.price <= 0:
+            await interaction.response.send_message("❌ 請先選擇標的", ephemeral=True)
+            return
+        await interaction.response.send_modal(TradeModal(self.room_view, "sell", self.symbol, self.price))
+    
+    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """返回按鈕"""
+        await interaction.response.defer()
+        await self.room_view.show_selection_view(interaction)
+
+
+# ============================================================
+# 個人操盤室視圖
+# ============================================================
+
+class StockRoomView(discord.ui.View):
+    """個人操盤室主視圖 - 管理狀態"""
+    
+    def __init__(self, cog, user_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.user_id = user_id
+        self.selected_symbol: Optional[str] = None
+        self.current_price: float = 0.0
+        self.current_message: Optional[discord.Message] = None
+    
+    async def show_selection_view(self, interaction: discord.Interaction):
+        """顯示股票選擇視圖"""
+        embed = discord.Embed(
+            title="📊 私人操盤室",
+            description="選擇標的開始交易",
+            color=discord.Color.gold()
+        )
         
+        balance = get_user_kkcoin(self.user_id)
+        embed.add_field(name="可用資金", value=f"💰 {balance:,} KK", inline=False)
+        embed.add_field(name="\u200b", value="**👇 選擇標的**", inline=False)
+        embed.set_footer(text="✨ 虛擬交易，零風險")
+        
+        view = StockSelectionView(self)
+        
+        if self.current_message:
+            await self.current_message.edit(embed=embed, view=view)
+        else:
+            self.current_message = await interaction.followup.send(embed=embed, view=view)
+    
+    async def show_detail_view(self, symbol: str, interaction: discord.Interaction):
+        """顯示股票詳細視圖"""
         try:
-            if defer_first:
-                await interaction.response.defer()
-            
             # 取得當前價格
-            price = await fetch_price(self.selected_symbol)
+            price = await fetch_price(symbol)
             if price is None:
                 await interaction.followup.send("❌ 無法取得該股票價格", ephemeral=True)
                 return
             
+            self.selected_symbol = symbol
             self.current_price = price
             
             # 取得使用者持倉
             user_stocks = get_user_stocks(self.user_id)
-            position = next((s for s in user_stocks if s['symbol'] == self.selected_symbol), None)
+            position = next((s for s in user_stocks if s['symbol'] == symbol), None)
             
             # 取得 KK 幣餘額
             balance = get_user_kkcoin(self.user_id)
             
             # 建立 Embed - 簡潔設計
             embed = discord.Embed(
-                title=f"{self.selected_symbol}",
+                title=f"{symbol}",
                 color=discord.Color.gold()
             )
             
@@ -193,7 +229,7 @@ class StockRoomView(discord.ui.View):
             price_str = f"💹 {price:,.2f}"
             embed.add_field(name="現價", value=price_str, inline=True)
             embed.add_field(name="餘額", value=f"💰 {balance:,}", inline=True)
-            embed.add_field(name="\u200b", value="\u200b", inline=False)  # 空行分隔
+            embed.add_field(name="\u200b", value="\u200b", inline=False)
             
             # 持倉信息
             if position:
@@ -211,45 +247,41 @@ class StockRoomView(discord.ui.View):
                 embed.add_field(name="持倉", value="無", inline=True)
                 embed.add_field(name="\u200b", value="\u200b", inline=True)
             
-            embed.set_footer(text="💵 點擊下方按鈕買入或賣出")
-            
             # 取得圖表
-            chart_url = await fetch_chart(self.selected_symbol, period="1mo")
+            chart_url = await fetch_chart(symbol, period="1mo")
             if chart_url:
                 embed.set_image(url=chart_url)
             
-            embed.set_footer(text="用下方按鈕進行交易")
+            embed.set_footer(text="👇 點擊按鈕進行交易")
             
-            # 根據是否有舊訊息決定編輯或發送
+            # 創建詳細視圖
+            view = StockDetailView(self, symbol, price)
+            
+            # 編輯訊息
             if self.current_message:
-                await self.current_message.edit(embed=embed, view=self)
+                await self.current_message.edit(embed=embed, view=view)
             else:
-                self.current_message = await interaction.followup.send(embed=embed, view=self)
+                self.current_message = await interaction.followup.send(embed=embed, view=view)
         
         except Exception as e:
-            logger.error(f"❌ 更新操盤室失敗: {e}")
+            logger.error(f"❌ 顯示股票詳細失敗: {e}")
             traceback.print_exc()
-            await interaction.followup.send("❌ 更新失敗", ephemeral=True)
+            await interaction.followup.send("❌ 顯示詳細失敗", ephemeral=True)
     
-    @discord.ui.button(label="買入", style=discord.ButtonStyle.green, emoji="📈")
-    async def buy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """買入按鈕"""
-        if not self.selected_symbol or self.current_price <= 0:
-            await interaction.response.send_message("❌ 請先選擇標的", ephemeral=True)
+    async def update_stock_select(self):
+        """更新下拉選單內容"""
+        pass
+    
+    async def update_embed(self, interaction: discord.Interaction, defer_first: bool = True):
+        """更新操盤室 Embed，顯示選定標的的資訊"""
+        
+        if not self.selected_symbol:
+            if defer_first:
+                await interaction.response.defer()
             return
         
-        # 進出數量 Modal
-        await interaction.response.send_modal(TradeModal(self, "buy", self.selected_symbol, self.current_price))
-    
-    @discord.ui.button(label="賣出", style=discord.ButtonStyle.red, emoji="📉")
-    async def sell_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """賣出按鈕"""
-        if not self.selected_symbol or self.current_price <= 0:
-            await interaction.response.send_message("❌ 請先選擇標的", ephemeral=True)
-            return
-        
-        # 進出數量 Modal
-        await interaction.response.send_modal(TradeModal(self, "sell", self.selected_symbol, self.current_price))
+        await self.show_detail_view(self.selected_symbol, interaction)
+
 
 
 class StockSelectMenu(discord.ui.Select):
@@ -266,14 +298,15 @@ class StockSelectMenu(discord.ui.Select):
     
     async def callback(self, interaction: discord.Interaction):
         """選項變更時的回調"""
+        await interaction.response.defer()
+        
         selected_value = self.values[0]
         
         # 如果選擇自訂代號
         if selected_value == "CUSTOM":
-            await interaction.response.send_modal(CustomStockModal(self.parent_view))
+            await interaction.followup.send_modal(CustomStockModal(self.parent_view, interaction))
         else:
-            self.parent_view.selected_symbol = selected_value
-            await self.parent_view.update_embed(interaction)
+            await self.parent_view.show_detail_view(selected_value, interaction)
 
 
 # ============================================================
@@ -291,13 +324,14 @@ class CustomStockModal(discord.ui.Modal, title="輸入股票代號"):
         max_length=10
     )
     
-    def __init__(self, parent_view: StockRoomView):
+    def __init__(self, parent_view: StockRoomView, interaction: discord.Interaction):
         super().__init__()
         self.parent_view = parent_view
+        self.interaction = interaction
     
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, modal_interaction: discord.Interaction):
         """提交股票代號"""
-        await interaction.response.defer(ephemeral=True)
+        await modal_interaction.response.defer(ephemeral=True)
         
         try:
             symbol = self.stock_code.value.strip().upper()
@@ -312,7 +346,7 @@ class CustomStockModal(discord.ui.Modal, title="輸入股票代號"):
             price = await fetch_price(symbol)
             if price is None:
                 print(f"❌ [STOCK_MARKET] 無法取得 {symbol} 的價格", flush=True)
-                await interaction.followup.send(
+                await modal_interaction.followup.send(
                     f"❌ 無法取得 {symbol} 的價格。請檢查:\n"
                     f"1. 代號是否正確\n"
                     f"2. 台股請用 .TW 後綴 (如: 2330.TW)\n"
@@ -323,17 +357,14 @@ class CustomStockModal(discord.ui.Modal, title="輸入股票代號"):
             
             print(f"✅ [STOCK_MARKET] 成功取得 {symbol} 的價格: ${price:,.2f}", flush=True)
             
-            # 設置選定的符號
-            self.parent_view.selected_symbol = symbol
-            
-            # 手動調用 update_embed (因為这是 Modal callback，不是 select callback)
-            await self.parent_view.update_embed(interaction, defer_first=False)
+            # 使用原始的 interaction 對象顯示詳細視圖
+            await self.parent_view.show_detail_view(symbol, self.interaction)
         
         except Exception as e:
             print(f"❌ [STOCK_MARKET] 自訂代號處理失敗: {e}", flush=True)
             logger.error(f"❌ 自訂代號處理失敗: {e}")
             traceback.print_exc()
-            await interaction.followup.send("❌ 處理失敗，請稍後再試", ephemeral=True)
+            await modal_interaction.followup.send("❌ 處理失敗，請稍後再試", ephemeral=True)
 
 
 class TradeModal(discord.ui.Modal, title="進行交易"):
