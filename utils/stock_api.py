@@ -63,13 +63,14 @@ async def fetch_price(symbol: str) -> Optional[float]:
         return None
 
 
-async def fetch_historical_data(symbol: str, period: str = "1mo") -> Optional[Dict]:
+async def fetch_historical_data(symbol: str, period: str = "3mo", interval: str = "1d") -> Optional[Dict]:
     """
     獲取歷史價格數據
     
     Args:
         symbol: 股票代號，例如 "2330.TW"
-        period: 時間區間，例如 "1d", "1mo", "1y"
+        period: 時間區間，例如 "5d", "1mo", "3mo", "2y"
+        interval: K 線間隔，例如 "5m", "15m", "60m", "1d", "1mo", "3mo"
         
     Returns:
         包含 dates 和 prices 的字典，或 None
@@ -79,11 +80,18 @@ async def fetch_historical_data(symbol: str, period: str = "1mo") -> Optional[Di
     try:
         def _fetch():
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period=period)
+            data = ticker.history(period=period, interval=interval)
             if data.empty:
                 return None
             
-            dates = [d.strftime('%Y-%m-%d') for d in data.index]
+            # 根據 interval 選擇日期格式
+            if interval in ("1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"):
+                dates = [d.strftime('%m/%d %H:%M') for d in data.index]
+            elif interval == "1d":
+                dates = [d.strftime('%m/%d') for d in data.index]
+            else:
+                dates = [d.strftime('%Y-%m') for d in data.index]
+            
             prices = [float(p) for p in data['Close']]
             
             return {
@@ -123,6 +131,8 @@ def build_quickchart_url(
     Returns:
         QuickChart URL
     """
+    from urllib.parse import quote
+
     # 對資料進行採樣，避免過多點導致 URL 過長（QuickChart 有 URL 長度限制）
     sample_rate = max(1, len(prices) // 30)  # 最多 30 個點
     sampled_prices = prices[::sample_rate]
@@ -179,18 +189,17 @@ def build_quickchart_url(
         }
     }
     
-    # 編碼為 URL encode 格式
+    # 使用 URL encoding（QuickChart 的 c 參數需要 URL-encoded JSON）
     config_json = json.dumps(chart_config, separators=(',', ':'))
-    # QuickChart 需要 base64 或 URL encode
-    import base64
-    encoded = base64.b64encode(config_json.encode()).decode()
+    encoded = quote(config_json)
     
-    return f"https://quickchart.io/chart?bkg=white&c={encoded}"
+    return f"https://quickchart.io/chart?bkg=white&w={width}&h={height}&c={encoded}"
 
 
 async def fetch_chart(
     symbol: str,
-    period: str = "1mo",
+    period: str = "3mo",
+    interval: str = "1d",
     force_refresh: bool = False
 ) -> Optional[str]:
     """
@@ -199,12 +208,13 @@ async def fetch_chart(
     Args:
         symbol: 股票代號
         period: 時間區間
+        interval: K 線間隔，例如 "5m", "15m", "60m", "1d", "1mo", "3mo"
         force_refresh: 是否強制重新生成
         
     Returns:
         QuickChart URL，或 None
     """
-    cache_key = f"{symbol}_{period}"
+    cache_key = f"{symbol}_{period}_{interval}"
     
     # 檢查快取
     if not force_refresh and cache_key in _chart_cache:
@@ -214,8 +224,9 @@ async def fetch_chart(
     
     try:
         # 獲取歷史數據
-        hist_data = await fetch_historical_data(symbol, period)
+        hist_data = await fetch_historical_data(symbol, period=period, interval=interval)
         if not hist_data or not hist_data['prices']:
+            logger.warning(f"⚠️ {symbol} 在 period={period} interval={interval} 下無歷史數據")
             return None
         
         # 構建 URL
@@ -224,6 +235,8 @@ async def fetch_chart(
             prices=hist_data['prices'],
             dates=hist_data['dates']
         )
+        
+        logger.info(f"✅ 圖表 URL 已生成: {symbol} ({period}/{interval}), 數據點: {len(hist_data['prices'])}")
         
         # 快取
         _chart_cache[cache_key] = (url, datetime.now())
