@@ -43,6 +43,17 @@ class CropOperationView(discord.ui.View):
             )
             harvest_button.callback = self.crop_harvest_callback
             self.add_item(harvest_button)
+            
+            # 添加一鍵收割按鈕（如果有多個成熟植物）
+            if len(harvested) > 1:
+                harvest_all_button = discord.ui.Button(
+                    label="一鍵收割",
+                    style=discord.ButtonStyle.danger,
+                    emoji="⚡",
+                    custom_id="crop_harvest_all"
+                )
+                harvest_all_button.callback = self.crop_harvest_all_callback
+                self.add_item(harvest_all_button)
 
         # 添加返回按鈕
         back_button = discord.ui.Button(
@@ -121,6 +132,85 @@ class CropOperationView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
+    async def crop_harvest_all_callback(self, interaction: discord.Interaction):
+        """一鍵收割所有成熟植物"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            if not self.harvested:
+                await interaction.followup.send("❌ 沒有已成熟的植物！", ephemeral=True)
+                return
+
+            total_earnings = 0
+            harvest_results = []
+            
+            # 依次收割所有成熟的植物
+            for plant in self.harvested:
+                try:
+                    result = await harvest_plant(self.user_id, plant["id"])
+                    
+                    if result.get("success"):
+                        plant_name = plant["seed_type"]
+                        yield_amount = result.get("yield_amount", 0)
+                        earnings = result.get("sell_price", 0)
+                        
+                        harvest_results.append({
+                            "plant": plant_name,
+                            "yield": yield_amount,
+                            "price": earnings
+                        })
+                        total_earnings += earnings
+                        
+                        # 記錄事件
+                        if self.cog:
+                            user = await self.bot.fetch_user(self.user_id)
+                            await self.cog.record_event(
+                                'harvest',
+                                user,
+                                f"收割{plant_name}獲得{yield_amount}個，可售{earnings} KK幣"
+                            )
+                except Exception as harvest_error:
+                    print(f"⚠️ 收割單株植物失敗：{harvest_error}")
+                    harvest_results.append({
+                        "plant": plant.get("seed_type", "未知"),
+                        "error": str(harvest_error)
+                    })
+            
+            # 創建結果embed
+            embed = discord.Embed(
+                title="⚡ 一鍵收割完成",
+                description=f"共收割 {len(harvest_results)} 棵植物",
+                color=discord.Color.gold()
+            )
+            
+            for result in harvest_results:
+                if "error" in result:
+                    embed.add_field(
+                        name=f"❌ {result['plant']}",
+                        value=f"失敗：{result['error']}",
+                        inline=True
+                    )
+                else:
+                    embed.add_field(
+                        name=f"✅ {result['plant']}",
+                        value=f"產出 {result['yield']} 個，獲得 {result['price']} KK幣",
+                        inline=True
+                    )
+            
+            if total_earnings > 0:
+                embed.add_field(
+                    name="💰 總收入",
+                    value=f"{total_earnings} KK幣",
+                    inline=False
+                )
+            
+            # 編輯原始回應
+            await interaction.edit_original_response(embed=embed, view=None)
+            
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 一鍵收割時發生錯誤：{str(e)[:100]}", ephemeral=True)
 
     async def back_to_locker_callback(self, interaction: discord.Interaction):
         """返回到個人儲物櫃"""
