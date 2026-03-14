@@ -46,6 +46,131 @@ class ScamHub(commands.Cog):
     def cog_unload(self):
         self.scam_event_task.cancel()
 
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self._init_db()
+        await self._load_active_rooms()
+
+    async def _init_db(self):
+        """建立 scam_rooms 表（如果不存在）"""
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS scam_rooms (
+                    room_id INTEGER PRIMARY KEY,
+                    guild_id INTEGER NOT NULL,
+                    owner_id INTEGER NOT NULL,
+                    room_name TEXT NOT NULL,
+                    message_id INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    next_event_time DATETIME,
+                    is_active INTEGER DEFAULT 1
+                )
+            """)
+            await db.commit()
+        print("[ScamHub] scam_rooms 表已初始化")
+
+    async def _load_active_rooms(self):
+        """從數據庫加載所有進行中的房間，Bot 啟動時調用"""
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                async with db.execute(
+                    "SELECT room_id, guild_id, owner_id, room_name, message_id, last_active, next_event_time FROM scam_rooms WHERE is_active=1"
+                ) as cursor:
+                    rows = await cursor.fetchall()
+
+            restored = 0
+            for row in rows:
+                room_id, guild_id, owner_id, room_name, message_id, last_active_str, next_event_str = row
+
+                # 檢查頻道是否仍然存在
+                vc = self.bot.get_channel(room_id)
+                if not vc:
+                    print(f"[ScamHub] 恢復: 頻道 {room_id} 不存在，標記為非活躍")
+                    await self._delete_room_from_db(room_id)
+                    continue
+
+                # 解析時間
+                try:
+                    last_active = datetime.fromisoformat(last_active_str) if last_active_str else datetime.utcnow()
+                except (ValueError, TypeError):
+                    last_active = datetime.utcnow()
+
+                try:
+                    next_event_time = datetime.fromisoformat(next_event_str) if next_event_str else datetime.utcnow() + timedelta(minutes=random.randint(1, 3))
+                except (ValueError, TypeError):
+                    next_event_time = datetime.utcnow() + timedelta(minutes=random.randint(1, 3))
+
+                self.active_rooms[room_id] = {
+                    'owner_id': owner_id,
+                    'last_active': last_active,
+                    'next_event_time': next_event_time,
+                }
+
+                # 恢復消息對象（透過 message_id 獲取）
+                if message_id:
+                    try:
+                        msg = await vc.fetch_message(message_id)
+                        self.room_messages[room_id] = msg
+                    except (discord.NotFound, discord.HTTPException):
+                        self.room_messages.pop(room_id, None)
+
+                restored += 1
+                print(f"[ScamHub] 已恢復房間: {room_name} (ID: {room_id})")
+
+            print(f"[ScamHub] 共恢復 {restored} 個活躍房間")
+        except Exception as e:
+            print(f"[ScamHub] 加載活躍房間時發生錯誤: {e}")
+
+    async def _save_room_to_db(self, room_id: int, guild_id: int, owner_id: int, room_name: str, next_event_time: datetime):
+        """新房間創建時保存到數據庫"""
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("""
+                    INSERT OR REPLACE INTO scam_rooms
+                        (room_id, guild_id, owner_id, room_name, last_active, next_event_time, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, 1)
+                """, (room_id, guild_id, owner_id, room_name,
+                      datetime.utcnow().isoformat(), next_event_time.isoformat()))
+                await db.commit()
+            print(f"[ScamHub] 房間 {room_id} 已保存到數據庫")
+        except Exception as e:
+            print(f"[ScamHub] 保存房間 {room_id} 到數據庫時發生錯誤: {e}")
+
+    async def _update_room_db(self, room_id: int, next_event_time: datetime = None, message_id: int = None):
+        """更新數據庫中的房間狀態"""
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                if next_event_time is not None and message_id is not None:
+                    await db.execute("""
+                        UPDATE scam_rooms SET last_active=?, next_event_time=?, message_id=? WHERE room_id=?
+                    """, (datetime.utcnow().isoformat(), next_event_time.isoformat(), message_id, room_id))
+                elif next_event_time is not None:
+                    await db.execute("""
+                        UPDATE scam_rooms SET last_active=?, next_event_time=? WHERE room_id=?
+                    """, (datetime.utcnow().isoformat(), next_event_time.isoformat(), room_id))
+                elif message_id is not None:
+                    await db.execute("""
+                        UPDATE scam_rooms SET last_active=?, message_id=? WHERE room_id=?
+                    """, (datetime.utcnow().isoformat(), message_id, room_id))
+                else:
+                    await db.execute("""
+                        UPDATE scam_rooms SET last_active=? WHERE room_id=?
+                    """, (datetime.utcnow().isoformat(), room_id))
+                await db.commit()
+        except Exception as e:
+            print(f"[ScamHub] 更新房間 {room_id} 數據庫狀態時發生錯誤: {e}")
+
+    async def _delete_room_from_db(self, room_id: int):
+        """從數據庫中刪除房間記錄"""
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("UPDATE scam_rooms SET is_active=0 WHERE room_id=?", (room_id,))
+                await db.commit()
+            print(f"[ScamHub] 房間 {room_id} 已從數據庫標記為非活躍")
+        except Exception as e:
+            print(f"[ScamHub] 刪除房間 {room_id} 數據庫記錄時發生錯誤: {e}")
+
     async def generate_scam_event(self, member_count):
         """使用AI生成詐騙事件"""
         try:
@@ -133,6 +258,7 @@ class ScamHub(commands.Cog):
             message = await vc.send(embed=embed)
             self.room_messages[vc.id] = message
             print(f"為頻道 {vc.id} 發送了新的狀態消息 ID: {message.id}")
+            await self._update_room_db(vc.id, message_id=message.id)
             
         except Exception as e:
             print(f"更新語音狀態失敗: {e}")
@@ -149,6 +275,7 @@ class ScamHub(commands.Cog):
                     print(f"頻道 {vc_id} 不存在，從活動房間列表中移除")
                     self.active_rooms.pop(vc_id, None)
                     self.room_messages.pop(vc_id, None)
+                    await self._delete_room_from_db(vc_id)
                     continue
 
                 # 檢查是否有人在頻道中
@@ -165,11 +292,13 @@ class ScamHub(commands.Cog):
                             await vc.delete(reason="自動刪除閒置語音頻道")
                             self.active_rooms.pop(vc_id, None)
                             self.room_messages.pop(vc_id, None)
+                            await self._delete_room_from_db(vc_id)
                             print(f"成功刪除閒置頻道 {vc_id}")
                         except discord.NotFound:
                             print(f"頻道 {vc_id} 已經不存在")
                             self.active_rooms.pop(vc_id, None)
                             self.room_messages.pop(vc_id, None)
+                            await self._delete_room_from_db(vc_id)
                         except Exception as e:
                             print(f"刪除頻道 {vc_id} 時發生錯誤: {e}")
                     continue
@@ -220,6 +349,7 @@ class ScamHub(commands.Cog):
                     next_event_minutes = random.randint(30, 60)
                     data['next_event_time'] = now + timedelta(minutes=next_event_minutes)
                     print(f"下一次詐騙事件將在 {next_event_minutes} 分鐘後觸發")
+                    await self._update_room_db(vc_id, next_event_time=data['next_event_time'])
                 
             except Exception as e:
                 print(f"處理詐騙事件時發生錯誤 (頻道 {vc_id}): {e}")
@@ -286,11 +416,13 @@ class ScamHub(commands.Cog):
             await new_channel.set_permissions(member, connect=True, manage_channels=True)
 
             # 記錄新房間信息
+            next_event_time = datetime.utcnow() + timedelta(minutes=random.randint(1, 3))
             self.active_rooms[new_channel.id] = {
                 'owner_id': member.id,
                 'last_active': datetime.utcnow(),
-                'next_event_time': datetime.utcnow() + timedelta(minutes=random.randint(1, 3))
+                'next_event_time': next_event_time
             }
+            await self._save_room_to_db(new_channel.id, guild.id, member.id, new_channel.name, next_event_time)
             
             print(f"創建新的詐騙小組頻道: {new_channel.name} (ID: {new_channel.id}), 房主: {member.display_name}")
 
