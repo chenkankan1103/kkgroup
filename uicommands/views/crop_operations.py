@@ -370,59 +370,111 @@ class CropPlantingView(discord.ui.View):
         self.add_item(mass_button)
 
     async def seed_select_callback(self, interaction: discord.Interaction):
-        """處理種子選擇"""
+        """處理種子選擇 - 顯示確認視圖，不自動種植"""
         try:
             await interaction.response.defer(ephemeral=True)
 
             selected_seed = interaction.data["values"][0]
+            config = CANNABIS_SHOP["種子"][selected_seed]
+            inventory = await get_inventory(self.user_id)
+            seed_qty = inventory.get("種子", {}).get(selected_seed, 0)
 
-            # 檢查是否有種子
-            has_seed = await remove_inventory(self.user_id, "種子", selected_seed, 1)
-            if not has_seed:
-                await interaction.followup.send("❌ 你沒有這種種子！", ephemeral=True)
-                return
-
-            # 種植
-            result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, selected_seed)
-
-            if result and not result.get("success") == False:
-                config = CANNABIS_SHOP["種子"][selected_seed]
-                embed = discord.Embed(
-                    title="🌱 種植成功",
-                    description=f"已種植 {selected_seed}",
-                    color=discord.Color.green()
-                )
-                embed.add_field(name="成長時間", value=f"{config['growth_time']//3600} 小時", inline=False)
-                embed.add_field(name="最大產量", value=f"{config['max_yield']} 個", inline=False)
-
-                # 記錄事件
-                if self.cog:
-                    await self.cog.record_event(
-                        'plant',
-                        interaction.user,
-                        f"種植{selected_seed}"
-                    )
-
-                # 創建包含返回按鈕的view
-                from .selection_views import PlantResultView
-                result_view = PlantResultView(self.user_id, self)
-
-                # 編輯原始回應顯示結果
-                await interaction.edit_original_response(embed=embed, view=result_view)
-            else:
-                # 種植失敗，退還種子
-                await add_inventory(self.user_id, "種子", selected_seed, 1)
-                reason = result.get("reason", "未知原因") if result else "未知原因"
-                await interaction.followup.send(f"❌ 種植失敗：{reason}", ephemeral=True)
+            # 創建確認視圖
+            view = discord.ui.View(timeout=60)
+            
+            # 種植該種子按鈕
+            plant_single_btn = discord.ui.Button(
+                label=f"種植 {selected_seed}",
+                style=discord.ButtonStyle.success,
+                emoji=config["emoji"]
+            )
+            
+            async def plant_single_callback(btn_interaction: discord.Interaction):
+                """種植單株選中的種子"""
+                try:
+                    await btn_interaction.response.defer(ephemeral=True)
+                    
+                    has_seed = await remove_inventory(self.user_id, "種子", selected_seed, 1)
+                    if not has_seed:
+                        await btn_interaction.followup.send("❌ 種子不足！", ephemeral=True)
+                        return
+                    
+                    result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, selected_seed)
+                    
+                    if result and not result.get("success") == False:
+                        embed = discord.Embed(
+                            title="🌱 種植成功",
+                            description=f"已種植 {selected_seed}",
+                            color=discord.Color.green()
+                        )
+                        embed.add_field(name="成長時間", value=f"{config['growth_time']//3600} 小時", inline=False)
+                        embed.add_field(name="最大產量", value=f"{config['max_yield']} 個", inline=False)
+                        
+                        if self.cog:
+                            await self.cog.record_event(
+                                'plant',
+                                btn_interaction.user,
+                                f"種植{selected_seed}"
+                            )
+                        
+                        await btn_interaction.edit_original_response(embed=embed, view=None)
+                    else:
+                        await add_inventory(self.user_id, "種子", selected_seed, 1)
+                        reason = result.get("reason", "未知原因") if result else "未知原因"
+                        await btn_interaction.followup.send(f"❌ 種植失敗：{reason}", ephemeral=True)
+                
+                except Exception as e:
+                    traceback.print_exc()
+                    if 'selected_seed' in locals():
+                        try:
+                            await add_inventory(self.user_id, "種子", selected_seed, 1)
+                        except:
+                            pass
+                    await btn_interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+            
+            plant_single_btn.callback = plant_single_callback
+            view.add_item(plant_single_btn)
+            
+            # 一鍵種植按鈕
+            plant_all_btn = discord.ui.Button(
+                label="一鍵種植所有",
+                style=discord.ButtonStyle.secondary,
+                emoji="🌾"
+            )
+            
+            async def plant_all_from_select_callback(btn_interaction: discord.Interaction):
+                """從選擇視圖呼叫一鍵種植"""
+                # 複用一鍵種植邏輯
+                await self.plant_all_callback(btn_interaction)
+            
+            plant_all_btn.callback = plant_all_from_select_callback
+            view.add_item(plant_all_btn)
+            
+            # 取消按鈕
+            cancel_btn = discord.ui.Button(
+                label="返回",
+                style=discord.ButtonStyle.secondary,
+                emoji="⬅️"
+            )
+            
+            async def cancel_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await btn_interaction.delete_original_response()
+            
+            cancel_btn.callback = cancel_callback
+            view.add_item(cancel_btn)
+            
+            embed = discord.Embed(
+                title=f"🌱 {selected_seed}",
+                description=f"數量：{seed_qty} | 成長時間：{config['growth_time']//3600}小時",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="選項", value="選擇下方按鈕", inline=False)
+            
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
             traceback.print_exc()
-            # 如果發生錯誤，嘗試退還種子
-            if 'selected_seed' in locals():
-                try:
-                    await add_inventory(self.user_id, "種子", selected_seed, 1)
-                except Exception as refund_error:
-                    print(f"⚠️ 退還種子失敗：{refund_error}", file=__import__('sys').stderr)
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
     async def plant_all_callback(self, interaction: discord.Interaction):
