@@ -845,17 +845,17 @@ class StockMarket(commands.Cog):
             print(f"💾 [STOCK_MARKET] 保存的 message ID: {message_id}", flush=True)
 
             if message_id:
-                print(f"🔍 [STOCK_MARKET] 嘗試取回舊訊息 ID: {message_id}", flush=True)
+                print(f"[STOCK_MARKET] ATTEMPT fetch message id {message_id}", flush=True)
                 try:
                     self.market_message = await channel.fetch_message(int(message_id))
-                    print(f"✅ [STOCK_MARKET] 恢復舊訊息 ID: {message_id}", flush=True)
+                    print(f"[STOCK_MARKET] FETCH SUCCESS message id {message_id}", flush=True)
                     logger.info(f"✅ 恢復舊訊息 ID: {message_id}")
                 except discord.NotFound:
-                    print(f"⚠️ [STOCK_MARKET] 舊訊息已被刪除，發送新訊息", flush=True)
+                    print(f"[STOCK_MARKET] FETCH FAILED: message not found, will send new message", flush=True)
                     logger.warning(f"⚠️ 舊訊息已被刪除，發送新訊息")
                     self.market_message = None
                 except Exception as e:
-                    print(f"⚠️ [STOCK_MARKET] 無法恢復訊息: {e}", flush=True)
+                    print(f"[STOCK_MARKET] FETCH FAILED exception: {e}", flush=True)
                     logger.warning(f"⚠️ 無法恢復訊息: {e}")
                     traceback.print_exc()
                     self.market_message = None
