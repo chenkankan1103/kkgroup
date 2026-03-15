@@ -182,7 +182,8 @@ class TimeframeButton(discord.ui.Button):
     
     async def callback(self, interaction: discord.Interaction):
         self.room_view.current_timeframe = self.timeframe
-        logger.info(f"📊 [TIMEFRAME] 使用者切換時間框架: {self.timeframe}\")\n        await self.room_view.update_detail_view(self.symbol, interaction, force_refresh=True)
+        logger.info(f"📊 [TIMEFRAME] 使用者切換時間框架: {self.timeframe}")
+        await self.room_view.update_detail_view(self.symbol, interaction, force_refresh=True)
 
 
 class UpdateChartButton(discord.ui.Button):
