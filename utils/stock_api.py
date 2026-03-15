@@ -376,6 +376,7 @@ async def fetch_chart(
             }
         }
 
+        print(f"[CHART_API] {symbol} 正在生成圖表 (period={period}, interval={interval}, 數據點={len(sampled_prices)})", flush=True)
         logger.info(
             f"📊 正在取得 {symbol} 圖表短 URL "
             f"(period={period}, interval={interval}, 數據點={len(sampled_prices)}, "
@@ -385,12 +386,16 @@ async def fetch_chart(
         # 使用 POST API 取得短 URL
         url = await create_quickchart_short_url(chart_config)
         if not url:
+            print(f"[CHART_API] {symbol} 短 URL 失敗，嘗試回退", flush=True)
             logger.warning(f"⚠️ {symbol} 圖表短 URL 取得失敗，嘗試回退至 URL encoding")
             url = build_quickchart_url(symbol=symbol, prices=prices, dates=dates)
 
         if url:
+            print(f"[CHART_API] {symbol} 圖表 URL 成功: {url[:60]}...", flush=True)
             logger.info(f"✅ 圖表 URL 已生成: {symbol} ({period}/{interval})")
             _chart_cache[cache_key] = (url, datetime.now())
+        else:
+            print(f"[CHART_API] {symbol} 圖表 URL 生成失敗", flush=True)
         
         return url
     

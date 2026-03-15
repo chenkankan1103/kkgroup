@@ -590,12 +590,16 @@ class StockRoomView(discord.ui.View):
             
             period, interval = self.TIMEFRAME_PARAMS.get(self.current_timeframe, ("3mo", "1d"))
             logger.info(f"📊 [UPDATE] 取得 {symbol} 圖表 period={period} interval={interval} force_refresh={force_refresh}")
+            print(f"[STOCK_MARKET] 申請圖表: {symbol} ({period}/{interval})", flush=True)
+            
             chart_url = await fetch_chart(symbol, period=period, interval=interval,
                                           force_refresh=force_refresh, avg_cost=avg_cost)
             if chart_url:
                 logger.info(f"✅ [UPDATE] 圖表 URL 已取得: {chart_url[:80]}...")
+                print(f"[STOCK_MARKET] 圖表成功: {symbol} {chart_url[:60]}...", flush=True)
             else:
                 logger.warning(f"⚠️ [UPDATE] 圖表 URL 為空")
+                print(f"[STOCK_MARKET] 圖表失敗: {symbol}", flush=True)
             
             embed = self._build_detail_embed(symbol, price, chart_url, avg_cost, balance)
             view = StockDetailView(self, symbol, price)
