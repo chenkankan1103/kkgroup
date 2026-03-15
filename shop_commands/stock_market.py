@@ -1,10 +1,11 @@
 """
-虛擬股票市場 - 使用 KK 幣進行股票模擬交易
+虛擬金融市場 - 使用 KK 幣進行多商品模擬交易
 
 功能：
 - 公開的主 Embed 顯示市場摘要與排行
+- 支援多商品：台股、數字貨幣、原物料、貴金屬
 - 個人專用的操盤室進行買賣
-- 使用 yfinance 取得台股報價
+- 使用 yfinance 取得市場報價
 - QuickChart 生成圖表
 - 自動發送 embed 至指定頻道，並持久化 MESSAGE ID
 """
@@ -23,6 +24,7 @@ from dotenv import load_dotenv, set_key
 from typing import Optional, Dict, List, Tuple
 import traceback
 from pathlib import Path
+from enum import Enum
 
 from db_adapter import (
     get_user_kkcoin, update_user_kkcoin, 
@@ -43,6 +45,49 @@ ENV_MARKET_MESSAGE_ID = "MARKET_EMBED_MESSAGE_ID"  # 若設置，優先使用環
 
 # 如果專案有 .env，先加載（讓 os.environ 可用）
 load_dotenv()
+
+
+# ============================================================
+# 資產類別定義
+# ============================================================
+
+class AssetClass(Enum):
+    """資產類別枚舉"""
+    STOCKS = "stocks"           # 台灣股票
+    CRYPTO = "crypto"           # 數字貨幣
+    COMMODITIES = "commodities" # 原物料
+    METALS = "metals"           # 貴金屬
+
+
+# 商品庫 - 支持多種商品
+ASSET_LIBRARY: Dict[AssetClass, Dict[str, Dict[str, str]]] = {
+    AssetClass.STOCKS: {
+        "2330": {"name": "👑 台積電", "symbol": "2330.TW"},
+        "2317": {"name": "🏭 鴻海", "symbol": "2317.TW"},
+        "2454": {"name": "📱 聯發科", "symbol": "2454.TW"},
+        "0050": {"name": "📊 元大台灣50", "symbol": "0050.TW"},
+        "2412": {"name": "⚡ 中華電", "symbol": "2412.TW"},
+        "1303": {"name": "💰 南亞科", "symbol": "1303.TW"},
+        "2883": {"name": "🏦 開發金", "symbol": "2883.TW"},
+        "6505": {"name": "🎮 晶豐", "symbol": "6505.TW"},
+    },
+    AssetClass.CRYPTO: {
+        "BTC": {"name": "🟠 比特幣", "symbol": "BTC-USD"},
+        "ETH": {"name": "🟦 以太幣", "symbol": "ETH-USD"},
+        "BNB": {"name": "🟨 幣安幣", "symbol": "BNB-USD"},
+        "SOL": {"name": "🟣 Solana", "symbol": "SOL-USD"},
+        "ADA": {"name": "🔴 卡達諾", "symbol": "ADA-USD"},
+    },
+    AssetClass.COMMODITIES: {
+        "OIL": {"name": "🛢️ 美原油", "symbol": "CL=F"},
+        "GAS": {"name": "💨 天然氣", "symbol": "NG=F"},
+        "CORN": {"name": "🌽 玉米", "symbol": "ZC=F"},
+    },
+    AssetClass.METALS: {
+        "GOLD": {"name": "🟡 黃金", "symbol": "GC=F"},
+        "SILVER": {"name": "⚪ 白銀", "symbol": "SI=F"},
+    },
+}
 
 
 def load_market_message_data() -> Dict:
@@ -95,6 +140,46 @@ for code, name, symbol in get_popular_stocks():
 # 主 Embed 和入口視圖
 # ============================================================
 
+class AssetClassSelectionView(discord.ui.View):
+    """商品類別選擇視圖 - 展示所有商品類別"""
+    
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+    
+    @discord.ui.button(label="台股", style=discord.ButtonStyle.primary, emoji="📈", custom_id="asset_class_stocks")
+    async def stocks_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """選擇台股"""
+        await self._show_asset_list(interaction, AssetClass.STOCKS)
+    
+    @discord.ui.button(label="數字貨幣", style=discord.ButtonStyle.primary, emoji="💰", custom_id="asset_class_crypto")
+    async def crypto_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """選擇數字貨幣"""
+        await self._show_asset_list(interaction, AssetClass.CRYPTO)
+    
+    @discord.ui.button(label="原物料", style=discord.ButtonStyle.primary, emoji="🌾", custom_id="asset_class_commodities")
+    async def commodities_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """選擇原物料"""
+        await self._show_asset_list(interaction, AssetClass.COMMODITIES)
+    
+    @discord.ui.button(label="貴金屬", style=discord.ButtonStyle.primary, emoji="✨", custom_id="asset_class_metals")
+    async def metals_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """選擇貴金屬"""
+        await self._show_asset_list(interaction, AssetClass.METALS)
+    
+    async def _show_asset_list(self, interaction: discord.Interaction, asset_class: AssetClass):
+        """顯示該類別內的商品清單"""
+        await interaction.response.defer(ephemeral=True)
+        
+        logger.info(f"📂 [ASSET_CLASS] 使用者選擇商品類別: {asset_class.value}")
+        
+        # 建立個人操盤室視圖
+        view = StockRoomView(self.cog, interaction.user.id, asset_class=asset_class)
+        
+        # 發送商品選擇頁面
+        await view.show_selection_view_followup(interaction)
+
+
 class StockEntryView(discord.ui.View):
     """主 Embed 上的入場按鈕"""
     
@@ -102,30 +187,39 @@ class StockEntryView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
     
-    @discord.ui.button(label="進入操盤室", style=discord.ButtonStyle.primary, emoji="📈", custom_id="stock_entry_button")
+    @discord.ui.button(label="進入市場", style=discord.ButtonStyle.primary, emoji="📈", custom_id="stock_entry_button")
     async def enter_trading_room(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """進入個人專用的操盤室"""
+        """進入市場 - 選擇商品類別"""
         try:
             # 先 defer 交互，避免 token 過期
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
             
-            logger.info(f"👤 [ENTER_ROOM] 使用者 {interaction.user.id} 進入操盤室")
+            logger.info(f"👤 [ENTER_MARKET] 使用者 {interaction.user.id} 進入市場")
             
-            # 建立個人操盤室視圖
-            view = StockRoomView(self.cog, interaction.user.id)
+            # 顯示商品類別選擇頁面
+            embed = discord.Embed(
+                title="🏦 虛擬金融市場",
+                description="選擇您想交易的商品類別",
+                color=discord.Color.gold()
+            )
+            embed.add_field(name="📊 台股", value="台灣上市公司股票", inline=False)
+            embed.add_field(name="💰 數字貨幣", value="比特幣、以太幣等加密資產", inline=False)
+            embed.add_field(name="🌾 原物料", value="石油、天然氣、農產品等", inline=False)
+            embed.add_field(name="✨ 貴金屬", value="黃金、白銀等貴金屬", inline=False)
+            embed.set_footer(text="👇 選擇一個類別開始交易")
             
-            # 發送新的私人 Embed（使用 followup，因為已 defer）
-            await view.show_selection_view_followup(interaction)
+            view = AssetClassSelectionView(self.cog)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         
         except Exception as e:
-            logger.error(f"❌ 進入操盤室失敗: {e}")
+            logger.error(f"❌ 進入市場失敗: {e}")
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 進入操盤室失敗，請稍後再試。", ephemeral=True)
+                    await interaction.response.send_message("❌ 進入市場失敗，請稍後再試。", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 進入操盤室失敗，請稍後再試。", ephemeral=True)
+                    await interaction.followup.send("❌ 進入市場失敗，請稍後再試。", ephemeral=True)
             except:
                 logger.error("❌ 無法發送錯誤訊息")
 
@@ -137,34 +231,43 @@ class StockEntryView(discord.ui.View):
 class StockSelectionView(discord.ui.View):
     """股票選擇視圖 - 只有下拉選單"""
     
-    def __init__(self, room_view):
+    def __init__(self, room_view, asset_class: AssetClass):
         super().__init__(timeout=None)
         self.room_view = room_view
-        self._update_stock_select()
+        self.asset_class = asset_class
+        self._update_asset_select()
     
-    def _update_stock_select(self):
+    def _update_asset_select(self):
         """更新下拉選單內容"""
         # 移除舊的 select
         for item in list(self.children):
             if isinstance(item, discord.ui.Select):
                 self.remove_item(item)
         
-        # 建立新的 select
+        # 建立新的 select - 從 ASSET_LIBRARY 取得商品
         options = []
-        for code, name, symbol in get_popular_stocks():
+        assets = ASSET_LIBRARY.get(self.asset_class, {})
+        
+        for code, asset_info in assets.items():
             option = discord.SelectOption(
-                label=f"{code} - {name}",
-                value=symbol,
+                label=f"{code} - {asset_info['name']}",
+                value=asset_info['symbol'],
                 emoji="📊"
             )
             options.append(option)
         
         # 添加自訂代號選項
+        custom_label = "📝 自訂代號"
+        if self.asset_class == AssetClass.STOCKS:
+            custom_label = "📝 自訂台股代號"
+        elif self.asset_class == AssetClass.CRYPTO:
+            custom_label = "📝 自訂幣種"
+        
         options.append(discord.SelectOption(
-            label="📝 自訂代號",
+            label=custom_label,
             value="CUSTOM",
             emoji="✏️",
-            description="輸入其他股票代號"
+            description="輸入其他商品代號"
         ))
         
         select = StockSelectMenu(self.room_view, options)
@@ -265,15 +368,25 @@ class StockRoomView(discord.ui.View):
         "季":  ("5y",  "3mo"),   # 5 年的季線
     }
     
-    def __init__(self, cog, user_id: int):
+    def __init__(self, cog, user_id: int, asset_class: AssetClass = None):
         super().__init__(timeout=None)
         self.cog = cog
         self.user_id = user_id
+        self.asset_class = asset_class or AssetClass.STOCKS  # 預設為台股
         self.selected_symbol: Optional[str] = None
         self.current_price: float = 0.0
         self.current_message: Optional[discord.Message] = None
         self.current_timeframe: str = "日"      # 預設日線
         self.last_chart_update: float = 0.0     # 更新圖表 CD 計時
+    
+    def _get_class_name(self) -> str:
+        """取得商品類別的中文名稱"""
+        return {
+            AssetClass.STOCKS: "台股",
+            AssetClass.CRYPTO: "數字貨幣",
+            AssetClass.COMMODITIES: "原物料",
+            AssetClass.METALS: "貴金屬",
+        }.get(self.asset_class, "商品")
     
     def _build_detail_embed(self, symbol: str, price: float, chart_url: Optional[str], 
                             avg_cost: Optional[float] = None, balance: int = 0) -> discord.Embed:
@@ -347,21 +460,23 @@ class StockRoomView(discord.ui.View):
             self.current_message = msg
     
     async def update_selection_view(self, interaction: discord.Interaction):
-        """更新股票選擇視圖（編輯現有訊息）"""
+        """更新商品選擇視圖（編輯現有訊息）"""
         # 在線程池中執行數據庫操作，避免阻塞事件迴圈
         loop = asyncio.get_event_loop()
         balance = await loop.run_in_executor(None, lambda: get_user_kkcoin(self.user_id))
         
+        class_name = self._get_class_name()
+        
         embed = discord.Embed(
-            title="📊 私人操盤室",
-            description="選擇標的開始交易",
+            title=f"📊 {class_name}操盤室",
+            description=f"選擇 {class_name} 開始交易",
             color=discord.Color.gold()
         )
         embed.add_field(name="可用資金", value=f"💰 {balance:,} KK", inline=False)
-        embed.add_field(name="\u200b", value="**👇 選擇標的**", inline=False)
+        embed.add_field(name="\u200b", value="**👇 選擇商品**", inline=False)
         embed.set_footer(text="✨ 虛擬交易，零風險")
         
-        view = StockSelectionView(self)
+        view = StockSelectionView(self, self.asset_class)
         
         await interaction.response.defer(ephemeral=True)
         # 編輯現有訊息
@@ -372,23 +487,25 @@ class StockRoomView(discord.ui.View):
                 pass
     
     async def show_selection_view_followup(self, interaction: discord.Interaction):
-        """使用 followup 發送股票選擇視圖（用於已 defer 的情況）"""
+        """使用 followup 發送商品選擇視圖（用於已 defer 的情況）"""
         try:
             loop = asyncio.get_event_loop()
             balance = await loop.run_in_executor(None, lambda: get_user_kkcoin(self.user_id))
             
+            class_name = self._get_class_name()
+            
             embed = discord.Embed(
-                title="📊 私人操盤室",
-                description="選擇標的開始交易",
+                title=f"📊 {class_name}操盤室",
+                description=f"選擇 {class_name} 開始交易",
                 color=discord.Color.gold()
             )
             embed.add_field(name="可用資金", value=f"💰 {balance:,} KK", inline=False)
-            embed.add_field(name="\u200b", value="**👇 選擇標的**", inline=False)
+            embed.add_field(name="\u200b", value="**👇 選擇商品**", inline=False)
             embed.set_footer(text="✨ 虛擬交易，零風險")
             
-            view = StockSelectionView(self)
+            view = StockSelectionView(self, self.asset_class)
             
-            logger.info(f"📨 [ENTRY] 使用 followup 發送股票選擇視圖")
+            logger.info(f"📨 [ENTRY] 使用 followup 發送商品選擇視圖 - {class_name}")
             msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             self.current_message = msg
             logger.info(f"✅ [ENTRY] 訊息已發送 ID: {msg.id}")
@@ -588,12 +705,12 @@ class StockSelectMenu(discord.ui.Select):
 # 自訂股票代號 Modal
 # ============================================================
 
-class CustomStockModal(discord.ui.Modal, title="輸入股票代號"):
-    """自訂股票代號輸入 Modal"""
+class CustomStockModal(discord.ui.Modal, title="輸入商品代號"):
+    """自訂商品代號輸入 Modal"""
     
     stock_code = discord.ui.TextInput(
-        label="股票代號",
-        placeholder="例如: 2330.TW 或 AAPL",
+        label="商品代號",
+        placeholder="例如: 2330.TW (台股) 或 BTC-USD (加密貨幣)",
         required=True,
         min_length=2,
         max_length=10
@@ -604,18 +721,22 @@ class CustomStockModal(discord.ui.Modal, title="輸入股票代號"):
         self.parent_view = parent_view
     
     async def on_submit(self, modal_interaction: discord.Interaction):
-        """提交股票代號"""
+        """提交商品代號"""
         try:
             symbol = self.stock_code.value.strip().upper()
+            class_name = self.parent_view._get_class_name()
             
-            # 如果沒有已知市場後綴，自動添加 .TW
-            known_suffixes = (".TW", ".TWO", ".HK", ".US", ".SS", ".SZ")
-            if not any(symbol.endswith(s) for s in known_suffixes):
-                symbol = f"{symbol}.TW"
+            # 根據商品類別自動處理後綴
+            if self.parent_view.asset_class == AssetClass.STOCKS:
+                # 台股：如果沒有已知市場後綴，自動添加 .TW
+                known_suffixes = (".TW", ".TWO", ".HK", ".US", ".SS", ".SZ")
+                if not any(symbol.endswith(s) for s in known_suffixes):
+                    symbol = f"{symbol}.TW"
+            # 其他商品類別也可以在這裡添加特定邏輯
             
-            print(f"🔍 [STOCK_MARKET] 用戶輸入自訂代號: {symbol}", flush=True)
+            print(f"🔍 [STOCK_MARKET] 用戶輸入自訂代號: {symbol} (類別: {class_name})", flush=True)
             
-            # 測試是否能取得該股票的價格
+            # 測試是否能取得該商品的價格
             price = await fetch_price(symbol)
             if price is None:
                 print(f"❌ [STOCK_MARKET] 無法取得 {symbol} 的價格", flush=True)
@@ -915,8 +1036,8 @@ class StockMarket(commands.Cog):
             
             # 建立摘要 Embed - 簡潔設計
             embed = discord.Embed(
-                title="🏦 台灣虛擬股市",
-                description="模擬交易 台股 使用 KK 幣",
+                title="🏦 虛擬金融市場",
+                description="台股・數字貨幣・原物料・貴金屬 - 多商品模擬交易",
                 color=discord.Color.gold(),
                 timestamp=datetime.now()
             )
@@ -942,8 +1063,8 @@ class StockMarket(commands.Cog):
                 leaderboard = "\n".join(leaderboard_lines)
                 embed.add_field(name="🏆 排行", value=leaderboard, inline=True)
             
-            embed.add_field(name="\u200b", value="**👇 點擊進入你的操盤室**", inline=False)
-            embed.set_footer(text="熱門: 2330 | 0050 | 2454 | 自訂代號 | 無風險交易")
+            embed.add_field(name="\u200b", value="**👇 點擊進入虛擬市場**", inline=False)
+            embed.set_footer(text="支持: 台股 | 數字貨幣 (BTC/ETH) | 原物料 | 貴金屬 | 無風險交易")
             
             
             print(f"✏️ [STOCK_MARKET] Embed 已生成，checking message 狀態...", flush=True)
