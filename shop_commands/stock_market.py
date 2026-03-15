@@ -793,21 +793,32 @@ class StockMarket(commands.Cog):
                     await self.market_message.edit(embed=embed, view=StockEntryView(self))
                     print("✅ [STOCK_MARKET] 市場 Embed 已更新（編輯）", flush=True)
                     logger.info("✅ 市場 Embed 已更新（編輯）")
-                except discord.NotFound:
-                    print("❌ [STOCK_MARKET] 訊息已被刪除，發送新訊息", flush=True)
-                    logger.warning("⚠️ 訊息已被刪除，發送新訊息")
-                    self.market_message = await channel.send(embed=embed, view=StockEntryView(self))
-                    self.market_data["message_id"] = self.market_message.id
-                    save_market_message_data(self.market_data)
-                    print(f"✅ [STOCK_MARKET] 新訊息已發送，ID: {self.market_message.id}", flush=True)
-            else:
-                # 發送新訊息
-                print(f"📤 [STOCK_MARKET] 發送新的市場 Embed 訊息...", flush=True)
-                self.market_message = await channel.send(embed=embed, view=StockEntryView(self))
-                self.market_data["message_id"] = self.market_message.id
-                save_market_message_data(self.market_data)
-                print(f"✅ [STOCK_MARKET] 市場 Embed 已發送 (Message ID: {self.market_message.id})", flush=True)
-                logger.info(f"✅ 市場 Embed 已發送 (Message ID: {self.market_message.id})")
+                    return
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                    # 如果訊息不存在或無法編輯，嘗試刪除舊訊息（若仍存在），避免重複
+                    print(f"⚠️ [STOCK_MARKET] 無法編輯舊訊息（可能已刪除/無權限），將嘗試刪除並發送新訊息: {e}", flush=True)
+                    logger.warning(f"⚠️ 無法編輯舊訊息，將發送新訊息: {e}")
+                    try:
+                        await self.market_message.delete()
+                        print("✅ [STOCK_MARKET] 已刪除舊市場訊息", flush=True)
+                        logger.info("✅ 已刪除舊市場訊息")
+                    except Exception as delete_exc:
+                        print(f"⚠️ [STOCK_MARKET] 刪除舊訊息失敗（可能已不存在）: {delete_exc}", flush=True)
+                        logger.debug(f"⚠️ 刪除舊訊息失敗: {delete_exc}")
+                    self.market_message = None
+                except Exception as e:
+                    print(f"❌ [STOCK_MARKET] 更新市場 Embed 失敗: {e}", flush=True)
+                    logger.error(f"❌ 更新市場 Embed 失敗: {e}")
+                    traceback.print_exc()
+                    return
+
+            # 如果沒有可編輯的舊訊息，發送新訊息
+            print(f"📤 [STOCK_MARKET] 發送新的市場 Embed 訊息...", flush=True)
+            self.market_message = await channel.send(embed=embed, view=StockEntryView(self))
+            self.market_data["message_id"] = self.market_message.id
+            save_market_message_data(self.market_data)
+            print(f"✅ [STOCK_MARKET] 市場 Embed 已發送 (Message ID: {self.market_message.id})", flush=True)
+            logger.info(f"✅ 市場 Embed 已發送 (Message ID: {self.market_message.id})")
         
         except Exception as e:
             print(f"❌ [STOCK_MARKET] 更新市場 Embed 失敗: {e}", flush=True)
