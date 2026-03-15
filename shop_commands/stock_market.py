@@ -294,14 +294,15 @@ class StockRoomView(discord.ui.View):
         
         view = StockSelectionView(self)
         
-        if not self.current_message:
-            # 初次建立：發送私人（ephemeral）訊息
-            self.current_message = await interaction.followup.send(
-                embed=embed, view=view, ephemeral=True
-            )
-        else:
-            # 後續更新：直接編輯已儲存的私人訊息，確保不對外公開
-            await self.current_message.edit(embed=embed, view=view)
+        # 確保 interaction 使用 private/ephemeral 模式
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
+        # 優先嘗試編輯原始回應（可避免在 Discord 前端出現多條 ephemeral 訊息）
+        try:
+            await interaction.edit_original_response(embed=embed, view=view)
+        except Exception:
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     
     async def show_detail_view(self, symbol: str, interaction: discord.Interaction,
                                force_refresh: bool = False):
@@ -329,13 +330,14 @@ class StockRoomView(discord.ui.View):
             embed = self._build_detail_embed(symbol, price, chart_url)
             view = StockDetailView(self, symbol, price)
             
-            if not self.current_message:
-                self.current_message = await interaction.followup.send(
-                    embed=embed, view=view, ephemeral=True
-                )
-            else:
-                # 直接編輯已儲存的私人訊息，確保不對外公開
-                await self.current_message.edit(embed=embed, view=view)
+            # 確保 interaction 使用 private/ephemeral 模式
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+
+            try:
+                await interaction.edit_original_response(embed=embed, view=view)
+            except Exception:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         
         except Exception as e:
             logger.error(f"❌ 顯示股票詳細失敗: {e}")
@@ -360,7 +362,11 @@ class StockRoomView(discord.ui.View):
             embed = self._build_detail_embed(symbol, price, chart_url)
             view = StockDetailView(self, symbol, price)
             
-            await self.current_message.edit(embed=embed, view=view)
+            try:
+                await self.current_message.edit(embed=embed, view=view)
+            except Exception:
+                # 如果無法編輯（可能為 ephemeral 或訊息已過期），忽略即可
+                pass
         except Exception as e:
             logger.debug(f"⚠️ 背景刷新操盤室失敗 (token 可能已過期): {e}")
     
