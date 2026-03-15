@@ -16,8 +16,10 @@ import asyncio
 import json
 import logging
 import math
+import os
 import time
 from datetime import datetime
+from dotenv import load_dotenv, set_key
 from typing import Optional, Dict, List, Tuple
 import traceback
 from pathlib import Path
@@ -37,10 +39,25 @@ logger = logging.getLogger(__name__)
 MARKET_CHANNEL_ID = 1481373417897988347
 REALIZED_PNL_FIELD = "stock_realized_pnl"  # 已實現損益欄位
 MARKET_MESSAGE_DATA_FILE = Path("./market_message_data.json")  # 存儲 message ID
+ENV_MARKET_MESSAGE_ID = "MARKET_EMBED_MESSAGE_ID"  # 若設置，優先使用環境變數（.env）
+
+# 如果專案有 .env，先加載（讓 os.environ 可用）
+load_dotenv()
 
 
 def load_market_message_data() -> Dict:
-    """載入市場 message ID 數據"""
+    """載入市場 message ID 數據
+
+    優先使用環境變數（例如 .env 中的 MARKET_EMBED_MESSAGE_ID），若不存在則退回到本地檔案。
+    """
+    # 優先使用環境變數，方便在 Docker/系統 service 環境中設定
+    env_id = os.environ.get(ENV_MARKET_MESSAGE_ID)
+    if env_id:
+        try:
+            return {"message_id": int(env_id)}
+        except ValueError:
+            logger.warning(f"⚠️ 環境變數 {ENV_MARKET_MESSAGE_ID} 不是有效的 message_id: {env_id}")
+
     if MARKET_MESSAGE_DATA_FILE.exists():
         try:
             with open(MARKET_MESSAGE_DATA_FILE, 'r', encoding='utf-8') as f:
@@ -51,12 +68,21 @@ def load_market_message_data() -> Dict:
 
 
 def save_market_message_data(data: Dict):
-    """保存市場 message ID 數據"""
+    """保存市場 message ID 數據
+
+    同時嘗試同步更新環境變數（.env 文件），讓部署環境可以直接讀取。
+    """
     try:
         with open(MARKET_MESSAGE_DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"❌ 保存 message 數據失敗: {e}")
+
+    # 儲存到 .env
+    try:
+        set_key('.env', ENV_MARKET_MESSAGE_ID, str(data.get('message_id') or ''))
+    except Exception as e:
+        logger.warning(f"⚠️ 無法更新 .env 中的 {ENV_MARKET_MESSAGE_ID}: {e}")
 
 
 # 快取（減少 API 呼叫）
