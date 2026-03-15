@@ -252,7 +252,8 @@ async def fetch_chart(
     symbol: str,
     period: str = "3mo",
     interval: str = "1d",
-    force_refresh: bool = False
+    force_refresh: bool = False,
+    avg_cost: Optional[float] = None
 ) -> Optional[str]:
     """
     獲取股票圖表 URL
@@ -262,6 +263,7 @@ async def fetch_chart(
         period: 時間區間
         interval: K 線間隔，例如 "5m", "15m", "60m", "1d", "1mo", "3mo"
         force_refresh: 是否強制重新生成
+        avg_cost: 用戶的平均成本（用於繪製成本線）
         
     Returns:
         QuickChart URL，或 None
@@ -292,21 +294,39 @@ async def fetch_chart(
 
         color = "green" if len(prices) < 2 or prices[-1] >= prices[-2] else "red"
 
+        # 建議資料集：價格線
+        datasets = [
+            {
+                "label": symbol,
+                "data": sampled_prices,
+                "borderColor": color,
+                "borderWidth": 2,
+                "fill": False,
+                "tension": 0.1,
+                "pointRadius": 0,
+            }
+        ]
+        
+        # 如果有成本線，添加到圖表
+        if avg_cost is not None and avg_cost > 0:
+            # 創建成本線（平直線）
+            cost_line_data = [avg_cost] * len(sampled_prices)
+            datasets.append({
+                "label": f"成本: ${avg_cost:.2f}",
+                "data": cost_line_data,
+                "borderColor": "blue",
+                "borderWidth": 2,
+                "fill": False,
+                "tension": 0,
+                "pointRadius": 0,
+                "borderDash": [5, 5],  # 虛線
+            })
+
         chart_config = {
             "type": "line",
             "data": {
                 "labels": sampled_dates,
-                "datasets": [
-                    {
-                        "label": symbol,
-                        "data": sampled_prices,
-                        "borderColor": color,
-                        "borderWidth": 2,
-                        "fill": False,
-                        "tension": 0.1,
-                        "pointRadius": 0,
-                    }
-                ]
+                "datasets": datasets
             },
             "options": {
                 "responsive": True,
@@ -333,7 +353,8 @@ async def fetch_chart(
 
         logger.info(
             f"📊 正在取得 {symbol} 圖表短 URL "
-            f"(period={period}, interval={interval}, 數據點={len(sampled_prices)})"
+            f"(period={period}, interval={interval}, 數據點={len(sampled_prices)}, "
+            f"cost_line={'是' if avg_cost else '否'})"
         )
 
         # 使用 POST API 取得短 URL
