@@ -170,7 +170,7 @@ class TimeframeButton(discord.ui.Button):
     
     async def callback(self, interaction: discord.Interaction):
         self.room_view.current_timeframe = self.timeframe
-        await self.room_view.show_detail_view(self.symbol, interaction)
+        await self.room_view.update_detail_view(self.symbol, interaction)
 
 
 class UpdateChartButton(discord.ui.Button):
@@ -193,7 +193,7 @@ class UpdateChartButton(discord.ui.Button):
             )
             return
         self.room_view.last_chart_update = now
-        await self.room_view.show_detail_view(self.symbol, interaction, force_refresh=True)
+        await self.room_view.update_detail_view(self.symbol, interaction, force_refresh=True)
 
 
 class StockDetailView(discord.ui.View):
@@ -232,7 +232,7 @@ class StockDetailView(discord.ui.View):
     @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️", row=0)
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """返回按鈕"""
-        await self.room_view.show_selection_view(interaction)
+        await self.room_view.update_selection_view(interaction)
 
 
 # ============================================================
@@ -308,7 +308,7 @@ class StockRoomView(discord.ui.View):
         return embed
     
     async def show_selection_view(self, interaction: discord.Interaction, is_new_message: bool = False):
-        """顯示股票選擇視圖"""
+        """顯示股票選擇視圖（首次發送）"""
         # 在線程池中執行數據庫操作，避免阻塞事件迴圈
         loop = asyncio.get_event_loop()
         balance = await loop.run_in_executor(None, lambda: get_user_kkcoin(self.user_id))
@@ -326,14 +326,41 @@ class StockRoomView(discord.ui.View):
         
         # 發送新的私人訊息（不編輯原來的回應）
         if is_new_message or not interaction.response.is_done():
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            msg = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            self.current_message = msg
         else:
             # 如果已經有過一次 defer/response，就用 followup 發送
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            self.current_message = msg
+    
+    async def update_selection_view(self, interaction: discord.Interaction):
+        """更新股票選擇視圖（編輯現有訊息）"""
+        # 在線程池中執行數據庫操作，避免阻塞事件迴圈
+        loop = asyncio.get_event_loop()
+        balance = await loop.run_in_executor(None, lambda: get_user_kkcoin(self.user_id))
+        
+        embed = discord.Embed(
+            title="📊 私人操盤室",
+            description="選擇標的開始交易",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="可用資金", value=f"💰 {balance:,} KK", inline=False)
+        embed.add_field(name="\u200b", value="**👇 選擇標的**", inline=False)
+        embed.set_footer(text="✨ 虛擬交易，零風險")
+        
+        view = StockSelectionView(self)
+        
+        await interaction.response.defer(ephemeral=True)
+        # 編輯現有訊息
+        if self.current_message:
+            try:
+                await self.current_message.edit(embed=embed, view=view)
+            except:
+                pass
     
     async def show_detail_view(self, symbol: str, interaction: discord.Interaction,
-                               force_refresh: bool = False):
-        """顯示股票詳細視圖（發送新的私人訊息）"""
+                               force_refresh: bool = False, is_new_message: bool = False):
+        """顯示股票詳細視圖（首次發送新訊息）"""
         try:
             price = await fetch_price(symbol)
             if price is None:
@@ -367,12 +394,59 @@ class StockRoomView(discord.ui.View):
             view = StockDetailView(self, symbol, price)
             
             # 發送新的私人訊息
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            if is_new_message or not interaction.response.is_done():
+                msg = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                self.current_message = msg
+            else:
+                msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                self.current_message = msg
         
         except Exception as e:
             logger.error(f"❌ 顯示股票詳細失敗: {e}")
             traceback.print_exc()
             await interaction.response.send_message("❌ 顯示詳細失敗", ephemeral=True)
+    
+    async def update_detail_view(self, symbol: str, interaction: discord.Interaction,
+                                  force_refresh: bool = False):
+        """更新股票詳細視圖（編輯現有訊息）"""
+        try:
+            price = await fetch_price(symbol)
+            if price is None:
+                await interaction.response.defer(ephemeral=True)
+                return
+            
+            self.selected_symbol = symbol
+            self.current_price = price
+            
+            # 在線程池中執行數據庫操作，避免阻塞事件迴圈
+            loop = asyncio.get_event_loop()
+            def _get_data():
+                user_stocks = get_user_stocks(self.user_id)
+                position = next((s for s in user_stocks if s['symbol'] == symbol), None)
+                avg_cost = position['avg_cost'] if position else None
+                balance = get_user_kkcoin(self.user_id)
+                return avg_cost, balance
+            
+            avg_cost, balance = await loop.run_in_executor(None, _get_data)
+            
+            period, interval = self.TIMEFRAME_PARAMS.get(self.current_timeframe, ("3mo", "1d"))
+            chart_url = await fetch_chart(symbol, period=period, interval=interval,
+                                          force_refresh=force_refresh, avg_cost=avg_cost)
+            
+            embed = self._build_detail_embed(symbol, price, chart_url, avg_cost, balance)
+            view = StockDetailView(self, symbol, price)
+            
+            await interaction.response.defer(ephemeral=True)
+            # 編輯現有訊息，而不是發送新的
+            if self.current_message:
+                try:
+                    await self.current_message.edit(embed=embed, view=view)
+                except:
+                    pass  # 若編輯失敗，忽略
+        
+        except Exception as e:
+            logger.error(f"❌ 更新股票詳細失敗: {e}")
+            await interaction.response.defer(ephemeral=True)
     
     async def _update_trading_room_embed(self, symbol: str):
         """無 interaction 情境下直接更新操盤室 embed（例如交易完成後刷新）"""

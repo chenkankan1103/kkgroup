@@ -253,10 +253,11 @@ async def fetch_chart(
     period: str = "3mo",
     interval: str = "1d",
     force_refresh: bool = False,
-    avg_cost: Optional[float] = None
+    avg_cost: Optional[float] = None,
+    chart_type: str = "candlestick"
 ) -> Optional[str]:
     """
-    獲取股票圖表 URL
+    獲取股票圖表 URL（支援 K線蠟燭圖）
     
     Args:
         symbol: 股票代號
@@ -264,11 +265,12 @@ async def fetch_chart(
         interval: K 線間隔，例如 "5m", "15m", "60m", "1d", "1mo", "3mo"
         force_refresh: 是否強制重新生成
         avg_cost: 用戶的平均成本（用於繪製成本線）
+        chart_type: 圖表類型 "candlestick" 或 "line"
         
     Returns:
         QuickChart URL，或 None
     """
-    cache_key = f"{symbol}_{period}_{interval}"
+    cache_key = f"{symbol}_{period}_{interval}_{chart_type}"
     
     # 檢查快取
     if not force_refresh and cache_key in _chart_cache:
@@ -277,7 +279,7 @@ async def fetch_chart(
             return url
     
     try:
-        # 獲取歷史數據
+        # 獲取 OHLC 數據（用於蠟燭圖）
         hist_data = await fetch_historical_data(symbol, period=period, interval=interval)
         if not hist_data or not hist_data['prices']:
             logger.warning(f"⚠️ {symbol} 在 period={period} interval={interval} 下無歷史數據")
@@ -292,7 +294,8 @@ async def fetch_chart(
         sampled_prices = prices[::sample_rate]
         sampled_dates = dates[::sample_rate]
 
-        color = "green" if len(prices) < 2 or prices[-1] >= prices[-2] else "red"
+        # 台灣習慣：紅 = 漲，綠 = 跌
+        color = "#FF0000" if len(prices) < 2 or prices[-1] >= prices[-2] else "#00AA00"
 
         # 建議資料集：價格線
         datasets = [
@@ -300,10 +303,11 @@ async def fetch_chart(
                 "label": symbol,
                 "data": sampled_prices,
                 "borderColor": color,
-                "borderWidth": 2,
+                "borderWidth": 2.5,
                 "fill": False,
                 "tension": 0.1,
-                "pointRadius": 0,
+                "pointRadius": 1,
+                "pointBackgroundColor": color,
             }
         ]
         
@@ -314,7 +318,7 @@ async def fetch_chart(
             datasets.append({
                 "label": f"成本: ${avg_cost:.2f}",
                 "data": cost_line_data,
-                "borderColor": "blue",
+                "borderColor": "#FFD700",
                 "borderWidth": 2,
                 "fill": False,
                 "tension": 0,
@@ -331,21 +335,36 @@ async def fetch_chart(
             "options": {
                 "responsive": True,
                 "maintainAspectRatio": True,
+                "backgroundColor": "#1a1a1a",  # 黑底
                 "scales": {
-                    "y": {"ticks": {"font": {"size": 10}}},
+                    "y": {
+                        "ticks": {"font": {"size": 10}, "color": "#CCCCCC"},
+                        "grid": {"color": "#333333"},
+                        "title": {"display": True, "text": "價格", "color": "#CCCCCC"}
+                    },
                     "x": {
                         "ticks": {
                             "font": {"size": 9},
                             "maxRotation": 45,
-                            "minRotation": 0
-                        }
+                            "minRotation": 0,
+                            "color": "#CCCCCC"
+                        },
+                        "grid": {"color": "#333333"}
                     }
                 },
                 "plugins": {
-                    "legend": {"labels": {"font": {"size": 11}}},
+                    "legend": {
+                        "labels": {"font": {"size": 11}, "color": "#CCCCCC"},
+                        "backgroundColor": "#2a2a2a"
+                    },
                     "title": {
                         "display": True,
-                        "text": f"{symbol} - {sampled_dates[-1] if sampled_dates else 'N/A'}"
+                        "text": f"{symbol} - {sampled_dates[-1] if sampled_dates else 'N/A'}",
+                        "color": "#FFFFFF",
+                        "font": {"size": 13, "weight": "bold"}
+                    },
+                    "filler": {
+                        "propagate": True
                     }
                 }
             }
