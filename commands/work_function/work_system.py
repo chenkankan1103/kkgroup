@@ -16,6 +16,14 @@ def get_taiwan_time():
     """獲取台灣時間"""
     return datetime.now(TAIWAN_TZ)
 
+
+def _safe_int(value, default=0):
+    """將值轉為 int，若失敗則返回預設值"""
+    try:
+        return int(value)
+    except Exception:
+        return default
+
 # AI API 設定
 AI_API_KEY = os.getenv("AI_API_KEY", "")
 AI_API_URL = os.getenv("AI_API_URL", "")
@@ -148,12 +156,12 @@ def required_days_for_level(level):
 
 def check_level_up(user):
     """檢查是否滿足升級條件（連續出勤 + 經驗值）"""
-    level = user.get('level', 0)
+    level = _safe_int(user.get('level', 0), 0)
     if level >= 6:
         return False, None
     
-    streak = user.get('streak', 0)
-    xp = user.get('xp', 0)
+    streak = _safe_int(user.get('streak', 0), 0)
+    xp = _safe_int(user.get('xp', 0), 0)
     
     next_level = level + 1
     required_days = LEVELS[next_level]["days_required"]
@@ -185,8 +193,8 @@ def create_progress_bar(current, total, length=10):
 def create_work_embed(user, user_obj):
     """創建工作記錄卡 Embed"""
     try:
-        level = user['level']
-        level_info = LEVELS[level]
+        level = _safe_int(user.get('level', 0), 0)
+        level_info = LEVELS.get(level, LEVELS[0])
         
         colors = {0: 0x7f8c8d, 1: 0x95a5a6, 2: 0x3498db, 3: 0x9b59b6, 4: 0xe74c3c, 5: 0xf39c12, 6: 0xdaa520}
         embed = discord.Embed(
@@ -368,9 +376,16 @@ def create_level_up_embed(user_obj, old_level, new_level, bonus_coins):
 async def assign_role(guild, user, new_level):
     """分配對應等級的身分組，並移除其他等級的身分組"""
     try:
-        member = guild.get_member(user.id)
+        member = None
+        if guild:
+            member = guild.get_member(user.id)
+
+        # 如果 guild cache 沒有，再嘗試使用傳入的 user 物件（例如 interaction.user）
+        if not member and isinstance(user, discord.Member):
+            member = user
+
         if not member:
-            print(f"⚠️ 找不到成員：{user.id}")
+            print(f"⚠️ 找不到成員：{getattr(user, 'id', user)}")
             return False
         
         all_level_roles = [LEVELS[lvl]["role_id"] for lvl in LEVELS.keys() if LEVELS[lvl]["role_id"]]
@@ -417,10 +432,15 @@ async def process_checkin(user_id, user_obj, guild):
         
         today = get_taiwan_time().strftime("%Y-%m-%d")
         
-        level = user.get('level', 1)
-        current_xp = user.get('xp', 0)
-        current_kkcoin = user.get('kkcoin', 0)
-        streak = user.get('streak', 0) + 1
+        # 確保類型正確（避免從 Sheet/DB 讀到字符串）
+        level = _safe_int(user.get('level', 0), 0)
+        current_xp = _safe_int(user.get('xp', 0), 0)
+        current_kkcoin = _safe_int(user.get('kkcoin', 0), 0)
+        streak = _safe_int(user.get('streak', 0), 0) + 1
+        
+        # level 可能超出定義範圍，fallback 到 0
+        if level not in LEVELS:
+            level = 0
         
         print(f"  📊 初始數據 - Lv.{level}, XP: {current_xp}, 金幣: {current_kkcoin}, 連勤: {streak-1}")
         
@@ -482,14 +502,17 @@ async def process_checkin(user_id, user_obj, guild):
         if not updated_user:
             print(f"  ❌ 獲取更新後的用戶資料失敗")
             return None, None, None, None
-        print(f"  ✓ 更新後資料: Lv.{updated_user['level']}, XP: {updated_user['xp']}, 金幣: {updated_user['kkcoin']}")
+        updated_level = _safe_int(updated_user.get('level', 0), 0)
+        updated_xp = _safe_int(updated_user.get('xp', 0), 0)
+        updated_kkcoin = _safe_int(updated_user.get('kkcoin', 0), 0)
+        print(f"  ✓ 更新後資料: Lv.{updated_level}, XP: {updated_xp}, 金幣: {updated_kkcoin}")
         
         # 使用 AI 生成每日情境描述（升級時使用升級前的 streak）
         # 設定超時防止交互令牌過期
         try:
             daily_story = await asyncio.wait_for(
                 generate_daily_checkin_story(
-                    level_title=LEVELS[updated_user['level']]['title'],
+                    level_title=LEVELS.get(updated_level, LEVELS[0])['title'],
                     salary_percent=salary_multiplier,
                     streak=original_streak if leveled_up else streak,  # 升級時用升級前的值
                     user_name=user_obj.display_name
