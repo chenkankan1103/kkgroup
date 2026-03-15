@@ -236,12 +236,9 @@ class StockRoomView(discord.ui.View):
         self.current_timeframe: str = "日"      # 預設日線
         self.last_chart_update: float = 0.0     # 更新圖表 CD 計時
     
-    def _build_detail_embed(self, symbol: str, price: float, chart_url: Optional[str]) -> discord.Embed:
+    def _build_detail_embed(self, symbol: str, price: float, chart_url: Optional[str], 
+                            avg_cost: Optional[float] = None, balance: int = 0) -> discord.Embed:
         """構建股票詳細 Embed（共用邏輯）"""
-        user_stocks = get_user_stocks(self.user_id)
-        position = next((s for s in user_stocks if s['symbol'] == symbol), None)
-        balance = get_user_kkcoin(self.user_id)
-        
         embed = discord.Embed(
             title=f"{symbol}",
             color=discord.Color.gold()
@@ -252,17 +249,26 @@ class StockRoomView(discord.ui.View):
         embed.add_field(name="餘額", value=f"💰 {balance:,}", inline=True)
         embed.add_field(name="時間框架", value=f"📅 {self.current_timeframe}", inline=True)
         
-        if position:
-            shares_str = f"📊 {position['shares']} 股"
-            cost_str = f"${position['avg_cost']:.2f}"
-            pnl = (price - position['avg_cost']) * position['shares']
-            pnl_pct = (pnl / (position['avg_cost'] * position['shares'])) * 100 if position['avg_cost'] > 0 else 0
-            pnl_color = "📈" if pnl >= 0 else "📉"
-            pnl_str = f"{pnl_color} {pnl:,.0f} ({pnl_pct:+.1f}%)"
+        if avg_cost is not None and avg_cost > 0:
+            # 如果有成本信息，計算損益
+            # 從 get_user_stocks 獲取完整的持倉信息
+            user_stocks = get_user_stocks(self.user_id)
+            position = next((s for s in user_stocks if s['symbol'] == symbol), None)
             
-            embed.add_field(name="持倉", value=shares_str, inline=True)
-            embed.add_field(name="平均成本", value=cost_str, inline=True)
-            embed.add_field(name="未實現損益", value=pnl_str, inline=True)
+            if position:
+                shares_str = f"📊 {position['shares']} 股"
+                cost_str = f"${position['avg_cost']:.2f}"
+                pnl = (price - position['avg_cost']) * position['shares']
+                pnl_pct = (pnl / (position['avg_cost'] * position['shares'])) * 100 if position['avg_cost'] > 0 else 0
+                pnl_color = "📈" if pnl >= 0 else "📉"
+                pnl_str = f"{pnl_color} {pnl:,.0f} ({pnl_pct:+.1f}%)"
+                
+                embed.add_field(name="持倉", value=shares_str, inline=True)
+                embed.add_field(name="平均成本", value=cost_str, inline=True)
+                embed.add_field(name="未實現損益", value=pnl_str, inline=True)
+            else:
+                embed.add_field(name="持倉", value="無", inline=True)
+                embed.add_field(name="\u200b", value="\u200b", inline=True)
         else:
             embed.add_field(name="持倉", value="無", inline=True)
             embed.add_field(name="\u200b", value="\u200b", inline=True)
@@ -277,7 +283,10 @@ class StockRoomView(discord.ui.View):
     
     async def show_selection_view(self, interaction: discord.Interaction, is_new_message: bool = False):
         """顯示股票選擇視圖"""
-        balance = get_user_kkcoin(self.user_id)
+        # 在線程池中執行數據庫操作，避免阻塞事件迴圈
+        loop = asyncio.get_event_loop()
+        balance = await loop.run_in_executor(None, lambda: get_user_kkcoin(self.user_id))
+        
         embed = discord.Embed(
             title="📊 私人操盤室",
             description="選擇標的開始交易",
@@ -308,10 +317,16 @@ class StockRoomView(discord.ui.View):
             self.selected_symbol = symbol
             self.current_price = price
             
-            # 獲取用戶的持倉以取得成本線資訊
-            user_stocks = get_user_stocks(self.user_id)
-            position = next((s for s in user_stocks if s['symbol'] == symbol), None)
-            avg_cost = position['avg_cost'] if position else None
+            # 在線程池中執行數據庫操作，避免阻塞事件迴圈
+            loop = asyncio.get_event_loop()
+            def _get_data():
+                user_stocks = get_user_stocks(self.user_id)
+                position = next((s for s in user_stocks if s['symbol'] == symbol), None)
+                avg_cost = position['avg_cost'] if position else None
+                balance = get_user_kkcoin(self.user_id)
+                return avg_cost, balance
+            
+            avg_cost, balance = await loop.run_in_executor(None, _get_data)
             
             period, interval = self.TIMEFRAME_PARAMS.get(self.current_timeframe, ("3mo", "1d"))
             logger.info(f"📊 取得 {symbol} 圖表 period={period} interval={interval} force={force_refresh}")
@@ -322,7 +337,7 @@ class StockRoomView(discord.ui.View):
             if not chart_url:
                 logger.warning(f"⚠️ {symbol} 圖表 URL 為 None，跳過圖表顯示")
             
-            embed = self._build_detail_embed(symbol, price, chart_url)
+            embed = self._build_detail_embed(symbol, price, chart_url, avg_cost, balance)
             view = StockDetailView(self, symbol, price)
             
             # 發送新的私人訊息
@@ -345,15 +360,21 @@ class StockRoomView(discord.ui.View):
             self.selected_symbol = symbol
             self.current_price = price
             
-            # 獲取用戶的持倉以取得成本線資訊
-            user_stocks = get_user_stocks(self.user_id)
-            position = next((s for s in user_stocks if s['symbol'] == symbol), None)
-            avg_cost = position['avg_cost'] if position else None
+            # 在線程池中執行數據庫操作，避免阻塞事件迴圈
+            loop = asyncio.get_event_loop()
+            def _get_data():
+                user_stocks = get_user_stocks(self.user_id)
+                position = next((s for s in user_stocks if s['symbol'] == symbol), None)
+                avg_cost = position['avg_cost'] if position else None
+                balance = get_user_kkcoin(self.user_id)
+                return avg_cost, balance
+            
+            avg_cost, balance = await loop.run_in_executor(None, _get_data)
             
             period, interval = self.TIMEFRAME_PARAMS.get(self.current_timeframe, ("3mo", "1d"))
             chart_url = await fetch_chart(symbol, period=period, interval=interval, avg_cost=avg_cost)
             
-            embed = self._build_detail_embed(symbol, price, chart_url)
+            embed = self._build_detail_embed(symbol, price, chart_url, avg_cost, balance)
             view = StockDetailView(self, symbol, price)
             
             try:
