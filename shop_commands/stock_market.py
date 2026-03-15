@@ -845,6 +845,7 @@ class StockMarket(commands.Cog):
             print(f"💾 [STOCK_MARKET] 保存的 message ID: {message_id}", flush=True)
 
             if message_id:
+                print(f"🔍 [STOCK_MARKET] 嘗試取回舊訊息 ID: {message_id}", flush=True)
                 try:
                     self.market_message = await channel.fetch_message(int(message_id))
                     print(f"✅ [STOCK_MARKET] 恢復舊訊息 ID: {message_id}", flush=True)
