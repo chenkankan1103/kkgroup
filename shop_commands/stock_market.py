@@ -106,16 +106,28 @@ class StockEntryView(discord.ui.View):
     async def enter_trading_room(self, interaction: discord.Interaction, button: discord.ui.Button):
         """進入個人專用的操盤室"""
         try:
+            # 先 defer 交互，避免 token 過期
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+            
+            logger.info(f"👤 [ENTER_ROOM] 使用者 {interaction.user.id} 進入操盤室")
+            
             # 建立個人操盤室視圖
             view = StockRoomView(self.cog, interaction.user.id)
             
-            # 發送新的私人 Embed（不改動主 Embed）
-            await view.show_selection_view(interaction, is_new_message=True)
+            # 發送新的私人 Embed（使用 followup，因為已 defer）
+            await view.show_selection_view_followup(interaction)
         
         except Exception as e:
             logger.error(f"❌ 進入操盤室失敗: {e}")
             traceback.print_exc()
-            await interaction.response.send_message("❌ 進入操盤室失敗，請稍後再試。", ephemeral=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 進入操盤室失敗，請稍後再試。", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 進入操盤室失敗，請稍後再試。", ephemeral=True)
+            except:
+                logger.error("❌ 無法發送錯誤訊息")
 
 
 # ============================================================
@@ -357,6 +369,31 @@ class StockRoomView(discord.ui.View):
                 await self.current_message.edit(embed=embed, view=view)
             except:
                 pass
+    
+    async def show_selection_view_followup(self, interaction: discord.Interaction):
+        """使用 followup 發送股票選擇視圖（用於已 defer 的情況）"""
+        try:
+            loop = asyncio.get_event_loop()
+            balance = await loop.run_in_executor(None, lambda: get_user_kkcoin(self.user_id))
+            
+            embed = discord.Embed(
+                title="📊 私人操盤室",
+                description="選擇標的開始交易",
+                color=discord.Color.gold()
+            )
+            embed.add_field(name="可用資金", value=f"💰 {balance:,} KK", inline=False)
+            embed.add_field(name="\u200b", value="**👇 選擇標的**", inline=False)
+            embed.set_footer(text="✨ 虛擬交易，零風險")
+            
+            view = StockSelectionView(self)
+            
+            logger.info(f"📨 [ENTRY] 使用 followup 發送股票選擇視圖")
+            msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            self.current_message = msg
+            logger.info(f"✅ [ENTRY] 訊息已發送 ID: {msg.id}")
+        except Exception as e:
+            logger.error(f"❌ show_selection_view_followup 失敗: {e}")
+            traceback.print_exc()
     
     async def show_detail_view(self, symbol: str, interaction: discord.Interaction,
                                force_refresh: bool = False, is_new_message: bool = False):
