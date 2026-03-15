@@ -210,7 +210,7 @@ class StockDetailView(discord.ui.View):
     @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️", row=0)
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """返回按鈕"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         await self.room_view.show_selection_view(interaction)
 
 
@@ -307,9 +307,9 @@ class StockRoomView(discord.ui.View):
                                force_refresh: bool = False):
         """顯示股票詳細視圖（透過 interaction 更新 embed）"""
         try:
-            # 非同步操作前先確保已 defer
+            # 非同步操作前先確保已 defer（保持私人）
             if not interaction.response.is_done():
-                await interaction.response.defer()
+                await interaction.response.defer(ephemeral=True)
             
             price = await fetch_price(symbol)
             if price is None:
@@ -371,6 +371,8 @@ class StockRoomView(discord.ui.View):
     async def update_embed(self, interaction: discord.Interaction, defer_first: bool = True):
         """更新操盤室 Embed（交易後刷新，使用 stored message）"""
         if not self.selected_symbol:
+            if defer_first:
+                await interaction.response.defer(ephemeral=True)
             return
         await self._update_trading_room_embed(self.selected_symbol)
 
@@ -395,9 +397,10 @@ class StockSelectMenu(discord.ui.Select):
         # 如果選擇自訂代號，必須先送出 Modal（不能先 defer）
         if selected_value == "CUSTOM":
             await interaction.response.send_modal(CustomStockModal(self.parent_view))
-        else:
-            await interaction.response.defer()
-            await self.parent_view.show_detail_view(selected_value, interaction)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        await self.parent_view.show_detail_view(selected_value, interaction)
 
 
 # ============================================================
