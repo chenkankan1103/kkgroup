@@ -770,13 +770,13 @@ class StockMarket(commands.Cog):
             await self.bot.wait_until_ready()
             print("✅ [STOCK_MARKET] Bot 已就緒，開始初始化", flush=True)
             
-            # 啟動定期更新
+            # 初始化市場消息
+            await self.initialize_market_message()
+
+            # 啟動定期更新（避免初始化完成前就觸發）
             if not self.periodic_market_update.is_running():
                 print("⏰ [STOCK_MARKET] 啟動定期更新任務...", flush=True)
                 self.periodic_market_update.start()
-            
-            # 初始化市場消息
-            await self.initialize_market_message()
             
             print("✅ [STOCK_MARKET] 市場設置完成", flush=True)
         except Exception as e:
