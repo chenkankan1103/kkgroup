@@ -170,7 +170,7 @@ class TimeframeButton(discord.ui.Button):
     
     async def callback(self, interaction: discord.Interaction):
         self.room_view.current_timeframe = self.timeframe
-        await self.room_view.update_detail_view(self.symbol, interaction)
+        logger.info(f"📊 [TIMEFRAME] 使用者切換時間框架: {self.timeframe}\")\n        await self.room_view.update_detail_view(self.symbol, interaction, force_refresh=True)
 
 
 class UpdateChartButton(discord.ui.Button):
@@ -410,9 +410,13 @@ class StockRoomView(discord.ui.View):
                                   force_refresh: bool = False):
         """更新股票詳細視圖（編輯現有訊息）"""
         try:
+            # 先 defer，避免「interaction token 已過期」的錯誤
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+            
             price = await fetch_price(symbol)
             if price is None:
-                await interaction.response.defer(ephemeral=True)
+                logger.warning(f"⚠️ 無法取得 {symbol} 的價格")
                 return
             
             self.selected_symbol = symbol
@@ -430,23 +434,40 @@ class StockRoomView(discord.ui.View):
             avg_cost, balance = await loop.run_in_executor(None, _get_data)
             
             period, interval = self.TIMEFRAME_PARAMS.get(self.current_timeframe, ("3mo", "1d"))
+            logger.info(f"📊 [UPDATE] 取得 {symbol} 圖表 period={period} interval={interval} force_refresh={force_refresh}")
             chart_url = await fetch_chart(symbol, period=period, interval=interval,
                                           force_refresh=force_refresh, avg_cost=avg_cost)
+            if chart_url:
+                logger.info(f"✅ [UPDATE] 圖表 URL 已取得: {chart_url[:80]}...")
+            else:
+                logger.warning(f"⚠️ [UPDATE] 圖表 URL 為空")
             
             embed = self._build_detail_embed(symbol, price, chart_url, avg_cost, balance)
             view = StockDetailView(self, symbol, price)
             
-            await interaction.response.defer(ephemeral=True)
             # 編輯現有訊息，而不是發送新的
             if self.current_message:
                 try:
+                    logger.info(f"📝 [UPDATE] 編輯訊息 ID: {self.current_message.id}")
                     await self.current_message.edit(embed=embed, view=view)
-                except:
-                    pass  # 若編輯失敗，忽略
+                    logger.info(f"✅ [UPDATE] 訊息編輯成功")
+                except Exception as edit_err:
+                    logger.error(f"❌ [UPDATE] 編輯訊息失敗: {edit_err}")
+            else:
+                logger.warning(f"⚠️ [UPDATE] 沒有可編輯的訊息（current_message 為 None）。發送新訊息...")
+                try:
+                    if not interaction.response.is_done():
+                        msg = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                    else:
+                        msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                    self.current_message = msg
+                    logger.info(f"✅ [UPDATE] 已發送新訊息 ID: {msg.id}")
+                except Exception as send_err:
+                    logger.error(f"❌ [UPDATE] 發送訊息失敗: {send_err}")
         
         except Exception as e:
             logger.error(f"❌ 更新股票詳細失敗: {e}")
-            await interaction.response.defer(ephemeral=True)
+            traceback.print_exc()
     
     async def _update_trading_room_embed(self, symbol: str):
         """無 interaction 情境下直接更新操盤室 embed（例如交易完成後刷新）"""
@@ -520,7 +541,9 @@ class StockSelectMenu(discord.ui.Select):
             await interaction.response.send_modal(CustomStockModal(self.parent_view))
             return
 
-        await self.parent_view.show_detail_view(selected_value, interaction)
+        # 編輯現有訊息（而不是發送新訊息），並強制刷新圖表快取
+        logger.info(f"👤 [SELECT] 使用者選擇股票: {selected_value}")
+        await self.parent_view.update_detail_view(selected_value, interaction, force_refresh=True)
 
 
 # ============================================================

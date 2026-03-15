@@ -272,11 +272,17 @@ async def fetch_chart(
     """
     cache_key = f"{symbol}_{period}_{interval}_{chart_type}"
     
-    # 檢查快取
+    # 檢查快取（force_refresh=True 時強制跳過快取）
     if not force_refresh and cache_key in _chart_cache:
         url, cached_time = _chart_cache[cache_key]
         if datetime.now() - cached_time < timedelta(seconds=CACHE_DURATION_SECONDS):
+            logger.debug(f"📊 圖表快取命中: {cache_key}")
             return url
+    
+    # 強制刷新時清除該快取
+    if force_refresh and cache_key in _chart_cache:
+        logger.info(f"🔄 清除圖表快取: {cache_key}")
+        del _chart_cache[cache_key]
     
     try:
         # 獲取 OHLC 數據（用於蠟燭圖）
