@@ -856,6 +856,7 @@ class StockMarket(commands.Cog):
                 except Exception as e:
                     print(f"⚠️ [STOCK_MARKET] 無法恢復訊息: {e}", flush=True)
                     logger.warning(f"⚠️ 無法恢復訊息: {e}")
+                    traceback.print_exc()
                     self.market_message = None
 
             # 如果沒有訊息，發送新訊息
