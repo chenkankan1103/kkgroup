@@ -959,6 +959,7 @@ class StockMarket(commands.Cog):
                     # 如果訊息不存在或無法編輯，嘗試刪除舊訊息（若仍存在），避免重複
                     print(f"⚠️ [STOCK_MARKET] 無法編輯舊訊息（可能已刪除/無權限），將嘗試刪除並發送新訊息: {e}", flush=True)
                     logger.warning(f"⚠️ 無法編輯舊訊息，將發送新訊息: {e}")
+                    traceback.print_exc()
                     try:
                         await self.market_message.delete()
                         print("✅ [STOCK_MARKET] 已刪除舊市場訊息", flush=True)
