@@ -569,9 +569,16 @@ class StockRoomView(discord.ui.View):
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
             
+            # 對期貨添加警告
+            is_future = "=F" in symbol
+            if is_future:
+                await interaction.followup.send("⏳ 期貨數據加載中... 可能需要 30-45 秒", ephemeral=True)
+            
+            print(f"[STOCK_MARKET] 申請圖表: {symbol} (期貨: {is_future})", flush=True)
             price = await fetch_price(symbol)
             if price is None:
                 logger.warning(f"⚠️ 無法取得 {symbol} 的價格")
+                await interaction.followup.send(f"❌ 無法取得 {symbol} 的實時價格，請稍後再試", ephemeral=True)
                 return
             
             self.selected_symbol = symbol
@@ -592,8 +599,20 @@ class StockRoomView(discord.ui.View):
             logger.info(f"📊 [UPDATE] 取得 {symbol} 圖表 period={period} interval={interval} force_refresh={force_refresh}")
             print(f"[STOCK_MARKET] 申請圖表: {symbol} ({period}/{interval})", flush=True)
             
-            chart_url = await fetch_chart(symbol, period=period, interval=interval,
-                                          force_refresh=force_refresh, avg_cost=avg_cost)
+            # 對期貨增加超時保護
+            chart_timeout = 50 if is_future else 20
+            try:
+                chart_url = await asyncio.wait_for(
+                    fetch_chart(symbol, period=period, interval=interval,
+                               force_refresh=force_refresh, avg_cost=avg_cost),
+                    timeout=chart_timeout
+                )
+            except asyncio.TimeoutError:
+                print(f"[STOCK_MARKET] 圖表超時: {symbol}", flush=True)
+                logger.warning(f"⚠️ {symbol} 圖表生成超時 ({chart_timeout}s)")
+                chart_url = None
+                await interaction.followup.send(f"⚠️ {symbol} 的圖表加載超時，使用無圖表顯示", ephemeral=True)
+            
             if chart_url:
                 logger.info(f"✅ [UPDATE] 圖表 URL 已取得: {chart_url[:80]}...")
                 print(f"[STOCK_MARKET] 圖表成功: {symbol} {chart_url[:60]}...", flush=True)
