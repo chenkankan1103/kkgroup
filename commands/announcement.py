@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -183,12 +183,54 @@ class Announcement(commands.Cog):
             traceback.print_exc()
     
     def _update_env_message_id(self, message_id: int):
-        """更新 .env 中的消息 ID"""
+        """更新 .env 中的消息 ID - 直接寫入文件"""
         try:
             print(f"💾 正在保存 MESSAGE_ID: {message_id}")
-            set_key(self.env_path, 'ANNOUNCEMENT_MESSAGE_ID', str(message_id))
+            
+            # 讀取現有 .env 內容
+            env_content = ""
+            if self.env_path.exists():
+                with open(self.env_path, 'r', encoding='utf-8') as f:
+                    env_content = f.read()
+            
+            # 檢查是否已經有 ANNOUNCEMENT_MESSAGE_ID 這一行
+            lines = env_content.split('\n')
+            found = False
+            new_lines = []
+            
+            for line in lines:
+                if line.startswith('ANNOUNCEMENT_MESSAGE_ID='):
+                    new_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}  # 公告消息 ID（由機器人自動更新）')
+                    found = True
+                else:
+                    new_lines.append(line)
+            
+            # 如果沒找到，就在 ANNOUNCEMENT_CHANNEL_ID 後面加入
+            if not found:
+                final_lines = []
+                for i, line in enumerate(new_lines):
+                    final_lines.append(line)
+                    if line.startswith('ANNOUNCEMENT_CHANNEL_ID='):
+                        final_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}  # 公告消息 ID（由機器人自動更新）')
+                new_lines = final_lines
+            
+            # 寫入文件
+            new_content = '\n'.join(new_lines)
+            with open(self.env_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            
+            # 同時更新環境變數
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
-            print(f"✅ MESSAGE_ID 已保存到 .env 和環境變數")
+            
+            # 驗證寫入
+            with open(self.env_path, 'r', encoding='utf-8') as f:
+                verify_content = f.read()
+                if f'ANNOUNCEMENT_MESSAGE_ID={message_id}' in verify_content:
+                    print(f"✅ MESSAGE_ID 已成功保存到 .env: {message_id}")
+                    return
+            
+            print(f"⚠️ MESSAGE_ID 保存後驗證失敗")
+        
         except Exception as e:
             print(f"❌ 保存 MESSAGE_ID 失敗: {e}")
             import traceback
@@ -197,9 +239,29 @@ class Announcement(commands.Cog):
     def _clear_env_message_id(self):
         """清除 .env 中的消息 ID"""
         try:
-            set_key(self.env_path, 'ANNOUNCEMENT_MESSAGE_ID', '')
+            # 讀取現有 .env 內容
+            if self.env_path.exists():
+                with open(self.env_path, 'r', encoding='utf-8') as f:
+                    env_content = f.read()
+                
+                # 改為空值
+                lines = env_content.split('\n')
+                new_lines = []
+                
+                for line in lines:
+                    if line.startswith('ANNOUNCEMENT_MESSAGE_ID='):
+                        new_lines.append('ANNOUNCEMENT_MESSAGE_ID=  # 公告消息 ID（由機器人自動更新）')
+                    else:
+                        new_lines.append(line)
+                
+                # 寫入文件
+                new_content = '\n'.join(new_lines)
+                with open(self.env_path, 'w', encoding='utf-8') as f:
+                    f.write(new_content)
+            
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = ''
             print(f"🗑️ 已清除 MESSAGE_ID")
+        
         except Exception as e:
             print(f"❌ 清除 MESSAGE_ID 失敗: {e}")
     
