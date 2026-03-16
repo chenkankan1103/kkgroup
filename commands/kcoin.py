@@ -219,7 +219,9 @@ def _sync_build_leaderboard_image(
         title_x = MARGIN + 54
     else:
         title_x = MARGIN
-    draw.text((title_x, 18), "KK幣排行榜（前20名）", fill=(60,60,60), font=FONT_BIG)
+    
+    # 改為金流斷點主題
+    draw.text((title_x, 18), "💰 金流斷點交易所 - KK幣排行", fill=(60,60,60), font=FONT_BIG)
 
     # 畫各行
     for i, ((member, kkcoin), avatar_img) in enumerate(zip(members_data, avatar_images)):
@@ -236,15 +238,15 @@ def _sync_build_leaderboard_image(
         name_x = rank_x + 100
         name_y = y+8
         draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
-        draw.text((WIDTH-180, y+8), f"{kkcoin} KK幣", fill=(50,110,210), font=FONT_KKCOIN)
+        draw.text((WIDTH-180, y+8), f"{kkcoin} KK", fill=(50,110,210), font=FONT_KKCOIN)
 
     desc_y = 75 + len(members_data) * 60 + 15
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200,200,200), width=1)
     descriptions = [
-        " 發送訊息獲得KK幣：10字+1幣 | 25字+2幣 | 50字+3幣 （冷卻30秒）",
-        " 限制：重複訊息、純表情不給幣 |  語音掛機可獲得額外獎勵"
+        " 💬 KK幣是「未洗淨的髒錢」- 交易/賣出資產時給予",
+        " 🔄 可透過「金流斷點」轉換為 💵 數位美金（D-USD）- 查看排行榜二"
     ]
-    draw.text((MARGIN, desc_y), " KKcoin獲得方法：", fill=(80,80,80), font=FONT_SMALL)
+    draw.text((MARGIN, desc_y), " 📊 金流說明：", fill=(80,80,80), font=FONT_SMALL)
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
         draw.text((MARGIN + 10, desc_text_y), desc, fill=(100,100,100), font=FONT_DESC)
@@ -616,7 +618,7 @@ class KKCoin(commands.Cog):
 
         img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
         draw = ImageDraw.Draw(img)
-        draw.text((MARGIN, 18), "💵 數位美金排行榜（前20名）", fill=(50,200,50), font=FONT_BIG)
+        draw.text((MARGIN, 18), "💵 虛擬金融市場 - 數位美金排行", fill=(50,200,50), font=FONT_BIG)
 
         # 畫各行
         for i, ((member, digital_usd), avatar_img) in enumerate(zip(members_data, avatar_images)):
@@ -629,15 +631,15 @@ class KKCoin(commands.Cog):
             name_x = rank_x + 100
             name_y = y+8
             draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
-            draw.text((WIDTH-220, y+8), f"${digital_usd:,.0f} USD", fill=(50,200,50), font=FONT_KKCOIN)
+            draw.text((WIDTH-220, y+8), f"${digital_usd:,.0f} D-USD", fill=(50,200,50), font=FONT_KKCOIN)
 
         desc_y = 75 + len(members_data) * 60 + 15
         draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200,200,200), width=1)
         descriptions = [
-            " 數位美金獲得方法：賣出資產後製造「金流斷點」轉換而來",
-            " 這是洗出的「白錢」，可用於購買高級商品或提領"
+            " 💵 數位美金 (D-USD) 是「洗淨的白錢」- 透過「金流斷點」轉換而來",
+            " 🔄 轉換公式：KK幣 × 95% (扣5%損耗) ÷ 35 = D-USD"
         ]
-        draw.text((MARGIN, desc_y), " 💵 數位美金說明：", fill=(50,200,50), font=FONT_SMALL)
+        draw.text((MARGIN, desc_y), " 🏦 虛擬金融說明：", fill=(50,200,50), font=FONT_SMALL)
         for i, desc in enumerate(descriptions):
             desc_text_y = desc_y + 25 + i * 22
             draw.text((MARGIN + 10, desc_text_y), desc, fill=(100,100,100), font=FONT_DESC)

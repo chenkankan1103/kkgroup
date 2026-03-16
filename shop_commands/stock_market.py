@@ -197,17 +197,41 @@ class StockEntryView(discord.ui.View):
             
             logger.info(f"👤 [ENTER_MARKET] 使用者 {interaction.user.id} 進入市場")
             
-            # 顯示商品類別選擇頁面
+            # 顯示商品類別選擇頁面 - 金流斷點主題
             embed = discord.Embed(
-                title="🏦 虛擬金融市場",
-                description="選擇您想交易的商品類別",
-                color=discord.Color.gold()
+                title="🏦 金流斷點交易所",
+                description="虛擬金融市場 - 透過投資資產將 KK幣轉換為數位美金",
+                color=0x2b2d31  # 暗灰色背景，低調專業
             )
-            embed.add_field(name="📊 台股", value="台灣上市公司股票", inline=False)
-            embed.add_field(name="💰 數字貨幣", value="比特幣、以太幣等加密資產", inline=False)
-            embed.add_field(name="🌾 原物料", value="石油、天然氣、農產品等", inline=False)
-            embed.add_field(name="✨ 貴金屬", value="黃金、白銀等貴金屬", inline=False)
-            embed.set_footer(text="👇 選擇一個類別開始交易")
+            embed.add_field(
+                name="📊 台股交易",
+                value="台灣上市公司股票 - 穩定收益",
+                inline=False
+            )
+            embed.add_field(
+                name="💰 數位資產",
+                value="比特幣、以太幣等加密貨幣 - 高風險高收益",
+                inline=False
+            )
+            embed.add_field(
+                name="🌾 原物料期貨",
+                value="石油、天然氣、農產品 - 跨境轉移",
+                inline=False
+            )
+            embed.add_field(
+                name="✨ 貴金屬",
+                value="黃金、白銀等貴金屬 - 保值資產",
+                inline=False
+            )
+            
+            # 添加金流說明
+            embed.add_field(
+                name="🔄 金流轉換流程",
+                value="```\n1️⃣ 選擇商品 → 2️⃣ 買入資產 → 3️⃣ 賣出獲利\n4️⃣ 製造「金流斷點」→ 5️⃣ 轉換為數位美金 💵\n```",
+                inline=False
+            )
+            
+            embed.set_footer(text="👇 選擇一個交易品類開始投資")
             
             view = AssetClassSelectionView(self.cog)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
@@ -837,8 +861,8 @@ class MoneyLaunderingView(discord.ui.View):
             
             final_embed = discord.Embed(
                 title="💎 【 資產純化完畢：請查收 】",
-                description="",
-                color=discord.Color.from_rgb(255, 215, 0)
+                description="🎉 金流斷點成功！虛擬資產已轉化為數位美金",
+                color=0x00ff00  # 綠色 - 成功完成
             )
             
             # 進度條完成
@@ -957,10 +981,22 @@ class MoneyLaunderingView(discord.ui.View):
         return progress_msg
     
     def _create_transmission_embed(self, stage: dict, amount: int) -> discord.Embed:
-        """創建傳輸鏈進度embed"""
+        """創建傳輸鏈進度embed - 色彩策略"""
+        
+        # 根據進度階段選擇顏色
+        # 準備階段：暗灰色 (0x2b2d31) - 低調準備
+        # 混淆中：鮮黃 (0xffff00) - 警告正在進行
+        # 完成：綠色 (0x00ff00) - 成功完成
+        if stage['percent'] < 50:
+            color = 0x2b2d31  # 暗灰色
+        elif stage['percent'] < 90:
+            color = 0xffff00  # 鮮黃 - 交易進行中
+        else:
+            color = 0x1abc9c   # 青色 - 完成中
+        
         embed = discord.Embed(
             title=f"{stage['icon']} 【 {stage['title']} 】",
-            color=discord.Color.gold()
+            color=color
         )
         
         # 進度條
