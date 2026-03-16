@@ -310,9 +310,9 @@ class ScamHub(commands.Cog):
                 if 'next_event_time' not in data or now >= data['next_event_time']:
                     print(f"觸發詐騙事件 - 頻道: {vc.name}, 人數: {current_members}")
                     
-                    # 根據人數計算獎勵（人越多，獎勵越高）
-                    max_reward = min(current_members * 40, 500)  # 最多500KK幣
-                    total_reward = random.randint(max(0, max_reward - 100), max_reward)
+                    # 根據人數計算獎勵（人越多，獎勵越高）×10倍
+                    max_reward = min(current_members * 400, 5000)  # 最多5000KK幣
+                    total_reward = random.randint(max(0, max_reward - 1000), max_reward)
                     
                     # 生成詐騙事件描述
                     event_text = await self.generate_scam_event(current_members)

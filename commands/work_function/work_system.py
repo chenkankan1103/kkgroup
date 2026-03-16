@@ -34,9 +34,9 @@ LEVELS = {
     0: {
         "title": "待宰豬仔",
         "actions": [
-            {"name": "領錢", "risk": 0.1, "base_reward": 50, "success_rate": 0.95, "xp": 10}
+            {"name": "領錢", "risk": 0.1, "base_reward": 500, "success_rate": 0.95, "xp": 10}
         ],
-        "salary": 25,
+        "salary": 250,
         "days_required": 0,
         "xp_required": 0,
         "role_id": 0,
@@ -47,9 +47,9 @@ LEVELS = {
     1: {
         "title": "基層狗推(車手)",
         "actions": [
-            {"name": "領錢", "risk": 0.1, "base_reward": 100, "success_rate": 0.9, "xp": 20}
+            {"name": "領錢", "risk": 0.1, "base_reward": 1000, "success_rate": 0.9, "xp": 20}
         ],
-        "salary": 150,
+        "salary": 1500,
         "days_required": 7,
         "xp_required": 500,
         "role_id": int(os.getenv("ROLE_CAR", 0)),
@@ -60,11 +60,11 @@ LEVELS = {
     2: {
         "title": "一線聊手",
         "actions": [
-            {"name": "領錢", "risk": 0.1, "base_reward": 100, "success_rate": 0.9, "xp": 20},
-            {"name": "詐騙", "risk": 0.2, "base_reward": 200, "success_rate": 0.85, "xp": 35},
-            {"name": "談判", "risk": 0.3, "base_reward": 300, "success_rate": 0.75, "xp": 50}
+            {"name": "領錢", "risk": 0.1, "base_reward": 1000, "success_rate": 0.9, "xp": 20},
+            {"name": "詐騙", "risk": 0.2, "base_reward": 2000, "success_rate": 0.85, "xp": 35},
+            {"name": "談判", "risk": 0.3, "base_reward": 3000, "success_rate": 0.75, "xp": 50}
         ],
-        "salary": 275,
+        "salary": 2750,
         "days_required": 14,
         "xp_required": 1500,
         "role_id": int(os.getenv("ROLE_CHAT_WORKER", 0)),
@@ -75,12 +75,12 @@ LEVELS = {
     3: {
         "title": "收水/車頭",
         "actions": [
-            {"name": "領錢", "risk": 0.1, "base_reward": 100, "success_rate": 0.9, "xp": 20},
-            {"name": "收水", "risk": 0.2, "base_reward": 200, "success_rate": 0.85, "xp": 35},
-            {"name": "轉移陣地", "risk": 0.25, "base_reward": 400, "success_rate": 0.8, "xp": 60},
-            {"name": "洗錢", "risk": 0.4, "base_reward": 600, "success_rate": 0.7, "xp": 80}
+            {"name": "領錢", "risk": 0.1, "base_reward": 1000, "success_rate": 0.9, "xp": 20},
+            {"name": "收水", "risk": 0.2, "base_reward": 2000, "success_rate": 0.85, "xp": 35},
+            {"name": "轉移陣地", "risk": 0.25, "base_reward": 4000, "success_rate": 0.8, "xp": 60},
+            {"name": "洗錢", "risk": 0.4, "base_reward": 6000, "success_rate": 0.7, "xp": 80}
         ],
-        "salary": 450,
+        "salary": 4500,
         "days_required": 28,
         "xp_required": 4000,
         "role_id": int(os.getenv("ROLE_TEAM_LEAD", 0)),
@@ -91,13 +91,13 @@ LEVELS = {
     4: {
         "title": "水房會計",
         "actions": [
-            {"name": "領錢", "risk": 0.1, "base_reward": 100, "success_rate": 0.9, "xp": 20},
-            {"name": "算帳", "risk": 0.2, "base_reward": 350, "success_rate": 0.85, "xp": 45},
-            {"name": "偷A錢", "risk": 0.3, "base_reward": 300, "success_rate": 0.75, "xp": 50},
-            {"name": "做假帳", "risk": 0.5, "base_reward": 800, "success_rate": 0.65, "xp": 100},
-            {"name": "挪用公款", "risk": 0.6, "base_reward": 1000, "success_rate": 0.6, "xp": 120}
+            {"name": "領錢", "risk": 0.1, "base_reward": 1000, "success_rate": 0.9, "xp": 20},
+            {"name": "算帳", "risk": 0.2, "base_reward": 3500, "success_rate": 0.85, "xp": 45},
+            {"name": "偷A錢", "risk": 0.3, "base_reward": 3000, "success_rate": 0.75, "xp": 50},
+            {"name": "做假帳", "risk": 0.5, "base_reward": 8000, "success_rate": 0.65, "xp": 100},
+            {"name": "挪用公款", "risk": 0.6, "base_reward": 10000, "success_rate": 0.6, "xp": 120}
         ],
-        "salary": 750,
+        "salary": 7500,
         "days_required": 42,
         "xp_required": 8500,
         "role_id": int(os.getenv("ROLE_ACCOUNTING", 0)),
@@ -108,13 +108,13 @@ LEVELS = {
     5: {
         "title": "機房主任",
         "actions": [
-            {"name": "詐騙", "risk": 0.35, "base_reward": 700, "success_rate": 0.75, "xp": 90},
-            {"name": "挖虛擬幣", "risk": 0.15, "base_reward": 400, "success_rate": 0.88, "xp": 55},
-            {"name": "培訓新人", "risk": 0.1, "base_reward": 300, "success_rate": 0.92, "xp": 40},
-            {"name": "開發話術", "risk": 0.25, "base_reward": 500, "success_rate": 0.82, "xp": 70},
-            {"name": "大單詐騙", "risk": 0.7, "base_reward": 1500, "success_rate": 0.5, "xp": 150}
+            {"name": "詐騙", "risk": 0.35, "base_reward": 7000, "success_rate": 0.75, "xp": 90},
+            {"name": "挖虛擬幣", "risk": 0.15, "base_reward": 4000, "success_rate": 0.88, "xp": 55},
+            {"name": "培訓新人", "risk": 0.1, "base_reward": 3000, "success_rate": 0.92, "xp": 40},
+            {"name": "開發話術", "risk": 0.25, "base_reward": 5000, "success_rate": 0.82, "xp": 70},
+            {"name": "大單詐騙", "risk": 0.7, "base_reward": 15000, "success_rate": 0.5, "xp": 150}
         ],
-        "salary": 1250,
+        "salary": 12500,
         "days_required": 60,
         "xp_required": 18000,
         "role_id": int(os.getenv("ROLE_SCAM_ROOM", 0)),
@@ -125,13 +125,13 @@ LEVELS = {
     6: {
         "title": "小區代理人",
         "actions": [
-            {"name": "詐騙", "risk": 0.35, "base_reward": 700, "success_rate": 0.75, "xp": 90},
-            {"name": "挖虛擬幣", "risk": 0.15, "base_reward": 400, "success_rate": 0.88, "xp": 55},
-            {"name": "培訓新人", "risk": 0.1, "base_reward": 300, "success_rate": 0.92, "xp": 40},
-            {"name": "開發話術", "risk": 0.25, "base_reward": 500, "success_rate": 0.82, "xp": 70},
-            {"name": "大單詐騙", "risk": 0.7, "base_reward": 1500, "success_rate": 0.5, "xp": 150}
+            {"name": "詐騙", "risk": 0.35, "base_reward": 7000, "success_rate": 0.75, "xp": 90},
+            {"name": "挖虛擬幣", "risk": 0.15, "base_reward": 4000, "success_rate": 0.88, "xp": 55},
+            {"name": "培訓新人", "risk": 0.1, "base_reward": 3000, "success_rate": 0.92, "xp": 40},
+            {"name": "開發話術", "risk": 0.25, "base_reward": 5000, "success_rate": 0.82, "xp": 70},
+            {"name": "大單詐騙", "risk": 0.7, "base_reward": 15000, "success_rate": 0.5, "xp": 150}
         ],
-        "salary": 2100,
+        "salary": 21000,
         "days_required": 90,
         "xp_required": 40000,
         "role_id": int(os.getenv("ROLE_REGIONAL_DIRECTOR", 0)),

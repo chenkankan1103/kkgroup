@@ -1389,15 +1389,14 @@ class KKCoin(commands.Cog):
         now = time.time()
 
         if (
-            len(content) < 10 or
-            now - self.last_kkcoin_time[user_id] < USER_COOLDOWN_SECONDS or
+            len(content) < 1 or
             content == self.last_message_cache[user_id]
         ):
             return
 
-        reward = 3 if len(content) >= 50 else 2 if len(content) >= 25 else 1
+        # 字數 = KK幣，最多50幣，無冷卻時間
+        reward = min(len(content), 50)
 
-        self.last_kkcoin_time[user_id] = now
         self.last_message_cache[user_id] = content
         # 同步操作寫入資料庫可能較快，但若擔心可改為 to_thread
         update_user_balance(user_id, reward)

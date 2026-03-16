@@ -30,9 +30,9 @@ CANNABIS_SHOP = {
     }
 }
 
-# 大麻出售價格
+# 大麻出售價格（×10倍）
 CANNABIS_HARVEST_PRICES = {
-    "常規種": 70,      # 每個 70 KKcoin
-    "優質種": 90,      # 每個 90 KKcoin
-    "黃金種": 150      # 每個 150 KKcoin
+    "常規種": 700,      # 每個 700 KKcoin
+    "優質種": 900,      # 每個 900 KKcoin
+    "黃金種": 1500      # 每個 1500 KKcoin
 }
