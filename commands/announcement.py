@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from discord.ui import View, Select
+from discord.ui import View, Button
 import json
 import os
 from pathlib import Path
@@ -9,14 +9,14 @@ from dotenv import load_dotenv, set_key
 
 load_dotenv()
 
-class AnnouncementSelectView(View):
-    """公告選擇視圖"""
+class AnnouncementButtonView(View):
+    """公告按鈕選擇視圖"""
     
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # 永久視圖
         self.announcements = self._load_announcements()
         self.current_announcement_id = self.announcements[0]['id'] if self.announcements else None
-        self.update_select()
+        self.update_buttons()
     
     def _load_announcements(self) -> list:
         """載入公告數據"""
@@ -31,53 +31,59 @@ class AnnouncementSelectView(View):
             print(f"❌ 載入公告失敗: {e}")
             return []
     
-    def update_select(self):
-        """更新下拉選單"""
-        # 移除舊Select
+    def update_buttons(self):
+        """更新按鈕"""
+        # 移除舊按鈕
         for item in self.children[:]:
-            if isinstance(item, Select):
+            if isinstance(item, Button):
                 self.remove_item(item)
         
         if not self.announcements:
             return
         
-        # 建立選項
-        options = [
-            discord.SelectOption(
+        # 為每個公告建立按鈕
+        for ann in self.announcements:
+            btn = Button(
                 label=ann['name'],
-                value=ann['id'],
-                emoji=ann.get('emoji', '📌')
+                emoji=ann.get('emoji', '📌'),
+                style=discord.ButtonStyle.blurple,
+                custom_id=f"ann_btn_{ann['id']}"
             )
-            for ann in self.announcements
-        ]
-        
-        select = Select(
-            placeholder="選擇公告...",
-            options=options,
-            min_values=1,
-            max_values=1
-        )
-        select.callback = self.select_callback
-        self.add_item(select)
+            btn.callback = self.make_button_callback(ann['id'])
+            self.add_item(btn)
     
-    async def select_callback(self, interaction: discord.Interaction):
-        """選擇公告回調"""
-        selected_id = interaction.data['values'][0]
-        self.current_announcement_id = selected_id
+    def make_button_callback(self, announcement_id: str):
+        """建立按鈕回調函數"""
+        async def callback(interaction: discord.Interaction):
+            self.current_announcement_id = announcement_id
+            
+            # 找到選中的公告
+            announcement = next(
+                (ann for ann in self.announcements if ann['id'] == announcement_id),
+                None
+            )
+            
+            if not announcement:
+                return
+            
+            # 建立 Embed
+            embed = self._create_embed(announcement)
+            
+            # 更新按鈕狀態
+            self.update_button_styles(announcement_id)
+            
+            await interaction.response.edit_message(embed=embed, view=self)
         
-        # 找到選中的公告
-        announcement = next(
-            (ann for ann in self.announcements if ann['id'] == selected_id),
-            None
-        )
-        
-        if not announcement:
-            return
-        
-        # 建立 Embed
-        embed = self._create_embed(announcement)
-        
-        await interaction.response.edit_message(embed=embed, view=self)
+        return callback
+    
+    def update_button_styles(self, active_id: str):
+        """更新按鈕樣式"""
+        for item in self.children:
+            if isinstance(item, Button) and item.custom_id:
+                if active_id in item.custom_id:
+                    item.style = discord.ButtonStyle.green
+                else:
+                    item.style = discord.ButtonStyle.blurple
     
     def _create_embed(self, announcement: dict) -> discord.Embed:
         """建立 Embed"""
@@ -132,7 +138,7 @@ class Announcement(commands.Cog):
                 return
             
             # 建立視圖和第一個公告
-            view = AnnouncementSelectView()
+            view = AnnouncementButtonView()
             first_announcement = announcements[0]
             embed = view._create_embed(first_announcement)
             
