@@ -142,38 +142,66 @@ class Announcement(commands.Cog):
             first_announcement = announcements[0]
             embed = view._create_embed(first_announcement)
             
+            # 讀取 MESSAGE_ID
             message_id_str = os.getenv('ANNOUNCEMENT_MESSAGE_ID', '').strip()
+            print(f"🔍 讀取到的 MESSAGE_ID: '{message_id_str}'")
             
             if message_id_str and message_id_str.isdigit():
                 # 嘗試編輯已存在的消息
+                message_id = int(message_id_str)
+                print(f"📨 嘗試編輯消息 ID: {message_id}")
                 try:
-                    message_id = int(message_id_str)
                     message = await channel.fetch_message(message_id)
                     await message.edit(embed=embed, view=view)
-                    print(f"✅ 公告已更新 (消息 ID: {message_id})")
+                    print(f"✅ 公告已編輯 (消息 ID: {message_id})")
+                    return
                 except discord.NotFound:
-                    # 消息已刪除，發送新消息
-                    message = await channel.send(embed=embed, view=view)
-                    self._update_env_message_id(message.id)
-                    print(f"✅ 公告已發送 (新消息，ID: {message.id})")
+                    print(f"⚠️ 消息已刪除 (ID: {message_id})，重新發送新消息")
+                    self._clear_env_message_id()
                 except Exception as e:
-                    print(f"❌ 編輯公告失敗: {e}")
+                    print(f"⚠️ 編輯消息失敗: {e}，重新發送新消息")
+                    self._clear_env_message_id()
+            
+            # 發送新消息
+            print("📤 發送新公告消息...")
+            message = await channel.send(embed=embed, view=view)
+            print(f"✅ 公告已發送 (新消息，ID: {message.id})")
+            
+            # 保存 MESSAGE_ID 並驗證
+            self._update_env_message_id(message.id)
+            
+            # 驗證保存是否成功
+            verify_id = os.getenv('ANNOUNCEMENT_MESSAGE_ID', '').strip()
+            if verify_id == str(message.id):
+                print(f"✅ MESSAGE_ID 已成功保存: {verify_id}")
             else:
-                # 首次發送消息
-                message = await channel.send(embed=embed, view=view)
-                self._update_env_message_id(message.id)
-                print(f"✅ 公告已發送 (新消息，ID: {message.id})")
+                print(f"⚠️ MESSAGE_ID 保存可能失敗 (預期: {message.id}, 實際: {verify_id})")
         
         except Exception as e:
             print(f"❌ 同步公告失敗: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _update_env_message_id(self, message_id: int):
         """更新 .env 中的消息 ID"""
         try:
+            print(f"💾 正在保存 MESSAGE_ID: {message_id}")
             set_key(self.env_path, 'ANNOUNCEMENT_MESSAGE_ID', str(message_id))
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
+            print(f"✅ MESSAGE_ID 已保存到 .env 和環境變數")
         except Exception as e:
-            print(f"❌ 保存消息 ID 失敗: {e}")
+            print(f"❌ 保存 MESSAGE_ID 失敗: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _clear_env_message_id(self):
+        """清除 .env 中的消息 ID"""
+        try:
+            set_key(self.env_path, 'ANNOUNCEMENT_MESSAGE_ID', '')
+            os.environ['ANNOUNCEMENT_MESSAGE_ID'] = ''
+            print(f"🗑️ 已清除 MESSAGE_ID")
+        except Exception as e:
+            print(f"❌ 清除 MESSAGE_ID 失敗: {e}")
     
     def _load_announcements(self) -> list:
         """載入公告數據"""
