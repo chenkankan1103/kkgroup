@@ -119,6 +119,7 @@ class Announcement(commands.Cog):
         self.announcement_channel_id = int(os.getenv('ANNOUNCEMENT_CHANNEL_ID', 0))
         self.env_path = Path('.env')
         self._synced = False  # 追蹤是否已同步過
+        print(f"✅ [Announcement COG INITIALIZED] Channel ID: {self.announcement_channel_id}")
     
     @commands.Cog.listener()
     async def on_ready(self):
