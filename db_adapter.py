@@ -517,3 +517,128 @@ def get_user_total_stock_value(
     unrealized_pnl = total_market_value - total_cost
     
     return (total_market_value, total_cost, unrealized_pnl)
+
+
+# ============================================================
+# 園區中央儲備池 (全局金庫系統)
+# ============================================================
+
+SYSTEM_CONFIG_ID = "SYSTEM_CONFIG"  # 系統配置的特殊 ID
+CENTRAL_RESERVE_FIELD = "central_reserve"  # 中央儲備池欄位名
+
+
+def get_central_reserve() -> int:
+    """
+    獲取園區中央儲備池的總額
+    
+    Returns:
+        儲備池中的 KK 幣總額 (預設 0)
+    """
+    return get_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, default=0)
+
+
+def add_to_central_reserve(amount: int) -> bool:
+    """
+    增加中央儲備池的金額 (當玩家輸錢、購買道具或支付手續費時)
+    
+    Args:
+        amount: 要加入的 KK 幣數量 (應為正整數)
+        
+    Returns:
+        是否成功
+    """
+    if amount < 0:
+        print(f"⚠️ 嘗試向儲備池添加負數: {amount}")
+        return False
+    return add_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, amount)
+
+
+def remove_from_central_reserve(amount: int) -> bool:
+    """
+    從中央儲備池中取出金額 (當玩家完成金流斷點、領取獎勵時)
+    
+    Args:
+        amount: 要取出的 KK 幣數量 (應為正整數)
+        
+    Returns:
+        是否成功
+    """
+    current = get_central_reserve()
+    if current < amount:
+        print(f"⚠️ 儲備池餘額不足: 當前 {current}, 要取 {amount}")
+        return False
+    return add_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, -amount)
+
+
+def set_central_reserve(amount: int) -> bool:
+    """
+    直接設置中央儲備池的金額 (用於初始化或管理員操作)
+    
+    Args:
+        amount: 新的總額
+        
+    Returns:
+        是否成功
+    """
+    return set_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, amount)
+
+
+def get_reserve_pressure() -> float:
+    """
+    計算洗錢壓力百分比 (0-100%)
+    
+    壓力計算邏輯：
+    - 儲備池滿（充裕）: 手續費低，鼓勵洗錢
+    - 儲備池空（枯竭）: 手續費高，限制洗錢
+    
+    Returns:
+        壓力百分比 (0.0 = 空虛, 100.0 = 充裕)
+    """
+    RESERVE_THRESHOLD = 1_000_000  # 目標儲備額 100 萬 KK 幣
+    current = get_central_reserve()
+    
+    if current <= 0:
+        return 0.0
+    if current >= RESERVE_THRESHOLD:
+        return 100.0
+    
+    return (current / RESERVE_THRESHOLD) * 100.0
+
+
+def get_dynamic_fee_rate() -> float:
+    """
+    根據儲備池狀態計算動態手續費率
+    
+    手續費率邏輯：
+    - 儲備池充裕 (>80%): 3% (優待)
+    - 儲備池正常 (50-80%): 5% (正常)
+    - 儲備池枯竭 (<50%): 8% (高額)
+    
+    Returns:
+        手續費率 (小數表示，如 0.05 = 5%)
+    """
+    pressure = get_reserve_pressure()
+    
+    if pressure >= 80:
+        return 0.03  # 優待費率
+    elif pressure >= 50:
+        return 0.05  # 正常費率
+    else:
+        return 0.08  # 高額費率
+
+
+def get_reserve_announcement() -> str:
+    """
+    根據儲備池狀態生成每日公告
+    
+    Returns:
+        公告文字
+    """
+    pressure = get_reserve_pressure()
+    
+    if pressure >= 80:
+        return "💰 「金庫充裕，今日斷點手續費優待中 (3%)。」"
+    elif pressure >= 50:
+        return "🟡 「金庫運轉正常，斷點手續費維持標準 (5%)。」"
+    else:
+        return "⚠️ 「金庫風險警報！斷點手續費提升至 8%，請謹慎操作。」"

@@ -29,7 +29,9 @@ from enum import Enum
 from db_adapter import (
     get_user_kkcoin, update_user_kkcoin, 
     get_user_stocks, set_user_stocks, add_stock_position, close_stock_position,
-    get_user_total_stock_value, get_user_field, set_user_field, get_all_users
+    get_user_total_stock_value, get_user_field, set_user_field, get_all_users,
+    get_central_reserve, add_to_central_reserve, 
+    get_dynamic_fee_rate, get_reserve_announcement
 )
 from utils.stock_api import (
     fetch_price, fetch_chart, get_popular_stocks, fetch_historical_data
@@ -847,17 +849,22 @@ class MoneyLaunderingView(discord.ui.View):
             
             # 完成後的embed
             update_user_kkcoin(self.user_id, -self.amount)
-            # 使用 set_user_field 來更新 digital_usd
-            current_usd = get_user_field(self.user_id, 'digital_usd', default=0)
-            set_user_field(self.user_id, 'digital_usd', current_usd + self.amount)
             
-            # 計算斷點損耗 (5%)
-            loss_amount = int(self.amount * 0.05)
-            net_output = self.amount - loss_amount
+            # 計算動態手續費 (根據金庫狀態)
+            dynamic_fee_rate = get_dynamic_fee_rate()  # 返回 0.03, 0.05, 或 0.08
+            fee_amount = int(self.amount * dynamic_fee_rate)
+            net_output = self.amount - fee_amount
+            
+            # 將手續費流入金庫
+            add_to_central_reserve(fee_amount)
             
             # 計算匯率 (1:35 - 1 USD = 35 KKB)
             exchange_rate = 35
             digital_usd = net_output / exchange_rate
+            
+            # 使用 set_user_field 來更新 digital_usd
+            current_usd = get_user_field(self.user_id, 'digital_usd', default=0)
+            set_user_field(self.user_id, 'digital_usd', current_usd + digital_usd)
             
             final_embed = discord.Embed(
                 title="💎 【 資產純化完畢：請查收 】",
@@ -879,17 +886,20 @@ class MoneyLaunderingView(discord.ui.View):
                 inline=False
             )
             
-            # 結算單據
+            # 結算單據 - 包含動態手續費說明
+            reserve_pressure = (get_central_reserve() / 1_000_000) * 100  # 計算壓力百分比
             final_embed.add_field(
                 name="💸 洗煉成果",
                 value=f"""```
 📥 輸入資金：{self.amount:,} KKB
 
-📉 斷點損耗 (5%)：-{loss_amount:,} KKB
+📉 動態手續費 ({dynamic_fee_rate*100:.1f}%)：-{fee_amount:,} KKB
 
 💱 匯率 (1:{exchange_rate})：1 USD = {exchange_rate} KKB
 
 📤 淨產出：{digital_usd:,.2f} 數位美金 (D-USD)
+
+💰 金庫狀態：{get_central_reserve():,} KKB ({reserve_pressure:.1f}% 壓力)
 
 資金已安全存入您的虛擬離岸帳戶。
 ```""",
@@ -901,6 +911,14 @@ class MoneyLaunderingView(discord.ui.View):
             final_embed.add_field(
                 name="📊 帳戶余額",
                 value=f"• KK幣: {new_kkcoin:,}\n• 數位美金: ${new_usd:,.2f} USD",
+                inline=False
+            )
+            
+            # 顯示金庫公告
+            system_announcement = get_reserve_announcement()
+            final_embed.add_field(
+                name="🏦 園區公告",
+                value=system_announcement,
                 inline=False
             )
             
@@ -925,6 +943,11 @@ class MoneyLaunderingView(discord.ui.View):
         """顯示金流斷點的進度動畫 - 傳輸鏈UI設計"""
         import asyncio
         
+        # 取得動態手續費率
+        dynamic_fee_rate = get_dynamic_fee_rate()
+        fee_amount = int(amount * dynamic_fee_rate)
+        reserve_status = get_reserve_announcement()
+        
         # 進度階段 - 傳輸鏈設計
         stages = [
             {
@@ -935,7 +958,7 @@ class MoneyLaunderingView(discord.ui.View):
                 "status": "📡 正在連線至跳板主機...",
                 "details": [
                     "⚪ ───── ⚪ ───── ⚪ ───── ⚪",
-                    "[ 等待接入匿名網路... ]"
+                    f"[ 檢測園區儲備狀態... 手續費率: {dynamic_fee_rate*100:.1f}% ]"
                 ]
             },
             {
@@ -946,7 +969,7 @@ class MoneyLaunderingView(discord.ui.View):
                 "status": f"🔄 正在將 {amount:,} KKB 拆分為 {max(5, amount // 2000)} 筆微額交易...",
                 "details": [
                     "🔵 ─── 🟢 ─── ⚪ ─── ⚪",
-                    "[ 正在通過「第二節點：境外伺服器」... ]"
+                    f"[ 手續費：{fee_amount:,} KKB 流入園區金庫... ]"
                 ]
             },
             {
@@ -957,7 +980,7 @@ class MoneyLaunderingView(discord.ui.View):
                 "status": "🔴 原始資金鏈已切斷。執法單位追蹤中斷。",
                 "details": [
                     "🔵 ─── 🔵 ─── 🔵 ─── 💎",
-                    "[ 正在生成離岸資產... ]"
+                    f"[ 園區金庫已增加 {fee_amount:,} KKB... ]"
                 ]
             },
         ]

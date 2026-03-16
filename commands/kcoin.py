@@ -9,7 +9,11 @@ from dotenv import load_dotenv, set_key
 from io import BytesIO
 
 # 匯入新的 DB 適配層
-from db_adapter import get_user_field, add_user_field
+from db_adapter import (
+    get_user_field, add_user_field,
+    get_central_reserve, add_to_central_reserve, remove_from_central_reserve, set_central_reserve,
+    get_reserve_pressure, get_dynamic_fee_rate, get_reserve_announcement
+)
 
 # 載入 .env 檔案
 load_dotenv()
@@ -271,6 +275,10 @@ class KKCoin(commands.Cog):
         self.digital_usd_channel_id = int(get_from_env("DIGITAL_USD_RANK_CHANNEL_ID", 0))
         self.digital_usd_message_id = int(get_from_env("DIGITAL_USD_RANK_MESSAGE_ID", 0))
         
+        # 園區中央儲備金狀態
+        self.reserve_channel_id = int(get_from_env("RESERVE_STATUS_CHANNEL_ID", 0))
+        self.reserve_message_id = int(get_from_env("RESERVE_STATUS_MESSAGE_ID", 0))
+        
         self.last_kkcoin_time = defaultdict(lambda: 0)
         self.last_message_cache = defaultdict(str)
         self.last_update_time = 0
@@ -280,13 +288,16 @@ class KKCoin(commands.Cog):
         # 啟動定時更新任務
         self.auto_update_leaderboard.start()
         self.auto_update_digital_usd_leaderboard.start()
+        self.auto_update_reserve_status.start()
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
         print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
+        print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
         self.auto_update_leaderboard.cancel()
         self.auto_update_digital_usd_leaderboard.cancel()
+        self.auto_update_reserve_status.cancel()
 
     @tasks.loop(minutes=5)
     async def auto_update_leaderboard(self):
@@ -440,6 +451,167 @@ class KKCoin(commands.Cog):
         
         except Exception as e:
             print(f"❌ 初始化數位美金排行榜時發生錯誤: {e}")
+
+    # ============================================================
+    # 園區中央儲備金狀態相關
+    # ============================================================
+
+    @tasks.loop(minutes=2)
+    async def auto_update_reserve_status(self):
+        """每 2 分鐘自動更新園區儲備狀態"""
+        if not self.reserve_channel_id:
+            return
+            
+        # 如果沒有訊息 ID，嘗試創建
+        if not self.reserve_message_id:
+            await self.create_reserve_status()
+        else:
+            # 否則更新現有狀態
+            await self.update_reserve_status(min_interval=0)
+
+    @auto_update_reserve_status.before_loop
+    async def before_auto_update_reserve(self):
+        """等待 bot 準備完成"""
+        await self.bot.wait_until_ready()
+        print("✅ 園區儲備狀態自動更新任務已啟動...")
+
+    async def create_reserve_status(self):
+        """創建園區儲備狀態訊息"""
+        if not self.reserve_channel_id:
+            print("❌ 未設定園區儲備狀態頻道 ID")
+            return
+        
+        if self.reserve_message_id:
+            return  # 已存在
+            
+        try:
+            channel = self.bot.get_channel(self.reserve_channel_id)
+            if not channel:
+                print(f"❌ 找不到儲備狀態頻道 {self.reserve_channel_id}")
+                return
+            
+            embed = self.create_reserve_embed()
+            msg = await channel.send(embed=embed)
+            
+            # 立即儲存訊息 ID
+            self.reserve_message_id = msg.id
+            save_to_env("RESERVE_STATUS_CHANNEL_ID", channel.id)
+            save_to_env("RESERVE_STATUS_MESSAGE_ID", msg.id)
+            
+            print(f"✅ 園區儲備狀態已創建 - 訊息 ID: {msg.id}")
+            
+        except Exception as e:
+            print(f"❌ 創建儲備狀態失敗: {e}")
+
+    def create_reserve_embed(self) -> discord.Embed:
+        """建立園區儲備狀態 Embed"""
+        reserve = get_central_reserve()
+        pressure = get_reserve_pressure()
+        fee_rate = get_dynamic_fee_rate()
+        announcement = get_reserve_announcement()
+        
+        # 繪製壓力條
+        bar_length = 20
+        filled = int(pressure / 100 * bar_length)
+        empty = bar_length - filled
+        pressure_bar = "█" * filled + "░" * empty
+        
+        # 根據壓力等級選擇顏色
+        if pressure >= 80:
+            color = 0x00ff00  # 綠色 - 充裕
+            status = "✅ 充裕"
+        elif pressure >= 50:
+            color = 0xffff00  # 黃色 - 正常
+            status = "🟡 正常"
+        else:
+            color = 0xff0000  # 紅色 - 風險
+            status = "⚠️ 風險"
+        
+        embed = discord.Embed(
+            title="🏦 園區中央儲備金 (The Reserve)",
+            description=f"園區資金池管理與金流斷點動態費率系統",
+            color=color
+        )
+        
+        embed.add_field(
+            name="💰 儲備餘額",
+            value=f"**{reserve:,} KK幣**",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🌡️ 洗錢壓力",
+            value=f"{pressure_bar} {pressure:.1f}% ({status})",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💸 動態手續費率",
+            value=f"**{fee_rate*100:.1f}%**",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 壓力影響",
+            value="- ≥80% 壓力: 3% 費率 (優待)\n"
+                  "- 50-80% 壓力: 5% 費率 (正常)\n"
+                  "- <50% 壓力: 8% 費率 (高額)",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📢 今日公告",
+            value=announcement,
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💡 說明",
+            value="**進帳來源:**\n"
+                  "• 玩家股市操作虧損\n"
+                  "• 購買道具扣款\n"
+                  "• 金流斷點手續費\n\n"
+                  "**支出用途:**\n"
+                  "• 金流斷點獎勵發放\n"
+                  "• 日常活動獎勵",
+            inline=False
+        )
+        
+        embed.set_footer(text="自動更新時間: 每 2 分鐘")
+        
+        return embed
+
+    async def update_reserve_status(self, min_interval=60, force=False):
+        """更新園區儲備狀態訊息"""
+        if not self.reserve_channel_id or not self.reserve_message_id:
+            return
+        
+        if not force and int(time.time()) % min_interval != 0:
+            return  # 簡單節流
+
+        try:
+            channel = self.bot.get_channel(self.reserve_channel_id)
+            if not channel:
+                return
+
+            try:
+                msg = await channel.fetch_message(self.reserve_message_id)
+            except discord.NotFound:
+                print("❌ 儲備狀態訊息已被刪除，將重新創建")
+                self.reserve_message_id = 0
+                save_to_env("RESERVE_STATUS_MESSAGE_ID", 0)
+                await self.create_reserve_status()
+                return
+            except Exception as e:
+                print(f"❌ 取得訊息失敗: {e}")
+                return
+
+            embed = self.create_reserve_embed()
+            await msg.edit(embed=embed)
+            print(f"✅ 儲備狀態已更新")
+
+        except Exception as e:
+            print(f"❌ 更新儲備狀態時發生錯誤: {e}")
 
     async def create_digital_usd_leaderboard(self):
         """自動創建數位美金排行榜訊息"""
@@ -1001,6 +1173,60 @@ class KKCoin(commands.Cog):
 
         # 排行榜更新不等待，透過 create_task 並靠內部節流控制頻率
         asyncio.create_task(self.update_leaderboard())
+
+    @app_commands.command(name="reserve_status", description="查詢園區中央儲備金狀態")
+    async def reserve_status(self, interaction: discord.Interaction):
+        """顯示園區中央儲備金的狀態"""
+        await interaction.response.defer()
+        
+        embed = self.create_reserve_embed()
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="reserve_admin", description="管理園區儲備金（管理員專用）")
+    @app_commands.describe(
+        action="操作類型",
+        amount="金額"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="增加", value="add"),
+        app_commands.Choice(name="減少", value="subtract"),
+        app_commands.Choice(name="設定為", value="set")
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def reserve_admin(self, interaction: discord.Interaction, action: str, amount: int):
+        """管理園區儲備金（測試用）"""
+        if amount < 0:
+            await interaction.response.send_message("❌ 金額不能為負數", ephemeral=True)
+            return
+        
+        from db_adapter import set_central_reserve, remove_from_central_reserve
+        
+        current = get_central_reserve()
+        
+        if action == "add":
+            add_to_central_reserve(amount)
+            action_text = f"增加了 {amount:,}"
+            new_amount = current + amount
+        elif action == "subtract":
+            if current < amount:
+                await interaction.response.send_message(f"❌ 儲備金不足！當前只有 {current:,}，要扣 {amount:,}", ephemeral=True)
+                return
+            remove_from_central_reserve(amount)
+            action_text = f"減少了 {amount:,}"
+            new_amount = current - amount
+        else:  # set
+            set_central_reserve(amount)
+            action_text = f"設定為 {amount:,}"
+            new_amount = amount
+        
+        await interaction.response.send_message(
+            f"✅ 已為園區儲備金 {action_text}\n"
+            f"💰 變更前：{current:,} KK幣\n"
+            f"💰 變更後：{new_amount:,} KK幣",
+            ephemeral=True
+        )
+        
+        print(f"🔧 管理員 {interaction.user.display_name} {action_text} 園區儲備金 ({current:,} → {new_amount:,})")
 
 
 
