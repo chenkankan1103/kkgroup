@@ -914,7 +914,13 @@ class MoneyLaunderingView(discord.ui.View):
                 inline=False
             )
             
-            new_usd = get_user_field(self.user_id, 'digital_usd', default=0)
+            # 取得最新的數位美金（可能是儲存在資料庫的字符串）
+            new_usd_raw = get_user_field(self.user_id, 'digital_usd', default=0)
+            try:
+                new_usd = float(new_usd_raw)
+            except (TypeError, ValueError):
+                new_usd = 0.0
+
             new_kkcoin = get_user_kkcoin(self.user_id)
             final_embed.add_field(
                 name="📊 帳戶余額",
@@ -1141,8 +1147,31 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 realized_total = get_user_field(user_id, REALIZED_PNL_FIELD, default=0.0)
                 set_user_field(user_id, REALIZED_PNL_FIELD, realized_total + (realized_pnl or 0))
                 
+                # 直接自動將 KK 幣轉換為數位美金（洗錢流程）
+                dynamic_fee_rate = get_dynamic_fee_rate()
+                fee_amount = int(total_cost * dynamic_fee_rate)
+                net_output = total_cost - fee_amount
+                exchange_rate = 35
+                digital_usd = float(net_output) / exchange_rate
+
+                # 併入中央儲備池
+                add_to_central_reserve(fee_amount)
+
+                # 更新用戶 D-USD
+                current_usd = get_user_field(user_id, 'digital_usd', default=0)
+                try:
+                    if isinstance(current_usd, str):
+                        current_usd = float(current_usd)
+                    else:
+                        current_usd = float(current_usd)
+                except (ValueError, TypeError):
+                    current_usd = 0.0
+                new_usd_total = current_usd + digital_usd
+                set_user_field(user_id, 'digital_usd', new_usd_total)
+
+                # 建立回報 Embed
                 embed = discord.Embed(
-                    title="✅ 賣出成功",
+                    title="✅ 賣出並完成洗錢：數位美金已入帳",
                     description=f"賣出 {qty} 股 {self.symbol}\n價格: ${self.price:,.2f}/股\n總收入: {int(total_cost):,} KK",
                     color=discord.Color.green()
                 )
@@ -1150,21 +1179,36 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 if realized_pnl:
                     pnl_text = f"+{int(realized_pnl)}" if realized_pnl > 0 else f"{int(realized_pnl)}"
                     embed.add_field(name="已實現損益", value=pnl_text, inline=True)
-                
-                # 添加金流斷點選項
+
                 embed.add_field(
-                    name="💰 製造斷點",
-                    value=f"✅ 你可以將這 {int(total_cost):,} KK 幣轉換為數位美金（白錢），按下面的按鈕開始",
+                    name="💸 洗錢結算",
+                    value=(
+                        f"手續費 {fee_amount:,} KK ({dynamic_fee_rate*100:.1f}%) 已存入金庫\n"
+                        f"淨可轉換: {net_output:,} KK → {digital_usd:,.2f} D-USD"
+                    ),
                     inline=False
                 )
-                
-                # 創建金流斷點視圖
-                view = MoneyLaunderingView(user_id, int(total_cost))
-                interaction_followup = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-                
-                # 存儲消息以供視圖使用
-                view.message = interaction_followup
-                
+
+                embed.add_field(
+                    name="📊 帳戶狀態",
+                    value=(
+                        f"• KK 幣: {get_user_kkcoin(user_id):,}\n"
+                        f"• 數位美金: ${new_usd_total:,.2f} USD"
+                    ),
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="🏦 金庫狀態",
+                    value=(
+                        f"目前金庫: {get_central_reserve():,} KK\n"
+                        f"{get_reserve_announcement()}"
+                    ),
+                    inline=False
+                )
+
+                await interaction.followup.send(embed=embed, ephemeral=True)
+
                 # 異步更新操盤室視圖（不依賴 interaction token）
                 async def refresh_view():
                     await asyncio.sleep(0.5)
