@@ -55,11 +55,14 @@ def get_user_digital_usd(user_id):
     value = get_user_field(user_id, 'digital_usd', default=0)
     # 確保返回的是數字類型（處理字符串情況）
     if isinstance(value, str):
+        # 處理空字符串
+        if not value or value.strip() == '':
+            return 0.0
         try:
             return float(value)
         except (ValueError, TypeError):
-            return 0
-    return float(value) if value else 0
+            return 0.0
+    return float(value) if value else 0.0
 
 def update_user_digital_usd(user_id, amount):
     """更新玩家數位美金"""

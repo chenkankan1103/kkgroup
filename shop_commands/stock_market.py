@@ -1166,9 +1166,13 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 current_usd = get_user_field(user_id, 'digital_usd', default=0)
                 try:
                     if isinstance(current_usd, str):
-                        current_usd = float(current_usd)
+                        # 處理空字符串情況
+                        if not current_usd or current_usd.strip() == '':
+                            current_usd = 0.0
+                        else:
+                            current_usd = float(current_usd)
                     else:
-                        current_usd = float(current_usd)
+                        current_usd = float(current_usd) if current_usd else 0.0
                 except (ValueError, TypeError):
                     current_usd = 0.0
                 new_usd_total = current_usd + digital_usd
