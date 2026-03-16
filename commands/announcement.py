@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord.ui import View, Button
 import json
 import os
+import asyncio
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -120,31 +121,48 @@ class Announcement(commands.Cog):
     
     async def cog_load(self):
         """Cog 載入時自動同步公告"""
+        # 等待 bot 完全連接後再同步公告
+        print("⏳ 等待機器人連接...")
+        await self.bot.wait_until_ready()
+        await asyncio.sleep(1)  # 額外延遲確保所有事件都初始化
+        print("✓ 機器人已連接，開始同步公告...")
         await self.sync_announcement()
     
     async def sync_announcement(self):
         """同步公告：編輯已存在的消息或發送新消息"""
         try:
+            # 確保 bot 已連接
+            await self.bot.wait_until_ready()
+            
             # 載入數據
             announcements = self._load_announcements()
             if not announcements:
                 print("❌ 沒有公告數據")
                 return
             
-            # 取得公告頻道
-            channel = self.bot.get_channel(self.announcement_channel_id)
+            # 取得公告頻道（使用 fetch 而不是 get）
+            try:
+                channel = await self.bot.fetch_channel(self.announcement_channel_id)
+            except Exception as e:
+                print(f"❌ 無法獲取公告頻道 (ID: {self.announcement_channel_id}): {e}")
+                return
+            
             if not channel:
                 print(f"❌ 公告頻道未找到 (ID: {self.announcement_channel_id})")
                 return
+            
+            print(f"✓ 已連接到頻道: {channel.name} (ID: {self.announcement_channel_id})")
             
             # 建立視圖和第一個公告
             view = AnnouncementButtonView()
             first_announcement = announcements[0]
             embed = view._create_embed(first_announcement)
             
-            # 讀取 MESSAGE_ID
-            message_id_str = os.getenv('ANNOUNCEMENT_MESSAGE_ID', '').strip()
-            print(f"🔍 讀取到的 MESSAGE_ID: '{message_id_str}'")
+            # 重新加載 .env 確保取得最新的 MESSAGE_ID
+            from dotenv import dotenv_values
+            env_vars = dotenv_values('.env')
+            message_id_str = env_vars.get('ANNOUNCEMENT_MESSAGE_ID', '').strip()
+            print(f"🔍 重新讀取 MESSAGE_ID: '{message_id_str}'")
             
             if message_id_str and message_id_str.isdigit():
                 # 嘗試編輯已存在的消息
@@ -170,10 +188,11 @@ class Announcement(commands.Cog):
             # 保存 MESSAGE_ID 並驗證
             self._update_env_message_id(message.id)
             
-            # 驗證保存是否成功
-            verify_id = os.getenv('ANNOUNCEMENT_MESSAGE_ID', '').strip()
+            # 驗證保存是否成功（使用 dotenv_values 重新讀取）
+            env_vars = dotenv_values('.env')
+            verify_id = env_vars.get('ANNOUNCEMENT_MESSAGE_ID', '').strip()
             if verify_id == str(message.id):
-                print(f"✅ MESSAGE_ID 已成功保存: {verify_id}")
+                print(f"✅ MESSAGE_ID 已成功保存到 .env: {verify_id}")
             else:
                 print(f"⚠️ MESSAGE_ID 保存可能失敗 (預期: {message.id}, 實際: {verify_id})")
         
