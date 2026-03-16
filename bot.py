@@ -13,7 +13,12 @@ from bot_status import build_discord_activity
 # 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
 # ============================================================
 import sys
-import syslog
+try:
+    import syslog
+    HAS_SYSLOG = True
+except ImportError:
+    # Windows 上沒有 syslog
+    HAS_SYSLOG = False
 
 LOG_FILE = "/tmp/bot-debug.log"
 
@@ -28,10 +33,11 @@ def file_log(msg):
         pass
     
     # 寫入 syslog
-    try:
-        syslog.syslog(syslog.LOG_INFO, f"[BOT_DEBUG] {msg}")
-    except:
-        pass
+    if HAS_SYSLOG:
+        try:
+            syslog.syslog(syslog.LOG_INFO, f"[BOT_DEBUG] {msg}")
+        except:
+            pass
     
     # 同時 print
     print(msg, flush=True)

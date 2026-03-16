@@ -118,14 +118,16 @@ class Announcement(commands.Cog):
         self.bot = bot
         self.announcement_channel_id = int(os.getenv('ANNOUNCEMENT_CHANNEL_ID', 0))
         self.env_path = Path('.env')
+        self._synced = False  # 追蹤是否已同步過
     
-    async def cog_load(self):
-        """Cog 載入時自動同步公告"""
-        # 等待 bot 完全連接後再同步公告
-        print("⏳ 等待機器人連接...")
-        await self.bot.wait_until_ready()
-        await asyncio.sleep(1)  # 額外延遲確保所有事件都初始化
-        print("✓ 機器人已連接，開始同步公告...")
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """機器人連接後自動同步公告"""
+        if self._synced:
+            return
+        
+        self._synced = True
+        print("🔔 [Announcement] 機器人已準備就緒，開始同步公告...")
         await self.sync_announcement()
     
     async def sync_announcement(self):
@@ -298,6 +300,4 @@ class Announcement(commands.Cog):
             return []
 
 async def setup(bot):
-    cog = Announcement(bot)
-    await bot.add_cog(cog)
-    await cog.cog_load()
+    await bot.add_cog(Announcement(bot))
