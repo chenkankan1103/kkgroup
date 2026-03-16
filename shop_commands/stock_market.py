@@ -1238,8 +1238,10 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
         except ValueError:
             await interaction.followup.send("❌ 請輸入有效的數字", ephemeral=True)
         except Exception as e:
-            logger.error(f"❌ 交易失敗: {e}")
+            # 日誌到 stdout 以便 systemd/journalctl 可抓到，並提供更容易追蹤的關鍵字
+            print(f"[STOCK_MARKET ERROR] {e}", flush=True)
             traceback.print_exc()
+            logger.error(f"❌ 交易失敗: {e}")
             await interaction.followup.send("❌ 交易失敗，請稍後再試。", ephemeral=True)
 
 
