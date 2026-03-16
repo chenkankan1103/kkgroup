@@ -523,7 +523,7 @@ def get_user_total_stock_value(
 # 園區中央儲備池 (全局金庫系統)
 # ============================================================
 
-SYSTEM_CONFIG_ID = "SYSTEM_CONFIG"  # 系統配置的特殊 ID
+SYSTEM_CONFIG_ID = 999999999  # 系統配置的特殊 ID（特殊數字，避免與真實玩家ID衝突）
 CENTRAL_RESERVE_FIELD = "central_reserve"  # 中央儲備池欄位名
 
 
