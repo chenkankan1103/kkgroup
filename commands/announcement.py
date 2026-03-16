@@ -120,22 +120,21 @@ class Announcement(commands.Cog):
         self.env_path = Path('.env')
         self._synced = False  # 追蹤是否已同步過
         print(f"✅ [Announcement COG INITIALIZED] Channel ID: {self.announcement_channel_id}")
+        
+        # 啟動背景任務監控 bot 連接
+        self.sync_task = asyncio.create_task(self._wait_and_sync())
     
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """機器人連接後自動同步公告"""
-        print(f"🔔 [Announcement] on_ready 事件觸發... _synced={self._synced}")
-        
-        if self._synced:
-            print(f"⏭️ [Announcement] 已同步過，跳過")
-            return
-        
-        self._synced = True
-        print("🔔 [Announcement] 機器人已準備就緒，開始同步公告...")
+    async def _wait_and_sync(self):
+        """等待 bot 連接然後同步"""
         try:
-            await self.sync_announcement()
+            await self.bot.wait_until_ready()
+            await asyncio.sleep(2)  # 額外延遲確保完全初始化
+            if not self._synced:
+                self._synced = True
+                print("[Announcement] Bot 已就緒，開始同步公告...")
+                await self.sync_announcement()
         except Exception as e:
-            print(f"❌ [Announcement] on_ready 中同步失敗: {e}")
+            print(f"❌ [Announcement] 任務執行失敗: {e}")
             import traceback
             traceback.print_exc()
     
