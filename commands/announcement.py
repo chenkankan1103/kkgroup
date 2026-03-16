@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
-from discord.ui import View, Button
+from discord.ui import View, Select
 import json
 import os
 from pathlib import Path
@@ -10,101 +9,86 @@ from dotenv import load_dotenv, set_key
 
 load_dotenv()
 
-class AnnouncementCarouselView(View):
-    """帶按鈕的公告輪播視圖"""
+class AnnouncementSelectView(View):
+    """公告選擇視圖"""
     
-    def __init__(self, carousel_id: str, current_page: int = 0):
-        super().__init__(timeout=None)  # 永久監聽按鈕
-        self.carousel_id = carousel_id
-        self.current_page = current_page
-        self.carousel_data = self._load_carousel()
-        
-        if self.carousel_data:
-            self.pages = self.carousel_data.get('pages', [])
-            self.update_buttons()
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.announcements = self._load_announcements()
+        self.current_announcement_id = self.announcements[0]['id'] if self.announcements else None
+        self.update_select()
     
-    def _load_carousel(self) -> Optional[dict]:
-        """載入轉木馬數據"""
+    def _load_announcements(self) -> list:
+        """載入公告數據"""
         docs_path = Path("docs/announcement_carousel.json")
         try:
             if docs_path.exists():
                 with open(docs_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    carousels = data.get('announcement_carousels', {})
-                    return carousels.get(self.carousel_id, {})
-            return None
+                    return data.get('announcement_carousels', {}).get('announcements', [])
+            return []
         except Exception as e:
-            print(f"❌ 載入轉木馬失敗: {e}")
-            return None
+            print(f"❌ 載入公告失敗: {e}")
+            return []
     
-    def update_buttons(self):
-        """更新按鈕狀態"""
-        # 移除舊按鈕
+    def update_select(self):
+        """更新下拉選單"""
+        # 移除舊Select
         for item in self.children[:]:
-            if isinstance(item, Button):
+            if isinstance(item, Select):
                 self.remove_item(item)
         
-        num_pages = len(self.pages)
+        if not self.announcements:
+            return
         
-        # 上一頁按鈕
-        prev_btn = Button(
-            label="⬅️ 上一頁",
-            style=discord.ButtonStyle.blurple,
-            disabled=self.current_page == 0,
-            custom_id=f"carousel_prev_{self.carousel_id}"
-        )
-        prev_btn.callback = self.prev_page
-        self.add_item(prev_btn)
+        # 建立選項
+        options = [
+            discord.SelectOption(
+                label=ann['name'],
+                value=ann['id'],
+                emoji=ann.get('emoji', '📌')
+            )
+            for ann in self.announcements
+        ]
         
-        # 頁碼按鈕
-        page_btn = Button(
-            label=f"{self.current_page + 1}/{num_pages}",
-            style=discord.ButtonStyle.gray,
-            disabled=True,
-            custom_id=f"carousel_page_{self.carousel_id}"
+        select = Select(
+            placeholder="選擇公告...",
+            options=options,
+            min_values=1,
+            max_values=1
         )
-        self.add_item(page_btn)
+        select.callback = self.select_callback
+        self.add_item(select)
+    
+    async def select_callback(self, interaction: discord.Interaction):
+        """選擇公告回調"""
+        selected_id = interaction.data['values'][0]
+        self.current_announcement_id = selected_id
         
-        # 下一頁按鈕
-        next_btn = Button(
-            label="下一頁 ➡️",
-            style=discord.ButtonStyle.blurple,
-            disabled=self.current_page == num_pages - 1,
-            custom_id=f"carousel_next_{self.carousel_id}"
+        # 找到選中的公告
+        announcement = next(
+            (ann for ann in self.announcements if ann['id'] == selected_id),
+            None
         )
-        next_btn.callback = self.next_page
-        self.add_item(next_btn)
-    
-    async def prev_page(self, interaction: discord.Interaction):
-        """上一頁"""
-        if self.current_page > 0:
-            self.current_page -= 1
-            await self.update_embed(interaction)
-    
-    async def next_page(self, interaction: discord.Interaction):
-        """下一頁"""
-        if self.current_page < len(self.pages) - 1:
-            self.current_page += 1
-            await self.update_embed(interaction)
-    
-    async def update_embed(self, interaction: discord.Interaction):
-        """更新 Embed 顯示"""
-        self.update_buttons()
-        page_data = self.pages[self.current_page]
-        embed = self._create_embed(page_data)
+        
+        if not announcement:
+            return
+        
+        # 建立 Embed
+        embed = self._create_embed(announcement)
         
         await interaction.response.edit_message(embed=embed, view=self)
     
-    def _create_embed(self, page_data: dict) -> discord.Embed:
+    def _create_embed(self, announcement: dict) -> discord.Embed:
         """建立 Embed"""
         embed = discord.Embed(
-            title=page_data.get('title', ''),
-            description=page_data.get('description', ''),
-            color=page_data.get('color', 0x2f3136)
+            title=announcement.get('title', ''),
+            description=announcement.get('description', ''),
+            color=announcement.get('color', 0x2f3136)
         )
         
         # 添加欄位
-        for field in page_data.get('fields', []):
+        for field in announcement.get('fields', []):
             embed.add_field(
                 name=field.get('name', ''),
                 value=field.get('value', ''),
@@ -112,10 +96,14 @@ class AnnouncementCarouselView(View):
             )
         
         # 添加內容
-        if page_data.get('content'):
-            embed.add_field(name="", value=page_data.get('content'), inline=False)
+        if announcement.get('content'):
+            embed.add_field(
+                name="",
+                value=announcement.get('content'),
+                inline=False
+            )
         
-        embed.set_footer(text=page_data.get('footer', 'KK 園區'))
+        embed.set_footer(text=announcement.get('footer', 'KK 園區'))
         return embed
 
 class Announcement(commands.Cog):
@@ -123,7 +111,6 @@ class Announcement(commands.Cog):
         self.bot = bot
         self.announcement_channel_id = int(os.getenv('ANNOUNCEMENT_CHANNEL_ID', 0))
         self.env_path = Path('.env')
-        self.carousel_id = "main_guide"  # 默認公告 ID
     
     async def cog_load(self):
         """Cog 載入時自動同步公告"""
@@ -132,27 +119,22 @@ class Announcement(commands.Cog):
     async def sync_announcement(self):
         """同步公告：編輯已存在的消息或發送新消息"""
         try:
-            # 載入數據驗證
-            carousel_data = self._load_carousel_data(self.carousel_id)
-            if not carousel_data:
-                print(f"❌ 找不到轉木馬：{self.carousel_id}")
+            # 載入數據
+            announcements = self._load_announcements()
+            if not announcements:
+                print("❌ 沒有公告數據")
                 return
-            
-            pages = carousel_data.get('pages', [])
-            if not pages:
-                print("❌ 轉木馬沒有頁面")
-                return
-            
-            # 建立視圖和第一頁 Embed
-            view = AnnouncementCarouselView(self.carousel_id, current_page=0)
-            first_page = pages[0]
-            embed = view._create_embed(first_page)
             
             # 取得公告頻道
             channel = self.bot.get_channel(self.announcement_channel_id)
             if not channel:
                 print(f"❌ 公告頻道未找到 (ID: {self.announcement_channel_id})")
                 return
+            
+            # 建立視圖和第一個公告
+            view = AnnouncementSelectView()
+            first_announcement = announcements[0]
+            embed = view._create_embed(first_announcement)
             
             message_id_str = os.getenv('ANNOUNCEMENT_MESSAGE_ID', '').strip()
             
@@ -187,19 +169,18 @@ class Announcement(commands.Cog):
         except Exception as e:
             print(f"❌ 保存消息 ID 失敗: {e}")
     
-    def _load_carousel_data(self, carousel_id: str) -> Optional[dict]:
-        """載入轉木馬數據"""
+    def _load_announcements(self) -> list:
+        """載入公告數據"""
         docs_path = Path("docs/announcement_carousel.json")
         try:
             if docs_path.exists():
                 with open(docs_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    carousels = data.get('announcement_carousels', {})
-                    return carousels.get(carousel_id, {})
-            return None
+                    return data.get('announcement_carousels', {}).get('announcements', [])
+            return []
         except Exception as e:
-            print(f"❌ 載入失敗: {e}")
-            return None
+            print(f"❌ 載入公告失敗: {e}")
+            return []
 
 async def setup(bot):
     cog = Announcement(bot)
