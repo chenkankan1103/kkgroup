@@ -124,25 +124,29 @@ async def fetch_avatar(session, url):
 
 
 async def make_leaderboard_image(members_data):
-    """協程版本的圖片生成流程（在執行器中運行以避免阻塞）：
+    """協程版本的圖片生成流程：
     1. 非同步地下載所有頭像（非密集型）
     2. 將所有 CPU 密集型的 PIL 繪製工作扔到 thread pool
     """
-    # 先收集相關靜態資源，這部分屬於共享且不會每次都重新載入
-    DESCRIPTION_HEIGHT = 80
-    RESERVE_SECTION_HEIGHT = 100  # 金庫區域高度
-    WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT + RESERVE_SECTION_HEIGHT
+    RESERVE_SECTION_HEIGHT = 120  # 儲備池區域高度（置頂）
+    DESCRIPTION_HEIGHT = 90
+    WIDTH, HEIGHT = 1000, RESERVE_SECTION_HEIGHT + 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
     AVATAR_SIZE = 48
     MARGIN = 20
     BG_COLOR = (255,255,255)
     RANK_COLOR = (240,200,80)
 
-    # fonts 和圖片都可以在同步函式中載入，因此在 thread 中進行
     # 先取得每個成員的頭像（或佔位）
     avatar_images = []
     placeholder = create_placeholder_avatar()
     async with aiohttp.ClientSession() as session:
-        for member, _ in members_data:
+        for i, member_data in enumerate(members_data):
+            # 相容新舊格式（三元組或二元組）
+            if len(member_data) == 3:
+                member, _, _ = member_data
+            else:
+                member = member_data[0]
+            
             avatar = None
             try:
                 url = None
@@ -171,7 +175,7 @@ async def make_leaderboard_image(members_data):
             except asyncio.TimeoutError:
                 pass  # 頭像下載超時，使用 placeholder
             except Exception as e:
-                print(f"❌ 頭像下載錯誤 ({member.display_name}): {e}")
+                print(f"❌ 頭像下載錯誤: {e}")
             avatar_images.append(avatar or placeholder)
 
     # 獲取金庫信息
@@ -219,71 +223,63 @@ def _sync_build_leaderboard_image(
     try:
         FONT_BIG = ImageFont.truetype(FONT_PATH, 28)
         FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
-        FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 24)
+        FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 20)
         FONT_DESC = ImageFont.truetype(FONT_PATH, 16)
     except Exception as e:
-        print(f"❌ 載入字體失敗: {e}")
+        print(f"❌ 載入字體失敗: {e}，使用預設字體")
         FONT_BIG = ImageFont.load_default()
         FONT_SMALL = ImageFont.load_default()
         FONT_KKCOIN = ImageFont.load_default()
         FONT_DESC = ImageFont.load_default()
+    
+    # 改進的圖片加載（有容錯機制）
+    trophy_img = None
     try:
-        trophy_img = Image.open(TROPHY_PATH).convert("RGBA")
+        if os.path.exists(TROPHY_PATH):
+            trophy_img = Image.open(TROPHY_PATH).convert("RGBA")
+        else:
+            print(f"⚠️ 獎杯圖片不存在: {TROPHY_PATH}")
     except Exception as e:
-        print(f"❌ 載入 trophy.png 失敗: {e}")
-        trophy_img = None
+        print(f"⚠️ 載入獎杯圖片失敗: {e}")
+    
     medal_imgs = []
     for idx, path in enumerate(MEDAL_PATHS):
         try:
-            medal_imgs.append(Image.open(path).convert("RGBA"))
+            if os.path.exists(path):
+                medal_imgs.append(Image.open(path).convert("RGBA"))
+            else:
+                print(f"⚠️ 獎牌 {idx+1} 不存在: {path}")
+                medal_imgs.append(None)
         except Exception as e:
-            print(f"❌ 載入 medal {idx+1} 失敗: {e}")
+            print(f"⚠️ 載入獎牌 {idx+1} 失敗: {e}")
             medal_imgs.append(None)
 
     img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
-    if trophy_img:
-        img.paste(trophy_img.resize((44,44)), (MARGIN, 12), trophy_img.resize((44,44)))
-        title_x = MARGIN + 54
-    else:
-        title_x = MARGIN
     
-    # 改為金流斷點主題
-    draw.text((title_x, 18), "💰 金流斷點交易所 - KK幣排行", fill=(60,60,60), font=FONT_BIG)
-
-    # 畫各行
-    for i, ((member, kkcoin), avatar_img) in enumerate(zip(members_data, avatar_images)):
-        y = 75 + i*60
-        if i < 3 and medal_imgs[i]:
-            img.paste(medal_imgs[i].resize((36,36)), (MARGIN, y+6), medal_imgs[i].resize((36,36)))
-            rank_x = MARGIN + 44
-        else:
-            rank_x = MARGIN
-        draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
-
-        display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
-        img.paste(display_avatar, (rank_x + 40, y), display_avatar)
-        name_x = rank_x + 100
-        name_y = y+8
-        draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
-        draw.text((WIDTH-180, y+8), f"{kkcoin} KK", fill=(50,110,210), font=FONT_KKCOIN)
-
-    # 畫中央金庫區塊
-    reserve_y = 75 + len(members_data) * 60 + 15
-    draw.line([(MARGIN, reserve_y - 8), (WIDTH - MARGIN, reserve_y - 8)], fill=(200,200,200), width=1)
+    # ========== 第一部分：置頂的儲備池區塊 ==========
+    # 背景色
+    reserve_bg_y_start = MARGIN
+    reserve_bg_y_end = MARGIN + RESERVE_SECTION_HEIGHT - 5
+    draw.rectangle(
+        [(MARGIN, reserve_bg_y_start), (WIDTH - MARGIN, reserve_bg_y_end)],
+        fill=(245, 250, 255),  # 淺藍背景
+        outline=(200, 220, 240),
+        width=2
+    )
     
-    # 金庫標題
-    draw.text((MARGIN, reserve_y), " 🏦 園區中央儲備池：", fill=(80,80,80), font=FONT_SMALL)
+    # 儲備池標題
+    draw.text((MARGIN + 10, MARGIN + 8), "🏦 園區中央儲備池", fill=(0, 100, 200), font=FONT_BIG)
     
-    # 金庫餘額
+    # 餘額和壓力 (同一行)
     reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
-    draw.text((MARGIN + 20, reserve_y + 28), f"💰 金庫餘額: {reserve_formatted} KK", fill=(50,110,210), font=FONT_DESC)
+    draw.text((MARGIN + 15, MARGIN + 45), f"💰 {reserve_formatted} KK", fill=(50,110,210), font=FONT_SMALL)
     
     # 壓力條
-    bar_x = MARGIN + 20
-    bar_y = reserve_y + 50
-    bar_width = WIDTH - 2*MARGIN - 40
-    bar_height = 16
+    bar_x = MARGIN + 280
+    bar_y = MARGIN + 48
+    bar_width = WIDTH - MARGIN - bar_x - 20
+    bar_height = 18
     
     # 背景條（灰色）
     draw.rectangle(
@@ -308,23 +304,81 @@ def _sync_build_leaderboard_image(
             fill=pressure_color
         )
     
-    # 壓力文字
-    pressure_text = f"  {reserve_pressure:.0f}% 壓力"
-    draw.text((bar_x + 8, bar_y + 1), pressure_text, fill=(50, 50, 50), font=FONT_DESC)
+    # 壓力比例文字
+    pressure_text = f"{reserve_pressure:.0f}%"
+    draw.text((bar_x + 8, bar_y + 2), pressure_text, fill=(50, 50, 50), font=FONT_DESC)
     
-    # 公報
+    # 簡介說明
     if reserve_announcement:
-        draw.text((MARGIN + 20, reserve_y + 72), f"📢 {reserve_announcement}", fill=(100,100,100), font=FONT_DESC)
-        desc_y = reserve_y + 100
+        draw.text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", fill=(100,100,100), font=FONT_DESC)
     else:
-        desc_y = reserve_y + 72
+        draw.text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", fill=(100,100,100), font=FONT_DESC)
     
+    # ========== 第二部分：排行榜標題和資料 ==========
+    leaderboard_start_y = MARGIN + RESERVE_SECTION_HEIGHT + 10
+    
+    if trophy_img:
+        try:
+            img.paste(trophy_img.resize((44,44)), (MARGIN, leaderboard_start_y + 5), trophy_img.resize((44,44)))
+            title_x = MARGIN + 54
+        except Exception as e:
+            print(f"⚠️ 貼上獎杯失敗: {e}")
+            title_x = MARGIN
+    else:
+        title_x = MARGIN
+    
+    draw.text((title_x, leaderboard_start_y + 8), "💰 金流斷點交易所 - 總資產排行", fill=(60,60,60), font=FONT_BIG)
+
+    # ========== 畫各行 ==========
+    for i, member_data in enumerate(zip(members_data, avatar_images)):
+        # 相容新舊格式（三元組或二元組）
+        if len(member_data[0]) == 3:
+            member, kkcoin, digital_usd = member_data[0]
+        else:
+            member, kkcoin = member_data[0]
+            digital_usd = 0
+        
+        avatar_img = member_data[1]
+        
+        y = leaderboard_start_y + 75 + i*60
+        if i < 3 and medal_imgs[i]:
+            try:
+                img.paste(medal_imgs[i].resize((36,36)), (MARGIN, y+6), medal_imgs[i].resize((36,36)))
+                rank_x = MARGIN + 44
+            except Exception as e:
+                print(f"⚠️ 貼上獎牌失敗: {e}")
+                rank_x = MARGIN
+        else:
+            rank_x = MARGIN
+        
+        draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
+
+        try:
+            display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
+            img.paste(display_avatar, (rank_x + 40, y), display_avatar)
+        except Exception as e:
+            print(f"⚠️ 貼上頭像失敗: {e}")
+        
+        name_x = rank_x + 100
+        name_y = y+8
+        draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
+        
+        # 同時顯示 KK幣和數位美金
+        kkcoin_text = f"{int(kkcoin)} KK"
+        usd_text = f"${digital_usd:,.0f}"
+        draw.text((WIDTH-280, y+8), kkcoin_text, fill=(50,110,210), font=FONT_KKCOIN)
+        draw.text((WIDTH-120, y+8), usd_text, fill=(50,200,50), font=FONT_KKCOIN)
+
+    # ========== 第三部分：說明區塊 ==========
+    desc_y = leaderboard_start_y + 75 + len(members_data) * 60 + 15
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200,200,200), width=1)
+    
     descriptions = [
         " 💬 KK幣是「未洗淨的髒錢」- 交易/賣出資產時給予",
-        " 🔄 可透過「金流斷點」轉換為 💵 數位美金（D-USD）- 查看排行榜二"
+        " 🔄 可透過「金流斷點」轉換為 💵 數位美金（D-USD）",
+        " 📊 排名計算：總資產 = KK幣 + (D-USD ÷ 35)"
     ]
-    draw.text((MARGIN, desc_y), " 📊 金流說明：", fill=(80,80,80), font=FONT_SMALL)
+    draw.text((MARGIN, desc_y), " 📚 金流說明：", fill=(80,80,80), font=FONT_SMALL)
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
         draw.text((MARGIN + 10, desc_text_y), desc, fill=(100,100,100), font=FONT_DESC)
@@ -470,7 +524,7 @@ class KKCoin(commands.Cog):
             save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
             
             # 快取資料
-            self.last_leaderboard_data = members_data.copy()
+            self.last_leaderboard_data = [m[:3] if len(m) >= 3 else m for m in members_data]
             self.last_update_time = time.time()
             
             print(f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
@@ -996,7 +1050,7 @@ class KKCoin(commands.Cog):
             self.rank_channel_id = interaction.channel.id
             self.rank_message_id = msg.id
             
-            self.last_leaderboard_data = members_data.copy()
+            self.last_leaderboard_data = [m[:3] if len(m) >= 3 else m for m in members_data]
             self.last_update_time = time.time()
 
             print(f"✅ 排行榜已手動建立在頻道 {interaction.channel.id}，訊息 ID: {msg.id}")
@@ -1064,7 +1118,7 @@ class KKCoin(commands.Cog):
             print(f"❌ 更新排行榜時發生錯誤: {e}")
 
     def get_current_leaderboard_data(self):
-        """取得當前排行榜資料"""
+        """取得當前排行榜資料（包含 KK幣和數位美金，按總資產排序）"""
         if not self.rank_channel_id:
             return []
             
@@ -1079,36 +1133,36 @@ class KKCoin(commands.Cog):
         members_data = []
         all_users = get_all_users()
         
-        # 篩選 kkcoin > 0，排序，取前 20
-        # 修正：處理 kkcoin 為 None 的情況
-        users = [u for u in all_users if (u.get('kkcoin') or 0) > 0]
-        users.sort(key=lambda x: (x.get('kkcoin') or 0), reverse=True)
+        # 篩選有資產的使用者，按總資產排序 (KK幣 + 數位美金/35)
+        users = [u for u in all_users if (u.get('kkcoin') or 0) > 0 or (u.get('digital_usd') or 0) > 0]
+        users.sort(
+            key=lambda x: (x.get('kkcoin') or 0) + (x.get('digital_usd') or 0) / 35,
+            reverse=True
+        )
         users = users[:20]
         
         # 嘗試獲取 Discord member，若失敗則使用 DB 數據
         for user in users:
             user_id = int(user["user_id"])
+            kkcoin = user.get('kkcoin') or 0
+            digital_usd = user.get('digital_usd') or 0
+            
             member = guild.get_member(user_id)
             
             if member:
                 # ✅ 成功找到 Discord member
-                members_data.append((member, user["kkcoin"]))
+                members_data.append((member, kkcoin, digital_usd))
             else:
                 # ⚠️ Guild 中沒有該成員，使用備用方案
-                # 創建一個簡單的對象來存儲用戶信息，包括 Discord 默認頭像
                 class FallbackMember:
                     """當玩家不在 Guild 中時使用的備用成員對象"""
                     def __init__(self, user_id, nickname):
                         self.id = user_id
                         self.display_name = nickname or f"未知玩家 ({user_id})"
                         
-                        # 為 FallbackMember 構造一個虛擬的 display_avatar 對象
-                        # Discord 默認頭像 URL: https://cdn.discordapp.com/embed/avatars/{color}.png
-                        # color 是 0-5 之間的顏色索引（根據用戶 ID 計算）
-                        avatar_color = user_id % 6  # 0-5 之間
+                        avatar_color = user_id % 6
                         default_avatar_url = f"https://cdn.discordapp.com/embed/avatars/{avatar_color}.png"
                         
-                        # 構造一個類似 display_avatar 的對象
                         class AvatarProxy:
                             def __init__(self, url):
                                 self.url = url
@@ -1119,7 +1173,7 @@ class KKCoin(commands.Cog):
                     user_id,
                     user.get('nickname', user.get('user_name', f'User {user_id}'))
                 )
-                members_data.append((fallback, user["kkcoin"]))
+                members_data.append((fallback, kkcoin, digital_usd))
         
         return members_data
 
@@ -1133,23 +1187,25 @@ class KKCoin(commands.Cog):
             print(f"🔍 資料筆數變化：{len(self.last_leaderboard_data)} → {len(new_data)}")
             return True
         
-        for i, (member, kkcoin) in enumerate(new_data):
+        for i, (member, kkcoin, digital_usd) in enumerate(new_data):
             if i >= len(self.last_leaderboard_data):
                 print(f"🔍 索引超出範圍：{i}")
                 return True
                 
-            old_member, old_kkcoin = self.last_leaderboard_data[i]
+            old_member, old_kkcoin, old_digital_usd = self.last_leaderboard_data[i]
             
-            # 安全比較 KK幣 (處理 None 值)
+            # 安全比較 KK幣和數位美金(處理 None 值)
             new_kk = kkcoin or 0
             old_kk = old_kkcoin or 0
+            new_usd = digital_usd or 0
+            old_usd = old_digital_usd or 0
             
             if member.id != old_member.id:
                 print(f"🔍 排名變化：位置 {i+1} 從 {old_member.display_name} 變成 {member.display_name}")
                 return True
                 
-            if new_kk != old_kk:
-                print(f"🔍 KK幣變化：{member.display_name} 從 {old_kk} 變成 {new_kk}")
+            if new_kk != old_kk or new_usd != old_usd:
+                print(f"🔍 資料變化：{member.display_name} ({old_kk} KK, ${old_usd} USD → {new_kk} KK, ${new_usd} USD)")
                 return True
         
         print("🔍 資料沒有變化，跳過更新")
