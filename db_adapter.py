@@ -534,7 +534,14 @@ def get_central_reserve() -> int:
     Returns:
         儲備池中的 KK 幣總額 (預設 0)
     """
-    return get_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, default=0)
+    value = get_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, default=0)
+    # 確保返回的是整數（可能從資料庫以字符串形式存儲）
+    try:
+        if isinstance(value, str):
+            return int(float(value))  # 先轉為 float 再轉 int，支持 "123.0" 形式
+        return int(value)
+    except (ValueError, TypeError):
+        return 0
 
 
 def add_to_central_reserve(amount: int) -> bool:
