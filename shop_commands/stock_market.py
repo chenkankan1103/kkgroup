@@ -1140,22 +1140,27 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                     )
                     return
                 
-                # 增加 KK 幣
-                update_user_kkcoin(user_id, int(total_cost))
-                
                 # 記錄已實現損益
                 realized_total = get_user_field(user_id, REALIZED_PNL_FIELD, default=0.0)
                 set_user_field(user_id, REALIZED_PNL_FIELD, realized_total + (realized_pnl or 0))
                 
-                # 直接自動將 KK 幣轉換為數位美金（洗錢流程）
+                # 計算動態手續費（從賣出收入中扣除）
                 dynamic_fee_rate = get_dynamic_fee_rate()
                 fee_amount = int(total_cost * dynamic_fee_rate)
-                net_output = total_cost - fee_amount
-                exchange_rate = 35
-                digital_usd = float(net_output) / exchange_rate
-
-                # 併入中央儲備池
+                net_kkcoin = total_cost - fee_amount
+                
+                # 用戶獲得淨 KK 幣（已扣手續費）
+                update_user_kkcoin(user_id, int(net_kkcoin))
+                
+                # 手續費流入金庫
                 add_to_central_reserve(fee_amount)
+
+                # 自動洗錢：將淨 KK 幣的一部分轉換為數位美金
+                # 洗錢比例：50% 洗成 USD（用戶可以自行調整）
+                launder_ratio = 0.5
+                kkcoin_to_launder = int(net_kkcoin * launder_ratio)
+                exchange_rate = 35
+                digital_usd = float(kkcoin_to_launder) / exchange_rate
 
                 # 更新用戶 D-USD
                 current_usd = get_user_field(user_id, 'digital_usd', default=0)
@@ -1168,11 +1173,14 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                     current_usd = 0.0
                 new_usd_total = current_usd + digital_usd
                 set_user_field(user_id, 'digital_usd', new_usd_total)
+                
+                # 從 KK 幣中扣除轉換掉的部分
+                update_user_kkcoin(user_id, -kkcoin_to_launder)
 
                 # 建立回報 Embed
                 embed = discord.Embed(
-                    title="✅ 賣出並完成洗錢：數位美金已入帳",
-                    description=f"賣出 {qty} 股 {self.symbol}\n價格: ${self.price:,.2f}/股\n總收入: {int(total_cost):,} KK",
+                    title="✅ 賣出並部分洗錢：資產已重新分配",
+                    description=f"賣出 {qty} 股 {self.symbol}\n價格: ${self.price:,.2f}/股",
                     color=discord.Color.green()
                 )
                 
@@ -1181,18 +1189,21 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                     embed.add_field(name="已實現損益", value=pnl_text, inline=True)
 
                 embed.add_field(
-                    name="💸 洗錢結算",
+                    name="💸 結算明細",
                     value=(
-                        f"手續費 {fee_amount:,} KK ({dynamic_fee_rate*100:.1f}%) 已存入金庫\n"
-                        f"淨可轉換: {net_output:,} KK → {digital_usd:,.2f} D-USD"
+                        f"賣出收入: {int(total_cost):,} KK\n"
+                        f"手續費 ({dynamic_fee_rate*100:.1f}%): -{fee_amount:,} KK → 金庫\n"
+                        f"淨收入: {int(net_kkcoin):,} KK\n"
+                        f"其中 {int(kkcoin_to_launder):,} KK 洗成: {digital_usd:,.2f} D-USD"
                     ),
                     inline=False
                 )
 
+                final_kkcoin = get_user_kkcoin(user_id)
                 embed.add_field(
                     name="📊 帳戶狀態",
                     value=(
-                        f"• KK 幣: {get_user_kkcoin(user_id):,}\n"
+                        f"• KK 幣: {final_kkcoin:,}\n"
                         f"• 數位美金: ${new_usd_total:,.2f} USD"
                     ),
                     inline=False
