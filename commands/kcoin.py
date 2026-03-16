@@ -363,9 +363,9 @@ def _sync_build_leaderboard_image(
         name_y = y+8
         draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
         
-        # 同時顯示 KK幣和數位美金
-        kkcoin_text = f"{int(kkcoin)} KK"
-        usd_text = f"${digital_usd:,.0f}"
+        # 同時顯示 KK幣和數位美金 (確保轉換為數值)
+        kkcoin_text = f"{int(float(kkcoin or 0))} KK"
+        usd_text = f"${float(digital_usd or 0):,.0f}"
         draw.text((WIDTH-280, y+8), kkcoin_text, fill=(50,110,210), font=FONT_KKCOIN)
         draw.text((WIDTH-120, y+8), usd_text, fill=(50,200,50), font=FONT_KKCOIN)
 
@@ -1141,9 +1141,10 @@ class KKCoin(commands.Cog):
         all_users = get_all_users()
         
         # 篩選有資產的使用者，按總資產排序 (KK幣 + 數位美金/35)
+        # ⚠️ 確保數值轉換，因為 DB 可能返回字符串
         users = [u for u in all_users if (u.get('kkcoin') or 0) > 0 or (u.get('digital_usd') or 0) > 0]
         users.sort(
-            key=lambda x: (x.get('kkcoin') or 0) + (x.get('digital_usd') or 0) / 35,
+            key=lambda x: float(x.get('kkcoin') or 0) + float(x.get('digital_usd') or 0) / 35,
             reverse=True
         )
         users = users[:20]
@@ -1151,8 +1152,9 @@ class KKCoin(commands.Cog):
         # 嘗試獲取 Discord member，若失敗則使用 DB 數據
         for user in users:
             user_id = int(user["user_id"])
-            kkcoin = user.get('kkcoin') or 0
-            digital_usd = user.get('digital_usd') or 0
+            # ⚠️ 確保轉換為數值類型
+            kkcoin = float(user.get('kkcoin') or 0)
+            digital_usd = float(user.get('digital_usd') or 0)
             
             member = guild.get_member(user_id)
             
@@ -1201,11 +1203,11 @@ class KKCoin(commands.Cog):
                 
             old_member, old_kkcoin, old_digital_usd = self.last_leaderboard_data[i]
             
-            # 安全比較 KK幣和數位美金(處理 None 值)
-            new_kk = kkcoin or 0
-            old_kk = old_kkcoin or 0
-            new_usd = digital_usd or 0
-            old_usd = old_digital_usd or 0
+            # 安全比較 KK幣和數位美金(轉換為浮點數處理)
+            new_kk = float(kkcoin or 0)
+            old_kk = float(old_kkcoin or 0)
+            new_usd = float(digital_usd or 0)
+            old_usd = float(old_digital_usd or 0)
             
             if member.id != old_member.id:
                 print(f"🔍 排名變化：位置 {i+1} 從 {old_member.display_name} 變成 {member.display_name}")
