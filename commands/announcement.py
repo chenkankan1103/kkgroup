@@ -171,9 +171,11 @@ class Announcement(commands.Cog):
             message_id_str = env_vars.get('ANNOUNCEMENT_MESSAGE_ID', '').strip()
             print(f"🔍 重新讀取 MESSAGE_ID: '{message_id_str}'")
             
-            if message_id_str and message_id_str.isdigit():
+            # 允許包含註解或額外空白的情況
+            message_id_candidate = message_id_str.split()[0] if message_id_str else ''
+            if message_id_candidate.isdigit():
                 # 嘗試編輯已存在的消息
-                message_id = int(message_id_str)
+                message_id = int(message_id_candidate)
                 print(f"📨 嘗試編輯消息 ID: {message_id}")
                 try:
                     message = await channel.fetch_message(message_id)
@@ -226,7 +228,8 @@ class Announcement(commands.Cog):
             
             for line in lines:
                 if line.startswith('ANNOUNCEMENT_MESSAGE_ID='):
-                    new_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}  # 公告消息 ID（由機器人自動更新）')
+                    # 只保存純數字，避免 dotenv_values 解析時帶入註解
+                    new_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}')
                     found = True
                 else:
                     new_lines.append(line)
