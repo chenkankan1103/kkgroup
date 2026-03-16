@@ -827,24 +827,60 @@ class MoneyLaunderingView(discord.ui.View):
             current_usd = get_user_field(self.user_id, 'digital_usd', default=0)
             set_user_field(self.user_id, 'digital_usd', current_usd + self.amount)
             
+            # 計算斷點損耗 (5%)
+            loss_amount = int(self.amount * 0.05)
+            net_output = self.amount - loss_amount
+            
+            # 計算匯率 (1:35 - 1 USD = 35 KKB)
+            exchange_rate = 35
+            digital_usd = net_output / exchange_rate
+            
             final_embed = discord.Embed(
-                title="✅ 金流斷點完成",
-                description=f"🎉 資金已成功轉換為數位美金",
-                color=discord.Color.green()
+                title="💎 【 資產純化完畢：請查收 】",
+                description="",
+                color=discord.Color.from_rgb(255, 215, 0)
             )
+            
+            # 進度條完成
             final_embed.add_field(
-                name="💵 轉換結果",
-                value=f"```\n轉換前: {self.amount:,} KK 幣\n轉換後: ${self.amount:,.0f} USD\n\n已添加至數位美金錢包\n```",
+                name="進度",
+                value="[==========] 100% ✅ SUCCESS",
                 inline=False
             )
+            
+            # 節點完全連接
+            final_embed.add_field(
+                name="📡 傳輸鏈已完成",
+                value="🔵 ─── 🔵 ─── 🔵 ─── 💎\n[ 金流斷點已建立，加密美金已入庫。]",
+                inline=False
+            )
+            
+            # 結算單據
+            final_embed.add_field(
+                name="💸 洗煉成果",
+                value=f"""```
+📥 輸入資金：{self.amount:,} KKB
+
+📉 斷點損耗 (5%)：-{loss_amount:,} KKB
+
+💱 匯率 (1:{exchange_rate})：1 USD = {exchange_rate} KKB
+
+📤 淨產出：{digital_usd:,.2f} 數位美金 (D-USD)
+
+資金已安全存入您的虛擬離岸帳戶。
+```""",
+                inline=False
+            )
+            
             new_usd = get_user_field(self.user_id, 'digital_usd', default=0)
             new_kkcoin = get_user_kkcoin(self.user_id)
             final_embed.add_field(
-                name="📊 當前資產",
-                value=f"• KK幣: {new_kkcoin:,}\n• 數位美金: ${new_usd:,.0f}",
+                name="📊 帳戶余額",
+                value=f"• KK幣: {new_kkcoin:,}\n• 數位美金: ${new_usd:,.2f} USD",
                 inline=False
             )
-            final_embed.set_footer(text="資金鏈已完全切斷，追蹤難度：不可能")
+            
+            final_embed.set_footer(text="⚠️ 此交易記錄將被自動加密銷毀")
             
             await interaction.followup.send(embed=final_embed, ephemeral=True)
             
@@ -862,66 +898,89 @@ class MoneyLaunderingView(discord.ui.View):
             await interaction.followup.send(f"❌ 製造斷點失敗: {e}", ephemeral=True)
     
     async def show_money_laundering_progress(self, interaction: discord.Interaction, user_id: int, amount: int):
-        """顯示金流斷點的進度動畫"""
+        """顯示金流斷點的進度動畫 - 傳輸鏈UI設計"""
         import asyncio
         
-        # 進度階段
+        # 進度階段 - 傳輸鏈設計
         stages = [
             {
-                "title": "🟢 準備虛擬錢包",
-                "description": f"正在將 {amount:,} KK 幣轉入虛擬錢包...",
-                "progress": "🟢 購買資產 -> 🟠 跨鏈交換 -> 🔴 準備中"
+                "icon": "🚨",
+                "title": "金流斷點啟動",
+                "percent": 10,
+                "bar": "[➡️........]",
+                "status": "📡 正在連線至跳板主機...",
+                "details": [
+                    "⚪ ───── ⚪ ───── ⚪ ───── ⚪",
+                    "[ 等待接入匿名網路... ]"
+                ]
             },
             {
-                "title": "🟠 跨鏈交換",
-                "description": f"資產進行跨鏈交換中...",
-                "progress": "✅ 購買資產 -> 🟠 跨鏈交換進行中 -> 🔴 準備中"
+                "icon": "⛓️",
+                "title": "金流斷點：資金混淆中",
+                "percent": 50,
+                "bar": "[====➡️....]",
+                "status": f"🔄 正在將 {amount:,} KKB 拆分為 {max(5, amount // 2000)} 筆微額交易...",
+                "details": [
+                    "🔵 ─── 🟢 ─── ⚪ ─── ⚪",
+                    "[ 正在通過「第二節點：境外伺服器」... ]"
+                ]
             },
             {
-                "title": "🔴 製造斷點",
-                "description": f"正在切斷資金鏈並隱藏追蹤...",
-                "progress": "✅ 購買資產 -> ✅ 跨鏈交換 -> 🔴 製造斷點進行中"
+                "icon": "🔗",
+                "title": "金流斷點：製造成功",
+                "percent": 90,
+                "bar": "[========➡️.]",
+                "status": "🔴 原始資金鏈已切斷。執法單位追蹤中斷。",
+                "details": [
+                    "🔵 ─── 🔵 ─── 🔵 ─── 💎",
+                    "[ 正在生成離岸資產... ]"
+                ]
             },
         ]
         
         # 發送進度消息
         progress_msg = await interaction.followup.send(
-            embed=self._create_progress_embed(stages[0], amount),
+            embed=self._create_transmission_embed(stages[0], amount),
             ephemeral=True
         )
         
         # 逐步更新進度
         for i, stage in enumerate(stages):
-            await asyncio.sleep(2)  # 2秒後更新進度
+            await asyncio.sleep(3)  # 3秒後更新進度
             try:
-                await progress_msg.edit(embed=self._create_progress_embed(stage, amount))
+                await progress_msg.edit(embed=self._create_transmission_embed(stage, amount))
             except discord.NotFound:
                 break
         
+        # 完成後發送結算單據 (最終Embed)
+        await asyncio.sleep(2)
         return progress_msg
     
-    def _create_progress_embed(self, stage: dict, amount: int) -> discord.Embed:
-        """創建進度embed"""
+    def _create_transmission_embed(self, stage: dict, amount: int) -> discord.Embed:
+        """創建傳輸鏈進度embed"""
         embed = discord.Embed(
-            title="💰 金流斷點系統",
-            description="",
+            title=f"{stage['icon']} 【 {stage['title']} 】",
             color=discord.Color.gold()
         )
         
-        system_msg = f"[系統提示] 正在將 {amount:,} KK 幣 轉入 虛擬錢包...\n"
+        # 進度條
         embed.add_field(
-            name="🔄 進度",
-            value=f"```{stage['progress']}```",
+            name="進度",
+            value=f"{stage['bar']} {stage['percent']}%",
             inline=False
         )
+        
+        # 節點鏈
         embed.add_field(
-            name=stage['title'],
-            value=f"```{stage['description']}```",
+            name="📡 傳輸鏈狀態",
+            value="\n".join(stage['details']),
             inline=False
         )
+        
+        # 系統狀態
         embed.add_field(
-            name="📊 狀態",
-            value="💬 資金鏈已切斷，目前追蹤難度：極高",
+            name="⚙️ 系統狀態",
+            value=f"```\n{stage['status']}\n此步驟將耗時較長，請勿關閉終端。\n```",
             inline=False
         )
         
