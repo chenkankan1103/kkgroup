@@ -1080,7 +1080,7 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
     
     async def on_submit(self, interaction: discord.Interaction):
         """提交交易"""
-        print(f"[TRADE_MODAL] on_submit 開始 - user_id={interaction.user.id}, action={self.action}, symbol={self.symbol}", flush=True)
+        logger.info(f"[TRADE_MODAL] on_submit 開始 - user_id={interaction.user.id}, action={self.action}, symbol={self.symbol}")
         await interaction.response.defer(ephemeral=True)
         
         try:
@@ -1092,7 +1092,7 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
             total_cost = qty * self.price
             user_id = interaction.user.id
             balance = get_user_kkcoin(user_id)
-            print(f"[TRADE_MODAL] 初始檢查 - qty={qty}, total_cost={total_cost}, balance={balance}", flush=True)
+            logger.info(f"[TRADE_MODAL] 初始檢查 - qty={qty}, total_cost={total_cost}, balance={balance}")
             
             if self.action == "buy":
                 # 買入
@@ -1133,9 +1133,9 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
             
             elif self.action == "sell":
                 # 賣出
-                print(f"[TRADE_MODAL] 停業前檢查持倉 - user_id={user_id}, symbol={self.symbol}, qty={qty}", flush=True)
+                logger.info(f"[TRADE_MODAL] 停業前檢查持倉 - user_id={user_id}, symbol={self.symbol}, qty={qty}")
                 success, realized_pnl = close_stock_position(user_id, self.symbol, qty, self.price)
-                print(f"[TRADE_MODAL] close_stock_position 結果 - success={success}, pnl={realized_pnl}", flush=True)
+                logger.info(f"[TRADE_MODAL] close_stock_position 結果 - success={success}, pnl={realized_pnl}")
                 
                 if not success:
                     await interaction.followup.send(
@@ -1150,17 +1150,17 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 
                 # 計算動態手續費（從賣出收入中扣除）
                 dynamic_fee_rate = get_dynamic_fee_rate()
-                print(f"[TRADE_MODAL] 動態費率 - rate={dynamic_fee_rate}, total_cost={total_cost}", flush=True)
+                logger.info(f"[TRADE_MODAL] 動態費率 - rate={dynamic_fee_rate}, total_cost={total_cost}")
                 fee_amount = int(total_cost * dynamic_fee_rate)
                 net_kkcoin = total_cost - fee_amount
-                print(f"[TRADE_MODAL] 費用計算 - fee_amount={fee_amount}, net_kkcoin={net_kkcoin}", flush=True)
+                logger.info(f"[TRADE_MODAL] 費用計算 - fee_amount={fee_amount}, net_kkcoin={net_kkcoin}")
                 
                 # 用戶獲得淨 KK 幣（已扣手續費）
-                print(f"[TRADE_MODAL] 發放淨 KK - user_id={user_id}, amount={int(net_kkcoin)}", flush=True)
+                logger.info(f"[TRADE_MODAL] 發放淨 KK - user_id={user_id}, amount={int(net_kkcoin)}")
                 update_user_kkcoin(user_id, int(net_kkcoin))
                 
                 # 手續費流入金庫
-                print(f"[TRADE_MODAL] 手續費入庫 - amount={fee_amount}", flush=True)
+                logger.info(f"[TRADE_MODAL] 手續費入庫 - amount={fee_amount}")
                 add_to_central_reserve(fee_amount)
 
                 # 自動洗錢：將淨 KK 幣的一部分轉換為數位美金
@@ -1169,11 +1169,11 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 kkcoin_to_launder = int(net_kkcoin * launder_ratio)
                 exchange_rate = 35
                 digital_usd = float(kkcoin_to_launder) / exchange_rate
-                print(f"[TRADE_MODAL] D-USD 轉換 - kkcoin={kkcoin_to_launder}, usd={digital_usd}", flush=True)
+                logger.info(f"[TRADE_MODAL] D-USD 轉換 - kkcoin={kkcoin_to_launder}, usd={digital_usd}")
 
                 # 更新用戶 D-USD
                 current_usd = get_user_field(user_id, 'digital_usd', default=0)
-                print(f"[TRADE_MODAL] 當前 D-USD - raw={repr(current_usd)}, type={type(current_usd).__name__}", flush=True)
+                logger.info(f"[TRADE_MODAL] 當前 D-USD - raw={repr(current_usd)}, type={type(current_usd).__name__}")
                 try:
                     if isinstance(current_usd, str):
                         # 處理空字符串情況
@@ -1184,14 +1184,14 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                     else:
                         current_usd = float(current_usd) if current_usd else 0.0
                 except (ValueError, TypeError) as e:
-                    print(f"[TRADE_MODAL] D-USD 轉換失敗 - error={e}, raw={repr(current_usd)}", flush=True)
+                    logger.error(f"[TRADE_MODAL] D-USD 轉換失敗 - error={e}, raw={repr(current_usd)}")
                     current_usd = 0.0
                 new_usd_total = current_usd + digital_usd
-                print(f"[TRADE_MODAL] 寫入 D-USD - old={current_usd}, new_total={new_usd_total}", flush=True)
+                logger.info(f"[TRADE_MODAL] 寫入 D-USD - old={current_usd}, new_total={new_usd_total}")
                 set_user_field(user_id, 'digital_usd', new_usd_total)
                 
                 # 從 KK 幣中扣除全部轉換掉的金額
-                print(f"[TRADE_MODAL] 扣除洗錢 KK - user_id={user_id}, amount={-kkcoin_to_launder}", flush=True)
+                logger.info(f"[TRADE_MODAL] 扣除洗錢 KK - user_id={user_id}, amount={-kkcoin_to_launder}")
                 update_user_kkcoin(user_id, -kkcoin_to_launder)
 
                 # 建立回報 Embed
