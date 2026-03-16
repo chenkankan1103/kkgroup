@@ -267,7 +267,7 @@ def _sync_build_leaderboard_image(
         FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
         FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 20)
         FONT_DESC = ImageFont.truetype(FONT_PATH, 16)
-        FONT_RANK = ImageFont.truetype(FONT_PATH, 42)  # 更大的排序序號字體
+        FONT_RANK = ImageFont.truetype(FONT_PATH, 30)  # 排序序號字體 - 縮小至30px
     except Exception as e:
         print(f"❌ 載入字體失敗: {e}，使用預設字體")
         FONT_BIG = ImageFont.load_default()
@@ -396,9 +396,9 @@ def _sync_build_leaderboard_image(
         else:
             rank_x = MARGIN
         
-        # 大的排序序號，壓在進度條上 - 只顯示第4名之後的序號（1-3名已有獎牌）
+        # 排序序號，向右放在頭像左側 - 只顯示第4名之後的序號（1-3名已有獎牌）
         if i >= 3:
-            draw.text((rank_x - 5, y + 15), f"{i+1}", fill=(255, 20, 147), font=FONT_RANK)  # 螢光粉紅
+            draw.text((rank_x + 15, y + 18), f"{i+1}", fill=(255, 20, 147), font=FONT_RANK)  # 螢光粉紅
 
         # 改進頭像加載：若失敗則使用灰色佔位符
         display_avatar = None
