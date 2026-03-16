@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from discord.ui import View, Button, Select, TextInput, Modal
+from discord.ui import View, Button
 import json
 import os
 from pathlib import Path
@@ -123,36 +123,67 @@ class Announcement(commands.Cog):
         self.bot = bot
         self.announcement_channel_id = int(os.getenv('ANNOUNCEMENT_CHANNEL_ID', 0))
         self.env_path = Path('.env')
+        self.carousel_id = "main_guide"  # 默認公告 ID
     
     async def cog_load(self):
-        """Cog 載入時執行"""
-        await self.validate_announcement_message()
+        """Cog 載入時自動同步公告"""
+        await self.sync_announcement()
     
-    async def validate_announcement_message(self):
-        """驗證公告消息是否還存在"""
-        message_id_str = os.getenv('ANNOUNCEMENT_MESSAGE_ID', '').strip()
-        if not message_id_str or not message_id_str.isdigit():
-            return
-        
+    async def sync_announcement(self):
+        """同步公告：編輯已存在的消息或發送新消息"""
         try:
-            message_id = int(message_id_str)
+            # 載入數據驗證
+            carousel_data = self._load_carousel_data(self.carousel_id)
+            if not carousel_data:
+                print(f"❌ 找不到轉木馬：{self.carousel_id}")
+                return
+            
+            pages = carousel_data.get('pages', [])
+            if not pages:
+                print("❌ 轉木馬沒有頁面")
+                return
+            
+            # 建立視圖和第一頁 Embed
+            view = AnnouncementCarouselView(self.carousel_id, current_page=0)
+            first_page = pages[0]
+            embed = view._create_embed(first_page)
+            
+            # 取得公告頻道
             channel = self.bot.get_channel(self.announcement_channel_id)
-            if channel:
-                message = await channel.fetch_message(message_id)
-                return  # 消息存在
-        except discord.NotFound:
-            # 消息已刪除，清除 MESSAGE_ID
-            set_key(self.env_path, 'ANNOUNCEMENT_MESSAGE_ID', '')
-            print("❌ 公告消息已被刪除，已清除 MESSAGE_ID")
+            if not channel:
+                print(f"❌ 公告頻道未找到 (ID: {self.announcement_channel_id})")
+                return
+            
+            message_id_str = os.getenv('ANNOUNCEMENT_MESSAGE_ID', '').strip()
+            
+            if message_id_str and message_id_str.isdigit():
+                # 嘗試編輯已存在的消息
+                try:
+                    message_id = int(message_id_str)
+                    message = await channel.fetch_message(message_id)
+                    await message.edit(embed=embed, view=view)
+                    print(f"✅ 公告已更新 (消息 ID: {message_id})")
+                except discord.NotFound:
+                    # 消息已刪除，發送新消息
+                    message = await channel.send(embed=embed, view=view)
+                    self._update_env_message_id(message.id)
+                    print(f"✅ 公告已發送 (新消息，ID: {message.id})")
+                except Exception as e:
+                    print(f"❌ 編輯公告失敗: {e}")
+            else:
+                # 首次發送消息
+                message = await channel.send(embed=embed, view=view)
+                self._update_env_message_id(message.id)
+                print(f"✅ 公告已發送 (新消息，ID: {message.id})")
+        
         except Exception as e:
-            print(f"❌ 驗證公告消息失敗: {e}")
+            print(f"❌ 同步公告失敗: {e}")
     
     def _update_env_message_id(self, message_id: int):
         """更新 .env 中的消息 ID"""
         try:
             set_key(self.env_path, 'ANNOUNCEMENT_MESSAGE_ID', str(message_id))
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
-            print(f"✅ 消息 ID 已保存: {message_id}")
         except Exception as e:
             print(f"❌ 保存消息 ID 失敗: {e}")
     
@@ -169,121 +200,6 @@ class Announcement(commands.Cog):
         except Exception as e:
             print(f"❌ 載入失敗: {e}")
             return None
-    
-    @app_commands.command(name="發送公告輪播", description="發送帶按鈕的公告輪播")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(
-        carousel_id="輪播ID (例如：main_guide)"
-    )
-    async def send_carousel(self, interaction: discord.Interaction, carousel_id: str = "main_guide"):
-        """發送或更新公告輪播"""
-        
-        # 載入數據驗證
-        carousel_data = self._load_carousel_data(carousel_id)
-        if not carousel_data:
-            await interaction.response.send_message(
-                f"❌ 找不到轉木馬：{carousel_id}",
-                ephemeral=True
-            )
-            return
-        
-        pages = carousel_data.get('pages', [])
-        if not pages:
-            await interaction.response.send_message(
-                "❌ 轉木馬沒有頁面",
-                ephemeral=True
-            )
-            return
-        
-        # 建立視圖
-        view = AnnouncementCarouselView(carousel_id, current_page=0)
-        
-        # 建立第一頁 Embed
-        first_page = pages[0]
-        embed = view._create_embed(first_page)
-        
-        # 檢查是否有已存在的消息
-        message_id_str = os.getenv('ANNOUNCEMENT_MESSAGE_ID', '').strip()
-        channel = self.bot.get_channel(self.announcement_channel_id)
-        
-        if not channel:
-            await interaction.response.send_message(
-                "❌ 公告頻道未找到",
-                ephemeral=True
-            )
-            return
-        
-        await interaction.response.defer()
-        
-        try:
-            if message_id_str and message_id_str.isdigit():
-                # 嘗試編輯已存在的消息
-                try:
-                    message_id = int(message_id_str)
-                    message = await channel.fetch_message(message_id)
-                    await message.edit(embed=embed, view=view)
-                    await interaction.followup.send(
-                        f"✅ 公告已更新！共 {len(pages)} 頁",
-                        ephemeral=True
-                    )
-                except discord.NotFound:
-                    # 消息已刪除，發送新消息
-                    message = await channel.send(embed=embed, view=view)
-                    self._update_env_message_id(message.id)
-                    await interaction.followup.send(
-                        f"✅ 公告已發送（新消息）！共 {len(pages)} 頁",
-                        ephemeral=True
-                    )
-            else:
-                # 首次發送public消息
-                message = await channel.send(embed=embed, view=view)
-                self._update_env_message_id(message.id)
-                await interaction.followup.send(
-                    f"✅ 公告已發送！共 {len(pages)} 頁",
-                    ephemeral=True
-                )
-        
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ 發送公告失敗: {e}",
-                ephemeral=True
-            )
-    
-    @app_commands.command(name="查看公告列表", description="查看所有可用的公告轉木馬")
-    async def list_carousels(self, interaction: discord.Interaction):
-        """查看可用的轉木馬"""
-        try:
-            docs_path = Path("docs/announcement_carousel.json")
-            if not docs_path.exists():
-                await interaction.response.send_message("📋 沒有公告文檔", ephemeral=True)
-                return
-            
-            with open(docs_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                carousels = data.get('announcement_carousels', {})
-            
-            if not carousels:
-                await interaction.response.send_message("📋 沒有可用的公告", ephemeral=True)
-                return
-            
-            embed = discord.Embed(
-                title="📋 可用公告列表",
-                color=0x7289da
-            )
-            
-            for carousel_id, carousel_data in carousels.items():
-                title = carousel_data.get('title', carousel_id)
-                pages = carousel_data.get('pages', [])
-                embed.add_field(
-                    name=f"📌 {title}",
-                    value=f"**ID:** `{carousel_id}`\n**頁數:** {len(pages)} 頁",
-                    inline=False
-                )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        except Exception as e:
-            await interaction.response.send_message(f"❌ 錯誤: {e}", ephemeral=True)
 
 async def setup(bot):
     cog = Announcement(bot)
