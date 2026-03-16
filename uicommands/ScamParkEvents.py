@@ -716,37 +716,32 @@ class ScamParkEvents(commands.Cog):
     # ==================== 事件處理函數 ====================
 
     async def event_major_confiscation(self, member, thread, kkcoin, level, hp, stamina):
-        """大額沒收"""
-        confiscated = min(kkcoin, random.randint(75, 150))
-        
+        """大額搜查行動"""
         ai_desc = await self.generate_ai_event_description(
-            "大額沒收", 
-            {"金額": confiscated, "原因": "發現鉅額私藏"}
+            "大額搜查", 
+            {"警告": "發現異常"}
         )
         
-        image_prompt = await self.translate_to_english("詐騙園區主管搜查房間，發現藏匿的金錢")
+        image_prompt = await self.translate_to_english("詐騙園區主管搜查房間")
         image_url = await self.generate_pollinations_image(
-            image_prompt or "scam park supervisor searching room, finding hidden money",
+            image_prompt or "scam park supervisor searching room",
             is_negative_event=True
         )
         
         embed = discord.Embed(
             title="🚨 重大搜查行動",
-            description=ai_desc or "園區主管帶隊突襲，你藏在床墊下的積蓄被翻了出來...",
+            description=ai_desc or "園區主管帶隊突襲檢查...",
             color=0xcc0000,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="💰 沒收金額", value=f"**-{confiscated} KKCoin**", inline=False)
-        embed.add_field(name="⚠️ 嚴重警告", value="再次發現將會被關禁閉！", inline=False)
+        embed.add_field(name="⚠️ 嚴重警告", value="被列為重點監控對象！", inline=False)
         
         if image_url:
             embed.set_image(url=image_url)
         
         embed.set_footer(text="園區安全管理處")
 
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "大額沒收")
-        
-        self.update_user_kkcoin(member.id, -confiscated)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "重大搜查")
 
     async def event_protection_fee(self, member, thread, kkcoin, level, hp, stamina):
         """保護費"""
@@ -772,9 +767,7 @@ class ScamParkEvents(commands.Cog):
         if image_url:
             embed.set_image(url=image_url)
 
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "保護費")
-        
-        self.update_user_kkcoin(member.id, -fee)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "保護費警告")
 
     async def event_beating(self, member, thread, kkcoin, level, hp, stamina):
         """毆打事件"""
@@ -850,64 +843,55 @@ class ScamParkEvents(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="💵 「建議金額」", value=f"-{bribe} KKCoin", inline=False)
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "賄賂要求")
-        self.update_user_kkcoin(member.id, -bribe)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "主管暗示")
 
     async def event_gambling_trap(self, member, thread, kkcoin, level, hp, stamina):
-        """賭博陷阱"""
-        loss = min(kkcoin, random.randint(25, 75))
+        """拒絕賭局"""
         embed = discord.Embed(
-            title="🎲 地下賭局", 
-            description="「來玩一把吧！」結果...莊家和荷官都是自己人。", 
+            title="🎲 地下賭局邀約", 
+            description="「來玩一把吧！」你客氣地拒絕了...", 
             color=0x990099,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="💸 輸掉的錢", value=f"-{loss} KKCoin", inline=False)
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "賭博陷阱")
-        self.update_user_kkcoin(member.id, -loss)
+        embed.add_field(name="✅ 聰明選擇", value="虧得你沒參加，聽說裡面全是老千。", inline=False)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "賭局拒絕")
 
     async def event_fine_penalty(self, member, thread, kkcoin, level, hp, stamina):
-        """罰款"""
-        fine = min(kkcoin, random.randint(20, 50))
+        """違規警告"""
         reasons = ["業績不達標", "遲到5分鐘", "說話太大聲", "上廁所超時", "態度不佳"]
         reason = random.choice(reasons)
         embed = discord.Embed(
-            title="📋 違規罰款", 
+            title="📋 違規警告", 
             description=f"違規原因：{reason}", 
             color=0xff3300,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="💰 罰款金額", value=f"-{fine} KKCoin", inline=False)
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "罰款")
-        self.update_user_kkcoin(member.id, -fine)
+        embed.add_field(name="⚠️ 警告", value="再犯一次將會被記過", inline=False)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "違規警告")
 
     async def event_equipment_fee(self, member, thread, kkcoin, level, hp, stamina):
-        """設備使用費"""
-        fee = min(kkcoin, random.randint(13, 38))
+        """設備維護通知"""
         items = ["電腦", "手機", "椅子", "桌子", "網路"]
         item = random.choice(items)
         embed = discord.Embed(
-            title="🔧 設備使用費", 
-            description=f"本月{item}使用費到期，請立即繳納。", 
+            title="🔧 設備維護通知", 
+            description=f"本月{item}需要進行定期維護。", 
             color=0x666666,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="💳 費用", value=f"-{fee} KKCoin", inline=False)
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "設備費")
-        self.update_user_kkcoin(member.id, -fee)
+        embed.add_field(name="📢 提醒", value="維護期間可能會有短暫不便，敬請見諒", inline=False)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "設備維護")
 
     async def event_kkcoin_confiscation(self, member, thread, kkcoin, level, hp, stamina):
-        """KKCoin沒收"""
-        confiscated = min(kkcoin, random.randint(25, 63))
+        """房間檢查"""
         embed = discord.Embed(
-            title="🚨 突襲搜查", 
-            description="管理員突襲檢查你的房間！", 
+            title="🚨 房間檢查", 
+            description="管理員進行了房間檢查...", 
             color=0xff0000,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="💰 沒收", value=f"-{confiscated} KKCoin", inline=False)
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "KKCoin沒收")
-        self.update_user_kkcoin(member.id, -confiscated)
+        embed.add_field(name="✅ 結果", value="檢查完畢，一切正常", inline=False)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "房間檢查")
 
     async def event_forced_overtime(self, member, thread, kkcoin, level, hp, stamina):
         """強制加班"""
@@ -939,45 +923,40 @@ class ScamParkEvents(commands.Cog):
         self.update_user_stats(member.id, kkcoin=kkcoin_gain, stamina=-stamina_loss)
 
     async def event_medical_extortion(self, member, thread, kkcoin, level, hp, stamina):
-        """醫療勒索"""
-        cost = min(kkcoin, random.randint(25, 63))
+        """免費醫療"""
         hp_restore = random.randint(15, 30)
         embed = discord.Embed(
             title="🏥 園區醫療室", 
-            description="「想治療？先付錢。」園區醫生冷冷地說。", 
+            description="醫生表示今天有免費診療活動！", 
             color=0x666666,
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="❤️ 治療", value=f"+{hp_restore} HP", inline=True)
-        embed.add_field(name="💰 費用", value=f"-{cost} KKCoin", inline=True)
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "醫療勒索")
-        self.update_user_stats(member.id, hp=hp_restore, kkcoin=-cost)
+        embed.add_field(name="✅ 費用", value="免費！ 🎉", inline=True)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "免費醫療")
+        self.update_user_stats(member.id, hp=hp_restore)
 
     async def event_cell_search(self, member, thread, kkcoin, level, hp, stamina):
-        """牢房搜查"""
-        loss = min(kkcoin, random.randint(13, 38))
+        """牢房檢查"""
         embed = discord.Embed(
-            title="🔍 牢房搜查", 
+            title="🔍 牢房檢查", 
             description="安全人員突襲檢查所有牢房...", 
             color=0xff6600,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="💰 沒收物品", value=f"-{loss} KKCoin", inline=False)
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "牢房搜查")
-        self.update_user_kkcoin(member.id, -loss)
+        embed.add_field(name="✅ 檢查結果", value="你的牢房通過檢查", inline=False)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "牢房檢查")
 
     async def event_blackmail(self, member, thread, kkcoin, level, hp, stamina):
-        """勒索"""
-        amount = min(kkcoin, random.randint(20, 50))
+        """間諜報告"""
         embed = discord.Embed(
-            title="😈 勒索", 
-            description="「我看到你藏東西了...想要我保密嗎？」", 
+            title="😈 間諜報告", 
+            description="有人在背後說你壞話...", 
             color=0x990066,
             timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="💸 封口費", value=f"-{amount} KKCoin", inline=False)
-        message = await self.send_or_edit_event_message(thread, embed, member.id, "勒索")
-        self.update_user_kkcoin(member.id, -amount)
+        embed.add_field(name="😤 心情", value="有點被冒犯，但也無所謂", inline=False)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "謠言")
 
     async def event_supervisor_inspection(self, member, thread, kkcoin, level, hp, stamina):
         """主管巡視"""
@@ -1067,21 +1046,15 @@ class ScamParkEvents(commands.Cog):
 
     async def event_random_inspection(self, member, thread, kkcoin, level, hp, stamina):
         """例行檢查"""
-        lost_kkcoin = min(kkcoin, random.randint(25, 75))
         embed = discord.Embed(
             title="👮 例行檢查", 
-            description="主管進行突擊檢查...", 
+            description="主管進行例行檢查...", 
             color=0xffa500,
             timestamp=discord.utils.utcnow()
         )
         
-        if random.random() < 0.5:
-            embed.add_field(name="❌ 發現違禁品", value=f"沒收 {lost_kkcoin} KKCoin", inline=False)
-            message = await self.send_or_edit_event_message(thread, embed, member.id, "例行檢查-沒收")
-            self.update_user_kkcoin(member.id, -lost_kkcoin)
-        else:
-            embed.add_field(name="✅ 通過檢查", value="這次僥倖逃過...", inline=False)
-            message = await self.send_or_edit_event_message(thread, embed, member.id, "例行檢查-通過")
+        embed.add_field(name="✅ 檢查完畢", value="一切正常，請繼續工作", inline=False)
+        message = await self.send_or_edit_event_message(thread, embed, member.id, "例行檢查")
 
     async def event_supervisor_favor(self, member, thread, kkcoin, level, hp, stamina):
         """主管恩惠"""
@@ -1417,30 +1390,26 @@ class ScamParkEvents(commands.Cog):
             active_plants = [plant for plant in plants if plant.get('status') != 'harvested']
             
             if not active_plants:
-                # 如果沒有正在種植的植物，改為一般罰款
-                fine = min(kkcoin, random.randint(25, 75))
-                
+                # 如果沒有正在種植的植物，改為一般檢查通知
                 ai_desc = await self.generate_ai_event_description(
                     "置物櫃檢查", 
-                    {"發現": "無違禁品", "罰款": fine, "原因": "隨機檢查"}
+                    {"發現": "無違禁品", "原因": "隨機檢查"}
                 )
                 
                 embed = discord.Embed(
                     title="🔍 置物櫃例行檢查",
-                    description=ai_desc or "園區主管進行了例行檢查，雖然沒有發現違禁品，但還是處以小額罰款作為警告。",
+                    description=ai_desc or "園區主管進行的例行檢查已完成。",
                     color=0xffaa00,
                     timestamp=discord.utils.utcnow()
                 )
-                embed.add_field(name="💰 罰款金額", value=f"**-{fine} KKCoin**", inline=False)
-                embed.add_field(name="⚠️ 檢查結果", value="無違禁品，但需注意規範", inline=False)
+                embed.add_field(name="✅ 檢查結果", value="無違禁品，檢查通過", inline=False)
                 
                 message = await self.send_or_edit_event_message(thread, embed, member.id, "置物櫃檢查")
-                self.update_user_kkcoin(member.id, -fine)
                 # 記錄執行時間
                 set_user_field(member.id, 'last_cannabis_confiscation', now_ts)
                 return
             
-            # 有正在種植的植物，摧毀所有植物並罰款10% KK幣
+            # 有正在種植的植物，摧毀所有植物（沒有罰款）
             destroyed_plants = []
             total_destroyed = 0
             
@@ -1461,27 +1430,23 @@ class ScamParkEvents(commands.Cog):
                 except Exception as e:
                     print(f"❌ 摧毀植物失敗: {e}")
             
-            # 計算5% KK幣罰款
-            kkcoin_penalty = max(1, int(kkcoin * 0.05))  # 至少罰款1個
-            
             ai_desc = await self.generate_ai_event_description(
                 "大麻種植摧毀", 
                 {
                     "摧毀植物": destroyed_plants,
-                    "罰款": kkcoin_penalty,
                     "總數": total_destroyed
                 }
             )
             
-            image_prompt = await self.translate_to_english("詐騙園區主管摧毀大麻種植園，員工被懲罰")
+            image_prompt = await self.translate_to_english("詐騙園區主管摧毀大麻種植園")
             image_url = await self.generate_pollinations_image(
-                image_prompt or "scam park supervisor destroying cannabis plants, worker being punished",
+                image_prompt or "scam park supervisor destroying cannabis plants",
                 is_negative_event=True
             )
             
             embed = discord.Embed(
                 title="🚨 大麻種植摧毀行動",
-                description=ai_desc or f"園區主管發現你在偷偷種植大麻！所有植物都被摧毀，還要額外罰款{kkcoin_penalty}個KK幣。",
+                description=ai_desc or f"園區主管發現你在偷偷種植大麻！所有植物都被摧毀。",
                 color=0xcc0000,
                 timestamp=discord.utils.utcnow()
             )
@@ -1489,11 +1454,6 @@ class ScamParkEvents(commands.Cog):
             embed.add_field(
                 name="🌱 摧毀植物",
                 value="\n".join(destroyed_plants) if destroyed_plants else "無",
-                inline=False
-            )
-            embed.add_field(
-                name="💰 罰款金額",
-                value=f"**-{kkcoin_penalty} KKCoin** (5%總額)",
                 inline=False
             )
             embed.add_field(
@@ -1509,8 +1469,6 @@ class ScamParkEvents(commands.Cog):
             
             message = await self.send_or_edit_event_message(thread, embed, member.id, "大麻種植摧毀")
             
-            # 更新KK幣
-            self.update_user_kkcoin(member.id, -kkcoin_penalty)
             # 記錄執行時間
             set_user_field(member.id, 'last_cannabis_confiscation', now_ts)
             
