@@ -372,8 +372,9 @@ def _sync_build_leaderboard_image(
         else:
             rank_x = MARGIN
         
-        # 大的排序序號，壓在進度條上
-        draw.text((rank_x - 5, y + 15), f"{i+1}", fill=(255, 20, 147), font=FONT_RANK)  # 螢光粉紅
+        # 大的排序序號，壓在進度條上 - 只顯示第4名之後的序號（1-3名已有獎牌）
+        if i >= 3:
+            draw.text((rank_x - 5, y + 15), f"{i+1}", fill=(255, 20, 147), font=FONT_RANK)  # 螢光粉紅
 
         # 改進頭像加載：若失敗則使用灰色佔位符
         display_avatar = None
