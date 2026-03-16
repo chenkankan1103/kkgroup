@@ -140,6 +140,19 @@ async def make_leaderboard_image(members_data):
     avatar_images = []
     member_totals = []  # 用於計算進度條
     max_assets = 0
+    
+    # 先計算每個成員的總資產和最大值（用於進度條百分比）
+    for member_data in members_data:
+        if len(member_data) == 3:
+            _, kkcoin, digital_usd = member_data
+        else:
+            _, kkcoin = member_data
+            digital_usd = 0
+        total_assets = float(kkcoin or 0) + float(digital_usd or 0) / 35
+        member_totals.append(total_assets)
+        if total_assets > max_assets:
+            max_assets = total_assets
+    
     placeholder = create_placeholder_avatar()
     async with aiohttp.ClientSession() as session:
         for i, member_data in enumerate(members_data):
@@ -203,6 +216,8 @@ async def make_leaderboard_image(members_data):
         reserve,
         reserve_pressure,
         reserve_announcement,
+        member_totals,
+        max_assets,
     )
 
 
@@ -220,6 +235,8 @@ def _sync_build_leaderboard_image(
     reserve,
     reserve_pressure,
     reserve_announcement,
+    member_totals,
+    max_assets,
 ):
     """純同步版，執行在工作執行緒中，不會阻塞事件循環"""
     try:
