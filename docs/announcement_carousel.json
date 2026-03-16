@@ -47,48 +47,58 @@
         "id": "earnings",
         "name": "KK幣賺取方式",
         "emoji": "💰",
-        "title": "💰 KK幣獲得攻略",
-        "color": 16776960,
-        "description": "7 種方式讓你輕鬆賺取 KK 幣",
+        "title": "� ︱ KK 園區：財富獲取終端",
+        "color": 2829617,
+        "description": "**7 種方式讓你輕鬆賺取 KK 幣**",
         "fields": [
           {
-            "name": "📝 聊天獎勵（最常用）",
-            "value": "發訊息就有錢拿\n字數 = KK 幣，最高 50 幣 / 條\n無冷卻，不連發同內容即可\n✓ 多聊天、多參與就對了",
-            "inline": false
+            "name": "💬 聊天獎勵",
+            "value": "`最高 50 幣/條`",
+            "inline": true
           },
           {
-            "name": "⏰ 每日工作（穩定收入）",
-            "value": "打卡領薪資 + 經驗\n等級越高，工資越多（已 × 10）\n升級有額外獎勵\n✓ 每天記得 `/work`",
-            "inline": false
+            "name": "💼 每日工作",
+            "value": "`等級越高領越多`",
+            "inline": true
           },
           {
-            "name": "🎧 語音掛機（掛越久賺越多）",
-            "value": "在語音頻道掛機賺獎勵\n人數越多賺越多（已 × 10）\n✓ 揪團一起掛更有效",
-            "inline": false
+            "name": "\u200b",
+            "value": "\u200b",
+            "inline": true
           },
           {
-            "name": "🌿 種植系統（被動賺錢）",
-            "value": "買種子 → 種植 → 收割 賣錢\n收割價格已調 × 10\n常規 700 | 優質 900 | 黃金 1500\n✓ 多種植、多收割最賺",
-            "inline": false
+            "name": "🎙️ 語音掛機",
+            "value": "`掛越久賺越多`",
+            "inline": true
           },
           {
-            "name": "📈 資產交易（高風險高報酬）",
-            "value": "股票、加密幣、原物料、貴金屬\n賺的是買賣價差\n✓ 先觀察、分散投資、別全壓",
-            "inline": false
+            "name": "🌱 種植系統",
+            "value": "`收割價已 x10`",
+            "inline": true
           },
           {
-            "name": "🎁 活動事件（不定期獎勵）",
-            "value": "不定時空投、隨機活動\n打開可能賺大錢或被扣錢\n✓ 多關注公告、快速參與",
-            "inline": false
+            "name": "\u200b",
+            "value": "\u200b",
+            "inline": true
           },
           {
-            "name": "🛒 商店任務（進階玩法）",
-            "value": "販售物品、完成任務領獎勵\n可跟朋友合作增加收益\n✓ 多逛商店、多做任務",
-            "inline": false
+            "name": "📉 資產交易",
+            "value": "`股市/加密幣`",
+            "inline": true
           },
           {
-            "name": "💡 致富祕訣",
-            "value": "**別只靠一種方法，組合搭配最賺！**",
+            "name": "🎁 活動事件",
+            "value": "`隨機空投大錢`",
+            "inline": true
+          },
+          {
+            "name": "\u200b",
+            "value": "\u200b",
+            "inline": true
+          },
+          {
+            "name": "🛒 商店任務",
+            "value": "販售物品、完成任務領獎勵，多逛商店不吃虧。",
             "inline": false
           }
         ],
