@@ -244,12 +244,14 @@ def _sync_build_leaderboard_image(
         FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
         FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 20)
         FONT_DESC = ImageFont.truetype(FONT_PATH, 16)
+        FONT_RANK = ImageFont.truetype(FONT_PATH, 42)  # 更大的排序序號字體
     except Exception as e:
         print(f"❌ 載入字體失敗: {e}，使用預設字體")
         FONT_BIG = ImageFont.load_default()
         FONT_SMALL = ImageFont.load_default()
         FONT_KKCOIN = ImageFont.load_default()
         FONT_DESC = ImageFont.load_default()
+        FONT_RANK = ImageFont.load_default()
     
     # 改進的圖片加載（有容錯機制）
     trophy_img = None
@@ -370,7 +372,8 @@ def _sync_build_leaderboard_image(
         else:
             rank_x = MARGIN
         
-        draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
+        # 大的排序序號，壓在進度條上
+        draw.text((rank_x - 5, y + 15), f"{i+1}", fill=(255, 20, 147), font=FONT_RANK)  # 螢光粉紅
 
         # 改進頭像加載：若失敗則使用灰色佔位符
         display_avatar = None
@@ -410,35 +413,54 @@ def _sync_build_leaderboard_image(
         progress_bar_y = y + 35
         progress_bar_x = rank_x + 100
         progress_bar_width = WIDTH - rank_x - 120 - 300
-        progress_bar_height = 12
+        progress_bar_height = 16  # 增加高度以容納圓角
         
-        # 背景條（深灰色）
-        draw.rectangle(
-            [(progress_bar_x, progress_bar_y), (progress_bar_x + progress_bar_width, progress_bar_y + progress_bar_height)],
-            fill=(80, 90, 120),
-            outline=(120, 130, 160),
-            width=1
-        )
+        # 背景條（深灰色）- 使用圓角矩形
+        try:
+            draw.rounded_rectangle(
+                [(progress_bar_x, progress_bar_y), (progress_bar_x + progress_bar_width, progress_bar_y + progress_bar_height)],
+                radius=8,
+                fill=(80, 90, 120),
+                outline=(120, 130, 160),
+                width=1
+            )
+        except AttributeError:
+            # 如果 PIL 版本不支持 rounded_rectangle，使用普通矩形
+            draw.rectangle(
+                [(progress_bar_x, progress_bar_y), (progress_bar_x + progress_bar_width, progress_bar_y + progress_bar_height)],
+                fill=(80, 90, 120),
+                outline=(120, 130, 160),
+                width=1
+            )
         
-        # 填充條（漸變顏色）
+        # 填充條（螢光色）
         if percent > 0:
             filled_width = int(progress_bar_width * percent / 100)
-            # 根據百分比選擇顏色
-            if percent >= 75:
-                bar_color = (255, 200, 50)  # 金色
-            elif percent >= 50:
-                bar_color = (100, 200, 255)  # 藍色
+            # 根據百分比選擇螢光色
+            if percent >= 80:
+                bar_color = (0, 255, 127)  # 螢光綠
+            elif percent >= 60:
+                bar_color = (57, 255, 20)  # 亮螢光綠
+            elif percent >= 40:
+                bar_color = (255, 240, 0)  # 螢光黃
             else:
-                bar_color = (100, 220, 150)  # 綠色
+                bar_color = (255, 16, 240)  # 螢光粉紅
             
-            draw.rectangle(
-                [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
-                fill=bar_color
-            )
+            try:
+                draw.rounded_rectangle(
+                    [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
+                    radius=8,
+                    fill=bar_color
+                )
+            except AttributeError:
+                draw.rectangle(
+                    [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
+                    fill=bar_color
+                )
         
         # 百分比文字
         percent_text = f"{percent:.0f}%"
-        draw.text((progress_bar_x + progress_bar_width + 10, progress_bar_y - 2), percent_text, fill=(200, 200, 200), font=FONT_DESC)
+        draw.text((progress_bar_x + progress_bar_width + 10, progress_bar_y), percent_text, fill=(255, 16, 240), font=FONT_DESC)  # 螢光粉紅
 
     # ========== 第三部分：說明區塊 ==========
     desc_y = leaderboard_start_y + 75 + len(members_data) * 70 + 15  # 調整位置以符合新的行高
