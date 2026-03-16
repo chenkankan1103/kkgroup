@@ -860,11 +860,19 @@ class MoneyLaunderingView(discord.ui.View):
             
             # 計算匯率 (1:35 - 1 USD = 35 KKB)
             exchange_rate = 35
-            digital_usd = net_output / exchange_rate
+            digital_usd = float(net_output) / exchange_rate
             
             # 使用 set_user_field 來更新 digital_usd
-            current_usd = get_user_field(self.user_id, 'digital_usd', default=0)
-            set_user_field(self.user_id, 'digital_usd', current_usd + digital_usd)
+            try:
+                current_usd = get_user_field(self.user_id, 'digital_usd', default=0)
+                # 確保 current_usd 是數字
+                if not isinstance(current_usd, (int, float)):
+                    current_usd = 0
+                new_usd_total = float(current_usd) + digital_usd
+                set_user_field(self.user_id, 'digital_usd', new_usd_total)
+            except Exception as e:
+                logger.error(f"❌ 更新 D-USD 失敗: {e}")
+                # 即使失敗也要繼續，因為已經扣了 KK 幣
             
             final_embed = discord.Embed(
                 title="💎 【 資產純化完畢：請查收 】",
