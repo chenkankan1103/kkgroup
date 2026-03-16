@@ -1156,8 +1156,8 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 add_to_central_reserve(fee_amount)
 
                 # 自動洗錢：將淨 KK 幣的一部分轉換為數位美金
-                # 洗錢比例：50% 洗成 USD（用戶可以自行調整）
-                launder_ratio = 0.5
+                # 洗錢比例：100% 全部洗成 USD
+                launder_ratio = 1.0
                 kkcoin_to_launder = int(net_kkcoin * launder_ratio)
                 exchange_rate = 35
                 digital_usd = float(kkcoin_to_launder) / exchange_rate
@@ -1174,12 +1174,12 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 new_usd_total = current_usd + digital_usd
                 set_user_field(user_id, 'digital_usd', new_usd_total)
                 
-                # 從 KK 幣中扣除轉換掉的部分
+                # 從 KK 幣中扣除全部轉換掉的金額
                 update_user_kkcoin(user_id, -kkcoin_to_launder)
 
                 # 建立回報 Embed
                 embed = discord.Embed(
-                    title="✅ 賣出並部分洗錢：資產已重新分配",
+                    title="✅ 賣出完成：資產洗成白錢（數位美金）",
                     description=f"賣出 {qty} 股 {self.symbol}\n價格: ${self.price:,.2f}/股",
                     color=discord.Color.green()
                 )
@@ -1194,16 +1194,15 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                         f"賣出收入: {int(total_cost):,} KK\n"
                         f"手續費 ({dynamic_fee_rate*100:.1f}%): -{fee_amount:,} KK → 金庫\n"
                         f"淨收入: {int(net_kkcoin):,} KK\n"
-                        f"其中 {int(kkcoin_to_launder):,} KK 洗成: {digital_usd:,.2f} D-USD"
+                        f"全部洗成: {digital_usd:,.2f} D-USD ✓"
                     ),
                     inline=False
                 )
 
-                final_kkcoin = get_user_kkcoin(user_id)
                 embed.add_field(
                     name="📊 帳戶狀態",
                     value=(
-                        f"• KK 幣: {final_kkcoin:,}\n"
+                        f"• KK 幣: {get_user_kkcoin(user_id):,}\n"
                         f"• 數位美金: ${new_usd_total:,.2f} USD"
                     ),
                     inline=False
