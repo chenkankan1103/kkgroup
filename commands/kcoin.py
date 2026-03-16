@@ -52,7 +52,14 @@ def update_user_balance(user_id, amount):
 
 def get_user_digital_usd(user_id):
     """獲取玩家數位美金（洗出的白錢）"""
-    return get_user_field(user_id, 'digital_usd', default=0)
+    value = get_user_field(user_id, 'digital_usd', default=0)
+    # 確保返回的是數字類型（處理字符串情況）
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0
+    return float(value) if value else 0
 
 def update_user_digital_usd(user_id, amount):
     """更新玩家數位美金"""

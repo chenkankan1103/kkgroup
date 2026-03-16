@@ -388,11 +388,22 @@ class SheetDrivenDB:
         user_id = int(user_id)
         current = self.get_user_field(user_id, field, 0)
         
-        if isinstance(current, str) and current.isdigit():
-            current = int(current)
+        # 嘗試將字符串轉換為數字（支援整數和浮點數）
+        if isinstance(current, str):
+            try:
+                if '.' in current:
+                    current = float(current)
+                elif current.isdigit() or (current.startswith('-') and current[1:].isdigit()):
+                    current = int(current)
+                else:
+                    print(f"❌ 欄位 {field} 不是有效的數字字符串: '{current}'")
+                    return False
+            except ValueError:
+                print(f"❌ 無法將 '{current}' 轉換為數字")
+                return False
         
         if not isinstance(current, (int, float)):
-            print(f"❌ 欄位 {field} 不是數字類型")
+            print(f"❌ 欄位 {field} 不是數字類型: {type(current).__name__}")
             return False
         
         new_value = current + amount
