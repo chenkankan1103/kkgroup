@@ -47,63 +47,42 @@
         "id": "earnings",
         "name": "KK幣賺取方式",
         "emoji": "💰",
-        "title": "� ︱ KK 園區：財富獲取終端",
+        "title": "📊 ︱ KK 園區：財富獲取終端 (v2.4)",
         "color": 2829617,
-        "description": "**7 種方式讓你輕鬆賺取 KK 幣**",
+        "description": ">>> `[權限已確認：領班級]`\n**在這裡，每一滴汗水都能轉化為籌碼。**",
         "fields": [
           {
-            "name": "💬 聊天獎勵",
-            "value": "`最高 50 幣/條`",
+            "name": "💬 基礎獲利",
+            "value": "• 聊天：`50 幣/條`\n• 打卡：`/work` 領薪",
             "inline": true
           },
           {
-            "name": "💼 每日工作",
-            "value": "`等級越高領越多`",
-            "inline": true
-          },
-          {
-            "name": "\u200b",
-            "value": "\u200b",
-            "inline": true
-          },
-          {
-            "name": "🎙️ 語音掛機",
-            "value": "`掛越久賺越多`",
-            "inline": true
-          },
-          {
-            "name": "🌱 種植系統",
-            "value": "`收割價已 x10`",
+            "name": "🎙️ 掛機收益",
+            "value": "• 語音：掛越久賺越多\n• 揪團：`10x` 倍率翻倍",
             "inline": true
           },
           {
             "name": "\u200b",
-            "value": "\u200b",
+            "value": "──────────────────",
+            "inline": false
+          },
+          {
+            "name": "🌱 生產協議",
+            "value": "> **種植系統**\n> 收割價已調高為 `10x` \n> 優質：`900` | 黃金：`1500`",
             "inline": true
           },
           {
-            "name": "📉 資產交易",
-            "value": "`股市/加密幣`",
+            "name": "📉 金融犯罪",
+            "value": "> **資產交易**\n> 股市、加密幣、原物料\n> 低買高賣，洗煉籌碼",
             "inline": true
           },
           {
-            "name": "🎁 活動事件",
-            "value": "`隨機空投大錢`",
-            "inline": true
-          },
-          {
-            "name": "\u200b",
-            "value": "\u200b",
-            "inline": true
-          },
-          {
-            "name": "🛒 商店任務",
-            "value": "販售物品、完成任務領獎勵，多逛商店不吃虧。",
+            "name": "💡 領班密語",
+            "value": "```ansi\n[1;33m別只靠一種方法，組合搭配最賺！[0m\n```",
             "inline": false
           }
         ],
-        "content": "",
-        "footer": "KK 園區 | 賺錢指南"
+        "footer": "KK 園區 | 財富終端"
       }
     ]
   }
