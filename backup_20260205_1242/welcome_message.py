@@ -221,6 +221,8 @@ class WelcomeFlow(commands.Cog):
                 {"itemId": config['top'], "region": "TWMS", "version": "256"},
                 {"itemId": config['bottom'], "region": "TWMS", "version": "256"},
                 {"itemId": config['shoes'], "region": "TWMS", "version": "256"}
+            ])
+
             item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
             api_url = f"https://maplestory.io/api/character/{item_path}/{config['pose']}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
 
