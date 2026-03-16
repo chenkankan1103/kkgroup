@@ -1448,18 +1448,39 @@ class StockMarket(commands.Cog):
                 inline=True
             )
             
-            # 損益排行（前5名）
+            # D-USD 排行（按數位美金排序，前5名）
             if active_traders:
-                sorted_traders = sorted(active_traders, key=lambda x: x['realized_pnl'], reverse=True)
+                # 構建完整的交易者資訊（包含 D-USD）
+                traders_with_dusd = []
+                for trader in active_traders:
+                    user_id = trader['user_id']
+                    digital_usd = get_user_field(user_id, 'digital_usd', default=0)
+                    # 確保轉換為數字
+                    try:
+                        if isinstance(digital_usd, str):
+                            digital_usd = float(digital_usd) if digital_usd else 0.0
+                        else:
+                            digital_usd = float(digital_usd) if digital_usd else 0.0
+                    except (ValueError, TypeError):
+                        digital_usd = 0.0
+                    
+                    traders_with_dusd.append({
+                        'user_id': user_id,
+                        'digital_usd': digital_usd,
+                        'realized_pnl': trader['realized_pnl']
+                    })
+                
+                # 按 D-USD 排序
+                sorted_traders = sorted(traders_with_dusd, key=lambda x: x['digital_usd'], reverse=True)
                 leaderboard_lines = []
                 for idx, trader in enumerate(sorted_traders[:5]):
-                    pnl = trader['realized_pnl']
+                    dusd = trader['digital_usd']
                     emoji = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx+1}."
-                    pnl_text = f"+{int(pnl)}" if pnl > 0 else f"{int(pnl)}"
-                    leaderboard_lines.append(f"{emoji} {pnl_text} KK")
+                    dusd_text = f"${dusd:,.2f}"
+                    leaderboard_lines.append(f"{emoji} {dusd_text} USD")
                 
                 leaderboard = "\n".join(leaderboard_lines)
-                embed.add_field(name="🏆 排行", value=leaderboard, inline=True)
+                embed.add_field(name="🏆 排行（數位美金）", value=leaderboard, inline=True)
             
             embed.add_field(name="\u200b", value="**👇 點擊進入虛擬市場**", inline=False)
             embed.set_footer(text="支持: 台股 | 數字貨幣 (BTC/ETH) | 原物料 | 貴金屬 | 無風險交易")
