@@ -123,12 +123,20 @@ class Announcement(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         """機器人連接後自動同步公告"""
+        print(f"🔔 [Announcement] on_ready 事件觸發... _synced={self._synced}")
+        
         if self._synced:
+            print(f"⏭️ [Announcement] 已同步過，跳過")
             return
         
         self._synced = True
         print("🔔 [Announcement] 機器人已準備就緒，開始同步公告...")
-        await self.sync_announcement()
+        try:
+            await self.sync_announcement()
+        except Exception as e:
+            print(f"❌ [Announcement] on_ready 中同步失敗: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def sync_announcement(self):
         """同步公告：編輯已存在的消息或發送新消息"""
