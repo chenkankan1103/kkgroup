@@ -239,6 +239,29 @@ def _sync_build_leaderboard_image(
     max_assets,
 ):
     """純同步版，執行在工作執行緒中，不會阻塞事件循環"""
+    
+    # 幾何圖形繪製函數
+    def draw_bank_icon(draw, x, y, size=12, color=(150, 180, 255)):
+        """繪製銀行/金庫圖標 - 方形加豎線"""
+        draw.rectangle([(x, y), (x+size, y+size)], outline=color, width=2)
+        draw.line([(x+size//2, y), (x+size//2, y+size)], fill=color, width=1)  # 中央豎線
+    
+    def draw_warning_icon(draw, x, y, size=12, color=(255, 193, 7)):
+        """繪製警告圖標 - 三角形"""
+        points = [(x+size//2, y), (x+size, y+size), (x, y+size)]
+        draw.polygon(points, outline=color, width=2)
+        draw.ellipse([(x+size//2-2, y+size-6), (x+size//2+2, y+size-2)], fill=color)  # 嘆號點
+    
+    def draw_info_icon(draw, x, y, size=12, color=(150, 160, 200)):
+        """繪製說明圖標 - 矩形堆疊"""
+        draw.rectangle([(x, y), (x+size-2, y+size//2)], outline=color, width=1)
+        draw.rectangle([(x+2, y+size//2), (x+size, y+size)], outline=color, width=1)
+    
+    def draw_bubble_icon(draw, x, y, size=10, color=(180, 180, 200)):
+        """繪製氣泡圖標 - 圓形"""
+        draw.ellipse([(x, y), (x+size, y+size)], outline=color, width=1)
+        draw.polygon([(x+size-2, y+size-2), (x+size+4, y+size-2), (x+size+2, y+size+4)], fill=color)
+    
     try:
         FONT_BIG = ImageFont.truetype(FONT_PATH, 28)
         FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
@@ -289,12 +312,13 @@ def _sync_build_leaderboard_image(
         width=2
     )
     
-    # 儲備池標題
-    draw.text((MARGIN + 10, MARGIN + 8), "🏦 園區中央儲備池", fill=(150, 180, 255), font=FONT_BIG)
+    # 儲備池標題 - 添加銀行圖標
+    draw_bank_icon(draw, MARGIN + 5, MARGIN + 12, size=14, color=(150, 180, 255))
+    draw.text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", fill=(150, 180, 255), font=FONT_BIG)
     
     # 餘額和壓力 (同一行)
     reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
-    draw.text((MARGIN + 15, MARGIN + 45), f"💰 {reserve_formatted} KK", fill=(100, 180, 220), font=FONT_SMALL)
+    draw.text((MARGIN + 15, MARGIN + 45), f"[金庫] {reserve_formatted} KK", fill=(100, 180, 220), font=FONT_SMALL)
     
     # 壓力條
     bar_x = MARGIN + 280
@@ -468,14 +492,19 @@ def _sync_build_leaderboard_image(
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(100, 110, 150), width=1)
     
     descriptions = [
-        " 💬 KK幣是「未洗淨的髒錢」- 交易/賣出資產時給予",
-        " 🔄 可透過「金流斷點」轉換為 💵 數位美金（D-USD）",
-        " 📊 排名計算：總資產 = KK幣 + (D-USD ÷ 35)"
+        "KK幣是「未洗淨的髒錢」- 交易/賣出資產時給予",
+        "可透過「金流斷點」轉換為 D-USD 數位美金",
+        "排名計算：總資產 = KK幣 + (D-USD ÷ 35)"
     ]
-    draw.text((MARGIN, desc_y), " 📚 金流說明：", fill=(150, 160, 200), font=FONT_SMALL)
+    # 繪製說明標題和圖標
+    draw_info_icon(draw, MARGIN + 5, desc_y + 5, size=12, color=(150, 160, 200))
+    draw.text((MARGIN + 20, desc_y), "金流說明：", fill=(150, 160, 200), font=FONT_SMALL)
+    
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
-        draw.text((MARGIN + 10, desc_text_y), desc, fill=(180, 180, 200), font=FONT_DESC)
+        # 每項前添加氣泡圖標
+        draw_bubble_icon(draw, MARGIN + 10, desc_text_y + 3, size=10, color=(180, 180, 200))
+        draw.text((MARGIN + 25, desc_text_y), desc, fill=(180, 180, 200), font=FONT_DESC)
 
     return img
 

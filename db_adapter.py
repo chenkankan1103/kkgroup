@@ -644,8 +644,8 @@ def get_reserve_announcement() -> str:
     pressure = get_reserve_pressure()
     
     if pressure >= 80:
-        return "💰 「金庫充裕，今日斷點手續費優待中 (3%)。」"
+        return "[充裕] 金庫充裕，今日斷點手續費優待中 (3%)。"
     elif pressure >= 50:
-        return "🟡 「金庫運轉正常，斷點手續費維持標準 (5%)。」"
+        return "[正常] 金庫運轉正常，斷點手續費維持標準 (5%)。"
     else:
-        return "⚠️ 「金庫風險警報！斷點手續費提升至 8%，請謹慎操作。」"
+        return "[警報] 金庫風險警報！斷點手續費提升至 8%，請謹慎操作。"
