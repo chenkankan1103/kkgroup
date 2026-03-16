@@ -299,14 +299,6 @@ class ButtonInteraction(commands.Cog):
             
             # 返回用戶資料（已自動適應任何欄位）
             return user
-                    'top': row[12] or 1040010,
-                    'bottom': row[13] or 1060096,
-                    'shoes': row[14] or 1072288,
-                    'is_stunned': row[15] or 0,
-                    'gender': row[16] or 'male'
-                }
-            else:
-                return None
         except Exception as e:
             traceback.print_exc()
             return None
