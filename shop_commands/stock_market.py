@@ -1146,7 +1146,18 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 
                 # 記錄已實現損益
                 realized_total = get_user_field(user_id, REALIZED_PNL_FIELD, default=0.0)
-                set_user_field(user_id, REALIZED_PNL_FIELD, realized_total + (realized_pnl or 0))
+                # 確保 realized_total 是數字類型（可能存儲為字符串）
+                try:
+                    if isinstance(realized_total, str):
+                        realized_total = float(realized_total) if realized_total else 0.0
+                    else:
+                        realized_total = float(realized_total) if realized_total else 0.0
+                except (ValueError, TypeError):
+                    realized_total = 0.0
+                
+                new_realized = realized_total + (realized_pnl or 0)
+                logger.info(f"[TRADE_MODAL] 損益更新 - old={realized_total}, pnl={realized_pnl}, new={new_realized}")
+                set_user_field(user_id, REALIZED_PNL_FIELD, new_realized)
                 
                 # 計算動態手續費（從賣出收入中扣除）
                 dynamic_fee_rate = get_dynamic_fee_rate()
