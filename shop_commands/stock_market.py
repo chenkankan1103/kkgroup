@@ -19,6 +19,8 @@ import logging
 import math
 import os
 import time
+import random
+import string
 from datetime import datetime
 from dotenv import load_dotenv, set_key
 from typing import Optional, Dict, List, Tuple
@@ -820,6 +822,100 @@ class CustomStockModal(discord.ui.Modal, title="輸入商品代號"):
 # 金流斷點相關視圖和按鈕
 # ============================================================
 
+def _create_progress_bar(percent: int, width: int = 12) -> str:
+    """
+    創建科技感進度條
+    
+    Args:
+        percent: 進度百分比 (0-100)
+        width: 進度條寬度
+    
+    Returns:
+        格式化的進度條字符串
+    """
+    filled = max(0, min(width, int(width * percent / 100)))
+    empty = width - filled
+    return f"▰{'▰' * (filled - 1 if filled > 0 else 0)}{'▱' * empty}"
+
+
+def _generate_hex_noise(count: int = 3) -> List[str]:
+    """
+    生成虛構的十六進制位址，營造資產拆分效果
+    
+    Args:
+        count: 生成數量
+    
+    Returns:
+        十六進制位址列表
+    """
+    addresses = []
+    for _ in range(count):
+        # 生成 0xXXXX... 格式的虛構位址
+        hex_addr = "0x" + "".join(random.choices(string.hexdigits[:16], k=random.randint(8, 12)))
+        addresses.append(hex_addr)
+    return addresses
+
+
+def _get_system_log(percent: int, amount: int, dynamic_fee_rate: float) -> str:
+    """
+    根據進度百分比生成擬真的系統日誌
+    
+    Args:
+        percent: 進度百分比
+        amount: 金額
+        dynamic_fee_rate: 動態手續費率
+    
+    Returns:
+        系統日誌字符串
+    """
+    fee_amount = int(amount * dynamic_fee_rate)
+    
+    if percent <= 10:
+        logs = [
+            f"[INFO] 初始化交易通道...",
+            f"[INFO] 檢測金庫狀態 → 手續費率: {dynamic_fee_rate*100:.1f}%",
+            f"[DEBUG] 跳板節點已加載",
+            f"[INFO] 建立加密隧道 (BFW-2024)",
+        ]
+    elif percent <= 30:
+        logs = [
+            f"[INFO] 多重跳板已建立",
+            f"[INFO] 節點：瑞典 → 盧森堡 → 開曼",
+            f"[TRACE] 資金追蹤已斷開",
+            f"[DEBUG] 緩衝池容量: {amount:,} KKB",
+        ]
+    elif percent <= 50:
+        logs = [
+            f"[INFO] 開始資金拆分...",
+            f"[PROCESS] 將 {amount:,} KKB 拆分為 {max(5, amount // 2000)} 筆交易",
+            f"[DEBUG] 第 1-{min(3, max(5, amount // 2000))} 筆交易已發送",
+            f"[INFO] 手續費: {fee_amount:,} KKB → 園區金庫",
+        ]
+    elif percent <= 70:
+        logs = [
+            f"[INFO] 資金混淆進行中...",
+            f"[TRACE] 節點信號: {' → '.join(random.sample(['🔴', '🟡', '🟢'], 3))}",
+            f"[INFO] 掩蓋源頭交易對...",
+            f"[DEBUG] 匯率暫存: 1 USD = 35 KKB",
+        ]
+    elif percent <= 90:
+        logs = [
+            f"[INFO] 虛擬資產轉化進行中...",
+            f"[PROCESS] 淨產出計算完成",
+            f"[INFO] D-USD 入賬驗證...",
+            f"[CRITICAL] 原始資金鏈已切斷 ✓",
+        ]
+    else:
+        logs = [
+            f"[SUCCESS] 金流斷點完成！",
+            f"[INFO] 數位美金已入庫",
+            f"[DEBUG] 交易記錄已加密銷毀",
+            f"[INFO] 執法單位追蹤已中斷 ✓",
+        ]
+    
+    return "\n".join(logs)
+
+
 class MoneyLaunderingView(discord.ui.View):
     """製造金流斷點的視圖"""
     
@@ -968,7 +1064,7 @@ class MoneyLaunderingView(discord.ui.View):
                 "icon": "🚨",
                 "title": "金流斷點啟動",
                 "percent": 10,
-                "bar": "[➡️........]",
+                "bar": "▰░░░░░░░░░░",
                 "status": "📡 正在連線至跳板主機...",
                 "details": [
                     "⚪ ───── ⚪ ───── ⚪ ───── ⚪",
@@ -979,22 +1075,24 @@ class MoneyLaunderingView(discord.ui.View):
                 "icon": "⛓️",
                 "title": "金流斷點：資金混淆中",
                 "percent": 50,
-                "bar": "[====➡️....]",
+                "bar": "▰▰▰▰▰▰░░░░░░",
                 "status": f"🔄 正在將 {amount:,} KKB 拆分為 {max(5, amount // 2000)} 筆微額交易...",
                 "details": [
                     "🔵 ─── 🟢 ─── ⚪ ─── ⚪",
-                    f"[ 手續費：{fee_amount:,} KKB 流入園區金庫... ]"
+                    f"[ 手續費：{fee_amount:,} KKB 流入園區金庫... ]",
+                    f"[ 節點鏈路: {' → '.join(_generate_hex_noise(2))} ]"
                 ]
             },
             {
                 "icon": "🔗",
                 "title": "金流斷點：製造成功",
                 "percent": 90,
-                "bar": "[========➡️.]",
+                "bar": "▰▰▰▰▰▰▰▰▰░░",
                 "status": "🔴 原始資金鏈已切斷。執法單位追蹤中斷。",
                 "details": [
                     "🔵 ─── 🔵 ─── 🔵 ─── 💎",
-                    f"[ 園區金庫已增加 {fee_amount:,} KKB... ]"
+                    f"[ 園區金庫已增加 {fee_amount:,} KKB... ]",
+                    f"[ 虛擬位址: {_generate_hex_noise(1)[0]} (資金已隔離) ]"
                 ]
             },
         ]
@@ -1018,12 +1116,12 @@ class MoneyLaunderingView(discord.ui.View):
         return progress_msg
     
     def _create_transmission_embed(self, stage: dict, amount: int) -> discord.Embed:
-        """創建傳輸鏈進度embed - 色彩策略"""
+        """創建傳輸鏈進度embed - 色彩策略 + 視覺增強"""
         
         # 根據進度階段選擇顏色
         # 準備階段：暗灰色 (0x2b2d31) - 低調準備
         # 混淆中：鮮黃 (0xffff00) - 警告正在進行
-        # 完成：綠色 (0x00ff00) - 成功完成
+        # 完成：青色 (0x1abc9c) - 完成中
         if stage['percent'] < 50:
             color = 0x2b2d31  # 暗灰色
         elif stage['percent'] < 90:
@@ -1031,31 +1129,62 @@ class MoneyLaunderingView(discord.ui.View):
         else:
             color = 0x1abc9c   # 青色 - 完成中
         
+        # 寬度佔位符 - 確保 Discord 在所有客戶端都能維持最大寬度
+        width_placeholder = "_ " * 40  # 使用空白寬度符
+        
         embed = discord.Embed(
             title=f"{stage['icon']} 【 {stage['title']} 】",
+            description=f"{width_placeholder}\n⚙️ **金流斷點系統運作中**",
             color=color
         )
         
-        # 進度條
+        # 科技感進度條 - 使用新的進度條函數
+        progress_bar = _create_progress_bar(stage['percent'], width=14)
         embed.add_field(
-            name="進度",
-            value=f"{stage['bar']} {stage['percent']}%",
+            name="📊 進度",
+            value=f"```\n{progress_bar} {stage['percent']}%\n```",
             inline=False
         )
         
-        # 節點鏈
+        # 系統日誌 - 根據進度百分比生成
+        dynamic_fee_rate = get_dynamic_fee_rate()
+        system_logs = _get_system_log(stage['percent'], amount, dynamic_fee_rate)
+        embed.add_field(
+            name="📝 系統日誌",
+            value=f"```\n{system_logs}\n```",
+            inline=False
+        )
+        
+        # 節點鏈 - 傳輸狀態
         embed.add_field(
             name="📡 傳輸鏈狀態",
             value="\n".join(stage['details']),
             inline=False
         )
         
-        # 系統狀態
+        # 實時監控 - 隨機雜訊效果
+        if stage['percent'] >= 30:
+            hex_noise = _generate_hex_noise(2)
+            embed.add_field(
+                name="🔐 虛擬錢包地址（進行中）",
+                value=f"```\n資產分流位址：\n{hex_noise[0]}\n{hex_noise[1]}\n```",
+                inline=False
+            )
+        
+        # 實時狀態指示器
         embed.add_field(
             name="⚙️ 系統狀態",
             value=f"```\n{stage['status']}\n此步驟將耗時較長，請勿關閉終端。\n```",
             inline=False
         )
+        
+        # 動態底部標記
+        if stage['percent'] >= 85:
+            embed.set_footer(text="✅ 即將完成 | 交易記錄將被自動加密銷毀")
+        elif stage['percent'] >= 50:
+            embed.set_footer(text="⏳ 進行中 | 請勿關閉此窗口")
+        else:
+            embed.set_footer(text="🔄 初始化中 | 請稍候...")
         
         return embed
 
