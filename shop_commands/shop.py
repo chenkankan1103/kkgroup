@@ -22,6 +22,7 @@ from shop_commands.merchant.database import (
     get_user_kkcoin, update_user_kkcoin, update_user_equipment, get_user_equipment
 )
 from shop_commands.merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID, VIP_ROLE_ID, RAINBOW_ROLE_ID
+from shop_commands.role_expiration_manager import get_manager as get_expiration_manager
 
 class ButtonInteraction(commands.Cog):
     def __init__(self, bot):
@@ -507,8 +508,16 @@ class ButtonInteraction(commands.Cog):
             await update_user_kkcoin(member.id, -price)
             await member.add_roles(role)
             
+            # ✅ 使用新的持久化系統記錄角色過期時間
             if duration:
-                self.bot.loop.create_task(self.remove_role_after_delay(member, role, duration))
+                manager = get_expiration_manager()
+                manager.save_role_purchase(
+                    user_id=member.id,
+                    guild_id=interaction.guild.id,
+                    role_id=role_id,
+                    role_name=role_name,
+                    duration_seconds=duration
+                )
 
             kkcoin_new = await get_user_kkcoin(member.id)
             embed = discord.Embed(

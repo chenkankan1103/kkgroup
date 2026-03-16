@@ -232,6 +232,26 @@ class FileEventHandler(FileSystemEventHandler):
 # ============================================================
 # 狀態更新任務
 # ============================================================
+# ============================================================
+# 定期清理過期角色的任務 (每 5 分鐘檢查一次)
+# ============================================================
+@tasks.loop(minutes=5)
+async def cleanup_expired_roles_loop():
+    """定期檢查並移除過期的臨時角色"""
+    try:
+        from shop_commands.role_expiration_manager import get_manager as get_expiration_manager
+        manager = get_expiration_manager()
+        removed_count = await manager.cleanup_expired_roles(client)
+        if removed_count > 0:
+            print(f"[RoleExpiration] ✅ 定期檢查移除了 {removed_count} 個過期角色")
+    except Exception as e:
+        print(f"[RoleExpiration] ⚠️ 定期清理失敗: {e}")
+
+@cleanup_expired_roles_loop.before_loop
+async def before_cleanup_expired_roles():
+    """等待 Bot 準備完成"""
+    await client.wait_until_ready()
+
 @tasks.loop(minutes=2)
 async def update_status():
     """定期更新 Bot 狀態和日誌 Embed"""
@@ -452,6 +472,20 @@ async def on_ready():
             traceback.print_exc()
         
         # ============================================================
+        # 清理過期的臨時角色（變色龍披風、進階組員等）
+        # ============================================================
+        try:
+            from shop_commands.role_expiration_manager import get_manager as get_expiration_manager
+            manager = get_expiration_manager()
+            removed_count = await manager.cleanup_expired_roles(client)
+            if removed_count > 0:
+                print(f"✅ 啟動清理: 已移除 {removed_count} 個過期角色")
+        except Exception as e:
+            print(f"⚠️ 角色過期清理失敗: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # ============================================================
         # 初始化監控儀表板及日誌系統（簡化版本 - 僅日誌）
         # ============================================================
         try:
@@ -491,6 +525,11 @@ async def on_ready():
         # 啟動狀態更新任務
         if not update_status.is_running():
             update_status.start()
+        
+        # 啟動角色過期清理任務
+        if not cleanup_expired_roles_loop.is_running():
+            cleanup_expired_roles_loop.start()
+            print("✅ 角色過期清理任務已啟動 (每 5 分鐘檢查一次)")
         
     except Exception as e:
         # 錯誤也使用單一 print
