@@ -127,7 +127,8 @@ async def make_leaderboard_image(members_data):
     """
     # 先收集相關靜態資源，這部分屬於共享且不會每次都重新載入
     DESCRIPTION_HEIGHT = 80
-    WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
+    RESERVE_SECTION_HEIGHT = 100  # 金庫區域高度
+    WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT + RESERVE_SECTION_HEIGHT
     AVATAR_SIZE = 48
     MARGIN = 20
     BG_COLOR = (255,255,255)
@@ -170,6 +171,11 @@ async def make_leaderboard_image(members_data):
                 print(f"❌ 頭像下載錯誤 ({member.display_name}): {e}")
             avatar_images.append(avatar or placeholder)
 
+    # 獲取金庫信息
+    reserve = get_central_reserve()
+    reserve_pressure = get_reserve_pressure()
+    reserve_announcement = get_reserve_announcement()
+    
     # ✅ 在執行緒中完成剩下的繪製工作（避免阻塞事件迴圈）
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
@@ -180,10 +186,14 @@ async def make_leaderboard_image(members_data):
         WIDTH,
         HEIGHT,
         DESCRIPTION_HEIGHT,
+        RESERVE_SECTION_HEIGHT,
         AVATAR_SIZE,
         MARGIN,
         BG_COLOR,
         RANK_COLOR,
+        reserve,
+        reserve_pressure,
+        reserve_announcement,
     )
 
 
@@ -193,10 +203,14 @@ def _sync_build_leaderboard_image(
     WIDTH,
     HEIGHT,
     DESCRIPTION_HEIGHT,
+    RESERVE_SECTION_HEIGHT,
     AVATAR_SIZE,
     MARGIN,
     BG_COLOR,
     RANK_COLOR,
+    reserve,
+    reserve_pressure,
+    reserve_announcement,
 ):
     """純同步版，執行在工作執行緒中，不會阻塞事件循環"""
     try:
@@ -251,7 +265,57 @@ def _sync_build_leaderboard_image(
         draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
         draw.text((WIDTH-180, y+8), f"{kkcoin} KK", fill=(50,110,210), font=FONT_KKCOIN)
 
-    desc_y = 75 + len(members_data) * 60 + 15
+    # 畫中央金庫區塊
+    reserve_y = 75 + len(members_data) * 60 + 15
+    draw.line([(MARGIN, reserve_y - 8), (WIDTH - MARGIN, reserve_y - 8)], fill=(200,200,200), width=1)
+    
+    # 金庫標題
+    draw.text((MARGIN, reserve_y), " 🏦 園區中央儲備池：", fill=(80,80,80), font=FONT_SMALL)
+    
+    # 金庫餘額
+    reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
+    draw.text((MARGIN + 20, reserve_y + 28), f"💰 金庫餘額: {reserve_formatted} KK", fill=(50,110,210), font=FONT_DESC)
+    
+    # 壓力條
+    bar_x = MARGIN + 20
+    bar_y = reserve_y + 50
+    bar_width = WIDTH - 2*MARGIN - 40
+    bar_height = 16
+    
+    # 背景條（灰色）
+    draw.rectangle(
+        [(bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height)],
+        fill=(220, 220, 220),
+        outline=(180, 180, 180)
+    )
+    
+    # 根據壓力等級選擇顏色
+    if reserve_pressure < 33:
+        pressure_color = (76, 175, 80)  # 綠色 - 低壓力
+    elif reserve_pressure < 66:
+        pressure_color = (255, 193, 7)  # 黃色 - 中等壓力
+    else:
+        pressure_color = (244, 67, 54)  # 紅色 - 高壓力
+    
+    # 填充條（根據壓力比例）
+    filled_width = int(bar_width * reserve_pressure / 100)
+    if filled_width > 0:
+        draw.rectangle(
+            [(bar_x, bar_y), (bar_x + filled_width, bar_y + bar_height)],
+            fill=pressure_color
+        )
+    
+    # 壓力文字
+    pressure_text = f"  {reserve_pressure:.0f}% 壓力"
+    draw.text((bar_x + 8, bar_y + 1), pressure_text, fill=(50, 50, 50), font=FONT_DESC)
+    
+    # 公報
+    if reserve_announcement:
+        draw.text((MARGIN + 20, reserve_y + 72), f"📢 {reserve_announcement}", fill=(100,100,100), font=FONT_DESC)
+        desc_y = reserve_y + 100
+    else:
+        desc_y = reserve_y + 72
+    
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200,200,200), width=1)
     descriptions = [
         " 💬 KK幣是「未洗淨的髒錢」- 交易/賣出資產時給予",
