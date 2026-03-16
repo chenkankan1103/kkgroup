@@ -462,6 +462,9 @@ class KKCoin(commands.Cog):
                 try:
                     msg = await channel.fetch_message(self.rank_message_id)
                     print(f"✅ 找到並重用排行榜訊息 ID: {self.rank_message_id}")
+                    # 立即強制更新一次
+                    print("🔄 第一次啟動強制更新排行榜...")
+                    await self.update_leaderboard(min_interval=0, force=True)
                     return
                 except discord.NotFound:
                     print(f"⚠️ 訊息 {self.rank_message_id} 不存在，嘗試重新查找...")
@@ -477,10 +480,14 @@ class KKCoin(commands.Cog):
                             print(f"✅ 找到舊排行榜訊息 ID: {msg.id}，將重用此訊息")
                             self.rank_message_id = msg.id
                             save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
+                            # 立即強制更新一次
+                            print("🔄 第一次啟動強制更新排行榜...")
+                            await self.update_leaderboard(min_interval=0, force=True)
                             return
             
-            # 如果沒有找到舊訊息，等待第一次循環自動創建
-            print("📝 未找到舊訊息，將在第一次循環時創建...")
+            # 如果沒有找到舊訊息，立即創建新的
+            print("📝 未找到舊訊息，立即創建新的...")
+            await self.create_leaderboard()
         
         except Exception as e:
             print(f"❌ 初始化排行榜時發生錯誤: {e}")
