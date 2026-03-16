@@ -141,9 +141,6 @@ class Announcement(commands.Cog):
     async def sync_announcement(self):
         """同步公告：編輯已存在的消息或發送新消息"""
         try:
-            # 確保 bot 已連接
-            await self.bot.wait_until_ready()
-            
             # 載入數據
             announcements = self._load_announcements()
             if not announcements:
