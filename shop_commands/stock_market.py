@@ -790,6 +790,144 @@ class CustomStockModal(discord.ui.Modal, title="輸入商品代號"):
             await modal_interaction.response.send_message("❌ 處理失敗，請稍後再試", ephemeral=True)
 
 
+# ============================================================
+# 金流斷點相關視圖和按鈕
+# ============================================================
+
+class MoneyLaunderingView(discord.ui.View):
+    """製造金流斷點的視圖"""
+    
+    def __init__(self, user_id: int, amount: int):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+        self.amount = amount
+        self.message: Optional[discord.Message] = None
+    
+    @discord.ui.button(label="💵 製造斷點", style=discord.ButtonStyle.primary, emoji="🔗", custom_id="money_laundry_create")
+    async def create_breakpoint(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """開始製造金流斷點"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # 檢查用戶的KK幣是否足夠
+            current_kkcoin = get_user_kkcoin(self.user_id)
+            if current_kkcoin < self.amount:
+                await interaction.followup.send(
+                    f"❌ KK幣不足！需要 {self.amount:,} KK，當前只有 {current_kkcoin:,} KK",
+                    ephemeral=True
+                )
+                return
+            
+            # 創建進度消息
+            progress_msg = await self.show_money_laundering_progress(interaction, self.user_id, self.amount)
+            
+            # 完成後的embed
+            update_user_kkcoin(self.user_id, -self.amount)
+            # 使用 set_user_field 來更新 digital_usd
+            current_usd = get_user_field(self.user_id, 'digital_usd', default=0)
+            set_user_field(self.user_id, 'digital_usd', current_usd + self.amount)
+            
+            final_embed = discord.Embed(
+                title="✅ 金流斷點完成",
+                description=f"🎉 資金已成功轉換為數位美金",
+                color=discord.Color.green()
+            )
+            final_embed.add_field(
+                name="💵 轉換結果",
+                value=f"```\n轉換前: {self.amount:,} KK 幣\n轉換後: ${self.amount:,.0f} USD\n\n已添加至數位美金錢包\n```",
+                inline=False
+            )
+            new_usd = get_user_field(self.user_id, 'digital_usd', default=0)
+            new_kkcoin = get_user_kkcoin(self.user_id)
+            final_embed.add_field(
+                name="📊 當前資產",
+                value=f"• KK幣: {new_kkcoin:,}\n• 數位美金: ${new_usd:,.0f}",
+                inline=False
+            )
+            final_embed.set_footer(text="資金鏈已完全切斷，追蹤難度：不可能")
+            
+            await interaction.followup.send(embed=final_embed, ephemeral=True)
+            
+            # 禁用按鈕
+            button.disabled = True
+            if self.message:
+                try:
+                    await self.message.edit(view=self)
+                except:
+                    pass
+        
+        except Exception as e:
+            logger.error(f"❌ 金流斷點失敗: {e}")
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 製造斷點失敗: {e}", ephemeral=True)
+    
+    async def show_money_laundering_progress(self, interaction: discord.Interaction, user_id: int, amount: int):
+        """顯示金流斷點的進度動畫"""
+        import asyncio
+        
+        # 進度階段
+        stages = [
+            {
+                "title": "🟢 準備虛擬錢包",
+                "description": f"正在將 {amount:,} KK 幣轉入虛擬錢包...",
+                "progress": "🟢 購買資產 -> 🟠 跨鏈交換 -> 🔴 準備中"
+            },
+            {
+                "title": "🟠 跨鏈交換",
+                "description": f"資產進行跨鏈交換中...",
+                "progress": "✅ 購買資產 -> 🟠 跨鏈交換進行中 -> 🔴 準備中"
+            },
+            {
+                "title": "🔴 製造斷點",
+                "description": f"正在切斷資金鏈並隱藏追蹤...",
+                "progress": "✅ 購買資產 -> ✅ 跨鏈交換 -> 🔴 製造斷點進行中"
+            },
+        ]
+        
+        # 發送進度消息
+        progress_msg = await interaction.followup.send(
+            embed=self._create_progress_embed(stages[0], amount),
+            ephemeral=True
+        )
+        
+        # 逐步更新進度
+        for i, stage in enumerate(stages):
+            await asyncio.sleep(2)  # 2秒後更新進度
+            try:
+                await progress_msg.edit(embed=self._create_progress_embed(stage, amount))
+            except discord.NotFound:
+                break
+        
+        return progress_msg
+    
+    def _create_progress_embed(self, stage: dict, amount: int) -> discord.Embed:
+        """創建進度embed"""
+        embed = discord.Embed(
+            title="💰 金流斷點系統",
+            description="",
+            color=discord.Color.gold()
+        )
+        
+        system_msg = f"[系統提示] 正在將 {amount:,} KK 幣 轉入 虛擬錢包...\n"
+        embed.add_field(
+            name="🔄 進度",
+            value=f"```{stage['progress']}```",
+            inline=False
+        )
+        embed.add_field(
+            name=stage['title'],
+            value=f"```{stage['description']}```",
+            inline=False
+        )
+        embed.add_field(
+            name="📊 狀態",
+            value="💬 資金鏈已切斷，目前追蹤難度：極高",
+            inline=False
+        )
+        
+        return embed
+
+
 class TradeModal(discord.ui.Modal, title="進行交易"):
     """交易輸入 Modal"""
     
@@ -842,6 +980,22 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                     description=f"買入 {qty} 股 {self.symbol}\n價格: ${self.price:,.2f}/股\n總成本: {int(total_cost):,} KK",
                     color=discord.Color.green()
                 )
+                
+                # 買入完成後發送embed
+                embed.set_footer(text="交易已完成，操盤室已更新")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                
+                # 異步更新操盤室視圖（不依賴 interaction token）
+                async def refresh_view():
+                    await asyncio.sleep(0.5)
+                    try:
+                        await self.parent_view._update_trading_room_embed(self.symbol)
+                    except Exception as e:
+                        logger.debug(f"⚠️ 自動刷新操盤室失敗: {e}")
+                
+                # 在背景運行刷新
+                asyncio.create_task(refresh_view())
+                return
             
             elif self.action == "sell":
                 # 賣出
@@ -870,21 +1024,32 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
                 if realized_pnl:
                     pnl_text = f"+{int(realized_pnl)}" if realized_pnl > 0 else f"{int(realized_pnl)}"
                     embed.add_field(name="已實現損益", value=pnl_text, inline=True)
-            
-            # 更新操盤室
-            embed.set_footer(text="交易已完成，操盤室已更新")
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-            # 異步更新操盤室視圖（不依賴 interaction token）
-            async def refresh_view():
-                await asyncio.sleep(0.5)
-                try:
-                    await self.parent_view._update_trading_room_embed(self.symbol)
-                except Exception as e:
-                    logger.debug(f"⚠️ 自動刷新操盤室失敗: {e}")
-            
-            # 在背景運行刷新
-            asyncio.create_task(refresh_view())
+                
+                # 添加金流斷點選項
+                embed.add_field(
+                    name="💰 製造斷點",
+                    value=f"✅ 你可以將這 {int(total_cost):,} KK 幣轉換為數位美金（白錢），按下面的按鈕開始",
+                    inline=False
+                )
+                
+                # 創建金流斷點視圖
+                view = MoneyLaunderingView(user_id, int(total_cost))
+                interaction_followup = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                
+                # 存儲消息以供視圖使用
+                view.message = interaction_followup
+                
+                # 異步更新操盤室視圖（不依賴 interaction token）
+                async def refresh_view():
+                    await asyncio.sleep(0.5)
+                    try:
+                        await self.parent_view._update_trading_room_embed(self.symbol)
+                    except Exception as e:
+                        logger.debug(f"⚠️ 自動刷新操盤室失敗: {e}")
+                
+                # 在背景運行刷新
+                asyncio.create_task(refresh_view())
+                return
         
         except ValueError:
             await interaction.followup.send("❌ 請輸入有效的數字", ephemeral=True)

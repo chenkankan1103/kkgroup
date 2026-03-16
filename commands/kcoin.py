@@ -46,6 +46,14 @@ def update_user_balance(user_id, amount):
     """更新玩家 KKCoin 餘額"""
     return add_user_field(user_id, 'kkcoin', amount)
 
+def get_user_digital_usd(user_id):
+    """獲取玩家數位美金（洗出的白錢）"""
+    return get_user_field(user_id, 'digital_usd', default=0)
+
+def update_user_digital_usd(user_id, amount):
+    """更新玩家數位美金"""
+    return add_user_field(user_id, 'digital_usd', amount)
+
 # 環境變數操作
 def get_from_env(variable_name, default=None):
     return os.getenv(variable_name, default)
@@ -257,18 +265,26 @@ class KKCoin(commands.Cog):
         self.rank_channel_id = int(get_from_env("KKCOIN_RANK_CHANNEL_ID", 0))
         self.rank_message_id = int(get_from_env("KKCOIN_RANK_MESSAGE_ID", 0))
         
+        # 數位美金排行榜
+        self.digital_usd_channel_id = int(get_from_env("DIGITAL_USD_RANK_CHANNEL_ID", 0))
+        self.digital_usd_message_id = int(get_from_env("DIGITAL_USD_RANK_MESSAGE_ID", 0))
+        
         self.last_kkcoin_time = defaultdict(lambda: 0)
         self.last_message_cache = defaultdict(str)
         self.last_update_time = 0
         self.last_leaderboard_data = None
+        self.last_digital_usd_data = None
         
         # 啟動定時更新任務
         self.auto_update_leaderboard.start()
+        self.auto_update_digital_usd_leaderboard.start()
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
+        print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
         self.auto_update_leaderboard.cancel()
+        self.auto_update_digital_usd_leaderboard.cancel()
 
     @tasks.loop(minutes=5)
     async def auto_update_leaderboard(self):
@@ -376,6 +392,329 @@ class KKCoin(commands.Cog):
             print(f"❌ 創建排行榜失敗: {e}")
             import traceback
             traceback.print_exc()
+
+    # ============================================================
+    # 數位美金排行榜相關
+    # ============================================================
+
+    @tasks.loop(minutes=5)
+    async def auto_update_digital_usd_leaderboard(self):
+        """每 5 分鐘自動更新數位美金排行榜"""
+        if not self.digital_usd_channel_id:
+            return
+            
+        # 如果沒有訊息 ID，嘗試創建排行榜
+        if not self.digital_usd_message_id:
+            await self.create_digital_usd_leaderboard()
+        else:
+            # 否則更新現有排行榜
+            await self.update_digital_usd_leaderboard(min_interval=0)
+
+    @auto_update_digital_usd_leaderboard.before_loop
+    async def before_auto_update_digital_usd(self):
+        """等待 bot 準備完成，並在啟動時查找/創建數位美金排行榜"""
+        await self.bot.wait_until_ready()
+        print("✅ 數位美金排行榜自動更新任務已啟動，正在查找舊訊息...")
+        
+        if not self.digital_usd_channel_id:
+            print("⚠️ 未設定數位美金排行榜頻道 ID")
+            return
+        
+        try:
+            channel = self.bot.get_channel(self.digital_usd_channel_id)
+            if not channel:
+                print(f"❌ 找不到數位美金排行榜頻道 {self.digital_usd_channel_id}")
+                return
+            
+            if self.digital_usd_message_id:
+                try:
+                    msg = await channel.fetch_message(self.digital_usd_message_id)
+                    print(f"✅ 找到並重用數位美金排行榜訊息 ID: {self.digital_usd_message_id}")
+                    return
+                except discord.NotFound:
+                    print(f"⚠️ 訊息 {self.digital_usd_message_id} 不存在")
+                    self.digital_usd_message_id = 0
+                    save_to_env("DIGITAL_USD_RANK_MESSAGE_ID", 0)
+        
+        except Exception as e:
+            print(f"❌ 初始化數位美金排行榜時發生錯誤: {e}")
+
+    async def create_digital_usd_leaderboard(self):
+        """自動創建數位美金排行榜訊息"""
+        if not self.digital_usd_channel_id:
+            print("❌ 未設定數位美金排行榜頻道 ID")
+            return
+        
+        if self.digital_usd_message_id:
+            print(f"⚠️ 數位美金排行榜已存在 (訊息 ID: {self.digital_usd_message_id})，跳過創建")
+            return
+            
+        try:
+            channel = self.bot.get_channel(self.digital_usd_channel_id)
+            if not channel:
+                print(f"❌ 找不到頻道 {self.digital_usd_channel_id}")
+                return
+            
+            members_data = self.get_digital_usd_leaderboard_data()
+            
+            if not members_data:
+                print("❌ 沒有使用者資料，無法創建數位美金排行榜")
+                return
+            
+            # 創建圖片
+            print("🎨 生成數位美金排行榜圖片...")
+            image = await self.make_digital_usd_leaderboard_image(members_data)
+            with io.BytesIO() as img_bytes:
+                image.save(img_bytes, format="PNG")
+                img_bytes.seek(0)
+                file = discord.File(img_bytes, filename="digital_usd_rank.png")
+                msg = await channel.send(file=file)
+            
+            # 立即儲存訊息 ID
+            self.digital_usd_message_id = msg.id
+            save_to_env("DIGITAL_USD_RANK_MESSAGE_ID", msg.id)
+            
+            self.last_digital_usd_data = members_data.copy()
+            
+            print(f"✅ 數位美金排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
+            
+        except Exception as e:
+            print(f"❌ 創建數位美金排行榜失敗: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def get_digital_usd_leaderboard_data(self):
+        """取得當前數位美金排行榜資料"""
+        if not self.digital_usd_channel_id:
+            return []
+            
+        channel = self.bot.get_channel(self.digital_usd_channel_id)
+        if not channel:
+            return []
+            
+        guild = channel.guild
+        
+        from db_adapter import get_all_users
+        
+        members_data = []
+        all_users = get_all_users()
+        
+        # 篩選 digital_usd > 0，排序，取前 20
+        users = [u for u in all_users if (u.get('digital_usd') or 0) > 0]
+        users.sort(key=lambda x: (x.get('digital_usd') or 0), reverse=True)
+        users = users[:20]
+        
+        for user in users:
+            user_id = int(user["user_id"])
+            member = guild.get_member(user_id)
+            
+            if member:
+                members_data.append((member, user["digital_usd"]))
+            else:
+                class FallbackMember:
+                    def __init__(self, user_id, nickname):
+                        self.id = user_id
+                        self.display_name = nickname or f"未知玩家 ({user_id})"
+                        avatar_color = user_id % 6
+                        default_avatar_url = f"https://cdn.discordapp.com/embed/avatars/{avatar_color}.png"
+                        
+                        class AvatarProxy:
+                            def __init__(self, url):
+                                self.url = url
+                        
+                        self.display_avatar = AvatarProxy(default_avatar_url)
+                
+                fallback = FallbackMember(
+                    user_id,
+                    user.get('nickname', user.get('user_name', f'User {user_id}'))
+                )
+                members_data.append((fallback, user["digital_usd"]))
+        
+        return members_data
+
+    async def make_digital_usd_leaderboard_image(self, members_data):
+        """生成數位美金排行榜圖片"""
+        DESCRIPTION_HEIGHT = 80
+        WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
+        AVATAR_SIZE = 48
+        MARGIN = 20
+        BG_COLOR = (255,255,255)
+        RANK_COLOR = (50,200,50)  # 綠色用於美金
+
+        avatar_images = []
+        placeholder = create_placeholder_avatar()
+        async with aiohttp.ClientSession() as session:
+            for member, _ in members_data:
+                avatar = None
+                try:
+                    url = None
+                    if hasattr(member, 'display_avatar') and member.display_avatar:
+                        try:
+                            url = member.display_avatar.url
+                        except AttributeError:
+                            pass
+                    if not url and hasattr(member, 'avatar') and member.avatar:
+                        try:
+                            url = member.avatar.url
+                        except AttributeError:
+                            pass
+                    if not url and hasattr(member, 'default_avatar') and member.default_avatar:
+                        try:
+                            url = member.default_avatar.url
+                        except AttributeError:
+                            pass
+                    if url:
+                        avatar = await asyncio.wait_for(
+                            fetch_avatar(session, url),
+                            timeout=5.0
+                        )
+                except asyncio.TimeoutError:
+                    pass
+                except Exception as e:
+                    print(f"❌ 頭像下載錯誤 ({member.display_name}): {e}")
+                avatar_images.append(avatar or placeholder)
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._sync_build_digital_usd_leaderboard_image,
+            members_data,
+            avatar_images,
+            WIDTH,
+            HEIGHT,
+            DESCRIPTION_HEIGHT,
+            AVATAR_SIZE,
+            MARGIN,
+            BG_COLOR,
+            RANK_COLOR,
+        )
+
+    def _sync_build_digital_usd_leaderboard_image(
+        self,
+        members_data,
+        avatar_images,
+        WIDTH,
+        HEIGHT,
+        DESCRIPTION_HEIGHT,
+        AVATAR_SIZE,
+        MARGIN,
+        BG_COLOR,
+        RANK_COLOR,
+    ):
+        """純同步版數位美金排行榜圖片生成"""
+        try:
+            FONT_BIG = ImageFont.truetype(FONT_PATH, 28)
+            FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
+            FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 24)
+            FONT_DESC = ImageFont.truetype(FONT_PATH, 16)
+        except Exception as e:
+            print(f"❌ 載入字體失敗: {e}")
+            FONT_BIG = ImageFont.load_default()
+            FONT_SMALL = ImageFont.load_default()
+            FONT_KKCOIN = ImageFont.load_default()
+            FONT_DESC = ImageFont.load_default()
+
+        img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
+        draw = ImageDraw.Draw(img)
+        draw.text((MARGIN, 18), "💵 數位美金排行榜（前20名）", fill=(50,200,50), font=FONT_BIG)
+
+        # 畫各行
+        for i, ((member, digital_usd), avatar_img) in enumerate(zip(members_data, avatar_images)):
+            y = 75 + i*60
+            rank_x = MARGIN
+            draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
+
+            display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
+            img.paste(display_avatar, (rank_x + 40, y), display_avatar)
+            name_x = rank_x + 100
+            name_y = y+8
+            draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
+            draw.text((WIDTH-220, y+8), f"${digital_usd:,.0f} USD", fill=(50,200,50), font=FONT_KKCOIN)
+
+        desc_y = 75 + len(members_data) * 60 + 15
+        draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200,200,200), width=1)
+        descriptions = [
+            " 數位美金獲得方法：賣出資產後製造「金流斷點」轉換而來",
+            " 這是洗出的「白錢」，可用於購買高級商品或提領"
+        ]
+        draw.text((MARGIN, desc_y), " 💵 數位美金說明：", fill=(50,200,50), font=FONT_SMALL)
+        for i, desc in enumerate(descriptions):
+            desc_text_y = desc_y + 25 + i * 22
+            draw.text((MARGIN + 10, desc_text_y), desc, fill=(100,100,100), font=FONT_DESC)
+
+        return img
+
+    async def update_digital_usd_leaderboard(self, min_interval=UPDATE_INTERVAL, force=False):
+        """更新數位美金排行榜"""
+        current_time = time.time()
+        if not self.digital_usd_channel_id or not self.digital_usd_message_id:
+            return
+        if not force and current_time - self.last_update_time < min_interval:
+            return
+
+        if not hasattr(self, "_digital_usd_update_lock"):
+            self._digital_usd_update_lock = asyncio.Lock()
+        async with self._digital_usd_update_lock:
+            try:
+                channel = self.bot.get_channel(self.digital_usd_channel_id)
+                if not channel:
+                    return
+
+                try:
+                    msg = await channel.fetch_message(self.digital_usd_message_id)
+                except discord.NotFound:
+                    print("❌ 數位美金排行榜訊息已被刪除，將重新創建")
+                    self.digital_usd_message_id = 0
+                    save_to_env("DIGITAL_USD_RANK_MESSAGE_ID", 0)
+                    await self.create_digital_usd_leaderboard()
+                    return
+                except Exception as e:
+                    print(f"❌ 取得訊息失敗: {e}")
+                    return
+
+                members_data = await asyncio.to_thread(self.get_digital_usd_leaderboard_data)
+                if not members_data:
+                    return
+
+                if not force and not self.has_digital_usd_data_changed(members_data):
+                    return
+
+                print(f"🔄 開始更新數位美金排行榜...")
+                image = await self.make_digital_usd_leaderboard_image(members_data)
+
+                with io.BytesIO() as img_bytes:
+                    image.save(img_bytes, format="PNG")
+                    img_bytes.seek(0)
+                    file = discord.File(img_bytes, filename="digital_usd_rank.png")
+                    await msg.edit(attachments=[file])
+
+                self.last_digital_usd_data = members_data.copy()
+                print(f"✅ 數位美金排行榜更新成功 ({len(members_data)} 名使用者)")
+
+            except Exception as e:
+                print(f"❌ 更新數位美金排行榜時發生錯誤: {e}")
+
+    def has_digital_usd_data_changed(self, new_data):
+        """檢查數位美金排行榜資料是否有變化"""
+        if not self.last_digital_usd_data:
+            return True
+            
+        if len(new_data) != len(self.last_digital_usd_data):
+            return True
+        
+        for i, (member, digital_usd) in enumerate(new_data):
+            if i >= len(self.last_digital_usd_data):
+                return True
+                
+            old_member, old_digital_usd = self.last_digital_usd_data[i]
+            
+            new_usd = digital_usd or 0
+            old_usd = old_digital_usd or 0
+            
+            if member.id != old_member.id or new_usd != old_usd:
+                return True
+        
+        return False
 
     @app_commands.command(name="kkcoin", description="查詢你的 KK 幣餘額")
     async def kkcoin(self, interaction: discord.Interaction, member: discord.Member = None):
