@@ -130,14 +130,16 @@ async def make_leaderboard_image(members_data):
     """
     RESERVE_SECTION_HEIGHT = 120  # 儲備池區域高度（置頂）
     DESCRIPTION_HEIGHT = 90
-    WIDTH, HEIGHT = 1000, RESERVE_SECTION_HEIGHT + 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
+    WIDTH, HEIGHT = 1000, RESERVE_SECTION_HEIGHT + 75 + 70 * len(members_data) + DESCRIPTION_HEIGHT  # 增加高度以容納進度條
     AVATAR_SIZE = 48
     MARGIN = 20
-    BG_COLOR = (255,255,255)
+    BG_COLOR = (54, 57, 63)  # Discord 深紫黑色背景
     RANK_COLOR = (240,200,80)
 
-    # 先取得每個成員的頭像（或佔位）
+    # 先取得每個成員的頭像（或佔位）、計算最大資產値用於進度條
     avatar_images = []
+    member_totals = []  # 用於計算進度條
+    max_assets = 0
     placeholder = create_placeholder_avatar()
     async with aiohttp.ClientSession() as session:
         for i, member_data in enumerate(members_data):
@@ -263,17 +265,17 @@ def _sync_build_leaderboard_image(
     reserve_bg_y_end = MARGIN + RESERVE_SECTION_HEIGHT - 5
     draw.rectangle(
         [(MARGIN, reserve_bg_y_start), (WIDTH - MARGIN, reserve_bg_y_end)],
-        fill=(245, 250, 255),  # 淺藍背景
-        outline=(200, 220, 240),
+        fill=(68, 71, 90),  # Discord 稍淡的背景
+        outline=(100, 110, 150),
         width=2
     )
     
     # 儲備池標題
-    draw.text((MARGIN + 10, MARGIN + 8), "🏦 園區中央儲備池", fill=(0, 100, 200), font=FONT_BIG)
+    draw.text((MARGIN + 10, MARGIN + 8), "🏦 園區中央儲備池", fill=(150, 180, 255), font=FONT_BIG)
     
     # 餘額和壓力 (同一行)
     reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
-    draw.text((MARGIN + 15, MARGIN + 45), f"💰 {reserve_formatted} KK", fill=(50,110,210), font=FONT_SMALL)
+    draw.text((MARGIN + 15, MARGIN + 45), f"💰 {reserve_formatted} KK", fill=(100, 180, 220), font=FONT_SMALL)
     
     # 壓力條
     bar_x = MARGIN + 280
@@ -284,8 +286,8 @@ def _sync_build_leaderboard_image(
     # 背景條（灰色）
     draw.rectangle(
         [(bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height)],
-        fill=(220, 220, 220),
-        outline=(180, 180, 180)
+        fill=(100, 110, 140),
+        outline=(120, 130, 160)
     )
     
     # 根據壓力等級選擇顏色
@@ -306,13 +308,13 @@ def _sync_build_leaderboard_image(
     
     # 壓力比例文字
     pressure_text = f"{reserve_pressure:.0f}%"
-    draw.text((bar_x + 8, bar_y + 2), pressure_text, fill=(50, 50, 50), font=FONT_DESC)
+    draw.text((bar_x + 8, bar_y + 2), pressure_text, fill=(200, 200, 200), font=FONT_DESC)
     
     # 簡介說明
     if reserve_announcement:
-        draw.text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", fill=(100,100,100), font=FONT_DESC)
+        draw.text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", fill=(180, 180, 200), font=FONT_DESC)
     else:
-        draw.text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", fill=(100,100,100), font=FONT_DESC)
+        draw.text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", fill=(180, 180, 200), font=FONT_DESC)
     
     # ========== 第二部分：排行榜標題和資料 ==========
     leaderboard_start_y = MARGIN + RESERVE_SECTION_HEIGHT + 10
@@ -327,7 +329,7 @@ def _sync_build_leaderboard_image(
     else:
         title_x = MARGIN
     
-    draw.text((title_x, leaderboard_start_y + 8), "💰 金流斷點交易所 - 總資產排行", fill=(60,60,60), font=FONT_BIG)
+    draw.text((title_x, leaderboard_start_y + 8), "💰 金流斷點交易所 - 總資產排行", fill=(200, 200, 220), font=FONT_BIG)
 
     # ========== 畫各行 ==========
     for i, member_data in enumerate(zip(members_data, avatar_images)):
@@ -340,7 +342,7 @@ def _sync_build_leaderboard_image(
         
         avatar_img = member_data[1]
         
-        y = leaderboard_start_y + 75 + i*60
+        y = leaderboard_start_y + 75 + i*70  # 增加行高以容納進度條
         if i < 3 and medal_imgs[i]:
             try:
                 img.paste(medal_imgs[i].resize((36,36)), (MARGIN, y+6), medal_imgs[i].resize((36,36)))
@@ -353,35 +355,87 @@ def _sync_build_leaderboard_image(
         
         draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
 
-        try:
-            display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
+        # 改進頭像加載：若失敗則使用灰色佔位符
+        display_avatar = None
+        if avatar_img:
+            try:
+                display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
+                img.paste(display_avatar, (rank_x + 40, y), display_avatar)
+            except Exception as e:
+                print(f"⚠️ 貼上頭像失敗: {e}")
+                # 使用灰色佔位符
+                display_avatar = create_placeholder_avatar()
+                display_avatar.resize((AVATAR_SIZE, AVATAR_SIZE))
+                img.paste(display_avatar, (rank_x + 40, y), display_avatar)
+        else:
+            # 沒有頭像，使用灰色佔位符
+            display_avatar = create_placeholder_avatar()
             img.paste(display_avatar, (rank_x + 40, y), display_avatar)
-        except Exception as e:
-            print(f"⚠️ 貼上頭像失敗: {e}")
         
         name_x = rank_x + 100
         name_y = y+8
-        draw.text((name_x, name_y), member.display_name, fill=(30,30,30), font=FONT_SMALL)
+        draw.text((name_x, name_y), member.display_name, fill=(200, 200, 220), font=FONT_SMALL)
         
         # 同時顯示 KK幣和數位美金 (確保轉換為數值)
         kkcoin_text = f"{int(float(kkcoin or 0))} KK"
         usd_text = f"${float(digital_usd or 0):,.0f}"
-        draw.text((WIDTH-280, y+8), kkcoin_text, fill=(50,110,210), font=FONT_KKCOIN)
-        draw.text((WIDTH-120, y+8), usd_text, fill=(50,200,50), font=FONT_KKCOIN)
+        draw.text((WIDTH-280, y+8), kkcoin_text, fill=(100, 180, 220), font=FONT_KKCOIN)
+        draw.text((WIDTH-120, y+8), usd_text, fill=(100, 220, 150), font=FONT_KKCOIN)
+        
+        # ========== 進度條（在用戶名下方） ==========
+        if max_assets > 0:
+            current_assets = member_totals[i]
+            percent = min(100, (current_assets / max_assets) * 100)  # 轉換為百分比
+        else:
+            percent = 0
+        
+        # 進度條尺寸
+        progress_bar_y = y + 35
+        progress_bar_x = rank_x + 100
+        progress_bar_width = WIDTH - rank_x - 120 - 300
+        progress_bar_height = 12
+        
+        # 背景條（深灰色）
+        draw.rectangle(
+            [(progress_bar_x, progress_bar_y), (progress_bar_x + progress_bar_width, progress_bar_y + progress_bar_height)],
+            fill=(80, 90, 120),
+            outline=(120, 130, 160),
+            width=1
+        )
+        
+        # 填充條（漸變顏色）
+        if percent > 0:
+            filled_width = int(progress_bar_width * percent / 100)
+            # 根據百分比選擇顏色
+            if percent >= 75:
+                bar_color = (255, 200, 50)  # 金色
+            elif percent >= 50:
+                bar_color = (100, 200, 255)  # 藍色
+            else:
+                bar_color = (100, 220, 150)  # 綠色
+            
+            draw.rectangle(
+                [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
+                fill=bar_color
+            )
+        
+        # 百分比文字
+        percent_text = f"{percent:.0f}%"
+        draw.text((progress_bar_x + progress_bar_width + 10, progress_bar_y - 2), percent_text, fill=(200, 200, 200), font=FONT_DESC)
 
     # ========== 第三部分：說明區塊 ==========
-    desc_y = leaderboard_start_y + 75 + len(members_data) * 60 + 15
-    draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200,200,200), width=1)
+    desc_y = leaderboard_start_y + 75 + len(members_data) * 70 + 15  # 調整位置以符合新的行高
+    draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(100, 110, 150), width=1)
     
     descriptions = [
         " 💬 KK幣是「未洗淨的髒錢」- 交易/賣出資產時給予",
         " 🔄 可透過「金流斷點」轉換為 💵 數位美金（D-USD）",
         " 📊 排名計算：總資產 = KK幣 + (D-USD ÷ 35)"
     ]
-    draw.text((MARGIN, desc_y), " 📚 金流說明：", fill=(80,80,80), font=FONT_SMALL)
+    draw.text((MARGIN, desc_y), " 📚 金流說明：", fill=(150, 160, 200), font=FONT_SMALL)
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
-        draw.text((MARGIN + 10, desc_text_y), desc, fill=(100,100,100), font=FONT_DESC)
+        draw.text((MARGIN + 10, desc_text_y), desc, fill=(180, 180, 200), font=FONT_DESC)
 
     return img
 
@@ -847,8 +901,8 @@ class KKCoin(commands.Cog):
         WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
         AVATAR_SIZE = 48
         MARGIN = 20
-        BG_COLOR = (255,255,255)
-        RANK_COLOR = (50,200,50)  # 綠色用於美金
+        BG_COLOR = (54, 57, 63)  # Discord 深紫黑色背景
+        RANK_COLOR = (100, 220, 150)  # 淺綠色用於美金
 
         avatar_images = []
         placeholder = create_placeholder_avatar()
