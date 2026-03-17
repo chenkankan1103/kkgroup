@@ -539,20 +539,24 @@ class KKCoin(commands.Cog):
         # Cloudflare Quick Tunnel 支援
         self.base_url = "https://kkgroup.com"  # 預設值，將在 on_ready 嘗試更新
         self.tunnel_url_lock = asyncio.Lock()
+        self.last_synced_tunnel_url = None  # 追蹤上一次同步的 URL
         
         # 啟動定時更新任務
         self.auto_update_leaderboard.start()
         self.auto_update_digital_usd_leaderboard.start()
         self.auto_update_reserve_status.start()
+        self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
         print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
         print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
+        print(f"🔄 隧道 URL 自動檢查已啟用（每 10 分鐘掃描一次）")
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
         self.auto_update_leaderboard.cancel()
         self.auto_update_digital_usd_leaderboard.cancel()
         self.auto_update_reserve_status.cancel()
+        self.auto_check_tunnel_url.cancel()  # 🔄 取消隧道檢查任務
     
     async def sync_to_github(self, new_url):
         """將新的隧道 URL 同步到 GitHub Pages 入口
@@ -561,7 +565,7 @@ class KKCoin(commands.Cog):
             new_url: 新的 Tunnel URL (e.g., https://xxx.trycloudflare.com)
         
         流程:
-            1. 讀取/更新本地 config.json
+            1. 讀取/更新本地 docs/config.json （GitHub Pages 讀取點）
             2. Git add/commit/push 到遠端 GitHub
         """
         try:
@@ -569,12 +573,13 @@ class KKCoin(commands.Cog):
             import json
             from datetime import datetime
             
-            config_path = os.path.join(os.path.dirname(__file__), "..", "web_portal", "config.json")
+            # 使用 docs/config.json（GitHub Pages 正確位置）
+            config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
             
-            # 檢查 web_portal 是否存在
-            web_portal_dir = os.path.dirname(config_path)
-            if not os.path.exists(web_portal_dir):
-                print(f"❌ web_portal 目錄不存在: {web_portal_dir}")
+            # 檢查 docs 目錄是否存在
+            docs_dir = os.path.dirname(config_path)
+            if not os.path.exists(docs_dir):
+                print(f"❌ docs 目錄不存在: {docs_dir}")
                 return False
             
             # 更新 config.json
@@ -586,34 +591,34 @@ class KKCoin(commands.Cog):
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, ensure_ascii=False, indent=2)
             
-            print(f"✅ 已更新 config.json: {new_url}")
+            print(f"✅ 已更新 docs/config.json: {new_url}")
             
-            # Git 操作（在 web_portal 目錄中執行）
+            # Git 操作（在項目根目錄中執行）
             git_commands = [
-                f"cd {web_portal_dir} && git add config.json",
-                f"cd {web_portal_dir} && git commit -m 'Auto-sync: Update tunnel URL to {new_url}'",
-                f"cd {web_portal_dir} && git push origin main"
+                ["git", "add", "docs/config.json"],
+                ["git", "commit", "-m", f"Auto-sync: Update tunnel URL to {new_url}"],
+                ["git", "push", "origin", "main"]
             ]
             
             for cmd in git_commands:
                 try:
-                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, cwd=os.path.dirname(__file__) + "/../..")
                     if result.returncode == 0:
-                        print(f"✅ Git 指令成功: {cmd.split('&&')[1].strip()}")
+                        print(f"✅ Git 指令成功: {' '.join(cmd[1:])}")
                     else:
                         # 如果是 commit 時沒有變更，允許這個錯誤
-                        if "nothing to commit" in result.stderr:
+                        if "nothing to commit" in result.stderr or "nothing added to commit" in result.stderr:
                             print(f"ℹ️  config.json 未有變更，跳過提交")
                         else:
                             print(f"⚠️  Git 指令警告: {result.stderr[:100]}")
                 except subprocess.TimeoutExpired:
-                    print(f"⏱️ 指令超時: {cmd}")
+                    print(f"⏱️ 指令超時: {' '.join(cmd)}")
                     return False
                 except Exception as e:
                     print(f"❌ Git 操作失敗: {e}")
                     return False
             
-            print(f"🚀 GitHub Pages 已更新: https://chenkankan1103.github.io/kkgroup/web_portal/")
+            print(f"🚀 GitHub Pages 已更新隧道 URL: https://chenkankan1103.github.io/kkgroup/")
             return True
         
         except Exception as e:
@@ -697,6 +702,70 @@ class KKCoin(commands.Cog):
                 + "✅ 執行後，機器人會自動從 /tmp/cloudflared.log 讀取隧道 URL\n\n"
                 + "="*70 + "\n"
             )
+
+    @tasks.loop(minutes=10)
+    async def auto_check_tunnel_url(self):
+        """🔄 每 10 分鐘檢查一次隧道 URL 是否變更
+        
+        如果隧道 URL 發生變更：
+        1. 更新 self.base_url
+        2. 同步到 GitHub Pages 的 config.json  
+        3. 發送 Discord 警報通知
+        """
+        try:
+            # 獲取當前隧道 URL
+            current_tunnel_url = await self.get_tunnel_url()
+            
+            if not current_tunnel_url:
+                # 未找到隧道，使用預設域名
+                return
+            
+            # 檢查 URL 是否與上次已同步的 URL 不同
+            if current_tunnel_url != self.last_synced_tunnel_url:
+                print(f"\n⚠️  【隧道 URL 變更偵測】")
+                print(f"   舊 URL: {self.last_synced_tunnel_url}")
+                print(f"   新 URL: {current_tunnel_url}\n")
+                
+                # 同步到 GitHub
+                sync_success = await self.sync_to_github(current_tunnel_url)
+                
+                if sync_success:
+                    self.last_synced_tunnel_url = current_tunnel_url
+                    self.base_url = current_tunnel_url
+                    
+                    # 發送 Discord 通知（如果有指定通知頻道）
+                    notify_channel_id = int(get_from_env("TUNNEL_NOTIFY_CHANNEL_ID", 0))
+                    if notify_channel_id:
+                        try:
+                            channel = self.bot.get_channel(notify_channel_id)
+                            if channel:
+                                embed = discord.Embed(
+                                    title="🚀 Cloudflare 隧道 URL 已更新",
+                                    description=f"**新網址：** {current_tunnel_url}",
+                                    color=discord.Color.green(),
+                                    timestamp=discord.utils.utcnow()
+                                )
+                                embed.add_field(name="📡 狀態", value="✅ GitHub Pages 已同步", inline=False)
+                                embed.add_field(name="🔗 入口網址", value="https://chenkankan1103.github.io/kkgroup/", inline=False)
+                                await channel.send(embed=embed)
+                                print(f"✅ Discord 通知已發送到頻道 {notify_channel_id}")
+                        except Exception as e:
+                            print(f"⚠️  無法發送 Discord 通知: {e}")
+                else:
+                    print(f"❌ 同步 GitHub 失敗，隧道 URL 未更新")
+        
+        except Exception as e:
+            print(f"❌ 自動檢查隧道 URL 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @auto_check_tunnel_url.before_loop
+    async def before_auto_check_tunnel(self):
+        """等待 bot 準備完成後再啟動隧道檢查"""
+        await self.bot.wait_until_ready()
+        print("✅ 隧道 URL 自動檢查任務已啟動（每 10 分鐘檢查一次）")
+        # 立即執行一次檢查
+        await self.auto_check_tunnel_url()
 
     @tasks.loop(minutes=5)
     async def auto_update_leaderboard(self):
