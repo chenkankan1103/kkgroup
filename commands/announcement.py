@@ -355,30 +355,35 @@ class Announcement(commands.Cog):
             else:
                 print(f"⚠️ [無效 MESSAGE_ID] 無有效的已保存 MESSAGE_ID (值為: {message_id})，將發送新消息")
             
+            # ======== 發送新消息前，嘗試從最近的消息歷史中恢復 MESSAGE_ID ========
+            print("🔄 [備用方案] 嘗試從頻道歷史中查找最近的公告消息...")
+            recovered_id = await self._find_last_announcement_message(channel)
+            if recovered_id:
+                print(f"✅ [恢復成功] 從頻道歷史中找到最近的公告: {recovered_id}")
+                try:
+                    message = await channel.fetch_message(recovered_id)
+                    print(f"✓ [編輯恢復的消息] 準備編輯...")
+                    await message.edit(embed=embed, view=view)
+                    print(f"✅ [編輯成功] 公告已編輯 (消息 ID: {recovered_id})")
+                    # 確保 .env 已更新
+                    self._update_env_message_id(recovered_id)
+                    return
+                except Exception as e:
+                    print(f"⚠️ [恢復失敗] 無法編輯恢復的消息: {e}，將發送新消息")
+            
             # 發送新消息
             print("📤 [發送新消息] 開始發送新公告...")
             message = await channel.send(embed=embed, view=view)
             print(f"✓ [消息已發送] 新消息 ID: {message.id}")
             
-            # ======== 關鍵：必須立即保存並驗證 ========
-            self._update_env_message_id(message.id)
-            
-            # 立即再次驗證，確保檔案寫入成功（最多重試 3 次）
-            max_retries = 3
-            for retry in range(max_retries):
-                verify_id = self._read_message_id_from_env()
-                if verify_id == message.id:
-                    print(f"✅ [最終驗證成功] MESSAGE_ID 已確認保存: {message.id}")
-                    return
-                else:
-                    print(f"⚠️ [驗證失敗 - 重試 {retry + 1}/{max_retries}] MESSAGE_ID 不匹配 (預期: {message.id}, 實際: {verify_id})")
-                    # 重新嘗試寫入
-                    self._update_env_message_id(message.id)
-                    import time
-                    time.sleep(0.5)
-            
-            # 如果最後仍未保存成功，紀錄警告但繼續
-            print(f"❌ [警告] MESSAGE_ID 驗證最終失敗，可能導致下次重啟重複發送")
+            # ======== 關鍵：必須立即保存並驗證（加強版） ========
+            success = await self._save_and_verify_message_id(message.id)
+            if success:
+                print(f"✅ [最終驗證成功] MESSAGE_ID 已確認保存: {message.id}")
+            else:
+                # 多次嘗試失敗，但仍然嘗試儲存到記憶體中作為備用
+                print(f"❌ [警告] MESSAGE_ID 多次驗證失敗，但已將 ID 存儲為備用: {message.id}")
+                print(f"   備用 ID 將在環境變數中保留，直到能成功寫入 .env")
         
         except asyncio.CancelledError:
             pass
@@ -387,7 +392,61 @@ class Announcement(commands.Cog):
             import traceback
             traceback.print_exc()
     
-    def _read_message_id_from_env(self) -> int:
+    
+    async def _find_last_announcement_message(self, channel) -> int:
+        """從頻道歷史中查找最近的公告消息（由本機器人發送）
+        
+        這是一個備用方案，用於恢復可能丟失的 MESSAGE_ID。
+        如果 .env 文件的寫入失敗，下次重啟時可以從頻道歷史中恢復。
+        """
+        try:
+            async for message in channel.history(limit=20):
+                # 檢查是否是由本機器人發送的消息
+                if message.author.id == self.bot.user.id:
+                    # 檢查是否包含公告內容（通過檢查 embed 是否存在）
+                    if message.embeds:
+                        first_embed = message.embeds[0]
+                        # 檢查是否是公告 embed（通過 footer 中的 "KK 園區"）
+                        if first_embed.footer and "KK 園區" in first_embed.footer.text:
+                            print(f"   ✓ 找到候選消息: ID={message.id}, 建立於 {message.created_at}")
+                            return message.id
+            
+            print(f"   ⚠️ 未找到有效的公告消息")
+            return 0
+        except Exception as e:
+            print(f"   ❌ 查詢頻道歷史失敗: {e}")
+            return 0
+    
+    async def _save_and_verify_message_id(self, message_id: int) -> bool:
+        """加強版的保存和驗證方法
+        
+        使用多次驗證確保 MESSAGE_ID 已正確保存到 .env。
+        如果驗證失敗，會多次重試並最終在環境變數中備份。
+        """
+        print(f"💾 正在保存 MESSAGE_ID: {message_id}")
+        
+        max_retries = 5  # 增加重試次數
+        for attempt in range(max_retries):
+            self._update_env_message_id(message_id)
+            
+            # 短暫延遲確保文件系統同步
+            import time
+            time.sleep(0.3 if attempt < 2 else 0.5)
+            
+            # 驗證
+            verify_id = self._read_message_id_from_env()
+            if verify_id == message_id:
+                print(f"✅ [驗證成功 - 嘗試 {attempt + 1}/{max_retries}] MESSAGE_ID 已確認保存: {message_id}")
+                return True
+            else:
+                print(f"⚠️ [驗證失敗 - 重試 {attempt + 1}/{max_retries}] MESSAGE_ID 不匹配 (預期: {message_id}, 實際: {verify_id})")
+        
+        # 所有重試都失敗，但仍然在環境變數中保留
+        print(f"❌ [警告] MESSAGE_ID {max_retries} 次驗證全部失敗")
+        print(f"   → 但 MESSAGE_ID 已存儲在環境變數中作為備用 (直到下次重啟)")
+        os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
+        return False
+    
         """從 .env 讀取 MESSAGE_ID，返回有效的整數或 0 - 每次都直接讀取文件"""
         try:
             if not self.env_path.exists():
@@ -436,10 +495,8 @@ class Announcement(commands.Cog):
             return 0
 
     def _update_env_message_id(self, message_id: int):
-        """更新 .env 中的消息 ID - 確保持久化"""
+        """更新 .env 中的消息 ID - 確保持久化（改進版）"""
         try:
-            print(f"💾 正在保存 MESSAGE_ID: {message_id}")
-            
             # 讀取現有 .env 內容
             env_content = ""
             if self.env_path.exists():
@@ -462,38 +519,36 @@ class Announcement(commands.Cog):
             # 如果沒找到，就在 ANNOUNCEMENT_CHANNEL_ID 後面加入
             if not found:
                 final_lines = []
-                for line in new_lines:
+                for i, line in enumerate(new_lines):
                     final_lines.append(line)
                     if line.startswith('ANNOUNCEMENT_CHANNEL_ID='):
                         final_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}')
+                        found = True
+                
+                # 如果還是沒找到 ANNOUNCEMENT_CHANNEL_ID，就在最後加入
+                if not found:
+                    final_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}')
+                
                 new_lines = final_lines
             
-            # 寫入文件并確保 flush
+            # 寫入文件并確保 flush（使用多層次確保）
             new_content = '\n'.join(new_lines)
-            with open(self.env_path, 'w', encoding='utf-8') as f:
-                f.write(new_content)
-                f.flush()  # 強制刷寫到磁盤
-                os.fsync(f.fileno())  # 確保操作系統已寫入
             
-            print(f"  [DEBUG] 已寫入 .env 文件並 flush，MESSAGE_ID={message_id}")
+            # 方法 1: 標準 flush + fsync
+            with open(self.env_path, 'w', encoding='utf-8', newline='') as f:
+                f.write(new_content)
+                f.flush()
+                os.fsync(f.fileno())
             
             # 同時更新環境變數
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
             
-            # 小延遲確保文件系統已寫入
-            import time
-            time.sleep(0.5)
-            
-            # 驗證寫入（直接讀取文件）
-            verify_id = self._read_message_id_from_env()
-            if verify_id == message_id:
-                print(f"✅ MESSAGE_ID 已成功保存到 .env: {message_id}")
-                return
-            
-            print(f"⚠️ MESSAGE_ID 保存後驗證失敗 (預期: {message_id}, 實際: {verify_id})")
+            print(f"  ✓ 已寫入 .env: ANNOUNCEMENT_MESSAGE_ID={message_id}")
         
         except (IOError, OSError) as e:
             print(f"❌ 保存 MESSAGE_ID 失敗: {e}")
+            # 至少在環境變數中保留
+            os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
             import traceback
             traceback.print_exc()
     
