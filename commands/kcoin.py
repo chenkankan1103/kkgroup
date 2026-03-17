@@ -643,11 +643,25 @@ class KKCoin(commands.Cog):
             # 創建圖片
             print("🎨 生成排行榜圖片...")
             image = await make_leaderboard_image(members_data)
-            with io.BytesIO() as img_bytes:
-                image.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                file = discord.File(img_bytes, filename="kkcoin_rank.png")
-                msg = await channel.send(file=file)
+            
+            # 固定儲存路徑（用於 Cloudflare 快取）
+            leaderboard_path = "/var/www/html/assets/leaderboard.png"
+            os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
+            
+            # 儲存到固定路徑（覆蓋舊檔）
+            image.save(leaderboard_path, format="PNG")
+            print(f"✅ 排行榜已存到: {leaderboard_path}")
+            
+            # 創建嵌入訊息，包含 Cloudflare CDN URL
+            embed = discord.Embed(
+                title="💰 金流斷點交易所 - 總資產排行",
+                description="通過 Cloudflare CDN 快速加載",
+                color=discord.Color.gold()
+            )
+            embed.set_image(url="https://kkgroup.com/assets/leaderboard.png")
+            embed.timestamp = discord.utils.utcnow()
+            
+            msg = await channel.send(embed=embed)
             
             # 立即儲存訊息 ID（防止重複創建）
             self.rank_message_id = msg.id
@@ -658,6 +672,7 @@ class KKCoin(commands.Cog):
             self.last_update_time = time.time()
             
             print(f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
+            print(f"📍 圖片 URL: https://kkgroup.com/assets/leaderboard.png")
             
         except Exception as e:
             print(f"❌ 創建排行榜失敗: {e}")
@@ -1391,15 +1406,29 @@ class KKCoin(commands.Cog):
                 # 生成圖片 (內部會在需要時移至執行緒)
                 image = await make_leaderboard_image(members_data)
 
-                with io.BytesIO() as img_bytes:
-                    image.save(img_bytes, format="PNG")
-                    img_bytes.seek(0)
-                    file = discord.File(img_bytes, filename="kkcoin_rank.png")
-                    await msg.edit(attachments=[file])
+                # 固定儲存路徑（用於 Cloudflare 快取）
+                leaderboard_path = "/var/www/html/assets/leaderboard.png"
+                os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
+                
+                # 儲存到固定路徑（覆蓋舊檔）
+                image.save(leaderboard_path, format="PNG")
+                print(f"✅ 排行榜已存到: {leaderboard_path}")
+
+                # 在 Discord 中發送以該固定 URL 為基礎的訊息
+                # 而不是上傳二進制檔案，讓 Discord 自動抓取並快取
+                embed = discord.Embed(
+                    title="💰 金流斷點交易所 - 總資產排行",
+                    description="通過 Cloudflare CDN 快速加載",
+                    color=discord.Color.gold()
+                )
+                embed.set_image(url="https://kkgroup.com/assets/leaderboard.png")
+                embed.timestamp = discord.utils.utcnow()
+                
+                await msg.edit(embed=embed, attachments=[])
 
                 self.last_leaderboard_data = members_data.copy()
                 self.last_update_time = current_time
-                print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者)")
+                print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者) - URL: https://kkgroup.com/assets/leaderboard.png")
 
             except discord.HTTPException as e:
                 print(f"❌ Discord API 錯誤: {e}")
