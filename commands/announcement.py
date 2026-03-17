@@ -345,9 +345,12 @@ class Announcement(commands.Cog):
                 except discord.Forbidden as e:
                     print(f"⚠️ [權限不足] 無法編輯消息: {e}，將發送新消息")
                     self._clear_env_message_id()
+                except asyncio.TimeoutError as e:
+                    print(f"⚠️ [超時] 編輯消息超時: {e}，將發送新消息")
+                    self._clear_env_message_id()
                 except discord.DiscordException as e:
-                    print(f"⚠️ [編輯失敗] 消息編輯失敗 ({type(e).__name__}): {e}")
-                    print(f"   嘗試發送新消息...")
+                    print(f"⚠️ [Discord 錯誤] 消息編輯失敗 ({type(e).__name__}): {e}")
+                    print(f"   詳細信息: 嘗試發送新消息...")
                     self._clear_env_message_id()
             else:
                 print(f"⚠️ [無效 MESSAGE_ID] 無有效的已保存 MESSAGE_ID (值為: {message_id})，將發送新消息")
@@ -375,12 +378,13 @@ class Announcement(commands.Cog):
             traceback.print_exc()
     
     def _read_message_id_from_env(self) -> int:
-        """從 .env 讀取 MESSAGE_ID，返回有效的整數或 0"""
+        """從 .env 讀取 MESSAGE_ID，返回有效的整數或 0 - 每次都直接讀取文件"""
         try:
             if not self.env_path.exists():
                 print(f"⚠️ .env 文件不存在: {self.env_path}")
                 return 0
             
+            # 直接讀取文件，避免緩存問題
             with open(self.env_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
@@ -404,9 +408,6 @@ class Announcement(commands.Cog):
                     # 分割並去掉註釋
                     value = value.split('#')[0].strip()
                     
-                    print(f"  [DEBUG 讀取] 原始行: {line}")
-                    print(f"  [DEBUG 讀取] 提取的值: {value}")
-                    
                     # 確保是純數字
                     if value and value.isdigit():
                         msg_id = int(value)
@@ -425,7 +426,7 @@ class Announcement(commands.Cog):
             return 0
 
     def _update_env_message_id(self, message_id: int):
-        """更新 .env 中的消息 ID - 直接寫入文件"""
+        """更新 .env 中的消息 ID - 確保持久化"""
         try:
             print(f"💾 正在保存 MESSAGE_ID: {message_id}")
             
@@ -457,15 +458,23 @@ class Announcement(commands.Cog):
                         final_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}')
                 new_lines = final_lines
             
-            # 寫入文件
+            # 寫入文件并確保 flush
             new_content = '\n'.join(new_lines)
             with open(self.env_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
+                f.flush()  # 強制刷寫到磁盤
+                os.fsync(f.fileno())  # 確保操作系統已寫入
+            
+            print(f"  [DEBUG] 已寫入 .env 文件並 flush，MESSAGE_ID={message_id}")
             
             # 同時更新環境變數
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
             
-            # 驗證寫入
+            # 小延遲確保文件系統已寫入
+            import time
+            time.sleep(0.5)
+            
+            # 驗證寫入（直接讀取文件）
             verify_id = self._read_message_id_from_env()
             if verify_id == message_id:
                 print(f"✅ MESSAGE_ID 已成功保存到 .env: {message_id}")
@@ -479,7 +488,7 @@ class Announcement(commands.Cog):
             traceback.print_exc()
     
     def _clear_env_message_id(self):
-        """清除 .env 中的消息 ID"""
+        """清除 .env 中的消息 ID，確保持久化"""
         try:
             # 讀取現有 .env 內容
             if self.env_path.exists():
@@ -496,10 +505,12 @@ class Announcement(commands.Cog):
                     else:
                         new_lines.append(line)
                 
-                # 寫入文件
+                # 寫入文件並確保 flush
                 new_content = '\n'.join(new_lines)
                 with open(self.env_path, 'w', encoding='utf-8') as f:
                     f.write(new_content)
+                    f.flush()  # 強制刷寫到磁盤
+                    os.fsync(f.fileno())  # 確保操作系統已寫入
             
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = ''
             print("🗑️ 已清除 MESSAGE_ID")
