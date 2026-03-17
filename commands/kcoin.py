@@ -702,6 +702,82 @@ class KKCoin(commands.Cog):
                 + "✅ 執行後，機器人會自動從 /tmp/cloudflared.log 讀取隧道 URL\n\n"
                 + "="*70 + "\n"
             )
+        
+        # 🔥 執行 Nginx 健康檢查
+        print("\n🔍 正在執行 Nginx 健康檢查...")
+        await self.check_nginx_health()
+
+    async def check_nginx_health(self):
+        """✅ 檢查 Nginx 是否正確提供排行榜圖片
+        
+        功能:
+            1. 測試本地 Nginx: http://127.0.0.1/assets/leaderboard.png
+            2. 若返回 200 則成功，否則通知管理員
+            3. 記錄檢查結果
+        """
+        admin_id = int(get_from_env("ADMIN_USER_ID", 0))
+        if not admin_id:
+            print("⚠️  未設定 ADMIN_USER_ID，無法發送健康檢查通知")
+            return
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                try:
+                    # 測試本地 Nginx 連接
+                    async with session.get(
+                        "http://127.0.0.1/assets/leaderboard.png", 
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as response:
+                        if response.status == 200:
+                            print(f"✅ 【Nginx 健康檢查】排行榜圖片可正確提供 (HTTP {response.status})")
+                            return True
+                        else:
+                            error_msg = f"❌ 【Nginx 健康檢查失敗】HTTP {response.status} (預期 200)"
+                            print(error_msg)
+                            
+                            # 通知管理員
+                            try:
+                                admin = await self.bot.fetch_user(admin_id)
+                                if admin:
+                                    embed = discord.Embed(
+                                        title="🚨 Nginx 健康檢查失敗",
+                                        description=error_msg,
+                                        color=discord.Color.red(),
+                                        timestamp=discord.utils.utcnow()
+                                    )
+                                    embed.add_field(name="📍 檔案路徑", value="/var/www/html/assets/leaderboard.png", inline=False)
+                                    embed.add_field(name="🔗 Tunnel URL", value=self.base_url, inline=False)
+                                    await admin.send(embed=embed)
+                                    print(f"📢 已發送 Discord 警報給管理員 {admin_id}")
+                            except Exception as e:
+                                print(f"⚠️  無法發送 Discord 通知: {e}")
+                            
+                            return False
+                            
+                except asyncio.TimeoutError:
+                    error_msg = "❌ 【Nginx 健康檢查失敗】連接超時（可能 Nginx 未啟動）"
+                    print(error_msg)
+                    
+                    # 通知管理員
+                    try:
+                        admin = await self.bot.fetch_user(admin_id)
+                        if admin:
+                            embed = discord.Embed(
+                                title="🚨 Nginx 連接超時",
+                                description=error_msg,
+                                color=discord.Color.red(),
+                                timestamp=discord.utils.utcnow()
+                            )
+                            embed.add_field(name="💡 可能原因", value="• Nginx 服務未啟動\n• 防火牆阻擋本地連接\n• 系統資源不足", inline=False)
+                            await admin.send(embed=embed)
+                    except Exception as e:
+                        print(f"⚠️  無法發送 Discord 通知: {e}")
+                    
+                    return False
+                    
+        except Exception as e:
+            print(f"❌ 【Nginx 健康檢查異常】{e}")
+            return False
 
     @tasks.loop(minutes=10)
     async def auto_check_tunnel_url(self):
@@ -862,7 +938,7 @@ class KKCoin(commands.Cog):
             image = await make_leaderboard_image(members_data)
             
             # 固定儲存路徑（用於 Cloudflare Quick Tunnel）
-            leaderboard_path = "/var/www/html/leaderboard.png"
+            leaderboard_path = "/var/www/html/assets/leaderboard.png"
             os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
             
             # 儲存到固定路徑（覆蓋舊檔）並進行權限偵測
@@ -881,7 +957,7 @@ class KKCoin(commands.Cog):
                 return
             
             # 創建嵌入訊息，使用 self.base_url（可能是 Tunnel URL 或預設域名）
-            image_url = f"{self.base_url}/leaderboard.png"
+            image_url = f"{self.base_url}/assets/leaderboard.png"
             embed = discord.Embed(
                 title="💰 金流斷點交易所 - 總資產排行",
                 description=f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸",
@@ -1636,7 +1712,7 @@ class KKCoin(commands.Cog):
                 image = await make_leaderboard_image(members_data)
 
                 # 固定儲存路徑（用於 Cloudflare Quick Tunnel）
-                leaderboard_path = "/var/www/html/leaderboard.png"
+                leaderboard_path = "/var/www/html/assets/leaderboard.png"
                 os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
                 
                 # 儲存到固定路徑（覆蓋舊檔）並進行權限偵測
@@ -1656,7 +1732,7 @@ class KKCoin(commands.Cog):
 
                 # 在 Discord 中發送以該 base_url 為基礎的訊息
                 # 使用 Cloudflare Quick Tunnel URL（如果可用）
-                image_url = f"{self.base_url}/leaderboard.png?t={int(time.time())}"
+                image_url = f"{self.base_url}/assets/leaderboard.png?t={int(time.time())}"
                 embed = discord.Embed(
                     title="💰 金流斷點交易所 - 總資產排行",
                     description=f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸",
