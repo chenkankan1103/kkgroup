@@ -288,90 +288,7 @@ class GCPMetricsMonitor:
             traceback.print_exc()
             return []
     
-    async def get_system_metric(self, metric_type: str, hours: int = 1) -> Optional[float]:
-        """Query a single-time-interval metric and return its most recent value.
 
-        Returns None if no data could be fetched (e.g. metric not reported).
-        """
-        try:
-            now = datetime.utcnow()
-            start_time = now - timedelta(hours=hours)
-            start_ts = Timestamp(); start_ts.FromDatetime(start_time)
-            end_ts = Timestamp(); end_ts.FromDatetime(now)
-            interval = monitoring_v3.TimeInterval({"start_time": start_ts, "end_time": end_ts})
-            
-            metric_filter = f'metric.type="{metric_type}"'
-            print(f"[GCP METRICS] 查詢系統 metric: {metric_type}")
-            
-            request = monitoring_v3.ListTimeSeriesRequest(
-                name=f"projects/{self.project_id}",
-                filter=metric_filter,
-                interval=interval,
-            )
-            results = list(self.metric_client.list_time_series(request=request))
-            
-            print(f"[GCP METRICS] 系統 metric {metric_type} 找到 {len(results)} 個 series")
-            
-            if results:
-                # pick the most recent point across all series
-                latest = None
-                latest_ts = None
-                for idx, series in enumerate(results):
-                    if series.points:
-                        print(f"[GCP METRICS] series {idx} 包含 {len(series.points)} 個 points")
-                        pt = series.points[0]
-                        ts = pt.interval.end_time
-                        # ts may be a protobuf Timestamp or a datetime object
-                        if hasattr(ts, 'seconds'):
-                            key = ts.seconds
-                        else:
-                            # assume datetime-like
-                            key = ts.timestamp()
-                        if latest is None or key > latest_ts:
-                            latest = pt
-                            latest_ts = key
-                if latest:
-                    value = latest.value.double_value
-                    print(f"[GCP METRICS] 系統 metric {metric_type} 值: {value}")
-                    return value
-            else:
-                print(f"[GCP METRICS] ⚠️ 系統 metric {metric_type} 無數據")
-            return None
-        except Exception as e:
-            print(f"[GCP METRICS] system metric {metric_type} failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
-    async def get_system_stats(self) -> Dict[str, Optional[float]]:
-        """
-        收集系統資源統計（CPU、內存、磁盤使用率）
-        
-        Returns:
-            Dict with 'cpu', 'mem', 'disk' keys (0.0-1.0 or None if unavailable)
-        """
-        try:
-            cpu_val = await self.get_system_metric('compute.googleapis.com/instance/cpu/utilization', hours=1)
-            mem_val = await self.get_system_metric('agent.googleapis.com/memory/percent_used', hours=1)
-            disk_val = await self.get_system_metric('agent.googleapis.com/disk/percent_used', hours=1)
-            
-            # normalize to 0-1 range (GCP CPU is already %, memory/disk are 0-100)
-            stats = {
-                'cpu': cpu_val / 100.0 if cpu_val is not None else None,
-                'mem': mem_val / 100.0 if mem_val is not None else None,
-                'disk': disk_val / 100.0 if disk_val is not None else None,
-            }
-            
-            print(f"[GCP METRICS] 系統統計: CPU={cpu_val}%, MEM={mem_val}%, DISK={disk_val}%")
-            return stats
-        except Exception as e:
-            print(f"[GCP METRICS] 收集系統統計失敗: {e}")
-            return {'cpu': None, 'mem': None, 'disk': None}
-
-    def _make_bar(self, ratio: float, length: int = 10) -> str:
-        """Create a text bar █ for filled portion and ░ for empty."""
-        filled = int(ratio * length)
-        return '█' * filled + '░' * (length - filled)
 
     def _format_size(self, gb_value: float) -> str:
         """Format a size expressed in **GB** into a human‑friendly string.
@@ -957,36 +874,9 @@ class GCPMetricsMonitor:
         except Exception as e:
             print(f"[GCP METRICS] 從數據庫讀取月累積流量失敗: {e}")
             return 0.0
-    
-    def get_system_stats_from_database(self) -> Dict:
-        """
-        從數據庫讀取最新的系統統計
-        
-        Returns:
-            Dict: {'cpu': float or None, 'mem': float or None, 'disk': float or None}
-        """
-        if not self.db:
-            return {'cpu': None, 'mem': None, 'disk': None}
-        
-        try:
-            stats_list = self.db.get_system_stats(hours=1)
-            
-            if stats_list:
-                # 取最新的一個
-                latest = stats_list[-1]
-                return {
-                    'cpu': latest.get('cpu_percent') / 100.0 if latest.get('cpu_percent') else None,
-                    'mem': latest.get('memory_percent') / 100.0 if latest.get('memory_percent') else None,
-                    'disk': latest.get('disk_percent') / 100.0 if latest.get('disk_percent') else None,
-                }
-            
-            return {'cpu': None, 'mem': None, 'disk': None}
-            
-        except Exception as e:
-            print(f"[GCP METRICS] 從數據庫讀取系統統計失敗: {e}")
-            return {'cpu': None, 'mem': None, 'disk': None}
 
-    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, cpu_seconds: Optional[float] = None, sys_stats: Dict = None) -> discord.Embed:
+
+    def create_metrics_embed(self, data_points: List[Dict], billing_info: Dict, monthly_gb: float = 0.0, cpu_seconds: Optional[float] = None) -> discord.Embed:
         """
         創建 metrics embed - 追蹤三個重要 metrics：出站流量、CPU時間、計費
         """
@@ -1067,34 +957,6 @@ class GCPMetricsMonitor:
             value=f"{table_block}**狀態**: {billing_info.get('status', '')}",
             inline=False
         )
-        
-        # 系統資源條狀顯示
-        if sys_stats:
-            # show values or N/A if None
-            cpu_val = sys_stats.get('cpu')
-            mem_val = sys_stats.get('mem')
-            disk_val = sys_stats.get('disk')
-            if cpu_val is not None:
-                cpu_bar = self._make_bar(cpu_val)
-                cpu_text = f"CPU {cpu_bar} {cpu_val*100:.0f}%"
-            else:
-                cpu_text = "CPU N/A"
-            if mem_val is not None:
-                mem_bar = self._make_bar(mem_val)
-                mem_text = f"MEM {mem_bar} {mem_val*100:.0f}%"
-            else:
-                mem_text = "MEM N/A"
-            if disk_val is not None:
-                disk_bar = self._make_bar(disk_val)
-                disk_text = f"DSK {disk_bar} {disk_val*100:.0f}%"
-            else:
-                disk_text = "DSK N/A"
-            sys_text = f"{cpu_text}\n{mem_text}\n{disk_text}"
-            embed.add_field(
-                name="💻 系統資源",
-                value=f"```\n{sys_text}\n```",
-                inline=False
-            )
         
         # 使用台灣時間顯示最後更新時間 - 確保每次都是最新時間
         current_time = datetime.now(timezone.utc).astimezone(TAIWAN_TZ)  # 重新計算一次確保最新

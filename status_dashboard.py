@@ -608,7 +608,6 @@ async def create_metrics_update_task(bot_type_str: str):
             data_points = []
             billing_info = {}
             monthly_gb = 0
-            sys_stats = None
             cpu_seconds = None
             
             # 優先從數據庫讀取數據（新架構）
@@ -619,7 +618,6 @@ async def create_metrics_update_task(bot_type_str: str):
                 data_points = monitor.db.get_egress_data(hours=6)
                 billing_info = monitor.get_billing_info_from_database()
                 monthly_gb = monitor.get_monthly_egress_from_database()
-                sys_stats = monitor.get_system_stats_from_database()
                 
                 if len(data_points) < 2:
                     print("[METRICS TASK] ⚠️ 數據庫中數據點不足，嘗試從 GCP API 獲取...")
@@ -644,22 +642,17 @@ async def create_metrics_update_task(bot_type_str: str):
                         monitor.get_monthly_egress_data(days=30),
                         timeout=15.0
                     )
-                    sys_stats = await asyncio.wait_for(
-                        monitor.get_system_stats(),
-                        timeout=10.0
-                    )
                     print(f"[METRICS TASK] 從 GCP API 成功獲取 metrics 數據（{len(data_points)} 數據點)")
                 except Exception as e:
                     print(f"[METRICS TASK] ⚠️ 從 GCP API 獲取失敗: {e}")
-                    data_points, billing_info, monthly_gb, sys_stats = [], {}, 0, None
+                    data_points, billing_info, monthly_gb = [], {}, 0
             
             # 創建 embed（包含三個重要 metrics）
             embed = monitor.create_metrics_embed(
                 data_points=data_points,
                 billing_info=billing_info,
                 monthly_gb=monthly_gb,
-                cpu_seconds=None,
-                sys_stats=sys_stats
+                cpu_seconds=None
             )
             embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 資料來源: {'數據庫' if monitor.db else 'GCP API'} | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
@@ -733,7 +726,6 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                 data_points = monitor.db.get_egress_data(hours=6)
                 billing_info = monitor.get_billing_info_from_database()
                 monthly_gb = monitor.get_monthly_egress_from_database()
-                sys_stats = monitor.get_system_stats_from_database()
                 
                 if len(data_points) < 2:
                     print("[METRICS INIT ASYNC] ⚠️ 數據庫數據不足，嘗試從 GCP API 獲取...")
@@ -748,10 +740,6 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                     monthly_gb = await asyncio.wait_for(
                         monitor.get_monthly_egress_data(days=30),
                         timeout=15.0
-                    )
-                    sys_stats = await asyncio.wait_for(
-                        monitor.get_system_stats(),
-                        timeout=10.0
                     )
                 else:
                     print(f"[METRICS INIT ASYNC] ✅ 從數據庫成功讀取 {len(data_points)} 個數據點")
@@ -770,23 +758,17 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                     monitor.get_monthly_egress_data(days=30),
                     timeout=15.0
                 )
-                sys_stats = await asyncio.wait_for(
-                    monitor.get_system_stats(),
-                    timeout=10.0
-                )
             else:
                 print("[METRICS INIT ASYNC] ⚠️ GCP Monitor 和數據庫都不可用")
                 return
             
             cpu_seconds = None
-            print(f"[METRICS INIT ASYNC] 系統信息已收集: {sys_stats}")
             
             embed = monitor.create_metrics_embed(
                 data_points=data_points,
                 billing_info=billing_info,
                 monthly_gb=monthly_gb,
-                cpu_seconds=cpu_seconds,
-                sys_stats=sys_stats
+                cpu_seconds=cpu_seconds
             )
             embed.set_footer(text=f"初始化時生成 | 資料來源: {'數據庫' if monitor.db else 'GCP API'} | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
             
