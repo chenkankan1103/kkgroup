@@ -115,9 +115,9 @@ class AnnouncementButtonView(View):
 class Announcement(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        channel_id_str = os.getenv('ANNOUNCEMENT_CHANNEL_ID', '0')
-        self.announcement_channel_id = int(channel_id_str)
+        # 直接從 .env 讀取，避免 os.getenv() 的緩存問題
         self.env_path = Path('.env')
+        self.announcement_channel_id = self._read_channel_id_from_env()
         self._synced = False  # 追蹤是否已同步過
         print(f"✅ [Announcement COG INITIALIZED] Channel ID: {self.announcement_channel_id}")
         
@@ -132,6 +132,7 @@ class Announcement(commands.Cog):
             if not self._synced:
                 self._synced = True
                 print("[Announcement] Bot 已就緒，開始同步公告...")
+                print(f"[Announcement] 當前 Channel ID: {self.announcement_channel_id}")
                 await self.sync_announcement()
         except asyncio.CancelledError:
             pass
@@ -139,6 +140,34 @@ class Announcement(commands.Cog):
             print(f"❌ [Announcement] 任務執行失敗: {e}")
             import traceback
             traceback.print_exc()
+    
+    def _read_channel_id_from_env(self) -> int:
+        """從 .env 讀取 ANNOUNCEMENT_CHANNEL_ID，避免 os.getenv() 的緩存問題"""
+        try:
+            if not self.env_path.exists():
+                print(f"⚠️ .env 文件不存在: {self.env_path}，使用默認值 0")
+                return 0
+            
+            with open(self.env_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            for line in content.split('\n'):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                    
+                if 'ANNOUNCEMENT_CHANNEL_ID' in line and '=' in line:
+                    value = line.split('=', 1)[1].strip()
+                    value = value.strip('\'"')
+                    value = value.split('#')[0].strip()
+                    
+                    if value and value.isdigit():
+                        return int(value)
+            
+            print("⚠️ 未在 .env 中找到有效的 ANNOUNCEMENT_CHANNEL_ID")
+            return 0
+        except (IOError, OSError):
+            return 0
     
     async def sync_announcement(self):
         """同步公告：編輯已存在的消息或發送新消息"""
@@ -149,7 +178,7 @@ class Announcement(commands.Cog):
                 print("❌ 沒有公告數據")
                 return
             
-            # 取得公告頻道（使用 fetch 而不是 get）
+            # 取得公告頻道
             try:
                 channel = await self.bot.fetch_channel(self.announcement_channel_id)
             except (discord.NotFound, discord.Forbidden) as e:
@@ -167,46 +196,47 @@ class Announcement(commands.Cog):
             first_announcement = announcements[0]
             embed = view.create_embed_for_announcement(first_announcement)
             
-            # 重新加載 .env 確保取得最新的 MESSAGE_ID
+            # ======== 關鍵邏輯：讀取 .env 中已保存的 MESSAGE_ID ========
             message_id = self._read_message_id_from_env()
-            print(f"🔍 重新讀取 MESSAGE_ID: {message_id}")
+            print(f"🔍 [重要] 讀取到的 MESSAGE_ID: {message_id}")
             
+            # 如果有有效的 MESSAGE_ID，嘗試編輯
             if message_id and message_id > 0:
-                # 嘗試編輯已存在的消息
-                print(f"📨 嘗試編輯消息 ID: {message_id}")
+                print(f"📨 [嘗試編輯] 尋找現有消息 ID: {message_id}")
                 try:
                     message = await channel.fetch_message(message_id)
+                    print(f"✓ [找到消息] 成功獲取消息，準備編輯...")
                     await message.edit(embed=embed, view=view)
-                    print(f"✅ 公告已編輯 (消息 ID: {message_id})")
+                    print(f"✅ [編輯成功] 公告已編輯 (消息 ID: {message_id})")
                     return
                 except discord.NotFound:
-                    print(f"⚠️ 消息已刪除 (ID: {message_id})，重新發送新消息")
+                    print(f"⚠️ [消息已刪除] 原消息 ID {message_id} 已被刪除，將發送新消息")
                     self._clear_env_message_id()
                 except Exception as e:
-                    print(f"⚠️ 編輯消息失敗: {e}，重新發送新消息")
+                    print(f"⚠️ [編輯失敗] 消息編輯失敗: {e}，將發送新消息")
                     self._clear_env_message_id()
             else:
-                print(f"⚠️ 無效的 MESSAGE_ID: {message_id}")
+                print(f"⚠️ [無效 MESSAGE_ID] 無有效的已保存 MESSAGE_ID (值為: {message_id})，將發送新消息")
             
             # 發送新消息
-            print("📤 發送新公告消息...")
+            print("📤 [發送新消息] 開始發送新公告...")
             message = await channel.send(embed=embed, view=view)
-            print(f"✅ 公告已發送 (新消息，ID: {message.id})")
+            print(f"✓ [消息已發送] 新消息 ID: {message.id}")
             
-            # 保存 MESSAGE_ID 並驗證
+            # 保存 MESSAGE_ID 到 .env
             self._update_env_message_id(message.id)
             
             # 驗證保存是否成功
             verify_id = self._read_message_id_from_env()
             if verify_id == message.id:
-                print(f"✅ MESSAGE_ID 已成功保存到 .env: {verify_id}")
+                print(f"✅ [驗證成功] MESSAGE_ID 已正確保存: {verify_id}")
             else:
-                print(f"⚠️ MESSAGE_ID 保存可能失敗 (預期: {message.id}, 實際: {verify_id})")
+                print(f"⚠️ [驗證失敗] MESSAGE_ID 保存失敗 (預期: {message.id}, 實際: {verify_id})")
         
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print(f"❌ 同步公告失敗: {e}")
+            print(f"❌ [同步失敗] 同步公告失敗: {e}")
             import traceback
             traceback.print_exc()
     
@@ -218,24 +248,39 @@ class Announcement(commands.Cog):
                 return 0
             
             with open(self.env_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith('ANNOUNCEMENT_MESSAGE_ID='):
-                        # 提取 = 後的值
-                        value = line.split('=', 1)[1].strip()  # 獲取 = 後的內容
-                        # 移除引號（可能被dotenv包裹）
-                        value = value.strip('\'"')
-                        # 只取純數字部分（去除註解）
-                        value = value.split()[0] if value else ''
-                        
-                        print(f"  [DEBUG] 原始 MESSAGE_ID 行: {line}")
-                        print(f"  [DEBUG] 提取的值: {value}")
-                        
-                        if value.isdigit():
-                            return int(value)
-                        else:
-                            print(f"  ⚠️ MESSAGE_ID 不是有效的數字: {value}")
-                            return 0
+                content = f.read()
+            
+            # 逐行查找
+            for line in content.split('\n'):
+                line = line.strip()
+                # 跳過空行和註釋
+                if not line or line.startswith('#'):
+                    continue
+                    
+                if 'ANNOUNCEMENT_MESSAGE_ID' in line:
+                    # 提取 = 後的值
+                    if '=' not in line:
+                        continue
+                    
+                    value = line.split('=', 1)[1].strip()  # 獲取 = 後的內容
+                    
+                    # 移除引號（可能被dotenv包裹）
+                    value = value.strip('\'"')
+                    
+                    # 分割並去掉註釋
+                    value = value.split('#')[0].strip()
+                    
+                    print(f"  [DEBUG 讀取] 原始行: {line}")
+                    print(f"  [DEBUG 讀取] 提取的值: {value}")
+                    
+                    # 確保是純數字
+                    if value and value.isdigit():
+                        msg_id = int(value)
+                        print(f"  ✅ 成功讀取 MESSAGE_ID: {msg_id}")
+                        return msg_id
+                    else:
+                        print(f"  ⚠️ MESSAGE_ID 不是有效的數字: {value}")
+                        return 0
             
             print("  ⚠️ .env 中未找到 ANNOUNCEMENT_MESSAGE_ID")
             return 0
