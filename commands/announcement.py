@@ -1,19 +1,151 @@
 import discord
 from discord.ext import commands
-from discord.ui import View, Button
+from discord.ui import View, Button, Modal, TextInput
 import json
 import os
 import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
+
+class FeedbackModal(Modal):
+    """玩家意見回饋表單"""
+    
+    def __init__(self, bot):
+        super().__init__(title="💝 玩家意見回饋")
+        self.bot = bot
+        
+        # 添加表單欄位
+        self.nickname = TextInput(
+            label="您的遊戲昵稱",
+            placeholder="請輸入您的遊戲昵稱（可選）",
+            required=False,
+            max_length=50
+        )
+        self.add_item(self.nickname)
+        
+        self.feedback_type = TextInput(
+            label="意見類別",
+            placeholder="例如：功能建議 / Bug報告 / 遊戲平衡 / 其他",
+            required=True,
+            max_length=50
+        )
+        self.add_item(self.feedback_type)
+        
+        self.feedback_content = TextInput(
+            label="意見內容（詳細描述您的想法）",
+            placeholder="請詳細說明您的想法或遇到的問題...",
+            required=True,
+            style=discord.TextStyle.long,
+            max_length=1000,
+            min_length=10
+        )
+        self.add_item(self.feedback_content)
+    
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """處理表單提交"""
+        try:
+            # 獲取管理員頻道
+            staff_channel_id_str = os.getenv('STAFF_ID_CHANNEL_ID')
+            if not staff_channel_id_str or not staff_channel_id_str.isdigit():
+                staff_channel_id = 0
+            else:
+                staff_channel_id = int(staff_channel_id_str)
+            
+            if staff_channel_id == 0:
+                await interaction.response.send_message(
+                    "❌ 無法提交意見：管理員頻道未配置",
+                    ephemeral=True
+                )
+                return
+            
+            channel = await self.bot.fetch_channel(staff_channel_id)
+            
+            if not channel:
+                await interaction.response.send_message(
+                    "❌ 無法提交意見：管理員頻道未找到",
+                    ephemeral=True
+                )
+                return
+            
+            # 建立回饋 Embed
+            embed = discord.Embed(
+                title="💝 新的玩家意見回饋",
+                description=f"用戶：{interaction.user.mention}",
+                color=discord.Color.gold(),
+                timestamp=datetime.now()
+            )
+            
+            embed.add_field(
+                name="🎭 遊戲昵稱",
+                value=self.nickname.value or "未提供",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📂 意見類別",
+                value=self.feedback_type.value,
+                inline=True
+            )
+            
+            embed.add_field(
+                name="👤 Discord 用戶",
+                value=f"{interaction.user.name}#{interaction.user.discriminator}\nID: {interaction.user.id}",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="📝 意見內容",
+                value=self.feedback_content.value,
+                inline=False
+            )
+            
+            embed.set_footer(text=f"伺服器ID: {interaction.guild.id}")
+            
+            # 發送到管理員頻道
+            await channel.send(embed=embed)
+            
+            # 給玩家確認訊息
+            confirm_embed = discord.Embed(
+                title="✅ 意見已提交",
+                description="感謝您的寶貴意見！我們已收到您的回饋，管理團隊將認真審視。",
+                color=discord.Color.green()
+            )
+            
+            confirm_embed.add_field(
+                name="意見類別",
+                value=self.feedback_type.value,
+                inline=False
+            )
+            
+            await interaction.response.send_message(
+                embed=confirm_embed,
+                ephemeral=True
+            )
+            
+            print(f"✅ [意見回饋] {interaction.user.name} 提交了 {self.feedback_type.value} 類別的意見")
+            
+        except ValueError as e:
+            print(f"❌ [意見回饋] 配置錯誤: {e}")
+            await interaction.response.send_message(
+                f"❌ 提交意見時發生配置錯誤",
+                ephemeral=True
+            )
+        except discord.DiscordException as e:
+            print(f"❌ [意見回饋] Discord 錯誤: {e}")
+            await interaction.response.send_message(
+                f"❌ 提交意見時發生網路錯誤，請稍後重試",
+                ephemeral=True
+            )
 
 class AnnouncementButtonView(View):
     """公告按鈕選擇視圖"""
     
-    def __init__(self):
+    def __init__(self, bot=None):
         super().__init__(timeout=None)  # 永久視圖
+        self.bot = bot
         self.announcements = self._load_announcements()
         self.current_announcement_id = self.announcements[0]['id'] if self.announcements else None
         self.update_buttons()
@@ -51,6 +183,16 @@ class AnnouncementButtonView(View):
             )
             btn.callback = self.make_button_callback(ann['id'])
             self.add_item(btn)
+        
+        # 添加意見回饋按鈕
+        feedback_btn = Button(
+            label="意見回饋",
+            emoji="💝",
+            style=discord.ButtonStyle.green,
+            custom_id="feedback_btn"
+        )
+        feedback_btn.callback = self.feedback_button_callback
+        self.add_item(feedback_btn)
     
     def make_button_callback(self, announcement_id: str):
         """建立按鈕回調函數"""
@@ -75,6 +217,18 @@ class AnnouncementButtonView(View):
             await interaction.response.edit_message(embed=embed, view=self)
         
         return callback
+    
+    async def feedback_button_callback(self, interaction: discord.Interaction):
+        """意見回饋按鈕回調"""
+        if not self.bot:
+            await interaction.response.send_message(
+                "❌ 機器人配置錯誤，無法提交意見",
+                ephemeral=True
+            )
+            return
+        
+        modal = FeedbackModal(self.bot)
+        await interaction.response.send_modal(modal)
     
     def update_button_styles(self, active_id: str):
         """更新按鈕樣式"""
@@ -136,7 +290,7 @@ class Announcement(commands.Cog):
                 await self.sync_announcement()
         except asyncio.CancelledError:
             pass
-        except Exception as e:
+        except (discord.DiscordException, OSError, asyncio.TimeoutError) as e:
             print(f"❌ [Announcement] 任務執行失敗: {e}")
             import traceback
             traceback.print_exc()
@@ -192,7 +346,7 @@ class Announcement(commands.Cog):
             print(f"✓ 已連接到頻道: {channel.name} (ID: {self.announcement_channel_id})")
             
             # 建立視圖和第一個公告
-            view = AnnouncementButtonView()
+            view = AnnouncementButtonView(self.bot)
             first_announcement = announcements[0]
             embed = view.create_embed_for_announcement(first_announcement)
             
@@ -216,7 +370,7 @@ class Announcement(commands.Cog):
                 except discord.Forbidden as e:
                     print(f"⚠️ [權限不足] 無法編輯消息: {e}，將發送新消息")
                     self._clear_env_message_id()
-                except Exception as e:
+                except discord.DiscordException as e:
                     print(f"⚠️ [編輯失敗] 消息編輯失敗 ({type(e).__name__}): {e}")
                     print(f"   嘗試發送新消息...")
                     self._clear_env_message_id()
@@ -240,7 +394,7 @@ class Announcement(commands.Cog):
         
         except asyncio.CancelledError:
             pass
-        except Exception as e:
+        except (discord.DiscordException, OSError, asyncio.TimeoutError) as e:
             print(f"❌ [同步失敗] 同步公告失敗: {e}")
             import traceback
             traceback.print_exc()
