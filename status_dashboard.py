@@ -89,8 +89,8 @@ logs_storage = {}
 # add_log used to record application-level logs. 這個功能已經移除，
 # 但部分初始化路徑仍會呼叫它；為避免 NameError，我們保留一個
 # 空實現作為兼容。
-def add_log(bot_type: str, message: str):
-    # no-op placeholder
+def add_log(_bot_type: str, _message: str):
+    # no-op placeholder - 應用日誌功能已移除
     return
 
 logs_file = None  # unused
@@ -224,7 +224,7 @@ def load_logs():
     except UnicodeDecodeError as e:
         print(f"[LOGS ERROR] 編碼錯誤 - 日誌文件編碼問題: {logs_file}")
         print(f"  詳情: {e}")
-        print(f"  嘗試使用不同的編碼讀取文件")
+        print("[LOGS ERROR] 嘗試使用不同的編碼讀取文件")
     except Exception as e:
         print(f"[LOGS ERROR] 未預期的錯誤加載日誌: {e}")
         traceback.print_exc()
@@ -267,7 +267,7 @@ def save_logs():
         print(f"  詳情: {e}")
         print(f"  磁盤空間: {e.strerror if hasattr(e, 'strerror') else '未知'}")
     except UnicodeEncodeError as e:
-        print(f"[LOGS ERROR] 編碼錯誤 - 日誌數據包含無法編碼的字符")
+        print("[LOGS ERROR] 編碼錯誤 - 日誌數據包含無法編碼的字符")
         print(f"  詳情: {e}")
     except Exception as e:
         print(f"[LOGS ERROR] 未預期的錯誤保存日誌: {e}")
@@ -317,11 +317,10 @@ def create_update_task(bot_type: str):
     async def individual_update_task():
         """個別機器人的儀表板更新任務 - 只更新自己的面板和日誌"""
         # 首次啟動時隨機延遲 (0~60s)，避免多個 bot 同刻編輯造成 429
-        if not hasattr(individual_update_task, "_jittered"):
-            individual_update_task._jittered = True
-            # import locally in case the global namespace somehow loses `random`
-            import random as _rand
-            jitter = _rand.uniform(0, 60)
+        if not hasattr(individual_update_task, "_task_jittered"):
+            individual_update_task._task_jittered = True
+            # 延遲導入不會影響全域 random
+            jitter = random.uniform(0, 60)
             task_log(f"[UPDATE TASK {bot_type}] 首次更新延遲 {jitter:.1f}s")
             await asyncio.sleep(jitter)
         try:
@@ -337,9 +336,7 @@ def create_update_task(bot_type: str):
                 print(f"[UPDATE TASK {bot_type}] 實例為空 - 取消任務")
                 return
 
-            # 添加系統狀態日誌
-            current_time = get_taiwan_time().strftime("%H:%M:%S")
-            # 移除洗版日誌: add_log(bot_type, f"🔄 系統狀態檢查 - {current_time}")
+            # 系統狀態日誌已移除（防止洗版）
 
             # 只更新日誌（控制面板已移除）
             try:
@@ -460,7 +457,7 @@ async def update_dashboard_logs(bot, bot_type: str):
             except asyncio.CancelledError:
                 # network or task cancelled; just log and return so periodic task can retry
                 if bot_type not in QUIET_UPDATE_BOTS:
-                    print(f"[UPDATE LOGS] {bot_type} fetch_message cancelled, skipping this cycle")
+                    print(f"[UPDATE LOGS] {bot_type} fetch_message 被中止，跳過此循環")
                 return
             except discord.NotFound:
                 if bot_type not in QUIET_UPDATE_BOTS:
@@ -470,8 +467,8 @@ async def update_dashboard_logs(bot, bot_type: str):
                     save_message_id(bot_type, "logs", str(message.id))
                     if bot_type not in QUIET_UPDATE_BOTS:
                         print(f"[UPDATE LOGS] {bot_type} 日誌訊息已重新創建: {message.id}")
-                except Exception as create_error:
-                    print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {create_error}")
+                except (discord.Forbidden, discord.HTTPException) as e:
+                    print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {e}")
             except discord.Forbidden:
                 print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
             except Exception as e:
@@ -500,8 +497,8 @@ async def update_dashboard_logs(bot, bot_type: str):
                         try:
                             await msg.delete()
                             print(f"[CLEANUP] 刪除重複日誌embed: {msg.id}")
-                        except Exception as delete_error:
-                            print(f"[CLEANUP ERROR] 刪除重複embed失敗 {msg.id}: {delete_error}")
+                        except (discord.Forbidden, discord.HTTPException) as e:
+                            print(f"[CLEANUP ERROR] 刪除重複embed失敗 {msg.id}: {e}")
 
                     # 更新保留的embed
                     await latest_msg.edit(embed=embed)
@@ -571,8 +568,7 @@ async def create_metrics_update_task(bot_type_str: str):
     if not GCP_METRICS_ENABLED:
         # Metrics 被禁用
         async def disabled_task():
-            if False:  # 永不執行
-                pass
+            pass  # Metrics 已禁用 (GCP_METRICS_ENABLED=False)
         task = tasks.loop(minutes=GCP_METRICS_UPDATE_INTERVAL_MINUTES)(disabled_task)
         task.__name__ = f"metrics_task_{bot_type_str}_disabled"
         return task
@@ -608,6 +604,13 @@ async def create_metrics_update_task(bot_type_str: str):
                 print("[METRICS TASK] 無法導入 GCP Metrics Monitor")
                 return
             
+            # 初始化變數，防止後續使用時出現 NameError
+            data_points = []
+            billing_info = {}
+            monthly_gb = 0
+            sys_stats = None
+            cpu_seconds = None
+            
             # 優先從數據庫讀取數據（新架構）
             if monitor.db:
                 print("[METRICS TASK] 從本地數據庫讀取 metrics 數據...")
@@ -617,15 +620,13 @@ async def create_metrics_update_task(bot_type_str: str):
                 billing_info = monitor.get_billing_info_from_database()
                 monthly_gb = monitor.get_monthly_egress_from_database()
                 sys_stats = monitor.get_system_stats_from_database()
-                cpu_seconds = None  # 暫不支持從數據庫讀取
                 
                 if len(data_points) < 2:
                     print("[METRICS TASK] ⚠️ 數據庫中數據點不足，嘗試從 GCP API 獲取...")
                 else:
-                    print(f"[METRICS TASK] ✅ 從數據庫成功讀取 {len(data_points)} 個數據點")
+                    print(f"[METRICS TASK] 從數據庫成功讀取 {len(data_points)} 個數據點")
             else:
                 print("[METRICS TASK] MetricsDatabase 不可用")
-                data_points = []
             
             # 如果數據庫數據不足，從 API 獲取（後備方案）
             if len(data_points) < 2 and monitor.available:
@@ -679,7 +680,7 @@ async def create_metrics_update_task(bot_type_str: str):
                         await msg.edit(embed=embed, attachments=[chart_file])
                     else:
                         await msg.edit(embed=embed)
-                    print(f"[METRICS TASK] metrics embed 已更新")
+                    print("[METRICS TASK] metrics embed 已更新")
                 except discord.NotFound:
                     print("[METRICS TASK] metrics 訊息不存在，重新發送")
                     msg = await channel.send(embed=embed, file=chart_file)
@@ -723,7 +724,7 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
         from gcp_metrics_monitor import GCPMetricsMonitor
         monitor = GCPMetricsMonitor(project_id="kkgroup")
         
-        print(f"[METRICS INIT ASYNC] 開始異步收集 metrics 數據...")
+        print("[METRICS INIT ASYNC] 開始異步收集 metrics 數據...")
         
         try:
             # 優先從數據庫讀取
@@ -830,7 +831,7 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
                     message_ids.setdefault("metrics", {})["message"] = int(metrics_msg_id)
                     save_message_ids("metrics")
                 except discord.NotFound:
-                    print(f"[METRICS INIT ASYNC] 舊消息不存在，創建新的")
+                    print("[METRICS INIT ASYNC] 舊消息不存在，創建新的")
                     msg = await channel.send(embed=embed, file=chart_file)
                     message_ids.setdefault("metrics", {})["message"] = msg.id
                     save_message_ids("metrics")
@@ -851,16 +852,16 @@ async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Clie
             
             # 啟動背景產圖任務（獨立於 embed 更新）
             if bot_type_str == "bot":  # 只由主 bot 負責產圖
-                print(f"[METRICS INIT ASYNC] 啟動背景圖表產生任務...")
-                charting_task = asyncio.create_task(
+                print("[METRICS INIT ASYNC] 啟動背景圖表產生任務...")
+                asyncio.create_task(
                     monitor.background_chart_generation_task(interval_minutes=5)
                 )
-                print(f"[METRICS INIT ASYNC] ✅ 背景產圖任務已啟動（每 5 分鐘產一次）")
+                print("[METRICS INIT ASYNC] ✅ 背景產圖任務已啟動（每 5 分鐘產一次）")
             metrics_task.start()
-            print(f"[METRICS INIT ASYNC] ✅ Metrics 任務已啟動")
+            print("[METRICS INIT ASYNC] ✅ Metrics 任務已啟動")
             
         except asyncio.TimeoutError:
-            print(f"[METRICS INIT ASYNC] ⏱️ Metrics 獲取超時")
+            print("[METRICS INIT ASYNC] ⏱️ Metrics 獲取超時")
         except Exception as e:
             print(f"[METRICS INIT ASYNC ERROR] {e}")
             traceback.print_exc()
@@ -914,7 +915,6 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     """
     print(f"[INIT] initialize_dashboard called for {bot_type_str}")
     print(f"[DEBUG] GCP_METRICS_ENABLED={GCP_METRICS_ENABLED}, GCP_METRICS_ONLY_BOT_RESPONSIBLE={GCP_METRICS_ONLY_BOT_RESPONSIBLE}")
-    global current_bot_type
     
     # 添加延遲以避免同時初始化
     delay_map = {"bot": 0, "shopbot": 5, "uibot": 10}
@@ -923,7 +923,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         print(f"[DASHBOARD] {bot_type_str} 等待 {delay} 秒後初始化...")
         await asyncio.sleep(delay)
     
-    current_bot_type = bot_type_str
+    # current_bot_type 追蹤已在函式簽名中完成
     
     # 加載訊息 ID（包括硬編碼的回退值）
     load_message_ids(bot_type_str)
@@ -971,7 +971,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 message_ids[bot_type_str]["logs"] = logs_msg.id
                 save_message_id(bot_type_str, "logs", str(logs_msg.id))
                 print(f"✅ 初始化時創建 {bot_type_str} 日誌: {logs_msg.id}")
-                add_log(bot_type_str, f"✅ 日誌系統已初始化")
+                add_log(bot_type_str, "✅ 日誌系統已初始化")
             except Exception as e:
                 print(f"⚠️ 初始化時創建日誌失敗: {e}")
                 return False
@@ -980,7 +980,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             message_ids[bot_type_str]["logs"] = found_logs.id
             save_message_ids(bot_type_str)
             print(f"✅ 使用現有 {bot_type_str} 日誌: {found_logs.id}")
-            add_log(bot_type_str, f"✅ 日誌系統已就緒")
+            add_log(bot_type_str, "✅ 日誌系統已就緒")
         
         # 清空初始日誌，防止重複累積
         # logs_storage 可能尚未包含鍵，因此使用 setdefault 保證存在
@@ -1024,7 +1024,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 print(f"✅ 使用現有 metrics 消息: {found_metrics.id}")
             else:
                 # 如果沒有現有消息，暫不創建（留給更新任務創建）
-                print(f"⚠️ 未找到現有 metrics 消息，將在第一次更新時創建")
+                print("⚠️ 未找到現有 metrics 消息，將在第一次更新時創建")
         
         # 註冊機器人實例並啟動獨立更新任務
         try:
