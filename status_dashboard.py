@@ -33,11 +33,6 @@ import pathlib
 #   - 非同步操作 + 10s 超時保護
 #   - 線程池執行 matplotlib 圖表生成
 #   - 數據緩存避免重複計算
-GCP_METRICS_ENABLED = False  # 禁用 Metrics 更新以降低 CPU 和帳單成本（2026-03-14）
-GCP_METRICS_ONLY_BOT_RESPONSIBLE = "bot"  # 只有這個 bot 負責更新 metrics
-GCP_METRICS_UPDATE_INTERVAL_MINUTES = 5  # 更新間隔（分鐘）
-GCP_METRICS_CHART_DISABLED = False  # 繪圖已恢復（之前禁用以排查連線問題）
-print("[DASHBOARD INIT] [METRICS] GCP Metrics Manager initialized - only 'bot' will update")
 
 load_dotenv()
 
@@ -296,9 +291,6 @@ current_bot_type = None
 # 每個機器人的獨立更新任務存儲
 update_tasks = {}
 
-# 每個機器人的 GCP Metrics 更新任務存儲
-metrics_tasks = {}
-
 # lock to prevent concurrent chart generation (serialize requests)
 chart_generation_lock = asyncio.Lock()
 
@@ -551,306 +543,7 @@ class MetricsCache:
 
 metrics_cache = MetricsCache()
 
-async def create_metrics_update_task(bot_type_str: str):
-    """
-    為指定機器人創建 metrics 更新任務
-    注意：只有 bot 類型會實際執行更新；其他類型是 NO-OP
-    """
-    
-    if bot_type_str != GCP_METRICS_ONLY_BOT_RESPONSIBLE:
-        # 非 bot 類型不執行任何操作
-        async def noop_task():
-            return
-        task = tasks.loop(minutes=GCP_METRICS_UPDATE_INTERVAL_MINUTES)(noop_task)
-        task.__name__ = f"metrics_task_{bot_type_str}_noop"
-        return task
-    
-    if not GCP_METRICS_ENABLED:
-        # Metrics 被禁用
-        async def disabled_task():
-            pass  # Metrics 已禁用 (GCP_METRICS_ENABLED=False)
-        task = tasks.loop(minutes=GCP_METRICS_UPDATE_INTERVAL_MINUTES)(disabled_task)
-        task.__name__ = f"metrics_task_{bot_type_str}_disabled"
-        return task
-    
-    # 從環境變數加載初始的 metrics message ID
-    if "metrics" not in message_ids:
-        message_ids["metrics"] = {"message": None}
-    
-    if not message_ids["metrics"].get("message"):
-        env_metrics_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
-        if env_metrics_id:
-            message_ids["metrics"]["message"] = env_metrics_id
-            print(f"[METRICS INIT] 從環境變數加載 metrics message ID: {env_metrics_id}")
-    
-    # 實際的 metrics 更新任務
-    async def actual_metrics_task():
-        """每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘更新一次 GCP Metrics embed"""
-        try:
-            print(f"[METRICS TASK] 開始更新 GCP Metrics（{bot_type_str}）")
-            
-            channel = bot_instances[bot_type_str].get_channel(DASHBOARD_CHANNEL_ID)
-            if not channel:
-                print("[METRICS TASK ERROR] 找不到儀表板頻道")
-                return
-            
-            # 嘗試導入 metrics monitor（延遲導入以避免啟動延遲）
-            try:
-                from gcp_metrics_monitor import GCPMetricsMonitor
-                monitor = GCPMetricsMonitor(project_id="kkgroup")
-                if not monitor.db:
-                    print("[METRICS TASK] ⚠️ MetricsDatabase 不可用，嘗試從 GCP API 獲取數據")
-            except ImportError:
-                print("[METRICS TASK] 無法導入 GCP Metrics Monitor")
-                return
-            
-            # 初始化變數，防止後續使用時出現 NameError
-            data_points = []
-            billing_info = {}
-            monthly_gb = 0
-            cpu_seconds = None
-            
-            # 優先從數據庫讀取數據（新架構）
-            if monitor.db:
-                print("[METRICS TASK] 從本地數據庫讀取 metrics 數據...")
-                
-                # 從數據庫讀取數據
-                data_points = monitor.db.get_egress_data(hours=6)
-                billing_info = monitor.get_billing_info_from_database()
-                monthly_gb = monitor.get_monthly_egress_from_database()
-                
-                if len(data_points) < 2:
-                    print("[METRICS TASK] ⚠️ 數據庫中數據點不足，嘗試從 GCP API 獲取...")
-                else:
-                    print(f"[METRICS TASK] 從數據庫成功讀取 {len(data_points)} 個數據點")
-            else:
-                print("[METRICS TASK] MetricsDatabase 不可用")
-            
-            # 如果數據庫數據不足，從 API 獲取（後備方案）
-            if len(data_points) < 2 and monitor.available:
-                print("[METRICS TASK] 從 GCP API 獲取數據（後備方案）...")
-                try:
-                    data_points = await asyncio.wait_for(
-                        monitor.get_network_egress_data(hours=6),
-                        timeout=10.0
-                    )
-                    billing_info = await asyncio.wait_for(
-                        monitor.get_billing_data(),
-                        timeout=10.0
-                    )
-                    monthly_gb = await asyncio.wait_for(
-                        monitor.get_monthly_egress_data(days=30),
-                        timeout=15.0
-                    )
-                    print(f"[METRICS TASK] 從 GCP API 成功獲取 metrics 數據（{len(data_points)} 數據點)")
-                except Exception as e:
-                    print(f"[METRICS TASK] ⚠️ 從 GCP API 獲取失敗: {e}")
-                    data_points, billing_info, monthly_gb = [], {}, 0
-            
-            # 創建 embed（包含三個重要 metrics）
-            embed = monitor.create_metrics_embed(
-                data_points=data_points,
-                billing_info=billing_info,
-                monthly_gb=monthly_gb,
-                cpu_seconds=None
-            )
-            embed.set_footer(text=f"每 {GCP_METRICS_UPDATE_INTERVAL_MINUTES} 分鐘自動更新 | 資料來源: {'數據庫' if monitor.db else 'GCP API'} | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            # 取得背景產圖任務產生的圖表（不在此處產圖）
-            chart_file = monitor.get_latest_chart()
-            if chart_file:
-                print("[METRICS TASK] 使用背景產生的圖表")
-            else:
-                print("[METRICS TASK] ⚠️ 背景圖表尚未可用，embed 將不含圖表")
-            
-            # 查找或創建 metrics message
-            message_id = message_ids["metrics"]["message"]
-            if message_id:
-                try:
-                    msg = await channel.fetch_message(int(message_id))
-                    # 編輯現有訊息（同時更新 embed 和附件）
-                    if chart_file:
-                        await msg.edit(embed=embed, attachments=[chart_file])
-                    else:
-                        await msg.edit(embed=embed)
-                    print("[METRICS TASK] metrics embed 已更新")
-                except discord.NotFound:
-                    print("[METRICS TASK] metrics 訊息不存在，重新發送")
-                    msg = await channel.send(embed=embed, file=chart_file)
-                    message_ids["metrics"]["message"] = msg.id
-                    save_message_ids("metrics")
-            else:
-                # 創建新訊息
-                msg = await channel.send(embed=embed, file=chart_file)
-                message_ids["metrics"]["message"] = msg.id
-                save_message_ids("metrics")
-                print(f"[METRICS TASK] metrics embed 已創建: {msg.id}")
-            
-        except Exception as e:
-            print(f"[METRICS TASK ERROR] 執行失敗: {e}")
-            traceback.print_exc()
-    
-    task = tasks.loop(minutes=GCP_METRICS_UPDATE_INTERVAL_MINUTES)(actual_metrics_task)
-    task.__name__ = f"metrics_task_{bot_type_str}"
-    return task
-
-# 應用日誌功能已移除，不再記錄 embed 日誌
-
-# application logs removed
-
-
-# clear_logs removed - no longer tracking internal logs
-
-# ===== 異步 Metrics 初始化（不阻塞 Bot 啟動）=====
-async def initialize_metrics_async(bot_type_str: str, bot_instance: discord.Client):
-    """
-    在後台進行 metrics 初始化，不會阻塞 bot 主初始化流程
-    """
-    try:
-        await asyncio.sleep(2)  # 延遲 2 秒，確保 bot 已完全連接
-        
-        channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
-        if not channel:
-            print("[METRICS INIT ASYNC] 無法找到儀表板頻道")
-            return
-        
-        from gcp_metrics_monitor import GCPMetricsMonitor
-        monitor = GCPMetricsMonitor(project_id="kkgroup")
-        
-        print("[METRICS INIT ASYNC] 開始異步收集 metrics 數據...")
-        
-        try:
-            # 優先從數據庫讀取
-            if monitor.db:
-                print("[METRICS INIT ASYNC] 嘗試從本地數據庫讀取初始 metrics 數據...")
-                data_points = monitor.db.get_egress_data(hours=6)
-                billing_info = monitor.get_billing_info_from_database()
-                monthly_gb = monitor.get_monthly_egress_from_database()
-                
-                if len(data_points) < 2:
-                    print("[METRICS INIT ASYNC] ⚠️ 數據庫數據不足，嘗試從 GCP API 獲取...")
-                    data_points = await asyncio.wait_for(
-                        monitor.get_network_egress_data(hours=6),
-                        timeout=10.0
-                    )
-                    billing_info = await asyncio.wait_for(
-                        monitor.get_billing_data(),
-                        timeout=10.0
-                    )
-                    monthly_gb = await asyncio.wait_for(
-                        monitor.get_monthly_egress_data(days=30),
-                        timeout=15.0
-                    )
-                else:
-                    print(f"[METRICS INIT ASYNC] ✅ 從數據庫成功讀取 {len(data_points)} 個數據點")
-            elif monitor.available:
-                # 後備方案：從 GCP API 獲取
-                print("[METRICS INIT ASYNC] MetricsDatabase 不可用，從 GCP API 獲取...")
-                data_points = await asyncio.wait_for(
-                    monitor.get_network_egress_data(hours=6),
-                    timeout=10.0
-                )
-                billing_info = await asyncio.wait_for(
-                    monitor.get_billing_data(),
-                    timeout=10.0
-                )
-                monthly_gb = await asyncio.wait_for(
-                    monitor.get_monthly_egress_data(days=30),
-                    timeout=15.0
-                )
-            else:
-                print("[METRICS INIT ASYNC] ⚠️ GCP Monitor 和數據庫都不可用")
-                return
-            
-            cpu_seconds = None
-            
-            embed = monitor.create_metrics_embed(
-                data_points=data_points,
-                billing_info=billing_info,
-                monthly_gb=monthly_gb,
-                cpu_seconds=cpu_seconds
-            )
-            embed.set_footer(text=f"初始化時生成 | 資料來源: {'數據庫' if monitor.db else 'GCP API'} | 台灣時間 • {get_taiwan_time().strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            chart_file = None
-            if GCP_METRICS_CHART_DISABLED:
-                print("[METRICS INIT ASYNC] ⏸️ 圖表生成已禁用以穩定連接")
-            elif not chart_generation_lock.locked():
-                try:
-                    async with chart_generation_lock:
-                        if monitor.db and len(data_points) > 0:
-                            chart_file = await asyncio.wait_for(
-                                monitor.generate_chart_from_database(hours=6),
-                                timeout=30.0
-                            )
-                        elif data_points:
-                            chart_file = await asyncio.wait_for(
-                                monitor.generate_metrics_chart_async(
-                                    data_points=data_points,
-                                    monthly_cost=float(billing_info.get('total_cost', 0)) if billing_info.get('total_cost') else None
-                                ),
-                                timeout=30.0
-                            )
-                except asyncio.TimeoutError:
-                    print("[METRICS INIT ASYNC] ⚠️ 图表初始化超时 (>30s)")
-                except Exception as e:
-                    print(f"[METRICS INIT ASYNC] 图表初始化异常: {e}")
-            else:
-                print("[METRICS INIT ASYNC] 图表正在生成，跳过重复执行")
-            
-            # 發送或更新 metrics embed
-            # load from saved message_ids if available
-            metrics_msg_id = message_ids.get("metrics", {}).get("message") or os.getenv("DASHBOARD_METRICS_MESSAGE")
-            if metrics_msg_id:
-                try:
-                    msg = await channel.fetch_message(int(metrics_msg_id))
-                    if chart_file:
-                        await msg.edit(embed=embed, attachments=[chart_file])
-                    else:
-                        await msg.edit(embed=embed)
-                    print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已更新: {metrics_msg_id}")
-                    # also ensure storage updated
-                    message_ids.setdefault("metrics", {})["message"] = int(metrics_msg_id)
-                    save_message_ids("metrics")
-                except discord.NotFound:
-                    print("[METRICS INIT ASYNC] 舊消息不存在，創建新的")
-                    msg = await channel.send(embed=embed, file=chart_file)
-                    message_ids.setdefault("metrics", {})["message"] = msg.id
-                    save_message_ids("metrics")
-                    set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
-                    print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已創建: {msg.id}")
-            else:
-                # 創建新消息
-                msg = await channel.send(embed=embed, file=chart_file)
-                message_ids.setdefault("metrics", {})["message"] = msg.id
-                save_message_ids("metrics")
-                set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(msg.id))
-                print(f"[METRICS INIT ASYNC] ✅ Metrics embed 已創建: {msg.id}")
-            
-            # 啟動定時任務
-            print(f"[METRICS INIT ASYNC] 啟動定時 metrics 更新任務...")
-            metrics_task = await create_metrics_update_task(bot_type_str)
-            metrics_tasks[bot_type_str] = metrics_task
-            
-            # 啟動背景產圖任務（獨立於 embed 更新）
-            if bot_type_str == "bot":  # 只由主 bot 負責產圖
-                print("[METRICS INIT ASYNC] 啟動背景圖表產生任務...")
-                asyncio.create_task(
-                    monitor.background_chart_generation_task(interval_minutes=5)
-                )
-                print("[METRICS INIT ASYNC] ✅ 背景產圖任務已啟動（每 5 分鐘產一次）")
-            metrics_task.start()
-            print("[METRICS INIT ASYNC] ✅ Metrics 任務已啟動")
-            
-        except asyncio.TimeoutError:
-            print("[METRICS INIT ASYNC] ⏱️ Metrics 獲取超時")
-        except Exception as e:
-            print(f"[METRICS INIT ASYNC ERROR] {e}")
-            traceback.print_exc()
-            
-    except Exception as e:
-        print(f"[METRICS INIT ASYNC ERROR] 異步初始化失敗: {e}")
-        traceback.print_exc()
+# Metrics 函數已移除 - 不再監測出站流量和計費
 
 # 調試助手：顯示儀表板 embed 的現有狀態
 async def inspect_dashboard(bot: discord.Client, bot_type: str = "bot") -> None:
@@ -896,7 +589,6 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         bot_type_str: "bot", "shopbot", "uibot"
     """
     print(f"[INIT] initialize_dashboard called for {bot_type_str}")
-    print(f"[DEBUG] GCP_METRICS_ENABLED={GCP_METRICS_ENABLED}, GCP_METRICS_ONLY_BOT_RESPONSIBLE={GCP_METRICS_ONLY_BOT_RESPONSIBLE}")
     
     # 添加延遲以避免同時初始化
     delay_map = {"bot": 0, "shopbot": 5, "uibot": 10}
@@ -969,44 +661,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         logs_storage.setdefault(bot_type_str, []).clear()
         save_logs()
         
-        # 如果是 bot，初始化 metrics 消息（檢查並清理舊消息）
-        if bot_type_str == GCP_METRICS_ONLY_BOT_RESPONSIBLE and GCP_METRICS_ENABLED:
-            print(f"[METRICS INIT] {bot_type_str} 檢查並初始化 metrics 消息...")
-            found_metrics = None
-            metrics_count = 0
-            old_metrics = []
-            
-            # 查找現有 metrics 訊息（只查找由當前 bot 發送的）
-            async for msg in channel.history(limit=100):
-                if msg.author.id != bot_instance.user.id:
-                    continue  # 跳過其他 bot 的訊息
-                
-                if msg.embeds:
-                    for embed in msg.embeds:
-                        if "GCP 成本監控" in embed.title:
-                            metrics_count += 1
-                            if metrics_count <= 1:
-                                found_metrics = msg
-                            else:
-                                old_metrics.append(msg)
-            
-            # 清理舊的 metrics embed
-            for msg in old_metrics:
-                try:
-                    await msg.delete()
-                    print(f"✓ 已清理舊的 metrics 消息: {msg.id}")
-                except Exception as e:
-                    print(f"⚠️ 清理舊 metrics 失敗 {msg.id}: {e}")
-            
-            # 記錄 metrics 消息 ID（供更新任務使用）
-            if found_metrics:
-                message_ids.setdefault("metrics", {})["message"] = found_metrics.id
-                save_message_ids("metrics")
-                set_key(".env", "DASHBOARD_METRICS_MESSAGE", str(found_metrics.id))
-                print(f"✅ 使用現有 metrics 消息: {found_metrics.id}")
-            else:
-                # 如果沒有現有消息，暫不創建（留給更新任務創建）
-                print("⚠️ 未找到現有 metrics 消息，將在第一次更新時創建")
+        # Metrics 初始化已移除
         
         # 註冊機器人實例並啟動獨立更新任務
         try:
@@ -1033,17 +688,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 else:
                     print(f"[DASHBOARD] {bot_type_str} 更新任務已在運行")
             
-            # ===== METRICS 初始化 =====
-            if bot_type_str == GCP_METRICS_ONLY_BOT_RESPONSIBLE and GCP_METRICS_ENABLED:
-                print(f"[METRICS INIT] 為 {bot_type_str} 初始化 metrics（異步進行，不阻塞 bot 啟動）")
-                # 在後台進行 metrics 初始化，不阻塞主初始化流程
-                try:
-                    asyncio.create_task(initialize_metrics_async(bot_type_str, bot_instance))
-                except Exception as e:
-                    print(f"[METRICS INIT ERROR] 無法創建 metrics 初始化任務: {e}")
-            else:
-                if bot_type_str != GCP_METRICS_ONLY_BOT_RESPONSIBLE:
-                    print(f"[METRICS INIT] ⏸️ {bot_type_str} 不負責 metrics（只有 {GCP_METRICS_ONLY_BOT_RESPONSIBLE} 負責）")
+            # Metrics 初始化已移除
                     
         except Exception as e:
             print(f"[DASHBOARD ERROR] {bot_type_str} 任務啟動失敗: {e}")
