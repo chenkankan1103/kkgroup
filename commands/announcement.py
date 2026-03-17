@@ -210,10 +210,15 @@ class Announcement(commands.Cog):
                     print(f"✅ [編輯成功] 公告已編輯 (消息 ID: {message_id})")
                     return
                 except discord.NotFound:
-                    print(f"⚠️ [消息已刪除] 原消息 ID {message_id} 已被刪除，將發送新消息")
+                    print(f"⚠️ [消息已刪除] 原消息 ID {message_id} 已被刪除或不存在，將發送新消息")
+                    print(f"   詳細信息: 頻道 ID={channel.id}, 消息 ID={message_id}")
+                    self._clear_env_message_id()
+                except discord.Forbidden as e:
+                    print(f"⚠️ [權限不足] 無法編輯消息: {e}，將發送新消息")
                     self._clear_env_message_id()
                 except Exception as e:
-                    print(f"⚠️ [編輯失敗] 消息編輯失敗: {e}，將發送新消息")
+                    print(f"⚠️ [編輯失敗] 消息編輯失敗 ({type(e).__name__}): {e}")
+                    print(f"   嘗試發送新消息...")
                     self._clear_env_message_id()
             else:
                 print(f"⚠️ [無效 MESSAGE_ID] 無有效的已保存 MESSAGE_ID (值為: {message_id})，將發送新消息")
