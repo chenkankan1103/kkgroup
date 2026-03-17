@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import os, io, time, aiohttp
+import os, io, time, aiohttp, re
 import asyncio
 from PIL import Image, ImageDraw, ImageFont
 from collections import defaultdict
@@ -536,6 +536,10 @@ class KKCoin(commands.Cog):
         self.last_leaderboard_data = None
         self.last_digital_usd_data = None
         
+        # Cloudflare Quick Tunnel 支援
+        self.base_url = "https://kkgroup.com"  # 預設值，將在 on_ready 嘗試更新
+        self.tunnel_url_lock = asyncio.Lock()
+        
         # 啟動定時更新任務
         self.auto_update_leaderboard.start()
         self.auto_update_digital_usd_leaderboard.start()
@@ -549,6 +553,58 @@ class KKCoin(commands.Cog):
         self.auto_update_leaderboard.cancel()
         self.auto_update_digital_usd_leaderboard.cancel()
         self.auto_update_reserve_status.cancel()
+    
+    async def get_tunnel_url(self):
+        """從 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
+        
+        成功: 更新 self.base_url 並返回該 URL
+        失敗: 返回 None
+        """
+        async with self.tunnel_url_lock:
+            try:
+                # 嘗試讀取 cloudflared.log
+                log_file = "/tmp/cloudflared.log"
+                if not os.path.exists(log_file):
+                    print(f"❌ 隧道日誌不存在: {log_file}")
+                    return None
+                
+                with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                
+                # 使用 regex 抓取最新的 https://*.trycloudflare.com URL
+                pattern = r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com"
+                matches = re.findall(pattern, content)
+                
+                if matches:
+                    # 取最後一個（最新的）
+                    tunnel_url = matches[-1]
+                    self.base_url = tunnel_url
+                    print(f"✅ 已設定 Tunnel URL: {tunnel_url}")
+                    return tunnel_url
+                else:
+                    print(f"⚠️ 在日誌中未找到有效的 Tunnel URL")
+                    return None
+            
+            except Exception as e:
+                print(f"❌ 讀取隧道 URL 失敗: {e}")
+                return None
+    
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """機器人啟動時執行 - 嘗試獲取 Tunnel URL"""
+        print("🔍 正在嘗試獲取 Cloudflare Tunnel URL...")
+        tunnel_url = await self.get_tunnel_url()
+        
+        if not tunnel_url:
+            print(
+                "\n" + "="*70
+                + "\n⚠️  【警告】無法獲取 Cloudflare Quick Tunnel 網址！\n"
+                + "="*70
+                + "\n\n📋 請在 GCP 終端機執行以下指令：\n\n"
+                + "  cloudflared tunnel --url http://localhost:80 --logfile /tmp/cloudflared.log &\n\n"
+                + "✅ 執行後，機器人會自動從 /tmp/cloudflared.log 讀取隧道 URL\n\n"
+                + "="*70 + "\n"
+            )
 
     @tasks.loop(minutes=5)
     async def auto_update_leaderboard(self):
@@ -644,21 +700,33 @@ class KKCoin(commands.Cog):
             print("🎨 生成排行榜圖片...")
             image = await make_leaderboard_image(members_data)
             
-            # 固定儲存路徑（用於 Cloudflare 快取）
-            leaderboard_path = "/var/www/html/assets/leaderboard.png"
+            # 固定儲存路徑（用於 Cloudflare Quick Tunnel）
+            leaderboard_path = "/var/www/html/leaderboard.png"
             os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
             
-            # 儲存到固定路徑（覆蓋舊檔）
-            image.save(leaderboard_path, format="PNG")
-            print(f"✅ 排行榜已存到: {leaderboard_path}")
+            # 儲存到固定路徑（覆蓋舊檔）並進行權限偵測
+            try:
+                image.save(leaderboard_path, format="PNG")
+                print(f"✅ 排行榜已存到: {leaderboard_path}")
+            except PermissionError:
+                print(
+                    f"❌ 無法寫入 {leaderboard_path}！\\n"
+                    f"請在 GCP 中執行以下指令修正權限：\\n"
+                    f"  sudo chown -R $USER:$USER /var/www/html"
+                )
+                return
+            except Exception as e:
+                print(f"❌ 保存圖片失敗: {e}")
+                return
             
-            # 創建嵌入訊息，包含 Cloudflare CDN URL
+            # 創建嵌入訊息，使用 self.base_url（可能是 Tunnel URL 或預設域名）
+            image_url = f"{self.base_url}/leaderboard.png"
             embed = discord.Embed(
                 title="💰 金流斷點交易所 - 總資產排行",
-                description="通過 Cloudflare CDN 快速加載",
+                description=f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸",
                 color=discord.Color.gold()
             )
-            embed.set_image(url="https://kkgroup.com/assets/leaderboard.png")
+            embed.set_image(url=image_url)
             embed.timestamp = discord.utils.utcnow()
             
             msg = await channel.send(embed=embed)
@@ -672,7 +740,7 @@ class KKCoin(commands.Cog):
             self.last_update_time = time.time()
             
             print(f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
-            print(f"📍 圖片 URL: https://kkgroup.com/assets/leaderboard.png")
+            print(f"📍 圖片 URL: {image_url}")
             
         except Exception as e:
             print(f"❌ 創建排行榜失敗: {e}")
@@ -1406,29 +1474,41 @@ class KKCoin(commands.Cog):
                 # 生成圖片 (內部會在需要時移至執行緒)
                 image = await make_leaderboard_image(members_data)
 
-                # 固定儲存路徑（用於 Cloudflare 快取）
-                leaderboard_path = "/var/www/html/assets/leaderboard.png"
+                # 固定儲存路徑（用於 Cloudflare Quick Tunnel）
+                leaderboard_path = "/var/www/html/leaderboard.png"
                 os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
                 
-                # 儲存到固定路徑（覆蓋舊檔）
-                image.save(leaderboard_path, format="PNG")
-                print(f"✅ 排行榜已存到: {leaderboard_path}")
+                # 儲存到固定路徑（覆蓋舊檔）並進行權限偵測
+                try:
+                    image.save(leaderboard_path, format="PNG")
+                    print(f"✅ 排行榜已存到: {leaderboard_path}")
+                except PermissionError:
+                    print(
+                        f"❌ 無法寫入 {leaderboard_path}！\n"
+                        f"請在 GCP 中執行以下指令修正權限：\n"
+                        f"  sudo chown -R $USER:$USER /var/www/html"
+                    )
+                    return
+                except Exception as e:
+                    print(f"❌ 保存圖片失敗: {e}")
+                    return
 
-                # 在 Discord 中發送以該固定 URL 為基礎的訊息
-                # 而不是上傳二進制檔案，讓 Discord 自動抓取並快取
+                # 在 Discord 中發送以該 base_url 為基礎的訊息
+                # 使用 Cloudflare Quick Tunnel URL（如果可用）
+                image_url = f"{self.base_url}/leaderboard.png?t={int(time.time())}"
                 embed = discord.Embed(
                     title="💰 金流斷點交易所 - 總資產排行",
-                    description="通過 Cloudflare CDN 快速加載",
+                    description=f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸",
                     color=discord.Color.gold()
                 )
-                embed.set_image(url="https://kkgroup.com/assets/leaderboard.png")
+                embed.set_image(url=image_url)
                 embed.timestamp = discord.utils.utcnow()
                 
                 await msg.edit(embed=embed, attachments=[])
 
                 self.last_leaderboard_data = members_data.copy()
                 self.last_update_time = current_time
-                print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者) - URL: https://kkgroup.com/assets/leaderboard.png")
+                print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者) - URL: {image_url}")
 
             except discord.HTTPException as e:
                 print(f"❌ Discord API 錯誤: {e}")
