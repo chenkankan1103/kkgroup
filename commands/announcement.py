@@ -166,16 +166,11 @@ class Announcement(commands.Cog):
             embed = view._create_embed(first_announcement)
             
             # 重新加載 .env 確保取得最新的 MESSAGE_ID
-            from dotenv import dotenv_values
-            env_vars = dotenv_values('.env')
-            message_id_str = env_vars.get('ANNOUNCEMENT_MESSAGE_ID', '').strip()
-            print(f"🔍 重新讀取 MESSAGE_ID: '{message_id_str}'")
+            message_id = self._read_message_id_from_env()
+            print(f"🔍 重新讀取 MESSAGE_ID: {message_id}")
             
-            # 允許包含註解或額外空白的情況
-            message_id_candidate = message_id_str.split()[0] if message_id_str else ''
-            if message_id_candidate.isdigit():
+            if message_id and message_id > 0:
                 # 嘗試編輯已存在的消息
-                message_id = int(message_id_candidate)
                 print(f"📨 嘗試編輯消息 ID: {message_id}")
                 try:
                     message = await channel.fetch_message(message_id)
@@ -188,6 +183,8 @@ class Announcement(commands.Cog):
                 except Exception as e:
                     print(f"⚠️ 編輯消息失敗: {e}，重新發送新消息")
                     self._clear_env_message_id()
+            else:
+                print(f"⚠️ 無效的 MESSAGE_ID: {message_id}")
             
             # 發送新消息
             print("📤 發送新公告消息...")
@@ -197,10 +194,9 @@ class Announcement(commands.Cog):
             # 保存 MESSAGE_ID 並驗證
             self._update_env_message_id(message.id)
             
-            # 驗證保存是否成功（使用 dotenv_values 重新讀取）
-            env_vars = dotenv_values('.env')
-            verify_id = env_vars.get('ANNOUNCEMENT_MESSAGE_ID', '').strip()
-            if verify_id == str(message.id):
+            # 驗證保存是否成功
+            verify_id = self._read_message_id_from_env()
+            if verify_id == message.id:
                 print(f"✅ MESSAGE_ID 已成功保存到 .env: {verify_id}")
             else:
                 print(f"⚠️ MESSAGE_ID 保存可能失敗 (預期: {message.id}, 實際: {verify_id})")
@@ -210,6 +206,41 @@ class Announcement(commands.Cog):
             import traceback
             traceback.print_exc()
     
+    def _read_message_id_from_env(self) -> int:
+        """從 .env 讀取 MESSAGE_ID，返回有效的整數或 0"""
+        try:
+            if not self.env_path.exists():
+                print(f"⚠️ .env 文件不存在: {self.env_path}")
+                return 0
+            
+            with open(self.env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('ANNOUNCEMENT_MESSAGE_ID='):
+                        # 提取 = 後的值
+                        value = line.split('=', 1)[1].strip()  # 獲取 = 後的內容
+                        # 移除引號（可能被dotenv包裹）
+                        value = value.strip('\'"')
+                        # 只取純數字部分（去除註解）
+                        value = value.split()[0] if value else ''
+                        
+                        print(f"  [DEBUG] 原始 MESSAGE_ID 行: {line}")
+                        print(f"  [DEBUG] 提取的值: {value}")
+                        
+                        if value.isdigit():
+                            return int(value)
+                        else:
+                            print(f"  ⚠️ MESSAGE_ID 不是有效的數字: {value}")
+                            return 0
+            
+            print(f"  ⚠️ .env 中未找到 ANNOUNCEMENT_MESSAGE_ID")
+            return 0
+        except Exception as e:
+            print(f"❌ 讀取 MESSAGE_ID 失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
+
     def _update_env_message_id(self, message_id: int):
         """更新 .env 中的消息 ID - 直接寫入文件"""
         try:
@@ -228,7 +259,7 @@ class Announcement(commands.Cog):
             
             for line in lines:
                 if line.startswith('ANNOUNCEMENT_MESSAGE_ID='):
-                    # 只保存純數字，避免 dotenv_values 解析時帶入註解
+                    # 只保存純數字，避免額外的引號或註解
                     new_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}')
                     found = True
                 else:
@@ -240,7 +271,7 @@ class Announcement(commands.Cog):
                 for i, line in enumerate(new_lines):
                     final_lines.append(line)
                     if line.startswith('ANNOUNCEMENT_CHANNEL_ID='):
-                        final_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}  # 公告消息 ID（由機器人自動更新）')
+                        final_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}')
                 new_lines = final_lines
             
             # 寫入文件
@@ -252,13 +283,12 @@ class Announcement(commands.Cog):
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
             
             # 驗證寫入
-            with open(self.env_path, 'r', encoding='utf-8') as f:
-                verify_content = f.read()
-                if f'ANNOUNCEMENT_MESSAGE_ID={message_id}' in verify_content:
-                    print(f"✅ MESSAGE_ID 已成功保存到 .env: {message_id}")
-                    return
+            verify_id = self._read_message_id_from_env()
+            if verify_id == message_id:
+                print(f"✅ MESSAGE_ID 已成功保存到 .env: {message_id}")
+                return
             
-            print(f"⚠️ MESSAGE_ID 保存後驗證失敗")
+            print(f"⚠️ MESSAGE_ID 保存後驗證失敗 (預期: {message_id}, 實際: {verify_id})")
         
         except Exception as e:
             print(f"❌ 保存 MESSAGE_ID 失敗: {e}")
@@ -279,7 +309,7 @@ class Announcement(commands.Cog):
                 
                 for line in lines:
                     if line.startswith('ANNOUNCEMENT_MESSAGE_ID='):
-                        new_lines.append('ANNOUNCEMENT_MESSAGE_ID=  # 公告消息 ID（由機器人自動更新）')
+                        new_lines.append('ANNOUNCEMENT_MESSAGE_ID=')
                     else:
                         new_lines.append(line)
                 
