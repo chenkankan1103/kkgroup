@@ -447,6 +447,7 @@ class Announcement(commands.Cog):
         os.environ['ANNOUNCEMENT_MESSAGE_ID'] = str(message_id)
         return False
     
+    def _read_message_id_from_env(self) -> int:
         """從 .env 讀取 MESSAGE_ID，返回有效的整數或 0 - 每次都直接讀取文件"""
         try:
             if not self.env_path.exists():
