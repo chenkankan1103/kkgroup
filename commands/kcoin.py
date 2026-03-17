@@ -130,8 +130,10 @@ async def make_leaderboard_image(members_data):
     """
     RESERVE_SECTION_HEIGHT = 120  # 儲備池區域高度（置頂）
     DESCRIPTION_HEIGHT = 90
-    WIDTH, HEIGHT = 1000, RESERVE_SECTION_HEIGHT + 75 + 70 * len(members_data) + DESCRIPTION_HEIGHT  # 增加高度以容納進度條
-    AVATAR_SIZE = 48
+    CARD_HEIGHT = 90  # 卡片高度
+    MAX_MEMBERS = 15  # 最多顯示 15 名
+    WIDTH, HEIGHT = 1000, RESERVE_SECTION_HEIGHT + 75 + CARD_HEIGHT * min(len(members_data), MAX_MEMBERS) + DESCRIPTION_HEIGHT  # 調整高度以容納卡片
+    AVATAR_SIZE = 70  # 擴大頭像至 70x70
     MARGIN = 20
     BG_COLOR = (54, 57, 63)  # Discord 深紫黑色背景
     RANK_COLOR = (240,200,80)
@@ -142,6 +144,7 @@ async def make_leaderboard_image(members_data):
     max_assets = 0
     
     # 先計算每個成員的總資產和最大值（用於進度條百分比）
+    members_data = members_data[:MAX_MEMBERS]  # 限制至 15 名
     for member_data in members_data:
         if len(member_data) == 3:
             _, kkcoin, digital_usd = member_data
@@ -207,6 +210,7 @@ async def make_leaderboard_image(members_data):
         avatar_images,
         WIDTH,
         HEIGHT,
+        CARD_HEIGHT,
         DESCRIPTION_HEIGHT,
         RESERVE_SECTION_HEIGHT,
         AVATAR_SIZE,
@@ -226,6 +230,7 @@ def _sync_build_leaderboard_image(
     avatar_images,
     WIDTH,
     HEIGHT,
+    CARD_HEIGHT,
     DESCRIPTION_HEIGHT,
     RESERVE_SECTION_HEIGHT,
     AVATAR_SIZE,
@@ -264,10 +269,10 @@ def _sync_build_leaderboard_image(
     
     try:
         FONT_BIG = ImageFont.truetype(FONT_PATH, 28)
-        FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
-        FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 20)
-        FONT_DESC = ImageFont.truetype(FONT_PATH, 16)
-        FONT_RANK = ImageFont.truetype(FONT_PATH, 30)  # 排序序號字體 - 縮小至30px
+        FONT_SMALL = ImageFont.truetype(FONT_PATH, 24)  # 玩家名稱
+        FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 32)  # 總資產（放大）
+        FONT_DESC = ImageFont.truetype(FONT_PATH, 14)  # 副資產（縮小）
+        FONT_RANK = ImageFont.truetype(FONT_PATH, 36)  # 排名序號（突出）
     except Exception as e:
         print(f"❌ 載入字體失敗: {e}，使用預設字體")
         FONT_BIG = ImageFont.load_default()
@@ -374,7 +379,8 @@ def _sync_build_leaderboard_image(
     
     draw.text((title_x, leaderboard_start_y + 8), "💰 金流斷點交易所 - 總資產排行", fill=(200, 200, 220), font=FONT_BIG)
 
-    # ========== 畫各行 ==========
+    # ========== 畫各行 - 卡片式風格 ==========
+    CARD_MARGIN = 15  # 卡片內邊距
     for i, member_data in enumerate(zip(members_data, avatar_images)):
         # 相容新舊格式（三元組或二元組）
         if len(member_data[0]) == 3:
@@ -385,110 +391,87 @@ def _sync_build_leaderboard_image(
         
         avatar_img = member_data[1]
         
-        y = leaderboard_start_y + 75 + i*70  # 增加行高以容納進度條
-        if i < 3 and medal_imgs[i]:
-            try:
-                img.paste(medal_imgs[i].resize((36,36)), (MARGIN, y+6), medal_imgs[i].resize((36,36)))
-                rank_x = MARGIN + 44
-            except Exception as e:
-                print(f"⚠️ 貼上獎牌失敗: {e}")
-                rank_x = MARGIN
-        else:
-            rank_x = MARGIN
+        # 卡片位置
+        card_y = leaderboard_start_y + 75 + i * CARD_HEIGHT
+        card_x = MARGIN
+        card_right = WIDTH - MARGIN
+        card_bottom = card_y + CARD_HEIGHT
         
-        # 排序序號，向右放在頭像左側 - 只顯示第4名之後的序號（1-3名已有獎牌）
-        if i >= 3:
-            draw.text((rank_x + 15, y + 18), f"{i+1}", fill=(255, 20, 147), font=FONT_RANK)  # 螢光粉紅
-
-        # 改進頭像加載：若失敗則使用灰色佔位符
-        display_avatar = None
-        if avatar_img:
-            try:
-                display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
-                img.paste(display_avatar, (rank_x + 40, y), display_avatar)
-            except Exception as e:
-                print(f"⚠️ 貼上頭像失敗: {e}")
-                # 使用灰色佔位符
-                display_avatar = create_placeholder_avatar()
-                display_avatar.resize((AVATAR_SIZE, AVATAR_SIZE))
-                img.paste(display_avatar, (rank_x + 40, y), display_avatar)
-        else:
-            # 沒有頭像，使用灰色佔位符
-            display_avatar = create_placeholder_avatar()
-            img.paste(display_avatar, (rank_x + 40, y), display_avatar)
-        
-        name_x = rank_x + 100
-        name_y = y+8
-        draw.text((name_x, name_y), member.display_name, fill=(200, 200, 220), font=FONT_SMALL)
-        
-        # 同時顯示 KK幣和數位美金 (確保轉換為數值)
-        kkcoin_text = f"{int(float(kkcoin or 0))} KK"
-        usd_text = f"${float(digital_usd or 0):,.0f}"
-        draw.text((WIDTH-280, y+8), kkcoin_text, fill=(100, 180, 220), font=FONT_KKCOIN)
-        draw.text((WIDTH-120, y+8), usd_text, fill=(100, 220, 150), font=FONT_KKCOIN)
-        
-        # ========== 進度條（在用戶名下方） ==========
-        if max_assets > 0:
-            current_assets = member_totals[i]
-            percent = min(100, (current_assets / max_assets) * 100)  # 轉換為百分比
-        else:
-            percent = 0
-        
-        # 進度條尺寸
-        progress_bar_y = y + 35
-        progress_bar_x = rank_x + 100
-        progress_bar_width = WIDTH - rank_x - 120 - 300
-        progress_bar_height = 16  # 增加高度以容納圓角
-        
-        # 背景條（深灰色）- 使用圓角矩形
+        # 繪製卡片背景（圓角矩形）
         try:
             draw.rounded_rectangle(
-                [(progress_bar_x, progress_bar_y), (progress_bar_x + progress_bar_width, progress_bar_y + progress_bar_height)],
-                radius=8,
-                fill=(80, 90, 120),
-                outline=(120, 130, 160),
+                [(card_x, card_y), (card_right, card_bottom)],
+                radius=12,
+                fill=(45, 47, 52),  # 深灰色卡片
+                outline=(60, 62, 68),  # 細邊框
                 width=1
             )
         except AttributeError:
-            # 如果 PIL 版本不支持 rounded_rectangle，使用普通矩形
+            # 舊版 PIL 兼容
             draw.rectangle(
-                [(progress_bar_x, progress_bar_y), (progress_bar_x + progress_bar_width, progress_bar_y + progress_bar_height)],
-                fill=(80, 90, 120),
-                outline=(120, 130, 160),
+                [(card_x, card_y), (card_right, card_bottom)],
+                fill=(45, 47, 52),
+                outline=(60, 62, 68),
                 width=1
             )
         
-        # 填充條（螢光色）
-        if percent > 0:
-            filled_width = int(progress_bar_width * percent / 100)
-            # 根據百分比選擇螢光色
-            if percent >= 80:
-                bar_color = (0, 255, 127)  # 螢光綠
-            elif percent >= 60:
-                bar_color = (57, 255, 20)  # 亮螢光綠
-            elif percent >= 40:
-                bar_color = (255, 240, 0)  # 螢光黃
-            else:
-                bar_color = (255, 16, 240)  # 螢光粉紅
-            
-            try:
-                draw.rounded_rectangle(
-                    [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
-                    radius=8,
-                    fill=bar_color
-                )
-            except AttributeError:
-                draw.rectangle(
-                    [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
-                    fill=bar_color
-                )
+        # 排名數字（卡片最左側）
+        rank_text = f"{i+1}"
+        rank_x = card_x + CARD_MARGIN
+        rank_y = card_y + (CARD_HEIGHT - 36) // 2  # 垂直置中
+        draw.text((rank_x, rank_y), rank_text, fill=(255, 240, 0), font=FONT_RANK)  # 螢光黃的排名
         
-        # 百分比文字
-        percent_text = f"{percent:.0f}%"
-        draw.text((progress_bar_x + progress_bar_width + 10, progress_bar_y), percent_text, fill=(255, 16, 240), font=FONT_DESC)  # 螢光粉紅
+        # 獎牌或頭像（1-3名顯示獎牌，4-15名顯示頭像）
+        avatar_x = rank_x + 50  # 排名數字右側
+        avatar_y = card_y + (CARD_HEIGHT - AVATAR_SIZE) // 2  # 垂直置中
+        
+        # 1-3名顯示獎牌，4-15名顯示頭像
+        if i < 3 and medal_imgs[i]:
+            try:
+                medal_resized = medal_imgs[i].resize((AVATAR_SIZE, AVATAR_SIZE))
+                img.paste(medal_resized, (avatar_x, avatar_y), medal_resized)
+            except Exception as e:
+                print(f"⚠️ 貼上獎牌失敗: {e}")
+                display_avatar = create_placeholder_avatar().resize((AVATAR_SIZE, AVATAR_SIZE))
+                img.paste(display_avatar, (avatar_x, avatar_y), display_avatar)
+        else:
+            # 顯示頭像
+            if avatar_img:
+                try:
+                    display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
+                    img.paste(display_avatar, (avatar_x, avatar_y), display_avatar)
+                except Exception as e:
+                    print(f"⚠️ 貼上頭像失敗: {e}")
+                    display_avatar = create_placeholder_avatar().resize((AVATAR_SIZE, AVATAR_SIZE))
+                    img.paste(display_avatar, (avatar_x, avatar_y), display_avatar)
+            else:
+                display_avatar = create_placeholder_avatar().resize((AVATAR_SIZE, AVATAR_SIZE))
+                img.paste(display_avatar, (avatar_x, avatar_y), display_avatar)
+        
+        # 玩家名稱（白色，較大）
+        name_x = avatar_x + AVATAR_SIZE + CARD_MARGIN
+        name_y = card_y + CARD_MARGIN
+        draw.text((name_x, name_y), member.display_name, fill=(255, 255, 255), font=FONT_SMALL)
+        
+        # 計算總資產
+        kkcoin_float = float(kkcoin or 0)
+        digital_usd_float = float(digital_usd or 0)
+        total_assets = kkcoin_float + digital_usd_float / 35
+        
+        # 總資產顯示（螢光綠，最大字體）
+        total_text = f"{int(total_assets)} 💎"
+        total_assets_y = name_y + 30
+        draw.text((name_x, total_assets_y), total_text, fill=(0, 255, 127), font=FONT_KKCOIN)  # 螢光綠
+        
+        # 副資產信息（淡灰色，較小）
+        kkcoin_detail = f"{int(kkcoin_float)} KK"
+        usd_detail = f"{int(digital_usd_float)} D-USD"
+        detail_text = f"{kkcoin_detail} / {usd_detail}"
+        detail_y = total_assets_y + 35
+        draw.text((name_x, detail_y), detail_text, fill=(180, 180, 200), font=FONT_DESC)  # 淡灰色
 
     # ========== 第三部分：說明區塊 ==========
-    desc_y = leaderboard_start_y + 75 + len(members_data) * 70 + 15  # 調整位置以符合新的行高
+    desc_y = leaderboard_start_y + 75 + len(members_data) * CARD_HEIGHT + 15  # 調整位置以符合新的卡片高度
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(100, 110, 150), width=1)
     
     descriptions = [
@@ -931,10 +914,10 @@ class KKCoin(commands.Cog):
         members_data = []
         all_users = get_all_users()
         
-        # 篩選 digital_usd > 0，排序，取前 20
+        # 篩選 digital_usd > 0，排序，取前 15
         users = [u for u in all_users if (u.get('digital_usd') or 0) > 0]
         users.sort(key=lambda x: (x.get('digital_usd') or 0), reverse=True)
-        users = users[:20]
+        users = users[:15]
         
         for user in users:
             user_id = int(user["user_id"])
@@ -1270,7 +1253,7 @@ class KKCoin(commands.Cog):
             key=lambda x: float(x.get('kkcoin') or 0) + float(x.get('digital_usd') or 0) / 35,
             reverse=True
         )
-        users = users[:20]
+        users = users[:15]
         
         # 嘗試獲取 Discord member，若失敗則使用 DB 數據
         for user in users:
