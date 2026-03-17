@@ -360,15 +360,25 @@ class Announcement(commands.Cog):
             message = await channel.send(embed=embed, view=view)
             print(f"✓ [消息已發送] 新消息 ID: {message.id}")
             
-            # 保存 MESSAGE_ID 到 .env
+            # ======== 關鍵：必須立即保存並驗證 ========
             self._update_env_message_id(message.id)
             
-            # 驗證保存是否成功
-            verify_id = self._read_message_id_from_env()
-            if verify_id == message.id:
-                print(f"✅ [驗證成功] MESSAGE_ID 已正確保存: {verify_id}")
-            else:
-                print(f"⚠️ [驗證失敗] MESSAGE_ID 保存失敗 (預期: {message.id}, 實際: {verify_id})")
+            # 立即再次驗證，確保檔案寫入成功（最多重試 3 次）
+            max_retries = 3
+            for retry in range(max_retries):
+                verify_id = self._read_message_id_from_env()
+                if verify_id == message.id:
+                    print(f"✅ [最終驗證成功] MESSAGE_ID 已確認保存: {message.id}")
+                    return
+                else:
+                    print(f"⚠️ [驗證失敗 - 重試 {retry + 1}/{max_retries}] MESSAGE_ID 不匹配 (預期: {message.id}, 實際: {verify_id})")
+                    # 重新嘗試寫入
+                    self._update_env_message_id(message.id)
+                    import time
+                    time.sleep(0.5)
+            
+            # 如果最後仍未保存成功，紀錄警告但繼續
+            print(f"❌ [警告] MESSAGE_ID 驗證最終失敗，可能導致下次重啟重複發送")
         
         except asyncio.CancelledError:
             pass
