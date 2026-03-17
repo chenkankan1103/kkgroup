@@ -3,9 +3,11 @@ import sys
 import asyncio
 import discord
 from discord.ext import commands, tasks
+from discord.ext.commands import ExtensionError
 from datetime import datetime
 from dotenv import load_dotenv
 from bot_status import build_discord_activity
+from watchdog.events import FileSystemEventHandler
 
 # ============================================================
 # 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
@@ -33,7 +35,7 @@ def file_log(msg):
     if HAS_SYSLOG:
         try:
             syslog.syslog(syslog.LOG_INFO, f"[BOT_DEBUG] {msg}")
-        except (OSError, Exception):
+        except OSError:
             pass
     
     # 同時 print
@@ -65,7 +67,8 @@ load_dotenv()
 STAGE = os.getenv("STAGE", "dev")
 TOKEN = os.getenv(f"{BOT_PREFIX}_BOT_TOKEN")
 GUILD_ID = os.getenv(f"{BOT_PREFIX}_GUILD_ID")
-SYS_CHANNEL_ID = int(os.getenv(f"{BOT_PREFIX}_SYS_CHANNEL_ID", 0))
+SYS_CHANNEL_ID_STR = os.getenv(f"{BOT_PREFIX}_SYS_CHANNEL_ID", "0")
+SYS_CHANNEL_ID = int(SYS_CHANNEL_ID_STR) if SYS_CHANNEL_ID_STR else 0
 
 if not TOKEN:
     raise RuntimeError(f"❌ {BOT_PREFIX}_BOT_TOKEN 未在 .env 中設定")
@@ -95,7 +98,7 @@ _on_ready_called = False
 _on_ready_check_task = None
 _pending_reloads = set()
 
-async def find_and_load_extensions(base_path, package_prefix="", client=None):
+async def find_and_load_extensions(base_path, package_prefix="", bot_client=None):
     """遞歸搜尋並載入所有 Python 擴展（只加載有效的 Cog）。
 
     為了避免 `views` 目錄被當成 Cog 而引發 “has no setup
@@ -123,7 +126,7 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
         
         if os.path.isdir(item_path) and os.path.exists(os.path.join(item_path, "__init__.py")):
             sub_package = f"{package_prefix}.{item}" if package_prefix else item
-            sub_extensions = await find_and_load_extensions(item_path, sub_package, client)
+            sub_extensions = await find_and_load_extensions(item_path, sub_package, bot_client)
             loaded_extensions.extend(sub_extensions)
         
         elif item.endswith(".py") and item != "__init__.py":
@@ -136,14 +139,14 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
             ext_name = f"{package_prefix}.{module_name}" if package_prefix else module_name
             
             try:
-                await client.load_extension(ext_name)
+                await bot_client.load_extension(ext_name)
                 loaded_extensions.append(ext_name)
-            except Exception as e:
-                print(f"❌ 載入失敗: {ext_name} - {e}")
+            except (ExtensionError, ImportError) as e:
+                print(f"[ERROR] Failed to load {ext_name}: {e}")
     
     return loaded_extensions
 
-async def setup_modules(client):
+async def setup_modules(bot_client):
     """載入所有模組"""
     full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
@@ -154,7 +157,7 @@ async def setup_modules(client):
             f.write(f"# {BOT_NAME} Bot Commands Module\n")
         return []
     
-    return await find_and_load_extensions(full_path, COMMANDS_DIR, client)
+    return await find_and_load_extensions(full_path, COMMANDS_DIR, bot_client)
 
 async def reload_extension_on_change(ext_name):
     """熱重載擴展（防止重複觸發）"""
@@ -170,12 +173,12 @@ async def reload_extension_on_change(ext_name):
             await asyncio.sleep(0.5)
             
             await client.reload_extension(ext_name)
-            print(f"🔄 已重載: {ext_name}")
+            print(f"[RELOAD] {ext_name}")
             
             synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
-            print(f"✓ 同步完成: {len(synced)} 個指令")
-        except Exception as e:
-            print(f"❌ 重載失敗: {ext_name} - {e}")
+            print(f"[SYNC] {len(synced)} commands synced")
+        except (ExtensionError, ImportError) as e:
+            print(f"[ERROR] Reload failed: {ext_name} - {e}")
         finally:
             _pending_reloads.discard(ext_name)
 
@@ -240,9 +243,9 @@ async def cleanup_expired_roles_loop():
         manager = get_expiration_manager()
         removed_count = await manager.cleanup_expired_roles(client)
         if removed_count > 0:
-            print(f"[RoleExpiration] ✅ 定期檢查移除了 {removed_count} 個過期角色")
-    except Exception as e:
-        print(f"[RoleExpiration] ⚠️ 定期清理失敗: {e}")
+            print(f"[CLEANUP] Removed {removed_count} expired roles")
+    except (ImportError, AttributeError) as e:
+        print(f"[WARNING] Failed to cleanup roles: {e}")
 
 @cleanup_expired_roles_loop.before_loop
 async def before_cleanup_expired_roles():
@@ -259,8 +262,8 @@ async def update_status():
         # 每 2 分鐘更新一次日誌 embed
         from status_dashboard import update_dashboard_logs
         await update_dashboard_logs(client, BOT_TYPE)
-    except Exception as e:
-        print(f"❌ 狀態更新失敗: {e}")
+    except (ImportError, OSError, RuntimeError) as e:
+        print(f"[ERROR] Failed to update status: {e}")
 
 @update_status.before_loop
 async def before_update_status():
@@ -272,7 +275,7 @@ async def before_update_status():
 # ============================================================
 async def _check_ready_timeout():
     """監視 ready 狀態，如果超時就手動調用 on_ready()"""
-    global _on_ready_called
+    global _on_ready_called, _on_ready_check_task
     file_log("[READY_MONITOR] 開始監視 ready 狀態（10 秒超時）")
     
     for i in range(10):
@@ -301,6 +304,7 @@ async def on_voice_state_update(member, before, after):
 @client.event
 async def on_connect():
     global _on_ready_check_task
+    _on_ready_check_task = None  # 重置
     file_log("=== ON_CONNECT CALLED ===")
     print("[DISCORD] gateway connected", flush=True)
     
@@ -321,14 +325,14 @@ async def on_resumed():
     # clients.  force an immediate refresh of both log and metrics embeds so
     # that the dashboard doesn't appear frozen after a disconnect.
     try:
-        from status_dashboard import update_dashboard_logs, get_bot_instance
+        from status_dashboard import update_dashboard_logs
         # bot type is defined at module level
         bot_type = BOT_TYPE
         bot_inst = client
         # update logs embed
         await update_dashboard_logs(bot_inst, bot_type)
         print("[on_resumed] forced log embed refresh")
-    except Exception as e:
+    except (ImportError, OSError, RuntimeError) as e:
         print(f"[on_resumed] log refresh failed: {e}")
     try:
         # metrics update task is not directly callable, but we can trigger
@@ -336,18 +340,18 @@ async def on_resumed():
         # easiest option is to import create_metrics_update_task and run the
         # underlying function directly.
         from status_dashboard import create_metrics_update_task
-        loop = await create_metrics_update_task(bot_type)
-        # loop._function is the coroutine that actually does the work
-        if hasattr(loop, '_function'):
-            await loop._function()
+        metrics_loop = await create_metrics_update_task(bot_type)
+        # metrics_loop has the update function
+        if hasattr(metrics_loop, '_function') and callable(metrics_loop._function):
+            await metrics_loop._function()
             print("[on_resumed] forced metrics embed refresh")
-    except Exception as e:
+    except (ImportError, AttributeError, RuntimeError) as e:
         print(f"[on_resumed] metrics refresh failed: {e}")
 
 @client.event
 async def on_ready():
     """Bot 啟動完成"""
-    global _on_ready_called
+    global _on_ready_called, _metrics_collector, _metrics_collector_task
     
     # 立即寫入標記來驗證 on_ready 被調用
     file_log("=== ON_READY CALLED ===")
@@ -381,7 +385,7 @@ async def on_ready():
         try:
             from tools.migrate_locker_event_system import migrate_locker_event_columns
             migrate_locker_event_columns()
-        except Exception as e:
+        except (ImportError, OSError) as e:
             print(f"⚠️  DB migration 失敗: {e}")
         
         # 清除舊指令
@@ -414,16 +418,13 @@ async def on_ready():
             "=" * 60,
             f"{EMOJI} {BOT_NAME} Bot 啟動完成 | v{VERSION} ({stage_text})",
             "=" * 60,
-            f"📊 統計: 📦 {len(loaded_extensions)} 擴展 | ⚡ {len(synced)} Slash指令 | 🔧 {len(prefix_cmds)} 前綴指令"
+            f"[STATS] {len(loaded_extensions)} Extensions | {len(synced)} Slash Commands | {len(prefix_cmds)} Prefix Commands"
         ]
-        
-        # 載入失敗的擴展（如果有）
-        failed_extensions = []
         
         # 已載入擴展（緊湊格式）
         if loaded_extensions:
             lines.append("")
-            lines.append("📦 已載入擴展:")
+            lines.append("[EXTENSIONS] Loaded:")
             ext_names = [ext.split('.')[-1] for ext in loaded_extensions]
             # 每行顯示 5 個擴展
             for i in range(0, len(ext_names), 5):
@@ -433,7 +434,7 @@ async def on_ready():
         # Slash 指令（緊湊格式）
         if synced:
             lines.append("")
-            lines.append("⚡ Slash 指令:")
+            lines.append("[SLASH_COMMANDS] Registered:")
             cmd_names = [f"/{cmd.name}" for cmd in synced]
             # 每行顯示 6 個指令
             for i in range(0, len(cmd_names), 6):
@@ -443,30 +444,28 @@ async def on_ready():
         # 前綴指令（緊湊格式）
         if prefix_cmds:
             lines.append("")
-            lines.append("🔧 前綴指令:")
+            lines.append("[PREFIX_COMMANDS] Registered:")
             cmd_names = [f"!{cmd.name}" for cmd in prefix_cmds]
             lines.append(f"   {' '.join(cmd_names)}")
         
         lines.append("")
         lines.append("=" * 60)
-        lines.append(f"✅ {client.user.name} 已就緒")
+        lines.append(f"[SUCCESS] {client.user.name} Ready")
         lines.append("=" * 60)
         
         # 打印啟動訊息
         try:
             print("\n".join(lines))
-        except Exception as e:
-            print(f"[DEBUG] 打印啟動訊息失敗: {e}")
+        except (UnicodeEncodeError, OSError, RuntimeError) as e:
+            print(f"[DEBUG] Failed to print startup message: {e}")
         
         # 設定初始狀態
         try:
             activity = build_discord_activity(BOT_TYPE)
             await client.change_presence(activity=activity)
-            print("[DEBUG] 狀態已更新")
-        except Exception as e:
-            print(f"[DEBUG] 狀態更新失敗: {e}")
-            import traceback
-            traceback.print_exc()
+            print("[DEBUG] Status updated")
+        except (ImportError, OSError, RuntimeError) as e:
+            print(f"[DEBUG] Failed to update status: {e}")
         
         # ============================================================
         # 清理過期的臨時角色（變色龍披風、進階組員等）
@@ -476,11 +475,9 @@ async def on_ready():
             manager = get_expiration_manager()
             removed_count = await manager.cleanup_expired_roles(client)
             if removed_count > 0:
-                print(f"✅ 啟動清理: 已移除 {removed_count} 個過期角色")
-        except Exception as e:
-            print(f"⚠️ 角色過期清理失敗: {e}")
-            import traceback
-            traceback.print_exc()
+                print(f"[CLEANUP] Removed {removed_count} expired roles")
+        except (ImportError, AttributeError, RuntimeError) as e:
+            print(f"[WARNING] Failed to cleanup expired roles: {e}")
         
         # ============================================================
         # 初始化監控儀表板及日誌系統（簡化版本 - 僅日誌）
@@ -489,20 +486,18 @@ async def on_ready():
             load_message_ids("bot")
             dashboard_ready = await initialize_dashboard(client, "bot")
             if dashboard_ready:
-                print("✅ 日誌系統已初始化")
-        except Exception as e:
-            print(f"⚠️ 儀表板初始化失敗: {e}")
+                print("[DASHBOARD] Log system initialized")
+        except (ImportError, OSError, RuntimeError) as e:
+            print(f"[WARNING] Failed to initialize dashboard: {e}")
 
         # ============================================================
         # 啟動 GCP Metrics 數據採集器（如果 BOT_TYPE == "bot"）
         # ============================================================
-        global _metrics_collector, _metrics_collector_task
-        
         if BOT_TYPE == "bot" and _metrics_collector is None:  # 只在主 bot 中啟動一次
             try:
                 from metrics_data_collector import MetricsDataCollector
                 
-                print("[bot] 初始化 GCP Metrics 數據採集器...")
+                print("[GCP_METRICS] Initializing GCP Metrics collector...")
                 _metrics_collector = MetricsDataCollector(project_id="kkgroup")
                 
                 # 啟動後台採集任務（每 30 分鐘運行一次）
@@ -510,14 +505,12 @@ async def on_ready():
                     _metrics_collector_task = asyncio.create_task(
                         _metrics_collector.start_background_collection(interval_minutes=30)
                     )
-                    print("[bot] ✅ GCP Metrics 數據採集器已啟動（每 30 分鐘採集一次）")
+                    print("[GCP_METRICS] Collector started (30 min interval)")
                 
             except ImportError:
-                print("[bot] ⚠️ MetricsDataCollector 不可用（metrics_data_collector.py 不存在）")
-            except Exception as e:
-                print(f"[bot] ⚠️ 無法啟動 Metrics 數據採集器: {e}")
-                import traceback
-                traceback.print_exc()
+                print("[GCP_METRICS] MetricsDataCollector not available")
+            except (OSError, RuntimeError) as e:
+                print(f"[GCP_METRICS] Failed to start collector: {e}")
 
         # 啟動狀態更新任務
         if not update_status.is_running():
@@ -526,14 +519,12 @@ async def on_ready():
         # 啟動角色過期清理任務
         if not cleanup_expired_roles_loop.is_running():
             cleanup_expired_roles_loop.start()
-            print("✅ 角色過期清理任務已啟動 (每 5 分鐘檢查一次)")
+            print("[SCHEDULER] Role expiration cleanup started (5 min interval)")
         
-    except Exception as e:
+    except (ImportError, OSError, RuntimeError) as e:
         # 錯誤也使用單一 print
-        error_msg = f"❌ 初始化失敗: {e}\n{'=' * 60}"
+        error_msg = f"[ERROR] Initialization failed: {e}\n{'=' * 60}"
         print(error_msg)
-        import traceback
-        traceback.print_exc()
 # ============================================================
 # 主程序入口
 # ============================================================
@@ -546,44 +537,22 @@ async def main():
     """
     # 立即寫入啟動標記到檔案
     file_log("=== BOT MAIN START ===")
-    
-    loop = asyncio.get_event_loop()
-    
-    # 暫時禁用檔案監控以避免重載問題
-    # observer = Observer()
-    # 
-    # commands_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
-    # 
-    # if not os.path.exists(commands_path):
-    #     os.makedirs(commands_path)
-    #     init_file = os.path.join(commands_path, "__init__.py")
-    #     with open(init_file, 'w', encoding='utf-8') as f:
-    #         f.write(f"# {BOT_NAME} Bot Commands Module\n")
-    # 
-    # observer.schedule(
-    #     FileEventHandler(loop),
-    #     path=commands_path,
-    #     recursive=True
-    # )
-    # observer.start()
 
     try:
         while True:
             try:
-                file_log(f"=== STARTING CLIENT WITH TOKEN ===")
+                file_log("=== STARTING CLIENT WITH TOKEN ===")
                 async with client:
                     file_log("=== CLIENT CONTEXT OPENED, CALLING client.start() ===")
                     await client.start(TOKEN)
             except KeyboardInterrupt:
-                print(f"\n👋 {BOT_NAME} Bot 已停止")
+                print(f"\n[SHUTDOWN] {BOT_NAME} Bot stopped")
                 break
             except discord.LoginFailure:
-                print("❌ Discord Token 無效")
+                print("[ERROR] Invalid Discord Token")
                 break
-            except Exception as e:
-                print(f"[MAIN] 運行失敗: {e}")
-                import traceback
-                traceback.print_exc()
+            except (discord.GatewayNotFound, discord.HTTPException, OSError) as e:
+                print(f"[ERROR] Run failed: {e}")
             # 自動重連
             print("[MAIN] 連線中斷，5秒後重試")
             await asyncio.sleep(5)
@@ -600,7 +569,7 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        file_log(f"❌ 啟動失敗: {e}")
-        print(f"❌ 啟動失敗: {e}", flush=True)
+    except (ImportError, RuntimeError, OSError) as e:
+        file_log(f"[FATAL] Startup failed: {e}")
+        print(f"[FATAL] Startup failed: {e}", flush=True)
         sys.exit(1)
