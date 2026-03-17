@@ -17,30 +17,14 @@ class FeedbackModal(Modal):
         super().__init__(title="💝 玩家意見回饋")
         self.bot = bot
         
-        # 添加表單欄位
-        self.nickname = TextInput(
-            label="您的遊戲昵稱",
-            placeholder="請輸入您的遊戲昵稱（可選）",
-            required=False,
-            max_length=50
-        )
-        self.add_item(self.nickname)
-        
-        self.feedback_type = TextInput(
-            label="意見類別",
-            placeholder="例如：功能建議 / Bug報告 / 遊戲平衡 / 其他",
-            required=True,
-            max_length=50
-        )
-        self.add_item(self.feedback_type)
-        
+        # 只添加內容欄位
         self.feedback_content = TextInput(
-            label="意見內容（詳細描述您的想法）",
+            label="您的意見或建議（詳細描述）",
             placeholder="請詳細說明您的想法或遇到的問題...",
             required=True,
             style=discord.TextStyle.long,
-            max_length=1000,
-            min_length=10
+            max_length=2000,
+            min_length=5
         )
         self.add_item(self.feedback_content)
     
@@ -70,29 +54,26 @@ class FeedbackModal(Modal):
                 )
                 return
             
+            # 取得用戶昵稱（優先使用 nick，其次使用 name）
+            user_display_name = interaction.user.nick or interaction.user.name
+            
             # 建立回饋 Embed
             embed = discord.Embed(
                 title="💝 新的玩家意見回饋",
-                description=f"用戶：{interaction.user.mention}",
+                description=f"**用戶：** {interaction.user.mention}",
                 color=discord.Color.gold(),
                 timestamp=datetime.now()
             )
             
             embed.add_field(
-                name="🎭 遊戲昵稱",
-                value=self.nickname.value or "未提供",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="📂 意見類別",
-                value=self.feedback_type.value,
+                name="👤 昵稱",
+                value=user_display_name,
                 inline=True
             )
             
             embed.add_field(
-                name="👤 Discord 用戶",
-                value=f"{interaction.user.name}#{interaction.user.discriminator}\nID: {interaction.user.id}",
+                name="ID",
+                value=interaction.user.id,
                 inline=True
             )
             
@@ -114,29 +95,23 @@ class FeedbackModal(Modal):
                 color=discord.Color.green()
             )
             
-            confirm_embed.add_field(
-                name="意見類別",
-                value=self.feedback_type.value,
-                inline=False
-            )
-            
             await interaction.response.send_message(
                 embed=confirm_embed,
                 ephemeral=True
             )
             
-            print(f"✅ [意見回饋] {interaction.user.name} 提交了 {self.feedback_type.value} 類別的意見")
+            print(f"✅ [意見回饋] {user_display_name} (ID: {interaction.user.id}) 提交了意見")
             
         except ValueError as e:
             print(f"❌ [意見回饋] 配置錯誤: {e}")
             await interaction.response.send_message(
-                f"❌ 提交意見時發生配置錯誤",
+                "❌ 提交意見時發生配置錯誤",
                 ephemeral=True
             )
         except discord.DiscordException as e:
             print(f"❌ [意見回饋] Discord 錯誤: {e}")
             await interaction.response.send_message(
-                f"❌ 提交意見時發生網路錯誤，請稍後重試",
+                "❌ 提交意見時發生網路錯誤，請稍後重試",
                 ephemeral=True
             )
 
