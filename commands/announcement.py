@@ -5,7 +5,6 @@ import json
 import os
 import asyncio
 from pathlib import Path
-from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,7 +27,7 @@ class AnnouncementButtonView(View):
                     data = json.load(f)
                     return data.get('announcement_carousels', {}).get('announcements', [])
             return []
-        except Exception as e:
+        except (IOError, json.JSONDecodeError) as e:
             print(f"❌ 載入公告失敗: {e}")
             return []
     
@@ -68,7 +67,7 @@ class AnnouncementButtonView(View):
                 return
             
             # 建立 Embed
-            embed = self._create_embed(announcement)
+            embed = self.create_embed_for_announcement(announcement)
             
             # 更新按鈕狀態
             self.update_button_styles(announcement_id)
@@ -86,7 +85,7 @@ class AnnouncementButtonView(View):
                 else:
                     item.style = discord.ButtonStyle.blurple
     
-    def _create_embed(self, announcement: dict) -> discord.Embed:
+    def create_embed_for_announcement(self, announcement: dict) -> discord.Embed:
         """建立 Embed"""
         embed = discord.Embed(
             title=announcement.get('title', ''),
@@ -116,7 +115,8 @@ class AnnouncementButtonView(View):
 class Announcement(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.announcement_channel_id = int(os.getenv('ANNOUNCEMENT_CHANNEL_ID', 0))
+        channel_id_str = os.getenv('ANNOUNCEMENT_CHANNEL_ID', '0')
+        self.announcement_channel_id = int(channel_id_str)
         self.env_path = Path('.env')
         self._synced = False  # 追蹤是否已同步過
         print(f"✅ [Announcement COG INITIALIZED] Channel ID: {self.announcement_channel_id}")
@@ -133,6 +133,8 @@ class Announcement(commands.Cog):
                 self._synced = True
                 print("[Announcement] Bot 已就緒，開始同步公告...")
                 await self.sync_announcement()
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             print(f"❌ [Announcement] 任務執行失敗: {e}")
             import traceback
@@ -150,7 +152,7 @@ class Announcement(commands.Cog):
             # 取得公告頻道（使用 fetch 而不是 get）
             try:
                 channel = await self.bot.fetch_channel(self.announcement_channel_id)
-            except Exception as e:
+            except (discord.NotFound, discord.Forbidden) as e:
                 print(f"❌ 無法獲取公告頻道 (ID: {self.announcement_channel_id}): {e}")
                 return
             
@@ -163,7 +165,7 @@ class Announcement(commands.Cog):
             # 建立視圖和第一個公告
             view = AnnouncementButtonView()
             first_announcement = announcements[0]
-            embed = view._create_embed(first_announcement)
+            embed = view.create_embed_for_announcement(first_announcement)
             
             # 重新加載 .env 確保取得最新的 MESSAGE_ID
             message_id = self._read_message_id_from_env()
@@ -201,6 +203,8 @@ class Announcement(commands.Cog):
             else:
                 print(f"⚠️ MESSAGE_ID 保存可能失敗 (預期: {message.id}, 實際: {verify_id})")
         
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             print(f"❌ 同步公告失敗: {e}")
             import traceback
@@ -233,9 +237,9 @@ class Announcement(commands.Cog):
                             print(f"  ⚠️ MESSAGE_ID 不是有效的數字: {value}")
                             return 0
             
-            print(f"  ⚠️ .env 中未找到 ANNOUNCEMENT_MESSAGE_ID")
+            print("  ⚠️ .env 中未找到 ANNOUNCEMENT_MESSAGE_ID")
             return 0
-        except Exception as e:
+        except (IOError, OSError) as e:
             print(f"❌ 讀取 MESSAGE_ID 失敗: {e}")
             import traceback
             traceback.print_exc()
@@ -268,7 +272,7 @@ class Announcement(commands.Cog):
             # 如果沒找到，就在 ANNOUNCEMENT_CHANNEL_ID 後面加入
             if not found:
                 final_lines = []
-                for i, line in enumerate(new_lines):
+                for line in new_lines:
                     final_lines.append(line)
                     if line.startswith('ANNOUNCEMENT_CHANNEL_ID='):
                         final_lines.append(f'ANNOUNCEMENT_MESSAGE_ID={message_id}')
@@ -290,7 +294,7 @@ class Announcement(commands.Cog):
             
             print(f"⚠️ MESSAGE_ID 保存後驗證失敗 (預期: {message_id}, 實際: {verify_id})")
         
-        except Exception as e:
+        except (IOError, OSError) as e:
             print(f"❌ 保存 MESSAGE_ID 失敗: {e}")
             import traceback
             traceback.print_exc()
@@ -319,9 +323,9 @@ class Announcement(commands.Cog):
                     f.write(new_content)
             
             os.environ['ANNOUNCEMENT_MESSAGE_ID'] = ''
-            print(f"🗑️ 已清除 MESSAGE_ID")
+            print("🗑️ 已清除 MESSAGE_ID")
         
-        except Exception as e:
+        except (IOError, OSError) as e:
             print(f"❌ 清除 MESSAGE_ID 失敗: {e}")
     
     def _load_announcements(self) -> list:
@@ -333,7 +337,7 @@ class Announcement(commands.Cog):
                     data = json.load(f)
                     return data.get('announcement_carousels', {}).get('announcements', [])
             return []
-        except Exception as e:
+        except (IOError, json.JSONDecodeError) as e:
             print(f"❌ 載入公告失敗: {e}")
             return []
 

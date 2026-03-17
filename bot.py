@@ -5,14 +5,11 @@ import discord
 from discord.ext import commands, tasks
 from datetime import datetime
 from dotenv import load_dotenv
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
 
 # ============================================================
 # 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
 # ============================================================
-import sys
 try:
     import syslog
     HAS_SYSLOG = True
@@ -29,14 +26,14 @@ def file_log(msg):
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
             f.flush()
-    except:
+    except (IOError, OSError):
         pass
     
     # 寫入 syslog
     if HAS_SYSLOG:
         try:
             syslog.syslog(syslog.LOG_INFO, f"[BOT_DEBUG] {msg}")
-        except:
+        except (OSError, Exception):
             pass
     
     # 同時 print
