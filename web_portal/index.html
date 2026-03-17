@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>KK 集團：資產中心入口</title>
+    <script>
+        // 自動讀取 config.json 中的最新隧道網址
+        fetch('./config.json?cache_bust=' + Date.now())
+            .then(response => response.json())
+            .then(data => {
+                if (data.url) {
+                    window.location.replace(data.url);
+                }
+            })
+            .catch(err => console.error("無法取得跳轉網址", err));
+    </script>
+    <style>
+        body { background: #000; color: #0f0; font-family: monospace; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    </style>
+</head>
+<body>
+    <p>> [系統訊息] 正在動態校準隧道頻率，請稍候...</p>
+</body>
+</html>

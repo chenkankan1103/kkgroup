@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import os, io, time, aiohttp, re
+import os, io, time, aiohttp, re, subprocess, json
 import asyncio
 from PIL import Image, ImageDraw, ImageFont
 from collections import defaultdict
@@ -554,6 +554,74 @@ class KKCoin(commands.Cog):
         self.auto_update_digital_usd_leaderboard.cancel()
         self.auto_update_reserve_status.cancel()
     
+    async def sync_to_github(self, new_url):
+        """將新的隧道 URL 同步到 GitHub Pages 入口
+        
+        參數:
+            new_url: 新的 Tunnel URL (e.g., https://xxx.trycloudflare.com)
+        
+        流程:
+            1. 讀取/更新本地 config.json
+            2. Git add/commit/push 到遠端 GitHub
+        """
+        try:
+            import subprocess
+            import json
+            from datetime import datetime
+            
+            config_path = os.path.join(os.path.dirname(__file__), "..", "web_portal", "config.json")
+            
+            # 檢查 web_portal 是否存在
+            web_portal_dir = os.path.dirname(config_path)
+            if not os.path.exists(web_portal_dir):
+                print(f"❌ web_portal 目錄不存在: {web_portal_dir}")
+                return False
+            
+            # 更新 config.json
+            config_data = {
+                "url": new_url,
+                "lastUpdated": datetime.utcnow().isoformat() + "Z"
+            }
+            
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ 已更新 config.json: {new_url}")
+            
+            # Git 操作（在 web_portal 目錄中執行）
+            git_commands = [
+                f"cd {web_portal_dir} && git add config.json",
+                f"cd {web_portal_dir} && git commit -m 'Auto-sync: Update tunnel URL to {new_url}'",
+                f"cd {web_portal_dir} && git push origin main"
+            ]
+            
+            for cmd in git_commands:
+                try:
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        print(f"✅ Git 指令成功: {cmd.split('&&')[1].strip()}")
+                    else:
+                        # 如果是 commit 時沒有變更，允許這個錯誤
+                        if "nothing to commit" in result.stderr:
+                            print(f"ℹ️  config.json 未有變更，跳過提交")
+                        else:
+                            print(f"⚠️  Git 指令警告: {result.stderr[:100]}")
+                except subprocess.TimeoutExpired:
+                    print(f"⏱️ 指令超時: {cmd}")
+                    return False
+                except Exception as e:
+                    print(f"❌ Git 操作失敗: {e}")
+                    return False
+            
+            print(f"🚀 GitHub Pages 已更新: https://chenkankan1103.github.io/kkgroup/web_portal/")
+            return True
+        
+        except Exception as e:
+            print(f"❌ 同步到 GitHub 失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     async def get_tunnel_url(self):
         """從 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
         
@@ -591,11 +659,35 @@ class KKCoin(commands.Cog):
     
     @commands.Cog.listener()
     async def on_ready(self):
-        """機器人啟動時執行 - 嘗試獲取 Tunnel URL"""
+        """機器人啟動時執行 - 嘗試獲取 Tunnel URL 並同步到 GitHub Pages"""
         print("🔍 正在嘗試獲取 Cloudflare Tunnel URL...")
         tunnel_url = await self.get_tunnel_url()
         
-        if not tunnel_url:
+        if tunnel_url:
+            # 檢查隧道 URL 是否與上一次不同
+            stored_config_path = os.path.join(os.path.dirname(__file__), "..", "web_portal", "config.json")
+            last_url = None
+            
+            try:
+                import json
+                if os.path.exists(stored_config_path):
+                    with open(stored_config_path, "r", encoding="utf-8") as f:
+                        stored_config = json.load(f)
+                        last_url = stored_config.get("url")
+            except Exception as e:
+                print(f"⚠️  無法讀取上一次的隧道 URL: {e}")
+            
+            # 如果 URL 發生變更，同步到 GitHub
+            if last_url != tunnel_url:
+                print(f"📡 偵測到隧道 URL 變更！")
+                print(f"   舊: {last_url}")
+                print(f"   新: {tunnel_url}")
+                sync_result = await self.sync_to_github(tunnel_url)
+                if sync_result:
+                    print(f"✅ 已同步到 GitHub Pages 入口")
+            else:
+                print(f"ℹ️  隧道 URL 未變更，跳過同步")
+        else:
             print(
                 "\n" + "="*70
                 + "\n⚠️  【警告】無法獲取 Cloudflare Quick Tunnel 網址！\n"

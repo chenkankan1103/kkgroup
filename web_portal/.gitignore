@@ -1,0 +1,14 @@
+# Local environment files
+.env
+.env.local
+*.pyc
+__pycache__/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
