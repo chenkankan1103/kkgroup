@@ -19,6 +19,7 @@ discord_auth_bp = Blueprint('discord_auth', __name__, url_prefix='/api/auth')
 DISCORD_CLIENT_ID = os.getenv('DISCORD_CLIENT_ID', '')
 DISCORD_CLIENT_SECRET = os.getenv('DISCORD_CLIENT_SECRET', '')
 DISCORD_REDIRECT_URI = os.getenv('DISCORD_REDIRECT_URI', 'http://localhost:5000/api/auth/callback')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8000')
 DISCORD_API_BASE = 'https://discord.com/api/v10'
 
 # 簡單的會話存儲（生產應使用 Redis 或數據庫）
@@ -136,7 +137,8 @@ def oauth_callback():
         logger.info(f"✅ 用戶認證成功: {user_data.get('username')} (ID: {user_data.get('id')})")
         
         # 5️⃣ 重定向回前端（帶 token）
-        redirect_url = f"/?auth_token={session_token}&user={user_data.get('username')}"
+        frontend_url = FRONTEND_URL.rstrip('/')
+        redirect_url = f"{frontend_url}/?auth_token={session_token}&user={user_data.get('username')}"
         return redirect(redirect_url)
         
     except Exception as e:
