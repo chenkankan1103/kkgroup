@@ -28,9 +28,7 @@ StandardError=append:/tmp/kkgroup-api.log
 
 # 安全設定
 PrivateTmp=yes
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=yes
+NoNewPrivileges=false
 
 [Install]
 WantedBy=multi-user.target
