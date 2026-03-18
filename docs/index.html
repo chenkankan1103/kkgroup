@@ -373,46 +373,63 @@
             LEADERBOARD_IMAGE: '/assets/leaderboard.png'
         };
 
-        // 加載即時統計數據
+        // 加載即時統計數據（從真實 API）
         async function loadStats() {
             try {
-                // 嘗試從 GCP API 獲取統計數據
-                // API 端點應該在 GCP 上準備好（例如 /api/stats）
+                console.log(`📊 正在從 ${CONFIG.API_BASE}/api/stats 加載統計數據...`);
+                
                 const response = await fetch(`${CONFIG.API_BASE}/api/stats`, {
-                    headers: { 'Accept': 'application/json' }
-                }).catch(() => null);
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    mode: 'cors'
+                });
 
                 if (response && response.ok) {
-                    const data = await response.json();
+                    const result = await response.json();
                     
-                    // 更新 DOM
-                    document.getElementById('stat-traders').textContent = data.total_traders || 1200;
-                    document.getElementById('stat-volume').textContent = formatNumber(data.total_volume || 50000);
-                    document.getElementById('stat-reserve').textContent = formatCurrency(data.reserve || 100000);
-                    
-                    const pressure = data.reserve_pressure || 45;
-                    document.getElementById('stat-pressure').textContent = pressure.toFixed(1) + '%';
-                    document.getElementById('pressure-percent').textContent = pressure.toFixed(1) + '%';
-                    document.getElementById('pressure-bar').style.width = Math.min(100, pressure) + '%';
-                    
-                    // 根據壓力級別改變狀態文字
-                    const pressureStatus = document.getElementById('pressure-status');
-                    if (pressure < 50) {
-                        pressureStatus.textContent = '✅ 安全';
-                        pressureStatus.className = 'text-xs text-green-400';
-                    } else if (pressure < 75) {
-                        pressureStatus.textContent = '⚠️ 警告';
-                        pressureStatus.className = 'text-xs text-yellow-400';
+                    // 檢查 API 回應格式
+                    if (result.status === 'success' && result.data) {
+                        const data = result.data;
+                        console.log('✅ API 回應:', data);
+                        
+                        // 更新 DOM
+                        const traders = data.total_traders || 0;
+                        const volume = data.total_volume || 0;
+                        const reserve = data.reserve || 0;
+                        const pressure = data.reserve_pressure || 0;
+                        
+                        document.getElementById('stat-traders').textContent = traders.toLocaleString();
+                        document.getElementById('stat-volume').textContent = formatNumber(volume);
+                        document.getElementById('stat-reserve').textContent = formatCurrency(reserve);
+                        
+                        document.getElementById('stat-pressure').textContent = pressure.toFixed(1) + '%';
+                        document.getElementById('pressure-percent').textContent = pressure.toFixed(1) + '%';
+                        document.getElementById('pressure-bar').style.width = Math.min(100, pressure) + '%';
+                        
+                        // 根據壓力級別改變狀態文字
+                        const pressureStatus = document.getElementById('pressure-status');
+                        if (pressure < 50) {
+                            pressureStatus.textContent = '✅ 安全';
+                            pressureStatus.className = 'text-xs text-green-400';
+                        } else if (pressure < 75) {
+                            pressureStatus.textContent = '⚠️ 警告';
+                            pressureStatus.className = 'text-xs text-yellow-400';
+                        } else {
+                            pressureStatus.textContent = '🔴 危險';
+                            pressureStatus.className = 'text-xs text-red-400';
+                        }
+                        
+                        console.log('✨ 統計數據已更新');
                     } else {
-                        pressureStatus.textContent = '🔴 危險';
-                        pressureStatus.className = 'text-xs text-red-400';
+                        console.warn('⚠️ API 回應格式不正確:', result);
+                        useDefaultStats();
                     }
                 } else {
-                    // 使用預設數據（演示）
+                    console.warn('⚠️ API 回應狀態:', response?.status);
                     useDefaultStats();
                 }
             } catch (error) {
-                console.error('無法載入統計數據:', error);
+                console.error('❌ 無法載入統計數據:', error);
                 useDefaultStats();
             }
         }
