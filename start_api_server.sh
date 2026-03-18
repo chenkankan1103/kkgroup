@@ -33,13 +33,13 @@ source "$VENV_PATH/bin/activate"
 echo "📦 檢查依賴..."
 pip install -q flask flask-cors python-dotenv
 
-# 啟動 API 伺服器
+# 啟動統一 API 伺服器
 echo ""
-echo "💫 啟動 API 伺服器..."
+echo "💫 啟動統一 API 伺服器..."
 cd "$PROJECT_DIR"
 
 # 使用 nohup 在後台運行，並重定向日誌
-nohup python3 api_server.py \
+nohup python3 unified_api.py \
     --host "$API_HOST" \
     --port "$API_PORT" \
     > "$LOG_FILE" 2>&1 &

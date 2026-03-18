@@ -1,0 +1,36 @@
+[Unit]
+Description=KKCoin Unified API Server
+Documentation=https://github.com/chenkankan1103/kkgroup
+After=network.target
+
+[Service]
+Type=simple
+User=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment="PATH=/home/e193752468/kkgroup/.venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="FLASK_DEBUG=False"
+Environment="API_HOST=127.0.0.1"
+Environment="API_PORT=5000"
+
+# 啟動命令
+ExecStart=/home/e193752468/kkgroup/.venv/bin/python3 /home/e193752468/kkgroup/unified_api.py
+
+# 重啟策略
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=5
+
+# 日誌設定
+StandardOutput=append:/tmp/kkgroup-api.log
+StandardError=append:/tmp/kkgroup-api.log
+
+# 安全設定
+PrivateTmp=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
