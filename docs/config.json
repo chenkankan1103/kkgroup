@@ -1,6 +1,15 @@
 {
-    "status":  "隧道已用內網 IP + HTTP/2 協議運行中",
-    "url":  "https://beach-because-dating-shelter.trycloudflare.com",
-    "lastUpdated":  "2026-03-18T05:25:18Z",
-    "note":  "使用最新隧道 URL - DNS 傳播中，請等待 5-15 分鐘"
+    "status": "✅ 隧道已修復並更新到最新 URL",
+    "rootCause": "/etc/cloudflared/config.yml - 命名隧道配置檔只允許 kkgroup.com 轉發，其他域名返回 404",
+    "solution": "已備份 config.yml → config.yml.bak，隧道現在使用純快速隧道模式",
+    "url": "https://praise-translate-launches-makes.trycloudflare.com",
+    "backendConfig": {
+        "frontendURL": "http://localhost:80",
+        "nginxStatus": "✅ 正在監聽",
+        "file": "/var/www/html/assets/leaderboard.png",
+        "fileSize": "254089 bytes"
+    },
+    "lastUpdated": "2026-03-18T06:56:17Z",
+    "imageURL": "https://praise-translate-launches-makes.trycloudflare.com/assets/leaderboard.png",
+    "notes": "隧道已完全修復。使用新的隧道 URL 連接應該正常工作。"
 }
