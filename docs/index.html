@@ -105,6 +105,60 @@
             background: rgba(255, 0, 85, 0.3);
             color: #ff0055;
         }
+
+        /* 漂浮標籤樣式 */
+        .floating-badge {
+            position: fixed;
+            right: 20px;
+            bottom: 100px;
+            z-index: 999;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0px);
+            }
+            50% {
+                transform: translateY(-20px);
+            }
+        }
+
+        .floating-badge button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #5865f2, #4752c4);
+            border: 3px solid #7289da;
+            border-radius: 50px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 30px rgba(88, 101, 242, 0.6), 0 0 60px rgba(88, 101, 242, 0.3);
+            transition: all 0.3s;
+            font-size: 0.9rem;
+            font-family: 'Press Start 2P', cursive;
+            letter-spacing: 1px;
+        }
+
+        .floating-badge button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 50px rgba(88, 101, 242, 0.8), 0 0 80px rgba(88, 101, 242, 0.5);
+        }
+
+        @media (max-width: 768px) {
+            .floating-badge {
+                right: 10px;
+                bottom: 80px;
+            }
+
+            .floating-badge button {
+                padding: 10px 16px;
+                font-size: 0.7rem;
+                gap: 6px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -118,6 +172,9 @@
                 <a class="nav-link text-white text-sm" onclick="navigateTo('leaderboard')">排行榜</a>
                 <a class="nav-link text-white text-sm" onclick="navigateTo('shop')">商店街</a>
                 <a class="nav-link text-white text-sm" onclick="navigateTo('stocks')">股市</a>
+                <button class="text-white text-sm px-3 py-1 rounded hover:bg-blue-600/30 transition" onclick="joinDiscord()" title="加入 KK 園區 Discord 社群">
+                    <span>🔗 加入</span>
+                </button>
                 <button id="login-btn" class="pixel-button text-xs" onclick="loginDiscord()" style="font-size: 0.75rem;">登入 DC</button>
             </div>
         </nav>
@@ -143,6 +200,7 @@
 
                     <div class="flex gap-4 justify-center mb-16 flex-wrap">
                         <button class="pixel-button text-sm" onclick="loginDiscord()">【立即登入 Discord】</button>
+                        <button class="pixel-button text-sm" style="background: linear-gradient(135deg, #5865f2, #4752c4);" onclick="joinDiscord()">【加入 Discord 社群】</button>
                         <button class="pixel-button text-sm" style="background: linear-gradient(135deg, #333333, #1a1a1a);" onclick="navigateTo('leaderboard')">查看排行榜</button>
                     </div>
                 </div>
@@ -286,6 +344,14 @@
 
     </main>
 
+    <!-- 漂浮標籤 - 邀請加入 Discord -->
+    <div class="floating-badge">
+        <button onclick="joinDiscord()" title="加入 KK 園區 Discord 社群">
+            <span>🔗</span>
+            <span>加入社群</span>
+        </button>
+    </div>
+
     <!-- Footer -->
     <footer class="border-t border-red-500/30 bg-black/80 py-12 px-4">
         <div class="max-w-6xl mx-auto text-center text-xs text-gray-500">
@@ -378,6 +444,11 @@
                 console.error('❌ 登錄失敗:', error);
                 alert('登錄失敗，請檢查網絡連接');
             }
+        }
+
+        // 🔗 加入 Discord 社群
+        function joinDiscord() {
+            window.open(CONFIG.DISCORD_URL, '_blank');
         }
 
         // 🚪 登出
