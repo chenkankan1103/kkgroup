@@ -628,11 +628,11 @@ class KKCoin(commands.Cog):
             return False
     
     async def get_tunnel_url(self):
-        """從 /tmp/cloudflared.log 或 docs/config.json 讀取 Cloudflare Quick Tunnel 網址
+        """從 docs/config.json 或 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
         
         優先順序:
-        1. /tmp/cloudflared.log (GCP VM)
-        2. docs/config.json (本地開發環境)
+        1. docs/config.json (GitHub同步，優先級最高 - 確保本機開發和GCP部署URL一致)
+        2. /tmp/cloudflared.log (GCP VM本地cloudflared - 備用)
         
         成功: 更新 self.base_url 並返回該 URL
         失敗: 返回 None
@@ -641,7 +641,24 @@ class KKCoin(commands.Cog):
             try:
                 import json
                 
-                # 1️⃣ 方式 1: 嘗試讀取 cloudflared.log (GCP VM)
+                # 1️⃣ 優先方式: 嘗試讀取 docs/config.json (GitHub同步，確保URL一致)
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                config_file = os.path.join(project_root, "docs", "config.json")
+                
+                if os.path.exists(config_file):
+                    try:
+                        with open(config_file, "r", encoding="utf-8") as f:
+                            config_data = json.load(f)
+                            tunnel_url = config_data.get("url")
+                            
+                            if tunnel_url and tunnel_url.startswith("https://"):
+                                self.base_url = tunnel_url
+                                print(f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}")
+                                return tunnel_url
+                    except Exception as config_err:
+                        print(f"⚠️ 從 config.json 讀取失敗: {config_err}")
+                
+                # 2️⃣ 備用方式: 嘗試讀取 /tmp/cloudflared.log (本地cloudflared)
                 log_file = "/tmp/cloudflared.log"
                 if os.path.exists(log_file):
                     try:
@@ -660,23 +677,6 @@ class KKCoin(commands.Cog):
                             return tunnel_url
                     except Exception as log_err:
                         print(f"⚠️ 從 log 讀取失敗: {log_err}")
-                
-                # 2️⃣ 方式 2: 嘗試讀取 docs/config.json (本地開發)
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                config_file = os.path.join(project_root, "docs", "config.json")
-                
-                if os.path.exists(config_file):
-                    try:
-                        with open(config_file, "r", encoding="utf-8") as f:
-                            config_data = json.load(f)
-                            tunnel_url = config_data.get("url")
-                            
-                            if tunnel_url and tunnel_url.startswith("https://"):
-                                self.base_url = tunnel_url
-                                print(f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}")
-                                return tunnel_url
-                    except Exception as config_err:
-                        print(f"⚠️ 從 config.json 讀取失敗: {config_err}")
                 
                 print(f"⚠️ 無法獲取隧道 URL (兩種方式均失敗)")
                 return None
