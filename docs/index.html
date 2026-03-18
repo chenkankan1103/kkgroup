@@ -378,7 +378,10 @@
                 const response = await fetch('./config.json?cache_bust=' + Date.now());
                 const data = await response.json();
 
-                if (data.url) {
+                // 優先使用 API_BASE，否則使用 url 字段
+                if (data.API_BASE) {
+                    CONFIG.API_BASE = data.API_BASE.replace(/\/+$/, '');
+                } else if (data.url) {
                     CONFIG.API_BASE = data.url.replace(/\/+$/, '');
                 }
 
@@ -388,7 +391,9 @@
                     LEADERBOARD_IMG_URL = data.url.replace(/\/+$/, '') + '/assets/leaderboard.png';
                 }
 
-                if (data.discordInvite) {
+                if (data.DISCORD_URL) {
+                    CONFIG.DISCORD_URL = data.DISCORD_URL;
+                } else if (data.discordInvite) {
                     CONFIG.DISCORD_URL = data.discordInvite;
                 }
 
@@ -396,8 +401,11 @@
                 if (img) {
                     img.src = LEADERBOARD_IMG_URL;
                 }
+                
+                console.log('✅ 配置已加載:', { API_BASE: CONFIG.API_BASE, imageURL: LEADERBOARD_IMG_URL });
             } catch (err) {
                 console.warn('⚠️ 無法讀取 config.json，使用預設隧道 URL', err);
+                console.warn('預設 API_BASE:', CONFIG.API_BASE);
             }
         }
 
@@ -462,18 +470,35 @@
         // 🎯 Discord OAuth 登錄
         async function loginDiscord() {
             try {
-                const response = await fetch(`${CONFIG.API_BASE}/api/auth/login`);
+                console.log('🔐 開始 Discord 登入流程...');
+                console.log('📍 API_BASE:', CONFIG.API_BASE);
+                
+                const loginUrl = `${CONFIG.API_BASE}/api/auth/login`;
+                console.log('🌐 調用 URL:', loginUrl);
+                
+                const response = await fetch(loginUrl, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                console.log('📊 Response Status:', response.status);
+                console.log('📊 Response Headers:', Array.from(response.headers.entries()));
+                
                 const data = await response.json();
+                console.log('📥 Response Data:', data);
                 
                 if (data.oauth_url) {
+                    console.log('✅ 獲得 OAuth URL，重定向到 Discord...');
                     // 重定向到 Discord OAuth
                     window.location.href = data.oauth_url;
                 } else {
-                    alert('❌ 無法獲取 Discord 登錄 URL');
+                    console.error('❌ 無任何 oauth_url:', data);
+                    alert('❌ 無法獲取 Discord 登錄 URL\n詳情請查看瀏覽器控制台 (F12)');
                 }
             } catch (error) {
-                console.error('❌ 登錄失敗:', error);
-                alert('登錄失敗，請檢查網絡連接');
+                console.error('❌ 登錄異常:', error);
+                console.error('❌ Error Stack:', error.stack);
+                alert(`登錄失敗\n\n詳情: ${error.message}\n\n請按 F12 查看控制台`);
             }
         }
 

@@ -1,17 +1,7 @@
 {
-  "status": "✅ 隧道已完全修復並正常運作",
-  "rootCause": "臨時隧道建立需要 20-30 秒，提前查詢日誌會失敗",
-  "solution": "增加等待時間至 30 秒，隧道 URL 已穩定，自動監控已部署",
   "url": "https://katrina-brief-fish-educators.trycloudflare.com",
+  "API_BASE": "https://katrina-brief-fish-educators.trycloudflare.com",
   "imageURL": "https://katrina-brief-fish-educators.trycloudflare.com/assets/leaderboard.png",
-  "lastUpdated": "2026-03-18T08:19:10.889172Z",
-  "lastAutoUpdate": "2026-03-18T08:19:10.889189Z",
-  "backendConfig": {
-    "frontendURL": "http://localhost:80",
-    "nginxStatus": "✅ 正在監聽",
-    "file": "/var/www/html/assets/leaderboard.png",
-    "fileSize": "254089 bytes",
-    "tunnelType": "Cloudflare 快速隧道（自動監控）"
-  },
-  "notes": "隧道已穩定運作。圖片可正常加載。自動監控系統已在 GCP VM 部署，設置於 /home/e193752468/kkgroup/auto_update_config.py"
+  "DISCORD_URL": "https://discord.gg/5JtuJvhhHu",
+  "lastUpdated": "2026-03-18T14:56:00Z"
 }
