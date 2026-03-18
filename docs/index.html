@@ -364,11 +364,42 @@
         const CONFIG = {
             DISCORD_URL: 'https://discord.gg/5JtuJvhhHu',
             API_BASE: 'https://katrina-brief-fish-educators.trycloudflare.com',
-            // API_BASE可用于本地测试: 'http://localhost:5000'
+            // API_BASE 可用于本地测试: 'http://localhost:5000'
         };
+
+        // 可由 config.json 覆蓋
+        let LEADERBOARD_IMG_URL = 'https://katrina-brief-fish-educators.trycloudflare.com/assets/leaderboard.png';
 
         let currentUser = null;
         let authToken = null;
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('./config.json?cache_bust=' + Date.now());
+                const data = await response.json();
+
+                if (data.url) {
+                    CONFIG.API_BASE = data.url.replace(/\/+$/, '');
+                }
+
+                if (data.imageURL) {
+                    LEADERBOARD_IMG_URL = data.imageURL;
+                } else if (data.url) {
+                    LEADERBOARD_IMG_URL = data.url.replace(/\/+$/, '') + '/assets/leaderboard.png';
+                }
+
+                if (data.discordInvite) {
+                    CONFIG.DISCORD_URL = data.discordInvite;
+                }
+
+                const img = document.getElementById('leaderboard-img');
+                if (img) {
+                    img.src = LEADERBOARD_IMG_URL;
+                }
+            } catch (err) {
+                console.warn('⚠️ 無法讀取 config.json，使用預設隧道 URL', err);
+            }
+        }
 
         // 🔐 從 URL 參數獲取認證 token
         function checkAuthToken() {
@@ -536,22 +567,24 @@
             const timestamp = Math.floor(Date.now() / 60000);
             const img = document.getElementById('leaderboard-img');
             if (img) {
-                img.src = 'https://katrina-brief-fish-educators.trycloudflare.com/assets/leaderboard.png?t=' + timestamp;
+                img.src = `${LEADERBOARD_IMG_URL}?t=${timestamp}`;
             }
             document.getElementById('leaderboard-time').textContent = new Date().toLocaleTimeString('zh-TW');
         }
 
         // 初始化
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             console.log('🎮 KK 園區已加載');
-            
+
+            await loadConfig();
+
             // 檢查認證
             if (checkAuthToken()) {
                 console.log('✅ 已驗證認證用戶');
             } else {
                 console.log('ℹ️ 尚未認證');
             }
-            
+
             // 初始化排行榜時間
             if (document.getElementById('leaderboard-time')) {
                 document.getElementById('leaderboard-time').textContent = new Date().toLocaleTimeString('zh-TW');
