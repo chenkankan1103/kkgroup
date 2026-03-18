@@ -1,5 +1,10 @@
 {
   "url": "https://katrina-brief-fish-educators.trycloudflare.com",
-  "lastUpdated": "2026-03-18T08:03:00.327823Z",
-  "imageURL": "https://katrina-brief-fish-educators.trycloudflare.com/assets/leaderboard.png"
+  "lastUpdated": "2026-03-18T08:19:10.889172Z",
+  "imageURL": "https://katrina-brief-fish-educators.trycloudflare.com/assets/leaderboard.png",
+  "status": "✅ 隧道已完全修復並正常運作",
+  "backendConfig": {
+    "tunnelType": "Cloudflare 快速隧道（自動監控）",
+    "lastAutoUpdate": "2026-03-18T08:19:10.889189Z"
+  }
 }
