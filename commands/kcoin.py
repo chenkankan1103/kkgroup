@@ -1719,7 +1719,6 @@ class KKCoin(commands.Cog):
                     return
 
                 if not force and not self.has_data_changed(members_data):
-                    self.last_update_time = current_time
                     return
 
                 print(f"🔄 開始更新排行榜...")
