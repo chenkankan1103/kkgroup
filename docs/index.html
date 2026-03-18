@@ -3,20 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KK 園區 - RPG 角色扮演社群</title>
-    
-    <!-- Tailwind CSS CDN -->
+    <title>KK 園區 - Discord 社群</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Discord Widget SDK -->
-    <script src="https://cdn.jsdelivr.net/npm/@widgetbot/crate@3" async defer>
-        new Crate({
-            server: '1234567890', // Replace with your Discord server ID
-            channel: '0987654321'  // Replace with your Discord channel ID
-        })
-    </script>
-    
-    <!-- Google Fonts - 像素藝術字體 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -24,17 +12,8 @@
     <style>
         :root {
             --primary: #ff0055;
-            --primary-dark: #cc0044;
-            --gold: #ffd700;
-            --neon-red: #ff0055;
             --dark-bg: #0a0a0a;
-            --darker-bg: #151515;
-            --metal-gray: #333333;
             --light-text: #ffffff;
-        }
-        
-        * {
-            --tw-ring-color: transparent;
         }
         
         body {
@@ -51,8 +30,7 @@
         .pixel-border {
             border: 3px solid;
             border-image: linear-gradient(135deg, #ff0055, #ffd700) 1;
-            box-shadow: 0 0 20px rgba(255, 0, 85, 0.5), 4px 4px 0px rgba(0, 0, 0, 0.5), 
-                        inset 0 0 0 1px rgba(255, 0, 85, 0.2);
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.5), 4px 4px 0px rgba(0, 0, 0, 0.5);
         }
         
         .pixel-button {
@@ -61,30 +39,18 @@
             padding: 12px 32px;
             border: 3px solid #ffd700;
             cursor: pointer;
-            transition: all 0.2s;
             box-shadow: 0 0 20px rgba(255, 0, 85, 0.6), 4px 4px 0px rgba(0, 0, 0, 0.7);
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 1px;
             color: white;
             font-family: 'Press Start 2P', cursive;
+            transition: all 0.2s;
         }
         
         .pixel-button:hover {
             transform: translate(-2px, -2px);
             box-shadow: 0 0 30px rgba(255, 0, 85, 0.8), 6px 6px 0px rgba(0, 0, 0, 0.7);
-            background: linear-gradient(135deg, #ff1166, #ff0055);
-            animation: button-blink 0.3s infinite;
-        }
-        
-        .pixel-button:active {
-            transform: translate(4px, 4px);
-            box-shadow: 0 0 10px rgba(255, 0, 85, 0.4), 0px 0px 0px rgba(0, 0, 0, 0.5);
-        }
-        
-        @keyframes button-blink {
-            0%, 49% { text-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055; }
-            50%, 100% { text-shadow: 0 0 5px #ff0055; }
         }
         
         .zone-card {
@@ -92,22 +58,14 @@
             border: 2px solid #333333;
             backdrop-filter: blur(10px);
             transition: all 0.3s ease;
+            cursor: pointer;
         }
         
         .zone-card:hover {
             background: rgba(255, 0, 85, 0.15);
-            box-shadow: 0 0 30px rgba(255, 0, 85, 0.5), inset 0 0 20px rgba(255, 0, 85, 0.1);
+            box-shadow: 0 0 30px rgba(255, 0, 85, 0.5);
             border-color: #ff0055;
             transform: translateY(-5px);
-        }
-        
-        .animate-pixel-blink {
-            animation: pixel-blink 1s infinite;
-        }
-        
-        @keyframes pixel-blink {
-            0%, 49% { opacity: 1; }
-            50%, 100% { opacity: 0.7; }
         }
         
         .gradient-text {
@@ -115,311 +73,267 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            text-shadow: 0 0 20px rgba(255, 0, 85, 0.3);
         }
         
-        .neon-dot {
-            width: 12px;
-            height: 12px;
-            background: #ff0055;
-            display: inline-block;
-            margin: 0 4px;
-            animation: neon-pulse 2s infinite;
-            border-radius: 50%;
+        .page {
+            display: none;
+            animation: fadeIn 0.3s ease-in;
         }
         
-        @keyframes neon-pulse {
-            0%, 100% { opacity: 1; box-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055; }
-            50% { opacity: 0.8; box-shadow: 0 0 5px #ff0055; }
+        .page.active {
+            display: block;
         }
         
-        .feature-box {
-            background: rgba(51, 51, 51, 0.6);
-            border-left: 4px solid #ff0055;
-            transition: all 0.3s;
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
-        
-        .feature-box:hover {
-            border-left: 4px solid #ffd700;
-            transform: translateX(8px);
-            box-shadow: 0 8px 16px rgba(255, 0, 85, 0.3);
+
+        .nav-link {
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            color: #ff0055;
+            background: rgba(255, 0, 85, 0.2);
+        }
+
+        .nav-link.active {
+            background: rgba(255, 0, 85, 0.3);
+            color: #ff0055;
         }
     </style>
 </head>
 <body>
-    <!-- Header / Navigation -->
+    <!-- Header -->
     <header class="sticky top-0 z-50 backdrop-blur-md bg-black/50 border-b border-red-500/30" style="box-shadow: 0 0 20px rgba(255, 0, 85, 0.3);">
-        <nav class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div class="pixel-font text-sm md:text-base text-red-500" style="text-shadow: 0 0 10px #ff0055;">
-                ◆ KK ZONE ◆
-            </div>
-            <div class="flex gap-4 items-center">
-                <a href="#zones" class="text-white hover:text-red-500 transition text-sm">園區分區</a>
-                <a href="#widget" class="text-white hover:text-red-500 transition text-sm">社群</a>
-                <button class="pixel-button text-xs md:text-sm" onclick="joinDiscord()">
-                    進入 DC
-                </button>
+        <nav class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center flex-wrap gap-4">
+            <div class="pixel-font text-sm md:text-base text-red-500 cursor-pointer nav-link" onclick="navigateTo('home')" style="text-shadow: 0 0 10px #ff0055;">◆ KK園區 ◆</div>
+            
+            <div class="flex gap-4 md:gap-6 items-center flex-wrap">
+                <a class="nav-link text-white text-sm" onclick="navigateTo('home')">首頁</a>
+                <a class="nav-link text-white text-sm" onclick="navigateTo('leaderboard')">排行榜</a>
+                <a class="nav-link text-white text-sm" onclick="navigateTo('shop')">商店街</a>
+                <a class="nav-link text-white text-sm" onclick="navigateTo('stocks')">股市</a>
+                <button class="pixel-button text-xs" onclick="loginDiscord()">登入 DC</button>
             </div>
         </nav>
     </header>
 
-    <!-- Hero Section -->
-    <section class="min-h-screen flex items-center justify-center px-4 py-20 relative overflow-hidden">
-        <!-- Background Animation Elements -->
-        <div class="absolute inset-0 opacity-20">
-            <div class="absolute top-10 left-10 w-40 h-40 bg-red-500 rounded-full blur-3xl animate-pulse"></div>
-            <div class="absolute bottom-20 right-20 w-60 h-60 bg-yellow-400 rounded-full blur-3xl animate-pulse" style="animation-delay: 2s"></div>
-            <div class="absolute top-1/2 left-1/2 w-48 h-48 bg-red-600 rounded-full blur-3xl animate-pulse" style="animation-delay: 4s"></div>
-        </div>
+    <!-- Main Container -->
+    <main id="main-container">
 
-        <div class="max-w-4xl mx-auto text-center relative z-10">
-            <!-- Main Title -->
-            <h1 class="pixel-font text-3xl md:text-6xl mb-4 gradient-text" style="text-shadow: 0 0 30px rgba(255, 0, 85, 0.6);">
-                歡迎來到 KK 園區
-            </h1>
-            
-            <p class="pixel-font text-red-500 text-xs md:text-sm mb-2" style="text-shadow: 0 0 10px #ff0055;">
-                ▼ RPG 角色扮演 × 虛擬交易 × 社群交流 ▼
-            </p>
-            
-            <p class="text-gray-300 text-sm md:text-lg mb-12 leading-relaxed max-w-2xl mx-auto font-light">
-                一個融合 RPG 角色扮演、二次元/三次元交流與虛擬交易所的終極生態系
-                <br />
-                <span class="text-red-500">★ 展開代理人冒險 ★</span> 
-                <span class="text-yellow-400">┃</span> 
-                <span class="text-red-500">★ 自由交流互動 ★</span>
-                <span class="text-yellow-400">┃</span> 
-                <span class="text-red-500">★ 掌控園區經濟 ★</span>
-            </p>
-
-            <!-- CTA Buttons -->
-            <div class="flex gap-4 justify-center mb-16 flex-wrap">
-                <button class="pixel-button text-sm md:text-base" onclick="joinDiscord()">
-                    【立即登入 Discord】
-                </button>
-            </div>
-
-            <!-- Live Indicator -->
-            <div class="flex justify-center gap-2 text-red-500 pixel-font text-xs" style="text-shadow: 0 0 10px rgba(255, 0, 85, 0.5);">
-                <span class="neon-dot"></span>
-                <span>LIVE • 園區開放中</span>
-                <span class="neon-dot"></span>
-            </div>
-        </div>
-    </section>
-
-    <!-- Zones Section -->
-    <section id="zones" class="py-20 px-4 bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
-        <div class="max-w-6xl mx-auto">
-            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text" style="text-shadow: 0 0 20px rgba(255, 0, 85, 0.4);">
-                ◆ 園區分區介紹 ◆
-            </h2>
-
-            <!-- Zones Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- Zone 1: RPG 任務區 -->
-                <div class="zone-card pixel-border rounded-lg p-8 h-full flex flex-col">
-                    <div class="text-5xl mb-4 text-red-500" style="text-shadow: 0 0 15px #ff0055;">⚔️</div>
-                    <h3 class="pixel-font text-lg md:text-xl text-red-500 mb-3" style="text-shadow: 0 0 10px #ff0055;">
-                        ◆ RPG 任務區 ◆
-                    </h3>
-                    <p class="text-gray-300 text-sm leading-relaxed flex-grow">
-                        展開你的代理人冒險，參與全體協作任務。完成任務、升級角色、收集稀有道具，成為園區的傳奇英雄！
-                    </p>
-                    <div class="mt-6 pt-6 border-t border-red-500/30">
-                        <span class="inline-block bg-red-500/20 text-red-400 px-3 py-1 rounded text-xs pixel-font">
-                            冒險進行中
-                        </span>
-                    </div>
+        <!-- HOME PAGE -->
+        <div id="page-home" class="page active">
+            <section class="min-h-screen flex items-center justify-center px-4 py-20 relative overflow-hidden">
+                <div class="absolute inset-0 opacity-20">
+                    <div class="absolute top-10 left-10 w-40 h-40 bg-red-500 rounded-full blur-3xl animate-pulse"></div>
+                    <div class="absolute bottom-20 right-20 w-60 h-60 bg-yellow-400 rounded-full blur-3xl animate-pulse" style="animation-delay: 2s"></div>
                 </div>
 
-                <!-- Zone 2: 多元交流區 -->
-                <div class="zone-card pixel-border rounded-lg p-8 h-full flex flex-col">
-                    <div class="text-5xl mb-4 text-yellow-400" style="text-shadow: 0 0 15px #ffd700;">💬</div>
-                    <h3 class="pixel-font text-lg md:text-xl text-yellow-400 mb-3" style="text-shadow: 0 0 10px #ffd700;">
-                        ◆ 多元交流區 ◆
-                    </h3>
-                    <p class="text-gray-300 text-sm leading-relaxed flex-grow">
-                        二次元、三次元、老司機交流平台。分享你的興趣、結識志同道合的朋友，自由探索無限可能！
+                <div class="max-w-4xl mx-auto text-center relative z-10">
+                    <h1 class="pixel-font text-4xl md:text-6xl mb-4 gradient-text">歡迎來到 KK 園區</h1>
+                    <p class="pixel-font text-red-500 text-xs md:text-sm mb-4" style="text-shadow: 0 0 10px #ff0055;">▼ RPG × 虛擬交易 × 社群交流 ▼</p>
+                    <p class="text-gray-300 text-sm md:text-lg mb-12 leading-relaxed max-w-2xl mx-auto">
+                        融合 RPG 角色扮演、二次元/三次元交流與虛擬交易所的終極生態系
                     </p>
-                    <div class="mt-6 pt-6 border-t border-yellow-400/30">
-                        <span class="inline-block bg-yellow-400/20 text-yellow-300 px-3 py-1 rounded text-xs pixel-font">
-                            熱烈討論中
-                        </span>
-                    </div>
-                </div>
 
-                <!-- Zone 3: 虛擬交易所 -->
-                <div class="zone-card pixel-border rounded-lg p-8 h-full flex flex-col">
-                    <div class="text-5xl mb-4 text-green-400" style="text-shadow: 0 0 15px #00ff00;">💎</div>
-                    <h3 class="pixel-font text-lg md:text-xl text-green-400 mb-3" style="text-shadow: 0 0 10px #00ff00;">
-                        ◆ 虛擬交易所 - KK 幣 ◆
-                    </h3>
-                    <p class="text-gray-300 text-sm leading-relaxed flex-grow">
-                        即時掌控園區經濟，交易 KK 幣並將收入洗成白錢的數位美金。把握市場機會，成就你的富豪夢！
-                    </p>
-                    <div class="mt-6 pt-6 border-t border-green-400/30">
-                        <span class="inline-block bg-green-400/20 text-green-300 px-3 py-1 rounded text-xs pixel-font">
-                            交易活躍
-                        </span>
+                    <div class="flex gap-4 justify-center mb-16 flex-wrap">
+                        <button class="pixel-button text-sm" onclick="loginDiscord()">【立即登入 Discord】</button>
+                        <button class="pixel-button text-sm" style="background: linear-gradient(135deg, #333333, #1a1a1a);" onclick="navigateTo('leaderboard')">查看排行榜</button>
                     </div>
                 </div>
-            </div>
+            </section>
+
+            <section class="py-20 px-4 bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
+                <div class="max-w-6xl mx-auto">
+                    <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text">◆ 園區分區 ◆</h2>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div class="zone-card pixel-border rounded-lg p-8 flex flex-col" onclick="navigateTo('stocks')">
+                            <div class="text-5xl mb-4">⚔️</div>
+                            <h3 class="pixel-font text-lg text-red-500 mb-3">RPG 任務區</h3>
+                            <p class="text-gray-300 text-sm flex-grow">展開代理人冒險，參與全體協作任務。</p>
+                        </div>
+
+                        <div class="zone-card pixel-border rounded-lg p-8 flex flex-col" onclick="navigateTo('shop')">
+                            <div class="text-5xl mb-4">💬</div>
+                            <h3 class="pixel-font text-lg text-yellow-400 mb-3">商 店 街</h3>
+                            <p class="text-gray-300 text-sm flex-grow">選購虛擬商品、裝飾你的角色。</p>
+                        </div>
+
+                        <div class="zone-card pixel-border rounded-lg p-8 flex flex-col" onclick="navigateTo('leaderboard')">
+                            <div class="text-5xl mb-4">💎</div>
+                            <h3 class="pixel-font text-lg text-green-400 mb-3">虛擬交易所</h3>
+                            <p class="text-gray-300 text-sm flex-grow">交易 KK 幣，掌控園區經濟。</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div>
-    </section>
 
-    <!-- Discord Widget Section -->
-    <section id="widget" class="py-20 px-4 bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
-        <div class="max-w-6xl mx-auto">
-            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text" style="text-shadow: 0 0 20px rgba(255, 0, 85, 0.4);">
-                ◆ 加入我們的社群 ◆
-            </h2>
+        <!-- LEADERBOARD PAGE -->
+        <div id="page-leaderboard" class="page">
+            <section class="py-20 px-4 min-h-screen bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
+                <div class="max-w-4xl mx-auto">
+                    <h1 class="pixel-font text-3xl md:text-5xl text-center mb-4 gradient-text">◆ KK 幣排行榜 ◆</h1>
+                    <p class="text-center text-gray-400 text-sm mb-12">最後更新: <span id="leaderboard-time">加載中...</span></p>
 
-            <!-- Discord Widget Container -->
-            <div class="max-w-2xl mx-auto">
-                <div class="pixel-border rounded-lg p-8 bg-gray-900/50 text-center">
-                    <p class="text-sm text-gray-400 mb-6">
-                        🎮 實時顯示 Discord 社群活動
-                    </p>
-                    
-                    <!-- Placeholder for Discord Widget -->
-                    <div id="discord-widget" class="bg-gray-800 rounded-lg p-12 border-2 border-dashed border-red-500/50 mb-6" style="min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                        <div class="text-red-500 text-4xl mb-4" style="text-shadow: 0 0 15px #ff0055;">👥</div>
-                        <p class="text-gray-300 font-bold mb-2">KK 園區 Discord 社群</p>
-                        <p class="text-gray-400 text-sm mb-6">
-                            點擊下方按鈕加入社群<br/>
-                            <span class="text-xs text-gray-500">[Discord Widget 會在此顯示]</span>
+                    <div class="pixel-border rounded-lg p-8 bg-gray-900/50 mb-8">
+                        <div class="text-center text-gray-400 mb-4">📊 排行榜圖片</div>
+                        <img id="leaderboard-img" src="./assets/leaderboard.png" alt="排行榜" class="w-full rounded border border-red-500/30" style="max-height: 500px; object-fit: contain;">
+                    </div>
+
+                    <div class="text-center">
+                        <button class="pixel-button text-sm" onclick="refreshLeaderboard()">🔄 重新整理</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- SHOP PAGE -->
+        <div id="page-shop" class="page">
+            <section class="py-20 px-4 min-h-screen bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
+                <div class="max-w-4xl mx-auto">
+                    <h1 class="pixel-font text-3xl md:text-5xl text-center mb-12 gradient-text">◆ 商 店 街 ◆</h1>
+
+                    <div class="pixel-border rounded-lg p-8 bg-gray-900/50 text-center">
+                        <div class="text-4xl mb-4">🛍️</div>
+                        <p class="text-gray-300 mb-6 text-sm md:text-base">
+                            楓之谷紙娃娃系統 - 選擇你的裝備與外觀
                         </p>
-                        <a href="https://discord.gg/5JtuJvhhHu" target="_blank" class="inline-block">
-                            <button class="pixel-button text-sm">
-                                📢 加入 Discord 社群
-                            </button>
-                        </a>
+                        <p class="text-gray-400 text-xs md:text-sm mb-8">
+                            此功能需要 Discord 登入後啟用<br/>
+                            <span class="text-gray-500">[紙娃娃系統整合開發中]</span>
+                        </p>
+                        <button class="pixel-button text-sm" onclick="loginDiscord()">登入解鎖</button>
                     </div>
 
-                    <p class="text-xs text-gray-500">
-                        Discord Widget ID 設定: 在 JavaScript 配置中更新 server ID 與 channel ID
-                    </p>
+                    <div class="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="pixel-border rounded-lg p-6 bg-gray-900/30 text-center">
+                            <div class="text-3xl mb-3">👕</div>
+                            <h3 class="pixel-font text-sm text-yellow-400 mb-2">服 裝</h3>
+                            <p class="text-gray-400 text-xs">来自楓之谷的經典服飾</p>
+                        </div>
+
+                        <div class="pixel-border rounded-lg p-6 bg-gray-900/30 text-center">
+                            <div class="text-3xl mb-3">⚔️</div>
+                            <h3 class="pixel-font text-sm text-yellow-400 mb-2">武 器</h3>
+                            <p class="text-gray-400 text-xs">強化你的角色戰力</p>
+                        </div>
+
+                        <div class="pixel-border rounded-lg p-6 bg-gray-900/30 text-center">
+                            <div class="text-3xl mb-3">💍</div>
+                            <h3 class="pixel-font text-sm text-yellow-400 mb-2">飾 品</h3>
+                            <p class="text-gray-400 text-xs">彰顯個性的配件</p>
+                        </div>
+
+                        <div class="pixel-border rounded-lg p-6 bg-gray-900/30 text-center">
+                            <div class="text-3xl mb-3">🎀</div>
+                            <h3 class="pixel-font text-sm text-yellow-400 mb-2">寵 物</h3>
+                            <p class="text-gray-400 text-xs">可愛的夥伴陪伴</p>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            </section>
         </div>
-    </section>
 
-    <!-- Features Highlight Section -->
-    <section class="py-20 px-4 bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
-        <div class="max-w-6xl mx-auto">
-            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text" style="text-shadow: 0 0 20px rgba(255, 0, 85, 0.4);">
-                ◆ 園區特色 ◆
-            </h2>
+        <!-- STOCKS PAGE -->
+        <div id="page-stocks" class="page">
+            <section class="py-20 px-4 min-h-screen bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
+                <div class="max-w-4xl mx-auto">
+                    <h1 class="pixel-font text-3xl md:text-5xl text-center mb-12 gradient-text">◆ 虛擬股市交易 ◆</h1>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-                <div class="feature-box p-6 rounded-lg">
-                    <h3 class="pixel-font text-lg text-red-500 mb-3" style="text-shadow: 0 0 10px #ff0055;">🎮 RPG 冒險</h3>
-                    <p class="text-gray-300 text-sm">完整的角色扮演系統，打造專屬的代理人角色。</p>
+                    <div class="pixel-border rounded-lg p-8 bg-gray-900/50 text-center">
+                        <div class="text-4xl mb-4">📈</div>
+                        <p class="text-gray-300 mb-6 text-sm md:text-base">
+                            實時股市操盤系統
+                        </p>
+                        <p class="text-gray-400 text-xs md:text-sm mb-8">
+                            支持台股、加密貨幣、原物料、貴金屬交易<br/>
+                            <span class="text-gray-500">[股市系統整合開發中 - Discord 認證後啟用]</span>
+                        </p>
+                        <button class="pixel-button text-sm" onclick="loginDiscord()">登入開始交易</button>
+                    </div>
+
+                    <div class="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="pixel-border rounded-lg p-6 bg-gray-900/30">
+                            <h3 class="pixel-font text-lg text-red-500 mb-4">📊 資產類別</h3>
+                            <ul class="text-gray-300 text-sm space-y-2">
+                                <li>✓ 台灣股票 (台積電、鴻海等)</li>
+                                <li>✓ 加密貨幣 (BTC、ETH、SOL)</li>
+                                <li>✓ 原物料 (油、氣、玉米)</li>
+                                <li>✓ 貴金屬 (黃金、白銀)</li>
+                            </ul>
+                        </div>
+
+                        <div class="pixel-border rounded-lg p-6 bg-gray-900/30">
+                            <h3 class="pixel-font text-lg text-yellow-400 mb-4">💰 功能</h3>
+                            <ul class="text-gray-300 text-sm space-y-2">
+                                <li>✓ 實時行情查詢</li>
+                                <li>✓ 建立持倉展示圖表</li>
+                                <li>✓ 損益計算與追蹤</li>
+                                <li>✓ 排行榜競賽</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
-
-                <div class="feature-box p-6 rounded-lg">
-                    <h3 class="pixel-font text-lg text-yellow-400 mb-3" style="text-shadow: 0 0 10px #ffd700;">💰 虛擬經濟</h3>
-                    <p class="text-gray-300 text-sm">真實的交易系統，$K-Coin$ 流動與價值波動。</p>
-                </div>
-
-                <div class="feature-box p-6 rounded-lg">
-                    <h3 class="pixel-font text-lg text-green-400 mb-3" style="text-shadow: 0 0 10px #00ff00;">👥 社群互動</h3>
-                    <p class="text-gray-300 text-sm">開放包容的社群文化，盡情分享與交流。</p>
-                </div>
-
-                <div class="feature-box p-6 rounded-lg">
-                    <h3 class="pixel-font text-lg text-blue-400 mb-3" style="text-shadow: 0 0 10px #00ccff;">🏆 排名競賽</h3>
-                    <p class="text-gray-300 text-sm">實時排行榜與成就系統，見證你的進步。</p>
-                </div>
-            </div>
+            </section>
         </div>
-    </section>
 
-    <!-- Call to Action Section -->
-    <section class="py-20 px-4 bg-gradient-to-t from-red-900/20 to-transparent">
-        <div class="max-w-4xl mx-auto text-center">
-            <h2 class="pixel-font text-2xl md:text-4xl mb-8 gradient-text" style="text-shadow: 0 0 20px rgba(255, 0, 85, 0.4);">
-                準備成為園區的傳奇玩家嗎？
-            </h2>
-            <p class="text-gray-300 text-sm md:text-base mb-12">
-                加入數千位活躍玩家，一起打造屬於我們的虛擬帝國。
-                <br />
-                <span class="text-red-500 pixel-font text-xs">現在加入 • 立即開始冒險</span>
-            </p>
-            <button class="pixel-button text-lg" onclick="joinDiscord()">
-                ⭐【立即登入 Discord】⭐
-            </button>
-        </div>
-    </section>
+    </main>
 
     <!-- Footer -->
-    <footer class="border-t border-red-500/30 bg-black/80 py-12 px-4" style="box-shadow: 0 0 20px rgba(255, 0, 85, 0.2);">
-        <div class="max-w-6xl mx-auto">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center md:text-left mb-8">
-                <div>
-                    <h4 class="pixel-font text-sm text-red-500 mb-4" style="text-shadow: 0 0 10px #ff0055;">◆ 關於 KK 園區 ◆</h4>
-                    <p class="text-xs text-gray-400">融合 RPG、交流與交易的終極生態系。創意、熱情、無限可能。</p>
-                </div>
-                <div>
-                    <h4 class="pixel-font text-sm text-red-500 mb-4" style="text-shadow: 0 0 10px #ff0055;">◆ 快速連結 ◆</h4>
-                    <ul class="text-xs text-gray-400 space-y-2">
-                        <li><a href="https://discord.gg/5JtuJvhhHu" target="_blank" class="hover:text-red-500 transition">Discord 社群</a></li>
-                        <li><a href="#zones" class="hover:text-red-500 transition">園區分區</a></li>
-                        <li><a href="#widget" class="hover:text-red-500 transition">社群 Widget</a></li>
-                    </ul>
-                </div>
-                <div>
-                    <h4 class="pixel-font text-sm text-red-500 mb-4" style="text-shadow: 0 0 10px #ff0055;">◆ 技術支持 ◆</h4>
-                    <p class="text-xs text-gray-400">
-                        暗黑霓虹風設計
-                        <br />
-                        Tailwind CSS + HTML5
-                        <br />
-                        RWD 完全適配
-                    </p>
-                </div>
-            </div>
-            <div class="border-t border-red-500/20 pt-8 text-center text-xs text-gray-600">
-                <p>&copy; 2026 KK 園區。由玩家與社群驅動。</p>
-                <p class="mt-2 pixel-font text-red-600" style="text-shadow: 0 0 10px rgba(255, 0, 85, 0.3);">◆ POWERED BY DISCORD ◆</p>
-            </div>
+    <footer class="border-t border-red-500/30 bg-black/80 py-12 px-4">
+        <div class="max-w-6xl mx-auto text-center text-xs text-gray-500">
+            <p>&copy; 2026 KK 園區 | 由 Discord 社群驅動</p>
+            <p class="mt-2 pixel-font text-red-600" style="text-shadow: 0 0 10px rgba(255, 0, 85, 0.3);">◆ POWERED BY DISCORD ◆</p>
         </div>
     </footer>
 
-    <!-- JavaScript -->
     <script>
-        // Configuration
         const CONFIG = {
-            // KK 園區 Discord 邀請連結
             DISCORD_URL: 'https://discord.gg/5JtuJvhhHu',
-            // Discord Widget 配置（需要填入正確的 Server ID 和 Channel ID）
-            DISCORD_WIDGET: {
-                serverId: 'YOUR_SERVER_ID', // 替換為你的 Discord 伺服器 ID
-                channelId: 'YOUR_CHANNEL_ID' // 替換為你的 Discord 頻道 ID
-            }
+            DISCORD_CLIENT_ID: 'YOUR_CLIENT_ID', // 需要填入
+            DISCORD_REDIRECT_URI: window.location.origin + '/callback',
+            API_BASE: 'https://katrina-brief-fish-educators.trycloudflare.com'
         };
 
-        // 按鈕操作
-        function joinDiscord() {
-            window.open(CONFIG.DISCORD_URL, '_blank');
-        }
-
-        function scrollToZones() {
-            document.getElementById('zones').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function scrollToWidget() {
-            document.getElementById('widget').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        // 頁面載入完成後的初始化
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('🎮 KK 園區 loaded');
-            console.log('📢 Discord URL:', CONFIG.DISCORD_URL);
+        // 頁面導航
+        function navigateTo(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-' + page).classList.add('active');
             
-            // 可在此處添加其他初始化代碼
-            // 例如：加載動畫延遲、事件監聽等
+            // 更新導航連結
+            document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            window.scrollTo(0, 0);
+        }
+
+        function loginDiscord() {
+            // 簡單版：直接打開 Discord 邀請
+            window.open(CONFIG.DISCORD_URL, '_blank');
+            
+            // 完整版（需要設置）：使用 OAuth
+            // const oauthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CONFIG.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(CONFIG.DISCORD_REDIRECT_URI)}&response_type=code&scope=identify`;
+            // window.location.href = oauthUrl;
+        }
+
+        function refreshLeaderboard() {
+            const timestamp = Math.floor(Date.now() / 60000);
+            const img = document.getElementById('leaderboard-img');
+            img.src = './assets/leaderboard.png?t=' + timestamp;
+            document.getElementById('leaderboard-time').textContent = new Date().toLocaleTimeString('zh-TW');
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🎮 KK 園區已加載');
+            document.getElementById('leaderboard-time').textContent = new Date().toLocaleTimeString('zh-TW');
         });
     </script>
 </body>
