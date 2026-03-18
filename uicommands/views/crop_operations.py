@@ -205,8 +205,45 @@ class CropOperationView(discord.ui.View):
                     inline=False
                 )
             
+            # 創建返回按鈕
+            result_view = discord.ui.View(timeout=None)
+            
+            back_btn = discord.ui.Button(
+                label="返回",
+                style=discord.ButtonStyle.secondary,
+                emoji="⬅️"
+            )
+            
+            async def back_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer()
+                # 重新刷新作物操作視圖
+                plants = await get_user_plants(self.user_id)
+                inventory = await get_inventory(self.user_id)
+                seeds = inventory.get("種子", {})
+                growing = [p for p in plants if p.get("status") == "growing"]
+                harvested = [p for p in plants if p.get("status") == "harvested"]
+                
+                # 創建新的CropOperationView
+                new_view = CropOperationView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds, plants, growing, harvested)
+                
+                embed = discord.Embed(
+                    title="🌱 作物管理",
+                    description="管理你的農場作物",
+                    color=discord.Color.green()
+                )
+                embed.add_field(
+                    name="📊 作物狀態",
+                    value=f"成長中: {len(growing)} | 已成熟: {len(harvested)} | 總計: {len(plants)}/3",
+                    inline=False
+                )
+                
+                await btn_interaction.edit_original_response(embed=embed, view=new_view)
+            
+            back_btn.callback = back_callback
+            result_view.add_item(back_btn)
+            
             # 編輯原始回應
-            await interaction.edit_original_response(embed=embed, view=None)
+            await interaction.edit_original_response(embed=embed, view=result_view)
             
         except Exception as e:
             traceback.print_exc()
