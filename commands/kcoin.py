@@ -29,7 +29,7 @@ MEDAL_PATHS = [
     os.path.join(ASSETS_PATH, "3.png"),  # 銅牌
 ]
 USER_COOLDOWN_SECONDS = 30
-UPDATE_INTERVAL = 10  # 更新間隔改為 10 秒
+UPDATE_INTERVAL = 300  # 更新間隔改為 5 分鐘 (300 秒)
 
 # 資料庫初始化
 def initialize_database():
@@ -979,17 +979,9 @@ class KKCoin(commands.Cog):
                 print(f"❌ 保存圖片失敗: {e}")
                 return
             
-            # 使用 Cloudflare Quick Tunnel URL（如果可用）
+            # 使用 Cloudflare Quick Tunnel 的排行榜圖片 URL（純連結）
             image_url = f"{self.base_url}/assets/leaderboard.png"
-
-            content = (
-                "💰 金流斷點交易所 - 總資產排行\n"
-                f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸\n"
-                f"📌 排行榜圖：{image_url}\n"
-                "(如瀏覽器未自動呈現，請複製網址貼到瀏覽器開啟)"
-            )
-
-            msg = await channel.send(content)
+            msg = await channel.send(image_url)
 
             # 立即儲存訊息 ID（防止重複創建）
             self.rank_message_id = msg.id
@@ -1753,17 +1745,9 @@ class KKCoin(commands.Cog):
                     print(f"❌ 保存圖片失敗: {e}")
                     return
 
-                # 在 Discord 中更新訊息為純文本，讓使用者直接看到連結
-                # 使用 Cloudflare Quick Tunnel URL（如果可用）
+                # 只更新為純圖片網址（避免 embed）
                 image_url = f"{self.base_url}/assets/leaderboard.png?t={int(time.time())}"
-                content = (
-                    "💰 金流斷點交易所 - 總資產排行\n"
-                    f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸\n"
-                    f"📌 排行榜圖：{image_url}\n"
-                    "(如瀏覽器未自動呈現，請複製網址貼到瀏覽器開啟)"
-                )
-
-                await msg.edit(content=content, embed=None, attachments=[])
+                await msg.edit(content=image_url, embed=None, attachments=[])
 
                 self.last_leaderboard_data = members_data.copy()
                 self.last_update_time = current_time
