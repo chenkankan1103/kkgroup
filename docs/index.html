@@ -3,10 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>金流斷點交易所 - Discord Community</title>
+    <title>KK 園區 - RPG 角色扮演社群</title>
     
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Discord Widget SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@widgetbot/crate@3" async defer>
+        new Crate({
+            server: '1234567890', // Replace with your Discord server ID
+            channel: '0987654321'  // Replace with your Discord channel ID
+        })
+    </script>
     
     <!-- Google Fonts - 像素藝術字體 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,11 +23,13 @@
     
     <style>
         :root {
-            --primary: #5865f2;
-            --primary-dark: #4752c4;
-            --gold: #f0c850;
-            --dark-bg: #2c2f33;
-            --darker-bg: #23272a;
+            --primary: #ff0055;
+            --primary-dark: #cc0044;
+            --gold: #ffd700;
+            --neon-red: #ff0055;
+            --dark-bg: #0a0a0a;
+            --darker-bg: #151515;
+            --metal-gray: #333333;
             --light-text: #ffffff;
         }
         
@@ -28,9 +38,9 @@
         }
         
         body {
-            background: linear-gradient(135deg, #1a1d21 0%, #2c2f33 100%);
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
             color: var(--light-text);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Roboto', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         
         .pixel-font {
@@ -40,45 +50,55 @@
         
         .pixel-border {
             border: 3px solid;
-            border-image: linear-gradient(135deg, #f0c850, #5865f2) 1;
-            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.3), 
-                        inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            border-image: linear-gradient(135deg, #ff0055, #ffd700) 1;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.5), 4px 4px 0px rgba(0, 0, 0, 0.5), 
+                        inset 0 0 0 1px rgba(255, 0, 85, 0.2);
         }
         
         .pixel-button {
             position: relative;
-            background: linear-gradient(135deg, #5865f2, #4752c4);
+            background: linear-gradient(135deg, #ff0055, #cc0044);
             padding: 12px 32px;
-            border: 3px solid #f0c850;
+            border: 3px solid #ffd700;
             cursor: pointer;
             transition: all 0.2s;
-            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.6), 4px 4px 0px rgba(0, 0, 0, 0.7);
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 1px;
             color: white;
+            font-family: 'Press Start 2P', cursive;
         }
         
         .pixel-button:hover {
             transform: translate(-2px, -2px);
-            box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.5);
-            background: linear-gradient(135deg, #6d77ff, #5865f2);
+            box-shadow: 0 0 30px rgba(255, 0, 85, 0.8), 6px 6px 0px rgba(0, 0, 0, 0.7);
+            background: linear-gradient(135deg, #ff1166, #ff0055);
+            animation: button-blink 0.3s infinite;
         }
         
         .pixel-button:active {
             transform: translate(4px, 4px);
-            box-shadow: 0px 0px 0px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 10px rgba(255, 0, 85, 0.4), 0px 0px 0px rgba(0, 0, 0, 0.5);
         }
         
-        .stat-card {
-            background: rgba(88, 101, 242, 0.1);
-            border: 2px dashed #5865f2;
+        @keyframes button-blink {
+            0%, 49% { text-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055; }
+            50%, 100% { text-shadow: 0 0 5px #ff0055; }
+        }
+        
+        .zone-card {
+            background: rgba(255, 0, 85, 0.05);
+            border: 2px solid #333333;
             backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
         }
         
-        .stat-card:hover {
-            background: rgba(88, 101, 242, 0.2);
-            box-shadow: 0 0 20px rgba(240, 200, 80, 0.3);
+        .zone-card:hover {
+            background: rgba(255, 0, 85, 0.15);
+            box-shadow: 0 0 30px rgba(255, 0, 85, 0.5), inset 0 0 20px rgba(255, 0, 85, 0.1);
+            border-color: #ff0055;
+            transform: translateY(-5px);
         }
         
         .animate-pixel-blink {
@@ -91,51 +111,53 @@
         }
         
         .gradient-text {
-            background: linear-gradient(135deg, #f0c850, #5865f2, #f0c850);
+            background: linear-gradient(135deg, #ff0055, #ffd700, #ff0055);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+            text-shadow: 0 0 20px rgba(255, 0, 85, 0.3);
         }
         
-        .pixel-circle {
+        .neon-dot {
             width: 12px;
             height: 12px;
-            background: #f0c850;
+            background: #ff0055;
             display: inline-block;
             margin: 0 4px;
-            animation: pulse 2s infinite;
+            animation: neon-pulse 2s infinite;
+            border-radius: 50%;
         }
         
-        @keyframes pulse {
-            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(240, 200, 80, 0.7); }
-            50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(240, 200, 80, 0); }
+        @keyframes neon-pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055; }
+            50% { opacity: 0.8; box-shadow: 0 0 5px #ff0055; }
         }
         
         .feature-box {
-            background: rgba(44, 47, 51, 0.8);
-            border-left: 4px solid #f0c850;
+            background: rgba(51, 51, 51, 0.6);
+            border-left: 4px solid #ff0055;
             transition: all 0.3s;
         }
         
         .feature-box:hover {
-            border-left: 4px solid #5865f2;
+            border-left: 4px solid #ffd700;
             transform: translateX(8px);
-            box-shadow: 0 8px 16px rgba(88, 101, 242, 0.2);
+            box-shadow: 0 8px 16px rgba(255, 0, 85, 0.3);
         }
     </style>
 </head>
 <body>
     <!-- Header / Navigation -->
-    <header class="sticky top-0 z-50 backdrop-blur-md bg-black/30 border-b border-yellow-500/20">
+    <header class="sticky top-0 z-50 backdrop-blur-md bg-black/50 border-b border-red-500/30" style="box-shadow: 0 0 20px rgba(255, 0, 85, 0.3);">
         <nav class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div class="pixel-font text-sm md:text-base text-yellow-400">
-                ★ KK EXCHANGE ★
+            <div class="pixel-font text-sm md:text-base text-red-500" style="text-shadow: 0 0 10px #ff0055;">
+                ◆ KK ZONE ◆
             </div>
             <div class="flex gap-4 items-center">
-                <a href="#stats" class="text-white hover:text-yellow-400 transition">統計</a>
-                <a href="#leaderboard" class="text-white hover:text-yellow-400 transition">排行榜</a>
+                <a href="#zones" class="text-white hover:text-red-500 transition text-sm">園區分區</a>
+                <a href="#widget" class="text-white hover:text-red-500 transition text-sm">社群</a>
                 <button class="pixel-button text-xs md:text-sm" onclick="joinDiscord()">
-                    加入 Discord
+                    進入 DC
                 </button>
             </div>
         </nav>
@@ -144,221 +166,223 @@
     <!-- Hero Section -->
     <section class="min-h-screen flex items-center justify-center px-4 py-20 relative overflow-hidden">
         <!-- Background Animation Elements -->
-        <div class="absolute inset-0 opacity-10">
-            <div class="absolute top-10 left-10 w-40 h-40 bg-blue-500 rounded-full blur-3xl animate-pulse"></div>
+        <div class="absolute inset-0 opacity-20">
+            <div class="absolute top-10 left-10 w-40 h-40 bg-red-500 rounded-full blur-3xl animate-pulse"></div>
             <div class="absolute bottom-20 right-20 w-60 h-60 bg-yellow-400 rounded-full blur-3xl animate-pulse" style="animation-delay: 2s"></div>
-            <div class="absolute top-1/2 left-1/2 w-48 h-48 bg-purple-500 rounded-full blur-3xl animate-pulse" style="animation-delay: 4s"></div>
+            <div class="absolute top-1/2 left-1/2 w-48 h-48 bg-red-600 rounded-full blur-3xl animate-pulse" style="animation-delay: 4s"></div>
         </div>
 
         <div class="max-w-4xl mx-auto text-center relative z-10">
             <!-- Main Title -->
-            <h1 class="pixel-font text-2xl md:text-5xl mb-4 gradient-text">
-                金流斷點交易所
+            <h1 class="pixel-font text-3xl md:text-6xl mb-4 gradient-text" style="text-shadow: 0 0 30px rgba(255, 0, 85, 0.6);">
+                歡迎來到 KK 園區
             </h1>
             
-            <p class="pixel-font text-yellow-400 text-xs md:text-sm mb-2">
-                ▼ NEXT GENERATION TRADING EXPERIENCE ▼
+            <p class="pixel-font text-red-500 text-xs md:text-sm mb-2" style="text-shadow: 0 0 10px #ff0055;">
+                ▼ RPG 角色扮演 × 虛擬交易 × 社群交流 ▼
             </p>
             
-            <p class="text-gray-300 text-sm md:text-lg mb-12 leading-relaxed max-w-2xl mx-auto">
-                在我們的 Discord 社群中交易虛擬資產、贏取獎勵！
+            <p class="text-gray-300 text-sm md:text-lg mb-12 leading-relaxed max-w-2xl mx-auto font-light">
+                一個融合 RPG 角色扮演、二次元/三次元交流與虛擬交易所的終極生態系
                 <br />
-                <span class="text-yellow-400">即時排行榜</span> • <span class="text-yellow-400">動態交易所</span> • <span class="text-yellow-400">全球競賽</span>
+                <span class="text-red-500">★ 展開代理人冒險 ★</span> 
+                <span class="text-yellow-400">┃</span> 
+                <span class="text-red-500">★ 自由交流互動 ★</span>
+                <span class="text-yellow-400">┃</span> 
+                <span class="text-red-500">★ 掌控園區經濟 ★</span>
             </p>
 
             <!-- CTA Buttons -->
             <div class="flex gap-4 justify-center mb-16 flex-wrap">
                 <button class="pixel-button text-sm md:text-base" onclick="joinDiscord()">
-                    → 加入現在 ←
-                </button>
-                <button class="pixel-button bg-gradient-to-r from-yellow-600 to-yellow-700 text-xs md:text-base" onclick="scrollToLeaderboard()">
-                    查看排行榜
+                    【立即登入 Discord】
                 </button>
             </div>
 
             <!-- Live Indicator -->
-            <div class="flex justify-center gap-2 text-yellow-400 pixel-font text-xs">
-                <span class="pixel-circle"></span>
-                <span>LIVE • 現在進行中</span>
-                <span class="pixel-circle"></span>
+            <div class="flex justify-center gap-2 text-red-500 pixel-font text-xs" style="text-shadow: 0 0 10px rgba(255, 0, 85, 0.5);">
+                <span class="neon-dot"></span>
+                <span>LIVE • 園區開放中</span>
+                <span class="neon-dot"></span>
             </div>
         </div>
     </section>
 
-    <!-- Live Stats Section -->
-    <section id="stats" class="py-20 px-4 bg-gradient-to-b from-transparent via-blue-900/10 to-transparent">
+    <!-- Zones Section -->
+    <section id="zones" class="py-20 px-4 bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
         <div class="max-w-6xl mx-auto">
-            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text">
-                ◆ 即時統計 ◆
+            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text" style="text-shadow: 0 0 20px rgba(255, 0, 85, 0.4);">
+                ◆ 園區分區介紹 ◆
             </h2>
 
-            <!-- Stats Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-                <!-- Total Traders -->
-                <div class="stat-card pixel-border rounded p-6">
-                    <div class="pixel-font text-yellow-400 text-xs mb-2">玩家人數</div>
-                    <div class="text-3xl font-bold mb-2" id="stat-traders">
-                        <span class="animate-pixel-blink">...</span>
+            <!-- Zones Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Zone 1: RPG 任務區 -->
+                <div class="zone-card pixel-border rounded-lg p-8 h-full flex flex-col">
+                    <div class="text-5xl mb-4 text-red-500" style="text-shadow: 0 0 15px #ff0055;">⚔️</div>
+                    <h3 class="pixel-font text-lg md:text-xl text-red-500 mb-3" style="text-shadow: 0 0 10px #ff0055;">
+                        ◆ RPG 任務區 ◆
+                    </h3>
+                    <p class="text-gray-300 text-sm leading-relaxed flex-grow">
+                        展開你的代理人冒險，參與全體協作任務。完成任務、升級角色、收集稀有道具，成為園區的傳奇英雄！
+                    </p>
+                    <div class="mt-6 pt-6 border-t border-red-500/30">
+                        <span class="inline-block bg-red-500/20 text-red-400 px-3 py-1 rounded text-xs pixel-font">
+                            冒險進行中
+                        </span>
                     </div>
-                    <div class="text-xs text-gray-400">線上活躍</div>
                 </div>
 
-                <!-- Total Volume -->
-                <div class="stat-card pixel-border rounded p-6">
-                    <div class="pixel-font text-yellow-400 text-xs mb-2">交易量</div>
-                    <div class="text-3xl font-bold mb-2" id="stat-volume">
-                        <span class="animate-pixel-blink">...</span>
+                <!-- Zone 2: 多元交流區 -->
+                <div class="zone-card pixel-border rounded-lg p-8 h-full flex flex-col">
+                    <div class="text-5xl mb-4 text-yellow-400" style="text-shadow: 0 0 15px #ffd700;">💬</div>
+                    <h3 class="pixel-font text-lg md:text-xl text-yellow-400 mb-3" style="text-shadow: 0 0 10px #ffd700;">
+                        ◆ 多元交流區 ◆
+                    </h3>
+                    <p class="text-gray-300 text-sm leading-relaxed flex-grow">
+                        二次元、三次元、老司機交流平台。分享你的興趣、結識志同道合的朋友，自由探索無限可能！
+                    </p>
+                    <div class="mt-6 pt-6 border-t border-yellow-400/30">
+                        <span class="inline-block bg-yellow-400/20 text-yellow-300 px-3 py-1 rounded text-xs pixel-font">
+                            熱烈討論中
+                        </span>
                     </div>
-                    <div class="text-xs text-gray-400">本日總額</div>
                 </div>
 
-                <!-- Central Reserve -->
-                <div class="stat-card pixel-border rounded p-6">
-                    <div class="pixel-font text-yellow-400 text-xs mb-2">儲備金</div>
-                    <div class="text-3xl font-bold mb-2" id="stat-reserve">
-                        <span class="animate-pixel-blink">...</span>
+                <!-- Zone 3: 虛擬交易所 -->
+                <div class="zone-card pixel-border rounded-lg p-8 h-full flex flex-col">
+                    <div class="text-5xl mb-4 text-green-400" style="text-shadow: 0 0 15px #00ff00;">💎</div>
+                    <h3 class="pixel-font text-lg md:text-xl text-green-400 mb-3" style="text-shadow: 0 0 10px #00ff00;">
+                        ◆ 虛擬交易所 - KK 幣 ◆
+                    </h3>
+                    <p class="text-gray-300 text-sm leading-relaxed flex-grow">
+                        即時掌控園區經濟，交易 KK 幣並將收入洗成白錢的數位美金。把握市場機會，成就你的富豪夢！
+                    </p>
+                    <div class="mt-6 pt-6 border-t border-green-400/30">
+                        <span class="inline-block bg-green-400/20 text-green-300 px-3 py-1 rounded text-xs pixel-font">
+                            交易活躍
+                        </span>
                     </div>
-                    <div class="text-xs text-gray-400">金庫餘額</div>
-                </div>
-
-                <!-- Reserve Pressure -->
-                <div class="stat-card pixel-border rounded p-6">
-                    <div class="pixel-font text-yellow-400 text-xs mb-2">金庫壓力</div>
-                    <div class="text-3xl font-bold mb-2" id="stat-pressure">
-                        <span class="animate-pixel-blink">...</span>
-                    </div>
-                    <div class="text-xs text-gray-400" id="pressure-status">安全</div>
-                </div>
-            </div>
-
-            <!-- Reserve Pressure Bar -->
-            <div class="max-w-2xl mx-auto bg-gray-800 rounded p-4 border border-yellow-500/30">
-                <div class="flex justify-between mb-2">
-                    <span class="pixel-font text-xs text-yellow-400">儲備金壓力指數</span>
-                    <span id="pressure-percent" class="text-yellow-400">0%</span>
-                </div>
-                <div class="w-full bg-gray-900 rounded h-4 overflow-hidden border border-yellow-500/20">
-                    <div id="pressure-bar" class="h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500" style="width: 0%"></div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Features Section -->
-    <section class="py-20 px-4">
-        <div class="max-w-6xl mx-auto">
-            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text">
-                ◆ 功能特色 ◆
-            </h2>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="feature-box p-6 rounded">
-                    <h3 class="pixel-font text-lg text-yellow-400 mb-3">📊 即時排行榜</h3>
-                    <p class="text-gray-300 text-sm">查看全球玩家的資產排名，每 5 分鐘自動更新。</p>
-                </div>
-
-                <div class="feature-box p-6 rounded">
-                    <h3 class="pixel-font text-lg text-yellow-400 mb-3">💰 金流交易</h3>
-                    <p class="text-gray-300 text-sm">進行虛擬資產交易，獲得真實獎勵。</p>
-                </div>
-
-                <div class="feature-box p-6 rounded">
-                    <h3 class="pixel-font text-lg text-yellow-400 mb-3">🏆 全球競賽</h3>
-                    <p class="text-gray-300 text-sm">與世界各地的玩家競爭，爭取最高排名。</p>
-                </div>
-
-                <div class="feature-box p-6 rounded">
-                    <h3 class="pixel-font text-lg text-yellow-400 mb-3">🎯 動態任務</h3>
-                    <p class="text-gray-300 text-sm">完成每日任務，累積更多虛擬幣。</p>
-                </div>
-
-                <div class="feature-box p-6 rounded">
-                    <h3 class="pixel-font text-lg text-yellow-400 mb-3">🔐 安全交易</h3>
-                    <p class="text-gray-300 text-sm">中央儲備金保障，所有交易完全透明。</p>
-                </div>
-
-                <div class="feature-box p-6 rounded">
-                    <h3 class="pixel-font text-lg text-yellow-400 mb-3">⚡ 即時通知</h3>
-                    <p class="text-gray-300 text-sm">漲跌提醒、排行變化、一切即時掌握。</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Leaderboard Preview Section -->
-    <section id="leaderboard" class="py-20 px-4 bg-gradient-to-b from-transparent via-purple-900/10 to-transparent">
+    <!-- Discord Widget Section -->
+    <section id="widget" class="py-20 px-4 bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
         <div class="max-w-6xl mx-auto">
-            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-12 gradient-text">
-                ◆ 總資產排行榜 ◆
+            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text" style="text-shadow: 0 0 20px rgba(255, 0, 85, 0.4);">
+                ◆ 加入我們的社群 ◆
             </h2>
 
-            <div class="pixel-border rounded-lg p-8 bg-gray-900/50 max-w-4xl mx-auto mb-8">
-                <div class="text-center text-sm text-gray-400 mb-4">
-                    📌 排行榜圖片（即時更新）
-                </div>
-                <img id="leaderboard-img" src="" alt="排行榜" class="w-full rounded border border-yellow-500/30 loading-placeholder" style="background: #1a1d21; min-height: 400px; display: flex; align-items: center; justify-content: center;">
-                <div class="text-center mt-4 text-xs text-gray-400">
-                    ⏰ 最後更新：<span id="update-time">加載中...</span>
+            <!-- Discord Widget Container -->
+            <div class="max-w-2xl mx-auto">
+                <div class="pixel-border rounded-lg p-8 bg-gray-900/50 text-center">
+                    <p class="text-sm text-gray-400 mb-6">
+                        🎮 實時顯示 Discord 社群活動
+                    </p>
+                    
+                    <!-- Placeholder for Discord Widget -->
+                    <div id="discord-widget" class="bg-gray-800 rounded-lg p-12 border-2 border-dashed border-red-500/50 mb-6" style="min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <div class="text-red-500 text-4xl mb-4" style="text-shadow: 0 0 15px #ff0055;">👥</div>
+                        <p class="text-gray-300 font-bold mb-2">KK 園區 Discord 社群</p>
+                        <p class="text-gray-400 text-sm mb-6">
+                            點擊下方按鈕加入社群<br/>
+                            <span class="text-xs text-gray-500">[Discord Widget 會在此顯示]</span>
+                        </p>
+                        <a href="https://discord.gg/5JtuJvhhHu" target="_blank" class="inline-block">
+                            <button class="pixel-button text-sm">
+                                📢 加入 Discord 社群
+                            </button>
+                        </a>
+                    </div>
+
+                    <p class="text-xs text-gray-500">
+                        Discord Widget ID 設定: 在 JavaScript 配置中更新 server ID 與 channel ID
+                    </p>
                 </div>
             </div>
+        </div>
+    </section>
 
-            <!-- Leaderboard Info -->
-            <div class="max-w-4xl mx-auto text-center">
-                <p class="text-gray-300 text-sm mb-6">
-                    上圖為即時排行榜預覽。只需要在 Discord 社群中活動，
-                    <br />
-                    你的排名就會自動更新！
-                </p>
-                <button class="pixel-button" onclick="refreshLeaderboard()">
-                    🔄 重新整理
-                </button>
+    <!-- Features Highlight Section -->
+    <section class="py-20 px-4 bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
+        <div class="max-w-6xl mx-auto">
+            <h2 class="pixel-font text-2xl md:text-4xl text-center mb-16 gradient-text" style="text-shadow: 0 0 20px rgba(255, 0, 85, 0.4);">
+                ◆ 園區特色 ◆
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+                <div class="feature-box p-6 rounded-lg">
+                    <h3 class="pixel-font text-lg text-red-500 mb-3" style="text-shadow: 0 0 10px #ff0055;">🎮 RPG 冒險</h3>
+                    <p class="text-gray-300 text-sm">完整的角色扮演系統，打造專屬的代理人角色。</p>
+                </div>
+
+                <div class="feature-box p-6 rounded-lg">
+                    <h3 class="pixel-font text-lg text-yellow-400 mb-3" style="text-shadow: 0 0 10px #ffd700;">💰 虛擬經濟</h3>
+                    <p class="text-gray-300 text-sm">真實的交易系統，$K-Coin$ 流動與價值波動。</p>
+                </div>
+
+                <div class="feature-box p-6 rounded-lg">
+                    <h3 class="pixel-font text-lg text-green-400 mb-3" style="text-shadow: 0 0 10px #00ff00;">👥 社群互動</h3>
+                    <p class="text-gray-300 text-sm">開放包容的社群文化，盡情分享與交流。</p>
+                </div>
+
+                <div class="feature-box p-6 rounded-lg">
+                    <h3 class="pixel-font text-lg text-blue-400 mb-3" style="text-shadow: 0 0 10px #00ccff;">🏆 排名競賽</h3>
+                    <p class="text-gray-300 text-sm">實時排行榜與成就系統，見證你的進步。</p>
+                </div>
             </div>
         </div>
     </section>
 
     <!-- Call to Action Section -->
-    <section class="py-20 px-4 bg-gradient-to-t from-blue-900/20 to-transparent">
+    <section class="py-20 px-4 bg-gradient-to-t from-red-900/20 to-transparent">
         <div class="max-w-4xl mx-auto text-center">
-            <h2 class="pixel-font text-2xl md:text-4xl mb-8 gradient-text">
-                準備好成為一名交易者了嗎？
+            <h2 class="pixel-font text-2xl md:text-4xl mb-8 gradient-text" style="text-shadow: 0 0 20px rgba(255, 0, 85, 0.4);">
+                準備成為園區的傳奇玩家嗎？
             </h2>
             <p class="text-gray-300 text-sm md:text-base mb-12">
-                加入超過 1000+ 位活躍玩家的社群，開始你的交易之旅吧！
+                加入數千位活躍玩家，一起打造屬於我們的虛擬帝國。
+                <br />
+                <span class="text-red-500 pixel-font text-xs">現在加入 • 立即開始冒險</span>
             </p>
             <button class="pixel-button text-lg" onclick="joinDiscord()">
-                ⭐ 立即加入 Discord ⭐
+                ⭐【立即登入 Discord】⭐
             </button>
         </div>
     </section>
 
     <!-- Footer -->
-    <footer class="border-t border-yellow-500/20 bg-black/50 py-12 px-4">
+    <footer class="border-t border-red-500/30 bg-black/80 py-12 px-4" style="box-shadow: 0 0 20px rgba(255, 0, 85, 0.2);">
         <div class="max-w-6xl mx-auto">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center md:text-left mb-8">
                 <div>
-                    <h4 class="pixel-font text-sm text-yellow-400 mb-4">關於我們</h4>
-                    <p class="text-xs text-gray-400">金流斷點交易所是一個創新的 Discord 社群遊戲平台。</p>
+                    <h4 class="pixel-font text-sm text-red-500 mb-4" style="text-shadow: 0 0 10px #ff0055;">◆ 關於 KK 園區 ◆</h4>
+                    <p class="text-xs text-gray-400">融合 RPG、交流與交易的終極生態系。創意、熱情、無限可能。</p>
                 </div>
                 <div>
-                    <h4 class="pixel-font text-sm text-yellow-400 mb-4">快速連結</h4>
+                    <h4 class="pixel-font text-sm text-red-500 mb-4" style="text-shadow: 0 0 10px #ff0055;">◆ 快速連結 ◆</h4>
                     <ul class="text-xs text-gray-400 space-y-2">
-                        <li><a href="#" class="hover:text-yellow-400 transition">Discord</a></li>
-                        <li><a href="#" class="hover:text-yellow-400 transition">排行榜</a></li>
-                        <li><a href="#" class="hover:text-yellow-400 transition">規則</a></li>
+                        <li><a href="https://discord.gg/5JtuJvhhHu" target="_blank" class="hover:text-red-500 transition">Discord 社群</a></li>
+                        <li><a href="#zones" class="hover:text-red-500 transition">園區分區</a></li>
+                        <li><a href="#widget" class="hover:text-red-500 transition">社群 Widget</a></li>
                     </ul>
                 </div>
                 <div>
-                    <h4 class="pixel-font text-sm text-yellow-400 mb-4">技術支持</h4>
+                    <h4 class="pixel-font text-sm text-red-500 mb-4" style="text-shadow: 0 0 10px #ff0055;">◆ 技術支持 ◆</h4>
                     <p class="text-xs text-gray-400">
-                        運行於 GCP + Cloudflare
+                        暗黑霓虹風設計
                         <br />
-                        零停機時間更新
+                        Tailwind CSS + HTML5
+                        <br />
+                        RWD 完全適配
                     </p>
                 </div>
             </div>
-            <div class="border-t border-yellow-500/10 pt-8 text-center text-xs text-gray-500">
-                <p>&copy; 2026 金流斷點交易所。社群由玩家驅動。</p>
-                <p class="mt-2 pixel-font text-yellow-600">★ POWERED BY DISCORD ★</p>
+            <div class="border-t border-red-500/20 pt-8 text-center text-xs text-gray-600">
+                <p>&copy; 2026 KK 園區。由玩家與社群驅動。</p>
+                <p class="mt-2 pixel-font text-red-600" style="text-shadow: 0 0 10px rgba(255, 0, 85, 0.3);">◆ POWERED BY DISCORD ◆</p>
             </div>
         </div>
     </footer>
@@ -367,139 +391,35 @@
     <script>
         // Configuration
         const CONFIG = {
-            // 將這裡改成你的 Cloudflare Tunnel URL
-            API_BASE: 'https://katrina-brief-fish-educators.trycloudflare.com',
-            DISCORD_URL: 'https://discord.gg/your-invite-code', // 更換為你的 Discord 邀請連結
-            LEADERBOARD_IMAGE: '/assets/leaderboard.png'
-        };
-
-        // 加載即時統計數據（從真實 API）
-        async function loadStats() {
-            try {
-                console.log(`📊 正在從 ${CONFIG.API_BASE}/api/stats 加載統計數據...`);
-                
-                const response = await fetch(`${CONFIG.API_BASE}/api/stats`, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' },
-                    mode: 'cors'
-                });
-
-                if (response && response.ok) {
-                    const result = await response.json();
-                    
-                    // 檢查 API 回應格式
-                    if (result.status === 'success' && result.data) {
-                        const data = result.data;
-                        console.log('✅ API 回應:', data);
-                        
-                        // 更新 DOM
-                        const traders = data.total_traders || 0;
-                        const volume = data.total_volume || 0;
-                        const reserve = data.reserve || 0;
-                        const pressure = data.reserve_pressure || 0;
-                        
-                        document.getElementById('stat-traders').textContent = traders.toLocaleString();
-                        document.getElementById('stat-volume').textContent = formatNumber(volume);
-                        document.getElementById('stat-reserve').textContent = formatCurrency(reserve);
-                        
-                        document.getElementById('stat-pressure').textContent = pressure.toFixed(1) + '%';
-                        document.getElementById('pressure-percent').textContent = pressure.toFixed(1) + '%';
-                        document.getElementById('pressure-bar').style.width = Math.min(100, pressure) + '%';
-                        
-                        // 根據壓力級別改變狀態文字
-                        const pressureStatus = document.getElementById('pressure-status');
-                        if (pressure < 50) {
-                            pressureStatus.textContent = '✅ 安全';
-                            pressureStatus.className = 'text-xs text-green-400';
-                        } else if (pressure < 75) {
-                            pressureStatus.textContent = '⚠️ 警告';
-                            pressureStatus.className = 'text-xs text-yellow-400';
-                        } else {
-                            pressureStatus.textContent = '🔴 危險';
-                            pressureStatus.className = 'text-xs text-red-400';
-                        }
-                        
-                        console.log('✨ 統計數據已更新');
-                    } else {
-                        console.warn('⚠️ API 回應格式不正確:', result);
-                        useDefaultStats();
-                    }
-                } else {
-                    console.warn('⚠️ API 回應狀態:', response?.status);
-                    useDefaultStats();
-                }
-            } catch (error) {
-                console.error('❌ 無法載入統計數據:', error);
-                useDefaultStats();
+            // KK 園區 Discord 邀請連結
+            DISCORD_URL: 'https://discord.gg/5JtuJvhhHu',
+            // Discord Widget 配置（需要填入正確的 Server ID 和 Channel ID）
+            DISCORD_WIDGET: {
+                serverId: 'YOUR_SERVER_ID', // 替換為你的 Discord 伺服器 ID
+                channelId: 'YOUR_CHANNEL_ID' // 替換為你的 Discord 頻道 ID
             }
-        }
-
-        function useDefaultStats() {
-            document.getElementById('stat-traders').textContent = '1,247';
-            document.getElementById('stat-volume').textContent = '52.3K';
-            document.getElementById('stat-reserve').textContent = '₹1.2M';
-            document.getElementById('stat-pressure').textContent = '45.2%';
-            document.getElementById('pressure-percent').textContent = '45.2%';
-            document.getElementById('pressure-bar').style.width = '45%';
-            document.getElementById('pressure-status').textContent = '✅ 安全';
-            document.getElementById('pressure-status').className = 'text-xs text-green-400';
-        }
-
-        // 加載排行榜圖片
-        function loadLeaderboard() {
-            const img = document.getElementById('leaderboard-img');
-            // 新增時間戳避免快取
-            const timestamp = Math.floor(Date.now() / 60000); // 每分鐘改變一次
-            img.src = `${CONFIG.API_BASE}${CONFIG.LEADERBOARD_IMAGE}?t=${timestamp}`;
-            img.onerror = () => {
-                img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="800" height="400"%3E%3Crect fill="%231a1d21" width="800" height="400"/%3E%3Ctext x="400" y="200" text-anchor="middle" fill="%23808080" font-size="20"%3E排行榜圖片加載中...%3C/text%3E%3C/svg%3E';
-            };
-            updateLastUpdateTime();
-        }
-
-        function updateLastUpdateTime() {
-            const now = new Date();
-            document.getElementById('update-time').textContent = now.toLocaleTimeString('zh-TW');
-        }
-
-        // 格式化數字
-        function formatNumber(num) {
-            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-            return num.toString();
-        }
-
-        // 格式化貨幣
-        function formatCurrency(num) {
-            if (num >= 1000000) return '₹' + (num / 1000000).toFixed(1) + 'M';
-            if (num >= 1000) return '₹' + (num / 1000).toFixed(1) + 'K';
-            return '₹' + num.toString();
-        }
+        };
 
         // 按鈕操作
         function joinDiscord() {
             window.open(CONFIG.DISCORD_URL, '_blank');
         }
 
-        function scrollToLeaderboard() {
-            document.getElementById('leaderboard').scrollIntoView({ behavior: 'smooth' });
+        function scrollToZones() {
+            document.getElementById('zones').scrollIntoView({ behavior: 'smooth' });
         }
 
-        function refreshLeaderboard() {
-            loadLeaderboard();
-            loadStats();
+        function scrollToWidget() {
+            document.getElementById('widget').scrollIntoView({ behavior: 'smooth' });
         }
 
-        // 初始化
+        // 頁面載入完成後的初始化
         document.addEventListener('DOMContentLoaded', () => {
-            loadStats();
-            loadLeaderboard();
+            console.log('🎮 KK 園區 loaded');
+            console.log('📢 Discord URL:', CONFIG.DISCORD_URL);
             
-            // 每 5 分鐘重新整理一次統計
-            setInterval(loadStats, 5 * 60 * 1000);
-            
-            // 每分鐘重新加載排行榜圖片
-            setInterval(loadLeaderboard, 60 * 1000);
+            // 可在此處添加其他初始化代碼
+            // 例如：加載動畫延遲、事件監聽等
         });
     </script>
 </body>
