@@ -14,7 +14,7 @@
     manager.set_user(user_id, data)         # 設置用戶
 """
 
-from sheet_driven_db import SheetDrivenDB
+from blueprints.sheet_driven_db import SheetDrivenDB
 import hashlib
 import sys
 import os
