@@ -118,7 +118,7 @@
                 <a class="nav-link text-white text-sm" onclick="navigateTo('leaderboard')">排行榜</a>
                 <a class="nav-link text-white text-sm" onclick="navigateTo('shop')">商店街</a>
                 <a class="nav-link text-white text-sm" onclick="navigateTo('stocks')">股市</a>
-                <button class="pixel-button text-xs" onclick="loginDiscord()">登入 DC</button>
+                <button id="login-btn" class="pixel-button text-xs" onclick="loginDiscord()" style="font-size: 0.75rem;">登入 DC</button>
             </div>
         </nav>
     </header>
@@ -297,43 +297,194 @@
     <script>
         const CONFIG = {
             DISCORD_URL: 'https://discord.gg/5JtuJvhhHu',
-            DISCORD_CLIENT_ID: 'YOUR_CLIENT_ID', // 需要填入
-            DISCORD_REDIRECT_URI: window.location.origin + '/callback',
-            API_BASE: 'https://katrina-brief-fish-educators.trycloudflare.com'
+            API_BASE: 'https://katrina-brief-fish-educators.trycloudflare.com',
+            // API_BASE可用于本地测试: 'http://localhost:5000'
         };
+
+        let currentUser = null;
+        let authToken = null;
+
+        // 🔐 從 URL 參數獲取認證 token
+        function checkAuthToken() {
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('auth_token');
+            const username = params.get('user');
+            
+            if (token) {
+                authToken = token;
+                localStorage.setItem('auth_token', token);
+                // 清理 URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                // 驗證 token 並加載用戶數據
+                verifyAuth();
+                return true;
+            }
+            
+            // 檢查 localStorage 中保存的 token
+            const savedToken = localStorage.getItem('auth_token');
+            if (savedToken) {
+                authToken = savedToken;
+                verifyAuth();
+                return true;
+            }
+            
+            return false;
+        }
+
+        // ✅ 驗證認證狀態
+        async function verifyAuth() {
+            if (!authToken) return false;
+            
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/auth/verify`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.authenticated) {
+                        currentUser = data.user;
+                        updateUIForAuthenticatedUser();
+                        return true;
+                    }
+                }
+            } catch (error) {
+                console.error('❌ 驗證失敗:', error);
+            }
+            
+            // Token 無效
+            authToken = null;
+            localStorage.removeItem('auth_token');
+            return false;
+        }
+
+        // 🎯 Discord OAuth 登錄
+        async function loginDiscord() {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/auth/login`);
+                const data = await response.json();
+                
+                if (data.oauth_url) {
+                    // 重定向到 Discord OAuth
+                    window.location.href = data.oauth_url;
+                } else {
+                    alert('❌ 無法獲取 Discord 登錄 URL');
+                }
+            } catch (error) {
+                console.error('❌ 登錄失敗:', error);
+                alert('登錄失敗，請檢查網絡連接');
+            }
+        }
+
+        // 🚪 登出
+        async function logout() {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/auth/logout`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    authToken = null;
+                    currentUser = null;
+                    localStorage.removeItem('auth_token');
+                    updateUIForUnauthenticatedUser();
+                    console.log('✅ 已登出');
+                }
+            } catch (error) {
+                console.error('❌ 登出失敗:', error);
+            }
+        }
+
+        // 📱 更新 UI - 已認證
+        function updateUIForAuthenticatedUser() {
+            const loginBtn = document.getElementById('login-btn');
+            if (!loginBtn) return;
+            
+            // 替換登錄按鈕為用戶資訊和登出按鈕
+            const userDiv = document.createElement('div');
+            userDiv.style.display = 'flex';
+            userDiv.style.alignItems = 'center';
+            userDiv.style.gap = '12px';
+            userDiv.innerHTML = `
+                <div style="text-align: right; font-size: 0.75rem;">
+                    <div class="pixel-font" style="color: #ff0055; letter-spacing: 1px;">
+                        ${currentUser.username}
+                    </div>
+                </div>
+                <button class="pixel-button" style="padding: 8px 16px; font-size: 0.65rem;" onclick="logout()">
+                    登 出
+                </button>
+            `;
+            
+            loginBtn.parentNode.replaceChild(userDiv, loginBtn);
+            loginBtn.id = ''; // 移除 ID 以便後續識別
+        }
+
+        // 📱 更新 UI - 未認證
+        function updateUIForUnauthenticatedUser() {
+            // 尋找已認證的用戶菜單  (通過找不是按鈕但在導航欄的元素)
+            const navContainer = document.querySelector('nav .flex');
+            const userDiv = navContainer?.querySelector('div[style*="flex"]');
+            
+            if (userDiv && userDiv.style.alignItems === 'center') {
+                // 找到了用戶菜單，替換為登錄按鈕
+                const loginBtn = document.createElement('button');
+                loginBtn.id = 'login-btn';
+                loginBtn.className = 'pixel-button';
+                loginBtn.setAttribute('onclick', 'loginDiscord()');
+                loginBtn.setAttribute('style', 'font-size: 0.75rem;');
+                loginBtn.textContent = '登入 DC';
+                
+                userDiv.parentNode.replaceChild(loginBtn, userDiv);
+            }
+        }
 
         // 頁面導航
         function navigateTo(page) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('page-' + page).classList.add('active');
+            const targetPage = document.getElementById('page-' + page);
+            if (targetPage) {
+                targetPage.classList.add('active');
+            }
             
-            // 更新導航連結
             document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
-            event.target.classList.add('active');
+            event.target?.classList.add('active');
             
             window.scrollTo(0, 0);
-        }
-
-        function loginDiscord() {
-            // 簡單版：直接打開 Discord 邀請
-            window.open(CONFIG.DISCORD_URL, '_blank');
-            
-            // 完整版（需要設置）：使用 OAuth
-            // const oauthUrl = `https://discord.com/api/oauth2/authorize?client_id=${CONFIG.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(CONFIG.DISCORD_REDIRECT_URI)}&response_type=code&scope=identify`;
-            // window.location.href = oauthUrl;
         }
 
         function refreshLeaderboard() {
             const timestamp = Math.floor(Date.now() / 60000);
             const img = document.getElementById('leaderboard-img');
-            img.src = './assets/leaderboard.png?t=' + timestamp;
+            if (img) {
+                img.src = './assets/leaderboard.png?t=' + timestamp;
+            }
             document.getElementById('leaderboard-time').textContent = new Date().toLocaleTimeString('zh-TW');
         }
 
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎮 KK 園區已加載');
-            document.getElementById('leaderboard-time').textContent = new Date().toLocaleTimeString('zh-TW');
+            
+            // 檢查認證
+            if (checkAuthToken()) {
+                console.log('✅ 已驗證認證用戶');
+            } else {
+                console.log('ℹ️ 尚未認證');
+            }
+            
+            // 初始化排行榜時間
+            if (document.getElementById('leaderboard-time')) {
+                document.getElementById('leaderboard-time').textContent = new Date().toLocaleTimeString('zh-TW');
+            }
         });
     </script>
 </body>

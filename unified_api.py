@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 🚀 KKCoin 統一 API 伺服器
-整合統計 API + Google Sheets 同步 API
+整合統計 API + Google Sheets 同步 API + Discord OAuth 認證
 """
 
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 # 載入環境變數
@@ -18,8 +18,15 @@ load_dotenv()
 # 建立 Flask 應用
 app = Flask(__name__)
 
+# Session 配置
+app.secret_key = os.getenv('SESSION_SECRET', os.urandom(32).hex())
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
 # 啟用 CORS
-CORS(app)
+CORS(app, supports_credentials=True)
 
 # 設置日誌
 logging.basicConfig(level=logging.INFO)
@@ -31,9 +38,16 @@ logger = logging.getLogger(__name__)
 
 from blueprints.stats import stats_bp
 from blueprints.sheets import sheets_bp
+from blueprints.discord_auth import discord_auth_bp
 
 app.register_blueprint(stats_bp)
 app.register_blueprint(sheets_bp)
+app.register_blueprint(discord_auth_bp)
+
+logger.info("✅ 已註冊所有 Blueprints")
+logger.info(f"  - Stats API")
+logger.info(f"  - Sheets API")
+logger.info(f"  - Discord Auth API")
 
 # ============================================================
 # 全局錯誤處理器
