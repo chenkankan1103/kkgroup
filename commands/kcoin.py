@@ -979,26 +979,26 @@ class KKCoin(commands.Cog):
                 print(f"❌ 保存圖片失敗: {e}")
                 return
             
-            # 創建嵌入訊息，使用 self.base_url（可能是 Tunnel URL 或預設域名）
+            # 使用 Cloudflare Quick Tunnel URL（如果可用）
             image_url = f"{self.base_url}/assets/leaderboard.png"
-            embed = discord.Embed(
-                title="💰 金流斷點交易所 - 總資產排行",
-                description=f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸",
-                color=discord.Color.gold()
+
+            content = (
+                "💰 金流斷點交易所 - 總資產排行\n"
+                f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸\n"
+                f"📌 排行榜圖：{image_url}\n"
+                "(如瀏覽器未自動呈現，請複製網址貼到瀏覽器開啟)"
             )
-            embed.set_image(url=image_url)
-            embed.timestamp = discord.utils.utcnow()
-            
-            msg = await channel.send(embed=embed)
-            
+
+            msg = await channel.send(content)
+
             # 立即儲存訊息 ID（防止重複創建）
             self.rank_message_id = msg.id
             save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
-            
+
             # 快取資料
             self.last_leaderboard_data = [m[:3] if len(m) >= 3 else m for m in members_data]
             self.last_update_time = time.time()
-            
+
             print(f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
             print(f"📍 圖片 URL: {image_url}")
             
@@ -1753,18 +1753,17 @@ class KKCoin(commands.Cog):
                     print(f"❌ 保存圖片失敗: {e}")
                     return
 
-                # 在 Discord 中發送以該 base_url 為基礎的訊息
+                # 在 Discord 中更新訊息為純文本，讓使用者直接看到連結
                 # 使用 Cloudflare Quick Tunnel URL（如果可用）
                 image_url = f"{self.base_url}/assets/leaderboard.png?t={int(time.time())}"
-                embed = discord.Embed(
-                    title="💰 金流斷點交易所 - 總資產排行",
-                    description=f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸",
-                    color=discord.Color.gold()
+                content = (
+                    "💰 金流斷點交易所 - 總資產排行\n"
+                    f"📡 通過 {self.base_url.replace('https://', '').split('/')[0]} 傳輸\n"
+                    f"📌 排行榜圖：{image_url}\n"
+                    "(如瀏覽器未自動呈現，請複製網址貼到瀏覽器開啟)"
                 )
-                embed.set_image(url=image_url)
-                embed.timestamp = discord.utils.utcnow()
-                
-                await msg.edit(embed=embed, attachments=[])
+
+                await msg.edit(content=content, embed=None, attachments=[])
 
                 self.last_leaderboard_data = members_data.copy()
                 self.last_update_time = current_time
