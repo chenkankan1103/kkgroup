@@ -628,35 +628,58 @@ class KKCoin(commands.Cog):
             return False
     
     async def get_tunnel_url(self):
-        """從 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
+        """從 /tmp/cloudflared.log 或 docs/config.json 讀取 Cloudflare Quick Tunnel 網址
+        
+        優先順序:
+        1. /tmp/cloudflared.log (GCP VM)
+        2. docs/config.json (本地開發環境)
         
         成功: 更新 self.base_url 並返回該 URL
         失敗: 返回 None
         """
         async with self.tunnel_url_lock:
             try:
-                # 嘗試讀取 cloudflared.log
+                import json
+                
+                # 1️⃣ 方式 1: 嘗試讀取 cloudflared.log (GCP VM)
                 log_file = "/tmp/cloudflared.log"
-                if not os.path.exists(log_file):
-                    print(f"❌ 隧道日誌不存在: {log_file}")
-                    return None
+                if os.path.exists(log_file):
+                    try:
+                        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                            content = f.read()
+                        
+                        # 使用 regex 抓取最新的 https://*.trycloudflare.com URL
+                        pattern = r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com"
+                        matches = re.findall(pattern, content)
+                        
+                        if matches:
+                            # 取最後一個（最新的）
+                            tunnel_url = matches[-1]
+                            self.base_url = tunnel_url
+                            print(f"✅ 已設定 Tunnel URL (from log): {tunnel_url}")
+                            return tunnel_url
+                    except Exception as log_err:
+                        print(f"⚠️ 從 log 讀取失敗: {log_err}")
                 
-                with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
+                # 2️⃣ 方式 2: 嘗試讀取 docs/config.json (本地開發)
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                config_file = os.path.join(project_root, "docs", "config.json")
                 
-                # 使用 regex 抓取最新的 https://*.trycloudflare.com URL
-                pattern = r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com"
-                matches = re.findall(pattern, content)
+                if os.path.exists(config_file):
+                    try:
+                        with open(config_file, "r", encoding="utf-8") as f:
+                            config_data = json.load(f)
+                            tunnel_url = config_data.get("url")
+                            
+                            if tunnel_url and tunnel_url.startswith("https://"):
+                                self.base_url = tunnel_url
+                                print(f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}")
+                                return tunnel_url
+                    except Exception as config_err:
+                        print(f"⚠️ 從 config.json 讀取失敗: {config_err}")
                 
-                if matches:
-                    # 取最後一個（最新的）
-                    tunnel_url = matches[-1]
-                    self.base_url = tunnel_url
-                    print(f"✅ 已設定 Tunnel URL: {tunnel_url}")
-                    return tunnel_url
-                else:
-                    print(f"⚠️ 在日誌中未找到有效的 Tunnel URL")
-                    return None
+                print(f"⚠️ 無法獲取隧道 URL (兩種方式均失敗)")
+                return None
             
             except Exception as e:
                 print(f"❌ 讀取隧道 URL 失敗: {e}")
