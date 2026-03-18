@@ -9,10 +9,15 @@ from flask import Blueprint, request, jsonify
 import logging
 from datetime import datetime
 import traceback
+import sys
+import os
+
+# 添加項目根目錄到路徑，以支持導入
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # 匯入同步管理器和 DB 引擎
-from sheet_sync_manager import SheetSyncManager
-from sheet_driven_db import SheetDrivenDB
+from blueprints.sheet_sync_manager import SheetSyncManager
+from blueprints.sheet_driven_db import SheetDrivenDB
 
 sheets_bp = Blueprint('sheets', __name__, url_prefix='/api')
 
