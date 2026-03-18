@@ -478,7 +478,7 @@ class CropPlantingView(discord.ui.View):
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
     async def plant_all_callback(self, interaction: discord.Interaction):
-        """一鍵種植：嘗試種植所有持有的種子"""
+        """一鍵種植：嘗試種植所有持有的種子（限制3個植物）"""
         try:
             await interaction.response.defer(ephemeral=True)
 
@@ -486,14 +486,30 @@ class CropPlantingView(discord.ui.View):
                 await interaction.followup.send("❌ 沒有可用的種子信息！", ephemeral=True)
                 return
 
+            # ⭐ 檢查當前植物數量，確保不超過3個
+            current_plants = await get_user_plants(self.user_id)
+            remaining_slots = 3 - len(current_plants)
+            
+            if remaining_slots <= 0:
+                await interaction.followup.send("❌ 植物格位已滿（3/3），無法再種植！請先收割成熟的植物。", ephemeral=True)
+                return
+
             results = []  # 儲存種植結果
+            plants_count = 0
+            
             # 遍歷所有種子
             for seed_name, qty in list(self.seeds_dict.items()):
                 for _ in range(qty):
+                    # ⭐ 檢查是否還有空位
+                    if plants_count >= remaining_slots:
+                        results.append((seed_name, False, "格位已滿"))
+                        break
+                    
                     has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
                     if not has_seed:
                         results.append((seed_name, False, "庫存不足"))
                         break
+                    
                     result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
                     if result and not result.get("success") == False:
                         # 成功
@@ -501,6 +517,7 @@ class CropPlantingView(discord.ui.View):
                             user = await self.bot.fetch_user(self.user_id)
                             await self.cog.record_event('plant', user, f"種植{seed_name}")
                         results.append((seed_name, True, ""))
+                        plants_count += 1  # ⭐ 計數成功的植物
                     else:
                         # 失敗，退還種子
                         await add_inventory(self.user_id, "種子", seed_name, 1)
@@ -510,6 +527,8 @@ class CropPlantingView(discord.ui.View):
 
             # 建立結果 embed
             embed = discord.Embed(title="🌱 一鍵種植結果", color=discord.Color.green())
+            embed.add_field(name="📊 種植進度", value=f"{plants_count}/{remaining_slots} 個植物已種植", inline=False)
+            
             for seed_name, success, reason in results:
                 emoji = ""
                 try:
@@ -517,9 +536,9 @@ class CropPlantingView(discord.ui.View):
                 except Exception:
                     pass
                 if success:
-                    embed.add_field(name=f"{emoji} {seed_name}", value="種植成功", inline=True)
+                    embed.add_field(name=f"{emoji} {seed_name}", value="✅ 種植成功", inline=True)
                 else:
-                    embed.add_field(name=f"{emoji} {seed_name}", value=f"失敗：{reason}", inline=True)
+                    embed.add_field(name=f"{emoji} {seed_name}", value=f"❌ {reason}", inline=True)
 
             # 顯示結果，並附帶返回按鈕
             from .selection_views import PlantResultView
