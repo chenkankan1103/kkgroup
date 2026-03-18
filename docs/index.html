@@ -575,7 +575,38 @@
         }
 
         // 頁面導航
-        function navigateTo(page) {
+        async function navigateTo(page) {
+            // 檢查是否需要認證
+            const protectedPages = ['shop', 'stocks', 'user'];
+            
+            if (protectedPages.includes(page)) {
+                // 先驗證 token
+                if (!authToken) {
+                    const savedToken = localStorage.getItem('auth_token');
+                    if (savedToken) {
+                        authToken = savedToken;
+                    }
+                }
+                
+                if (!authToken) {
+                    console.warn('❌ 未認證，無法訪問此頁面');
+                    alert('❌ 請先登入 Discord');
+                    return;
+                }
+                
+                // 驗證 token 是否仍有效
+                const isValid = await verifyAuth();
+                if (!isValid) {
+                    console.warn('❌ Token 已過期，請重新登入');
+                    localStorage.removeItem('auth_token');
+                    authToken = null;
+                    updateUIForUnauthenticatedUser();
+                    alert('❌ 認證已過期，請重新登入');
+                    return;
+                }
+            }
+            
+            // 切換頁面
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             const targetPage = document.getElementById('page-' + page);
             if (targetPage) {
@@ -586,6 +617,7 @@
             event.target?.classList.add('active');
             
             window.scrollTo(0, 0);
+            console.log(`📄 已切換到: ${page}`);
         }
 
         function refreshLeaderboard() {
