@@ -341,7 +341,7 @@ def _sync_build_leaderboard_image(
     )
     
     draw_bank_icon(draw, MARGIN + 5, MARGIN + 12, size=14, color=(150, 180, 255))
-    draw_text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255))
+    draw_text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255), shadow=True)
     
     reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
     draw_text((MARGIN + 15, MARGIN + 45), f"[金庫] {reserve_formatted} KK", font=FONT_SMALL, fill=(100, 180, 220))
@@ -373,9 +373,9 @@ def _sync_build_leaderboard_image(
         )
     
     if reserve_announcement:
-        draw_text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", font=FONT_DESC, fill=(180, 180, 200))
+        draw_text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", font=FONT_DESC, fill=(180, 180, 200), shadow=True)
     else:
-        draw_text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", font=FONT_DESC, fill=(180, 180, 200))
+        draw_text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", font=FONT_DESC, fill=(180, 180, 200), shadow=True)
     
     # 第二部分：排行榜標題和資料
     leaderboard_start_y = MARGIN + RESERVE_SECTION_HEIGHT + 10
@@ -390,7 +390,7 @@ def _sync_build_leaderboard_image(
     else:
         title_x = MARGIN
     
-    draw_text((title_x, leaderboard_start_y + 8), "💰 KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220))
+    draw_text((title_x, leaderboard_start_y + 8), "💰 KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
 
     # 顯示欄位標題：KK幣 / 數位美金
     header_y = leaderboard_start_y + 45
@@ -417,8 +417,8 @@ def _sync_build_leaderboard_image(
         y = leaderboard_start_y + 75 + i*70
         if i < 3 and medal_imgs[i]:
             try:
-                img.paste(medal_imgs[i].resize((36, 36)), (MARGIN, y+6), medal_imgs[i].resize((36, 36)))
-                rank_x = MARGIN + 44
+                img.paste(medal_imgs[i].resize((48, 48)), (MARGIN + 20, y+2), medal_imgs[i].resize((48, 48)))
+                rank_x = MARGIN + 50
             except Exception as e:
                 print(f"⚠️ 貼上獎牌失敗: {e}")
                 rank_x = MARGIN
@@ -434,8 +434,8 @@ def _sync_build_leaderboard_image(
         avatar_size = AVATAR_SIZE
         avatar_x = rank_x + 40
         if i < 3:
-            avatar_size = AVATAR_SIZE + 12
-            avatar_x = rank_x + 30
+            avatar_size = AVATAR_SIZE + 20
+            avatar_x = rank_x + 15
 
         display_avatar = None
         if avatar_img:
@@ -757,7 +757,7 @@ def _sync_build_digital_usd_leaderboard_image(
         else:
             draw.text((x, y), text, font=font, fill=fill)
     
-    draw_text((MARGIN, 18), "💵 KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50))
+    draw_text((MARGIN, 18), "💵 KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50), shadow=True)
 
     # 欄位標題：數位美金
     header_y = 50
