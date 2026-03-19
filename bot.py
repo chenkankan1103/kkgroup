@@ -497,15 +497,14 @@ async def on_ready():
             try:
                 from metrics_data_collector import MetricsDataCollector
                 
-                print("[GCP_METRICS] Initializing GCP Metrics collector...")
-                _metrics_collector = MetricsDataCollector(project_id="kkgroup")
-                
-                # 啟動後台採集任務（每 30 分鐘運行一次）
-                if _metrics_collector_task is None:
-                    _metrics_collector_task = asyncio.create_task(
-                        _metrics_collector.start_background_collection(interval_minutes=30)
-                    )
-                    print("[GCP_METRICS] Collector started (30 min interval)")
+                # ✅ 已停用 GCP Metrics 採集以降低成本
+                # print("[GCP_METRICS] Initializing GCP Metrics collector...")
+                # _metrics_collector = MetricsDataCollector(project_id="kkgroup")
+                # if _metrics_collector_task is None:
+                #     _metrics_collector_task = asyncio.create_task(
+                #         _metrics_collector.start_background_collection(interval_minutes=30)
+                #     )
+                #     print("[GCP_METRICS] Collector started (30 min interval)")
                 
             except ImportError:
                 print("[GCP_METRICS] MetricsDataCollector not available")

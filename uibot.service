@@ -17,9 +17,8 @@ Environment=LANG=C.UTF-8
 ExecStart=/home/e193752468/kkgroup/venv/bin/python uibot.py
 Restart=always
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=uibot
+StandardOutput=append:/tmp/uibot.log
+StandardError=append:/tmp/uibot.log
 
 TimeoutStopSec=30
 KillMode=mixed
