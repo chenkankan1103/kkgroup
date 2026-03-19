@@ -297,20 +297,24 @@ def _sync_build_leaderboard_image(
         """繪製文字，自動處理 emoji 對齐
 
         - 優先使用 pilmoji Drawer（支持 emoji）
-        - 可選擇加一點陰影，使數字更立體（不超過1px偏移）
+        - 可選擇加多層陰影，使文字更立體（8方向陰影營造描邊效果）
         - 降級使用標準 draw（當 pilmoji 不可用）
         """
         x, y = pos
         if shadow:
-            sx, sy = shadow_offset
-            # 先繪製陰影
-            try:
-                if drawer is not None and PILMOJI_AVAILABLE:
-                    drawer.text((x + sx, y + sy), text, font=font, fill=shadow_color)
-                else:
-                    draw.text((x + sx, y + sy), text, font=font, fill=shadow_color)
-            except Exception:
-                pass
+            # 多層陰影（8方向）營造描邊效果
+            shadow_offsets = [
+                (2, 2), (2, -2), (-2, 2), (-2, -2),  # 四個對角
+                (2, 0), (-2, 0), (0, 2), (0, -2)      # 四個正方向
+            ]
+            for sx, sy in shadow_offsets:
+                try:
+                    if drawer is not None and PILMOJI_AVAILABLE:
+                        drawer.text((x + sx, y + sy), text, font=font, fill=shadow_color)
+                    else:
+                        draw.text((x + sx, y + sy), text, font=font, fill=shadow_color)
+                except Exception:
+                    pass
         try:
             if drawer is not None and PILMOJI_AVAILABLE:
                 # 使用 pilmoji 的 text 方法，自動處理 emoji 對齐
