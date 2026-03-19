@@ -297,21 +297,20 @@ def _sync_build_leaderboard_image(
         """繪製文字，自動處理 emoji 對齐
 
         - 優先使用 pilmoji Drawer（支持 emoji）
-        - 可選擇加輕量陰影（2方向對角），用於用戶名和數字
+        - 可選擇加輕量陰影（右下1px偏移），用於使用者名、數字標题
         - 降級使用標準 draw（當 pilmoji 不可用）
         """
         x, y = pos
         if shadow:
-            # 輕量陰影（2方向對角）
-            shadow_offsets = [(1, 1), (-1, -1)]
-            for sx, sy in shadow_offsets:
-                try:
-                    if drawer is not None and PILMOJI_AVAILABLE:
-                        drawer.text((x + sx, y + sy), text, font=font, fill=shadow_color)
-                    else:
-                        draw.text((x + sx, y + sy), text, font=font, fill=shadow_color)
-                except Exception:
-                    pass
+            sx, sy = shadow_offset
+            # 单方向陰影（右下偏移）
+            try:
+                if drawer is not None and PILMOJI_AVAILABLE:
+                    drawer.text((x + sx, y + sy), text, font=font, fill=shadow_color)
+                else:
+                    draw.text((x + sx, y + sy), text, font=font, fill=shadow_color)
+            except Exception:
+                pass
         try:
             if drawer is not None and PILMOJI_AVAILABLE:
                 # 使用 pilmoji 的 text 方法，自動處理 emoji 對齐
@@ -387,7 +386,7 @@ def _sync_build_leaderboard_image(
     else:
         title_x = MARGIN
     
-    draw_text((title_x, leaderboard_start_y + 8), "💰 KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220))
+    draw_text((title_x, leaderboard_start_y + 8), "💰 KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
 
     # 顯示欄位標題：KK幣 / 數位美金
     header_y = leaderboard_start_y + 45
@@ -754,7 +753,7 @@ def _sync_build_digital_usd_leaderboard_image(
         else:
             draw.text((x, y), text, font=font, fill=fill)
     
-    draw_text((MARGIN, 18), "💵 KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50))
+    draw_text((MARGIN, 18), "💵 KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50), shadow=True)
 
     # 欄位標題：數位美金
     header_y = 50
