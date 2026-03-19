@@ -609,82 +609,99 @@ class WelcomeFlow(commands.Cog):
         return None
 
     async def create_welcome_embed(self, user_data: dict, user: discord.User) -> discord.Embed:
-        if user_data.get('is_stunned', 0) == 1:
-            embed = discord.Embed(
-                title="💫 一陣天旋地轉...",
-                description=(
-                    f"💫 **{user.mention}** 一陣天旋地轉，你已倒在地上。\n\n"
-                    "😵 你被擊暈了！\n"
-                    "🏥 血量和體力大幅下降\n"
-                    "💤 正在恢復中...\n\n"
-                    "⏰ 請等待恢復，或聯繫管理員協助"
-                ),
-                color=0xFF6B6B
-            )
-        else:
-            embed = discord.Embed(
+        try:
+            if user_data.get('is_stunned', 0) == 1:
+                embed = discord.Embed(
+                    title="💫 一陣天旋地轉...",
+                    description=(
+                        f"💫 **{user.mention}** 一陣天旋地轉，你已倒在地上。\n\n"
+                        "😵 你被擊暈了！\n"
+                        "🏥 血量和體力大幅下降\n"
+                        "💤 正在恢復中...\n\n"
+                        "⏰ 請等待恢復，或聯繫管理員協助"
+                    ),
+                    color=0xFF6B6B
+                )
+            else:
+                embed = discord.Embed(
+                    title="🎉 歡迎光臨 KK 園區™",
+                    description=(
+                        f"🎉 歡迎 **{user.mention}** 蒞臨 KK 園區™ — 一個讓人留連忘返的樂園。\n\n"
+                        "🏠 食宿無憂，大通鋪讓你夜夜安穩；\n"
+                        "🤝 不怕孤單，因為你永遠有人作伴；\n"
+                        "🎭 娛樂充足，幹部們會「適時」安排你的休閒時光。\n\n"
+                        "📜 **入園流程如下：**\n"
+                        "1️⃣ 選擇你的性別\n"
+                        "2️⃣ 繳交不必要的物品\n"
+                        "3️⃣ 點擊確認，即刻入住\n\n"
+                        "📌 每日表現將自動記錄為積分，影響分配與待遇。\n"
+                        "🎁 定期將物品上繳以獲得特別回饋。\n"
+                        "🚪 出口目前維護中，開放時間未定。\n"
+                        "📷 園區全程監控中，請放心生活。"
+                    ),
+                    color=0x8B0000
+                )
+            
+            # 添加用戶資訊欄位
+            embed.add_field(name="⭐ 等級", value=f"{user_data['level']}", inline=True)
+            embed.add_field(name="💰 金錢", value=f"{user_data['kkcoin']} KKCoin", inline=True)
+            embed.add_field(name="🏆 職位", value=user_data['title'], inline=True)
+
+            hp_bar = self.create_progress_bar(user_data['hp'], 100)
+            stamina_bar = self.create_progress_bar(user_data['stamina'], 100)
+            embed.add_field(name="❤️ 血量", value=f"{hp_bar} {user_data['hp']}/100", inline=False)
+            embed.add_field(name="⚡ 體力", value=f"{stamina_bar} {user_data['stamina']}/100", inline=False)
+
+            gender_display = "男性 ♂️" if user_data.get('gender') == 'male' else "女性 ♀️"
+            embed.add_field(name="👤 性別", value=gender_display, inline=True)
+            embed.add_field(name="👔 上衣", value=f"ID: {user_data['top']}", inline=True)
+            embed.add_field(name="👖 下裝", value=f"ID: {user_data['bottom']}", inline=True)
+
+            # 處理物品欄顯示
+            inventory = '空的'
+            if user_data['inventory']:
+                try:
+                    items = json.loads(user_data['inventory'])
+                    if items:
+                        inventory = ', '.join(str(item) for item in items[:3])
+                        if len(items) > 3:
+                            inventory += f"... 等{len(items)}項"
+                except:
+                    pass
+            embed.add_field(name="🎒 物品欄", value=inventory, inline=False)
+
+            embed.set_thumbnail(url=user.display_avatar.url)
+            
+            # 獲取並設置紙娃娃圖片
+            try:
+                character_image_url = await self.get_character_image_url(user_data)
+                if character_image_url:
+                    embed.set_image(url=character_image_url)
+            except Exception as e:
+                print(f"⚠️ 無法獲取紙娃娃圖片: {e}")
+
+            if user_data.get('is_stunned', 0) == 1:
+                embed.set_footer(text="💫 你目前處於擊暈狀態，請等待恢復...")
+            else:
+                embed.set_footer(text="⚠️ 園區已自動為你關閉離開選項，安心享受吧。")
+                
+            return embed
+
+        except Exception as e:
+            print(f"⚠️ create_welcome_embed 發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+
+            fallback = discord.Embed(
                 title="🎉 歡迎光臨 KK 園區™",
                 description=(
-                    f"🎉 歡迎 **{user.mention}** 蒞臨 KK 園區™ — 一個讓人留連忘返的樂園。\n\n"
-                    "🏠 食宿無憂，大通鋪讓你夜夜安穩；\n"
-                    "🤝 不怕孤單，因為你永遠有人作伴；\n"
-                    "🎭 娛樂充足，幹部們會「適時」安排你的休閒時光。\n\n"
-                    "📜 **入園流程如下：**\n"
-                    "1️⃣ 選擇你的性別\n"
-                    "2️⃣ 繳交不必要的物品\n"
-                    "3️⃣ 點擊確認，即刻入住\n\n"
-                    "📌 每日表現將自動記錄為積分，影響分配與待遇。\n"
-                    "🎁 定期將物品上繳以獲得特別回饋。\n"
-                    "🚪 出口目前維護中，開放時間未定。\n"
-                    "📷 園區全程監控中，請放心生活。"
+                    f"🎉 歡迎 **{user.mention}**！\n\n"
+                    "發生了一點小問題，但你仍可以按下確認進入園區。"
                 ),
                 color=0x8B0000
             )
-        
-        # 添加用戶資訊欄位
-        embed.add_field(name="⭐ 等級", value=f"{user_data['level']}", inline=True)
-        embed.add_field(name="💰 金錢", value=f"{user_data['kkcoin']} KKCoin", inline=True)
-        embed.add_field(name="🏆 職位", value=user_data['title'], inline=True)
-
-        hp_bar = self.create_progress_bar(user_data['hp'], 100)
-        stamina_bar = self.create_progress_bar(user_data['stamina'], 100)
-        embed.add_field(name="❤️ 血量", value=f"{hp_bar} {user_data['hp']}/100", inline=False)
-        embed.add_field(name="⚡ 體力", value=f"{stamina_bar} {user_data['stamina']}/100", inline=False)
-
-        gender_display = "男性 ♂️" if user_data.get('gender') == 'male' else "女性 ♀️"
-        embed.add_field(name="👤 性別", value=gender_display, inline=True)
-        embed.add_field(name="👔 上衣", value=f"ID: {user_data['top']}", inline=True)
-        embed.add_field(name="👖 下裝", value=f"ID: {user_data['bottom']}", inline=True)
-
-        # 處理物品欄顯示
-        inventory = '空的'
-        if user_data['inventory']:
-            try:
-                items = json.loads(user_data['inventory'])
-                if items:
-                    inventory = ', '.join(str(item) for item in items[:3])
-                    if len(items) > 3:
-                        inventory += f"... 等{len(items)}項"
-            except:
-                pass
-        embed.add_field(name="🎒 物品欄", value=inventory, inline=False)
-
-        embed.set_thumbnail(url=user.display_avatar.url)
-        
-        # 獲取並設置紙娃娃圖片
-        try:
-            character_image_url = await self.get_character_image_url(user_data)
-            if character_image_url:
-                embed.set_image(url=character_image_url)
-        except Exception as e:
-            print(f"⚠️ 無法獲取紙娃娃圖片: {e}")
-        
-        if user_data.get('is_stunned', 0) == 1:
-            embed.set_footer(text="💫 你目前處於擊暈狀態，請等待恢復...")
-        else:
-            embed.set_footer(text="⚠️ 園區已自動為你關閉離開選項，安心享受吧。")
-            
-        return embed
+            fallback.add_field(name="📌 提示", value="若按鈕無法顯示，可稍後再嘗試。", inline=False)
+            return fallback
 
     async def update_welcome_message(self, interaction: discord.Interaction, user_id: int, edit_channel: bool = False):
         """更新用戶的歡迎 embed。
@@ -794,16 +811,30 @@ class WelcomeFlow(commands.Cog):
             print(f"📢 準備發送歡迎訊息到頻道: {channel.name}")
             
             try:
-                embed = await self.create_welcome_embed(user_data, member)
-                
-                # 獲取角色圖片 URL（非關鍵錯誤，可以失敗）
-                character_image_url = await self.get_character_image_url(user_data)
-                
-                if character_image_url:
-                    embed.set_image(url=character_image_url)
-                    print(f"✅ 已設置角色圖片")
-                else:
-                    print(f"⚠️ 無法獲取角色圖片（將不影響主功能）")
+                try:
+                    embed = await self.create_welcome_embed(user_data, member)
+                    # 獲取角色圖片 URL（非關鍵錯誤，可以失敗）
+                    character_image_url = await self.get_character_image_url(user_data)
+                    if character_image_url:
+                        embed.set_image(url=character_image_url)
+                        print(f"✅ 已設置角色圖片")
+                    else:
+                        print(f"⚠️ 無法獲取角色圖片（將不影響主功能）")
+                except Exception as inner_err:
+                    # 生成歡迎 embed 或獲取圖片失敗，仍需發送基本歡迎訊息
+                    print(f"⚠️ 生成歡迎 embed 失敗，改用簡化版本: {inner_err}")
+                    import traceback
+                    traceback.print_exc()
+
+                    embed = discord.Embed(
+                        title="🎉 歡迎光臨 KK 園區™",
+                        description=(
+                            f"🎉 歡迎 **{member.mention}** 來到 KK 園區！\n\n"
+                            "⚠️ 發生一些問題，但你仍然可以按下按鈕進入園區。"
+                        ),
+                        color=0x8B0000
+                    )
+                    embed.add_field(name="📌 提示", value="如果按鈕無法顯示，請稍後重新進入此頻道。", inline=False)
 
                 # 使用跨重啟的 persistent view（已註冊）
                 welcome_msg = await channel.send(embed=embed, view=self.persistent_view)
