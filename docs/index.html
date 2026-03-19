@@ -877,22 +877,45 @@
 
         async function initializeAndDisplayChart(symbol, currentPrice) {
             try {
+                console.log('🔍 檢查 LightweightCharts 庫是否加載...');
+                
+                // 檢查 CDN 是否已加載
+                if (!window.LightweightCharts) {
+                    console.error('❌ LightweightCharts 未加載，等待重試...');
+                    // 等待一下並重試
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    if (!window.LightweightCharts) {
+                        throw new Error('LightweightCharts CDN 加載失敗，請檢查網路連接');
+                    }
+                }
+                
+                console.log('✅ LightweightCharts 已加載:', typeof window.LightweightCharts);
+                
                 const chartContainer = document.getElementById('stocks-chart-container');
                 const chartDiv = document.getElementById('stocks-chart');
                 
+                console.log('🔍 檢查容器元素:');
+                console.log(`  - stocks-chart-container: ${chartContainer ? '✅ 找到' : '❌ 未找到'}`);
+                console.log(`  - stocks-chart: ${chartDiv ? '✅ 找到' : '❌ 未找到'}`);
+                
                 if (!chartContainer || !chartDiv) {
                     console.error('❌ 找不到圖表容器');
+                    alert('❌ 圖表容器未找到，請重新整理頁面');
                     return;
                 }
                 
+                console.log(`🔍 容器尺寸: ${chartDiv.clientWidth}x400`);
+                
                 // 如果已存在圖表，摧毀舊的
                 if (stockChart) {
+                    console.log('🧹 清理舊圖表...');
                     stockChart.remove();
                     stockChart = null;
                     candlestickSeries = null;
                 }
                 
                 // 創建新圖表
+                console.log('🎨 創建新圖表...');
                 const width = chartDiv.clientWidth;
                 stockChart = window.LightweightCharts.createChart(chartDiv, {
                     layout: {
@@ -915,7 +938,10 @@
                     }
                 });
                 
+                console.log('✅ 圖表實例已創建');
+                
                 // 添加蠟燭圖系列
+                console.log('📊 添加蠟燭圖系列...');
                 candlestickSeries = stockChart.addCandlestickSeries({
                     upColor: '#26a69a',
                     downColor: '#ef5350',
@@ -924,18 +950,27 @@
                     wickDownColor: '#ef5350'
                 });
                 
+                console.log('✅ 蠟燭圖系列已添加');
+                
                 // 生成模擬 K 線數據（使用當前價格 ±20% 隨機波動）
+                console.log(`📈 為 ${symbol}（價格: ${currentPrice}）生成模擬 K 線數據...`);
                 const candleData = generateMockCandleData(symbol, currentPrice);
+                console.log(`✅ 生成了 ${candleData.length} 條蠟燭數據`);
+                
                 candlestickSeries.setData(candleData);
+                console.log('✅ 數據已設置到圖表');
                 
                 // 自動縮放
                 stockChart.timeScale().fitContent();
+                console.log('✅ 圖表已自動縮放');
                 
                 // 顯示圖表容器
                 chartContainer.style.display = 'block';
+                console.log('✅ 容器已顯示（display: block）');
+                
                 currentChartSymbol = symbol;
                 
-                console.log(`✅ ${symbol} 的 K 線圖已顯示`);
+                console.log(`✅ ${symbol} 的 K 線圖已完全顯示！`);
                 
                 // 響應式調整
                 window.addEventListener('resize', () => {
@@ -946,6 +981,9 @@
                 
             } catch (error) {
                 console.error('❌ 初始化圖表失敗:', error);
+                console.error('❌ 錯誤詳情:', error.message);
+                console.error('❌ 堆棧:', error.stack);
+                alert(`❌ 圖表顯示失敗:\n${error.message}`);
             }
         }
 
