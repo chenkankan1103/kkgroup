@@ -21,14 +21,6 @@ import asyncio
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv, set_key
 
-# pilmoji 用於正確處理 Emoji 渲染
-try:
-    from pilmoji import Pilmoji
-    PILMOJI_AVAILABLE = True
-except ImportError:
-    PILMOJI_AVAILABLE = False
-    print("⚠️ pilmoji 未安裝，Emoji 渲染可能不完美。執行: pip install pilmoji")
-
 # 匯入資料庫相關
 from db_adapter import (
     get_central_reserve, 
@@ -283,48 +275,21 @@ def _sync_build_leaderboard_image(
     img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
     
-    # 如果 pilmoji 可用，則初始化 Pilmoji Drawer（即使自定義字體載入失敗，也能渲染 Emoji）
-    drawer = None
-    if PILMOJI_AVAILABLE:
-        try:
-            drawer = Pilmoji(img)
-        except Exception as e:
-            print(f"⚠️ pilmoji 初始化失敗: {e}，使用標準 draw")
-            drawer = None
-    
-    # 統一的文字繪製函數，支持 emoji 和對齐
+    # 統一的文字繪製函數（已移除 emoji 支持）
     def draw_text(pos, text, font=FONT_DESC, fill=(255, 255, 255), shadow=False, shadow_color=(0, 0, 0), shadow_offset=(1, 1)):
-        """繪製文字，自動處理 emoji 對齐
-
-        - 優先使用 pilmoji Drawer（支持 emoji）
-        - 可選擇加輕量陰影（右下1px偏移），用於使用者名、數字標题
-        - 降級使用標準 draw（當 pilmoji 不可用）
-        """
+        """繪製文字 - 支持單向陰影（右下1px偏移）"""
         x, y = pos
         if shadow:
             sx, sy = shadow_offset
-            # 单方向陰影（右下偏移）
+            # 單方向陰影（右下偏移）
             try:
-                if drawer is not None and PILMOJI_AVAILABLE:
-                    drawer.text((x + sx, y + sy), text, font=font, fill=shadow_color)
-                else:
-                    draw.text((x + sx, y + sy), text, font=font, fill=shadow_color)
+                draw.text((x + sx, y + sy), text, font=font, fill=shadow_color)
             except Exception:
                 pass
         try:
-            if drawer is not None and PILMOJI_AVAILABLE:
-                # 使用 pilmoji 的 text 方法，自動處理 emoji 對齐
-                drawer.text((x, y), text, font=font, fill=fill)
-            else:
-                # 降級方案：使用標準 ImageDraw
-                draw.text((x, y), text, font=font, fill=fill)
+            draw.text((x, y), text, font=font, fill=fill)
         except Exception as e:
             print(f"⚠️ 文字繪製失敗 ({text[:20]}...): {e}")
-            # 最後的降級方案
-            try:
-                draw.text((x, y), text, font=font, fill=fill)
-            except Exception as e2:
-                print(f"❌ 文字繪製徹底失敗: {e2}")
     
     # 第一部分：置頂的儲備池區塊
     reserve_bg_y_start = MARGIN
@@ -337,7 +302,7 @@ def _sync_build_leaderboard_image(
     )
     
     draw_bank_icon(draw, MARGIN + 5, MARGIN + 12, size=14, color=(150, 180, 255))
-    draw_text((MARGIN + 25, MARGIN + 8), "🏦 園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255))
+    draw_text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255))
     
     reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
     draw_text((MARGIN + 15, MARGIN + 45), f"[金庫] {reserve_formatted} KK", font=FONT_SMALL, fill=(100, 180, 220))
@@ -386,7 +351,7 @@ def _sync_build_leaderboard_image(
     else:
         title_x = MARGIN
     
-    draw_text((title_x, leaderboard_start_y + 8), "💰 KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
+    draw_text((title_x, leaderboard_start_y + 8), "KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
 
     # 顯示欄位標題：KK幣 / 數位美金
     header_y = leaderboard_start_y + 45
@@ -720,40 +685,22 @@ def _sync_build_digital_usd_leaderboard_image(
     img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
     
-    # Pilmoji 初始化
-    drawer = None
-    if PILMOJI_AVAILABLE and fonts_loaded:
-        try:
-            drawer = Pilmoji(img)
-        except Exception as e:
-            print(f"⚠️ Pilmoji 初始化失敗: {e}")
-            drawer = None
-    
+    # 統一的文字繪製函數（已移除 emoji 支持）
     def draw_text(pos, text, font=FONT_DESC, fill=(255, 255, 255), shadow=False, shadow_color=(0, 0, 0), shadow_offset=(1, 1)):
-        """繪製文字，自動處理 emoji 對齊
-
-        支援選擇性陰影，使數字更立體。
-        """
+        """繪製文字 - 支持單向陰影（右下1px偏移）"""
         x, y = pos
         if shadow:
             sx, sy = shadow_offset
             try:
-                if drawer is not None and PILMOJI_AVAILABLE:
-                    drawer.text((x + sx, y + sy), text, font=font, fill=shadow_color)
-                else:
-                    draw.text((x + sx, y + sy), text, font=font, fill=shadow_color)
+                draw.text((x + sx, y + sy), text, font=font, fill=shadow_color)
             except Exception:
                 pass
-        if drawer is not None and PILMOJI_AVAILABLE:
-            try:
-                drawer.text((x, y), text, font=font, fill=fill)
-            except Exception as e:
-                print(f"⚠️ pilmoji 繪製失敗: {e}")
-                draw.text((x, y), text, font=font, fill=fill)
-        else:
+        try:
             draw.text((x, y), text, font=font, fill=fill)
+        except Exception as e:
+            print(f"⚠️ 文字繪製失敗 ({text[:20]}...): {e}")
     
-    draw_text((MARGIN, 18), "💵 KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50), shadow=True)
+    draw_text((MARGIN, 18), "KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50), shadow=True)
 
     # 欄位標題：數位美金
     header_y = 50
@@ -781,10 +728,10 @@ def _sync_build_digital_usd_leaderboard_image(
     desc_y = 75 + len(members_data) * 60 + 15
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200, 200, 200), width=1)
     descriptions = [
-        " 💵 數位美金 (D-USD) 是「洗淨的白錢」- 透過「金流斷點」轉換而來",
-        " 🔄 轉換公式：KK幣 × 95% (扣5%損耗) ÷ 35 = D-USD"
+        "數位美銀 (D-USD) 是「洗淸的白錢」 - 透過「金流斷點」轉換而來",
+        "轉換公式：KK幣 × 95% (拣5%損誨) ÷ 35 = D-USD"
     ]
-    draw_text((MARGIN, desc_y), " 🏦 虛擬金融說明：", font=FONT_SMALL, fill=(50, 200, 50))
+    draw_text((MARGIN, desc_y), "虛擬金融說明：", font=FONT_SMALL, fill=(50, 200, 50))
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
         draw_text((MARGIN + 10, desc_text_y), desc, font=FONT_DESC, fill=(100, 100, 100))
