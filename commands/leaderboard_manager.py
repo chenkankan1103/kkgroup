@@ -337,7 +337,7 @@ def _sync_build_leaderboard_image(
     )
     
     draw_bank_icon(draw, MARGIN + 5, MARGIN + 12, size=14, color=(150, 180, 255))
-    draw_text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255))
+    draw_text((MARGIN + 25, MARGIN + 8), "🏦 園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255))
     
     reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
     draw_text((MARGIN + 15, MARGIN + 45), f"[金庫] {reserve_formatted} KK", font=FONT_SMALL, fill=(100, 180, 220))
@@ -369,9 +369,9 @@ def _sync_build_leaderboard_image(
         )
     
     if reserve_announcement:
-        draw_text((MARGIN + 15, MARGIN + 75), f"{reserve_announcement}", font=FONT_DESC, fill=(180, 180, 200))
+        draw_text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", font=FONT_DESC, fill=(180, 180, 200))
     else:
-        draw_text((MARGIN + 15, MARGIN + 75), "儲備池用於金流斷點手續費收取與獎勵發放", font=FONT_DESC, fill=(180, 180, 200))
+        draw_text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", font=FONT_DESC, fill=(180, 180, 200))
     
     # 第二部分：排行榜標題和資料
     leaderboard_start_y = MARGIN + RESERVE_SECTION_HEIGHT + 10
@@ -386,7 +386,7 @@ def _sync_build_leaderboard_image(
     else:
         title_x = MARGIN
     
-    draw_text((title_x, leaderboard_start_y + 8), "KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
+    draw_text((title_x, leaderboard_start_y + 8), "💰 KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
 
     # 顯示欄位標題：KK幣 / 數位美金
     header_y = leaderboard_start_y + 45
@@ -753,7 +753,7 @@ def _sync_build_digital_usd_leaderboard_image(
         else:
             draw.text((x, y), text, font=font, fill=fill)
     
-    draw_text((MARGIN, 18), "KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50), shadow=True)
+    draw_text((MARGIN, 18), "💵 KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50), shadow=True)
 
     # 欄位標題：數位美金
     header_y = 50
@@ -781,10 +781,10 @@ def _sync_build_digital_usd_leaderboard_image(
     desc_y = 75 + len(members_data) * 60 + 15
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200, 200, 200), width=1)
     descriptions = [
-        " 數位美金 (D-USD) 是「洗淨的白錢」- 透過「金流斷點」轉換而來",
-        " 轉換公式：KK幣 × 95% (扣5%損耗) ÷ 35 = D-USD"
+        " 💵 數位美金 (D-USD) 是「洗淨的白錢」- 透過「金流斷點」轉換而來",
+        " 🔄 轉換公式：KK幣 × 95% (扣5%損耗) ÷ 35 = D-USD"
     ]
-    draw_text((MARGIN, desc_y), " 虛擬金融說明：", font=FONT_SMALL, fill=(50, 200, 50))
+    draw_text((MARGIN, desc_y), " 🏦 虛擬金融說明：", font=FONT_SMALL, fill=(50, 200, 50))
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
         draw_text((MARGIN + 10, desc_text_y), desc, font=FONT_DESC, fill=(100, 100, 100))
