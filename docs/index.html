@@ -410,9 +410,10 @@
         }
 
         // 🔐 從 URL 參數獲取認證 token
-        function checkAuthToken() {
+        async function checkAuthToken() {
             const params = new URLSearchParams(window.location.search);
             const token = params.get('auth_token');
+            const hasAuthTokenInUrl = !!token;  // 記錄是否有新的 auth_token
             const username = params.get('user');
             
             if (token) {
@@ -421,16 +422,22 @@
                 // 清理 URL
                 window.history.replaceState({}, document.title, window.location.pathname);
                 // 驗證 token 並加載用戶數據
-                verifyAuth();
-                return true;
+                const verified = await verifyAuth();
+                
+                // ✅ 如果剛完成登入（URL 中有 auth_token），自動導航到股市
+                if (verified && hasAuthTokenInUrl) {
+                    console.log('✅ 登入成功，自動導航到股市');
+                    setTimeout(() => navigateTo('stocks'), 500);
+                }
+                
+                return verified;
             }
             
             // 檢查 localStorage 中保存的 token
             const savedToken = localStorage.getItem('auth_token');
             if (savedToken) {
                 authToken = savedToken;
-                verifyAuth();
-                return true;
+                return await verifyAuth();
             }
             
             return false;
@@ -636,7 +643,8 @@
             await loadConfig();
 
             // 檢查認證
-            if (checkAuthToken()) {
+            const isAuthenticated = await checkAuthToken();
+            if (isAuthenticated) {
                 console.log('✅ 已驗證認證用戶');
             } else {
                 console.log('ℹ️ 尚未認證');
