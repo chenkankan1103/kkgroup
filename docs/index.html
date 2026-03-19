@@ -9,6 +9,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     
+    <!-- TradingView Lightweight Charts - 使用 jsDelivr CDN（更穩定） -->
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.0.0/dist/lightweight-charts.production.js"></script>
+    
     <style>
         :root {
             --primary: #ff0055;
@@ -160,9 +163,6 @@
             }
         }
     </style>
-    
-    <!-- TradingView Lightweight Charts - 免費 K 線圖庫 -->
-    <script src="https://unpkg.com/lightweight-charts@4.0.0/dist/lightweight-charts.production.js"></script>
 </head>
 <body>
     <!-- Header -->
@@ -879,44 +879,52 @@
             try {
                 console.log('🔍 檢查 LightweightCharts 庫是否加載...');
                 
-                // 檢查 CDN 是否已加載
-                if (!window.LightweightCharts) {
-                    console.error('❌ LightweightCharts 未加載，等待重試...');
-                    // 等待一下並重試
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    if (!window.LightweightCharts) {
-                        throw new Error('LightweightCharts CDN 加載失敗，請檢查網路連接');
-                    }
+                // 強化重試邏輯 - 最多 50 次，每次 200ms
+                let attempts = 0;
+                const maxAttempts = 50;
+                
+                while (!window.LightweightCharts && attempts < maxAttempts) {
+                    attempts++;
+                    console.log(`⏳ 等待 CDN 加載 (第 ${attempts}/${maxAttempts} 次)...`);
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 }
                 
-                console.log('✅ LightweightCharts 已加載:', typeof window.LightweightCharts);
+                if (!window.LightweightCharts) {
+                    console.warn('⚠️ jsDelivr CDN 加載超時，嘗試備用 CDN...');
+                    // 嘗試備用 CDN
+                    await loadChartLibraryFromBackup();
+                }
+                
+                if (!window.LightweightCharts) {
+                    throw new Error('所有 CDN 加載失敗。請檢查：1) 網路連接 2) 瀏覽器開發工具是否阻止脚本 3) 代理設定');
+                }
+                
+                console.log('✅ LightweightCharts 已成功加載！', typeof window.LightweightCharts);
                 
                 const chartContainer = document.getElementById('stocks-chart-container');
                 const chartDiv = document.getElementById('stocks-chart');
                 
-                console.log('🔍 檢查容器元素:');
-                console.log(`  - stocks-chart-container: ${chartContainer ? '✅ 找到' : '❌ 未找到'}`);
-                console.log(`  - stocks-chart: ${chartDiv ? '✅ 找到' : '❌ 未找到'}`);
+                console.log('🔍 驗證容器元素:');
+                console.log(`  ✅ stocks-chart-container: ${chartContainer ? '找到' : '未找到 ❌'}`);
+                console.log(`  ✅ stocks-chart: ${chartDiv ? '找到' : '未找到 ❌'}`);
                 
                 if (!chartContainer || !chartDiv) {
-                    console.error('❌ 找不到圖表容器');
-                    alert('❌ 圖表容器未找到，請重新整理頁面');
-                    return;
+                    throw new Error('DOM 容器未找到 - 請檢查 HTML 結構');
                 }
                 
-                console.log(`🔍 容器尺寸: ${chartDiv.clientWidth}x400`);
+                const width = chartDiv.clientWidth;
+                console.log(`📐 容器尺寸: ${width}x400`);
                 
-                // 如果已存在圖表，摧毀舊的
+                // 清理舊圖表
                 if (stockChart) {
-                    console.log('🧹 清理舊圖表...');
+                    console.log('🧹 清理舊圖表實例...');
                     stockChart.remove();
                     stockChart = null;
                     candlestickSeries = null;
                 }
                 
                 // 創建新圖表
-                console.log('🎨 創建新圖表...');
-                const width = chartDiv.clientWidth;
+                console.log('🎨 使用 LightweightCharts v' + window.LightweightCharts.version + ' 創建圖表...');
                 stockChart = window.LightweightCharts.createChart(chartDiv, {
                     layout: {
                         background: { color: '#0a0a0a' },
@@ -938,7 +946,7 @@
                     }
                 });
                 
-                console.log('✅ 圖表實例已創建');
+                console.log('✅ 圖表實例建立成功');
                 
                 // 添加蠟燭圖系列
                 console.log('📊 添加蠟燭圖系列...');
@@ -950,41 +958,95 @@
                     wickDownColor: '#ef5350'
                 });
                 
-                console.log('✅ 蠟燭圖系列已添加');
+                console.log('✅ 蠟燭圖系列建立成功');
                 
-                // 生成模擬 K 線數據（使用當前價格 ±20% 隨機波動）
-                console.log(`📈 為 ${symbol}（價格: ${currentPrice}）生成模擬 K 線數據...`);
+                // 生成模擬 K 線數據
+                console.log(`📈 為 ${symbol}（當前價: ${currentPrice}）生成 K 線數據...`);
                 const candleData = generateMockCandleData(symbol, currentPrice);
-                console.log(`✅ 生成了 ${candleData.length} 條蠟燭數據`);
+                console.log(`✅ 已生成 ${candleData.length} 筆蠟燭數據`);
+                
+                if (candleData.length === 0) {
+                    throw new Error('K線數據生成失敗');
+                }
                 
                 candlestickSeries.setData(candleData);
                 console.log('✅ 數據已設置到圖表');
                 
                 // 自動縮放
                 stockChart.timeScale().fitContent();
-                console.log('✅ 圖表已自動縮放');
+                console.log('✅ 圖表已自動調整視圖');
                 
                 // 顯示圖表容器
                 chartContainer.style.display = 'block';
-                console.log('✅ 容器已顯示（display: block）');
+                console.log('✅ 圖表容器已顯示');
                 
                 currentChartSymbol = symbol;
                 
-                console.log(`✅ ${symbol} 的 K 線圖已完全顯示！`);
+                console.log(`\n🎉 ${symbol} 的 K 線圖顯示完成！\n`);
                 
-                // 響應式調整
+                // 添加響應式支持
                 window.addEventListener('resize', () => {
-                    if (stockChart) {
-                        stockChart.applyOptions({ width: chartDiv.clientWidth });
+                    if (stockChart && chartDiv) {
+                        const newWidth = chartDiv.clientWidth;
+                        stockChart.applyOptions({ width: newWidth });
+                        console.log(`📐 圖表已調整寬度: ${newWidth}px`);
                     }
                 });
                 
             } catch (error) {
-                console.error('❌ 初始化圖表失敗:', error);
-                console.error('❌ 錯誤詳情:', error.message);
-                console.error('❌ 堆棧:', error.stack);
-                alert(`❌ 圖表顯示失敗:\n${error.message}`);
+                console.error('❌ 圖表初始化失敗!');
+                console.error('  錯誤信息:', error.message);
+                console.error('  完整堆棧:', error);
+                
+                // 嘗試提供更詳細的診斷
+                console.log('\n📋 診斷信息:');
+                console.log(`  - window.LightweightCharts 存在: ${!!window.LightweightCharts}`);
+                console.log(`  - localStorage.debugMode: ${localStorage.getItem('debugMode')}`);
+                
+                alert(`❌ 圖表顯示失敗\n\n原因: ${error.message}\n\n請檢查瀏覽器控制台 (F12) 查看詳細日誌`);
             }
+        }
+
+        // 備用 CDN 加載函數
+        async function loadChartLibraryFromBackup() {
+            const alternativeCDNs = [
+                'https://cdn.jsdelivr.net/npm/lightweight-charts@4.0.0/dist/lightweight-charts.standalone.production.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.0.0/lightweight-charts.min.js'
+            ];
+            
+            for (const cdnUrl of alternativeCDNs) {
+                try {
+                    console.log(`🔄 嘗試備用 CDN: ${cdnUrl}`);
+                    await loadScriptFromURL(cdnUrl);
+                    
+                    if (window.LightweightCharts) {
+                        console.log(`✅ 備用 CDN 成功加載!`);
+                        return true;
+                    }
+                } catch (e) {
+                    console.warn(`❌ 備用 CDN 失敗: ${e.message}`);
+                }
+            }
+            
+            return false;
+        }
+
+        // 動態加載 script
+        function loadScriptFromURL(url) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = () => {
+                    console.log(`✅ 腳本加載成功: ${url}`);
+                    resolve();
+                };
+                script.onerror = () => {
+                    console.error(`❌ 腳本加載失敗: ${url}`);
+                    reject(new Error(`腳本無法從 ${url} 加載`));
+                };
+                script.async = true;
+                document.head.appendChild(script);
+            });
         }
 
         function generateMockCandleData(symbol, currentPrice) {
