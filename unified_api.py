@@ -39,15 +39,18 @@ logger = logging.getLogger(__name__)
 from blueprints.stats import stats_bp
 from blueprints.sheets import sheets_bp
 from blueprints.discord_auth import discord_auth_bp
+from blueprints.stocks_api import stocks_api_bp
 
 app.register_blueprint(stats_bp)
 app.register_blueprint(sheets_bp)
 app.register_blueprint(discord_auth_bp)
+app.register_blueprint(stocks_api_bp)
 
 logger.info("✅ 已註冊所有 Blueprints")
 logger.info(f"  - Stats API")
 logger.info(f"  - Sheets API")
 logger.info(f"  - Discord Auth API")
+logger.info(f"  - Stocks API")
 
 # ============================================================
 # 全局錯誤處理器
