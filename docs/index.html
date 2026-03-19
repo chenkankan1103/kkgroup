@@ -643,14 +643,19 @@
 
         // 頁面導航
         async function navigateTo(page) {
+            console.log(`🔀 導航到: ${page}, 認證狀態: ${!!authToken}`);
+            
             // 檢查是否需要認證
             const protectedPages = ['shop', 'stocks', 'user'];
             
             if (protectedPages.includes(page)) {
+                console.log(`🔐 ${page} 是受保護頁面，檢查認證...`);
+                
                 // 先驗證 token
                 if (!authToken) {
                     const savedToken = localStorage.getItem('auth_token');
                     if (savedToken) {
+                        console.log(`✅ 從 localStorage 恢復 token`);
                         authToken = savedToken;
                     }
                 }
@@ -671,25 +676,36 @@
                     alert('❌ 認證已過期，請重新登入');
                     return;
                 }
+                
+                console.log(`✅ ${page} 認證驗證通過`);
             }
             
             // 切換頁面
+            console.log(`🎬 切換頁面 DOM...`);
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             const targetPage = document.getElementById('page-' + page);
             if (targetPage) {
                 targetPage.classList.add('active');
+                console.log(`✅ 頁面 ${page} 已啟用`);
+            } else {
+                console.error(`❌ 找不到頁面元素: page-${page}`);
             }
             
             document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
-            event.target?.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
 
             // 股市頁面初始化
             if (page === 'stocks') {
+                console.log(`📊 初始化股市頁面，authToken 存在: ${!!authToken}`);
                 if (!authToken) {
+                    console.log('❌ 未認證，顯示登入提示');
                     // 未認證時顯示登入提示
                     document.getElementById('stocks-login-prompt').style.display = 'block';
                     document.getElementById('stocks-trading-interface').style.display = 'none';
                 } else {
+                    console.log('✅ 已認證，加載交易介面');
                     // 已認證時加載交易介面
                     loadStocksInterface();
                 }
@@ -703,20 +719,42 @@
         
         async function loadStocksInterface() {
             console.log('📊 載入股市交易介面...');
+            console.log('🔍 檢查 DOM 元素...');
+            
+            const loginPrompt = document.getElementById('stocks-login-prompt');
+            const tradingInterface = document.getElementById('stocks-trading-interface');
+            
+            console.log(`  - stocks-login-prompt: ${loginPrompt ? '找到' : '❌ 未找到'}`);
+            console.log(`  - stocks-trading-interface: ${tradingInterface ? '找到' : '❌ 未找到'}`);
             
             try {
+                if (!loginPrompt || !tradingInterface) {
+                    console.error('❌ 缺少必要的 DOM 元素！');
+                    return;
+                }
+                
                 // 隱藏登入提示，顯示交易介面
-                document.getElementById('stocks-login-prompt').style.display = 'none';
-                document.getElementById('stocks-trading-interface').style.display = 'block';
+                console.log('🎬 開始隱藏登入提示...');
+                loginPrompt.style.display = 'none';
+                console.log(`  取消後: display = ${loginPrompt.style.display}`);
+                
+                console.log('🎬 開始顯示交易介面...');
+                tradingInterface.style.display = 'block';
+                console.log(`  設置後: display = ${tradingInterface.style.display}`);
                 
                 // 加載用戶投資組合
+                console.log('💰 加載用戶投資組合...');
                 await loadUserPortfolio();
                 
                 // 加載排行榜
+                console.log('🏆 加載排行榜...');
                 await loadStocksLeaderboard();
+                
+                console.log('✅ 股市交易介面已完全加載');
                 
             } catch (error) {
                 console.error('❌ 載入股市介面失敗:', error);
+                console.error('❌ 錯誤堆棧:', error.stack);
             }
         }
 
