@@ -286,7 +286,7 @@ def _sync_build_leaderboard_image(
     # 如果 pilmoji 可用且有自定義字體，使用 Pilmoji Drawer 處理 Emoji
     if PILMOJI_AVAILABLE and fonts_loaded:
         try:
-            drawer = Pilmoji(img, font=FONT_BIG)
+            drawer = Pilmoji(img)
         except Exception as e:
             print(f"⚠️ pilmoji 初始化失敗: {e}，使用標準 draw")
             drawer = None
@@ -690,7 +690,7 @@ def _sync_build_digital_usd_leaderboard_image(
     drawer = None
     if PILMOJI_AVAILABLE and fonts_loaded:
         try:
-            drawer = Pilmoji(img, font=FONT_BIG)
+            drawer = Pilmoji(img)
         except Exception as e:
             print(f"⚠️ Pilmoji 初始化失敗: {e}")
             drawer = None
