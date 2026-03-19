@@ -666,15 +666,23 @@
                     return;
                 }
                 
-                // 驗證 token 是否仍有效
-                const isValid = await verifyAuth();
-                if (!isValid) {
-                    console.warn('❌ Token 已過期，請重新登入');
-                    localStorage.removeItem('auth_token');
-                    authToken = null;
-                    updateUIForUnauthenticatedUser();
-                    alert('❌ 認證已過期，請重新登入');
-                    return;
+                // 只在不是自動導航時驗證 token
+                // 自動導航時，我們已經在 checkAuthToken() 中驗證過了
+                const isAutoNavigation = !event || !event.target;
+                
+                if (!isAutoNavigation) {
+                    console.log('🔄 手動導航，重新驗證 token...');
+                    const isValid = await verifyAuth();
+                    if (!isValid) {
+                        console.warn('❌ Token 已過期，請重新登入');
+                        localStorage.removeItem('auth_token');
+                        authToken = null;
+                        updateUIForUnauthenticatedUser();
+                        alert('❌ 認證已過期，請重新登入');
+                        return;
+                    }
+                } else {
+                    console.log('✅ 自動導航，跳過驗證（已在登入時驗證）');
                 }
                 
                 console.log(`✅ ${page} 認證驗證通過`);
@@ -707,7 +715,7 @@
                 } else {
                     console.log('✅ 已認證，加載交易介面');
                     // 已認證時加載交易介面
-                    loadStocksInterface();
+                    await loadStocksInterface();
                 }
             }
             
