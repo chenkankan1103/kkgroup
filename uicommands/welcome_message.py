@@ -671,6 +671,14 @@ class WelcomeFlow(commands.Cog):
 
         embed.set_thumbnail(url=user.display_avatar.url)
         
+        # 獲取並設置紙娃娃圖片
+        try:
+            character_image_url = await self.get_character_image_url(user_data)
+            if character_image_url:
+                embed.set_image(url=character_image_url)
+        except Exception as e:
+            print(f"⚠️ 無法獲取紙娃娃圖片: {e}")
+        
         if user_data.get('is_stunned', 0) == 1:
             embed.set_footer(text="💫 你目前處於擊暈狀態，請等待恢復...")
         else:
