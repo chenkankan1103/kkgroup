@@ -452,7 +452,7 @@ def _sync_build_leaderboard_image(
         name_y = y+8
         draw_text((name_x, name_y), member.display_name, font=FONT_SMALL, fill=(200, 200, 220))
         
-        kkcoin_text = f"{int(float(kkcoin or 0))} KK"
+        kkcoin_text = f"{int(float(kkcoin or 0))}"
         usd_text = f"${float(digital_usd or 0):,.0f}"
 
         # 右對齊：KK幣在靠右位置，數位美金緊貼最右邊
@@ -463,8 +463,8 @@ def _sync_build_leaderboard_image(
         kkcoin_x = kk_right - kkcoin_width
         usd_x = usd_right - usd_width
 
-        draw_text((kkcoin_x, y+8), kkcoin_text, font=FONT_KKCOIN, fill=(100, 180, 220))
-        draw_text((usd_x, y+8), usd_text, font=FONT_KKCOIN, fill=(100, 220, 150))
+        draw_text((kkcoin_x, y+12), kkcoin_text, font=FONT_KKCOIN, fill=(100, 180, 220))
+        draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(100, 220, 150))
         
         # 進度條
         if max_assets > 0:
@@ -779,7 +779,7 @@ def _sync_build_digital_usd_leaderboard_image(
         usd_width = FONT_KKCOIN.getbbox(usd_text)[2] - FONT_KKCOIN.getbbox(usd_text)[0]
         usd_right = WIDTH - 20
         usd_x = usd_right - usd_width
-        draw_text((usd_x, y+8), usd_text, font=FONT_KKCOIN, fill=(50, 200, 50))
+        draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(50, 200, 50))
 
     desc_y = 75 + len(members_data) * 60 + 15
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200, 200, 200), width=1)
