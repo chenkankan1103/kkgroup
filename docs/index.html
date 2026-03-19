@@ -432,7 +432,7 @@
                         <!-- K 線圖 -->
                         <div id="stocks-chart-container" class="pixel-border rounded-lg p-6 bg-gray-900/50 mb-8" style="display: none;">
                             <h3 class="pixel-font text-lg text-cyan-400 mb-4">📊 K 線圖</h3>
-                            <div id="stocks-chart" style="height: 400px; width: 100%;"></div>
+                            <div id="stocks-chart" style="height: 300px; width: 100%;"></div>
                             <p class="text-gray-500 text-xs mt-2">（實時更新，支持台股、加密貨幣等）</p>
                         </div>
 
@@ -962,7 +962,7 @@
                 }
                 
                 const width = chartDiv.clientWidth;
-                console.log(`  - 容器尺寸: ${width}x400`);
+                console.log(`  - 容器尺寸: ${width}x300`);
                 
                 // ============ 第三階段：建立圖表 ============
                 console.log('\n🎨 第三階段：建立圖表實例...');
@@ -981,7 +981,7 @@
                         textColor: '#ffffff'
                     },
                     width: width,
-                    height: 400,
+                    height: 300,
                     timeScale: {
                         timeVisible: true,
                         secondsVisible: false,
