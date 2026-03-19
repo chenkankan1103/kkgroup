@@ -516,9 +516,6 @@ def _sync_build_leaderboard_image(
                     [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
                     fill=bar_color
                 )
-        
-        percent_text = f"{percent:.0f}%"
-        draw_text((progress_bar_x + progress_bar_width + 10, progress_bar_y), percent_text, font=FONT_DESC, fill=(255, 16, 240))
 
     # 第三部分：說明區塊
     desc_y = leaderboard_start_y + 75 + len(members_data) * 70 + 15
