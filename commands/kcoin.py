@@ -599,8 +599,15 @@ class KKCoin(commands.Cog):
             
             # 儲存到固定路徑（覆蓋舊檔）並進行權限偵測
             try:
-                image.save(leaderboard_path, format="PNG")
-                print(f"✅ 排行榜已存到: {leaderboard_path}")
+                # 優化 PNG：壓縮級別 9（最大），過濾優化
+                image.save(
+                    leaderboard_path,
+                    format="PNG",
+                    optimize=True,
+                    compress_level=9
+                )
+                file_size_kb = os.path.getsize(leaderboard_path) / 1024
+                print(f"✅ 排行榜已存到: {leaderboard_path} ({file_size_kb:.1f}KB)")
             except PermissionError:
                 print(
                     f"❌ 無法寫入 {leaderboard_path}！\\n"
@@ -1105,8 +1112,16 @@ class KKCoin(commands.Cog):
                 
                 # 儲存到固定路徑（覆蓋舊檔）並進行權限偵測
                 try:
-                    image.save(leaderboard_path, format="PNG")
-                    print(f"✅ 排行榜已存到: {leaderboard_path}")
+                    # 優化 PNG：壓縮級別 9（最大），濾波優化
+                    image.save(
+                        leaderboard_path,
+                        format="PNG",
+                        optimize=True,
+                        compress_level=9
+                    )
+                    # 計算檔案大小
+                    file_size_kb = os.path.getsize(leaderboard_path) / 1024
+                    print(f"✅ 排行榜已存到: {leaderboard_path} ({file_size_kb:.1f}KB)")
                 except PermissionError:
                     print(
                         f"❌ 無法寫入 {leaderboard_path}！\n"
@@ -1124,7 +1139,8 @@ class KKCoin(commands.Cog):
 
                 self.last_leaderboard_data = members_data.copy()
                 self.last_update_time = current_time
-                print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者) - URL: {image_url}")
+                file_size_kb = os.path.getsize(leaderboard_path) / 1024
+                print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者，{file_size_kb:.1f}KB) - URL: {image_url}")
 
             except discord.HTTPException as e:
                 print(f"❌ Discord API 錯誤: {e}")
