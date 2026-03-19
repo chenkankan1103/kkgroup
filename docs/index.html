@@ -302,40 +302,100 @@
         <!-- STOCKS PAGE -->
         <div id="page-stocks" class="page">
             <section class="py-20 px-4 min-h-screen bg-gradient-to-b from-transparent via-red-900/5 to-transparent">
-                <div class="max-w-4xl mx-auto">
+                <div class="max-w-6xl mx-auto">
                     <h1 class="pixel-font text-3xl md:text-5xl text-center mb-12 gradient-text">◆ 虛擬股市交易 ◆</h1>
 
-                    <div class="pixel-border rounded-lg p-8 bg-gray-900/50 text-center">
-                        <div class="text-4xl mb-4">📈</div>
-                        <p class="text-gray-300 mb-6 text-sm md:text-base">
-                            實時股市操盤系統
-                        </p>
-                        <p class="text-gray-400 text-xs md:text-sm mb-8">
-                            支持台股、加密貨幣、原物料、貴金屬交易<br/>
-                            <span class="text-gray-500">[股市系統整合開發中 - Discord 認證後啟用]</span>
-                        </p>
-                        <button class="pixel-button text-sm" onclick="loginDiscord()">登入開始交易</button>
-                    </div>
-
-                    <div class="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="pixel-border rounded-lg p-6 bg-gray-900/30">
-                            <h3 class="pixel-font text-lg text-red-500 mb-4">📊 資產類別</h3>
-                            <ul class="text-gray-300 text-sm space-y-2">
-                                <li>✓ 台灣股票 (台積電、鴻海等)</li>
-                                <li>✓ 加密貨幣 (BTC、ETH、SOL)</li>
-                                <li>✓ 原物料 (油、氣、玉米)</li>
-                                <li>✓ 貴金屬 (黃金、白銀)</li>
-                            </ul>
+                    <!-- 未登入狀態 -->
+                    <div id="stocks-login-prompt">
+                        <div class="pixel-border rounded-lg p-8 bg-gray-900/50 text-center">
+                            <div class="text-4xl mb-4">📈</div>
+                            <p class="text-gray-300 mb-6 text-sm md:text-base">
+                                實時股市操盤系統
+                            </p>
+                            <p class="text-gray-400 text-xs md:text-sm mb-8">
+                                支持台股、加密貨幣、原物料、貴金屬交易<br/>
+                                <span class="text-gray-500">[股市系統整合開發中 - Discord 認證後啟用]</span>
+                            </p>
+                            <button class="pixel-button text-sm" onclick="loginDiscord()">登入開始交易</button>
                         </div>
 
-                        <div class="pixel-border rounded-lg p-6 bg-gray-900/30">
-                            <h3 class="pixel-font text-lg text-yellow-400 mb-4">💰 功能</h3>
-                            <ul class="text-gray-300 text-sm space-y-2">
-                                <li>✓ 實時行情查詢</li>
-                                <li>✓ 建立持倉展示圖表</li>
-                                <li>✓ 損益計算與追蹤</li>
-                                <li>✓ 排行榜競賽</li>
-                            </ul>
+                        <div class="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="pixel-border rounded-lg p-6 bg-gray-900/30">
+                                <h3 class="pixel-font text-lg text-red-500 mb-4">📊 資產類別</h3>
+                                <ul class="text-gray-300 text-sm space-y-2">
+                                    <li>✓ 台灣股票 (台積電、鴻海等)</li>
+                                    <li>✓ 加密貨幣 (BTC、ETH、SOL)</li>
+                                    <li>✓ 原物料 (油、氣、玉米)</li>
+                                    <li>✓ 貴金屬 (黃金、白銀)</li>
+                                </ul>
+                            </div>
+
+                            <div class="pixel-border rounded-lg p-6 bg-gray-900/30">
+                                <h3 class="pixel-font text-lg text-yellow-400 mb-4">💰 功能</h3>
+                                <ul class="text-gray-300 text-sm space-y-2">
+                                    <li>✓ 實時行情查詢</li>
+                                    <li>✓ 建立持倉展示圖表</li>
+                                    <li>✓ 損益計算與追蹤</li>
+                                    <li>✓ 排行榜競賽</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 已登入狀態 -->
+                    <div id="stocks-trading-interface" style="display: none;">
+                        <!-- 用戶資金狀況 -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                            <div class="pixel-border rounded-lg p-6 bg-gray-900/50">
+                                <p class="text-gray-400 text-xs uppercase mb-2">可用資金</p>
+                                <p class="pixel-font text-2xl text-yellow-400" id="stocks-cash">0 KKB</p>
+                                <p class="text-gray-500 text-xs mt-2">帳戶現金</p>
+                            </div>
+                            <div class="pixel-border rounded-lg p-6 bg-gray-900/50">
+                                <p class="text-gray-400 text-xs uppercase mb-2">投資組合價值</p>
+                                <p class="pixel-font text-2xl text-cyan-400" id="stocks-portfolio-value">0 KKB</p>
+                                <p class="text-gray-500 text-xs mt-2">股票淨值</p>
+                            </div>
+                            <div class="pixel-border rounded-lg p-6 bg-gray-900/50">
+                                <p class="text-gray-400 text-xs uppercase mb-2">未實現損益</p>
+                                <p class="pixel-font text-2xl text-red-400" id="stocks-unrealized-pnl">0 KKB</p>
+                                <p class="text-gray-500 text-xs mt-2">開倉利潤</p>
+                            </div>
+                        </div>
+
+                        <!-- 交易區間 -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                            <!-- 股票搜索 & 查詢 -->
+                            <div class="lg:col-span-2">
+                                <div class="pixel-border rounded-lg p-6 bg-gray-900/50">
+                                    <h3 class="pixel-font text-lg text-red-400 mb-4">🔍 查詢行情</h3>
+                                    <div class="space-y-4">
+                                        <input type="text" id="stocks-symbol-input" placeholder="輸入股票代碼 (如: 2330.TW)" 
+                                               class="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded text-white text-sm placeholder-gray-500 focus:border-red-500 focus:outline-none">
+                                        <button class="w-full pixel-button text-sm" onclick="getStockQuote()">查詢行情</button>
+                                    </div>
+                                    <div id="stocks-quote-result" class="mt-4 text-sm text-gray-300" style="display: none;">
+                                        <p>股票代碼: <span id="quote-symbol" class="text-yellow-400"></span></p>
+                                        <p>當前價格: <span id="quote-price" class="text-cyan-400"></span></p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 持倉列表 -->
+                            <div class="pixel-border rounded-lg p-6 bg-gray-900/50">
+                                <h3 class="pixel-font text-lg text-yellow-400 mb-4">📍 持倉數量</h3>
+                                <div id="stocks-positions" class="space-y-2 text-sm text-gray-300">
+                                    <p class="text-gray-500">載入中...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 排行榜 -->
+                        <div class="pixel-border rounded-lg p-6 bg-gray-900/50">
+                            <h3 class="pixel-font text-lg text-yellow-400 mb-4">🏆 損益排行榜 (Top 10)</h3>
+                            <div id="stocks-leaderboard" class="text-sm text-gray-300">
+                                <p class="text-gray-500">載入中...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -622,9 +682,183 @@
             
             document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
             event.target?.classList.add('active');
+
+            // 股市頁面初始化
+            if (page === 'stocks') {
+                if (!authToken) {
+                    // 未認證時顯示登入提示
+                    document.getElementById('stocks-login-prompt').style.display = 'block';
+                    document.getElementById('stocks-trading-interface').style.display = 'none';
+                } else {
+                    // 已認證時加載交易介面
+                    loadStocksInterface();
+                }
+            }
             
             window.scrollTo(0, 0);
             console.log(`📄 已切換到: ${page}`);
+        }
+
+        // ===== 股市頁面功能 =====
+        
+        async function loadStocksInterface() {
+            console.log('📊 載入股市交易介面...');
+            
+            try {
+                // 隱藏登入提示，顯示交易介面
+                document.getElementById('stocks-login-prompt').style.display = 'none';
+                document.getElementById('stocks-trading-interface').style.display = 'block';
+                
+                // 加載用戶投資組合
+                await loadUserPortfolio();
+                
+                // 加載排行榜
+                await loadStocksLeaderboard();
+                
+            } catch (error) {
+                console.error('❌ 載入股市介面失敗:', error);
+            }
+        }
+
+        async function loadUserPortfolio() {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/stocks/portfolio`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) throw new Error('無法獲取投資組合');
+                
+                const data = await response.json();
+                const portfolio = data.portfolio || [];
+                
+                // 更新資金顯示
+                document.getElementById('stocks-cash').textContent = `${data.cash?.toLocaleString() || 0} KKB`;
+                document.getElementById('stocks-portfolio-value').textContent = `${data.total_value?.toLocaleString() || 0} KKB`;
+                
+                const pnlColor = (data.total_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400';
+                document.getElementById('stocks-unrealized-pnl').className = `pixel-font text-2xl ${pnlColor}`;
+                document.getElementById('stocks-unrealized-pnl').textContent = `${data.total_pnl?.toLocaleString() || 0} KKB`;
+                
+                // 更新持倉列表
+                const positionsDiv = document.getElementById('stocks-positions');
+                if (portfolio.length === 0) {
+                    positionsDiv.innerHTML = '<p class="text-gray-500">暫無持倉</p>';
+                } else {
+                    positionsDiv.innerHTML = portfolio.map(stock => `
+                        <div class="border border-gray-600 rounded p-2">
+                            <p class="text-yellow-400"><strong>${stock.symbol}</strong></p>
+                            <p class="text-sm">股數: ${stock.shares}</p>
+                            <p class="text-sm">成本: ${stock.average_cost}</p>
+                            <p class="text-sm">現價: ${stock.current_price}</p>
+                            <p class="text-xs ${stock.unrealized_pnl >= 0 ? 'text-green-500' : 'text-red-500'}">
+                                損益: ${stock.unrealized_pnl > 0 ? '+' : ''}${stock.unrealized_pnl} (${stock.unrealized_pnl_percent}%)
+                            </p>
+                        </div>
+                    `).join('');
+                }
+                
+                console.log('✅ 投資組合已加載');
+                
+            } catch (error) {
+                console.error('❌ 加載投資組合失敗:', error);
+                document.getElementById('stocks-positions').innerHTML = '<p class="text-red-500">載入失敗</p>';
+            }
+        }
+
+        async function getStockQuote() {
+            const symbol = document.getElementById('stocks-symbol-input').value.trim();
+            
+            if (!symbol) {
+                alert('⚠️ 請輸入股票代碼');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/stocks/quotes`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ symbols: [symbol] })
+                });
+                
+                if (!response.ok) throw new Error('無法獲取行情');
+                
+                const data = await response.json();
+                const quotes = data.quotes || {};
+                const price = quotes[symbol];
+                
+                if (price) {
+                    document.getElementById('quote-symbol').textContent = symbol;
+                    document.getElementById('quote-price').textContent = `${price} USD`;
+                    document.getElementById('stocks-quote-result').style.display = 'block';
+                    console.log(`✅ ${symbol}: ${price}`);
+                } else {
+                    alert(`❌ 找不到 ${symbol} 的行情`);
+                }
+                
+            } catch (error) {
+                console.error('❌ 查詢行情失敗:', error);
+                alert('❌ 查詢失敗，請檢查股票代碼');
+            }
+        }
+
+        async function loadStocksLeaderboard() {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/stocks/leaderboard?limit=10`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) throw new Error('無法獲取排行榜');
+                
+                const data = await response.json();
+                const leaderboard = data.leaderboard || [];
+                
+                const leaderboardDiv = document.getElementById('stocks-leaderboard');
+                if (leaderboard.length === 0) {
+                    leaderboardDiv.innerHTML = '<p class="text-gray-500">暫無排行數據</p>';
+                } else {
+                    leaderboardDiv.innerHTML = `
+                        <table class="w-full text-xs">
+                            <thead class="border-b border-gray-600">
+                                <tr>
+                                    <th class="text-left p-2">排名</th>
+                                    <th class="text-left p-2">玩家</th>
+                                    <th class="text-right p-2">損益</th>
+                                    <th class="text-right p-2">投資組合值</th>
+                                    <th class="text-right p-2">ROI</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${leaderboard.map(user => `
+                                    <tr class="border-b border-gray-700 hover:bg-gray-800/30">
+                                        <td class="p-2">${user.rank}</td>
+                                        <td class="p-2 text-yellow-400"><strong>${user.username}</strong></td>
+                                        <td class="p-2 text-right ${user.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}">${user.total_pnl > 0 ? '+' : ''}${user.total_pnl}</td>
+                                        <td class="p-2 text-right text-cyan-400">${user.portfolio_value}</td>
+                                        <td class="p-2 text-right text-blue-400">${user.roi > 0 ? '+' : ''}${user.roi}%</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                }
+                
+                console.log('✅ 排行榜已加載');
+                
+            } catch (error) {
+                console.error('❌ 加載排行榜失敗:', error);
+                document.getElementById('stocks-leaderboard').innerHTML = '<p class="text-red-500">載入失敗</p>';
+            }
         }
 
         function refreshLeaderboard() {
