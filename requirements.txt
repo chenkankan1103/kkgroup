@@ -3,6 +3,7 @@ python-dotenv
 aiohttp
 watchdog
 pillow
+pilmoji
 matplotlib
 numpy
 regex

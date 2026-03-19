@@ -21,6 +21,14 @@ import asyncio
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv, set_key
 
+# pilmoji 用於正確處理 Emoji 渲染
+try:
+    from pilmoji import Pilmoji
+    PILMOJI_AVAILABLE = True
+except ImportError:
+    PILMOJI_AVAILABLE = False
+    print("⚠️ pilmoji 未安裝，Emoji 渲染可能不完美。執行: pip install pilmoji")
+
 # 匯入資料庫相關
 from db_adapter import (
     get_central_reserve, 
@@ -244,13 +252,15 @@ def _sync_build_leaderboard_image(
         FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 20)
         FONT_DESC = ImageFont.truetype(FONT_PATH, 16)
         FONT_RANK = ImageFont.truetype(FONT_PATH, 30)
+        fonts_loaded = True
     except Exception as e:
-        print(f"❌ 載入字體失敗: {e}，使用預設字體")
+        print(f"⚠️ 載入自定義字體失敗: {e}，使用預設字體")
         FONT_BIG = ImageFont.load_default()
         FONT_SMALL = ImageFont.load_default()
         FONT_KKCOIN = ImageFont.load_default()
         FONT_DESC = ImageFont.load_default()
         FONT_RANK = ImageFont.load_default()
+        fonts_loaded = False
     
     trophy_img = None
     try:
@@ -273,6 +283,40 @@ def _sync_build_leaderboard_image(
     img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
     
+    # 如果 pilmoji 可用且有自定義字體，使用 Pilmoji Drawer 處理 Emoji
+    if PILMOJI_AVAILABLE and fonts_loaded:
+        try:
+            drawer = Pilmoji(img, font=FONT_BIG)
+        except Exception as e:
+            print(f"⚠️ pilmoji 初始化失敗: {e}，使用標準 draw")
+            drawer = None
+    else:
+        drawer = None
+    
+    # 統一的文字繪製函數，支持 emoji 和對齐
+    def draw_text(pos, text, font=FONT_DESC, fill=(255, 255, 255)):
+        """
+        繪製文字，自動處理 emoji 對齐
+        - 優先使用 pilmoji Drawer（支持 emoji）
+        - 降級使用標準 draw（當 pilmoji 不可用）
+        """
+        x, y = pos
+        try:
+            if drawer is not None and PILMOJI_AVAILABLE:
+                # 使用 pilmoji 的 text 方法，自動處理 emoji 對齐
+                drawer.text((x, y), text, font=font, fill=fill)
+            else:
+                # 降級方案：使用標準 ImageDraw
+                # 先過濾 emoji 以減少對齐問題
+                draw.text((x, y), text, font=font, fill=fill)
+        except Exception as e:
+            print(f"⚠️ 文字繪製失敗 ({text[:20]}...): {e}")
+            # 最後的降級方案
+            try:
+                draw.text((x, y), text, font=font, fill=fill)
+            except Exception as e2:
+                print(f"❌ 文字繪製徹底失敗: {e2}")
+    
     # 第一部分：置頂的儲備池區塊
     reserve_bg_y_start = MARGIN
     reserve_bg_y_end = MARGIN + RESERVE_SECTION_HEIGHT - 5
@@ -284,10 +328,10 @@ def _sync_build_leaderboard_image(
     )
     
     draw_bank_icon(draw, MARGIN + 5, MARGIN + 12, size=14, color=(150, 180, 255))
-    draw.text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", fill=(150, 180, 255), font=FONT_BIG)
+    draw_text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255))
     
     reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
-    draw.text((MARGIN + 15, MARGIN + 45), f"[金庫] {reserve_formatted} KK", fill=(100, 180, 220), font=FONT_SMALL)
+    draw_text((MARGIN + 15, MARGIN + 45), f"[金庫] {reserve_formatted} KK", font=FONT_SMALL, fill=(100, 180, 220))
     
     # 壓力條
     bar_x = MARGIN + 280
@@ -316,12 +360,12 @@ def _sync_build_leaderboard_image(
         )
     
     pressure_text = f"{reserve_pressure:.0f}%"
-    draw.text((bar_x + 8, bar_y + 2), pressure_text, fill=(200, 200, 200), font=FONT_DESC)
+    draw_text((bar_x + 8, bar_y + 2), pressure_text, font=FONT_DESC, fill=(200, 200, 200))
     
     if reserve_announcement:
-        draw.text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", fill=(180, 180, 200), font=FONT_DESC)
+        draw_text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", font=FONT_DESC, fill=(180, 180, 200))
     else:
-        draw.text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", fill=(180, 180, 200), font=FONT_DESC)
+        draw_text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", font=FONT_DESC, fill=(180, 180, 200))
     
     # 第二部分：排行榜標題和資料
     leaderboard_start_y = MARGIN + RESERVE_SECTION_HEIGHT + 10
@@ -336,7 +380,7 @@ def _sync_build_leaderboard_image(
     else:
         title_x = MARGIN
     
-    draw.text((title_x, leaderboard_start_y + 8), "💰 金流斷點交易所 - 總資產排行", fill=(200, 200, 220), font=FONT_BIG)
+    draw_text((title_x, leaderboard_start_y + 8), "💰 金流斷點交易所 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220))
 
     # 畫各行
     for i, member_data in enumerate(zip(members_data, avatar_images)):
@@ -360,7 +404,7 @@ def _sync_build_leaderboard_image(
             rank_x = MARGIN
         
         if i >= 3:
-            draw.text((rank_x + 15, y + 18), f"{i+1}", fill=(255, 20, 147), font=FONT_RANK)
+            draw_text((rank_x + 15, y + 18), f"{i+1}", font=FONT_RANK, fill=(255, 20, 147))
 
         display_avatar = None
         if avatar_img:
@@ -378,12 +422,12 @@ def _sync_build_leaderboard_image(
         
         name_x = rank_x + 100
         name_y = y+8
-        draw.text((name_x, name_y), member.display_name, fill=(200, 200, 220), font=FONT_SMALL)
+        draw_text((name_x, name_y), member.display_name, font=FONT_SMALL, fill=(200, 200, 220))
         
         kkcoin_text = f"{int(float(kkcoin or 0))} KK"
         usd_text = f"${float(digital_usd or 0):,.0f}"
-        draw.text((WIDTH-280, y+8), kkcoin_text, fill=(100, 180, 220), font=FONT_KKCOIN)
-        draw.text((WIDTH-120, y+8), usd_text, fill=(100, 220, 150), font=FONT_KKCOIN)
+        draw_text((WIDTH-280, y+8), kkcoin_text, font=FONT_KKCOIN, fill=(100, 180, 220))
+        draw_text((WIDTH-120, y+8), usd_text, font=FONT_KKCOIN, fill=(100, 220, 150))
         
         # 進度條
         if max_assets > 0:
@@ -437,7 +481,7 @@ def _sync_build_leaderboard_image(
                 )
         
         percent_text = f"{percent:.0f}%"
-        draw.text((progress_bar_x + progress_bar_width + 10, progress_bar_y), percent_text, fill=(255, 16, 240), font=FONT_DESC)
+        draw_text((progress_bar_x + progress_bar_width + 10, progress_bar_y), percent_text, font=FONT_DESC, fill=(255, 16, 240))
 
     # 第三部分：說明區塊
     desc_y = leaderboard_start_y + 75 + len(members_data) * 70 + 15
@@ -449,12 +493,12 @@ def _sync_build_leaderboard_image(
         "排名計算：總資產 = KK幣 + (D-USD ÷ 35)"
     ]
     draw_info_icon(draw, MARGIN + 5, desc_y + 5, size=12, color=(150, 160, 200))
-    draw.text((MARGIN + 20, desc_y), "金流說明：", fill=(150, 160, 200), font=FONT_SMALL)
+    draw_text((MARGIN + 20, desc_y), "金流說明：", font=FONT_SMALL, fill=(150, 160, 200))
     
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
         draw_bubble_icon(draw, MARGIN + 10, desc_text_y + 3, size=10, color=(180, 180, 200))
-        draw.text((MARGIN + 25, desc_text_y), desc, fill=(180, 180, 200), font=FONT_DESC)
+        draw_text((MARGIN + 25, desc_text_y), desc, font=FONT_DESC, fill=(180, 180, 200))
 
     return img
 
@@ -630,28 +674,51 @@ def _sync_build_digital_usd_leaderboard_image(
         FONT_SMALL = ImageFont.truetype(FONT_PATH, 22)
         FONT_KKCOIN = ImageFont.truetype(FONT_PATH, 24)
         FONT_DESC = ImageFont.truetype(FONT_PATH, 16)
+        fonts_loaded = True
     except Exception as e:
         print(f"❌ 載入字體失敗: {e}")
         FONT_BIG = ImageFont.load_default()
         FONT_SMALL = ImageFont.load_default()
         FONT_KKCOIN = ImageFont.load_default()
         FONT_DESC = ImageFont.load_default()
+        fonts_loaded = False
 
     img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
-    draw.text((MARGIN, 18), "💵 虛擬金融市場 - 數位美金排行", fill=(50, 200, 50), font=FONT_BIG)
+    
+    # Pilmoji 初始化
+    drawer = None
+    if PILMOJI_AVAILABLE and fonts_loaded:
+        try:
+            drawer = Pilmoji(img, font=FONT_BIG)
+        except Exception as e:
+            print(f"⚠️ Pilmoji 初始化失敗: {e}")
+            drawer = None
+    
+    def draw_text(pos, text, font=FONT_DESC, fill=(255, 255, 255)):
+        """繪製文字，自動處理 emoji 對齊"""
+        if drawer is not None and PILMOJI_AVAILABLE:
+            try:
+                drawer.text(pos, text, font=font, fill=fill)
+            except Exception as e:
+                print(f"⚠️ pilmoji 繪製失敗: {e}")
+                draw.text(pos, text, font=font, fill=fill)
+        else:
+            draw.text(pos, text, font=font, fill=fill)
+    
+    draw_text((MARGIN, 18), "💵 虛擬金融市場 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50))
 
     for i, ((member, digital_usd), avatar_img) in enumerate(zip(members_data, avatar_images)):
         y = 75 + i*60
         rank_x = MARGIN
-        draw.text((rank_x, y), f"{i+1:2d}", fill=RANK_COLOR, font=FONT_SMALL)
+        draw_text((rank_x, y), f"{i+1:2d}", font=FONT_SMALL, fill=RANK_COLOR)
 
         display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
         img.paste(display_avatar, (rank_x + 40, y), display_avatar)
         name_x = rank_x + 100
         name_y = y+8
-        draw.text((name_x, name_y), member.display_name, fill=(30, 30, 30), font=FONT_SMALL)
-        draw.text((WIDTH-220, y+8), f"${digital_usd:,.0f} D-USD", fill=(50, 200, 50), font=FONT_KKCOIN)
+        draw_text((name_x, name_y), member.display_name, font=FONT_SMALL, fill=(30, 30, 30))
+        draw_text((WIDTH-220, y+8), f"${digital_usd:,.0f} D-USD", font=FONT_KKCOIN, fill=(50, 200, 50))
 
     desc_y = 75 + len(members_data) * 60 + 15
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200, 200, 200), width=1)
@@ -659,10 +726,10 @@ def _sync_build_digital_usd_leaderboard_image(
         " 💵 數位美金 (D-USD) 是「洗淨的白錢」- 透過「金流斷點」轉換而來",
         " 🔄 轉換公式：KK幣 × 95% (扣5%損耗) ÷ 35 = D-USD"
     ]
-    draw.text((MARGIN, desc_y), " 🏦 虛擬金融說明：", fill=(50, 200, 50), font=FONT_SMALL)
+    draw_text((MARGIN, desc_y), " 🏦 虛擬金融說明：", font=FONT_SMALL, fill=(50, 200, 50))
     for i, desc in enumerate(descriptions):
         desc_text_y = desc_y + 25 + i * 22
-        draw.text((MARGIN + 10, desc_text_y), desc, fill=(100, 100, 100), font=FONT_DESC)
+        draw_text((MARGIN + 10, desc_text_y), desc, font=FONT_DESC, fill=(100, 100, 100))
 
     return img
 
