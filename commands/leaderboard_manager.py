@@ -297,16 +297,13 @@ def _sync_build_leaderboard_image(
         """繪製文字，自動處理 emoji 對齐
 
         - 優先使用 pilmoji Drawer（支持 emoji）
-        - 可選擇加多層陰影，使文字更立體（8方向陰影營造描邊效果）
+        - 可選擇加輕量陰影（2方向對角），用於用戶名和數字
         - 降級使用標準 draw（當 pilmoji 不可用）
         """
         x, y = pos
         if shadow:
-            # 多層陰影（8方向）營造描邊效果
-            shadow_offsets = [
-                (2, 2), (2, -2), (-2, 2), (-2, -2),  # 四個對角
-                (2, 0), (-2, 0), (0, 2), (0, -2)      # 四個正方向
-            ]
+            # 輕量陰影（2方向對角）
+            shadow_offsets = [(1, 1), (-1, -1)]
             for sx, sy in shadow_offsets:
                 try:
                     if drawer is not None and PILMOJI_AVAILABLE:
@@ -341,7 +338,7 @@ def _sync_build_leaderboard_image(
     )
     
     draw_bank_icon(draw, MARGIN + 5, MARGIN + 12, size=14, color=(150, 180, 255))
-    draw_text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255), shadow=True)
+    draw_text((MARGIN + 25, MARGIN + 8), "園區中央儲備池", font=FONT_BIG, fill=(150, 180, 255))
     
     reserve_formatted = f"{reserve:,.0f}" if reserve else "0"
     draw_text((MARGIN + 15, MARGIN + 45), f"[金庫] {reserve_formatted} KK", font=FONT_SMALL, fill=(100, 180, 220))
@@ -373,9 +370,9 @@ def _sync_build_leaderboard_image(
         )
     
     if reserve_announcement:
-        draw_text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", font=FONT_DESC, fill=(180, 180, 200), shadow=True)
+        draw_text((MARGIN + 15, MARGIN + 75), f"📢 {reserve_announcement}", font=FONT_DESC, fill=(180, 180, 200))
     else:
-        draw_text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", font=FONT_DESC, fill=(180, 180, 200), shadow=True)
+        draw_text((MARGIN + 15, MARGIN + 75), "💡 儲備池用於金流斷點手續費收取與獎勵發放", font=FONT_DESC, fill=(180, 180, 200))
     
     # 第二部分：排行榜標題和資料
     leaderboard_start_y = MARGIN + RESERVE_SECTION_HEIGHT + 10
@@ -390,7 +387,7 @@ def _sync_build_leaderboard_image(
     else:
         title_x = MARGIN
     
-    draw_text((title_x, leaderboard_start_y + 8), "💰 KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
+    draw_text((title_x, leaderboard_start_y + 8), "💰 KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220))
 
     # 顯示欄位標題：KK幣 / 數位美金
     header_y = leaderboard_start_y + 45
@@ -428,7 +425,7 @@ def _sync_build_leaderboard_image(
         # 第4-9 名靠左一點，第10名起更靠左一些
         if i >= 3:
             offset = 10 if i < 9 else 5
-            draw_text((rank_x + offset, y + 18), f"{i+1}", font=FONT_RANK, fill=(255, 20, 147))
+            draw_text((rank_x + offset, y + 18), f"{i+1}", font=FONT_RANK, fill=(255, 20, 147), shadow=True)
 
         # 前三名的頭貼要更靠左且放大一些
         avatar_size = AVATAR_SIZE
@@ -454,7 +451,7 @@ def _sync_build_leaderboard_image(
         
         name_x = rank_x + 100
         name_y = y+8
-        draw_text((name_x, name_y), member.display_name, font=FONT_SMALL, fill=(200, 200, 220))
+        draw_text((name_x, name_y), member.display_name, font=FONT_SMALL, fill=(200, 200, 220), shadow=True)
         
         kkcoin_text = f"{int(float(kkcoin or 0))}"
         usd_text = f"${float(digital_usd or 0):,.0f}"
@@ -467,8 +464,8 @@ def _sync_build_leaderboard_image(
         kkcoin_x = kk_right - kkcoin_width
         usd_x = usd_right - usd_width
 
-        draw_text((kkcoin_x, y+12), kkcoin_text, font=FONT_KKCOIN, fill=(100, 180, 220))
-        draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(100, 220, 150))
+        draw_text((kkcoin_x, y+12), kkcoin_text, font=FONT_KKCOIN, fill=(100, 180, 220), shadow=True)
+        draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(100, 220, 150), shadow=True)
         
         # 進度條
         if max_assets > 0:
@@ -757,7 +754,7 @@ def _sync_build_digital_usd_leaderboard_image(
         else:
             draw.text((x, y), text, font=font, fill=fill)
     
-    draw_text((MARGIN, 18), "💵 KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50), shadow=True)
+    draw_text((MARGIN, 18), "💵 KK園區 - 數位美金排行", font=FONT_BIG, fill=(50, 200, 50))
 
     # 欄位標題：數位美金
     header_y = 50
@@ -769,18 +766,18 @@ def _sync_build_digital_usd_leaderboard_image(
     for i, ((member, digital_usd), avatar_img) in enumerate(zip(members_data, avatar_images)):
         y = 75 + i*60
         rank_x = MARGIN
-        draw_text((rank_x, y), f"{i+1:2d}", font=FONT_SMALL, fill=RANK_COLOR)
+        draw_text((rank_x, y), f"{i+1:2d}", font=FONT_SMALL, fill=RANK_COLOR, shadow=True)
 
         display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
         img.paste(display_avatar, (rank_x + 40, y), display_avatar)
         name_x = rank_x + 100
         name_y = y+8
-        draw_text((name_x, name_y), member.display_name, font=FONT_SMALL, fill=(30, 30, 30))
+        draw_text((name_x, name_y), member.display_name, font=FONT_SMALL, fill=(30, 30, 30), shadow=True)
         usd_text = f"${digital_usd:,.0f} D-USD"
         usd_width = FONT_KKCOIN.getbbox(usd_text)[2] - FONT_KKCOIN.getbbox(usd_text)[0]
         usd_right = WIDTH - 20
         usd_x = usd_right - usd_width
-        draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(50, 200, 50))
+        draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(50, 200, 50), shadow=True)
 
     desc_y = 75 + len(members_data) * 60 + 15
     draw.line([(MARGIN, desc_y - 8), (WIDTH - MARGIN, desc_y - 8)], fill=(200, 200, 200), width=1)
