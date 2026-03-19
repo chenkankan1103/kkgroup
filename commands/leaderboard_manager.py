@@ -403,22 +403,31 @@ def _sync_build_leaderboard_image(
         else:
             rank_x = MARGIN
         
+        # 第4-15名的序號靠左一點（更貼近頭像）
         if i >= 3:
-            draw_text((rank_x + 15, y + 18), f"{i+1}", font=FONT_RANK, fill=(255, 20, 147))
+            draw_text((rank_x + 10, y + 18), f"{i+1}", font=FONT_RANK, fill=(255, 20, 147))
+
+        # 前三名的頭貼要更靠左且放大一些
+        avatar_size = AVATAR_SIZE
+        avatar_x = rank_x + 40
+        if i < 3:
+            avatar_size = AVATAR_SIZE + 12
+            avatar_x = rank_x + 30
 
         display_avatar = None
         if avatar_img:
             try:
-                display_avatar = avatar_img.resize((AVATAR_SIZE, AVATAR_SIZE))
-                img.paste(display_avatar, (rank_x + 40, y), display_avatar)
+                display_avatar = avatar_img.resize((avatar_size, avatar_size))
+                img.paste(display_avatar, (avatar_x, y), display_avatar)
             except Exception as e:
                 print(f"⚠️ 貼上頭像失敗: {e}")
                 display_avatar = create_placeholder_avatar()
-                display_avatar.resize((AVATAR_SIZE, AVATAR_SIZE))
-                img.paste(display_avatar, (rank_x + 40, y), display_avatar)
+                display_avatar = display_avatar.resize((avatar_size, avatar_size))
+                img.paste(display_avatar, (avatar_x, y), display_avatar)
         else:
             display_avatar = create_placeholder_avatar()
-            img.paste(display_avatar, (rank_x + 40, y), display_avatar)
+            display_avatar = display_avatar.resize((avatar_size, avatar_size))
+            img.paste(display_avatar, (avatar_x, y), display_avatar)
         
         name_x = rank_x + 100
         name_y = y+8
