@@ -1002,21 +1002,41 @@
                 console.log('\n📊 第四階段：添加蠟燭圖數據...');
                 
                 candlestickSeries = stockChart.addCandlestickSeries({
-                    upColor: '#26a69a',
-                    downColor: '#ef5350',
-                    borderVisible: false,
-                    wickUpColor: '#26a69a',
-                    wickDownColor: '#ef5350'
+                    upColor: '#22ab94',
+                    downColor: '#f23645',
+                    borderUpColor: '#22ab94',
+                    borderDownColor: '#f23645',
+                    borderVisible: true,
+                    wickUpColor: '#22ab94',
+                    wickDownColor: '#f23645',
+                    wickVisible: true
                 });
                 
                 const candleData = generateMockCandleData(symbol, currentPrice);
                 console.log(`  - 生成了 ${candleData.length} 筆蠟燭數據`);
+                console.log(`  - 第一筆: ${JSON.stringify(candleData[0])}`);
+                console.log(`  - 最後一筆: ${JSON.stringify(candleData[candleData.length - 1])}`);
                 
                 candlestickSeries.setData(candleData);
                 console.log('  ✅ 數據設置完成');
                 
-                stockChart.timeScale().fitContent();
-                console.log('  ✅ 視圖自動調整');
+                // 調整視圖以適應所有數據
+                console.log('  📍 調整視圖...');
+                const timeScale = stockChart.timeScale();
+                
+                if (candleData.length > 0) {
+                    // 獲取第一個和最後一個時間
+                    const firstTime = candleData[0].time;
+                    const lastTime = candleData[candleData.length - 1].time;
+                    
+                    // 設置可見範圍
+                    timeScale.setVisibleRange({ from: firstTime, to: lastTime });
+                    console.log(`  ✅ 時間範圍已設置: ${firstTime} ~ ${lastTime}`);
+                    
+                    // 強制重繪
+                    stockChart.timeScale().fitContent();
+                    console.log('  ✅ 視圖已自動調整');
+                }
                 
                 // ============ 第五階段：顯示圖表 ============
                 console.log('\n🎯 第五階段：顯示圖表...');
@@ -1099,6 +1119,10 @@
             const now = Math.floor(Date.now() / 1000);
             const dayInSeconds = 86400;
             
+            console.log(`  [generateMockCandleData] 開始生成 K 線數據`);
+            console.log(`    - 當前時間戳: ${now} (${new Date(now * 1000).toLocaleString()})`);
+            console.log(`    - 當前價格: ${currentPrice}`);
+            
             // 波動率（±20%）
             let price = currentPrice * 0.9;  // 從低於當前價格開始
             
@@ -1123,13 +1147,21 @@
             }
             
             // 添加今天數據，收盤價設置為當前價格
-            data.push({
+            const todayCandle = {
                 time: now,
                 open: Math.round(price * 100) / 100,
                 high: Math.round((currentPrice * 1.01) * 100) / 100,
                 low: Math.round((currentPrice * 0.99) * 100) / 100,
                 close: Math.round(currentPrice * 100) / 100
-            });
+            };
+            data.push(todayCandle);
+            
+            console.log(`  [generateMockCandleData] 完成：共 ${data.length} 筆數據`);
+            if (data.length > 0) {
+                console.log(`    - 最早: ${data[0].time} (${new Date(data[0].time * 1000).toLocaleDateString()})`);
+                console.log(`    - 最新: ${data[data.length - 1].time} (${new Date(data[data.length - 1].time * 1000).toLocaleDateString()})`);
+                console.log(`    - 最新蠟燭: O=${data[data.length - 1].open} H=${data[data.length - 1].high} L=${data[data.length - 1].low} C=${data[data.length - 1].close}`);
+            }
             
             return data;
         }
