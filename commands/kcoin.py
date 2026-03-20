@@ -170,7 +170,8 @@ class KKCoin(commands.Cog):
         self.last_digital_usd_data = None
         
         # Cloudflare Quick Tunnel 支援
-        self.base_url = "https://kkgroup.com"  # 預設值，將在 on_ready 嘗試更新
+        # 不使用 kkgroup.com（已被第三方公司註冊），改從 config.json 讀取
+        self.base_url = self._load_base_url_from_config()
         self.tunnel_url_lock = asyncio.Lock()
         self.last_synced_tunnel_url = None  # 追蹤上一次同步的 URL
         
@@ -195,7 +196,23 @@ class KKCoin(commands.Cog):
         if self.auto_push_leaderboard_to_github.is_running():
             self.auto_push_leaderboard_to_github.cancel()  # 📤 取消 GitHub 推送任務
     
-    async def sync_to_github(self, new_url, image_url="https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png"):
+    def _load_base_url_from_config(self) -> str:
+        """啟動時同步讀取 docs/config.json 取得 tunnel URL（避免使用 kkgroup.com 預設值）"""
+        try:
+            import json
+            config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    url = data.get("url", "")
+                    if url and url.startswith("https://"):
+                        print(f"✅ 啟動時從 config.json 讀取 base_url: {url}")
+                        return url
+        except Exception as e:
+            print(f"⚠️ 啟動時讀取 config.json 失敗: {e}")
+        return ""  # 空字串，不指向任何第三方網域
+
+    async def sync_to_github(self, new_url, image_url="https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png"):
         """將新的隧道 URL 同步到 GitHub Pages 入口
         
         參數:
@@ -746,11 +763,14 @@ class KKCoin(commands.Cog):
                 print(f"❌ 保存圖片失敗: {e}")
                 return
             
-            # 使用 GitHub Pages 的排行榜圖片 URL（最稳定）
-            image_url = "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=0"
+            # ✅ 使用 Discord 附件 CDN（不依賴 GitHub Pages 快取，100% 即時）
+            buf = io.BytesIO()
+            image.save(buf, format="PNG", optimize=True, compress_level=9)
+            buf.seek(0)
+            file = discord.File(buf, filename="leaderboard.png")
             embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
-            embed.set_image(url=image_url)
-            msg = await channel.send(embed=embed)
+            embed.set_image(url="attachment://leaderboard.png")
+            msg = await channel.send(file=file, embed=embed)
 
             # 立即儲存訊息 ID（防止重複創建）
             self.rank_message_id = msg.id
@@ -760,8 +780,7 @@ class KKCoin(commands.Cog):
             self.last_leaderboard_data = [m[:3] if len(m) >= 3 else m for m in members_data]
             self.last_update_time = time.time()
 
-            print(f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
-            print(f"📍 圖片 URL: {image_url}")
+            print(f"✅ 排行榜已創建 (Discord CDN 附件模式) - 頻道: {channel.name}, 訊息 ID: {msg.id}")
             
         except Exception as e:
             print(f"❌ 創建排行榜失敗: {e}")
@@ -1101,11 +1120,14 @@ class KKCoin(commands.Cog):
 
         try:
             image = await make_leaderboard_image(members_data)
-            # GitHub Pages URL (most stable)
-            image_url = f"https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t={int(time.time())}"
+            # ✅ 使用 Discord 附件 CDN（不依賴 GitHub Pages 快取）
+            buf = io.BytesIO()
+            image.save(buf, format="PNG", optimize=True, compress_level=9)
+            buf.seek(0)
+            file = discord.File(buf, filename="leaderboard.png")
             embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
-            embed.set_image(url=image_url)
-            msg = await interaction.followup.send(embed=embed)
+            embed.set_image(url="attachment://leaderboard.png")
+            msg = await interaction.followup.send(file=file, embed=embed)
 
             # 更新設定
             save_to_env("KKCOIN_RANK_CHANNEL_ID", interaction.channel.id)
@@ -1116,7 +1138,7 @@ class KKCoin(commands.Cog):
             self.last_leaderboard_data = [m[:3] if len(m) >= 3 else m for m in members_data]
             self.last_update_time = time.time()
 
-            print(f"✅ 排行榜已手動建立在頻道 {interaction.channel.id}，訊息 ID: {msg.id}")
+            print(f"✅ 排行榜已手動建立 (Discord CDN 附件模式) 頻道 {interaction.channel.id}，訊息 ID: {msg.id}")
         except Exception as e:
             print(f"❌ 建立排行榜時發生錯誤: {e}")
             await interaction.followup.send("❌ 建立排行榜時發生錯誤", ephemeral=True)
@@ -1262,16 +1284,19 @@ class KKCoin(commands.Cog):
                     print(f"❌ 保存圖片失敗: {e}")
                     return
 
-                # 使用 GitHub Pages 的排行榜圖片 URL（最稳定）
-                image_url = f"https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t={int(time.time())}"
+                # ✅ 使用 Discord 附件 CDN（不依賴 GitHub Pages 快取，100% 即時）
+                buf = io.BytesIO()
+                image.save(buf, format="PNG", optimize=True, compress_level=9)
+                buf.seek(0)
+                attach_file = discord.File(buf, filename="leaderboard.png")
                 embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
-                embed.set_image(url=image_url)
-                await msg.edit(embed=embed, content=None, attachments=[])
+                embed.set_image(url="attachment://leaderboard.png")
+                await msg.edit(embed=embed, content=None, attachments=[attach_file])
 
                 self.last_leaderboard_data = members_data.copy()
                 self.last_update_time = current_time
                 file_size_kb = os.path.getsize(leaderboard_path) / 1024
-                print(f"✅ 排行榜更新成功 ({len(members_data)} 名使用者，{file_size_kb:.1f}KB) - URL: {image_url}")
+                print(f"✅ 排行榜更新成功 (Discord CDN) ({len(members_data)} 名使用者，{file_size_kb:.1f}KB)")
 
             except discord.HTTPException as e:
                 print(f"❌ Discord API 錯誤: {e}")
