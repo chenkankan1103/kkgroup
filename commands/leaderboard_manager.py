@@ -603,7 +603,10 @@ def has_data_changed(new_data, last_data):
 # ======================================================================
 
 async def make_digital_usd_leaderboard_image(bot, members_data):
-    """生成數位美金排行榜圖片"""
+    """生成數位美金排行榜圖片（限制前 15 位以減少檔案大小）"""
+    # 限制排行榜為前 15 位（減少圖片大小）
+    members_data = members_data[:15]
+    
     DESCRIPTION_HEIGHT = 80
     WIDTH, HEIGHT = 900, 75 + 60 * len(members_data) + DESCRIPTION_HEIGHT
     AVATAR_SIZE = 48
