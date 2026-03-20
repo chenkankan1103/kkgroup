@@ -344,18 +344,27 @@ class KKCoin(commands.Cog):
                 if self.rank_message_id:
                     try:
                         msg = await channel.fetch_message(self.rank_message_id)
-                        # 編輯為純 URL 格式（DC 自動渲染為圖片）
-                        await msg.edit(content=f"🏆 **KK幣排行榜** ({user_count} 人)\n{leaderboard_url}")
+                        # 用 embed 顯示圖片（比純 URL 更可靠）
+                        embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
+                        embed.set_image(url=leaderboard_url)
+                        embed.add_field(name="使用人數", value=f"{user_count} 人", inline=False)
+                        await msg.edit(embed=embed, content=None, attachments=[])
                         print(f"✅ 排行榜已更新 ({user_count} 名使用者)")
                     except discord.NotFound:
                         print("⚠️ 舊 message 已被刪除，使用新 temp_msg 作為排行榜")
                         self.rank_message_id = temp_msg.id
-                        await temp_msg.edit(content=f"🏆 **KK幣排行榜** ({user_count} 人)\n{leaderboard_url}")
+                        embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
+                        embed.set_image(url=leaderboard_url)
+                        embed.add_field(name="使用人數", value=f"{user_count} 人", inline=False)
+                        await temp_msg.edit(embed=embed, content=None, attachments=[])
                         save_to_env("KKCOIN_RANK_MESSAGE_ID", self.rank_message_id)
                 else:
                     # 首次設置：使用 temp_msg
                     self.rank_message_id = temp_msg.id
-                    await temp_msg.edit(content=f"🏆 **KK幣排行榜** ({user_count} 人)\n{leaderboard_url}")
+                    embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
+                    embed.set_image(url=leaderboard_url)
+                    embed.add_field(name="使用人數", value=f"{user_count} 人", inline=False)
+                    await temp_msg.edit(embed=embed, content=None, attachments=[])
                     save_to_env("KKCOIN_RANK_MESSAGE_ID", self.rank_message_id)
                     print(f"✅ 排行榜訊息已創建: {self.rank_message_id}")
             else:
@@ -795,8 +804,8 @@ class KKCoin(commands.Cog):
                 print(f"✅ 排行榜已存到: {leaderboard_path} ({file_size_kb:.1f}KB)")
             except PermissionError:
                 print(
-                    f"❌ 無法寫入 {leaderboard_path}！\\n"
-                    f"請在 GCP 中執行以下指令修正權限：\\n"
+                    f"❌ 無法寫入 {leaderboard_path}！\n"
+                    f"請在 GCP 中執行以下指令修正權限：\n"
                     f"  sudo chown -R $USER:$USER /var/www/html"
                 )
                 return
@@ -804,24 +813,14 @@ class KKCoin(commands.Cog):
                 print(f"❌ 保存圖片失敗: {e}")
                 return
             
-            # ✅ 從 config.json 讀取圖片 URL（Discord 和網頁統一來源）
-            leaderboard_url = get_from_env("LEADERBOARD_URL", "")
-            if not leaderboard_url:
-                # 備用：如果還沒設置，使用 GitHub CDN
-                leaderboard_url = "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png"
+            # 💾 直接上傳到 Discord 並建立訊息（_upload_leaderboard_to_discord 會處理）
+            await self._upload_leaderboard_to_discord(image, len(members_data))
             
-            # 只發送圖片 URL，DC 自動渲染為嵌入圖片（不用 embed）
-            msg = await channel.send(f"🏆 **KK幣排行榜**\n{leaderboard_url}")
-
-            # 立即儲存訊息 ID（防止重複創建）
-            self.rank_message_id = msg.id
-            save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
-
             # 快取資料
             self.last_leaderboard_data = [m[:3] if len(m) >= 3 else m for m in members_data]
             self.last_update_time = time.time()
 
-            print(f"✅ 排行榜已創建 (Discord CDN) - 頻道: {channel.name}, 訊息 ID: {msg.id}")
+            print(f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {self.rank_message_id}")
             
         except Exception as e:
             print(f"❌ 創建排行榜失敗: {e}")
