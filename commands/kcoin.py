@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import os, io, time, aiohttp, re, subprocess, json
+import os, io, time, aiohttp, re, subprocess, json, datetime
 import asyncio
 from PIL import Image, ImageDraw, ImageFont
 from collections import defaultdict
@@ -179,10 +179,12 @@ class KKCoin(commands.Cog):
         self.auto_update_digital_usd_leaderboard.start()
         self.auto_update_reserve_status.start()
         self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
+        self.auto_push_leaderboard_to_github.start()  # 📤 啟動排行榜 GitHub 推送（每 5 分鐘）
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
         print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
         print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
         print(f"🔄 隧道 URL 自動檢查已啟用（每 10 分鐘掃描一次）")
+        print(f"📤 排行榜 GitHub 自動推送已啟用（每 5 分鐘一次，降低 VM 出站流量）")
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
@@ -190,6 +192,7 @@ class KKCoin(commands.Cog):
         self.auto_update_digital_usd_leaderboard.cancel()
         self.auto_update_reserve_status.cancel()
         self.auto_check_tunnel_url.cancel()  # 🔄 取消隧道檢查任務
+        self.auto_push_leaderboard_to_github.cancel()  # 📤 取消 GitHub 推送任務
     
     async def sync_to_github(self, new_url):
         """將新的隧道 URL 同步到 GitHub Pages 入口
@@ -259,6 +262,120 @@ class KKCoin(commands.Cog):
             import traceback
             traceback.print_exc()
             return False
+    
+    @tasks.loop(minutes=5)
+    async def auto_push_leaderboard_to_github(self):
+        """🔄 每 5 分鐘自動推送排行榜圖片到 GitHub
+        
+        功能:
+            1. 生成最新排行榜圖片
+            2. 儲存到本地 assets/leaderboard.png
+            3. Git add/commit/push 到 GitHub
+            4. 減少 VM 出站流量（網頁改讀 GitHub CDN）
+        """
+        try:
+            # 取得排行榜資料
+            members_data = await asyncio.to_thread(self.get_current_leaderboard_data)
+            if not members_data:
+                print("⚠️ 無可用排行榜資料，跳過 GitHub 推送")
+                return
+            
+            print("🎨 生成排行榜圖片用於 GitHub 推送...")
+            image = await make_leaderboard_image(members_data)
+            
+            # 本地資產路徑（用於 GitHub）
+            leaderboard_local_path = os.path.join(
+                os.path.dirname(__file__), "..", "assets", "leaderboard.png"
+            )
+            os.makedirs(os.path.dirname(leaderboard_local_path), exist_ok=True)
+            
+            # 儲存到本地
+            try:
+                image.save(
+                    leaderboard_local_path,
+                    format="PNG",
+                    optimize=True,
+                    compress_level=9
+                )
+                file_size_kb = os.path.getsize(leaderboard_local_path) / 1024
+                print(f"✅ 排行榜已存到本地: {leaderboard_local_path} ({file_size_kb:.1f}KB)")
+            except Exception as e:
+                print(f"❌ 保存圖片失敗: {e}")
+                return
+            
+            # Git 操作（在項目根目錄中執行）
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            
+            try:
+                # 檢查是否有變動
+                result = subprocess.run(
+                    ["git", "diff", "assets/leaderboard.png", "--quiet"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=project_root
+                )
+                
+                has_changes = result.returncode != 0
+                
+                if not has_changes:
+                    print("ℹ️ 排行榜圖片未變動，跳過 GitHub 推送")
+                    return
+                
+                print("📤 開始 GitHub 推送步驟...")
+                
+                git_commands = [
+                    ["git", "add", "assets/leaderboard.png"],
+                    ["git", "commit", "-m", f"Auto: Update leaderboard image ({len(members_data)} users) - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"],
+                    ["git", "push", "origin", "main"]
+                ]
+                
+                for cmd in git_commands:
+                    try:
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=15,
+                            cwd=project_root
+                        )
+                        
+                        if result.returncode == 0:
+                            print(f"✅ Git 指令成功: {' '.join(cmd[1:])}")
+                        else:
+                            if "nothing to commit" in result.stderr or "nothing added to commit" in result.stderr:
+                                print(f"ℹ️ 沒有變更需要提交")
+                            else:
+                                print(f"⚠️ Git 指令警告: {result.stderr[:150]}")
+                    
+                    except subprocess.TimeoutExpired:
+                        print(f"⏱️ 指令超時: {' '.join(cmd)}")
+                        return
+                    except Exception as e:
+                        print(f"❌ Git 操作失敗: {e}")
+                        return
+                
+                print(f"🚀 排行榜已推送到 GitHub ({len(members_data)} 使用者)")
+                print(f"📍 GitHub Raw: https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/assets/leaderboard.png")
+                print(f"📍 jsDelivr CDN: https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png")
+            
+            except Exception as e:
+                print(f"❌ GitHub 推送時發生錯誤: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        except Exception as e:
+            print(f"❌ 自動推送排行榜到 GitHub 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @auto_push_leaderboard_to_github.before_loop
+    async def before_auto_push_leaderboard(self):
+        """等待 bot 準備完成後再啟動推送」"""
+        await self.bot.wait_until_ready()
+        print("✅ GitHub 自動推送任務已啟動（每 5 分鐘推送一次，減少 VM 流量）")
+        # 延遲 60 秒後首次執行，讓 bot 充分初始化
+        await asyncio.sleep(60)
     
     async def get_tunnel_url(self):
         """從 docs/config.json 或 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
