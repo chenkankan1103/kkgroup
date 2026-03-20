@@ -496,15 +496,14 @@
                     CONFIG.API_BASE = data.url.replace(/\/+$/, '');
                 }
 
-                // Use GitHub Pages URL
-                LEADERBOARD_IMG_URL = 'https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=' + Date.now();
-                
-                // 允許 data.imageURL 覆蓋
+                // ✨ 優先讀 config.json 的 imageURL（Discord CDN，無快取延遲）
                 if (data.imageURL) {
                     LEADERBOARD_IMG_URL = data.imageURL;
-                } else if (data.url && !LEADERBOARD_IMG_URL) {
-                    // 備用: 如果 GitHub CDN 失敗，使用隧道 URL
-                    LEADERBOARD_IMG_URL = data.url.replace(/\/+$/, '') + '/assets/leaderboard.png';
+                    console.log('📍 排行榜圖片 URL:', LEADERBOARD_IMG_URL);
+                } else {
+                    // 備用：如果沒有設置 imageURL，使用 GitHub CDN
+                    LEADERBOARD_IMG_URL = 'https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=' + Date.now();
+                    console.log('⚠️ 使用備用 GitHub CDN URL');
                 }
 
                 if (data.DISCORD_URL) {
