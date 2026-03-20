@@ -169,6 +169,11 @@ class KKCoin(commands.Cog):
         self.last_leaderboard_data = None
         self.last_digital_usd_data = None
         
+        # 🎯 事件驅動排行榜生成（資料變化時延遲 5 分鐘後生成，避免頻繁更新）
+        self._pending_leaderboard_generation = False  # 標記是否有待生成的任務
+        self._generation_timer = None  # 5 分鐘延遲計時器
+        self._generation_lock = asyncio.Lock()  # 防止同時多次觸發
+        
         # Cloudflare Quick Tunnel 支援
         # 不使用 kkgroup.com（已被第三方公司註冊），改從 config.json 讀取
         self.base_url = self._load_base_url_from_config()
@@ -180,12 +185,12 @@ class KKCoin(commands.Cog):
         self.auto_update_digital_usd_leaderboard.start()
         self.auto_update_reserve_status.start()
         self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
-        self.auto_push_leaderboard_to_github.start()  # 📤 啟動排行榜 GitHub 推送（每 5 分鐘）
+        self.auto_push_leaderboard_to_github.start()  # 📤 [事件驅動] 排行榜生成已改為事件觸發模式
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
         print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
         print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
         print(f"🔄 隧道 URL 自動檢查已啟用（每 10 分鐘掃描一次）")
-        print(f"📤 排行榜每 5 分鐘透過 GitHub API 覆蓋上傳（無歷史累積，CDN 自動分發，VM 無出站流量）")
+        print(f"📤 ✨ 排行榜已改用事件驅動模式：資料有變化時，等 5 分鐘後生成一次（避免頻繁更新，减少 VM 出站流量）")
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
@@ -286,48 +291,17 @@ class KKCoin(commands.Cog):
     
     @tasks.loop(minutes=5)
     async def auto_push_leaderboard_to_github(self):
-        """🔄 每 5 分鐘自動推送排行榜圖片到 Discord CDN（覆蓋模式）
+        """✅ [已停用] 原來的定時推送任務
         
-        功能:
-            1. 生成最新排行榜圖片
-            2. 上傳到 Discord 排行榜頻道（KKCOIN_RANK_CHANNEL_ID）
-            3. 覆蓋同一個 message，URL 不變
-            4. DC 和網頁版都讀該 Discord CDN URL（無快取延遲）
+        現在改用事件驅動模式：
+        - 只在排行榜資料有變化時才生成圖片
+        - 檢測到變化後延遲 5 分鐘再生成（避免頻繁更新）
+        - 5 分鐘內多次變化只生成一次（減少出站流量）
+        
+        生成邏輯已移至 _trigger_leaderboard_generation()
         """
-        if not self.rank_channel_id:
-            return
-        
-        try:
-            # 取得排行榜資料
-            members_data = await asyncio.to_thread(self.get_current_leaderboard_data)
-            if not members_data:
-                print("⚠️ 無可用排行榜資料，跳過推送")
-                return
-            
-            print("🎨 生成排行榜圖片...")
-            image = await make_leaderboard_image(members_data)
-            
-            # 保存到本地 Nginx（隧道 URL 用）
-            leaderboard_nginx_path = "/var/www/html/assets/leaderboard.png"
-            try:
-                image.save(
-                    leaderboard_nginx_path,
-                    format="PNG",
-                    optimize=True,
-                    compress_level=9
-                )
-                file_size_kb = os.path.getsize(leaderboard_nginx_path) / 1024
-                print(f"✅ 排行榜已存到 Nginx: {file_size_kb:.1f}KB")
-            except Exception as e:
-                print(f"⚠️ Nginx 保存失敗（本地開發可忽略）: {e}")
-            
-            # 上傳到 Discord CDN（覆蓋模式）
-            await self._upload_leaderboard_to_discord(image, len(members_data))
-        
-        except Exception as e:
-            print(f"❌ 推送排行榜時發生錯誤: {e}")
-            import traceback
-            traceback.print_exc()
+        # 此方法保留以維持向後兼容性，但不再執行任何操作
+        pass
 
     async def _upload_leaderboard_to_discord(self, image, user_count):
         """上傳排行榜圖片到 Discord，覆蓋舊 message"""
@@ -455,11 +429,12 @@ class KKCoin(commands.Cog):
 
     @auto_push_leaderboard_to_github.before_loop
     async def before_auto_push_leaderboard(self):
-        """等待 bot 準備完成後再啟動推送」"""
-        await self.bot.wait_until_ready()
-        print("✅ GitHub API 自動推送任務已啟動（每 5 分鐘該一次，直接覆蓋無歷史累積，CDN 自動分發）")
-        # 延遲 60 秒後首次執行，讓 bot 充分初始化
-        await asyncio.sleep(60)
+        """✅ [已停用] 原來用於初始化定時推送的方法
+        
+        現在改用事件驅動模式，此方法不再需要
+        """
+        # 原來的延遲邏輯已不需要，保持空實現以維持結構
+        pass
     
     async def get_tunnel_url(self):
         """從 docs/config.json 或 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
@@ -1264,6 +1239,78 @@ class KKCoin(commands.Cog):
         """檢查資料是否有變化（已移至 leaderboard_manager）"""
         return has_data_changed(new_data, self.last_leaderboard_data)
 
+    async def _schedule_leaderboard_generation(self):
+        """🎯 當排行榜資料有變化時，安排 5 分鐘後的圖片生成
+        
+        優勢：
+        - 只有在資料真正變化時才生成（減少不必要的流量）
+        - 5 分鐘內多次變化只生成一次（避免頻繁更新）
+        - 自動延遲 5 分鐘，避免立即洪泛 Discord CDN
+        """
+        async with self._generation_lock:
+            # 設置待生成標記
+            self._pending_leaderboard_generation = True
+            
+            # 如果已有計時器在運行，則保持現有計時器（不重置延遲時間）
+            if self._generation_timer is not None:
+                print("⏱️ 排行榜即將在 ~5 分鐘後生成...")
+                return
+            
+            # 首次設置計時器，5 分鐘後觸發生成
+            print("🔔 偵測到排行榜數據變化，將在 5 分鐘後自動生成圖片並上傳...")
+            self._generation_timer = asyncio.get_event_loop().call_later(
+                300,  # 5 分鐘 = 300 秒
+                lambda: asyncio.create_task(self._trigger_leaderboard_generation())
+            )
+
+    async def _trigger_leaderboard_generation(self):
+        """⏰ 延遲時間到達，執行實際的圖片生成和上傳"""
+        async with self._generation_lock:
+            self._generation_timer = None
+            
+            # 檢查是否還有待生成的任務
+            if not self._pending_leaderboard_generation:
+                return
+            
+            self._pending_leaderboard_generation = False
+            
+            try:
+                print("🎨 開始生成排行榜圖片...")
+                if not self.rank_channel_id:
+                    return
+                
+                # 取得最新排行榜資料
+                members_data = await asyncio.to_thread(self.get_current_leaderboard_data)
+                if not members_data:
+                    print("⚠️ 無可用排行榜資料，跳過生成")
+                    return
+                
+                # 生成圖片
+                image = await make_leaderboard_image(members_data)
+                
+                # 保存到本地 Nginx（隧道 URL 用）
+                leaderboard_nginx_path = "/var/www/html/assets/leaderboard.png"
+                try:
+                    os.makedirs(os.path.dirname(leaderboard_nginx_path), exist_ok=True)
+                    image.save(
+                        leaderboard_nginx_path,
+                        format="PNG",
+                        optimize=True,
+                        compress_level=9
+                    )
+                    file_size_kb = os.path.getsize(leaderboard_nginx_path) / 1024
+                    print(f"✅ 排行榜已存到 Nginx: {file_size_kb:.1f}KB")
+                except Exception as e:
+                    print(f"⚠️ Nginx 保存失敗（本地開發可忽略）: {e}")
+                
+                # 上傳到 Discord CDN（覆蓋模式）
+                await self._upload_leaderboard_to_discord(image, len(members_data))
+                
+            except Exception as e:
+                print(f"❌ 排行榜生成失敗: {e}")
+                import traceback
+                traceback.print_exc()
+
     async def update_leaderboard(self, min_interval=UPDATE_INTERVAL, force=False):
         """
         更新排行榜
@@ -1304,50 +1351,49 @@ class KKCoin(commands.Cog):
                 if not members_data:
                     return
 
-                if not force and not self.has_data_changed(members_data):
-                    return
-
-                print(f"🔄 開始更新排行榜...")
-                # 生成圖片 (內部會在需要時移至執行緒)
-                image = await make_leaderboard_image(members_data)
-
-                # 固定儲存路徑（用於 Cloudflare Quick Tunnel）
-                leaderboard_path = "/var/www/html/assets/leaderboard.png"
-                os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
+                has_changed = force or self.has_data_changed(members_data)
                 
-                # 儲存到固定路徑（覆蓋舊檔）並進行權限偵測
-                try:
-                    # 優化 PNG：壓縮級別 9（最大），濾波優化
-                    image.save(
-                        leaderboard_path,
-                        format="PNG",
-                        optimize=True,
-                        compress_level=9
-                    )
-                    # 計算檔案大小
-                    file_size_kb = os.path.getsize(leaderboard_path) / 1024
-                    print(f"✅ 排行榜已存到: {leaderboard_path} ({file_size_kb:.1f}KB)")
-                except PermissionError:
-                    print(
-                        f"❌ 無法寫入 {leaderboard_path}！\n"
-                        f"請在 GCP 中執行以下指令修正權限：\n"
-                        f"  sudo chown -R $USER:$USER /var/www/html"
-                    )
-                    return
-                except Exception as e:
-                    print(f"❌ 保存圖片失敗: {e}")
+                if has_changed:
+                    # 🎯 資料有變化，安排 5 分鐘後的圖片生成（減少流量）
+                    await self._schedule_leaderboard_generation()
+                    
+                    # 先更新本地快取（供下次比對用）
+                    self.last_leaderboard_data = members_data.copy()
+                    print(f"🔔 排行榜數據已變化 ({len(members_data)} 名使用者)，將在 5 分鐘後生成圖片...")
+                else:
+                    # 資料未變化，跳過本次更新
                     return
 
-                # ✅ 使用 Discord CDN URL（即時顯示，流量由 Discord 擋）
-                leaderboard_url = get_from_env("LEADERBOARD_URL", "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=0")
-                embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
-                embed.set_image(url=leaderboard_url)
-                await msg.edit(embed=embed, content=None, attachments=[])
-
-                self.last_leaderboard_data = members_data.copy()
-                self.last_update_time = current_time
-                file_size_kb = os.path.getsize(leaderboard_path) / 1024
-                print(f"✅ 排行榜更新成功 (Discord CDN) ({len(members_data)} 名使用者，{file_size_kb:.1f}KB)")
+                # ✅ 如果是強制更新或首次啟動，立即生成一次（不等 5 分鐘）
+                if force:
+                    print(f"⚡ 強制更新排行榜圖片...")
+                    # 立即生成圖片並上傳
+                    image = await make_leaderboard_image(members_data)
+                    
+                    # 保存到本地 Nginx
+                    leaderboard_path = "/var/www/html/assets/leaderboard.png"
+                    os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
+                    
+                    try:
+                        image.save(
+                            leaderboard_path,
+                            format="PNG",
+                            optimize=True,
+                            compress_level=9
+                        )
+                        file_size_kb = os.path.getsize(leaderboard_path) / 1024
+                        print(f"✅ 排行榜已存到: {leaderboard_path} ({file_size_kb:.1f}KB)")
+                    except Exception as e:
+                        print(f"❌ 保存圖片失敗: {e}")
+                        return
+                    
+                    # 上傳到 Discord CDN
+                    await self._upload_leaderboard_to_discord(image, len(members_data))
+                    self.last_update_time = current_time
+                else:
+                    # 平時只在檢查到變化時調用 _schedule_leaderboard_generation()，不立即生成
+                    # 這樣可以避免頻繁的圖片生成和上傳
+                    pass
 
             except discord.HTTPException as e:
                 print(f"❌ Discord API 錯誤: {e}")
