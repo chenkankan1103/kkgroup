@@ -108,7 +108,11 @@ async def make_leaderboard_image(members_data):
     """協程版本的圖片生成流程：
     1. 非同步地下載所有頭像（非密集型）
     2. 將所有 CPU 密集型的 PIL 繪製工作扔到 thread pool
+    3. 限制排行榜為前 15 位以減少檔案大小（避免超過 50MB）
     """
+    # 限制排行榜為前 15 位（減少圖片大小）
+    members_data = members_data[:15]
+    
     RESERVE_SECTION_HEIGHT = 120
     DESCRIPTION_HEIGHT = 90
     WIDTH, HEIGHT = 1000, RESERVE_SECTION_HEIGHT + 75 + 70 * len(members_data) + DESCRIPTION_HEIGHT
