@@ -304,72 +304,74 @@ class KKCoin(commands.Cog):
         pass
 
     async def _upload_leaderboard_to_discord(self, image, user_count):
-        """更新排行榜訊息（使用 config.json 中的圖片 URL，避免重複上傳）"""
+        """上傳/編輯排行榜圖片到 Discord（只用 Discord CDN，無隧道流量）
+        
+        邏輯：
+        1. 如果已有訊息，編輯其附件（覆蓋舊圖片）
+        2. 如果沒有，新建訊息
+        3. 從訊息附件取得 Discord CDN URL
+        4. 存到 config.json 供網頁版讀取
+        """
         try:
             channel = self.bot.get_channel(self.rank_channel_id)
             if not channel:
                 print(f"❌ 找不到排行榜頻道 {self.rank_channel_id}")
                 return
             
-            # 先更新 config.json 的 imageURL（使用既有的 Nginx 或備用 URL）
-            leaderboard_url = get_from_env("LEADERBOARD_URL", "")
-            if not leaderboard_url:
-                # 備用：使用 Nginx 隧道 URL 或 GitHub CDN
-                tunnel_url = self.base_url or "https://katrina-brief-fish-educators.trycloudflare.com"
-                leaderboard_url = f"{tunnel_url}/assets/leaderboard.png?t={int(time.time())}"
+            # 把圖片存到 BytesIO
+            buf = io.BytesIO()
+            image.save(buf, format="PNG", optimize=True, compress_level=9)
+            buf.seek(0)
+            file = discord.File(buf, filename="leaderboard.png")
             
-            # 更新 config.json
-            try:
-                config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
-                if os.path.exists(config_path):
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        config = json.load(f)
-                    config["imageURL"] = leaderboard_url
-                    config["lastUpdated"] = datetime.datetime.now().isoformat()
-                    with open(config_path, "w", encoding="utf-8") as f:
-                        json.dump(config, f, ensure_ascii=False, indent=2)
-                    print(f"✅ 已更新 config.json imageURL: {leaderboard_url[:60]}...")
-            except Exception as e:
-                print(f"⚠️ 更新 config.json 失敗: {e}")
-            
-            # 保存 URL 到 env
-            save_to_env("LEADERBOARD_URL", leaderboard_url)
-            
-            # 更新排行榜訊息（只在 embed 中顯示圖片，不上傳附件）
+            # 更新或創建訊息
             if self.rank_message_id:
                 try:
                     msg = await channel.fetch_message(self.rank_message_id)
-                    # 只用 embed 顯示圖片（不重複上傳附件）
-                    embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
-                    embed.set_image(url=leaderboard_url)
-                    embed.add_field(name="使用人數", value=f"{user_count} 人", inline=False)
-                    embed.add_field(name="📍 網頁版", value="https://chenkankan1103.github.io/kkgroup/", inline=False)
-                    await msg.edit(embed=embed, content=None, attachments=[])
-                    print(f"✅ 排行榜已更新 ({user_count} 名使用者)")
+                    # 編輯訊息的附件（覆蓋舊圖片）
+                    await msg.edit(attachments=[file])
+                    print(f"✅ 排行榜圖片已更新（編輯附件）- {user_count} 人")
                 except discord.NotFound:
-                    print("⚠️ 舊 message 已被刪除，創建新訊息")
+                    print("⚠️ 舊訊息已刪除，創建新訊息")
                     self.rank_message_id = 0
-                    embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
-                    embed.set_image(url=leaderboard_url)
-                    embed.add_field(name="使用人數", value=f"{user_count} 人", inline=False)
-                    embed.add_field(name="📍 網頁版", value="https://chenkankan1103.github.io/kkgroup/", inline=False)
-                    msg = await channel.send(embed=embed)
+                    msg = await channel.send(file=file)
                     self.rank_message_id = msg.id
                     save_to_env("KKCOIN_RANK_MESSAGE_ID", self.rank_message_id)
-                    print(f"✅ 排行榜訊息已創建")
+                    print(f"✅ 排行榜訊息已創建（新訊息）")
             else:
-                # 首次創建
-                embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
-                embed.set_image(url=leaderboard_url)
-                embed.add_field(name="使用人數", value=f"{user_count} 人", inline=False)
-                embed.add_field(name="📍 網頁版", value="https://chenkankan1103.github.io/kkgroup/", inline=False)
-                msg = await channel.send(embed=embed)
+                # 首次上傳
+                msg = await channel.send(file=file)
                 self.rank_message_id = msg.id
                 save_to_env("KKCOIN_RANK_MESSAGE_ID", self.rank_message_id)
-                print(f"✅ 排行榜訊息已創建")
+                print(f"✅ 排行榜訊息已創建（首次）")
+            
+            # 從訊息附件取得 Discord CDN URL
+            if msg.attachments:
+                leaderboard_url = msg.attachments[0].url
+                
+                # 💾 保存 URL 到 .env
+                save_to_env("LEADERBOARD_URL", leaderboard_url)
+                
+                # 💾 更新 config.json 供網頁端讀取
+                try:
+                    config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
+                    if os.path.exists(config_path):
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            config = json.load(f)
+                        config["imageURL"] = leaderboard_url
+                        config["lastUpdated"] = datetime.datetime.now().isoformat()
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            json.dump(config, f, ensure_ascii=False, indent=2)
+                        print(f"✅ 已更新 config.json: Discord CDN")
+                    else:
+                        print(f"⚠️ config.json 不存在")
+                except Exception as e:
+                    print(f"⚠️ 更新 config.json 失敗: {e}")
+            else:
+                print("❌ 訊息中沒有附件")
         
         except Exception as e:
-            print(f"❌ 更新排行榜訊息失敗: {e}")
+            print(f"❌ 上傳排行榜到 Discord 失敗: {e}")
             import traceback
             traceback.print_exc()
 
