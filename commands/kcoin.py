@@ -179,12 +179,12 @@ class KKCoin(commands.Cog):
         self.auto_update_digital_usd_leaderboard.start()
         self.auto_update_reserve_status.start()
         self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
-        self.auto_push_leaderboard_to_github.start()  # 📤 啟動排行榜 GitHub 推送（每 5 分鐘）
+        # self.auto_push_leaderboard_to_github.start()  # ❌ 禁用：排行榜圖片直接存 Nginx，避免 50MB 推送失敗
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
         print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
         print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
         print(f"🔄 隧道 URL 自動檢查已啟用（每 10 分鐘掃描一次）")
-        print(f"📤 排行榜 GitHub 自動推送已啟用（每 5 分鐘一次，降低 VM 出站流量）")
+        print(f"📸 排行榜圖片存儲本地 Nginx (/var/www/html/assets/leaderboard.png)，不推送 GitHub")
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
@@ -736,8 +736,8 @@ class KKCoin(commands.Cog):
                 print(f"❌ 保存圖片失敗: {e}")
                 return
             
-            # 使用 GitHub CDN 的排行榜圖片 URL（無隧道流量）
-            image_url = "https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png?t=0"
+            # 使用 Nginx 本地路徑的排行榜圖片 URL（隧道直連）
+            image_url = "https://kkgroup.com/assets/leaderboard.png?t=0"
             msg = await channel.send(image_url)
 
             # 立即儲存訊息 ID（防止重複創建）
@@ -1250,8 +1250,8 @@ class KKCoin(commands.Cog):
                     print(f"❌ 保存圖片失敗: {e}")
                     return
 
-                # 使用 GitHub CDN 的排行榜圖片 URL（無隧道流量）
-                image_url = f"https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png?t={int(time.time())}"
+                # 使用 Nginx 本地路徑的排行榜圖片 URL（隧道直連）
+                image_url = f"https://kkgroup.com/assets/leaderboard.png?t={int(time.time())}"
                 await msg.edit(content=image_url, embed=None, attachments=[])
 
                 self.last_leaderboard_data = members_data.copy()
