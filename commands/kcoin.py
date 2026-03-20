@@ -746,8 +746,8 @@ class KKCoin(commands.Cog):
                 print(f"❌ 保存圖片失敗: {e}")
                 return
             
-            # 使用 GitHub Raw 的排行榜圖片 URL（無隧道流量）
-            image_url = "https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png?t=0"
+            # 使用 GitHub Pages 的排行榜圖片 URL（最稳定）
+            image_url = "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=0"
             embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
             embed.set_image(url=image_url)
             msg = await channel.send(embed=embed)
@@ -1101,8 +1101,8 @@ class KKCoin(commands.Cog):
 
         try:
             image = await make_leaderboard_image(members_data)
-            # 使用 GitHub Raw 的排行榜圖片 URL
-            image_url = f"https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png?t={int(time.time())}"
+            # GitHub Pages URL (most stable)
+            image_url = f"https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t={int(time.time())}"
             embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
             embed.set_image(url=image_url)
             msg = await interaction.followup.send(embed=embed)
@@ -1262,8 +1262,8 @@ class KKCoin(commands.Cog):
                     print(f"❌ 保存圖片失敗: {e}")
                     return
 
-                # 使用 GitHub Raw 的排行榜圖片 URL（無隧道流量）
-                image_url = f"https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png?t={int(time.time())}"
+                # 使用 GitHub Pages 的排行榜圖片 URL（最稳定）
+                image_url = f"https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t={int(time.time())}"
                 embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
                 embed.set_image(url=image_url)
                 await msg.edit(embed=embed, content=None, attachments=[])
