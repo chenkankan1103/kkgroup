@@ -496,8 +496,8 @@
                     CONFIG.API_BASE = data.url.replace(/\/+$/, '');
                 }
 
-                // 優先使用 GitHub CDN，備用隧道 URL
-                LEADERBOARD_IMG_URL = 'https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/docs/assets/leaderboard.png?t=' + Date.now();
+                // 優先使用 GitHub Raw，備用隧道 URL
+                LEADERBOARD_IMG_URL = 'https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png?t=' + Date.now();
                 
                 // 允許 data.imageURL 覆蓋
                 if (data.imageURL) {
