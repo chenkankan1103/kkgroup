@@ -366,7 +366,7 @@ class KKCoin(commands.Cog):
                 ) as resp:
                     if resp.status in [200, 201]:
                         print(f"✅ GitHub API 上傳成功 ({user_count} 使用者)")
-                        print(f"📍 CDN: https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/docs/assets/leaderboard.png")
+                        print(f"📍 CDN: https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png")
                     else:
                         error_text = await resp.text()
                         print(f"❌ GitHub API 上傳失敗 ({resp.status}): {error_text[:200]}")
