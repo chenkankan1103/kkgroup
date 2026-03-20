@@ -745,7 +745,9 @@ class KKCoin(commands.Cog):
             
             # 使用 GitHub Raw 的排行榜圖片 URL（無隧道流量）
             image_url = "https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png?t=0"
-            msg = await channel.send(image_url)
+            embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
+            embed.set_image(url=image_url)
+            msg = await channel.send(embed=embed)
 
             # 立即儲存訊息 ID（防止重複創建）
             self.rank_message_id = msg.id
@@ -1259,7 +1261,9 @@ class KKCoin(commands.Cog):
 
                 # 使用 GitHub Raw 的排行榜圖片 URL（無隧道流量）
                 image_url = f"https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png?t={int(time.time())}"
-                await msg.edit(content=image_url, embed=None, attachments=[])
+                embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
+                embed.set_image(url=image_url)
+                await msg.edit(embed=embed, content=None, attachments=[])
 
                 self.last_leaderboard_data = members_data.copy()
                 self.last_update_time = current_time
