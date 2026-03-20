@@ -667,19 +667,22 @@ class KKCoin(commands.Cog):
                     self.rank_message_id = 0
                     save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
             
-            # 在頻道中查找所有訊息，尋找舊的排行榜訊息
+            # 在頻道中查找所有訊息，尋找舊的排行榜訊息（可能是 Embed 或附件格式）
             print("🔍 在頻道中查找舊排行榜訊息...")
             async for msg in channel.history(limit=100):
-                if msg.author.id == self.bot.user.id and msg.attachments:
-                    for attachment in msg.attachments:
-                        if "kkcoin_rank" in attachment.filename:
-                            print(f"✅ 找到舊排行榜訊息 ID: {msg.id}，將重用此訊息")
-                            self.rank_message_id = msg.id
-                            save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
-                            # 立即強制更新一次
-                            print("🔄 第一次啟動強制更新排行榜...")
-                            await self.update_leaderboard(min_interval=0, force=True)
-                            return
+                if msg.author.id == self.bot.user.id:
+                    # 檢查是否有：1. 經由我們發送的排行榜 Embed，或 2. 帶有排行榜附件的消息
+                    is_embed_leaderboard = msg.embeds and any("KK" in embed.title or "排行榜" in embed.title for embed in msg.embeds)
+                    is_attachment_leaderboard = msg.attachments and any("kkcoin_rank" in att.filename for att in msg.attachments)
+                    
+                    if is_embed_leaderboard or is_attachment_leaderboard:
+                        print(f"✅ 找到舊排行榜訊息 ID: {msg.id}（格式: {'Embed' if is_embed_leaderboard else '附件'}），將重用此訊息")
+                        self.rank_message_id = msg.id
+                        save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
+                        # 立即強制更新一次
+                        print("🔄 第一次啟動強制更新排行榜...")
+                        await self.update_leaderboard(min_interval=0, force=True)
+                        return
             
             # 如果沒有找到舊訊息，立即創建新的
             print("📝 未找到舊訊息，立即創建新的...")
@@ -1098,11 +1101,11 @@ class KKCoin(commands.Cog):
 
         try:
             image = await make_leaderboard_image(members_data)
-            with io.BytesIO() as img_bytes:
-                image.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                file = discord.File(img_bytes, filename="kkcoin_rank.png")
-                msg = await interaction.followup.send(file=file)
+            # 使用 GitHub Raw 的排行榜圖片 URL
+            image_url = f"https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png?t={int(time.time())}"
+            embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
+            embed.set_image(url=image_url)
+            msg = await interaction.followup.send(embed=embed)
 
             # 更新設定
             save_to_env("KKCOIN_RANK_CHANNEL_ID", interaction.channel.id)
