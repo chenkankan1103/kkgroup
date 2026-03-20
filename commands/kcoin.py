@@ -363,9 +363,23 @@ class KKCoin(commands.Cog):
             # 從 message 獲取圖片 URL
             if msg.attachments:
                 leaderboard_url = msg.attachments[0].url
-                # 存到 env 供網頁版讀取
+                # 存到 env 供後端讀取
                 save_to_env("LEADERBOARD_URL", leaderboard_url)
-                print(f"📍 Discord CDN URL: {leaderboard_url}")
+                
+                # 同時更新 docs/config.json 供網頁版讀取
+                try:
+                    config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
+                    if os.path.exists(config_path):
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            config = json.load(f)
+                        config["imageURL"] = leaderboard_url
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            json.dump(config, f, ensure_ascii=False, indent=2)
+                        print(f"📍 已更新 config.json imageURL: {leaderboard_url[:80]}...")
+                    else:
+                        print(f"⚠️ config.json 不存在，跳過嘗試更新網頁版 URL")
+                except Exception as config_err:
+                    print(f"⚠️ 更新 config.json 失敗（網頁版可能延遲更新）: {config_err}")
         
         except Exception as e:
             print(f"❌ 上傳到 Discord 失敗: {e}")
