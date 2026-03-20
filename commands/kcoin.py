@@ -736,8 +736,8 @@ class KKCoin(commands.Cog):
                 print(f"❌ 保存圖片失敗: {e}")
                 return
             
-            # 使用 Cloudflare Quick Tunnel 的排行榜圖片 URL（純連結）
-            image_url = f"{self.base_url}/assets/leaderboard.png"
+            # 使用 GitHub CDN 的排行榜圖片 URL（無隧道流量）
+            image_url = "https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png?t=0"
             msg = await channel.send(image_url)
 
             # 立即儲存訊息 ID（防止重複創建）
@@ -1250,8 +1250,8 @@ class KKCoin(commands.Cog):
                     print(f"❌ 保存圖片失敗: {e}")
                     return
 
-                # 只更新為純圖片網址（避免 embed）
-                image_url = f"{self.base_url}/assets/leaderboard.png?t={int(time.time())}"
+                # 使用 GitHub CDN 的排行榜圖片 URL（無隧道流量）
+                image_url = f"https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png?t={int(time.time())}"
                 await msg.edit(content=image_url, embed=None, attachments=[])
 
                 self.last_leaderboard_data = members_data.copy()
