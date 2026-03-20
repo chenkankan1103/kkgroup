@@ -195,7 +195,7 @@ class KKCoin(commands.Cog):
         if self.auto_push_leaderboard_to_github.is_running():
             self.auto_push_leaderboard_to_github.cancel()  # 📤 取消 GitHub 推送任務
     
-    async def sync_to_github(self, new_url):
+    async def sync_to_github(self, new_url, image_url="https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png"):
         """將新的隧道 URL 同步到 GitHub Pages 入口
         
         參數:
@@ -222,6 +222,9 @@ class KKCoin(commands.Cog):
             # 更新 config.json
             config_data = {
                 "url": new_url,
+                "API_BASE": new_url,
+                "imageURL": image_url,  # 📤 使用 GitHub CDN，不流量隧道
+                "DISCORD_URL": "https://discord.gg/5JtuJvhhHu",
                 "lastUpdated": datetime.utcnow().isoformat() + "Z"
             }
             
