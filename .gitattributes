@@ -1,4 +1,2 @@
-*.png filter=lfs diff=lfs merge=lfs -text
-*.jpg filter=lfs diff=lfs merge=lfs -text
-*.jpeg filter=lfs diff=lfs merge=lfs -text
+# 只管理排行榜的 PNG 图片
 assets/leaderboard.png filter=lfs diff=lfs merge=lfs -text

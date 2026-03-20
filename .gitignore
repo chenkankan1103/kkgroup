@@ -98,6 +98,11 @@ config.local.json
 .gcp/
 ~/.config/gcloud/
 
+# Python 供应商文件（不追踪）
+.local/
+.cache/
+.pip/
+
 # API 令牌和密钥（绝不追踪）
 *.token
 *.secret
