@@ -47,7 +47,7 @@ def update_config_json(new_url):
     
     # 更新 URL
     config['url'] = new_url
-    config['imageURL'] = "https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png"  # 📤 使用 GitHub CDN，不流量痘道
+    config['imageURL'] = "https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/docs/assets/leaderboard.png"  # 📤 使用 GitHub CDN，不流量隧道
     config['lastUpdated'] = datetime.utcnow().isoformat() + "Z"
     config['status'] = "✅ 隧道已完全修復並正常運作"
     

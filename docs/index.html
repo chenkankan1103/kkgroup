@@ -281,7 +281,7 @@
 
                     <div class="pixel-border rounded-lg p-8 bg-gray-900/50 mb-8">
                         <div class="text-center text-gray-400 mb-4">📊 排行榜圖片 <span class="text-xs text-green-500">(GitHub CDN)</span></div>
-                        <img id="leaderboard-img" src="https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png?t=0" alt="排行榜" class="w-full rounded border border-red-500/30" style="max-height: 500px; object-fit: contain;">
+                        <img id="leaderboard-img" src="https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/docs/assets/leaderboard.png?t=0" alt="排行榜" class="w-full rounded border border-red-500/30" style="max-height: 500px; object-fit: contain;">
                     </div>
 
                     <div class="text-center">
@@ -497,7 +497,7 @@
                 }
 
                 // 優先使用 GitHub CDN，備用隧道 URL
-                LEADERBOARD_IMG_URL = 'https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/assets/leaderboard.png?t=' + Date.now();
+                LEADERBOARD_IMG_URL = 'https://cdn.jsdelivr.net/gh/chenkankan1103/kkgroup/docs/assets/leaderboard.png?t=' + Date.now();
                 
                 // 允許 data.imageURL 覆蓋
                 if (data.imageURL) {
