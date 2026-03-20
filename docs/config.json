@@ -1,7 +1,8 @@
 {
   "url": "https://katrina-brief-fish-educators.trycloudflare.com",
   "API_BASE": "https://katrina-brief-fish-educators.trycloudflare.com",
-  "imageURL": "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png",
+  "imageURL": "https://discord.com/placeholder",
   "DISCORD_URL": "https://discord.gg/5JtuJvhhHu",
-  "lastUpdated": "2026-03-20T00:00:00Z"
+  "lastUpdated": "2026-03-20T12:00:00Z",
+  "note": "排行榜現改用事件驅動：資料變化後 5 分鐘生成一次，imageURL 會被自動更新為 Discord CDN URL"
 }
