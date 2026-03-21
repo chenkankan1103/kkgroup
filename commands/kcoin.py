@@ -330,6 +330,9 @@ class KKCoin(commands.Cog):
                     msg = await channel.fetch_message(self.rank_message_id)
                     # 編輯訊息的附件（覆蓋舊圖片）
                     await msg.edit(attachments=[file])
+                    # 編輯後立即重新獲取訊息以確保附件 URL 已生成
+                    await asyncio.sleep(0.5)  # 等待 Discord 處理
+                    msg = await channel.fetch_message(self.rank_message_id)
                     print(f"✅ 排行榜圖片已更新（編輯附件）- {user_count} 人")
                 except discord.NotFound:
                     print("⚠️ 舊訊息已刪除，創建新訊息")
@@ -346,8 +349,9 @@ class KKCoin(commands.Cog):
                 print(f"✅ 排行榜訊息已創建（首次）")
             
             # 從訊息附件取得 Discord CDN URL
-            if msg.attachments:
+            if msg.attachments and len(msg.attachments) > 0:
                 leaderboard_url = msg.attachments[0].url
+                print(f"📸 Discord CDN URL: {leaderboard_url}")
                 
                 # 💾 保存 URL 到 .env
                 save_to_env("LEADERBOARD_URL", leaderboard_url)
@@ -362,13 +366,15 @@ class KKCoin(commands.Cog):
                         config["lastUpdated"] = datetime.datetime.now().isoformat()
                         with open(config_path, "w", encoding="utf-8") as f:
                             json.dump(config, f, ensure_ascii=False, indent=2)
-                        print(f"✅ 已更新 config.json: Discord CDN")
+                        print(f"✅ 已更新 config.json: {leaderboard_url[:50]}...")
                     else:
-                        print(f"⚠️ config.json 不存在")
+                        print(f"⚠️ config.json 不存在: {config_path}")
                 except Exception as e:
                     print(f"⚠️ 更新 config.json 失敗: {e}")
+                    import traceback
+                    traceback.print_exc()
             else:
-                print("❌ 訊息中沒有附件")
+                print(f"❌ 訊息中沒有附件（attachments={msg.attachments if msg else 'N/A'}）")
         
         except Exception as e:
             print(f"❌ 上傳排行榜到 Discord 失敗: {e}")
