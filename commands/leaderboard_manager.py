@@ -397,10 +397,10 @@ def _sync_build_leaderboard_image(
 
         # 前三名的頭貼要更靠左且放大一些
         avatar_size = AVATAR_SIZE
-        avatar_x = rank_x + 40
+        avatar_x = rank_x + 55
         if i < 3:
             avatar_size = AVATAR_SIZE + 15
-            avatar_x = rank_x + 5
+            avatar_x = rank_x + 20
 
         display_avatar = None
         if avatar_img:
