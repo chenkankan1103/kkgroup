@@ -1,0 +1,41 @@
+{
+  "message_id": null,
+  "channel_id": null,
+  "events": [
+    {
+      "type": "harvest",
+      "user_id": 432018481890983936,
+      "user_name": "干干",
+      "details": "收割常規種獲得7個，可售4900 KK幣",
+      "timestamp": "2026-03-22T19:05:37.897017"
+    },
+    {
+      "type": "harvest",
+      "user_id": 432018481890983936,
+      "user_name": "干干",
+      "details": "收割常規種獲得5個，可售3500 KK幣",
+      "timestamp": "2026-03-22T19:05:38.148172"
+    },
+    {
+      "type": "harvest",
+      "user_id": 432018481890983936,
+      "user_name": "干干",
+      "details": "收割常規種獲得15個，可售10500 KK幣",
+      "timestamp": "2026-03-22T19:05:38.336445"
+    },
+    {
+      "type": "plant",
+      "user_id": 432018481890983936,
+      "user_name": "干干",
+      "details": "種植常規種",
+      "timestamp": "2026-03-22T19:06:00.254081"
+    },
+    {
+      "type": "plant",
+      "user_id": 432018481890983936,
+      "user_name": "干干",
+      "details": "種植常規種",
+      "timestamp": "2026-03-22T19:06:00.638675"
+    }
+  ]
+}
