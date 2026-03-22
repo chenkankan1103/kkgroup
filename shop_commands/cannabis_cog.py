@@ -58,7 +58,7 @@ class CannabisBuyView(discord.ui.View):
             
             embed = discord.Embed(
                 title="🌱 購買種子",
-                description="選擇要購買的種子類型：",
+                description="選擇種子類型 (成長4h±1h，最多同時種植3株)。收割後可獲得大麻並出售。",
                 color=discord.Color.green()
             )
             

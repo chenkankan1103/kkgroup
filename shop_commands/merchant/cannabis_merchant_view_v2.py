@@ -47,7 +47,7 @@ class CannabisMerchantViewV2(View):
             view = SeedSelectView(self.cog, options)
             embed = discord.Embed(
                 title="🌱 購買種子",
-                description="從下方選擇要購買的種子類型",
+                description="成長時間 4h±1h，最多 3 格植物，收割後可獲得大麻，請根據需求配置種子量。",
                 color=discord.Color.green()
             )
             await interaction.response.edit_message(embed=embed, view=view)

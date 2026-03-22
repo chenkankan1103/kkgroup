@@ -9,7 +9,7 @@ CANNABIS_SHOP = {
             "emoji": "🌱",
             "growth_time": 14400,  # 4小時（隨機 ±1 小時）
             "max_yield": 15,
-            "description": "標準大麻種子，容易大豐收"
+            "description": "4h±1h 成長，3格上限；高概率中高產，單價700KK"
         },
         "優質種": {
             "name": "優質種子",
@@ -17,7 +17,7 @@ CANNABIS_SHOP = {
             "emoji": "🌿",
             "growth_time": 14400,  # 4小時（隨機 ±1 小時）
             "max_yield": 15,
-            "description": "優質大麻種子，機率中等的高產"
+            "description": "4h±1h 成長，3格上限；中等速度成長，中等風險高產"
         },
         "黃金種": {
             "name": "黃金種子",
@@ -25,7 +25,7 @@ CANNABIS_SHOP = {
             "emoji": "👑",
             "growth_time": 14400,  # 4小時（隨機 ±1 小時）
             "max_yield": 15,
-            "description": "稀有黃金種子，高級但常常低產"
+            "description": "4h±1h 成長，3格上限；高價稀有，但大多低產（可爆發少量高價）"
         }
     }
 }

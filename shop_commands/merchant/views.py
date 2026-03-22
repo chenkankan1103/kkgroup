@@ -909,7 +909,7 @@ class ProductCategoryView(View):
         from shop_commands.merchant.cannabis_merchant_view_v2 import CannabisMerchantViewV2
         embed = discord.Embed(
             title="🌱 大麻商店",
-            description="歡迎來到大麻商店！選擇您想要的功能。",
+            description="歡迎來到大麻商店！成長 4h±1h，最多同時種植 3 株。種子與肥料請謹慎配置。",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, view=CannabisMerchantViewV2(self.cog), ephemeral=True)
