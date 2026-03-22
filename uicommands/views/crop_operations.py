@@ -153,14 +153,13 @@ class CropOperationView(discord.ui.View):
                     if result.get("success"):
                         plant_name = plant["seed_type"]
                         yield_amount = result.get("yield_amount", 0)
-                        earnings = result.get("sell_price", 0)
+                        # ✅ 不再顯示價格！收割只進庫存，出售必須透過商人
                         
                         harvest_results.append({
                             "plant": plant_name,
-                            "yield": yield_amount,
-                            "price": earnings
+                            "yield": yield_amount
                         })
-                        total_earnings += earnings
+                        # ⚠️ 移除 total_earnings 計算，避免誤導用戶
                         
                         # 記錄事件
                         if self.cog:
@@ -168,7 +167,7 @@ class CropOperationView(discord.ui.View):
                             await self.cog.record_event(
                                 'harvest',
                                 user,
-                                f"收割{plant_name}獲得{yield_amount}個，可售{earnings} KK幣"
+                                f"收割{plant_name}獲得{yield_amount}個"
                             )
                 except Exception as harvest_error:
                     print(f"⚠️ 收割單株植物失敗：{harvest_error}")
@@ -194,16 +193,16 @@ class CropOperationView(discord.ui.View):
                 else:
                     embed.add_field(
                         name=f"✅ {result['plant']}",
-                        value=f"產出 {result['yield']} 個，獲得 {result['price']} KK幣",
+                        value=f"產出 {result['yield']} 個",
                         inline=True
                     )
             
-            if total_earnings > 0:
-                embed.add_field(
-                    name="💰 總收入",
-                    value=f"{total_earnings} KK幣",
-                    inline=False
-                )
+            # 🚫 移除自動計價邏輯，避免誤導
+            embed.add_field(
+                name="💰 出售方式",
+                value="請到商人處出售大麻以獲得 KK幣",
+                inline=False
+            )
             
             # 創建返回按鈕
             result_view = discord.ui.View(timeout=None)
@@ -1365,7 +1364,5 @@ class SelectSeedView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 返回時發生錯誤：{str(e)[:100]}", ephemeral=True)
-
-        return callback
 
     

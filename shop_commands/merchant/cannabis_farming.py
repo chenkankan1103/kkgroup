@@ -265,12 +265,13 @@ async def harvest_plant(user_id: int, plant_id: int) -> dict:
         # 添加到庫存
         await adapter.add_inventory(user_id, "大麻", seed_type, yield_amount)
         
+        # ✅ 只返回收割信息，不計算賣價
+        # 價格計算延遲到出售時，避免混淆
         return {
             "success": True,
             "user_id": user_id,
             "seed_type": seed_type,
-            "yield_amount": yield_amount,
-            "sell_price": CANNABIS_HARVEST_PRICES[seed_type] * yield_amount
+            "yield_amount": yield_amount
         }
     except Exception as e:
         print(f"❌ 收割失敗：{e}")

@@ -211,9 +211,15 @@ class PlantActionButton(discord.ui.Button):
                 if result["success"]:
                     embed = discord.Embed(
                         title="🎉 收割成功！",
-                        description=f"獲得：{result['seed_type']} x{result['yield_amount']}\n"
-                                   f"可賣價：{result['sell_price']} KKcoin",
+                        description=f"已收割：{result['seed_type']} x{result['yield_amount']}\n"
+                                   f"✅ 已進入庫存",
                         color=discord.Color.gold()
+                    )
+                    # ✅ 添加商人出售提示
+                    embed.add_field(
+                        name="💰 下一步",
+                        value="請前往商人處出售大麻以獲得 KK幣",
+                        inline=False
                     )
                 else:
                     embed = discord.Embed(
