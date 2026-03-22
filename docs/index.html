@@ -280,7 +280,7 @@
                     <p class="text-center text-gray-400 text-sm mb-12">最後更新: <span id="leaderboard-time">加載中...</span></p>
 
                     <div class="pixel-border rounded-lg p-8 bg-gray-900/50 mb-8">
-                        <div class="text-center text-gray-400 mb-4">📊 排行榜圖片 <span class="text-xs text-green-500">(GitHub CDN)</span></div>
+                        <div class="text-center text-gray-400 mb-4">📊 排行榜圖片 <span class="text-xs text-cyan-500">(Discord CDN)</span></div>
                         <img id="leaderboard-img" src="https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=0" alt="排行榜" class="w-full rounded border border-red-500/30" style="max-height: 500px; object-fit: contain;">
                     </div>
 
@@ -496,14 +496,12 @@
                     CONFIG.API_BASE = data.url.replace(/\/+$/, '');
                 }
 
-                // ✨ 優先讀 config.json 的 imageURL（Discord CDN，無快取延遲）
+                // ✨ 從 config.json 讀取 Discord CDN imageURL（唯一來源）
                 if (data.imageURL) {
                     LEADERBOARD_IMG_URL = data.imageURL;
-                    console.log('📍 排行榜圖片 URL:', LEADERBOARD_IMG_URL);
+                    console.log('📍 排行榜圖片 URL (Discord CDN):', LEADERBOARD_IMG_URL);
                 } else {
-                    // 備用：如果沒有設置 imageURL，使用 GitHub CDN
-                    LEADERBOARD_IMG_URL = 'https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=' + Date.now();
-                    console.log('⚠️ 使用備用 GitHub CDN URL');
+                    console.error('❌ 排行榜圖片 URL 未設置，請檢查 config.json');
                 }
 
                 if (data.DISCORD_URL) {

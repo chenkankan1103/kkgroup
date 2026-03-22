@@ -217,15 +217,16 @@ class KKCoin(commands.Cog):
             print(f"⚠️ 啟動時讀取 config.json 失敗: {e}")
         return ""  # 空字串，不指向任何第三方網域
 
-    async def sync_to_github(self, new_url, image_url="https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png"):
+    async def sync_to_github(self, new_url):
         """將新的隧道 URL 同步到 GitHub Pages 入口
         
         參數:
             new_url: 新的 Tunnel URL (e.g., https://xxx.trycloudflare.com)
         
         流程:
-            1. 讀取/更新本地 docs/config.json （GitHub Pages 讀取點）
-            2. Git add/commit/push 到遠端 GitHub
+            1. 讀取現有 docs/config.json，保留 imageURL（Discord CDN 由 Bot 自動維護）
+            2. 只更新隧道 URL：url 和 API_BASE
+            3. Git add/commit/push 到遠端 GitHub
         """
         try:
             import subprocess
@@ -241,11 +242,21 @@ class KKCoin(commands.Cog):
                 print(f"❌ docs 目錄不存在: {docs_dir}")
                 return False
             
-            # 更新 config.json
+            # 讀取現有配置（保留排行榜 CDN URL，由 Bot 自動維護）
+            existing_image_url = "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png"  # 備用值
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        existing_config = json.load(f)
+                        existing_image_url = existing_config.get("imageURL", existing_image_url)
+                except Exception as e:
+                    print(f"⚠️  讀取現有 config.json 失敗，使用備用 URL: {e}")
+            
+            # 更新 config.json（只更新隧道 URL，保留 imageURL）
             config_data = {
                 "url": new_url,
                 "API_BASE": new_url,
-                "imageURL": image_url,  # 📤 使用 GitHub CDN，不流量隧道
+                "imageURL": existing_image_url,  # 📤 保留現有的排行榜 CDN URL（由 Bot 自動維護）
                 "DISCORD_URL": "https://discord.gg/5JtuJvhhHu",
                 "lastUpdated": datetime.utcnow().isoformat() + "Z"
             }
@@ -382,7 +393,11 @@ class KKCoin(commands.Cog):
             traceback.print_exc()
 
     async def _upload_leaderboard_via_api(self, image, user_count):
-        """使用 GitHub API 上傳排行榜（每次直接覆蓋，無歷史累積）"""
+        """[已停用] 使用 GitHub API 上傳排行榜 - 已改用 Discord CDN
+        
+        保留此方法以維持向後兼容性，但不再執行任何操作。
+        排行榜現在直接上傳到 Discord CDN 進行存儲。
+        """
         try:
             import base64
             
