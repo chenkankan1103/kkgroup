@@ -14,6 +14,7 @@ import hashlib
 from pathlib import Path
 import time
 import re
+from datetime import datetime
 from db_adapter import get_user, set_user, get_user_field, set_user_field
 
 load_dotenv()
@@ -889,10 +890,13 @@ class WelcomeFlow(commands.Cog):
 
             # 設置擊暈狀態
             print(f"💫 設置 {member.name} 為擊暈狀態")
+            current_timestamp = int(datetime.now().timestamp())
             await self.update_user_data(member.id, {
                 'is_stunned': 1,
                 'hp': 10,
-                'stamina': 10
+                'stamina': 10,
+                'injury_recovery_time': current_timestamp,
+                'last_recovery': current_timestamp
             })
 
             # 立即添加正式成員身分
@@ -988,8 +992,44 @@ class WelcomeFlow(commands.Cog):
             if stun_data['temp_role1'] and stun_data['temp_role1'] in member.roles:
                 await member.remove_roles(stun_data['temp_role1'], reason="5分鐘後移除臨時身分組")
 
-            # 恢復擊暈狀態 (但血量體力保持在10)
-            await self.update_user_data(user_id, {'is_stunned': 0})
+            # 🏥 **保持傷病狀態**（`is_stunned: 1`）讓 recovery_cog 自動恢復
+            # ✅ 傷病狀態恢復速度更快：每小時 +25 體力，約 4 小時後自動出院
+            # 🔑 更新 injury_recovery_time 讓恢復循環能正確追蹤
+            current_timestamp = int(datetime.now().timestamp())
+            await self.update_user_data(user_id, {
+                'injury_recovery_time': current_timestamp,
+                'last_recovery': current_timestamp
+                # ⚠️ **不**設置 is_stunned: 0，讓它保持為 1，由 recovery_cog 在體力達 100 時自動設為 0
+            })
+
+            # 🔄 刷新紙娃娃顯示狀態（重新渲染歡迎訊息頂部，顯示恢復中的狀態）
+            try:
+                user_data = self.get_user_data(user_id)
+                if user_data and member:
+                    embed = await self.create_welcome_embed(user_data, member)
+                    # 嘗試獲取角色圖片
+                    try:
+                        character_image_url = await self.get_character_image_url(user_data)
+                        if character_image_url:
+                            embed.set_image(url=character_image_url)
+                    except:
+                        pass
+                    # 👤 發送恢復說明給用戶（私訊）
+                    try:
+                        recovery_message = (
+                            f"✅ 5 分鐘清理完成！\n\n"
+                            f"**📊 當前狀態：**\n"
+                            f"• ❤️ 血量：{user_data.get('hp', 10)}/100\n"
+                            f"• ⚡ 體力：{user_data.get('stamina', 10)}/100\n"
+                            f"• 💤 傷病狀態：恢復中\n\n"
+                            f"**⏱️ 自動恢復進度：**\n"
+                            f"• 每小時恢復 +25 體力\n"
+                            f"• 預計 4 小時內自動出院\n"
+                            f"• 系統會自動通知你出院\n\n"
+                            f"**💊 快速恢復選項：**\n"
+                            f"• 如需立即恢復，可前往醫院購買恢復產品\n"
+                            f"• 紙娃娃狀態見下方 ↓\n"
+                        )\n                        await member.send(recovery_message, embed=embed)\n                    except:\n                        pass  # 如果無法私訊，也不影響主流程\n            except Exception as refresh_err:\n                print(f\"⚠️ 刷新紙娃娃失敗（非關鍵）: {refresh_err}\")"
 
             # 清理歡迎訊息
             if stun_data['message_id']:
