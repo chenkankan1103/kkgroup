@@ -385,6 +385,8 @@ class CropPlantingView(discord.ui.View):
         self.channel_id = channel_id
         self.seeds_dict = seeds_dict or {}  # 保留完整種子字典用於一鍵種植
         self.crop_operation_view = crop_operation_view
+        # ⭐ 記錄用戶選擇的一鍵種植配置
+        self.plant_all_config = {}  # {seed_name: quantity}
 
         # 添加種子選擇下拉選單
         if options:
@@ -396,15 +398,15 @@ class CropPlantingView(discord.ui.View):
             select.callback = self.seed_select_callback
             self.add_item(select)
 
-        # 添加一鍵種植按鈕
-        mass_button = discord.ui.Button(
-            label="一鍵種植",
-            style=discord.ButtonStyle.success,
-            emoji="🌾",
-            custom_id="plant_all_seeds"
+        # 添加一鍵種植配置按鈕
+        config_button = discord.ui.Button(
+            label="配置一鍵種植",
+            style=discord.ButtonStyle.primary,
+            emoji="⚙️",
+            custom_id="config_plant_all"
         )
-        mass_button.callback = self.plant_all_callback
-        self.add_item(mass_button)
+        config_button.callback = self.config_plant_all_callback
+        self.add_item(config_button)
 
     async def seed_select_callback(self, interaction: discord.Interaction):
         """處理種子選擇 - 顯示確認視圖，不自動種植"""
@@ -474,15 +476,15 @@ class CropPlantingView(discord.ui.View):
             
             # 一鍵種植按鈕
             plant_all_btn = discord.ui.Button(
-                label="一鍵種植所有",
-                style=discord.ButtonStyle.secondary,
-                emoji="🌾"
+                label="配置一鍵種植",
+                style=discord.ButtonStyle.primary,
+                emoji="⚙️"
             )
             
             async def plant_all_from_select_callback(btn_interaction: discord.Interaction):
-                """從選擇視圖呼叫一鍵種植"""
-                # 複用一鍵種植邏輯
-                await self.plant_all_callback(btn_interaction)
+                """從選擇視圖呼叫配置一鍵種植"""
+                # 複用配置一鍵種植邏輯
+                await self.config_plant_all_callback(btn_interaction)
             
             plant_all_btn.callback = plant_all_from_select_callback
             view.add_item(plant_all_btn)
@@ -514,7 +516,313 @@ class CropPlantingView(discord.ui.View):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
-    async def plant_all_callback(self, interaction: discord.Interaction):
+    async def config_plant_all_callback(self, interaction: discord.Interaction):
+        """配置一鍵種植 - 讓用戶選擇要種的種子和數量"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            if not self.seeds_dict:
+                await interaction.followup.send("❌ 你沒有任何種子！", ephemeral=True)
+                return
+
+            # 建立配置 embed
+            embed = discord.Embed(
+                title="🌾 配置一鍵種植",
+                description="選擇要種植的種子和數量",
+                color=discord.Color.green()
+            )
+
+            # 建立按鈕組
+            view = discord.ui.View(timeout=None)
+
+            # 為每種種子添加 +/- 按鈕
+            for idx, (seed_name, max_qty) in enumerate(self.seeds_dict.items()):
+                if max_qty > 0:
+                    # 初始化配置
+                    if seed_name not in self.plant_all_config:
+                        self.plant_all_config[seed_name] = 0
+                    
+                    # 減少按鈕
+                    decrease_btn = discord.ui.Button(
+                        label="-",
+                        style=discord.ButtonStyle.danger,
+                        custom_id=f"decrease_{idx}",
+                        row=idx
+                    )
+                    
+                    def make_decrease_callback(sn):
+                        async def callback(btn_interaction: discord.Interaction):
+                            await btn_interaction.response.defer(ephemeral=True)
+                            if self.plant_all_config.get(sn, 0) > 0:
+                                self.plant_all_config[sn] -= 1
+                            await self.update_config_embed(btn_interaction)
+                        return callback
+                    
+                    decrease_btn.callback = make_decrease_callback(seed_name)
+                    view.add_item(decrease_btn)
+
+                    # 數量顯示按鈕（禁用）
+                    qty_btn = discord.ui.Button(
+                        label=f"{seed_name}: {self.plant_all_config.get(seed_name, 0)}/{max_qty}",
+                        style=discord.ButtonStyle.secondary,
+                        custom_id=f"qty_{idx}",
+                        disabled=True,
+                        row=idx
+                    )
+                    view.add_item(qty_btn)
+
+                    # 增加按鈕
+                    increase_btn = discord.ui.Button(
+                        label="+",
+                        style=discord.ButtonStyle.success,
+                        custom_id=f"increase_{idx}",
+                        row=idx
+                    )
+                    
+                    def make_increase_callback(sn, max_q):
+                        async def callback(btn_interaction: discord.Interaction):
+                            await btn_interaction.response.defer(ephemeral=True)
+                            if self.plant_all_config.get(sn, 0) < max_q:
+                                self.plant_all_config[sn] += 1
+                            await self.update_config_embed(btn_interaction)
+                        return callback
+                    
+                    increase_btn.callback = make_increase_callback(seed_name, max_qty)
+                    view.add_item(increase_btn)
+
+            # 底部：確認和返回按鈕
+            confirm_btn = discord.ui.Button(
+                label="確認種植",
+                style=discord.ButtonStyle.success,
+                emoji="✅"
+            )
+            
+            async def confirm_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                # 執行配置好的種植
+                await self.execute_configured_planting(btn_interaction)
+            
+            confirm_btn.callback = confirm_callback
+            view.add_item(confirm_btn)
+
+            cancel_btn = discord.ui.Button(
+                label="返回",
+                style=discord.ButtonStyle.secondary,
+                emoji="⬅️"
+            )
+            
+            async def cancel_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await btn_interaction.delete_original_response()
+            
+            cancel_btn.callback = cancel_callback
+            view.add_item(cancel_btn)
+
+            embed.add_field(name="💡 說明", value="使用 +/- 按鈕調整數量，完成後點「確認種植」", inline=False)
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # 保存 interaction 用於更新
+            self._config_interaction = interaction
+
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
+    async def update_config_embed(self, interaction: discord.Interaction):
+        """更新配置 embed（顯示當前選擇的數量）"""
+        try:
+            embed = discord.Embed(
+                title="🌾 配置一鍵種植",
+                description="選擇要種植的種子和數量",
+                color=discord.Color.green()
+            )
+
+            # 顯示當前配置
+            for seed_name, qty in self.plant_all_config.items():
+                max_qty = self.seeds_dict.get(seed_name, 0)
+                if max_qty > 0:
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    embed.add_field(
+                        name=f"{config['emoji']} {seed_name}",
+                        value=f"已選擇: {qty} / 可用: {max_qty}",
+                        inline=True
+                    )
+
+            total_selected = sum(self.plant_all_config.values())
+            embed.add_field(name="📊 合計", value=f"將種植 {total_selected} 棵植物", inline=False)
+            embed.add_field(name="💡 說明", value="使用 +/- 按鈕調整數量，完成後點「確認種植」", inline=False)
+
+            # 重建視圖
+            view = discord.ui.View(timeout=None)
+
+            idx = 0
+            for seed_name, max_qty in self.seeds_dict.items():
+                if max_qty > 0:
+                    # 減少按鈕
+                    decrease_btn = discord.ui.Button(
+                        label="-",
+                        style=discord.ButtonStyle.danger,
+                        custom_id=f"decrease_{idx}",
+                        row=idx
+                    )
+                    
+                    def make_decrease_callback(sn):
+                        async def callback(btn_interaction: discord.Interaction):
+                            await btn_interaction.response.defer(ephemeral=True)
+                            if self.plant_all_config.get(sn, 0) > 0:
+                                self.plant_all_config[sn] -= 1
+                            await self.update_config_embed(btn_interaction)
+                        return callback
+                    
+                    decrease_btn.callback = make_decrease_callback(seed_name)
+                    view.add_item(decrease_btn)
+
+                    # 數量顯示按鈕
+                    qty_btn = discord.ui.Button(
+                        label=f"{seed_name}: {self.plant_all_config.get(seed_name, 0)}/{max_qty}",
+                        style=discord.ButtonStyle.secondary,
+                        custom_id=f"qty_{idx}",
+                        disabled=True,
+                        row=idx
+                    )
+                    view.add_item(qty_btn)
+
+                    # 增加按鈕
+                    increase_btn = discord.ui.Button(
+                        label="+",
+                        style=discord.ButtonStyle.success,
+                        custom_id=f"increase_{idx}",
+                        row=idx
+                    )
+                    
+                    def make_increase_callback(sn, max_q):
+                        async def callback(btn_interaction: discord.Interaction):
+                            await btn_interaction.response.defer(ephemeral=True)
+                            if self.plant_all_config.get(sn, 0) < max_q:
+                                self.plant_all_config[sn] += 1
+                            await self.update_config_embed(btn_interaction)
+                        return callback
+                    
+                    increase_btn.callback = make_increase_callback(seed_name, max_qty)
+                    view.add_item(increase_btn)
+                    
+                    idx += 1
+
+            # 確認按鈕
+            confirm_btn = discord.ui.Button(
+                label="確認種植",
+                style=discord.ButtonStyle.success,
+                emoji="✅"
+            )
+            
+            async def confirm_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await self.execute_configured_planting(btn_interaction)
+            
+            confirm_btn.callback = confirm_callback
+            view.add_item(confirm_btn)
+
+            # 返回按鈕
+            cancel_btn = discord.ui.Button(
+                label="返回",
+                style=discord.ButtonStyle.secondary,
+                emoji="⬅️"
+            )
+            
+            async def cancel_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await btn_interaction.delete_original_response()
+            
+            cancel_btn.callback = cancel_callback
+            view.add_item(cancel_btn)
+
+            await interaction.edit_original_response(embed=embed, view=view)
+
+        except Exception as e:
+            traceback.print_exc()
+
+    async def execute_configured_planting(self, interaction: discord.Interaction):
+        """執行配置好的一鍵種植"""
+        try:
+            # ⭐ 檢查當前植物數量，確保不超過3個
+            current_plants = await get_user_plants(self.user_id)
+            remaining_slots = 3 - len(current_plants)
+            
+            if remaining_slots <= 0:
+                await interaction.followup.send("❌ 植物格位已滿（3/3），無法再種植！", ephemeral=True)
+                return
+
+            results = []
+            plants_count = 0
+            total_to_plant = sum(self.plant_all_config.values())
+
+            if total_to_plant == 0:
+                await interaction.followup.send("❌ 請先選擇要種植的種子！", ephemeral=True)
+                return
+
+            # 依照配置種植
+            for seed_name, qty_to_plant in self.plant_all_config.items():
+                for _ in range(qty_to_plant):
+                    if plants_count >= remaining_slots:
+                        results.append((seed_name, False, "格位已滿"))
+                        break
+                    
+                    has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
+                    if not has_seed:
+                        results.append((seed_name, False, "庫存不足"))
+                        break
+                    
+                    result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
+                    if result and not result.get("success") == False:
+                        if self.cog:
+                            user = await self.bot.fetch_user(self.user_id)
+                            await self.cog.record_event('plant', user, f"種植{seed_name}")
+                        results.append((seed_name, True, ""))
+                        plants_count += 1
+                    else:
+                        await add_inventory(self.user_id, "種子", seed_name, 1)
+                        reason = result.get("reason", "未知原因") if result else "未知原因"
+                        results.append((seed_name, False, reason))
+                        continue
+
+            # 建立結果 embed
+            embed = discord.Embed(title="🌱 配置一鍵種植結果", color=discord.Color.green())
+            embed.add_field(name="📊 種植進度", value=f"{plants_count}/{remaining_slots} 個植物已種植", inline=False)
+            
+            for seed_name, success, reason in results:
+                emoji = ""
+                try:
+                    emoji = CANNABIS_SHOP["種子"][seed_name]["emoji"]
+                except Exception:
+                    pass
+                if success:
+                    embed.add_field(name=f"{emoji} {seed_name}", value="✅ 種植成功", inline=True)
+                else:
+                    embed.add_field(name=f"{emoji} {seed_name}", value=f"❌ {reason}", inline=True)
+
+            # 建立結果視圖（帶返回按鈕）
+            result_view = discord.ui.View(timeout=None)
+            
+            back_btn = discord.ui.Button(
+                label="返回",
+                style=discord.ButtonStyle.secondary,
+                emoji="⬅️"
+            )
+            
+            async def back_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await btn_interaction.delete_original_response()
+            
+            back_btn.callback = back_callback
+            result_view.add_item(back_btn)
+
+            await interaction.edit_original_response(embed=embed, view=result_view)
+            # 重置配置
+            self.plant_all_config = {}
+
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 種植時發生錯誤：{str(e)[:100]}", ephemeral=True)
         """一鍵種植：嘗試種植所有持有的種子（限制3個植物）"""
         try:
             await interaction.response.defer(ephemeral=True)
@@ -615,12 +923,12 @@ class SelectSeedView(discord.ui.View):
 
         # 添加一鍵種植按鈕
         mass_button = discord.ui.Button(
-            label="一鍵種植",
-            style=discord.ButtonStyle.success,
-            emoji="🌾",
+            label="配置一鍵種植",
+            style=discord.ButtonStyle.primary,
+            emoji="⚙️",
             custom_id="plant_all_seeds"
         )
-        mass_button.callback = self.plant_all_callback
+        mass_button.callback = self.config_plant_all_callback
         self.add_item(mass_button)
 
     def make_plant_callback(self, seed_name):
@@ -678,7 +986,302 @@ class SelectSeedView(discord.ui.View):
 
         return callback
 
-    async def plant_all_callback(self, interaction: discord.Interaction):
+    async def config_plant_all_callback(self, interaction: discord.Interaction):
+        """配置一鍵種植 - 讓用戶選擇要種的種子和數量"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            if not self.seeds:
+                await interaction.followup.send("❌ 你沒有任何種子！", ephemeral=True)
+                return
+
+            # 初始化配置字典
+            if not hasattr(self, 'plant_all_config'):
+                self.plant_all_config = {}
+            
+            # 建立配置 embed
+            embed = discord.Embed(
+                title="🌾 配置一鍵種植",
+                description="選擇要種植的種子和數量",
+                color=discord.Color.green()
+            )
+
+            # 建立按鈕組
+            view = discord.ui.View(timeout=None)
+
+            # 為每種種子添加 +/- 按鈕
+            for idx, (seed_name, max_qty) in enumerate(self.seeds.items()):
+                if max_qty > 0:
+                    # 初始化配置
+                    if seed_name not in self.plant_all_config:
+                        self.plant_all_config[seed_name] = 0
+                    
+                    # 減少按鈕
+                    decrease_btn = discord.ui.Button(
+                        label="-",
+                        style=discord.ButtonStyle.danger,
+                        custom_id=f"decrease_select_{idx}",
+                        row=idx
+                    )
+                    
+                    def make_decrease_callback(sn):
+                        async def callback(btn_interaction: discord.Interaction):
+                            await btn_interaction.response.defer(ephemeral=True)
+                            if self.plant_all_config.get(sn, 0) > 0:
+                                self.plant_all_config[sn] -= 1
+                            await self.update_config_embed(btn_interaction)
+                        return callback
+                    
+                    decrease_btn.callback = make_decrease_callback(seed_name)
+                    view.add_item(decrease_btn)
+
+                    # 數量顯示按鈕（禁用）
+                    qty_btn = discord.ui.Button(
+                        label=f"{seed_name}: {self.plant_all_config.get(seed_name, 0)}/{max_qty}",
+                        style=discord.ButtonStyle.secondary,
+                        custom_id=f"qty_select_{idx}",
+                        disabled=True,
+                        row=idx
+                    )
+                    view.add_item(qty_btn)
+
+                    # 增加按鈕
+                    increase_btn = discord.ui.Button(
+                        label="+",
+                        style=discord.ButtonStyle.success,
+                        custom_id=f"increase_select_{idx}",
+                        row=idx
+                    )
+                    
+                    def make_increase_callback(sn, max_q):
+                        async def callback(btn_interaction: discord.Interaction):
+                            await btn_interaction.response.defer(ephemeral=True)
+                            if self.plant_all_config.get(sn, 0) < max_q:
+                                self.plant_all_config[sn] += 1
+                            await self.update_config_embed(btn_interaction)
+                        return callback
+                    
+                    increase_btn.callback = make_increase_callback(seed_name, max_qty)
+                    view.add_item(increase_btn)
+
+            # 底部：確認和返回按鈕
+            confirm_btn = discord.ui.Button(
+                label="確認種植",
+                style=discord.ButtonStyle.success,
+                emoji="✅"
+            )
+            
+            async def confirm_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await self.execute_configured_planting(btn_interaction)
+            
+            confirm_btn.callback = confirm_callback
+            view.add_item(confirm_btn)
+
+            cancel_btn = discord.ui.Button(
+                label="返回",
+                style=discord.ButtonStyle.secondary,
+                emoji="⬅️"
+            )
+            
+            async def cancel_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await btn_interaction.delete_original_response()
+            
+            cancel_btn.callback = cancel_callback
+            view.add_item(cancel_btn)
+
+            embed.add_field(name="💡 說明", value="使用 +/- 按鈕調整數量，完成後點「確認種植」", inline=False)
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+
+    async def update_config_embed(self, interaction: discord.Interaction):
+        """更新配置 embed（顯示當前選擇的數量）"""
+        try:
+            embed = discord.Embed(
+                title="🌾 配置一鍵種植",
+                description="選擇要種植的種子和數量",
+                color=discord.Color.green()
+            )
+
+            # 顯示當前配置
+            for seed_name, qty in self.plant_all_config.items():
+                max_qty = self.seeds.get(seed_name, 0)
+                if max_qty > 0:
+                    config = CANNABIS_SHOP["種子"][seed_name]
+                    embed.add_field(
+                        name=f"{config['emoji']} {seed_name}",
+                        value=f"已選擇: {qty} / 可用: {max_qty}",
+                        inline=True
+                    )
+
+            total_selected = sum(self.plant_all_config.values())
+            embed.add_field(name="📊 合計", value=f"將種植 {total_selected} 棵植物", inline=False)
+            embed.add_field(name="💡 說明", value="使用 +/- 按鈕調整數量，完成後點「確認種植」", inline=False)
+
+            # 重建視圖
+            view = discord.ui.View(timeout=None)
+
+            idx = 0
+            for seed_name, max_qty in self.seeds.items():
+                if max_qty > 0:
+                    # 減少按鈕
+                    decrease_btn = discord.ui.Button(
+                        label="-",
+                        style=discord.ButtonStyle.danger,
+                        custom_id=f"decrease_select_{idx}",
+                        row=idx
+                    )
+                    
+                    def make_decrease_callback(sn):
+                        async def callback(btn_interaction: discord.Interaction):
+                            await btn_interaction.response.defer(ephemeral=True)
+                            if self.plant_all_config.get(sn, 0) > 0:
+                                self.plant_all_config[sn] -= 1
+                            await self.update_config_embed(btn_interaction)
+                        return callback
+                    
+                    decrease_btn.callback = make_decrease_callback(seed_name)
+                    view.add_item(decrease_btn)
+
+                    # 數量顯示按鈕
+                    qty_btn = discord.ui.Button(
+                        label=f"{seed_name}: {self.plant_all_config.get(seed_name, 0)}/{max_qty}",
+                        style=discord.ButtonStyle.secondary,
+                        custom_id=f"qty_select_{idx}",
+                        disabled=True,
+                        row=idx
+                    )
+                    view.add_item(qty_btn)
+
+                    # 增加按鈕
+                    increase_btn = discord.ui.Button(
+                        label="+",
+                        style=discord.ButtonStyle.success,
+                        custom_id=f"increase_select_{idx}",
+                        row=idx
+                    )
+                    
+                    def make_increase_callback(sn, max_q):
+                        async def callback(btn_interaction: discord.Interaction):
+                            await btn_interaction.response.defer(ephemeral=True)
+                            if self.plant_all_config.get(sn, 0) < max_q:
+                                self.plant_all_config[sn] += 1
+                            await self.update_config_embed(btn_interaction)
+                        return callback
+                    
+                    increase_btn.callback = make_increase_callback(seed_name, max_qty)
+                    view.add_item(increase_btn)
+                    
+                    idx += 1
+
+            # 確認按鈕
+            confirm_btn = discord.ui.Button(
+                label="確認種植",
+                style=discord.ButtonStyle.success,
+                emoji="✅"
+            )
+            
+            async def confirm_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await self.execute_configured_planting(btn_interaction)
+            
+            confirm_btn.callback = confirm_callback
+            view.add_item(confirm_btn)
+
+            # 返回按鈕
+            cancel_btn = discord.ui.Button(
+                label="返回",
+                style=discord.ButtonStyle.secondary,
+                emoji="⬅️"
+            )
+            
+            async def cancel_callback(btn_interaction: discord.Interaction):
+                await btn_interaction.response.defer(ephemeral=True)
+                await btn_interaction.delete_original_response()
+            
+            cancel_btn.callback = cancel_callback
+            view.add_item(cancel_btn)
+
+            await interaction.edit_original_response(embed=embed, view=view)
+
+        except Exception as e:
+            traceback.print_exc()
+
+    async def execute_configured_planting(self, interaction: discord.Interaction):
+        """執行配置好的一鍵種植"""
+        try:
+            # ⭐ 檢查當前植物數量，確保不超過3個
+            current_plants = await get_user_plants(self.user_id)
+            remaining_slots = 3 - len(current_plants)
+            
+            if remaining_slots <= 0:
+                await interaction.followup.send("❌ 植物格位已滿（3/3），無法再種植！", ephemeral=True)
+                return
+
+            results = []
+            plants_count = 0
+            total_to_plant = sum(self.plant_all_config.values())
+
+            if total_to_plant == 0:
+                await interaction.followup.send("❌ 請先選擇要種植的種子！", ephemeral=True)
+                return
+
+            # 依照配置種植
+            for seed_name, qty_to_plant in self.plant_all_config.items():
+                for _ in range(qty_to_plant):
+                    if plants_count >= remaining_slots:
+                        results.append((seed_name, False, "格位已滿"))
+                        break
+                    
+                    has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
+                    if not has_seed:
+                        results.append((seed_name, False, "庫存不足"))
+                        break
+                    
+                    result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
+                    if result and not result.get("success") == False:
+                        if self.cog:
+                            user = await self.bot.fetch_user(self.user_id)
+                            await self.cog.record_event('plant', user, f"種植{seed_name}")
+                        results.append((seed_name, True, ""))
+                        plants_count += 1
+                    else:
+                        await add_inventory(self.user_id, "種子", seed_name, 1)
+                        reason = result.get("reason", "未知原因") if result else "未知原因"
+                        results.append((seed_name, False, reason))
+                        continue
+
+            # 建立結果 embed
+            embed = discord.Embed(title="🌱 配置一鍵種植結果", color=discord.Color.green())
+            embed.add_field(name="📊 種植進度", value=f"{plants_count}/{remaining_slots} 個植物已種植", inline=False)
+            
+            for seed_name, success, reason in results:
+                emoji = ""
+                try:
+                    emoji = CANNABIS_SHOP["種子"][seed_name]["emoji"]
+                except Exception:
+                    pass
+                if success:
+                    embed.add_field(name=f"{emoji} {seed_name}", value="✅ 種植成功", inline=True)
+                else:
+                    embed.add_field(name=f"{emoji} {seed_name}", value=f"❌ {reason}", inline=True)
+
+            # 建立結果視圖（帶返回按鈕）
+            from .selection_views import PlantResultView
+            result_view = PlantResultView(self.user_id, self.crop_operation_view)
+
+            await interaction.edit_original_response(embed=embed, view=result_view)
+            # 重置配置
+            self.plant_all_config = {}
+
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 種植時發生錯誤：{str(e)[:100]}", ephemeral=True)
         """一鍵種植：嘗試種植所有持有的種子"""
         try:
             await interaction.response.defer(ephemeral=True)
