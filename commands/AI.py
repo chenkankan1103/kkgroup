@@ -205,26 +205,28 @@ class AIResponse(commands.Cog):
                             response_text = await resp.text()
 
                             if resp.status == 429:
+                                logger.warning(f"⚠️ {api_name} 配額超限 (429)，嘗試下一個 API...")
                                 continue
 
                             if resp.status != 200:
-                                logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
+                                logger.warning(f"⚠️ {api_name} 返回 {resp.status}，回應: {response_text[:200]}")
                                 continue
 
                             try:
                                 data = _json.loads(response_text)
                             except _json.JSONDecodeError as e:
-                                logger.warning(f"{api_name} JSON 解析失敗: {e}\n原始回應: {response_text[:200]}")
+                                logger.warning(f"⚠️ {api_name} JSON 解析失敗: {e}\n原始回應: {response_text[:300]}")
                                 continue
 
                             if not data or "candidates" not in data or not data["candidates"]:
-                                logger.warning(f"{api_name} 回應缺少 candidates 欄位")
+                                logger.warning(f"⚠️ {api_name} 回應非空但缺 candidates: {list(data.keys()) if data else 'data=None'}")
                                 continue
 
                             candidate = data["candidates"][0]
                             parts = candidate.get("content", {}).get("parts", [])
 
                             if not parts:
+                                logger.warning(f"⚠️ {api_name} 回應無 parts 內容")
                                 continue
 
                             # ── 處理 Function Call（工具呼叫）──────────────────────
@@ -265,11 +267,20 @@ class AIResponse(commands.Cog):
                                     parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
 
                             # ── 提取最終文字內容 ───────────────────────────────────
-                            if parts and "text" in parts[0]:
-                                content = parts[0]["text"].strip()
-                                if content:
-                                    logger.info(f"✅ {api_name} 成功: {len(content)} 字符")
-                                    return content
+                            if not parts:
+                                logger.warning(f"⚠️ {api_name} 提取後 parts 仍為空")
+                                continue
+                            
+                            if "text" not in parts[0]:
+                                logger.warning(f"⚠️ {api_name} 回應無 text 欄位: {parts[0].keys() if isinstance(parts[0], dict) else '非dict'}")
+                                continue
+                            
+                            content = parts[0]["text"].strip()
+                            if content:
+                                logger.info(f"✅ {api_name} 成功: {len(content)} 字符")
+                                return content
+                            else:
+                                logger.warning(f"⚠️ {api_name} 文字內容為空")
 
                 else:
                     # ── OpenAI 相容格式（Groq 等）─────────────────────────────────
