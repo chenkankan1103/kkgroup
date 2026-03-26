@@ -40,6 +40,20 @@ except ImportError:
     _TOOLS_AVAILABLE = False
     print("⚠️  agent_tools 模組不可用，AI 工具功能已停用")
 
+# ─── 基於提示的函數呼叫系統（支持 Groq 和 GitHub Models）─────────────────────
+try:
+    from prompt_function_calling import (
+        build_system_prompt_with_tools,
+        extract_function_calls,
+        extract_response_without_calls,
+        execute_extracted_calls,
+        format_call_results_for_context
+    )
+    _PROMPT_FC_AVAILABLE = True
+except ImportError:
+    _PROMPT_FC_AVAILABLE = False
+    print("⚠️  prompt_function_calling 模組不可用，Groq/GitHub Models 工具呼叫功能已停用")
+
 AI_API_KEY = os.getenv("AI_API_KEY")
 AI_API_KEY_BACKUP = os.getenv("AI_API_KEY_BACKUP")  # 備用 API 金鑰
 AI_API_URL = os.getenv("AI_API_URL")
@@ -305,7 +319,7 @@ class AIResponse(commands.Cog):
                                 logger.warning(f"⚠️ {api_name} 文字內容為空")
 
                 else:
-                    # ── OpenAI 相容格式（GitHub Models, Groq 等）─────────────────────────────────
+                    # ── OpenAI 相容格式（GitHub Models, Groq 等）───────────────────────
                     import json as _json
                     full_url = url
                     headers = {
@@ -313,11 +327,19 @@ class AIResponse(commands.Cog):
                         "Content-Type": "application/json"
                     }
                     
-                    # 如果正在使用備用 API 且之前 Gemini 失敗，添加警告
+                    # 準備系統提示（可能包含工具說明）
                     enhanced_system = system_prompt
+                    
+                    # 如果工具可用，添加工具說明到系統提示
+                    if _PROMPT_FC_AVAILABLE and _TOOLS_AVAILABLE:
+                        enhanced_system = build_system_prompt_with_tools(enhanced_system)
+                    
+                    # 如果之前 Gemini 失敗，添加降級提示
                     if gemini_failed_reason and ("GitHub" in api_name or "Groq" in api_name):
-                        enhanced_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 {api_name}。無法使用工具呼叫，請直接回答用戶的問題。"
-                        logger.warning(f"⚠️ 已切換至 {api_name}（Gemini {gemini_failed_reason}）- 工具呼叫功能不可用")
+                        enhanced_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 {api_name}。"
+                        if _TOOLS_AVAILABLE and _PROMPT_FC_AVAILABLE:
+                            enhanced_system += f"該模型支持基於提示的工具呼叫，請按上述格式調用工具。"
+                        logger.warning(f"⚠️ 已切換至 {api_name}（Gemini {gemini_failed_reason}）")
                     
                     payload = {
                         "model": model,
@@ -328,6 +350,7 @@ class AIResponse(commands.Cog):
                     }
 
                     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                        # ── 第一次請求 ──────────────────────────────────────────────
                         async with session.post(full_url, headers=headers, json=payload) as resp:
                             response_text = await resp.text()
 
@@ -345,10 +368,56 @@ class AIResponse(commands.Cog):
                                 continue
 
                             if "choices" in data and data["choices"]:
-                                content = data["choices"][0]["message"]["content"].strip()
-                                if content:
-                                    logger.info(f"✅ {api_name} 成功: {len(content)} 字符")
-                                    return content
+                                first_response = data["choices"][0]["message"]["content"].strip()
+                                
+                                # ── 檢查是否有工具呼叫（Prompt-Based Function Calling）────
+                                if _PROMPT_FC_AVAILABLE and _TOOLS_AVAILABLE:
+                                    calls = extract_function_calls(first_response)
+                                    if calls:
+                                        logger.info(f"🔧 {api_name} 呼叫工具: {[c['name'] for c in calls]}")
+                                        
+                                        # 執行工具
+                                        call_results = execute_extracted_calls(calls, caller_id=caller_id)
+                                        results_context = format_call_results_for_context(calls, call_results)
+                                        logger.info(f"   工具結果: {str(results_context)[:150]}")
+                                        
+                                        # ── 第二次請求（基於工具結果生成最終回答）─────────
+                                        # 添加工具結果到對話歷史
+                                        payload["messages"].append({
+                                            "role": "assistant",
+                                            "content": first_response
+                                        })
+                                        payload["messages"].append({
+                                            "role": "user",
+                                            "content": results_context + "\n\n請根據工具執行結果給出最終回答，不要再輸出工具呼叫標籤。"
+                                        })
+                                        
+                                        # 再次調用模型
+                                        async with session.post(full_url, headers=headers, json=payload) as resp2:
+                                            r2_text = await resp2.text()
+                                            if resp2.status == 200:
+                                                try:
+                                                    data2 = _json.loads(r2_text)
+                                                    if "choices" in data2 and data2["choices"]:
+                                                        final_response = data2["choices"][0]["message"]["content"].strip()
+                                                        # 確保移除任何可能的工具呼叫標籤
+                                                        final_response = extract_response_without_calls(final_response)
+                                                        if final_response:
+                                                            logger.info(f"✅ {api_name} 成功（工具輔助）: {len(final_response)} 字符")
+                                                            return final_response
+                                                except _json.JSONDecodeError:
+                                                    pass
+                                        
+                                        # 如果第二次請求失敗，使用第一次回應（移除工具標籤）
+                                        first_response = extract_response_without_calls(first_response)
+                                        if first_response:
+                                            logger.info(f"✅ {api_name} 成功（第一次回應）: {len(first_response)} 字符")
+                                            return first_response
+                                
+                                # 沒有工具呼叫，直接返回回應
+                                if first_response:
+                                    logger.info(f"✅ {api_name} 成功: {len(first_response)} 字符")
+                                    return first_response
 
 
             except asyncio.TimeoutError:
