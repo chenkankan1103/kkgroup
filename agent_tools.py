@@ -76,19 +76,31 @@ def register_tool(name: str, description: str, parameters: Dict):
         "required": ["user_id"]
     }
 )
-def get_kkcoin_balance(user_id: str, *, caller_id: Optional[int] = None) -> str:
+def get_kkcoin_balance(user_id: str = "", *, caller_id: Optional[int] = None) -> str:
     """
     查詢指定用戶的 KK幣與數位美金餘額。
+    
+    ⭐ 智能 ID 判斷：
+      如果 user_id 為空或無效，自動使用 caller_id（當前請求者）
+      這樣用戶問「我有多少 KK幣」時，會自動查詢自己的餘額
 
     Args:
-        user_id (str):   Discord 用戶 ID
-        caller_id (int): 呼叫此工具的 Discord 用戶 ID（由系統注入，不由 Gemini 提供）
+        user_id (str):   要查詢的 Discord 用戶 ID（可選，為空時使用 caller_id）
+        caller_id (int): 呼叫此工具的 Discord 用戶 ID（由系統注入）
 
     Returns:
         str: 包含 KK幣和數位美金餘額的文字描述
     """
     try:
         from db_adapter import get_user_field
+        
+        # ⭐ 智能判斷：如果 user_id 為空或不是數字，使用 caller_id
+        if not user_id or not user_id.isdigit():
+            if caller_id:
+                user_id = str(caller_id)
+            else:
+                return "❌ 無法確定要查詢哪個用戶的 KK幣。請提供用戶 ID 或 @tag 我來查詢你的餘額。"
+        
         kkcoin = float(get_user_field(user_id, 'kkcoin', default=0) or 0)
         digital_usd = float(get_user_field(user_id, 'digital_usd', default=0) or 0)
         return f"用戶 {user_id} — KK幣：{kkcoin:.1f} KKC，數位美金：${digital_usd:.2f}"
@@ -113,12 +125,16 @@ def get_kkcoin_balance(user_id: str, *, caller_id: Optional[int] = None) -> str:
         "required": ["user_id"]
     }
 )
-def get_user_stats(user_id: str, *, caller_id: Optional[int] = None) -> str:
+def get_user_stats(user_id: str = "", *, caller_id: Optional[int] = None) -> str:
     """
     查詢指定用戶的完整遊戲數據。
 
+    ⭐ 智能 ID 判斷：
+      如果 user_id 為空或無效，自動使用 caller_id（當前請求者）
+      這樣用戶問「我的狀態」時，會自動查詢自己的數據
+
     Args:
-        user_id (str):   Discord 用戶 ID
+        user_id (str):   Discord 用戶 ID（可選，為空時使用 caller_id）
         caller_id (int): 呼叫者 ID（系統注入）
 
     Returns:
@@ -126,6 +142,14 @@ def get_user_stats(user_id: str, *, caller_id: Optional[int] = None) -> str:
     """
     try:
         from db_adapter import get_user
+        
+        # ⭐ 智能判斷：如果 user_id 為空或不是數字，使用 caller_id
+        if not user_id or not user_id.isdigit():
+            if caller_id:
+                user_id = str(caller_id)
+            else:
+                return "❌ 無法確定要查詢哪個用戶的狀態。請提供用戶 ID 或 @tag 我來查詢你的狀態。"
+        
         user = get_user(user_id)
         if not user:
             return f"找不到用戶 {user_id} 的資料。"

@@ -352,6 +352,9 @@ class AIResponse(commands.Cog):
             persona_prompt = build_persona_prompt(bot_name="KK園區中控室", tone=tone)
             user_id = message.author.id
             user_input = message.clean_content.replace(f"<@{self.bot.user.id}>", "").strip()
+            
+            # ⭐ 添加當前用戶 ID 到系統提示，以便 Gemini 工具使用
+            persona_prompt += f"\n\n【當前用戶資訊】\n- Discord 用戶 ID: {user_id}\n- 用戶名稱: {message.author.name}\n\n當提及『我』、『我的』、『查一下我』等時，應使用當前用戶 ID: {user_id}"
 
             # 記錄到簡單歷史
             add_to_history(user_id, user_input)
