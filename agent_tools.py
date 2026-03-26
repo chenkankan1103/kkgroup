@@ -639,6 +639,91 @@ def list_maplestory_equipment_slots(*, caller_id: Optional[int] = None) -> str:
     return "\n".join(lines)
 
 
+# ==================== Shell Agent 工具 ====================
+
+@register_tool(
+    name="run_terminal",
+    description=(
+        "【高權限 Shell Agent 專用】在伺服器上執行 Shell 指令並回傳輸出結果。"
+        "僅限園區管理員，且每次執行前必須由管理員在 Discord 確認。"
+        "適用情境：查看伺服器狀態、檢查日誌、管理進程等。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "command": {
+                "type": "STRING",
+                "description": "要執行的 Shell 指令（例如：'systemctl status bot.service'）"
+            },
+            "timeout_sec": {
+                "type": "INTEGER",
+                "description": "指令最長執行時間（秒），預設 30，最大 120"
+            }
+        },
+        "required": ["command"]
+    }
+)
+def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int] = None) -> str:
+    """
+    在伺服器執行 Shell 指令並回傳 stdout/stderr 結果。
+
+    ⚠️ 高危函數：此工具在 Shell Agent 框架中透過 Discord Button 確認機制調用，
+       確認邏輯位於 commands/shell_agent.py。直接呼叫仍需 LEADER_ID 驗證。
+
+    Args:
+        command (str):      Shell 指令字串
+        timeout_sec (int):  最長執行秒數（上限 120）
+        caller_id (int):    呼叫者 Discord ID（系統注入）
+
+    Returns:
+        str: 包含 exit code、stdout 與 stderr 的執行摘要
+    """
+    # 🔒 權限防火牆
+    if LEADER_ID and caller_id != LEADER_ID:
+        return "存取拒絕：run_terminal 僅限園區管理員。"
+
+    # 安全限制
+    timeout_sec = min(int(timeout_sec), 120)
+
+    # 危險指令黑名單（雙重保險）
+    _BLACKLIST = [
+        "rm -rf /", "mkfs", ":(){:|:&};:", "dd if=",
+        "shutdown", "reboot", "halt", "poweroff",
+    ]
+    for danger in _BLACKLIST:
+        if danger in command:
+            return f"⛔ 指令包含危險關鍵字「{danger}」，已拒絕執行。"
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec
+        )
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+        exit_code = result.returncode
+
+        output_lines = [f"📟 指令：{command}", f"🚪 Exit Code：{exit_code}"]
+
+        if stdout:
+            # 限制輸出長度避免 Discord 訊息超過 2000 字
+            preview = stdout[:1200] + ("…（截斷）" if len(stdout) > 1200 else "")
+            output_lines.append(f"📤 stdout：\n{preview}")
+        if stderr:
+            preview = stderr[:400] + ("…（截斷）" if len(stderr) > 400 else "")
+            output_lines.append(f"⚠️ stderr：\n{preview}")
+
+        return "\n".join(output_lines)
+
+    except subprocess.TimeoutExpired:
+        return f"⏰ 指令超時（{timeout_sec} 秒）：{command}"
+    except Exception as e:
+        return f"❌ 指令執行失敗：{e}"
+
+
 # ==================== 核心公開介面 ====================
 
 def get_gemini_tools_spec() -> List[Dict]:
