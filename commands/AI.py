@@ -50,6 +50,11 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_API_URL = os.getenv("GROQ_API_URL")
 GROQ_API_MODEL = os.getenv("GROQ_API_MODEL", "mixtral-8x7b-32768")
 
+# GitHub Models 備用 API（優先級在 Groq 之前）
+GITHUB_MODELS_API_KEY = os.getenv("GITHUB_MODELS_API_KEY")
+GITHUB_MODELS_API_URL = os.getenv("GITHUB_MODELS_API_URL")
+GITHUB_MODELS_API_MODEL = os.getenv("GITHUB_MODELS_API_MODEL", "gpt-5-turbo")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -165,7 +170,7 @@ class AIResponse(commands.Cog):
             except Exception as e:
                 logger.warning(f"無法整合記憶上下文: {e}，將跳過記憶")
         
-        # 優先嘗試 Gemini（主金鑰 → 備用金鑰），然後備用 Groq
+        # 優先嘗試：Gemini（主 → 備用） → GitHub Models → Groq
         api_attempts = []
         gemini_failed_reason = None
         
@@ -173,6 +178,8 @@ class AIResponse(commands.Cog):
             api_attempts.append(("Gemini (主)", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
         if AI_API_KEY_BACKUP and AI_API_URL:
             api_attempts.append(("Gemini (備用)", AI_API_URL, AI_API_KEY_BACKUP, AI_API_MODEL, "gemini"))
+        if GITHUB_MODELS_API_KEY and GITHUB_MODELS_API_URL:
+            api_attempts.append(("GitHub Models", GITHUB_MODELS_API_URL, GITHUB_MODELS_API_KEY, GITHUB_MODELS_API_MODEL, "openai"))
         if GROQ_API_KEY and GROQ_API_URL:
             api_attempts.append(("Groq", GROQ_API_URL, GROQ_API_KEY, GROQ_API_MODEL, "openai"))
         
@@ -180,6 +187,8 @@ class AIResponse(commands.Cog):
             logger.error("❌ 沒有可用的 AI API 配置")
             logger.error(f"  - AI_API_KEY: {'有' if AI_API_KEY else '無'}")
             logger.error(f"  - AI_API_URL: {'有' if AI_API_URL else '無'}")
+            logger.error(f"  - GITHUB_MODELS_API_KEY: {'有' if GITHUB_MODELS_API_KEY else '無'}")
+            logger.error(f"  - GITHUB_MODELS_API_URL: {'有' if GITHUB_MODELS_API_URL else '無'}")
             logger.error(f"  - GROQ_API_KEY: {'有' if GROQ_API_KEY else '無'}")
             logger.error(f"  - GROQ_API_URL: {'有' if GROQ_API_URL else '無'}")
             return None
@@ -296,7 +305,7 @@ class AIResponse(commands.Cog):
                                 logger.warning(f"⚠️ {api_name} 文字內容為空")
 
                 else:
-                    # ── OpenAI 相容格式（Groq 等）─────────────────────────────────
+                    # ── OpenAI 相容格式（GitHub Models, Groq 等）─────────────────────────────────
                     import json as _json
                     full_url = url
                     headers = {
@@ -304,16 +313,16 @@ class AIResponse(commands.Cog):
                         "Content-Type": "application/json"
                     }
                     
-                    # 如果正在使用 Groq 且之前 Gemini 失敗，添加警告
-                    groq_system = system_prompt
-                    if "Groq" in api_name and gemini_failed_reason:
-                        groq_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 Groq。無法使用工具呼叫，請直接回答用戶的問題。"
+                    # 如果正在使用備用 API 且之前 Gemini 失敗，添加警告
+                    enhanced_system = system_prompt
+                    if gemini_failed_reason and ("GitHub" in api_name or "Groq" in api_name):
+                        enhanced_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 {api_name}。無法使用工具呼叫，請直接回答用戶的問題。"
                         logger.warning(f"⚠️ 已切換至 {api_name}（Gemini {gemini_failed_reason}）- 工具呼叫功能不可用")
                     
                     payload = {
                         "model": model,
                         "messages": [
-                            {"role": "system", "content": groq_system},
+                            {"role": "system", "content": enhanced_system},
                             {"role": "user", "content": user_prompt}
                         ]
                     }
