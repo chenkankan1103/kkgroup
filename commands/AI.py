@@ -41,6 +41,7 @@ except ImportError:
     print("⚠️  agent_tools 模組不可用，AI 工具功能已停用")
 
 AI_API_KEY = os.getenv("AI_API_KEY")
+AI_API_KEY_BACKUP = os.getenv("AI_API_KEY_BACKUP")  # 備用 API 金鑰
 AI_API_URL = os.getenv("AI_API_URL")
 AI_API_MODEL = os.getenv("AI_API_MODEL", "gpt-3.5-turbo")
 
@@ -158,10 +159,12 @@ class AIResponse(commands.Cog):
             except Exception as e:
                 logger.warning(f"無法整合記憶上下文: {e}")
         
-        # 優先嘗試 Gemini，然後備用 Groq
+        # 優先嘗試 Gemini（主金鑰 → 備用金鑰），然後備用 Groq
         api_attempts = []
         if AI_API_KEY and AI_API_URL:
-            api_attempts.append(("Gemini", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
+            api_attempts.append(("Gemini (主)", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
+        if AI_API_KEY_BACKUP and AI_API_URL:
+            api_attempts.append(("Gemini (備用)", AI_API_URL, AI_API_KEY_BACKUP, AI_API_MODEL, "gemini"))
         if GROQ_API_KEY and GROQ_API_URL:
             api_attempts.append(("Groq", GROQ_API_URL, GROQ_API_KEY, GROQ_API_MODEL, "openai"))
         
