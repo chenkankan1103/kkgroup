@@ -83,7 +83,14 @@ def get_from_env(variable_name, default=None):
     return os.getenv(variable_name, default)
 
 def save_to_env(variable_name, value):
-    set_key(".env", variable_name, str(value))
+    """
+    保存環境變數到 .env 檔案（不帶引號）
+    確保 MESSAGE_ID 等數字值正確儲存（無引號）
+    """
+    value_str = str(value)
+    # 移除任何已有的引號以防止雙重引號
+    value_str = value_str.strip("'\"")
+    set_key(".env", variable_name, value_str)
 
 # 生成灰色占位頭像（當頭像加載失敗時使用）
 def create_placeholder_avatar():
