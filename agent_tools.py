@@ -89,10 +89,10 @@ def get_kkcoin_balance(user_id: str = "", *, caller_id: Optional[int] = None) ->
         caller_id (int): 呼叫此工具的 Discord 用戶 ID（由系統注入）
 
     Returns:
-        str: 包含 KK幣和數位美金餘額的文字描述
+        str: 包含 KK幣和數位美金餘額的文字描述（超額時直接顯示）
     """
     try:
-        from db_adapter import get_user_field
+        from db_adapter import get_user_field, get_user
         
         # ⭐ 智能判斷：如果 user_id 為空或不是數字，使用 caller_id
         if not user_id or not user_id.isdigit():
@@ -101,11 +101,36 @@ def get_kkcoin_balance(user_id: str = "", *, caller_id: Optional[int] = None) ->
             else:
                 return "❌ 無法確定要查詢哪個用戶的 KK幣。請提供用戶 ID 或 @tag 我來查詢你的餘額。"
         
-        kkcoin = float(get_user_field(user_id, 'kkcoin', default=0) or 0)
-        digital_usd = float(get_user_field(user_id, 'digital_usd', default=0) or 0)
-        return f"用戶 {user_id} — KK幣：{kkcoin:.1f} KKC，數位美金：${digital_usd:.2f}"
+        # 先取得完整用戶數據
+        user_data = get_user(user_id)
+        if not user_data:
+            # ⚠️ 用戶不存在，直接返回預設值
+            return f"⚠️ 用戶 {user_id} 未存在於系統中，返回預設值：KK幣：0 KKC，數位美金：$0.00"
+        
+        # 從用戶數據中提取 kkcoin 和 digital_usd
+        kkcoin = float(user_data.get('kkcoin', 0) or 0)
+        digital_usd = float(user_data.get('digital_usd', 0) or 0)
+        
+        # ⭐ 不使用預設值，直接顯示查詢結果（即使是超限的負數）
+        result = f"用戶 {user_id} — KK幣：{kkcoin:.1f} KKC，數位美金：${digital_usd:.2f}"
+        
+        # 如果超限，添加警告
+        if kkcoin > 99999:
+            result += " 🚨 [超額警告]"
+        elif kkcoin < 0:
+            result += " 🔴 [透支]"
+        
+        return result
+        
+    except KeyError as e:
+        # 欄位不存在
+        return f"❌ 查詢失敗：欄位出錯 {e}（可能是數據格式問題）"
+    except ValueError as e:
+        # 類型轉換失敗
+        return f"❌ 查詢失敗：數值轉換錯誤 {e}"
     except Exception as e:
-        return f"查詢 KK幣餘額失敗：{e}"
+        # 其他異常直接顯示
+        return f"❌ 查詢 KK幣餘額失敗：{type(e).__name__}: {e}"
 
 
 @register_tool(
@@ -152,7 +177,7 @@ def get_user_stats(user_id: str = "", *, caller_id: Optional[int] = None) -> str
         
         user = get_user(user_id)
         if not user:
-            return f"找不到用戶 {user_id} 的資料。"
+            return f"⚠️ 用戶 {user_id} 未存在於系統中，返回預設值。"
         level   = user.get('level', 1)
         xp      = user.get('xp', 0)
         hp      = user.get('hp', 100)
@@ -165,8 +190,12 @@ def get_user_stats(user_id: str = "", *, caller_id: Optional[int] = None) -> str
             f"  HP：{hp} | 體力：{stamina}\n"
             f"  KK幣：{kkcoin:.1f} KKC | 數位美金：${digital_usd:.2f}"
         )
+    except KeyError as e:
+        return f"❌ 查詢失敗：欄位出錯 {e}"
+    except ValueError as e:
+        return f"❌ 查詢失敗：數值轉換錯誤 {e}"
     except Exception as e:
-        return f"查詢用戶資料失敗：{e}"
+        return f"❌ 查詢用戶資料失敗：{type(e).__name__}: {e}"
 
 
 @register_tool(

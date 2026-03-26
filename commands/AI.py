@@ -142,22 +142,28 @@ class AIResponse(commands.Cog):
                 memory_context = build_memory_context()
 
                 # 記錄取得的記憶上下文（除錯用）
-                logger.debug(f"[memory_context] {memory_context}")
+                estimated_tokens = memory_context.get("estimated_tokens", 0)
+                logger.debug(f"[memory_context] estimated_tokens={estimated_tokens}")
 
-                # 組合系統提示詞：基礎設定 + 角色記憶 + 對話歷史
-                enhanced_prompt = system_prompt + "\n\n" + memory_context["system_instructions"]
-                
-                # 添加對話歷史（如果有）
-                if memory_context["dialogue_history"]:
-                    enhanced_prompt += f"\n=== 對話歷史參考 ===\n{memory_context['dialogue_history']}\n"
-                
-                # 添加知識庫背景（如果有）
-                if memory_context["knowledge_context"]:
-                    enhanced_prompt += f"\n=== 相關知識背景 ===\n{memory_context['knowledge_context']}\n"
-                
-                system_prompt = enhanced_prompt
+                # ⚠️ 如果記憶 token 過多，降級使用
+                if estimated_tokens > 2500:
+                    logger.warning(f"⚠️ 記憶 token 過多 ({estimated_tokens} tokens)，跳過記憶上下文以避免超限")
+                    system_prompt = system_prompt
+                else:
+                    # 組合系統提示詞：基礎設定 + 角色記憶 + 對話歷史
+                    enhanced_prompt = system_prompt + "\n\n" + memory_context["system_instructions"]
+                    
+                    # 添加對話歷史（如果有）
+                    if memory_context["dialogue_history"]:
+                        enhanced_prompt += f"\n=== 對話歷史參考 ===\n{memory_context['dialogue_history']}\n"
+                    
+                    # 添加知識庫背景（如果有）
+                    if memory_context["knowledge_context"]:
+                        enhanced_prompt += f"\n=== 相關知識背景 ===\n{memory_context['knowledge_context']}\n"
+                    
+                    system_prompt = enhanced_prompt
             except Exception as e:
-                logger.warning(f"無法整合記憶上下文: {e}")
+                logger.warning(f"無法整合記憶上下文: {e}，將跳過記憶")
         
         # 優先嘗試 Gemini（主金鑰 → 備用金鑰），然後備用 Groq
         api_attempts = []

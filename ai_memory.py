@@ -359,11 +359,11 @@ def build_memory_context() -> Dict[str, str]:
         # 獲取角色記憶（系統設定）
         personality = PersonalityMemory.get_personality_context()
         
-        # 獲取對話歷史
-        dialogue = DialogueMemory.get_recent_dialogue(max_tokens=1000)
+        # 獲取對話歷史（激進限制，防止 token 爆掉）
+        dialogue = DialogueMemory.get_recent_dialogue(max_tokens=500)
         
-        # 獲取知識庫
-        knowledge = KnowledgeBase.get_all_knowledge(max_tokens=800)
+        # 獲取知識庫（激進限制）
+        knowledge = KnowledgeBase.get_all_knowledge(max_tokens=300)
         
         system_instructions = ""
         if personality:
