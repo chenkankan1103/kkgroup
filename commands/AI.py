@@ -31,6 +31,15 @@ except ImportError:
 
 load_dotenv()
 
+# ─── 工具箱導入（agent_tools.py 在專案根目錄）───────────────────────────────
+try:
+    import agent_tools
+    _TOOLS_AVAILABLE = True
+except ImportError:
+    agent_tools = None  # type: ignore
+    _TOOLS_AVAILABLE = False
+    print("⚠️  agent_tools 模組不可用，AI 工具功能已停用")
+
 AI_API_KEY = os.getenv("AI_API_KEY")
 AI_API_URL = os.getenv("AI_API_URL")
 AI_API_MODEL = os.getenv("AI_API_MODEL", "gpt-3.5-turbo")
@@ -124,8 +133,8 @@ class AIResponse(commands.Cog):
         except Exception as e:
             logger.warning(f"記憶系統初始化失敗: {e}")
     
-    async def call_ai_api(self, system_prompt: str, user_prompt: str, include_memory: bool = True) -> Optional[str]:
-        """通用 API 調用函數 - 優先 Groq，備用 Gemini"""
+    async def call_ai_api(self, system_prompt: str, user_prompt: str, include_memory: bool = True, caller_id: Optional[int] = None) -> Optional[str]:
+        """通用 API 調用函數 - 優先 Gemini（含 Function Calling），備用 Groq"""
         # 如果需要，添加全局記憶上下文
         if include_memory:
             try:
@@ -165,24 +174,103 @@ class AIResponse(commands.Cog):
                 logger.info(f"⏳ 嘗試使用 {api_name} API...")
                 
                 if api_type == "gemini":
-                    # Google Gemini API
+                    # ── Google Gemini API（支援 Function Calling）──────────────────
+                    import json as _json
                     full_url = f"{url}?key={api_key}"
                     headers = {"Content-Type": "application/json"}
+
+                    # 建立初始對話內容
+                    contents = [{
+                        "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]
+                    }]
+
                     payload = {
-                        "contents": [{
-                            "parts": [
-                                {
-                                    "text": f"{system_prompt}\n\n{user_prompt}"
-                                }
-                            ]
-                        }],
+                        "contents": contents,
                         "generationConfig": {
                             "temperature": 0.7,
                             "maxOutputTokens": 500
                         }
                     }
+
+                    # 注入工具清單（若工具箱可用）
+                    if _TOOLS_AVAILABLE:
+                        payload["tools"] = agent_tools.get_gemini_tools_spec()
+
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                        # ── 第一次請求 ──────────────────────────────────────────────
+                        async with session.post(full_url, headers=headers, json=payload) as resp:
+                            response_text = await resp.text()
+
+                            if resp.status == 429:
+                                continue
+
+                            if resp.status != 200:
+                                logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
+                                continue
+
+                            try:
+                                data = _json.loads(response_text)
+                            except _json.JSONDecodeError as e:
+                                logger.warning(f"{api_name} JSON 解析失敗: {e}\n原始回應: {response_text[:200]}")
+                                continue
+
+                            if not data or "candidates" not in data or not data["candidates"]:
+                                logger.warning(f"{api_name} 回應缺少 candidates 欄位")
+                                continue
+
+                            candidate = data["candidates"][0]
+                            parts = candidate.get("content", {}).get("parts", [])
+
+                            if not parts:
+                                continue
+
+                            # ── 處理 Function Call（工具呼叫）──────────────────────
+                            if "functionCall" in parts[0] and _TOOLS_AVAILABLE:
+                                fc = parts[0]["functionCall"]
+                                tool_name = fc.get("name", "")
+                                tool_args = fc.get("args", {})
+                                logger.info(f"🔧 Gemini 呼叫工具: {tool_name}({tool_args})")
+
+                                tool_result = agent_tools.dispatch_tool(
+                                    tool_name, tool_args, caller_id=caller_id
+                                )
+                                logger.info(f"   工具結果: {str(tool_result)[:100]}")
+
+                                # 多輪對話：附上工具結果，取得最終回應
+                                contents.append({
+                                    "role": "model",
+                                    "parts": [{"functionCall": fc}]
+                                })
+                                contents.append({
+                                    "role": "user",
+                                    "parts": [{"functionResponse": {
+                                        "name": tool_name,
+                                        "response": {"result": str(tool_result)}
+                                    }}]
+                                })
+                                payload["contents"] = contents
+
+                                # ── 第二次請求（取得工具結果後的最終回覆）─────────
+                                async with session.post(full_url, headers=headers, json=payload) as resp2:
+                                    r2_text = await resp2.text()
+                                    if resp2.status != 200:
+                                        continue
+                                    try:
+                                        data = _json.loads(r2_text)
+                                    except _json.JSONDecodeError:
+                                        continue
+                                    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+
+                            # ── 提取最終文字內容 ───────────────────────────────────
+                            if parts and "text" in parts[0]:
+                                content = parts[0]["text"].strip()
+                                if content:
+                                    logger.info(f"✅ {api_name} 成功: {len(content)} 字符")
+                                    return content
+
                 else:
-                    # OpenAI 相容格式（Groq 等）
+                    # ── OpenAI 相容格式（Groq 等）─────────────────────────────────
+                    import json as _json
                     full_url = url
                     headers = {
                         "Authorization": f"Bearer {api_key}",
@@ -195,74 +283,31 @@ class AIResponse(commands.Cog):
                             {"role": "user", "content": user_prompt}
                         ]
                     }
-                
-                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                    async with session.post(full_url, headers=headers, json=payload) as resp:
-                        response_text = await resp.text()
-                        
-                        if resp.status == 200:
-                            # 成功，解析回應
-                            import json
-                            data = None
-                            
-                            # 提取 JSON 對象
-                            cleaned_text = response_text.strip()
-                            start_idx = cleaned_text.find('{')
-                            
-                            if start_idx != -1:
-                                brace_count = 0
-                                end_idx = -1
-                                for i in range(start_idx, len(cleaned_text)):
-                                    if cleaned_text[i] == '{':
-                                        brace_count += 1
-                                    elif cleaned_text[i] == '}':
-                                        brace_count -= 1
-                                        if brace_count == 0:
-                                            end_idx = i
-                                            break
-                                
-                                if end_idx != -1:
-                                    json_str = cleaned_text[start_idx:end_idx+1]
-                                    try:
-                                        data = json.loads(json_str)
-                                    except json.JSONDecodeError as e:
-                                        logger.warning(f"{api_name} JSON 解析失敗: {e}")
-                                        continue
-                            
-                            if data:
-                                # 根據 API 類型解析
-                                content = None
-                                
-                                # Gemini 格式
-                                if "candidates" in data and len(data["candidates"]) > 0:
-                                    candidate = data["candidates"][0]
-                                    if "content" in candidate and "parts" in candidate["content"]:
-                                        parts = candidate["content"]["parts"]
-                                        if len(parts) > 0 and "text" in parts[0]:
-                                            content = parts[0]["text"].strip()
-                                
-                                # OpenAI 格式（Groq）
-                                elif "choices" in data and len(data["choices"]) > 0:
-                                    content = data["choices"][0]["message"]["content"].strip()
-                                
-                                # 其他格式
-                                elif "result" in data:
-                                    content = data["result"].strip() if isinstance(data["result"], str) else str(data["result"])
-                                elif "content" in data:
-                                    content = data["content"].strip() if isinstance(data["content"], str) else str(data["content"])
-                                
+
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                        async with session.post(full_url, headers=headers, json=payload) as resp:
+                            response_text = await resp.text()
+
+                            if resp.status == 429:
+                                continue
+
+                            if resp.status != 200:
+                                logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
+                                continue
+
+                            try:
+                                data = _json.loads(response_text)
+                            except _json.JSONDecodeError as e:
+                                logger.warning(f"{api_name} JSON 解析失敗: {e}")
+                                continue
+
+                            if "choices" in data and data["choices"]:
+                                content = data["choices"][0]["message"]["content"].strip()
                                 if content:
                                     logger.info(f"✅ {api_name} 成功: {len(content)} 字符")
                                     return content
-                        
-                        elif resp.status == 429:
-                            # 配額超限，無聲地嘗試下一個 API（不記錄警告）
-                            continue
-                        
-                        else:
-                            logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
-                            continue
-                            
+
+
             except asyncio.TimeoutError:
                 logger.warning(f"⚠️ {api_name} 請求超時，嘗試備用 API...")
                 continue
@@ -301,7 +346,7 @@ class AIResponse(commands.Cog):
                 try:
                     # 添加 45 秒超時保護，確保不會卡住
                     reply = await asyncio.wait_for(
-                        self.call_ai_api(persona_prompt, full_prompt),
+                        self.call_ai_api(persona_prompt, full_prompt, caller_id=user_id),
                         timeout=45
                     )
                 except asyncio.TimeoutError:
