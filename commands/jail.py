@@ -659,31 +659,31 @@ class Ai(commands.Cog):
                         template = random.choice(punishment_templates)
                         attack_message = ""
                         
-                        # 嘗試獲取 AI 回應
-                        if AI_API_KEY and AI_API_URL:
+                        # 嘗試獲取 AI 回應（只使用 Groq）
+                        if GROQ_API_KEY and GROQ_API_URL:
                             try:
                                 headers = {
-                                    "Authorization": f"Bearer {AI_API_KEY}",
+                                    "Authorization": f"Bearer {GROQ_API_KEY}",
                                     "Content-Type": "application/json"
                                 }
                                 payload = {
-                                    "model": AI_API_MODEL,
+                                    "model": GROQ_API_MODEL,
                                     "messages": [
                                         {"role": "system", "content": persona_prompt},
                                         {"role": "user", "content": template}
                                     ]
                                 }
                                 
-                                async with session.post(AI_API_URL, headers=headers, json=payload) as resp:
+                                async with session.post(GROQ_API_URL, headers=headers, json=payload) as resp:
                                     if resp.status == 200:
                                         data = await resp.json()
                                         if "choices" in data and len(data["choices"]) > 0:
                                             attack_message = data["choices"][0]["message"]["content"].strip()
                                     else:
-                                        logger.warning(f"AI API 回應狀態: {resp.status}")
+                                        logger.warning(f"Groq API 回應狀態: {resp.status}")
                                         
                             except Exception as e:
-                                logger.warning(f"AI API 請求錯誤: {e}")
+                                logger.warning(f"Groq API 請求錯誤: {e}")
                         
                         # 如果 AI 回應失敗，使用備用回應
                         if not attack_message:

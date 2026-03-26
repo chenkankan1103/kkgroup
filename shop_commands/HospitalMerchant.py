@@ -73,9 +73,9 @@ class HospitalMerchant(commands.Cog):
         self.injured_role_id = int(os.getenv("INJURED_ROLE_ID", 0))
         self.member_role_id = int(os.getenv("MEMBER_ROLE_ID", 0))
         self.db_path = "./user_data.db"
-        self.ai_api_key = os.getenv("AI_API_KEY", "")
-        self.ai_api_url = os.getenv("AI_API_URL", "")
-        self.ai_model = os.getenv("AI_API_MODEL", "")
+        self.groq_api_key = os.getenv("GROQ_API_KEY", "")
+        self.groq_api_url = os.getenv("GROQ_API_URL", "")
+        self.groq_model = os.getenv("GROQ_API_MODEL", "")
         
         # 商品定義
         self.products = {
@@ -132,12 +132,12 @@ class HospitalMerchant(commands.Cog):
 範例風格參考：「看你這狼狽的樣子，肯定是又被打得服服貼貼了。別急，我這邊有最新鮮的進口藥劑，保證讓你起死回生...或至少能走動。怎麼樣，要來點嗎？」"""
 
             headers = {
-                "Authorization": f"Bearer {self.ai_api_key}",
+                "Authorization": f"Bearer {self.groq_api_key}",
                 "Content-Type": "application/json"
             }
             
             payload = {
-                "model": self.ai_model,
+                "model": self.groq_model,
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],
@@ -146,7 +146,7 @@ class HospitalMerchant(commands.Cog):
             }
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.ai_api_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                async with session.post(self.groq_api_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
                     if response.status == 200:
                         data = await response.json()
                         message = data['choices'][0]['message']['content'].strip()

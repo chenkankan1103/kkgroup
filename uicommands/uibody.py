@@ -345,13 +345,8 @@ class UserPanel(commands.Cog):
     # ============= AI 評論生成 =============
     
     async def generate_ai_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
-        """生成 AI 評論"""
+        """生成 AI 評論（只使用 Groq API）"""
         try:
-            if self.AI_API_KEY and self.AI_API_URL:
-                comment = await self._generate_google_comment(member, kkcoin_change, xp_change, level_change)
-                if comment:
-                    return comment
-            
             if self.GROQ_API_KEY and self.GROQ_API_URL:
                 comment = await self._generate_groq_comment(member, kkcoin_change, xp_change, level_change)
                 if comment:
@@ -361,50 +356,7 @@ class UserPanel(commands.Cog):
         
         return f"本週表現不錯！繼續保持這個節奏 💪"
     
-    async def _generate_google_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
-        """使用 Google Generative AI 生成評論"""
-        try:
-            if not all([self.AI_API_KEY, self.AI_API_URL, self.AI_API_MODEL]):
-                return None
-            
-            prompt = f"""你是一個友善的遊戲助手，請為玩家 {member.display_name or member.name} 本週的表現寫一段鼓勵性的評論。
 
-本週數據：
-- KKCoin 增長: {kkcoin_change}
-- 經驗值 增長: {xp_change}
-- 等級 提升: {level_change}
-
-請用繁體中文回應，語氣要活潑友善，長度控制在50字以內，可以適當使用表情符號。"""
-            
-            url = f"{self.AI_API_URL}?key={self.AI_API_KEY}"
-            
-            data = {
-                "contents": [
-                    {
-                        "role": "user",
-                        "parts": [{"text": prompt}]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.8,
-                    "maxOutputTokens": 100
-                }
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        if result.get('candidates'):
-                            content = result['candidates'][0].get('content', {})
-                            if content.get('parts'):
-                                return content['parts'][0].get('text', '').strip()
-                    elif response.status == 429:
-                        return None
-        except Exception:
-            pass
-        
-        return None
     
     async def _generate_groq_comment(self, member: discord.Member, kkcoin_change: int, xp_change: int, level_change: int) -> str:
         """使用 Groq API 生成評論"""

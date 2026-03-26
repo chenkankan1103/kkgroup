@@ -543,7 +543,7 @@ async def process_checkin(user_id, user_obj, guild):
 async def generate_daily_checkin_story(level_title, salary_percent, streak, user_name):
     """使用 AI 生成每日打卡情境描述"""
     try:
-        if not AI_API_KEY or not AI_API_URL:
+        if not GROQ_API_KEY or not GROQ_API_URL:
             return get_fallback_checkin_story(salary_percent)
         
         # 根據薪資比例判斷今日狀況
@@ -570,12 +570,12 @@ async def generate_daily_checkin_story(level_title, salary_percent, streak, user
 直接輸出情境描述，不需要任何前綴。"""
 
         headers = {
-            "Authorization": f"Bearer {AI_API_KEY}",
+            "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json"
         }
         
         data = {
-            "model": AI_API_MODEL,
+            "model": GROQ_API_MODEL,
             "messages": [
                 {
                     "role": "system",
@@ -591,7 +591,7 @@ async def generate_daily_checkin_story(level_title, salary_percent, streak, user
         }
         
         async with aiohttp.ClientSession() as session:
-            async with session.post(AI_API_URL, headers=headers, json=data, timeout=8) as response:
+            async with session.post(GROQ_API_URL, headers=headers, json=data, timeout=8) as response:
                 if response.status == 200:
                     result = await response.json()
                     story = result['choices'][0]['message']['content'].strip()
@@ -853,10 +853,10 @@ async def generate_daily_checkin_story(level_title, salary_percent, streak, user
         return f"今天的工作表現{int(salary_percent * 100)}%，連續出勤已達 {streak} 天。"
 
 async def generate_story_with_ai(action_name, level_title, success, reward, user_name):
-    """使用 AI API 生成行動故事"""
+    """使用 Groq API 生成行動故事"""
     try:
-        if not AI_API_KEY or not AI_API_URL:
-            # 如果沒有設定 AI API，使用預設故事
+        if not GROQ_API_KEY or not GROQ_API_URL:
+            # 如果沒有設定 Groq API，使用預設故事
             return get_fallback_story(action_name, success, reward)
         
         # 根據成功或失敗設定提示詞
@@ -880,12 +880,12 @@ async def generate_story_with_ai(action_name, level_title, success, reward, user
 直接輸出故事內容，不需要任何前綴或標題。"""
 
         headers = {
-            "Authorization": f"Bearer {AI_API_KEY}",
+            "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json"
         }
         
         data = {
-            "model": AI_API_MODEL,
+            "model": GROQ_API_MODEL,
             "messages": [
                 {
                     "role": "system",
@@ -901,7 +901,7 @@ async def generate_story_with_ai(action_name, level_title, success, reward, user
         }
         
         async with aiohttp.ClientSession() as session:
-            async with session.post(AI_API_URL, headers=headers, json=data, timeout=10) as response:
+            async with session.post(GROQ_API_URL, headers=headers, json=data, timeout=10) as response:
                 if response.status == 200:
                     result = await response.json()
                     story = result['choices'][0]['message']['content'].strip()
@@ -911,14 +911,14 @@ async def generate_story_with_ai(action_name, level_title, success, reward, user
                     
                     return story
                 else:
-                    print(f"⚠️ AI API 回應錯誤: {response.status}")
+                    print(f"⚠️ Groq API 回應錯誤: {response.status}")
                     return get_fallback_story(action_name, success, reward)
                     
     except asyncio.TimeoutError:
-        print("⚠️ AI API 請求超時")
+        print("⚠️ Groq API 請求超時")
         return get_fallback_story(action_name, success, reward)
     except Exception as e:
-        print(f"⚠️ AI 生成故事失敗: {e}")
+        print(f"⚠️ Groq 生成故事失敗: {e}")
         traceback.print_exc()
         return get_fallback_story(action_name, success, reward)
 

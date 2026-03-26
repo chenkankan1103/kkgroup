@@ -424,12 +424,9 @@ class ScamParkEvents(commands.Cog):
         return None
 
     async def generate_ai_event_description(self, event_type: str, details: dict) -> str:
-        """使用AI生成事件描述（支援 Google API 和 Groq API）"""
+        """使用AI生成事件描述（只使用 Groq API）"""
         try:
-            if self.use_google_api:
-                return await self._generate_google_description(event_type, details)
-            else:
-                return await self._generate_groq_description(event_type, details)
+            return await self._generate_groq_description(event_type, details)
         except Exception as e:
             print(f"❌ AI生成錯誤: {e}")
             return None

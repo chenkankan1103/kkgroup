@@ -172,7 +172,7 @@ class ScamHub(commands.Cog):
             print(f"[ScamHub] 刪除房間 {room_id} 數據庫記錄時發生錯誤: {e}")
 
     async def generate_scam_event(self, member_count):
-        """使用AI生成詐騙事件"""
+        """使用AI生成詐騙事件（只使用 Groq）"""
         try:
             base_prompt = f"""生成一個詐騙事件的簡短描述（50-100字），讓{member_count}人參與的詐騙小組去執行。
             請包含：
@@ -185,11 +185,11 @@ class ScamHub(commands.Cog):
             
             async with aiohttp.ClientSession() as session:
                 headers = {
-                    "Authorization": f"Bearer {AI_API_KEY}",
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
                     "Content-Type": "application/json"
                 }
                 payload = {
-                    "model": AI_API_MODEL,
+                    "model": GROQ_API_MODEL,
                     "messages": [
                         {"role": "system", "content": "你是一個創意詐騙事件生成器，用於遊戲內容。"},
                         {"role": "user", "content": base_prompt}
@@ -198,13 +198,13 @@ class ScamHub(commands.Cog):
                     "max_tokens": 150
                 }
                 
-                async with session.post(AI_API_URL, headers=headers, json=payload) as response:
+                async with session.post(GROQ_API_URL, headers=headers, json=payload) as response:
                     if response.status == 200:
                         result = await response.json()
                         return result["choices"][0]["message"]["content"].strip()
                     else:
                         error_text = await response.text()
-                        print(f"AI API錯誤 ({response.status}): {error_text}")
+                        print(f"Groq API錯誤 ({response.status}): {error_text}")
                         return f"詐騙團隊執行了一場經典的電話詐騙行動，冒充銀行客服誘騙受害者透露個人資料。"
         except Exception as e:
             print(f"生成詐騙事件時發生錯誤: {e}")

@@ -55,41 +55,10 @@ class AirdropSystem(commands.Cog):
         print("❌ 空投系統已卸載")
     
     # ==================== AI API 調用 ====================
-    async def call_gemini(self, prompt: str) -> Optional[str]:
-        """呼叫 Gemini API（若配額超限則無聲返回 None）"""
-        if not GEMINI_API_KEY or not GEMINI_API_URL:
-            return None
-        
-        try:
-            url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "contents": [{
-                    "parts": [{"text": prompt}]
-                }],
-                "generationConfig": {
-                    "temperature": 0.7,
-                    "maxOutputTokens": 200
-                }
-            }
-            
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if "candidates" in data and len(data["candidates"]) > 0:
-                            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    elif resp.status == 429:
-                        # 配額超限，無聲返回 None（上層會嘗試 Groq）
-                        return None
-        except Exception:
-            # 任何錯誤都無聲返回 None
-            pass
-        
-        return None
+
     
     async def call_groq(self, prompt: str) -> Optional[str]:
-        """呼叫 Groq API（文字生成備用）"""
+        """呼叫 Groq API（文字生成專用）"""
         if not GROQ_API_KEY or not GROQ_API_URL:
             return None
         
@@ -99,7 +68,7 @@ class AirdropSystem(commands.Cog):
                 "Content-Type": "application/json"
             }
             payload = {
-                "model": "mixtral-8x7b-32768",
+                "model": GROQ_API_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.7,
                 "max_tokens": 200
@@ -117,7 +86,7 @@ class AirdropSystem(commands.Cog):
         return None
     
     async def generate_ai_text(self, text_type: str, reward_type: str, value: int) -> str:
-        """生成 AI 文本（優先 Groq，備用 Gemini）"""
+        """生成 AI 文本（只使用 Groq API）"""
         # 統一處理 kkcoin 各等級
         is_kkcoin = "kkcoin" in reward_type
         
@@ -132,11 +101,7 @@ class AirdropSystem(commands.Cog):
         else:
             return ""
         
-        # 優先 Gemini，備用 Groq，最後硬編碼備用
-        result = await self.call_gemini(prompt)
-        if result:
-            return result
-        
+        # 只使用 Groq，最後硬編碼備用
         result = await self.call_groq(prompt)
         if result:
             return result
