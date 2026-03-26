@@ -127,7 +127,7 @@ class AIResponse(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.context_manager = ContextManager(max_history=10)
+        self.context_manager = ContextManager(max_history=5)
         # 初始化全局記憶系統
         try:
             initialize_memory_system()
@@ -169,7 +169,11 @@ class AIResponse(commands.Cog):
             api_attempts.append(("Groq", GROQ_API_URL, GROQ_API_KEY, GROQ_API_MODEL, "openai"))
         
         if not api_attempts:
-            logger.error("沒有可用的 AI API 配置")
+            logger.error("❌ 沒有可用的 AI API 配置")
+            logger.error(f"  - AI_API_KEY: {'有' if AI_API_KEY else '無'}")
+            logger.error(f"  - AI_API_URL: {'有' if AI_API_URL else '無'}")
+            logger.error(f"  - GROQ_API_KEY: {'有' if GROQ_API_KEY else '無'}")
+            logger.error(f"  - GROQ_API_URL: {'有' if GROQ_API_URL else '無'}")
             return None
         
         for api_name, url, api_key, model, api_type in api_attempts:
@@ -191,7 +195,7 @@ class AIResponse(commands.Cog):
                         "contents": contents,
                         "generationConfig": {
                             "temperature": 0.7,
-                            "maxOutputTokens": 500
+                            "maxOutputTokens": 300
                         }
                     }
 
@@ -330,7 +334,9 @@ class AIResponse(commands.Cog):
                 continue
         
         # 所有 API 都失敗
-        logger.error("❌ 所有 AI API 都不可用")
+        logger.error("❌ 所有 AI API 都不可用 - 已嘗試的引擎:")
+        for api_name, _, _, _, _ in api_attempts:
+            logger.error(f"   ✗ {api_name} - 失敗")
         return None
 
     @commands.Cog.listener()
