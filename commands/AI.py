@@ -161,6 +161,8 @@ class AIResponse(commands.Cog):
         
         # 優先嘗試 Gemini（主金鑰 → 備用金鑰），然後備用 Groq
         api_attempts = []
+        gemini_failed_reason = None
+        
         if AI_API_KEY and AI_API_URL:
             api_attempts.append(("Gemini (主)", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
         if AI_API_KEY_BACKUP and AI_API_URL:
@@ -209,6 +211,7 @@ class AIResponse(commands.Cog):
                             response_text = await resp.text()
 
                             if resp.status == 429:
+                                gemini_failed_reason = "配額超限 (429)"
                                 logger.warning(f"⚠️ {api_name} 配額超限 (429)，嘗試下一個 API...")
                                 continue
 
@@ -294,10 +297,17 @@ class AIResponse(commands.Cog):
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
                     }
+                    
+                    # 如果正在使用 Groq 且之前 Gemini 失敗，添加警告
+                    groq_system = system_prompt
+                    if "Groq" in api_name and gemini_failed_reason:
+                        groq_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 Groq。無法使用工具呼叫，請直接回答用戶的問題。"
+                        logger.warning(f"⚠️ 已切換至 {api_name}（Gemini {gemini_failed_reason}）- 工具呼叫功能不可用")
+                    
                     payload = {
                         "model": model,
                         "messages": [
-                            {"role": "system", "content": system_prompt},
+                            {"role": "system", "content": groq_system},
                             {"role": "user", "content": user_prompt}
                         ]
                     }
