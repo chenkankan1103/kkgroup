@@ -798,14 +798,18 @@ def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int
 )
 def read_project_file(file_path: str, *, caller_id: Optional[int] = None) -> str:
     """
-    讀取專案目錄下的 .py 檔案內容。
+    讀取專案目錄下的 .py 檔案內容。支持多種搜尋方式：
+    
+    1. 完整路徑：'commands/AI.py'
+    2. 檔名：'shop.py' 或 'shop'（自動補全 .py）
+    3. 代碼片段：'class Shop' 或 'def handle_message'（自動搜尋所有檔案）
 
     Args:
-        file_path (str):  相對路徑（如 'bot.py', 'commands/AI.py'）
+        file_path (str):  檔案路徑、檔名或代碼片段
         caller_id (int):  呼叫者 Discord ID（系統注入）
 
     Returns:
-        str: 檔案內容或錯誤訊息
+        str: 檔案內容或錯誤/選項訊息
     """
     # 🔒 權限防火牆
     if LEADER_ID and caller_id != LEADER_ID:
@@ -827,25 +831,103 @@ def read_project_file(file_path: str, *, caller_id: Optional[int] = None) -> str
             return f"❌ 安全檢查失敗：路徑超出專案目錄。只允許讀取專案內的文件。"
         
         # 檢查副檔名
-        if not full_path.suffix == ".py":
+        if full_path.suffix and not full_path.suffix == ".py":
             return f"❌ 僅支持 .py 檔案，不支持 {full_path.suffix}"
         
-        # 檢查文件是否存在
-        if not full_path.exists():
+        # 若檔案存在，直接讀取
+        if full_path.exists():
+            with open(full_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            line_count = len(content.split('\n'))
+            char_count = len(content)
+            relative_path = str(full_path.relative_to(project_root)).replace(os.sep, '/')
+            
+            return (
+                f"✅ 成功讀取 {relative_path}\n"
+                f"📊 {line_count} 行，{char_count} 字符\n\n"
+                f"───────────────────────\n{content}\n───────────────────────"
+            )
+        
+        # 檔案不存在，嘗試模糊搜尋
+        # 只搜尋單純的檔名（無路徑分隔符）
+        if os.sep not in file_path and "/" not in file_path:
+            project_path = pathlib.Path(project_root)
+            
+            # 策略 1：以檔名形式搜尋
+            matches = list(project_path.rglob(f"{file_path}" if file_path.endswith(".py") else f"{file_path}.py"))
+            
+            if matches:
+                if len(matches) == 1:
+                    # 只找到一個，自動使用
+                    full_path = matches[0]
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    line_count = len(content.split('\n'))
+                    char_count = len(content)
+                    relative_path = str(full_path.relative_to(project_root)).replace(os.sep, '/')
+                    
+                    return (
+                        f"✅ 成功讀取 {relative_path}（按檔名自動搜尋）\n"
+                        f"📊 {line_count} 行，{char_count} 字符\n\n"
+                        f"───────────────────────\n{content}\n───────────────────────"
+                    )
+                else:
+                    # 找到多個，列出所有選項
+                    relative_paths = [str(m.relative_to(project_root)) for m in matches]
+                    options = "\n".join([f"  • {p.replace(os.sep, '/')}" for p in relative_paths])
+                    return f"🔍 找到 {len(matches)} 個 '{file_path}'：\n{options}\n\n💡 請指定完整路徑以明確選擇。"
+            
+            # 策略 2：以代碼片段形式搜尋
+            py_files = list(project_path.rglob("*.py"))
+            
+            # 過濾掉備份、虛擬環境、快取目錄
+            exclude_patterns = ('backup', '__pycache__', '.venv', 'venv', '.local', 'site-packages', '.git')
+            py_files = [
+                f for f in py_files 
+                if not any(pattern in str(f) for pattern in exclude_patterns)
+            ]
+            
+            content_matches = []
+            for py_file in py_files:
+                try:
+                    with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
+                        file_content = f.read()
+                    
+                    # 大小寫不敏感搜尋
+                    if file_path.lower() in file_content.lower():
+                        content_matches.append(py_file)
+                except:
+                    pass
+            
+            if content_matches:
+                if len(content_matches) == 1:
+                    # 只找到一個，自動使用
+                    full_path = content_matches[0]
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    line_count = len(content.split('\n'))
+                    char_count = len(content)
+                    relative_path = str(full_path.relative_to(project_root)).replace(os.sep, '/')
+                    
+                    return (
+                        f"✅ 成功讀取 {relative_path}（按代碼片段自動搜尋）\n"
+                        f"📊 {line_count} 行，{char_count} 字符\n"
+                        f"🔎 包含 '{file_path}'：\n\n"
+                        f"───────────────────────\n{content}\n───────────────────────"
+                    )
+                else:
+                    # 找到多個，列出選項
+                    relative_paths = [str(m.relative_to(project_root)) for m in content_matches]
+                    options = "\n".join([f"  • {p.replace(os.sep, '/')}" for p in relative_paths])
+                    return f"🔍 找到 {len(content_matches)} 個包含 '{file_path}' 的檔案：\n{options}\n\n💡 請指定完整路徑以明確選擇。"
+            
+            # 都沒找到
+            return f"❌ 找不到任何符合 '{file_path}' 的檔案或代碼片段。"
+        else:
             return f"❌ 檔案不存在：{file_path}"
-        
-        # 讀取檔案
-        with open(full_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        line_count = len(content.split('\n'))
-        char_count = len(content)
-        
-        return (
-            f"✅ 成功讀取 {file_path}\n"
-            f"📊 {line_count} 行，{char_count} 字符\n\n"
-            f"───────────────────────\n{content}\n───────────────────────"
-        )
         
     except Exception as e:
         return f"❌ 讀取檔案失敗：{type(e).__name__}: {e}"
