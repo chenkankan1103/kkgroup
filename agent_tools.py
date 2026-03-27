@@ -1788,13 +1788,15 @@ def diagnose_problem(problem_description: str, error_output: str = "", *, caller
         
         # 常見產品關鍵詞對應
         keyword_map = {
-            '種植|cannabis|plant': 'cannabis_farming',
+            '種植|cannabis|plant|growth_time|生長時間': 'cannabis',
             '大麻|hemp': 'cannabis',
+            '縮短|減少|增加|延長|改成|時間': 'cannabis',  # 時間修改命令
             'api|端點|接口': 'api',
             'kkcoin|coin|幣': 'kkcoin',
             '配裝|equipment|paperdoll': 'equipment',
             '數據庫|database|db': 'database',
             '權限|permission|auth': 'auth',
+            'growth_time|max_yield|price': 'config',  # 配置參數
         }
         
         for pattern, keyword in keyword_map.items():
@@ -2143,6 +2145,232 @@ def automate_workflow(workflow_type: str, target: str, details: str = "", *, cal
         
     except Exception as e:
         return f"❌ 工作流生成失敗：{type(e).__name__}: {e}"
+
+
+@register_tool(
+    name="smart_config_modifier",
+    description=(
+        "【智能參數修改工具】🚀 專門處理自然語言配置修改命令！"
+        "能理解模糊的自然語言：'把大麻種植時間縮短一小時' → 自動找出所有 growth_time 參數"
+        "支持：時間修改、數值增減、配置更新。自動計算新舊值差異，列出所有需修改位置。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "user_command": {
+                "type": "STRING",
+                "description": "用戶的自然語言命令（例如：'把現在三種大麻種植的時間縮短一小時'）"
+            },
+            "affected_system": {
+                "type": "STRING",
+                "description": "受影響系統（例如：'cannabis'、'equipment'、'kkcoin'）"
+            }
+        },
+        "required": ["user_command", "affected_system"]
+    }
+)
+@_require_leader
+def smart_config_modifier(user_command: str, affected_system: str, *, caller_id: Optional[int] = None) -> str:
+    """
+    🎯 智能參數修改識別系統 - 理解自然語言並提取配置修改意圖
+
+    支持的命令模式：
+    1️⃣ 時間修改：「縮短/減少/增加 X 小時/分鐘/秒」
+    2️⃣ 數值增減：「改成 X」、「從 X 改為 Y」、「增加 X%」
+    3️⃣ 配置更新：「把 XXX 改成 YYY」
+
+    例子：
+      • 「把現在三種大麻種植的時間縮短一小時」
+        → 定位：growth_time 參數（14400 秒）
+        → 計算：14400 - 3600 = 10800 秒
+        → 位置：3 個種子（常規種、優質種、黃金種）
+      
+      • 「把最大產量從 15 改成 20」
+        → 定位：max_yield 參數
+        → 計算：15 → 20
+        → 位置：所有相關配置文件
+
+    Args:
+        user_command (str):     用戶的自然語言命令
+        affected_system (str):  受影響系統關鍵字
+
+    Returns:
+        str: 詳細的修改分析報告
+    """
+    import re
+    import pathlib
+    
+    try:
+        project_root = _get_project_root()
+        project_path = pathlib.Path(project_root)
+        
+        # 第一步：解析用戶命令，提取修改意圖
+        cmd_lower = user_command.lower()
+        analysis = {
+            "original_command": user_command,
+            "system": affected_system,
+            "detected_params": [],
+            "time_changes": [],
+            "value_changes": [],
+            "affected_files": [],
+            "locations": []
+        }
+        
+        # 時間修改識別（支持：小時 h、分鐘 min/m、秒 s）
+        time_patterns = [
+            (r'縮短|減少|降低.*?(\d+)\s*小時', -3600),  # 縮短 X 小時
+            (r'增加|延長|增長.*?(\d+)\s*小時', 3600),    # 增加 X 小時
+            (r'縮短|減少.*?(\d+)\s*分鐘', -60),          # 縮短 X 分鐘
+            (r'增加|延長.*?(\d+)\s*分鐘', 60),           # 增加 X 分鐘
+            (r'縮短|減少.*?(\d+)\s*秒', -1),             # 縮短 X 秒
+            (r'增加|延長.*?(\d+)\s*秒', 1),              # 增加 X 秒
+        ]
+        
+        for pattern, multiplier in time_patterns:
+            match = re.search(pattern, cmd_lower)
+            if match:
+                value = int(match.group(1))
+                delta_seconds = value * multiplier
+                analysis["time_changes"].append({
+                    "delta_seconds": delta_seconds,
+                    "human_readable": f"{'+' if delta_seconds > 0 else ''}{delta_seconds // 60 if abs(delta_seconds) >= 60 else delta_seconds}{'分鐘' if abs(delta_seconds) >= 60 else '秒'}"
+                })
+        
+        # 數值修改識別（支持：改成 X、從 X 改為 Y、增加 X%）
+        value_patterns = [
+            (r'改成\s*(\d+)', None),                     # 改成 X
+            (r'從\s*(\d+)\s*改(?:為|成)\s*(\d+)', 0),   # 從 X 改為 Y
+            (r'增加\s*(\d+)%', None),                    # 增加 X%
+        ]
+        
+        for pattern, _ in value_patterns:
+            match = re.search(pattern, cmd_lower)
+            if match:
+                if match.groups().__len__() == 2:  # 從 X 改為 Y
+                    old_val, new_val = int(match.group(1)), int(match.group(2))
+                    analysis["value_changes"].append({
+                        "old_value": old_val,
+                        "new_value": new_val,
+                        "change_type": "direct_change"
+                    })
+                else:  # 改成 X
+                    new_val = int(match.group(1))
+                    analysis["value_changes"].append({
+                        "new_value": new_val,
+                        "change_type": "simple_change"
+                    })
+        
+        # 第二步：根據系統類型定位相關檔案和參數
+        config_maps = {
+            "cannabis": {
+                "config_file": "shop_commands/merchant/cannabis_config.py",
+                "params": ["growth_time", "max_yield", "price"],
+                "search_terms": ["CANNABIS_SHOP", "growth_time", "max_yield"]
+            },
+            "equipment": {
+                "config_file": "shop_commands/merchant/equipment_config.py",
+                "params": ["price", "ability", "requirement"],
+                "search_terms": ["EQUIPMENT", "ability"]
+            }
+        }
+        
+        if affected_system not in config_maps:
+            # 嘗試模糊匹配
+            for key in config_maps.keys():
+                if key in user_command.lower():
+                    affected_system = key
+                    break
+        
+        system_config = config_maps.get(affected_system, {})
+        
+        # 第三步：搜尋所有相關文件
+        exclude_patterns = ('backup', '__pycache__', '.venv', 'venv', '.local', 'site-packages', '.git')
+        py_files = [
+            f for f in project_path.rglob("*.py")
+            if not any(pattern in str(f) for pattern in exclude_patterns)
+        ]
+        
+        # 搜尋包含相關配置的文件
+        for py_file in py_files:
+            try:
+                with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                    lines = content.split('\n')
+                
+                file_matches = []
+                for line_num, line in enumerate(lines, 1):
+                    # 搜尋參數相關的行
+                    for search_term in system_config.get("search_terms", []):
+                        if search_term.lower() in line.lower():
+                            # 提取上下文
+                            context_start = max(0, line_num - 2)
+                            context_end = min(len(lines), line_num + 2)
+                            context_lines = lines[context_start:context_end]
+                            
+                            file_matches.append({
+                                "line": line_num,
+                                "content": line.strip(),
+                                "context": '\n'.join(context_lines)
+                            })
+                
+                if file_matches:
+                    relative_path = str(py_file.relative_to(project_root)).replace(os.sep, '/')
+                    analysis["affected_files"].append({
+                        "path": relative_path,
+                        "matches": file_matches
+                    })
+            except:
+                pass
+        
+        # 第四步：生成詳細的修改分析報告
+        report_lines = [
+            "🔍 【智能配置修改分析報告】",
+            f"\n📝 用戶命令：{user_command}",
+            f"🎯 受影響系統：{affected_system}",
+            f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        ]
+        
+        # 顯示檢測到的修改
+        if analysis["time_changes"]:
+            report_lines.append(f"\n⏰ 【時間修改】：")
+            for change in analysis["time_changes"]:
+                report_lines.append(f"   📊 時間差：{change['human_readable']}")
+        
+        if analysis["value_changes"]:
+            report_lines.append(f"\n🔢 【數值修改】：")
+            for change in analysis["value_changes"]:
+                if "old_value" in change:
+                    report_lines.append(f"   {change['old_value']} → {change['new_value']}")
+                else:
+                    report_lines.append(f"   新值：{change['new_value']}")
+        
+        # 顯示受影響的文件
+        if analysis["affected_files"]:
+            report_lines.append(f"\n📄 【受影響的文件】（共 {len(analysis['affected_files'])} 個）：")
+            for file_info in analysis["affected_files"]:
+                report_lines.append(f"\n   📍 {file_info['path']}")
+                for idx, match in enumerate(file_info["matches"][:3], 1):
+                    report_lines.append(f"      {idx}. 第 {match['line']} 行：{match['content'][:70]}")
+                if len(file_info["matches"]) > 3:
+                    report_lines.append(f"      ... 還有 {len(file_info['matches']) - 3} 處")
+        else:
+            report_lines.append(f"\n⚠️ 【警告】：未找到相關配置文件！")
+            report_lines.append(f"   💡 請檢查：")
+            report_lines.append(f"      1) 系統名稱 '{affected_system}' 是否正確")
+            report_lines.append(f"      2) 配置文件是否存在：{system_config.get('config_file', 'unknown')}")
+        
+        # 生成修改建議
+        report_lines.append(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        report_lines.append(f"\n✅ 【下一步操作】：")
+        report_lines.append(f"   1️⃣ 使用 read_project_file 確認現有值")
+        report_lines.append(f"   2️⃣ 使用 write_project_file 進行修改")
+        report_lines.append(f"   3️⃣ 使用 trigger_git_push 提交變更")
+        report_lines.append(f"\n💡 提示：可直接複製上述 file_path 使用")
+        
+        return "\n".join(report_lines)
+        
+    except Exception as e:
+        return f"❌ 分析失敗：{type(e).__name__}: {str(e)[:100]}"
 
 
 @register_tool(
