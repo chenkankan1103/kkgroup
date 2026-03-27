@@ -1233,6 +1233,127 @@ def list_tools() -> List[str]:
     return list(_TOOL_REGISTRY.keys())
 
 
+@register_tool(
+    name="analyze_code_changes",
+    description=(
+        "【AI 輔助工具】分析代碼修改的全面影響範圍。"
+        "用於找出所有需要同步修改的位置（常數、函數、配置等）。"
+        "當要修改一個常數或功能時，先調用此工具自動定位所有相關文件。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "change_description": {
+                "type": "STRING",
+                "description": "修改描述（例如：'把種植數量從 3 改成 5'、'修改大麻系統'）"
+            },
+            "search_keyword": {
+                "type": "STRING",
+                "description": "搜尋關鍵字（例如：種植、cannabis、planting）"
+            }
+        },
+        "required": ["change_description", "search_keyword"]
+    }
+)
+def analyze_code_changes(change_description: str, search_keyword: str, *, caller_id: Optional[int] = None) -> str:
+    """
+    分析代碼修改的全面影響：自動找出所有需要修改的檔案和位置。
+
+    用途：
+      當要修改某個功能或常數時，快速定位所有相關代碼，避免遺漏。
+      例如：改種植數量、改常數值、改配置等。
+
+    Args:
+        change_description (str): 修改描述（用於 AI 理解上下文）
+        search_keyword (str):      搜尋關鍵字（檔案、函數、常數名稱等）
+        caller_id (int):           呼叫者 ID（系統注入）
+
+    Returns:
+        str: 相關檔案和位置的清單
+    """
+    # 🔒 權限防火牆
+    if LEADER_ID and caller_id != LEADER_ID:
+        return "存取拒絕：analyze_code_changes 僅限園區管理員。"
+
+    import os
+    import pathlib
+    import re
+
+    try:
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        project_path = pathlib.Path(project_root)
+        
+        # 過濾掉不相關的目錄
+        exclude_patterns = ('backup', '__pycache__', '.venv', 'venv', '.local', 'site-packages', '.git', 'node_modules')
+        
+        # 搜尋所有 .py 檔案
+        py_files = [
+            f for f in project_path.rglob("*.py")
+            if not any(pattern in str(f) for pattern in exclude_patterns)
+        ]
+        
+        # 分析每個檔案中符合關鍵字的位置
+        results = []
+        for py_file in py_files:
+            try:
+                with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                    lines = content.split('\n')
+                
+                # 搜尋大小寫不敏感的關鍵字
+                matches = []
+                for line_num, line in enumerate(lines, 1):
+                    if search_keyword.lower() in line.lower():
+                        # 提取上下文（前後 1 行）
+                        context_start = max(0, line_num - 2)
+                        context_end = min(len(lines), line_num + 1)
+                        context_lines = lines[context_start:context_end]
+                        matches.append({
+                            'line': line_num,
+                            'content': line.strip()[:80],  # 限制長度
+                            'context': '\n'.join(context_lines)[:150]
+                        })
+                
+                if matches:
+                    relative_path = str(py_file.relative_to(project_root)).replace(os.sep, '/')
+                    results.append({
+                        'file': relative_path,
+                        'matches':matches,
+                        'count': len(matches)
+                    })
+            except Exception as e:
+                pass  # 跳過無法讀取的檔案
+        
+        # 生成報告
+        if not results:
+            return f"❌ 未找到符合 '{search_keyword}' 的代碼片段。"
+        
+        report_lines = [
+            f"🔍 修改分析報告",
+            f"📝 修改內容：{change_description}",
+            f"🔎 搜尋關鍵字：{search_keyword}",
+            f"📊 共找到 {len(results)} 個相關檔案，{sum(r['count'] for r in results)} 處需要檢查\n",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        ]
+        
+        for result in results:
+            report_lines.append(f"\n📄 {result['file']}")
+            report_lines.append(f"   🎯 找到 {result['count']} 處相關代碼：")
+            for match in result['matches'][:3]:  # 限制每個檔案最多顯示 3 處
+                report_lines.append(f"      第 {match['line']} 行：{match['content']}")
+            if len(result['matches']) > 3:
+                report_lines.append(f"      ... 還有 {len(result['matches']) - 3} 處")
+        
+        report_lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        report_lines.append(f"\n✅ 分析完成！請根據上述位置逐一檢查和修改。")
+        report_lines.append(f"💡 建議：先用 read_project_file 確認各檔案內容，再用 write_project_file 修改。")
+        
+        return "\n".join(report_lines)
+        
+    except Exception as e:
+        return f"❌ 分析失敗：{type(e).__name__}: {e}"
+
+
 # ==================== 獨立測試模式 ====================
 
 if __name__ == "__main__":
