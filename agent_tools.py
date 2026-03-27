@@ -2218,18 +2218,19 @@ def smart_config_modifier(user_command: str, affected_system: str, *, caller_id:
         
         # 時間修改識別（支持：小時 h、分鐘 min/m、秒 s）
         time_patterns = [
-            (r'縮短|減少|降低.*?(\d+)\s*小時', -3600),  # 縮短 X 小時
-            (r'增加|延長|增長.*?(\d+)\s*小時', 3600),    # 增加 X 小時
-            (r'縮短|減少.*?(\d+)\s*分鐘', -60),          # 縮短 X 分鐘
-            (r'增加|延長.*?(\d+)\s*分鐘', 60),           # 增加 X 分鐘
-            (r'縮短|減少.*?(\d+)\s*秒', -1),             # 縮短 X 秒
-            (r'增加|延長.*?(\d+)\s*秒', 1),              # 增加 X 秒
+            (r'(縮短|減少|降低).*?(\d+)\s*小時', -3600),  # 縮短 X 小時（用括号确保优先级）
+            (r'(增加|延長|增長).*?(\d+)\s*小時', 3600),    # 增加 X 小時
+            (r'(縮短|減少).*?(\d+)\s*分鐘', -60),          # 縮短 X 分鐘
+            (r'(增加|延長).*?(\d+)\s*分鐘', 60),           # 增加 X 分鐘
+            (r'(縮短|減少).*?(\d+)\s*秒', -1),             # 縮短 X 秒
+            (r'(增加|延長).*?(\d+)\s*秒', 1),              # 增加 X 秒
         ]
         
         for pattern, multiplier in time_patterns:
             match = re.search(pattern, cmd_lower)
             if match:
-                value = int(match.group(1))
+                # 因為添加了括号，现在 group(2) 才是数字
+                value = int(match.group(2))
                 delta_seconds = value * multiplier
                 analysis["time_changes"].append({
                     "delta_seconds": delta_seconds,
@@ -2246,15 +2247,16 @@ def smart_config_modifier(user_command: str, affected_system: str, *, caller_id:
         for pattern, _ in value_patterns:
             match = re.search(pattern, cmd_lower)
             if match:
-                if match.groups().__len__() == 2:  # 從 X 改為 Y
-                    old_val, new_val = int(match.group(1)), int(match.group(2))
+                groups = match.groups()
+                if len(groups) == 2 and groups[1] is not None:  # 從 X 改為 Y
+                    old_val, new_val = int(groups[0]), int(groups[1])
                     analysis["value_changes"].append({
                         "old_value": old_val,
                         "new_value": new_val,
                         "change_type": "direct_change"
                     })
-                else:  # 改成 X
-                    new_val = int(match.group(1))
+                elif groups[0] is not None:  # 改成 X 或 增加 X%
+                    new_val = int(groups[0])
                     analysis["value_changes"].append({
                         "new_value": new_val,
                         "change_type": "simple_change"
