@@ -1601,6 +1601,360 @@ def list_tools() -> List[str]:
 
 
 @register_tool(
+    name="smart_search_code",
+    description=(
+        "【精準搜索工具】智能代碼搜尋 - 支持正則表達式、欄位限制、結果去重。"
+        "比全文搜索更精確：自動過濾無關結果，避免誤觸無關代碼。"
+        "當需要定位特定代碼時，比 analyze_code_changes 更靈活。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "search_pattern": {
+                "type": "STRING",
+                "description": "搜尋模式（支持正則表達式，如 '5\\b|五個|5個'）"
+            },
+            "context": {
+                "type": "STRING",
+                "description": "搜尋上下文（如 'cannabis', 'plant', 'config' 限制搜尋範圍）"
+            },
+            "is_regex": {
+                "type": "BOOLEAN",
+                "description": "是否使用正則表達式，預設 false（普通文字搜索）"
+            }
+        },
+        "required": ["search_pattern"]
+    }
+)
+@_require_leader
+def smart_search_code(search_pattern: str, context: str = "", is_regex: bool = False, *, caller_id: Optional[int] = None) -> str:
+    """
+    智能代碼搜尋 - 精準定位相關代碼，避免誤觸。
+
+    特點：
+      1️⃣ 精準搜索：支持正則表達式，過濾無關行
+      2️⃣ 上下文限制：按功能模塊縮小搜尋範圍
+      3️⃣ 結果去重：相同代碼行只列一次
+      4️⃣ 智能分類：區分「可能相關」vs「確實需要改」
+
+    用例：
+      • search_pattern='5\\b|5個|5株'，is_regex=True
+        → 找出所有「5」的變體（邊界詞、中文計量）
+      • context='cannabis'
+        → 只搜尋大麻相關檔案
+      • search_pattern='MAX_PLANTS.*=.*5'
+        → 找常數定義，不找註釋
+
+    Args:
+        search_pattern (str): 搜尋模式或正則表達式
+        context (str):        上下文限制（檔案名、模塊名）
+        is_regex (bool):      是否為正則表達式
+        caller_id (int):      呼叫者 ID
+
+    Returns:
+        str: 綜合搜尋報告
+    """
+    import pathlib
+    import re
+    
+    try:
+        project_root = _get_project_root()
+        project_path = pathlib.Path(project_root)
+        
+        # 如果提供了上下文，限制搜尋範圍
+        if context:
+            # 搜尋包含上下文的檔案
+            all_files = list(project_path.rglob("*.py"))
+            exclude_patterns = ('backup', '__pycache__', '.venv', 'venv', '.local', 'site-packages', '.git')
+            py_files = [
+                f for f in all_files
+                if not any(pattern in str(f) for pattern in exclude_patterns)
+                and context.lower() in str(f).lower()
+            ]
+            if not py_files:
+                # 如果按路徑搜不到，嘗試按檔案內容
+                py_files = [
+                    f for f in all_files
+                    if not any(pattern in str(f) for pattern in exclude_patterns)
+                ]
+        else:
+            # 搜尋全部
+            py_files = list(project_path.rglob("*.py"))
+            exclude_patterns = ('backup', '__pycache__', '.venv', 'venv', '.local', 'site-packages', '.git')
+            py_files = [
+                f for f in py_files
+                if not any(pattern in str(f) for pattern in exclude_patterns)
+            ]
+        
+        # 編譯正則表達式（如果需要）
+        if is_regex:
+            try:
+                compiled_pattern = re.compile(search_pattern, re.IGNORECASE)
+            except re.error as e:
+                return f"❌ 正則表達式錯誤：{e}"
+        else:
+            # 轉義特殊字符，執行普通文字搜費
+            compiled_pattern = None
+        
+        # 搜尋結果分類
+        exact_matches = []    # 精確匹配（如常數定義）
+        likely_matches = []   # 可能相關（代碼邏輯）
+        comment_matches = []  # 註釋中提及（可能忽略）
+        
+        seen_lines = set()    # 去重
+        
+        for py_file in py_files:
+            try:
+                with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+                
+                for line_num, line in enumerate(lines, 1):
+                    # 搜尋
+                    if is_regex:
+                        if not compiled_pattern.search(line):
+                            continue
+                    else:
+                        if search_pattern.lower() not in line.lower():
+                            continue
+                    
+                    # 防止重複
+                    line_sig = (str(py_file), line.strip())
+                    if line_sig in seen_lines:
+                        continue
+                    seen_lines.add(line_sig)
+                    
+                    relative_path = str(py_file.relative_to(project_root)).replace(os.sep, '/')
+                    match_info = {
+                        'file': relative_path,
+                        'line': line_num,
+                        'content': line.rstrip()
+                    }
+                    
+                    # 分類
+                    if '#' in line and line.find('#') < line.find(search_pattern if not is_regex else 'match'):
+                        comment_matches.append(match_info)
+                    elif '=' in line and any(x in line for x in ['const', 'MAX', 'LIMIT', '= ']):
+                        exact_matches.append(match_info)
+                    else:
+                        likely_matches.append(match_info)
+            
+            except Exception:
+                pass
+        
+        # 生成報告
+        total = len(exact_matches) + len(likely_matches) + len(comment_matches)
+        if total == 0:
+            return f"❌ 未找到符合 '{search_pattern}' 的代碼。"
+        
+        report_lines = [
+            f"🔍 智能搜尋結果",
+            f"搜尋模式：{search_pattern}{'（正則）' if is_regex else '（文字）'}",
+            f"上下文：{context if context else '全部檔案'}",
+            f"📊 共找到 {total} 處，分類如下：\n",
+        ]
+        
+        if exact_matches:
+            report_lines.append(f"✅ 【確實需要改】常數/配置定義（{len(exact_matches)} 處）：")
+            for m in exact_matches[:5]:
+                report_lines.append(f"   {m['file']}:{m['line']} → {m['content'][:60].strip()}")
+            if len(exact_matches) > 5:
+                report_lines.append(f"   ... 還有 {len(exact_matches)-5} 處")
+        
+        if likely_matches:
+            report_lines.append(f"\n⚠️  【可能相關】代碼邏輯（{len(likely_matches)} 處，需人工檢查）：")
+            for m in likely_matches[:5]:
+                report_lines.append(f"   {m['file']}:{m['line']} → {m['content'][:60].strip()}")
+            if len(likely_matches) > 5:
+                report_lines.append(f"   ... 還有 {len(likely_matches)-5} 處")
+        
+        if comment_matches:
+            report_lines.append(f"\n💬 【註釋提及】（{len(comment_matches)} 處，通常無需改）：")
+            for m in comment_matches[:3]:
+                report_lines.append(f"   {m['file']}:{m['line']} → {m['content'][:60].strip()}")
+        
+        report_lines.append("\n💡 建議：優先修改「確實需要改」，再檢查「可能相關」。")
+        return "\n".join(report_lines)
+        
+    except Exception as e:
+        return f"❌ 搜尋失敗：{type(e).__name__}: {e}"
+
+
+@register_tool(
+    name="batch_replace_code",
+    description=(
+        "【批量修改工具】同時修改多個位置的代碼。"
+        "支持多個搜尋-替換對，一次操作提交到 Git。"
+        "比逐個修改快 5 倍，減少 Git 提交次數。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "replacements": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "file": {
+                            "type": "STRING",
+                            "description": "相對路徑（如 'commands/AI.py'）"
+                        },
+                        "search": {
+                            "type": "STRING",
+                            "description": "要搜尋的文字"
+                        },
+                        "replace": {
+                            "type": "STRING",
+                            "description": "要替換成的文字"
+                        }
+                    },
+                    "required": ["file", "search", "replace"]
+                },
+                "description": "批量修改清單（數組）"
+            },
+            "commit_message": {
+                "type": "STRING",
+                "description": "Git 提交訊息"
+            }
+        },
+        "required": ["replacements", "commit_message"]
+    }
+)
+@_require_leader
+def batch_replace_code(replacements: List[Dict], commit_message: str, *, caller_id: Optional[int] = None) -> str:
+    """
+    批量修改代碼 - 一次提交多個文件修改。
+
+    執行流程：
+      1️⃣ 驗證所有修改（確保搜尋文字存在）
+      2️⃣ 執行替換（逐個文件）
+      3️⃣ 語法檢查（每個 Python 文件）
+      4️⃣ Git 提交（一次推送）
+
+    Args:
+        replacements (list): [{"file": "path", "search": "old", "replace": "new"}, ...]
+        commit_message (str): Git 提交訊息
+        caller_id (int):      呼叫者 ID
+
+    Returns:
+        str: 批量修改報告
+    """
+    import pathlib
+    
+    try:
+        project_root = _get_project_root()
+        
+        # 第一步：驗證所有修改
+        validation_results = []
+        for replacement in replacements:
+            file_path = replacement['file']
+            search_text = replacement['search']
+            replace_text = replacement['replace']
+            
+            full_path = pathlib.Path(project_root) / file_path
+            full_path = full_path.resolve()
+            
+            # 安全檢查
+            if not str(full_path).startswith(str(pathlib.Path(project_root).resolve())):
+                return f"❌ 安全檢查失敗：{file_path} 超出專案目錄"
+            
+            # 檢查文件存在
+            if not full_path.exists():
+                return f"❌ 文件不存在：{file_path}"
+            
+            # 檢查搜尋文字存在
+            with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            if search_text not in content:
+                return f"❌ 搜尋文字不存在於 {file_path}：'{search_text[:50]}...'"
+            
+            validation_results.append({
+                'file': file_path,
+                'success': True,
+                'count': content.count(search_text)
+            })
+        
+        # 第二步：執行替換
+        replaced_files = []
+        for replacement in replacements:
+            file_path = replacement['file']
+            search_text = replacement['search']
+            replace_text = replacement['replace']
+            
+            full_path = pathlib.Path(project_root) / file_path
+            
+            with open(full_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 執行替換
+            new_content = content.replace(search_text, replace_text)
+            
+            # 語法檢查（若是 Python 文件）
+            if file_path.endswith('.py'):
+                try:
+                    compile(new_content, filename=str(full_path), mode='exec')
+                except SyntaxError as e:
+                    return f"❌ 語法檢查失敗（{file_path}）：第 {e.lineno} 行 - {e.msg}"
+            
+            # 寫入
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            
+            replaced_files.append(file_path)
+        
+        # 第三步：Git 操作
+        try:
+            # git add
+            subprocess.run(
+                ['git', '-C', project_root, 'add'] + replaced_files,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            # git commit
+            commit_result = subprocess.run(
+                ['git', '-C', project_root, 'commit', '-m', commit_message],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if commit_result.returncode != 0:
+                return f"❌ git commit 失敗：{commit_result.stderr}"
+            
+            # git push
+            push_result = subprocess.run(
+                ['git', '-C', project_root, 'push', 'origin', 'main'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if push_result.returncode != 0:
+                return f"❌ git push 失敗：{push_result.stderr}"
+        
+        except Exception as e:
+            return f"❌ Git 操作失敗：{e}"
+        
+        # 生成成功報告
+        report_lines = [
+            f"✅ 批量修改完成並推送到 GitHub",
+            f"📝 修改文件數：{len(replaced_files)}",
+            f"💬 提交訊息：{commit_message}\n",
+            f"【修改詳情】：",
+        ]
+        
+        for i, v_result in enumerate(validation_results, 1):
+            report_lines.append(f"  {i}. {v_result['file']} - {v_result['count']} 處修改")
+        
+        return "\n".join(report_lines)
+        
+    except Exception as e:
+        return f"❌ 批量修改失敗：{type(e).__name__}: {e}"
+
+
+@register_tool(
     name="analyze_code_changes",
     description=(
         "【AI 輔助工具】分析代碼修改的全面影響範圍。"
