@@ -777,6 +777,326 @@ def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int
         return f"❌ 指令執行失敗：{e}"
 
 
+# ==================== Git 遠端維護工具 ====================
+
+@register_tool(
+    name="read_project_file",
+    description=(
+        "讀取專案目錄下指定的 Python 檔案內容。"
+        "用於AI審視當前代碼並準備修改。支持相對路徑（相對於專案根目錄）。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "file_path": {
+                "type": "STRING",
+                "description": "相對路徑（如 'bot.py', 'commands/AI.py'）。系統會安全檢查確保在專案目錄內。"
+            }
+        },
+        "required": ["file_path"]
+    }
+)
+def read_project_file(file_path: str, *, caller_id: Optional[int] = None) -> str:
+    """
+    讀取專案目錄下的 .py 檔案內容。
+
+    Args:
+        file_path (str):  相對路徑（如 'bot.py', 'commands/AI.py'）
+        caller_id (int):  呼叫者 Discord ID（系統注入）
+
+    Returns:
+        str: 檔案內容或錯誤訊息
+    """
+    # 🔒 權限防火牆
+    if LEADER_ID and caller_id != LEADER_ID:
+        return "存取拒絕：read_project_file 僅限園區管理員。"
+
+    import os
+    import pathlib
+    
+    try:
+        # 獲取專案根目錄
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        
+        # 安全檢查：防止路徑遍歷攻擊
+        full_path = pathlib.Path(project_root) / file_path
+        full_path = full_path.resolve()  # 解析符號連結
+        
+        # 確保路徑在專案目錄內
+        if not str(full_path).startswith(str(pathlib.Path(project_root).resolve())):
+            return f"❌ 安全檢查失敗：路徑超出專案目錄。只允許讀取專案內的文件。"
+        
+        # 檢查副檔名
+        if not full_path.suffix == ".py":
+            return f"❌ 僅支持 .py 檔案，不支持 {full_path.suffix}"
+        
+        # 檢查文件是否存在
+        if not full_path.exists():
+            return f"❌ 檔案不存在：{file_path}"
+        
+        # 讀取檔案
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        line_count = len(content.split('\n'))
+        char_count = len(content)
+        
+        return (
+            f"✅ 成功讀取 {file_path}\n"
+            f"📊 {line_count} 行，{char_count} 字符\n\n"
+            f"───────────────────────\n{content}\n───────────────────────"
+        )
+        
+    except Exception as e:
+        return f"❌ 讀取檔案失敗：{type(e).__name__}: {e}"
+
+
+@register_tool(
+    name="write_project_file",
+    description=(
+        "修改專案目錄下的 Python 檔案並執行 git push 提交到遠端。"
+        "集成安全檢查：權限驗證、語法檢查、git 提交。"
+        "僅限園區管理員。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "file_path": {
+                "type": "STRING",
+                "description": "相對路徑（如 'bot.py', 'commands/AI.py'）"
+            },
+            "new_content": {
+                "type": "STRING",
+                "description": "新的檔案內容（完整代碼）"
+            },
+            "commit_message": {
+                "type": "STRING",
+                "description": "Git 提交訊息，簡要說明此次修改"
+            }
+        },
+        "required": ["file_path", "new_content", "commit_message"]
+    }
+)
+def write_project_file(file_path: str, new_content: str, commit_message: str, *, caller_id: Optional[int] = None) -> str:
+    """
+    修改專案檔案、語法檢查、提交到 Git。
+
+    執行流程：
+      1️⃣ 權限驗證（僅限管理員）
+      2️⃣ 路徑安全檢查
+      3️⃣ Python 語法檢查（compile()）
+      4️⃣ 寫入檔案
+      5️⃣ Git add + commit + push
+
+    Args:
+        file_path (str):        相對路徑
+        new_content (str):      新的完整檔案內容
+        commit_message (str):   Git 提交訊息
+        caller_id (int):        呼叫者 Discord ID
+
+    Returns:
+        str: 操作結果摘要
+    """
+    # 🔒 權限防火牆
+    if LEADER_ID and caller_id != LEADER_ID:
+        return "存取拒絕：write_project_file 僅限園區管理員。"
+
+    import os
+    import pathlib
+    
+    try:
+        # 獲取專案根目錄
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        
+        # 安全檢查：防止路徑遍歷
+        full_path = pathlib.Path(project_root) / file_path
+        full_path = full_path.resolve()
+        
+        if not str(full_path).startswith(str(pathlib.Path(project_root).resolve())):
+            return f"❌ 安全檢查失敗：路徑超出專案目錄。"
+        
+        # 檢查副檔名
+        if not full_path.suffix == ".py":
+            return f"❌ 僅支持 .py 檔案，不支持 {full_path.suffix}"
+        
+        # 🔍 防呆機制：Python 語法檢查
+        try:
+            compile(new_content, filename=str(full_path), mode='exec')
+        except SyntaxError as e:
+            return (
+                f"❌ 代碼語法檢查失敗（拒絕寫入）\n"
+                f"📍 錯誤位置：第 {e.lineno} 行\n"
+                f"❗ {e.msg}\n"
+                f"📜 {e.text}"
+            )
+        except Exception as e:
+            return f"❌ 語法檢查異常：{type(e).__name__}: {e}"
+        
+        # 寫入檔案
+        try:
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            new_line_count = len(new_content.split('\n'))
+        except Exception as e:
+            return f"❌ 檔案寫入失敗：{type(e).__name__}: {e}"
+        
+        # 🔧 Git 操作
+        git_results = []
+        try:
+            # git add
+            add_result = subprocess.run(
+                ['git', '-C', project_root, 'add', file_path],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if add_result.returncode != 0:
+                git_results.append(f"⚠️ git add 警告：{add_result.stderr}")
+            else:
+                git_results.append("✅ git add 成功")
+            
+            # git commit
+            commit_result = subprocess.run(
+                ['git', '-C', project_root, 'commit', '-m', commit_message],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if commit_result.returncode != 0:
+                git_results.append(f"⚠️ git commit 警告：{commit_result.stderr}")
+            else:
+                git_results.append("✅ git commit 成功")
+            
+            # git push
+            push_result = subprocess.run(
+                ['git', '-C', project_root, 'push', 'origin', 'main'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if push_result.returncode != 0:
+                git_results.append(f"⚠️ git push 警告：{push_result.stderr}")
+            else:
+                git_results.append("✅ git push 成功")
+        
+        except subprocess.TimeoutExpired:
+            return f"❌ Git 操作超時"
+        except Exception as e:
+            return f"❌ Git 操作失敗：{type(e).__name__}: {e}"
+        
+        # 成功摘要
+        return (
+            f"✅ 檔案修改完成並已推送到 GitHub\n"
+            f"📝 修改檔案：{file_path}\n"
+            f"📊 新內容：{new_line_count} 行\n"
+            f"💬 提交訊息：{commit_message}\n\n"
+            f"🔧 Git 操作結果：\n" + "\n".join(git_results)
+        )
+        
+    except Exception as e:
+        return f"❌ 未知錯誤：{type(e).__name__}: {e}"
+
+
+@register_tool(
+    name="get_git_status",
+    description=(
+        "查詢專案的 Git 狀態（當前分支、未提交的改動、遠端狀態等）。"
+        "用於確認代碼是否已同步到遠端。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {},
+        "required": []
+    }
+)
+def get_git_status(*, caller_id: Optional[int] = None) -> str:
+    """
+    獲取 Git 狀態摘要。
+
+    Args:
+        caller_id (int): 呼叫者 Discord ID
+
+    Returns:
+        str: 當前 Git 狀態
+    """
+    # 🔒 權限防火牆
+    if LEADER_ID and caller_id != LEADER_ID:
+        return "存取拒絕：get_git_status 僅限園區管理員。"
+
+    import os
+    
+    try:
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        
+        # 獲取當前分支
+        branch_result = subprocess.run(
+            ['git', '-C', project_root, 'rev-parse', '--abbrev-ref', 'HEAD'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "未知"
+        
+        # 獲取 Git 狀態
+        status_result = subprocess.run(
+            ['git', '-C', project_root, 'status', '--short'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        changes = status_result.stdout.strip() if status_result.returncode == 0 else ""
+        
+        # 獲取最後一次提交
+        log_result = subprocess.run(
+            ['git', '-C', project_root, 'log', '-1', '--oneline'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        last_commit = log_result.stdout.strip() if log_result.returncode == 0 else "未知"
+        
+        # 檢查是否領先或落後遠端
+        fetch_result = subprocess.run(
+            ['git', '-C', project_root, 'fetch', 'origin'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        status_vs_remote = subprocess.run(
+            ['git', '-C', project_root, 'status', '-uno'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        remote_status = status_vs_remote.stdout.strip() if status_vs_remote.returncode == 0 else "未知"
+        
+        # 組織結果
+        result_lines = [
+            f"🌿 當前分支：{current_branch}",
+            f"📝 最後提交：{last_commit}",
+        ]
+        
+        if changes:
+            result_lines.append(f"\n📝 未提交的改動：")
+            result_lines.extend(changes.split('\n'))
+        else:
+            result_lines.append("✅ 沒有未提交的改動")
+        
+        result_lines.append(f"\n🔗 遠端狀態摘要：")
+        # 只取摘要行
+        for line in remote_status.split('\n'):
+            if 'ahead' in line or 'behind' in line or 'up to date' in line:
+                result_lines.append(line)
+        
+        return "\n".join(result_lines)
+        
+    except subprocess.TimeoutExpired:
+        return "❌ Git 操作超時"
+    except Exception as e:
+        return f"❌ 獲取 Git 狀態失敗：{type(e).__name__}: {e}"
+
+
 # ==================== 核心公開介面 ====================
 
 def get_gemini_tools_spec() -> List[Dict]:
