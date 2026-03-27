@@ -58,7 +58,7 @@ class CannabisBuyView(discord.ui.View):
             
             embed = discord.Embed(
                 title="🌱 購買種子",
-                description="選擇種子類型 (成長4h±1h，最多同時種植5株)。收割後可獲得大麻並出售。",
+                description="選擇種子類型 (成長4h±1h，最多同時種植7株)。收割後可獲得大麻並出售。",
                 color=discord.Color.green()
             )
             
@@ -177,7 +177,7 @@ class CannabisPlantsView(discord.ui.View):
         self.plants = plants
         self.user_id = user_id
         
-        for plant in plants[:5]:  # 限制 5 個按鈕
+        for plant in plants[:7]:  # 限制 7 個按鈕
             self.add_item(PlantActionButton(bot, plant, user_id))
 
 
