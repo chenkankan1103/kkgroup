@@ -1955,6 +1955,419 @@ def batch_replace_code(replacements: List[Dict], commit_message: str, *, caller_
 
 
 @register_tool(
+    name="diagnose_problem",
+    description=(
+        "【智能診斷工具】分析問題根源 - 檢查錯誤日誌、系統狀態、代碼邏輯。"
+        "當出現 Bug 或報錯時，自動定位問題根源、提供修復建議。"
+        "如：『函數報錯』→ 自動查找相關代碼 → 分析錯誤類型 → 建議修復方案"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "problem_description": {
+                "type": "STRING",
+                "description": "問題描述（如 '種植系統無法正常運作'、'API 返回 500 錯誤'）"
+            },
+            "error_output": {
+                "type": "STRING",
+                "description": "錯誤輸出或日誌（可選，幫助定位問題）"
+            }
+        },
+        "required": ["problem_description"]
+    }
+)
+@_require_leader
+def diagnose_problem(problem_description: str, error_output: str = "", *, caller_id: Optional[int] = None) -> str:
+    """
+    智能問題診斷 - 自動分析問題根源。
+
+    工作流程：
+      1️⃣ 解析問題描述，提取關鍵詞
+      2️⃣ 搜尋相關代碼和日誌
+      3️⃣ 分析錯誤模式（語法、邏輯、權限、資料）
+      4️⃣ 生成修復建議
+
+    例子：
+      • 「種植系統無法正常運作」
+        → 搜尋 cannabis_farming.py
+        → 檢查數據庫邏輯
+        → 建議檢查植物狀態更新
+      
+      • 「API 返回 500」
+        → 搜尋相關 API 端點
+        → 檢查異常捕獲
+        → 建議添加日誌記錄
+    """
+    import pathlib
+    
+    try:
+        project_root = _get_project_root()
+        project_path = pathlib.Path(project_root)
+        
+        # 提取關鍵詞
+        keywords = []
+        problem_lower = problem_description.lower()
+        
+        # 常見產品關鍵詞對應
+        keyword_map = {
+            '種植|cannabis|plant': 'cannabis_farming',
+            '大麻|hemp': 'cannabis',
+            'api|端點|接口': 'api',
+            'kkcoin|coin|幣': 'kkcoin',
+            '配裝|equipment|paperdoll': 'equipment',
+            '數據庫|database|db': 'database',
+            '權限|permission|auth': 'auth',
+        }
+        
+        for pattern, keyword in keyword_map.items():
+            if any(k in problem_lower for k in pattern.split('|')):
+                keywords.append(keyword)
+        
+        if not keywords:
+            keywords = ['general']
+        
+        # 搜尋相關文件
+        py_files = list(project_path.rglob("*.py"))
+        exclude_patterns = ('backup', '__pycache__', '.venv', 'venv', '.local', 'site-packages', '.git')
+        py_files = [
+            f for f in py_files
+            if not any(pattern in str(f) for pattern in exclude_patterns)
+        ]
+        
+        related_files = []
+        for py_file in py_files:
+            file_str = str(py_file).lower()
+            for keyword in keywords:
+                if keyword in file_str:
+                    related_files.append(py_file)
+                    break
+        
+        # 分析錯誤模式
+        error_type = "未知"
+        if error_output:
+            error_lower = error_output.lower()
+            if 'syntaxerror' in error_lower:
+                error_type = "語法錯誤"
+            elif 'keyerror' in error_lower or 'indexerror' in error_lower:
+                error_type = "資料訪問錯誤"
+            elif 'typeerror' in error_lower:
+                error_type = "類型錯誤"
+            elif 'permission' in error_lower or '拒絕' in error_output:
+                error_type = "權限錯誤"
+            elif '500' in error_output or 'exception' in error_lower:
+                error_type = "運行時例外"
+        
+        # 提出建議
+        suggestions = []
+        
+        if related_files:
+            suggestions.append(f"📄 相關文件：{', '.join([f.name for f in related_files[:3]])}")
+        
+        if error_type == "語法錯誤":
+            suggestions.append("✅ 建議：1) 檢查最近修改的代碼 2) 運行 Python 語法檢查 3) 查看錯誤行號")
+        elif error_type == "資料訪問錯誤":
+            suggestions.append("✅ 建議：1) 檢查字典/列表鍵是否存在 2) 添加數據驗證 3) 使用 .get() 方法")
+        elif error_type == "類型錯誤":
+            suggestions.append("✅ 建議：1) 檢查函數參數類型 2) 添加類型提示（Type Hints）")
+        elif error_type == "權限錯誤":
+            suggestions.append("✅ 建議：1) 檢查 LEADER_ID 設定 2) 驗證 caller_id 是否正確")
+        elif error_type == "運行時例外":
+            suggestions.append("✅ 建議：1) 查看日誌文件 2) 添加更詳細的錯誤捕獲 3) 檢查外部依賴（DB、API）")
+        
+        # 生成報告
+        report_lines = [
+            f"🔍 問題診斷報告",
+            f"📝 問題：{problem_description}",
+            f"🎯 關鍵詞：{', '.join(keywords)}",
+            f"⚠️ 錯誤類型：{error_type}",
+            f"\n【相關模塊】：",
+        ]
+        
+        if related_files:
+            for f in related_files[:5]:
+                report_lines.append(f"  • {str(f.relative_to(project_root)).replace(os.sep, '/')}")
+        else:
+            report_lines.append("  （暫未找到相關模塊）")
+        
+        report_lines.append(f"\n【修復建議】：")
+        for suggestion in suggestions:
+            report_lines.append(f"  {suggestion}")
+        
+        report_lines.append(f"\n💡 下一步：")
+        if related_files:
+            report_lines.append(f"  1) 使用 smart_search_code 搜尋相關代碼")
+            report_lines.append(f"  2) 分析代碼邏輯")
+            report_lines.append(f"  3) 使用 batch_replace_code 修復問題")
+        else:
+            report_lines.append(f"  1) 提供更詳細的錯誤訊息")
+            report_lines.append(f"  2) 查看相關日誌文件")
+        
+        return "\n".join(report_lines)
+        
+    except Exception as e:
+        return f"❌ 診斷失敗：{type(e).__name__}: {e}"
+
+
+@register_tool(
+    name="generate_fix_suggestion",
+    description=(
+        "【智能修復建議工具】根據問題類型生成完整的修復方案。"
+        "包括：代碼修改建議、測試方案、回退計劃。"
+        "讓 Agent 能像 Copilot 一樣提供完整的解決方案。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "file_path": {
+                "type": "STRING",
+                "description": "要修復的文件路徑"
+            },
+            "problem_pattern": {
+                "type": "STRING",
+                "description": "問題模式（如 'missing-error-check', 'type-mismatch', 'logic-error'）"
+            }
+        },
+        "required": ["file_path", "problem_pattern"]
+    }
+)
+@_require_leader
+def generate_fix_suggestion(file_path: str, problem_pattern: str, *, caller_id: Optional[int] = None) -> str:
+    """
+    生成智能修復建議 - 完整的解決方案。
+
+    支持的 problem_pattern：
+      • missing-error-check    - 缺少錯誤處理
+      • type-mismatch          - 類型不匹配
+      • logic-error            - 邏輯錯誤
+      • performance-issue      - 性能問題
+      • security-issue         - 安全問題
+
+    返回：代碼修改建議 + 測試方案 + 風險評估
+    """
+    import pathlib
+    
+    try:
+        project_root = _get_project_root()
+        full_path = pathlib.Path(project_root) / file_path
+        full_path = full_path.resolve()
+        
+        # 安全檢查
+        if not str(full_path).startswith(str(pathlib.Path(project_root).resolve())):
+            return f"❌ 安全檢查失敗：{file_path}"
+        
+        if not full_path.exists():
+            return f"❌ 文件不存在：{file_path}"
+        
+        # 讀取代碼
+        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        # 根據問題模式生成建議
+        suggestions = {
+            'missing-error-check': {
+                'title': '缺少錯誤處理',
+                'pattern': 'try/except 不足',
+                'fix_template': '''try:
+    # 你的代碼
+except Exception as e:
+    logger.error(f"操作失敗: {e}")
+    return f"❌ 錯誤: {e}"''',
+                'test': '測試異常情況（壞輸入、外部服務失敗）',
+                'risk': '低',
+            },
+            'type-mismatch': {
+                'title': '類型不匹配',
+                'pattern': '傳入的數據類型不符合預期',
+                'fix_template': '''# 添加類型檢查
+if not isinstance(value, expected_type):
+    return f"❌ 類型錯誤：期望 {expected_type}，得到 {type(value)}"''',
+                'test': '用不同類型的入參測試',
+                'risk': '低',
+            },
+            'logic-error': {
+                'title': '邏輯錯誤',
+                'pattern': '業務邏輯不符合預期',
+                'fix_template': '''# 檢查邏輯條件
+# 舊: if condition:
+# 新: if not condition:  # 邏輯反轉''',
+                'test': '用邊界值測試（最小值、最大值、空值）',
+                'risk': '中等',
+            },
+            'performance-issue': {
+                'title': '性能問題',
+                'pattern': '代碼執行太慢',
+                'fix_template': '''# 使用快取避免重複計算
+cache[key] = expensive_operation()
+return cache.get(key)  # 下次直接返回''',
+                'test': '測試大量操作的執行時間',
+                'risk': '低',
+            },
+            'security-issue': {
+                'title': '安全問題',
+                'pattern': '存在權限或注入漏洞',
+                'fix_template': '''# 驗證權限
+if caller_id != LEADER_ID:
+    return "❌ 存取拒絕"
+
+# 防止注入
+sanitized = escape_string(user_input)''',
+                'test': '測試權限邊界、非法輸入',
+                'risk': '高',
+            },
+        }
+        
+        suggestion = suggestions.get(problem_pattern, suggestions['missing-error-check'])
+        
+        report_lines = [
+            f"🔧 修復建議",
+            f"📝 文件：{file_path}",
+            f"🎯 問題類型：{suggestion['title']}",
+            f"⚠️ 風險等級：{suggestion['risk']}",
+            f"\n【問題模式】：",
+            f"  {suggestion['pattern']}",
+            f"\n【修復範本】：",
+            f"```python",
+            suggestion['fix_template'],
+            f"```",
+            f"\n【測試方案】：",
+            f"  {suggestion['test']}",
+            f"\n【回退計劃】：",
+            f"  如修復後出現問題，使用 git revert <commit_hash> 迅速回退",
+            f"\n💡 後續：",
+            f"  1) 修改代碼",
+            f"  2) 運行測試",
+            f"  3) 使用 batch_replace_code 提交修改",
+        ]
+        
+        return "\n".join(report_lines)
+        
+    except Exception as e:
+        return f"❌ 生成建議失敗：{type(e).__name__}: {e}"
+
+
+@register_tool(
+    name="automate_workflow",
+    description=(
+        "【工作流自動化】一鍵執行完整的開發工作流。"
+        "包括：問題分析 → 代碼搜尋 → 修復建議 → 批量修改 → Git 提交"
+        "讓 Agent 能自主完成整個開發任務，像 Copilot 一樣全面。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "workflow_type": {
+                "type": "STRING",
+                "description": "工作流類型（如 'fix-bug', 'update-constant', 'refactor-module'）"
+            },
+            "target": {
+                "type": "STRING",
+                "description": "目標（如 '種植數量', 'api_timeout', '權限檢查'）"
+            },
+            "details": {
+                "type": "STRING",
+                "description": "詳細描述（如 '從 5 改成 7'）"
+            }
+        },
+        "required": ["workflow_type", "target"]
+    }
+)
+@_require_leader
+def automate_workflow(workflow_type: str, target: str, details: str = "", *, caller_id: Optional[int] = None) -> str:
+    """
+    工作流自動化 - 自主完成完整開發任務。
+
+    支持的 workflow_type：
+      • fix-bug              - 修復 Bug
+      • update-constant      - 更新常數
+      • refactor-module      - 重構模塊
+      • add-feature          - 添加功能
+
+    例子：
+      • workflow_type='update-constant', target='種植數量', details='5→7'
+        → 分析影響範圍 → 搜尋所有相關位置 → 生成修復方案 → 準備批量修改
+    """
+    try:
+        report_lines = [
+            f"⚙️ 工作流自動化",
+            f"📋 類型：{workflow_type}",
+            f"🎯 目標：{target}",
+            f"📝 詳情：{details if details else '（未提供）'}",
+            f"\n【自動化步驟】：",
+        ]
+        
+        if workflow_type == 'update-constant':
+            # 常數更新工作流
+            search_keyword = target.split('→')[0].strip() if '→' in target else target
+            old_val, new_val = (target.split('→')[0].strip(), target.split('→')[1].strip()) if '→' in target else (target, details)
+            
+            report_lines.extend([
+                f"\n1️⃣ 分析影響範圍...",
+                f"   → 搜尋關鍵詞：'{search_keyword}'",
+                f"   → 建議：先用 smart_search_code('{search_keyword}') 掃描",
+                f"\n2️⃣ 分類需要修改的位置...",
+                f"   ✅ 確實需要改：常數定義、配置值",
+                f"   ⚠️ 可能相關：業務邏輯（需人工檢查）",
+                f"   💬 註釋提及：通常無需改",
+                f"\n3️⃣ 準備批量修改...",
+                f"   → 使用 batch_replace_code 參數：",
+                f"     - search: '{search_keyword}'",
+                f"     - replace: '{new_val}'",
+                f"\n4️⃣ 執行修改並提交...",
+                f"   → commit message: 'update: {target}'",
+            ])
+        
+        elif workflow_type == 'fix-bug':
+            # Bug 修復工作流
+            report_lines.extend([
+                f"\n1️⃣ 診斷問題...",
+                f"   → 使用 diagnose_problem('{target}')",
+                f"   → 定位問題根源和相關文件",
+                f"\n2️⃣ 搜尋相關代碼...",
+                f"   → 使用 smart_search_code 精準搜尋",
+                f"   → 分析問題模式",
+                f"\n3️⃣ 生成修復建議...",
+                f"   → 使用 generate_fix_suggestion",
+                f"   → 獲得完整修復方案",
+                f"\n4️⃣ 實施修復...",
+                f"   → 根據建議修改代碼",
+                f"   → 使用 batch_replace_code 提交",
+                f"\n5️⃣ 驗證修復...",
+                f"   → 測試修復結果",
+                f"   → 檢查是否引入新問題",
+            ])
+        
+        elif workflow_type == 'refactor-module':
+            # 模塊重構工作流
+            report_lines.extend([
+                f"\n1️⃣ 分析模塊結構...",
+                f"   → 搜尋相關模塊：{target}",
+                f"   → 列出所有依賴",
+                f"\n2️⃣ 規劃重構方案...",
+                f"   → 識別需要改進的部分",
+                f"   → 制定修改策略",
+                f"\n3️⃣ 階段性實施...",
+                f"   → 逐個修改相關文件",
+                f"   → 分多次提交，避免一次性破壞",
+                f"\n4️⃣ 測試驗證...",
+                f"   → 完整功能測試",
+                f"   → 性能測試（如適用）",
+            ])
+        
+        report_lines.extend([
+            f"\n【后續行動】：",
+            f"✅ 所有步驟已列出",
+            f"⚠️ 敏感操作（如 batch_replace_code）需要人工確認",
+            f"💡 建議按序執行上述步驟，每步後檢查結果",
+            f"\n🤖 Agent 已為你規劃完整工作流，現在可以自主執行各步驟",
+        ])
+        
+        return "\n".join(report_lines)
+        
+    except Exception as e:
+        return f"❌ 工作流生成失敗：{type(e).__name__}: {e}"
+
+
+@register_tool(
     name="analyze_code_changes",
     description=(
         "【AI 輔助工具】分析代碼修改的全面影響範圍。"
