@@ -4,7 +4,7 @@ import aiohttp
 import asyncio
 import os
 from typing import Optional, List, Dict
-from utils.persona import build_persona_prompt, analyze_tone
+from utils.persona import build_persona_prompt, analyze_tone, get_emotion_emoji
 from utils.memory import add_to_history, get_history
 from dotenv import load_dotenv
 import logging
@@ -443,7 +443,20 @@ class AIResponse(commands.Cog):
                 return
 
             tone = analyze_tone(message.content)
-            persona_prompt = build_persona_prompt(bot_name="KK園區中控室", tone=tone)
+            
+            # 🎯 改進：檢查是否為緊急或玩笑語氣
+            is_urgent = any(word in message.content for word in ["急", "快", "緊急", "馬上", "幫我"])
+            is_joking = tone == "playful"
+            
+            # 🎯 改進：使用動態 Persona 完全版本，傳入額外信息
+            persona_prompt = build_persona_prompt(
+                bot_name="KK園區中控室", 
+                tone=tone,
+                user_impression=None,  # 暫時不使用用戶印象，避免額外查詢
+                is_urgent=is_urgent,
+                is_joking=is_joking
+            )
+            
             user_id = message.author.id
             user_input = message.clean_content.replace(f"<@{self.bot.user.id}>", "").strip()
             
@@ -488,7 +501,18 @@ class AIResponse(commands.Cog):
             except Exception as e:
                 logger.warning(f"記憶存儲失敗: {e}")
             
-            await message.reply(reply)
+            # 🎯 改進：動態添加情感 Emoji 到回覆（輕量級，無額外 token 調用）
+            try:
+                emotion_emoji = get_emotion_emoji(tone)
+                # 只在回覆不是太長時添加 emoji（避免破壞格式）
+                if len(reply) < 500:
+                    reply_with_emoji = f"{reply} {emotion_emoji}"
+                else:
+                    reply_with_emoji = reply
+            except Exception:
+                reply_with_emoji = reply  # 如果失敗，就用原回覆
+            
+            await message.reply(reply_with_emoji)
 
         except Exception as e:
             logger.error(f"訊息處理錯誤: {e}")
