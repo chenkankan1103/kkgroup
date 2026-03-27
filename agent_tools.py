@@ -91,6 +91,16 @@ def _get_project_root() -> str:
     return _PROJECT_ROOT_CACHE
 
 
+def _resolve_user_id(user_id: str, caller_id: Optional[int], context: str) -> tuple[Optional[str], Optional[str]]:
+    """智能判斷用戶 ID，返回 (resolved_id, error_msg)"""
+    if not user_id or not user_id.isdigit():
+        if caller_id:
+            return (str(caller_id), None)
+        else:
+            return (None, f"❌ 無法確定要查詢哪個用戶的{context}。請提供用戶 ID 或 @tag 我來查詢你的{context}。")
+    return (user_id, None)
+
+
 # ==================== 工具登記系統 ====================
 
 _TOOL_REGISTRY: Dict[str, Dict] = {}
@@ -138,59 +148,33 @@ def register_tool(name: str, description: str, parameters: Dict):
     }
 )
 def get_kkcoin_balance(user_id: str = "", *, caller_id: Optional[int] = None) -> str:
-    """
-    查詢指定用戶的 KK幣與數位美金餘額。
+    """查詢指定用戶的 KK幣與數位美金餘額。⭐智能判斷：為空時自動使用 caller_id。
     
-    ⭐ 智能 ID 判斷：
-      如果 user_id 為空或無效，自動使用 caller_id（當前請求者）
-      這樣用戶問「我有多少 KK幣」時，會自動查詢自己的餘額
-
-    Args:
-        user_id (str):   要查詢的 Discord 用戶 ID（可選，為空時使用 caller_id）
-        caller_id (int): 呼叫此工具的 Discord 用戶 ID（由系統注入）
-
-    Returns:
-        str: 包含 KK幣和數位美金餘額的文字描述（超額時直接顯示）
+    Args: user_id (str), caller_id (int)
+    Returns: str - 餘額信息
     """
     try:
-        from db_adapter import get_user_field, get_user
+        from db_adapter import get_user
         
-        # ⭐ 智能判斷：如果 user_id 為空或不是數字，使用 caller_id
-        if not user_id or not user_id.isdigit():
-            if caller_id:
-                user_id = str(caller_id)
-            else:
-                return "❌ 無法確定要查詢哪個用戶的 KK幣。請提供用戶 ID 或 @tag 我來查詢你的餘額。"
+        user_id, err = _resolve_user_id(user_id, caller_id, "KK幣")
+        if err:
+            return err
         
-        # 先取得完整用戶數據
         user_data = get_user(user_id)
         if not user_data:
-            # ⚠️ 用戶不存在，直接返回預設值
-            return f"⚠️ 用戶 {user_id} 未存在於系統中，返回預設值：KK幣：0 KKC，數位美金：$0.00"
+            return f"⚠️ 用戶 {user_id} 未存在，預設值：KK幣：0 KKC，數位美金：$0.00"
         
-        # 從用戶數據中提取 kkcoin 和 digital_usd
         kkcoin = float(user_data.get('kkcoin', 0) or 0)
         digital_usd = float(user_data.get('digital_usd', 0) or 0)
-        
-        # ⭐ 不使用預設值，直接顯示查詢結果（即使是超限的負數）
         result = f"用戶 {user_id} — KK幣：{kkcoin:.1f} KKC，數位美金：${digital_usd:.2f}"
         
-        # 如果超限，添加警告
         if kkcoin > 99999:
             result += " 🚨 [超額警告]"
         elif kkcoin < 0:
             result += " 🔴 [透支]"
         
         return result
-        
-    except KeyError as e:
-        # 欄位不存在
-        return f"❌ 查詢失敗：欄位出錯 {e}（可能是數據格式問題）"
-    except ValueError as e:
-        # 類型轉換失敗
-        return f"❌ 查詢失敗：數值轉換錯誤 {e}"
     except Exception as e:
-        # 其他異常直接顯示
         return f"❌ 查詢 KK幣餘額失敗：{type(e).__name__}: {e}"
 
 
@@ -212,49 +196,28 @@ def get_kkcoin_balance(user_id: str = "", *, caller_id: Optional[int] = None) ->
     }
 )
 def get_user_stats(user_id: str = "", *, caller_id: Optional[int] = None) -> str:
-    """
-    查詢指定用戶的完整遊戲數據。
-
-    ⭐ 智能 ID 判斷：
-      如果 user_id 為空或無效，自動使用 caller_id（當前請求者）
-      這樣用戶問「我的狀態」時，會自動查詢自己的數據
-
-    Args:
-        user_id (str):   Discord 用戶 ID（可選，為空時使用 caller_id）
-        caller_id (int): 呼叫者 ID（系統注入）
-
-    Returns:
-        str: 用戶完整屬性的文字摘要
+    """查詢指定用戶的完整遊戲數據。⭐智能判斷：為空時自動使用 caller_id。
+    
+    Args: user_id (str), caller_id (int)
+    Returns: str - 用戶屬性摘要
     """
     try:
         from db_adapter import get_user
         
-        # ⭐ 智能判斷：如果 user_id 為空或不是數字，使用 caller_id
-        if not user_id or not user_id.isdigit():
-            if caller_id:
-                user_id = str(caller_id)
-            else:
-                return "❌ 無法確定要查詢哪個用戶的狀態。請提供用戶 ID 或 @tag 我來查詢你的狀態。"
+        user_id, err = _resolve_user_id(user_id, caller_id, "狀態")
+        if err:
+            return err
         
         user = get_user(user_id)
         if not user:
-            return f"⚠️ 用戶 {user_id} 未存在於系統中，返回預設值。"
-        level   = user.get('level', 1)
-        xp      = user.get('xp', 0)
-        hp      = user.get('hp', 100)
-        stamina = user.get('stamina', 100)
-        kkcoin  = float(user.get('kkcoin', 0) or 0)
-        digital_usd = float(user.get('digital_usd', 0) or 0)
+            return f"⚠️ 用戶 {user_id} 未存在於系統中。"
+        
         return (
             f"用戶 {user_id} 的狀態：\n"
-            f"  等級：{level} | 經驗值：{xp}\n"
-            f"  HP：{hp} | 體力：{stamina}\n"
-            f"  KK幣：{kkcoin:.1f} KKC | 數位美金：${digital_usd:.2f}"
+            f"  等級：{user.get('level', 1)} | 經驗值：{user.get('xp', 0)}\n"
+            f"  HP：{user.get('hp', 100)} | 體力：{user.get('stamina', 100)}\n"
+            f"  KK幣：{float(user.get('kkcoin', 0) or 0):.1f} KKC | 數位美金：${float(user.get('digital_usd', 0) or 0):.2f}"
         )
-    except KeyError as e:
-        return f"❌ 查詢失敗：欄位出錯 {e}"
-    except ValueError as e:
-        return f"❌ 查詢失敗：數值轉換錯誤 {e}"
     except Exception as e:
         return f"❌ 查詢用戶資料失敗：{type(e).__name__}: {e}"
 
@@ -982,120 +945,6 @@ def read_project_file(file_path: str, *, caller_id: Optional[int] = None) -> str
         
     except Exception as e:
         return f"❌ 讀取檔案失敗：{type(e).__name__}: {e}"
-    
-    try:
-        # 獲取專案根目錄
-        project_root = os.path.dirname(os.path.abspath(__file__))
-        
-        # 安全檢查：防止路徑遍歷攻擊
-        full_path = pathlib.Path(project_root) / file_path
-        full_path = full_path.resolve()  # 解析符號連結
-        
-        # 確保路徑在專案目錄內
-        if not str(full_path).startswith(str(pathlib.Path(project_root).resolve())):
-            return f"❌ 安全檢查失敗：路徑超出專案目錄。只允許讀取專案內的文件。"
-        
-        # 檢查副檔名
-        if full_path.suffix and not full_path.suffix == ".py":
-            return f"❌ 僅支持 .py 檔案，不支持 {full_path.suffix}"
-        
-        # 若檔案存在，直接讀取
-        if full_path.exists():
-            with open(full_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            line_count = len(content.split('\n'))
-            char_count = len(content)
-            relative_path = str(full_path.relative_to(project_root)).replace(os.sep, '/')
-            
-            return (
-                f"✅ 成功讀取 {relative_path}\n"
-                f"📊 {line_count} 行，{char_count} 字符\n\n"
-                f"───────────────────────\n{content}\n───────────────────────"
-            )
-        
-        # 檔案不存在，嘗試模糊搜尋
-        # 只搜尋單純的檔名（無路徑分隔符）
-        if os.sep not in file_path and "/" not in file_path:
-            project_path = pathlib.Path(project_root)
-            
-            # 策略 1：以檔名形式搜尋
-            matches = list(project_path.rglob(f"{file_path}" if file_path.endswith(".py") else f"{file_path}.py"))
-            
-            if matches:
-                if len(matches) == 1:
-                    # 只找到一個，自動使用
-                    full_path = matches[0]
-                    with open(full_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    
-                    line_count = len(content.split('\n'))
-                    char_count = len(content)
-                    relative_path = str(full_path.relative_to(project_root)).replace(os.sep, '/')
-                    
-                    return (
-                        f"✅ 成功讀取 {relative_path}（按檔名自動搜尋）\n"
-                        f"📊 {line_count} 行，{char_count} 字符\n\n"
-                        f"───────────────────────\n{content}\n───────────────────────"
-                    )
-                else:
-                    # 找到多個，列出所有選項
-                    relative_paths = [str(m.relative_to(project_root)) for m in matches]
-                    options = "\n".join([f"  • {p.replace(os.sep, '/')}" for p in relative_paths])
-                    return f"🔍 找到 {len(matches)} 個 '{file_path}'：\n{options}\n\n💡 請指定完整路徑以明確選擇。"
-            
-            # 策略 2：以代碼片段形式搜尋
-            py_files = list(project_path.rglob("*.py"))
-            
-            # 過濾掉備份、虛擬環境、快取目錄
-            exclude_patterns = ('backup', '__pycache__', '.venv', 'venv', '.local', 'site-packages', '.git')
-            py_files = [
-                f for f in py_files 
-                if not any(pattern in str(f) for pattern in exclude_patterns)
-            ]
-            
-            content_matches = []
-            for py_file in py_files:
-                try:
-                    with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
-                        file_content = f.read()
-                    
-                    # 大小寫不敏感搜尋
-                    if file_path.lower() in file_content.lower():
-                        content_matches.append(py_file)
-                except:
-                    pass
-            
-            if content_matches:
-                if len(content_matches) == 1:
-                    # 只找到一個，自動使用
-                    full_path = content_matches[0]
-                    with open(full_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    
-                    line_count = len(content.split('\n'))
-                    char_count = len(content)
-                    relative_path = str(full_path.relative_to(project_root)).replace(os.sep, '/')
-                    
-                    return (
-                        f"✅ 成功讀取 {relative_path}（按代碼片段自動搜尋）\n"
-                        f"📊 {line_count} 行，{char_count} 字符\n"
-                        f"🔎 包含 '{file_path}'：\n\n"
-                        f"───────────────────────\n{content}\n───────────────────────"
-                    )
-                else:
-                    # 找到多個，列出選項
-                    relative_paths = [str(m.relative_to(project_root)) for m in content_matches]
-                    options = "\n".join([f"  • {p.replace(os.sep, '/')}" for p in relative_paths])
-                    return f"🔍 找到 {len(content_matches)} 個包含 '{file_path}' 的檔案：\n{options}\n\n💡 請指定完整路徑以明確選擇。"
-            
-            # 都沒找到
-            return f"❌ 找不到任何符合 '{file_path}' 的檔案或代碼片段。"
-        else:
-            return f"❌ 檔案不存在：{file_path}"
-        
-    except Exception as e:
-        return f"❌ 讀取檔案失敗：{type(e).__name__}: {e}"
 
 
 @register_tool(
@@ -1357,77 +1206,6 @@ def get_git_status(*, caller_id: Optional[int] = None) -> str:
     """
     try:
         project_root = _get_project_root()
-        
-        # 獲取當前分支
-        branch_result = subprocess.run(
-            ['git', '-C', project_root, 'rev-parse', '--abbrev-ref', 'HEAD'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "未知"
-        
-        # 獲取 Git 狀態
-        status_result = subprocess.run(
-            ['git', '-C', project_root, 'status', '--short'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        changes = status_result.stdout.strip() if status_result.returncode == 0 else ""
-        
-        # 獲取最後一次提交
-        log_result = subprocess.run(
-            ['git', '-C', project_root, 'log', '-1', '--oneline'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        last_commit = log_result.stdout.strip() if log_result.returncode == 0 else "未知"
-        
-        # 檢查是否領先或落後遠端
-        fetch_result = subprocess.run(
-            ['git', '-C', project_root, 'fetch', 'origin'],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        
-        status_vs_remote = subprocess.run(
-            ['git', '-C', project_root, 'status', '-uno'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        remote_status = status_vs_remote.stdout.strip() if status_vs_remote.returncode == 0 else "未知"
-        
-        # 組織結果
-        result_lines = [
-            f"🌿 當前分支：{current_branch}",
-            f"📝 最後提交：{last_commit}",
-        ]
-        
-        if changes:
-            result_lines.append(f"\n📝 未提交的改動：")
-            result_lines.extend(changes.split('\n'))
-        else:
-            result_lines.append("✅ 沒有未提交的改動")
-        
-        result_lines.append(f"\n🔗 遠端狀態摘要：")
-        # 只取摘要行
-        for line in remote_status.split('\n'):
-            if 'ahead' in line or 'behind' in line or 'up to date' in line:
-                result_lines.append(line)
-        
-        return "\n".join(result_lines)
-        
-    except subprocess.TimeoutExpired:
-        return "❌ Git 操作超時"
-    except Exception as e:
-        return f"❌ 獲取 Git 狀態失敗：{type(e).__name__}: {e}"
-    
-    try:
-        project_root = os.path.dirname(os.path.abspath(__file__))
         
         # 獲取當前分支
         branch_result = subprocess.run(
