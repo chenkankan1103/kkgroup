@@ -36,6 +36,7 @@ LEADER_ID: int = int(os.getenv("LEADER_DISCORD_ID", "0"))
 _OPERATION_LOG: List[Dict] = []  # 操作日誌（最多保留 100 條）
 _PROJECT_ROOT_CACHE: Optional[str] = None  # 專案根目錄快取
 _SEARCH_CACHE: Dict[str, List[str]] = {}  # 搜尋結果快取（鍵：搜尋關鍵字）
+_CODE_INDEX: Dict[str, Dict] = {}  # 本地代碼索引（加速搜尋）
 
 
 # ==================== 輔助函數 ====================
@@ -99,6 +100,66 @@ def _resolve_user_id(user_id: str, caller_id: Optional[int], context: str) -> tu
         else:
             return (None, f"❌ 無法確定要查詢哪個用戶的{context}。請提供用戶 ID 或 @tag 我來查詢你的{context}。")
     return (user_id, None)
+
+
+def _build_local_code_index() -> Dict[str, Any]:
+    """
+    🚀 建立本地代碼索引 - 快速搜尋專用
+    
+    在 GCP VM 上首次運行時建立，後續使用快取。
+    包含：文件位置、關鍵詞、函數/類名稱、導入關係等
+    """
+    global _CODE_INDEX
+    
+    if _CODE_INDEX:  # 已有快取
+        return _CODE_INDEX
+    
+    import pathlib
+    import re
+    
+    try:
+        project_root = _get_project_root()
+        project_path = pathlib.Path(project_root)
+        exclude_patterns = ('backup', '__pycache__', '.venv', 'venv', '.local', 'site-packages', '.git')
+        
+        # 掃描所有 Python 文件
+        py_files = [
+            f for f in project_path.rglob("*.py")
+            if not any(pattern in str(f) for pattern in exclude_patterns)
+        ]
+        
+        for py_file in py_files:
+            try:
+                with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                
+                relative_path = str(py_file.relative_to(project_root)).replace(os.sep, '/')
+                
+                # 提取關鍵信息
+                functions = re.findall(r'def\s+(\w+)\s*\(', content)
+                classes = re.findall(r'class\s+(\w+)[\(:]', content)
+                imports = re.findall(r'(?:from|import)\s+[\w\.]+', content)
+                
+                # 提取中文關鍵詞
+                cn_keywords = re.findall(r'[\u4e00-\u9fff]+', content)
+                
+                _CODE_INDEX[relative_path] = {
+                    'functions': list(set(functions)),
+                    'classes': list(set(classes)),
+                    'imports': list(set(imports)),
+                    'keywords': list(set(cn_keywords))[:20],  # 限制數量
+                    'line_count': content.count('\n'),
+                    'file_path': py_file
+                }
+            except Exception as e:
+                pass  # 跳過無法讀取的文件
+        
+        print(f"✅ 代碼索引建立完成：{len(_CODE_INDEX)} 個文件已索引")
+        return _CODE_INDEX
+        
+    except Exception as e:
+        print(f"❌ 索引建立失敗：{e}")
+        return {}
 
 
 # ==================== 工具登記系統 ====================
