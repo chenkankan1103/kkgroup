@@ -356,6 +356,7 @@ def _sync_build_leaderboard_image(
         title_x = MARGIN
     
     draw_text((title_x, leaderboard_start_y + 8), "KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
+    draw_text((title_x, leaderboard_start_y + 32), "排名依據：總資產 = KK幣 + 數位美金 × 35", font=FONT_DESC, fill=(150, 180, 200))
 
     # 顯示欄位標題：KK幣 / 數位美金
     header_y = leaderboard_start_y + 45
