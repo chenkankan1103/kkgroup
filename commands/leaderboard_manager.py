@@ -132,7 +132,7 @@ async def make_leaderboard_image(members_data):
         else:
             _, kkcoin = member_data
             digital_usd = 0
-        total_assets = float(kkcoin or 0) + float(digital_usd or 0) / 35
+        total_assets = float(kkcoin or 0) + float(digital_usd or 0) * 35
         member_totals.append(total_assets)
         if total_assets > max_assets:
             max_assets = total_assets
@@ -493,7 +493,7 @@ def _sync_build_leaderboard_image(
     descriptions = [
         "KK幣是「未洗淨的髒錢」- 交易/賣出資產時給予",
         "可透過「金流斷點」轉換為 D-USD 數位美金",
-        "排名計算：總資產 = KK幣 + (D-USD ÷ 35)"
+        "排名計算：總資產 = KK幣 + (D-USD × 35)"
     ]
     draw_info_icon(draw, MARGIN + 5, desc_y + 5, size=12, color=(150, 160, 200))
     draw_text((MARGIN + 20, desc_y), "金流說明：", font=FONT_SMALL, fill=(150, 160, 200))
@@ -526,7 +526,7 @@ def get_current_leaderboard_data(bot, rank_channel_id):
     
     users = [u for u in all_users if (u.get('kkcoin') or 0) > 0 or (u.get('digital_usd') or 0) > 0]
     users.sort(
-        key=lambda x: float(x.get('kkcoin') or 0) + float(x.get('digital_usd') or 0) / 35,
+        key=lambda x: float(x.get('kkcoin') or 0) + float(x.get('digital_usd') or 0) * 35,
         reverse=True
     )
     users = users[:15]
