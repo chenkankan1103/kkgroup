@@ -414,13 +414,16 @@ def _sync_build_leaderboard_image(
         if i >= 3:
             offset = 10 if i < 9 else 5
             draw_text((rank_x + offset, y + 18), f"{i+1}", font=FONT_RANK, fill=(255, 20, 147), shadow=True)
+        else:
+            # 前三名也顯示排名數字
+            draw_text((rank_x + 5, y + 18), f"{i+1}", font=FONT_RANK, fill=(255, 20, 147), shadow=True)
 
         # 前三名的頭貼要更靠左且放大一些
         avatar_size = AVATAR_SIZE
         avatar_x = rank_x + 55
         if i < 3:
             avatar_size = AVATAR_SIZE + 15
-            avatar_x = rank_x + 20
+            avatar_x = rank_x + 50
 
         display_avatar = None
         if avatar_img:
@@ -463,8 +466,8 @@ def _sync_build_leaderboard_image(
             percent = 0
         
         progress_bar_y = y + 35
-        progress_bar_x = rank_x + 100
-        progress_bar_width = WIDTH - rank_x - 120 - 300
+        progress_bar_x = rank_x + 150
+        progress_bar_width = WIDTH - rank_x - 180 - 300
         progress_bar_height = 16
         
         try:
