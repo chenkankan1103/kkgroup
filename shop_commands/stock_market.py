@@ -33,7 +33,8 @@ from db_adapter import (
     get_user_stocks, set_user_stocks, add_stock_position, close_stock_position,
     get_user_total_stock_value, get_user_field, set_user_field, get_all_users,
     get_central_reserve, add_to_central_reserve, 
-    get_dynamic_fee_rate, get_reserve_announcement
+    get_dynamic_fee_rate, get_reserve_announcement,
+    get_dynamic_exchange_rate
 )
 from utils.stock_api import (
     fetch_price, fetch_chart, get_popular_stocks, fetch_historical_data
@@ -954,8 +955,8 @@ class MoneyLaunderingView(discord.ui.View):
             # 將手續費流入金庫
             add_to_central_reserve(fee_amount)
             
-            # 計算匯率 (1:35 - 1 USD = 35 KKB)
-            exchange_rate = 35
+            # 計算浮動匯率 (基礎 1:35 - 通膨時會提升)
+            exchange_rate = get_dynamic_exchange_rate()
             digital_usd = float(net_output) / exchange_rate
             
             # 使用 set_user_field 來更新 digital_usd

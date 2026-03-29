@@ -649,3 +649,88 @@ def get_reserve_announcement() -> str:
         return "[正常] 金庫運轉正常，斷點手續費維持標準 (5%)。"
     else:
         return "[警報] 金庫風險警報！斷點手續費提升至 8%，請謹慎操作。"
+
+
+# ============================================================
+# 浮動匯率系統 - 基於通膨的動態匯率
+# ============================================================
+
+def get_total_kkcoin_supply() -> float:
+    """
+    計算全網 KK 幣總供應量
+    
+    Returns:
+        全網 KK 幣總數
+    """
+    all_users = get_all_users()
+    total = 0.0
+    for user in all_users:
+        kkcoin = float(user.get('kkcoin', 0) or 0)
+        total += kkcoin
+    return total
+
+
+def calculate_inflation_rate() -> float:
+    """
+    計算通膨指數 (百分比)
+    
+    邏輯：
+    - 基準供應量：1,000,000 KK 幣
+    - 供應量越高，通膨指數越高
+    - 通膨指數 = (當前供應量 - 基準) / 基準 * 100
+    
+    Returns:
+        通膨百分比 (如 50.0 表示 50% 通膨)
+    """
+    BASE_SUPPLY = 1_000_000
+    current_supply = get_total_kkcoin_supply()
+    
+    if current_supply <= BASE_SUPPLY:
+        return 0.0
+    
+    inflation_percent = ((current_supply - BASE_SUPPLY) / BASE_SUPPLY) * 100
+    return inflation_percent
+
+
+def get_dynamic_exchange_rate() -> float:
+    """
+    計算浮動匯率（KK 幣對 D-USD）
+    
+    匯率計算公式：
+    匯率 = 基礎匯率 × (1 + 通膨指數/100)
+    
+    範例：
+    - 無通膨 (基準): 35 KK = 1 USD
+    - 50% 通膨: 52.5 KK = 1 USD 
+    - 100% 通膨: 70 KK = 1 USD
+    
+    Returns:
+        當前匯率（1 USD 需要多少 KK 幣）
+    """
+    BASE_RATE = 35.0
+    inflation_percent = calculate_inflation_rate()
+    dynamic_rate = BASE_RATE * (1 + inflation_percent / 100)
+    return dynamic_rate
+
+
+def get_inflation_info() -> Dict[str, float]:
+    """
+    獲取通膨和匯率相關的完整信息
+    
+    Returns:
+        字典包含：
+        - total_supply: 全網 KK 幣供應量
+        - inflation_percent: 通膨百分比
+        - base_rate: 基礎匯率 (35)
+        - current_rate: 當前匯率
+    """
+    total_supply = get_total_kkcoin_supply()
+    inflation = calculate_inflation_rate()
+    current_rate = get_dynamic_exchange_rate()
+    
+    return {
+        'total_supply': total_supply,
+        'inflation_percent': inflation,
+        'base_rate': 35.0,
+        'current_rate': current_rate
+    }

@@ -26,7 +26,10 @@ from db_adapter import (
     get_central_reserve, 
     get_reserve_pressure, 
     get_reserve_announcement,
-    get_all_users
+    get_all_users,
+    get_dynamic_exchange_rate,
+    calculate_inflation_rate,
+    get_inflation_info
 )
 
 # 載入 .env 檔案
@@ -126,13 +129,15 @@ async def make_leaderboard_image(members_data):
     member_totals = []
     max_assets = 0
     
+    # 使用動態匯率
+    dynamic_rate = get_dynamic_exchange_rate()
     for member_data in members_data:
         if len(member_data) == 3:
             _, kkcoin, digital_usd = member_data
         else:
             _, kkcoin = member_data
             digital_usd = 0
-        total_assets = float(kkcoin or 0) + float(digital_usd or 0) * 35
+        total_assets = float(kkcoin or 0) + float(digital_usd or 0) * dynamic_rate
         member_totals.append(total_assets)
         if total_assets > max_assets:
             max_assets = total_assets
@@ -179,6 +184,7 @@ async def make_leaderboard_image(members_data):
     reserve = get_central_reserve()
     reserve_pressure = get_reserve_pressure()
     reserve_announcement = get_reserve_announcement()
+    inflation_info = get_inflation_info()
     
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
@@ -199,6 +205,7 @@ async def make_leaderboard_image(members_data):
         reserve_announcement,
         member_totals,
         max_assets,
+        inflation_info,
     )
 
 
@@ -218,6 +225,7 @@ def _sync_build_leaderboard_image(
     reserve_announcement,
     member_totals,
     max_assets,
+    inflation_info,
 ):
     """純同步版，執行在工作執行緒中，不會阻塞事件循環"""
     
@@ -356,7 +364,18 @@ def _sync_build_leaderboard_image(
         title_x = MARGIN
     
     draw_text((title_x, leaderboard_start_y + 8), "KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
-    draw_text((title_x, leaderboard_start_y + 32), "排名依據：總資產 = KK幣 + 數位美金 × 35", font=FONT_DESC, fill=(150, 180, 200))
+    
+    # 顯示動態通膨敘述
+    current_rate = inflation_info['current_rate']
+    inflation_percent = inflation_info['inflation_percent']
+    if inflation_percent <= 0:
+        inflation_label = "🏦 基準匯率"
+        rate_text = f"總資產 = KK幣 + 數位美金 × 35"
+    else:
+        inflation_label = "📈 通膨警報"
+        rate_text = f"總資產 = KK幣 + 數位美金 × {current_rate:.1f} (通膨: +{inflation_percent:.1f}%)"
+    
+    draw_text((title_x, leaderboard_start_y + 32), rate_text, font=FONT_DESC, fill=(150, 180, 200))
 
     # 顯示欄位標題：KK幣 / 數位美金
     header_y = leaderboard_start_y + 45
@@ -526,8 +545,10 @@ def get_current_leaderboard_data(bot, rank_channel_id):
     all_users = get_all_users()
     
     users = [u for u in all_users if (u.get('kkcoin') or 0) > 0 or (u.get('digital_usd') or 0) > 0]
+    # 使用動態匯率計算排名
+    dynamic_rate = get_dynamic_exchange_rate()
     users.sort(
-        key=lambda x: float(x.get('kkcoin') or 0) + float(x.get('digital_usd') or 0) * 35,
+        key=lambda x: float(x.get('kkcoin') or 0) + float(x.get('digital_usd') or 0) * dynamic_rate,
         reverse=True
     )
     users = users[:15]
