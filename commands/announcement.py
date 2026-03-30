@@ -30,26 +30,33 @@ class FeedbackModal(Modal):
     
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """處理表單提交"""
+        # 🔑 立即 defer 交互，避免超時
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        
         try:
-            # 獲取管理員頻道
+            # 獲取管理員頻道 ID
             staff_channel_id_str = os.getenv('STAFF_ID_CHANNEL_ID')
             if not staff_channel_id_str or not staff_channel_id_str.isdigit():
-                staff_channel_id = 0
-            else:
-                staff_channel_id = int(staff_channel_id_str)
-            
-            if staff_channel_id == 0:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ 無法提交意見：管理員頻道未配置",
                     ephemeral=True
                 )
                 return
             
-            channel = await self.bot.fetch_channel(staff_channel_id)
+            staff_channel_id = int(staff_channel_id_str)
             
-            if not channel:
-                await interaction.response.send_message(
-                    "❌ 無法提交意見：管理員頻道未找到",
+            # 🔑 嘗試獲取頻道（fetch_channel 會拋出異常而非返回 None）
+            try:
+                channel = await self.bot.fetch_channel(staff_channel_id)
+            except discord.NotFound:
+                await interaction.followup.send(
+                    "❌ 無法提交意見：管理員頻道已被刪除",
+                    ephemeral=True
+                )
+                return
+            except discord.Forbidden:
+                await interaction.followup.send(
+                    "❌ 無法提交意見：機器人無法access管理員頻道",
                     ephemeral=True
                 )
                 return
@@ -86,7 +93,14 @@ class FeedbackModal(Modal):
             embed.set_footer(text=f"伺服器ID: {interaction.guild.id}")
             
             # 發送到管理員頻道
-            await channel.send(embed=embed)
+            try:
+                await channel.send(embed=embed)
+            except discord.Forbidden:
+                await interaction.followup.send(
+                    "❌ 無法提交意見：機器人無法在管理員頻道發送消息",
+                    ephemeral=True
+                )
+                return
             
             # 給玩家確認訊息
             confirm_embed = discord.Embed(
@@ -95,25 +109,26 @@ class FeedbackModal(Modal):
                 color=discord.Color.green()
             )
             
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=confirm_embed,
                 ephemeral=True
             )
             
             print(f"✅ [意見回饋] {user_display_name} (ID: {interaction.user.id}) 提交了意見")
             
-        except ValueError as e:
-            print(f"❌ [意見回饋] 配置錯誤: {e}")
-            await interaction.response.send_message(
-                "❌ 提交意見時發生配置錯誤",
-                ephemeral=True
-            )
-        except discord.DiscordException as e:
-            print(f"❌ [意見回饋] Discord 錯誤: {e}")
-            await interaction.response.send_message(
-                "❌ 提交意見時發生網路錯誤，請稍後重試",
-                ephemeral=True
-            )
+        except Exception as e:
+            # 🔑 捕捉所有未預期的異常
+            print(f"❌ [意見回饋] 未預期的錯誤: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            try:
+                await interaction.followup.send(
+                    "❌ 提交意見時發生異常，請稍後重試",
+                    ephemeral=True
+                )
+            except:
+                pass  # 交互可能已過期
 
 class AnnouncementButtonView(View):
     """公告按鈕選擇視圖"""
