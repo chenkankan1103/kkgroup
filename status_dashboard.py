@@ -56,8 +56,8 @@ def get_taiwan_time():
     return datetime.now(TAIWAN_TZ)
 
 def format_taiwan_time():
-    """格式化台灣時間為 HH:MM"""
-    return get_taiwan_time().strftime("%H:%M")
+    """格式化台灣時間為 MM-DD HH:MM (含日期)"""
+    return get_taiwan_time().strftime("%m-%d %H:%M")
 
 # 配置常數
 MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
