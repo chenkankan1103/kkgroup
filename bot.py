@@ -503,6 +503,14 @@ async def on_ready():
             
             if dashboard_ready:
                 print("[DASHBOARD] Log system initialized", flush=True)
+                # 立即執行一次日誌更新以確保 Discord 能看到日誌
+                print("[BOT] 執行初始日誌更新...", flush=True)
+                try:
+                    from status_dashboard import update_dashboard_logs
+                    await update_dashboard_logs(client, "bot")
+                    print("[BOT] 初始日誌更新完成", flush=True)
+                except Exception as update_error:
+                    print(f"[BOT] 初始日誌更新失敗: {update_error}", flush=True)
             else:
                 print("[WARNING] Dashboard 初始化返回 False", flush=True)
         except Exception as e:
