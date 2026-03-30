@@ -166,12 +166,17 @@ class PersistentWelcomeView(discord.ui.View):
             await interaction.followup.send("❌ 這不是你的按鈕！", ephemeral=True)
             return
 
+        if not interaction.guild:
+            print(f"❌ 【入園按鈕】交互不在伺服器中")
+            await interaction.followup.send("❌ 無法在此上下文中處理", ephemeral=True)
+            return
+        
         member = interaction.guild.get_member(target_user_id)
         if not member:
             print(f"❌ 【入園按鈕】找不到成員: {target_user_id}")
             await interaction.followup.send("❌ 無法找到用戶，請重試", ephemeral=True)
             return
-            
+        
         print(f"✅ 【入園按鈕】權限檢查通過，開始處理 {member.name} 的入園流程...")
         await self.cog.handle_final_verification(interaction, member)
 
@@ -711,6 +716,10 @@ class WelcomeFlow(commands.Cog):
         - 不編輯 ephemeral interaction 的 original response（轉而使用 followup）
         """
         try:
+            if not interaction.guild:
+                print(f"⚠️ 交互不在伺服器中，無法更新訊息")
+                return
+            
             user_data = self.get_user_data(user_id)
             if not user_data:
                 print(f"⚠️ 無法獲取用戶資料: {user_id}")
@@ -811,32 +820,33 @@ class WelcomeFlow(commands.Cog):
                 
             print(f"📢 準備發送歡迎訊息到頻道: {channel.name}")
             
+            embed = None
             try:
-                try:
-                    embed = await self.create_welcome_embed(user_data, member)
-                    # 獲取角色圖片 URL（非關鍵錯誤，可以失敗）
-                    character_image_url = await self.get_character_image_url(user_data)
-                    if character_image_url:
-                        embed.set_image(url=character_image_url)
-                        print(f"✅ 已設置角色圖片")
-                    else:
-                        print(f"⚠️ 無法獲取角色圖片（將不影響主功能）")
-                except Exception as inner_err:
-                    # 生成歡迎 embed 或獲取圖片失敗，仍需發送基本歡迎訊息
-                    print(f"⚠️ 生成歡迎 embed 失敗，改用簡化版本: {inner_err}")
-                    import traceback
-                    traceback.print_exc()
+                embed = await self.create_welcome_embed(user_data, member)
+                # 獲取角色圖片 URL（非關鍵錯誤，可以失敗）
+                character_image_url = await self.get_character_image_url(user_data)
+                if character_image_url:
+                    embed.set_image(url=character_image_url)
+                    print(f"✅ 已設置角色圖片")
+                else:
+                    print(f"⚠️ 無法獲取角色圖片（將不影響主功能）")
+            except Exception as inner_err:
+                # 生成歡迎 embed 或獲取圖片失敗，仍需發送基本歡迎訊息
+                print(f"⚠️ 生成歡迎 embed 失敗，改用簡化版本: {inner_err}")
+                import traceback
+                traceback.print_exc()
 
-                    embed = discord.Embed(
-                        title="🎉 歡迎光臨 KK 園區™",
-                        description=(
-                            f"🎉 歡迎 **{member.mention}** 來到 KK 園區！\n\n"
-                            "⚠️ 發生一些問題，但你仍然可以按下按鈕進入園區。"
-                        ),
-                        color=0x8B0000
-                    )
-                    embed.add_field(name="📌 提示", value="如果按鈕無法顯示，請稍後重新進入此頻道。", inline=False)
+                embed = discord.Embed(
+                    title="🎉 歡迎光臨 KK 園區™",
+                    description=(
+                        f"🎉 歡迎 **{member.mention}** 來到 KK 園區！\n\n"
+                        "⚠️ 發生一些問題，但你仍然可以按下按鈕進入園區。"
+                    ),
+                    color=0x8B0000
+                )
+                embed.add_field(name="📌 提示", value="如果按鈕無法顯示，請稍後重新進入此頻道。", inline=False)
 
+            try:
                 # 使用跨重啟的 persistent view（已註冊）
                 welcome_msg = await channel.send(embed=embed, view=self.persistent_view)
                 self.welcome_messages.setdefault(guild.id, {})[member.id] = welcome_msg.id
@@ -1006,33 +1016,36 @@ class WelcomeFlow(commands.Cog):
             try:
                 user_data = self.get_user_data(user_id)
                 if user_data and member:
-                    embed = await self.create_welcome_embed(user_data, member)
-                    # 嘗試獲取角色圖片
+                    embed = None
                     try:
+                        embed = await self.create_welcome_embed(user_data, member)
+                        # 嘗試獲取角色圖片
                         character_image_url = await self.get_character_image_url(user_data)
-                        if character_image_url:
+                        if character_image_url and embed:
                             embed.set_image(url=character_image_url)
-                    except:
-                        pass
+                    except Exception as embed_err:
+                        print(f"⚠️ 生成歡迎 embed 失敗: {embed_err}")
+                    
                     # 👤 發送恢復說明給用戶（私訊）
                     try:
-                        recovery_message = (
-                            f"✅ 5 分鐘清理完成！\n\n"
-                            f"**📊 當前狀態：**\n"
-                            f"• ❤️ 血量：{user_data.get('hp', 10)}/100\n"
-                            f"• ⚡ 體力：{user_data.get('stamina', 10)}/100\n"
-                            f"• 💤 傷病狀態：恢復中\n\n"
-                            f"**⏱️ 自動恢復進度：**\n"
-                            f"• 每小時恢復 +25 體力\n"
-                            f"• 預計 4 小時內自動出院\n"
-                            f"• 系統會自動通知你出院\n\n"
-                            f"**💊 快速恢復選項：**\n"
-                            f"• 如需立即恢復，可前往醫院購買恢復產品\n"
-                            f"• 紙娃娃狀態見下方 ↓\n"
-                        )
-                        await member.send(recovery_message, embed=embed)
-                    except:
-                        pass  # 如果無法私訊，也不影響主流程
+                        if embed:
+                            recovery_message = (
+                                f"✅ 5 分鐘清理完成！\n\n"
+                                f"**📊 當前狀態：**\n"
+                                f"• ❤️ 血量：{user_data.get('hp', 10)}/100\n"
+                                f"• ⚡ 體力：{user_data.get('stamina', 10)}/100\n"
+                                f"• 💤 傷病狀態：恢復中\n\n"
+                                f"**⏱️ 自動恢復進度：**\n"
+                                f"• 每小時恢復 +25 體力\n"
+                                f"• 預計 4 小時內自動出院\n"
+                                f"• 系統會自動通知你出院\n\n"
+                                f"**💊 快速恢復選項：**\n"
+                                f"• 如需立即恢復，可前往醫院購買恢復產品\n"
+                                f"• 紙娃娃狀態見下方 ↓\n"
+                            )
+                            await member.send(recovery_message, embed=embed)
+                    except Exception as msg_err:
+                        print(f"⚠️ 發送恢復訊息失敗: {msg_err}")
             except Exception as refresh_err:
                 print(f"⚠️ 刷新紙娃娃失敗（非關鍵）: {refresh_err}")
 
@@ -1066,12 +1079,15 @@ class WelcomeFlow(commands.Cog):
                 
                 completion_msg = await channel.send(embed=embed)
                 
-                # 5分鐘後刪除完成訊息
-                await asyncio.sleep(300)
-                try:
-                    await completion_msg.delete()
-                except (discord.NotFound, discord.Forbidden):
-                    pass
+                # 5分鐘後刪除完成訊息（使用後台任務避免阻塞）
+                async def delete_completion_msg():
+                    try:
+                        await asyncio.sleep(300)
+                        await completion_msg.delete()
+                    except (discord.NotFound, discord.Forbidden):
+                        pass
+                
+                self.bot.loop.create_task(delete_completion_msg())
 
             # 清理記錄
             if user_id in self.stunned_users:
