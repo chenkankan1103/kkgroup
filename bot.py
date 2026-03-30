@@ -483,14 +483,35 @@ async def on_ready():
         # 初始化監控儀表板及日誌系統（簡化版本 - 僅日誌）
         # ============================================================
         try:
+            # 寫入診斷日誌到文件
+            with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as df:
+                df.write(f"[{datetime.now()}] 開始初始化 dashboard\n")
+                df.flush()
+            
             print("[BOT] 開始初始化 dashboard...", flush=True)
             load_message_ids("bot")
+            
+            with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as df:
+                df.write(f"[{datetime.now()}] 調用 initialize_dashboard\n")
+                df.flush()
+            
             dashboard_ready = await initialize_dashboard(client, "bot")
+            
+            with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as df:
+                df.write(f"[{datetime.now()}] 返回 dashboard_ready={dashboard_ready}\n")
+                df.flush()
+            
             if dashboard_ready:
                 print("[DASHBOARD] Log system initialized", flush=True)
             else:
                 print("[WARNING] Dashboard 初始化返回 False", flush=True)
         except Exception as e:
+            with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as df:
+                df.write(f"[{datetime.now()}] 異常: {e}\n")
+                import traceback
+                traceback.print_exc(file=df)
+                df.flush()
+            
             print(f"[WARNING] Failed to initialize dashboard: {e}", flush=True)
             import traceback
             traceback.print_exc()
