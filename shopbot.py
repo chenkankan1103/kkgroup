@@ -367,38 +367,38 @@ async def on_ready():
         # 初始化監控儀表板及日誌系統
         # ============================================================
         try:
-            # 寫入診斷日誌到文件
+            # Write diagnostic log (using ASCII only to avoid encoding issues)
             with open("/tmp/dashboard_init_shopbot.log", "a", encoding="utf-8") as df:
-                df.write(f"[{datetime.now()}] 開始初始化 dashboard\n")
+                df.write(f"[{datetime.now()}] [INIT] Starting dashboard initialization\n")
                 df.flush()
             
-            print("[SHOPBOT] 開始初始化 dashboard...", flush=True)
+            print("[SHOPBOT] Starting dashboard init...", flush=True)
             load_message_ids("shopbot")
             
             with open("/tmp/dashboard_init_shopbot.log", "a", encoding="utf-8") as df:
-                df.write(f"[{datetime.now()}] 調用 initialize_dashboard\n")
+                df.write(f"[{datetime.now()}] [INIT] Calling initialize_dashboard\n")
                 df.flush()
             
             dashboard_ready = await initialize_dashboard(client, "shopbot")
             
             with open("/tmp/dashboard_init_shopbot.log", "a", encoding="utf-8") as df:
-                df.write(f"[{datetime.now()}] 返回 dashboard_ready={dashboard_ready}\n")
+                df.write(f"[{datetime.now()}] [INIT] Result: dashboard_ready={dashboard_ready}\n")
                 df.flush()
             
             if dashboard_ready:
                 print("[DASHBOARD] Shopbot log system initialized", flush=True)
-                # 立即執行一次日誌更新以確保 Discord 能看到日誌
-                print("[SHOPBOT] 執行初始日誌更新...", flush=True)
+                # Immediate log update to ensure Discord shows logs
+                print("[SHOPBOT] Running initial log update...", flush=True)
                 try:
                     await update_dashboard_logs(client, "shopbot")
-                    print("[SHOPBOT] 初始日誌更新完成", flush=True)
+                    print("[SHOPBOT] Initial log update complete", flush=True)
                 except Exception as update_error:
-                    print(f"[SHOPBOT] 初始日誌更新失敗: {update_error}", flush=True)
+                    print(f"[SHOPBOT] Initial log update failed: {update_error}", flush=True)
             else:
-                print("[WARNING] Dashboard 初始化返回 False", flush=True)
+                print("[WARNING] Dashboard initialization returned False", flush=True)
         except Exception as e:
             with open("/tmp/dashboard_init_shopbot.log", "a", encoding="utf-8") as df:
-                df.write(f"[{datetime.now()}] 異常: {e}\n")
+                df.write(f"[{datetime.now()}] [ERROR] Exception: {e}\n")
                 import traceback
                 traceback.print_exc(file=df)
         
