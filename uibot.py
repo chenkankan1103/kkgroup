@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from bot_status import build_discord_activity
-from status_dashboard import initialize_dashboard, load_message_ids  # add_log removed
+from status_dashboard import initialize_dashboard, load_message_ids, update_dashboard_logs  # add_log removed
 import syslog
 
 # ============================================================
@@ -357,13 +357,24 @@ async def on_ready():
         # 初始化監控儀表板及日誌系統
         # ============================================================
         try:
-            # 初始化儀表板（簡化版本 - 僅日誌）
+            # 診斷日誌
+            with open("/tmp/dashboard_init_uibot.log", "a", encoding="utf-8") as df:
+                df.write(f"[{datetime.now()}] Starting dashboard initialization\n")
+                df.flush()
+            
+            print("[UIBOT] 開始初始化 dashboard...", flush=True)
             load_message_ids("uibot")
             dashboard_ready = await initialize_dashboard(client, "uibot")
+            
             if dashboard_ready:
-                print("✅ 日誌系統已初始化")
+                print("[DASHBOARD] UIbot log system initialized", flush=True)
+                await update_dashboard_logs(client, "uibot")
+            else:
+                print("[WARNING] Dashboard initialization returned False", flush=True)
         except Exception as e:
-            print(f"⚠️ 儀表板初始化失敗: {e}")
+            print(f"[WARNING] Failed to initialize uibot dashboard: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
         
         
         # 啟動狀態更新任務
