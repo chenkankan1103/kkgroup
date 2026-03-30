@@ -441,7 +441,7 @@ class WelcomeFlow(commands.Cog):
     async def update_user_data(self, user_id: int, data: dict):
         """Update user data fields in sheet-driven database"""
         try:
-            allowed_fields = {'face', 'hair', 'skin', 'top', 'bottom', 'shoes', 'gender', 'hp', 'stamina', 'is_stunned', 'thread_id', 'inventory', 'character_config'}
+            allowed_fields = {'face', 'hair', 'skin', 'top', 'bottom', 'shoes', 'gender', 'hp', 'stamina', 'is_stunned', 'thread_id', 'inventory', 'character_config', 'injury_recovery_time', 'last_recovery'}
             
             for key, value in data.items():
                 if key in allowed_fields:
@@ -1029,20 +1029,25 @@ class WelcomeFlow(commands.Cog):
                             f"**💊 快速恢復選項：**\n"
                             f"• 如需立即恢復，可前往醫院購買恢復產品\n"
                             f"• 紙娃娃狀態見下方 ↓\n"
-                        )\n                        await member.send(recovery_message, embed=embed)\n                    except:\n                        pass  # 如果無法私訊，也不影響主流程\n            except Exception as refresh_err:\n                print(f\"⚠️ 刷新紙娃娃失敗（非關鍵）: {refresh_err}\")"
+                        )
+                        await member.send(recovery_message, embed=embed)
+                    except:
+                        pass  # 如果無法私訊，也不影響主流程
+            except Exception as refresh_err:
+                print(f"⚠️ 刷新紙娃娃失敗（非關鍵）: {refresh_err}")
 
+            # 獲取歡迎頻道（共用於清理訊息和發送完成通知）
+            channel = self.bot.get_channel(self.welcome_channel_id)
+            
             # 清理歡迎訊息
-            if stun_data['message_id']:
+            if channel and stun_data['message_id']:
                 try:
-                    channel = self.bot.get_channel(self.welcome_channel_id)
-                    if channel:
-                        msg = await channel.fetch_message(stun_data['message_id'])
-                        await msg.delete()
+                    msg = await channel.fetch_message(stun_data['message_id'])
+                    await msg.delete()
                 except (discord.NotFound, discord.Forbidden):
                     pass
 
             # 發送完成通知
-            channel = self.bot.get_channel(self.welcome_channel_id)
             if channel:
                 embed = discord.Embed(
                     title="✨ 入園完成！",
