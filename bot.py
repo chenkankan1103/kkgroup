@@ -483,12 +483,17 @@ async def on_ready():
         # 初始化監控儀表板及日誌系統（簡化版本 - 僅日誌）
         # ============================================================
         try:
+            print("[BOT] 開始初始化 dashboard...", flush=True)
             load_message_ids("bot")
             dashboard_ready = await initialize_dashboard(client, "bot")
             if dashboard_ready:
-                print("[DASHBOARD] Log system initialized")
-        except (ImportError, OSError, RuntimeError) as e:
-            print(f"[WARNING] Failed to initialize dashboard: {e}")
+                print("[DASHBOARD] Log system initialized", flush=True)
+            else:
+                print("[WARNING] Dashboard 初始化返回 False", flush=True)
+        except Exception as e:
+            print(f"[WARNING] Failed to initialize dashboard: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
 
         # ============================================================
         # 啟動 GCP Metrics 數據採集器（如果 BOT_TYPE == "bot"）
