@@ -312,7 +312,8 @@ class UserPanel(commands.Cog):
                     name=thread_name, 
                     embed=embed, 
                     view=view,
-                    content="👋 這是你的專屬置物櫃～"
+                    content="👋 這是你的專屬置物櫃～",
+                    flags=discord.MessageFlags(suppress_notifications=True)
                 )
                 set_user_field(user.id, 'locker_message_id', message.id)
                 try:
@@ -330,7 +331,8 @@ class UserPanel(commands.Cog):
                     thread, message = await forum_channel.create_thread(
                         name=thread_name, 
                         embed=simple_embed,
-                        content="👋 這是你的專屬置物櫃～"
+                        content="👋 這是你的專屬置物櫃～",
+                        flags=discord.MessageFlags(suppress_notifications=True)
                     )
                     try:
                         await thread.add_user(user)
