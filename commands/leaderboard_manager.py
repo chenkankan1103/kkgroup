@@ -363,7 +363,7 @@ def _sync_build_leaderboard_image(
     else:
         title_x = MARGIN
     
-    draw_text((title_x, leaderboard_start_y + 8), "KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
+    draw_text((title_x, leaderboard_start_y - 8), "KK園區 - 總資產排行", font=FONT_BIG, fill=(200, 200, 220), shadow=True)
     
     # 顯示動態通膨敘述
     current_rate = inflation_info['current_rate']
@@ -375,7 +375,7 @@ def _sync_build_leaderboard_image(
         inflation_label = "📈 通膨警報"
         rate_text = f"總資產 = KK幣 + 數位美金 × {current_rate:.1f} (通膨: +{inflation_percent:.1f}%)"
     
-    draw_text((title_x, leaderboard_start_y + 32), rate_text, font=FONT_DESC, fill=(150, 180, 200))
+    draw_text((title_x, leaderboard_start_y + 20), rate_text, font=FONT_DESC, fill=(150, 180, 200))
 
     # 顯示欄位標題：KK幣 / 數位美金
     header_y = leaderboard_start_y + 45
