@@ -9,6 +9,9 @@ import os
 import aiohttp
 import urllib.parse
 import math
+import zoneinfo
+
+TW_TZ = zoneinfo.ZoneInfo("Asia/Taipei")
 # add_user_field is needed by update_user_kkcoin
 from db_adapter import get_user, set_user_field, get_user_field, get_all_users, add_user_field
 
@@ -535,7 +538,7 @@ class ScamParkEvents(commands.Cog):
                 event_history = []
             
             # 添加新事件到歷史（保留前 5 條）
-            current_time = datetime.datetime.now().isoformat()
+            current_time = datetime.datetime.now(TW_TZ).isoformat()
             new_event = {
                 'type': event_type,
                 'time': current_time
