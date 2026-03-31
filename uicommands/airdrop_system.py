@@ -264,7 +264,7 @@ class AirdropSystem(commands.Cog):
             embed, view = await self.create_airdrop_embed()
             
             try:
-                message = await channel.send(embed=embed, view=view)
+                message = await channel.send(embed=embed, view=view, flags=discord.MessageFlags(suppress_notifications=True))
                 print(f"✅ 空投已投放到 #{channel.name} (消息ID: {message.id})")
             except Exception as e:
                 print(f"❌ 投放空投失敗於 #{channel.name}: {e}")
