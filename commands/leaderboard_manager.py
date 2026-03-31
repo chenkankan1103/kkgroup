@@ -455,18 +455,13 @@ def _sync_build_leaderboard_image(
         draw_text((kkcoin_x, y+12), kkcoin_text, font=FONT_KKCOIN, fill=(100, 180, 220), shadow=True)
         draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(100, 220, 150), shadow=True)
         
-        # 進度條
-        if max_assets > 0:
-            current_assets = member_totals[i]
-            percent = min(100, (current_assets / max_assets) * 100)
-        else:
-            percent = 0
-        
+        # 進度條 - 分開顯示 KK幣（綠色）和數位美金（藍色）
         progress_bar_y = y + 35
         progress_bar_x = rank_x + 100
         progress_bar_width = WIDTH - rank_x - 120 - 300
         progress_bar_height = 16
         
+        # 背景框
         try:
             draw.rounded_rectangle(
                 [(progress_bar_x, progress_bar_y), (progress_bar_x + progress_bar_width, progress_bar_y + progress_bar_height)],
@@ -483,28 +478,46 @@ def _sync_build_leaderboard_image(
                 width=1
             )
         
-        if percent > 0:
-            filled_width = int(progress_bar_width * percent / 100)
-            if percent >= 80:
-                bar_color = (0, 255, 127)
-            elif percent >= 60:
-                bar_color = (57, 255, 20)
-            elif percent >= 40:
-                bar_color = (255, 240, 0)
-            else:
-                bar_color = (255, 16, 240)
+        # 計算 KK幣和數位美金的部分
+        if max_assets > 0:
+            kkcoin_value = float(kkcoin or 0)
+            digital_usd_value = float(digital_usd or 0) * dynamic_rate
+            total_assets = kkcoin_value + digital_usd_value
             
-            try:
-                draw.rounded_rectangle(
-                    [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
-                    radius=8,
-                    fill=bar_color
-                )
-            except AttributeError:
-                draw.rectangle(
-                    [(progress_bar_x, progress_bar_y), (progress_bar_x + filled_width, progress_bar_y + progress_bar_height)],
-                    fill=bar_color
-                )
+            # 計算寬度百分比
+            kkcoin_percent = (kkcoin_value / max_assets) * 100 if max_assets > 0 else 0
+            digital_percent = (digital_usd_value / max_assets) * 100 if max_assets > 0 else 0
+            
+            kkcoin_width = int(progress_bar_width * kkcoin_percent / 100)
+            digital_width = int(progress_bar_width * digital_percent / 100)
+            
+            # 繪製 KK幣部分（綠色）
+            if kkcoin_width > 0:
+                try:
+                    draw.rounded_rectangle(
+                        [(progress_bar_x, progress_bar_y), (progress_bar_x + kkcoin_width, progress_bar_y + progress_bar_height)],
+                        radius=8,
+                        fill=(76, 175, 80)  # 綠色
+                    )
+                except AttributeError:
+                    draw.rectangle(
+                        [(progress_bar_x, progress_bar_y), (progress_bar_x + kkcoin_width, progress_bar_y + progress_bar_height)],
+                        fill=(76, 175, 80)
+                    )
+            
+            # 繪製數位美金部分（藍色）
+            if digital_width > 0:
+                try:
+                    draw.rounded_rectangle(
+                        [(progress_bar_x + kkcoin_width, progress_bar_y), (progress_bar_x + kkcoin_width + digital_width, progress_bar_y + progress_bar_height)],
+                        radius=8,
+                        fill=(33, 150, 243)  # 藍色
+                    )
+                except AttributeError:
+                    draw.rectangle(
+                        [(progress_bar_x + kkcoin_width, progress_bar_y), (progress_bar_x + kkcoin_width + digital_width, progress_bar_y + progress_bar_height)],
+                        fill=(33, 150, 243)
+                    )
 
     # 第三部分：說明區塊
     desc_y = leaderboard_start_y + 75 + len(members_data) * 70 + 15
