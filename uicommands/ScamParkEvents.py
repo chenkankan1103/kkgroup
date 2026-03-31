@@ -593,8 +593,8 @@ class ScamParkEvents(commands.Cog):
                 except Exception as e:
                     print(f"⚠️ 編輯消息失敗 ({type(e).__name__}): {e}，嘗試發送新訊息")
             
-            # 發送新訊息
-            message = await thread.send(embed=embed)
+            # 發送新訊息（靜音，不推播通知）
+            message = await thread.send(embed=embed, silent=True)
             # 保存消息 ID
             set_user_field(user_id, 'last_event_message_id', message.id)
             print(f"📤 發送新事件訊息: {event_type} for user {user_id}")
@@ -606,7 +606,7 @@ class ScamParkEvents(commands.Cog):
             traceback.print_exc()
             # 降級到簡單發送（也要嘗試存 ID）
             try:
-                message = await thread.send(embed=embed)
+                message = await thread.send(embed=embed, silent=True)
                 set_user_field(user_id, 'last_event_message_id', message.id)
                 print(f"📤 降級發送成功，已存 ID: {message.id}")
                 return message
