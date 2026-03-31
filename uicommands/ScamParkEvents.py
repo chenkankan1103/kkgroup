@@ -528,6 +528,9 @@ class ScamParkEvents(commands.Cog):
             
             try:
                 event_history = json.loads(event_history_str) if isinstance(event_history_str, str) else []
+                # 防禦性檢查: 若解析結果不是 list (如 null 解析成 None)，重設為空 list
+                if not isinstance(event_history, list):
+                    event_history = []
             except:
                 event_history = []
             
@@ -547,15 +550,15 @@ class ScamParkEvents(commands.Cog):
             history_text = "📋 【前 5 次事件紀錄】\n"
             for idx, evt in enumerate(event_history[:5], 1):
                 evt_time = evt.get('time', '')
-                evt_type = evt.get('type', '未知')
+                evt_type_str = evt.get('type', '未知')
                 # 格式化時間
                 try:
                     dt = datetime.datetime.fromisoformat(evt_time)
                     time_str = dt.strftime('%m/%d %H:%M')
                 except:
-                    time_str = evt_time[:10]
+                    time_str = evt_time[:10] if evt_time else '??'
                 
-                history_text += f"{idx}. {evt_type} ({time_str})\n"
+                history_text += f"{idx}. {evt_type_str} ({time_str})\n"
             
             # 添加歷史欄位到 embed
             embed.add_field(
@@ -576,10 +579,16 @@ class ScamParkEvents(commands.Cog):
                     print(f"✏️ 編輯事件訊息: {event_type} for user {user_id}")
                     return message
                 except discord.NotFound:
-                    # 消息已被刪除，發送新消息
-                    print(f"⚠️ 舊消息已被刪除，發送新訊息")
+                    # 消息已被刪除，清除舊 ID 並發送新消息
+                    print(f"⚠️ 舊事件消息已被刪除 (id={last_message_id})，清除並發送新訊息")
+                    set_user_field(user_id, 'last_event_message_id', None)
+                except discord.Forbidden:
+                    print(f"⚠️ 無法編輯事件消息 (Forbidden)，發送新訊息")
+                    set_user_field(user_id, 'last_event_message_id', None)
+                except discord.HTTPException as e:
+                    print(f"⚠️ 編輯消息 HTTP 錯誤 {e.status}/{e.code}: {e.text}，嘗試發送新訊息")
                 except Exception as e:
-                    print(f"⚠️ 編輯消息失敗: {e}，嘗試發送新訊息")
+                    print(f"⚠️ 編輯消息失敗 ({type(e).__name__}): {e}，嘗試發送新訊息")
             
             # 發送新訊息
             message = await thread.send(embed=embed)
@@ -589,11 +598,18 @@ class ScamParkEvents(commands.Cog):
             return message
             
         except Exception as e:
-            print(f"❌ 發送/編輯事件訊息失敗: {e}")
+            print(f"❌ 發送/編輯事件訊息失敗 ({type(e).__name__}): {e}")
             import traceback
             traceback.print_exc()
-            # 降級到簡單發送
-            return await thread.send(embed=embed)
+            # 降級到簡單發送（也要嘗試存 ID）
+            try:
+                message = await thread.send(embed=embed)
+                set_user_field(user_id, 'last_event_message_id', message.id)
+                print(f"📤 降級發送成功，已存 ID: {message.id}")
+                return message
+            except Exception as e2:
+                print(f"❌ 降級發送也失敗: {e2}")
+                raise
 
     async def trigger_random_event(self, member: discord.Member, thread: discord.Thread, 
                                    kkcoin: int, level: int, hp: int, stamina: int):
