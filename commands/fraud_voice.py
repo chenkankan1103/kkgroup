@@ -435,7 +435,7 @@ class ScamHub(commands.Cog):
                 description="歡迎來到詐騙小組語音機房，在這裡你可以在每30-60分鐘詐騙獲取kk幣，招集組長可獲取1.5倍獎勵，組員越多越有機會幹到一大票！",
                 color=discord.Color.blurple()
             )
-            await new_channel.send(content=member.mention, embed=embed, view=RoomControlView())
+            await new_channel.send(content=member.mention, embed=embed, view=RoomControlView(), flags=discord.MessageFlags(suppress_notifications=True))
             
             # 初始化狀態消息
             await self.update_voice_status(new_channel)

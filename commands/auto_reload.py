@@ -183,7 +183,7 @@ class AutoReload(commands.Cog):
                 )
             
             try:
-                reload_msg = await channel.send(embed=reload_start_embed)
+                reload_msg = await channel.send(embed=reload_start_embed, flags=discord.MessageFlags(suppress_notifications=True))
             except Exception as e:
                 print(f"⚠️ [{self.bot_name}] 發送開始通知失敗: {e}")
         

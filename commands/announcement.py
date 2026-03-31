@@ -94,7 +94,7 @@ class FeedbackModal(Modal):
             
             # 發送到管理員頻道
             try:
-                await channel.send(embed=embed)
+                await channel.send(embed=embed, flags=discord.MessageFlags(suppress_notifications=True))
             except discord.Forbidden:
                 await interaction.followup.send(
                     "❌ 無法提交意見：機器人無法在管理員頻道發送消息",
@@ -388,7 +388,7 @@ class Announcement(commands.Cog):
             
             # 發送新消息
             print("📤 [發送新消息] 開始發送新公告...")
-            message = await channel.send(embed=embed, view=view)
+            message = await channel.send(embed=embed, view=view, flags=discord.MessageFlags(suppress_notifications=True))
             print(f"✓ [消息已發送] 新消息 ID: {message.id}")
             
             # ======== 關鍵：必須立即保存並驗證（加強版） ========
