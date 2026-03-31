@@ -544,7 +544,13 @@ def get_current_leaderboard_data(bot, rank_channel_id):
     members_data = []
     all_users = get_all_users()
     
-    users = [u for u in all_users if (u.get('kkcoin') or 0) > 0 or (u.get('digital_usd') or 0) > 0]
+    def _safe_float(val):
+        try:
+            return float(val) if val not in (None, '') else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    users = [u for u in all_users if _safe_float(u.get('kkcoin')) > 0 or _safe_float(u.get('digital_usd')) > 0]
     # 使用動態匯率計算排名
     dynamic_rate = get_dynamic_exchange_rate()
     users.sort(
@@ -786,8 +792,14 @@ def get_digital_usd_leaderboard_data(bot, digital_usd_channel_id):
     members_data = []
     all_users = get_all_users()
     
-    users = [u for u in all_users if (u.get('digital_usd') or 0) > 0]
-    users.sort(key=lambda x: (x.get('digital_usd') or 0), reverse=True)
+    def _parse_dusd(val):
+        try:
+            return float(val) if val not in (None, '', '0', '0.0') else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    users = [u for u in all_users if _parse_dusd(u.get('digital_usd')) > 0]
+    users.sort(key=lambda x: _parse_dusd(x.get('digital_usd')), reverse=True)
     users = users[:15]
     
     for user in users:
@@ -795,7 +807,7 @@ def get_digital_usd_leaderboard_data(bot, digital_usd_channel_id):
         member = guild.get_member(user_id)
         
         if member:
-            members_data.append((member, user["digital_usd"]))
+            members_data.append((member, _parse_dusd(user.get("digital_usd"))))
         else:
             class FallbackMember:
                 def __init__(self, user_id, nickname):
@@ -814,7 +826,7 @@ def get_digital_usd_leaderboard_data(bot, digital_usd_channel_id):
                 user_id,
                 user.get('nickname', user.get('user_name', f'User {user_id}'))
             )
-            members_data.append((fallback, user["digital_usd"]))
+            members_data.append((fallback, _parse_dusd(user.get("digital_usd"))))
     
     return members_data
 
