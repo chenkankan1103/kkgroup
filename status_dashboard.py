@@ -439,13 +439,13 @@ async def update_dashboard_logs(bot, bot_type: str):
         # Create logs embed
         config = BOT_CONFIG.get(bot_type, {})
         embed = discord.Embed(
-            title=f"{config['名稱']} Real-time Logs",
+            title=f"{config['名稱']} 即時日誌",
             description=logs_text,
             color=config["顏色"]
             # Don't set timestamp so time doesn't appear at top of embed
         )
 
-        embed.set_footer(text=f"Auto-updates every 120s | Taiwan Time • {format_taiwan_time()}")
+        embed.set_footer(text=f"每 120 秒自動更新 | 台灣時間 {format_taiwan_time()}")
 
         # Update message
         message_id = get_message_id(bot_type, "logs")
@@ -468,7 +468,7 @@ async def update_dashboard_logs(bot, bot_type: str):
                 if bot_type not in QUIET_UPDATE_BOTS:
                     print(f"[UPDATE LOGS] {bot_type} log message does not exist, recreating")
                 try:
-                    message = await channel.send(embed=embed)
+                    message = await channel.send(embed=embed, flags=discord.MessageFlags(suppress_notifications=True))
                     save_message_id(bot_type, "logs", str(message.id))
                     if bot_type not in QUIET_UPDATE_BOTS:
                         print(f"[UPDATE LOGS] {bot_type} log message recreated: {message.id}")
@@ -488,7 +488,7 @@ async def update_dashboard_logs(bot, bot_type: str):
                 async for msg in channel.history(limit=20):
                     if msg.author.id == bot.user.id and msg.embeds:
                         for embed in msg.embeds:
-                            if "Real-time Logs" in embed.title and BOT_CONFIG[bot_type]["名稱"] in embed.title:
+                            if "即時日誌" in embed.title and BOT_CONFIG[bot_type]["名稱"] in embed.title:
                                 existing_logs.append(msg)
 
                 # If existing embed exists, update latest and delete others
@@ -513,7 +513,7 @@ async def update_dashboard_logs(bot, bot_type: str):
                         print(f"[UPDATE LOGS] {bot_type} updated existing logs embed: {latest_msg.id}")
                 else:
                     # No embed found, create new one
-                    message = await channel.send(embed=embed)
+                    message = await channel.send(embed=embed, flags=discord.MessageFlags(suppress_notifications=True))
                     message_ids[bot_type]["logs"] = message.id
                     save_message_ids(bot_type)
                     if bot_type not in QUIET_UPDATE_BOTS:
@@ -582,15 +582,15 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     """Create logs Embed"""
     config = BOT_CONFIG.get(bot_type, {})
     embed = discord.Embed(
-        title=f"{config['名稱']} Real-time Logs",
+        title=f"{config['名稱']} 即時日誌",
         color=config['顏色'],
         timestamp=datetime.now(timezone.utc)  # Use UTC time, let Discord handle timezone correctly
     )
     
     # Log functionality removed, display placeholder text
-    embed.description = "`Logging disabled`"
+    embed.description = "`日誌記錄中`"
     
-    embed.set_footer(text="Update frequency: 60 seconds")
+    embed.set_footer(text="每 60 秒更新")
     return embed
 
 async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
@@ -637,7 +637,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             if msg.embeds:
                 for embed in msg.embeds:
                     bot_name = BOT_CONFIG[bot_type_str]["名稱"]
-                    if "Real-time Logs" in embed.title and bot_name in embed.title:
+                    if "即時日誌" in embed.title and bot_name in embed.title:
                         logs_count += 1
                         if logs_count <= 1:
                             found_logs = msg
@@ -660,7 +660,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
             try:
                 print(f"[INIT] Creating new logs embed...", flush=True)
                 logs_embed = await create_logs_embed(bot_type_str)
-                logs_msg = await channel.send(embed=logs_embed)
+                logs_msg = await channel.send(embed=logs_embed, flags=discord.MessageFlags(suppress_notifications=True))
                 message_ids[bot_type_str]["logs"] = logs_msg.id
                 save_message_id(bot_type_str, "logs", str(logs_msg.id))
                 print(f"OK [INIT] Created {bot_type_str} logs: {logs_msg.id}", flush=True)
