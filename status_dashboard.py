@@ -307,52 +307,52 @@ def create_update_task(bot_type: str):
             print(message)
 
     async def individual_update_task():
-        """個別機器人的儀表板更新任務 - 只更新自己的面板和日誌"""
-        # 首次啟動時隨機延遲 (0~60s)，避免多個 bot 同刻編輯造成 429
+        """Individual bot dashboard update task - updates only own dashboard and logs"""
+        # First startup with random delay (0~60s) to avoid concurrent edits causing 429
         if not hasattr(individual_update_task, "_task_jittered"):
             individual_update_task._task_jittered = True
-            # 延遲導入不會影響全域 random
+            # Delay import won't affect global random
             jitter = random.uniform(0, 60)
-            task_log(f"[UPDATE TASK {bot_type}] 首次更新延遲 {jitter:.1f}s")
+            task_log(f"[UPDATE TASK {bot_type}] First update delay {jitter:.1f}s")
             await asyncio.sleep(jitter)
         try:
-            task_log(f"[UPDATE TASK {bot_type}] ===== 開始更新 {bot_type} 的儀表板和日誌 =====")
-            print(f"[UPDATE TASK {bot_type}] 開始迴圈執行", flush=True)
+            task_log(f"[UPDATE TASK {bot_type}] ===== Starting update for {bot_type} dashboard and logs =====")
+            print(f"[UPDATE TASK {bot_type}] Starting loop execution", flush=True)
 
-            # 檢查機器人實例
+            # Check bot instance
             if bot_type not in bot_instances:
-                print(f"[UPDATE TASK {bot_type}] 實例未找到 - 取消任務", flush=True)
+                print(f"[UPDATE TASK {bot_type}] Instance not found - cancelling task", flush=True)
                 return
 
             bot_instance = get_bot_instance(bot_type)
             if not bot_instance:
-                print(f"[UPDATE TASK {bot_type}] 實例為空 - 取消任務", flush=True)
+                print(f"[UPDATE TASK {bot_type}] Instance is null - cancelling task", flush=True)
                 return
 
-            # 系統狀態日誌已移除（防止洗版）
+            # System status logging removed (prevent spam)
 
-            # 只更新日誌（控制面板已移除）
+            # Only update logs (dashboard removed)
             try:
-                task_log(f"[UPDATE TASK {bot_type}] 開始更新日誌")
-                print(f"[UPDATE TASK {bot_type}] 調用 update_dashboard_logs...", flush=True)
+                task_log(f"[UPDATE TASK {bot_type}] Starting log update")
+                print(f"[UPDATE TASK {bot_type}] Calling update_dashboard_logs...", flush=True)
                 await update_dashboard_logs(bot_instance, bot_type)
-                task_log(f"[UPDATE TASK {bot_type}] 日誌更新完成")
-                print(f"[UPDATE TASK {bot_type}] update_dashboard_logs 完成", flush=True)
+                task_log(f"[UPDATE TASK {bot_type}] Log update completed")
+                print(f"[UPDATE TASK {bot_type}] update_dashboard_logs completed", flush=True)
             except Exception as e:
-                print(f"[UPDATE TASK {bot_type} ERROR] 日誌更新失敗: {e}", flush=True)
+                print(f"[UPDATE TASK {bot_type} ERROR] Log update failed: {e}", flush=True)
                 with open("update_task_errors.log", "a", encoding="utf-8") as ef:
-                    ef.write(f"[{datetime.now(TAIWAN_TZ)}] 日誌更新失敗: {e}\n")
+                    ef.write(f"[{datetime.now(TAIWAN_TZ)}] Log update failed: {e}\n")
                     traceback.print_exc(file=ef)
                 traceback.print_exc()
 
-            task_log(f"[UPDATE TASK {bot_type}] ===== {bot_type} 更新完成 =====")
-            print(f"[UPDATE TASK {bot_type}] 這次迴圈完成", flush=True)
+            task_log(f"[UPDATE TASK {bot_type}] ===== {bot_type} update completed =====")
+            print(f"[UPDATE TASK {bot_type}] Loop execution completed", flush=True)
 
         except Exception as e:
             # errors should always be visible even for quiet bots
-            print(f"[UPDATE TASK {bot_type} ERROR] 任務執行失敗: {e}", flush=True)
+            print(f"[UPDATE TASK {bot_type} ERROR] Task execution failed: {e}", flush=True)
             with open("update_task_errors.log", "a", encoding="utf-8") as ef:
-                ef.write(f"[{datetime.now(TAIWAN_TZ)}] 任務執行失敗: {e}\n")
+                ef.write(f"[{datetime.now(TAIWAN_TZ)}] Task execution failed: {e}\n")
                 traceback.print_exc(file=ef)
             traceback.print_exc()
 
@@ -363,26 +363,26 @@ def create_update_task(bot_type: str):
     return task
 
 def register_bot_instance(bot_type: str, bot_instance):
-    """註冊機器人實例並確保更新任務啟動"""
+    """Register bot instance and ensure update task starts"""
     bot_instances[bot_type] = bot_instance
-    print(f"[REGISTER] {bot_type} 實例已記錄，開始啟動更新任務", flush=True)
+    print(f"[REGISTER] {bot_type} instance recorded, starting update task", flush=True)
 
-    # 確保對應的更新任務存在並啟動（防止 initialize_dashboard 失敗）
+    # Ensure corresponding update task exists and starts (prevent initialize_dashboard failure)
     if bot_type not in update_tasks:
         try:
-            print(f"[REGISTER] 為 {bot_type} 創建新的更新任務...", flush=True)
+            print(f"[REGISTER] Creating new update task for {bot_type}...", flush=True)
             update_task = create_update_task(bot_type)
-            print(f"[REGISTER] {bot_type} 更新任務已創建，準備啟動", flush=True)
+            print(f"[REGISTER] {bot_type} update task created, preparing to start", flush=True)
             update_tasks[bot_type] = update_task
-            print(f"[REGISTER] 準備調用 .start()...", flush=True)
+            print(f"[REGISTER] Preparing to call .start()...", flush=True)
             update_task.start()
-            print(f"[REGISTER] ✅ {bot_type} 更新任務成功啟動", flush=True)
+            print(f"[REGISTER] ✅ {bot_type} update task started successfully", flush=True)
         except Exception as e:
-            print(f"[REGISTER ERROR] 無法啟動 {bot_type} 更新任務: {e}", flush=True)
+            print(f"[REGISTER ERROR] Failed to start {bot_type} update task: {e}", flush=True)
             import traceback
             traceback.print_exc()
     else:
-        print(f"[REGISTER] {bot_type} 更新任務已存在，跳過創建", flush=True)
+        print(f"[REGISTER] {bot_type} update task already exists, skipping creation", flush=True)
 
 def get_bot_instance(bot_type: str):
     """獲取機器人實例"""
@@ -401,33 +401,33 @@ def save_message_id(bot_type: str, message_type: str, message_id: str):
 last_logs_text: Dict[str, str] = {}
 
 async def update_dashboard_logs(bot, bot_type: str):
-    """更新指定機器人的日誌"""
+    """Update logs for specified bot"""
     try:
         if bot_type not in QUIET_UPDATE_BOTS:
-            print(f"[UPDATE LOGS] 開始更新 {bot_type} 日誌")
+            print(f"[UPDATE LOGS] Starting log update for {bot_type}")
 
-        # 檢查機器人實例
+        # Check bot instance
         if not bot:
-            print(f"[UPDATE LOGS ERROR] {bot_type} 機器人實例為空")
+            print(f"[UPDATE LOGS ERROR] {bot_type} bot instance is null")
             return
 
-        # 僅獲取 systemd 日誌
+        # Fetch only systemd logs
         systemd_logs = await get_systemd_logs(bot_type)
         combined_logs = ""
-        if systemd_logs and systemd_logs not in ["無 systemd 日誌", "Systemd 日誌已停用"]:
-            combined_logs = f"📊 **Systemd 日誌**\n```\n{systemd_logs}\n```"
+        if systemd_logs and systemd_logs not in ["No systemd logs", "Systemd logs disabled"]:
+            combined_logs = f"📊 **Systemd Logs**\n```\n{systemd_logs}\n```"
 
-        # 若合併結果為空，說明兩邊都沒有資料；跳過更新以保留舊內容
+        # If combined result is empty, both sides have no data; skip update to preserve old content
         if not combined_logs:
             if bot_type not in QUIET_UPDATE_BOTS:
-                print(f"[UPDATE LOGS] {bot_type} 無新日誌，保留現有內容")
+                print(f"[UPDATE LOGS] {bot_type} no new logs, preserving existing content")
             return
         logs_text = combined_logs
 
-        # 檢查是否與上次內容相同；若相同則跳過編輯，減少 429
+        # Check if content is same as last time; if so, skip edit to reduce 429
         if last_logs_text.get(bot_type) == logs_text:
             if bot_type not in QUIET_UPDATE_BOTS:
-                print(f"[UPDATE LOGS] {bot_type} 日誌內容未變，跳過編輯")
+                print(f"[UPDATE LOGS] {bot_type} log content unchanged, skipping edit")
             return
         last_logs_text[bot_type] = logs_text
 
@@ -436,23 +436,23 @@ async def update_dashboard_logs(bot, bot_type: str):
         # Discord 在輸入超過限制時會拒絕，因此保留此註解以備未來調整。
 
 
-        # 創建日誌 embed
+        # Create logs embed
         config = BOT_CONFIG.get(bot_type, {})
         embed = discord.Embed(
-            title=f"{config['名稱']} 實時日誌",
+            title=f"{config['名稱']} Real-time Logs",
             description=logs_text,
             color=config["顏色"]
-            # 不設定 timestamp 讓時間不出現在 embed 頂部
+            # Don't set timestamp so time doesn't appear at top of embed
         )
 
-        embed.set_footer(text=f"每 120 秒自動更新 | 台灣時間•{format_taiwan_time()}")
+        embed.set_footer(text=f"Auto-updates every 120s | Taiwan Time • {format_taiwan_time()}")
 
-        # 更新訊息
+        # Update message
         message_id = get_message_id(bot_type, "logs")
         
         channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
-            print(f"[UPDATE LOGS ERROR] {bot_type} 找不到頻道 {DASHBOARD_CHANNEL_ID}")
+            print(f"[UPDATE LOGS ERROR] {bot_type} unable to find channel {DASHBOARD_CHANNEL_ID}")
             return
             
         if message_id:
@@ -462,68 +462,68 @@ async def update_dashboard_logs(bot, bot_type: str):
             except asyncio.CancelledError:
                 # network or task cancelled; just log and return so periodic task can retry
                 if bot_type not in QUIET_UPDATE_BOTS:
-                    print(f"[UPDATE LOGS] {bot_type} fetch_message 被中止，跳過此循環")
+                    print(f"[UPDATE LOGS] {bot_type} fetch_message was cancelled, skipping this cycle")
                 return
             except discord.NotFound:
                 if bot_type not in QUIET_UPDATE_BOTS:
-                    print(f"[UPDATE LOGS] {bot_type} 日誌訊息不存在，重新創建")
+                    print(f"[UPDATE LOGS] {bot_type} log message does not exist, recreating")
                 try:
                     message = await channel.send(embed=embed)
                     save_message_id(bot_type, "logs", str(message.id))
                     if bot_type not in QUIET_UPDATE_BOTS:
-                        print(f"[UPDATE LOGS] {bot_type} 日誌訊息已重新創建: {message.id}")
+                        print(f"[UPDATE LOGS] {bot_type} log message recreated: {message.id}")
                 except (discord.Forbidden, discord.HTTPException) as e:
-                    print(f"[UPDATE LOGS ERROR] {bot_type} 創建新訊息失敗: {e}")
+                    print(f"[UPDATE LOGS ERROR] {bot_type} failed to create new message: {e}")
             except discord.Forbidden:
-                print(f"[UPDATE LOGS ERROR] {bot_type} 沒有權限編輯訊息")
+                print(f"[UPDATE LOGS ERROR] {bot_type} no permission to edit message")
             except Exception as e:
                 # catch-all for other errors; print traceback
-                print(f"[UPDATE LOGS ERROR] {bot_type} 日誌更新錯誤: {e}")
+                print(f"[UPDATE LOGS ERROR] {bot_type} log update error: {e}")
                 traceback.print_exc()
         else:
-            # 訊息ID不存在，創建新的日誌embed
+            # Message ID doesn't exist, create new logs embed
             try:
-                # 在創建前檢查是否已經有現有的日誌embed
+                # Check if existing logs embed exists before creating
                 existing_logs = []
                 async for msg in channel.history(limit=20):
                     if msg.author.id == bot.user.id and msg.embeds:
                         for embed in msg.embeds:
-                            if "實時日誌" in embed.title and BOT_CONFIG[bot_type]["名稱"] in embed.title:
+                            if "Real-time Logs" in embed.title and BOT_CONFIG[bot_type]["名稱"] in embed.title:
                                 existing_logs.append(msg)
 
-                # 如果有現有的embed，更新最新的，刪除其他的
+                # If existing embed exists, update latest and delete others
                 if existing_logs:
-                    # 保留最新的embed，刪除其他的
+                    # Keep latest embed, delete others
                     existing_logs.sort(key=lambda m: m.created_at, reverse=True)
                     latest_msg = existing_logs[0]
 
-                    # 刪除重複的embed
+                    # Delete duplicate embeds
                     for msg in existing_logs[1:]:
                         try:
                             await msg.delete()
-                            print(f"[CLEANUP] 刪除重複日誌embed: {msg.id}")
+                            print(f"[CLEANUP] Deleted duplicate log embed: {msg.id}")
                         except (discord.Forbidden, discord.HTTPException) as e:
-                            print(f"[CLEANUP ERROR] 刪除重複embed失敗 {msg.id}: {e}")
+                            print(f"[CLEANUP ERROR] Failed to delete duplicate embed {msg.id}: {e}")
 
-                    # 更新保留的embed
+                    # Update preserved embed
                     await latest_msg.edit(embed=embed)
                     message_ids[bot_type]["logs"] = latest_msg.id
                     save_message_ids(bot_type)
                     if bot_type not in QUIET_UPDATE_BOTS:
-                        print(f"[UPDATE LOGS] {bot_type} 更新現有日誌embed: {latest_msg.id}")
+                        print(f"[UPDATE LOGS] {bot_type} updated existing logs embed: {latest_msg.id}")
                 else:
-                    # 真的沒有embed，才創建新的
+                    # No embed found, create new one
                     message = await channel.send(embed=embed)
                     message_ids[bot_type]["logs"] = message.id
                     save_message_ids(bot_type)
                     if bot_type not in QUIET_UPDATE_BOTS:
-                        print(f"[UPDATE LOGS] {bot_type} 創建新日誌embed: {message.id}")
+                        print(f"[UPDATE LOGS] {bot_type} created new logs embed: {message.id}")
 
             except Exception as create_error:
-                print(f"[UPDATE LOGS ERROR] {bot_type} 創建/更新日誌embed失敗: {create_error}")
+                print(f"[UPDATE LOGS ERROR] {bot_type} failed to create/update logs embed: {create_error}")
 
     except Exception as e:
-        print(f"[UPDATE LOGS ERROR] {bot_type} 更新日誌時發生未預期錯誤: {e}")
+        print(f"[UPDATE LOGS ERROR] {bot_type} unexpected error updating logs: {e}")
         traceback.print_exc()
 
 # ========== GCP Metrics 管理系統 ==========
@@ -560,37 +560,37 @@ metrics_cache = MetricsCache()
 
 # 調試助手：顯示儀表板 embed 的現有狀態
 async def inspect_dashboard(bot: discord.Client, bot_type: str = "bot") -> None:
-    """直接從 Discord 拉取儀表板和日誌訊息並打印資訊"""
+    """Pull dashboard and log messages directly from Discord and print information"""
     channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
     if not channel:
-        print("[INSPECT] 無法找到儀表板頻道")
+        print("[INSPECT] Unable to find dashboard channel")
         return
     ids = message_ids.get(bot_type, {})
     print(f"[INSPECT] {bot_type} message_ids: {ids}")
     for typ in ("dashboard", "logs"):
         msg_id = ids.get(typ)
         if not msg_id:
-            print(f"[INSPECT] {bot_type} {typ} ID 不存在")
+            print(f"[INSPECT] {bot_type} {typ} ID not found")
             continue
         try:
             msg = await channel.fetch_message(int(msg_id))
-            print(f"[INSPECT] {bot_type} {typ} embed: {msg.embeds[0] if msg.embeds else '無'}")
+            print(f"[INSPECT] {bot_type} {typ} embed: {msg.embeds[0] if msg.embeds else 'None'}")
         except Exception as e:
-            print(f"[INSPECT] 無法抓取 {typ} 訊息 {msg_id}: {e}")
+            print(f"[INSPECT] Failed to fetch {typ} message {msg_id}: {e}")
 
 async def create_logs_embed(bot_type: str) -> discord.Embed:
-    """創建日誌 Embed"""
+    """Create logs Embed"""
     config = BOT_CONFIG.get(bot_type, {})
     embed = discord.Embed(
-        title=f"{config['名稱']} 實時日誌",
+        title=f"{config['名稱']} Real-time Logs",
         color=config['顏色'],
-        timestamp=datetime.now(timezone.utc)  # 使用 UTC 時間，讓 Discord 正確處理時區
+        timestamp=datetime.now(timezone.utc)  # Use UTC time, let Discord handle timezone correctly
     )
     
-    # 日誌功能已移除，顯示占位文字
-    embed.description = "`日誌功能已停用`"
+    # Log functionality removed, display placeholder text
+    embed.description = "`Logging disabled`"
     
-    embed.set_footer(text="更新頻率: 60秒")
+    embed.set_footer(text="Update frequency: 60 seconds")
     return embed
 
 async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
@@ -601,153 +601,153 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         bot_instance: Discord bot instance
         bot_type_str: "bot", "shopbot", "uibot"
     """
-    print(f"[INIT] initialize_dashboard 開始執行 bot_type={bot_type_str}", flush=True)
+    print(f"[INIT] initialize_dashboard started bot_type={bot_type_str}", flush=True)
     
-    # 添加延遲以避免同時初始化
+    # Add delay to avoid simultaneous initialization
     delay_map = {"bot": 0, "shopbot": 5, "uibot": 10}
     delay = delay_map.get(bot_type_str, 0)
     if delay > 0:
-        print(f"[INIT] {bot_type_str} 等待 {delay} 秒後初始化...", flush=True)
+        print(f"[INIT] {bot_type_str} waiting {delay}s before initialization...", flush=True)
         await asyncio.sleep(delay)
     
-    # current_bot_type 追蹤已在函式簽名中完成
+    # current_bot_type tracking completed in function signature
     
-    # 加載訊息 ID（包括硬編碼的回退值）
-    print(f"[INIT] 加載 {bot_type_str} 的訊息 ID...", flush=True)
+    # Load message IDs (including hardcoded fallback values)
+    print(f"[INIT] Loading message IDs for {bot_type_str}...", flush=True)
     load_message_ids(bot_type_str)
     
     try:
         channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
-            print(f"❌ [INIT] 找不到儀表板頻道: {DASHBOARD_CHANNEL_ID}", flush=True)
+            print(f"X [INIT] Cannot find dashboard channel: {DASHBOARD_CHANNEL_ID}", flush=True)
             return False
         
-        print(f"[INIT] ✓ 找到了頻道 {DASHBOARD_CHANNEL_ID}", flush=True)
+        print(f"[INIT] OK Found channel {DASHBOARD_CHANNEL_ID}", flush=True)
         
-        # 清理舊日誌 embed 並初始化新的
+        # Clean up old log embeds and initialize new ones
         found_logs = None
         logs_count = 0
         old_logs = []
         
-        # 查找現有日誌訊息（只查找由當前 bot 發送的）
+        # Find existing log messages (only from current bot)
         async for msg in channel.history(limit=100):
             if msg.author.id != bot_instance.user.id:
-                continue  # 跳過其他 bot 的訊息
+                continue  # Skip messages from other bots
             
             if msg.embeds:
                 for embed in msg.embeds:
                     bot_name = BOT_CONFIG[bot_type_str]["名稱"]
-                    if "實時日誌" in embed.title and bot_name in embed.title:
+                    if "Real-time Logs" in embed.title and bot_name in embed.title:
                         logs_count += 1
                         if logs_count <= 1:
                             found_logs = msg
                         else:
                             old_logs.append(msg)
         
-        print(f"[INIT] 找到 {logs_count} 個現有日誌 embed", flush=True)
+        print(f"[INIT] Found {logs_count} existing log embeds", flush=True)
         
-        # 清理舊的日誌 embed
+        # Clean up old log embeds
         for msg in old_logs:
             try:
                 await msg.delete()
-                print(f"✓ [INIT] 已清理舊的 {bot_type_str} 日誌", flush=True)
+                print(f"OK [INIT] Cleaned up old {bot_type_str} logs", flush=True)
             except Exception as e:
-                print(f"⚠️ [INIT] 清理舊日誌失敗 {msg.id}: {e}", flush=True)
+                print(f"WARN [INIT] Failed to clean up old logs {msg.id}: {e}", flush=True)
         
-        # 創建或更新日誌embed
+        # Create or update logs embed
         if not found_logs:
-            # 沒有找到現有的，創建新的
+            # No existing found, create new one
             try:
-                print(f"[INIT] 創建新的日誌 embed...", flush=True)
+                print(f"[INIT] Creating new logs embed...", flush=True)
                 logs_embed = await create_logs_embed(bot_type_str)
                 logs_msg = await channel.send(embed=logs_embed)
                 message_ids[bot_type_str]["logs"] = logs_msg.id
                 save_message_id(bot_type_str, "logs", str(logs_msg.id))
-                print(f"✅ [INIT] 創建 {bot_type_str} 日誌: {logs_msg.id}", flush=True)
-                add_log(bot_type_str, "✅ 日誌系統已初始化")
+                print(f"OK [INIT] Created {bot_type_str} logs: {logs_msg.id}", flush=True)
+                add_log(bot_type_str, "OK Log system initialized")
             except Exception as e:
-                print(f"⚠️ [INIT] 創建日誌失敗: {e}", flush=True)
+                print(f"WARN [INIT] Failed to create logs: {e}", flush=True)
                 import traceback
                 traceback.print_exc()
                 return False
         else:
-            # 有現有的，保存ID供後續更新
+            # Has existing, save ID for future updates
             message_ids[bot_type_str]["logs"] = found_logs.id
             save_message_ids(bot_type_str)
-            print(f"✅ [INIT] 使用現有 {bot_type_str} 日誌: {found_logs.id}", flush=True)
-            add_log(bot_type_str, "✅ 日誌系統已就緒")
+            print(f"OK [INIT] Using existing {bot_type_str} logs: {found_logs.id}", flush=True)
+            add_log(bot_type_str, "OK Log system ready")
         
-        # 清空初始日誌，防止重複累積
-        # logs_storage 可能尚未包含鍵，因此使用 setdefault 保證存在
+        # Clear initial logs, prevent duplicate accumulation
+        # logs_storage may not contain key yet, use setdefault to ensure exists
         logs_storage.setdefault(bot_type_str, []).clear()
         save_logs()
         
-        # Metrics 初始化已移除
+        # Metrics initialization removed
         
-        # 註冊機器人實例並啟動獨立更新任務
+        # Register bot instance and start independent update task
         try:
-            print(f"[INIT] 正在註冊 {bot_type_str} 機器人實例...", flush=True)
+            print(f"[INIT] Registering {bot_type_str} bot instance...", flush=True)
             register_bot_instance(bot_type_str, bot_instance)
-            print(f"[INIT] ✓ {bot_type_str} 實例已註冊", flush=True)
+            print(f"[INIT] OK {bot_type_str} instance registered", flush=True)
 
-            # 為當前機器人創建並啟動獨立的更新任務
-            print(f"[INIT] 檢查 {bot_type_str} 更新任務狀態...", flush=True)
+            # Create and start independent update task for current bot
+            print(f"[INIT] Checking {bot_type_str} update task status...", flush=True)
             if bot_type_str not in update_tasks:
-                print(f"[INIT] 任務不存在，創建新的...", flush=True)
+                print(f"[INIT] Task does not exist, creating new one...", flush=True)
                 update_task = create_update_task(bot_type_str)
                 update_tasks[bot_type_str] = update_task
-                print(f"[INIT] 正在啟動 {bot_type_str} 更新任務...", flush=True)
+                print(f"[INIT] Starting {bot_type_str} update task...", flush=True)
                 update_task.start()
-                print(f"[INIT] ✅ {bot_type_str} 獨立更新任務已啟動", flush=True)
+                print(f"[INIT] OK {bot_type_str} independent update task started", flush=True)
             else:
-                # 如果任務存在但意外停止，重新啟動
+                # If task exists but unexpectedly stopped, restart
                 existing = update_tasks[bot_type_str]
                 if not existing.is_running():
-                    print(f"[INIT] {bot_type_str} 任務已停止，重新啟動...", flush=True)
+                    print(f"[INIT] {bot_type_str} task stopped, restarting...", flush=True)
                     try:
                         existing.start()
                     except Exception as restart_error:
-                        print(f"[INIT ERROR] 重啟 {bot_type_str} 任務失敗: {restart_error}", flush=True)
+                        print(f"[INIT ERROR] Failed to restart {bot_type_str} task: {restart_error}", flush=True)
                 else:
-                    print(f"[INIT] ✓ {bot_type_str} 更新任務已在運行", flush=True)
+                    print(f"[INIT] OK {bot_type_str} update task already running", flush=True)
             
-            # Metrics 初始化已移除
-            print(f"[INIT] ✅ {bot_type_str} 初始化完成", flush=True)
+            # Metrics initialization removed
+            print(f"[INIT] OK {bot_type_str} initialization completed", flush=True)
                     
         except Exception as e:
-            print(f"[INIT ERROR] {bot_type_str} 任務啟動失敗: {e}", flush=True)
+            print(f"[INIT ERROR] {bot_type_str} task startup failed: {e}", flush=True)
             traceback.print_exc()
         
         return True
                 
     except Exception as e:
-        print(f"❌ [INIT] 初始化失敗: {e}", flush=True)
+        print(f"X [INIT] Initialization failed: {e}", flush=True)
         traceback.print_exc()
         return False
 
-# 監視任務的守護程序，定期檢測並重啟已停止的更新任務
+# Watchdog daemon for update tasks, periodically detects and restarts stopped update tasks
 @tasks.loop(minutes=5)
 async def update_task_watchdog():
-    # 如果字典中沒有任何任務，也試著為所有已註冊機器人建立
+    # If no tasks in dict, try to create for all registered bots
     if not update_tasks:
-        print("[WATCHDOG] 尚無任何更新任務，嘗試為已註冊機器人建立")
+        print("[WATCHDOG] No update tasks exist yet, attempting to create for registered bots")
         for bot_type in bot_instances.keys():
             if bot_type not in update_tasks:
                 try:
                     t = create_update_task(bot_type)
                     update_tasks[bot_type] = t
                     t.start()
-                    print(f"[WATCHDOG] 已為 {bot_type} 建立並啟動更新任務")
+                    print(f"[WATCHDOG] Created and started update task for {bot_type}")
                 except Exception as e:
-                    print(f"[WATCHDOG ERROR] 建立 {bot_type} 任務失敗: {e}")
+                    print(f"[WATCHDOG ERROR] Failed to create task for {bot_type}: {e}")
 
     for bot_type, task in list(update_tasks.items()):
         if not task.is_running():
-            print(f"[WATCHDOG] {bot_type} 更新任務停止，嘗試重啟")
+            print(f"[WATCHDOG] {bot_type} update task stopped, attempting restart")
             try:
                 task.start()
             except Exception as e:
-                print(f"[WATCHDOG ERROR] 無法重啟 {bot_type} 任務: {e}")
+                print(f"[WATCHDOG ERROR] Failed to restart {bot_type} task: {e}")
 
 # ===== METRICS 更新任務 (動態創建) =====
 # 注意：具體的任務在 initialize_dashboard 中為每個 bot 類型動態創建
@@ -762,20 +762,20 @@ async def update_task_watchdog():
 
 def _start_watchdog():
     try:
-        # 檢查 update_task_watchdog 是否已在運行
+        # Check if update_task_watchdog is already running
         if not update_task_watchdog.is_running():
             update_task_watchdog.start()
-            print("[WATCHDOG] 更新任務守護程序已啟動")
+            print("[WATCHDOG] Update task watchdog started")
         else:
-            print("[WATCHDOG] 更新任務守護程序已在運行中")
+            print("[WATCHDOG] Update task watchdog already running")
         
-        # ⏸️ 暫停 GCP Metrics 圖表生成以隔離連線穩定性問題
-        # Metrics 圖表生成（matplotlib）可能導致事件循環阻塞和心跳超時
-        # 待完全 debug 後重新啟用
-        print("[METRICS TASK] ⏸️ GCP Metrics 圖表生成 DISABLED（debug 中）- 等待連線穩定度驗證")
+        # PAUSE GCP Metrics chart generation to isolate connection stability issues
+        # Metrics chart generation (matplotlib) may cause event loop blocking and heartbeat timeouts
+        # Will re-enable after full debugging
+        print("[METRICS TASK] PAUSE GCP Metrics chart generation DISABLED (debugging) - waiting for connection stability verification")
     except Exception as e:
         # swallow startup errors; they will be retried in bot init
-        print(f"[WATCHDOG ERROR] 無法啟動守護程序: {e}")
+        print(f"[WATCHDOG ERROR] Failed to start watchdog: {e}")
         traceback.print_exc()
 
 # If there is a running loop, start right away; otherwise queue the
