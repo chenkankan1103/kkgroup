@@ -218,6 +218,14 @@ class UserPanel(commands.Cog):
                     
                     if thread_id and thread_id != 0:
                         thread = forum_channel.get_thread(thread_id)
+                        if not thread:
+                            # cache 找不到時，向 Discord API 確認（archived thread 不在快取）
+                            try:
+                                thread = await self.bot.fetch_channel(thread_id)
+                            except discord.NotFound:
+                                thread = None
+                            except Exception:
+                                thread = None
                         if thread:
                             existing_threads += 1
                             continue
@@ -272,6 +280,14 @@ class UserPanel(commands.Cog):
             thread_id = user_data.get('thread_id', 0)
             if thread_id:
                 thread = forum_channel.get_thread(thread_id)
+                if not thread:
+                    # cache 找不到時，向 Discord API 確認（archived thread 不在快取）
+                    try:
+                        thread = await self.bot.fetch_channel(thread_id)
+                    except discord.NotFound:
+                        thread = None
+                    except Exception:
+                        thread = None
                 if thread:
                     return thread
                 else:
