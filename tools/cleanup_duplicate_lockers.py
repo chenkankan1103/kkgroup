@@ -43,7 +43,15 @@ def load_env(path: str) -> dict:
                 if not line or line.startswith('#') or '=' not in line:
                     continue
                 key, _, val = line.partition('=')
-                env[key.strip()] = val.strip().strip('"').strip("'")
+                val = val.strip().strip('"').strip("'")
+                # 移除行尾的 inline 注解（# 之後部分），但要小心值裡面本身有 #
+                # 規則：空格 + # 視為注解起點
+                comment_idx = val.find('  #')
+                if comment_idx == -1:
+                    comment_idx = val.find(' #')
+                if comment_idx != -1:
+                    val = val[:comment_idx].strip()
+                env[key.strip()] = val
     except FileNotFoundError:
         pass
     return env
