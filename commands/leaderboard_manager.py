@@ -450,8 +450,8 @@ def _sync_build_leaderboard_image(
         kkcoin_x = kk_right - kkcoin_width
         usd_x = usd_right - usd_width
 
-        draw_text((kkcoin_x, y+12), kkcoin_text, font=FONT_KKCOIN, fill=(100, 180, 220), shadow=True)
-        draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(100, 220, 150), shadow=True)
+        draw_text((kkcoin_x, y+12), kkcoin_text, font=FONT_KKCOIN, fill=(76, 175, 80), shadow=True)  # 綠色
+        draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(33, 150, 243), shadow=True)  # 藍色
         
         # 進度條 - 分開顯示 KK幣（綠色）和數位美金（藍色）
         progress_bar_y = y + 35
