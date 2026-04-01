@@ -442,23 +442,81 @@ def _sync_build_leaderboard_image(
                 (192, 192, 192),    # 銀色（第2名）
                 (205, 127, 50)      # 銅色（第3名）
             ]
+            medal_rank = [" 🥇", " 🥈", " 🥉"]
             border_color = medal_border_colors[i]
             border_width = 4
+            
+            # 邊框位置
+            frame_left = avatar_x - border_width//2
+            frame_top = y - border_width//2
+            frame_right = avatar_x + avatar_size + border_width//2
+            frame_bottom = y + avatar_size + border_width//2
+            frame_center_x = (frame_left + frame_right) // 2
+            
             try:
                 draw.rounded_rectangle(
-                    [(avatar_x - border_width//2, y - border_width//2),
-                     (avatar_x + avatar_size + border_width//2, y + avatar_size + border_width//2)],
+                    [(frame_left, frame_top), (frame_right, frame_bottom)],
                     radius=4,
                     outline=border_color,
                     width=border_width
                 )
             except AttributeError:
                 draw.rectangle(
-                    [(avatar_x - border_width//2, y - border_width//2),
-                     (avatar_x + avatar_size + border_width//2, y + avatar_size + border_width//2)],
+                    [(frame_left, frame_top), (frame_right, frame_bottom)],
                     outline=border_color,
                     width=border_width
                 )
+            
+            # 頂部中間：小翅膀（三角形）
+            wing_size = 8
+            wing_gap = 3
+            wing_y_top = frame_top - 8
+            
+            # 左翅膀
+            left_wing_points = [
+                (frame_center_x - wing_gap - wing_size, wing_y_top + wing_size),
+                (frame_center_x - wing_gap, wing_y_top),
+                (frame_center_x - wing_gap, wing_y_top + wing_size)
+            ]
+            draw.polygon(left_wing_points, fill=border_color)
+            
+            # 右翅膀
+            right_wing_points = [
+                (frame_center_x + wing_gap, wing_y_top),
+                (frame_center_x + wing_gap + wing_size, wing_y_top + wing_size),
+                (frame_center_x + wing_gap, wing_y_top + wing_size)
+            ]
+            draw.polygon(right_wing_points, fill=border_color)
+            
+            # 底部圓圈，裡面標註 1/2/3
+            circle_radius = 12
+            circle_x = frame_center_x
+            circle_y = frame_bottom + 8
+            
+            # 繪製圓圈
+            draw.ellipse(
+                [(circle_x - circle_radius, circle_y - circle_radius),
+                 (circle_x + circle_radius, circle_y + circle_radius)],
+                fill=border_color,
+                outline=border_color
+            )
+            
+            # 圓圈內的數字
+            rank_text = str(i + 1)
+            try:
+                # 使用較小的字體繪製排名數字
+                rank_num_font = ImageFont.truetype(FONT_PATH, 16)
+            except:
+                rank_num_font = FONT_DESC
+            
+            # 計算文字位置（水平垂直都居中）
+            text_bbox = rank_num_font.getbbox(rank_text)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
+            text_x = circle_x - text_width // 2
+            text_y = circle_y - text_height // 2
+            
+            draw.text((text_x, text_y), rank_text, font=rank_num_font, fill=(54, 57, 63))
         
         name_x = rank_x + 100
         name_y = y+8
