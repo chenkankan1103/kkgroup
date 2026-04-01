@@ -435,6 +435,31 @@ def _sync_build_leaderboard_image(
             display_avatar = display_avatar.resize((avatar_size, avatar_size))
             img.paste(display_avatar, (avatar_x, y), display_avatar)
         
+        # 前三名的頭像邊框（金銀銅）
+        if i < 3:
+            medal_border_colors = [
+                (255, 215, 0),      # 金色（第1名）
+                (192, 192, 192),    # 銀色（第2名）
+                (205, 127, 50)      # 銅色（第3名）
+            ]
+            border_color = medal_border_colors[i]
+            border_width = 4
+            try:
+                draw.rounded_rectangle(
+                    [(avatar_x - border_width//2, y - border_width//2),
+                     (avatar_x + avatar_size + border_width//2, y + avatar_size + border_width//2)],
+                    radius=4,
+                    outline=border_color,
+                    width=border_width
+                )
+            except AttributeError:
+                draw.rectangle(
+                    [(avatar_x - border_width//2, y - border_width//2),
+                     (avatar_x + avatar_size + border_width//2, y + avatar_size + border_width//2)],
+                    outline=border_color,
+                    width=border_width
+                )
+        
         name_x = rank_x + 100
         name_y = y+8
         draw_text((name_x, name_y), member.display_name, font=FONT_SMALL, fill=(200, 200, 220), shadow=True)
