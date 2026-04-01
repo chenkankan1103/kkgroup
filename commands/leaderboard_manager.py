@@ -467,31 +467,10 @@ def _sync_build_leaderboard_image(
                     width=border_width
                 )
             
-            # 頂部中間：小翅膀（三角形）
-            wing_size = 8
-            wing_gap = 3
-            wing_y_top = frame_top - 8
-            
-            # 左翅膀
-            left_wing_points = [
-                (frame_center_x - wing_gap - wing_size, wing_y_top + wing_size),
-                (frame_center_x - wing_gap, wing_y_top),
-                (frame_center_x - wing_gap, wing_y_top + wing_size)
-            ]
-            draw.polygon(left_wing_points, fill=border_color)
-            
-            # 右翅膀
-            right_wing_points = [
-                (frame_center_x + wing_gap, wing_y_top),
-                (frame_center_x + wing_gap + wing_size, wing_y_top + wing_size),
-                (frame_center_x + wing_gap, wing_y_top + wing_size)
-            ]
-            draw.polygon(right_wing_points, fill=border_color)
-            
-            # 底部圓圈，裡面標註 1/2/3
+            # 底部圓圈，圓心正好在邊框線上
             circle_radius = 12
             circle_x = frame_center_x
-            circle_y = frame_bottom + 8
+            circle_y = frame_bottom  # 圓心正好在邊框底部線上
             
             # 繪製圓圈
             draw.ellipse(
