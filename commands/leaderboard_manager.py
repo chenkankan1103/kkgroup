@@ -206,6 +206,7 @@ async def make_leaderboard_image(members_data):
         member_totals,
         max_assets,
         inflation_info,
+        dynamic_rate,
     )
 
 
@@ -226,6 +227,7 @@ def _sync_build_leaderboard_image(
     member_totals,
     max_assets,
     inflation_info,
+    dynamic_rate,
 ):
     """純同步版，執行在工作執行緒中，不會阻塞事件循環"""
     
