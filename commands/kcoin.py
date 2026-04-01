@@ -1188,7 +1188,10 @@ class KKCoin(commands.Cog):
 
         try:
             image = await make_leaderboard_image(members_data)
-            # ✅ 使用 Discord CDN URL（即時顯示，流量由 Discord 擋）
+
+            # 立即上傳並更新 URL（避免舊圖緩存、確保最新顏色）
+            await self._upload_leaderboard_to_discord(image, len(members_data))
+
             leaderboard_url = get_from_env("LEADERBOARD_URL", "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=0")
             embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
             embed.set_image(url=leaderboard_url)
