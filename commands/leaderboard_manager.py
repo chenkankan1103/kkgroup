@@ -493,7 +493,7 @@ def _sync_build_leaderboard_image(
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
             text_x = circle_x - text_width // 2
-            text_y = circle_y - text_height // 2
+            text_y = circle_y - text_height // 2 - 2  # 數字稍微往上移一點
             
             draw.text((text_x, text_y), rank_text, font=rank_num_font, fill=(54, 57, 63))
         
