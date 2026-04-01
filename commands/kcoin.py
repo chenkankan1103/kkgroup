@@ -1457,8 +1457,8 @@ class KKCoin(commands.Cog):
         ):
             return
 
-        # 字數 = KK幣，最多50幣，無冷卻時間
-        reward = min(len(content), 50)
+        # 字數 * 2 = KK幣，最多100幣，無冷卻時間
+        reward = min(len(content) * 2, 100)
 
         self.last_message_cache[user_id] = content
         # 同步操作寫入資料庫可能較快，但若擔心可改為 to_thread
