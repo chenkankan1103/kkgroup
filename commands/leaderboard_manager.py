@@ -397,7 +397,14 @@ def _sync_build_leaderboard_image(
         
         avatar_img = member_data[1]
         
+        # 1/2/3 名略微上移以增加視覺層次感
         y = leaderboard_start_y + 75 + i*70
+        if i == 0:
+            y -= 8
+        elif i == 1:
+            y -= 5
+        elif i == 2:
+            y -= 2
         if i < 3 and medal_imgs[i]:
             try:
                 img.paste(medal_imgs[i].resize((48, 48)), (MARGIN + 10, y+2), medal_imgs[i].resize((48, 48)))
@@ -493,7 +500,7 @@ def _sync_build_leaderboard_image(
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
             text_x = circle_x - text_width // 2
-            text_y = circle_y - text_height // 2 - 2  # 數字稍微往上移一點
+            text_y = circle_y - text_height // 2 - 4  # 數字再往上移一點
             
             draw.text((text_x, text_y), rank_text, font=rank_num_font, fill=(54, 57, 63))
         
