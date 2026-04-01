@@ -490,8 +490,8 @@ def _sync_build_leaderboard_image(
             # 圓圈內的數字
             rank_text = str(i + 1)
             try:
-                # 使用較小的字體繪製排名數字
-                rank_num_font = ImageFont.truetype(FONT_PATH, 16)
+                # 數字放大一些
+                rank_num_font = ImageFont.truetype(FONT_PATH, 18)
             except:
                 rank_num_font = FONT_DESC
             
@@ -500,7 +500,7 @@ def _sync_build_leaderboard_image(
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
             text_x = circle_x - text_width // 2
-            text_y = circle_y - text_height // 2 - 4  # 數字再往上移一點
+            text_y = circle_y - text_height // 2 - 6  # 數字再往上移一點
             
             draw.text((text_x, text_y), rank_text, font=rank_num_font, fill=(54, 57, 63))
         
