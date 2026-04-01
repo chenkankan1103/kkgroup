@@ -331,12 +331,8 @@ def _sync_build_leaderboard_image(
         outline=(120, 130, 160)
     )
     
-    if reserve_pressure < 33:
-        pressure_color = (76, 175, 80)
-    elif reserve_pressure < 66:
-        pressure_color = (255, 193, 7)
-    else:
-        pressure_color = (244, 67, 54)
+    # 將儲備壓力條固定為綠色，避免圖中出現紅黃色（只用於內部監控）
+    pressure_color = (76, 175, 80)
     
     filled_width = int(bar_width * reserve_pressure / 100)
     if filled_width > 0:
