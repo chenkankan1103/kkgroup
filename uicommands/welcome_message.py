@@ -289,10 +289,15 @@ class WelcomeFlow(commands.Cog):
     async def delayed_preload(self):
         """延遲預載入以避免阻塞機器人啟動"""
         try:
+            print("⏳ 等待機器人完全啟動...")
             await asyncio.sleep(5)  # 等待機器人完全啟動
+            print("🚀 機器人已啟動，開始預載入角色圖片...")
             await self.preload_preset_images()
+            print(f"✅ 角色圖片預載入完成！(共 {len(self.image_cache)} 個預設圖片)")
         except Exception as e:
             print(f"⚠️ 預載入圖片時發生錯誤（不影響主功能）: {e}")
+            import traceback
+            traceback.print_exc()
 
     def init_database(self):
         """
@@ -313,14 +318,20 @@ class WelcomeFlow(commands.Cog):
 
     async def preload_preset_images(self):
         """預載入 4 張預設角色圖片（如果緩存不存在）"""
-        print("🖼️ 開始檢查角色圖片緩存...")
+        print("🖼️ 開始檢查並預載入角色圖片...")
+        print(f"   預設角色配置: {list(self.preset_characters.keys())}")
+        print(f"   當前記憶體緩存: {len(self.image_cache)} 個圖片")
+        
+        success_count = 0
+        fail_count = 0
         
         for preset_name, config in self.preset_characters.items():
             try:
                 # 檢查是否已有緩存（優先從文件快取）
                 cached_url = self.get_cached_discord_url(preset_name)
                 if cached_url:
-                    print(f"✅ {preset_name} 使用已存在的緩存 (跳過上傳)")
+                    print(f"   ✅ {preset_name} 使用已存在的緩存 (跳過上傳)")
+                    success_count += 1
                     continue
                 
                 # 檢查本地緩存
@@ -330,27 +341,37 @@ class WelcomeFlow(commands.Cog):
                         with open(cache_path, 'rb') as f:
                             image_data = f.read()
                         
+                        print(f"   📁 {preset_name} 找到本地緩存: {len(image_data)} bytes")
                         discord_url = await self.upload_image_to_discord_storage(image_data, preset_name)
                         if discord_url:
-                            print(f"✅ {preset_name} 從本地緩存上傳到 Discord")
+                            print(f"   ✅ {preset_name} 從本地緩存上傳到 Discord")
+                            success_count += 1
                             continue
+                        else:
+                            print(f"   ⚠️ {preset_name} 本地緩存上傳失敗，嘗試重新生成")
                     except Exception as e:
-                        print(f"⚠️ 讀取本地緩存 {preset_name} 失敗: {e}")
+                        print(f"   ⚠️ 讀取本地緩存 {preset_name} 失敗: {e}")
                 
                 # 從 API 獲取圖片
+                print(f"   🌐 {preset_name} 正在從 API 生成...")
                 discord_url = await self.generate_and_cache_preset_image(preset_name, config)
                 if discord_url:
-                    print(f"✅ {preset_name} 從 API 獲取並緩存")
+                    print(f"   ✅ {preset_name} 從 API 獲取並緩存成功")
+                    success_count += 1
                 else:
-                    print(f"❌ {preset_name} 預載入失敗")
+                    print(f"   ❌ {preset_name} 預載入失敗（API 無法生成）")
+                    fail_count += 1
                     
                 # 避免請求過於頻繁
                 await asyncio.sleep(1)
                 
             except Exception as e:
-                print(f"❌ 預載入 {preset_name} 時發生錯誤: {e}")
+                print(f"   ❌ {preset_name} 預載入異常: {type(e).__name__}: {e}")
+                fail_count += 1
         
-        print("✅ 角色圖片預載入完成")
+        print(f"📊 預載入完成: ✅ {success_count} 成功 | ❌ {fail_count} 失敗 | 📦 {len(self.image_cache)} 總計")
+        if fail_count > 0:
+            print(f"⚠️ 提示: 如果圖片無法顯示，請檢查 MapleStory API (maplestory.io) 是否可訪問")
 
     async def generate_and_cache_preset_image(self, preset_name: str, config: dict) -> Optional[str]:
         """生成並緩存預設角色圖片"""
@@ -375,19 +396,33 @@ class WelcomeFlow(commands.Cog):
             item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
             api_url = f"https://maplestory.io/api/character/{item_path}/{config['pose']}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
 
+            print(f"🎨 【{preset_name}】正在從 MapleStory API 生成圖片...")
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
                 async with session.get(api_url) as response:
                     if response.status == 200:
                         image_data = await response.read()
+                        print(f"   ✅ API 響應成功: 接收 {len(image_data)} bytes")
+                        
                         if len(image_data) > 100:
                             # 保存到本地緩存
                             await self.save_image_to_cache(image_data, preset_name)
                             
                             # 上傳到 Discord
-                            return await self.upload_image_to_discord_storage(image_data, preset_name)
+                            discord_url = await self.upload_image_to_discord_storage(image_data, preset_name)
+                            if discord_url:
+                                print(f"   ✅ 已上傳到 Discord: {discord_url[:80]}...")
+                            return discord_url
+                        else:
+                            print(f"   ⚠️ 圖片數據太小: {len(image_data)} bytes")
+                    else:
+                        print(f"   ❌ API 返回錯誤: HTTP {response.status}")
 
+        except asyncio.TimeoutError:
+            print(f"❌ 【{preset_name}】API 超時 (15秒)")
+        except aiohttp.ClientError as e:
+            print(f"❌ 【{preset_name}】網路錯誤: {e}")
         except Exception as e:
-            print(f"❌ 生成預設圖片 {preset_name} 錯誤: {e}")
+            print(f"❌ 【{preset_name}】生成失敗: {type(e).__name__}: {e}")
         
         return None
 
@@ -560,8 +595,10 @@ class WelcomeFlow(commands.Cog):
             channel = self.bot.get_channel(storage_channel_id)
             
             if not channel:
-                print(f"❌ 找不到儲存頻道: {storage_channel_id}")
+                print(f"   ❌ 找不到儲存頻道 (ID: {storage_channel_id})")
                 return None
+            
+            print(f"   📤 準備上傳到 Discord (Channel: {channel.name}, ID: {storage_channel_id})")
             
             file_obj = discord.File(
                 io.BytesIO(image_data), 
@@ -569,20 +606,26 @@ class WelcomeFlow(commands.Cog):
             )
             
             if storage_channel_id == self.welcome_channel_id:
+                print(f"   📨 使用歡迎頻道發送（發送後自動刪除）")
                 temp_msg = await channel.send(file=file_obj)
                 
                 if temp_msg.attachments:
                     discord_url = temp_msg.attachments[0].url
+                    print(f"   ✅ 上傳成功: {discord_url[:80]}...")
                     self.save_discord_url_cache(cache_key, discord_url, temp_msg.id)
                     
                     try:
                         await asyncio.sleep(0.5)
                         await temp_msg.delete()
+                        print(f"   🗑️ 臨時訊息已刪除")
                     except (discord.NotFound, discord.Forbidden):
                         pass
                     
                     return discord_url
+                else:
+                    print(f"   ⚠️ 上傳成功但無法取得附件 URL")
             else:
+                print(f"   📨 使用儲存頻道發送（持久存儲）")
                 storage_msg = await channel.send(
                     content=f"🖼️ **角色圖片** - {cache_key}",
                     file=file_obj
@@ -590,27 +633,46 @@ class WelcomeFlow(commands.Cog):
                 
                 if storage_msg.attachments:
                     discord_url = storage_msg.attachments[0].url
+                    print(f"   ✅ 已儲存到頻道: {discord_url[:80]}...")
                     self.save_discord_url_cache(cache_key, discord_url, storage_msg.id)
                     return discord_url
+                else:
+                    print(f"   ⚠️ 上傳成功但無法取得附件 URL")
             
+        except discord.Forbidden as e:
+            print(f"   ❌ 權限不足: {e}")
+        except discord.HTTPException as e:
+            print(f"   ❌ HTTP 錯誤: {e}")
         except Exception as e:
-            print(f"❌ 上傳圖片到 Discord 錯誤: {e}")
+            print(f"   ❌ 上傳錯誤: {type(e).__name__}: {e}")
         
         return None
 
     async def get_character_image_url(self, user_data: dict) -> Optional[str]:
         """獲取用戶對應的角色圖片 URL"""
         preset_key = self.get_preset_key_for_user(user_data)
+        print(f"🎭 【get_character_image_url】用戶角色鍵: {preset_key}")
         
         # 直接從緩存獲取 URL
         cached_url = self.get_cached_discord_url(preset_key)
         if cached_url:
+            print(f"   ✅ 從緩存獲取: {cached_url[:80]}...")
             return cached_url
+        else:
+            print(f"   ⚠️ 緩存中未找到: {preset_key}")
         
         # 如果沒有緩存，嘗試生成
         if preset_key in self.preset_characters:
+            print(f"   🔄 嘗試從 API 生成...")
             config = self.preset_characters[preset_key]
-            return await self.generate_and_cache_preset_image(preset_key, config)
+            url = await self.generate_and_cache_preset_image(preset_key, config)
+            if url:
+                print(f"   ✅ 成功生成: {url[:80]}...")
+            else:
+                print(f"   ❌ 生成失敗")
+            return url
+        else:
+            print(f"   ❌ 未知的角色鍵: {preset_key}")
         
         return None
 
@@ -680,11 +742,19 @@ class WelcomeFlow(commands.Cog):
             
             # 獲取並設置紙娃娃圖片
             try:
+                print(f"📸 【create_welcome_embed】開始獲取紙娃娃圖片 (User: {user.name}, ID: {user.id})")
                 character_image_url = await self.get_character_image_url(user_data)
                 if character_image_url:
                     embed.set_image(url=character_image_url)
+                    print(f"✅ 【create_welcome_embed】紙娃娃已設置")
+                else:
+                    print(f"⚠️ 【create_welcome_embed】無法獲取紙娃娃圖片（URL 為 None）")
+                    print(f"   用戶資料: gender={user_data.get('gender')}, is_stunned={user_data.get('is_stunned')}")
+                    print(f"   圖片緩存狀態: {len(self.image_cache)} 個預設圖片在記憶體中")
             except Exception as e:
-                print(f"⚠️ 無法獲取紙娃娃圖片: {e}")
+                print(f"❌ 【create_welcome_embed】獲取紙娃娃失敗: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
 
             if user_data.get('is_stunned', 0) == 1:
                 embed.set_footer(text="💫 你目前處於擊暈狀態，請等待恢復...")
@@ -827,12 +897,12 @@ class WelcomeFlow(commands.Cog):
                 character_image_url = await self.get_character_image_url(user_data)
                 if character_image_url:
                     embed.set_image(url=character_image_url)
-                    print(f"✅ 已設置角色圖片")
+                    print(f"✅ 【on_member_join】已設置角色圖片")
                 else:
-                    print(f"⚠️ 無法獲取角色圖片（將不影響主功能）")
+                    print(f"⚠️ 【on_member_join】無法獲取角色圖片（將不影響主功能）")
             except Exception as inner_err:
                 # 生成歡迎 embed 或獲取圖片失敗，仍需發送基本歡迎訊息
-                print(f"⚠️ 生成歡迎 embed 失敗，改用簡化版本: {inner_err}")
+                print(f"⚠️ 【on_member_join】生成 embed 失敗，改用簡化版本: {inner_err}")
                 import traceback
                 traceback.print_exc()
 
