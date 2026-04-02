@@ -580,6 +580,7 @@ class ScamParkEvents(commands.Cog):
                     # 編輯現有消息
                     await message.edit(embed=embed)
                     print(f"✏️ 編輯事件訊息: {event_type} for user {user_id}")
+                    self.save_event_time(user_id, message.id, event_type)
                     return message
                 except discord.NotFound:
                     # 消息已被刪除，清除舊 ID 並發送新消息
@@ -597,6 +598,7 @@ class ScamParkEvents(commands.Cog):
             message = await thread.send(embed=embed, silent=True)
             # 保存消息 ID
             set_user_field(user_id, 'last_event_message_id', message.id)
+            self.save_event_time(user_id, message.id, event_type)
             print(f"📤 發送新事件訊息: {event_type} for user {user_id}")
             return message
             
@@ -608,6 +610,7 @@ class ScamParkEvents(commands.Cog):
             try:
                 message = await thread.send(embed=embed, silent=True)
                 set_user_field(user_id, 'last_event_message_id', message.id)
+                self.save_event_time(user_id, message.id, event_type)
                 print(f"📤 降級發送成功，已存 ID: {message.id}")
                 return message
             except Exception as e2:
