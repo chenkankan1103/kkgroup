@@ -607,9 +607,11 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     load_message_ids(bot_type_str)
     
     try:
+        print(f"[INIT] Attempting to get channel {DASHBOARD_CHANNEL_ID}...", flush=True)
         channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
             print(f"X [INIT] Cannot find dashboard channel: {DASHBOARD_CHANNEL_ID}", flush=True)
+            print(f"[INIT] Available channels in bot_instance: {[c.id for c in bot_instance.get_all_channels()[:5]]}", flush=True)
             return False
         
         print(f"[INIT] OK Found channel {DASHBOARD_CHANNEL_ID}", flush=True)
@@ -648,8 +650,9 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         if not found_logs:
             # No existing found, create new one
             try:
-                print(f"[INIT] Creating new logs embed...", flush=True)
+                print(f"[INIT] Creating new logs embed for {bot_type_str}...", flush=True)
                 logs_embed = await create_logs_embed(bot_type_str)
+                print(f"[INIT] Sending new logs embed to channel...", flush=True)
                 logs_msg = await channel.send(embed=logs_embed, flags=discord.MessageFlags(suppress_notifications=True))
                 message_ids[bot_type_str]["logs"] = logs_msg.id
                 save_message_id(bot_type_str, "logs", str(logs_msg.id))
@@ -676,9 +679,9 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         
         # Register bot instance and start independent update task
         try:
-            print(f"[INIT] Registering {bot_type_str} bot instance...", flush=True)
+            print(f"[INIT] About to register {bot_type_str} bot instance...", flush=True)
             register_bot_instance(bot_type_str, bot_instance)
-            print(f"[INIT] OK {bot_type_str} instance registered", flush=True)
+            print(f"[INIT] OK {bot_type_str} instance registered successfully", flush=True)
 
             # Create and start independent update task for current bot
             print(f"[INIT] Checking {bot_type_str} update task status...", flush=True)
