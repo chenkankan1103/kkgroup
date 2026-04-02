@@ -119,22 +119,11 @@ async def get_systemd_logs(bot_type: str) -> Optional[str]:
         if bot_type not in QUIET_UPDATE_BOTS:
             print(f"[SYSTEMD LOGS] {bot_type} 正在獲取 {service_name} 的日誌...")
 
-        # 使用上次查詢時間構造 --since 參數
-        since_time = _last_log_fetch.get(bot_type)
-        if since_time is None:
-            # 第一次查詢：從最近 10 分鐘開始
-            since_arg = "10 minutes ago"
-        else:
-            # journalctl 不喜歡帶時區或微秒的 ISO 字串，會報 "Failed to parse timestamp"
-            # 使用最簡單的年月日時分秒格式即可
-            # since_time 存的是本地台灣時區時間
-            since_arg = since_time.strftime("%Y-%m-%d %H:%M:%S")
-
-        # 構建 journalctl 命令（使用完整路徑）
+        # 構建 journalctl 命令 - 直接獲取最後 N 行（不使用 --since 篩選）
+        # 這樣可以保證總是獲取最新的日誌，不會因為時間戳問題而返回空結果
         cmd = [
             "/usr/bin/journalctl", "-u", service_name,
-            "-n", str(lines), "--no-pager", "-o", "short-iso",
-            "--since", since_arg
+            "-n", str(lines), "--no-pager", "-o", "short-iso"
         ]
 
         # 異步執行命令；移除超時保護，使 journalctl 執行時間不限
@@ -149,8 +138,6 @@ async def get_systemd_logs(bot_type: str) -> Optional[str]:
             # 使用 errors='replace' 而非 'ignore'，以便看到編碼問題（用替代符號表示）
             # 這樣日誌中會出現 U+FFFD '？' 而不是無聲丟棄無效字符
             logs = stdout.decode('utf-8', errors='replace').strip()
-            # 更新 fetch 時間，無論是否有新內容
-            _last_log_fetch[bot_type] = datetime.now(TAIWAN_TZ)
 
             if logs:
                 # 格式化日誌
