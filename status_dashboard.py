@@ -283,7 +283,8 @@ chart_generation_lock = asyncio.Lock()
 
 # list of bots for which we suppress the routine start/finish logs
 # now quiet all of them to eliminate per-minute console noise
-QUIET_UPDATE_BOTS = {"bot", "shopbot", "uibot"}
+# 暫時啟用所有調試訊息用來診斷日誌傳遞問題
+QUIET_UPDATE_BOTS = set()  # 空集合表示所有 bots 都啟用調試訊息
 
 def create_update_task(bot_type: str):
     """為指定機器人創建獨立的更新任務"""
