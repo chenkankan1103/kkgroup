@@ -660,15 +660,29 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         if not found_logs:
             # No existing found, create new one
             try:
+                with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now()}] Creating new logs embed for {bot_type_str}...\n")
+                    f.flush()
                 print(f"[INIT] Creating new logs embed for {bot_type_str}...", flush=True)
                 logs_embed = await create_logs_embed(bot_type_str)
+                with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now()}] Sending new logs embed to channel...\n")
+                    f.flush()
                 print(f"[INIT] Sending new logs embed to channel...", flush=True)
                 logs_msg = await channel.send(embed=logs_embed, flags=discord.MessageFlags(suppress_notifications=True))
                 message_ids[bot_type_str]["logs"] = logs_msg.id
                 save_message_id(bot_type_str, "logs", str(logs_msg.id))
+                with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now()}] OK: Created {bot_type_str} logs: {logs_msg.id}\n")
+                    f.flush()
                 print(f"OK [INIT] Created {bot_type_str} logs: {logs_msg.id}", flush=True)
                 add_log(bot_type_str, "OK Log system initialized")
             except Exception as e:
+                with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now()}] ERROR creating logs: {e}\n")
+                    import traceback
+                    traceback.print_exc(file=f)
+                    f.flush()
                 print(f"WARN [INIT] Failed to create logs: {e}", flush=True)
                 import traceback
                 traceback.print_exc()
@@ -689,8 +703,14 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
         
         # Register bot instance and start independent update task
         try:
+            with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now()}] About to register {bot_type_str} bot instance...\n")
+                f.flush()
             print(f"[INIT] About to register {bot_type_str} bot instance...", flush=True)
             register_bot_instance(bot_type_str, bot_instance)
+            with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now()}] OK {bot_type_str} instance registered successfully\n")
+                f.flush()
             print(f"[INIT] OK {bot_type_str} instance registered successfully", flush=True)
 
             # Create and start independent update task for current bot
