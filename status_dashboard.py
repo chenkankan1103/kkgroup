@@ -669,7 +669,13 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                     f.write(f"[{datetime.now()}] Sending new logs embed to channel...\n")
                     f.flush()
                 print(f"[INIT] Sending new logs embed to channel...", flush=True)
-                logs_msg = await channel.send(embed=logs_embed, flags=discord.MessageFlags(suppress_notifications=True))
+                # First send without flags, then edit with flags if needed
+                logs_msg = await channel.send(embed=logs_embed)
+                # Try to edit with suppress_notifications flag
+                try:
+                    await logs_msg.edit(flags=discord.MessageFlags(suppress_notifications=True))
+                except:
+                    pass  # Flag setting is optional, don't fail if not supported
                 message_ids[bot_type_str]["logs"] = logs_msg.id
                 save_message_id(bot_type_str, "logs", str(logs_msg.id))
                 with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
