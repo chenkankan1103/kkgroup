@@ -343,8 +343,10 @@ def create_update_task(bot_type: str):
                 traceback.print_exc(file=ef)
             traceback.print_exc()
 
-    # 創建任務對象 - 優化：每 120 秒更新一次（從 60 秒改為減少 I/O）
-    task = tasks.loop(seconds=120)(individual_update_task)
+    # 創建任務對象 - 每 15 秒檢查一次日誌
+    # 如果內容相同會跳過 Discord 編輯，所以頻繁檢查不會造成噪音
+    # 這樣新日誌會在 15 秒內迅速反映到 Discord
+    task = tasks.loop(seconds=15)(individual_update_task)
     task.__name__ = f"update_task_{bot_type}"
 
     return task
@@ -432,7 +434,7 @@ async def update_dashboard_logs(bot, bot_type: str):
             # Don't set timestamp so time doesn't appear at top of embed
         )
 
-        embed.set_footer(text=f"每 120 秒自動更新 | 台灣時間 {format_taiwan_time()}")
+        embed.set_footer(text=f"有新日誌時即時更新 | 台灣時間 {format_taiwan_time()}")
 
         # Update message
         message_id = get_message_id(bot_type, "logs")
