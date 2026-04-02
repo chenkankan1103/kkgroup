@@ -608,12 +608,22 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     
     try:
         print(f"[INIT] Attempting to get channel {DASHBOARD_CHANNEL_ID}...", flush=True)
+        with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now()}] Attempting get_channel({DASHBOARD_CHANNEL_ID})\n")
+            f.flush()
+        
         channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
         if not channel:
+            with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now()}] ERROR: Channel not found! {DASHBOARD_CHANNEL_ID}\n")
+                f.flush()
             print(f"X [INIT] Cannot find dashboard channel: {DASHBOARD_CHANNEL_ID}", flush=True)
             print(f"[INIT] Available channels in bot_instance: {[c.id for c in bot_instance.get_all_channels()[:5]]}", flush=True)
             return False
         
+        with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now()}] OK: Found channel {DASHBOARD_CHANNEL_ID}\n")
+            f.flush()
         print(f"[INIT] OK Found channel {DASHBOARD_CHANNEL_ID}", flush=True)
         
         # Clean up old log embeds and initialize new ones
