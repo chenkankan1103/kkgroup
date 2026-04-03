@@ -25,7 +25,7 @@ class CropOperationView(discord.ui.View):
         self.harvested = harvested
 
         # 添加種植按鈕（如果有種子且有空位）
-        if seeds and len(plants) < 3:
+        if seeds and len(plants) < 5:
             plant_button = discord.ui.Button(
                 label="🌱 種植",
                 style=discord.ButtonStyle.success,
@@ -232,7 +232,7 @@ class CropOperationView(discord.ui.View):
                 )
                 embed.add_field(
                     name="📊 作物狀態",
-                    value=f"成長中: {len(growing)} | 已成熟: {len(harvested)} | 總計: {len(plants)}/3",
+                    value=f"成長中: {len(growing)} | 已成熟: {len(harvested)} | 總計: {len(plants)}/5",
                     inline=False
                 )
                 
@@ -274,7 +274,7 @@ class CropOperationView(discord.ui.View):
 
                 embed.add_field(
                     name="🌾 作物狀態",
-                    value=f"成長中: {len(growing)} | 已成熟: {len(harvested)} | 總計: {len(plants)}/3",
+                    value=f"成長中: {len(growing)} | 已成熟: {len(harvested)} | 總計: {len(plants)}/5",
                     inline=False
                 )
 
@@ -743,12 +743,12 @@ class CropPlantingView(discord.ui.View):
     async def execute_configured_planting(self, interaction: discord.Interaction):
         """執行配置好的一鍵種植"""
         try:
-            # ⭐ 檢查當前植物數量，確保不超過3個
+            # ⭐ 檢查當前植物數量，確保不超過5個
             current_plants = await get_user_plants(self.user_id)
-            remaining_slots = 3 - len(current_plants)
+            remaining_slots = 5 - len(current_plants)
             
             if remaining_slots <= 0:
-                await interaction.followup.send("❌ 植物格位已滿（3/3），無法再種植！", ephemeral=True)
+                await interaction.followup.send("❌ 植物格位已滿（5/5），無法再種植！", ephemeral=True)
                 return
 
             results = []
@@ -822,7 +822,7 @@ class CropPlantingView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 種植時發生錯誤：{str(e)[:100]}", ephemeral=True)
-        """一鍵種植：嘗試種植所有持有的種子（限制3個植物）"""
+        """一鍵種植：嘗試種植所有持有的種子（限制5個植物）"""
         try:
             await interaction.response.defer(ephemeral=True)
 
@@ -830,12 +830,12 @@ class CropPlantingView(discord.ui.View):
                 await interaction.followup.send("❌ 沒有可用的種子信息！", ephemeral=True)
                 return
 
-            # ⭐ 檢查當前植物數量，確保不超過3個
+            # ⭐ 檢查當前植物數量，確保不超過5個
             current_plants = await get_user_plants(self.user_id)
-            remaining_slots = 3 - len(current_plants)
+            remaining_slots = 5 - len(current_plants)
             
             if remaining_slots <= 0:
-                await interaction.followup.send("❌ 植物格位已滿（3/3），無法再種植！請先收割成熟的植物。", ephemeral=True)
+                await interaction.followup.send("❌ 植物格位已滿（5/5），無法再種植！請先收割成熟的植物。", ephemeral=True)
                 return
 
             results = []  # 儲存種植結果
@@ -907,6 +907,8 @@ class SelectSeedView(discord.ui.View):
         self.crop_operation_view = crop_operation_view
         # 保留種子快照以便一鍵種植使用
         self.seeds = dict(seeds)
+        # 初始化配置字典
+        self.plant_all_config = {}
 
         for idx, (seed_name, qty) in enumerate(seeds.items(), 1):
             if qty > 0:
@@ -1214,12 +1216,12 @@ class SelectSeedView(discord.ui.View):
     async def execute_configured_planting(self, interaction: discord.Interaction):
         """執行配置好的一鍵種植"""
         try:
-            # ⭐ 檢查當前植物數量，確保不超過3個
+            # ⭐ 檢查當前植物數量，確保不超過5個
             current_plants = await get_user_plants(self.user_id)
-            remaining_slots = 3 - len(current_plants)
+            remaining_slots = 5 - len(current_plants)
             
             if remaining_slots <= 0:
-                await interaction.followup.send("❌ 植物格位已滿（3/3），無法再種植！", ephemeral=True)
+                await interaction.followup.send("❌ 植物格位已滿（5/5），無法再種植！", ephemeral=True)
                 return
 
             results = []

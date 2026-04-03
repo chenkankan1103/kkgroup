@@ -135,8 +135,8 @@ async def get_user_plants(user_id: int) -> list:
             except Exception as e:
                 print(f"❌ 解析植物失敗：{e}")
         
-        # 如果資料庫內植物超過 7 個，則保留最新 7 個（避免舊資料影響種植邏輯）
-        if len(result) > 7:
+        # 如果資料庫內植物超過 5 個，則保留最新 5 個（避免舊資料影響種植邏輯）
+        if len(result) > 5:
             try:
                 # 依照被種植時間排序，最近的保留
                 sorted_plants = sorted(
