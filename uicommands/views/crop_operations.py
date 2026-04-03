@@ -619,9 +619,7 @@ class CropPlantingView(discord.ui.View):
 
             embed.add_field(name="💡 說明", value="使用 +/- 按鈕調整數量，完成後點「確認種植」", inline=False)
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            # 保存 interaction 用於更新
-            self._config_interaction = interaction
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
@@ -899,7 +897,7 @@ class SelectSeedView(discord.ui.View):
                     from .selection_views import PlantResultView
                     result_view = PlantResultView(self.user_id, self)
 
-                    await interaction.followup.send(embed=embed, view=result_view, ephemeral=True)
+                    await interaction.edit_original_response(embed=embed, view=result_view)
                 else:
                     # 種植失敗，退還種子
                     await add_inventory(self.user_id, "種子", seed_name, 1)
@@ -1024,7 +1022,7 @@ class SelectSeedView(discord.ui.View):
 
             embed.add_field(name="💡 說明", value="使用 +/- 按鈕調整數量，完成後點「確認種植」", inline=False)
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
