@@ -1213,58 +1213,6 @@ class SelectSeedView(discord.ui.View):
         except Exception as e:
             traceback.print_exc()
             await interaction.followup.send(f"❌ 種植時發生錯誤：{str(e)[:100]}", ephemeral=True)
-        """一鍵種植：嘗試種植所有持有的種子"""
-        try:
-            await interaction.response.defer(ephemeral=True)
-
-            # 檢查使用者是否為該視圖的擁有者
-            if interaction.user.id != self.user_id:
-                await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
-                return
-
-            results = []  # 儲存種植結果
-            # 遍歷快照的種子數量
-            for seed_name, qty in list(self.seeds.items()):
-                for _ in range(qty):
-                    has_seed = await remove_inventory(self.user_id, "種子", seed_name, 1)
-                    if not has_seed:
-                        results.append((seed_name, False, "庫存不足"))
-                        break
-                    result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
-                    if result and not result.get("success") == False:
-                        # 成功
-                        if self.cog:
-                            user = await self.bot.fetch_user(self.user_id)
-                            await self.cog.record_event('plant', user, f"種植{seed_name}")
-                        results.append((seed_name, True, ""))
-                    else:
-                        # 失敗，退還種子
-                        await add_inventory(self.user_id, "種子", seed_name, 1)
-                        reason = result.get("reason", "未知原因") if result else "未知原因"
-                        results.append((seed_name, False, reason))
-                        continue
-
-            # 建立結果 embed
-            embed = discord.Embed(title="🌱 一鍵種植結果", color=discord.Color.green())
-            for seed_name, success, reason in results:
-                emoji = ""
-                try:
-                    emoji = CANNABIS_SHOP["種子"][seed_name]["emoji"]
-                except Exception:
-                    pass
-                if success:
-                    embed.add_field(name=f"{emoji} {seed_name}", value="種植成功", inline=True)
-                else:
-                    embed.add_field(name=f"{emoji} {seed_name}", value=f"失敗：{reason}", inline=True)
-
-            # 顯示結果，並附帶返回按鈕
-            from .selection_views import PlantResultView
-            result_view = PlantResultView(self.user_id, self.crop_operation_view)
-            await interaction.followup.send(embed=embed, view=result_view, ephemeral=True)
-
-        except Exception as e:
-            traceback.print_exc()
-            await interaction.followup.send(f"❌ 一鍵種植時發生錯誤：{str(e)[:100]}", ephemeral=True)
 
     async def back_to_locker_callback(self, interaction: discord.Interaction):
         """返回到個人置物櫃主選項"""
