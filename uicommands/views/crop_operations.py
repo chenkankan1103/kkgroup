@@ -417,8 +417,8 @@ class CropPlantingView(discord.ui.View):
             inventory = await get_inventory(self.user_id)
             seed_qty = inventory.get("種子", {}).get(selected_seed, 0)
 
-            # 創建確認視圖
-            view = discord.ui.View(timeout=60)
+            # 創建確認視圖（永久視圖）
+            view = discord.ui.View(timeout=None)
             
             # 種植該種子按鈕
             plant_single_btn = discord.ui.Button(
@@ -509,7 +509,7 @@ class CropPlantingView(discord.ui.View):
             )
             embed.add_field(name="選項", value="選擇下方按鈕", inline=False)
             
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await interaction.edit_original_response(embed=embed, view=view)
 
         except Exception as e:
             traceback.print_exc()
