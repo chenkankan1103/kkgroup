@@ -42,6 +42,17 @@ def file_log(msg):
     print(msg, flush=True)
     sys.stdout.flush()
 
+def _get_memory_usage():
+    """取得當前進程的內存使用情況"""
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+        memory_mb = memory_info.rss / 1024 / 1024
+        return f"{memory_mb:.1f}MB"
+    except (ImportError, OSError):
+        return "unknown"
+
 # dashboard helpers
 # add_log removed; status_dashboard handles logs internally
 from status_dashboard import initialize_dashboard, load_message_ids
@@ -256,13 +267,20 @@ async def before_cleanup_expired_roles():
 async def update_status():
     """定期更新 Bot 狀態和日誌 Embed"""
     try:
+        # 添加超時防護，防止長時間掛起
         activity = build_discord_activity(BOT_TYPE)
-        await client.change_presence(activity=activity)
+        await asyncio.wait_for(client.change_presence(activity=activity), timeout=10.0)
         
-        # 每 2 分鐘更新一次日誌 embed
+        # 每 2 分鐘更新一次日誌 embed，但有超時保護
         from status_dashboard import update_dashboard_logs
-        await update_dashboard_logs(client, BOT_TYPE)
+        file_log("[HEARTBEAT] Starting update_dashboard_logs")
+        await asyncio.wait_for(update_dashboard_logs(client, BOT_TYPE), timeout=15.0)
+        file_log("[HEARTBEAT] Completed update_dashboard_logs")
+    except asyncio.TimeoutError:
+        file_log(f"[ERROR] Status update timeout - dashboard operation exceeded 15s")
+        print(f"[ERROR] Status update timeout")
     except (ImportError, OSError, RuntimeError) as e:
+        file_log(f"[ERROR] Failed to update status: {e}")
         print(f"[ERROR] Failed to update status: {e}")
 
 @update_status.before_loop
@@ -314,12 +332,14 @@ async def on_connect():
 
 @client.event
 async def on_disconnect():
-    file_log("=== ON_DISCONNECT CALLED ===")
-    print("[DISCORD] gateway disconnected", flush=True)
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    file_log(f"[{timestamp}] === ON_DISCONNECT CALLED === (Memory: {_get_memory_usage()})")
+    print(f"[DISCORD] gateway disconnected at {timestamp}", flush=True)
 
 @client.event
 async def on_resumed():
-    file_log("=== ON_RESUMED CALLED ===")
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    file_log(f"[{timestamp}] === ON_RESUMED CALLED === (Memory: {_get_memory_usage()})")
     # when the gateway reconnects, our periodic tasks may have sent edits
     # while the connection was down and Discord might not deliver them to
     # clients.  force an immediate refresh of both log and metrics embeds so
@@ -570,10 +590,14 @@ async def main():
     """
     # 立即寫入啟動標記到檔案
     file_log("=== BOT MAIN START ===")
+    
+    reconnect_count = 0
+    max_backoff = 60  # 最大退避 60 秒
 
     try:
         while True:
             try:
+                reconnect_count = 0  # 重置重連計數
                 file_log("=== STARTING CLIENT WITH TOKEN ===")
                 async with client:
                     file_log("=== CLIENT CONTEXT OPENED, CALLING client.start() ===")
@@ -583,12 +607,23 @@ async def main():
                 break
             except discord.LoginFailure:
                 print("[ERROR] Invalid Discord Token")
+                file_log("[FATAL] Invalid Discord Token")
                 break
             except (discord.GatewayNotFound, discord.HTTPException, OSError) as e:
-                print(f"[ERROR] Run failed: {e}")
-            # 自動重連
-            print("[MAIN] 連線中斷，5秒後重試")
-            await asyncio.sleep(5)
+                reconnect_count += 1
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                error_msg = f"[{timestamp}] [ERROR] Run failed (attempt {reconnect_count}): {e}"
+                file_log(error_msg)
+                print(error_msg)
+            
+            # 指數退避：5s, 10s, 20s, 40s, 60s, 60s, ...
+            wait_time = min(5 * (2 ** min(reconnect_count - 1, 0)), max_backoff)
+            wait_time = max(5, wait_time)  # 最小 5 秒
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            retry_msg = f"[{timestamp}] [MAIN] 連線中斷，{wait_time}秒後重試 (嘗試 #{reconnect_count})"
+            file_log(retry_msg)
+            print(retry_msg)
+            await asyncio.sleep(wait_time)
     finally:
         if update_status.is_running():
             update_status.stop()
