@@ -1616,7 +1616,7 @@ class StockMarket(commands.Cog):
             if self.market_message:
                 try:
                     print(f"🔄 [STOCK_MARKET] 編輯現存訊息 ID: {self.market_message.id}", flush=True)
-                    await self.market_message.edit(embed=embed, view=StockEntryView(self), flags=discord.MessageFlags(suppress_notifications=True))
+                    await self.market_message.edit(embed=embed, view=StockEntryView(self))
                     print("✅ [STOCK_MARKET] 市場 Embed 已更新（編輯）", flush=True)
                     logger.info("✅ 市場 Embed 已更新（編輯）")
                     return
