@@ -25,6 +25,7 @@ GEMINI_API_KEY = os.getenv("AI_API_KEY")
 GEMINI_API_URL = os.getenv("AI_API_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_API_URL = os.getenv("GROQ_API_URL")
+GROQ_API_MODEL = os.getenv("GROQ_API_MODEL", "mixtral-8x7b-32768")
 
 MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID", 0))
 
