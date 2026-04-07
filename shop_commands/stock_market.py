@@ -1659,6 +1659,28 @@ class StockMarket(commands.Cog):
     async def before_periodic_update(self):
         """等待 Bot 就緒"""
         await self.bot.wait_until_ready()
+    
+    @app_commands.command(name="refresh_market", description="重新發送股市訊息（管理員用）")
+    @app_commands.default_permissions(manage_messages=True)
+    async def refresh_market_message(self, interaction: discord.Interaction):
+        """手動刷新股市訊息"""
+        await interaction.response.defer(ephemeral=True)
+        try:
+            print(f"🔄 [STOCK_MARKET] 收到手動刷新請求", flush=True)
+            # 清空舊訊息，強制重新發送
+            self.market_message = None
+            self.market_data["message_id"] = None
+            save_market_message_data(self.market_data)
+            
+            # 立即發送新訊息
+            await self.update_market_embed()
+            print(f"✅ [STOCK_MARKET] 股市訊息已重新發送", flush=True)
+            await interaction.followup.send("✅ 股市訊息已重新發送", ephemeral=True)
+        except Exception as e:
+            print(f"❌ [STOCK_MARKET] 刷新失敗: {e}", flush=True)
+            logger.error(f"❌ 刷新股市訊息失敗: {e}")
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ 刷新失敗: {str(e)}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
