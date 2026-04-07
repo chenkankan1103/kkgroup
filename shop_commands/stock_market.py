@@ -1642,7 +1642,7 @@ class StockMarket(commands.Cog):
 
             # 如果沒有可編輯的舊訊息，發送新訊息
             print(f"📤 [STOCK_MARKET] 發送新的市場 Embed 訊息...", flush=True)
-            self.market_message = await channel.send(embed=embed, view=StockEntryView(self), flags=discord.MessageFlags(suppress_notifications=True))
+            self.market_message = await channel.send(embed=embed, view=StockEntryView(self))
             self.market_data["message_id"] = self.market_message.id
             save_market_message_data(self.market_data)
             print(f"✅ [STOCK_MARKET] 市場 Embed 已發送 (Message ID: {self.market_message.id})", flush=True)
