@@ -227,15 +227,15 @@ class AirdropSystem(commands.Cog):
             checked_count = 0
             
             for guild in self.bot.guilds:
-                member_role = guild.get_role(MEMBER_ROLE_ID)
-                if not member_role:
-                    print(f"⚠️ 伺服器 {guild.name} 中找不到角色 (MEMBER_ROLE_ID={MEMBER_ROLE_ID})")
-                    continue
-                
+                member_role = guild.get_role(MEMBER_ROLE_ID) if MEMBER_ROLE_ID else None
+                if MEMBER_ROLE_ID and not member_role:
+                    print(f"⚠️ 伺服器 {guild.name} 中找不到角色 (MEMBER_ROLE_ID={MEMBER_ROLE_ID})，改用機器人可寫頻道備援")
+
+                checked_any = False
                 for channel in guild.text_channels:
                     checked_count += 1
                     try:
-                        perms = channel.permissions_for(member_role)
+                        perms = channel.permissions_for(member_role if member_role else guild.me)
                         # 檢查讀取和發送權限，排除論壇頻道
                         if perms.read_messages and perms.send_messages and not isinstance(channel, discord.ForumChannel):
                             eligible_channels.append(channel)
@@ -251,6 +251,29 @@ class AirdropSystem(commands.Cog):
                             print(f"🔒 【跳過】{guild.name} #{channel.name} - {', '.join(reason)}")
                     except Exception as e:
                         print(f"❌ 【錯誤】{guild.name} #{channel.name} - {e}")
+                        continue
+                    checked_any = True
+
+                if member_role and not any(channel.permissions_for(member_role).read_messages and channel.permissions_for(member_role).send_messages and not isinstance(channel, discord.ForumChannel) for channel in guild.text_channels):
+                    print(f"⚠️ 伺服器 {guild.name} 沒有符合角色 {MEMBER_ROLE_ID} 的可投放頻道，改用機器人權限重新掃描")
+                    for channel in guild.text_channels:
+                        checked_count += 1
+                        try:
+                            perms = channel.permissions_for(guild.me)
+                            if perms.read_messages and perms.send_messages and not isinstance(channel, discord.ForumChannel):
+                                eligible_channels.append(channel)
+                                print(f"✅ 【可投放(備援)】{guild.name} #{channel.name}")
+                            else:
+                                reason = []
+                                if not perms.read_messages:
+                                    reason.append("無讀")
+                                if not perms.send_messages:
+                                    reason.append("無寫")
+                                if isinstance(channel, discord.ForumChannel):
+                                    reason.append("論壇")
+                                print(f"🔒 【跳過(備援)】{guild.name} #{channel.name} - {', '.join(reason)}")
+                        except Exception as e:
+                            print(f"❌ 【備援錯誤】{guild.name} #{channel.name} - {e}")
             
             print(f"📊 掃描結果：檢查 {checked_count} 個頻道，找到 {len(eligible_channels)} 個可投放頻道")
             
