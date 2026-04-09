@@ -377,11 +377,29 @@ class AnimeTracker(commands.Cog):
 
 async def setup(bot):
     """設置 AnimeTracker Cog"""
+    import os
+    log_file = "/tmp/anime_tracker_setup.log"
+    
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(f"\n[SETUP_START] {datetime.now().isoformat()}\n")
+        f.write(f"[SETUP] 開始設置 AnimeTracker Cog...\n")
+        f.flush()
+    
     logger.info("📺 [setup] 開始設置 AnimeTracker Cog...")
     try:
         cog = AnimeTracker(bot)
+        
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[SETUP] Cog 實例已創建\n")
+            f.flush()
+        
         await bot.add_cog(cog)
         logger.info("✅ [setup] AnimeTracker Cog 已添加到 bot")
+        
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[SETUP] Cog 已添加到 bot\n")
+            f.write(f"[SETUP] task_started: {cog.task_started}, bot.is_ready(): {bot.is_ready()}\n")
+            f.flush()
         
         # 嘗試啟動任務（如果 cog_load 沒有被調用）
         if not cog.task_started and bot.is_ready():
@@ -390,10 +408,27 @@ async def setup(bot):
                 cog.check_new_anime.start()
                 cog.task_started = True
                 logger.info("✅ [setup] AnimeTracker 任務已啟動")
+                
+                with open(log_file, "a", encoding="utf-8") as f:
+                    f.write(f"[SETUP] 任務已啟動\n")
+                    f.flush()
         else:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"[SETUP] 任務未啟動 - started:{cog.task_started}, bot_ready:{bot.is_ready()}\n")
+                f.flush()
             logger.info(f"📺 [setup] 任務狀態 - started:{cog.task_started}, bot_ready:{bot.is_ready()}")
+        
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[SETUP_END] 成功\n")
+            f.flush()
             
     except Exception as e:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[SETUP_ERROR] {str(e)}\n")
+            f.write(f"[SETUP] Traceback:\n")
+            import traceback
+            f.write(traceback.format_exc())
+            f.flush()
         logger.error(f"❌ [setup] AnimeTracker 設置失敗: {e}", exc_info=True)
         raise
 
