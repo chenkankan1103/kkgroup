@@ -166,11 +166,21 @@ class AnimeTracker(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db = AnimeDatabase(ANIME_DB_PATH)
-        self.check_new_anime.start()
+        self.task_started = False
+        logger.info("🎬 AnimeTracker __init__ called")
+    
+    async def cog_load(self):
+        """Cog 加載時啟動任務"""
+        if not self.task_started:
+            self.task_started = True
+            logger.info("🎬 AnimeTracker cog_load called - starting task")
+            self.check_new_anime.start()
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
-        self.check_new_anime.cancel()
+        logger.info("🎬 AnimeTracker cog_unload called")
+        if self.task_started and self.check_new_anime.is_running():
+            self.check_new_anime.cancel()
     
     async def fetch_new_anime_from_api(self) -> Optional[List[Dict]]:
         """
@@ -248,6 +258,7 @@ class AnimeTracker(commands.Cog):
     @tasks.loop(seconds=30)  # 測試模式：每 30 秒檢查一次（正式環境改為 hours=1）
     async def check_new_anime(self):
         """主循環：定時檢查並通知新集"""
+        logger.info("🎬 check_new_anime loop iteration started")
         try:
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
@@ -315,7 +326,9 @@ class AnimeTracker(commands.Cog):
     @check_new_anime.before_loop
     async def before_check_new_anime(self):
         """在第一次循環前等待 bot 就緒"""
+        logger.info("🎬 AnimeTracker before_loop started")
         await self.bot.wait_until_ready()
+        logger.info("🎬 AnimeTracker bot is ready! Starting main loop...")
 
 
 async def setup(bot: commands.Bot):
