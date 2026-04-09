@@ -167,18 +167,33 @@ class AnimeTracker(commands.Cog):
         self.bot = bot
         self.db = AnimeDatabase(ANIME_DB_PATH)
         self.task_started = False
-        logger.info("🎬 AnimeTracker __init__ called")
+        logger.info(f"🎬 AnimeTracker.__init__ called (bot ready: {bot.is_ready()})")
+        
+        # 如果 bot 已經 ready，立即啟動任務
+        if bot.is_ready():
+            self._start_task()
+        else:
+            # 否則在 on_ready 時啟動
+            bot.add_listener(self._on_bot_ready, "on_ready")
     
-    async def cog_load(self):
-        """Cog 加載時啟動任務"""
+    async def _on_bot_ready(self):
+        """Bot 就緒時啟動任務"""
+        logger.info("🎬 AnimeTracker._on_bot_ready called")
+        if not self.task_started:
+            self._start_task()
+        # 移除監聽器，只需要運行一次
+        self.bot.remove_listener(self._on_bot_ready, "on_ready")
+    
+    def _start_task(self):
+        """啟動後台任務"""
         if not self.task_started:
             self.task_started = True
-            logger.info("🎬 AnimeTracker cog_load called - starting task")
+            logger.info("🎬 AnimeTracker: Starting check_new_anime task")
             self.check_new_anime.start()
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
-        logger.info("🎬 AnimeTracker cog_unload called")
+        logger.info("🎬 AnimeTracker.cog_unload called")
         if self.task_started and self.check_new_anime.is_running():
             self.check_new_anime.cancel()
     
