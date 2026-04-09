@@ -24,6 +24,13 @@ LOG_FILE = "/tmp/bot-debug.log"
 def file_log(msg):
     """寫入日誌到檔案、syslog 並同時調用 print"""
     try:
+        # 同時 print（前置，防止後續代碼崩潰）
+        print(f"[FILE_LOG] {msg}", flush=True)
+        sys.stdout.flush()
+    except Exception as e:
+        pass
+    
+    try:
         # 寫入文件
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
@@ -37,9 +44,6 @@ def file_log(msg):
             syslog.syslog(syslog.LOG_INFO, f"[BOT_DEBUG] {msg}")
         except OSError:
             pass
-    
-    # 同時 print
-    print(msg, flush=True)
     sys.stdout.flush()
 
 def _get_memory_usage():
