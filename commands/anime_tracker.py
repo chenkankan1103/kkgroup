@@ -199,10 +199,12 @@ class AnimeTracker(commands.Cog):
     
     async def fetch_new_anime_from_api(self) -> Optional[List[Dict]]:
         """
-        從 Bahamut API 獲取最近更新的動畫集
+        從 Bahamut API 獲取今天更新的動畫集
+        
+        注意：API 返回的列表包含多個日期的動畫，我們只需要今天的
         
         Returns:
-            集列表，或 None 如果失敗
+            今天的集列表，或 None 如果失敗
         """
         try:
             async with aiohttp.ClientSession() as session:
@@ -221,9 +223,17 @@ class AnimeTracker(commands.Cog):
                     # API 返回結構：{"data": {"newAnime": {"date": [...], "popular": [...]}}}
                     new_anime = data.get("data", {}).get("newAnime", {})
                     # newAnime 是字典，我們需要 'date' 鍵中的列表
-                    episodes = new_anime.get("date", []) if isinstance(new_anime, dict) else []
-                    logger.info(f"🔍 API fetch: got {len(episodes)} episodes from newAnime['date']")
-                    return episodes
+                    all_episodes = new_anime.get("date", []) if isinstance(new_anime, dict) else []
+                    
+                    # 篩選只取今天的動畫
+                    today = datetime.now().strftime("%m/%d")
+                    today_episodes = [
+                        ep for ep in all_episodes 
+                        if isinstance(ep, dict) and ep.get("upTime", "").startswith(today)
+                    ]
+                    
+                    logger.info(f"🔍 API fetch: 獲得 {len(all_episodes)} 集，其中今天的 {len(today_episodes)} 集 (upTime: {today})")
+                    return today_episodes
         except asyncio.TimeoutError:
             logger.warning(f"⚠️ API timeout ({API_TIMEOUT}s)")
             return None
