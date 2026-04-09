@@ -167,14 +167,17 @@ class AnimeTracker(commands.Cog):
         self.bot = bot
         self.db = AnimeDatabase(ANIME_DB_PATH)
         self.task_started = False
-        # 直接啟動任務（Discord.py 會自動等待 bot ready）
+        logger.info("📺 AnimeTracker Cog instantiated")
+    
+    async def cog_load(self):
+        """Cog 加載時啟動任務（Discord.py 支持此選項卡）"""
         try:
-            logger.info("📺 AnimeTracker.__init__() 開始啟動任務...")
+            logger.info("📺 cog_load() 被調用，啟動任務...")
             self.check_new_anime.start()
             self.task_started = True
-            logger.info("✅ AnimeTracker 任務已啟動")
+            logger.info("✅ AnimeTracker 任務已在 cog_load() 中啟動")
         except Exception as e:
-            logger.error(f"❌ AnimeTracker.__init__() 啟動任務失敗: {e}", exc_info=True)
+            logger.error(f"❌ cog_load() 啟動任務失敗: {e}", exc_info=True)
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
