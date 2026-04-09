@@ -202,6 +202,7 @@ class AnimeTracker(commands.Cog):
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
         """
         監聽反應事件 - 當用戶給動畫通知評分時獎勵 KK幣
+        支持任何表情反應（正評或負評都可以）
         """
         # 不處理 bot 自己的反應
         if user.bot:
@@ -368,11 +369,11 @@ class AnimeTracker(commands.Cog):
         # 添加評分提示
         embed.add_field(
             name="⭐ 評分獲獎勵",
-            value="點擊下方表情反應來評分此集！評分成功可獲得 2000 KK幣",
+            value="點擊任何表情反應來評分此集！評分成功可獲得 2000 KK幣\n（任何表情都可以，正評或負評都歡迎！）",
             inline=False
         )
         
-        embed.set_footer(text="Bahamut 動畫追蹤 | 點擊下方表情反應評分")
+        embed.set_footer(text="Bahamut 動畫追蹤 | 用任何表情反應評分吧！")
         return embed
     
     @tasks.loop(minutes=1)
@@ -455,15 +456,6 @@ class AnimeTracker(commands.Cog):
                         embed = self.generate_anime_embed(ep)
                         message = await channel.send(embed=embed)
                         
-                        # 添加評分表情反應
-                        reactions = ["⭐", "😍", "👍", "🔥"]
-                        for emoji in reactions:
-                            try:
-                                await message.add_reaction(emoji)
-                                await asyncio.sleep(0.1)  # 避免 API 限流
-                            except Exception as e:
-                                logger.warning(f"⚠️ 添加反應 {emoji} 失敗: {e}")
-                        
                         # 記錄已通知
                         self.db.add_notified(
                             video_sn=ep.get("videoSn"),
@@ -525,15 +517,6 @@ class AnimeTracker(commands.Cog):
                 try:
                     embed = self.generate_anime_embed(ep)
                     message = await interaction.followup.send(embed=embed)
-                    
-                    # 添加評分表情反應
-                    reactions = ["⭐", "😍", "👍", "🔥"]
-                    for emoji in reactions:
-                        try:
-                            await message.add_reaction(emoji)
-                            await asyncio.sleep(0.1)  # 避免 API 限流
-                        except Exception as e:
-                            logger.warning(f"⚠️ 添加反應 {emoji} 失敗: {e}")
                     
                     sent_count += 1
                     await asyncio.sleep(0.2)  # 避免限流
