@@ -26,6 +26,7 @@ print("[ANIME_TRACKER_MODULE] Module is being imported...", flush=True)
 sys.stdout.flush()
 
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 import asyncio
 import aiohttp
@@ -397,6 +398,44 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"📋 Guild: {guild.name}")
                 for ch in guild.channels[:5]:  # 只列前 5 個
                     logger.info(f"   - {ch.name} (ID: {ch.id})")
+
+    @app_commands.command(name="anime_test", description="測試動畫通知 - 顯示最近的動畫集")
+    async def anime_test(self, interaction: discord.Interaction):
+        """測試指令：獲取最近的動畫數據並在當前頻道發送"""
+        try:
+            await interaction.response.defer()  # 延遲回應，因為可能需要時間
+            
+            logger.info(f"📺 [anime_test] 被 {interaction.user} 在頻道 {interaction.channel} 調用")
+            
+            # 獲取最新動畫數據
+            episodes = await self.fetch_new_anime_from_api()
+            if not episodes:
+                await interaction.followup.send("❌ 無法從 API 獲取動畫數據")
+                logger.warning("📺 [anime_test] API 返回空結果")
+                return
+            
+            logger.info(f"📺 [anime_test] 獲得 {len(episodes)} 集")
+            
+            # 生成並發送前 3 集的 embed
+            sent_count = 0
+            for ep in episodes[:3]:
+                try:
+                    embed = self.generate_anime_embed(ep)
+                    await interaction.followup.send(embed=embed)
+                    sent_count += 1
+                    await asyncio.sleep(0.2)  # 避免限流
+                except Exception as e:
+                    logger.error(f"❌ [anime_test] 發送 embed 失敗: {e}")
+            
+            logger.info(f"✅ [anime_test] 成功發送 {sent_count} 個 embed")
+            
+        except Exception as e:
+            logger.error(f"❌ [anime_test] 指令執行失敗: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
+            except:
+                pass
+    
 
 
 async def setup(bot):
