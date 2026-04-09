@@ -171,14 +171,21 @@ async def setup_modules(bot_client):
     extensions = await find_and_load_extensions(full_path, COMMANDS_DIR, bot_client)
     
     # 特殊處理 anime_tracker Cog - 確保它被加載
+    debug_msg = "[ANIME_TRACKER] Explicitly loading anime_tracker..."
+    print(debug_msg, flush=True)
+    sys.stdout.flush()
+    
     try:
-        print("[ANIME_TRACKER] Explicitly loading anime_tracker...")
         await bot_client.load_extension("commands.anime_tracker")
-        print("[ANIME_TRACKER] ✅ commands.anime_tracker loaded successfully!")
+        success_msg = "[ANIME_TRACKER] ✅ commands.anime_tracker loaded successfully!"
+        print(success_msg, flush=True)
+        sys.stdout.flush()
         if "commands.anime_tracker" not in extensions:
             extensions.append("commands.anime_tracker")
     except Exception as e:
-        print(f"[ANIME_TRACKER] ❌ Failed to load anime_tracker: {e}")
+        error_msg = f"[ANIME_TRACKER] ❌ Failed to load anime_tracker: {e}"
+        print(error_msg, flush=True)
+        sys.stdout.flush()
         import traceback
         traceback.print_exc()
     
