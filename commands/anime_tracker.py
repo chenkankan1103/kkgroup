@@ -167,15 +167,23 @@ class AnimeTracker(commands.Cog):
         self.bot = bot
         self.db = AnimeDatabase(ANIME_DB_PATH)
         self.task_started = False
+        self.bootstrap_completed = False
         logger.info("📺 AnimeTracker Cog instantiated")
+        logger.info(f"📺 Bot 已就緒? {bot.is_ready()}")
+        logger.info(f"📺 頻道 ID: {ANIME_CHANNEL_ID}")
+        logger.info(f"📺 數據庫路徑: {ANIME_DB_PATH}")
     
     async def cog_load(self):
         """Cog 加載時啟動任務（Discord.py 支持此選項卡）"""
         try:
-            logger.info("📺 cog_load() 被調用，啟動任務...")
-            self.check_new_anime.start()
-            self.task_started = True
-            logger.info("✅ AnimeTracker 任務已在 cog_load() 中啟動")
+            logger.info("📺 cog_load() 被調用，準備啟動任務...")
+            if not self.check_new_anime.is_running():
+                logger.info("📺 任務未在運行，現在啟動...")
+                self.check_new_anime.start()
+                self.task_started = True
+                logger.info("✅ AnimeTracker 任務已在 cog_load() 中啟動")
+            else:
+                logger.warning("⚠️ 任務已在運行中，跳過重複啟動")
         except Exception as e:
             logger.error(f"❌ cog_load() 啟動任務失敗: {e}", exc_info=True)
     
@@ -261,7 +269,8 @@ class AnimeTracker(commands.Cog):
     async def check_new_anime(self):
         """主循環：定時檢查並通知新集"""
         try:
-            logger.info("📺 [AnimeTracker] Task loop executing...")
+            logger.info("📺 [check_new_anime] ========== 任務循環執行開始 ==========")
+            
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
             if not channel:
@@ -269,29 +278,41 @@ class AnimeTracker(commands.Cog):
                 all_channels = []
                 for guild in self.bot.guilds:
                     for ch in guild.channels:
-                        all_channels.append(f"{ch.name} (ID:{ch.id})")
-                logger.error(f"❌ Anime channel {ANIME_CHANNEL_ID} not found. Available channels: {', '.join(all_channels[:5])}")
+                        if hasattr(ch, 'id'):
+                            all_channels.append(f"{ch.name} (ID:{ch.id})")
+                logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
+                logger.error(f"📋 可用頻道前 10 個: {', '.join(all_channels[:10])}")
                 return
             
             # 獲取最新動畫數據
+            logger.info("📺 [check_new_anime] 當前頻道: " + channel.name)
+            logger.info("📺 [check_new_anime] 正在從 API 獲取動畫數據...")
             episodes = await self.fetch_new_anime_from_api()
             if not episodes:
-                logger.warning("⚠️ No episodes fetched from API")
+                logger.warning("⚠️ [check_new_anime] 無法從 API 獲取數據")
                 return
             
+            logger.info(f"📺 [check_new_anime] 獲得 {len(episodes)} 集")
+            
             # 檢查 Bootstrap 狀態
-            if not self.db.is_bootstrap_completed():
+            bootstrap_status = self.db.is_bootstrap_completed()
+            logger.info(f"📺 [check_new_anime] Bootstrap 狀態: {bootstrap_status}")
+            
+            if not bootstrap_status:
                 # 首次運行：記錄所有現存集，不發送通知
-                logger.info("🚀 First run detected - performing bootstrap...")
+                logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
                 self.db.bootstrap_add_all(episodes)
                 self.db.mark_bootstrap_completed()
-                await channel.send(
-                    embed=discord.Embed(
-                        title="✅ 動畫追蹤已啟動",
-                        description="已記錄現有集合。之後會通知新上架的集。",
-                        color=discord.Color.green()
-                    )
+                self.bootstrap_completed = True
+                
+                embed = discord.Embed(
+                    title="✅ 動畫追蹤已啟動",
+                    description="已記錄現有集合。之後會通知新上架的集。",
+                    color=discord.Color.green()
                 )
+                logger.info("📺 [check_new_anime] 發送 bootstrap 確認 embed")
+                await channel.send(embed=embed)
+                logger.info("✅ [check_new_anime] Bootstrap 完成，embed 已發送")
                 return
             
             # 正常運行：檢查新集
@@ -333,13 +354,45 @@ class AnimeTracker(commands.Cog):
     @check_new_anime.before_loop
     async def before_check_new_anime(self):
         """在第一次循環前等待 bot 就緒"""
+        logger.info("📺 [before_check_new_anime] 等待 bot 就緒...")
         await self.bot.wait_until_ready()
+        logger.info(f"✅ [before_check_new_anime] Bot 已就緒！")
+        logger.info(f"📺 [before_check_new_anime] Bot guilds 數量: {len(self.bot.guilds)}")
+        logger.info(f"📺 [before_check_new_anime] 尋找目標頻道 {ANIME_CHANNEL_ID}...")
+        
+        channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+        if channel:
+            logger.info(f"✅ [before_check_new_anime] 找到頻道: {channel.name} (Guild: {channel.guild.name})")
+        else:
+            logger.error(f"❌ [before_check_new_anime] 未找到頻道 {ANIME_CHANNEL_ID}")
+            # 列出所有頻道以供診斷
+            for guild in self.bot.guilds:
+                logger.info(f"📋 Guild: {guild.name}")
+                for ch in guild.channels[:5]:  # 只列前 5 個
+                    logger.info(f"   - {ch.name} (ID: {ch.id})")
 
 
 async def setup(bot):
     """設置 AnimeTracker Cog"""
-    await bot.add_cog(AnimeTracker(bot))
-    logger.info("✅ AnimeTracker Cog 已載入")
+    logger.info("📺 [setup] 開始設置 AnimeTracker Cog...")
+    try:
+        cog = AnimeTracker(bot)
+        await bot.add_cog(cog)
+        logger.info("✅ [setup] AnimeTracker Cog 已添加到 bot")
+        
+        # 嘗試啟動任務（如果 cog_load 沒有被調用）
+        if not cog.task_started and bot.is_ready():
+            logger.info("📺 [setup] Bot 已就緒，直接啟動任務...")
+            if not cog.check_new_anime.is_running():
+                cog.check_new_anime.start()
+                cog.task_started = True
+                logger.info("✅ [setup] AnimeTracker 任務已啟動")
+        else:
+            logger.info(f"📺 [setup] 任務狀態 - started:{cog.task_started}, bot_ready:{bot.is_ready()}")
+            
+    except Exception as e:
+        logger.error(f"❌ [setup] AnimeTracker 設置失敗: {e}", exc_info=True)
+        raise
 
 
 
