@@ -434,7 +434,21 @@ async def on_ready():
             await client.tree.clear_commands(guild=guild)
         
         # 載入模組
-        loaded_extensions = await setup_modules(client)
+        try:
+            debug_setup = "[SETUP] About to call setup_modules()..."
+            print(debug_setup, flush=True)
+            sys.stdout.flush()
+            loaded_extensions = await setup_modules(client)
+            success_setup = f"[SETUP] setup_modules() completed, loaded {len(loaded_extensions)} extensions"
+            print(success_setup, flush=True)
+            sys.stdout.flush()
+        except Exception as e:
+            error_setup = f"[SETUP] ❌ setup_modules() failed: {e}"
+            print(error_setup, flush=True)
+            sys.stdout.flush()
+            import traceback
+            traceback.print_exc()
+            raise
         
         # 明確載入 uibody 模組（UserPanel 和 LockerEventListenerCog）
         # try:
