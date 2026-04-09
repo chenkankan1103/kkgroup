@@ -253,7 +253,7 @@ class StockEntryView(discord.ui.View):
             except:
                 logger.error("❌ 無法發送錯誤訊息")
     
-    @discord.ui.button(label="我的持仓", style=discord.ButtonStyle.secondary, emoji="📋", custom_id="user_portfolio_button")
+    @discord.ui.button(label="我的持倉", style=discord.ButtonStyle.secondary, emoji="📋", custom_id="user_portfolio_button")
     async def view_portfolio(self, interaction: discord.Interaction, button: discord.ui.Button):
         """顯示用戶的持倉信息"""
         try:
