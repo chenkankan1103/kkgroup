@@ -265,7 +265,12 @@ class AnimeTracker(commands.Cog):
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
             if not channel:
-                logger.error(f"❌ Anime channel {ANIME_CHANNEL_ID} not found")
+                # 診斷：列出所有可用的頻道
+                all_channels = []
+                for guild in self.bot.guilds:
+                    for ch in guild.channels:
+                        all_channels.append(f"{ch.name} (ID:{ch.id})")
+                logger.error(f"❌ Anime channel {ANIME_CHANNEL_ID} not found. Available channels: {', '.join(all_channels[:5])}")
                 return
             
             # 獲取最新動畫數據
@@ -329,6 +334,13 @@ class AnimeTracker(commands.Cog):
     async def before_check_new_anime(self):
         """在第一次循環前等待 bot 就緒"""
         await self.bot.wait_until_ready()
+
+
+async def setup(bot):
+    """設置 AnimeTracker Cog"""
+    await bot.add_cog(AnimeTracker(bot))
+    logger.info("✅ AnimeTracker Cog 已載入")
+
 
 
 # 必要的 setup() 函數，讓 Discord.py 可以加載此 Cog

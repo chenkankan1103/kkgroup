@@ -18,15 +18,20 @@ async def setup_commands(tree, client):
             module = import_module(f"commands.{module_name}")
             
             # 尋找並呼叫 setup_* 函數
+            # 支持兩種模式: setup_{module_name} 或 setup
             setup_func_name = f"setup_{module_name}"
             if hasattr(module, setup_func_name):
                 setup_func = getattr(module, setup_func_name)
-                if inspect.iscoroutinefunction(setup_func):
-                    await setup_func(tree, client)
-                    print(f"✅ 模組 {module_name} 載入成功")
-                else:
-                    print(f"⚠️ 警告: {module_name} 的 {setup_func_name} 函數不是異步函數")
+            elif hasattr(module, "setup"):
+                setup_func = getattr(module, "setup")
             else:
-                print(f"⚠️ 警告: 模組 {module_name} 缺少 {setup_func_name} 函數")
+                print(f"⚠️ 警告: 模組 {module_name} 缺少 setup 函數")
+                continue
+            
+            if inspect.iscoroutinefunction(setup_func):
+                await setup_func(client)
+                print(f"✅ 模組 {module_name} 載入成功")
+            else:
+                print(f"⚠️ 警告: {module_name} 的 setup 函數不是異步函數")
         except Exception as e:
             print(f"❌ 模組 {module_name} 載入失敗: {str(e)}")
