@@ -40,7 +40,7 @@ from typing import Optional, Dict, List
 logger = logging.getLogger(__name__)
 
 # 配置
-ANIME_CHANNEL_ID = 1490890263709745224  # 你的動畫通知頻道
+ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
 ANIME_DB_PATH = Path("./uibot_anime.db")  # 獨立的動畫追蹤數據庫
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # 秒
@@ -198,6 +198,79 @@ class AnimeTracker(commands.Cog):
         if self.check_new_anime.is_running():
             self.check_new_anime.cancel()
     
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
+        """
+        監聽反應事件 - 當用戶給動畫通知評分時獎勵 KK幣
+        """
+        # 不處理 bot 自己的反應
+        if user.bot:
+            return
+        
+        # 只處理來自動畫通知頻道的反應
+        if reaction.message.channel.id != ANIME_CHANNEL_ID:
+            return
+        
+        try:
+            # 檢查 embed 是否包含評分提示（即是否為動畫通知）
+            embeds = reaction.message.embeds
+            if not embeds:
+                return
+            
+            embed = embeds[0]
+            # 檢查是否包含評分提示字段
+            is_anime_message = any(
+                field.name == "⭐ 評分獲獎勵" 
+                for field in embed.fields
+            )
+            
+            if not is_anime_message:
+                return
+            
+            logger.info(f"📺 [on_reaction_add] {user.name} 給動畫通知評分（反應：{reaction.emoji}）")
+            
+            # 導入 db_adapter 來更新 KK幣（需要確定實現方式）
+            try:
+                from db_adapter import set_user_field, get_user_field
+                
+                # 獲取當前 KK幣
+                current_kkcoin = get_user_field(user.id, "kkcoin") or 0
+                new_kkcoin = int(current_kkcoin) + 2000
+                
+                # 更新 KK幣
+                set_user_field(user.id, "kkcoin", new_kkcoin)
+                
+                logger.info(f"✅ [on_reaction_add] {user.name} 獲得 2000 KK幣，現在共有 {new_kkcoin} KK幣")
+                
+                # 發送 DM 通知用戶
+                try:
+                    dm_embed = discord.Embed(
+                        title="⭐ 評分獎勵",
+                        description="感謝你給動畫通知評分！",
+                        color=discord.Color.gold()
+                    )
+                    dm_embed.add_field(
+                        name="獲得獎勵",
+                        value="💰 +2000 KK幣",
+                        inline=False
+                    )
+                    dm_embed.add_field(
+                        name="目前餘額",
+                        value=f"💵 {new_kkcoin} KK幣",
+                        inline=False
+                    )
+                    await user.send(embed=dm_embed)
+                except discord.Forbidden:
+                    logger.warning(f"⚠️ [on_reaction_add] 無法發送 DM 給 {user.name}（關閉了 DM）")
+                
+            except ImportError:
+                logger.warning("⚠️ [on_reaction_add] db_adapter 未找到，無法獎勵 KK幣")
+            except Exception as e:
+                logger.error(f"❌ [on_reaction_add] 獎勵 KK幣失敗: {e}", exc_info=True)
+        
+        except Exception as e:
+            logger.error(f"❌ [on_reaction_add] 處理反應失敗: {e}", exc_info=True)
+    
     async def fetch_new_anime_from_api(self) -> Optional[List[Dict]]:
         """
         從 Bahamut API 獲取今天更新的動畫集
@@ -255,10 +328,29 @@ class AnimeTracker(commands.Cog):
         anime_name = episode.get("title", "Unknown")
         volume = episode.get("volume", "")
         cover_url = episode.get("cover", "")
+        anime_sn = episode.get("animeSn", "")
+        
+        # 構建動畫連結 (Bahamut 動畫連結)
+        anime_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={anime_sn}" if anime_sn else "https://ani.gamer.com.tw"
+        
+        # 獲取標籤信息
+        highlight_tag = episode.get("highlightTag", {})
+        tag_parts = []
+        
+        if highlight_tag.get("bilingual"):
+            tag_parts.append("🗣️ 雙語")
+        
+        edition = highlight_tag.get("edition", "").strip()
+        if edition:
+            tag_parts.append(f"📺 {edition}")
+        
+        # 如果有標籤則顯示，否則不顯示
+        tags_str = " | ".join(tag_parts) if tag_parts else "無特殊標籤"
         
         embed = discord.Embed(
-            title=f"🎬 {anime_name} 更新了！",
-            description=f"**新集：{volume}**",
+            title=f"🎬 {anime_name}",
+            description=f"**集數：{volume}**",
+            url=anime_url,  # 點擊標題可到動畫頁面
             color=discord.Color.from_rgb(178, 108, 196),  # Bahamut 紫色
             timestamp=datetime.utcnow()
         )
@@ -266,19 +358,21 @@ class AnimeTracker(commands.Cog):
         if cover_url:
             embed.set_image(url=cover_url)
         
-        # 添加追蹤信息
+        # 添加標籤
         embed.add_field(
-            name="集識別符",
-            value=f"`videoSn: {episode.get('videoSn', 'N/A')}`",
+            name="📌 標籤",
+            value=tags_str,
             inline=False
         )
         
-        # 上傳時間
-        up_time = episode.get("upTime", "")
-        if up_time:
-            embed.add_field(name="發佈時間", value=up_time, inline=True)
+        # 添加評分提示
+        embed.add_field(
+            name="⭐ 評分獲獎勵",
+            value="點擊下方表情反應來評分此集！評分成功可獲得 2000 KK幣",
+            inline=False
+        )
         
-        embed.set_footer(text="Bahamut 動畫追蹤 | 自動通知新上架集")
+        embed.set_footer(text="Bahamut 動畫追蹤 | 點擊下方表情反應評分")
         return embed
     
     @tasks.loop(minutes=1)
@@ -359,7 +453,16 @@ class AnimeTracker(commands.Cog):
                 for ep in new_episodes:
                     try:
                         embed = self.generate_anime_embed(ep)
-                        await channel.send(embed=embed)
+                        message = await channel.send(embed=embed)
+                        
+                        # 添加評分表情反應
+                        reactions = ["⭐", "😍", "👍", "🔥"]
+                        for emoji in reactions:
+                            try:
+                                await message.add_reaction(emoji)
+                                await asyncio.sleep(0.1)  # 避免 API 限流
+                            except Exception as e:
+                                logger.warning(f"⚠️ 添加反應 {emoji} 失敗: {e}")
                         
                         # 記錄已通知
                         self.db.add_notified(
@@ -421,7 +524,17 @@ class AnimeTracker(commands.Cog):
             for ep in episodes[:3]:
                 try:
                     embed = self.generate_anime_embed(ep)
-                    await interaction.followup.send(embed=embed)
+                    message = await interaction.followup.send(embed=embed)
+                    
+                    # 添加評分表情反應
+                    reactions = ["⭐", "😍", "👍", "🔥"]
+                    for emoji in reactions:
+                        try:
+                            await message.add_reaction(emoji)
+                            await asyncio.sleep(0.1)  # 避免 API 限流
+                        except Exception as e:
+                            logger.warning(f"⚠️ 添加反應 {emoji} 失敗: {e}")
+                    
                     sent_count += 1
                     await asyncio.sleep(0.2)  # 避免限流
                 except Exception as e:
