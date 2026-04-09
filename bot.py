@@ -159,6 +159,10 @@ async def find_and_load_extensions(base_path, package_prefix="", bot_client=None
 
 async def setup_modules(bot_client):
     """載入所有模組"""
+    debug_start = "[setup_modules] 函數開始"
+    print(debug_start, flush=True)
+    sys.stdout.flush()
+    
     full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
     if not os.path.exists(full_path):
@@ -166,28 +170,42 @@ async def setup_modules(bot_client):
         init_file = os.path.join(full_path, "__init__.py")
         with open(init_file, 'w', encoding='utf-8') as f:
             f.write(f"# {BOT_NAME} Bot Commands Module\n")
+        print("[setup_modules] Created commands directory", flush=True)
+        sys.stdout.flush()
         return []
+    
+    debug_find = "[setup_modules] 調用 find_and_load_extensions()"
+    print(debug_find, flush=True)
+    sys.stdout.flush()
     
     extensions = await find_and_load_extensions(full_path, COMMANDS_DIR, bot_client)
     
+    debug_found = f"[setup_modules] find_and_load_extensions() 返回 {len(extensions)} 擴展"
+    print(debug_found, flush=True)
+    sys.stdout.flush()
+    
     # 特殊處理 anime_tracker Cog - 確保它被加載
-    debug_msg = "[ANIME_TRACKER] Explicitly loading anime_tracker..."
-    print(debug_msg, flush=True)
+    debug_anime = "[setup_modules] 嘗試明確加載 anime_tracker..."
+    print(debug_anime, flush=True)
     sys.stdout.flush()
     
     try:
         await bot_client.load_extension("commands.anime_tracker")
-        success_msg = "[ANIME_TRACKER] ✅ commands.anime_tracker loaded successfully!"
-        print(success_msg, flush=True)
+        success_anime = "[setup_modules] ✅ commands.anime_tracker 加載成功！"
+        print(success_anime, flush=True)
         sys.stdout.flush()
         if "commands.anime_tracker" not in extensions:
             extensions.append("commands.anime_tracker")
     except Exception as e:
-        error_msg = f"[ANIME_TRACKER] ❌ Failed to load anime_tracker: {e}"
-        print(error_msg, flush=True)
+        error_anime = f"[setup_modules] ❌ anime_tracker 加載失敗: {e}"
+        print(error_anime, flush=True)
         sys.stdout.flush()
         import traceback
         traceback.print_exc()
+    
+    debug_end = f"[setup_modules] 函數完成，共 {len(extensions)} 個擴展"
+    print(debug_end, flush=True)
+    sys.stdout.flush()
     
     return extensions
 
