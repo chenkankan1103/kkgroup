@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KK 群紙娃娃 RPG 遊戲</title>
+    <link rel="stylesheet" href="/static/css/rpg-game.css">
+</head>
+<body>
+    <div class="game-container">
+        <!-- 遊戲頭部 -->
+        <div class="game-header">
+            <div class="title">🎮 KK 群紙娃娃 RPG 橫向遊戲</div>
+            <div class="user-info">
+                <span id="user-name">玩家</span>
+                <span id="user-level">Lv. 1</span>
+            </div>
+        </div>
+
+        <!-- 遊戲主體 -->
+        <div class="game-main">
+            <!-- 左側：角色顯示 -->
+            <div class="game-left">
+                <div class="character-display">
+                    <div class="character-frame">
+                        <img id="character-image" src="" alt="角色圖像" class="character-img">
+                    </div>
+                    <div class="character-name" id="character-name">角色名稱</div>
+                </div>
+            </div>
+
+            <!-- 中間：主要互動區域 -->
+            <div class="game-center">
+                <!-- 選項菜單 -->
+                <div class="menu-section">
+                    <div class="menu-title">請選擇操作</div>
+                    <div class="menu-buttons">
+                        <button class="menu-btn" id="btn-wardrobe">
+                            <span class="btn-icon">👕</span>
+                            <span class="btn-text">衣櫃</span>
+                        </button>
+                        <button class="menu-btn" id="btn-profile">
+                            <span class="btn-icon">📊</span>
+                            <span class="btn-text">檔案</span>
+                        </button>
+                        <button class="menu-btn" id="btn-shop">
+                            <span class="btn-icon">🛍️</span>
+                            <span class="btn-text">商店</span>
+                        </button>
+                        <button class="menu-btn" id="btn-battle">
+                            <span class="btn-icon">⚔️</span>
+                            <span class="btn-text">對戰</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 動態內容區域 -->
+                <div class="content-area" id="content-area">
+                    <div class="welcome-message">
+                        <p>歡迎來到 KK 群紙娃娃 RPG！</p>
+                        <p>選擇上方的選項開始遊戲。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右側：屬性面板 -->
+            <div class="game-right">
+                <div class="stats-panel">
+                    <div class="stat-item">
+                        <span class="stat-label">等級</span>
+                        <span class="stat-value" id="stat-level">1</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">經驗值</span>
+                        <div class="exp-bar">
+                            <div class="exp-fill" id="exp-fill" style="width: 0%"></div>
+                        </div>
+                        <span class="exp-text" id="exp-text">0/1000</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">KKcoin</span>
+                        <span class="stat-value" id="stat-kkcoin">0</span>
+                    </div>
+                </div>
+
+                <!-- 裝備欄 -->
+                <div class="equipment-panel">
+                    <div class="panel-title">⚙️ 目前穿著</div>
+                    <div class="equipment-list">
+                        <div class="equipment-slot">
+                            <span class="slot-label">臉</span>
+                            <span class="slot-value" id="eq-face">-</span>
+                        </div>
+                        <div class="equipment-slot">
+                            <span class="slot-label">髮</span>
+                            <span class="slot-value" id="eq-hair">-</span>
+                        </div>
+                        <div class="equipment-slot">
+                            <span class="slot-label">上衣</span>
+                            <span class="slot-value" id="eq-top">-</span>
+                        </div>
+                        <div class="equipment-slot">
+                            <span class="slot-label">下衣</span>
+                            <span class="slot-value" id="eq-bottom">-</span>
+                        </div>
+                        <div class="equipment-slot">
+                            <span class="slot-label">鞋</span>
+                            <span class="slot-value" id="eq-shoes">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 遊戲底部 -->
+        <div class="game-footer">
+            <div class="footer-text">提示：選擇衣櫃查看並更改你的紙娃娃配置</div>
+            <div class="version-info">v1.0.0 | 開發中</div>
+        </div>
+    </div>
+
+    <!-- 模態窗口：衣櫃 -->
+    <div id="modal-wardrobe" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>👕 我的衣櫃</h2>
+                <button class="modal-close" onclick="closeModal('wardrobe')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="wardrobe-categories" id="wardrobe-categories">
+                    <!-- 動態生成的分類 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態窗口：檔案 -->
+    <div id="modal-profile" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📊 我的檔案</h2>
+                <button class="modal-close" onclick="closeModal('profile')">&times;</button>
+            </div>
+            <div class="modal-body" id="profile-content">
+                <!-- 動態生成的內容 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態窗口：商店 -->
+    <div id="modal-shop" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🛍️ 紙娃娃商店</h2>
+                <button class="modal-close" onclick="closeModal('shop')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="shop-items" id="shop-items">
+                    <!-- 動態生成的商品 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/rpg-game.js"></script>
+</body>
+</html>

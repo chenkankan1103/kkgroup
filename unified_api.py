@@ -6,7 +6,7 @@
 """
 
 import os
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory, render_template_string
 from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -15,8 +15,17 @@ import logging
 # 載入環境變數
 load_dotenv()
 
-# 建立 Flask 應用
-app = Flask(__name__)
+# 定義靜態文件路徑
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_FOLDER = os.path.join(BASE_DIR, 'game', 'web', 'static')  # 遊戲靜態文件
+WEB_PORTAL_FOLDER = os.path.join(BASE_DIR, 'game', 'web')  # 遊戲網頁文件
+
+# 建立 Flask 應用，配置靜態文件和模板路徑
+app = Flask(
+    __name__,
+    static_folder=STATIC_FOLDER,
+    static_url_path='/static'
+)
 
 # Session 配置
 app.secret_key = os.getenv('SESSION_SECRET', os.urandom(32).hex())
@@ -40,17 +49,66 @@ from blueprints.stats import stats_bp
 from blueprints.sheets import sheets_bp
 from blueprints.discord_auth import discord_auth_bp
 from blueprints.stocks_api import stocks_api_bp
+from game import game_bp, init_game_api
 
 app.register_blueprint(stats_bp)
 app.register_blueprint(sheets_bp)
 app.register_blueprint(discord_auth_bp)
 app.register_blueprint(stocks_api_bp)
+app.register_blueprint(game_bp)
+
+# 初始化遊戲 API
+init_game_api(bot=None)
 
 logger.info("✅ 已註冊所有 Blueprints")
 logger.info(f"  - Stats API")
 logger.info(f"  - Sheets API")
 logger.info(f"  - Discord Auth API")
 logger.info(f"  - Stocks API")
+logger.info(f"  - Game API (紙娃娃 RPG)")
+
+# ============================================================
+# 網頁遊戲服務 (必須在 Blueprint 之後、404 handler 之前)
+# ============================================================
+
+@app.route('/rpg-game', methods=['GET'])
+@app.route('/rpg-game.html', methods=['GET'])
+def serve_rpg_game():
+    """提供紙娃娃 RPG 遊戲頁面"""
+    rpg_game_path = os.path.join(WEB_PORTAL_FOLDER, 'rpg-game.html')
+    logger.info(f"嘗試加載遊戲頁面: {rpg_game_path}")
+    logger.info(f"文件存在: {os.path.exists(rpg_game_path)}")
+    if os.path.exists(rpg_game_path):
+        with open(rpg_game_path, 'r', encoding='utf-8') as f:
+            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+    return jsonify({"error": "遊戲頁面不存在", "path": rpg_game_path}), 404
+
+
+@app.route('/game.html', methods=['GET'])
+@app.route('/game', methods=['GET'])
+def serve_game():
+    """提供遊戲首頁（指向紙娃娃 RPG）"""
+    game_path = os.path.join(WEB_PORTAL_FOLDER, 'rpg-game.html')
+    if os.path.exists(game_path):
+        with open(game_path, 'r', encoding='utf-8') as f:
+            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+    return jsonify({"error": "遊戲首頁不存在"}), 404
+
+
+@app.route('/static/<path:filename>', methods=['GET'])
+def serve_static(filename):
+    """提供靜態文件"""
+    if os.path.exists(os.path.join(STATIC_FOLDER, filename)):
+        return send_from_directory(STATIC_FOLDER, filename)
+    return jsonify({"error": "靜態文件不存在"}), 404
+
+
+@app.route('/web/<path:filename>', methods=['GET'])
+def serve_web_portal(filename):
+    """提供 web_portal 中的文件"""
+    if os.path.exists(os.path.join(WEB_PORTAL_FOLDER, filename)):
+        return send_from_directory(WEB_PORTAL_FOLDER, filename)
+    return jsonify({"error": "文件不存在"}), 404
 
 # ============================================================
 # 全局錯誤處理器
@@ -83,10 +141,22 @@ def handle_bad_request(e):
 
 @app.errorhandler(404)
 def handle_not_found(e):
-    """處理 404 錯誤"""
+    """處理 404 錯誤 - 提供可用端點列表"""
     return jsonify({
         "status": "error",
         "message": f"端點不存在: {request.path}",
+        "available_endpoints": [
+            "/",
+            "/api/stats",
+            "/api/stats/detailed",
+            "/api/config",
+            "/api/health",
+            "/api/sync",
+            "/api/export",
+            "/api/clean-virtual",
+            "/api/user/<id>",
+            "/api/game/*"
+        ],
         "timestamp": datetime.now().isoformat()
     }), 404
 
@@ -154,6 +224,11 @@ if __name__ == '__main__':
     print(f"   ✅ Sheets 同步 API (/api/sync, /api/export)")
     print(f"   ✅ 用戶管理 API    (/api/user/...)")
     print(f"   ✅ 系統監控       (/api/health)")
+    print(f"   ✅ 網頁遊戲       (/rpg-game 或 /game.html)")
+    print(f"🎮 遊戲網址:")
+    print(f"   • http://{host}:{port}/rpg-game")
+    print(f"   • http://{host}:{port}/rpg-game.html")
+    print(f"   • http://{host}:{port}/game.html")
     print(f"{'='*60}\n")
     
     app.run(host=host, port=port, debug=debug_mode, threaded=True)

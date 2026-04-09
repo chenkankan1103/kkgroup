@@ -157,6 +157,26 @@ def get_config():
             "error": str(e)
         }), 500
 
+# ============================================================
+# 根路徑和信息端點
+# ============================================================
+
+@app.route('/', methods=['GET'])
+def index():
+    """根路徑 - 提供 API 信息"""
+    return jsonify({
+        "service": "KKCoin Unified API",
+        "status": "operational",
+        "version": "2.0",
+        "endpoints": {
+            "health": "GET /api/health",
+            "stats": "GET /api/stats",
+            "stats_detailed": "GET /api/stats/detailed",
+            "config": "GET /api/config"
+        },
+        "documentation": "https://github.com/chenkankan1103/kkgroup"
+    }), 200
+
 
 # ============================================================
 # 錯誤處理
@@ -166,7 +186,14 @@ def get_config():
 def not_found(error):
     return jsonify({
         "status": "error",
-        "error": "Endpoint not found"
+        "error": "Endpoint not found",
+        "available_endpoints": [
+            "/",
+            "/api/health",
+            "/api/stats",
+            "/api/stats/detailed",
+            "/api/config"
+        ]
     }), 404
 
 

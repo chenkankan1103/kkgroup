@@ -69,6 +69,8 @@ def oauth_callback():
     """📍 Discord OAuth 回調端點"""
     
     code = request.args.get('code')
+    state = request.args.get('state')  # 可選的狀態參數
+    
     if not code:
         return jsonify({"status": "error", "message": "缺少授權碼"}), 400
     
@@ -136,9 +138,18 @@ def oauth_callback():
         
         logger.info(f"✅ 用戶認證成功: {user_data.get('username')} (ID: {user_data.get('id')})")
         
-        # 5️⃣ 重定向回前端（帶 token）
-        frontend_url = FRONTEND_URL.rstrip('/')
-        redirect_url = f"{frontend_url}/?auth_token={session_token}&user={user_data.get('username')}"
+        # 5️⃣ 重定向回遊戲或前端
+        # 檢查是否是遊戲的登入（通過 referrer 或固定目標）
+        redirect_url = None
+        
+        # 優先重定向到遊戲
+        if request.referrer and '/rpg-game' in request.referrer or '/game' in request.referrer:
+            redirect_url = f"/rpg-game?auth_token={session_token}&user_id={user_data.get('id')}"
+        else:
+            # 否則使用 FRONTEND_URL
+            frontend_url = FRONTEND_URL.rstrip('/')
+            redirect_url = f"{frontend_url}/?auth_token={session_token}&user={user_data.get('username')}"
+        
         return redirect(redirect_url)
         
     except Exception as e:
@@ -210,6 +221,29 @@ def get_user():
             "roles": user.get('roles'),
             "created_at": user.get('created_at')
         }
+    }), 200
+
+
+@discord_auth_bp.route('/user-info', methods=['GET'])
+def get_user_info():
+    """🎮 獲取用戶信息（遊戲用）- 支持 Bearer token"""
+    
+    auth_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    
+    if not auth_token or auth_token not in user_sessions:
+        return jsonify({
+            "status": "error",
+            "message": "無效的 token"
+        }), 401
+    
+    user = user_sessions[auth_token]
+    
+    return jsonify({
+        "status": "success",
+        "user_id": int(user.get('user_id', 0)),  # 轉換為整數用於遊戲
+        "username": user.get('username'),
+        "email": user.get('email'),
+        "is_member": user.get('is_member')
     }), 200
 
 

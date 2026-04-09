@@ -168,8 +168,13 @@ class AnimeTracker(commands.Cog):
         self.db = AnimeDatabase(ANIME_DB_PATH)
         self.task_started = False
         # 直接啟動任務（Discord.py 會自動等待 bot ready）
-        self.check_new_anime.start()
-        self.task_started = True
+        try:
+            logger.info("📺 AnimeTracker.__init__() 開始啟動任務...")
+            self.check_new_anime.start()
+            self.task_started = True
+            logger.info("✅ AnimeTracker 任務已啟動")
+        except Exception as e:
+            logger.error(f"❌ AnimeTracker.__init__() 啟動任務失敗: {e}", exc_info=True)
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
@@ -253,6 +258,7 @@ class AnimeTracker(commands.Cog):
     async def check_new_anime(self):
         """主循環：定時檢查並通知新集"""
         try:
+            logger.info("📺 [AnimeTracker] Task loop executing...")
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
             if not channel:
@@ -325,9 +331,12 @@ class AnimeTracker(commands.Cog):
 # 必要的 setup() 函數，讓 Discord.py 可以加載此 Cog
 async def setup(bot: commands.Bot):
     """加載 AnimeTracker Cog"""
-    logger.info("📺 AnimeTracker Cog loading...")
-    await bot.add_cog(AnimeTracker(bot))
-    logger.info("✅ AnimeTracker Cog loaded successfully")
+    try:
+        logger.info("📺 setup() 開始加載 AnimeTracker Cog...")
+        await bot.add_cog(AnimeTracker(bot))
+        logger.info("✅ AnimeTracker Cog 加載成功！")
+    except Exception as e:
+        logger.error(f"❌ setup() 加載 Cog 失敗: {e}", exc_info=True)
 
 
 async def setup(bot: commands.Bot):

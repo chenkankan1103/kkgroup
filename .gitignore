@@ -28,6 +28,10 @@ ENV/
 .idea/
 *.swp
 *.swo
+
+# Godot 游戏开发（等完整输出后再推送）
+game/
+
 *~
 .DS_Store
 

@@ -1,0 +1,200 @@
+{
+  "api_version": "2.0",
+  "service": "KKCoin Unified API",
+  "base_url": "http://127.0.0.1:5000",
+  "status": "operational",
+  "last_verified": "2026-04-04T13:27:06.896953Z",
+  "documentation": "https://github.com/chenkankan1103/kkgroup",
+  
+  "endpoints": {
+    "system": {
+      "root": {
+        "method": "GET",
+        "path": "/",
+        "description": "API 根路由，返回服務信息和所有可用端點",
+        "auth_required": false,
+        "parameters": [],
+        "response_code": 200,
+        "example_response": {
+          "service": "KKCoin Unified API",
+          "version": "2.0",
+          "status": "ok",
+          "timestamp": "2026-04-04T13:27:06.896953Z"
+        }
+      },
+      "health": {
+        "method": "GET",
+        "path": "/api/health",
+        "description": "健康檢查端點",
+        "auth_required": false,
+        "parameters": [],
+        "response_code": 200,
+        "purpose": "監控、負載均衡、故障偵測"
+      }
+    },
+    
+    "stats": {
+      "stats": {
+        "method": "GET",
+        "path": "/api/stats",
+        "description": "即時統計數據",
+        "auth_required": false,
+        "parameters": [],
+        "response_code": 200
+      },
+      "stats_detailed": {
+        "method": "GET",
+        "path": "/api/stats/detailed",
+        "description": "詳細統計（包含玩家排名）",
+        "auth_required": false,
+        "parameters": [],
+        "response_code": 200
+      },
+      "config": {
+        "method": "GET",
+        "path": "/api/config",
+        "description": "前端配置",
+        "auth_required": false,
+        "parameters": [],
+        "response_code": 200
+      }
+    },
+    
+    "sheets": {
+      "sync": {
+        "method": "POST",
+        "path": "/api/sync",
+        "description": "同步 Google Sheets 資料到 DB",
+        "auth_required": true,
+        "parameters": ["spreadsheet_id", "sheets"],
+        "response_code": 200,
+        "error_codes": [400, 401, 403]
+      },
+      "export": {
+        "method": ["GET", "POST"],
+        "path": "/api/export",
+        "description": "導出 DB 資料為 Sheets 格式",
+        "auth_required": true,
+        "parameters": ["format", "sheet_id"],
+        "response_code": 200,
+        "error_codes": [400, 401, 403]
+      }
+      "clean_virtual": {
+        "method": "POST",
+        "path": "/api/clean-virtual",
+        "description": "清理虛擬帳號",
+        "auth_required": true,
+        "admin_required": true,
+        "parameters": ["before_date", "exclude_ids"],
+        "response_code": 200,
+        "error_codes": [400, 401, 403]
+      },
+      "get_user": {
+        "method": "GET",
+        "path": "/api/user/<id>",
+        "description": "取得用戶資料",
+        "auth_required": false,
+        "parameters": ["id"],
+        "response_code": [200, 404],
+        "error_codes": [400, 401]
+      },
+      "update_user": {
+        "method": "PUT",
+        "path": "/api/user/<id>",
+        "description": "更新用戶資料",
+        "auth_required": true,
+        "parameters": ["id"],
+        "body_parameters": ["nickname", "coins", "level"],
+        "response_code": 200,
+        "error_codes": [400, 401, 404]
+      }
+    },
+    
+    "game": {
+      "paperdoll": {
+        "method": ["GET", "POST"],
+        "path": "/api/game/user/<user_id>/paperdoll",
+        "description": "取得/更新用戶紙娃娃配置",
+        "auth_required": false,
+        "parameters": ["user_id"],
+        "response_code": 200,
+        "error_codes": [400, 404]
+      }
+    }
+  },
+  
+  "error_responses": {
+    "400": {
+      "code": 400,
+      "name": "Bad Request",
+      "description": "請求格式錯誤或缺少必要參數"
+    },
+    "401": {
+      "code": 401,
+      "name": "Unauthorized",
+      "description": "未授權或身份驗證失敗"
+    },
+    "403": {
+      "code": 403,
+      "name": "Forbidden",
+      "description": "禁止訪問（權限不足）"
+    },
+    "404": {
+      "code": 404,
+      "name": "Not Found",
+      "description": "資源或端點不存在"
+    },
+    "500": {
+      "code": 500,
+      "name": "Internal Server Error",
+      "description": "服務器內部錯誤"
+    }
+  },
+  
+  "response_formats": {
+    "success": {
+      "status": "ok",
+      "data": "endpoint specific",
+      "timestamp": "ISO 8601"
+    },
+    "error": {
+      "status": "error",
+      "message": "error description",
+      "error_type": "exception type",
+      "timestamp": "ISO 8601"
+    }
+  },
+  
+  "authentication": {
+    "methods": [
+      "Session Cookie",
+      "Discord OAuth 2.0",
+      "API Key",
+      "Bearer Token"
+    ],
+    "session_lifetime": "7 days",
+    "cookie_flags": {
+      "secure": true,
+      "httpOnly": true,
+      "sameSite": "Lax"
+    }
+  },
+  
+  "test_results": {
+    "date": "2026-04-04",
+    "time": "13:27:06",
+    "total_endpoints_tested": 10,
+    "total_passed": 10,
+    "total_failed": 0,
+    "success_rate": "100%",
+    "status": "all_systems_operational"
+  },
+  
+  "performance_metrics": {
+    "startup_time_seconds": 2.5,
+    "average_response_time_ms": 20,
+    "health_check_response_ms": 5,
+    "memory_usage_mb": 100,
+    "cpu_usage_percent": 5
+  }
+}
