@@ -280,10 +280,10 @@ class AnimeTracker(commands.Cog):
         embed.set_footer(text="Bahamut 動畫追蹤 | 自動通知新上架集")
         return embed
     
-    @tasks.loop(minutes=1)  # 每分鐘檢查一次，但只在整點 10 分和 40 分時執行實際檢查
+    @tasks.loop(minutes=1)
     async def check_new_anime(self):
         """
-        主循環：在整點 10 分和 40 分檢查並通知新集
+        每分鐘檢查一次，但只在整點 10 分和 40 分執行實際檢查
         
         時間安排：
         - :10 分：檢查整點更新（允許 10 分鐘的 API 延遲）
@@ -291,97 +291,92 @@ class AnimeTracker(commands.Cog):
         
         動畫通常在整點 (:00) 和整點 30 分 (:30) 時更新
         """
-        try:
-            # 檢查是否應該在此時執行
-            now = datetime.now()
-            current_minute = now.minute
-            
-            # 只在第 10 分鐘或第 40 分鐘時執行
-            if current_minute not in [10, 40]:
-                logger.debug(f"📺 [check_new_anime] 非檢查時間 ({current_minute:02d}分)，跳過")
-                return
-            
-            logger.info(f"📺 [check_new_anime] ========== 定時檢查開始 ({now.strftime('%H:%M:%S')}) ==========")
-            
-            # 取得頻道
-            channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-            if not channel:
-                # 診斷：列出所有可用的頻道
-                all_channels = []
-                for guild in self.bot.guilds:
-                    for ch in guild.channels:
-                        if hasattr(ch, 'id'):
-                            all_channels.append(f"{ch.name} (ID:{ch.id})")
-                logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
-                logger.error(f"📋 可用頻道前 10 個: {', '.join(all_channels[:10])}")
-                return
-            
-            # 獲取最新動畫數據
-            logger.info("📺 [check_new_anime] 當前頻道: " + channel.name)
-            logger.info("📺 [check_new_anime] 正在從 API 獲取動畫數據...")
-            episodes = await self.fetch_new_anime_from_api()
-            if not episodes:
-                logger.warning("⚠️ [check_new_anime] 無法從 API 獲取數據")
-                return
-            
-            logger.info(f"📺 [check_new_anime] 獲得 {len(episodes)} 集")
-            
-            # 檢查 Bootstrap 狀態
-            bootstrap_status = self.db.is_bootstrap_completed()
-            logger.info(f"📺 [check_new_anime] Bootstrap 狀態: {bootstrap_status}")
-            
-            if not bootstrap_status:
-                # 首次運行：記錄所有現存集，不發送通知
-                logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
-                self.db.bootstrap_add_all(episodes)
-                self.db.mark_bootstrap_completed()
-                self.bootstrap_completed = True
-                
-                embed = discord.Embed(
-                    title="✅ 動畫追蹤已啟動",
-                    description="已記錄現有集合。之後會通知新上架的集。",
-                    color=discord.Color.green()
-                )
-                logger.info("📺 [check_new_anime] 發送 bootstrap 確認 embed")
-                await channel.send(embed=embed)
-                logger.info("✅ [check_new_anime] Bootstrap 完成，embed 已發送")
-                return
-            
-            # 正常運行：檢查新集
-            new_episodes = []
-            for ep in episodes:
-                video_sn = ep.get("videoSn")
-                if video_sn and not self.db.is_notified(video_sn):
-                    new_episodes.append(ep)
-            
-            if not new_episodes:
-                logger.info("⏭️ No new episodes found")
-                return
-            
-            # 發送新集通知
-            logger.info(f"🆕 Found {len(new_episodes)} new episodes")
-            for ep in new_episodes:
-                try:
-                    embed = self.generate_anime_embed(ep)
-                    await channel.send(embed=embed)
-                    
-                    # 記錄已通知
-                    self.db.add_notified(
-                        video_sn=ep.get("videoSn"),
-                        anime_sn=ep.get("animeSn"),
-                        anime_name=ep.get("title", "Unknown"),
-                        volume=ep.get("volume", ""),
-                        cover_url=ep.get("cover", "")
-                    )
-                    
-                    # 避免 Discord 限流（200ms 間隔）
-                    await asyncio.sleep(0.2)
-                except Exception as e:
-                    logger.error(f"❌ Error sending embed: {e}")
-                    await asyncio.sleep(1)
+        now = datetime.now()
         
-        except Exception as e:
-            logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
+        # 只在 10 分和 40 分時執行檢查
+        if now.minute in [10, 40]:
+            try:
+                logger.info(f"📺 [check_new_anime] ========== 定時檢查開始 ({now.strftime('%H:%M:%S')}) ==========")
+                
+                # 取得頻道
+                channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+                if not channel:
+                    # 診斷：列出所有可用的頻道
+                    all_channels = []
+                    for guild in self.bot.guilds:
+                        for ch in guild.channels:
+                            if hasattr(ch, 'id'):
+                                all_channels.append(f"{ch.name} (ID:{ch.id})")
+                    logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
+                    logger.error(f"📋 可用頻道前 10 個: {', '.join(all_channels[:10])}")
+                    return
+                
+                # 獲取最新動畫數據
+                logger.info("📺 [check_new_anime] 當前頻道: " + channel.name)
+                logger.info("📺 [check_new_anime] 正在從 API 獲取動畫數據...")
+                episodes = await self.fetch_new_anime_from_api()
+                if not episodes:
+                    logger.warning("⚠️ [check_new_anime] 無法從 API 獲取數據")
+                    return
+                
+                logger.info(f"📺 [check_new_anime] 獲得 {len(episodes)} 集")
+                
+                # 檢查 Bootstrap 狀態
+                bootstrap_status = self.db.is_bootstrap_completed()
+                logger.info(f"📺 [check_new_anime] Bootstrap 狀態: {bootstrap_status}")
+                
+                if not bootstrap_status:
+                    # 首次運行：記錄所有現存集，不發送通知
+                    logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
+                    self.db.bootstrap_add_all(episodes)
+                    self.db.mark_bootstrap_completed()
+                    self.bootstrap_completed = True
+                    
+                    embed = discord.Embed(
+                        title="✅ 動畫追蹤已啟動",
+                        description="已記錄現有集合。之後會通知新上架的集。",
+                        color=discord.Color.green()
+                    )
+                    logger.info("📺 [check_new_anime] 發送 bootstrap 確認 embed")
+                    await channel.send(embed=embed)
+                    logger.info("✅ [check_new_anime] Bootstrap 完成，embed 已發送")
+                    return
+                
+                # 正常運行：檢查新集
+                new_episodes = []
+                for ep in episodes:
+                    video_sn = ep.get("videoSn")
+                    if video_sn and not self.db.is_notified(video_sn):
+                        new_episodes.append(ep)
+                
+                if not new_episodes:
+                    logger.info("⏭️ No new episodes found")
+                    return
+                
+                # 發送新集通知
+                logger.info(f"🆕 Found {len(new_episodes)} new episodes")
+                for ep in new_episodes:
+                    try:
+                        embed = self.generate_anime_embed(ep)
+                        await channel.send(embed=embed)
+                        
+                        # 記錄已通知
+                        self.db.add_notified(
+                            video_sn=ep.get("videoSn"),
+                            anime_sn=ep.get("animeSn"),
+                            anime_name=ep.get("title", "Unknown"),
+                            volume=ep.get("volume", ""),
+                            cover_url=ep.get("cover", "")
+                        )
+                        
+                        # 避免 Discord 限流（200ms 間隔）
+                        await asyncio.sleep(0.2)
+                    except Exception as e:
+                        logger.error(f"❌ Error sending embed: {e}")
+                        await asyncio.sleep(1)
+            
+            except Exception as e:
+                logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
     
     @check_new_anime.before_loop
     async def before_check_new_anime(self):
