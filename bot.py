@@ -8,6 +8,19 @@ from datetime import datetime
 from dotenv import load_dotenv
 from bot_status import build_discord_activity
 from watchdog.events import FileSystemEventHandler
+import logging
+
+# ============================================================
+# 日誌配置
+# ============================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # 輸出到 stdout，被 systemd journalctl 捕獲
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
@@ -37,7 +50,6 @@ def file_log(msg):
             f.flush()
     except (IOError, OSError):
         pass
-    
     # 寫入 syslog
     if HAS_SYSLOG:
         try:
@@ -163,9 +175,7 @@ async def find_and_load_extensions(base_path, package_prefix="", bot_client=None
 
 async def setup_modules(bot_client):
     """載入所有模組"""
-    debug_start = "[setup_modules] 函數開始"
-    print(debug_start, flush=True)
-    sys.stdout.flush()
+    file_log("[setup_modules] 函數開始")
     
     full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
@@ -174,42 +184,29 @@ async def setup_modules(bot_client):
         init_file = os.path.join(full_path, "__init__.py")
         with open(init_file, 'w', encoding='utf-8') as f:
             f.write(f"# {BOT_NAME} Bot Commands Module\n")
-        print("[setup_modules] Created commands directory", flush=True)
-        sys.stdout.flush()
+        file_log("[setup_modules] Created commands directory")
         return []
     
-    debug_find = "[setup_modules] 調用 find_and_load_extensions()"
-    print(debug_find, flush=True)
-    sys.stdout.flush()
+    file_log("[setup_modules] 調用 find_and_load_extensions()")
     
     extensions = await find_and_load_extensions(full_path, COMMANDS_DIR, bot_client)
     
-    debug_found = f"[setup_modules] find_and_load_extensions() 返回 {len(extensions)} 擴展"
-    print(debug_found, flush=True)
-    sys.stdout.flush()
+    file_log(f"[setup_modules] find_and_load_extensions() 返回 {len(extensions)} 擴展")
     
     # 特殊處理 anime_tracker Cog - 確保它被加載
-    debug_anime = "[setup_modules] 嘗試明確加載 anime_tracker..."
-    print(debug_anime, flush=True)
-    sys.stdout.flush()
+    file_log("[setup_modules] 嘗試明確加載 anime_tracker...")
     
     try:
         await bot_client.load_extension("commands.anime_tracker")
-        success_anime = "[setup_modules] ✅ commands.anime_tracker 加載成功！"
-        print(success_anime, flush=True)
-        sys.stdout.flush()
+        file_log("[setup_modules] ✅ commands.anime_tracker 加載成功！")
         if "commands.anime_tracker" not in extensions:
             extensions.append("commands.anime_tracker")
     except Exception as e:
-        error_anime = f"[setup_modules] ❌ anime_tracker 加載失敗: {e}"
-        print(error_anime, flush=True)
-        sys.stdout.flush()
+        file_log(f"[setup_modules] ❌ anime_tracker 加載失敗: {e}")
         import traceback
         traceback.print_exc()
     
-    debug_end = f"[setup_modules] 函數完成，共 {len(extensions)} 個擴展"
-    print(debug_end, flush=True)
-    sys.stdout.flush()
+    file_log(f"[setup_modules] 函數完成，共 {len(extensions)} 個擴展")
     
     return extensions
 
