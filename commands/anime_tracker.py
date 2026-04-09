@@ -245,7 +245,7 @@ class AnimeTracker(commands.Cog):
         embed.set_footer(text="Bahamut 動畫追蹤 | 自動通知新上架集")
         return embed
     
-    @tasks.loop(hours=1)
+    @tasks.loop(seconds=30)  # 測試模式：每 30 秒檢查一次（正式環境改為 hours=1）
     async def check_new_anime(self):
         """主循環：定時檢查並通知新集"""
         try:
