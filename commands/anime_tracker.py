@@ -167,34 +167,13 @@ class AnimeTracker(commands.Cog):
         self.bot = bot
         self.db = AnimeDatabase(ANIME_DB_PATH)
         self.task_started = False
-        logger.info(f"🎬 AnimeTracker.__init__ called (bot ready: {bot.is_ready()})")
-        
-        # 如果 bot 已經 ready，立即啟動任務
-        if bot.is_ready():
-            self._start_task()
-        else:
-            # 否則在 on_ready 時啟動
-            bot.add_listener(self._on_bot_ready, "on_ready")
-    
-    async def _on_bot_ready(self):
-        """Bot 就緒時啟動任務"""
-        logger.info("🎬 AnimeTracker._on_bot_ready called")
-        if not self.task_started:
-            self._start_task()
-        # 移除監聽器，只需要運行一次
-        self.bot.remove_listener(self._on_bot_ready, "on_ready")
-    
-    def _start_task(self):
-        """啟動後台任務"""
-        if not self.task_started:
-            self.task_started = True
-            logger.info("🎬 AnimeTracker: Starting check_new_anime task")
-            self.check_new_anime.start()
+        # 直接啟動任務（Discord.py 會自動等待 bot ready）
+        self.check_new_anime.start()
+        self.task_started = True
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
-        logger.info("🎬 AnimeTracker.cog_unload called")
-        if self.task_started and self.check_new_anime.is_running():
+        if self.check_new_anime.is_running():
             self.check_new_anime.cancel()
     
     async def fetch_new_anime_from_api(self) -> Optional[List[Dict]]:
@@ -273,7 +252,6 @@ class AnimeTracker(commands.Cog):
     @tasks.loop(seconds=30)  # 測試模式：每 30 秒檢查一次（正式環境改為 hours=1）
     async def check_new_anime(self):
         """主循環：定時檢查並通知新集"""
-        logger.info("🎬 check_new_anime loop iteration started")
         try:
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
@@ -341,9 +319,7 @@ class AnimeTracker(commands.Cog):
     @check_new_anime.before_loop
     async def before_check_new_anime(self):
         """在第一次循環前等待 bot 就緒"""
-        logger.info("🎬 AnimeTracker before_loop started")
         await self.bot.wait_until_ready()
-        logger.info("🎬 AnimeTracker bot is ready! Starting main loop...")
 
 
 async def setup(bot: commands.Bot):
