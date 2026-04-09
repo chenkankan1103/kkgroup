@@ -416,6 +416,11 @@ async def on_ready():
     file_log("=== ON_READY CALLED ===")
     _on_ready_called = True
     
+    # 調試：打印到 journalctl 以確保追蹤執行
+    debug1 = "[ON_READY_DEBUG] Starting on_ready execution..."
+    print(debug1, flush=True)
+    sys.stdout.flush()
+    
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     print("[bot] on_ready triggered, guilds:", [(g.id, g.name) for g in client.guilds], flush=True)
     # enumerate voice channels in each guild the bot is actually in
