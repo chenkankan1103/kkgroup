@@ -24,6 +24,8 @@ API：
 import sys
 print("[ANIME_TRACKER_MODULE] Module is being imported...", flush=True)
 sys.stdout.flush()
+
+import discord
 from discord.ext import commands, tasks
 import asyncio
 import aiohttp
