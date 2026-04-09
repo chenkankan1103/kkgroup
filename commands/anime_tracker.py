@@ -322,6 +322,14 @@ class AnimeTracker(commands.Cog):
         await self.bot.wait_until_ready()
 
 
+# 必要的 setup() 函數，讓 Discord.py 可以加載此 Cog
+async def setup(bot: commands.Bot):
+    """加載 AnimeTracker Cog"""
+    logger.info("📺 AnimeTracker Cog loading...")
+    await bot.add_cog(AnimeTracker(bot))
+    logger.info("✅ AnimeTracker Cog loaded successfully")
+
+
 async def setup(bot: commands.Bot):
     """Discord.py 2.0+ 加載方式"""
     await bot.add_cog(AnimeTracker(bot))
