@@ -269,7 +269,7 @@ class StockEntryView(discord.ui.View):
             # 建立持倉顯示 Embed
             embed = discord.Embed(
                 title=f"📊 {interaction.user.name} 的持倉",
-                description="您目前持有的所有仓位",
+                description="您目前持有的所有倉位",
                 color=discord.Color.blue(),
                 timestamp=datetime.now()
             )
