@@ -156,7 +156,7 @@ class PersistentWelcomeView(discord.ui.View):
 
     @discord.ui.button(custom_id="welcome_confirm_entry", label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
     async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         target_user_id = self._extract_target_user_id(interaction.message) or interaction.user.id
 
         print(f"🔘 【入園按鈕】按下者: {interaction.user.id} ({interaction.user.name}), 目標用戶: {target_user_id}")
@@ -729,7 +729,13 @@ class WelcomeFlow(commands.Cog):
             inventory = '空的'
             if user_data['inventory']:
                 try:
-                    items = json.loads(user_data['inventory'])
+                    inv_raw = user_data['inventory']
+                    if isinstance(inv_raw, list):
+                        items = inv_raw
+                    elif isinstance(inv_raw, str):
+                        items = json.loads(inv_raw) if inv_raw else []
+                    else:
+                        items = []
                     if items:
                         inventory = ', '.join(str(item) for item in items[:3])
                         if len(items) > 3:
@@ -947,7 +953,13 @@ class WelcomeFlow(commands.Cog):
                 await interaction.followup.send("❌ 無法獲取用戶資料，請聯繫管理員", ephemeral=True)
                 return
             
-            inventory = json.loads(user_data.get('inventory', '[]')) if user_data.get('inventory') else []
+            inventory_raw = user_data.get('inventory', '[]')
+            if isinstance(inventory_raw, list):
+                inventory = inventory_raw
+            elif isinstance(inventory_raw, str):
+                inventory = json.loads(inventory_raw) if inventory_raw else []
+            else:
+                inventory = []
             
             if "手機" in inventory or "身分證" in inventory:
                 # 使用者尚未手動上繳，先警告並自動沒收
@@ -1036,10 +1048,16 @@ class WelcomeFlow(commands.Cog):
             print(f"✅ 發送入園成功訊息給 {member.name}")
             await interaction.followup.send(embed=embed_response, ephemeral=True)
 
-            # 5分鐘後移除臨時身分組並完成處理
+            # 5分鐘後移除臨時身分組並完成處理（後台執行，不阻塞交互）
+            async def cleanup_after_delay():
+                try:
+                    await asyncio.sleep(300)
+                    await self.remove_temp_role_and_cleanup(member.id)
+                except Exception as cleanup_err:
+                    print(f"❌ 後台清理任務錯誤: {cleanup_err}")
+
             print(f"⏱️ 排隊 5 分鐘後的清理任務")
-            await asyncio.sleep(300)
-            await self.remove_temp_role_and_cleanup(member.id)
+            self.bot.loop.create_task(cleanup_after_delay())
             
         except Exception as e:
             print(f"❌ handle_final_verification 錯誤: {e}")
