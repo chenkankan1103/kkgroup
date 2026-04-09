@@ -462,22 +462,18 @@ async def on_ready():
         
         # 載入模組 - 添加分步驟日誌
         try:
-            print("[SETUP_TRACE] 準備調用 setup_modules()...", flush=True)
-            sys.stdout.flush()
+            file_log("[SETUP_TRACE] 準備調用 setup_modules()...")
             
             debug_setup = "[SETUP] About to call setup_modules()..."
-            print(debug_setup, flush=True)
-            sys.stdout.flush()
+            file_log(debug_setup)
             
             loaded_extensions = await setup_modules(client)
             
             success_setup = f"[SETUP] setup_modules() completed, loaded {len(loaded_extensions)} extensions"
-            print(success_setup, flush=True)
-            sys.stdout.flush()
+            file_log(success_setup)
         except Exception as e:
             error_setup = f"[SETUP] ❌ setup_modules() failed: {e}"
-            print(error_setup, flush=True)
-            sys.stdout.flush()
+            file_log(error_setup)
             import traceback
             traceback.print_exc()
             raise
