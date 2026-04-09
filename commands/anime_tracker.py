@@ -280,11 +280,28 @@ class AnimeTracker(commands.Cog):
         embed.set_footer(text="Bahamut 動畫追蹤 | 自動通知新上架集")
         return embed
     
-    @tasks.loop(seconds=30)  # 測試模式：每 30 秒檢查一次（正式環境改為 hours=1）
+    @tasks.loop(minutes=1)  # 每分鐘檢查一次，但只在整點 10 分和 40 分時執行實際檢查
     async def check_new_anime(self):
-        """主循環：定時檢查並通知新集"""
+        """
+        主循環：在整點 10 分和 40 分檢查並通知新集
+        
+        時間安排：
+        - :10 分：檢查整點更新（允許 10 分鐘的 API 延遲）
+        - :40 分：檢查整點 30 分的更新（允許 10 分鐘的 API 延遲）
+        
+        動畫通常在整點 (:00) 和整點 30 分 (:30) 時更新
+        """
         try:
-            logger.info("📺 [check_new_anime] ========== 任務循環執行開始 ==========")
+            # 檢查是否應該在此時執行
+            now = datetime.now()
+            current_minute = now.minute
+            
+            # 只在第 10 分鐘或第 40 分鐘時執行
+            if current_minute not in [10, 40]:
+                logger.debug(f"📺 [check_new_anime] 非檢查時間 ({current_minute:02d}分)，跳過")
+                return
+            
+            logger.info(f"📺 [check_new_anime] ========== 定時檢查開始 ({now.strftime('%H:%M:%S')}) ==========")
             
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
