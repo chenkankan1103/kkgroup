@@ -252,6 +252,223 @@ class StockEntryView(discord.ui.View):
                     await interaction.followup.send("❌ 進入市場失敗，請稍後再試。", ephemeral=True)
             except:
                 logger.error("❌ 無法發送錯誤訊息")
+    
+    @discord.ui.button(label="我的持仓", style=discord.ButtonStyle.secondary, emoji="📋", custom_id="user_portfolio_button")
+    async def view_portfolio(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """顯示用戶的持倉信息"""
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+            
+            user_id = interaction.user.id
+            logger.info(f"📋 [PORTFOLIO] 使用者 {user_id} 查看持倉")
+            
+            # 獲取用戶持倉信息
+            user_stocks = get_user_stocks(user_id)
+            
+            # 建立持倉顯示 Embed
+            embed = discord.Embed(
+                title=f"📊 {interaction.user.name} 的持倉",
+                description="您目前持有的所有仓位",
+                color=discord.Color.blue(),
+                timestamp=datetime.now()
+            )
+            
+            if not user_stocks:
+                embed.add_field(
+                    name="目前無持倉",
+                    value="點擊「進入市場」開始投資",
+                    inline=False
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            # 按資產類別分組顯示
+            positions_by_class = {}
+            total_value = 0
+            
+            for stock in user_stocks:
+                asset_class = stock.get('asset_class', 'unknown')
+                symbol = stock.get('symbol', 'N/A')
+                shares = stock.get('shares', 0)
+                buy_price = stock.get('buy_price', 0)
+                current_price = stock.get('current_price', buy_price)
+                
+                position_value = shares * current_price
+                total_value += position_value
+                pnl = (current_price - buy_price) * shares
+                pnl_percent = ((current_price - buy_price) / buy_price * 100) if buy_price > 0 else 0
+                
+                if asset_class not in positions_by_class:
+                    positions_by_class[asset_class] = []
+                
+                positions_by_class[asset_class].append({
+                    'symbol': symbol,
+                    'shares': shares,
+                    'buy_price': buy_price,
+                    'current_price': current_price,
+                    'value': position_value,
+                    'pnl': pnl,
+                    'pnl_percent': pnl_percent
+                })
+            
+            # 顯示各類別持倉
+            for asset_class in positions_by_class:
+                positions = positions_by_class[asset_class]
+                field_value = ""
+                
+                for pos in positions:
+                    pnl_emoji = "📈" if pos['pnl'] >= 0 else "📉"
+                    field_value += f"**{pos['symbol']}** | {pos['shares']:.2f}股\n"
+                    field_value += f"  買入: ${pos['buy_price']:.2f} | 現價: ${pos['current_price']:.2f}\n"
+                    field_value += f"  損益: {pnl_emoji} ${pos['pnl']:.2f} ({pos['pnl_percent']:.2f}%)\n\n"
+                
+                embed.add_field(
+                    name=f"🔹 {asset_class}",
+                    value=field_value,
+                    inline=False
+                )
+            
+            # 添加總值摘要
+            embed.add_field(
+                name="💰 總資產值",
+                value=f"${total_value:,.2f}",
+                inline=True
+            )
+            
+            # 建立持倉操作視圖
+            view = PortfolioManageView(self.cog, user_id, user_stocks)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"❌ 顯示持倉失敗: {e}")
+            traceback.print_exc()
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 無法顯示持倉信息", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 無法顯示持倉信息", ephemeral=True)
+            except:
+                logger.error("❌ 無法發送錯誤訊息")
+
+
+# ============================================================
+# 股票選擇視圖（第一層）
+# ============================================================
+
+
+# ============================================================
+# 持倉管理視圖
+# ============================================================
+
+class PortfolioManageView(discord.ui.View):
+    """用戶持倉管理視圖 - 显示持仓并提供买卖选项"""
+    
+    def __init__(self, cog, user_id: int, user_stocks: list):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.user_id = user_id
+        self.user_stocks = user_stocks
+        
+        # 為每個持倉添加按鈕
+        for idx, stock in enumerate(user_stocks):
+            symbol = stock.get('symbol', 'N/A')
+            asset_class = stock.get('asset_class', 'unknown')
+            
+            # 添加買賣按鈕
+            button = discord.ui.Button(
+                label=f"買賣 {symbol}",
+                style=discord.ButtonStyle.success,
+                custom_id=f"portfolio_trade_{idx}",
+                emoji="💹"
+            )
+            button.callback = self._create_trade_callback(idx, symbol, asset_class)
+            self.add_item(button)
+    
+    def _create_trade_callback(self, idx: int, symbol: str, asset_class: str):
+        """為每個持倉創建買賣回調函數"""
+        async def callback(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+            
+            # 顯示該股票的詳細信息和交易選項
+            stock = self.user_stocks[idx]
+            
+            embed = discord.Embed(
+                title=f"💹 {symbol} - 交易選項",
+                description=f"資產類別: {asset_class}",
+                color=discord.Color.green()
+            )
+            
+            embed.add_field(
+                name="📊 當前持倉",
+                value=f"{stock.get('shares', 0):.2f} 股",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="💰 持仓价值",
+                value=f"${stock.get('shares', 0) * stock.get('current_price', 0):,.2f}",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="📈 買入價格",
+                value=f"${stock.get('buy_price', 0):,.2f}",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="💹 現價",
+                value=f"${stock.get('current_price', 0):,.2f}",
+                inline=True
+            )
+            
+            # 添加買賣按鈕
+            current_price = stock.get('current_price', 0)
+            trade_view = StockTradingActionView(self.cog, self.user_id, symbol, asset_class, current_price)
+            await interaction.followup.send(embed=embed, view=trade_view, ephemeral=True)
+        
+        return callback
+
+
+# ============================================================
+# 股票交易操作視圖
+# ============================================================
+
+class StockTradingActionView(discord.ui.View):
+    """股票交易操作視圖 - 提供買入和賣出選項"""
+    
+    def __init__(self, cog, user_id: int, symbol: str, asset_class: str, current_price: float):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.user_id = user_id
+        self.symbol = symbol
+        self.asset_class = asset_class
+        self.current_price = current_price
+    
+    @discord.ui.button(label="買入", style=discord.ButtonStyle.success, emoji="📈", custom_id="action_buy")
+    async def buy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """打開買入交易模態"""
+        # 創建虛擬 room_view 物件來兼容 TradeModal
+        room_view = type('obj', (object,), {
+            'cog': self.cog,
+            'user_id': self.user_id,
+            'asset_class': self.asset_class
+        })()
+        modal = TradeModal(room_view, "buy", self.symbol, self.current_price)
+        await interaction.response.show_modal(modal)
+    
+    @discord.ui.button(label="賣出", style=discord.ButtonStyle.danger, emoji="📉", custom_id="action_sell")
+    async def sell_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """打開賣出交易模態"""
+        # 創建虛擬 room_view 物件來兼容 TradeModal
+        room_view = type('obj', (object,), {
+            'cog': self.cog,
+            'user_id': self.user_id,
+            'asset_class': self.asset_class
+        })()
+        modal = TradeModal(room_view, "sell", self.symbol, self.current_price)
+        await interaction.response.show_modal(modal)
 
 
 # ============================================================
