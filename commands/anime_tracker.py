@@ -33,6 +33,8 @@ import aiohttp
 import sqlite3
 import json
 import logging
+import re
+import html
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List
@@ -316,7 +318,55 @@ class AnimeTracker(commands.Cog):
             logger.error(f"❌ Error fetching anime from API: {e}", exc_info=True)
             return None
     
-    def generate_anime_embed(self, episode: Dict) -> discord.Embed:
+    async def fetch_anime_web_details(self, anime_sn: str) -> Dict[str, Optional[object]]:
+        """
+        從動畫瘋網頁版的 animeRef 詳情頁抓取作品分類和簡介。
+        """
+        if not anime_sn:
+            return {}
+
+        detail_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    detail_url,
+                    timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"⚠️ Web detail page returned status {resp.status} for animeSn={anime_sn}")
+                        return {}
+                    html_text = await resp.text()
+
+            genres = []
+            summary = None
+
+            tag_section = re.search(r'<span class="title">作品分類</span>\s*<ul class="tag-list">(.*?)</ul>', html_text, re.S)
+            if tag_section:
+                genres = re.findall(r'<li class="tag">(.*?)</li>', tag_section.group(1), re.S)
+                genres = [html.unescape(tag.strip()) for tag in genres if tag.strip()]
+
+            summary_section = re.search(r'<div class="data-intro">\s*<p>(.*?)</p>', html_text, re.S)
+            if summary_section:
+                raw_summary = summary_section.group(1)
+                summary = html.unescape(re.sub(r'\s+', ' ', raw_summary)).strip()
+
+            return {
+                "genres": genres,
+                "summary": summary,
+                "detail_url": detail_url,
+            }
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ Web detail timeout ({API_TIMEOUT}s) for animeSn={anime_sn}")
+            return {}
+        except Exception as e:
+            logger.error(f"❌ Error fetching anime web details for animeSn={anime_sn}: {e}", exc_info=True)
+            return {}
+
+    def _truncate_text(self, text: str, limit: int = 240) -> str:
+        return text if len(text) <= limit else text[:limit].rstrip() + '...'
+
+    async def generate_anime_embed(self, episode: Dict) -> discord.Embed:
         """
         生成單個集的 Discord Embed
         
@@ -332,41 +382,55 @@ class AnimeTracker(commands.Cog):
         anime_sn = episode.get("animeSn", "")
         
         # 構建動畫連結 (Bahamut 動畫連結)
-        anime_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={anime_sn}" if anime_sn else "https://ani.gamer.com.tw"
+        anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}" if anime_sn else "https://ani.gamer.com.tw"
+        
+        web_details = await self.fetch_anime_web_details(str(anime_sn)) if anime_sn else {}
+        genres = web_details.get("genres", [])
+        summary = web_details.get("summary")
         
         # 獲取標籤信息
         highlight_tag = episode.get("highlightTag", {})
         tag_parts = []
         
-        if highlight_tag.get("bilingual"):
+        if genres:
+            tag_parts.extend([f"#{tag}" for tag in genres[:6]])
+        elif highlight_tag.get("bilingual"):
             tag_parts.append("🗣️ 雙語")
-        
+
         edition = highlight_tag.get("edition", "").strip()
         if edition:
             tag_parts.append(f"📺 {edition}")
         
-        # 如果有標籤則顯示，否則不顯示
         tags_str = " | ".join(tag_parts) if tag_parts else "無特殊標籤"
+        
+        description_text = f"**集數：{volume}**"
+        if summary:
+            description_text += "\n" + self._truncate_text(summary, 280)
         
         embed = discord.Embed(
             title=f"🎬 {anime_name}",
-            description=f"**集數：{volume}**",
-            url=anime_url,  # 點擊標題可到動畫頁面
-            color=discord.Color.from_rgb(178, 108, 196),  # Bahamut 紫色
+            description=description_text,
+            url=anime_url,
+            color=discord.Color.from_rgb(178, 108, 196),
             timestamp=datetime.utcnow()
         )
         
         if cover_url:
             embed.set_image(url=cover_url)
         
-        # 添加標籤
         embed.add_field(
             name="📌 標籤",
             value=tags_str,
             inline=False
         )
         
-        # 添加評分提示
+        if summary:
+            embed.add_field(
+                name="📝 劇情簡介",
+                value=self._truncate_text(summary, 280),
+                inline=False
+            )
+        
         embed.add_field(
             name="⭐ 點擊反應留下評價吧",
             value="不管點什麼表情都沒關係啦，正評負評都可以～\n評分成功會獲得 💰 2000 KK幣喔！",
@@ -453,9 +517,9 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"🆕 Found {len(new_episodes)} new episodes")
                 for ep in new_episodes:
                     try:
-                        embed = self.generate_anime_embed(ep)
+                        embed = await self.generate_anime_embed(ep)
                         message = await channel.send(embed=embed)
-                        
+
                         # 記錄已通知
                         self.db.add_notified(
                             video_sn=ep.get("videoSn"),
@@ -515,7 +579,7 @@ class AnimeTracker(commands.Cog):
             sent_count = 0
             for ep in episodes[:3]:
                 try:
-                    embed = self.generate_anime_embed(ep)
+                    embed = await self.generate_anime_embed(ep)
                     message = await interaction.followup.send(embed=embed)
                     
                     sent_count += 1
