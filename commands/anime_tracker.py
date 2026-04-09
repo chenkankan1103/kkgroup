@@ -20,7 +20,10 @@ API：
 - Bootstrap：首次運行記錄所有現存 videoSn，之後只通知新集
 """
 
-import discord
+# 模塊導入時就輸出標記，確保能追蹤加載
+import sys
+print("[ANIME_TRACKER_MODULE] Module is being imported...", flush=True)
+sys.stdout.flush()
 from discord.ext import commands, tasks
 import asyncio
 import aiohttp
