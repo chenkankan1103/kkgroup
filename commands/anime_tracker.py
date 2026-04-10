@@ -20,9 +20,13 @@ API：
 - Bootstrap：首次運行記錄所有現存 videoSn，之後只通知新集
 """
 
+# 先設置 logger
+import logging
+logger = logging.getLogger(__name__)
+
 # 模塊導入時就輸出標記，確保能追蹤加載
 import sys
-print("[ANIME_TRACKER_MODULE] Module is being imported...", flush=True)
+logger.info("[ANIME_TRACKER_MODULE] Module is being imported...")
 sys.stdout.flush()
 
 import discord
@@ -32,14 +36,11 @@ import asyncio
 import aiohttp
 import sqlite3
 import json
-import logging
 import re
 import html
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
-
-logger = logging.getLogger(__name__)
 
 # 配置
 ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
@@ -233,41 +234,41 @@ class AnimeTracker(commands.Cog):
     """Bahamut 動畫追蹤主 Cog"""
     
     def __init__(self, bot: commands.Bot):
-        print("[ANIME_TRACKER_INIT] 開始初始化...", flush=True)
+        logger.info("=" * 50)
+        logger.info("📺 [AnimeTracker.__init__] 開始初始化")
         self.bot = bot
         try:
             self.db = AnimeDatabase(ANIME_DB_PATH)
-            print(f"[ANIME_TRACKER_INIT] ✅ 數據庫已初始化: {ANIME_DB_PATH}", flush=True)
+            logger.info(f"✅ [AnimeTracker.__init__] 數據庫已初始化: {ANIME_DB_PATH}")
         except Exception as e:
-            print(f"[ANIME_TRACKER_INIT] ❌ 數據庫初始化失敗: {e}", flush=True)
+            logger.error(f"❌ [AnimeTracker.__init__] 數據庫初始化失敗: {e}", exc_info=True)
             raise
         
         self.task_started = False
         self.bootstrap_completed = False
-        print(f"[ANIME_TRACKER_INIT] ✅ AnimeTracker Cog 初始化完成", flush=True)
-        logger.info("📺 AnimeTracker Cog instantiated")
+        logger.info("📺 [AnimeTracker.__init__] AnimeTracker Cog 初始化完成")
         logger.info(f"📺 Bot 已就緒? {bot.is_ready()}")
         logger.info(f"📺 頻道 ID: {ANIME_CHANNEL_ID}")
         logger.info(f"📺 數據庫路徑: {ANIME_DB_PATH}")
+        logger.info("=" * 50)
     
     async def cog_load(self):
         """Cog 加載時啟動任務（Discord.py 支持此選項卡）"""
-        print("[ANIME_TRACKER_COG_LOAD] cog_load() 被調用", flush=True)
+        logger.info("=" * 50)
+        logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
         try:
-            logger.info("📺 cog_load() 被調用，準備啟動任務...")
+            logger.info("📺 [AnimeTracker.cog_load] 準備啟動任務...")
+            logger.info(f"📺 [AnimeTracker.cog_load] 任務運行狀態: {self.check_new_anime.is_running()}")
             if not self.check_new_anime.is_running():
-                print("[ANIME_TRACKER_COG_LOAD] 任務未運行，現在啟動...", flush=True)
-                logger.info("📺 任務未在運行，現在啟動...")
+                logger.info("📺 [AnimeTracker.cog_load] 任務未運行，現在啟動...")
                 self.check_new_anime.start()
                 self.task_started = True
-                print("[ANIME_TRACKER_COG_LOAD] ✅ 任務已啟動", flush=True)
-                logger.info("✅ AnimeTracker 任務已在 cog_load() 中啟動")
+                logger.info("✅ [AnimeTracker.cog_load] check_new_anime 任務已啟動")
             else:
-                print("[ANIME_TRACKER_COG_LOAD] 任務已在運行", flush=True)
-                logger.warning("⚠️ 任務已在運行中，跳過重複啟動")
+                logger.warning("⚠️ [AnimeTracker.cog_load] 任務已在運行中，跳過重複啟動")
         except Exception as e:
-            print(f"[ANIME_TRACKER_COG_LOAD] ❌ 啟動失敗: {e}", flush=True)
-            logger.error(f"❌ cog_load() 啟動任務失敗: {e}", exc_info=True)
+            logger.error(f"❌ [AnimeTracker.cog_load] 任務啟動失敗: {e}", exc_info=True)
+        logger.info("=" * 50)
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
@@ -686,7 +687,6 @@ class AnimeTracker(commands.Cog):
         4. 減少離峰時間每分鐘的檢查成本
         """
         now = datetime.now()
-        print(f"[ANIME_CHECK] 執行檢查 時刻: {now.strftime('%H:%M:%S')}", flush=True)
         
         try:
             # 獲取日程表
