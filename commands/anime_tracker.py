@@ -587,8 +587,7 @@ class AnimeTracker(commands.Cog):
             content = web_details.get("summary", "")
         
         description_text = f"**集數：{volume}**"
-        if content:
-            description_text += "\n" + self._truncate_text(content, 280)
+        # 不再在 description 中添加簡介，改為只在 field 中顯示短版簡介
         
         # 人氣度和評分信息
         popularity_text = f"👥 {popular:,} 人氣" if popular > 0 else ""
@@ -623,7 +622,7 @@ class AnimeTracker(commands.Cog):
         if content:
             embed.add_field(
                 name="📝 劇情簡介",
-                value=self._truncate_text(content, 280),
+                value=self._truncate_text(content, 140),
                 inline=False
             )
         
