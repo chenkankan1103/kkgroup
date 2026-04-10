@@ -234,6 +234,10 @@ class AnimeTracker(commands.Cog):
     """Bahamut 動畫追蹤主 Cog"""
     
     def __init__(self, bot: commands.Bot):
+        import sys
+        print("[ANIME_INIT_START] 🎬 AnimeTracker.__init__ 開始執行", flush=True)
+        sys.stdout.flush()
+        
         logger.info("=" * 50)
         logger.info("📺 [AnimeTracker.__init__] 開始初始化")
         self.bot = bot
@@ -254,6 +258,8 @@ class AnimeTracker(commands.Cog):
             try:
                 self.check_new_anime.start()
                 self.task_started = True
+                print("[ANIME_INIT_TASK_STARTED] ✅ 任務已啟動", flush=True)
+                sys.stdout.flush()
                 logger.info("✅ [AnimeTracker.__init__] check_new_anime 任務已在 __init__ 中啟動")
             except Exception as e:
                 logger.error(f"❌ [AnimeTracker.__init__] 任務啟動失敗: {e}", exc_info=True)
@@ -264,6 +270,8 @@ class AnimeTracker(commands.Cog):
         logger.info(f"📺 Bot 已就緒? {bot.is_ready()}")
         logger.info(f"📺 頻道 ID: {ANIME_CHANNEL_ID}")
         logger.info(f"📺 數據庫路徑: {ANIME_DB_PATH}")
+        print("[ANIME_INIT_COMPLETE] ✅ AnimeTracker.__init__ 執行完成", flush=True)
+        sys.stdout.flush()
         logger.info("=" * 50)
     
     async def cog_load(self):
