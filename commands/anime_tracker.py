@@ -452,8 +452,24 @@ class AnimeTracker(commands.Cog):
             inline=False
         )
         
-        embed.set_footer(text="Bahamut 動畫追蹤 | 🔕 反應留評獲獎勵")
+        embed.set_footer(text="動畫瘋新番通知")
         return embed
+    
+    async def generate_anime_view(self, episode: Dict) -> Optional[discord.ui.View]:
+        """生成 Discord 按鈕視圖，包括動畫頁與本集連結。"""
+        anime_sn = episode.get("animeSn")
+        video_sn = episode.get("videoSn")
+        view = discord.ui.View()
+        
+        if anime_sn:
+            anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
+            view.add_item(discord.ui.Button(label="前往動畫瘋新番頁", url=anime_url))
+        
+        if video_sn:
+            video_url = f"https://ani.gamer.com.tw/video.php?sn={video_sn}"
+            view.add_item(discord.ui.Button(label="查看本集", url=video_url))
+        
+        return view if view.children else None
     
     @tasks.loop(minutes=1)
     async def check_new_anime(self):
@@ -544,7 +560,8 @@ class AnimeTracker(commands.Cog):
             for ep in new_episodes:
                 try:
                     embed = await self.generate_anime_embed(ep)
-                    message = await channel.send(embed=embed)
+                    view = await self.generate_anime_view(ep)
+                    message = await channel.send(embed=embed, view=view)
 
                     # 記錄已通知
                     self.db.add_notified(
@@ -661,7 +678,8 @@ class AnimeTracker(commands.Cog):
             for ep in episodes[:3]:
                 try:
                     embed = await self.generate_anime_embed(ep)
-                    message = await interaction.followup.send(embed=embed)
+                    view = await self.generate_anime_view(ep)
+                    message = await interaction.followup.send(embed=embed, view=view)
                     
                     sent_count += 1
                     await asyncio.sleep(0.2)  # 避免限流
