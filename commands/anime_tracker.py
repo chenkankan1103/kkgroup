@@ -41,6 +41,10 @@ import html
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
+import pytz  # 用於台灣時區轉換
+
+# 台灣時區
+TW_TZ = pytz.timezone('Asia/Taipei')
 
 # 配置
 ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
@@ -696,7 +700,8 @@ class AnimeTracker(commands.Cog):
         3. 只有在預期時間窗口內且有集更新時，才發送通知
         4. 減少離峰時間每分鐘的檢查成本
         """
-        now = datetime.now()
+        # 使用台灣時區而不是 GCP VM 的美國時間
+        now = datetime.now(TW_TZ)
         
         # 使用 print 而不是 logger，確保被 systemd journalctl 捕獲
         print(f"[ANIME_CHECK] 執行檢查 時刻: {now.strftime('%H:%M:%S')}", flush=True)
