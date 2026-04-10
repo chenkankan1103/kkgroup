@@ -38,8 +38,11 @@ LOG_FILE = "/tmp/bot-debug.log"
 def file_log(msg):
     """寫入日誌到檔案、syslog 並同時調用 print"""
     try:
-        # 同時 print（前置，防止後續代碼崩潰）
-        print(f"[FILE_LOG] {msg}", flush=True)
+        # 確保字符串是 UTF-8 編碼的 (防止亂碼)
+        if isinstance(msg, bytes):
+            msg = msg.decode('utf-8', errors='replace')
+        output = f"[FILE_LOG] {msg}".encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+        print(output, flush=True)
         sys.stdout.flush()
     except Exception as e:
         pass

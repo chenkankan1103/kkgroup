@@ -20,16 +20,24 @@ LOG_FILE = "/tmp/uibot-debug.log"
 def file_log(msg):
     """寫入日誌到檔案、syslog 並同時調用 print"""
     try:
+        # 確保字符串是 UTF-8 編碼的 (防止亂碼)
+        if isinstance(msg, bytes):
+            msg = msg.decode('utf-8', errors='replace')
+        output = msg.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+    except:
+        output = str(msg)
+    
+    try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {output}\n")
             f.flush()
     except:
         pass
     try:
-        syslog.syslog(syslog.LOG_INFO, f"[UIBOT_DEBUG] {msg}")
+        syslog.syslog(syslog.LOG_INFO, f"[UIBOT_DEBUG] {output}")
     except:
         pass
-    print(msg, flush=True)
+    print(output, flush=True)
     sys.stdout.flush()
 
 # ============================================================
