@@ -42,9 +42,9 @@ TAIWAN_TZ = timezone(timedelta(hours=8))
 # Systemd 日誌配置
 # 只抓8行最新日誌以減少磁盤I/O，每行都很重要（最後一行為最新錯誤/狀態）
 SYSTEMD_LOG_CONFIG = {
-    "bot": {"service": "bot.service", "lines": 8, "enabled": True},
-    "shopbot": {"service": "shopbot.service", "lines": 8, "enabled": True},
-    "uibot": {"service": "uibot.service", "lines": 8, "enabled": True}
+    "bot": {"service": "bot.service", "lines": 15, "enabled": True},
+    "shopbot": {"service": "shopbot.service", "lines": 15, "enabled": True},
+    "uibot": {"service": "uibot.service", "lines": 15, "enabled": True}
 }
 
 # 控制 journalctl 查詢超時時間（秒）
@@ -348,6 +348,12 @@ def create_update_task(bot_type: str):
     # 創建任務對象 - 每 15 秒檢查一次日誌
     # 如果內容相同會跳過 Discord 編輯，所以頻繁檢查不會造成噪音
     # 這樣新日誌會在 15 秒內迅速反映到 Discord
+    # 
+    # 流量估算：
+    # - 每 15 秒 × 3 機器人 = 最多 3 次 API edits（如果日誌改變）
+    # - 每天 = 3 × 288 次 = ~864 次 API 調用
+    # - 智能緩存會跳過內容未改變的編輯，實際調用數更少
+    # - 主要網路開銷是本地 systemd journalctl 查詢（無外部流量）
     task = tasks.loop(seconds=15)(individual_update_task)
     task.__name__ = f"update_task_{bot_type}"
 
