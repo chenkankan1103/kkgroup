@@ -305,16 +305,16 @@ def create_update_task(bot_type: str):
             await asyncio.sleep(jitter)
         try:
             task_log(f"[UPDATE TASK {bot_type}] ===== Starting update for {bot_type} dashboard and logs =====")
-            print(f"[UPDATE TASK {bot_type}] Starting loop execution", flush=True)
+            # print(f"[UPDATE TASK {bot_type}] Starting loop execution", flush=True)  # Disabled to reduce log spam
 
             # Check bot instance
             if bot_type not in bot_instances:
-                print(f"[UPDATE TASK {bot_type}] Instance not found - cancelling task", flush=True)
+                # print(f"[UPDATE TASK {bot_type}] Instance not found - cancelling task", flush=True)  # Disabled
                 return
 
             bot_instance = get_bot_instance(bot_type)
             if not bot_instance:
-                print(f"[UPDATE TASK {bot_type}] Instance is null - cancelling task", flush=True)
+                # print(f"[UPDATE TASK {bot_type}] Instance is null - cancelling task", flush=True)  # Disabled
                 return
 
             # System status logging removed (prevent spam)
@@ -322,23 +322,24 @@ def create_update_task(bot_type: str):
             # Only update logs (dashboard removed)
             try:
                 task_log(f"[UPDATE TASK {bot_type}] Starting log update")
-                print(f"[UPDATE TASK {bot_type}] Calling update_dashboard_logs...", flush=True)
+                # print(f"[UPDATE TASK {bot_type}] Calling update_dashboard_logs...", flush=True)  # Disabled
                 await update_dashboard_logs(bot_instance, bot_type)
                 task_log(f"[UPDATE TASK {bot_type}] Log update completed")
-                print(f"[UPDATE TASK {bot_type}] update_dashboard_logs completed", flush=True)
+                # print(f"[UPDATE TASK {bot_type}] update_dashboard_logs completed", flush=True)  # Disabled
             except Exception as e:
-                print(f"[UPDATE TASK {bot_type} ERROR] Log update failed: {e}", flush=True)
+                # print(f"[UPDATE TASK {bot_type} ERROR] Log update failed: {e}", flush=True)  # Keep ERROR disabled
                 with open("update_task_errors.log", "a", encoding="utf-8") as ef:
                     ef.write(f"[{datetime.now(TAIWAN_TZ)}] Log update failed: {e}\n")
                     traceback.print_exc(file=ef)
                 traceback.print_exc()
 
             task_log(f"[UPDATE TASK {bot_type}] ===== {bot_type} update completed =====")
-            print(f"[UPDATE TASK {bot_type}] Loop execution completed", flush=True)
+            # print(f"[UPDATE TASK {bot_type}] Loop execution completed", flush=True)  # Disabled
 
         except Exception as e:
             # errors should always be visible even for quiet bots
-            print(f"[UPDATE TASK {bot_type} ERROR] Task execution failed: {e}", flush=True)
+            # print(f"[UPDATE TASK {bot_type} ERROR] Task execution failed: {e}", flush=True)  # Disabled
+            task_log(f"[UPDATE TASK {bot_type} ERROR] Task execution failed: {e}")
             with open("update_task_errors.log", "a", encoding="utf-8") as ef:
                 ef.write(f"[{datetime.now(TAIWAN_TZ)}] Task execution failed: {e}\n")
                 traceback.print_exc(file=ef)
