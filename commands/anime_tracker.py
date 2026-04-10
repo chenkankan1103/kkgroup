@@ -35,7 +35,7 @@ import json
 import logging
 import re
 import html
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
 
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # 配置
 ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
-ANIME_DB_PATH = Path("./uibot_anime.db")  # 獨立的動畫追蹤數據庫
+ANIME_DB_PATH = Path(__file__).resolve().parent.parent / "uibot_anime.db"  # 獨立的動畫追蹤數據庫，固定到專案根目錄
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # 秒
 
@@ -317,7 +317,22 @@ class AnimeTracker(commands.Cog):
         except Exception as e:
             logger.error(f"❌ Error fetching anime from API: {e}", exc_info=True)
             return None
-    
+
+    def _episode_in_current_check_window(self, episode: Dict, now: datetime) -> bool:
+        up_date = episode.get("upTime", "").strip()
+        up_time = episode.get("upTimeHours", "").strip()
+        if not up_date or not up_time:
+            return False
+
+        try:
+            episode_dt = datetime.strptime(f"{datetime.now().year}/{up_date} {up_time}", "%Y/%m/%d %H:%M")
+        except ValueError:
+            return False
+
+        window_start = now - timedelta(minutes=50)
+        window_end = now - timedelta(minutes=5)
+        return window_start <= episode_dt <= window_end
+
     async def fetch_anime_web_details(self, anime_sn: str) -> Dict[str, Optional[object]]:
         """
         從動畫瘋網頁版的 animeRef 詳情頁抓取作品分類和簡介。
@@ -443,100 +458,166 @@ class AnimeTracker(commands.Cog):
     @tasks.loop(minutes=1)
     async def check_new_anime(self):
         """
-        每分鐘檢查一次，但只在整點 10 分和 40 分執行實際檢查
+        根據日程表智能檢查，在預期時刻 +1 分鐘時發起檢查
         
-        時間安排：
-        - :10 分：檢查整點更新（允許 10 分鐘的 API 延遲）
-        - :40 分：檢查整點 30 分的更新（允許 10 分鐘的 API 延遲）
-        
-        動畫通常在整點 (:00) 和整點 30 分 (:30) 時更新
+        工作流程：
+        1. 獲取 newAnimeSchedule（各星期的預期時刻表）
+        2. 計算出今天和明天的所有預期時刻
+        3. 當前時刻匹配到預期時刻 +1 分鐘時，發起 API 檢查
+        4. 適應未來任何時段的更新時間
         """
         now = datetime.now()
         
-        # 只在 10 分和 40 分時執行檢查
-        if now.minute in [10, 40]:
-            try:
-                logger.info(f"📺 [check_new_anime] ========== 定時檢查開始 ({now.strftime('%H:%M:%S')}) ==========")
-                
-                # 取得頻道
-                channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-                if not channel:
-                    # 診斷：列出所有可用的頻道
-                    all_channels = []
-                    for guild in self.bot.guilds:
-                        for ch in guild.channels:
-                            if hasattr(ch, 'id'):
-                                all_channels.append(f"{ch.name} (ID:{ch.id})")
-                    logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
-                    logger.error(f"📋 可用頻道前 10 個: {', '.join(all_channels[:10])}")
-                    return
-                
-                # 獲取最新動畫數據
-                logger.info("📺 [check_new_anime] 當前頻道: " + channel.name)
-                logger.info("📺 [check_new_anime] 正在從 API 獲取動畫數據...")
-                episodes = await self.fetch_new_anime_from_api()
-                if not episodes:
-                    logger.warning("⚠️ [check_new_anime] 無法從 API 獲取數據")
-                    return
-                
-                logger.info(f"📺 [check_new_anime] 獲得 {len(episodes)} 集")
-                
-                # 檢查 Bootstrap 狀態
-                bootstrap_status = self.db.is_bootstrap_completed()
-                logger.info(f"📺 [check_new_anime] Bootstrap 狀態: {bootstrap_status}")
-                
-                if not bootstrap_status:
-                    # 首次運行：記錄所有現存集，不發送通知
-                    logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
-                    self.db.bootstrap_add_all(episodes)
-                    self.db.mark_bootstrap_completed()
-                    self.bootstrap_completed = True
-                    
-                    embed = discord.Embed(
-                        title="✅ 動畫追蹤已啟動",
-                        description="已記錄現有集合。之後會通知新上架的集。",
-                        color=discord.Color.green()
-                    )
-                    logger.info("📺 [check_new_anime] 發送 bootstrap 確認 embed")
-                    await channel.send(embed=embed)
-                    logger.info("✅ [check_new_anime] Bootstrap 完成，embed 已發送")
-                    return
-                
-                # 正常運行：檢查新集
-                new_episodes = []
-                for ep in episodes:
-                    video_sn = ep.get("videoSn")
-                    if video_sn and not self.db.is_notified(video_sn):
-                        new_episodes.append(ep)
-                
-                if not new_episodes:
-                    logger.info("⏭️ No new episodes found")
-                    return
-                
-                # 發送新集通知
-                logger.info(f"🆕 Found {len(new_episodes)} new episodes")
-                for ep in new_episodes:
-                    try:
-                        embed = await self.generate_anime_embed(ep)
-                        message = await channel.send(embed=embed)
-
-                        # 記錄已通知
-                        self.db.add_notified(
-                            video_sn=ep.get("videoSn"),
-                            anime_sn=ep.get("animeSn"),
-                            anime_name=ep.get("title", "Unknown"),
-                            volume=ep.get("volume", ""),
-                            cover_url=ep.get("cover", "")
-                        )
-                        
-                        # 避免 Discord 限流（200ms 間隔）
-                        await asyncio.sleep(0.2)
-                    except Exception as e:
-                        logger.error(f"❌ Error sending embed: {e}")
-                        await asyncio.sleep(1)
+        try:
+            # 獲取日程表
+            schedule = await self._get_anime_schedule()
+            if not schedule:
+                # 日程表為空，跳過
+                return
             
-            except Exception as e:
-                logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
+            # 獲取當前時刻應該檢查的集合
+            expected_check_times = self._get_expected_check_times(schedule, now)
+            
+            # 檢查當前時刻是否應該檢查（預期時刻 +1 分鐘）
+            current_hm = now.strftime("%H:%M")
+            should_check = current_hm in expected_check_times
+            
+            if not should_check:
+                # 不是預期時刻，跳過
+                return
+            
+            logger.info(f"📺 [check_new_anime] ========== 智能日程檢查 ({current_hm}) ==========")
+            
+            # 取得頻道
+            channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+            if not channel:
+                logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
+                return
+            
+            # 獲取最新動畫數據
+            logger.info("📺 [check_new_anime] 正在從 API 獲取動畫數據...")
+            episodes = await self.fetch_new_anime_from_api()
+            if not episodes:
+                logger.warning("⚠️ [check_new_anime] 無法從 API 獲取數據")
+                return
+            
+            logger.info(f"📺 [check_new_anime] 獲得 {len(episodes)} 集")
+            
+            # 檢查 Bootstrap 狀態
+            bootstrap_status = self.db.is_bootstrap_completed()
+            logger.info(f"📺 [check_new_anime] Bootstrap 狀態: {bootstrap_status}")
+            
+            if not bootstrap_status:
+                # 首次運行：記錄所有現存集，不發送通知
+                logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
+                self.db.bootstrap_add_all(episodes)
+                self.db.mark_bootstrap_completed()
+                self.bootstrap_completed = True
+                
+                embed = discord.Embed(
+                    title="✅ 動畫追蹤已啟動",
+                    description="已記錄現有集合。之後會通知新上架的集。",
+                    color=discord.Color.green()
+                )
+                logger.info("📺 [check_new_anime] 發送 bootstrap 確認 embed")
+                await channel.send(embed=embed)
+                logger.info("✅ [check_new_anime] Bootstrap 完成，embed 已發送")
+                return
+            
+            # 正常運行：檢查新集
+            new_episodes = []
+            for ep in episodes:
+                video_sn = ep.get("videoSn")
+                if not video_sn or self.db.is_notified(video_sn):
+                    continue
+                if not self._episode_in_current_check_window(ep, now):
+                    logger.debug(f"📺 Skip episode outside current window: {ep.get('title')} {ep.get('upTime')} {ep.get('upTimeHours')}")
+                    continue
+                new_episodes.append(ep)
+            
+            if not new_episodes:
+                logger.info("⏭️ No new episodes found")
+                return
+            
+            # 發送新集通知
+            logger.info(f"🆕 Found {len(new_episodes)} new episodes")
+            for ep in new_episodes:
+                try:
+                    embed = await self.generate_anime_embed(ep)
+                    message = await channel.send(embed=embed)
+
+                    # 記錄已通知
+                    self.db.add_notified(
+                        video_sn=ep.get("videoSn"),
+                        anime_sn=ep.get("animeSn"),
+                        anime_name=ep.get("title", "Unknown"),
+                        volume=ep.get("volume", ""),
+                        cover_url=ep.get("cover", "")
+                    )
+                    
+                    # 避免 Discord 限流（200ms 間隔）
+                    await asyncio.sleep(0.2)
+                except Exception as e:
+                    logger.error(f"❌ Error sending embed: {e}")
+                    await asyncio.sleep(1)
+        
+        except Exception as e:
+            logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
+    
+    async def _get_anime_schedule(self) -> dict:
+        """從 API 獲取日程表 (newAnimeSchedule)"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(API_ENDPOINT, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
+                    if response.status != 200:
+                        logger.error(f"❌ API returned status {response.status}")
+                        return {}
+                    
+                    data = await response.json()
+                    schedule = data.get("data", {}).get("newAnimeSchedule", {})
+                    return schedule
+        except Exception as e:
+            logger.error(f"❌ Error fetching schedule: {e}")
+            return {}
+    
+    def _get_expected_check_times(self, schedule: dict, now: datetime) -> list:
+        """
+        計算出包含今天和明天的所有預期檢查時刻（預期時刻 +1 分鐘）
+        
+        Returns:
+            預期檢查時刻列表，格式為 ["HH:MM", ...]
+        """
+        check_times = set()
+        
+        # 計算今天和明天的星期（1-7）
+        weekday_today = (now.weekday() + 1) % 7
+        if weekday_today == 0:
+            weekday_today = 7  # Sunday is 7
+        weekday_tomorrow = (weekday_today % 7) + 1
+        
+        # 從日程表中獲取時刻
+        for weekday in [str(weekday_today), str(weekday_tomorrow)]:
+            for anime_info in schedule.get(weekday, []):
+                schedule_time = anime_info.get("scheduleTime", "")  # 格式: "22:00"
+                if schedule_time:
+                    try:
+                        # 解析時間並加上 1 分鐘
+                        hour, minute = map(int, schedule_time.split(":"))
+                        check_minute = minute + 1
+                        check_hour = hour
+                        
+                        # 處理進位
+                        if check_minute >= 60:
+                            check_minute = 0
+                            check_hour = (hour + 1) % 24
+                        
+                        check_time_str = f"{check_hour:02d}:{check_minute:02d}"
+                        check_times.add(check_time_str)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to parse schedule time '{schedule_time}': {e}")
+        
+        logger.debug(f"📺 Expected check times: {sorted(check_times)}")
+        return sorted(list(check_times))
     
     @check_new_anime.before_loop
     async def before_check_new_anime(self):
