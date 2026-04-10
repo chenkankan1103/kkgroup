@@ -24,27 +24,18 @@ from dotenv import load_dotenv, set_key
 from discord.ext import tasks
 import pathlib
 
-# ⏸️ METRICS 管理 - 優化版本
-# 注意：Metrics 更新必須由 "bot" 單獨負責（不是 shopbot/uibot）
-# 原因：避免並發競爭、重複 API 調用導致 CPU 飙高
-# 特性：
-
-#   - 20 分鐘更新一次（降低 API 呼叫頻率）
-#   - 非同步操作 + 10s 超時保護
-#   - 線程池執行 matplotlib 圖表生成
-#   - 數據緩存避免重複計算
-
 load_dotenv()
 
 # 台灣時區（UTC+8）
 TAIWAN_TZ = timezone(timedelta(hours=8))
 
 # Systemd 日誌配置
-# 只抓8行最新日誌以減少磁盤I/O，每行都很重要（最後一行為最新錯誤/狀態）
+# 40 行日誌約 4400 字符（含標題/頁腳），接近 Discord embed 4000 字符限制
+# 每 5 分鐘更新一次，平衡信息密度與 API 調用成本
 SYSTEMD_LOG_CONFIG = {
-    "bot": {"service": "bot.service", "lines": 15, "enabled": True},
-    "shopbot": {"service": "shopbot.service", "lines": 15, "enabled": True},
-    "uibot": {"service": "uibot.service", "lines": 15, "enabled": True}
+    "bot": {"service": "bot.service", "lines": 40, "enabled": True},
+    "shopbot": {"service": "shopbot.service", "lines": 40, "enabled": True},
+    "uibot": {"service": "uibot.service", "lines": 40, "enabled": True}
 }
 
 # 控制 journalctl 查詢超時時間（秒）
@@ -62,17 +53,11 @@ def format_taiwan_time():
 # 配置常數
 MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 
-# 硬編碼的訊息 ID 作為回退值（只保留日誌，控制面板已移除）
+# 硬編碼的訊息 ID 作為回退值（只保留日誌）
 HARDCODED_MESSAGE_IDS = {
-    "bot": {
-        "logs": 1470781481868591187
-    },
-    "shopbot": {
-        "logs": 1470782650716389648
-    },
-    "uibot": {
-        "logs": 1470782659843068032
-    }
+    "bot": {"logs": 1470781481868591187},
+    "shopbot": {"logs": 1470782650716389648},
+    "uibot": {"logs": 1470782659843068032}
 }
 
 DASHBOARD_CHANNEL_ID = int(os.getenv("DASHBOARD_CHANNEL_ID", "1470272652429099125"))
@@ -89,9 +74,6 @@ def add_log(_bot_type: str, _message: str):
     return
 
 logs_file = None  # unused
-
-# GCP Metrics 追蹤上次的 embed 內容（避免重複更新）
-last_metrics_text = ""
 
 # keep track of last fetch time for each bot to avoid re-reading the same log
 _last_log_fetch: Dict[str, datetime] = {}
@@ -255,12 +237,11 @@ def save_logs():
         print(f"[LOGS ERROR] 未預期的錯誤保存日誌: {e}")
         traceback.print_exc()
 
-# Message ID 存儲（每個機器人獨立）
+# Message ID 存儲（每個機器人獨立，只保留日誌）
 message_ids = {
     "bot": {"logs": None},
     "shopbot": {"logs": None},
-    "uibot": {"logs": None},
-    "metrics": {"message": None}  # GCP Metrics 使用全域 message ID（已禁用）
+    "uibot": {"logs": None}
 }
 
 # 機器人實例存儲（每個機器人獨立）
@@ -295,7 +276,7 @@ def create_update_task(bot_type: str):
             print(message)
 
     async def individual_update_task():
-        """Individual bot dashboard update task - updates only own dashboard and logs"""
+        """Individual bot log update task - updates only own logs"""
         # First startup with random delay (0~60s) to avoid concurrent edits causing 429
         if not hasattr(individual_update_task, "_task_jittered"):
             individual_update_task._task_jittered = True
@@ -304,7 +285,7 @@ def create_update_task(bot_type: str):
             task_log(f"[UPDATE TASK {bot_type}] First update delay {jitter:.1f}s")
             await asyncio.sleep(jitter)
         try:
-            task_log(f"[UPDATE TASK {bot_type}] ===== Starting update for {bot_type} dashboard and logs =====")
+            task_log(f"[UPDATE TASK {bot_type}] ===== Starting update for {bot_type} logs =====")
             # print(f"[UPDATE TASK {bot_type}] Starting loop execution", flush=True)  # Disabled to reduce log spam
 
             # Check bot instance
@@ -345,16 +326,15 @@ def create_update_task(bot_type: str):
                 traceback.print_exc(file=ef)
             traceback.print_exc()
 
-    # 創建任務對象 - 每 15 秒檢查一次日誌
-    # 如果內容相同會跳過 Discord 編輯，所以頻繁檢查不會造成噪音
-    # 這樣新日誌會在 15 秒內迅速反映到 Discord
+    # 創建任務對象 - 每 5 分鐘檢查一次日誌
+    # 如果內容相同會跳過 Discord 編輯，減少不必要的 API 調用
     # 
     # 流量估算：
-    # - 每 15 秒 × 3 機器人 = 最多 3 次 API edits（如果日誌改變）
+    # - 每 300 秒（5 分鐘）× 3 機器人 = 最多 3 次 API edits（如果日誌改變）
     # - 每天 = 3 × 288 次 = ~864 次 API 調用
     # - 智能緩存會跳過內容未改變的編輯，實際調用數更少
     # - 主要網路開銷是本地 systemd journalctl 查詢（無外部流量）
-    task = tasks.loop(seconds=15)(individual_update_task)
+    task = tasks.loop(minutes=5)(individual_update_task)
     task.__name__ = f"update_task_{bot_type}"
 
     return task
@@ -523,71 +503,20 @@ async def update_dashboard_logs(bot, bot_type: str):
         print(f"[UPDATE LOGS ERROR] {bot_type} unexpected error updating logs: {e}")
         traceback.print_exc()
 
-# ========== GCP Metrics 管理系統 ==========
-
-# 快取管理 - 避免頻繁 API 調用
-class MetricsCache:
-    """Simple metrics data cache to prevent redundant API calls"""
-    def __init__(self):
-        self.data = None
-        self.timestamp = None
-        self.ttl_seconds = 600  # 10 分鐘緩存
-    
-    def is_stale(self):
-        """Check if cache data is stale"""
-        if not self.timestamp:
-            return True
-        elapsed = (datetime.now(TAIWAN_TZ) - self.timestamp).total_seconds()
-        return elapsed > self.ttl_seconds
-    
-    def set(self, data):
-        """Store metrics data"""
-        self.data = data
-        self.timestamp = datetime.now(TAIWAN_TZ)
-    
-    def get(self):
-        """Retrieve metrics data if not stale"""
-        if self.is_stale():
-            return None
-        return self.data
-
-metrics_cache = MetricsCache()
-
-# Metrics 函數已移除 - 不再監測出站流量和計費
-
-# 調試助手：顯示儀表板 embed 的現有狀態
-async def inspect_dashboard(bot: discord.Client, bot_type: str = "bot") -> None:
-    """Pull dashboard and log messages directly from Discord and print information"""
-    channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
-    if not channel:
-        print("[INSPECT] Unable to find dashboard channel")
-        return
-    ids = message_ids.get(bot_type, {})
-    print(f"[INSPECT] {bot_type} message_ids: {ids}")
-    for typ in ("dashboard", "logs"):
-        msg_id = ids.get(typ)
-        if not msg_id:
-            print(f"[INSPECT] {bot_type} {typ} ID not found")
-            continue
-        try:
-            msg = await channel.fetch_message(int(msg_id))
-            print(f"[INSPECT] {bot_type} {typ} embed: {msg.embeds[0] if msg.embeds else 'None'}")
-        except Exception as e:
-            print(f"[INSPECT] Failed to fetch {typ} message {msg_id}: {e}")
+# ========== 日誌管理系統 ==========
 
 async def create_logs_embed(bot_type: str) -> discord.Embed:
     """Create logs Embed"""
     config = BOT_CONFIG.get(bot_type, {})
     embed = discord.Embed(
         title=f"{config['名稱']} 即時日誌",
-        color=config['顏色'],
-        timestamp=datetime.now(timezone.utc)  # Use UTC time, let Discord handle timezone correctly
+        color=config['顏色']
     )
     
     # Log functionality removed, display placeholder text
     embed.description = "`日誌記錄中`"
     
-    embed.set_footer(text="每 60 秒更新")
+    embed.set_footer(text="每 5 分鐘更新最多 4000 字")
     return embed
 
 async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
@@ -840,17 +769,11 @@ def save_message_ids(bot_type: str):
     env_path = ".env"
 
     try:
-        if bot_type == "metrics":
-            # 特殊處理 metrics message ID（已禁用）
-            metrics_id = message_ids["metrics"].get("message")
-            if metrics_id:
-                set_key(env_path, "DASHBOARD_METRICS_MESSAGE", str(metrics_id))
-        else:
-            # 只保存日誌 ID
-            logs_id = message_ids[bot_type].get("logs")
-            if logs_id:
-                env_key = f"DASHBOARD_{bot_type.upper()}_LOGS"
-                set_key(env_path, env_key, str(logs_id))
+        # 只保存日誌 ID
+        logs_id = message_ids[bot_type].get("logs")
+        if logs_id:
+            env_key = f"DASHBOARD_{bot_type.upper()}_LOGS"
+            set_key(env_path, env_key, str(logs_id))
     except Exception as e:
         # 不讓任何寫入失敗中斷初始化流程
         print(f"[ENV WRITE ERROR] 無法保存 {bot_type} 訊息 ID 到 .env: {e}")
@@ -858,29 +781,20 @@ def save_message_ids(bot_type: str):
 def load_message_ids(bot_type: str):
     """從 .env 加載訊息 ID，如果沒有則使用硬編碼的回退值（簡化版本，只加載日誌）"""
     
-    if bot_type == "metrics":
-        # 特殊處理 metrics message ID（已禁用）
-        metrics_id = os.getenv("DASHBOARD_METRICS_MESSAGE")
-        if metrics_id:
-            message_ids["metrics"]["message"] = int(metrics_id)
-            print(f"[LOAD IDS] Metrics 訊息 ID: {metrics_id}")
-        else:
-            message_ids["metrics"]["message"] = None
-    else:
-        # 只加載日誌 ID
-        logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
+    # 只加載日誌 ID
+    logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
 
-        if logs_id:
-            message_ids[bot_type]["logs"] = int(logs_id)
-            print(f"[LOAD IDS] {bot_type} 日誌 ID: {logs_id}")
+    if logs_id:
+        message_ids[bot_type]["logs"] = int(logs_id)
+        print(f"[LOAD IDS] {bot_type} 日誌 ID: {logs_id}")
+    else:
+        # 使用硬編碼的回退值
+        fallback_id = HARDCODED_MESSAGE_IDS.get(bot_type, {}).get("logs")
+        if fallback_id:
+            message_ids[bot_type]["logs"] = fallback_id
+            print(f"[LOAD IDS] {bot_type} 日誌 ID 使用回退值: {fallback_id}")
         else:
-            # 使用硬編碼的回退值
-            fallback_id = HARDCODED_MESSAGE_IDS.get(bot_type, {}).get("logs")
-            if fallback_id:
-                message_ids[bot_type]["logs"] = fallback_id
-                print(f"[LOAD IDS] {bot_type} 日誌 ID 使用回退值: {fallback_id}")
-            else:
-                message_ids[bot_type]["logs"] = None
-                print(f"[LOAD IDS] {bot_type} 日誌 ID 未設置")
+            message_ids[bot_type]["logs"] = None
+            print(f"[LOAD IDS] {bot_type} 日誌 ID 未設置")
 
 # REMOVED: update_dashboard 已被移除 - 日誌更新由 update_dashboard_logs 處理
