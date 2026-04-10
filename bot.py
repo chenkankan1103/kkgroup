@@ -201,17 +201,20 @@ async def setup_modules(bot_client):
         await bot_client.unload_extension("commands.anime_tracker")
         file_log("[setup_modules] ✅ anime_tracker 已卸載")
     except Exception as e:
-        file_log(f"[setup_modules] ℹ️ anime_tracker 未加載或卸載失敗 (正常): {type(e).__name__}")
+        file_log(f"[setup_modules] ℹ️ anime_tracker 未加載或卸載失敗: {type(e).__name__}: {str(e)}")
     
     # 再加載
     file_log("[setup_modules] 嘗試加載 anime_tracker...")
     try:
+        print("[SETUP_DEBUG] 即將調用 load_extension", flush=True)
         await bot_client.load_extension("commands.anime_tracker")
+        print("[SETUP_DEBUG] load_extension 返回成功", flush=True)
         file_log("[setup_modules] ✅ commands.anime_tracker 加載成功！")
         if "commands.anime_tracker" not in extensions:
             extensions.append("commands.anime_tracker")
     except Exception as e:
         file_log(f"[setup_modules] ❌ anime_tracker 加載失敗: {e}")
+        print(f"[SETUP_DEBUG_ERROR] {type(e).__name__}: {str(e)}", flush=True)
         import traceback
         traceback.print_exc()
     
