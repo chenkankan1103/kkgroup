@@ -246,6 +246,20 @@ class AnimeTracker(commands.Cog):
         
         self.task_started = False
         self.bootstrap_completed = False
+        
+        # 直接在 __init__ 中啟動任務 - 不依賴 cog_load()
+        logger.info("📺 [AnimeTracker.__init__] 檢查任務狀態...")
+        if not self.check_new_anime.is_running():
+            logger.info("🚀 [AnimeTracker.__init__] 任務未運行，直接啟動...")
+            try:
+                self.check_new_anime.start()
+                self.task_started = True
+                logger.info("✅ [AnimeTracker.__init__] check_new_anime 任務已在 __init__ 中啟動")
+            except Exception as e:
+                logger.error(f"❌ [AnimeTracker.__init__] 任務啟動失敗: {e}", exc_info=True)
+        else:
+            logger.warning("⚠️ [AnimeTracker.__init__] 任務已在運行中，跳過重複啟動")
+        
         logger.info("📺 [AnimeTracker.__init__] AnimeTracker Cog 初始化完成")
         logger.info(f"📺 Bot 已就緒? {bot.is_ready()}")
         logger.info(f"📺 頻道 ID: {ANIME_CHANNEL_ID}")
