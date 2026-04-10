@@ -330,9 +330,9 @@ async def update_status():
         
         # 每 2 分鐘更新一次日誌 embed，但有超時保護
         from status_dashboard import update_dashboard_logs
-        file_log("[HEARTBEAT] Starting update_dashboard_logs")
+        # file_log("[HEARTBEAT] Starting update_dashboard_logs")  # 心跳日誌已停用，減少日誌噪音
         await asyncio.wait_for(update_dashboard_logs(client, BOT_TYPE), timeout=15.0)
-        file_log("[HEARTBEAT] Completed update_dashboard_logs")
+        # file_log("[HEARTBEAT] Completed update_dashboard_logs")  # 心跳日誌已停用
     except asyncio.TimeoutError:
         file_log(f"[ERROR] Status update timeout - dashboard operation exceeded 15s")
         print(f"[ERROR] Status update timeout")
