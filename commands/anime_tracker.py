@@ -702,6 +702,9 @@ class AnimeTracker(commands.Cog):
         """
         now = datetime.now()
         
+        # 使用 print 而不是 logger，確保被 systemd journalctl 捕獲
+        print(f"[ANIME_CHECK] 執行檢查 時刻: {now.strftime('%H:%M:%S')}", flush=True)
+        
         try:
             # 獲取日程表
             schedule = await self._get_anime_schedule()
