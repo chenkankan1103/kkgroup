@@ -251,20 +251,8 @@ class AnimeTracker(commands.Cog):
         self.task_started = False
         self.bootstrap_completed = False
         
-        # 直接在 __init__ 中啟動任務 - 不依賴 cog_load()
-        logger.info("📺 [AnimeTracker.__init__] 檢查任務狀態...")
-        if not self.check_new_anime.is_running():
-            logger.info("🚀 [AnimeTracker.__init__] 任務未運行，直接啟動...")
-            try:
-                self.check_new_anime.start()
-                self.task_started = True
-                print("[ANIME_INIT_TASK_STARTED] ✅ 任務已啟動", flush=True)
-                sys.stdout.flush()
-                logger.info("✅ [AnimeTracker.__init__] check_new_anime 任務已在 __init__ 中啟動")
-            except Exception as e:
-                logger.error(f"❌ [AnimeTracker.__init__] 任務啟動失敗: {e}", exc_info=True)
-        else:
-            logger.warning("⚠️ [AnimeTracker.__init__] 任務已在運行中，跳過重複啟動")
+        # 注：任務將在 before_loop 中由 Discord.py 自動啟動，不在 __init__ 中啟動
+        logger.info("📺 [AnimeTracker.__init__] 任務將在 before_loop 中由框架自動啟動")
         
         logger.info("📺 [AnimeTracker.__init__] AnimeTracker Cog 初始化完成")
         logger.info(f"📺 Bot 已就緒? {bot.is_ready()}")
@@ -877,7 +865,7 @@ class AnimeTracker(commands.Cog):
     
     @check_new_anime.before_loop
     async def before_check_new_anime(self):
-        """在第一次循環前等待 bot 就緒"""
+        """在第一次循環前等待 bot 就緒並啟動任務"""
         logger.info("📺 [before_check_new_anime] 等待 bot 就緒...")
         print("[ANIME_BEFORE_LOOP] ⏳ before_loop 開始執行", flush=True)
         
@@ -900,6 +888,21 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"📋 Guild: {guild.name}")
                 for ch in guild.channels[:5]:  # 只列前 5 個
                     logger.info(f"   - {ch.name} (ID: {ch.id})")
+        
+        # 重要：確保任務已啟動
+        if not self.check_new_anime.is_running():
+            logger.info("🚀 [before_check_new_anime] 啟動 check_new_anime 任務...")
+            print("[ANIME_BEFORE_LOOP] 🚀 即將啟動任務", flush=True)
+            try:
+                self.check_new_anime.start()
+                self.task_started = True
+                logger.info("✅ [before_check_new_anime] 任務已啟動！")
+                print("[ANIME_BEFORE_LOOP] ✅ 任務已啟動", flush=True)
+            except Exception as e:
+                logger.error(f"❌ [before_check_new_anime] 啟動任務失敗: {e}", exc_info=True)
+                print(f"[ANIME_BEFORE_LOOP_ERROR] ❌ {str(e)}", flush=True)
+        else:
+            logger.info("⚠️ [before_check_new_anime] 任務已在運行")
 
     @app_commands.command(name="anime_test", description="測試動畫通知 - 顯示最近的動畫集")
     async def anime_test(self, interaction: discord.Interaction):
