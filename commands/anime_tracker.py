@@ -50,6 +50,7 @@ API_TIMEOUT = 15  # 秒
 # 表名與欄位
 NOTIFIED_TABLE = "anime_notified"
 BOOTSTRAP_FLAG_TABLE = "anime_bootstrap"
+ANIME_DETAILS_TABLE = "anime_details"  # 永恆快取動畫詳細信息
 
 
 class AnimeDatabase:
@@ -83,6 +84,19 @@ class AnimeDatabase:
                         id INTEGER PRIMARY KEY CHECK (id = 1),
                         bootstrap_completed INTEGER DEFAULT 0,
                         completed_at TIMESTAMP
+                    )
+                """)
+                
+                # 3. 永恆動畫詳細信息快取（簡介、標籤、人氣度等）
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {ANIME_DETAILS_TABLE} (
+                        animeSn INTEGER PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        content TEXT,
+                        tags TEXT,
+                        popular INTEGER,
+                        score REAL,
+                        cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
                 
@@ -164,6 +178,53 @@ class AnimeDatabase:
                         ))
                 conn.commit()
                 logger.info(f"✅ Bootstrap: added {len(episodes)} episodes to notified list")
+        except Exception as e:
+            logger.error(f"❌ Error during bootstrap: {e}")
+    
+    def get_anime_details(self, anime_sn: int) -> Optional[Dict]:
+        """從快取獲取動畫詳細信息"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT title, content, tags, popular, score FROM {ANIME_DETAILS_TABLE}
+                    WHERE animeSn = ?
+                """, (anime_sn,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        "title": row[0],
+                        "content": row[1],
+                        "tags": json.loads(row[2]) if row[2] else [],
+                        "popular": row[3],
+                        "score": row[4]
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"❌ Error getting anime details: {e}")
+            return None
+    
+    def cache_anime_details(self, anime_sn: int, title: str, content: str, tags: List[str], popular: int, score: float):
+        """快取動畫詳細信息到數據庫"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT OR REPLACE INTO {ANIME_DETAILS_TABLE}
+                    (animeSn, title, content, tags, popular, score, cached_at)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (
+                    anime_sn,
+                    title,
+                    content,
+                    json.dumps(tags, ensure_ascii=False),
+                    popular,
+                    score
+                ))
+                conn.commit()
+                logger.info(f"✅ Cached anime details for animeSn={anime_sn}")
+        except Exception as e:
+            logger.error(f"❌ Error caching anime details: {e}")
         except Exception as e:
             logger.error(f"❌ Error during bootstrap: {e}")
 
@@ -378,6 +439,66 @@ class AnimeTracker(commands.Cog):
             logger.error(f"❌ Error fetching anime web details for animeSn={anime_sn}: {e}", exc_info=True)
             return {}
 
+    async def fetch_anime_details_from_api(self, video_sn: int) -> Optional[Dict]:
+        """
+        從 Bahamut 手機 API 獲取動畫詳細信息（簡介、標籤、人氣度等）
+        
+        API endpoint: https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}
+        返回 anime 部分包含：content(簡介), tags(標籤), popular(人氣度), score(評分)
+        
+        Returns:
+            詳細信息字典或 None
+        """
+        if not video_sn:
+            return None
+        
+        api_url = f"https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    api_url,
+                    timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)"
+                    }
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"⚠️ API detail returned status {resp.status} for videoSn={video_sn}")
+                        return None
+                    
+                    data = await resp.json()
+                    anime = data.get("data", {}).get("anime", {})
+                    
+                    if not anime:
+                        logger.warning(f"⚠️ No anime data in API response for videoSn={video_sn}")
+                        return None
+                    
+                    anime_sn = anime.get("anime_sn")
+                    title = anime.get("title", "")
+                    content = anime.get("content", "")
+                    tags = anime.get("tags", [])
+                    popular = anime.get("popular", 0)
+                    score = anime.get("score", 0)
+                    
+                    # 快取到數據庫
+                    if anime_sn:
+                        self.db.cache_anime_details(anime_sn, title, content, tags, popular, score)
+                    
+                    return {
+                        "anime_sn": anime_sn,
+                        "title": title,
+                        "content": content,
+                        "tags": tags,
+                        "popular": popular,
+                        "score": score
+                    }
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ API detail timeout ({API_TIMEOUT}s) for videoSn={video_sn}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error fetching anime details from API for videoSn={video_sn}: {e}", exc_info=True)
+            return None
+
     def _truncate_text(self, text: str, limit: int = 240) -> str:
         return text if len(text) <= limit else text[:limit].rstrip() + '...'
 
@@ -385,8 +506,11 @@ class AnimeTracker(commands.Cog):
         """
         生成單個集的 Discord Embed
         
+        包含動畫簡介、標籤、人氣度等信息
+        優先使用快取，未快取時調用 API 並存儲到永恆快取
+        
         Args:
-            episode: 集信息字典
+            episode: 集信息字典（包含 videoSn, animeSn 等）
         
         Returns:
             格式化的 discord.Embed
@@ -395,21 +519,42 @@ class AnimeTracker(commands.Cog):
         volume = episode.get("volume", "")
         cover_url = episode.get("cover", "")
         anime_sn = episode.get("animeSn", "")
+        video_sn = episode.get("videoSn", "")
         
-        # 構建動畫連結 (Bahamut 動畫連結)
+        # 構建動畫連結
         anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}" if anime_sn else "https://ani.gamer.com.tw"
         
-        web_details = await self.fetch_anime_web_details(str(anime_sn)) if anime_sn else {}
-        genres = web_details.get("genres", [])
-        summary = web_details.get("summary")
+        # 優先檢查快取，未快取則調用 API
+        anime_details = None
+        if anime_sn:
+            anime_details = self.db.get_anime_details(int(anime_sn))
         
-        # 獲取標籤信息
-        highlight_tag = episode.get("highlightTag", {})
+        if not anime_details and video_sn:
+            # 快取中沒有，調用 API 獲取並快取
+            anime_details = await self.fetch_anime_details_from_api(int(video_sn))
+        
+        # 提取詳細信息
+        content = anime_details.get("content", "") if anime_details else ""
+        api_tags = anime_details.get("tags", []) if anime_details else []
+        popular = anime_details.get("popular", 0) if anime_details else 0
+        score = anime_details.get("score", 0) if anime_details else 0
+        
+        # 構建標籤信息
         tag_parts = []
         
-        if genres:
-            tag_parts.extend([f"#{tag}" for tag in genres[:6]])
-        elif highlight_tag.get("bilingual"):
+        # 優先使用 API 返回的標籤
+        if api_tags:
+            tag_parts.extend([f"#{tag}" for tag in api_tags[:6]])
+        else:
+            # 如果沒有 API 標籤，嘗試從網頁抓取（舊方式）
+            web_details = await self.fetch_anime_web_details(str(anime_sn)) if anime_sn else {}
+            genres = web_details.get("genres", [])
+            if genres:
+                tag_parts.extend([f"#{tag}" for tag in genres[:6]])
+        
+        # 添加亮點標籤（雙語、版本等）
+        highlight_tag = episode.get("highlightTag", {})
+        if not api_tags and highlight_tag.get("bilingual"):
             tag_parts.append("🗣️ 雙語")
 
         edition = highlight_tag.get("edition", "").strip()
@@ -418,9 +563,19 @@ class AnimeTracker(commands.Cog):
         
         tags_str = " | ".join(tag_parts) if tag_parts else "無特殊標籤"
         
+        # 構建描述，優先使用 API 返回的簡介
+        if not content:
+            web_details = await self.fetch_anime_web_details(str(anime_sn)) if anime_sn else {}
+            content = web_details.get("summary", "")
+        
         description_text = f"**集數：{volume}**"
-        if summary:
-            description_text += "\n" + self._truncate_text(summary, 280)
+        if content:
+            description_text += "\n" + self._truncate_text(content, 280)
+        
+        # 人氣度和評分信息
+        popularity_text = f"👥 {popular:,} 人氣" if popular > 0 else ""
+        if score > 0:
+            popularity_text += f" | ⭐ {score:.1f} 分"
         
         embed = discord.Embed(
             title=f"🎬 {anime_name}",
@@ -433,16 +588,24 @@ class AnimeTracker(commands.Cog):
         if cover_url:
             embed.set_image(url=cover_url)
         
+        # 添加人氣度與評分字段
+        if popularity_text:
+            embed.add_field(
+                name="📊 人氣度與評分",
+                value=popularity_text,
+                inline=True
+            )
+        
         embed.add_field(
             name="📌 標籤",
             value=tags_str,
             inline=False
         )
         
-        if summary:
+        if content:
             embed.add_field(
                 name="📝 劇情簡介",
-                value=self._truncate_text(summary, 280),
+                value=self._truncate_text(content, 280),
                 inline=False
             )
         
