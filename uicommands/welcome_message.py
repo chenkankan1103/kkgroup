@@ -785,12 +785,8 @@ class WelcomeFlow(commands.Cog):
             fallback.add_field(name="📌 提示", value="若按鈕無法顯示，可稍後再嘗試。", inline=False)
             return fallback
 
-    async def update_welcome_message(self, interaction: discord.Interaction, user_id: int, edit_channel: bool = False):
-        """更新用戶的歡迎 embed。
-        - 如果 edit_channel=False（預設），只編輯歡迎頻道的原始訊息
-        - 如果 edit_channel=True，也會編輯歡迎頻道的訊息
-        - 不編輯 ephemeral interaction 的 original response（轉而使用 followup）
-        """
+    async def update_welcome_message(self, interaction: discord.Interaction, user_id: int):
+        """更新歡迎頻道中用戶的歡迎 embed。"""
         try:
             if not interaction.guild:
                 print(f"⚠️ 交互不在伺服器中，無法更新訊息")
@@ -1021,9 +1017,9 @@ class WelcomeFlow(commands.Cog):
             except Exception as e:
                 print(f"⚠️ 修改昵稱失敗: {e}")
 
-            # 更新歡迎訊息為擊暈狀態
+            # 更新歡迎訊息
             print(f"📢 更新歡迎訊息...")
-            await self.update_welcome_message(interaction, member.id, edit_channel=True)
+            await self.update_welcome_message(interaction, member.id)
 
             # 記錄擊暈用戶資訊
             self.stunned_users[member.id] = {
