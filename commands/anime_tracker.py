@@ -450,11 +450,11 @@ class AnimeTracker(commands.Cog):
             詳細信息字典或 None
         """
         if not video_sn:
-            logger.debug(f"📺 [fetch_anime_details_from_api] video_sn 為空，跳過")
+            logger.info(f"📺 [fetch_anime_details_from_api] video_sn 為空，跳過")
             return None
         
         api_url = f"https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}"
-        logger.debug(f"📺 [fetch_anime_details_from_api] 開始調用 API: {api_url}")
+        logger.info(f"📺 [fetch_anime_details_from_api] 開始調用 API: {api_url}")
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -464,14 +464,14 @@ class AnimeTracker(commands.Cog):
                         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)"
                     }
                 ) as resp:
-                    logger.debug(f"📺 [fetch_anime_details_from_api] 獲得响應，status={resp.status}")
+                    logger.info(f"📺 [fetch_anime_details_from_api] 獲得响應，status={resp.status}")
                     if resp.status != 200:
                         logger.warning(f"⚠️ API detail returned status {resp.status} for videoSn={video_sn}")
                         return None
                     
                     data = await resp.json()
                     anime = data.get("data", {}).get("anime", {})
-                    logger.debug(f"📺 [fetch_anime_details_from_api] anime 字典鍵: {list(anime.keys()) if anime else '(empty)'}")
+                    logger.info(f"📺 [fetch_anime_details_from_api] anime 字典鍵: {list(anime.keys()) if anime else '(empty)'}")
                     
                     if not anime:
                         logger.warning(f"⚠️ No anime data in API response for videoSn={video_sn}")
@@ -533,21 +533,21 @@ class AnimeTracker(commands.Cog):
         # 優先檢查快取，未快取則調用 API
         anime_details = None
         if anime_sn:
-            logger.debug(f"📺 [generate_anime_embed] 檢查快取 animeSn={anime_sn}")
+            logger.info(f"📺 [generate_anime_embed] 檢查快取 animeSn={anime_sn}")
             anime_details = self.db.get_anime_details(int(anime_sn))
             if anime_details:
-                logger.debug(f"📺 [generate_anime_embed] ✅ 快取命中 animeSn={anime_sn}")
+                logger.info(f"📺 [generate_anime_embed] ✅ 快取命中 animeSn={anime_sn}")
             else:
-                logger.debug(f"📺 [generate_anime_embed] ⏸ 快取未命中 animeSn={anime_sn}")
+                logger.info(f"📺 [generate_anime_embed] ⏸ 快取未命中 animeSn={anime_sn}")
         
         if not anime_details and video_sn:
             # 快取中沒有，調用 API 獲取並快取
-            logger.debug(f"📺 [generate_anime_embed] 準備調用 API videoSn={video_sn}")
+            logger.info(f"📺 [generate_anime_embed] 準備調用 API videoSn={video_sn}")
             anime_details = await self.fetch_anime_details_from_api(int(video_sn))
             if anime_details:
-                logger.debug(f"📺 [generate_anime_embed] ✅ API 成功回傳數據")
+                logger.info(f"📺 [generate_anime_embed] ✅ API 成功回傳數據")
             else:
-                logger.debug(f"📺 [generate_anime_embed] ❌ API 未返回數據")
+                logger.info(f"📺 [generate_anime_embed] ❌ API 未返回數據")
         
         # 提取詳細信息
         content = anime_details.get("content", "") if anime_details else ""
@@ -555,7 +555,7 @@ class AnimeTracker(commands.Cog):
         popular = anime_details.get("popular", 0) if anime_details else 0
         score = anime_details.get("score", 0) if anime_details else 0
         
-        logger.debug(f"📺 [generate_anime_embed] 提取的詳細信息: content_len={len(content)}, tags={api_tags}, popular={popular}, score={score}")
+        logger.info(f"📺 [generate_anime_embed] 提取的詳細信息: content_len={len(content)}, tags={api_tags}, popular={popular}, score={score}")
         
         # 構建標籤信息
         tag_parts = []
