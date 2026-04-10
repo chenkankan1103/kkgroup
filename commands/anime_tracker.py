@@ -687,23 +687,24 @@ class AnimeTracker(commands.Cog):
                 # 沒有預期時刻，跳過
                 return
             
-            # 檢查當前時刻是否在任何預期時刻的 ±10 分鐘內
+            # 檢查當前時刻是否在預定時刻之後約 1 分鐘內
             current_time = now.time()
             in_check_window = False
             for check_time_str in expected_check_times:
                 try:
                     check_time = datetime.strptime(check_time_str, "%H:%M").time()
-                    time_diff = abs((datetime.combine(now.date(), current_time) - 
-                                   datetime.combine(now.date(), check_time)).total_seconds()) / 60
-                    if time_diff <= 10:  # ±10分鐘窗口
+                    scheduled_datetime = datetime.combine(now.date(), check_time)
+                    current_datetime = datetime.combine(now.date(), current_time)
+                    time_diff = (current_datetime - scheduled_datetime).total_seconds() / 60
+                    if 0 <= time_diff <= 1.5:  # 預定時刻後 1 分鐘內
                         in_check_window = True
-                        logger.info(f"📺 [check_new_anime] 在預期時刻 {check_time_str} 的窗口內 ({time_diff:.0f} 分鐘)")
+                        logger.info(f"📺 [check_new_anime] 在預定時刻 {check_time_str} 後的檢查窗口內 ({time_diff:.1f} 分鐘)")
                         break
                 except:
                     continue
             
             if not in_check_window:
-                # 不在預期時刻附近，跳過
+                # 尚未到預定時刻或已過 1 分鐘後，跳過
                 return
             
             logger.info(f"📺 [check_new_anime] ========== 預期時刻附近檢查 ({now.strftime('%H:%M')}) ==========")
@@ -802,7 +803,7 @@ class AnimeTracker(commands.Cog):
     def _get_expected_check_times(self, schedule: dict, now: datetime) -> list:
         """
         計算出今天和明天的所有預期檢查時刻
-        （用於檢查當前時間是否在預期時刻附近，±10分鐘窗口）
+        （用於檢查當前時間是否在預定時刻後約 1 分鐘內）
         
         Returns:
             預期檢查時刻列表，格式為 ["HH:MM", ...]
