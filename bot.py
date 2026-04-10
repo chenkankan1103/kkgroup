@@ -12,19 +12,19 @@ from watchdog.events import FileSystemEventHandler
 import logging
 
 # ============================================================
-# 日誌配置
+# Logging configuration
 # ============================================================
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)  # 輸出到 stdout，被 systemd journalctl 捕獲
+        logging.StreamHandler(sys.stdout)  # Output to stdout, captured by systemd journalctl
     ]
 )
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
+# File logging helper functions (for debugging systemd output)
 # ============================================================
 try:
     import syslog
@@ -36,9 +36,9 @@ except ImportError:
 LOG_FILE = "/tmp/bot-debug.log"
 
 def file_log(msg):
-    """寫入日誌到檔案、syslog 並同時調用 print"""
+    """Write logs to file, syslog and call print"""
     try:
-        # 確保字符串是 UTF-8 編碼的 (防止亂碼)
+        # Ensure string is UTF-8 encoded (prevent garbled output)
         if isinstance(msg, bytes):
             msg = msg.decode('utf-8', errors='replace')
         output = f"[FILE_LOG] {msg}".encode('utf-8', errors='replace').decode('utf-8', errors='replace')
@@ -48,13 +48,13 @@ def file_log(msg):
         pass
     
     try:
-        # 寫入文件
+        # Write to file
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
             f.flush()
     except (IOError, OSError):
         pass
-    # 寫入 syslog
+    # Write to syslog
     if HAS_SYSLOG:
         try:
             syslog.syslog(syslog.LOG_INFO, f"[BOT_DEBUG] {msg}")
@@ -183,8 +183,8 @@ async def find_and_load_extensions(base_path, package_prefix="", bot_client=None
     return loaded_extensions
 
 async def setup_modules(bot_client):
-    """載入所有模組"""
-    file_log("[setup_modules] 函數開始")
+    """Load all modules"""
+    file_log("[setup_modules] Function started")
     
     full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
@@ -196,38 +196,38 @@ async def setup_modules(bot_client):
         file_log("[setup_modules] Created commands directory")
         return []
     
-    file_log("[setup_modules] 調用 find_and_load_extensions()")
+    file_log("[setup_modules] Calling find_and_load_extensions()")
     
     extensions = await find_and_load_extensions(full_path, COMMANDS_DIR, bot_client)
     
-    file_log(f"[setup_modules] find_and_load_extensions() 返回 {len(extensions)} 擴展")
+    file_log(f"[setup_modules] find_and_load_extensions() returned {len(extensions)} extensions")
     
-    # 特殊處理 anime_tracker Cog - 先卸載再加載，確保新修改生效
-    file_log("[setup_modules] 檢查 anime_tracker 加載狀態...")
+    # Special handling for anime_tracker Cog - unload then reload to ensure new changes take effect
+    file_log("[setup_modules] Checking anime_tracker load status...")
     
-    # 先嘗試卸載
+    # Try to unload first
     try:
         await bot_client.unload_extension("commands.anime_tracker")
-        file_log("[setup_modules] ✅ anime_tracker 已卸載")
+        file_log("[setup_modules] OK anime_tracker unloaded")
     except Exception as e:
-        file_log(f"[setup_modules] ℹ️ anime_tracker 未加載或卸載失敗: {type(e).__name__}: {str(e)}")
+        file_log(f"[setup_modules] INFO anime_tracker not loaded or unload failed: {type(e).__name__}: {str(e)}")
     
-    # 再加載
-    file_log("[setup_modules] 嘗試加載 anime_tracker...")
+    # Then load
+    file_log("[setup_modules] Attempting to load anime_tracker...")
     try:
-        print("[SETUP_DEBUG] 即將調用 load_extension", flush=True)
+        print("[SETUP_DEBUG] About to call load_extension", flush=True)
         await bot_client.load_extension("commands.anime_tracker")
-        print("[SETUP_DEBUG] load_extension 返回成功", flush=True)
-        file_log("[setup_modules] ✅ commands.anime_tracker 加載成功！")
+        print("[SETUP_DEBUG] load_extension returned success", flush=True)
+        file_log("[setup_modules] OK commands.anime_tracker loaded successfully!")
         if "commands.anime_tracker" not in extensions:
             extensions.append("commands.anime_tracker")
     except Exception as e:
-        file_log(f"[setup_modules] ❌ anime_tracker 加載失敗: {e}")
+        file_log(f"[setup_modules] FAIL anime_tracker load failed: {e}")
         print(f"[SETUP_DEBUG_ERROR] {type(e).__name__}: {str(e)}", flush=True)
         import traceback
         traceback.print_exc()
     
-    file_log(f"[setup_modules] 函數完成，共 {len(extensions)} 個擴展")
+    file_log(f"[setup_modules] Function completed, total {len(extensions)} extensions")
     
     return extensions
 
@@ -353,25 +353,25 @@ async def before_update_status():
 # 事件監視函數
 # ============================================================
 async def _check_ready_timeout():
-    """監視 ready 狀態，如果超時就手動調用 on_ready()"""
+    """Monitor ready state, manually call on_ready if timeout"""
     global _on_ready_called, _on_ready_check_task
-    file_log("[READY_MONITOR] 開始監視 ready 狀態（10 秒超時）")
+    file_log("[READY_MONITOR] Starting ready state monitor (10s timeout)")
     
     for i in range(10):
         await asyncio.sleep(1)
         file_log(f"[READY_MONITOR] {i+1}s - ready={client.is_ready()} - on_ready_called={_on_ready_called}")
         
         if _on_ready_called:
-            file_log("[READY_MONITOR] on_ready 已被正常觸發")
+            file_log("[READY_MONITOR] on_ready triggered normally")
             return
     
-    # 如果 10 秒後 on_ready 還沒被觸發，手動調用
+    # If on_ready still not triggered after 10s, manually call it
     if not _on_ready_called:
-        file_log("[READY_MONITOR] 10 秒超時，on_ready 未被觸發，嘗試手動調用")
+        file_log("[READY_MONITOR] 10s timeout, on_ready not triggered, attempting manual call")
         try:
             await on_ready()
         except Exception as e:
-            file_log(f"[READY_MONITOR] 手動調用 on_ready 失敗: {e}")
+            file_log(f"[READY_MONITOR] Manual on_ready call failed: {e}")
 
 # ============================================================
 # Bot 事件處理
@@ -478,9 +478,9 @@ async def on_ready():
         if guild and STAGE != "prod":
             await client.tree.clear_commands(guild=guild)
         
-        # 載入模組 - 添加分步驟日誌
+        # Load modules - add step-by-step logging
         try:
-            file_log("[SETUP_TRACE] 準備調用 setup_modules()...")
+            file_log("[SETUP_TRACE] About to call setup_modules()...")
             
             debug_setup = "[SETUP] About to call setup_modules()..."
             file_log(debug_setup)
@@ -490,19 +490,19 @@ async def on_ready():
             success_setup = f"[SETUP] setup_modules() completed, loaded {len(loaded_extensions)} extensions"
             file_log(success_setup)
         except Exception as e:
-            error_setup = f"[SETUP] ❌ setup_modules() failed: {e}"
+            error_setup = f"[SETUP] FAIL setup_modules() failed: {e}"
             file_log(error_setup)
             import traceback
             traceback.print_exc()
             raise
         
-        # 明確載入 uibody 模組（UserPanel 和 LockerEventListenerCog）
+        # Explicitly load uibody module (UserPanel and LockerEventListenerCog)
         # try:
         #     from uicommands import uibody
         #     await uibody.setup(client)
-        #     print("✅ uibody 模組已明確加載")
+        #     print("OK uibody module loaded explicitly")
         # except Exception as e:
-        #     print(f"❌ uibody 模組加載失敗: {e}")
+        #     print(f"FAIL uibody module load failed: {e}")
         #     import traceback
         #     traceback.print_exc()
         
