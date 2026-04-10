@@ -17,8 +17,9 @@ Environment=LANG=C.UTF-8
 ExecStart=/home/e193752468/kkgroup/venv/bin/python bot.py
 Restart=always
 RestartSec=10
-StandardOutput=append:/tmp/bot.log
-StandardError=append:/tmp/bot.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bot
 
 TimeoutStopSec=30
 KillMode=mixed

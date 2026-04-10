@@ -17,8 +17,9 @@ Environment=LANG=C.UTF-8
 ExecStart=/home/e193752468/kkgroup/venv/bin/python -u shopbot.py
 Restart=always
 RestartSec=10
-StandardOutput=append:/tmp/shopbot.log
-StandardError=append:/tmp/shopbot.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shopbot
 
 TimeoutStopSec=30
 KillMode=mixed
