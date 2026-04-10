@@ -333,19 +333,16 @@ async def before_cleanup_expired_roles():
 
 @tasks.loop(minutes=2)
 async def update_status():
-    """定期更新 Bot 狀態和日誌 Embed"""
+    """定期更新 Bot 狀態（日誌更新由 status_dashboard.py 10 分鐘定時任務負責）"""
     try:
         # 添加超時防護，防止長時間掛起
         activity = build_discord_activity(BOT_TYPE)
         await asyncio.wait_for(client.change_presence(activity=activity), timeout=10.0)
         
-        # 每 2 分鐘更新一次日誌 embed，但有超時保護
-        from status_dashboard import update_dashboard_logs
-        # file_log("[HEARTBEAT] Starting update_dashboard_logs")  # 心跳日誌已停用，減少日誌噪音
-        await asyncio.wait_for(update_dashboard_logs(client, BOT_TYPE), timeout=15.0)
-        # file_log("[HEARTBEAT] Completed update_dashboard_logs")  # 心跳日誌已停用
+        # 日誌更新已移交給 status_dashboard.py 的獨立 10 分鐘定時任務
+        # 此函式現在只負責更新 bot 的狀態活動
     except asyncio.TimeoutError:
-        file_log(f"[ERROR] Status update timeout - dashboard operation exceeded 15s")
+        file_log(f"[ERROR] Status update timeout - presence change exceeded 10s")
         print(f"[ERROR] Status update timeout")
     except (ImportError, OSError, RuntimeError) as e:
         file_log(f"[ERROR] Failed to update status: {e}")
