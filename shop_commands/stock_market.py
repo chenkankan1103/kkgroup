@@ -291,13 +291,21 @@ class StockEntryView(discord.ui.View):
                 asset_class = stock.get('asset_class', 'unknown')
                 symbol = stock.get('symbol', 'N/A')
                 shares = stock.get('shares', 0)
-                buy_price = stock.get('buy_price', 0)
-                current_price = stock.get('current_price', buy_price)
+                avg_cost = stock.get('avg_cost', 0)  # 使用 avg_cost
+                
+                # 獲取實時價格
+                try:
+                    current_price = await fetch_price(symbol)
+                except:
+                    current_price = avg_cost  # 失敗時用平均成本代替
+                
+                if current_price is None or current_price == 0:
+                    current_price = avg_cost  # 如果價格為 0 或 None，用平均成本代替
                 
                 position_value = shares * current_price
                 total_value += position_value
-                pnl = (current_price - buy_price) * shares
-                pnl_percent = ((current_price - buy_price) / buy_price * 100) if buy_price > 0 else 0
+                pnl = (current_price - avg_cost) * shares
+                pnl_percent = ((current_price - avg_cost) / avg_cost * 100) if avg_cost > 0 else 0
                 
                 if asset_class not in positions_by_class:
                     positions_by_class[asset_class] = []
@@ -305,7 +313,7 @@ class StockEntryView(discord.ui.View):
                 positions_by_class[asset_class].append({
                     'symbol': symbol,
                     'shares': shares,
-                    'buy_price': buy_price,
+                    'avg_cost': avg_cost,
                     'current_price': current_price,
                     'value': position_value,
                     'pnl': pnl,
@@ -320,7 +328,7 @@ class StockEntryView(discord.ui.View):
                 for pos in positions:
                     pnl_emoji = "📈" if pos['pnl'] >= 0 else "📉"
                     field_value += f"**{pos['symbol']}** | {pos['shares']:.2f}股\n"
-                    field_value += f"  買入: ${pos['buy_price']:.2f} | 現價: ${pos['current_price']:.2f}\n"
+                    field_value += f"  買入: ${pos['avg_cost']:.2f} | 現價: ${pos['current_price']:.2f}\n"
                     field_value += f"  損益: {pnl_emoji} ${pos['pnl']:.2f} ({pos['pnl_percent']:.2f}%)\n\n"
                 
                 embed.add_field(
@@ -392,6 +400,18 @@ class PortfolioManageView(discord.ui.View):
             
             # 顯示該股票的詳細信息和交易選項
             stock = self.user_stocks[idx]
+            shares = stock.get('shares', 0)
+            avg_cost = stock.get('avg_cost', 0)
+            
+            # 獲取實時價格
+            try:
+                from utils.stock_api import fetch_price
+                current_price = await fetch_price(symbol)
+            except:
+                current_price = avg_cost
+            
+            if current_price is None or current_price == 0:
+                current_price = avg_cost
             
             embed = discord.Embed(
                 title=f"💹 {symbol} - 交易選項",
@@ -401,25 +421,25 @@ class PortfolioManageView(discord.ui.View):
             
             embed.add_field(
                 name="📊 當前持倉",
-                value=f"{stock.get('shares', 0):.2f} 股",
+                value=f"{shares:.2f} 股",
                 inline=True
             )
             
             embed.add_field(
-                name="💰 持仓价值",
-                value=f"${stock.get('shares', 0) * stock.get('current_price', 0):,.2f}",
+                name="💰 持倉價值",
+                value=f"${shares * current_price:,.2f}",
                 inline=True
             )
             
             embed.add_field(
                 name="📈 買入價格",
-                value=f"${stock.get('buy_price', 0):,.2f}",
+                value=f"${avg_cost:.2f}",
                 inline=True
             )
             
             embed.add_field(
                 name="💹 現價",
-                value=f"${stock.get('current_price', 0):,.2f}",
+                value=f"${current_price:.2f}",
                 inline=True
             )
             
