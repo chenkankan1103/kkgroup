@@ -380,6 +380,16 @@ class AnimeTracker(commands.Cog):
             return None
 
     def _episode_in_current_check_window(self, episode: Dict, now: datetime) -> bool:
+        """
+        檢查集是否在預期時間窗口內（僅用於現在）
+        
+        Args:
+            episode: 集信息
+            now: 當前時間
+            
+        Returns:
+            True 如果該集應該被通知
+        """
         up_date = episode.get("upTime", "").strip()
         up_time = episode.get("upTimeHours", "").strip()
         if not up_date or not up_time:
@@ -390,9 +400,9 @@ class AnimeTracker(commands.Cog):
         except ValueError:
             return False
 
-        window_start = now - timedelta(minutes=50)
-        window_end = now - timedelta(minutes=5)
-        return window_start <= episode_dt <= window_end
+        # 檢查集在今天且時間匹配（允許一些容差）
+        # 由於現在用 schedule 驅動檢查，這裡只做基本驗證
+        return episode_dt.date() == now.date()
 
     async def fetch_anime_web_details(self, anime_sn: str) -> Dict[str, Optional[object]]:
         """
@@ -646,7 +656,7 @@ class AnimeTracker(commands.Cog):
             view.add_item(discord.ui.Button(label="前往動畫瘋新番頁", url=anime_url))
         
         if video_sn:
-            video_url = f"https://ani.gamer.com.tw/video.php?sn={video_sn}"
+            video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
             view.add_item(discord.ui.Button(label="查看本集", url=video_url))
         
         return view if view.children else None
@@ -654,13 +664,13 @@ class AnimeTracker(commands.Cog):
     @tasks.loop(minutes=1)
     async def check_new_anime(self):
         """
-        根據日程表智能檢查，在預期時刻 +1 分鐘時發起檢查
+        根據日程表檢查新番，優化為只在預期時間附近檢查
         
         工作流程：
         1. 獲取 newAnimeSchedule（各星期的預期時刻表）
-        2. 計算出今天和明天的所有預期時刻
-        3. 當前時刻匹配到預期時刻 +1 分鐘時，發起 API 檢查
-        4. 適應未來任何時段的更新時間
+        2. 計算預期時刻（±10分鐘的窗口）
+        3. 只有在預期時間窗口內且有集更新時，才發送通知
+        4. 減少離峰時間每分鐘的檢查成本
         """
         now = datetime.now()
         
@@ -673,16 +683,30 @@ class AnimeTracker(commands.Cog):
             
             # 獲取當前時刻應該檢查的集合
             expected_check_times = self._get_expected_check_times(schedule, now)
-            
-            # 檢查當前時刻是否應該檢查（預期時刻 +1 分鐘）
-            current_hm = now.strftime("%H:%M")
-            should_check = current_hm in expected_check_times
-            
-            if not should_check:
-                # 不是預期時刻，跳過
+            if not expected_check_times:
+                # 沒有預期時刻，跳過
                 return
             
-            logger.info(f"📺 [check_new_anime] ========== 智能日程檢查 ({current_hm}) ==========")
+            # 檢查當前時刻是否在任何預期時刻的 ±10 分鐘內
+            current_time = now.time()
+            in_check_window = False
+            for check_time_str in expected_check_times:
+                try:
+                    check_time = datetime.strptime(check_time_str, "%H:%M").time()
+                    time_diff = abs((datetime.combine(now.date(), current_time) - 
+                                   datetime.combine(now.date(), check_time)).total_seconds()) / 60
+                    if time_diff <= 10:  # ±10分鐘窗口
+                        in_check_window = True
+                        logger.info(f"📺 [check_new_anime] 在預期時刻 {check_time_str} 的窗口內 ({time_diff:.0f} 分鐘)")
+                        break
+                except:
+                    continue
+            
+            if not in_check_window:
+                # 不在預期時刻附近，跳過
+                return
+            
+            logger.info(f"📺 [check_new_anime] ========== 預期時刻附近檢查 ({now.strftime('%H:%M')}) ==========")
             
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
@@ -694,7 +718,7 @@ class AnimeTracker(commands.Cog):
             logger.info("📺 [check_new_anime] 正在從 API 獲取動畫數據...")
             episodes = await self.fetch_new_anime_from_api()
             if not episodes:
-                logger.warning("⚠️ [check_new_anime] 無法從 API 獲取數據")
+                logger.warning("⚠️ [check_new_anime] 無法從 API 獲取數據或沒有今日最新集")
                 return
             
             logger.info(f"📺 [check_new_anime] 獲得 {len(episodes)} 集")
@@ -726,17 +750,15 @@ class AnimeTracker(commands.Cog):
                 video_sn = ep.get("videoSn")
                 if not video_sn or self.db.is_notified(video_sn):
                     continue
-                if not self._episode_in_current_check_window(ep, now):
-                    logger.debug(f"📺 Skip episode outside current window: {ep.get('title')} {ep.get('upTime')} {ep.get('upTimeHours')}")
-                    continue
+                # 簡化邏輯：只要不在 notified 表中就認為是新集
                 new_episodes.append(ep)
             
             if not new_episodes:
-                logger.info("⏭️ No new episodes found")
+                logger.info("⏭️ 沒有新集")
                 return
             
             # 發送新集通知
-            logger.info(f"🆕 Found {len(new_episodes)} new episodes")
+            logger.info(f"🆕 發現 {len(new_episodes)} 個新集")
             for ep in new_episodes:
                 try:
                     embed = await self.generate_anime_embed(ep)
@@ -779,7 +801,8 @@ class AnimeTracker(commands.Cog):
     
     def _get_expected_check_times(self, schedule: dict, now: datetime) -> list:
         """
-        計算出包含今天和明天的所有預期檢查時刻（預期時刻 +1 分鐘）
+        計算出今天和明天的所有預期檢查時刻
+        （用於檢查當前時間是否在預期時刻附近，±10分鐘窗口）
         
         Returns:
             預期檢查時刻列表，格式為 ["HH:MM", ...]
@@ -798,22 +821,12 @@ class AnimeTracker(commands.Cog):
                 schedule_time = anime_info.get("scheduleTime", "")  # 格式: "22:00"
                 if schedule_time:
                     try:
-                        # 解析時間並加上 1 分鐘
-                        hour, minute = map(int, schedule_time.split(":"))
-                        check_minute = minute + 1
-                        check_hour = hour
-                        
-                        # 處理進位
-                        if check_minute >= 60:
-                            check_minute = 0
-                            check_hour = (hour + 1) % 24
-                        
-                        check_time_str = f"{check_hour:02d}:{check_minute:02d}"
-                        check_times.add(check_time_str)
+                        # 直接使用原始時刻（不再加 +1 分鐘）
+                        check_times.add(schedule_time)
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to parse schedule time '{schedule_time}': {e}")
         
-        logger.debug(f"📺 Expected check times: {sorted(check_times)}")
+        logger.debug(f"📺 預期更新時刻: {sorted(check_times)}")
         return sorted(list(check_times))
     
     @check_new_anime.before_loop
