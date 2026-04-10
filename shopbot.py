@@ -95,14 +95,14 @@ _on_ready_check_task = None
 async def _check_ready_timeout():
     """監視 ready 狀態，如果超時就手動調用 on_ready()"""
     global _on_ready_called
-    file_log("[READY_MONITOR] 開始監視 ready 狀態（10 秒超時）")
+    # file_log("[READY_MONITOR] 開始監視 ready 狀態（10 秒超時）")  # 日誌已停用
     
     for i in range(10):
         await asyncio.sleep(1)
-        file_log(f"[READY_MONITOR] {i+1}s - ready={client.is_ready()} - on_ready_called={_on_ready_called}")
+        # file_log(f"[READY_MONITOR] {i+1}s - ready={client.is_ready()} - on_ready_called={_on_ready_called}")  # 日誌已停用
         
         if _on_ready_called:
-            file_log("[READY_MONITOR] on_ready 已被正常觸發")
+            # file_log("[READY_MONITOR] on_ready 已被正常觸發")  # 日誌已停用
             return
     
     if not _on_ready_called:
