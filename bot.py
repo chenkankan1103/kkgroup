@@ -193,9 +193,18 @@ async def setup_modules(bot_client):
     
     file_log(f"[setup_modules] find_and_load_extensions() 返回 {len(extensions)} 擴展")
     
-    # 特殊處理 anime_tracker Cog - 確保它被加載
-    file_log("[setup_modules] 嘗試明確加載 anime_tracker...")
+    # 特殊處理 anime_tracker Cog - 先卸載再加載，確保新修改生效
+    file_log("[setup_modules] 檢查 anime_tracker 加載狀態...")
     
+    # 先嘗試卸載
+    try:
+        await bot_client.unload_extension("commands.anime_tracker")
+        file_log("[setup_modules] ✅ anime_tracker 已卸載")
+    except Exception as e:
+        file_log(f"[setup_modules] ℹ️ anime_tracker 未加載或卸載失敗 (正常): {type(e).__name__}")
+    
+    # 再加載
+    file_log("[setup_modules] 嘗試加載 anime_tracker...")
     try:
         await bot_client.load_extension("commands.anime_tracker")
         file_log("[setup_modules] ✅ commands.anime_tracker 加載成功！")
