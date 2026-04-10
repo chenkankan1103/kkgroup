@@ -168,8 +168,13 @@ async def find_and_load_extensions(base_path, package_prefix="", bot_client=None
             try:
                 await bot_client.load_extension(ext_name)
                 loaded_extensions.append(ext_name)
-            except (ExtensionError, ImportError) as e:
-                print(f"[ERROR] Failed to load {ext_name}: {e}")
+                print(f"✅ 載入成功: {ext_name}")
+            except Exception as e:
+                import traceback
+                print(f"❌ 載入失敗: {ext_name}")
+                print(f"   錯誤: {e}")
+                print(f"   Traceback:")
+                traceback.print_exc()
     
     return loaded_extensions
 
