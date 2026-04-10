@@ -133,6 +133,8 @@ async def get_systemd_logs(bot_type: str) -> Optional[str]:
                             message = parts[2] if len(parts) > 2 else parts[1]
                             # 刪除 PID（例如 service[1234]）以縮短行長
                             message = re.sub(r"\[\d+\]", "", message)
+                            # 移除重複的服務名稱前綴（bot:, shopbot:, uibot:）以節省字數
+                            message = re.sub(r"^(bot|shopbot|uibot):\s+", "", message)
                             # 過濾非必要的訊息
                             if any(keyword in message for keyword in ["成功獲取消息", "日誌已成功更新", "更新完成"]):
                                 continue
