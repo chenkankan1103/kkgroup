@@ -31,7 +31,7 @@ TAIWAN_TZ = timezone(timedelta(hours=8))
 
 # Systemd 日誌配置
 # 40 行日誌約 4400 字符（含標題/頁腳），接近 Discord embed 4000 字符限制
-# 每 5 分鐘更新一次，平衡信息密度與 API 調用成本
+# 每 10 分鐘更新一次，平衡信息密度與 API 調用成本
 SYSTEMD_LOG_CONFIG = {
     "bot": {"service": "bot.service", "lines": 40, "enabled": True},
     "shopbot": {"service": "shopbot.service", "lines": 40, "enabled": True},
@@ -328,15 +328,15 @@ def create_update_task(bot_type: str):
                 traceback.print_exc(file=ef)
             traceback.print_exc()
 
-    # 創建任務對象 - 每 5 分鐘檢查一次日誌
+    # 創建任務對象 - 每 10 分鐘檢查一次日誌
     # 如果內容相同會跳過 Discord 編輯，減少不必要的 API 調用
     # 
     # 流量估算：
-    # - 每 300 秒（5 分鐘）× 3 機器人 = 最多 3 次 API edits（如果日誌改變）
-    # - 每天 = 3 × 288 次 = ~864 次 API 調用
+    # - 每 600 秒（10 分鐘）× 3 機器人 = 最多 3 次 API edits（如果日誌改變）
+    # - 每天 = 3 × 144 次 = ~432 次 API 調用
     # - 智能緩存會跳過內容未改變的編輯，實際調用數更少
     # - 主要網路開銷是本地 systemd journalctl 查詢（無外部流量）
-    task = tasks.loop(minutes=5)(individual_update_task)
+    task = tasks.loop(minutes=10)(individual_update_task)
     task.__name__ = f"update_task_{bot_type}"
 
     return task
@@ -518,7 +518,7 @@ async def create_logs_embed(bot_type: str) -> discord.Embed:
     # Log functionality removed, display placeholder text
     embed.description = "`日誌記錄中`"
     
-    embed.set_footer(text="每 5 分鐘更新最多 4000 字")
+    embed.set_footer(text="每 10 分鐘更新最多 4000 字")
     return embed
 
 async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
