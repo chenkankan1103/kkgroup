@@ -49,9 +49,11 @@ class GenderSelectView(discord.ui.View):
             'gender': select.values[0]
         }
 
-        await self.cog.update_user_data(self.user_id, appearance)
-        # 不需要更新頻道訊息，僅更新當前互動回應
-        await self.cog.update_welcome_message(interaction, self.user_id, edit_channel=False)
+        try:
+            await self.cog.update_user_data(self.user_id, appearance)
+            await self.cog.update_welcome_message(interaction, self.user_id)
+        except Exception as e:
+            print(f"❌ 更新用戶性別失敗: {e}")
         
         gender_text = "男性" if select.values[0] == "male" else "女性"
         await interaction.followup.send(f"✅ 已設定為{gender_text}！")
@@ -70,9 +72,12 @@ class WelcomeActionView(discord.ui.View):
             await interaction.followup.send("❌ 這不是你的按鈕！")
             return
 
-        await self.cog.remove_items_from_inventory(self.user_id, ["手機", "身分證"])
-        # 只更新當前互動回應
-        await self.cog.update_welcome_message(interaction, self.user_id, edit_channel=False)
+        try:
+            await self.cog.remove_items_from_inventory(self.user_id, ["手機", "身分證"])
+            await self.cog.update_welcome_message(interaction, self.user_id)
+        except Exception as e:
+            print(f"❌ 繳交物品失敗: {e}")
+        
         await interaction.followup.send("✅ 已繳交手機和身分證！")
 
     @discord.ui.button(label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
@@ -436,47 +441,66 @@ class WelcomeFlow(commands.Cog):
             return None
 
     def create_user_data(self, user_id: int) -> bool:
-        """Create new user data with default values. Returns True if successful."""
-        try:
-            default_inventory = json.dumps(["手機", "身分證"])
-            
-            user_data = {
-                'user_id': user_id,
-                'inventory': default_inventory,
-                'character_config': '{}',
-                'face': 20005,
-                'hair': 30120,
-                'skin': 12000,
-                'top': 1040014,
-                'bottom': 1060096,
-                'shoes': 1072005,
-                'gender': 'male',
-                'level': 1,
-                'xp': 0,
-                'kkcoin': 0,
-                'title': '新手',
-                'hp': 100,
-                'stamina': 100,
-                'is_stunned': 0,
-                'thread_id': 0,
-                # 初始化週統計快照字段
-                'last_kkcoin_snapshot': 0,
-                'last_xp_snapshot': 0,
-                'last_level_snapshot': 1
-            }
-            
-            result = set_user(user_id, user_data)
-            if result:
-                print(f"✅ 創建用戶資料: {user_id}")
-            else:
-                print(f"⚠️ 設置用戶資料返回失敗（可能已存在）: {user_id}")
-            return result
+        """Create new user data with default values. Returns True if successful. Includes retry logic."""
+        max_retries = 3
+        default_inventory = json.dumps(["手機", "身分證"])
         
-        except Exception as e:
-            print(f"❌ 創建用戶資料錯誤: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+        user_data = {
+            'user_id': user_id,
+            'inventory': default_inventory,
+            'character_config': '{}',
+            'face': 20005,
+            'hair': 30120,
+            'skin': 12000,
+            'top': 1040014,
+            'bottom': 1060096,
+            'shoes': 1072005,
+            'gender': 'male',
+            'level': 1,
+            'xp': 0,
+            'kkcoin': 0,
+            'title': '新手',
+            'hp': 100,
+            'stamina': 100,
+            'is_stunned': 0,
+            'thread_id': 0,
+            'last_kkcoin_snapshot': 0,
+            'last_xp_snapshot': 0,
+            'last_level_snapshot': 1
+        }
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                # 先檢查用戶是否已存在
+                existing = get_user(user_id)
+                if existing:
+                    print(f"⚠️ 用戶資料已存在: {user_id}（略過創建）")
+                    return True
+                
+                result = set_user(user_id, user_data)
+                if result:
+                    print(f"✅ 創建用戶資料: {user_id} (嘗試 {attempt}/{max_retries})")
+                    return True
+                else:
+                    print(f"⚠️ set_user 返回 False: {user_id} (嘗試 {attempt}/{max_retries})")
+                    if attempt < max_retries:
+                        import time
+                        time.sleep(0.5)
+                        continue
+                    return False
+            
+            except Exception as e:
+                print(f"❌ 創建用戶資料錯誤 (嘗試 {attempt}/{max_retries}): {type(e).__name__}: {e}")
+                if attempt < max_retries:
+                    import time
+                    time.sleep(0.5)
+                    continue
+                else:
+                    import traceback
+                    traceback.print_exc()
+                    return False
+        
+        return False
 
     async def update_user_data(self, user_id: int, data: dict):
         """Update user data fields in sheet-driven database"""
@@ -649,32 +673,55 @@ class WelcomeFlow(commands.Cog):
         return None
 
     async def get_character_image_url(self, user_data: dict) -> Optional[str]:
-        """獲取用戶對應的角色圖片 URL"""
-        preset_key = self.get_preset_key_for_user(user_data)
-        print(f"🎭 【get_character_image_url】用戶角色鍵: {preset_key}")
-        
-        # 直接從緩存獲取 URL
-        cached_url = self.get_cached_discord_url(preset_key)
-        if cached_url:
-            print(f"   ✅ 從緩存獲取: {cached_url[:80]}...")
-            return cached_url
-        else:
-            print(f"   ⚠️ 緩存中未找到: {preset_key}")
-        
-        # 如果沒有緩存，嘗試生成
-        if preset_key in self.preset_characters:
-            print(f"   🔄 嘗試從 API 生成...")
-            config = self.preset_characters[preset_key]
-            url = await self.generate_and_cache_preset_image(preset_key, config)
-            if url:
-                print(f"   ✅ 成功生成: {url[:80]}...")
+        """獲取用戶對應的角色圖片 URL。包含多層次的降級機制。"""
+        try:
+            preset_key = self.get_preset_key_for_user(user_data)
+            print(f"🎭 【get_character_image_url】用戶角色鍵: {preset_key}")
+            
+            # 層級 1: 直接從緩存獲取 URL
+            cached_url = self.get_cached_discord_url(preset_key)
+            if cached_url:
+                print(f"   ✅ 從緩存獲取: {cached_url[:80]}...")
+                return cached_url
             else:
-                print(f"   ❌ 生成失敗")
-            return url
-        else:
-            print(f"   ❌ 未知的角色鍵: {preset_key}")
-        
-        return None
+                print(f"   ⚠️ 緩存中未找到: {preset_key}")
+            
+            # 層級 2: 嘗試從 API 生成（帶超時保護）
+            if preset_key in self.preset_characters:
+                print(f"   🔄 嘗試從 API 生成...")
+                config = self.preset_characters[preset_key]
+                try:
+                    # 添加超時保護，避免 API 掛起
+                    url = await asyncio.wait_for(
+                        self.generate_and_cache_preset_image(preset_key, config),
+                        timeout=20
+                    )
+                    if url:
+                        print(f"   ✅ 成功生成: {url[:80]}...")
+                        return url
+                    else:
+                        print(f"   ⚠️ API 響應但返回 None")
+                except asyncio.TimeoutError:
+                    print(f"   ⚠️ 生成圖片超時（20秒）")
+                except Exception as e:
+                    print(f"   ⚠️ 生成圖片失敗: {type(e).__name__}: {e}")
+            else:
+                print(f"   ⚠️ 未知的角色鍵: {preset_key}")
+            
+            # 層級 3: 返回任何可用的備選 URL
+            for fallback_key in self.image_cache:
+                if fallback_key.startswith(preset_key.split('_')[0]):  # 同性別的任何預設
+                    url = self.image_cache[fallback_key].get('discord_url')
+                    if url:
+                        print(f"   🔄 使用備選圖片: {fallback_key}")
+                        return url
+            
+            print(f"   ❌ 無可用的圖片 URL")
+            return None
+            
+        except Exception as e:
+            print(f"❌ 【get_character_image_url】異常: {type(e).__name__}: {e}")
+            return None
 
     async def create_welcome_embed(self, user_data: dict, user: discord.User) -> discord.Embed:
         try:
@@ -842,18 +889,16 @@ class WelcomeFlow(commands.Cog):
         try:
             print(f"🎯 檢測到新成員加入: {member.name} (ID: {member.id})")
             
-            # 檢查環境變數是否正確設置
+            # 檢查環境變數 - 如果缺失，日誌警告但繼續（稍後會有動態檢查）
             if not self.welcome_channel_id or not self.temp_role1_id or not self.member_role_id:
-                print(f"❌ 環境變數缺失: WELCOME_CHANNEL_ID={self.welcome_channel_id}, TEMP_ROLE1_ID={self.temp_role1_id}, MEMBER_ROLE_ID={self.member_role_id}")
-                try:
-                    await member.send("❌ 歡迎系統配置不完整，請聯繫管理員")
-                except discord.Forbidden:
-                    pass
-                return
+                print(f"⚠️ 環境變數不完整（將繼續嘗試）:")
+                print(f"   WELCOME_CHANNEL_ID={self.welcome_channel_id}")
+                print(f"   TEMP_ROLE1_ID={self.temp_role1_id}")
+                print(f"   MEMBER_ROLE_ID={self.member_role_id}")
             
             guild = member.guild
 
-            # 添加臨時身分組
+            # 添加臨時身分組（失敗時繼續，不中斷流程）
             if self.temp_role1_id:
                 temp_role1 = guild.get_role(self.temp_role1_id)
                 if temp_role1:
@@ -861,32 +906,62 @@ class WelcomeFlow(commands.Cog):
                         await member.add_roles(temp_role1, reason="初步驗證角色")
                         print(f"✅ 已添加臨時身分組給 {member.name}")
                     except discord.Forbidden:
-                        print(f"❌ 權限不足，無法添加身分組給 {member.name}")
+                        print(f"⚠️ 權限不足，無法添加身分組 (將繼續)")
+                    except Exception as e:
+                        print(f"⚠️ 添加身分組失敗: {type(e).__name__} (將繼續)")
                 else:
-                    print(f"❌ 找不到臨時身分組 ID: {self.temp_role1_id}")
+                    print(f"⚠️ 找不到臨時身分組 (將繼續)")
+            else:
+                print(f"⚠️ TEMP_ROLE1_ID 未設置 (將繼續)")
 
-            # 創建用戶資料
+            # 創建用戶資料（帶重試）
             user_created = self.create_user_data(member.id)
             if not user_created:
-                print(f"⚠️ 創建用戶資料失敗，嘗試獲取現有資料: {member.name}")
+                print(f"⚠️ 創建用戶資料失敗，但嘗試繼續...")
                 
-            user_data = self.get_user_data(member.id)
+            # 獲取用戶資料（重試機制）
+            user_data = None
+            for attempt in range(1, 4):
+                user_data = self.get_user_data(member.id)
+                if user_data:
+                    print(f"✅ 成功獲取用戶資料 (嘗試 {attempt}/3)")
+                    break
+                else:
+                    print(f"⚠️ 第 {attempt}/3 次獲取用戶資料失敗，重試...")
+                    await asyncio.sleep(0.3)
             
+            # 如果仍然無法獲取，使用預設值
             if not user_data:
-                print(f"❌ 無法獲取或創建用戶資料: {member.name}")
-                try:
-                    await member.send("❌ 無法初始化用戶資料，請聯繫管理員")
-                except discord.Forbidden:
-                    pass
-                return
+                print(f"❌ 無法獲取用戶資料，使用預設值")
+                user_data = {
+                    'user_id': member.id,
+                    'gender': 'male',
+                    'is_stunned': 0,
+                    'hp': 100,
+                    'stamina': 100,
+                    'level': 1,
+                    'kkcoin': 0,
+                    'title': '新手',
+                    'inventory': '["手機", "身分證"]',
+                    'face': 20005,
+                    'hair': 30120,
+                    'skin': 12000,
+                    'top': 1040014,
+                    'bottom': 1060096,
+                    'shoes': 1072005
+                }
+                print(f"⚠️ 將使用臨時預設資料發送歡迎訊息")
 
             # 發送歡迎訊息
-            channel = self.bot.get_channel(self.welcome_channel_id)
+            channel = None
+            if self.welcome_channel_id:
+                channel = self.bot.get_channel(self.welcome_channel_id)
+            
             if not channel:
-                print(f"❌ 找不到歡迎頻道 ID: {self.welcome_channel_id}")
+                print(f"❌ 找不到歡迎頻道 ID: {self.welcome_channel_id})")
                 try:
-                    await member.send("❌ 無法找到歡迎頻道，請聯繫管理員")
-                except discord.Forbidden:
+                    await member.send("⚠️ 無法在歡迎頻道發送訊息，但你已被記錄。請聯繫管理員。")
+                except (discord.Forbidden, discord.HTTPException):
                     pass
                 return
                 
@@ -896,45 +971,84 @@ class WelcomeFlow(commands.Cog):
             try:
                 embed = await self.create_welcome_embed(user_data, member)
                 # 獲取角色圖片 URL（非關鍵錯誤，可以失敗）
-                character_image_url = await self.get_character_image_url(user_data)
-                if character_image_url:
-                    embed.set_image(url=character_image_url)
-                    print(f"✅ 【on_member_join】已設置角色圖片")
-                else:
-                    print(f"⚠️ 【on_member_join】無法獲取角色圖片（將不影響主功能）")
+                try:
+                    character_image_url = await self.get_character_image_url(user_data)
+                    if character_image_url:
+                        embed.set_image(url=character_image_url)
+                        print(f"✅ 【on_member_join】已設置角色圖片")
+                    else:
+                        print(f"⚠️ 【on_member_join】無法獲取角色圖片，將跳過")
+                except Exception as img_err:
+                    print(f"⚠️ 【on_member_join】獲取圖片異常: {type(img_err).__name__} (將繼續)")
+                    
             except Exception as inner_err:
                 # 生成歡迎 embed 或獲取圖片失敗，仍需發送基本歡迎訊息
-                print(f"⚠️ 【on_member_join】生成 embed 失敗，改用簡化版本: {inner_err}")
-                import traceback
-                traceback.print_exc()
+                print(f"⚠️ 【on_member_join】生成 embed 失敗，改用簡化版本: {type(inner_err).__name__}")
 
                 embed = discord.Embed(
                     title="🎉 歡迎光臨 KK 園區™",
                     description=(
                         f"🎉 歡迎 **{member.mention}** 來到 KK 園區！\n\n"
-                        "⚠️ 發生一些問題，但你仍然可以按下按鈕進入園區。"
+                        "發生了一些問題，但你仍然可以按下按鈕進入園區。"
                     ),
                     color=0x8B0000
                 )
                 embed.add_field(name="📌 提示", value="如果按鈕無法顯示，請稍後重新進入此頻道。", inline=False)
+                embed.set_thumbnail(url=member.display_avatar.url)
 
-            try:
-                # 使用跨重啟的 persistent view（已註冊）
-                welcome_msg = await channel.send(embed=embed, view=self.persistent_view)
-                self.welcome_messages.setdefault(guild.id, {})[member.id] = welcome_msg.id
-                
-                print(f"✅ 成功發送歡迎訊息給 {member.name}")
-                
-            except discord.Forbidden as perm_err:
-                print(f"❌ 發送訊息權限不足: {perm_err}")
-                print(f"🔧 檢查 bot 在頻道 {self.welcome_channel_id} 是否有 SEND_MESSAGES 權限")
-            except Exception as msg_err:
-                print(f"❌ 發送歡迎訊息錯誤: {msg_err}")
-                import traceback
-                traceback.print_exc()
+            # 發送訊息到頻道（最多重試 2 次）
+            welcome_msg = None
+            for attempt in range(1, 3):
+                try:
+                    # 確保 embed 存在
+                    if not embed:
+                        embed = discord.Embed(
+                            title="🎉 歡迎光臨",
+                            description=f"歡迎 {member.mention}！",
+                            color=0x8B0000
+                        )
+                    
+                    # 使用跨重啟的 persistent view（已註冊）
+                    welcome_msg = await channel.send(embed=embed, view=self.persistent_view)
+                    self.welcome_messages.setdefault(guild.id, {})[member.id] = welcome_msg.id
+                    
+                    print(f"✅ 成功發送歡迎訊息給 {member.name} (嘗試 {attempt}/2)")
+                    break
+                    
+                except discord.Forbidden as perm_err:
+                    print(f"❌ 發送訊息權限不足 (嘗試 {attempt}/2): {perm_err}")
+                    if attempt < 2:
+                        await asyncio.sleep(1)
+                        continue
+                    try:
+                        await member.send(f"⚠️ {channel.name} 頻道發送失敗 (權限不足)，但你已被記錄。")
+                    except:
+                        pass
+                        
+                except discord.HTTPException as http_err:
+                    print(f"❌ HTTP 錯誤 (嘗試 {attempt}/2): {http_err}")
+                    if attempt < 2:
+                        await asyncio.sleep(1)
+                        continue
+                    try:
+                        await member.send(f"⚠️ 發送歡迎訊息失敗，但你已被記錄。")
+                    except:
+                        pass
+                        
+                except Exception as msg_err:
+                    print(f"❌ 發送訊息異常 (嘗試 {attempt}/2): {type(msg_err).__name__}: {msg_err}")
+                    if attempt < 2:
+                        await asyncio.sleep(1)
+                        continue
+                    import traceback
+                    traceback.print_exc()
+                    try:
+                        await member.send(f"⚠️ 發送歡迎訊息異常，但你已被記錄。")
+                    except:
+                        pass
             
         except Exception as e:
-            print(f"❌ on_member_join 錯誤: {e}")
+            print(f"❌ on_member_join 外層異常: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
 
