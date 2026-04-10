@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # 模塊導入時就輸出標記，確保能追蹤加載
 import sys
-logger.info("[ANIME_TRACKER_MODULE] Module is being imported...")
+print("[ANIME_TRACKER_MODULE] 🎬 開始導入 anime_tracker 模塊", flush=True)
 sys.stdout.flush()
 
 import discord
