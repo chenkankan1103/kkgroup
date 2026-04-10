@@ -443,52 +443,42 @@ class PortfolioManageView(discord.ui.View):
                 inline=True
             )
             
-            # 添加買賣按鈕
-            current_price = stock.get('current_price', 0)
-            trade_view = StockTradingActionView(self.cog, self.user_id, symbol, asset_class, current_price)
+            # 使用相同的交易邏輯視圖
+            trade_view = PortfolioDetailView(self.cog, self.user_id, symbol, current_price)
             await interaction.followup.send(embed=embed, view=trade_view, ephemeral=True)
         
         return callback
 
 
 # ============================================================
-# 股票交易操作視圖
+# 股票交易操作視圖（複用 StockDetailView 邏輯）
 # ============================================================
 
-class StockTradingActionView(discord.ui.View):
-    """股票交易操作視圖 - 提供買入和賣出選項"""
+class PortfolioDetailView(discord.ui.View):
+    """持倉詳細交易視圖 - 複用原來的交易邏輯"""
     
-    def __init__(self, cog, user_id: int, symbol: str, asset_class: str, current_price: float):
+    def __init__(self, cog, user_id: int, symbol: str, price: float):
         super().__init__(timeout=None)
         self.cog = cog
         self.user_id = user_id
         self.symbol = symbol
-        self.asset_class = asset_class
-        self.current_price = current_price
+        self.price = price
     
-    @discord.ui.button(label="買入", style=discord.ButtonStyle.success, emoji="📈", custom_id="action_buy")
+    @discord.ui.button(label="買入", style=discord.ButtonStyle.success, emoji="📈", row=0)
     async def buy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """打開買入交易模態"""
-        # 創建虛擬 room_view 物件來兼容 TradeModal
-        room_view = type('obj', (object,), {
-            'cog': self.cog,
-            'user_id': self.user_id,
-            'asset_class': self.asset_class
-        })()
-        modal = TradeModal(room_view, "buy", self.symbol, self.current_price)
-        await interaction.response.show_modal(modal)
+        """買入按鈕 - 複用原來的邏輯"""
+        if not self.symbol or self.price <= 0:
+            await interaction.response.send_message("❌ 請先選擇標的", ephemeral=True)
+            return
+        await interaction.response.send_modal(TradeModal(self, "buy", self.symbol, self.price))
     
-    @discord.ui.button(label="賣出", style=discord.ButtonStyle.danger, emoji="📉", custom_id="action_sell")
+    @discord.ui.button(label="賣出", style=discord.ButtonStyle.red, emoji="📉", row=0)
     async def sell_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """打開賣出交易模態"""
-        # 創建虛擬 room_view 物件來兼容 TradeModal
-        room_view = type('obj', (object,), {
-            'cog': self.cog,
-            'user_id': self.user_id,
-            'asset_class': self.asset_class
-        })()
-        modal = TradeModal(room_view, "sell", self.symbol, self.current_price)
-        await interaction.response.show_modal(modal)
+        """賣出按鈕 - 複用原來的邏輯"""
+        if not self.symbol or self.price <= 0:
+            await interaction.response.send_message("❌ 請先選擇標的", ephemeral=True)
+            return
+        await interaction.response.send_modal(TradeModal(self, "sell", self.symbol, self.price))
 
 
 # ============================================================
