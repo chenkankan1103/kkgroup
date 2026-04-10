@@ -706,6 +706,7 @@ class AnimeTracker(commands.Cog):
             schedule = await self._get_anime_schedule()
             if not schedule:
                 # 日程表為空，跳過
+                print(f"[ANIME_CHECK] 📺 日程表為空，跳過檢查", flush=True)
                 logger.info(f"📺 [check_new_anime] 日程表為空，跳過檢查")
                 return
             
@@ -713,9 +714,11 @@ class AnimeTracker(commands.Cog):
             expected_check_times = self._get_expected_check_times(schedule, now)
             if not expected_check_times:
                 # 沒有預期時刻，跳過
+                print(f"[ANIME_CHECK] 📺 今天無預期檢查時刻，跳過檢查", flush=True)
                 logger.info(f"📺 [check_new_anime] 今天無預期檢查時刻，跳過檢查")
                 return
             
+            print(f"[ANIME_CHECK] 📺 今天預期檢查時刻: {expected_check_times}", flush=True)
             logger.info(f"📺 [check_new_anime] 今天預期檢查時刻: {expected_check_times}")
             
             # 檢查當前時刻是否在預定時刻之後約 1 分鐘內
@@ -727,9 +730,10 @@ class AnimeTracker(commands.Cog):
                     scheduled_datetime = datetime.combine(now.date(), check_time)
                     current_datetime = datetime.combine(now.date(), current_time)
                     time_diff = (current_datetime - scheduled_datetime).total_seconds() / 60
-                    logger.debug(f"📺 [check_new_anime] 檢查時刻 {check_time_str}: 差異 {time_diff:.1f} 分鐘")
+                    print(f"[ANIME_CHECK] 檢查時刻 {check_time_str}: 差異 {time_diff:.1f} 分鐘", flush=True)
                     if 0 <= time_diff <= 1.5:  # 預定時刻後 1 分鐘內
                         in_check_window = True
+                        print(f"[ANIME_CHECK] ✅ 在預定時刻 {check_time_str} 後的檢查窗口內 ({time_diff:.1f} 分鐘)", flush=True)
                         logger.info(f"📺 [check_new_anime] 在預定時刻 {check_time_str} 後的檢查窗口內 ({time_diff:.1f} 分鐘)")
                         break
                 except:
@@ -737,7 +741,7 @@ class AnimeTracker(commands.Cog):
             
             if not in_check_window:
                 # 尚未到預定時刻或已過 1 分鐘後，跳過
-                logger.debug(f"📺 [check_new_anime] 當前時刻 {now.strftime('%H:%M:%S')} 不在預定窗口內，跳過檢查")
+                print(f"[ANIME_CHECK] ⏭️ 當前時刻 {now.strftime('%H:%M:%S')} 不在預定窗口內，跳過檢查", flush=True)
                 return
             
             logger.info(f"📺 [check_new_anime] ========== 預期時刻附近檢查 ({now.strftime('%H:%M')}) ==========")
