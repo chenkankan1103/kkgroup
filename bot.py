@@ -11,10 +11,12 @@ from bot_status import build_discord_activity
 from watchdog.events import FileSystemEventHandler
 import logging
 
-# 強制 stdout/stderr 使用 UTF-8 (解決亂碼問題)
+# 強制設置正確的 locale 和編碼
+import locale
 import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+locale.setlocale(locale.LC_ALL, '')
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # ============================================================
 # 日誌配置
