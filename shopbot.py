@@ -149,8 +149,13 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
             try:
                 await client.load_extension(ext_name)
                 loaded_extensions.append(ext_name)
+                print(f"✅ 載入成功: {ext_name}")
             except Exception as e:
-                print(f"❌ 載入失敗: {ext_name} - {e}")
+                import traceback
+                print(f"❌ 載入失敗: {ext_name}")
+                print(f"   錯誤: {e}")
+                print(f"   Traceback:")
+                traceback.print_exc()
     
     return loaded_extensions
 
