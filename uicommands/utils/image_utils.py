@@ -7,6 +7,7 @@ import time
 import hashlib
 from pathlib import Path
 from typing import Optional
+from PIL import Image
 from db_adapter import set_user_field, get_user_field
 
 
@@ -55,43 +56,30 @@ def save_discord_url_cache(image_cache: dict, cache_key: str, discord_url: str, 
         pass
 
 
-async def upload_image_to_discord_storage(bot, image_data: bytes, cache_key: str, image_cache: dict, 
-                                          image_storage_channel_id: int, welcome_channel_id: int) -> Optional[str]:
-    """上傳圖片到Discord存儲頻道"""
-    try:
-        storage_channel_id = image_storage_channel_id or welcome_channel_id
-        
-        channel = bot.get_channel(storage_channel_id)
-        if not channel:
-            print(f"❌ 找不到存儲頻道: {storage_channel_id}")
-            return None
-        
-        file_obj = discord.File(io.BytesIO(image_data), filename=f'{cache_key}.png')
-        
-        if image_storage_channel_id and image_storage_channel_id != welcome_channel_id:
-            # 專用存儲頻道：保留訊息以維持 URL 永久有效
-            storage_msg = await channel.send(content=f"🖼️ **角色圖片** - {cache_key}", file=file_obj)
-            if storage_msg.attachments:
-                discord_url = storage_msg.attachments[0].url
-                save_discord_url_cache(image_cache, cache_key, discord_url, storage_msg.id)
-                print(f"✅ 圖片已存儲至存儲頻道: {storage_msg.id}")
-                return discord_url
-        else:
-            # 備用：歡迎頻道臨時訊息
-            temp_msg = await channel.send(file=file_obj)
-            if temp_msg.attachments:
-                discord_url = temp_msg.attachments[0].url
-                save_discord_url_cache(image_cache, cache_key, discord_url, temp_msg.id)
-                try:
-                    await asyncio.sleep(0.5)
-                    await temp_msg.delete()
-                except discord.NotFound:
-                    pass
-                return discord_url
-        
-    except Exception as e:
-        print(f"❌ 上傳圖片失敗: {e}")
-    return None
+def build_maplestory_api_url(user_data: dict, animated: bool = True) -> str:
+    """
+    構建 MapleStory API URL（不實際發送請求）
+    直接返回 API URL 用於在 Embed 中顯示
+    """
+    items = [
+        {"itemId": 2000, "region": "TWMS", "version": "256"},
+        {"itemId": user_data.get('skin', 12000), "region": "TWMS", "version": "256"},
+        {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "TWMS", "version": "256"},
+        {"itemId": user_data.get('hair', 30120), "region": "TWMS", "version": "256"},
+        {"itemId": user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
+        {"itemId": user_data.get('bottom', 1060096), "region": "TWMS", "version": "256"},
+        {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"}
+    ]
+
+    if user_data.get('is_stunned', 0) == 1:
+        items.append({"itemId": 1005411, "region": "TWMS", "version": "256"})
+
+    item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
+    pose = "prone" if user_data.get('is_stunned', 0) == 1 else "stand1"
+
+    if animated:
+        return f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&resize=2&flipX=true"
+    return f"https://maplestory.io/api/character/{item_path}/{pose}/0?showears=false&resize=2&flipX=true"
 
 
 def build_maplestory_api_url(user_data: dict, animated: bool = True) -> str:
@@ -119,75 +107,14 @@ def build_maplestory_api_url(user_data: dict, animated: bool = True) -> str:
 
 async def get_character_image_url(bot, user_data: dict, image_cache: dict, image_storage_channel_id: int, 
                                   welcome_channel_id: int) -> Optional[str]:
-    """獲取角色圖片URL（優先使用快取，再用API）"""
-    cache_key = generate_character_cache_key(user_data)
-    user_id = user_data.get('user_id')
-    
-    # 1. 先檢查記憶體快取
-    cached_url = get_cached_discord_url(image_cache, cache_key)
-    if cached_url:
-        return cached_url
-    
-    # 2. 檢查資料庫中的快取
+    """獲取角色圖片 API URL（直接返回 MapleStory API URL）"""
     try:
-        cached_char_data = get_user_field(user_id, 'cached_character_image', default=None)
-        if cached_char_data:
-            try:
-                char_cache = json.loads(cached_char_data)
-                current_key = generate_character_cache_key(user_data)
-                if char_cache.get('cache_key') == current_key and char_cache.get('discord_url'):
-                    stored_url = char_cache['discord_url']
-                    save_discord_url_cache(image_cache, cache_key, stored_url)
-                    return stored_url
-            except json.JSONDecodeError:
-                pass
-    except Exception:
-        pass
-    
-    # 3. 呼叫API獲取圖片
-    try:
-        items = [
-            {"itemId": 2000, "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('skin', 12000), "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('hair', 30120), "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('top', 1040014), "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('bottom', 1060096), "region": "GMS", "version": "217"},
-            {"itemId": user_data.get('shoes', 1072005), "region": "GMS", "version": "217"}
-        ]
-
-        if user_data.get('is_stunned', 0) == 1:
-            items.append({"itemId": 1005411, "region": "GMS", "version": "217"})
-
-        item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
-        pose = "prone" if user_data.get('is_stunned', 0) == 1 else "stand1"
-        url = f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&resize=2&flipX=true"
-
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    image_data = await response.read()
-                    if len(image_data) > 100:
-                        discord_url = await upload_image_to_discord_storage(
-                            bot, image_data, cache_key, image_cache, 
-                            image_storage_channel_id, welcome_channel_id
-                        )
-                        if discord_url:
-                            char_cache = {
-                                'cache_key': cache_key,
-                                'discord_url': discord_url,
-                                'timestamp': int(time.time())
-                            }
-                            try:
-                                set_user_field(user_id, 'cached_character_image', json.dumps(char_cache))
-                            except Exception:
-                                pass
-                            return discord_url
-
-    except asyncio.TimeoutError:
-        print(f"⏱️ 楓之谷 API 超時 (用戶 {user_id})")
+        # 直接構建並返回 API URL，無需下載圖片
+        api_url = build_maplestory_api_url(user_data, animated=True)
+        return api_url
+        
     except Exception as e:
-        print(f"❌ 獲取角色圖片失敗: {e}")
+        print(f"❌ 構建圖片 URL 失敗: {e}")
     
     return None
 
