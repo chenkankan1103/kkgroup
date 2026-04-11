@@ -1639,6 +1639,7 @@ class StockMarket(commands.Cog):
         self.market_channel_id = MARKET_CHANNEL_ID
         self.market_message: Optional[discord.Message] = None
         self.market_data = load_market_message_data()
+        self.last_market_snapshot: Optional[Dict[str, Any]] = None
     
     async def _setup_market_message(self):
         """設置市場消息（在 setup() 中由異步任務調用）"""
@@ -1810,8 +1811,8 @@ class StockMarket(commands.Cog):
             
             # D-USD 排行（按數位美金排序，前5名）
             # 從全部用戶中取 D-USD，不限於"有持股"的人
+            traders_with_dusd = []
             if all_users:
-                traders_with_dusd = []
                 for user_data in all_users:
                     user_id = user_data['user_id']
                     raw = user_data.get('digital_usd', 0)
@@ -1836,6 +1837,28 @@ class StockMarket(commands.Cog):
             embed.add_field(name="\u200b", value="**👇 點擊進入虛擬市場**", inline=False)
             embed.set_footer(text="支持: 台股 | 數字貨幣 (BTC/ETH) | 原物料 | 貴金屬 | 無風險交易")
             
+            # 建立摘要快取，用於檢查市場是否有更新
+            leaderboard_snapshot = []
+            if traders_with_dusd:
+                sorted_traders = sorted(traders_with_dusd, key=lambda x: x['digital_usd'], reverse=True)
+                leaderboard_snapshot = [
+                    {'rank': idx + 1, 'digital_usd': trader['digital_usd']}
+                    for idx, trader in enumerate(sorted_traders[:5])
+                ]
+            else:
+                sorted_traders = []
+            
+            current_snapshot = {
+                'active_traders': len(active_traders),
+                'total_shares': total_shares,
+                'leaderboard': leaderboard_snapshot,
+            }
+            
+            if self.last_market_snapshot == current_snapshot and self.market_message:
+                print("⏳ [STOCK_MARKET] 市場摘要未變化，跳過更新", flush=True)
+                logger.info("⏳ 市場摘要未變化，跳過更新")
+                return
+            self.last_market_snapshot = current_snapshot
             
             print(f"✏️ [STOCK_MARKET] Embed 已生成，checking message 狀態...", flush=True)
             print(f"   - market_message 存在: {self.market_message is not None}", flush=True)
