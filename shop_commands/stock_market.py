@@ -1903,15 +1903,15 @@ class StockMarket(commands.Cog):
             logger.error(f"❌ 更新市場 Embed 失敗: {e}")
             traceback.print_exc()
     
-    @tasks.loop(minutes=5)
-    async def periodic_market_update(self):
-        """定期更新市場行情（每 5 分鐘）"""
-        await self.update_market_embed()
-    
-    @periodic_market_update.before_loop
-    async def before_periodic_update(self):
-        """等待 Bot 就緒"""
-        await self.bot.wait_until_ready()
+    # @tasks.loop(minutes=5)  # ❌ 移除自動更新 - 改用按需更新模式
+    # async def periodic_market_update(self):
+    #     """定期更新市場行情（每 5 分鐘）"""
+    #     await self.update_market_embed()
+    # 
+    # @periodic_market_update.before_loop
+    # async def before_periodic_update(self):
+    #     """等待 Bot 就緒"""
+    #     await self.bot.wait_until_ready()
 
 
 async def setup(bot: commands.Bot):
