@@ -379,7 +379,7 @@ class WelcomeFlow(commands.Cog):
             print(f"⚠️ 提示: 如果圖片無法顯示，請檢查 MapleStory API (maplestory.io) 是否可訪問")
 
     async def generate_and_cache_preset_image(self, preset_name: str, config: dict) -> Optional[str]:
-        """生成並緩存預設角色圖片"""
+        """生成並返回預設角色圖片 API URL（不保存本地文件）"""
         try:
             items = [
                 {"itemId": 2000, "region": "TWMS", "version": "256"},
@@ -401,31 +401,10 @@ class WelcomeFlow(commands.Cog):
             item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
             api_url = f"https://maplestory.io/api/character/{item_path}/{config['pose']}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
 
-            print(f"🎨 【{preset_name}】正在從 MapleStory API 生成圖片...")
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-                async with session.get(api_url) as response:
-                    if response.status == 200:
-                        image_data = await response.read()
-                        print(f"   ✅ API 響應成功: 接收 {len(image_data)} bytes")
-                        
-                        if len(image_data) > 100:
-                            # 保存到本地緩存
-                            await self.save_image_to_cache(image_data, preset_name)
-                            
-                            # 上傳到 Discord
-                            discord_url = await self.upload_image_to_discord_storage(image_data, preset_name)
-                            if discord_url:
-                                print(f"   ✅ 已上傳到 Discord: {discord_url[:80]}...")
-                            return discord_url
-                        else:
-                            print(f"   ⚠️ 圖片數據太小: {len(image_data)} bytes")
-                    else:
-                        print(f"   ❌ API 返回錯誤: HTTP {response.status}")
+            print(f"🎨 【{preset_name}】API URL: {api_url[:80]}...")
+            print(f"   ✅ 已生成 API URL")
+            return api_url
 
-        except asyncio.TimeoutError:
-            print(f"❌ 【{preset_name}】API 超時 (15秒)")
-        except aiohttp.ClientError as e:
-            print(f"❌ 【{preset_name}】網路錯誤: {e}")
         except Exception as e:
             print(f"❌ 【{preset_name}】生成失敗: {type(e).__name__}: {e}")
         
@@ -613,108 +592,54 @@ class WelcomeFlow(commands.Cog):
             print(f"❌ 保存 Discord URL 緩存錯誤: {e}")
 
     async def upload_image_to_discord_storage(self, image_data: bytes, cache_key: str) -> Optional[str]:
-        """將圖片上傳到 Discord 儲存頻道"""
+        """改為直接返回 MapleStory API URL（不保存本地文件）"""
         try:
-            storage_channel_id = self.image_storage_channel_id or self.welcome_channel_id
-            channel = self.bot.get_channel(storage_channel_id)
-            
-            if not channel:
-                print(f"   ❌ 找不到儲存頻道 (ID: {storage_channel_id})")
+            # 構建 API URL
+            preset_config = self.preset_characters.get(cache_key)
+            if not preset_config:
+                print(f"   ⚠️ 未找到預設配置: {cache_key}")
                 return None
             
-            print(f"   📤 準備上傳到 Discord (Channel: {channel.name}, ID: {storage_channel_id})")
-            
-            file_obj = discord.File(
-                io.BytesIO(image_data), 
-                filename=f'char_{cache_key}.png'
-            )
-            
-            if storage_channel_id == self.welcome_channel_id:
-                print(f"   📨 使用歡迎頻道發送（發送後自動刪除）")
-                temp_msg = await channel.send(file=file_obj)
-                
-                if temp_msg.attachments:
-                    discord_url = temp_msg.attachments[0].url
-                    print(f"   ✅ 上傳成功: {discord_url[:80]}...")
-                    self.save_discord_url_cache(cache_key, discord_url, temp_msg.id)
-                    
-                    try:
-                        await asyncio.sleep(0.5)
-                        await temp_msg.delete()
-                        print(f"   🗑️ 臨時訊息已刪除")
-                    except (discord.NotFound, discord.Forbidden):
-                        pass
-                    
-                    return discord_url
-                else:
-                    print(f"   ⚠️ 上傳成功但無法取得附件 URL")
+            # 直接返回 API URL
+            items = [
+                {"itemId": 2000, "region": "TWMS", "version": "256"},
+                {"itemId": preset_config['skin'], "region": "TWMS", "version": "256"},
+            ]
+
+            if preset_config['stunned'] == 1:
+                items.append({"itemId": preset_config['face'], "animationName": "stunned", "region": "TWMS", "version": "256"})
             else:
-                print(f"   📨 使用儲存頻道發送（持久存儲）")
-                storage_msg = await channel.send(
-                    content=f"🖼️ **角色圖片** - {cache_key}",
-                    file=file_obj
-                )
-                
-                if storage_msg.attachments:
-                    discord_url = storage_msg.attachments[0].url
-                    print(f"   ✅ 已儲存到頻道: {discord_url[:80]}...")
-                    self.save_discord_url_cache(cache_key, discord_url, storage_msg.id)
-                    return discord_url
-                else:
-                    print(f"   ⚠️ 上傳成功但無法取得附件 URL")
+                items.append({"itemId": preset_config['face'], "animationName": "default", "region": "TWMS", "version": "256"})
+
+            items.extend([
+                {"itemId": preset_config['hair'], "region": "TWMS", "version": "256"},
+                {"itemId": preset_config['top'], "region": "TWMS", "version": "256"},
+                {"itemId": preset_config['bottom'], "region": "TWMS", "version": "256"},
+                {"itemId": preset_config['shoes'], "region": "TWMS", "version": "256"}
+            ])
+
+            item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
+            api_url = f"https://maplestory.io/api/character/{item_path}/{preset_config['pose']}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
+            return api_url
             
-        except discord.Forbidden as e:
-            print(f"   ❌ 權限不足: {e}")
-        except discord.HTTPException as e:
-            print(f"   ❌ HTTP 錯誤: {e}")
         except Exception as e:
-            print(f"   ❌ 上傳錯誤: {type(e).__name__}: {e}")
+            print(f"   ❌ 構建 API URL 錯誤: {type(e).__name__}: {e}")
         
         return None
 
     async def get_character_image_url(self, user_data: dict) -> Optional[str]:
-        """獲取用戶對應的角色圖片 URL。包含多層次的降級機制。"""
+        """獲取用戶對應的角色圖片 API URL"""
         try:
             preset_key = self.get_preset_key_for_user(user_data)
             print(f"🎭 【get_character_image_url】用戶角色鍵: {preset_key}")
             
-            # 層級 1: 直接從緩存獲取 URL
-            cached_url = self.get_cached_discord_url(preset_key)
-            if cached_url:
-                print(f"   ✅ 從緩存獲取: {cached_url[:80]}...")
-                return cached_url
-            else:
-                print(f"   ⚠️ 緩存中未找到: {preset_key}")
-            
-            # 層級 2: 嘗試從 API 生成（帶超時保護）
+            # 直接構建並返回 API URL
             if preset_key in self.preset_characters:
-                print(f"   🔄 嘗試從 API 生成...")
                 config = self.preset_characters[preset_key]
-                try:
-                    # 添加超時保護，避免 API 掛起
-                    url = await asyncio.wait_for(
-                        self.generate_and_cache_preset_image(preset_key, config),
-                        timeout=20
-                    )
-                    if url:
-                        print(f"   ✅ 成功生成: {url[:80]}...")
-                        return url
-                    else:
-                        print(f"   ⚠️ API 響應但返回 None")
-                except asyncio.TimeoutError:
-                    print(f"   ⚠️ 生成圖片超時（20秒）")
-                except Exception as e:
-                    print(f"   ⚠️ 生成圖片失敗: {type(e).__name__}: {e}")
-            else:
-                print(f"   ⚠️ 未知的角色鍵: {preset_key}")
-            
-            # 層級 3: 返回任何可用的備選 URL
-            for fallback_key in self.image_cache:
-                if fallback_key.startswith(preset_key.split('_')[0]):  # 同性別的任何預設
-                    url = self.image_cache[fallback_key].get('discord_url')
-                    if url:
-                        print(f"   🔄 使用備選圖片: {fallback_key}")
-                        return url
+                api_url = await self.generate_and_cache_preset_image(preset_key, config)
+                if api_url:
+                    print(f"   ✅ 已返回 API URL")
+                    return api_url
             
             print(f"   ❌ 無可用的圖片 URL")
             return None
@@ -793,21 +718,17 @@ class WelcomeFlow(commands.Cog):
 
             embed.set_thumbnail(url=user.display_avatar.url)
             
-            # 獲取並設置紙娃娃圖片
+            # 獲取並設置角色圖片 API URL
             try:
-                print(f"📸 【create_welcome_embed】開始獲取紙娃娃圖片 (User: {user.name}, ID: {user.id})")
+                print(f"📸 【create_welcome_embed】開始獲取角色圖片 (User: {user.name}, ID: {user.id})")
                 character_image_url = await self.get_character_image_url(user_data)
                 if character_image_url:
                     embed.set_image(url=character_image_url)
                     print(f"✅ 【create_welcome_embed】紙娃娃已設置")
                 else:
-                    print(f"⚠️ 【create_welcome_embed】無法獲取紙娃娃圖片（URL 為 None）")
-                    print(f"   用戶資料: gender={user_data.get('gender')}, is_stunned={user_data.get('is_stunned')}")
-                    print(f"   圖片緩存狀態: {len(self.image_cache)} 個預設圖片在記憶體中")
+                    print(f"⚠️ 【create_welcome_embed】無法獲取紙娃娃圖片。")
             except Exception as e:
                 print(f"❌ 【create_welcome_embed】獲取紙娃娃失敗: {type(e).__name__}: {e}")
-                import traceback
-                traceback.print_exc()
 
             if user_data.get('is_stunned', 0) == 1:
                 embed.set_footer(text="💫 你目前處於擊暈狀態，請等待恢復...")
@@ -851,11 +772,11 @@ class WelcomeFlow(commands.Cog):
 
             embed = await self.create_welcome_embed(user_data, user)
             
-            # 獲取角色圖片 URL
-            character_image_url = await self.get_character_image_url(user_data)
-            
-            if character_image_url:
-                embed.set_image(url=character_image_url)
+            # 獲取角色圖片路徑（本地緩存）
+            # 注: 本地路徑不能直接用作 Embed URL，已改為本地文件存儲
+            character_image_path = await self.get_character_image_url(user_data)
+            if character_image_path:
+                print(f"📁 本地圖片快取: {character_image_path}")
 
             # 更新歡迎頻道的原始訊息（如果有紀錄）
             try:
@@ -970,12 +891,11 @@ class WelcomeFlow(commands.Cog):
             embed = None
             try:
                 embed = await self.create_welcome_embed(user_data, member)
-                # 獲取角色圖片 URL（非關鍵錯誤，可以失敗）
+                # 獲取角色圖片本地快取（非關鍵錯誤，可以失敗）
                 try:
-                    character_image_url = await self.get_character_image_url(user_data)
-                    if character_image_url:
-                        embed.set_image(url=character_image_url)
-                        print(f"✅ 【on_member_join】已設置角色圖片")
+                    character_image_path = await self.get_character_image_url(user_data)
+                    if character_image_path:
+                        print(f"✅ 【on_member_join】已準備角色圖片本地快取: {character_image_path}")
                     else:
                         print(f"⚠️ 【on_member_join】無法獲取角色圖片，將跳過")
                 except Exception as img_err:
@@ -1217,10 +1137,10 @@ class WelcomeFlow(commands.Cog):
                     embed = None
                     try:
                         embed = await self.create_welcome_embed(user_data, member)
-                        # 嘗試獲取角色圖片
-                        character_image_url = await self.get_character_image_url(user_data)
-                        if character_image_url and embed:
-                            embed.set_image(url=character_image_url)
+                        # 嘗試獲取角色圖片本地快取
+                        character_image_path = await self.get_character_image_url(user_data)
+                        if character_image_path and embed:
+                            print(f"✅ 已準備角色圖片本地快取: {character_image_path}")
                     except Exception as embed_err:
                         print(f"⚠️ 生成歡迎 embed 失敗: {embed_err}")
                     
