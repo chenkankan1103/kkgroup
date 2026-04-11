@@ -1651,10 +1651,8 @@ class StockMarket(commands.Cog):
             # 初始化市場消息
             await self.initialize_market_message()
 
-            # 啟動定期更新（避免初始化完成前就觸發）
-            if not self.periodic_market_update.is_running():
-                print("⏰ [STOCK_MARKET] 啟動定期更新任務...", flush=True)
-                self.periodic_market_update.start()
+            # 💡 自動更新已移除，改用按需查詢模式
+            # （舊的 periodic_market_update 任務已刪除）
             
             print("✅ [STOCK_MARKET] 市場設置完成", flush=True)
         except Exception as e:
