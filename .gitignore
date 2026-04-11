@@ -81,7 +81,7 @@ Thumbs.db
 .env.*
 .env.backup.*
 .env.local
-!.env.example
+.env.example
 
 # 凭据文件（绝不追踪）
 google_credentials.json
