@@ -334,26 +334,31 @@ class AnimeTracker(commands.Cog):
                 
                 logger.info(f"✅ [on_reaction_add] {user.name} 獲得 2000 KK幣，現在共有 {new_kkcoin} KK幣")
                 
-                # 發送 DM 通知用戶
+                # 在該頻道發送 ephemeral message（僅使用者能看到）
                 try:
-                    dm_embed = discord.Embed(
+                    reward_embed = discord.Embed(
                         title="⭐ 評分獎勵",
                         description="感謝你給動畫通知評分！",
                         color=discord.Color.gold()
                     )
-                    dm_embed.add_field(
+                    reward_embed.add_field(
                         name="獲得獎勵",
                         value="💰 +2000 KK幣",
                         inline=False
                     )
-                    dm_embed.add_field(
+                    reward_embed.add_field(
                         name="目前餘額",
                         value=f"💵 {new_kkcoin} KK幣",
                         inline=False
                     )
-                    await user.send(embed=dm_embed)
+                    await reaction.message.channel.send(
+                        embed=reward_embed,
+                        ephemeral=True,
+                        silent=True,
+                        reference=reaction.message
+                    )
                 except discord.Forbidden:
-                    logger.warning(f"⚠️ [on_reaction_add] 無法發送 DM 給 {user.name}（關閉了 DM）")
+                    logger.warning(f"⚠️ [on_reaction_add] 無法在頻道發送訊息給 {user.name}")
                 
             except ImportError:
                 logger.warning("⚠️ [on_reaction_add] db_adapter 未找到，無法獎勵 KK幣")
@@ -770,7 +775,7 @@ class AnimeTracker(commands.Cog):
                     color=discord.Color.green()
                 )
                 logger.info("📺 [check_new_anime] 發送 bootstrap 確認 embed")
-                await channel.send(embed=embed)
+                await channel.send(embed=embed, silent=True)
                 logger.info("✅ [check_new_anime] Bootstrap 完成，embed 已發送")
                 return
             
@@ -793,7 +798,7 @@ class AnimeTracker(commands.Cog):
                 try:
                     embed = await self.generate_anime_embed(ep)
                     view = await self.generate_anime_view(ep)
-                    message = await channel.send(embed=embed, view=view)
+                    message = await channel.send(embed=embed, view=view, silent=True)
 
                     # 記錄已通知
                     self.db.add_notified(
@@ -923,7 +928,7 @@ class AnimeTracker(commands.Cog):
                 try:
                     embed = await self.generate_anime_embed(ep)
                     view = await self.generate_anime_view(ep)
-                    message = await interaction.followup.send(embed=embed, view=view)
+                    message = await interaction.followup.send(embed=embed, view=view, silent=True)
                     
                     sent_count += 1
                     await asyncio.sleep(0.2)  # 避免限流
