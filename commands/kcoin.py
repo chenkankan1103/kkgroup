@@ -733,9 +733,11 @@ class KKCoin(commands.Cog):
 
     @auto_update_leaderboard.before_loop
     async def before_auto_update(self):
-        """等待 bot 準備完成，並在啟動時查找/創建排行榜"""
+        """等待 bot 準備完成，並在啟動時查找/創建排行榜和儲備狀態"""
         await self.bot.wait_until_ready()
         print("✅ 排行榜自動更新任務已啟動，正在查找舊訊息...")
+        # 確保儲備狀態訊息已初始化
+        await self.ensure_reserve_status_initialized()
         
         # 在 bot 啟動時立即查找或創建排行榜
         if not self.rank_channel_id:
@@ -905,24 +907,20 @@ class KKCoin(commands.Cog):
     # 園區中央儲備金狀態相關
     # ============================================================
 
-    @tasks.loop(minutes=2)
-    async def auto_update_reserve_status(self):
-        """每 2 分鐘自動更新園區儲備狀態"""
+    # ✅ 優化：儲備狀態現已改為隨排行榜更新而更新
+    # async def auto_update_reserve_status(self):
+    #     """[已優化] 不再每 2 分鐘獨立更新，改為隨排行榜更新而更新"""
+    #     pass
+
+    async def ensure_reserve_status_initialized(self):
+        """確保園區儲備狀態訊息已初始化（啟動時調用一次）"""
         if not self.reserve_channel_id:
             return
             
         # 如果沒有訊息 ID，嘗試創建
         if not self.reserve_message_id:
             await self.create_reserve_status()
-        else:
-            # 否則更新現有狀態
-            await self.update_reserve_status(min_interval=0)
-
-    @auto_update_reserve_status.before_loop
-    async def before_auto_update_reserve(self):
-        """等待 bot 準備完成"""
-        await self.bot.wait_until_ready()
-        print("✅ 園區儲備狀態自動更新任務已啟動...")
+            print("✅ 園區儲備狀態訊息已初始化")
 
     async def create_reserve_status(self):
         """創建園區儲備狀態訊息"""
@@ -1433,6 +1431,12 @@ class KKCoin(commands.Cog):
                     # 平時只在檢查到變化時調用 _schedule_leaderboard_generation()，不立即生成
                     # 這樣可以避免頻繁的圖片生成和上傳
                     pass
+                
+                # 🎯 優化：同時更新儲備狀態（避免每 2 分鐘獨立更新）
+                try:
+                    await self.update_reserve_status(min_interval=0)
+                except Exception as e:
+                    print(f"⚠️ 更新儲備狀態失敗: {e}")
 
             except discord.HTTPException as e:
                 print(f"❌ Discord API 錯誤: {e}")
