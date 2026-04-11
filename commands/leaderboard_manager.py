@@ -275,17 +275,6 @@ def _sync_build_leaderboard_image(
     except Exception as e:
         print(f"⚠️ 載入獎杯圖片失敗: {e}")
     
-    medal_imgs = []
-    for idx, path in enumerate(MEDAL_PATHS):
-        try:
-            if os.path.exists(path):
-                medal_imgs.append(Image.open(path).convert("RGBA"))
-            else:
-                medal_imgs.append(None)
-        except Exception as e:
-            print(f"⚠️ 載入獎牌 {idx+1} 失敗: {e}")
-            medal_imgs.append(None)
-
     img = Image.new("RGBA", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
     
@@ -405,15 +394,7 @@ def _sync_build_leaderboard_image(
             y -= 5
         elif i == 2:
             y -= 2
-        if i < 3 and medal_imgs[i]:
-            try:
-                img.paste(medal_imgs[i].resize((48, 48)), (MARGIN + 10, y+2), medal_imgs[i].resize((48, 48)))
-                rank_x = MARGIN + 50
-            except Exception as e:
-                print(f"⚠️ 貼上獎牌失敗: {e}")
-                rank_x = MARGIN
-        else:
-            rank_x = MARGIN
+        rank_x = MARGIN
         
         # 第4-9 名靠左一點，第10名起更靠左一些
         if i >= 3:
@@ -449,7 +430,6 @@ def _sync_build_leaderboard_image(
                 (192, 192, 192),    # 銀色（第2名）
                 (205, 127, 50)      # 銅色（第3名）
             ]
-            medal_rank = [" 🥇", " 🥈", " 🥉"]
             border_color = medal_border_colors[i]
             border_width = 4
             
