@@ -58,6 +58,10 @@ temp_*.py
 add_test_*.py
 WEEKLY_PANEL_DEMO.py
 
+# 文档和测试资源（本地开发用，不追踪）
+docs_and_tests/
+docs_and_tests/**
+
 # 临时文件
 *.backup
 *.tmp
