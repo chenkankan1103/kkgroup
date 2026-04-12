@@ -1293,6 +1293,7 @@ class AnimeTracker(commands.Cog):
                                 # 使用 API 返回的正確動畫名稱
                                 if details.get("title"):
                                     anime_name = details.get("title")
+                                    logger.info(f"📺 [anime_ranking] 獲得動畫名稱: {anime_name} (animeSn={anime_sn})")
                     except Exception as e:
                         logger.warning(f"⚠️ 無法取得 videoSn={video_sn} 的詳細信息: {e}")
                     
@@ -1314,6 +1315,7 @@ class AnimeTracker(commands.Cog):
                 top_anime = []
                 for anime_sn, data in anime_list.items():
                     if data["total_episodes"] > 0:
+                        logger.info(f"📺 [anime_ranking] 排行動畫: {data['name']} (animeSn={anime_sn}, views={data['total_views']})")
                         top_anime.append({
                             "anime_sn": anime_sn,
                             "name": data["name"],
@@ -1346,16 +1348,22 @@ class AnimeTracker(commands.Cog):
             
             ranking_text = []
             for idx, anime in enumerate(top_anime, 1):
-                medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"#{idx:2d}"
+                # 不使用 emoji，改用 #1 #2 #3 統一字型大小
+                medal = f"#{idx}"
                 
                 # 計算條形圖
                 filled = int((anime['total_views'] / max_views) * bar_length)
                 bar = "▰" * filled + "▱" * (bar_length - filled)
                 
-                # 組合排行資訊
+                # 動畫名稱
+                anime_name = anime.get('name', f'Anime #{anime.get("anime_sn", "?")}').strip()
+                if not anime_name or anime_name.startswith('Anime #'):
+                    logger.warning(f"⚠️ [anime_ranking] 動畫 {anime.get('anime_sn')} 名稱為空或未取得: {anime_name}")
+                
+                # 組合排行資訊（名稱在獨立一行，便於閱讀）
                 line = (
-                    f"{medal} **{anime['name']}**\n"
-                    f"{bar} {anime['total_views']:,} 次 | 📺 {anime['total_episodes']} 集"
+                    f"{medal} {anime_name}\n"
+                    f"`{bar}` {anime['total_views']:,} 次 | 📺 {anime['total_episodes']} 集"
                 )
                 ranking_text.append(line)
             
