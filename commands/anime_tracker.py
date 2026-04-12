@@ -133,9 +133,37 @@ class AnimeDatabase:
                 """)
                 
                 conn.commit()
+                
+                # 驗證所有表都被創建
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                existing_tables = {row[0] for row in cursor.fetchall()}
+                required_tables = {
+                    NOTIFIED_TABLE, BOOTSTRAP_FLAG_TABLE, ANIME_DETAILS_TABLE,
+                    ANIME_STATS_TABLE, EPISODE_STATS_TABLE
+                }
+                missing_tables = required_tables - existing_tables
+                
+                if missing_tables:
+                    logger.warning(f"⚠️ 缺失的表: {missing_tables}")
+                    # 嘗試再次創建缺失的表
+                    for table_name in missing_tables:
+                        logger.warning(f"🔧 重新創建表: {table_name}")
+                        if table_name == EPISODE_STATS_TABLE:
+                            cursor.execute(f"""
+                                CREATE TABLE IF NOT EXISTS {table_name} (
+                                    videoSn INTEGER PRIMARY KEY,
+                                    animeSn INTEGER NOT NULL,
+                                    episode_num TEXT,
+                                    views INTEGER,
+                                    score REAL,
+                                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                )
+                            """)
+                    conn.commit()
+                
                 logger.info(f"✅ Anime database initialized: {self.db_path}")
         except Exception as e:
-            logger.error(f"❌ Failed to init anime DB: {e}")
+            logger.error(f"❌ Failed to init anime DB: {e}", exc_info=True)
             raise
     
     def is_bootstrap_completed(self) -> bool:
