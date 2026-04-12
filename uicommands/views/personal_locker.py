@@ -217,8 +217,7 @@ class PersonalLockerView(discord.ui.View):
     async def crop_info_callback_impl(self, interaction: discord.Interaction):
         """作物資訊 - 顯示作物狀態和操作選項"""
         try:
-            await interaction.response.defer()
-
+            # defer 已在 crop_info_callback 中完成，此處不需重複 defer
             plants = await get_user_plants(self.user_id)
             inventory = await get_inventory(self.user_id)
             seeds = inventory.get("種子", {})
@@ -292,8 +291,7 @@ class PersonalLockerView(discord.ui.View):
     async def personal_items_callback_impl(self, interaction: discord.Interaction):
         """個人物品 - 顯示物品庫存"""
         try:
-            await interaction.response.defer()
-
+            # defer 已在 personal_items_callback 中完成，此處不需重複 defer
             inventory = await get_inventory(self.user_id)
 
             embed = discord.Embed(
