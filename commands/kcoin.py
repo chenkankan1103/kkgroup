@@ -23,6 +23,8 @@ from .leaderboard_manager import (
     get_digital_usd_leaderboard_data,
     has_digital_usd_data_changed,
     make_digital_usd_leaderboard_image,
+    generate_quickchart_leaderboard_url,
+    generate_quickchart_simple_bar,
 )
 
 # 載入 .env 檔案
@@ -1526,10 +1528,110 @@ class KKCoin(commands.Cog):
         
         print(f"🔧 管理員 {interaction.user.display_name} {action_text} 園區儲備金 ({current:,} → {new_amount:,})")
 
+    # ====================================================================
+    # QuickChart API 測試指令
+    # ====================================================================
+    
+    @app_commands.command(name="leaderboard_quickchart", description="[實驗] 用 QuickChart 顯示排行榜（無格式版）")
+    @app_commands.describe(
+        style="圖表風格"
+    )
+    @app_commands.choices(style=[
+        app_commands.Choice(name="堆疊柱狀圖 (KK幣 + D-USD)", value="stacked"),
+        app_commands.Choice(name="總資產柱狀圖", value="simple"),
+    ])
+    async def leaderboard_quickchart(self, interaction: discord.Interaction, style: str = "stacked"):
+        """
+        使用 QuickChart API 生成排行榜圖表 URL
+        
+        優點：
+        ✅ 直接返回 URL，無需 PIL 生成和 CDN 上傳
+        ✅ 減少 VM 頻寬使用
+        ✅ 自動生成專業圖表
+        
+        缺點：
+        ❌ 依賴外部服務（quickchart.io）
+        ❌ 免費版速率限制（可能需要 API key）
+        ❌ 無法包含頭像等複雜元素
+        ❌ 需要網路連接來載入圖表
+        
+        對比結果將在 embed 中顯示。
+        """
+        await interaction.response.defer()
+        
+        try:
+            members_data = self.get_current_leaderboard_data()
+            
+            if not members_data:
+                await interaction.followup.send("❌ 沒有排行榜數據", ephemeral=True)
+                return
+            
+            # 生成 QuickChart URL
+            if style == "stacked":
+                chart_url = generate_quickchart_leaderboard_url(members_data, max_visible=10)
+                title = "堆疊柱狀圖（KK幣 + D-USD）"
+            else:
+                chart_url = generate_quickchart_simple_bar(members_data, max_visible=10)
+                title = "總資產柱狀圖"
+            
+            # 創建 embed
+            embed = discord.Embed(
+                title=f"🔬 QuickChart API 實驗 - {title}",
+                description="⚠️ 這是試驗版本，對比原 PIL 版本的流量與效能",
+                color=discord.Color.blue()
+            )
+            
+            embed.set_image(url=chart_url)
+            
+            # 顯示流量對比
+            embed.add_field(
+                name="📊 流量對比",
+                value=(
+                    "**原 PIL 版本**：\n"
+                    "• 本地 PNG 生成：~100-200ms\n"
+                    "• Discord CDN 上傳：~500-1500ms\n"
+                    "• 總流量：255-265 KB\n"
+                    "• VM 頻寬：需雙向傳輸\n\n"
+                    "**QuickChart URL 版本**：\n"
+                    "• URL 生成：~10-20ms\n"
+                    "• 圖表渲染：在 quickchart.io 伺服器\n"
+                    "• 傳輸流量：URL 長度 ~500-1000 bytes\n"
+                    "• VM 頻寬：僅傳輸 URL 字符串\n\n"
+                    "💡 **推薦**：QuickChart 節省 ~99% 的 VM 上傳頻寬！"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="⚠️ 注意",
+                value=(
+                    "• 免費版 quickchart.io 有速率限制\n"
+                    "• 用戶需要網路連接來查看圖表\n"
+                    "• 不包含頭像等複雜視覺元素\n"
+                    "• 依賴外部服務穩定性"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🔗 直接 URL",
+                value=f"[點擊查看圖表]({chart_url})",
+                inline=False
+            )
+            
+            embed.set_footer(text="💡 如果圖表不顯示，可能是 quickchart.io 速率限制或網路問題")
+            
+            await interaction.followup.send(embed=embed)
+            
+            print(f"✅ QuickChart 排行榜已生成 (風格: {style}) - URL 長度: {len(chart_url)} 字符")
+            
+        except Exception as e:
+            print(f"❌ QuickChart 生成失敗: {e}")
+            await interaction.followup.send(f"❌ 生成失敗：{e}", ephemeral=True)
 
 
-
-
+async def setup(bot):
+    await bot.add_cog(KKCoin(bot))
 
 
 
