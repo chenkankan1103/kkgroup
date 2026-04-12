@@ -1282,16 +1282,17 @@ class AnimeTracker(commands.Cog):
                     
                     anime_name = ep.get("title", f"Anime #{anime_sn}")
                     views = 0
-                    score = 0
                     
-                    # 為了獲取詳細的观看人数，调用 API
+                    # 為了獲取詳細的观看人数和正確的動畫名稱，调用 API
                     try:
                         video_sn = ep.get("videoSn")
                         if video_sn:
                             details = await self.fetch_anime_details_from_api(video_sn)
                             if details:
                                 views = details.get("popular", 0)
-                                score = details.get("score", 0)
+                                # 使用 API 返回的正確動畫名稱
+                                if details.get("title"):
+                                    anime_name = details.get("title")
                     except Exception as e:
                         logger.warning(f"⚠️ 無法取得 videoSn={video_sn} 的詳細信息: {e}")
                     
@@ -1302,16 +1303,12 @@ class AnimeTracker(commands.Cog):
                             "episodes": [],
                             "total_views": 0,
                             "total_episodes": 0,
-                            "scores": []
                         }
                     
                     if views > 0:
                         anime_list[anime_sn]["episodes"].append(views)
                         anime_list[anime_sn]["total_views"] += views
                         anime_list[anime_sn]["total_episodes"] += 1
-                    
-                    if score > 0:
-                        anime_list[anime_sn]["scores"].append(score)
                 
                 # 轉換為排行格式並按總觀看數排序
                 top_anime = []
@@ -1321,8 +1318,6 @@ class AnimeTracker(commands.Cog):
                             "anime_sn": anime_sn,
                             "name": data["name"],
                             "total_views": data["total_views"],
-                            "avg_views": data["total_views"] / data["total_episodes"],
-                            "avg_score": sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0,
                             "total_episodes": data["total_episodes"]
                         })
                 
