@@ -39,14 +39,11 @@ import json
 import re
 import html
 import os
-import tempfile
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
 import pytz  # 用於台灣時區轉換
 from urllib.parse import quote  # 用於生成 QuickChart URL
-from PIL import Image, ImageDraw, ImageFont  # 用於生成組合圖像
 
 # 台灣時區
 TW_TZ = pytz.timezone('Asia/Taipei')
@@ -1442,124 +1439,6 @@ class AnimeTracker(commands.Cog):
             logger.warning(f"⚠️ [get_short_chart_url] 請求失敗: {e}")
             return None
     
-    async def create_composite_chart_with_thumbnails(self, chart_url: str, multi_anime: List[Dict]) -> Optional[str]:
-        """生成折線圖 + 動畫縮圖組合圖像
-        
-        Args:
-            chart_url: QuickChart 圖表 URL
-            multi_anime: 動畫列表（包含 cover_url 和 short_name）
-        
-        Returns:
-            組合圖像的文件路徑，或 None 如果失敗
-        """
-        try:
-            import io
-            
-            # 下載圖表圖像
-            logger.info("📥 [composite_chart] 下載 QuickChart 圖表...")
-            async with aiohttp.ClientSession() as session:
-                async with session.get(chart_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status != 200:
-                        logger.warning(f"⚠️ [composite_chart] 下載圖表失敗: {resp.status}")
-                        return None
-                    chart_data = await resp.read()
-                    chart_img = Image.open(io.BytesIO(chart_data)).convert('RGB')
-            
-            logger.info(f"📊 [composite_chart] 圖表尺寸: {chart_img.size}")
-            
-            # 下載所有動畫縮圖（左側縱列）
-            thumbnails = []
-            thumbnail_size = (120, 160)  # 縮圖尺寸：寬 120px，高 160px
-            
-            for idx, anime in enumerate(multi_anime):
-                cover_url = anime.get('cover_url')
-                short_name = anime.get('short_name', '?')
-                
-                if not cover_url:
-                    logger.warning(f"⚠️ [composite_chart] 動畫 {short_name} 無縮圖 URL")
-                    # 創建佔位圖
-                    placeholder = Image.new('RGB', thumbnail_size, color=(200, 200, 200))
-                    draw = ImageDraw.Draw(placeholder)
-                    draw.text((10, 70), short_name, fill=(0, 0, 0))
-                    thumbnails.append({'img': placeholder, 'name': short_name})
-                    continue
-                
-                # 下載縮圖
-                try:
-                    async with session.get(cover_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                        if resp.status == 200:
-                            thumb_data = await resp.read()
-                            thumb = Image.open(io.BytesIO(thumb_data)).convert('RGB')
-                            # 調整大小
-                            thumb.thumbnail(thumbnail_size, Image.Resampling.LANCZOS)
-                            # 居中粘貼到固定大小的背景
-                            bg = Image.new('RGB', thumbnail_size, color=(255, 255, 255))
-                            offset = ((thumbnail_size[0] - thumb.width) // 2, 
-                                    (thumbnail_size[1] - thumb.height) // 2)
-                            bg.paste(thumb, offset)
-                            thumbnails.append({'img': bg, 'name': short_name})
-                            logger.info(f"✅ [composite_chart] 下載縮圖: {short_name}")
-                        else:
-                            logger.warning(f"⚠️ [composite_chart] 下載 {short_name} 縮圖失敗: {resp.status}")
-                            placeholder = Image.new('RGB', thumbnail_size, color=(200, 200, 200))
-                            draw = ImageDraw.Draw(placeholder)
-                            draw.text((10, 70), short_name, fill=(0, 0, 0))
-                            thumbnails.append({'img': placeholder, 'name': short_name})
-                except Exception as e:
-                    logger.warning(f"⚠️ [composite_chart] 縮圖下載異常 {anime['name']}: {e}")
-                    placeholder = Image.new('RGB', thumbnail_size, color=(200, 200, 200))
-                    draw = ImageDraw.Draw(placeholder)
-                    draw.text((10, 70), short_name, fill=(0, 0, 0))
-                    thumbnails.append({'img': placeholder, 'name': short_name})
-            
-            # 建立組合圖像
-            # 左側：圖表
-            # 右側：縮圖列（120 * 10 個，共 1200 高）+ 文字（20 高）= 1220 高
-            thumb_column_width = 120
-            thumb_column_height = 180 * min(len(thumbnails), 10)  # 每帧 180px（160 圖 + 20 文字）
-            
-            # 左側：圖表
-            chart_width = chart_img.width
-            chart_height = chart_img.height
-            
-            # 總寬度：圖表 + 邊距 + 縮圖
-            total_width = chart_width + 10 + thumb_column_width
-            total_height = max(thumb_column_height, chart_height)
-            
-            # 創建組合圖像
-            composite = Image.new('RGB', (total_width, total_height), color=(255, 255, 255))
-            
-            # 粘貼圖表（左邊）
-            chart_offset = (0, (total_height - chart_height) // 2)
-            composite.paste(chart_img, chart_offset)
-            
-            # 粘貼縮圖（右邊）和簡稱
-            draw = ImageDraw.Draw(composite)
-            y_pos = 0
-            for idx in range(min(len(thumbnails), 10)):
-                thumb_obj = thumbnails[idx]
-                # 粘貼縮圖（右側）
-                composite.paste(thumb_obj['img'], (chart_width + 10, y_pos))
-                # 添加簡稱文字
-                name_y = y_pos + 160 + 5
-                try:
-                    # 嘗試使用系統字體
-                    draw.text((chart_width + 15, name_y), thumb_obj['name'][:4], fill=(0, 0, 0))
-                except:
-                    pass
-                y_pos += 180
-            
-            # 保存到臨時文件
-            temp_dir = tempfile.gettempdir()
-            import time
-            filename = os.path.join(temp_dir, f"anime_chart_{int(time.time())}.png")
-            composite.save(filename, 'PNG')
-            logger.info(f"✅ [composite_chart] 組合圖像已保存: {filename}")
-            return filename
-            
-        except Exception as e:
-            logger.error(f"❌ [composite_chart] 生成組合圖像失敗: {e}", exc_info=True)
-            return None
     @app_commands.command(name="anime_ranking", description="查看本季動畫觀看排行榜")
     async def anime_ranking(self, interaction: discord.Interaction):
         """顯示本季動畫的觀看排行榜（實時從 API 獲取或從歷史數據統計）"""
@@ -1667,9 +1546,6 @@ class AnimeTracker(commands.Cog):
                 for i, anime in enumerate(multi_anime[:3]):
                     logger.info(f"  📺 [{i+1}] {anime['name']}: {len(anime['episodes'])} 集, {anime['total_views']} 次觀看")
             
-            # 初始化文件變數
-            embed_file = None
-            
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
                 color=discord.Color.gold(),
@@ -1748,31 +1624,41 @@ class AnimeTracker(commands.Cog):
                             multi_anime = None  # 改用模式 B
                             chart_url = None
                     
-                    # 如果成功獲得 chart_url，嘗試生成組合圖像（圖表 + 縮圖）
-                    if chart_url and multi_anime:
-                        try:
-                            logger.info("🎨 [anime_ranking] 開始生成圖表 + 縮圖組合圖像...")
-                            composite_file = await self.create_composite_chart_with_thumbnails(chart_url, multi_anime)
-                            if composite_file:
-                                # 使用組合圖像文件上傳
-                                embed_file = discord.File(composite_file, filename="anime_ranking.png")
-                                embed.set_image(url="attachment://anime_ranking.png")
-                                logger.info(f"✅ [anime_ranking] 組合圖像已準備，將通過文件上傳")
-                            else:
-                                # 組合失敗，回退到原始 URL 顯示
-                                logger.warning("⚠️ [anime_ranking] 組合圖像生成失敗，回退到 URL 顯示")
-                                embed.set_image(url=chart_url)
-                                embed_file = None
-                        except Exception as e:
-                            logger.error(f"❌ [anime_ranking] 組合圖像異常: {e}")
-                            embed.set_image(url=chart_url)
-                            embed_file = None
+                    # 直接使用圖表 URL
+                    if chart_url:
+                        embed.set_image(url=chart_url)
+                        logger.info(f"✅ [anime_ranking] 多線趨勢圖已設置")
+                    
+                    # 添加參賽動畫排名信息
+                    anime_ranking_info = []
+                    for idx, anime in enumerate(multi_anime, 1):
+                        rank_emoji = ["🥇", "🥈", "🥉"] + [f"{i}️⃣" for i in range(4, 11)]
+                        emoji = rank_emoji[idx - 1] if idx <= 10 else "📌"
+                        anime_ranking_info.append(
+                            f"{emoji} **{anime['short_name']}** - {anime['total_views']:,} 次閱覽"
+                        )
+                    
+                    # 分成兩個字段顯示（Top 5 和 6-10）
+                    if len(anime_ranking_info) > 5:
+                        embed.add_field(
+                            name="🏅 Top 5 熱度排名",
+                            value="\n".join(anime_ranking_info[:5]),
+                            inline=True
+                        )
+                        embed.add_field(
+                            name="🎖️ 6-10 熱度排名",
+                            value="\n".join(anime_ranking_info[5:]),
+                            inline=True
+                        )
                     else:
-                        embed_file = None
+                        embed.add_field(
+                            name="📈 參賽動畫排名",
+                            value="\n".join(anime_ranking_info),
+                            inline=False
+                        )
                 except Exception as e:
                     logger.warning(f"⚠️ [anime_ranking] 生成多線圖失敗: {e}，改用文字顯示")
                     multi_anime = None  # 改用模式 B
-                    embed_file = None
             
             # === 模式 B：文字排行列表（當無多集數據或圖表生成失敗）===
             if not multi_anime or len(multi_anime) < 2:
@@ -1832,15 +1718,9 @@ class AnimeTracker(commands.Cog):
                 
                 embed.description += "\n\n" + "\n".join(ranking_text)
             
-            embed.set_footer(text="📊 集數趨勢" if multi_anime and len(multi_anime) >= 1 else "📈 聚合排行")
+            embed.set_footer(text="📊 集數觀看趨勢分析" if multi_anime and len(multi_anime) >= 1 else "📈 本季熱度聚合排行")
             
-            # 發送 embed，如果有文件則一併上傳
-            if embed_file:
-                await interaction.followup.send(embed=embed, file=embed_file)
-                logger.info("📤 [anime_ranking] 已發送組合圖像")
-            else:
-                await interaction.followup.send(embed=embed)
-            
+            await interaction.followup.send(embed=embed)
             logger.info(f"📺 [anime_ranking] 顯示排行榜（模式: {'多線趨勢' if multi_anime and len(multi_anime) >= 1 else '聚合排行'}）")
         except Exception as e:
             logger.error(f"❌ [anime_ranking] 指令執行失敗: {e}", exc_info=True)
