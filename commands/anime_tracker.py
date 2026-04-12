@@ -1465,7 +1465,7 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"📺 [anime_ranking] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
             # 嘗試獲取有多集的動畫數據（用於多線圖）
-            multi_anime = self.db.get_multi_episode_anime_for_chart(limit=10, min_episodes=2)
+            multi_anime = self.db.get_multi_episode_anime_for_chart(limit=10, min_episodes=1)
             
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
