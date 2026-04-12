@@ -1190,6 +1190,25 @@ class AnimeTracker(commands.Cog):
         try:
             await interaction.response.defer()
             
+            # 確保 episode_statistics 表存在（修復初始化問題）
+            try:
+                with sqlite3.connect(self.db.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS episode_statistics (
+                            videoSn INTEGER PRIMARY KEY,
+                            animeSn INTEGER NOT NULL,
+                            episode_num TEXT,
+                            views INTEGER,
+                            score REAL,
+                            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    conn.commit()
+                    logger.info("✅ [anime_ranking] 確保 episode_statistics 表存在")
+            except Exception as e:
+                logger.warning(f"⚠️ [anime_ranking] 表初始化失敗: {e}")
+            
             top_anime = self.db.get_top_anime_by_views(limit=10)
             
             if not top_anime:
