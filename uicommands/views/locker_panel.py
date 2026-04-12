@@ -20,8 +20,18 @@ class LockerPanelView(discord.ui.View):
             LockerPanelView.last_update = {}
     
     async def get_owner_user_id(self, interaction: discord.Interaction) -> int:
-        """根據 thread_id 從資料庫獲取論壇帖子的所有者 user_id"""
+        """根據 self.user_id 或 thread_id 獲取置物櫃所有者 user_id"""
+        if getattr(self, 'user_id', 0):
+            return self.user_id
+
         try:
+            # 先嘗試用 locker_message_id 快速定位（針對持久視圖重啟後的場景）
+            if interaction.message and getattr(interaction.message, 'id', None):
+                from db_adapter import get_user_by_field
+                user_row = get_user_by_field('locker_message_id', interaction.message.id)
+                if user_row and user_row.get('user_id'):
+                    return user_row['user_id']
+
             # 直接從 interaction.channel 獲取 thread，不依賴 self.thread
             thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
             if thread:
@@ -58,18 +68,23 @@ class LockerPanelView(discord.ui.View):
         last_update_time = LockerPanelView.last_update.get(interaction.user.id, 0)
         
         if current_time - last_update_time < 5:
-            remaining_time = 5 - (current_time - last_update_time)
-            await interaction.response.send_message(f"⏰ 請等待 {remaining_time:.1f} 秒後再更新面板！", ephemeral=True)
+            await interaction.response.send_message(f"⏰ 請等待 {5 - (current_time - last_update_time):.1f} 秒後再更新面板！", ephemeral=True)
             return
-        
-        # 根據 thread_id 獲取正確的所有者 user_id
-        owner_user_id = await self.get_owner_user_id(interaction)
-        if interaction.user.id != owner_user_id:
-            await interaction.response.send_message("❌ 你只能更新自己的面板！", ephemeral=True)
-            return
-            
+
+        # 立即 defer 避免 Discord 3 秒交互失敗
         try:
             await interaction.response.defer(ephemeral=True)
+        except Exception as e:
+            print(f"❌ [Update Panel] 無法 defer: {e}")
+            return
+
+        # 根據 self.user_id 或 thread_id 獲取正確的所有者 user_id
+        owner_user_id = await self.get_owner_user_id(interaction)
+        if interaction.user.id != owner_user_id:
+            await interaction.followup.send("❌ 你只能更新自己的面板！", ephemeral=True)
+            return
+
+        try:
             LockerPanelView.last_update[interaction.user.id] = current_time
             
             # 更新最後活動時間
