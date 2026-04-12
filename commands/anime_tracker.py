@@ -274,22 +274,27 @@ class AnimeDatabase:
             logger.error(f"❌ Error recording episode stats: {e}")
     
     def get_anime_statistics(self, anime_sn: int) -> Optional[Dict]:
-        """獲取某部動畫的統計數據"""
+        """獲取某部動畫的統計數據（直接從 episode_statistics 聚合）"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                # 直接從 episode_statistics 聚合
                 cursor.execute(f"""
-                    SELECT anime_name, total_episodes, avg_views, avg_score, total_views
-                    FROM {ANIME_STATS_TABLE} WHERE animeSn = ?
+                    SELECT 
+                        COUNT(*) as total_episodes,
+                        AVG(views) as avg_views,
+                        AVG(score) as avg_score,
+                        SUM(views) as total_views
+                    FROM {EPISODE_STATS_TABLE} WHERE animeSn = ?
                 """, (anime_sn,))
                 row = cursor.fetchone()
-                if row:
+                if row and row[1] is not None:  # 檢查是否有數據
                     return {
-                        "anime_name": row[0],
-                        "total_episodes": row[1],
-                        "avg_views": row[2],
-                        "avg_score": row[3],
-                        "total_views": row[4]
+                        "anime_name": "",  # 從 NOTIFIED_TABLE 獲取
+                        "total_episodes": row[0],
+                        "avg_views": row[1],
+                        "avg_score": row[2],
+                        "total_views": row[3] or 0
                     }
                 return None
         except Exception as e:
@@ -321,26 +326,44 @@ class AnimeDatabase:
             logger.error(f"❌ Error updating anime statistics: {e}")
     
     def get_top_anime_by_views(self, limit: int = 10) -> List[Dict]:
-        """獲取觀看次數最多的動畫排行"""
+        """獲取觀看次數最多的動畫排行（直接從 episode_statistics 聚合）"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                # 直接從 episode_statistics 聚合，而不是等待 anime_statistics 更新
                 cursor.execute(f"""
-                    SELECT animeSn, anime_name, total_views, avg_views, avg_score, total_episodes
-                    FROM {ANIME_STATS_TABLE}
+                    SELECT 
+                        animeSn,
+                        COUNT(*) as total_episodes,
+                        SUM(views) as total_views,
+                        AVG(views) as avg_views,
+                        AVG(score) as avg_score
+                    FROM {EPISODE_STATS_TABLE}
+                    GROUP BY animeSn
                     ORDER BY total_views DESC LIMIT ?
                 """, (limit,))
-                return [
-                    {
-                        "anime_sn": row[0],
-                        "name": row[1],
-                        "total_views": row[2],
-                        "avg_views": row[3],
-                        "avg_score": row[4],
-                        "total_episodes": row[5]
-                    }
-                    for row in cursor.fetchall()
-                ]
+                
+                results = []
+                for row in cursor.fetchall():
+                    anime_sn = row[0]
+                    # 獲取動畫名稱
+                    cursor.execute(f"""
+                        SELECT anime_name FROM {NOTIFIED_TABLE} 
+                        WHERE animeSn = ? LIMIT 1
+                    """, (anime_sn,))
+                    name_row = cursor.fetchone()
+                    anime_name = name_row[0] if name_row else f"Anime #{anime_sn}"
+                    
+                    results.append({
+                        "anime_sn": anime_sn,
+                        "name": anime_name,
+                        "total_views": row[2] or 0,
+                        "avg_views": row[3] or 0,
+                        "avg_score": row[4] or 0,
+                        "total_episodes": row[1] or 0
+                    })
+                
+                return results
         except Exception as e:
             logger.error(f"❌ Error getting top anime: {e}")
             return []
