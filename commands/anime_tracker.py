@@ -42,6 +42,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
 import pytz  # 用於台灣時區轉換
+from urllib.parse import quote  # 用於生成 QuickChart URL
 
 # 台灣時區
 TW_TZ = pytz.timezone('Asia/Taipei')
@@ -1350,7 +1351,7 @@ class AnimeTracker(commands.Cog):
                 
                 logger.info(f"📺 [anime_ranking] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
-            # 生成排行榜 embed（條形圖顯示觀看數）
+            # 生成排行榜折線圖（用 QuickChart）
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
                 description=f"前 {len(top_anime)} 名熱度排行",
@@ -1358,33 +1359,86 @@ class AnimeTracker(commands.Cog):
                 timestamp=datetime.utcnow()
             )
             
-            # 找到最高觀看數用於條形圖縮放
-            max_views = max(anime['total_views'] for anime in top_anime) if top_anime else 1
-            bar_length = 20  # 條形圖長度
+            # 提取排名資料用於圖表
+            anime_names = []
+            anime_views = []
+            for idx, anime in enumerate(top_anime, 1):
+                anime_name = anime.get('name', f"Anime #{anime.get('anime_sn')}")
+                anime_names.append(f"#{idx} {anime_name[:15]}")  # 截短名稱以符合圖表寬度
+                anime_views.append(anime['total_views'])
             
+            # 生成 QuickChart 折線圖 URL
+            try:
+                chart_config = {
+                    "type": "line",
+                    "data": {
+                        "labels": anime_names,
+                        "datasets": [
+                            {
+                                "label": "觀看次數",
+                                "data": anime_views,
+                                "borderColor": "#FFD700",  # 金色
+                                "backgroundColor": "rgba(255, 215, 0, 0.1)",
+                                "borderWidth": 2,
+                                "fill": True,
+                                "tension": 0.4,
+                                "pointRadius": 5,
+                                "pointBackgroundColor": "#FFD700",
+                                "pointBorderColor": "#fff"
+                            }
+                        ]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "maintainAspectRatio": True,
+                        "scales": {
+                            "y": {
+                                "ticks": {
+                                    "font": {"size": 11},
+                                    "callback": "function(value) { return value.toLocaleString(); }"
+                                },
+                                "title": {
+                                    "display": True,
+                                    "text": "觀看次數"
+                                }
+                            },
+                            "x": {
+                                "ticks": {
+                                    "font": {"size": 9},
+                                    "maxRotation": 45,
+                                    "minRotation": 0
+                                }
+                            }
+                        },
+                        "plugins": {
+                            "legend": {
+                                "labels": {"font": {"size": 12}},
+                                "position": "top"
+                            }
+                        }
+                    }
+                }
+                
+                # 生成 QuickChart URL
+                config_json = json.dumps(chart_config, separators=(',', ':'))
+                encoded = quote(config_json)
+                chart_url = f"https://quickchart.io/chart?bkg=white&w=900&h=400&c={encoded}"
+                
+                embed.set_image(url=chart_url)
+                logger.info(f"📺 [anime_ranking] 生成折線圖 URL 成功")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ [anime_ranking] 生成圖表失敗: {e}")
+                # 即使生成圖表失敗，仍顯示文字排行
+            
+            # 在 description 中添加簡單排行列表
             ranking_text = []
             for idx, anime in enumerate(top_anime, 1):
-                # 不使用 emoji，改用 #1 #2 #3 統一字型大小
-                medal = f"#{idx}"
-                
-                # 計算條形圖
-                filled = int((anime['total_views'] / max_views) * bar_length)
-                bar = "▰" * filled + "▱" * (bar_length - filled)
-                
-                # 動畫名稱
                 anime_name = anime.get('name', f'Anime #{anime.get("anime_sn", "?")}').strip()
-                if not anime_name or anime_name.startswith('Anime #'):
-                    logger.warning(f"⚠️ [anime_ranking] 動畫 {anime.get('anime_sn')} 名稱為空或未取得: {anime_name}")
-                
-                # 組合排行資訊（名稱在獨立一行，便於閱讀）
-                line = (
-                    f"{medal} {anime_name}\n"
-                    f"`{bar}` {anime['total_views']:,} 次 | 📺 {anime['total_episodes']} 集"
-                )
+                line = f"#{idx} **{anime_name}** - {anime['total_views']:,} 次"
                 ranking_text.append(line)
             
-            # 將所有排行資訊作為 description 添加
-            embed.description += "\n\n" + "\n\n".join(ranking_text)
+            embed.description += "\n\n" + "\n".join(ranking_text)
             
             embed.set_footer(text="🔄 實時數據" if not self.db.get_top_anime_by_views(limit=1) else "📊 歷史統計")
             
