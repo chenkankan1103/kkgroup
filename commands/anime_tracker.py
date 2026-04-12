@@ -533,6 +533,57 @@ class AnimeTracker(commands.Cog):
         except Exception as e:
             logger.error(f"❌ [on_reaction_add] 處理反應失敗: {e}", exc_info=True)
     
+    async def fetch_all_recent_anime_from_api(self) -> Optional[List[Dict]]:
+        """
+        從 Bahamut API 獲取所有最近的動畫集（不限於今天的）
+        用於排行榜顯示
+        
+        Returns:
+            所有最近的集列表，或 None 如果失敗
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    API_ENDPOINT,
+                    timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                    }
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"⚠️ API returned status {resp.status}")
+                        return None
+                    
+                    data = await resp.json()
+                    new_anime = data.get("data", {}).get("newAnime", {})
+                    
+                    # 組合所有日期的動畫
+                    all_episodes = []
+                    if isinstance(new_anime, dict):
+                        # 'date' 鍵包含按日期分組的集
+                        all_episodes.extend(new_anime.get("date", []))
+                        # 'popular' 鍵包含最受歡迎的集
+                        all_episodes.extend(new_anime.get("popular", []))
+                    
+                    # 去重（按 videoSn）
+                    seen = set()
+                    unique_episodes = []
+                    for ep in all_episodes:
+                        if isinstance(ep, dict):
+                            video_sn = ep.get("videoSn")
+                            if video_sn and video_sn not in seen:
+                                seen.add(video_sn)
+                                unique_episodes.append(ep)
+                    
+                    logger.info(f"🔍 [fetch_all_recent_anime_from_api] 獲得 {len(unique_episodes)} 部最近的動畫")
+                    return unique_episodes
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ API timeout ({API_TIMEOUT}s)")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error fetching anime from API: {e}", exc_info=True)
+            return None
+
     async def fetch_new_anime_from_api(self) -> Optional[List[Dict]]:
         """
         從 Bahamut API 獲取今天更新的動畫集
@@ -1186,7 +1237,7 @@ class AnimeTracker(commands.Cog):
     
     @app_commands.command(name="anime_ranking", description="查看本季動畫觀看排行榜")
     async def anime_ranking(self, interaction: discord.Interaction):
-        """顯示本季動畫的觀看排行榜"""
+        """顯示本季動畫的觀看排行榜（實時從 API 獲取或從歷史數據統計）"""
         try:
             await interaction.response.defer()
             
@@ -1209,13 +1260,84 @@ class AnimeTracker(commands.Cog):
             except Exception as e:
                 logger.warning(f"⚠️ [anime_ranking] 表初始化失敗: {e}")
             
+            # 先嘗試從数據庫取歷史統計數據
             top_anime = self.db.get_top_anime_by_views(limit=10)
             
+            # 如果沒有歷史數據，則實時從 API 獲取最近的動畫
             if not top_anime:
-                await interaction.followup.send("📊 目前還沒有統計數據，請等待更多動畫被推送")
-                logger.info("📺 [anime_ranking] 沒有統計數據")
-                return
+                logger.info("📺 [anime_ranking] 數據庫無歷史數據，改為實時從 API 獲取")
+                episodes = await self.fetch_all_recent_anime_from_api()
+                
+                if not episodes:
+                    await interaction.followup.send("❌ 無法獲取動畫數據，請稍後再試")
+                    logger.warning("📺 [anime_ranking] API 無數據")
+                    return
+                
+                # 按觀看人數排序
+                anime_list = {}
+                for ep in episodes:
+                    anime_sn = ep.get("animeSn")
+                    if not anime_sn:
+                        continue
+                    
+                    anime_name = ep.get("title", f"Anime #{anime_sn}")
+                    views = 0
+                    score = 0
+                    
+                    # 為了獲取詳細的观看人数，调用 API
+                    try:
+                        video_sn = ep.get("videoSn")
+                        if video_sn:
+                            details = await self.fetch_anime_details_from_api(video_sn)
+                            if details:
+                                views = details.get("popular", 0)
+                                score = details.get("score", 0)
+                    except Exception as e:
+                        logger.warning(f"⚠️ 無法取得 videoSn={video_sn} 的詳細信息: {e}")
+                    
+                    # 聚合多集的数据
+                    if anime_sn not in anime_list:
+                        anime_list[anime_sn] = {
+                            "name": anime_name,
+                            "episodes": [],
+                            "total_views": 0,
+                            "total_episodes": 0,
+                            "scores": []
+                        }
+                    
+                    if views > 0:
+                        anime_list[anime_sn]["episodes"].append(views)
+                        anime_list[anime_sn]["total_views"] += views
+                        anime_list[anime_sn]["total_episodes"] += 1
+                    
+                    if score > 0:
+                        anime_list[anime_sn]["scores"].append(score)
+                
+                # 轉換為排行格式並按總觀看數排序
+                top_anime = []
+                for anime_sn, data in anime_list.items():
+                    if data["total_episodes"] > 0:
+                        top_anime.append({
+                            "anime_sn": anime_sn,
+                            "name": data["name"],
+                            "total_views": data["total_views"],
+                            "avg_views": data["total_views"] / data["total_episodes"],
+                            "avg_score": sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0,
+                            "total_episodes": data["total_episodes"]
+                        })
+                
+                # 按總觀看數排序
+                top_anime.sort(key=lambda x: x["total_views"], reverse=True)
+                top_anime = top_anime[:10]
+                
+                if not top_anime:
+                    await interaction.followup.send("📊 目前還沒有動畫數據，請稍後再試")
+                    logger.info("📺 [anime_ranking] 無有效的動畫數據")
+                    return
+                
+                logger.info(f"📺 [anime_ranking] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
+            # 生成排行榜 embed
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
                 description=f"統計前 {len(top_anime)} 部動畫的數據",
@@ -1232,7 +1354,7 @@ class AnimeTracker(commands.Cog):
                 ranking_lines.append(line)
             
             embed.description += "\n\n" + "\n".join(ranking_lines)
-            embed.set_footer(text="數據基於 API 返回的觀看人數統計")
+            embed.set_footer(text="🔄 實時數據 (最近推送的動畫)" if not self.db.get_top_anime_by_views(limit=1) else "📊 歷史數據統計")
             
             await interaction.followup.send(embed=embed)
             logger.info(f"📺 [anime_ranking] 顯示前 {len(top_anime)} 部動畫的排行")
