@@ -295,6 +295,16 @@ async def async_get_all_users(limit: Optional[int] = None) -> List[Dict[str, Any
     return await loop.run_in_executor(None, lambda: get_all_users(limit))
 
 
+async def async_get_user_by_field(field: str, value: Any) -> Optional[Dict[str, Any]]:
+    """
+    非同步版本的 get_user_by_field - 根據欄位值查詢用戶（避免阻塞事件迴圈）
+    
+    適用於在 Discord 交互處理中查詢用戶，避免同步 DB 調用阻塞 asyncio
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: get_user_by_field(field, value))
+
+
 # ============================================================
 # 設備系統 (shop_commands 專用)
 # ============================================================
