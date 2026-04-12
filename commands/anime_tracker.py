@@ -1098,15 +1098,7 @@ class AnimeTracker(commands.Cog):
                 self.db.bootstrap_add_all(episodes)
                 self.db.mark_bootstrap_completed()
                 self.bootstrap_completed = True
-                
-                embed = discord.Embed(
-                    title="✅ 動畫追蹤已啟動",
-                    description="已記錄現有集合。之後會通知新上架的集。",
-                    color=discord.Color.green()
-                )
-                logger.info("📺 [check_new_anime] 發送 bootstrap 確認 embed")
-                await channel.send(embed=embed, silent=True)
-                logger.info("✅ [check_new_anime] Bootstrap 完成，embed 已發送")
+                logger.info("✅ [check_new_anime] Bootstrap 完成，已記錄所有現存集")
                 return
             
             # 正常運行：檢查新集
