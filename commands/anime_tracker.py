@@ -1524,9 +1524,9 @@ class AnimeTracker(commands.Cog):
                 
                 episode_labels = sorted(list(all_episodes))
                 
-                # 為每部動畫建立一條線
+                # 為每部動畫建立一條線（簡化配置以減少 URL 長度）
                 for idx, anime in enumerate(multi_anime):
-                    name = anime['name'][:10]  # 縮短名稱
+                    name = anime['name'][:8]  # 最多 8 個字
                     color = colors[idx % len(colors)]
                     
                     # 建立該動畫的數據點（缺失集用 None）
@@ -1537,15 +1537,12 @@ class AnimeTracker(commands.Cog):
                         "label": name,
                         "data": data,
                         "borderColor": color,
-                        "backgroundColor": f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.05)",
-                        "borderWidth": 2,
                         "fill": False,
-                        "tension": 0.3,
-                        "pointRadius": 3,
-                        "pointBackgroundColor": color
+                        "tension": 0.2,
+                        "pointRadius": 2
                     })
                 
-                # 構建圖表配置
+                # 構建圖表配置（簡化版本以減少 URL 長度）
                 try:
                     chart_config = {
                         "type": "line",
@@ -1556,34 +1553,33 @@ class AnimeTracker(commands.Cog):
                         "options": {
                             "scales": {
                                 "y": {
-                                    "ticks": {"font": {"size": 9}},
-                                    "title": {"display": True, "text": "觀看次數"}
+                                    "title": {"display": True, "text": "觀看"}
                                 },
                                 "x": {
-                                    "ticks": {"font": {"size": 8}},
-                                    "title": {"display": True, "text": "集數"}
+                                    "title": {"display": True, "text": "集"}
                                 }
                             },
                             "plugins": {
                                 "legend": {
-                                    "display": True,
                                     "position": "top",
-                                    "labels": {"font": {"size": 9}}
+                                    "labels": {"font": {"size": 8}}
                                 }
                             }
                         }
                     }
                     
-                    # 直接使用 URL 編碼方式（確保圖片一定能顯示）
+                    # 直接使用 URL 編碼方式
                     config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
                     encoded = quote(config_json)
-                    chart_url = f"https://quickchart.io/chart?bkg=white&w=950&h=400&c={encoded}"
+                    chart_url = f"https://quickchart.io/chart?bkg=white&w=850&h=350&c={encoded}"
+                    
+                    logger.info(f"📺 [anime_ranking] 圖表 URL 長度: {len(chart_url)}")
                     
                     if len(chart_url) <= 2048:
                         embed.set_image(url=chart_url)
-                        logger.info(f"📺 [anime_ranking] 多線趨勢圖 URL 已設置 (長度: {len(chart_url)})")
+                        logger.info(f"✅ [anime_ranking] 多線趨勢圖 URL 已設置")
                     else:
-                        logger.warning(f"⚠️ [anime_ranking] 多線圖 URL {len(chart_url)} 字元超過限制，改用文字顯示")
+                        logger.warning(f"⚠️ [anime_ranking] URL {len(chart_url)} 字元超過限制，改用文字顯示")
                         multi_anime = None  # 改用模式 B
                 except Exception as e:
                     logger.warning(f"⚠️ [anime_ranking] 生成多線圖失敗: {e}，改用文字顯示")
