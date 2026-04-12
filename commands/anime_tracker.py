@@ -1337,7 +1337,7 @@ class AnimeTracker(commands.Cog):
                 
                 logger.info(f"📺 [anime_ranking] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
-            # 生成排行榜 embed（使用 fields 保證排版清晰）
+            # 生成排行榜 embed（條形圖顯示觀看數）
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
                 description=f"前 {len(top_anime)} 名熱度排行",
@@ -1345,22 +1345,27 @@ class AnimeTracker(commands.Cog):
                 timestamp=datetime.utcnow()
             )
             
+            # 找到最高觀看數用於條形圖縮放
+            max_views = max(anime['total_views'] for anime in top_anime) if top_anime else 1
+            bar_length = 20  # 條形圖長度
+            
+            ranking_text = []
             for idx, anime in enumerate(top_anime, 1):
                 medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"#{idx:2d}"
                 
-                # 動畫名稱作為 field name
-                field_name = f"{medal} | {anime['name']}"
+                # 計算條形圖
+                filled = int((anime['total_views'] / max_views) * bar_length)
+                bar = "▰" * filled + "▱" * (bar_length - filled)
                 
-                # 詳細資訊作為 field value
-                field_value = (
-                    f"**👥 觀看人次**\n"
-                    f"└ 總計: {anime['total_views']:>8,}\n"
-                    f"└ 平均: {anime['avg_views']:>8.0f}\n\n"
-                    f"**⭐ 評分**: {anime['avg_score']:.1f}/10\n"
-                    f"**📺 集數**: {anime['total_episodes']} 集"
+                # 組合排行資訊
+                line = (
+                    f"{medal} **{anime['name']}**\n"
+                    f"{bar} {anime['total_views']:,} 次 | 📺 {anime['total_episodes']} 集"
                 )
-                
-                embed.add_field(name=field_name, value=field_value, inline=False)
+                ranking_text.append(line)
+            
+            # 將所有排行資訊作為 description 添加
+            embed.description += "\n\n" + "\n\n".join(ranking_text)
             
             embed.set_footer(text="🔄 實時數據" if not self.db.get_top_anime_by_views(limit=1) else "📊 歷史統計")
             
