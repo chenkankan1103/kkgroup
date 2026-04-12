@@ -65,6 +65,11 @@ def delete_user(user_id: Union[int, str]) -> bool:
     return get_db().delete_user(user_id)
 
 
+def get_user_by_field(field: str, value: Any) -> Optional[Dict[str, Any]]:
+    """根據指定欄位和值查詢用戶，適用於 locker_message_id 等快速定位"""
+    return get_db().get_user_by_field(field, value)
+
+
 # ============================================================
 # 欄位操作 (最常用的方法)
 # ============================================================

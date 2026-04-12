@@ -413,6 +413,22 @@ class SheetDrivenDB:
     # 批量操作
     # ============================================================
     
+    def get_user_by_field(self, field: str, value: Any) -> Optional[Dict[str, Any]]:
+        """根據指定欄位和值查詢用戶，適用於 locker_message_id 等快速定位"""
+        if not self._columns_cache_valid:
+            self._refresh_columns_cache()
+
+        if field not in self._columns_cache:
+            return None
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(f'SELECT * FROM {self.table_name} WHERE "{field}" = ?', (value,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return self._row_to_dict(row) if row else None
+
     def get_all_users(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """獲取所有用戶"""
         conn = self._get_connection()
@@ -428,7 +444,7 @@ class SheetDrivenDB:
         conn.close()
         
         return [self._row_to_dict(row) for row in rows]
-    
+
     def delete_user(self, user_id: Union[int, str]) -> bool:
         """刪除用戶"""
         user_id = int(user_id)
