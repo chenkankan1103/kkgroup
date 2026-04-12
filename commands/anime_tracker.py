@@ -374,13 +374,29 @@ class AnimeDatabase:
                 results = []
                 for row in cursor.fetchall():
                     anime_sn = row[0]
-                    # 獲取動畫名稱
+                    # 先從 anime_details 查詢名稱（最新數據），再從 anime_notified 查詢
+                    anime_name = None
+                    
                     cursor.execute(f"""
-                        SELECT anime_name FROM {NOTIFIED_TABLE} 
-                        WHERE animeSn = ? LIMIT 1
+                        SELECT title FROM {ANIME_DETAILS_TABLE} 
+                        WHERE animeSn = ? ORDER BY cached_at DESC LIMIT 1
                     """, (anime_sn,))
-                    name_row = cursor.fetchone()
-                    anime_name = name_row[0] if name_row else f"Anime #{anime_sn}"
+                    detail_row = cursor.fetchone()
+                    if detail_row:
+                        anime_name = detail_row[0]
+                    
+                    # 如果 anime_details 沒有，再從 anime_notified 查詢
+                    if not anime_name:
+                        cursor.execute(f"""
+                            SELECT anime_name FROM {NOTIFIED_TABLE} 
+                            WHERE animeSn = ? LIMIT 1
+                        """, (anime_sn,))
+                        notified_row = cursor.fetchone()
+                        anime_name = notified_row[0] if notified_row else None
+                    
+                    # 最後還是沒有就用預設名稱
+                    if not anime_name:
+                        anime_name = f"Anime #{anime_sn}"
                     
                     results.append({
                         "anime_sn": anime_sn,
