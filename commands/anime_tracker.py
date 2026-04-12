@@ -1529,7 +1529,7 @@ class AnimeTracker(commands.Cog):
             )
             
             # 如果有多集數據，生成多線趨勢圖；否則使用單線聚合圖
-            if multi_anime and len(multi_anime) >= 2:
+            if multi_anime and len(multi_anime) >= 1:
                 # ===== 模式 A：多線趨勢圖（每部動畫一條線）=====
                 embed.description = f"集數觀看趨勢 ({len(multi_anime)} 部動畫)"
                 
@@ -1663,10 +1663,10 @@ class AnimeTracker(commands.Cog):
                 
                 embed.description += "\n\n" + "\n".join(ranking_text)
             
-            embed.set_footer(text="📊 集數趨勢" if multi_anime and len(multi_anime) >= 2 else "📈 聚合排行")
+            embed.set_footer(text="📊 集數趨勢" if multi_anime and len(multi_anime) >= 1 else "📈 聚合排行")
             
             await interaction.followup.send(embed=embed)
-            logger.info(f"📺 [anime_ranking] 顯示排行榜（模式: {'多線趨勢' if multi_anime and len(multi_anime) >= 2 else '聚合排行'}）")
+            logger.info(f"📺 [anime_ranking] 顯示排行榜（模式: {'多線趨勢' if multi_anime and len(multi_anime) >= 1 else '聚合排行'}）")
         except Exception as e:
             logger.error(f"❌ [anime_ranking] 指令執行失敗: {e}", exc_info=True)
             try:
