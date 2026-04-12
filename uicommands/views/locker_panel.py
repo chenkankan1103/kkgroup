@@ -20,24 +20,25 @@ class LockerPanelView(discord.ui.View):
             LockerPanelView.last_update = {}
     
     async def get_owner_user_id(self, interaction: discord.Interaction) -> int:
-        """根據 self.user_id 或 thread_id 獲取置物櫃所有者 user_id"""
+        """根據 self.user_id 或 thread_id 獲取置物櫃所有者 user_id - 使用非同步 DB 查詢避免阻塞"""
         if getattr(self, 'user_id', 0):
             return self.user_id
 
         try:
             # 先嘗試用 locker_message_id 快速定位（針對持久視圖重啟後的場景）
             if interaction.message and getattr(interaction.message, 'id', None):
-                from db_adapter import get_user_by_field
-                user_row = get_user_by_field('locker_message_id', interaction.message.id)
+                from db_adapter import async_get_user_by_field
+                # 使用非同步版本，避免阻塞事件迴圈
+                user_row = await async_get_user_by_field('locker_message_id', interaction.message.id)
                 if user_row and user_row.get('user_id'):
                     return user_row['user_id']
 
             # 直接從 interaction.channel 獲取 thread，不依賴 self.thread
             thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
             if thread:
-                # 使用 db_adapter 獲取所有用戶，然後過濾出有匹配 thread_id 的用戶
-                from db_adapter import get_all_users
-                all_users = get_all_users()
+                # 使用非同步版本的 get_all_users，避免阻塞事件迴圈
+                from db_adapter import async_get_all_users
+                all_users = await async_get_all_users()
 
                 for user_data in all_users:
                     if user_data and user_data.get('thread_id') == thread.id:
