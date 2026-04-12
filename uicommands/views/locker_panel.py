@@ -1,7 +1,8 @@
 import discord
 import time
 import sqlite3
-from db_adapter import set_user_field, get_user
+import asyncio
+from db_adapter import async_set_user_field, async_get_user
 from shop_commands.merchant.cannabis_farming import get_user_plants, get_inventory
 from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
 from .work_card import WorkCardModal, WorkCardEditView, WorkCardActionView
@@ -88,8 +89,8 @@ class LockerPanelView(discord.ui.View):
         try:
             LockerPanelView.last_update[interaction.user.id] = current_time
             
-            # 更新最後活動時間
-            set_user_field(owner_user_id, 'last_activity', int(time.time()))
+            # 更新最後活動時間（使用非同步版本）
+            await async_set_user_field(owner_user_id, 'last_activity', int(time.time()))
             
             # 重新獲取最新的用戶資料（確保數據是最新的）
             user_data = self.cog.get_user_data(owner_user_id)
@@ -132,8 +133,8 @@ class LockerPanelView(discord.ui.View):
                 await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
             
-            # 更新最後活動時間
-            set_user_field(owner_user_id, 'last_activity', int(time.time()))
+            # 更新最後活動時間（使用非同步版本）
+            await async_set_user_field(owner_user_id, 'last_activity', int(time.time()))
             
             # 獲取用戶的植物數據
             plants = await get_user_plants(owner_user_id)
@@ -227,10 +228,10 @@ class LockerPanelView(discord.ui.View):
                 await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
             
-            # 更新最後活動時間
-            set_user_field(owner_user_id, 'last_activity', int(time.time()))
+            # 更新最後活動時間（使用非同步版本）
+            await async_set_user_field(owner_user_id, 'last_activity', int(time.time()))
             
-            user_data = get_user(owner_user_id)
+            user_data = await async_get_user(owner_user_id)
             
             # 檢查是否已填寫工作證信息（pre_job 存在表示已領取）
             if user_data and user_data.get('pre_job'):

@@ -305,6 +305,22 @@ async def async_get_user_by_field(field: str, value: Any) -> Optional[Dict[str, 
     return await loop.run_in_executor(None, lambda: get_user_by_field(field, value))
 
 
+async def async_get_user(user_id: Union[int, str]) -> Optional[Dict[str, Any]]:
+    """
+    非同步版本的 get_user（避免阻塞事件迴圈）
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: get_user(user_id))
+
+
+async def async_set_user_field(user_id: Union[int, str], field: str, value: Any) -> bool:
+    """
+    非同步版本的 set_user_field（避免阻塞事件迴圈）
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: set_user_field(user_id, field, value))
+
+
 # ============================================================
 # 設備系統 (shop_commands 專用)
 # ============================================================
