@@ -1545,13 +1545,21 @@ class AnimeTracker(commands.Cog):
                         }
                     }
                     
-                    # 使用短網址 API
+                    # 先嘗試用短網址 API，失敗則回退到直接 URL
                     chart_url = await self.get_quickchart_short_url(chart_config)
-                    if chart_url:
+                    if not chart_url:
+                        # 短網址 API 失敗，改用直接 URL 編碼
+                        config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
+                        encoded = quote(config_json)
+                        chart_url = f"https://quickchart.io/chart?bkg=white&w=950&h=400&c={encoded}"
+                        logger.info(f"📺 [anime_ranking] 短網址 API 失敗，改用直接 URL (長度: {len(chart_url)})")
+                    
+                    # 檢查 URL 長度限制
+                    if len(chart_url) <= 2048:
                         embed.set_image(url=chart_url)
-                        logger.info(f"📺 [anime_ranking] 多線趨勢圖短網址生成成功")
+                        logger.info(f"📺 [anime_ranking] 多線趨勢圖 URL 已設置")
                     else:
-                        logger.warning(f"⚠️ [anime_ranking] 多線圖短網址生成失敗，改用文字顯示")
+                        logger.warning(f"⚠️ [anime_ranking] 多線圖 URL {len(chart_url)} 字元超過限制，改用文字顯示")
                         multi_anime = None  # 改用模式 B
                 except Exception as e:
                     logger.warning(f"⚠️ [anime_ranking] 生成多線圖失敗: {e}，改用文字顯示")
@@ -1595,13 +1603,21 @@ class AnimeTracker(commands.Cog):
                         }
                     }
                     
-                    # 使用短網址 API
+                    # 先嘗試用短網址 API，失敗則回退到直接 URL
                     chart_url = await self.get_quickchart_short_url(chart_config)
-                    if chart_url:
+                    if not chart_url:
+                        # 短網址 API 失敗，改用直接 URL 編碼
+                        config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
+                        encoded = quote(config_json)
+                        chart_url = f"https://quickchart.io/chart?bkg=white&w=850&h=350&c={encoded}"
+                        logger.info(f"📺 [anime_ranking] 短網址 API 失敗，改用直接 URL (長度: {len(chart_url)})")
+                    
+                    # 檢查 URL 長度限制
+                    if len(chart_url) <= 2048:
                         embed.set_image(url=chart_url)
-                        logger.info(f"📺 [anime_ranking] 單線聚合圖短網址生成成功")
+                        logger.info(f"📺 [anime_ranking] 單線聚合圖 URL 已設置")
                 except Exception as e:
-                    logger.warning(f"⚠️ [anime_ranking] 生成單線圖失敗: {e}")
+                    logger.warning(f"⚠️ [anime_ranking] 生成單線圖 URL 失敗: {e}")
                 
                 # 添加文字排行
                 ranking_text = []
