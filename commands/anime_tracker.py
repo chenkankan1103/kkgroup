@@ -1513,37 +1513,38 @@ class AnimeTracker(commands.Cog):
                     thumbnails.append({'img': placeholder, 'name': short_name})
             
             # 建立組合圖像
-            # 左側：縮圖列（120 * 10 個，共 1200 高）+ 文字（20 高）= 1220 高
+            # 左側：圖表
+            # 右側：縮圖列（120 * 10 個，共 1200 高）+ 文字（20 高）= 1220 高
             thumb_column_width = 120
             thumb_column_height = 180 * min(len(thumbnails), 10)  # 每帧 180px（160 圖 + 20 文字）
             
-            # 右側：圖表
+            # 左側：圖表
             chart_width = chart_img.width
             chart_height = chart_img.height
             
-            # 總寬度：縮圖 + 圖表 + 邊距
-            total_width = thumb_column_width + 10 + chart_width
+            # 總寬度：圖表 + 邊距 + 縮圖
+            total_width = chart_width + 10 + thumb_column_width
             total_height = max(thumb_column_height, chart_height)
             
             # 創建組合圖像
             composite = Image.new('RGB', (total_width, total_height), color=(255, 255, 255))
             
-            # 粘貼圖表（右邊）
-            chart_offset = (thumb_column_width + 10, (total_height - chart_height) // 2)
+            # 粘貼圖表（左邊）
+            chart_offset = (0, (total_height - chart_height) // 2)
             composite.paste(chart_img, chart_offset)
             
-            # 粘貼縮圖（左邊）和簡稱
+            # 粘貼縮圖（右邊）和簡稱
             draw = ImageDraw.Draw(composite)
             y_pos = 0
             for idx in range(min(len(thumbnails), 10)):
                 thumb_obj = thumbnails[idx]
-                # 粘貼縮圖
-                composite.paste(thumb_obj['img'], (0, y_pos))
+                # 粘貼縮圖（右側）
+                composite.paste(thumb_obj['img'], (chart_width + 10, y_pos))
                 # 添加簡稱文字
                 name_y = y_pos + 160 + 5
                 try:
                     # 嘗試使用系統字體
-                    draw.text((5, name_y), thumb_obj['name'][:4], fill=(0, 0, 0))
+                    draw.text((chart_width + 15, name_y), thumb_obj['name'][:4], fill=(0, 0, 0))
                 except:
                     pass
                 y_pos += 180
