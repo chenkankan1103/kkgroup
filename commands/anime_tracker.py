@@ -1490,7 +1490,8 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"📺 [anime_ranking] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
             # 嘗試獲取有多集的動畫數據（用於多線圖）
-            multi_anime = self.db.get_multi_episode_anime_for_chart(limit=10, min_episodes=1)
+            # 限制為 5 部以確保 URL 長度在 2048 以內
+            multi_anime = self.db.get_multi_episode_anime_for_chart(limit=5, min_episodes=1)
             logger.info(f"📺 [anime_ranking] 查詢 multi_anime 結果: {len(multi_anime) if multi_anime else 0} 部動畫")
             if multi_anime:
                 for i, anime in enumerate(multi_anime[:3]):
@@ -1526,7 +1527,7 @@ class AnimeTracker(commands.Cog):
                 
                 # 為每部動畫建立一條線（簡化配置以減少 URL 長度）
                 for idx, anime in enumerate(multi_anime):
-                    name = anime['name'][:8]  # 最多 8 個字
+                    name = anime['name'][:6]  # 最多 6 個字
                     color = colors[idx % len(colors)]
                     
                     # 建立該動畫的數據點（缺失集用 None）
@@ -1538,11 +1539,10 @@ class AnimeTracker(commands.Cog):
                         "data": data,
                         "borderColor": color,
                         "fill": False,
-                        "tension": 0.2,
-                        "pointRadius": 2
+                        "showLine": True
                     })
                 
-                # 構建圖表配置（簡化版本以減少 URL 長度）
+                # 構建圖表配置（極速優化版）
                 try:
                     chart_config = {
                         "type": "line",
@@ -1551,19 +1551,8 @@ class AnimeTracker(commands.Cog):
                             "datasets": datasets
                         },
                         "options": {
-                            "scales": {
-                                "y": {
-                                    "title": {"display": True, "text": "觀看"}
-                                },
-                                "x": {
-                                    "title": {"display": True, "text": "集"}
-                                }
-                            },
                             "plugins": {
-                                "legend": {
-                                    "position": "top",
-                                    "labels": {"font": {"size": 8}}
-                                }
+                                "legend": {"position": "top"}
                             }
                         }
                     }
@@ -1571,7 +1560,7 @@ class AnimeTracker(commands.Cog):
                     # 直接使用 URL 編碼方式
                     config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
                     encoded = quote(config_json)
-                    chart_url = f"https://quickchart.io/chart?bkg=white&w=850&h=350&c={encoded}"
+                    chart_url = f"https://quickchart.io/chart?bkg=white&w=700&h=300&c={encoded}"
                     
                     logger.info(f"📺 [anime_ranking] 圖表 URL 長度: {len(chart_url)}")
                     
