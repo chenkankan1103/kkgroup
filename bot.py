@@ -419,19 +419,7 @@ async def on_resumed():
         print("[on_resumed] forced log embed refresh")
     except (ImportError, OSError, RuntimeError) as e:
         print(f"[on_resumed] log refresh failed: {e}")
-    try:
-        # metrics update task is not directly callable, but we can trigger
-        # a one-shot by creating a temporary loop and running it once.  the
-        # easiest option is to import create_metrics_update_task and run the
-        # underlying function directly.
-        from status_dashboard import create_metrics_update_task
-        metrics_loop = await create_metrics_update_task(bot_type)
-        # metrics_loop has the update function
-        if hasattr(metrics_loop, '_function') and callable(metrics_loop._function):
-            await metrics_loop._function()
-            print("[on_resumed] forced metrics embed refresh")
-    except (ImportError, AttributeError, RuntimeError) as e:
-        print(f"[on_resumed] metrics refresh failed: {e}")
+    # metrics 功能已被禁用，移除相關代碼
 
 @client.event
 async def on_ready():
