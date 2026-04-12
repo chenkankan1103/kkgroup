@@ -412,6 +412,85 @@ class AnimeDatabase:
         except Exception as e:
             logger.error(f"❌ Error getting top anime: {e}")
             return []
+    
+    def get_multi_episode_anime_for_chart(self, limit: int = 10, min_episodes: int = 2) -> List[Dict]:
+        """獲取有多集數據的動畫（用於多線坐標圖），按總觀看次數排序
+        
+        Returns:
+            [{
+                "anime_sn": int,
+                "name": str,
+                "episodes": [{"num": str, "views": int}, ...],
+                "total_views": int,
+                "total_episodes": int
+            }, ...]
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 先獲取所有有多於 min_episodes 的動畫
+                cursor.execute(f"""
+                    SELECT 
+                        animeSn,
+                        COUNT(*) as total_episodes,
+                        SUM(views) as total_views
+                    FROM {EPISODE_STATS_TABLE}
+                    GROUP BY animeSn
+                    HAVING COUNT(*) >= ?
+                    ORDER BY total_views DESC LIMIT ?
+                """, (min_episodes, limit))
+                
+                results = []
+                for row in cursor.fetchall():
+                    anime_sn = row[0]
+                    total_episodes = row[1]
+                    total_views = row[2] or 0
+                    
+                    # 獲取動畫名稱
+                    anime_name = None
+                    cursor.execute(f"""
+                        SELECT title FROM {ANIME_DETAILS_TABLE} 
+                        WHERE animeSn = ? ORDER BY cached_at DESC LIMIT 1
+                    """, (anime_sn,))
+                    detail_row = cursor.fetchone()
+                    if detail_row:
+                        anime_name = detail_row[0]
+                    
+                    if not anime_name:
+                        cursor.execute(f"""
+                            SELECT anime_name FROM {NOTIFIED_TABLE} 
+                            WHERE animeSn = ? LIMIT 1
+                        """, (anime_sn,))
+                        notified_row = cursor.fetchone()
+                        anime_name = notified_row[0] if notified_row else f"Anime #{anime_sn}"
+                    
+                    # 獲取該動畫的所有集集數據（按集數排序）
+                    cursor.execute(f"""
+                        SELECT episode_num, views FROM {EPISODE_STATS_TABLE}
+                        WHERE animeSn = ?
+                        ORDER BY episode_num ASC
+                    """, (anime_sn,))
+                    
+                    episodes = []
+                    for ep_row in cursor.fetchall():
+                        ep_num = ep_row[0] or "?"
+                        views = ep_row[1] or 0
+                        episodes.append({"num": ep_num, "views": views})
+                    
+                    results.append({
+                        "anime_sn": anime_sn,
+                        "name": anime_name,
+                        "episodes": episodes,
+                        "total_views": total_views,
+                        "total_episodes": total_episodes
+                    })
+                
+                logger.info(f"📊 [get_multi_episode_anime_for_chart] 找到 {len(results)} 部有多集數據的動畫")
+                return results
+        except Exception as e:
+            logger.error(f"❌ Error getting multi-episode anime for chart: {e}", exc_info=True)
+            return []
         except Exception as e:
             logger.error(f"❌ Error during bootstrap: {e}")
 
@@ -1351,32 +1430,120 @@ class AnimeTracker(commands.Cog):
                 
                 logger.info(f"📺 [anime_ranking] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
-            # 生成排行榜折線圖（用 QuickChart）
+            # 嘗試獲取有多集的動畫數據（用於多線圖）
+            multi_anime = self.db.get_multi_episode_anime_for_chart(limit=10, min_episodes=2)
+            
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
-                description=f"前 {len(top_anime)} 名熱度排行",
                 color=discord.Color.gold(),
                 timestamp=datetime.utcnow()
             )
             
-            # 提取排名資料用於圖表
-            anime_names = []
-            anime_views = []
-            for idx, anime in enumerate(top_anime, 1):
-                anime_name = anime.get('name', f"#{anime.get('anime_sn')}")
-                # 大幅縮短名稱以符合 URL 長度限制
-                short_name = anime_name[:8] if len(anime_name) > 8 else anime_name
-                anime_names.append(f"#{idx} {short_name}")
-                anime_views.append(anime['total_views'])
+            # 如果有多集數據，生成多線趨勢圖；否則使用單線聚合圖
+            if multi_anime and len(multi_anime) >= 2:
+                # ===== 模式 A：多線趨勢圖（每部動畫一條線）=====
+                embed.description = f"集數觀看趨勢 ({len(multi_anime)} 部動畫)"
+                
+                # 構建多線圖表
+                datasets = []
+                
+                # 顏色數組（10 種顏色）
+                colors = [
+                    "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
+                    "#F7DC6F", "#BB8FCE", "#85C1E2", "#F8B88B", "#ABEBC6"
+                ]
+                
+                # 找出所有集數編號（X 軸）
+                all_episodes = set()
+                for anime in multi_anime:
+                    for ep in anime['episodes']:
+                        all_episodes.add(ep['num'])
+                
+                episode_labels = sorted(list(all_episodes))
+                
+                # 為每部動畫建立一條線
+                for idx, anime in enumerate(multi_anime):
+                    name = anime['name'][:10]  # 縮短名稱
+                    color = colors[idx % len(colors)]
+                    
+                    # 建立該動畫的數據點（缺失集用 None）
+                    ep_dict = {ep['num']: ep['views'] for ep in anime['episodes']}
+                    data = [ep_dict.get(label) for label in episode_labels]
+                    
+                    datasets.append({
+                        "label": name,
+                        "data": data,
+                        "borderColor": color,
+                        "backgroundColor": f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.05)",
+                        "borderWidth": 2,
+                        "fill": False,
+                        "tension": 0.3,
+                        "pointRadius": 3,
+                        "pointBackgroundColor": color
+                    })
+                
+                # 構建圖表配置
+                try:
+                    chart_config = {
+                        "type": "line",
+                        "data": {
+                            "labels": episode_labels,
+                            "datasets": datasets
+                        },
+                        "options": {
+                            "scales": {
+                                "y": {
+                                    "ticks": {"font": {"size": 9}},
+                                    "title": {"display": True, "text": "觀看次數"}
+                                },
+                                "x": {
+                                    "ticks": {"font": {"size": 8}},
+                                    "title": {"display": True, "text": "集數"}
+                                }
+                            },
+                            "plugins": {
+                                "legend": {
+                                    "display": True,
+                                    "position": "top",
+                                    "labels": {"font": {"size": 9}}
+                                }
+                            }
+                        }
+                    }
+                    
+                    config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
+                    encoded = quote(config_json)
+                    chart_url = f"https://quickchart.io/chart?bkg=white&w=950&h=400&c={encoded}"
+                    
+                    if len(chart_url) <= 2048:
+                        embed.set_image(url=chart_url)
+                        logger.info(f"📺 [anime_ranking] 多線趨勢圖 URL {len(chart_url)} 字元，生成成功")
+                    else:
+                        logger.warning(f"⚠️ [anime_ranking] 多線圖 URL {len(chart_url)} 字元，超過限制，改用文字顯示")
+                        multi_anime = None  # 改用模式 B
+                except Exception as e:
+                    logger.warning(f"⚠️ [anime_ranking] 生成多線圖失敗: {e}，改用文字顯示")
+                    multi_anime = None  # 改用模式 B
             
-            # 生成 QuickChart 折線圖 URL（簡化配置以符合 Discord 2048 字元限制）
-            try:
-                chart_config = {
-                    "type": "line",
-                    "data": {
-                        "labels": anime_names,
-                        "datasets": [
-                            {
+            # === 模式 B：文字排行列表（當無多集數據或圖表生成失敗）===
+            if not multi_anime or len(multi_anime) < 2:
+                embed.description = f"前 {len(top_anime)} 名熱度排行"
+                
+                # 生成單線聚合圖
+                anime_names = []
+                anime_views = []
+                for idx, anime in enumerate(top_anime, 1):
+                    anime_name = anime.get('name', f"#{anime.get('anime_sn')}")
+                    short_name = anime_name[:8] if len(anime_name) > 8 else anime_name
+                    anime_names.append(f"#{idx} {short_name}")
+                    anime_views.append(anime['total_views'])
+                
+                try:
+                    chart_config = {
+                        "type": "line",
+                        "data": {
+                            "labels": anime_names,
+                            "datasets": [{
                                 "data": anime_views,
                                 "borderColor": "#FFD700",
                                 "backgroundColor": "rgba(255,215,0,0.1)",
@@ -1385,54 +1552,40 @@ class AnimeTracker(commands.Cog):
                                 "tension": 0.3,
                                 "pointRadius": 3,
                                 "pointBackgroundColor": "#FFD700"
-                            }
-                        ]
-                    },
-                    "options": {
-                        "scales": {
-                            "y": {
-                                "ticks": {"font": {"size": 10}}
-                            },
-                            "x": {
-                                "ticks": {"font": {"size": 8}}
-                            }
+                            }]
                         },
-                        "plugins": {
-                            "legend": {"display": False}
+                        "options": {
+                            "scales": {
+                                "y": {"ticks": {"font": {"size": 10}}},
+                                "x": {"ticks": {"font": {"size": 8}}}
+                            },
+                            "plugins": {"legend": {"display": False}}
                         }
                     }
-                }
+                    
+                    config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
+                    encoded = quote(config_json)
+                    chart_url = f"https://quickchart.io/chart?bkg=white&w=850&h=350&c={encoded}"
+                    
+                    if len(chart_url) <= 2048:
+                        embed.set_image(url=chart_url)
+                        logger.info(f"📺 [anime_ranking] 單線聚合圖 URL {len(chart_url)} 字元")
+                except Exception as e:
+                    logger.warning(f"⚠️ [anime_ranking] 生成單線圖失敗: {e}")
                 
-                # 生成 QuickChart URL
-                config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
-                encoded = quote(config_json)
-                chart_url = f"https://quickchart.io/chart?bkg=white&w=850&h=350&c={encoded}"
+                # 添加文字排行
+                ranking_text = []
+                for idx, anime in enumerate(top_anime, 1):
+                    anime_name = anime.get('name', f'Anime #{anime.get("anime_sn", "?")}').strip()
+                    line = f"#{idx} **{anime_name}** - {anime['total_views']:,} 次"
+                    ranking_text.append(line)
                 
-                # 檢查 URL 長度
-                if len(chart_url) <= 2048:
-                    embed.set_image(url=chart_url)
-                    logger.info(f"📺 [anime_ranking] 折線圖 URL {len(chart_url)} 字元，生成成功")
-                else:
-                    logger.warning(f"⚠️ [anime_ranking] 折線圖 URL {len(chart_url)} 字元，超過 2048 限制")
-                    # 超過限制時不設定圖片，僅顯示文字排行
-                
-            except Exception as e:
-                logger.warning(f"⚠️ [anime_ranking] 生成圖表失敗: {e}")
-                # 即使生成圖表失敗，仍顯示文字排行
+                embed.description += "\n\n" + "\n".join(ranking_text)
             
-            # 在 description 中添加簡單排行列表
-            ranking_text = []
-            for idx, anime in enumerate(top_anime, 1):
-                anime_name = anime.get('name', f'Anime #{anime.get("anime_sn", "?")}').strip()
-                line = f"#{idx} **{anime_name}** - {anime['total_views']:,} 次"
-                ranking_text.append(line)
-            
-            embed.description += "\n\n" + "\n".join(ranking_text)
-            
-            embed.set_footer(text="🔄 實時數據" if not self.db.get_top_anime_by_views(limit=1) else "📊 歷史統計")
+            embed.set_footer(text="📊 集數趨勢" if multi_anime and len(multi_anime) >= 2 else "📈 聚合排行")
             
             await interaction.followup.send(embed=embed)
-            logger.info(f"📺 [anime_ranking] 顯示前 {len(top_anime)} 部動畫的排行")
+            logger.info(f"📺 [anime_ranking] 顯示排行榜（模式: {'多線趨勢' if multi_anime and len(multi_anime) >= 2 else '聚合排行'}）")
         except Exception as e:
             logger.error(f"❌ [anime_ranking] 指令執行失敗: {e}", exc_info=True)
             try:
