@@ -34,7 +34,6 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import asyncio
 import aiohttp
-import requests
 import sqlite3
 import json
 import re
@@ -570,24 +569,25 @@ class AnimeTracker(commands.Cog):
                 "h": 400 if chart_config.get("type") == "line" and len(chart_config.get("data", {}).get("datasets", [])) > 1 else 350
             }
             
-            response = requests.post(
-                "https://quickchart.io/chart/create",
-                json=chart_config_with_params,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                short_url = data.get("url")
-                if short_url:
-                    logger.info(f"📊 [get_quickchart_short_url] 成功生成短網址: {short_url[:50]}...")
-                    return short_url
-                else:
-                    logger.warning(f"⚠️ [get_quickchart_short_url] API 無返回 url: {data}")
-                    return None
-            else:
-                logger.warning(f"⚠️ [get_quickchart_short_url] API 返回 {response.status_code}: {response.text}")
-                return None
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://quickchart.io/chart/create",
+                    json=chart_config_with_params,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        short_url = data.get("url")
+                        if short_url:
+                            logger.info(f"📊 [get_quickchart_short_url] 成功生成短網址: {short_url[:50]}...")
+                            return short_url
+                        else:
+                            logger.warning(f"⚠️ [get_quickchart_short_url] API 無返回 url: {data}")
+                            return None
+                    else:
+                        text = await resp.text()
+                        logger.warning(f"⚠️ [get_quickchart_short_url] API 返回 {resp.status}: {text}")
+                        return None
         except Exception as e:
             logger.warning(f"⚠️ [get_quickchart_short_url] 生成短網址失敗: {e}")
             return None
