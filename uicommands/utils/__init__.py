@@ -8,7 +8,6 @@ from .image_utils import (
     generate_character_cache_key,
     get_cached_discord_url,
     save_discord_url_cache,
-    upload_image_to_discord_storage,
     get_character_image_url,
     restore_image_cache_from_storage,
 )
@@ -31,7 +30,6 @@ __all__ = [
     'generate_character_cache_key',
     'get_cached_discord_url',
     'save_discord_url_cache',
-    'upload_image_to_discord_storage',
     'get_character_image_url',
     'restore_image_cache_from_storage',
     'ensure_user_exists',
