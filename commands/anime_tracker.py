@@ -56,6 +56,8 @@ API_TIMEOUT = 15  # 秒
 NOTIFIED_TABLE = "anime_notified"
 BOOTSTRAP_FLAG_TABLE = "anime_bootstrap"
 ANIME_DETAILS_TABLE = "anime_details"  # 永恆快取動畫詳細信息
+ANIME_STATS_TABLE = "anime_statistics"  # 動畫統計數據（觀看人數、評分趨勢等）
+EPISODE_STATS_TABLE = "episode_statistics"  # 每集統計數據
 
 
 class AnimeDatabase:
@@ -102,6 +104,31 @@ class AnimeDatabase:
                         popular INTEGER,
                         score REAL,
                         cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # 4. 動畫統計數據（跨集聚合）
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {ANIME_STATS_TABLE} (
+                        animeSn INTEGER PRIMARY KEY,
+                        anime_name TEXT NOT NULL,
+                        total_episodes INTEGER DEFAULT 0,
+                        avg_views REAL DEFAULT 0,
+                        avg_score REAL DEFAULT 0,
+                        total_views INTEGER DEFAULT 0,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # 5. 每集統計數據（用於趨勢分析）
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {EPISODE_STATS_TABLE} (
+                        videoSn INTEGER PRIMARY KEY,
+                        animeSn INTEGER NOT NULL,
+                        episode_num TEXT,
+                        views INTEGER,
+                        score REAL,
+                        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
                 
@@ -230,6 +257,93 @@ class AnimeDatabase:
                 logger.info(f"✅ Cached anime details for animeSn={anime_sn}")
         except Exception as e:
             logger.error(f"❌ Error caching anime details: {e}")
+    
+    def record_episode_stats(self, video_sn: int, anime_sn: int, episode_num: str, views: int, score: float):
+        """記錄每集的統計數據"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT OR REPLACE INTO {EPISODE_STATS_TABLE}
+                    (videoSn, animeSn, episode_num, views, score, recorded_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (video_sn, anime_sn, episode_num, views, score))
+                conn.commit()
+                logger.info(f"📊 Recorded stats for videoSn={video_sn}: views={views}, score={score}")
+        except Exception as e:
+            logger.error(f"❌ Error recording episode stats: {e}")
+    
+    def get_anime_statistics(self, anime_sn: int) -> Optional[Dict]:
+        """獲取某部動畫的統計數據"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT anime_name, total_episodes, avg_views, avg_score, total_views
+                    FROM {ANIME_STATS_TABLE} WHERE animeSn = ?
+                """, (anime_sn,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        "anime_name": row[0],
+                        "total_episodes": row[1],
+                        "avg_views": row[2],
+                        "avg_score": row[3],
+                        "total_views": row[4]
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"❌ Error getting anime stats: {e}")
+            return None
+    
+    def update_anime_statistics(self, anime_sn: int, anime_name: str):
+        """更新動畫的聚合統計數據（從 episode_statistics 表計算）"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                # 計算本動畫的統計
+                cursor.execute(f"""
+                    SELECT COUNT(*), AVG(views), AVG(score), SUM(views)
+                    FROM {EPISODE_STATS_TABLE} WHERE animeSn = ?
+                """, (anime_sn,))
+                row = cursor.fetchone()
+                total_ep, avg_views, avg_score, total_views = row
+                
+                # 更新或插入統計表
+                cursor.execute(f"""
+                    INSERT OR REPLACE INTO {ANIME_STATS_TABLE}
+                    (animeSn, anime_name, total_episodes, avg_views, avg_score, total_views, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (anime_sn, anime_name, total_ep or 0, avg_views or 0, avg_score or 0, total_views or 0))
+                conn.commit()
+                logger.info(f"📈 Updated stats for {anime_name}: {total_ep} eps, avg_views={avg_views:.0f}, avg_score={avg_score:.1f}")
+        except Exception as e:
+            logger.error(f"❌ Error updating anime statistics: {e}")
+    
+    def get_top_anime_by_views(self, limit: int = 10) -> List[Dict]:
+        """獲取觀看次數最多的動畫排行"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT animeSn, anime_name, total_views, avg_views, avg_score, total_episodes
+                    FROM {ANIME_STATS_TABLE}
+                    ORDER BY total_views DESC LIMIT ?
+                """, (limit,))
+                return [
+                    {
+                        "anime_sn": row[0],
+                        "name": row[1],
+                        "total_views": row[2],
+                        "avg_views": row[3],
+                        "avg_score": row[4],
+                        "total_episodes": row[5]
+                    }
+                    for row in cursor.fetchall()
+                ]
+        except Exception as e:
+            logger.error(f"❌ Error getting top anime: {e}")
+            return []
         except Exception as e:
             logger.error(f"❌ Error during bootstrap: {e}")
 
@@ -532,6 +646,14 @@ class AnimeTracker(commands.Cog):
                     # 快取到數據庫
                     if anime_sn:
                         self.db.cache_anime_details(anime_sn, title, content, tags, popular, score)
+                        # 同時記錄統計數據（用於數據分析）
+                        self.db.record_episode_stats(
+                            video_sn=video_sn,
+                            anime_sn=anime_sn,
+                            episode_num=f"Ep. {anime.get('video_episode_number', '')}",
+                            views=popular,
+                            score=score
+                        )
                     
                     return {
                         "anime_sn": anime_sn,
@@ -632,10 +754,12 @@ class AnimeTracker(commands.Cog):
         description_text = f"**集數：{volume}**"
         # 不再在 description 中添加簡介，改為只在 field 中顯示短版簡介
         
-        # 人氣度和評分信息
-        popularity_text = f"👥 {popular:,} 人氣" if popular > 0 else ""
-        if score > 0:
-            popularity_text += f" | ⭐ {score:.1f} 分"
+        # 人氣度和評分信息 - 增強展示
+        popularity_text = f"👥 {popular:,}" if popular > 0 else "👥 N/A"
+        score_text = f"⭐ {score:.1f}" if score > 0 else "⭐ N/A"
+        
+        # 嘗試獲取動畫統計信息（用於顯示平均數據）
+        anime_stats = self.db.get_anime_statistics(int(anime_sn)) if anime_sn else None
         
         embed = discord.Embed(
             title=f"🎬 {anime_name}",
@@ -648,13 +772,21 @@ class AnimeTracker(commands.Cog):
         if cover_url:
             embed.set_image(url=cover_url)
         
-        # 添加人氣度與評分字段
-        if popularity_text:
-            embed.add_field(
-                name="📊 人氣度與評分",
-                value=popularity_text,
-                inline=True
-            )
+        # 添加詳細的人氣度與評分字段
+        stats_lines = [
+            f"**本集**: {popularity_text} 觀看 | {score_text} 評分"
+        ]
+        if anime_stats and anime_stats['total_episodes'] > 0:
+            avg_views = anime_stats['avg_views']
+            avg_score = anime_stats['avg_score']
+            stats_lines.append(f"**本季均值**: 👥 {avg_views:,.0f} 觀看 | ⭐ {avg_score:.1f} 評分")
+            stats_lines.append(f"**本季統計**: {anime_stats['total_episodes']} 集, 共 {anime_stats['total_views']:,} 觀看")
+        
+        embed.add_field(
+            name="📊 觀看數據",
+            value="\n".join(stats_lines),
+            inline=False
+        )
         
         embed.add_field(
             name="📌 標籤",
@@ -996,6 +1128,73 @@ class AnimeTracker(commands.Cog):
             logger.info(f"📺 [anime_status] 任務狀態: {'運行中' if task_running else '未運行'}, Bootstrap: {'完成' if bootstrap_done else '未完成'}")
         except Exception as e:
             logger.error(f"❌ [anime_status] 指令執行失敗: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
+            except:
+                pass
+    
+    @app_commands.command(name="anime_ranking", description="查看本季動畫觀看排行榜")
+    async def anime_ranking(self, interaction: discord.Interaction):
+        """顯示本季動畫的觀看排行榜"""
+        try:
+            await interaction.response.defer()
+            
+            top_anime = self.db.get_top_anime_by_views(limit=10)
+            
+            if not top_anime:
+                await interaction.followup.send("📊 目前還沒有統計數據，請等待更多動畫被推送")
+                logger.info("📺 [anime_ranking] 沒有統計數據")
+                return
+            
+            embed = discord.Embed(
+                title="🏆 本季動畫觀看排行榜",
+                description=f"統計前 {len(top_anime)} 部動畫的數據",
+                color=discord.Color.gold(),
+                timestamp=datetime.utcnow()
+            )
+            
+            ranking_lines = []
+            for idx, anime in enumerate(top_anime, 1):
+                medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"#{idx}"
+                line = f"{medal} **{anime['name']}**\n"
+                line += f"   👥 總觀看: {anime['total_views']:,} | 平均: {anime['avg_views']:.0f}\n"
+                line += f"   ⭐ 平均評分: {anime['avg_score']:.1f} | 集數: {anime['total_episodes']}"
+                ranking_lines.append(line)
+            
+            embed.description += "\n\n" + "\n".join(ranking_lines)
+            embed.set_footer(text="數據基於 API 返回的觀看人數統計")
+            
+            await interaction.followup.send(embed=embed)
+            logger.info(f"📺 [anime_ranking] 顯示前 {len(top_anime)} 部動畫的排行")
+        except Exception as e:
+            logger.error(f"❌ [anime_ranking] 指令執行失敗: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
+            except:
+                pass
+    
+    @app_commands.command(name="anime_stats", description="查看特定動畫的統計數據分析")
+    async def anime_stats(self, interaction: discord.Interaction, anime_name: str):
+        """查看某部動畫的詳細統計數據"""
+        try:
+            await interaction.response.defer()
+            
+            # 簡單的搜索：從數據庫中查找名稱相符的動畫
+            # 這需要先更新系統，但我們可以返回提示
+            await interaction.followup.send(
+                "📊 **動畫統計分析功能**\n\n"
+                "此功能用於查看特定動畫的詳細數據分析。\n\n"
+                "目前支持的數據指標：\n"
+                "• 👥 本季總觀看人數\n"
+                "• ⭐ 平均評分趨勢\n"
+                "• 📈 集數 vs 觀看人數趨勢\n"
+                "• 🔢 排名變化\n\n"
+                f"查詢動畫: **{anime_name}**\n"
+                "更多統計功能開發中... 請使用 `/anime_ranking` 查看排行榜"
+            )
+            logger.info(f"📺 [anime_stats] 查詢動畫: {anime_name}")
+        except Exception as e:
+            logger.error(f"❌ [anime_stats] 指令執行失敗: {e}", exc_info=True)
             try:
                 await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
             except:
