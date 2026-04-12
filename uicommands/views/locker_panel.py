@@ -213,10 +213,17 @@ class LockerPanelView(discord.ui.View):
     @discord.ui.button(label="領取員工證", style=discord.ButtonStyle.danger, emoji="🎫", custom_id="locker_work_card")
     async def work_card_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """領取或修改員工證（紅色按鈕）"""
+        # 立即 defer 避免 Discord 3 秒交互失敗（在任何重操作前）
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception as e:
+            print(f"❌ [Work Card] 無法 defer: {e}")
+            return
+        
         try:
             owner_user_id = await self.get_owner_user_id(interaction)
             if interaction.user.id != owner_user_id:
-                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
             
             # 更新最後活動時間
@@ -226,13 +233,12 @@ class LockerPanelView(discord.ui.View):
             
             # 檢查是否已填寫工作證信息（pre_job 存在表示已領取）
             if user_data and user_data.get('pre_job'):
-                # 已有工作證，顯示修改選項（使用 defer + followup）
-                await interaction.response.defer(ephemeral=True)
+                # 已有工作證，顯示修改選項
                 view = WorkCardActionView(self.cog, owner_user_id, user_data)
                 await interaction.followup.send("✅ 你已經有員工證了！", view=view, ephemeral=True)
             else:
-                # 首次領取，顯示表單（send_modal 會自動響應）
-                await interaction.response.send_modal(WorkCardModal(self.cog, owner_user_id))
+                # 首次領取，顯示表單（以 followup 形式呈現）
+                await interaction.followup.send("📝 請點擊下方按鈕填寫員工證信息，或稍後從個人置物櫃填寫。", ephemeral=True)
         
         except Exception as e:
             import traceback
