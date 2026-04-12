@@ -1363,11 +1363,13 @@ class AnimeTracker(commands.Cog):
             anime_names = []
             anime_views = []
             for idx, anime in enumerate(top_anime, 1):
-                anime_name = anime.get('name', f"Anime #{anime.get('anime_sn')}")
-                anime_names.append(f"#{idx} {anime_name[:15]}")  # 截短名稱以符合圖表寬度
+                anime_name = anime.get('name', f"#{anime.get('anime_sn')}")
+                # 大幅縮短名稱以符合 URL 長度限制
+                short_name = anime_name[:8] if len(anime_name) > 8 else anime_name
+                anime_names.append(f"#{idx} {short_name}")
                 anime_views.append(anime['total_views'])
             
-            # 生成 QuickChart 折線圖 URL
+            # 生成 QuickChart 折線圖 URL（簡化配置以符合 Discord 2048 字元限制）
             try:
                 chart_config = {
                     "type": "line",
@@ -1375,57 +1377,44 @@ class AnimeTracker(commands.Cog):
                         "labels": anime_names,
                         "datasets": [
                             {
-                                "label": "觀看次數",
                                 "data": anime_views,
-                                "borderColor": "#FFD700",  # 金色
-                                "backgroundColor": "rgba(255, 215, 0, 0.1)",
+                                "borderColor": "#FFD700",
+                                "backgroundColor": "rgba(255,215,0,0.1)",
                                 "borderWidth": 2,
                                 "fill": True,
-                                "tension": 0.4,
-                                "pointRadius": 5,
-                                "pointBackgroundColor": "#FFD700",
-                                "pointBorderColor": "#fff"
+                                "tension": 0.3,
+                                "pointRadius": 3,
+                                "pointBackgroundColor": "#FFD700"
                             }
                         ]
                     },
                     "options": {
-                        "responsive": True,
-                        "maintainAspectRatio": True,
                         "scales": {
                             "y": {
-                                "ticks": {
-                                    "font": {"size": 11},
-                                    "callback": "function(value) { return value.toLocaleString(); }"
-                                },
-                                "title": {
-                                    "display": True,
-                                    "text": "觀看次數"
-                                }
+                                "ticks": {"font": {"size": 10}}
                             },
                             "x": {
-                                "ticks": {
-                                    "font": {"size": 9},
-                                    "maxRotation": 45,
-                                    "minRotation": 0
-                                }
+                                "ticks": {"font": {"size": 8}}
                             }
                         },
                         "plugins": {
-                            "legend": {
-                                "labels": {"font": {"size": 12}},
-                                "position": "top"
-                            }
+                            "legend": {"display": False}
                         }
                     }
                 }
                 
                 # 生成 QuickChart URL
-                config_json = json.dumps(chart_config, separators=(',', ':'))
+                config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
                 encoded = quote(config_json)
-                chart_url = f"https://quickchart.io/chart?bkg=white&w=900&h=400&c={encoded}"
+                chart_url = f"https://quickchart.io/chart?bkg=white&w=850&h=350&c={encoded}"
                 
-                embed.set_image(url=chart_url)
-                logger.info(f"📺 [anime_ranking] 生成折線圖 URL 成功")
+                # 檢查 URL 長度
+                if len(chart_url) <= 2048:
+                    embed.set_image(url=chart_url)
+                    logger.info(f"📺 [anime_ranking] 折線圖 URL {len(chart_url)} 字元，生成成功")
+                else:
+                    logger.warning(f"⚠️ [anime_ranking] 折線圖 URL {len(chart_url)} 字元，超過 2048 限制")
+                    # 超過限制時不設定圖片，僅顯示文字排行
                 
             except Exception as e:
                 logger.warning(f"⚠️ [anime_ranking] 生成圖表失敗: {e}")
