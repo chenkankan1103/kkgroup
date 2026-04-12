@@ -433,6 +433,8 @@ class AnimeDatabase:
             [{
                 "anime_sn": int,
                 "name": str,
+                "cover_url": str,  # 新增：動畫封面 URL
+                "short_name": str,  # 新增：動畫簡稱（前 2 個字符）
                 "episodes": [{"num": str, "views": int}, ...],
                 "total_views": int,
                 "total_episodes": int
@@ -472,8 +474,10 @@ class AnimeDatabase:
                     total_episodes = row[1]
                     total_views = row[2] or 0
                     
-                    # 獲取動畫名稱
+                    # 獲取動畫名稱和封面 URL
                     anime_name = None
+                    cover_url = None
+                    
                     cursor.execute(f"""
                         SELECT title FROM {ANIME_DETAILS_TABLE} 
                         WHERE animeSn = ? ORDER BY cached_at DESC LIMIT 1
@@ -484,11 +488,28 @@ class AnimeDatabase:
                     
                     if not anime_name:
                         cursor.execute(f"""
-                            SELECT anime_name FROM {NOTIFIED_TABLE} 
+                            SELECT anime_name, cover_url FROM {NOTIFIED_TABLE} 
                             WHERE animeSn = ? LIMIT 1
                         """, (anime_sn,))
                         notified_row = cursor.fetchone()
-                        anime_name = notified_row[0] if notified_row else f"Anime #{anime_sn}"
+                        if notified_row:
+                            anime_name = notified_row[0]
+                            cover_url = notified_row[1] if len(notified_row) > 1 else None
+                        else:
+                            anime_name = f"Anime #{anime_sn}"
+                    
+                    # 如果還沒有 cover_url，嘗試從 NOTIFIED_TABLE 獲取
+                    if not cover_url:
+                        cursor.execute(f"""
+                            SELECT cover_url FROM {NOTIFIED_TABLE} 
+                            WHERE animeSn = ? ORDER BY notified_at DESC LIMIT 1
+                        """, (anime_sn,))
+                        cover_row = cursor.fetchone()
+                        if cover_row and cover_row[0]:
+                            cover_url = cover_row[0]
+                    
+                    # 生成動畫簡稱（前 2 個字符）
+                    short_name = anime_name[:2] if len(anime_name) >= 2 else anime_name
                     
                     # 獲取該動畫的所有集集數據（按集數排序）
                     cursor.execute(f"""
@@ -506,6 +527,8 @@ class AnimeDatabase:
                     results.append({
                         "anime_sn": anime_sn,
                         "name": anime_name,
+                        "cover_url": cover_url,
+                        "short_name": short_name,
                         "episodes": episodes,
                         "total_views": total_views,
                         "total_episodes": total_episodes
@@ -1604,6 +1627,32 @@ class AnimeTracker(commands.Cog):
                 except Exception as e:
                     logger.warning(f"⚠️ [anime_ranking] 生成多線圖失敗: {e}，改用文字顯示")
                     multi_anime = None  # 改用模式 B
+                
+                # === 新增：動畫簡稱和分級顯示 ===
+                if multi_anime and len(multi_anime) > 0:
+                    # 構建縮略圖/簡稱列表
+                    anime_list_text = ""
+                    
+                    # 方法 1：簡稱列表（緊湊格式）
+                    short_names = " | ".join([f"{idx+1}. {anime['short_name']}" for idx, anime in enumerate(multi_anime)])
+                    embed.add_field(name="📊 參賽動畫", value=short_names, inline=False)
+                    
+                    # 方法 2：帶有觀看數的完整列表
+                    anime_details = []
+                    for idx, anime in enumerate(multi_anime):
+                        rank = idx + 1
+                        short_name = anime['short_name']
+                        views = anime['total_views']
+                        anime_details.append(f"#{rank} **{short_name}** ({views:,} 次)")
+                    
+                    # 分成 2 列顯示（5 部每列）
+                    if len(anime_details) > 5:
+                        col1 = "\n".join(anime_details[:5])
+                        col2 = "\n".join(anime_details[5:])
+                        embed.add_field(name="🥇 Top 5", value=col1, inline=True)
+                        embed.add_field(name="🥈 6-10", value=col2, inline=True)
+                    else:
+                        embed.add_field(name="📈 觀看排名", value="\n".join(anime_details), inline=False)
             
             # === 模式 B：文字排行列表（當無多集數據或圖表生成失敗）===
             if not multi_anime or len(multi_anime) < 2:
@@ -1666,6 +1715,56 @@ class AnimeTracker(commands.Cog):
             embed.set_footer(text="📊 集數趨勢" if multi_anime and len(multi_anime) >= 1 else "📈 聚合排行")
             
             await interaction.followup.send(embed=embed)
+            
+            # === 新增：發送縮略圖卡片（如果有多線數據）===
+            if multi_anime and len(multi_anime) >= 1:
+                try:
+                    # 構建縮略圖網格 - 分為兩行，每行 5 個
+                    thumbnail_embeds = []
+                    
+                    # 處理前 5 個動畫
+                    row1_text = ""
+                    for idx in range(min(5, len(multi_anime))):
+                        anime = multi_anime[idx]
+                        rank = idx + 1
+                        short_name = anime['short_name']
+                        cover_url = anime.get('cover_url', '')
+                        
+                        # 使用 emoji 表示排名
+                        rank_emoji = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][idx]
+                        row1_text += f"{rank_emoji} **{short_name}**\n"
+                    
+                    # 處理 6-10 個動畫
+                    row2_text = ""
+                    for idx in range(5, min(10, len(multi_anime))):
+                        anime = multi_anime[idx]
+                        rank = idx + 1
+                        short_name = anime['short_name']
+                        rank_emoji = f"{rank}️⃣"  # 使用數字 emoji
+                        row2_text += f"{rank_emoji} **{short_name}**\n"
+                    
+                    # 創建縮略圖 embed
+                    thumb_embed = discord.Embed(
+                        title="🎬 參賽動畫列表",
+                        description="",
+                        color=discord.Color.blue()
+                    )
+                    
+                    if row1_text:
+                        thumb_embed.add_field(name="🏅 排名 1-5", value=row1_text, inline=True)
+                    
+                    if row2_text:
+                        thumb_embed.add_field(name="🎖️ 排名 6-10", value=row2_text, inline=True)
+                    
+                    # 添加第一部動畫的縮略圖（如果有）
+                    if multi_anime[0].get('cover_url'):
+                        thumb_embed.set_thumbnail(url=multi_anime[0]['cover_url'])
+                    
+                    await interaction.followup.send(embed=thumb_embed)
+                    logger.info(f"✅ [anime_ranking] 縮略圖卡片已發送")
+                except Exception as e:
+                    logger.warning(f"⚠️ [anime_ranking] 發送縮略圖卡片失敗: {e}")
+            
             logger.info(f"📺 [anime_ranking] 顯示排行榜（模式: {'多線趨勢' if multi_anime and len(multi_anime) >= 1 else '聚合排行'}）")
         except Exception as e:
             logger.error(f"❌ [anime_ranking] 指令執行失敗: {e}", exc_info=True)
