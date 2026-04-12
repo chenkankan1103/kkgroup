@@ -292,15 +292,28 @@ class AnimeDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                
+                # 確保表存在（防止表未創建的情況）
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {EPISODE_STATS_TABLE} (
+                        videoSn INTEGER PRIMARY KEY,
+                        animeSn INTEGER NOT NULL,
+                        episode_num TEXT,
+                        views INTEGER,
+                        score REAL,
+                        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {EPISODE_STATS_TABLE}
                     (videoSn, animeSn, episode_num, views, score, recorded_at)
                     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, (video_sn, anime_sn, episode_num, views, score))
                 conn.commit()
-                logger.info(f"📊 Recorded stats for videoSn={video_sn}: views={views}, score={score}")
+                logger.info(f"📊 [record_episode_stats] videoSn={video_sn}, episode={episode_num}, views={views}")
         except Exception as e:
-            logger.error(f"❌ Error recording episode stats: {e}")
+            logger.error(f"❌ Error recording episode stats: {e}", exc_info=True)
     
     def get_anime_statistics(self, anime_sn: int) -> Optional[Dict]:
         """獲取某部動畫的統計數據（直接從 episode_statistics 聚合）"""
@@ -428,6 +441,18 @@ class AnimeDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                
+                # 確保表存在
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {EPISODE_STATS_TABLE} (
+                        videoSn INTEGER PRIMARY KEY,
+                        animeSn INTEGER NOT NULL,
+                        episode_num TEXT,
+                        views INTEGER,
+                        score REAL,
+                        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
                 
                 # 先獲取所有有多於 min_episodes 的動畫
                 cursor.execute(f"""
