@@ -165,14 +165,18 @@ class LockerPanelView(discord.ui.View):
     @discord.ui.button(label="變換性別", style=discord.ButtonStyle.secondary, emoji="👤", custom_id="locker_change_gender")
     async def locker_change_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
         """從永久置物櫃面板打開性別選擇（立即 defer，避免 3 秒超時）"""
+        # 立即 defer 避免 Discord 3 秒交互失敗（在任何重操作前）
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception as e:
+            print(f"❌ [Gender Change] 無法 defer: {e}")
+            return
+        
         try:
             owner_user_id = await self.get_owner_user_id(interaction)
             if interaction.user.id != owner_user_id:
-                await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+                await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
-
-            # 立即 defer 避免 Discord 3 秒交互失敗
-            await interaction.response.defer(ephemeral=True)
 
             # 使用共用的 GenderSelectView
             try:
@@ -207,12 +211,12 @@ class LockerPanelView(discord.ui.View):
             
             # 檢查是否已填寫工作證信息（pre_job 存在表示已領取）
             if user_data and user_data.get('pre_job'):
-                # 已有工作證，顯示修改選項並移除按鈕
+                # 已有工作證，顯示修改選項（使用 defer + followup）
+                await interaction.response.defer(ephemeral=True)
                 view = WorkCardActionView(self.cog, owner_user_id, user_data)
-                await interaction.response.send_message("✅ 你已經有員工證了！", view=view, ephemeral=True)
+                await interaction.followup.send("✅ 你已經有員工證了！", view=view, ephemeral=True)
             else:
-                # 首次領取，顯示表單
-                # send_modal 會立即響應，不需要額外的 defer
+                # 首次領取，顯示表單（send_modal 會自動響應）
                 await interaction.response.send_modal(WorkCardModal(self.cog, owner_user_id))
         
         except Exception as e:
@@ -220,7 +224,6 @@ class LockerPanelView(discord.ui.View):
             traceback.print_exc()
             print(f"❌ [Locker Work Card] 錯誤: {e}")
             try:
-                # 嘗試回應，如果已被使用則使用 followup
                 if not interaction.response.is_done():
                     await interaction.response.send_message(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
                 else:
