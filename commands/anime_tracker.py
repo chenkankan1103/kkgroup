@@ -34,6 +34,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import asyncio
 import aiohttp
+import requests
 import sqlite3
 import json
 import re
@@ -549,6 +550,47 @@ class AnimeTracker(commands.Cog):
         """Cog 卸載時停止任務"""
         if self.check_new_anime.is_running():
             self.check_new_anime.cancel()
+    
+    async def get_quickchart_short_url(self, chart_config: Dict) -> Optional[str]:
+        """
+        使用 QuickChart /chart/create API 生成短網址
+        
+        Args:
+            chart_config: QuickChart 圖表配置字典
+        
+        Returns:
+            短網址或 None
+        """
+        try:
+            # 添加常用參數
+            chart_config_with_params = {
+                **chart_config,
+                "bkg": "white",
+                "w": 950 if chart_config.get("type") == "line" and len(chart_config.get("data", {}).get("datasets", [])) > 1 else 850,
+                "h": 400 if chart_config.get("type") == "line" and len(chart_config.get("data", {}).get("datasets", [])) > 1 else 350
+            }
+            
+            response = requests.post(
+                "https://quickchart.io/chart/create",
+                json=chart_config_with_params,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                short_url = data.get("url")
+                if short_url:
+                    logger.info(f"📊 [get_quickchart_short_url] 成功生成短網址: {short_url[:50]}...")
+                    return short_url
+                else:
+                    logger.warning(f"⚠️ [get_quickchart_short_url] API 無返回 url: {data}")
+                    return None
+            else:
+                logger.warning(f"⚠️ [get_quickchart_short_url] API 返回 {response.status_code}: {response.text}")
+                return None
+        except Exception as e:
+            logger.warning(f"⚠️ [get_quickchart_short_url] 生成短網址失敗: {e}")
+            return None
     
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
@@ -1503,15 +1545,13 @@ class AnimeTracker(commands.Cog):
                         }
                     }
                     
-                    config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
-                    encoded = quote(config_json)
-                    chart_url = f"https://quickchart.io/chart?bkg=white&w=950&h=400&c={encoded}"
-                    
-                    if len(chart_url) <= 2048:
+                    # 使用短網址 API
+                    chart_url = await self.get_quickchart_short_url(chart_config)
+                    if chart_url:
                         embed.set_image(url=chart_url)
-                        logger.info(f"📺 [anime_ranking] 多線趨勢圖 URL {len(chart_url)} 字元，生成成功")
+                        logger.info(f"📺 [anime_ranking] 多線趨勢圖短網址生成成功")
                     else:
-                        logger.warning(f"⚠️ [anime_ranking] 多線圖 URL {len(chart_url)} 字元，超過限制，改用文字顯示")
+                        logger.warning(f"⚠️ [anime_ranking] 多線圖短網址生成失敗，改用文字顯示")
                         multi_anime = None  # 改用模式 B
                 except Exception as e:
                     logger.warning(f"⚠️ [anime_ranking] 生成多線圖失敗: {e}，改用文字顯示")
@@ -1555,13 +1595,11 @@ class AnimeTracker(commands.Cog):
                         }
                     }
                     
-                    config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
-                    encoded = quote(config_json)
-                    chart_url = f"https://quickchart.io/chart?bkg=white&w=850&h=350&c={encoded}"
-                    
-                    if len(chart_url) <= 2048:
+                    # 使用短網址 API
+                    chart_url = await self.get_quickchart_short_url(chart_config)
+                    if chart_url:
                         embed.set_image(url=chart_url)
-                        logger.info(f"📺 [anime_ranking] 單線聚合圖 URL {len(chart_url)} 字元")
+                        logger.info(f"📺 [anime_ranking] 單線聚合圖短網址生成成功")
                 except Exception as e:
                     logger.warning(f"⚠️ [anime_ranking] 生成單線圖失敗: {e}")
                 
