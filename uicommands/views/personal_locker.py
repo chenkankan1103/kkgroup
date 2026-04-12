@@ -345,8 +345,8 @@ class PersonalLockerView(discord.ui.View):
             # 判斷此訊息是否為該使用者的永久置物櫃訊息
             is_permanent_locker_msg = False
             try:
-                from db_adapter import get_user
-                user_row = get_user(self.user_id)
+                from db_adapter import async_get_user
+                user_row = await async_get_user(self.user_id)
                 locker_msg_id = user_row.get('locker_message_id') if user_row else None
                 if interaction.message and locker_msg_id and interaction.message.id == locker_msg_id:
                     is_permanent_locker_msg = True
