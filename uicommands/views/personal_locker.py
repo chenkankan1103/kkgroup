@@ -59,10 +59,20 @@ class PersonalLockerView(discord.ui.View):
 
     async def crop_info_callback(self, interaction: discord.Interaction):
         """作物資訊"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception as e:
+            print(f"❌ 無法defer (crop_info_callback): {e}")
+            return
         await self.crop_info_callback_impl(interaction)
 
     async def personal_items_callback(self, interaction: discord.Interaction):
         """個人物品"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception as e:
+            print(f"❌ 無法defer (personal_items_callback): {e}")
+            return
         await self.personal_items_callback_impl(interaction)
 
     async def locker_change_gender_callback(self, interaction: discord.Interaction):
@@ -87,19 +97,24 @@ class PersonalLockerView(discord.ui.View):
     async def crop_planting_callback(self, interaction: discord.Interaction):
         """作物種植 - 顯示種子選擇介面"""
         try:
-            # await interaction.response.defer(ephemeral=True)
+            # 立即 defer - 避免 3 秒超時
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except Exception as defer_error:
+                print(f"❌ 無法defer (crop_planting): {defer_error}")
+                return
 
             # 獲取用戶種子庫存
             try:
                 inventory = await get_inventory(self.user_id)
                 if not inventory:
                     print(f"⚠️  [Crop Planting] Failed to get inventory for user {self.user_id}")
-                    await interaction.response.send_message("❌ 無法獲取庫存資料！請稍後再試。", ephemeral=True)
+                    await interaction.followup.send("❌ 無法獲取庫存資料！請稍後再試。", ephemeral=True)
                     return
             except Exception as inv_error:
                 print(f"❌ [Crop Planting] Inventory error for user {self.user_id}: {inv_error}")
                 traceback.print_exc()
-                await interaction.response.send_message("❌ 獲取庫存時發生錯誤！請聯繫管理員。", ephemeral=True)
+                await interaction.followup.send("❌ 獲取庫存時發生錯誤！請聯繫管理員。", ephemeral=True)
                 return
 
             seeds = inventory.get("種子", {})
@@ -131,15 +146,15 @@ class PersonalLockerView(discord.ui.View):
 
             from .selection_views import SelectSeedView
             view = SelectSeedView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds)
-            # 編輯原始回應而不是發送新訊息
-            await interaction.response.edit_message(embed=embed, view=view)
+            # 在 defer 後使用 followup.send() 而不是 edit_message()
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             add_log("ui", f"[Crop Planting] Seed selection view updated for user {self.user_id}")
 
         except Exception as e:
             add_log("ui", f"[Crop Planting] Unexpected error for user {self.user_id}: {e}")
             traceback.print_exc()
             try:
-                await interaction.response.send_message(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
+                await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
             except:
                 pass
 
