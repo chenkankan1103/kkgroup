@@ -1491,6 +1491,10 @@ class AnimeTracker(commands.Cog):
             
             # 嘗試獲取有多集的動畫數據（用於多線圖）
             multi_anime = self.db.get_multi_episode_anime_for_chart(limit=10, min_episodes=1)
+            logger.info(f"📺 [anime_ranking] 查詢 multi_anime 結果: {len(multi_anime) if multi_anime else 0} 部動畫")
+            if multi_anime:
+                for i, anime in enumerate(multi_anime[:3]):
+                    logger.info(f"  📺 [{i+1}] {anime['name']}: {len(anime['episodes'])} 集, {anime['total_views']} 次觀看")
             
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
