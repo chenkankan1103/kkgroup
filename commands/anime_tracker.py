@@ -1337,24 +1337,32 @@ class AnimeTracker(commands.Cog):
                 
                 logger.info(f"📺 [anime_ranking] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
-            # 生成排行榜 embed
+            # 生成排行榜 embed（使用 fields 保證排版清晰）
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
-                description=f"統計前 {len(top_anime)} 部動畫的數據",
+                description=f"前 {len(top_anime)} 名熱度排行",
                 color=discord.Color.gold(),
                 timestamp=datetime.utcnow()
             )
             
-            ranking_lines = []
             for idx, anime in enumerate(top_anime, 1):
-                medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"#{idx}"
-                line = f"{medal} **{anime['name']}**\n"
-                line += f"   👥 總觀看: {anime['total_views']:,} | 平均: {anime['avg_views']:.0f}\n"
-                line += f"   ⭐ 平均評分: {anime['avg_score']:.1f} | 集數: {anime['total_episodes']}"
-                ranking_lines.append(line)
+                medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"#{idx:2d}"
+                
+                # 動畫名稱作為 field name
+                field_name = f"{medal} | {anime['name']}"
+                
+                # 詳細資訊作為 field value
+                field_value = (
+                    f"**👥 觀看人次**\n"
+                    f"└ 總計: {anime['total_views']:>8,}\n"
+                    f"└ 平均: {anime['avg_views']:>8.0f}\n\n"
+                    f"**⭐ 評分**: {anime['avg_score']:.1f}/10\n"
+                    f"**📺 集數**: {anime['total_episodes']} 集"
+                )
+                
+                embed.add_field(name=field_name, value=field_value, inline=False)
             
-            embed.description += "\n\n" + "\n".join(ranking_lines)
-            embed.set_footer(text="🔄 實時數據 (最近推送的動畫)" if not self.db.get_top_anime_by_views(limit=1) else "📊 歷史數據統計")
+            embed.set_footer(text="🔄 實時數據" if not self.db.get_top_anime_by_views(limit=1) else "📊 歷史統計")
             
             await interaction.followup.send(embed=embed)
             logger.info(f"📺 [anime_ranking] 顯示前 {len(top_anime)} 部動畫的排行")
