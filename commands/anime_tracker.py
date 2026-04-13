@@ -1117,7 +1117,7 @@ class AnimeTracker(commands.Cog):
         
         return view if view.children else None
     
-    @tasks.loop(minutes=1)
+    @tasks.loop(minutes=5)
     async def check_new_anime(self):
         """
         根據日程表檢查新番，優化為只在預期時間附近檢查
@@ -1126,7 +1126,7 @@ class AnimeTracker(commands.Cog):
         1. 獲取 newAnimeSchedule（各星期的預期時刻表）
         2. 計算預期時刻（±10分鐘的窗口）
         3. 只有在預期時間窗口內且有集更新時，才發送通知
-        4. 減少離峰時間每分鐘的檢查成本
+        4. 每 5 分鐘檢查一次，減少 API 請求流量成本
         """
         # 使用台灣時區而不是 GCP VM 的美國時間
         now = datetime.now(TW_TZ)
