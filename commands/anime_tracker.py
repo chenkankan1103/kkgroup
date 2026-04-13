@@ -565,6 +565,10 @@ class AnimeTracker(commands.Cog):
         self.task_started = False
         self.bootstrap_completed = False
         
+        # 跟踪動畫的檢查狀態（用於多次重試策略）
+        # 格式: {(anime_sn, schedule_time): {"check_count": 0, "found": False, "last_check_time": datetime}}
+        self.anime_retry_queue = {}
+        
         # 注：任務將在 before_loop 中由 Discord.py 自動啟動，不在 __init__ 中啟動
         logger.info("📺 [AnimeTracker.__init__] 任務將在 before_loop 中由框架自動啟動")
         
@@ -1117,54 +1121,32 @@ class AnimeTracker(commands.Cog):
         
         return view if view.children else None
     
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=1)
     async def check_new_anime(self):
         """
-        根據日程表檢查新番，優化為只在預期時間附近檢查
+        智能多階段檢查新番 - 3 個檢查窗口策略
         
         工作流程：
-        1. 獲取 newAnimeSchedule（各星期的預期時刻表）
-        2. 計算預期時刻（±10分鐘的窗口）
-        3. 只有在預期時間窗口內且有集更新時，才發送通知
-        4. 每 5 分鐘檢查一次，減少 API 請求流量成本
+        1. 獲取 newAnimeSchedule 與預期檢查時刻
+        2. 對於每個預期時刻，在 3 個窗口進行檢查：
+           - 窗口 1：預定時刻 +0 至 +1 分鐘（針對 +30 秒到 +90 秒的檢查）
+           - 窗口 2：預定時刻 +5 至 +6 分鐘
+           - 窗口 3：預定時刻 +10 至 +11 分鐘
+        3. 如果三個窗口都未找到新集，標記為待處理，在下一個動畫預定時刻時重新檢查
+        4. 每分鐘運行一次，智能判斷是否需要 API 檢查（減少無必要的請求）
         """
-        # 使用台灣時區而不是 GCP VM 的美國時間
         now = datetime.now(TW_TZ)
         
         try:
             # 獲取日程表
             schedule = await self._get_anime_schedule()
             if not schedule:
-                # 日程表為空，跳過
                 return
             
-            # 獲取當前時刻應該檢查的集合
-            expected_check_times = self._get_expected_check_times(schedule, now)
-            if not expected_check_times:
-                # 沒有預期時刻，跳過
+            # 獲取今日的預期檢查時刻
+            expected_times = self._get_expected_check_times(schedule, now)
+            if not expected_times:
                 return
-            
-            # 檢查當前時刻是否在預定時刻之後約 10 分鐘內
-            current_time = now.time()
-            in_check_window = False
-            for check_time_str in expected_check_times:
-                try:
-                    check_time = datetime.strptime(check_time_str, "%H:%M").time()
-                    scheduled_datetime = datetime.combine(now.date(), check_time)
-                    current_datetime = datetime.combine(now.date(), current_time)
-                    time_diff = (current_datetime - scheduled_datetime).total_seconds() / 60
-                    if 0 <= time_diff <= 10:  # 預定時刻後 10 分鐘內（放寬時間窗口）
-                        in_check_window = True
-                        logger.info(f"📺 [check_new_anime] 在預定時刻 {check_time_str} 後的檢查窗口內，開始檢查新集")
-                        break
-                except:
-                    continue
-            
-            if not in_check_window:
-                # 尚未到預定時刻或已過 10 分鐘後，跳過
-                return
-            
-            logger.info(f"📺 [check_new_anime] ========== 預期時刻附近檢查 ({now.strftime('%H:%M')}) ==========")
             
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
@@ -1172,49 +1154,112 @@ class AnimeTracker(commands.Cog):
                 logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
                 return
             
-            # 獲取最新動畫數據
-            logger.info("📺 [check_new_anime] 正在從 API 獲取動畫數據...")
-            episodes = await self.fetch_new_anime_from_api()
-            if not episodes:
-                logger.warning("⚠️ [check_new_anime] 無法從 API 獲取數據或沒有今日最新集")
-                return
-            
-            logger.info(f"📺 [check_new_anime] 獲得 {len(episodes)} 集")
-            
             # 檢查 Bootstrap 狀態
             bootstrap_status = self.db.is_bootstrap_completed()
-            logger.info(f"📺 [check_new_anime] Bootstrap 狀態: {bootstrap_status}")
-            
             if not bootstrap_status:
-                # 首次運行：記錄所有現存集，不發送通知
+                # 首次運行：Bootstrap
                 logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
-                self.db.bootstrap_add_all(episodes)
+                episodes = await self.fetch_new_anime_from_api()
+                if episodes:
+                    self.db.bootstrap_add_all(episodes)
                 self.db.mark_bootstrap_completed()
                 self.bootstrap_completed = True
-                logger.info("✅ [check_new_anime] Bootstrap 完成，已記錄所有現存集")
+                logger.info("✅ [check_new_anime] Bootstrap 完成")
                 return
             
-            # 正常運行：檢查新集
+            # 對於每個預期時刻，檢查是否應該在某個窗口進行檢查
+            any_window_checked = False
+            for scheduled_time_str in expected_times:
+                # 初始化追蹤狀態
+                if scheduled_time_str not in self.anime_retry_queue:
+                    self.anime_retry_queue[scheduled_time_str] = {
+                        'windows': [False, False, False],  # 3 個窗口是否已檢查
+                        'found': False,  # 是否已找到新集
+                        'start_time': now,
+                    }
+                
+                # 解析預定時刻
+                try:
+                    scheduled_time = datetime.strptime(scheduled_time_str, "%H:%M").time()
+                    scheduled_dt = datetime.combine(now.date(), scheduled_time, tzinfo=TW_TZ)
+                except:
+                    continue
+                
+                # 計算時間差（分鐘）
+                time_diff_min = (now - scheduled_dt).total_seconds() / 60
+                
+                # 判斷應該執行哪個窗口
+                window_idx = None
+                if 0 <= time_diff_min < 1:
+                    window_idx = 0  # 窗口 1：+30 秒到 +90 秒
+                    window_name = "1"
+                elif 5 <= time_diff_min < 6:
+                    window_idx = 1  # 窗口 2：+5 分鐘
+                    window_name = "2"
+                elif 10 <= time_diff_min < 11:
+                    window_idx = 2  # 窗口 3：+10 分鐘
+                    window_name = "3"
+                
+                # 如果應該執行某個窗口，且還未執行過
+                if window_idx is not None:
+                    if not self.anime_retry_queue[scheduled_time_str]['windows'][window_idx]:
+                        logger.info(f"📺 [check_new_anime] 窗口 {window_name} 檢查: {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
+                        any_window_checked = True
+                        
+                        # 執行檢查
+                        await self._check_and_send_anime(scheduled_time_str, channel)
+                        
+                        # 標記窗口已檢查
+                        self.anime_retry_queue[scheduled_time_str]['windows'][window_idx] = True
+                elif time_diff_min > 11 and not self.anime_retry_queue[scheduled_time_str]['windows'][2]:
+                    # 如果超過了所有窗口但還未被標記，自動標記為透過第 3 窗口
+                    self.anime_retry_queue[scheduled_time_str]['windows'][2] = True
+                
+                # 清理過期的數據（超過 12 小時）
+                if time_diff_min > 720:
+                    if scheduled_time_str in self.anime_retry_queue:
+                        del self.anime_retry_queue[scheduled_time_str]
+            
+            if not any_window_checked:
+                logging_required = False  # 只在有 debug 必要時才 log
+        
+        except Exception as e:
+            logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
+    
+    async def _check_and_send_anime(self, scheduled_time_str: str, channel):
+        """
+        檢查新番集並發送通知（用於多窗口檢查）
+        
+        Args:
+            scheduled_time_str: 預定時刻字符串，例如 "14:30"
+            channel: Discord 頻道物件
+        """
+        try:
+            # 獲取最新動畫數據
+            episodes = await self.fetch_new_anime_from_api()
+            if not episodes:
+                logger.warning(f"⚠️ [_check_and_send_anime] 無法從 API 獲取數據 (時刻: {scheduled_time_str})")
+                return
+            
+            # 檢查新集
             new_episodes = []
             for ep in episodes:
                 video_sn = ep.get("videoSn")
-                if not video_sn or self.db.is_notified(video_sn):
-                    continue
-                # 簡化邏輯：只要不在 notified 表中就認為是新集
-                new_episodes.append(ep)
+                if video_sn and not self.db.is_notified(video_sn):
+                    new_episodes.append(ep)
             
             if not new_episodes:
-                logger.info("⏭️ 沒有新集")
+                logger.info(f"⏭️  [{scheduled_time_str}] 沒有新集")
                 return
             
             # 發送新集通知
-            logger.info(f"🆕 發現 {len(new_episodes)} 個新集")
+            logger.info(f"🆕 [{scheduled_time_str}] 發現 {len(new_episodes)} 個新集，開始推播...")
             for ep in new_episodes:
                 try:
                     embed = await self.generate_anime_embed(ep)
                     view = await self.generate_anime_view(ep)
                     message = await channel.send(embed=embed, view=view, silent=True)
-
+                    
                     # 記錄已通知
                     self.db.add_notified(
                         video_sn=ep.get("videoSn"),
@@ -1224,14 +1269,18 @@ class AnimeTracker(commands.Cog):
                         cover_url=ep.get("cover", "")
                     )
                     
-                    # 避免 Discord 限流（200ms 間隔）
+                    # 避免 Discord 限流
                     await asyncio.sleep(0.2)
                 except Exception as e:
-                    logger.error(f"❌ Error sending embed: {e}")
+                    logger.error(f"❌ Error sending anime embed for {scheduled_time_str}: {e}")
                     await asyncio.sleep(1)
+            
+            # 標記為已找到
+            self.anime_retry_queue[scheduled_time_str]['found'] = True
+            logger.info(f"✅ [{scheduled_time_str}] 推播完成")
         
         except Exception as e:
-            logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
+            logger.error(f"❌ Error in _check_and_send_anime: {e}", exc_info=True)
     
     async def _get_anime_schedule(self) -> dict:
         """從 API 獲取日程表 (newAnimeSchedule)"""
