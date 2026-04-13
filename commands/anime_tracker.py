@@ -800,7 +800,7 @@ class AnimeTracker(commands.Cog):
                     all_episodes = new_anime.get("date", []) if isinstance(new_anime, dict) else []
                     
                     # 篩選只取今天的動畫
-                    today = datetime.now().strftime("%m/%d")
+                    today = datetime.now(TW_TZ).strftime("%m/%d")
                     today_episodes = [
                         ep for ep in all_episodes 
                         if isinstance(ep, dict) and ep.get("upTime", "").startswith(today)
@@ -832,7 +832,9 @@ class AnimeTracker(commands.Cog):
             return False
 
         try:
-            episode_dt = datetime.strptime(f"{datetime.now().year}/{up_date} {up_time}", "%Y/%m/%d %H:%M")
+            episode_dt = datetime.strptime(f"{datetime.now(TW_TZ).year}/{up_date} {up_time}", "%Y/%m/%d %H:%M")
+            # 將解析的時間設置為台灣時區
+            episode_dt = TW_TZ.localize(episode_dt)
         except ValueError:
             return False
 
@@ -1055,7 +1057,7 @@ class AnimeTracker(commands.Cog):
             description=description_text,
             url=anime_url,
             color=discord.Color.from_rgb(178, 108, 196),
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(TW_TZ)
         )
         
         if cover_url:
@@ -1549,7 +1551,7 @@ class AnimeTracker(commands.Cog):
             embed = discord.Embed(
                 title="🏆 本季動畫觀看排行榜",
                 color=discord.Color.gold(),
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(TW_TZ)
             )
             
             # 如果有多集數據，生成多線趨勢圖；否則使用單線聚合圖
