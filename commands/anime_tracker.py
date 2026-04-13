@@ -1144,7 +1144,7 @@ class AnimeTracker(commands.Cog):
                 # 沒有預期時刻，跳過
                 return
             
-            # 檢查當前時刻是否在預定時刻之後約 1 分鐘內
+            # 檢查當前時刻是否在預定時刻之後約 10 分鐘內
             current_time = now.time()
             in_check_window = False
             for check_time_str in expected_check_times:
@@ -1153,7 +1153,7 @@ class AnimeTracker(commands.Cog):
                     scheduled_datetime = datetime.combine(now.date(), check_time)
                     current_datetime = datetime.combine(now.date(), current_time)
                     time_diff = (current_datetime - scheduled_datetime).total_seconds() / 60
-                    if 0 <= time_diff <= 1.5:  # 預定時刻後 1 分鐘內
+                    if 0 <= time_diff <= 10:  # 預定時刻後 10 分鐘內（放寬時間窗口）
                         in_check_window = True
                         logger.info(f"📺 [check_new_anime] 在預定時刻 {check_time_str} 後的檢查窗口內，開始檢查新集")
                         break
@@ -1161,7 +1161,7 @@ class AnimeTracker(commands.Cog):
                     continue
             
             if not in_check_window:
-                # 尚未到預定時刻或已過 1 分鐘後，跳過
+                # 尚未到預定時刻或已過 10 分鐘後，跳過
                 return
             
             logger.info(f"📺 [check_new_anime] ========== 預期時刻附近檢查 ({now.strftime('%H:%M')}) ==========")
