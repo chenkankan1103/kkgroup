@@ -608,26 +608,6 @@ async def on_ready():
             import traceback
             traceback.print_exc()
 
-        # ============================================================
-        # 啟動 GCP Metrics 數據採集器（如果 BOT_TYPE == "bot"）
-        # ============================================================
-        if BOT_TYPE == "bot" and _metrics_collector is None:  # 只在主 bot 中啟動一次
-            try:
-                from metrics_data_collector import MetricsDataCollector
-                
-                # ✅ 已停用 GCP Metrics 採集以降低成本
-                # print("[GCP_METRICS] Initializing GCP Metrics collector...")
-                # _metrics_collector = MetricsDataCollector(project_id="kkgroup")
-                # if _metrics_collector_task is None:
-                #     _metrics_collector_task = asyncio.create_task(
-                #         _metrics_collector.start_background_collection(interval_minutes=30)
-                #     )
-                #     print("[GCP_METRICS] Collector started (30 min interval)")
-                
-            except ImportError:
-                print("[GCP_METRICS] MetricsDataCollector not available")
-            except (OSError, RuntimeError) as e:
-                print(f"[GCP_METRICS] Failed to start collector: {e}")
 
         # 啟動狀態更新任務
         if not update_status.is_running():
