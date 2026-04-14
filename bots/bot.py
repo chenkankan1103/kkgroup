@@ -3,14 +3,11 @@ import os
 import sys
 import asyncio
 
-# Fix sys.path for proper relative imports when running as module
-# This ensures that relative imports like 'from ..shared' work correctly
-if __name__ != "__main__":
-    # Running as a module (python -m bots.bot or similar)
-    # Add parent directory to sys.path if not already there
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
+# Fix sys.path for proper imports
+# This ensures that imports like 'from shared' work correctly
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 import discord
 from discord.ext import commands, tasks
