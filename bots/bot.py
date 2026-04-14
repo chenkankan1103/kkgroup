@@ -225,33 +225,6 @@ async def setup_modules(bot_client):
     extensions = await find_and_load_extensions(full_path, package_prefix, bot_client)
     
     file_log(f"[setup_modules] find_and_load_extensions() 返回 {len(extensions)} 擴展")
-    
-    # 特殊處理 anime_tracker Cog - 先卸載再加載，確保新修改生效（只在主 bot 中）
-    if BOT_TYPE == "bot":
-        file_log("[setup_modules] 檢查 anime_tracker 加載狀態...")
-        
-        # 先嘗試卸載
-        try:
-            await bot_client.unload_extension("cogs.common.anime_tracker")
-            file_log("[setup_modules] ✅ anime_tracker 已卸載")
-        except Exception as e:
-            file_log(f"[setup_modules] ℹ️ anime_tracker 未加載或卸載失敗: {type(e).__name__}: {str(e)}")
-        
-        # 再加載
-        file_log("[setup_modules] 嘗試加載 anime_tracker...")
-        try:
-            print("[SETUP_DEBUG] 即將調用 load_extension", flush=True)
-            await bot_client.load_extension("cogs.common.anime_tracker")
-            print("[SETUP_DEBUG] load_extension 返回成功", flush=True)
-            file_log("[setup_modules] ✅ cogs.common.anime_tracker 加載成功！")
-            if "cogs.common.anime_tracker" not in extensions:
-                extensions.append("cogs.common.anime_tracker")
-        except Exception as e:
-            file_log(f"[setup_modules] ❌ anime_tracker 加載失敗: {e}")
-            print(f"[SETUP_DEBUG_ERROR] {type(e).__name__}: {str(e)}", flush=True)
-            import traceback
-            traceback.print_exc()
-    
     file_log(f"[setup_modules] 函數完成，共 {len(extensions)} 個擴展")
     
     return extensions
