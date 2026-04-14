@@ -58,6 +58,14 @@ try:
         get_dynamic_fee_rate,
         get_reserve_announcement,
         get_dynamic_exchange_rate,
+        get_reserve_pressure,
+        # 非同步操作
+        async_set_user,
+        async_set_user_field,
+        async_batch_set_users,
+        async_get_all_users,
+        async_get_user_by_field,
+        async_get_user,
         # 導入匯出
         export_to_json,
         import_from_json,

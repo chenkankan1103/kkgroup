@@ -11,8 +11,7 @@ import sys
 import os
 
 # 導入 SHEET 同步管理器
-sys.path.insert(0, os.path.dirname(__file__) + '/..')
-from sheet_sync_manager import SheetSyncManager
+from shared.db.sheet_sync_manager import SheetSyncManager
 from db_adapter import get_all_users
 
 class GoogleSheetsSync(commands.Cog):
