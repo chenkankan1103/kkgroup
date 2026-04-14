@@ -14,4 +14,4 @@ export FLASK_DEBUG=False
 export API_HOST=127.0.0.1
 export API_PORT=5000
 
-/usr/bin/python3 /home/e193752468/kkgroup/unified_api.py
+/usr/bin/python3 /home/e193752468/kkgroup/web/api/unified_api.py
