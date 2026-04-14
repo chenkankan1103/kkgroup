@@ -18,7 +18,7 @@ DB 適配層 - 統一的數據庫操作接口
     add_user_field(user_id, 'kkcoin', 100)
 """
 
-from sheet_driven_db import SheetDrivenDB, get_db_instance
+from .sheet_driven_db import SheetDrivenDB, get_db_instance
 from typing import Any, Optional, Union, Dict, List, Tuple
 import asyncio
 import json

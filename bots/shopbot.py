@@ -15,7 +15,7 @@ import io
 locale.setlocale(locale.LC_ALL, '')
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-from bot_status import build_discord_activity
+from ..shared.utils.bot_status import build_discord_activity
 from status_dashboard import initialize_dashboard, load_message_ids, update_dashboard_logs  # add_log removed
 import syslog
 
