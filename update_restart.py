@@ -22,7 +22,7 @@ from pathlib import Path
 # 強制設置正確的 locale 和編碼
 import locale
 import io
-locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+locale.setlocale(locale.LC_ALL, 'C.utf8')
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
