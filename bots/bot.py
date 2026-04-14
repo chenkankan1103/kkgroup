@@ -17,7 +17,7 @@ from discord.ext import commands, tasks
 from discord.ext.commands import ExtensionError
 from datetime import datetime
 from dotenv import load_dotenv
-from ..shared.utils.bot_status import build_discord_activity
+from shared.utils.bot_status import build_discord_activity
 from watchdog.events import FileSystemEventHandler
 import logging
 
