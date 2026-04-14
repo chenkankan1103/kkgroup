@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from uicommands.events import (
+from cogs.ui.events import (
     EquipmentChangedEvent,
     CurrencyChangedEvent,
     HealthChangedEvent,

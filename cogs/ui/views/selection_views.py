@@ -3,9 +3,9 @@ from discord.ui import Button
 import traceback
 from datetime import datetime
 
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
-from shop_commands.merchant.database import update_user_kkcoin
+from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from cogs.shop.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
+from cogs.shop.merchant.database import update_user_kkcoin
 from status_dashboard import add_log
 
 
@@ -192,7 +192,7 @@ class SelectPlantForFertilizerView(discord.ui.View):
             await interaction.response.defer()
 
             # 使用CropOperationView的類方法創建embed和view
-            from uicommands.views.crop_operations import CropOperationView
+            from .crop_operations import CropOperationView
             embed, view = await CropOperationView.create_crop_info_embed_and_view(
                 self.bot, self.cog, self.user_id, self.guild_id, self.channel_id
             )
@@ -308,7 +308,7 @@ class SelectPlantForHarvestView(discord.ui.View):
             harvested = [p for p in plants if p["status"] == "harvested"]
 
             # 創建CropOperationView
-            from uicommands.views.crop_operations import CropOperationView
+            from .crop_operations import CropOperationView
             view = CropOperationView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds, plants, growing, harvested)
 
             embed = discord.Embed(
@@ -321,7 +321,7 @@ class SelectPlantForHarvestView(discord.ui.View):
             if growing:
                 embed.add_field(name="🌱 成長中的植物", value="━" * 25, inline=False)
                 for idx, plant in enumerate(growing, 1):
-                    from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
                     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
                     # 計算進度
                     if plant["status"] == "harvested":
@@ -354,7 +354,7 @@ class SelectPlantForHarvestView(discord.ui.View):
             if harvested:
                 embed.add_field(name="✅ 已成熟的植物", value="━" * 25, inline=False)
                 for idx, plant in enumerate(harvested, 1):
-                    from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
                     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
                     embed.add_field(
                         name=f"#{idx} {config['emoji']} {plant['seed_type']}",
@@ -388,7 +388,7 @@ class SelectSeedView(discord.ui.View):
         # 為每個種子添加按鈕
         for seed_name, qty in seeds.items():
             if qty > 0:
-                from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
                 config = CANNABIS_SHOP["種子"][seed_name]
                 button = discord.ui.Button(
                     label=f"{config['emoji']} {seed_name}",
@@ -434,7 +434,7 @@ class SelectSeedView(discord.ui.View):
                 result = await plant_cannabis(self.user_id, self.guild_id, self.channel_id, seed_name)
 
                 if result and not result.get("success") == False:
-                    from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
                     config = CANNABIS_SHOP["種子"][seed_name]
                     embed = discord.Embed(
                         title="🌱 種植成功",
@@ -512,7 +512,7 @@ class SelectSeedView(discord.ui.View):
             for seed_name, success, reason in results:
                 emoji = ""
                 try:
-                    from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
                     emoji = CANNABIS_SHOP["種子"][seed_name]["emoji"]
                 except Exception:
                     pass
@@ -542,7 +542,7 @@ class SelectSeedView(discord.ui.View):
             harvested = [p for p in plants if p["status"] == "harvested"]
 
             # 創建CropOperationView
-            from uicommands.views.crop_operations import CropOperationView
+            from .crop_operations import CropOperationView
             view = CropOperationView(self.bot, self.cog, self.user_id, self.guild_id, self.channel_id, seeds, plants, growing, harvested)
 
             embed = discord.Embed(
@@ -555,7 +555,7 @@ class SelectSeedView(discord.ui.View):
             if growing:
                 embed.add_field(name="🌱 成長中的植物", value="━" * 25, inline=False)
                 for idx, plant in enumerate(growing, 1):
-                    from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
                     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
                     # 計算進度
                     if plant["status"] == "harvested":
@@ -588,7 +588,7 @@ class SelectSeedView(discord.ui.View):
             if harvested:
                 embed.add_field(name="✅ 已成熟的植物", value="━" * 25, inline=False)
                 for idx, plant in enumerate(harvested, 1):
-                    from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
                     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
                     embed.add_field(
                         name=f"#{idx} {config['emoji']} {plant['seed_type']}",
@@ -623,7 +623,7 @@ class HarvestResultView(discord.ui.View):
 
         try:
             # 使用CropOperationView的類方法創建embed和view
-            from uicommands.views.crop_operations import CropOperationView
+            from .crop_operations import CropOperationView
             embed, view = await CropOperationView.create_crop_info_embed_and_view(
                 self.crop_operation_view.bot,
                 self.crop_operation_view.cog,
@@ -660,7 +660,7 @@ class PlantResultView(discord.ui.View):
 
         try:
             # 使用CropOperationView的類方法創建embed和view
-            from uicommands.views.crop_operations import CropOperationView
+            from .crop_operations import CropOperationView
             embed, view = await CropOperationView.create_crop_info_embed_and_view(
                 self.crop_operation_view.bot,
                 self.crop_operation_view.cog,

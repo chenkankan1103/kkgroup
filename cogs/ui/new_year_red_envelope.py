@@ -14,7 +14,7 @@ from discord.ext import commands
 logger = logging.getLogger(__name__)
 
 # 用於更新用戶 KKcoin
-from shop_commands.merchant.database import update_user_kkcoin, get_user_kkcoin
+from cogs.shop.merchant.database import update_user_kkcoin, get_user_kkcoin
 
 DATA_PATH = Path("data")
 STORAGE_FILE = DATA_PATH / "red_envelopes.json"

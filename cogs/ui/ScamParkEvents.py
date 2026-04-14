@@ -1403,7 +1403,7 @@ class ScamParkEvents(commands.Cog):
                 return
 
             # 檢查用戶是否有正在種植的大麻植物
-            from shop_commands.merchant.cannabis_farming import get_user_plants
+            from cogs.shop.merchant.cannabis_farming import get_user_plants
             
             plants = await get_user_plants(member.id)
             active_plants = [plant for plant in plants if plant.get('status') != 'harvested']
@@ -1433,7 +1433,7 @@ class ScamParkEvents(commands.Cog):
             total_destroyed = 0
             
             # 摧毀所有正在種植的植物
-            from shop_commands.merchant.cannabis_unified import get_adapter
+            from cogs.shop.merchant.cannabis_unified import get_adapter
             adapter = get_adapter()
             
             for plant in active_plants:

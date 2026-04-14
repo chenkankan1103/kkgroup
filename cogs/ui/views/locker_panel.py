@@ -3,8 +3,8 @@ import time
 import sqlite3
 import asyncio
 from db_adapter import async_set_user_field, async_get_user
-from shop_commands.merchant.cannabis_farming import get_user_plants, get_inventory
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
+from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 from .work_card import WorkCardModal, WorkCardEditView, WorkCardActionView
 from status_dashboard import add_log
 

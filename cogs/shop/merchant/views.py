@@ -354,7 +354,7 @@ class ExploreView(View):
             )
 
             # 動態導入View
-            from shop_commands.shop import DressingRoomView
+            from cogs.shop import DressingRoomView
             view = DressingRoomView(self.cog, interaction.user.id)
 
             new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
@@ -451,7 +451,7 @@ class EquipmentShopView(View):
         self.current_category = interaction.data["values"][0]
         self.update_items()
         
-        from shop_commands.merchant.database import get_user_kkcoin
+        from .database import get_user_kkcoin
         kkcoin = await get_user_kkcoin(interaction.user.id)
         
         embed = discord.Embed(
@@ -465,7 +465,7 @@ class EquipmentShopView(View):
         """顯示商品的詳細選項（預覽、試穿、購買）"""
         await interaction.response.defer(ephemeral=True)
         
-        from shop_commands.merchant.database import get_user_kkcoin
+        from .database import get_user_kkcoin
         kkcoin = await get_user_kkcoin(interaction.user.id)
         
         embed = discord.Embed(
@@ -533,7 +533,7 @@ class ItemDetailView(View):
     
     @discord.ui.button(label="🔙 返回商店", style=discord.ButtonStyle.grey)
     async def back_to_shop(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from shop_commands.merchant.database import get_user_kkcoin
+        from .database import get_user_kkcoin
         kkcoin = await get_user_kkcoin(interaction.user.id)
         
         embed = discord.Embed(
@@ -571,7 +571,7 @@ class EquipmentPreviewView(discord.ui.View):
 
     @discord.ui.button(label="🔙 返回商店", style=discord.ButtonStyle.secondary)
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from shop_commands.merchant.database import get_user_kkcoin
+        from .database import get_user_kkcoin
         
         kkcoin = await get_user_kkcoin(interaction.user.id)
         embed = discord.Embed(
@@ -596,8 +596,8 @@ class TryOnResultView(discord.ui.View):
 
     @discord.ui.button(label="🔄 試穿其他裝備", style=discord.ButtonStyle.primary)
     async def try_other_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from shop_commands.merchant.views import EquipmentShopView
-        from shop_commands.merchant.database import get_user_kkcoin
+        from .views import EquipmentShopView
+        from .database import get_user_kkcoin
         
         kkcoin = await get_user_kkcoin(interaction.user.id)
         embed = discord.Embed(
@@ -708,7 +708,7 @@ class PaperDollPreviewView(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=view)
             return
 
-        from shop_commands.shop import EditView
+        from cogs.shop import EditView
         view = EditView(self.cog, interaction.user.id, category, items, page=0, embed=embed, original_message=getattr(self, 'original_message', interaction.message))
         try:
             await interaction.response.edit_message(embed=embed, view=view)
@@ -860,7 +860,7 @@ class PurchaseConfirmView(discord.ui.View):
     @discord.ui.button(label="✅ 確認購買", style=discord.ButtonStyle.success)
     async def confirm_purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
         # 實現批量購買邏輯
-        from shop_commands.merchant.database import get_user_kkcoin, update_user_kkcoin
+        from .database import get_user_kkcoin, update_user_kkcoin
         
         kkcoin = await get_user_kkcoin(interaction.user.id)
         if kkcoin < self.total_price:
@@ -873,7 +873,7 @@ class PurchaseConfirmView(discord.ui.View):
         # 扣除金錢並更新裝備
         await update_user_kkcoin(interaction.user.id, -self.total_price)
         # items 里的 key 對應 users 表欄位名稱
-        from shop_commands.merchant.database import update_user_equipment
+        from .database import update_user_equipment
         for category, item_id in self.items.items():
             await update_user_equipment(interaction.user.id, category, item_id)
         
@@ -906,7 +906,7 @@ class ProductCategoryView(View):
 
     @discord.ui.button(label="種植大麻", style=discord.ButtonStyle.success, custom_id="persistent_cannabis", emoji="🌱")
     async def cannabis_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from shop_commands.merchant.cannabis_merchant_view_v2 import CannabisMerchantViewV2
+        from .cannabis_merchant_view_v2 import CannabisMerchantViewV2
         embed = discord.Embed(
             title="🌱 大麻商店",
             description="歡迎來到大麻商店！成長 4h±1h，最多同時種植 5 株。種子與肥料請謹慎配置。",

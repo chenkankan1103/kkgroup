@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 from typing import Optional
 
-from uicommands.events import (
+from cogs.ui.events import (
     EquipmentChangedEvent,
     CurrencyChangedEvent,
     HealthChangedEvent,
@@ -15,7 +15,7 @@ from uicommands.events import (
     SyncRequestedEvent,
 )
 from db_adapter import get_user, set_user_field, get_user_field
-from uicommands.utils.locker_cache import locker_cache
+from cogs.ui.utils.locker_cache import locker_cache
 
 
 class LockerEventListenerCog(commands.Cog):

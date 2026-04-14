@@ -3,9 +3,9 @@ import discord
 from discord.ui import View, Button, Select, TextInput, Modal
 import traceback
 import logging
-from shop_commands.merchant.database import get_user_kkcoin, update_user_kkcoin
-from shop_commands.merchant.cannabis_farming import add_inventory, remove_inventory, get_inventory
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from .database import get_user_kkcoin, update_user_kkcoin
+from .cannabis_farming import add_inventory, remove_inventory, get_inventory
+from .cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 
 # 取得 logger 用於上報錯誤
 logger = logging.getLogger(__name__)
@@ -158,7 +158,7 @@ class CannabisMerchantViewV2(View):
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """返回主菜單"""
         try:
-            from shop_commands.merchant.views import ExploreView
+            from .views import ExploreView
             embed = discord.Embed(
                 title="黑市商人出現了",
                 description="竟然被你發現了，想要買些什麼，還是..."
@@ -191,7 +191,7 @@ class SeedSelectView(View):
             # 不 defer，直接編輯原始 message
             seed_name = interaction.data['values'][0].replace("buy_seed_", "")
             
-            from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+            from .cannabis_config import CANNABIS_SHOP
             seed_config = CANNABIS_SHOP["種子"][seed_name]
             
             embed = discord.Embed(

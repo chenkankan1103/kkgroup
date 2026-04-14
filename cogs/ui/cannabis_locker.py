@@ -9,11 +9,11 @@ import json
 import aiosqlite
 from collections import deque
 from status_dashboard import add_log
-from shop_commands.merchant.cannabis_farming import (
+from cogs.shop.merchant.cannabis_farming import (
     get_user_plants, plant_cannabis, harvest_plant, get_inventory, remove_inventory, add_inventory
 )
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from shop_commands.merchant.database import update_user_kkcoin, get_user_kkcoin
+from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from cogs.shop.merchant.database import update_user_kkcoin, get_user_kkcoin
 
 # 导入拆分的View类
 from .views.personal_locker import PersonalLockerView, WeeklySummaryCannabisPanelView
@@ -466,7 +466,7 @@ class PersonalLockerCog(commands.Cog):
         """
         try:
             from db_adapter import get_user, set_user_field
-            from uicommands.utils.locker_embed_generator import generate_canonical_locker_embed
+            from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
             
             plants = await get_user_plants(user_id)
             inventory = await get_inventory(user_id)
@@ -479,7 +479,7 @@ class PersonalLockerCog(commands.Cog):
                 pass
 
             # 取得或建立 view
-            from uicommands.views import LockerPanelView
+            from cogs.ui.views import LockerPanelView
             view = LockerPanelView(self.bot, self, user_id, thread.guild.id, thread.id, plants, self) if hasattr(thread, 'guild') else None
 
             # 使用中心化生成器

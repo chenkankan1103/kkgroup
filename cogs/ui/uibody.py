@@ -16,11 +16,11 @@ import hashlib
 from pathlib import Path
 from db_adapter import get_user, set_user_field, get_user_field, get_all_users
 import datetime
-from shop_commands.merchant.cannabis_farming import (
+from cogs.shop.merchant.cannabis_farming import (
     get_inventory, plant_cannabis, get_user_plants, apply_fertilizer, 
     harvest_plant, remove_inventory, add_inventory
 )
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 
 # 導入拆分出去的模組
 from .views import UpdatePanelView, WorkCardModal, WorkCardEditView, WorkCardActionView, LockerPanelView
@@ -656,7 +656,7 @@ async def setup(bot):
         
         # 載入置物櫃事件監聽器 Cog（處理事件驅動 embed 更新）
         # 注意：此時 UserPanel 應該已存在於 bot.cogs 中
-        from uicommands.cogs.locker_event_listener import LockerEventListenerCog
+        from .cogs.locker_event_listener import LockerEventListenerCog
         if 'LockerEventListenerCog' not in bot.cogs:
             user_panel_cog = bot.get_cog('UserPanel')
             await bot.add_cog(LockerEventListenerCog(bot, user_panel_cog))
