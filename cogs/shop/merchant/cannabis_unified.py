@@ -10,7 +10,7 @@ import json
 import sqlite3
 import asyncio
 from datetime import datetime
-from sheet_driven_db import SheetDrivenDB
+from shared.db.sheet_driven_db import SheetDrivenDB
 from concurrent.futures import ThreadPoolExecutor
 
 # 線程池用於同步 DB 操作的異步包裝
