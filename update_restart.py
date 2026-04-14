@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 自動更新和重啟腳本
 功能：
@@ -17,6 +18,13 @@ import subprocess
 import asyncio
 from datetime import datetime
 from pathlib import Path
+
+# 強制設置正確的 locale 和編碼
+import locale
+import io
+locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # 設定工作目錄和環境變數
 SCRIPT_DIR = Path(__file__).parent.absolute()
