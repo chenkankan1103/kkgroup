@@ -45,7 +45,7 @@ async def generate_canonical_locker_embed(
             embed = await cog.create_user_embed(user_data, user_obj)
         else:
             # 嘗試從 utils 導入
-            from uicommands.utils.embed_utils import create_user_embed as util_create
+            from .embed_utils import create_user_embed as util_create
             embed = await util_create(cog, user_data, user_obj or discord.Object(id=user_data.get('user_id')))
     except Exception as e:
         print(f"⚠️ [Locker Embed Generator] 無法呼叫 create_user_embed: {e}")
@@ -60,7 +60,7 @@ async def generate_canonical_locker_embed(
             
         if not img_url:
             try:
-                from uicommands.utils.image_utils import build_maplestory_api_url
+                from .image_utils import build_maplestory_api_url
                 api_url = build_maplestory_api_url(user_data, animated=True)
                 if api_url:
                     embed.set_image(url=api_url)
@@ -84,7 +84,7 @@ async def generate_canonical_locker_embed(
         
         # 仍然嘗試添加動態圖片
         try:
-            from uicommands.utils.image_utils import build_maplestory_api_url
+            from .image_utils import build_maplestory_api_url
             api_url = build_maplestory_api_url(user_data, animated=True)
             if api_url:
                 embed.set_image(url=api_url)
@@ -94,7 +94,7 @@ async def generate_canonical_locker_embed(
     
     # Step 4: 附加大麻系統信息（可選）
     if include_cannabis_info and plants:
-        from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+        from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
         from datetime import datetime
         
         for plant in plants:
@@ -141,7 +141,7 @@ async def generate_canonical_locker_embed(
     
     # 附加庫存信息（可選）
     if include_cannabis_info and inventory:
-        from shop_commands.merchant.cannabis_config import CANNABIS_HARVEST_PRICES
+        from cogs.shop.merchant.cannabis_config import CANNABIS_HARVEST_PRICES
         
         if inventory.get('種子'):
             seeds_info = ''.join(f"  🌱 {k} x{v}\n" for k, v in (inventory.get('種子') or {}).items() if v)
@@ -269,7 +269,7 @@ async def update_locker_message(
     """
     try:
         from db_adapter import get_user, set_user_field
-        from uicommands.views import LockerPanelView
+        from ..views import LockerPanelView
         
         # 獲取用戶數據
         user_data = get_user(user_id)

@@ -205,8 +205,8 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
 
     # 2) 大麻系統庫存（若存在則合併）
     try:
-        from shop_commands.merchant.cannabis_farming import get_inventory as _get_cannabis_inventory
-        from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+        from cogs.shop.merchant.cannabis_farming import get_inventory as _get_cannabis_inventory
+        from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 
         cannabis_inv = await _get_cannabis_inventory(user_data.get('user_id'))
         # 種子

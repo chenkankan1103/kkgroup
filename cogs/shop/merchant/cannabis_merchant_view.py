@@ -2,9 +2,9 @@
 import discord
 from discord.ui import View, Button, Modal, TextInput
 import traceback
-from shop_commands.merchant.database import get_user_kkcoin, update_user_kkcoin
-from shop_commands.merchant.cannabis_farming import add_inventory, remove_inventory, get_inventory
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from .database import get_user_kkcoin, update_user_kkcoin
+from .cannabis_farming import add_inventory, remove_inventory, get_inventory
+from .cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 
 
 class CannabisMerchantView(View):
@@ -106,7 +106,7 @@ class CannabisMerchantView(View):
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """返回主菜單"""
         try:
-            from shop_commands.merchant.views import ExploreView
+            from .views import ExploreView
             embed = discord.Embed(
                 title="黑市商人出現了",
                 description="竟然被你發現了，想要買些什麼，還是..."

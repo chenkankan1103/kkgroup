@@ -99,12 +99,12 @@ class LockerTasks:
                                 color=0x9933ff,
                             )
                             
-                            from uicommands.utils.locker_cache import locker_cache
+                            from ..utils.locker_cache import locker_cache
                             paperdoll_url = await locker_cache.get_paperdoll_image(user_data)
                             if paperdoll_url:
                                 appearance_embed.set_image(url=paperdoll_url)
                             
-                            from uicommands.views import LockerPanelView
+                            from ..views import LockerPanelView
                             view = LockerPanelView(self.cog, user_id, thread)
                             
                             new_msg = await thread.send(embeds=[summary_embed, appearance_embed], view=view)
@@ -206,7 +206,7 @@ class LockerTasks:
     async def _trigger_events_for_changes(self, user_id, _changed):
         """觸發事件"""
         try:
-            from uicommands.events.locker_events import FullRefreshEvent
+            from ..events import FullRefreshEvent
             
             event = FullRefreshEvent(user_id, {'*'})
             self.bot.dispatch('locker_full_refresh', event)

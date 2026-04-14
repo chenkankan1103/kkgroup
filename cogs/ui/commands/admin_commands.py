@@ -4,7 +4,7 @@ import datetime
 from discord.ext import commands
 from discord import app_commands
 from db_adapter import get_all_users, set_user_field
-from uicommands.views import LockerPanelView
+from ..views import LockerPanelView
 
 
 class AdminCommands(commands.Cog):
@@ -73,7 +73,7 @@ class AdminCommands(commands.Cog):
                     # Safety check: only update messages that are non-canonical to avoid
                     # regressing fixes (missing image or legacy buttons).
                     try:
-                        from uicommands.utils.locker_embed_generator import message_needs_update
+                        from ..utils.locker_embed_generator import message_needs_update
                         if not message_needs_update(message):
                             # message is canonical — but still ensure the new `locker_change_gender`
                             # button exists. If present, skip; otherwise fall through to update.
@@ -160,7 +160,7 @@ class AdminCommands(commands.Cog):
                         img_url = None
                     if not img_url:
                         try:
-                            from uicommands.utils.image_utils import build_maplestory_api_url
+                            from ..utils.image_utils import build_maplestory_api_url
                             api_url = build_maplestory_api_url(user_data, animated=True)
                             embed.set_image(url=api_url)
                         except Exception:

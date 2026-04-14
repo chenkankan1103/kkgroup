@@ -13,16 +13,16 @@ import sqlite3
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from shop_commands.merchant.views import (
+from .merchant.views import (
     PersistentView, ExploreView, RoleShopView, EquipmentShopView, 
     SlotMachineView, PaperDollPreviewView, EquipmentPreviewView, 
     TryOnResultView, ItemDetailView
 )
-from shop_commands.merchant.database import (
+from .merchant.database import (
     get_user_kkcoin, update_user_kkcoin, update_user_equipment, get_user_equipment
 )
-from shop_commands.merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID, VIP_ROLE_ID, RAINBOW_ROLE_ID
-from shop_commands.role_expiration_manager import get_manager as get_expiration_manager
+from .merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID, VIP_ROLE_ID, RAINBOW_ROLE_ID
+from .role_expiration_manager import get_manager as get_expiration_manager
 
 class ButtonInteraction(commands.Cog):
     def __init__(self, bot):
@@ -237,7 +237,7 @@ class ButtonInteraction(commands.Cog):
 
             # 處理賭博邏輯
             try:
-                from shop_commands.merchant.gambling import process_slot_machine_bet
+                from .merchant.gambling import process_slot_machine_bet
                 result, net_change, msg = await process_slot_machine_bet(bet_amount)
             except Exception as e:
                 traceback.print_exc()
@@ -988,7 +988,7 @@ class DressingRoomView(discord.ui.View):
             await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
             return
         # 延遲導入以避免循環引用
-        from shop_commands.merchant.views import ExploreView
+        from .merchant.views import ExploreView
         embed = discord.Embed(title="黑市商人出現了", description="竟然被你發現了，想要買些什麼，還是...")
         await interaction.response.edit_message(embed=embed, view=ExploreView(self.cog))
 
@@ -1016,7 +1016,7 @@ class DressingRoomView(discord.ui.View):
             return
 
         # 建立預覽視圖並填入隨機選項
-        from shop_commands.merchant.views import PaperDollPreviewView
+        from .merchant.views import PaperDollPreviewView
         preview_view = PaperDollPreviewView(self.cog, user_data)
 
         import random

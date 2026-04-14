@@ -97,7 +97,7 @@ class WorkCardModal(discord.ui.Modal):
     
     async def create_work_card_embed(self, user_data, user_obj):
         """生成工作證卡片 embed"""
-        from commands.work_function.work_system import LEVELS
+        from cogs.common.work_function.work_system import LEVELS
         
         level = user_data.get('level', 0)
         level_info = LEVELS.get(level, {})

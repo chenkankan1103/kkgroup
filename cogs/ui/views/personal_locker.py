@@ -3,9 +3,9 @@ from discord.ui import Button
 from datetime import datetime
 import traceback
 
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
-from shop_commands.merchant.database import update_user_kkcoin
+from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from cogs.shop.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
+from cogs.shop.merchant.database import update_user_kkcoin
 from status_dashboard import add_log
 
 
@@ -86,7 +86,7 @@ class PersonalLockerView(discord.ui.View):
 
         # 延遲載入以避免循環 import
         try:
-            from uicommands.views.work_card import GenderSelectView
+            from .work_card import GenderSelectView
         except Exception as e:
             await interaction.followup.send("❌ 系統錯誤：無法載入性別選擇視圖。", ephemeral=True)
             return
@@ -361,7 +361,7 @@ class PersonalLockerView(discord.ui.View):
                     user_obj = self.bot.get_user(self.user_id) or await self.bot.fetch_user(self.user_id)
                     embed = await user_panel_cog.create_user_embed(user_data, user_obj)
 
-                    from uicommands.views import LockerPanelView
+                    from . import LockerPanelView
                     view = LockerPanelView(user_panel_cog, self.user_id, interaction.channel)
 
                     try:

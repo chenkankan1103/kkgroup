@@ -104,7 +104,7 @@ _metrics_collector_task = None
 BOT_NAME = "Bot"  # 可改為 "Shop" 或 "UI"
 BOT_TYPE = "bot"  # 狀態主題: bot / shopbot / uibot (須與 BOT_CONFIG 匹配)
 BOT_PREFIX = "DISCORD"  # 環境變數前綴: DISCORD / SHOP_DISCORD / UI_DISCORD
-COMMANDS_DIR = "commands"  # 指令目錄: commands / shop_commands / uicommands
+COMMANDS_DIR = "cogs/common"  # 指令目錄: cogs/common / cogs/shop / cogs/ui (已重構)
 VERSION = "1.0.0"
 EMOJI = "🤖"  # Bot 代表符號: 🤖 / 🛒 / 🎨
 
@@ -203,46 +203,57 @@ async def setup_modules(bot_client):
     """載入所有模組"""
     file_log("[setup_modules] 函數開始")
     
-    full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
+    # 轉換路徑為包名（cogs/common → cogs.common）
+    package_prefix = COMMANDS_DIR.replace('/', '.')
+    
+    # 從父目錄開始計算路徑（cogs/common -> cogs_base_path, common_subdir）
+    if '/' in COMMANDS_DIR:
+        parts = COMMANDS_DIR.split('/')
+        # 從 bots/ 向上一級到根目錄
+        root_path = os.path.dirname(os.path.dirname(__file__))
+        full_path = os.path.join(root_path, *parts)
+    else:
+        full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
     if not os.path.exists(full_path):
         os.makedirs(full_path)
         init_file = os.path.join(full_path, "__init__.py")
         with open(init_file, 'w', encoding='utf-8') as f:
             f.write(f"# {BOT_NAME} Bot Commands Module\n")
-        file_log("[setup_modules] Created commands directory")
+        file_log(f"[setup_modules] 建立目錄: {full_path}")
         return []
     
-    file_log("[setup_modules] 調用 find_and_load_extensions()")
+    file_log(f"[setup_modules] 調用 find_and_load_extensions() - 包: {package_prefix}")
     
-    extensions = await find_and_load_extensions(full_path, COMMANDS_DIR, bot_client)
+    extensions = await find_and_load_extensions(full_path, package_prefix, bot_client)
     
     file_log(f"[setup_modules] find_and_load_extensions() 返回 {len(extensions)} 擴展")
     
-    # 特殊處理 anime_tracker Cog - 先卸載再加載，確保新修改生效
-    file_log("[setup_modules] 檢查 anime_tracker 加載狀態...")
-    
-    # 先嘗試卸載
-    try:
-        await bot_client.unload_extension("commands.anime_tracker")
-        file_log("[setup_modules] ✅ anime_tracker 已卸載")
-    except Exception as e:
-        file_log(f"[setup_modules] ℹ️ anime_tracker 未加載或卸載失敗: {type(e).__name__}: {str(e)}")
-    
-    # 再加載
-    file_log("[setup_modules] 嘗試加載 anime_tracker...")
-    try:
-        print("[SETUP_DEBUG] 即將調用 load_extension", flush=True)
-        await bot_client.load_extension("commands.anime_tracker")
-        print("[SETUP_DEBUG] load_extension 返回成功", flush=True)
-        file_log("[setup_modules] ✅ commands.anime_tracker 加載成功！")
-        if "commands.anime_tracker" not in extensions:
-            extensions.append("commands.anime_tracker")
-    except Exception as e:
-        file_log(f"[setup_modules] ❌ anime_tracker 加載失敗: {e}")
-        print(f"[SETUP_DEBUG_ERROR] {type(e).__name__}: {str(e)}", flush=True)
-        import traceback
-        traceback.print_exc()
+    # 特殊處理 anime_tracker Cog - 先卸載再加載，確保新修改生效（只在主 bot 中）
+    if BOT_TYPE == "bot":
+        file_log("[setup_modules] 檢查 anime_tracker 加載狀態...")
+        
+        # 先嘗試卸載
+        try:
+            await bot_client.unload_extension("cogs.common.anime_tracker")
+            file_log("[setup_modules] ✅ anime_tracker 已卸載")
+        except Exception as e:
+            file_log(f"[setup_modules] ℹ️ anime_tracker 未加載或卸載失敗: {type(e).__name__}: {str(e)}")
+        
+        # 再加載
+        file_log("[setup_modules] 嘗試加載 anime_tracker...")
+        try:
+            print("[SETUP_DEBUG] 即將調用 load_extension", flush=True)
+            await bot_client.load_extension("cogs.common.anime_tracker")
+            print("[SETUP_DEBUG] load_extension 返回成功", flush=True)
+            file_log("[setup_modules] ✅ cogs.common.anime_tracker 加載成功！")
+            if "cogs.common.anime_tracker" not in extensions:
+                extensions.append("cogs.common.anime_tracker")
+        except Exception as e:
+            file_log(f"[setup_modules] ❌ anime_tracker 加載失敗: {e}")
+            print(f"[SETUP_DEBUG_ERROR] {type(e).__name__}: {str(e)}", flush=True)
+            import traceback
+            traceback.print_exc()
     
     file_log(f"[setup_modules] 函數完成，共 {len(extensions)} 個擴展")
     
@@ -328,7 +339,7 @@ class FileEventHandler(FileSystemEventHandler):
 async def cleanup_expired_roles_loop():
     """定期檢查並移除過期的臨時角色"""
     try:
-        from shop_commands.role_expiration_manager import get_manager as get_expiration_manager
+        from cogs.shop.role_expiration_manager import get_manager as get_expiration_manager
         manager = get_expiration_manager()
         removed_count = await manager.cleanup_expired_roles(client)
         if removed_count > 0:
@@ -574,7 +585,7 @@ async def on_ready():
         # 清理過期的臨時角色（變色龍披風、進階組員等）
         # ============================================================
         try:
-            from shop_commands.role_expiration_manager import get_manager as get_expiration_manager
+            from cogs.shop.role_expiration_manager import get_manager as get_expiration_manager
             manager = get_expiration_manager()
             removed_count = await manager.cleanup_expired_roles(client)
             if removed_count > 0:

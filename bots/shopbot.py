@@ -63,7 +63,7 @@ def file_log(msg):
 BOT_NAME = "Shop"  # 可改為 "Shop" 或 "UI"
 BOT_TYPE = "shopbot"  # 狀態主題: bot / shopbot / uibot (須與 BOT_CONFIG 匹配)
 BOT_PREFIX = "SHOP_DISCORD"  # 環境變數前綴: DISCORD / SHOP_DISCORD / UI_DISCORD
-COMMANDS_DIR = "shop_commands"  # 指令目錄: commands / shop_commands / uicommands
+COMMANDS_DIR = "cogs/shop"  # 指令目錄: cogs/common / cogs/shop / cogs/ui (已重構)
 VERSION = "1.0.0"
 EMOJI = "🛒"  # Bot 代表符號: 🤖 / 🛒 / 🎨
 
@@ -181,7 +181,17 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
 
 async def setup_modules(client):
     """載入所有模組"""
-    full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
+    # 轉換路徑為包名（cogs/shop → cogs.shop）
+    package_prefix = COMMANDS_DIR.replace('/', '.')
+    
+    # 從父目錄開始計算路徑（cogs/shop -> cogs_base_path, shop_subdir）
+    if '/' in COMMANDS_DIR:
+        parts = COMMANDS_DIR.split('/')
+        # 從 bots/ 向上一級到根目錄
+        root_path = os.path.dirname(os.path.dirname(__file__))
+        full_path = os.path.join(root_path, *parts)
+    else:
+        full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
     if not os.path.exists(full_path):
         os.makedirs(full_path)
@@ -190,7 +200,7 @@ async def setup_modules(client):
             f.write(f"# {BOT_NAME} Bot Commands Module\n")
         return []
     
-    return await find_and_load_extensions(full_path, COMMANDS_DIR, client)
+    return await find_and_load_extensions(full_path, package_prefix, client)
 
 async def reload_extension_on_change(ext_name):
     """熱重載擴展（防止重複觸發）"""

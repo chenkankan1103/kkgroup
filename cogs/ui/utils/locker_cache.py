@@ -5,7 +5,7 @@ Locker Cache System
 import hashlib
 import time
 from typing import Optional, Dict, Tuple
-from uicommands.utils.image_utils import build_maplestory_api_url
+from .image_utils import build_maplestory_api_url
 
 
 class LockerCache:

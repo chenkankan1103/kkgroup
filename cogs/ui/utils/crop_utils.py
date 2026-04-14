@@ -2,7 +2,7 @@
 
 import discord
 from datetime import datetime
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP
+from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
 
 def format_plant_progress(plant):

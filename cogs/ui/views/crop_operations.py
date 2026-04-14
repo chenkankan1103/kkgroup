@@ -3,9 +3,9 @@ from discord.ui import Button
 import traceback
 from datetime import datetime
 
-from shop_commands.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from shop_commands.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
-from shop_commands.merchant.database import update_user_kkcoin
+from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from cogs.shop.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
+from cogs.shop.merchant.database import update_user_kkcoin
 from status_dashboard import add_log
 
 
