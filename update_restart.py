@@ -16,7 +16,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 import subprocess
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # 強制設置正確的 locale 和編碼
@@ -31,6 +31,10 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = Path("/home/e193752468/kkgroup")
 ENV_FILE = PROJECT_DIR / ".env"
 
+# 速率限制：最短檢查間隔（分鐘）
+MIN_CHECK_INTERVAL_MINUTES = 5
+LAST_CHECK_FILE = PROJECT_DIR / ".last_update_check"
+
 # 載入環境變數
 load_dotenv(ENV_FILE)
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -44,6 +48,28 @@ def log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
     sys.stdout.flush()  # 確保 crontab 能看到輸出
+
+def should_check_for_updates():
+    """檢查是否應該執行更新檢查（速率限制）"""
+    try:
+        if LAST_CHECK_FILE.exists():
+            last_check_time = datetime.fromtimestamp(LAST_CHECK_FILE.stat().st_mtime)
+            time_since_last_check = datetime.now() - last_check_time
+            
+            if time_since_last_check < timedelta(minutes=MIN_CHECK_INTERVAL_MINUTES):
+                log(f"⏱️ 距離上次檢查僅 {time_since_last_check.total_seconds()/60:.1f} 分鐘，跳過此次檢查")
+                return False
+        return True
+    except Exception as e:
+        log(f"⚠️ 檢查速率限制時發生錯誤: {e}")
+        return True  # 出錯時允許檢查，避免阻塞
+
+def update_last_check_time():
+    """更新最後檢查時間"""
+    try:
+        LAST_CHECK_FILE.touch()
+    except Exception as e:
+        log(f"⚠️ 更新檢查時間戳記失敗: {e}")
 
 def check_git_updates():
     """檢查是否有新的 git 更新"""
@@ -337,10 +363,16 @@ async def main():
     log("🚀 開始執行自動更新檢查")
     log("=" * 60)
     
+    # 0. 速率限制檢查
+    if not should_check_for_updates():
+        log("✅ 跳過此次檢查（速率限制）")
+        return
+    
     # 1. 檢查是否有更新
     has_updates, commits_count = check_git_updates()
     if not has_updates:
         log("✅ 無需更新，程式結束")
+        update_last_check_time()  # 更新檢查時間戳記
         return
     
     # 2. 獲取更新詳情
@@ -368,6 +400,9 @@ async def main():
         log("✅ 所有服務重啟成功")
         # 5. 發送成功通知
         await send_discord_notification(update_details, commits_count, "update")
+    
+    # 更新檢查時間戳記
+    update_last_check_time()
     
     log("=" * 60)
     log("✅ 自動更新流程完成")
