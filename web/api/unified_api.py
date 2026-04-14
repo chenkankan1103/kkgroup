@@ -49,7 +49,7 @@ from blueprints.stats import stats_bp
 from blueprints.sheets import sheets_bp
 from blueprints.discord_auth import discord_auth_bp
 from blueprints.stocks_api import stocks_api_bp
-from game import game_bp, init_game_api
+from api.game import game_bp, init_game_api
 
 app.register_blueprint(stats_bp)
 app.register_blueprint(sheets_bp)
