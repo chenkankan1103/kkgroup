@@ -198,6 +198,24 @@ def restart_systemd_services():
     """重啟所有 systemd 服務"""
     log("🔄 開始重啟服務...")
     
+    # ⚠️ 重要：先重新加載 systemd 配置（以便讀取任何更新的 service 文件）
+    try:
+        log("🔄 重新加載 systemd 配置...")
+        result = subprocess.run(
+            ["sudo", "systemctl", "daemon-reload"],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            log("✅ systemd 配置重新加載成功")
+        else:
+            log(f"⚠️ systemd daemon-reload 可能失敗: {result.stderr}")
+            # 不中止，繼續嘗試重啟服務
+    except Exception as e:
+        log(f"⚠️ daemon-reload 發生錯誤: {e}")
+    
     success_count = 0
     failed_services = []
     
