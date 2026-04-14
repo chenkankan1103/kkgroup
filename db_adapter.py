@@ -49,6 +49,15 @@ try:
         add_stock_position,
         close_stock_position,
         get_user_total_stock_value,
+        # 中央儲備系統
+        get_central_reserve,
+        add_to_central_reserve,
+        remove_from_central_reserve,
+        set_central_reserve,
+        # 動態費率與匯率系統
+        get_dynamic_fee_rate,
+        get_reserve_announcement,
+        get_dynamic_exchange_rate,
         # 導入匯出
         export_to_json,
         import_from_json,
