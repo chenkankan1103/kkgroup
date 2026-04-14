@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 import logging
 
 from db_adapter import get_user_field, set_user_field, add_user_field, get_user
-from logger import print  # 使用 Discord 連接的 print
+# 使用標準 print 或 logging
+log = logging.getLogger(__name__)
 
 load_dotenv()
 logger = logging.getLogger("airdrop_system")
