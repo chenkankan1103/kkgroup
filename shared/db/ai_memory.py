@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
-from logger import print
+from ..utils.logger import print
 
 # ==================== 配置 ====================
 # 使用絕對路徑確保所有執行上下文都指向同一個資料庫
