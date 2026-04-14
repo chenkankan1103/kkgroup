@@ -125,3 +125,7 @@ tokens.json
 # GCP 相关
 *_gcp.py
 gcp_secrets/
+
+# 工具脚本（不追踪）
+tools/
+tools/**
