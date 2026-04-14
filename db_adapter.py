@@ -14,7 +14,7 @@ DB 適配層相容層 - 保持向後相容性
 
 # 相容層轉導 - 導入所有公開函數以保持現存代碼正常運作
 try:
-    from shared.db.adapter import (
+    from shared.db.db_adapter import (
         get_db,
         get_user,
         set_user,
@@ -38,5 +38,5 @@ try:
     )
 except ImportError as e:
     import warnings
-    warnings.warn(f"無法導入 shared.db.adapter: {e}。請確保已執行 Phase 2 import 更新。", DeprecationWarning)
+    warnings.warn(f"無法導入 shared.db.db_adapter: {e}。請確保已執行 Phase 2 import 更新。", DeprecationWarning)
     raise
