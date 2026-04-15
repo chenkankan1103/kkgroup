@@ -108,7 +108,7 @@ def execute_git_pull():
         
         # 強制重置到最新
         result = subprocess.run(
-            ["git", "reset", "--hard", "origin/restructure-project-20260414"],
+            ["git", "reset", "--hard", "origin/main"],
             cwd=PROJECT_DIR,
             capture_output=True,
             text=True,
@@ -284,9 +284,9 @@ def github_webhook():
         logger.info(f"📌 分支: {branch_name}")
         logger.info(f"📝 提交數: {len(commits)}")
         
-        # 只處理 restructure-project-20260414 分支
-        if branch_name != 'restructure-project-20260414':
-            logger.info(f"⏭️ 忽略分支 {branch_name}，仅監控 restructure-project-20260414")
+        # 只處理 main 分支
+        if branch_name != 'main':
+            logger.info(f"⏭️ 忽略分支 {branch_name}，仅監控 main")
             return jsonify({"status": "ok", "message": "已忽略該分支"}), 200
         
         # 執行更新和重啟
