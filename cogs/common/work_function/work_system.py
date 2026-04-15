@@ -29,6 +29,10 @@ AI_API_KEY = os.getenv("AI_API_KEY", "")
 AI_API_URL = os.getenv("AI_API_URL", "")
 AI_API_MODEL = os.getenv("AI_API_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
+# Groq API 設定
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_URL = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+
 # 等級配置 - Lv.0 至 Lv.6
 LEVELS = {
     0: {
