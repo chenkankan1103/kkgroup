@@ -188,6 +188,14 @@ class AIResponse(commands.Cog):
         api_attempts = []
         gemini_failed_reason = None
         
+        logger.info("═" * 60)
+        logger.info("📡 AI API 配置檢查")
+        logger.info(f"  ✓ Gemini 主API: {'已配置' if (AI_API_KEY and AI_API_URL) else '未配置'}")
+        logger.info(f"  ✓ Gemini 備用API: {'已配置' if (AI_API_KEY_BACKUP and AI_API_URL) else '未配置'}")
+        logger.info(f"  ✓ GitHub Models: {'已配置' if (GITHUB_MODELS_API_KEY and GITHUB_MODELS_API_URL) else '未配置'}")
+        logger.info(f"  ✓ Groq API: {'已配置' if (GROQ_API_KEY and GROQ_API_URL) else '未配置'}")
+        logger.info("═" * 60)
+        
         if AI_API_KEY and AI_API_URL:
             api_attempts.append(("Gemini (主)", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
         if AI_API_KEY_BACKUP and AI_API_URL:
@@ -207,9 +215,11 @@ class AIResponse(commands.Cog):
             logger.error(f"  - GROQ_API_URL: {'有' if GROQ_API_URL else '無'}")
             return None
         
+        logger.info(f"🔄 開始嘗試 API（共 {len(api_attempts)} 個）: {' → '.join([name for name, *_ in api_attempts])}")
+        
         for api_name, url, api_key, model, api_type in api_attempts:
             try:
-                logger.info(f"⏳ 嘗試使用 {api_name} API...")
+                logger.info(f"⏳ 嘗試使用 {api_name} (模型: {model})...")
                 
                 if api_type == "gemini":
                     # ── Google Gemini API（支援 Function Calling）──────────────────
@@ -313,7 +323,11 @@ class AIResponse(commands.Cog):
                             
                             content = parts[0]["text"].strip()
                             if content:
-                                logger.info(f"✅ {api_name} 成功: {len(content)} 字符")
+                                logger.info(f"✅ 使用以下 API 成功回應:")
+                                logger.info(f"   - API 名稱: {api_name}")
+                                logger.info(f"   - 模型: {model}")
+                                logger.info(f"   - 回應長度: {len(content)} 字符")
+                                logger.info("═" * 60)
                                 return content
                             else:
                                 logger.warning(f"⚠️ {api_name} 文字內容為空")
@@ -399,11 +413,16 @@ class AIResponse(commands.Cog):
                                                 try:
                                                     data2 = _json.loads(r2_text)
                                                     if "choices" in data2 and data2["choices"]:
-                                                        final_response = data2["choices"][0]["message"]["content"].strip()
+                                        final_response = data2["choices"][0]["message"]["content"].strip()
                                                         # 確保移除任何可能的工具呼叫標籤
                                                         final_response = extract_response_without_calls(final_response)
                                                         if final_response:
-                                                            logger.info(f"✅ {api_name} 成功（工具輔助）: {len(final_response)} 字符")
+                                                            logger.info(f"✅ 使用以下 API 成功回應:")
+                                                            logger.info(f"   - API 名稱: {api_name}")
+                                                            logger.info(f"   - 模型: {model}")
+                                                            logger.info(f"   - 回應長度: {len(final_response)} 字符")
+                                                            logger.info(f"   - 方式: 工具輔助")
+                                                            logger.info("═" * 60)
                                                             return final_response
                                                 except _json.JSONDecodeError:
                                                     pass
@@ -411,12 +430,20 @@ class AIResponse(commands.Cog):
                                         # 如果第二次請求失敗，使用第一次回應（移除工具標籤）
                                         first_response = extract_response_without_calls(first_response)
                                         if first_response:
-                                            logger.info(f"✅ {api_name} 成功（第一次回應）: {len(first_response)} 字符")
+                                            logger.info(f"✅ 使用以下 API 成功回應:")
+                                            logger.info(f"   - API 名稱: {api_name}")
+                                            logger.info(f"   - 模型: {model}")
+                                            logger.info(f"   - 回應長度: {len(first_response)} 字符")
+                                            logger.info("═" * 60)
                                             return first_response
                                 
                                 # 沒有工具呼叫，直接返回回應
                                 if first_response:
-                                    logger.info(f"✅ {api_name} 成功: {len(first_response)} 字符")
+                                    logger.info(f"✅ 使用以下 API 成功回應:")
+                                    logger.info(f"   - API 名稱: {api_name}")
+                                    logger.info(f"   - 模型: {model}")
+                                    logger.info(f"   - 回應長度: {len(first_response)} 字符")
+                                    logger.info("═" * 60)
                                     return first_response
 
 
