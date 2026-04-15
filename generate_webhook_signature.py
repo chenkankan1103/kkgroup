@@ -9,7 +9,7 @@ import json
 WEBHOOK_SECRET = ""  # 如果未設置，簽名驗證將被跳過
 
 payload_json = {
-    "ref": "refs/heads/restructure-project-20260414",
+    "ref": "refs/heads/main",
     "commits": [
         {
             "id": "abc123def456",

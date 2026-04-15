@@ -20,8 +20,8 @@ echo "✅ 已從遠端拉取"
 echo ""
 
 # Step 3: 檢出重組分支
-echo "Step 3: 檢出分支 restructure-project-20260414..."
-git checkout restructure-project-20260414
+echo "Step 3: 檢出分支 main..."
+git checkout main
 echo "✅ 已切換到重組分支"
 echo ""
 
