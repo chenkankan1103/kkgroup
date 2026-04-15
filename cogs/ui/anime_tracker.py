@@ -60,6 +60,7 @@ BOOTSTRAP_FLAG_TABLE = "anime_bootstrap"
 ANIME_DETAILS_TABLE = "anime_details"  # 永恆快取動畫詳細信息
 ANIME_STATS_TABLE = "anime_statistics"  # 動畫統計數據（觀看人數、評分趨勢等）
 EPISODE_STATS_TABLE = "episode_statistics"  # 每集統計數據
+ANIME_VOTES_TABLE = "anime_votes"  # 匿名投票結果
 
 
 class AnimeDatabase:
@@ -131,6 +132,20 @@ class AnimeDatabase:
                         views INTEGER,
                         score REAL,
                         recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # 6. 匿名投票結果表
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {ANIME_VOTES_TABLE} (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        videoSn INTEGER NOT NULL,
+                        animeSn INTEGER NOT NULL,
+                        message_id INTEGER NOT NULL,
+                        vote_type TEXT NOT NULL,
+                        comment TEXT,
+                        user_hash TEXT,
+                        voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
                 
@@ -540,11 +555,238 @@ class AnimeDatabase:
         except Exception as e:
             logger.error(f"❌ Error getting multi-episode anime for chart: {e}", exc_info=True)
             return []
+    
+    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None):
+        """記錄匿名投票"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT INTO {ANIME_VOTES_TABLE}
+                    (videoSn, animeSn, message_id, vote_type, comment, user_hash, voted_at)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (video_sn, anime_sn, message_id, vote_type, comment, user_hash))
+                conn.commit()
+                logger.info(f"📊 [record_vote] 記錄投票: videoSn={video_sn}, vote_type={vote_type}")
         except Exception as e:
-            logger.error(f"❌ Error during bootstrap: {e}")
+            logger.error(f"❌ Error recording vote: {e}", exc_info=True)
+    
+    def get_vote_stats(self, message_id: int) -> Dict:
+        """獲取某條消息的投票統計"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT vote_type, COUNT(*) as count FROM {ANIME_VOTES_TABLE}
+                    WHERE message_id = ?
+                    GROUP BY vote_type
+                    ORDER BY count DESC
+                """, (message_id,))
+                
+                stats = {}
+                for row in cursor.fetchall():
+                    stats[row[0]] = row[1]
+                
+                return stats
+        except Exception as e:
+            logger.error(f"❌ Error getting vote stats: {e}")
+            return {}
+    
+    def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
+        """獲取某條消息的匿名評論"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT comment FROM {ANIME_VOTES_TABLE}
+                    WHERE message_id = ? AND comment IS NOT NULL
+                    ORDER BY voted_at DESC
+                    LIMIT ?
+                """, (message_id, limit))
+                
+                comments = [row[0] for row in cursor.fetchall() if row[0]]
+                return comments
+        except Exception as e:
+            logger.error(f"❌ Error getting vote comments: {e}")
+            return []
 
 
-class AnimeTracker(commands.Cog):
+# ==================== 匿名投票 View 類 ====================
+
+class AnimeVoteView(discord.ui.View):
+    """動畫投票視圖 - 6 個投票按鈕 + 評論按鈕"""
+    
+    # 投票類型配置
+    VOTE_TYPES = {
+        "masterpiece": ("神作", "🟩"),     # 綠
+        "great": ("佳作", "🟦"),          # 藍
+        "darkhorse": ("黑馬", "🟪"),      # 紫
+        "decent": ("普作/小品", "🟨"),    # 黃
+        "controversial": ("爭議作", "🟧"), # 橙
+        "disaster": ("雷作/糞作", "🟥"),   # 紅
+    }
+    
+    def __init__(self, episode: Dict, anime_tracker: "AnimeTracker"):
+        super().__init__(timeout=None)
+        self.episode = episode
+        self.tracker = anime_tracker
+        self.video_sn = episode.get("videoSn")
+        self.anime_sn = episode.get("animeSn")
+        self.message_id = None
+        
+        # 添加投票按鈕
+        for vote_key, (vote_label, _) in self.VOTE_TYPES.items():
+            button = discord.ui.Button(
+                label=vote_label,
+                custom_id=f"vote_{vote_key}_{self.video_sn}",
+                style=discord.ButtonStyle.secondary
+            )
+            button.callback = self._vote_callback
+            self.add_item(button)
+        
+        # 添加評論按鈕
+        comment_button = discord.ui.Button(
+            label="💬 留言",
+            custom_id=f"comment_{self.video_sn}",
+            style=discord.ButtonStyle.primary
+        )
+        comment_button.callback = self._comment_callback
+        self.add_item(comment_button)
+    
+    async def _vote_callback(self, interaction: discord.Interaction):
+        """處理投票按鈕點擊"""
+        try:
+            # 解析投票類型
+            vote_key = interaction.custom_id.replace(f"vote_", "").rsplit("_", 1)[0]
+            vote_label, _ = self.VOTE_TYPES.get(vote_key, ("未知", None))
+            
+            # 獲取用戶的匿名雜湊（用來防止同一用戶多次投票）
+            user_hash = str(hash(interaction.user.id))[:10]
+            
+            # 記錄投票
+            self.tracker.db.record_vote(
+                video_sn=self.video_sn,
+                anime_sn=self.anime_sn,
+                message_id=interaction.message.id,
+                vote_type=vote_key,
+                user_hash=user_hash
+            )
+            
+            logger.info(f"📊 [vote_callback] {interaction.user} 投票: {vote_label}")
+            
+            # 立即回應用戶
+            await interaction.response.defer()
+            
+            # 更新原始消息的 embed（添加統計信息）
+            await self._update_message_stats(interaction.message)
+        
+        except Exception as e:
+            logger.error(f"❌ [_vote_callback] 投票失敗: {e}", exc_info=True)
+            try:
+                await interaction.response.send_message(f"❌ 投票失敗: {str(e)[:50]}", ephemeral=True)
+            except:
+                pass
+    
+    async def _comment_callback(self, interaction: discord.Interaction):
+        """處理評論按鈕點擊 - 彈出評論輸入框"""
+        try:
+            # 創建簡單的文本輸入模態框
+            class CommentModal(discord.ui.Modal, title="留下匿名評論"):
+                comment_input = discord.ui.TextInput(
+                    label="評論內容",
+                    placeholder="寫下你對這部動畫的看法...",
+                    max_length=200,
+                    required=False
+                )
+                
+                async def on_submit(self, modal_interaction: discord.Interaction):
+                    try:
+                        comment = str(self.comment_input).strip()
+                        if not comment:
+                            await modal_interaction.response.send_message("評論不能為空", ephemeral=True)
+                            return
+                        
+                        # 獲取用戶匿名雜湊
+                        user_hash = str(hash(modal_interaction.user.id))[:10]
+                        
+                        # 記錄評論（vote_type 為空表示只是評論）
+                        self.modal_tracker.db.record_vote(
+                            video_sn=self.modal_video_sn,
+                            anime_sn=self.modal_anime_sn,
+                            message_id=modal_interaction.message.id,
+                            vote_type="comment",
+                            comment=comment,
+                            user_hash=user_hash
+                        )
+                        
+                        logger.info(f"💬 [comment] {modal_interaction.user} 留言: {comment[:30]}...")
+                        
+                        await modal_interaction.response.send_message("✅ 評論已保存！感謝你的意見", ephemeral=True)
+                        
+                        # 更新原始消息統計
+                        await self.modal_update_stats(modal_interaction.message)
+                    except Exception as e:
+                        logger.error(f"❌ [comment_submit] 保存評論失敗: {e}", exc_info=True)
+            
+            # 將追蹤和更新函數保存到模態框實例
+            modal = CommentModal()
+            modal.modal_tracker = self.tracker
+            modal.modal_video_sn = self.video_sn
+            modal.modal_anime_sn = self.anime_sn
+            modal.modal_update_stats = self._update_message_stats
+            
+            await interaction.response.send_modal(modal)
+        
+        except Exception as e:
+            logger.error(f"❌ [_comment_callback] 評論失敗: {e}", exc_info=True)
+    
+    async def _update_message_stats(self, message: discord.Message):
+        """更新消息中的投票統計"""
+        try:
+            if not message.embeds:
+                return
+            
+            embed = message.embeds[0]
+            
+            # 獲取投票統計
+            stats = self.tracker.db.get_vote_stats(message.id)
+            comments = self.tracker.db.get_vote_comments(message.id, limit=3)
+            
+            # 清除舊的統計 field
+            embed.fields = [f for f in embed.fields if f.name not in ["📊 投票統計", "💬 匿名評論"]]
+            
+            # 添加新的統計 field
+            if stats:
+                stat_lines = []
+                for vote_key, (vote_label, color_block) in self.VOTE_TYPES.items():
+                    count = stats.get(vote_key, 0)
+                    if count > 0:
+                        stat_lines.append(f"{color_block} {vote_label}: {count} 票")
+                
+                if stat_lines:
+                    embed.add_field(
+                        name="📊 投票統計",
+                        value="\n".join(stat_lines),
+                        inline=False
+                    )
+            
+            # 添加評論 field
+            if comments:
+                comment_text = "\n".join([f"• {c}" for c in comments])
+                embed.add_field(
+                    name="💬 匿名評論",
+                    value=comment_text,
+                    inline=False
+                )
+            
+            # 編輯原始消息
+            await message.edit(embed=embed)
+        
+        except Exception as e:
+            logger.warning(f"⚠️ [_update_message_stats] 更新統計失敗: {e}")
+
+
+
     """Bahamut 動畫追蹤主 Cog"""
     
     def __init__(self, bot: commands.Bot):
@@ -1097,29 +1339,32 @@ class AnimeTracker(commands.Cog):
             )
         
         embed.add_field(
-            name="⭐ 點擊反應留下評價吧",
-            value="不管點什麼表情都沒關係啦，正評負評都可以～\n評分成功會獲得 💰 2000 KK幣喔！",
+            name="🎯 匿名投票",
+            value="選擇你認為本作的評價，或留下評論\n投票完全匿名，無法追蹤個人身份",
             inline=False
         )
         
-        embed.set_footer(text="動畫瘋新番通知")
+        embed.set_footer(text="動畫瘋新番通知 | 使用下方按鈕進行匿名投票")
         return embed
     
     async def generate_anime_view(self, episode: Dict) -> Optional[discord.ui.View]:
-        """生成 Discord 按鈕視圖，包括動畫頁與本集連結。"""
+        """生成 Discord 按鈕視圖，包括投票按鈕 + 動畫頁與本集連結。"""
+        # 創建投票視圖
+        vote_view = AnimeVoteView(episode, self)
+        
+        # 添加原有的連結按鈕
         anime_sn = episode.get("animeSn")
         video_sn = episode.get("videoSn")
-        view = discord.ui.View()
         
         if anime_sn:
             anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
-            view.add_item(discord.ui.Button(label="前往動畫瘋新番頁", url=anime_url))
+            vote_view.add_item(discord.ui.Button(label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link))
         
         if video_sn:
             video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
-            view.add_item(discord.ui.Button(label="查看本集", url=video_url))
+            vote_view.add_item(discord.ui.Button(label="▶️ 觀看", url=video_url, style=discord.ButtonStyle.link))
         
-        return view if view.children else None
+        return vote_view if vote_view.children else None
     
     @tasks.loop(minutes=1)
     async def check_new_anime(self):
