@@ -24,7 +24,7 @@ class LeaderboardURLMonitor(commands.Cog):
         self.bot = bot
         self.rank_channel_id = int(os.getenv("KKCOIN_RANK_CHANNEL_ID", 0))
         self.rank_message_id = int(os.getenv("KKCOIN_RANK_MESSAGE_ID", 0))
-        self.config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
+        self.config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "config.json")
         self._config_missing_warned = False  # 追踪是否已警告过 config.json 不存在
         self._last_url = None  # 追踪上一次的 URL
         
@@ -127,7 +127,7 @@ class LeaderboardURLMonitor(commands.Cog):
 
             # 添加文件
             result = subprocess.run(
-                ["git", "add", "docs/config.json"],
+                ["git", "add", "config/config.json"],
                 check=True,
                 capture_output=True,
                 text=True,
