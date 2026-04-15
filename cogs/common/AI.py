@@ -413,7 +413,7 @@ class AIResponse(commands.Cog):
                                                 try:
                                                     data2 = _json.loads(r2_text)
                                                     if "choices" in data2 and data2["choices"]:
-                                        final_response = data2["choices"][0]["message"]["content"].strip()
+                                                        final_response = data2["choices"][0]["message"]["content"].strip()
                                                         # 確保移除任何可能的工具呼叫標籤
                                                         final_response = extract_response_without_calls(final_response)
                                                         if final_response:
