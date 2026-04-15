@@ -142,7 +142,7 @@ class AnnouncementButtonView(View):
     
     def _load_announcements(self) -> list:
         """載入公告數據"""
-        docs_path = Path("docs/announcement_carousel.json")
+        docs_path = Path("config/announcement_carousel.json")
         try:
             if docs_path.exists():
                 with open(docs_path, 'r', encoding='utf-8') as f:
@@ -601,7 +601,7 @@ class Announcement(commands.Cog):
     
     def _load_announcements(self) -> list:
         """載入公告數據"""
-        docs_path = Path("docs/announcement_carousel.json")
+        docs_path = Path("config/announcement_carousel.json")
         try:
             if docs_path.exists():
                 with open(docs_path, 'r', encoding='utf-8') as f:

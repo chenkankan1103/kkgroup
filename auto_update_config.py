@@ -36,7 +36,7 @@ def get_latest_tunnel_url():
 
 def update_config_json(new_url):
     """更新 config.json"""
-    config_path = Path(__file__).parent / "docs" / "config.json"
+    config_path = Path(__file__).parent / "config" / "config.json"
     
     try:
         # 讀取現有配置
@@ -68,7 +68,7 @@ def update_config_json(new_url):
 def git_commit_changes(new_url):
     """提交 Git 變更"""
     try:
-        subprocess.run(["git", "add", "docs/config.json"], cwd=Path(__file__).parent, timeout=5)
+        subprocess.run(["git", "add", "config/config.json"], cwd=Path(__file__).parent, timeout=5)
         result = subprocess.run(
             ["git", "commit", "-m", f"Auto-update: Tunnel URL changed to {new_url}"],
             cwd=Path(__file__).parent,

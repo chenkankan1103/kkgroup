@@ -23,6 +23,9 @@ venv/
 env/
 ENV/
 
+# 工作區文件（文檔、測試、臨時工具）- 不提交 Git
+/docs_and_tests/
+
 # IDE 和编辑器
 .vscode/
 .idea/

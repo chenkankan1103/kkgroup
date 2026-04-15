@@ -210,10 +210,10 @@ class KKCoin(commands.Cog):
             self.auto_push_leaderboard_to_github.cancel()  # 📤 取消 GitHub 推送任務
     
     def _load_base_url_from_config(self) -> str:
-        """啟動時同步讀取 docs/config.json 取得 tunnel URL（避免使用 kkgroup.com 預設值）"""
+        """啟動時同步讀取 config/config.json 取得 tunnel URL（避免使用 kkgroup.com 預設值）"""
         try:
             import json
-            config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
+            config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "config.json")
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -232,7 +232,7 @@ class KKCoin(commands.Cog):
             new_url: 新的 Tunnel URL (e.g., https://xxx.trycloudflare.com)
         
         流程:
-            1. 讀取現有 docs/config.json，保留 imageURL（Discord CDN 由 Bot 自動維護）
+            1. 讀取現有 config/config.json，保留 imageURL（Discord CDN 由 Bot 自動維護）
             2. 只更新隧道 URL：url 和 API_BASE
             3. Git add/commit/push 到遠端 GitHub
         """
@@ -241,13 +241,13 @@ class KKCoin(commands.Cog):
             import json
             from datetime import datetime
             
-            # 使用 docs/config.json（GitHub Pages 正確位置）
-            config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
+            # 使用 config/config.json
+            config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "config.json")
             
-            # 檢查 docs 目錄是否存在
-            docs_dir = os.path.dirname(config_path)
-            if not os.path.exists(docs_dir):
-                print(f"❌ docs 目錄不存在: {docs_dir}")
+            # 檢查 config 目錄是否存在
+            config_dir = os.path.dirname(config_path)
+            if not os.path.exists(config_dir):
+                print(f"❌ config 目錄不存在: {config_dir}")
                 return False
             
             # 讀取現有配置（保留排行榜 CDN URL，由 Bot 自動維護）
@@ -272,11 +272,11 @@ class KKCoin(commands.Cog):
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, ensure_ascii=False, indent=2)
             
-            print(f"✅ 已更新 docs/config.json: {new_url}")
+            print(f"✅ 已更新 config.json: {new_url}")
             
             # Git 操作（在項目根目錄中執行）
             git_commands = [
-                ["git", "add", "docs/config.json"],
+                ["git", "add", "config/config.json"],
                 ["git", "commit", "-m", f"Auto-sync: Update tunnel URL to {new_url}"],
                 ["git", "push", "origin", "main"]
             ]
@@ -377,7 +377,7 @@ class KKCoin(commands.Cog):
                 
                 # 💾 更新 config.json 供網頁端讀取
                 try:
-                    config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
+                    config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "config.json")
                     if os.path.exists(config_path):
                         with open(config_path, "r", encoding="utf-8") as f:
                             config = json.load(f)
@@ -484,10 +484,10 @@ class KKCoin(commands.Cog):
         pass
     
     async def get_tunnel_url(self):
-        """從 docs/config.json 或 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
+        """從 config/config.json 或 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
         
         優先順序:
-        1. docs/config.json (GitHub同步，優先級最高 - 確保本機開發和GCP部署URL一致)
+        1. config/config.json (GitHub同步，優先級最高 - 確保本機開發和GCP部署URL一致)
         2. /tmp/cloudflared.log (GCP VM本地cloudflared - 備用)
         
         成功: 更新 self.base_url 並返回該 URL
@@ -497,9 +497,9 @@ class KKCoin(commands.Cog):
             try:
                 import json
                 
-                # 1️⃣ 優先方式: 嘗試讀取 docs/config.json (GitHub同步，確保URL一致)
+                # 1️⃣ 優先方式: 嘗試讀取 config/config.json (GitHub同步，確保URL一致)
                 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                config_file = os.path.join(project_root, "docs", "config.json")
+                config_file = os.path.join(project_root, "config", "config.json")
                 
                 if os.path.exists(config_file):
                     try:
