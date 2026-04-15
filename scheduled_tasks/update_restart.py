@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-自動更新和重啟腳本
-功能：
-1. 檢查並拉取 git 更新
-2. 通過 systemd 重啟服務
-3. 發送更新通知到 Discord
-4. 適配 crontab 定時執行
+⚠️ 已停用 - Git 自動更新系統
+
+此文件已棄用。系統現在只依賴 GitHub Webhook 進行自動部署：
+- GitHub Push 事件 → Webhook 觸發 (web/blueprints/webhook.py)
+- Git 自動拉取 + 服務重啟
+- 實時且可靠的自動化部署
+
+舊功能（已移除）：
+- 定期檢查 git 更新（crontab）
+- 輕量級監控循環（已停用）
+
+保留此文件只供參考。如需恢復定期檢查，請參考 git 歷史。
 """
 
 import os
