@@ -790,7 +790,11 @@ class AnimeVoteView(discord.ui.View):
                 logger.error(f"❌ [vote_callback] 獎勵 KK幣失敗: {e}", exc_info=True)
             
             # 更新原始消息的 embed（添加統計信息）
-            await self._update_message_stats(interaction.message)
+            try:
+                await self._update_message_stats(interaction.message)
+                logger.info(f"✅ [vote_callback] {interaction.user} 的投票已記錄並更新消息統計")
+            except Exception as update_error:
+                logger.error(f"❌ [vote_callback] 更新消息統計失敗: {update_error}", exc_info=True)
         
         except Exception as e:
             logger.error(f"❌ [_vote_callback] 投票失敗: {e}", exc_info=True)
@@ -877,7 +881,11 @@ class AnimeVoteView(discord.ui.View):
                         await modal_interaction.response.send_message(reward_message, ephemeral=True)
                         
                         # 更新原始消息統計
-                        await self.modal_update_stats(modal_interaction.message)
+                        try:
+                            await self.modal_update_stats(modal_interaction.message)
+                            logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存並更新消息統計")
+                        except Exception as update_error:
+                            logger.error(f"❌ [comment_submit] 更新消息統計失敗: {update_error}", exc_info=True)
                     except Exception as e:
                         logger.error(f"❌ [comment_submit] 保存評論失敗: {e}", exc_info=True)
             
@@ -897,19 +905,27 @@ class AnimeVoteView(discord.ui.View):
         """更新消息中的投票統計"""
         try:
             if not message.embeds:
+                logger.warning(f"⚠️ [_update_message_stats] 消息沒有 embed")
                 return
             
-            embed = message.embeds[0]
+            # 複製原始 embed 避免修改原件
+            embed = discord.Embed.from_dict(message.embeds[0].to_dict())
             
-            # 獲取投票統計
+            # 獲取投票統計和評論
             stats = self.tracker.db.get_vote_stats(message.id)
             comments = self.tracker.db.get_vote_comments(message.id, limit=3)
             
-            # 清除舊的統計 field
-            embed.fields = [f for f in embed.fields if f.name not in ["📊 投票統計", "💬 匿名評論"]]
+            logger.info(f"📊 [_update_message_stats] message_id={message.id}, stats={stats}, comments_count={len(comments) if comments else 0}")
+            
+            # 清除舊的統計 field（重新創建 embed 的 fields 列表）
+            new_fields = []
+            for field in embed.fields:
+                if field.name not in ["📊 投票統計", "💬 匿名評論"]:
+                    new_fields.append(field)
+            embed._fields = new_fields
             
             # 添加新的統計 field
-            if stats:
+            if stats and any(stats.values()):
                 stat_lines = []
                 for vote_key, (vote_label, color_block) in self.VOTE_TYPES.items():
                     count = stats.get(vote_key, 0)
@@ -917,6 +933,7 @@ class AnimeVoteView(discord.ui.View):
                         stat_lines.append(f"{color_block} {vote_label}: {count} 票")
                 
                 if stat_lines:
+                    logger.info(f"📊 [_update_message_stats] 添加統計: {stat_lines}")
                     embed.add_field(
                         name="📊 投票統計",
                         value="\n".join(stat_lines),
@@ -926,6 +943,7 @@ class AnimeVoteView(discord.ui.View):
             # 添加評論 field
             if comments:
                 comment_text = "\n".join([f"• {c}" for c in comments])
+                logger.info(f"💬 [_update_message_stats] 添加評論: {len(comments)} 條")
                 embed.add_field(
                     name="💬 匿名評論",
                     value=comment_text,
@@ -934,9 +952,10 @@ class AnimeVoteView(discord.ui.View):
             
             # 編輯原始消息
             await message.edit(embed=embed)
+            logger.info(f"✅ [_update_message_stats] 消息已更新")
         
         except Exception as e:
-            logger.warning(f"⚠️ [_update_message_stats] 更新統計失敗: {e}")
+            logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
 
 
 class AnimeTracker(commands.Cog):
@@ -1423,6 +1442,12 @@ class AnimeTracker(commands.Cog):
         embed.add_field(
             name="🎯 匿名投票",
             value="選擇你認為本作的評價，或留下評論\n投票完全匿名，無法追蹤個人身份",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🎁 獲得獎勵",
+            value="💬 **投票**: +2000 KK幣\n📝 **評論**: +3000 KK幣\n每條消息僅限一次獎勵",
             inline=False
         )
         
