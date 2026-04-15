@@ -1241,6 +1241,10 @@ class AnimeVoteView(discord.ui.View):
                     anime = data.get("data", {}).get("anime", {})
                     logger.info(f"📺 [fetch_anime_details_from_api] anime 字典鍵: {list(anime.keys()) if anime else '(empty)'}")
                     
+                    # 詳細日誌：打印完整的 anime 字典（前 2000 字符）
+                    anime_str = str(anime)[:2000] if anime else "(empty)"
+                    logger.info(f"📺 [fetch_anime_details_from_api] 完整 anime 數據: {anime_str}")
+                    
                     if not anime:
                         logger.warning(f"⚠️ No anime data in API response for videoSn={video_sn}")
                         return None
@@ -1253,6 +1257,7 @@ class AnimeVoteView(discord.ui.View):
                     score = anime.get("score", 0)
                     
                     logger.info(f"✅ [fetch_anime_details_from_api] animeSn={anime_sn}, title={title[:30]}, tags={tags}, popular={popular}, score={score}")
+                    logger.info(f"✅ [fetch_anime_details_from_api] 提取的觀看數: popular={popular}, type={type(popular)}")
                     
                     # 快取到數據庫
                     if anime_sn:
@@ -1331,7 +1336,10 @@ class AnimeVoteView(discord.ui.View):
         popular = anime_details.get("popular", 0) if anime_details else 0
         score = anime_details.get("score", 0) if anime_details else 0
         
+        logger.info(f"📺 [generate_anime_embed] anime_details type: {type(anime_details)}")
+        logger.info(f"📺 [generate_anime_embed] anime_details keys: {list(anime_details.keys()) if anime_details else '(None)'}")
         logger.info(f"📺 [generate_anime_embed] 提取的詳細信息: content_len={len(content)}, tags={api_tags}, popular={popular}, score={score}")
+        logger.info(f"📺 [generate_anime_embed] 觀看數詳情: popular={popular}, type={type(popular)}, bool(popular)={bool(popular)}")
         
         # 構建標籤信息
         tag_parts = []
