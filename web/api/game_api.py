@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request, send_file, redirect
 import json
 from typing import Optional
 from db_adapter import get_user, set_user_field, get_user_field
-from shop_commands.merchant.paperdoll_system import EnhancedPaperDollSystem
+from cogs.shop.merchant.paperdoll_system import EnhancedPaperDollSystem
 import io
 
 # 建立 Blueprint

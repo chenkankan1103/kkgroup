@@ -1,0 +1,10 @@
+{
+  "ref": "refs/heads/restructure-project-20260414",
+  "commits": [
+    {
+      "id": "abc123def456",
+      "message": "Fix webhook routing issue\n\nUpdate nginx configuration"
+    }
+  ],
+  "action": "push"
+}

@@ -268,8 +268,12 @@ def github_webhook():
         logger.error(f"❌ JSON 解析失敗: {e}")
         return jsonify({"status": "error", "message": "JSON 解析失敗"}), 400
     
-    # 檢查推送事件
-    if payload.get('action') == 'opened' or 'push' in request.headers.get('X-GitHub-Event', ''):
+    try:
+        # 檢查推送事件
+        if not (payload.get('action') == 'opened' or 'push' in request.headers.get('X-GitHub-Event', '')):
+            logger.info("⏭️ 忽略非 push 事件")
+            return jsonify({"status": "ok", "message": "已忽略非 push 事件"}), 200
+        
         logger.info("🔔 收到 GitHub push 事件")
         
         # 獲取提交信息
