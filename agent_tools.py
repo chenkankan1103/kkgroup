@@ -2195,7 +2195,7 @@ def automate_workflow(workflow_type: str, target: str, details: str = "", *, cal
             ])
         
         report_lines.extend([
-            f"\n【后續行動】：",
+            f"\n【後續行動】：",
             f"✅ 所有步驟已列出",
             f"⚠️ 敏感操作（如 batch_replace_code）需要人工確認",
             f"💡 建議按序執行上述步驟，每步後檢查結果",

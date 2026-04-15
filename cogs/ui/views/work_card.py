@@ -169,7 +169,7 @@ class WorkCardActionView(discord.ui.View):
     async def view_card_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """查看員工證"""
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 这不是你的員工證！", ephemeral=True)
+            await interaction.response.send_message("❌ 這不是你的員工證！", ephemeral=True)
             return
         
         try:
