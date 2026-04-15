@@ -872,7 +872,7 @@ class PurchaseConfirmView(discord.ui.View):
         
         # 扣除金錢並更新裝備
         await update_user_kkcoin(interaction.user.id, -self.total_price)
-        # items 里的 key 對應 users 表欄位名稱
+        # items 裡的 key 對應 users 表欄位名稱
         from .database import update_user_equipment
         for category, item_id in self.items.items():
             await update_user_equipment(interaction.user.id, category, item_id)

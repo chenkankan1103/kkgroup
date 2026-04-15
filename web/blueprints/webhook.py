@@ -286,7 +286,7 @@ def github_webhook():
         
         # 只處理 main 分支
         if branch_name != 'main':
-            logger.info(f"⏭️ 忽略分支 {branch_name}，仅監控 main")
+            logger.info(f"⏭️ 忽略分支 {branch_name}，僅監控 main")
             return jsonify({"status": "ok", "message": "已忽略該分支"}), 200
         
         # 執行更新和重啟

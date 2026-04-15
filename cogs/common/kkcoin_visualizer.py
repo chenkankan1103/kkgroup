@@ -16,7 +16,7 @@ from io import BytesIO
 # 延迟导入 matplotlib（用于图表生成）
 try:
     import matplotlib
-    matplotlib.use('Agg')  # 设置非交互后端（必须在 pyplot 导入前）
+    matplotlib.use('Agg')  # 設置非互動後端（必須在 pyplot 導入前）
     import matplotlib.pyplot as plt
     import numpy as np
     MATPLOTLIB_AVAILABLE = True

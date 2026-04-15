@@ -31,7 +31,7 @@ class RainbowRole(commands.Cog):
             has_members = len(members) > 0
             last_status = self._last_status.get(guild_id)
             
-            # 仅在状态改变时输出日志
+            # 只有在狀態改變時輸出日誌
             if has_members and last_status != True:
                 print(f"[🌈] 發現成員擁有七彩角色，開始五分鐘變色循環")
                 self._last_status[guild_id] = True

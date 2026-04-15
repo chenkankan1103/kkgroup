@@ -39,7 +39,7 @@ class ScamHub(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.active_rooms = {}
-        self.room_messages = {}  # 存储每个语音频道的消息ID
+        self.room_messages = {}  # 存儲每個語音頻道的消息ID
         self.scam_event_task.start()
         print("[ScamHub] cog initialized, active_rooms cleared")
 

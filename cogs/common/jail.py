@@ -31,9 +31,9 @@ class Ai(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.punishment_tasks = {}
-        self.punishment_messages = {}  # 存储用戶專屬的懲罰消息ID
-        self.admin_notification_messages = {}  # 存储管理員通知消息ID
-        self.cached_punishment_images = {}  # 缓存惩罚状态图片
+        self.punishment_messages = {}  # 存儲用戶專屬的懲罰消息ID
+        self.admin_notification_messages = {}  # 存儲管理員通知消息ID
+        self.cached_punishment_images = {}  # 快取懲罰狀態圖片
         
         # 預設的眩晕状态图片配置
         self.punishment_presets = {
@@ -222,7 +222,7 @@ class Ai(commands.Cog):
                     if response.status == 200:
                         image_data = await response.read()
                         if len(image_data) > 100:
-                            # 上传到Discord存储
+                            # 上傳到 Discord 儲存
                             discord_url = await self.upload_punishment_image_to_storage(image_data, preset_key)
                             if discord_url:
                                 self.cached_punishment_images[preset_key] = discord_url
