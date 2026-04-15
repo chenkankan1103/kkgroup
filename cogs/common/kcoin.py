@@ -175,6 +175,7 @@ class KKCoin(commands.Cog):
         self.last_update_time = 0
         self.last_leaderboard_data = None
         self.last_digital_usd_data = None
+        self._config_missing_warned = False  # 追踪是否已警告过 config.json 不存在
         
         # 🎯 事件驅動排行榜生成（資料變化時延遲 5 分鐘後生成，避免頻繁更新）
         self._pending_leaderboard_generation = False  # 標記是否有待生成的任務
@@ -386,7 +387,10 @@ class KKCoin(commands.Cog):
                             json.dump(config, f, ensure_ascii=False, indent=2)
                         print(f"✅ 已更新 config.json: {leaderboard_url[:50]}...")
                     else:
-                        print(f"⚠️ config.json 不存在: {config_path}")
+                        # 只在首次警告
+                        if not self._config_missing_warned:
+                            print(f"⚠️ config.json 不存在: {config_path}")
+                            self._config_missing_warned = True
                 except Exception as e:
                     print(f"⚠️ 更新 config.json 失敗: {e}")
                     import traceback
