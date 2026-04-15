@@ -49,23 +49,26 @@ from blueprints.stats import stats_bp
 from blueprints.sheets import sheets_bp
 from blueprints.discord_auth import discord_auth_bp
 from blueprints.stocks_api import stocks_api_bp
+from blueprints.webhook import webhook_bp
 from api.game import game_bp, init_game_api
 
 app.register_blueprint(stats_bp)
 app.register_blueprint(sheets_bp)
 app.register_blueprint(discord_auth_bp)
 app.register_blueprint(stocks_api_bp)
+app.register_blueprint(webhook_bp)
 app.register_blueprint(game_bp)
 
 # 初始化遊戲 API
 init_game_api(bot=None)
 
-logger.info("✅ 已註冊所有 Blueprints")
-logger.info(f"  - Stats API")
-logger.info(f"  - Sheets API")
-logger.info(f"  - Discord Auth API")
-logger.info(f"  - Stocks API")
-logger.info(f"  - Game API (紙娃娃 RPG)")
+    logger.info("✅ 已註冊所有 Blueprints")
+    logger.info(f"  - Stats API")
+    logger.info(f"  - Sheets API")
+    logger.info(f"  - Discord Auth API")
+    logger.info(f"  - Stocks API")
+    logger.info(f"  - Webhook (GitHub 自動部署)")
+    logger.info(f"  - Game API (紙娃娃 RPG)")
 
 # ============================================================
 # 網頁遊戲服務 (必須在 Blueprint 之後、404 handler 之前)
@@ -225,6 +228,7 @@ if __name__ == '__main__':
     print(f"   ✅ Sheets 同步 API (/api/sync, /api/export)")
     print(f"   ✅ 用戶管理 API    (/api/user/...)")
     print(f"   ✅ 系統監控       (/api/health)")
+    print(f"   ✅ GitHub Webhook  (/webhook/github - 自動部署)")
     print(f"   ✅ 網頁遊戲       (/rpg-game 或 /game.html)")
     print(f"🎮 遊戲網址:")
     print(f"   • http://{host}:{port}/rpg-game")
