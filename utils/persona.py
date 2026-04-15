@@ -51,7 +51,7 @@ def build_persona_prompt(
     is_joking: bool = False
 ) -> str:
     """
-    動態構建 Persona 提示詞。
+    動態構建 Persona 提示詞，風格自然流暢。
     
     Args:
         bot_name: 機器人名稱
@@ -61,58 +61,42 @@ def build_persona_prompt(
         is_joking: 使用者是否在開玩笑
     """
     
-    # 構建動態修飾符 - 減少重複代碼
-    modifiers = []
-    if user_impression:
-        modifiers.append(f"這位使用者：{user_impression}")
+    # 構建動態上下文 - 自然融入提示詞
+    context = []
     if is_urgent:
-        modifiers.append("使用者看起來很急，你應該快速直切重點")
+        context.append("用戶看起來很急，直切重點，言簡意賅")
     if is_joking:
-        modifiers.append("使用者在開玩笑，你也可以打趣回應")
+        context.append("用戶在開玩笑，可以打趣回應，增加互動的趣味")
+    if user_impression:
+        context.append(f"根據以往交互，這位用戶{user_impression}")
     
-    modifier_text = "（" + "，".join(modifiers) + "）" if modifiers else ""
+    context_text = "；".join(context) + "。" if context else ""
     
     tone_data = {
         "arrogant": {
-            "base": f"你是「{bot_name}」，對重複問題略帶不耐{modifier_text}",
-            "traits": "冷靜、偶爾毒舌、但會展現溫度",
-            "examples": ["這麼簡單你也問？", "再想想，你一定會的"]
+            "style": f"你是 {bot_name}，對簡單重複的問題有點不耐煩，但這不是冷漠，而是想推動用戶思考。{context_text}",
+            "vibe": "冷靜但有溫度，偶爾毒舌，最終會耐心幫助",
         },
         "neutral": {
-            "base": f"你是「{bot_name}」，理性且友善{modifier_text}",
-            "traits": "溫和、有條理、樂於幫助",
-            "examples": ["這個問題問得不錯", "不用擔心，我來幫你"]
+            "style": f"你是 {bot_name}，友善、理性、樂於幫忙。像一個靠譜的朋友，清楚明確地指引方向。{context_text}",
+            "vibe": "溫和、有邏輯、值得信任",
         },
         "sarcastic": {
-            "base": f"你是「{bot_name}」，風趣且有毒舌{modifier_text}",
-            "traits": "幽默、用諷刺化解尷尬、不會真傷害人",
-            "examples": ["這勇氣可嘉", "我就勉強幫你吧"]
+            "style": f"你是 {bot_name}，幽默風趣，用諷刺化解尷尬氣氛，但始終是善意的。{context_text}",
+            "vibe": "調皮但暖心，不會真傷害人，反而是在互動中製造樂趣",
         },
         "playful": {
-            "base": f"你是「{bot_name}」，親切且調皮{modifier_text}",
-            "traits": "有趣、常用 emoji、打趣",
-            "examples": ["你這樣問很可愛", "好欸，3 秒解決你"]
+            "style": f"你是 {bot_name}，親切活潑，回應時帶著調皮感，適度用表情符號增加親近感。{context_text}",
+            "vibe": "輕鬆、有趣、像個朋友",
         },
         "adaptive": {
-            "base": f"你是「{bot_name}」，能根據情境切換風格{modifier_text}",
-            "traits": "同理心強、觀察力敏銳、像朋友般自然",
-            "examples": ["你是不是有點卡住", "沒關係，這很常見"]
+            "style": f"你是 {bot_name}，能根據用戶的語氣和需求自然切換風格。{context_text}",
+            "vibe": "同理心強、觀察敏銳、如朋友般自然",
         }
     }
     
     data = tone_data.get(tone, tone_data["neutral"])
     
-    return f"""【角色設定】
-{data['base']}
+    return f"""{data['style']}
 
-【語氣特徵】
-{data['traits']}
-
-【回應範例】
-{' | '.join(data['examples'])}
-
-【關鍵原則】
-- 簡潔直接（減少廢話，減少 token）
-- 如果使用者急，立即給重點
-- 適度用表情符號增加人味，但不過度
-"""
+回應時保持{data['vibe']}的感覺。直接、簡潔，避免冗長和重複。"""

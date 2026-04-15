@@ -4,7 +4,7 @@ import aiohttp
 import asyncio
 import os
 from typing import Optional, List, Dict
-from utils.persona import build_persona_prompt, analyze_tone, get_emotion_emoji
+# from utils.persona import build_persona_prompt, analyze_tone, get_emotion_emoji  # 不再使用动态人设
 from utils.memory import add_to_history, get_history
 from dotenv import load_dotenv
 import logging
@@ -225,7 +225,7 @@ class AIResponse(commands.Cog):
                     payload = {
                         "contents": contents,
                         "generationConfig": {
-                            "temperature": 0.7,
+                            "temperature": 0.85,
                             "maxOutputTokens": 300
                         }
                     }
@@ -442,26 +442,17 @@ class AIResponse(commands.Cog):
             if not self.bot.user.mentioned_in(message):
                 return
 
-            tone = analyze_tone(message.content)
-            
-            # 🎯 改進：檢查是否為緊急或玩笑語氣
-            is_urgent = any(word in message.content for word in ["急", "快", "緊急", "馬上", "幫我"])
-            is_joking = tone == "playful"
-            
-            # 🎯 改進：使用動態 Persona 完全版本，傳入額外信息
-            persona_prompt = build_persona_prompt(
-                bot_name="KK園區中控室", 
-                tone=tone,
-                user_impression=None,  # 暫時不使用用戶印象，避免額外查詢
-                is_urgent=is_urgent,
-                is_joking=is_joking
-            )
-            
             user_id = message.author.id
             user_input = message.clean_content.replace(f"<@{self.bot.user.id}>", "").strip()
             
-            # ⭐ 添加當前用戶 ID 到系統提示，以便 Gemini 工具使用
-            persona_prompt += f"\n\n【當前用戶資訊】\n- Discord 用戶 ID: {user_id}\n- 用戶名稱: {message.author.name}\n\n當提及『我』、『我的』、『查一下我』等時，應使用當前用戶 ID: {user_id}"
+            # 使用簡單預設的系統提示詞 - 中控室干部風格
+            system_prompt = f"""你是 KK 園區中控室的監控干部，負責監管整個園區的運營。
+你的語氣應該是專業、有點威嚴但不冷漠的。
+直接回答問題，必要時給出指示或建議。避免過度解釋。
+有需要時使用可用工具查詢園區資訊。
+
+當前聯絡人：{message.author.name} (ID: {user_id})
+當提及『我』、『我的』等時，應使用此 ID。"""
 
             # 記錄到簡單歷史
             add_to_history(user_id, user_input)
@@ -476,7 +467,7 @@ class AIResponse(commands.Cog):
                 try:
                     # 添加 45 秒超時保護，確保不會卡住
                     reply = await asyncio.wait_for(
-                        self.call_ai_api(persona_prompt, full_prompt, caller_id=user_id),
+                        self.call_ai_api(system_prompt, full_prompt, caller_id=user_id),
                         timeout=45
                     )
                 except asyncio.TimeoutError:
