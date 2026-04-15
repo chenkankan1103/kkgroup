@@ -61,6 +61,7 @@ ANIME_DETAILS_TABLE = "anime_details"  # 永恆快取動畫詳細信息
 ANIME_STATS_TABLE = "anime_statistics"  # 動畫統計數據（觀看人數、評分趨勢等）
 EPISODE_STATS_TABLE = "episode_statistics"  # 每集統計數據
 ANIME_VOTES_TABLE = "anime_votes"  # 匿名投票結果
+ANIME_REWARDS_TABLE = "anime_rewards"  # KK幣獎勵追踪（防止重複發放）
 
 
 class AnimeDatabase:
@@ -146,6 +147,19 @@ class AnimeDatabase:
                         comment TEXT,
                         user_hash TEXT,
                         voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # 7. KK幣獎勵追踪表
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {ANIME_REWARDS_TABLE} (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        message_id INTEGER NOT NULL,
+                        reward_type TEXT NOT NULL,
+                        reward_amount INTEGER NOT NULL,
+                        awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_id, message_id, reward_type)
                     )
                 """)
                 
@@ -609,6 +623,41 @@ class AnimeDatabase:
         except Exception as e:
             logger.error(f"❌ Error getting vote comments: {e}")
             return []
+    
+    def record_reward(self, user_id: int, message_id: int, reward_type: str, reward_amount: int) -> bool:
+        """記錄 KK幣獎勵 - 防止重複發放"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT INTO {ANIME_REWARDS_TABLE}
+                    (user_id, message_id, reward_type, reward_amount, awarded_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (user_id, message_id, reward_type, reward_amount))
+                conn.commit()
+                logger.info(f"💰 [record_reward] user_id={user_id}, message_id={message_id}, type={reward_type}, amount={reward_amount}")
+                return True
+        except sqlite3.IntegrityError:
+            # 該用戶在該消息上已獲得過此類型的獎勵
+            logger.info(f"⏭️ [record_reward] user_id={user_id} 已獲得過 {reward_type} 獎勵")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error recording reward: {e}")
+            return False
+    
+    def is_reward_already_given(self, user_id: int, message_id: int, reward_type: str) -> bool:
+        """檢查是否已發放過獎勵"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT 1 FROM {ANIME_REWARDS_TABLE}
+                    WHERE user_id = ? AND message_id = ? AND reward_type = ?
+                """, (user_id, message_id, reward_type))
+                return cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"❌ Error checking reward: {e}")
+            return False
 
 
 # ==================== 匿名投票 View 類 ====================
@@ -656,7 +705,7 @@ class AnimeVoteView(discord.ui.View):
         self.add_item(comment_button)
     
     async def _vote_callback(self, interaction: discord.Interaction):
-        """處理投票按鈕點擊"""
+        """處理投票按鈕點擊 - 投票 +2000 KK幣（每個用戶每條消息只適用一次）"""
         try:
             # 記錄互動時間
             self.last_interaction_time = datetime.now(TW_TZ)
@@ -687,6 +736,58 @@ class AnimeVoteView(discord.ui.View):
                 self.timeout = 3  # 設置 3 秒的延長超時
             else:
                 self.timeout = max(self.timeout + 3, 180)  # 每次加 3 秒，最多 3 分鐘
+            
+            # === KK幣獎勵邏輯 (投票 +2000) ===
+            reward_given = False
+            try:
+                from db_adapter import set_user_field, get_user_field
+                
+                # 檢查是否已發放過獎勵
+                if not self.tracker.db.is_reward_already_given(interaction.user.id, interaction.message.id, "vote"):
+                    # 獲取當前 KK幣
+                    current_kkcoin = get_user_field(interaction.user.id, "kkcoin") or 0
+                    new_kkcoin = int(current_kkcoin) + 2000
+                    
+                    # 更新 KK幣
+                    set_user_field(interaction.user.id, "kkcoin", new_kkcoin)
+                    
+                    # 記錄獎勵發放
+                    self.tracker.db.record_reward(
+                        user_id=interaction.user.id,
+                        message_id=interaction.message.id,
+                        reward_type="vote",
+                        reward_amount=2000
+                    )
+                    
+                    logger.info(f"💰 [vote_callback] {interaction.user} 投票獲得 2000 KK幣，現在共有 {new_kkcoin} KK幣")
+                    reward_given = True
+                    
+                    # 發送獎勵通知
+                    try:
+                        reward_embed = discord.Embed(
+                            title="🎯 投票獎勵",
+                            description="感謝你的投票！",
+                            color=discord.Color.gold()
+                        )
+                        reward_embed.add_field(
+                            name="獲得獎勵",
+                            value="💰 +2000 KK幣",
+                            inline=False
+                        )
+                        reward_embed.add_field(
+                            name="目前餘額",
+                            value=f"💵 {new_kkcoin} KK幣",
+                            inline=False
+                        )
+                        await interaction.followup.send(embed=reward_embed, ephemeral=True)
+                    except:
+                        pass
+                else:
+                    logger.info(f"⏭️ [vote_callback] {interaction.user} 已獲得過該消息的投票獎勵")
+            except ImportError:
+                logger.warning("⚠️ [vote_callback] db_adapter 未找到，無法獎勵 KK幣")
+            except Exception as e:
+                logger.error(f"❌ [vote_callback] 獎勵 KK幣失敗: {e}", exc_info=True)
             
             # 更新原始消息的 embed（添加統計信息）
             await self._update_message_stats(interaction.message)
@@ -741,7 +842,39 @@ class AnimeVoteView(discord.ui.View):
                         
                         logger.info(f"💬 [comment] {modal_interaction.user} 留言: {comment[:30]}...")
                         
-                        await modal_interaction.response.send_message("✅ 評論已保存！感謝你的意見", ephemeral=True)
+                        # === KK幣獎勵邏輯 (評論 +3000) ===
+                        reward_message = "✅ 評論已保存！感謝你的意見"
+                        try:
+                            from db_adapter import set_user_field, get_user_field
+                            
+                            # 檢查是否已發放過獎勵
+                            if not self.modal_tracker.db.is_reward_already_given(modal_interaction.user.id, modal_interaction.message.id, "comment"):
+                                # 獲取當前 KK幣
+                                current_kkcoin = get_user_field(modal_interaction.user.id, "kkcoin") or 0
+                                new_kkcoin = int(current_kkcoin) + 3000
+                                
+                                # 更新 KK幣
+                                set_user_field(modal_interaction.user.id, "kkcoin", new_kkcoin)
+                                
+                                # 記錄獎勵發放
+                                self.modal_tracker.db.record_reward(
+                                    user_id=modal_interaction.user.id,
+                                    message_id=modal_interaction.message.id,
+                                    reward_type="comment",
+                                    reward_amount=3000
+                                )
+                                
+                                logger.info(f"💰 [comment_submit] {modal_interaction.user} 評論獲得 3000 KK幣，現在共有 {new_kkcoin} KK幣")
+                                reward_message = "✅ 評論已保存！\n💰 +3000 KK幣獎勵已發放"
+                            else:
+                                logger.info(f"⏭️ [comment_submit] {modal_interaction.user} 已獲得過該消息的評論獎勵")
+                                reward_message = "✅ 評論已保存！"
+                        except ImportError:
+                            logger.warning("⚠️ [comment_submit] db_adapter 未找到，無法獎勵 KK幣")
+                        except Exception as e:
+                            logger.error(f"❌ [comment_submit] 獎勵 KK幣失敗: {e}", exc_info=True)
+                        
+                        await modal_interaction.response.send_message(reward_message, ephemeral=True)
                         
                         # 更新原始消息統計
                         await self.modal_update_stats(modal_interaction.message)
@@ -906,85 +1039,6 @@ class AnimeVoteView(discord.ui.View):
         except Exception as e:
             logger.warning(f"⚠️ [get_quickchart_short_url] 生成短網址失敗: {e}")
             return None
-    
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
-        """
-        監聽反應事件 - 當用戶給動畫通知評分時獎勵 KK幣
-        支持任何表情反應（正評或負評都可以）
-        """
-        # 不處理 bot 自己的反應
-        if user.bot:
-            return
-        
-        # 只處理來自動畫通知頻道的反應
-        if reaction.message.channel.id != ANIME_CHANNEL_ID:
-            return
-        
-        try:
-            # 檢查 embed 是否包含評分提示（即是否為動畫通知）
-            embeds = reaction.message.embeds
-            if not embeds:
-                return
-            
-            embed = embeds[0]
-            # 檢查是否包含評分提示字段
-            is_anime_message = any(
-                field.name == "⭐ 點擊反應留下評價吧" 
-                for field in embed.fields
-            )
-            
-            if not is_anime_message:
-                return
-            
-            logger.info(f"📺 [on_reaction_add] {user.name} 給動畫通知評分（反應：{reaction.emoji}）")
-            
-            # 導入 db_adapter 來更新 KK幣（需要確定實現方式）
-            try:
-                from db_adapter import set_user_field, get_user_field
-                
-                # 獲取當前 KK幣
-                current_kkcoin = get_user_field(user.id, "kkcoin") or 0
-                new_kkcoin = int(current_kkcoin) + 2000
-                
-                # 更新 KK幣
-                set_user_field(user.id, "kkcoin", new_kkcoin)
-                
-                logger.info(f"✅ [on_reaction_add] {user.name} 獲得 2000 KK幣，現在共有 {new_kkcoin} KK幣")
-                
-                # 在該頻道發送 ephemeral message（僅使用者能看到）
-                try:
-                    reward_embed = discord.Embed(
-                        title="⭐ 評分獎勵",
-                        description="感謝你給動畫通知評分！",
-                        color=discord.Color.gold()
-                    )
-                    reward_embed.add_field(
-                        name="獲得獎勵",
-                        value="💰 +2000 KK幣",
-                        inline=False
-                    )
-                    reward_embed.add_field(
-                        name="目前餘額",
-                        value=f"💵 {new_kkcoin} KK幣",
-                        inline=False
-                    )
-                    await reaction.message.channel.send(
-                        embed=reward_embed,
-                        ephemeral=True,
-                        silent=True,
-                        reference=reaction.message
-                    )
-                except discord.Forbidden:
-                    logger.warning(f"⚠️ [on_reaction_add] 無法在頻道發送訊息給 {user.name}")
-                
-            except ImportError:
-                logger.warning("⚠️ [on_reaction_add] db_adapter 未找到，無法獎勵 KK幣")
-            except Exception as e:
-                logger.error(f"❌ [on_reaction_add] 獎勵 KK幣失敗: {e}", exc_info=True)
-        
-        except Exception as e:
-            logger.error(f"❌ [on_reaction_add] 處理反應失敗: {e}", exc_info=True)
     
     async def fetch_all_recent_anime_from_api(self) -> Optional[List[Dict]]:
         """
