@@ -32,8 +32,10 @@ PROJECT_DIR = Path("/home/e193752468/kkgroup")
 ENV_FILE = PROJECT_DIR / ".env"
 
 # 速率限制：最短檢查間隔（分鐘）
-MIN_CHECK_INTERVAL_MINUTES = 5
+MIN_CHECK_INTERVAL_MINUTES = 5  # 監控循環間隔（輕量檢查）
+FETCH_INTERVAL_MINUTES = 30     # Git Fetch 間隔（重型 API 調用），減少出站流量
 LAST_CHECK_FILE = PROJECT_DIR / ".last_update_check"
+LAST_FETCH_FILE = PROJECT_DIR / ".last_git_fetch"
 
 # 載入環境變數
 load_dotenv(ENV_FILE)
@@ -50,7 +52,7 @@ def log(message):
     sys.stdout.flush()  # 確保 crontab 能看到輸出
 
 def should_check_for_updates():
-    """檢查是否應該執行更新檢查（速率限制）"""
+    """檢查是否應該執行更新檢查（輕量檢查，5 分鐘間隔）"""
     try:
         if LAST_CHECK_FILE.exists():
             last_check_time = datetime.fromtimestamp(LAST_CHECK_FILE.stat().st_mtime)
@@ -64,6 +66,21 @@ def should_check_for_updates():
         log(f"⚠️ 檢查速率限制時發生錯誤: {e}")
         return True  # 出錯時允許檢查，避免阻塞
 
+def should_fetch_from_github():
+    """檢查是否應該執行 git fetch（重型 API 調用，30 分鐘間隔以減少出站流量）"""
+    try:
+        if LAST_FETCH_FILE.exists():
+            last_fetch_time = datetime.fromtimestamp(LAST_FETCH_FILE.stat().st_mtime)
+            time_since_last_fetch = datetime.now() - last_fetch_time
+            
+            if time_since_last_fetch < timedelta(minutes=FETCH_INTERVAL_MINUTES):
+                log(f"⏱️ 距離上次 Fetch 僅 {time_since_last_fetch.total_seconds()/60:.1f} 分鐘，跳過 GitHub API 調用")
+                return False
+        return True
+    except Exception as e:
+        log(f"⚠️ 檢查 Fetch 間隔時發生錯誤: {e}")
+        return True  # 出錯時允許 fetch，避免阻塞
+
 def update_last_check_time():
     """更新最後檢查時間"""
     try:
@@ -72,9 +89,16 @@ def update_last_check_time():
         log(f"⚠️ 更新檢查時間戳記失敗: {e}")
 
 def check_git_updates():
-    """檢查是否有新的 git 更新"""
+    """檢查是否有新的 git 更新（僅在 fetch 間隔時執行 GitHub API 調用）"""
     try:
         log("🔍 檢查 Git 更新...")
+        
+        # 檢查是否應該執行 git fetch（避免頻繁調用 GitHub API）
+        if not should_fetch_from_github():
+            log("⏭️ 跳過 GitHub API 調用，使用上次已緩存的更新信息")
+            return False, 0
+        
+        log("🌐 連接 GitHub API 拉取最新更新資訊...")
         
         # remove stale lock if present (prevents fetch/reset failures)
         lockfile = PROJECT_DIR / ".git/index.lock"
@@ -92,6 +116,12 @@ def check_git_updates():
             check=True,
             capture_output=True
         )
+        
+        # 記錄此次 fetch 的時間
+        try:
+            LAST_FETCH_FILE.touch()
+        except Exception as e:
+            log(f"⚠️ 無法更新 Fetch 時間戳: {e}")
         
         # 比較本地和遠端的差異
         result = subprocess.run(
@@ -363,16 +393,17 @@ async def main():
     log("🚀 開始執行自動更新檢查")
     log("=" * 60)
     
-    # 0. 速率限制檢查
+    # 0. 速率限制檢查（輕量檢查，5 分鐘間隔）
     if not should_check_for_updates():
-        log("✅ 跳過此次檢查（速率限制）")
+        log("✅ 跳過此次檢查（監控循環間隔未到）")
         return
     
-    # 1. 檢查是否有更新
+    update_last_check_time()  # 記錄此次檢查
+    
+    # 1. 檢查是否有更新（如果 fetch 間隔未到，會跳過 API 調用）
     has_updates, commits_count = check_git_updates()
     if not has_updates:
         log("✅ 無需更新，程式結束")
-        update_last_check_time()  # 更新檢查時間戳記
         return
     
     # 2. 獲取更新詳情
@@ -400,9 +431,6 @@ async def main():
         log("✅ 所有服務重啟成功")
         # 5. 發送成功通知
         await send_discord_notification(update_details, commits_count, "update")
-    
-    # 更新檢查時間戳記
-    update_last_check_time()
     
     log("=" * 60)
     log("✅ 自動更新流程完成")
