@@ -50,7 +50,7 @@ from blueprints.sheets import sheets_bp
 from blueprints.discord_auth import discord_auth_bp
 from blueprints.stocks_api import stocks_api_bp
 from blueprints.webhook import webhook_bp
-from api.game import game_bp, init_game_api
+from api.game_api import game_bp, init_game_api
 
 app.register_blueprint(stats_bp)
 app.register_blueprint(sheets_bp)
@@ -62,13 +62,13 @@ app.register_blueprint(game_bp)
 # 初始化遊戲 API
 init_game_api(bot=None)
 
-    logger.info("✅ 已註冊所有 Blueprints")
-    logger.info(f"  - Stats API")
-    logger.info(f"  - Sheets API")
-    logger.info(f"  - Discord Auth API")
-    logger.info(f"  - Stocks API")
-    logger.info(f"  - Webhook (GitHub 自動部署)")
-    logger.info(f"  - Game API (紙娃娃 RPG)")
+logger.info("✅ 已註冊所有 Blueprints")
+logger.info(f"  - Stats API")
+logger.info(f"  - Sheets API")
+logger.info(f"  - Discord Auth API")
+logger.info(f"  - Stocks API")
+logger.info(f"  - Webhook (GitHub 自動部署)")
+logger.info(f"  - Game API (紙娃娃 RPG)")
 
 # ============================================================
 # 網頁遊戲服務 (必須在 Blueprint 之後、404 handler 之前)
