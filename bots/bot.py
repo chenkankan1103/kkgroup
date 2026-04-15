@@ -37,6 +37,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 減少 discord 庫的日誌噪音（只顯示警告及以上）
+discord_logger = logging.getLogger('discord')
+discord_logger.setLevel(logging.WARNING)
+discord_webhook_logger = logging.getLogger('discord.webhook')
+discord_webhook_logger.setLevel(logging.WARNING)
+
 # ============================================================
 # 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
 # ============================================================

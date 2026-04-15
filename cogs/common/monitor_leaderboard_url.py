@@ -25,6 +25,8 @@ class LeaderboardURLMonitor(commands.Cog):
         self.rank_channel_id = int(os.getenv("KKCOIN_RANK_CHANNEL_ID", 0))
         self.rank_message_id = int(os.getenv("KKCOIN_RANK_MESSAGE_ID", 0))
         self.config_path = os.path.join(os.path.dirname(__file__), "..", "docs", "config.json")
+        self._config_missing_warned = False  # 追踪是否已警告过 config.json 不存在
+        self._last_url = None  # 追踪上一次的 URL
         
         # 啟動監控任務
         self.monitor_url.start()
@@ -39,11 +41,7 @@ class LeaderboardURLMonitor(commands.Cog):
     async def monitor_url(self):
         """
         每小時檢查一次 Discord CDN URL
-        流程：
-        1. 從 Discord 訊息獲取最新附件 URL
-        2. 與 config.json 中的 URL 比較
-        3. 如果不同 → 自動更新
-        4. 可選：提交到 Git
+        只在 URL 改變時才輸出日誌
         """
         try:
             # 檢查必要參數
@@ -70,11 +68,13 @@ class LeaderboardURLMonitor(commands.Cog):
                 return
 
             current_url = msg.attachments[0].url
-            print(f"\n📍 當前 Discord CDN URL: {current_url[:70]}...")
 
             # 檢查 config.json
             if not os.path.exists(self.config_path):
-                print(f"⚠️ config.json 不存在: {self.config_path}")
+                # 只在首次警告
+                if not self._config_missing_warned:
+                    print(f"⚠️ config.json 不存在: {self.config_path}")
+                    self._config_missing_warned = True
                 return
 
             # 讀取舊 URL
@@ -83,16 +83,17 @@ class LeaderboardURLMonitor(commands.Cog):
 
             old_url = config.get("imageURL", "")
 
-            # 比較 URL
+            # 比較 URL - 只在改變時才輸出日誌
             if old_url == current_url:
-                print("✅ 排行榜圖片 URL 未變更，無需更新")
+                # 正常情況，不輸出日誌
                 return
 
             # URL 已變更或為空 - 執行更新
-            print(f"🔄 排行榜圖片 URL 已變更，更新中...")
+            print(f"\n📍 Discord CDN URL 已變更:")
             if old_url:
                 print(f"   舊: {old_url[:70]}...")
             print(f"   新: {current_url[:70]}...")
+            print(f"🔄 更新 config.json 中...")
 
             # 更新 config.json
             config["imageURL"] = current_url
@@ -102,6 +103,7 @@ class LeaderboardURLMonitor(commands.Cog):
                 json.dump(config, f, ensure_ascii=False, indent=2)
 
             print(f"✅ config.json 已更新 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+            self._last_url = current_url
 
             # 可選：自動提交到 Git
             if os.getenv("ENABLE_LEADERBOARD_GIT_COMMIT", "false").lower() == "true":

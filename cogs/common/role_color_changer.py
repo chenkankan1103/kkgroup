@@ -8,6 +8,7 @@ class RainbowRole(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.rainbow_role_id = int(os.getenv("RAINBOW_ROLE_ID", 0))
+        self._last_status = {}  # 追踪上一次检查状态，避免重复日志
         self.monitor_members.start()
 
     def cog_unload(self):
@@ -26,11 +27,18 @@ class RainbowRole(commands.Cog):
                 continue
 
             members = [m for m in guild.members if role in m.roles]
-            if members:
+            guild_id = guild.id
+            has_members = len(members) > 0
+            last_status = self._last_status.get(guild_id)
+            
+            # 仅在状态改变时输出日志
+            if has_members and last_status != True:
                 print(f"[🌈] 發現成員擁有七彩角色，開始五分鐘變色循環")
+                self._last_status[guild_id] = True
                 await self.run_rainbow_cycle(role)
-            else:
+            elif not has_members and last_status != False:
                 print(f"[⏸️] 沒有成員擁有七彩角色，暫停變色")
+                self._last_status[guild_id] = False
 
     async def run_rainbow_cycle(self, role: discord.Role):
         for _ in range(30):  # 每 10 秒變色，共 5 分鐘

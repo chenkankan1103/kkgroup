@@ -67,6 +67,14 @@ EMOJI = "🎨"  # Bot 代表符號: 🤖 / 🛒 / 🎨
 # 環境變數載入
 # ============================================================
 load_dotenv()
+
+# 減少 discord 庫的日誌噪音（只顯示警告及以上）
+import logging
+discord_logger = logging.getLogger('discord')
+discord_logger.setLevel(logging.WARNING)
+discord_webhook_logger = logging.getLogger('discord.webhook')
+discord_webhook_logger.setLevel(logging.WARNING)
+
 STAGE = os.getenv("STAGE", "dev")
 TOKEN = os.getenv(f"{BOT_PREFIX}_BOT_TOKEN")
 GUILD_ID = os.getenv(f"{BOT_PREFIX}_GUILD_ID")
@@ -98,6 +106,11 @@ _pending_reloads = set()
 # 追蹤 on_ready 是否被觸發
 _on_ready_called = False
 _on_ready_check_task = None
+
+# Gateway 事件日誌控制（避免刷屏）
+_last_disconnect_log_time = 0
+_last_resumed_log_time = 0
+_GATEWAY_LOG_INTERVAL = 30  # 每 30 秒最多輸出一次相同日誌
 
 # ============================================================
 # 事件監視函數
@@ -295,11 +308,23 @@ async def on_connect():
 
 @client.event
 async def on_disconnect():
-    print("[DISCORD] gateway disconnected")
+    global _last_disconnect_log_time
+    import time
+    current_time = time.time()
+    # 只在间隔足够长时才输出日志（避免刷屏）
+    if current_time - _last_disconnect_log_time >= _GATEWAY_LOG_INTERVAL:
+        print("[DISCORD] gateway disconnected")
+        _last_disconnect_log_time = current_time
 
 @client.event
 async def on_resumed():
-    print("[DISCORD] session resumed")
+    global _last_resumed_log_time
+    import time
+    current_time = time.time()
+    # 只在间隔足够长时才输出日志（避免刷屏）
+    if current_time - _last_resumed_log_time >= _GATEWAY_LOG_INTERVAL:
+        print("[DISCORD] session resumed")
+        _last_resumed_log_time = current_time
 
 # ============================================================
 # Bot 事件處理
