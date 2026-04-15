@@ -50,7 +50,7 @@ TW_TZ = pytz.timezone('Asia/Taipei')
 
 # 配置
 ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
-ANIME_DB_PATH = Path(__file__).resolve().parent.parent / "uibot_anime.db"  # 獨立的動畫追蹤數據庫，固定到專案根目錄
+ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"  # 統一使用主數據庫，所有表在同一個 user_data.db 中
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # 秒
 
