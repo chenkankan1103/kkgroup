@@ -686,11 +686,21 @@ class AnimeVoteView(discord.ui.View):
         self.last_interaction_time = None  # 用於追蹤最後互動時間
         
         # 添加投票按鈕
-        for vote_key, (vote_label, _) in self.VOTE_TYPES.items():
+        for vote_key, (vote_label, color_emoji) in self.VOTE_TYPES.items():
+            # 根據投票類型選擇按鈕樣式
+            button_style = discord.ButtonStyle.secondary  # 預設灰色
+            if vote_key == "masterpiece":
+                button_style = discord.ButtonStyle.success  # 綠色
+            elif vote_key == "great":
+                button_style = discord.ButtonStyle.primary  # 藍色
+            elif vote_key == "disaster":
+                button_style = discord.ButtonStyle.danger  # 紅色
+            # darkhorse (紫), decent (黃), controversial (橙) 使用 secondary 灰色（Discord 不支援這些顏色）
+            
             button = discord.ui.Button(
-                label=vote_label,
+                label=f"{color_emoji} {vote_label}",
                 custom_id=f"anime_vote_{vote_key}_{self.video_sn}",
-                style=discord.ButtonStyle.secondary
+                style=button_style
             )
             button.callback = self._vote_callback
             self.add_item(button)
