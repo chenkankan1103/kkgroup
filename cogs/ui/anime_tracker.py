@@ -939,7 +939,7 @@ class AnimeVoteView(discord.ui.View):
             logger.warning(f"⚠️ [_update_message_stats] 更新統計失敗: {e}")
 
 
-
+class AnimeTracker(commands.Cog):
     """Bahamut 動畫追蹤主 Cog"""
     
     def __init__(self, bot: commands.Bot):
