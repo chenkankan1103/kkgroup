@@ -236,15 +236,16 @@ class AIResponse(commands.Cog):
                         }
                     }
 
-                    # ⚠️ 使用工具列表的切換開關：禁用工具可節省 ~1000+ tokens
-                    # 改為 False 以節省額度（如果勤快超額）
-                    USE_TOOLS_FOR_GEMINI = True
+                    # ⚠️ 代理人工具已禁用，優化 token 消耗和 AI 回應簡潔性
+                    # 專注於通用 AI 回應，無需工具呼叫功能
+                    # 節省 ~1200 tokens 可用額度
+                    USE_TOOLS_FOR_GEMINI = False
                     
                     if USE_TOOLS_FOR_GEMINI and _TOOLS_AVAILABLE:
                         payload["tools"] = agent_tools.get_gemini_tools_spec()
                         logger.info("🔧 工具列表已加入 Gemini payload (消耗 ~1000+ tokens)")
                     else:
-                        logger.info("⚠️ 工具列表已禁用以節省 token 額度")
+                        logger.info("ℹ️ 代理人工具已禁用，專注於通用 AI 回應")
 
                     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
                         # ── 第一次請求 ──────────────────────────────────────────────
@@ -343,18 +344,12 @@ class AIResponse(commands.Cog):
                         "Content-Type": "application/json"
                     }
                     
-                    # 準備系統提示（可能包含工具說明）
+                    # 準備系統提示 - 無工具功能，專注於通用 AI 回應
                     enhanced_system = system_prompt
-                    
-                    # 如果工具可用，添加工具說明到系統提示
-                    if _PROMPT_FC_AVAILABLE and _TOOLS_AVAILABLE:
-                        enhanced_system = build_system_prompt_with_tools(enhanced_system)
                     
                     # 如果之前 Gemini 失敗，添加降級提示
                     if gemini_failed_reason and ("GitHub" in api_name or "Groq" in api_name):
                         enhanced_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 {api_name}。"
-                        if _TOOLS_AVAILABLE and _PROMPT_FC_AVAILABLE:
-                            enhanced_system += f"該模型支援基於提示的工具呼叫，請按上述格式調用工具。"
                         logger.warning(f"⚠️ 已切換至 {api_name}（Gemini {gemini_failed_reason}）")
                     
                     payload = {
@@ -386,60 +381,7 @@ class AIResponse(commands.Cog):
                             if "choices" in data and data["choices"]:
                                 first_response = data["choices"][0]["message"]["content"].strip()
                                 
-                                # ── 檢查是否有工具呼叫（Prompt-Based Function Calling）────
-                                if _PROMPT_FC_AVAILABLE and _TOOLS_AVAILABLE:
-                                    calls = extract_function_calls(first_response)
-                                    if calls:
-                                        logger.info(f"🔧 {api_name} 呼叫工具: {[c['name'] for c in calls]}")
-                                        
-                                        # 執行工具
-                                        call_results = execute_extracted_calls(calls, caller_id=caller_id)
-                                        results_context = format_call_results_for_context(calls, call_results)
-                                        logger.info(f"   工具結果: {str(results_context)[:150]}")
-                                        
-                                        # ── 第二次請求（基於工具結果生成最終回答）─────────
-                                        # 添加工具結果到對話歷史
-                                        payload["messages"].append({
-                                            "role": "assistant",
-                                            "content": first_response
-                                        })
-                                        payload["messages"].append({
-                                            "role": "user",
-                                            "content": results_context + "\n\n請根據工具執行結果給出最終回答，不要再輸出工具呼叫標籤。"
-                                        })
-                                        
-                                        # 再次調用模型
-                                        async with session.post(full_url, headers=headers, json=payload) as resp2:
-                                            r2_text = await resp2.text()
-                                            if resp2.status == 200:
-                                                try:
-                                                    data2 = _json.loads(r2_text)
-                                                    if "choices" in data2 and data2["choices"]:
-                                                        final_response = data2["choices"][0]["message"]["content"].strip()
-                                                        # 確保移除任何可能的工具呼叫標籤
-                                                        final_response = extract_response_without_calls(final_response)
-                                                        if final_response:
-                                                            logger.info(f"✅ 使用以下 API 成功回應:")
-                                                            logger.info(f"   - API 名稱: {api_name}")
-                                                            logger.info(f"   - 模型: {model}")
-                                                            logger.info(f"   - 回應長度: {len(final_response)} 字符")
-                                                            logger.info(f"   - 方式: 工具輔助")
-                                                            logger.info("═" * 60)
-                                                            return final_response
-                                                except _json.JSONDecodeError:
-                                                    pass
-                                        
-                                        # 如果第二次請求失敗，使用第一次回應（移除工具標籤）
-                                        first_response = extract_response_without_calls(first_response)
-                                        if first_response:
-                                            logger.info(f"✅ 使用以下 API 成功回應:")
-                                            logger.info(f"   - API 名稱: {api_name}")
-                                            logger.info(f"   - 模型: {model}")
-                                            logger.info(f"   - 回應長度: {len(first_response)} 字符")
-                                            logger.info("═" * 60)
-                                            return first_response
-                                
-                                # 沒有工具呼叫，直接返回回應
+                                # 代理人工具已禁用，直接返回 AI 回應
                                 if first_response:
                                     logger.info(f"✅ 使用以下 API 成功回應:")
                                     logger.info(f"   - API 名稱: {api_name}")
