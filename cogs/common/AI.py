@@ -4,7 +4,7 @@ import aiohttp
 import asyncio
 import os
 from typing import Optional, List, Dict
-# from utils.persona import build_persona_prompt, analyze_tone, get_emotion_emoji  # 不再使用动态人设
+# from utils.persona import build_persona_prompt, analyze_tone, get_emotion_emoji  # 不再使用動態人設
 from utils.memory import add_to_history, get_history
 from dotenv import load_dotenv
 import logging
@@ -40,7 +40,7 @@ except ImportError:
     _TOOLS_AVAILABLE = False
     print("⚠️  agent_tools 模組不可用，AI 工具功能已停用")
 
-# ─── 基於提示的函數呼叫系統（支持 Groq 和 GitHub Models）─────────────────────
+# ─── 基於提示的函數呼叫系統（支援 Groq 和 GitHub Models）─────────────────────
 try:
     from prompt_function_calling import (
         build_system_prompt_with_tools,
@@ -57,7 +57,7 @@ except ImportError:
 AI_API_KEY = os.getenv("AI_API_KEY")
 AI_API_KEY_BACKUP = os.getenv("AI_API_KEY_BACKUP")  # 備用 API 金鑰
 AI_API_URL = os.getenv("AI_API_URL")
-AI_API_MODEL = os.getenv("AI_API_MODEL", "gpt-3.5-turbo")
+AI_API_MODEL = os.getenv("AI_API_MODEL", "gemini-2.0-flash")  # Gemini 預設模型
 
 # Groq 備用 API（優先級更高）
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -352,7 +352,7 @@ class AIResponse(commands.Cog):
                     if gemini_failed_reason and ("GitHub" in api_name or "Groq" in api_name):
                         enhanced_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 {api_name}。"
                         if _TOOLS_AVAILABLE and _PROMPT_FC_AVAILABLE:
-                            enhanced_system += f"該模型支持基於提示的工具呼叫，請按上述格式調用工具。"
+                            enhanced_system += f"該模型支援基於提示的工具呼叫，請按上述格式調用工具。"
                         logger.warning(f"⚠️ 已切換至 {api_name}（Gemini {gemini_failed_reason}）")
                     
                     payload = {
