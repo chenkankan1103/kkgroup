@@ -565,8 +565,8 @@ class AnimeTracker(commands.Cog):
         self.task_started = False
         self.bootstrap_completed = False
         
-        # 跟踪動畫的檢查狀態（用於多次重試策略）
-        # 格式: {(anime_sn, schedule_time): {"check_count": 0, "found": False, "last_check_time": datetime}}
+        # 跟踪動畫的檢查狀態（單一窗口檢查）
+        # 格式: {"HH:MM": {"checked": bool, "found": bool, "start_time": datetime}}
         self.anime_retry_queue = {}
         
         # 注：任務將在 before_loop 中由 Discord.py 自動啟動，不在 __init__ 中啟動
@@ -1124,16 +1124,13 @@ class AnimeTracker(commands.Cog):
     @tasks.loop(minutes=1)
     async def check_new_anime(self):
         """
-        智能多階段檢查新番 - 3 個檢查窗口策略
+        單一窗口檢查新番 - 在預定時刻 +4 分鐘左右檢查一次
         
         工作流程：
         1. 獲取 newAnimeSchedule 與預期檢查時刻
-        2. 對於每個預期時刻，在 3 個窗口進行檢查：
-           - 窗口 1：預定時刻 +0 至 +1 分鐘（針對 +30 秒到 +90 秒的檢查）
-           - 窗口 2：預定時刻 +5 至 +6 分鐘
-           - 窗口 3：預定時刻 +10 至 +11 分鐘
-        3. 如果三個窗口都未找到新集，標記為待處理，在下一個動畫預定時刻時重新檢查
-        4. 每分鐘運行一次，智能判斷是否需要 API 檢查（減少無必要的請求）
+        2. 對於每個預期時刻，在 +3~+5 分鐘窗口進行檢查
+        3. 每個預定時刻的動畫只會戳一次 API（效率優先）
+        4. 每分鐘運行一次，在目標窗口內執行檢查
         """
         now = datetime.now(TW_TZ)
         
@@ -1167,14 +1164,13 @@ class AnimeTracker(commands.Cog):
                 logger.info("✅ [check_new_anime] Bootstrap 完成")
                 return
             
-            # 對於每個預期時刻，檢查是否應該在某個窗口進行檢查
-            any_window_checked = False
+            # 對於每個預期時刻，檢查是否在 +3~+5 分鐘窗口內
             for scheduled_time_str in expected_times:
                 # 初始化追蹤狀態
                 if scheduled_time_str not in self.anime_retry_queue:
                     self.anime_retry_queue[scheduled_time_str] = {
-                        'windows': [False, False, False],  # 3 個窗口是否已檢查
-                        'found': False,  # 是否已找到新集
+                        'checked': False,  # 是否已檢查過
+                        'found': False,    # 是否已找到新集
                         'start_time': now,
                     }
                 
@@ -1188,40 +1184,21 @@ class AnimeTracker(commands.Cog):
                 # 計算時間差（分鐘）
                 time_diff_min = (now - scheduled_dt).total_seconds() / 60
                 
-                # 判斷應該執行哪個窗口
-                window_idx = None
-                if 0 <= time_diff_min < 1:
-                    window_idx = 0  # 窗口 1：+30 秒到 +90 秒
-                    window_name = "1"
-                elif 5 <= time_diff_min < 6:
-                    window_idx = 1  # 窗口 2：+5 分鐘
-                    window_name = "2"
-                elif 10 <= time_diff_min < 11:
-                    window_idx = 2  # 窗口 3：+10 分鐘
-                    window_name = "3"
-                
-                # 如果應該執行某個窗口，且還未執行過
-                if window_idx is not None:
-                    if not self.anime_retry_queue[scheduled_time_str]['windows'][window_idx]:
-                        logger.info(f"📺 [check_new_anime] 窗口 {window_name} 檢查: {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
-                        any_window_checked = True
+                # 在 +3~+5 分鐘窗口內執行檢查（只執行一次）
+                if 3 <= time_diff_min < 5:
+                    if not self.anime_retry_queue[scheduled_time_str]['checked']:
+                        logger.info(f"📺 [check_new_anime] +4分鐘檢查窗口: {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
                         
                         # 執行檢查
                         await self._check_and_send_anime(scheduled_time_str, channel)
                         
-                        # 標記窗口已檢查
-                        self.anime_retry_queue[scheduled_time_str]['windows'][window_idx] = True
-                elif time_diff_min > 11 and not self.anime_retry_queue[scheduled_time_str]['windows'][2]:
-                    # 如果超過了所有窗口但還未被標記，自動標記為透過第 3 窗口
-                    self.anime_retry_queue[scheduled_time_str]['windows'][2] = True
+                        # 標記已檢查
+                        self.anime_retry_queue[scheduled_time_str]['checked'] = True
                 
                 # 清理過期的數據（超過 12 小時）
                 if time_diff_min > 720:
                     if scheduled_time_str in self.anime_retry_queue:
                         del self.anime_retry_queue[scheduled_time_str]
-            
-            if not any_window_checked:
-                logging_required = False  # 只在有 debug 必要時才 log
         
         except Exception as e:
             logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
