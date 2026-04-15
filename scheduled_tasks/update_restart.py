@@ -125,7 +125,7 @@ def check_git_updates():
         
         # 比較本地和遠端的差異
         result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD..origin/restructure-project-20260414"],
+            ["git", "rev-list", "--count", "HEAD..origin/main"],
             cwd=PROJECT_DIR,
             capture_output=True,
             text=True,
@@ -153,7 +153,7 @@ def get_git_update_details():
     try:
         # 獲取最新的 commit (最多5個)
         commits_result = subprocess.run(
-            ["git", "log", "HEAD..origin/restructure-project-20260414", 
+            ["git", "log", "HEAD..origin/main", 
              "--pretty=format:• %s (%h) - %an", 
              "--max-count=5"],
             cwd=PROJECT_DIR,
@@ -164,7 +164,7 @@ def get_git_update_details():
         
         # 獲取更新的檔案列表
         files_result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD", "origin/restructure-project-20260414"],
+            ["git", "diff", "--name-only", "HEAD", "origin/main"],
             cwd=PROJECT_DIR,
             capture_output=True,
             text=True
@@ -173,7 +173,7 @@ def get_git_update_details():
         
         # 獲取統計資訊
         stats_result = subprocess.run(
-            ["git", "diff", "--stat", "HEAD", "origin/restructure-project-20260414"],
+            ["git", "diff", "--stat", "HEAD", "origin/main"],
             cwd=PROJECT_DIR,
             capture_output=True,
             text=True
@@ -224,7 +224,7 @@ def pull_git_updates():
                 log(f"無法刪除鎖檔: {e}")
         try:
             result = subprocess.run(
-                ["git", "reset", "--hard", "origin/restructure-project-20260414"],
+                ["git", "reset", "--hard", "origin/main"],
                 cwd=PROJECT_DIR,
                 capture_output=True,
                 text=True,
