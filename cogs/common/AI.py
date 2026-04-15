@@ -153,36 +153,32 @@ class AIResponse(commands.Cog):
         except Exception as e:
             logger.warning(f"記憶系統初始化失敗: {e}")
     
-    async def call_ai_api(self, system_prompt: str, user_prompt: str, include_memory: bool = True, caller_id: Optional[int] = None) -> Optional[str]:
-        """通用 API 調用函數 - 優先 Gemini（含 Function Calling），備用 Groq"""
-        # 如果需要，添加全局記憶上下文
+    async def call_ai_api(self, system_prompt: str, user_prompt: str, include_memory: bool = False, caller_id: Optional[int] = None) -> Optional[str]:
+        """通用 API 調用函數 - 優先 Gemini（含 Function Calling），備用 Groq
+        
+        ⚠️ 注意：include_memory 預設關閉以節省 token 額度（Gemini 免費額度有限）
+        如果需要記憶功能，可設置 include_memory=True，但會大幅增加 token 消耗
+        """
+        # 記憶系統已禁用以節省 token 額度
+        # 原因：工具列表(~1200 tokens) + 記憶上下文(~800 tokens) 會導致快速超額
+        # 如確實需要記憶，可改回以下邏輯：
         if include_memory:
-            try:
-                memory_context = build_memory_context()
-
-                # 記錄取得的記憶上下文（除錯用）
-                estimated_tokens = memory_context.get("estimated_tokens", 0)
-                logger.debug(f"[memory_context] estimated_tokens={estimated_tokens}")
-
-                # ⚠️ 如果記憶 token 過多，降級使用
-                if estimated_tokens > 2500:
-                    logger.warning(f"⚠️ 記憶 token 過多 ({estimated_tokens} tokens)，跳過記憶上下文以避免超限")
-                    system_prompt = system_prompt
-                else:
-                    # 組合系統提示詞：基礎設定 + 角色記憶 + 對話歷史
-                    enhanced_prompt = system_prompt + "\n\n" + memory_context["system_instructions"]
-                    
-                    # 添加對話歷史（如果有）
-                    if memory_context["dialogue_history"]:
-                        enhanced_prompt += f"\n=== 對話歷史參考 ===\n{memory_context['dialogue_history']}\n"
-                    
-                    # 添加知識庫背景（如果有）
-                    if memory_context["knowledge_context"]:
-                        enhanced_prompt += f"\n=== 相關知識背景 ===\n{memory_context['knowledge_context']}\n"
-                    
-                    system_prompt = enhanced_prompt
-            except Exception as e:
-                logger.warning(f"無法整合記憶上下文: {e}，將跳過記憶")
+            logger.warning("⚠️ 記憶系統在 Gemini 免費版上會導致快速超額，已跳過記憶注入")
+            # 實際的記憶注入已禁用，以下代碼保留作參考
+            # try:
+            #     memory_context = build_memory_context()
+            #     estimated_tokens = memory_context.get("estimated_tokens", 0)
+            #     if estimated_tokens > 2500:
+            #         logger.warning(f"⚠️ 記憶 token 過多，跳過記憶上下文")
+            #     else:
+            #         enhanced_prompt = system_prompt + "\n\n" + memory_context["system_instructions"]
+            #         if memory_context["dialogue_history"]:
+            #             enhanced_prompt += f"\n=== 對話歷史參考 ===\n{memory_context['dialogue_history']}\n"
+            #         if memory_context["knowledge_context"]:
+            #             enhanced_prompt += f"\n=== 相關知識背景 ===\n{memory_context['knowledge_context']}\n"
+            #         system_prompt = enhanced_prompt
+            # except Exception as e:
+            #     logger.warning(f"無法整合記憶上下文: {e}")
         
         # 優先嘗試：Gemini（主 → 備用） → GitHub Models → Groq
         api_attempts = []
@@ -240,9 +236,15 @@ class AIResponse(commands.Cog):
                         }
                     }
 
-                    # 注入工具清單（若工具箱可用）
-                    if _TOOLS_AVAILABLE:
+                    # ⚠️ 使用工具列表的切換開關：禁用工具可節省 ~1000+ tokens
+                    # 改為 False 以節省額度（如果勤快超額）
+                    USE_TOOLS_FOR_GEMINI = True
+                    
+                    if USE_TOOLS_FOR_GEMINI and _TOOLS_AVAILABLE:
                         payload["tools"] = agent_tools.get_gemini_tools_spec()
+                        logger.info("🔧 工具列表已加入 Gemini payload (消耗 ~1000+ tokens)")
+                    else:
+                        logger.info("⚠️ 工具列表已禁用以節省 token 額度")
 
                     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
                         # ── 第一次請求 ──────────────────────────────────────────────
@@ -519,18 +521,7 @@ class AIResponse(commands.Cog):
             except Exception as e:
                 logger.warning(f"記憶存儲失敗: {e}")
             
-            # 🎯 改進：動態添加情感 Emoji 到回覆（輕量級，無額外 token 調用）
-            try:
-                emotion_emoji = get_emotion_emoji(tone)
-                # 只在回覆不是太長時添加 emoji（避免破壞格式）
-                if len(reply) < 500:
-                    reply_with_emoji = f"{reply} {emotion_emoji}"
-                else:
-                    reply_with_emoji = reply
-            except Exception:
-                reply_with_emoji = reply  # 如果失敗，就用原回覆
-            
-            await message.reply(reply_with_emoji)
+            await message.reply(reply)
 
         except Exception as e:
             logger.error(f"訊息處理錯誤: {e}")
