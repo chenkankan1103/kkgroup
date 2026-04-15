@@ -614,7 +614,7 @@ class AnimeDatabase:
 # ==================== 匿名投票 View 類 ====================
 
 class AnimeVoteView(discord.ui.View):
-    """動畫投票視圖 - 6 個投票按鈕 + 評論按鈕"""
+    """動畫投票視圖 - 6 個投票按鈕 + 評論按鈕 (永久視圖)"""
     
     # 投票類型配置
     VOTE_TYPES = {
@@ -627,18 +627,20 @@ class AnimeVoteView(discord.ui.View):
     }
     
     def __init__(self, episode: Dict, anime_tracker: "AnimeTracker"):
+        # 永久視圖設置：timeout=None 表示永不超時，persistent=True 表示重啟後依然有效
         super().__init__(timeout=None)
         self.episode = episode
         self.tracker = anime_tracker
         self.video_sn = episode.get("videoSn")
         self.anime_sn = episode.get("animeSn")
         self.message_id = None
+        self.last_interaction_time = None  # 用於追蹤最後互動時間
         
         # 添加投票按鈕
         for vote_key, (vote_label, _) in self.VOTE_TYPES.items():
             button = discord.ui.Button(
                 label=vote_label,
-                custom_id=f"vote_{vote_key}_{self.video_sn}",
+                custom_id=f"anime_vote_{vote_key}_{self.video_sn}",
                 style=discord.ButtonStyle.secondary
             )
             button.callback = self._vote_callback
@@ -647,7 +649,7 @@ class AnimeVoteView(discord.ui.View):
         # 添加評論按鈕
         comment_button = discord.ui.Button(
             label="💬 留言",
-            custom_id=f"comment_{self.video_sn}",
+            custom_id=f"anime_comment_{self.video_sn}",
             style=discord.ButtonStyle.primary
         )
         comment_button.callback = self._comment_callback
@@ -656,8 +658,11 @@ class AnimeVoteView(discord.ui.View):
     async def _vote_callback(self, interaction: discord.Interaction):
         """處理投票按鈕點擊"""
         try:
+            # 記錄互動時間
+            self.last_interaction_time = datetime.now(TW_TZ)
+            
             # 解析投票類型
-            vote_key = interaction.custom_id.replace(f"vote_", "").rsplit("_", 1)[0]
+            vote_key = interaction.custom_id.replace(f"anime_vote_", "").rsplit("_", 1)[0]
             vote_label, _ = self.VOTE_TYPES.get(vote_key, ("未知", None))
             
             # 獲取用戶的匿名雜湊（用來防止同一用戶多次投票）
@@ -674,8 +679,14 @@ class AnimeVoteView(discord.ui.View):
             
             logger.info(f"📊 [vote_callback] {interaction.user} 投票: {vote_label}")
             
-            # 立即回應用戶
+            # 立即回應用戶 (延長 3 秒超時)
             await interaction.response.defer()
+            
+            # 延長視圖超時 (新增)
+            if self.timeout is None:
+                self.timeout = 3  # 設置 3 秒的延長超時
+            else:
+                self.timeout = max(self.timeout + 3, 180)  # 每次加 3 秒，最多 3 分鐘
             
             # 更新原始消息的 embed（添加統計信息）
             await self._update_message_stats(interaction.message)
@@ -690,6 +701,15 @@ class AnimeVoteView(discord.ui.View):
     async def _comment_callback(self, interaction: discord.Interaction):
         """處理評論按鈕點擊 - 彈出評論輸入框"""
         try:
+            # 記錄互動時間
+            self.last_interaction_time = datetime.now(TW_TZ)
+            
+            # 延長視圖超時
+            if self.timeout is None:
+                self.timeout = 3
+            else:
+                self.timeout = max(self.timeout + 3, 180)
+            
             # 創建簡單的文本輸入模態框
             class CommentModal(discord.ui.Modal, title="留下匿名評論"):
                 comment_input = discord.ui.TextInput(
