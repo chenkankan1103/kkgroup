@@ -477,15 +477,14 @@ async def on_ready():
             traceback.print_exc()
             raise
         
-        # 明確載入 uibody 模組（UserPanel 和 LockerEventListenerCog）
-        # try:
-        #     from uicommands import uibody
-        #     await uibody.setup(client)
-        #     print("✅ uibody 模組已明確加載")
-        # except Exception as e:
-        #     print(f"❌ uibody 模組加載失敗: {e}")
-        #     import traceback
-        #     traceback.print_exc()
+        # ⭐ 註冊所有永久視圖（timeout=None）
+        # 這是解決按鈕交互失敗的關鍵步驟
+        try:
+            from shared.utils.view_registry import register_all_permanent_views
+            register_all_permanent_views(client)
+        except Exception as e:
+            file_log(f"❌ 視圖註冊失敗: {e}")
+            print(f"❌ 視圖註冊失敗: {e}")
         
         # 同步指令
         synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
