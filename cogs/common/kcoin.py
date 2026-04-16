@@ -30,8 +30,8 @@ load_dotenv()
 
 # 配置常數
 DB_FILE = "user_data.db"
-FONT_PATH = os.path.join(os.path.dirname(__file__), "..", "fonts", "NotoSansCJKtc-Regular.otf")
-ASSETS_PATH = os.path.join(os.path.dirname(__file__), "..", "assets")
+FONT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "fonts", "NotoSansCJKtc-Regular.otf")
+ASSETS_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "assets")
 TROPHY_PATH = os.path.join(ASSETS_PATH, "trophy.png")
 MEDAL_PATHS = [
     os.path.join(ASSETS_PATH, "1.png"),  # 金牌
