@@ -28,6 +28,45 @@ import logging
 logger = setup_utf8_logging(__name__, logging.INFO)
 
 # ============================================================
+# file_log 函數定義（必須有）
+# ============================================================
+try:
+    import syslog
+    HAS_SYSLOG = True
+except ImportError:
+    # Windows 上沒有 syslog
+    HAS_SYSLOG = False
+
+LOG_FILE = "/tmp/shopbot-debug.log"
+
+def file_log(msg):
+    """寫入日誌到檔案、syslog 並同時調用 print"""
+    try:
+        # 確保字符串是 UTF-8 編碼的 (防止亂碼)
+        if isinstance(msg, bytes):
+            msg = msg.decode('utf-8', errors='replace')
+        output = f"[FILE_LOG] {msg}".encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+        print(output, flush=True)
+        sys.stdout.flush()
+    except Exception as e:
+        pass
+    
+    try:
+        # 寫入文件
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+            f.flush()
+    except (IOError, OSError):
+        pass
+    # 寫入 syslog
+    if HAS_SYSLOG:
+        try:
+            syslog.syslog(syslog.LOG_INFO, f"[SHOPBOT_DEBUG] {msg}")
+        except OSError:
+            pass
+    sys.stdout.flush()
+
+# ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
 # ============================================================
 BOT_NAME = "Shop"  # 可改為 "Shop" 或 "UI"
