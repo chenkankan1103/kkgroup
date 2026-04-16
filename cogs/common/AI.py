@@ -59,6 +59,10 @@ AI_API_KEY_BACKUP = os.getenv("AI_API_KEY_BACKUP")  # 備用 API 金鑰
 AI_API_URL = os.getenv("AI_API_URL")
 AI_API_MODEL = os.getenv("AI_API_MODEL", "gemini-2.0-flash")  # Gemini 預設模型
 
+# ✅ Gemini API 必須使用 generateContent 接口（而非 start_chat）
+# 正確格式: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+# 我們手動控制對話歷史（Sliding Window），所以不需要 Chat API 的自動管理
+
 # Groq 備用 API（優先級更高）
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_API_URL = os.getenv("GROQ_API_URL")
@@ -156,13 +160,37 @@ class AIResponse(commands.Cog):
         
         優先級: Gemini (主) → Gemini (備用) → Groq
         返回: [(api_name, url, api_key, model, api_type)]
+        
+        🔍 驗證: Gemini URL 必須指向 :generateContent 端點，而非 :streamGenerateContent 或 :batchGenerateContent
         """
         api_attempts = []
         
+        # ✅ 驗證 Gemini API URL 格式
+        def validate_gemini_url(url: str, api_name: str) -> bool:
+            """驗證 Gemini URL 是否指向 generateContent 端點"""
+            if not url:
+                return False
+            # 正確格式必須包含 :generateContent（而非 :streamGenerateContent）
+            if ":generateContent" not in url:
+                logger.warning(f"⚠️ {api_name} URL 格式可能錯誤，未包含 ':generateContent'")
+                logger.warning(f"   ⚠️ 預期格式: https://generativelanguage.googleapis.com/v1beta/models/{{model}}:generateContent")
+                logger.warning(f"   ❌ 當前 URL: {url[:80]}...")
+                return False
+            if ":streamGenerateContent" in url or ":batchGenerateContent" in url:
+                logger.error(f"❌ {api_name} URL 指向錯誤的端點（stream 或 batch）")
+                return False
+            return True
+        
         if AI_API_KEY and AI_API_URL:
-            api_attempts.append(("Gemini (主)", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
+            if validate_gemini_url(AI_API_URL, "Gemini (主)"):
+                api_attempts.append(("Gemini (主)", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
+                logger.info(f"✅ Gemini (主) API: 使用 generateContent 端點")
+        
         if AI_API_KEY_BACKUP and AI_API_URL:
-            api_attempts.append(("Gemini (備用)", AI_API_URL, AI_API_KEY_BACKUP, AI_API_MODEL, "gemini"))
+            if validate_gemini_url(AI_API_URL, "Gemini (備用)"):
+                api_attempts.append(("Gemini (備用)", AI_API_URL, AI_API_KEY_BACKUP, AI_API_MODEL, "gemini"))
+                logger.info(f"✅ Gemini (備用) API: 使用 generateContent 端點")
+        
         if GROQ_API_KEY and GROQ_API_URL:
             api_attempts.append(("Groq", GROQ_API_URL, GROQ_API_KEY, GROQ_API_MODEL, "openai"))
         
@@ -171,18 +199,40 @@ class AIResponse(commands.Cog):
             logger.info(f"✅ 初始化 {len(api_attempts)} 個 API 配置: {' → '.join([name for name, *_ in api_attempts])}")
         else:
             logger.error("❌ 沒有可用的 AI API 配置")
+            logger.error("⚠️ 請檢查 .env 文件中的 API 配置")
         
         return api_attempts
     
     def _build_gemini_payload(self, system_prompt: str, contents: List[Dict], use_tools: bool = False) -> Dict:
-        """構建 Gemini API 的 payload - 將邏輯抽離為獨立方法，提高可讀性與可維護性
+        """構建 Gemini API 的 payload - 單一責任原則
+        
+        🎯 Gemini 1.5 Flash generateContent API 規範:
+        
+        1. system_instruction - 分離的系統提示詞
+           • Gemini API 對此進行內部快取優化
+           • 比將其混入 contents 節省 5-10% token
+           
+        2. contents - 對話歷史列表（role/parts 格式）
+           • 手動管理滑動窗口（最近 5 輪對話）
+           • 每項格式: {"role": "user"/"model", "parts": [{"text": "..."}]}
+           • 直接符合 API 規格，無需轉換邏輯
+           
+        3. generationConfig - 生成配置
+           • temperature: 0.7（降低以獲得更穩定、更簡潔的回應）
+           • maxOutputTokens: 300（控制回應長度，避免超額）
+           • topP: 0.8（平衡創意度）
+           
+        4. 注意：NOT start_chat API
+           • 我們使用 generateContent（POST 請求）
+           • 不使用 start_chat（自動管理多輪對話）
+           • 原因：需要手動控制歷史長度以節省 token
         
         參數:
             system_prompt: 系統提示詞
             contents: 原生 Gemini contents 列表 [{"role": "user"/"model", "parts": [...]}]
             use_tools: 是否加入工具列表（默認關閉以節省 token）
         
-        返回: 符合 Gemini API 規格的 payload
+        返回: 符合 Gemini generateContent API 規格的 payload
         """
         payload = {
             "system_instruction": {
@@ -190,9 +240,9 @@ class AIResponse(commands.Cog):
             },
             "contents": contents,
             "generationConfig": {
-                "temperature": 0.7,  # 優化：降低至 0.7 以獲得更穩定的回應
-                "maxOutputTokens": 300,
-                "topP": 0.8
+                "temperature": 0.7,  # ✅ 優化：降低至 0.7 以獲得更穩定的回應
+                "maxOutputTokens": 300,  # ✅ 控制回應長度
+                "topP": 0.8  # 平衡創意度
             }
         }
         
@@ -201,7 +251,7 @@ class AIResponse(commands.Cog):
             payload["tools"] = agent_tools.get_gemini_tools_spec()
             logger.info("🔧 工具列表已加入 Gemini payload (消耗 ~1000+ tokens)")
         else:
-            logger.info("ℹ️ 代理人工具已禁用，專注於通用 AI 回應")
+            logger.debug("ℹ️ 代理人工具已禁用，專注於通用 AI 回應")
         
         return payload
     
@@ -244,16 +294,35 @@ class AIResponse(commands.Cog):
                 logger.info(f"⏳ 嘗試使用 {api_name} (模型: {model})...")
                 
                 if api_type == "gemini":
-                    # ── Google Gemini API - 使用結構化 contents 列表 ──────────────────
+                    # ── Google Gemini 1.5 Flash API - 使用 generateContent 接口 ──────────
+                    # 📌 重要: 我們使用 generateContent POST 接口（而非 start_chat）
+                    #    原因: 需要手動精準控制對話歷史長度（Sliding Window Memory）
+                    #    好處: 節省 token、避免不必要的對話上下文
+                    #
+                    # 預期 URL 格式: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+                    # 完整請求 URL: {AI_API_URL}?key={api_key}
+                    # 
+                    # Payload 結構:
+                    #   - system_instruction: 系統提示詞（Gemini API 內部快取優化）
+                    #   - contents: 對話歷史（role/parts 格式，手動管理長度）
+                    #   - generationConfig: 生成配置（temperature, maxOutputTokens 等）
                     import json as _json
-                    full_url = f"{url}?key={api_key}"
+                    full_url = f"{url}?key={api_key}"  # URL 應包含 :generateContent
                     headers = {"Content-Type": "application/json"}
 
                     # 優化：使用 _build_gemini_payload 方法構建 payload（包含 system_instruction）
                     payload = self._build_gemini_payload(system_prompt, contents, use_tools=False)
+                    
+                    logger.debug(f"📨 Gemini generateContent 請求詳情:")
+                    logger.debug(f"   - 端點: {url}")
+                    logger.debug(f"   - 方式: POST generateContent（手動滑動窗口記憶）")
+                    logger.debug(f"   - System Instruction 字數: {len(system_prompt)}")
+                    logger.debug(f"   - Contents 項數: {len(contents)}")
+                    logger.debug(f"   - Temperature: {payload['generationConfig']['temperature']}")
+                    logger.debug(f"   - maxOutputTokens: {payload['generationConfig']['maxOutputTokens']}")
 
                     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                        # ── 第一次請求 ──────────────────────────────────────────────
+                        # ── generateContent POST 請求 ──────────────────────────────────
                         async with session.post(full_url, headers=headers, json=payload) as resp:
                             response_text = await resp.text()
 
