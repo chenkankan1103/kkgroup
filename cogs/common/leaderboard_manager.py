@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv, set_key
 
 # 匯入資料庫相關
-from db_adapter import (
+from shared.db.db_adapter import (
     get_central_reserve, 
     get_reserve_pressure, 
     get_reserve_announcement,
