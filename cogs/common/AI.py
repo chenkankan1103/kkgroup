@@ -352,12 +352,20 @@ class AIResponse(commands.Cog):
                         enhanced_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 {api_name}。"
                         logger.warning(f"⚠️ 已切換至 {api_name}（Gemini {gemini_failed_reason}）")
                     
+                    # GitHub Models 可能需要特定的模型名稱格式
+                    api_model = model
+                    if "GitHub" in api_name and model == "gpt-5-turbo":
+                        # GitHub Models 可能不支持 gpt-5-turbo，使用備用模型
+                        api_model = "gpt-4-turbo"
+                        logger.info(f"ℹ️ GitHub Models 改用 {api_model}（原始: {model}）")
+                    
                     payload = {
-                        "model": model,
+                        "model": api_model,
                         "messages": [
                             {"role": "system", "content": enhanced_system},
                             {"role": "user", "content": user_prompt}
                         ],
+                        "temperature": 0.85,  # OpenAI 兼容 API 需要溫度參數
                         "max_tokens": 300  # 限制輸出 token，避免過長回應浪費配額
                     }
 
