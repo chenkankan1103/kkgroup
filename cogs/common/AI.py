@@ -370,7 +370,15 @@ class AIResponse(commands.Cog):
                                 continue
 
                             if resp.status != 200:
-                                logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
+                                # 詳細診斷錯誤
+                                error_detail = response_text[:500] if len(response_text) > 500 else response_text
+                                if api_name == "GitHub Models":
+                                    logger.error(f"❌ GitHub Models 返回 {resp.status}")
+                                    logger.error(f"   URL: {url}")
+                                    logger.error(f"   Model: {model}")
+                                    logger.error(f"   Error: {error_detail}")
+                                else:
+                                    logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
                                 continue
 
                             try:
