@@ -917,49 +917,69 @@ def query_vm_logs(service_name: str, lines: int = 30, filter_keyword: str = "", 
     results = []
     for service in services_to_query:
         service_unit = f"{service}.service"
+        section = [f"【{service.upper()}】"]
         
-        # 構建查詢命令
+        # 嘗試多種查詢命令（優先級遞減）
+        commands_to_try = []
+        
+        # 【優先】用 sudo journalctl
         if filter_keyword:
-            command = f"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'"
+            commands_to_try.append(f"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'")
         else:
-            command = f"sudo journalctl -u {service_unit} -n {lines} --no-pager"
+            commands_to_try.append(f"sudo journalctl -u {service_unit} -n {lines} --no-pager")
         
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            section = [f"【{service.upper()}】"]
-            
-            if result.returncode == 0:
-                stdout = result.stdout.strip()
-                if stdout:
-                    # 限制輸出長度
-                    lines_list = stdout.split('\n')
-                    preview = '\n'.join(lines_list[:15])  # 最多 15 行
-                    if len(lines_list) > 15:
-                        preview += f"\n…（共 {len(lines_list)} 行，已截斷）"
-                    section.append(f"✅ {preview}")
-                else:
-                    section.append(f"⚠️ 無日誌（或無匹配的關鍵字）")
-            else:
+        # 【降級】不用 sudo 的 journalctl
+        if filter_keyword:
+            commands_to_try.append(f"journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'")
+        else:
+            commands_to_try.append(f"journalctl -u {service_unit} -n {lines} --no-pager")
+        
+        success = False
+        for command in commands_to_try:
+            try:
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                if result.returncode == 0:
+                    stdout = result.stdout.strip()
+                    if stdout:
+                        # 限制輸出長度
+                        lines_list = stdout.split('\n')
+                        preview = '\n'.join(lines_list[:15])  # 最多 15 行
+                        if len(lines_list) > 15:
+                            preview += f"\n…（共 {len(lines_list)} 行，已截斷）"
+                        section.append(f"✅ {preview}")
+                    else:
+                        section.append(f"⚠️ 無日誌（或無匹配的關鍵字）")
+                    success = True
+                    break  # 成功了，跳出命令循環
+                
+                # 如果這條命令返回 127（command not found），試下一個
+                if result.returncode == 127:
+                    continue
+                
+                # 其他錯誤也試下一個，但記錄一下
                 stderr = result.stderr.strip() if result.stderr else ""
-                if stderr:
-                    preview = stderr[:200] + ("…" if len(stderr) > 200 else "")
-                    section.append(f"❌ 查詢失敗：{preview}")
-                else:
-                    section.append(f"❌ 查詢失敗 (exit {result.returncode})")
-            
-            results.append("\n".join(section))
+                if "command not found" in stderr.lower() or "not found" in stderr.lower():
+                    continue
+                
+            except subprocess.TimeoutExpired:
+                section.append(f"⏰ 查詢超時（10 秒）")
+                success = True
+                break
+            except Exception as e:
+                pass  # 試下一個命令
         
-        except subprocess.TimeoutExpired:
-            results.append(f"【{service.upper()}】⏰ 查詢超時（10 秒）")
-        except Exception as e:
-            results.append(f"【{service.upper()}】❌ 查詢異常：{e}")
+        if not success:
+            # 所有命令都失敗了
+            section.append(f"❌ 無法查詢日誌（journalctl 命令不可用或無權限）")
+        
+        results.append("\n".join(section))
     
     # 合併所有結果
     output_header = [f"📊 日誌查詢結果 ({', '.join(services_to_query)})"]
