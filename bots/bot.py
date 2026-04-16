@@ -9,6 +9,10 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+# 🔧 在任何其他導入之前初始化全局 UTF-8 編碼
+from shared.utils.encoding_handler import init_all, setup_utf8_logging
+init_all()
+
 import discord
 from discord.ext import commands, tasks
 from discord.ext.commands import ExtensionError
@@ -18,24 +22,10 @@ from shared.utils.bot_status import build_discord_activity
 from watchdog.events import FileSystemEventHandler
 import logging
 
-# 強制設置正確的 locale 和編碼
-import locale
-import io
-locale.setlocale(locale.LC_ALL, 'C.utf8')
-sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-
 # ============================================================
-# 日誌配置
+# 日誌配置 (使用全局 UTF-8 編碼處理)
 # ============================================================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)  # 輸出到 stdout，被 systemd journalctl 捕獲
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_utf8_logging(__name__, logging.INFO)
 
 # 減少 discord 庫的日誌噪音（只顯示警告及以上）
 discord_logger = logging.getLogger('discord')

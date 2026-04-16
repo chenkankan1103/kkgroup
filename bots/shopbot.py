@@ -8,6 +8,10 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+# 🔧 在任何其他導入之前初始化全局 UTF-8 編碼
+from shared.utils.encoding_handler import init_all, setup_utf8_logging
+init_all()
+
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime
@@ -15,30 +19,13 @@ from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-# 強制設置正確的 locale 和編碼
-import locale
-import io
-locale.setlocale(locale.LC_ALL, 'C.utf8')
-sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 from shared.utils.bot_status import build_discord_activity
-from status_dashboard import initialize_dashboard, load_message_ids, update_dashboard_logs  # add_log removed
+from status_dashboard import initialize_dashboard, load_message_ids, update_dashboard_logs
 import syslog
+import logging
 
-# ============================================================
-# 文件日誌輔助函數（用於調試 systemd 中的輸出問題）
-# ============================================================
-LOG_FILE = "/tmp/shopbot-debug.log"
-
-def file_log(msg):
-    """寫入日誌到檔案、syslog 並同時調用 print"""
-    try:
-        # 確保字符串是 UTF-8 編碼的 (防止亂碼)
-        if isinstance(msg, bytes):
-            msg = msg.decode('utf-8', errors='replace')
-        output = msg.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-    except:
-        output = str(msg)
+# 設置日誌
+logger = setup_utf8_logging(__name__, logging.INFO)
     
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
