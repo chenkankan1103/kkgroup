@@ -387,14 +387,78 @@ class AIResponse(commands.Cog):
         # ⚠️ 注意：Gemini 只在非常少量情況下用工具
         # 大部分工具呼叫應該在 Groq 上進行（見 call_ai_api 的智能排序）
         # 這裡只保留備用邏輯，不應該經常執行
-        if use_tools and _TOOLS_AVAILABLE and False:  # 暫時禁用 Gemini 工具
+        if use_tools and _TOOLS_AVAILABLE:
             payload["tools"] = agent_tools.get_gemini_tools_spec()
-            logger.info("🔧 工具列表已加入 Gemini payload (消耗 ~1000+ tokens)")
+            logger.info("🔧 工具列表已加入 Gemini payload（用於高層決策）")
         else:
             logger.debug("ℹ️ Gemini 專注於普通對話（工具呼叫已移至 Groq）")
         
         return payload
     
+    async def _try_gemini_decision(self, system_prompt: str, original_user_prompt: str, groq_summary: str, user_id: Optional[int] = None) -> Optional[str]:
+        """
+        【第二層】Gemini 進行高層決策
+        
+        Groq 已經執行工具並生成簡短摘要，現在 Gemini 基於摘要進行高層決策
+        並可能使用 native function calling 進行額外操作。
+        
+        這樣 Gemini 只接收簡短摘要（~100 token），不會導致 token 爆炸。
+        
+        參數:
+            system_prompt: 系統提示詞
+            original_user_prompt: 原始用戶問題
+            groq_summary: Groq 執行工具後的簡短摘要
+            user_id: 用戶 ID
+        """
+        logger.info(f"🚀 使用 Gemini 進行高層決策（基於 Groq 摘要）")
+        
+        # 直接調用 Gemini（不加工具定義，只用摘要作為上下文）
+        gemini_system = f"{system_prompt}\n\n你是高層決策 AI，基於下面的工具執行摘要做出決策。"
+        gemini_user = f"""
+原始問題: {original_user_prompt}
+
+工具執行摘要（已由 Groq 執行）:
+{groq_summary}
+
+請基於這個摘要：
+1. 分析問題
+2. 決定是否需要進一步操作
+3. 生成最終建議或執行計劃
+"""
+        
+        # 構建 Gemini 請求（啟用 native function calling）
+        contents = [{"role": "user", "parts": [{"text": gemini_user}]}]
+        
+        payload = self._build_gemini_payload(
+            gemini_system, 
+            contents, 
+            gemini_user,
+            use_tools=True  # 這次啟用工具，但因為只是摘要，token 很少
+        )
+        
+        # 調用 Gemini（不加冷却邏輯，直接嘗試）
+        import json as _json
+        full_url = f"{AI_API_URL}?key={AI_API_KEY}"
+        headers = {"Content-Type": "application/json"}
+        
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                async with session.post(full_url, headers=headers, json=payload) as resp:
+                    if resp.status == 200:
+                        data = _json.loads(await resp.text())
+                        if "candidates" in data and data["candidates"]:
+                            candidate = data["candidates"][0]
+                            parts = candidate.get("content", {}).get("parts", [])
+                            
+                            if parts and "text" in parts[0]:
+                                result = parts[0]["text"].strip()
+                                logger.info(f"✅ Gemini 決策完成：{result[:100]}...")
+                                return result
+        except Exception as e:
+            logger.warning(f"⚠️ Gemini 決策失敗: {e}，回到 Groq 摘要")
+        
+        return None
+
     async def call_ai_api(self, system_prompt: str, user_prompt: str, user_id: Optional[int] = None, include_memory: bool = False) -> Optional[str]:
         """通用 API 調用函數 - 優先 Gemini，備用 Groq
         
@@ -615,21 +679,21 @@ class AIResponse(commands.Cog):
                                         function_calls = extract_function_calls(first_response)
                                         
                                         if function_calls:
-                                            logger.info(f"🔧 檢測到工具呼叫（共 {len(function_calls)} 個）")
+                                            logger.info(f"🔧 Groq 檢測到工具呼叫（共 {len(function_calls)} 個）")
                                             
                                             # 執行工具並獲取結果
-                                            results = execute_extracted_calls(function_calls)
+                                            results = execute_extracted_calls(function_calls, caller_id=user_id)
                                             
                                             if results:
-                                                # 將工具結果作為上下文發送給 Groq，讓它基於結果生成最終回答
+                                                # 將工具結果作為上下文發送給 Groq，讓它基於結果生成簡短摘要
                                                 tool_results_context = format_call_results_for_context(function_calls, results)
                                                 
-                                                # 第二次請求：基於工具結果生成最終回答
+                                                # 第二次請求：Groq 生成簡短摘要
                                                 payload["messages"] = [
-                                                    {"role": "system", "content": effective_system_prompt},
+                                                    {"role": "system", "content": enhanced_system},
                                                     {"role": "user", "content": user_prompt},
                                                     {"role": "assistant", "content": first_response},
-                                                    {"role": "user", "content": f"工具執行結果:\n{tool_results_context}\n\n請基於這些結果提供最終回答。"}
+                                                    {"role": "user", "content": f"請用 50-100 字簡潔總結這些工具執行結果，包括:\n1. 我查到了什麼\n2. 問題現狀\n3. 建議做什麼\n\n執行結果:\n{tool_results_context}"}
                                                 ]
                                                 
                                                 async with session.post(full_url, headers=headers, json=payload) as resp2:
@@ -637,15 +701,32 @@ class AIResponse(commands.Cog):
                                                     if resp2.status == 200:
                                                         data2 = _json.loads(response_text2)
                                                         if "choices" in data2 and data2["choices"]:
-                                                            final_response = data2["choices"][0]["message"]["content"].strip()
-                                                            if final_response:
-                                                                logger.info(f"✅ 使用以下 API 成功回應:")
-                                                                logger.info(f"   - API 名稱: {api_name}")
-                                                                logger.info(f"   - 模型: {model}")
-                                                                logger.info(f"   - 工具呼叫: {len(function_calls)} 個")
-                                                                logger.info(f"   - 最終回應長度: {len(final_response)} 字符")
-                                                                logger.info("═" * 60)
-                                                                return final_response
+                                                            groq_summary = data2["choices"][0]["message"]["content"].strip()
+                                                            
+                                                            if groq_summary:
+                                                                logger.info(f"🔧 Groq 工具執行摘要:\n{groq_summary}")
+                                                                
+                                                                # 🚀 【第二層】現在將摘要傳給 Gemini 進行高層決策
+                                                                # 此時 Gemini 可以用 native function calling 進行更高級操作
+                                                                # 因為只傳了簡短摘要（~100 token），不會導致 token 爆炸
+                                                                
+                                                                # 嘗試用 Gemini 進行後續決策
+                                                                gemini_decision = await self._try_gemini_decision(
+                                                                    system_prompt=system_prompt,
+                                                                    original_user_prompt=user_prompt,
+                                                                    groq_summary=groq_summary,
+                                                                    user_id=user_id
+                                                                )
+                                                                
+                                                                if gemini_decision:
+                                                                    logger.info(f"✅ Gemini 決策完成，返回最終答案")
+                                                                    logger.info("═" * 60)
+                                                                    return gemini_decision
+                                                                else:
+                                                                    # Gemini 決策失敗，直接返回 Groq 摘要
+                                                                    logger.info(f"✅ 使用 Groq 工具執行摘要作為最終答案")
+                                                                    logger.info("═" * 60)
+                                                                    return groq_summary
                     
                     # 如果沒有工具呼叫或工具執行失敗，直接返回 Groq 的第一次回答
                     if first_response:
