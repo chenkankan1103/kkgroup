@@ -861,9 +861,9 @@ def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int
 @register_tool(
     name="query_vm_logs",
     description=(
-        "【遠程日誌查詢工具】透過 gcloud SSH 隧道查詢 GCP VM 上的 systemd 日誌。"
+        "【遠程日誌查詢工具】查詢 systemd journalctl 日誌。"
         "用於診斷 Discord Bot（bot.service）、shopbot.service、uibot.service 的執行狀態和問題。"
-        "自動連接 GCP 實例並獲取日誌，無需手動 SSH。"
+        "在 GCP VM 上運行時直接呼叫 journalctl；在其他環境則嘗試遠程連接。"
     ),
     parameters={
         "type": "OBJECT",
@@ -887,10 +887,10 @@ def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int
 @_require_leader
 def query_vm_logs(service_name: str, lines: int = 50, filter_keyword: str = "", *, caller_id: Optional[int] = None) -> str:
     """
-    透過 gcloud compute ssh 查詢 GCP VM 上的 systemd 日誌。
+    查詢 systemd journalctl 日誌。
     
-    自動連接到 GCP 實例（instance-20250501-142333）並執行 journalctl 查詢。
-    適用於診斷 Discord Bot 服務的運行狀態。
+    優先在本地直接執行 journalctl（適合在 GCP VM 上運行的 Bot）。
+    如果本地 journalctl 失敗，再嘗試透過 gcloud ssh 遠程查詢。
 
     Args:
         service_name (str):    服務名稱 ('bot', 'shopbot', 'uibot')
@@ -908,24 +908,13 @@ def query_vm_logs(service_name: str, lines: int = 50, filter_keyword: str = "", 
     
     lines = min(max(int(lines), 1), 200)  # 限制 1-200 行
     
-    # 構建 gcloud ssh 命令
-    # 使用 IAP 隧道連接到 GCP VM
     service_unit = f"{service_name}.service"
     
+    # 【首選】在本地直接執行 journalctl（Bot 在 VM 上時最快）
     if filter_keyword:
-        # 帶過濾的日誌查詢
-        command = (
-            f"gcloud compute ssh e193752468@instance-20250501-142333 "
-            f"--zone us-central1-c --tunnel-through-iap "
-            f"--command \"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'\""
-        )
+        command = f"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'"
     else:
-        # 不帶過濾的日誌查詢
-        command = (
-            f"gcloud compute ssh e193752468@instance-20250501-142333 "
-            f"--zone us-central1-c --tunnel-through-iap "
-            f"--command \"sudo journalctl -u {service_unit} -n {lines} --no-pager\""
-        )
+        command = f"sudo journalctl -u {service_unit} -n {lines} --no-pager"
     
     try:
         result = subprocess.run(
@@ -933,7 +922,7 @@ def query_vm_logs(service_name: str, lines: int = 50, filter_keyword: str = "", 
             shell=True,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=15
         )
         
         output_lines = [f"📊 日誌查詢：{service_unit}"]
@@ -946,12 +935,50 @@ def query_vm_logs(service_name: str, lines: int = 50, filter_keyword: str = "", 
                 output_lines.append(f"✅ 查詢成功：\n{preview}")
             else:
                 output_lines.append(f"⚠️ 未找到匹配的日誌行（搜尋關鍵字：'{filter_keyword}'）")
+            
+            return "\n".join(output_lines)
+        
+    except subprocess.TimeoutExpired:
+        return f"⏰ 日誌查詢超時（15 秒）"
+    except Exception as e:
+        # 本地查詢失敗，嘗試降級到 gcloud ssh
+        pass
+    
+    # 【降級方案】本地 journalctl 失敗時，嘗試遠程連接
+    # （適合在開發機上測試）
+    try:
+        if filter_keyword:
+            command = (
+                f"gcloud compute ssh e193752468@instance-20250501-142333 "
+                f"--zone us-central1-c --tunnel-through-iap "
+                f"--command \"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'\""
+            )
+        else:
+            command = (
+                f"gcloud compute ssh e193752468@instance-20250501-142333 "
+                f"--zone us-central1-c --tunnel-through-iap "
+                f"--command \"sudo journalctl -u {service_unit} -n {lines} --no-pager\""
+            )
+        
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            stdout = result.stdout.strip()
+            if stdout:
+                preview = stdout[:1800] + ("…（截斷）" if len(stdout) > 1800 else "")
+                return f"📊 日誌查詢（遠程）：{service_unit}\n✅ 查詢成功：\n{preview}"
+            else:
+                return f"📊 日誌查詢：{service_unit}\n⚠️ 未找到匹配的日誌行"
         else:
             stderr = result.stderr.strip()
             preview = stderr[:600] + ("…（截斷）" if len(stderr) > 600 else "")
-            output_lines.append(f"❌ 查詢失敗 (exit {result.returncode})：\n{preview}")
-        
-        return "\n".join(output_lines)
+            return f"❌ 日誌查詢失敗 (exit {result.returncode})：\n{preview}"
     
     except subprocess.TimeoutExpired:
         return f"⏰ 日誌查詢超時（30 秒）"
