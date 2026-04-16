@@ -198,5 +198,16 @@ class FeedbackCog(commands.Cog):
 
 async def setup(bot):
     """將 cog 加入 bot"""
-    await bot.add_cog(FeedbackCog(bot))
+    cog = FeedbackCog(bot)
+    await bot.add_cog(cog)
+    
+    # 為持久視圖註冊 FeedbackView - 這樣機器人重新啟動後仍能識別按鈕
+    # FeedbackView 被設置為 timeout=None，所以需要預先註冊
+    try:
+        feedback_view = FeedbackView(bot)
+        bot.add_view(feedback_view)
+        print("[FEEDBACK COG] ✅ 已註冊 FeedbackView 為持久視圖")
+    except Exception as e:
+        print(f"[FEEDBACK COG] ⚠️  無法註冊 FeedbackView: {e}")
+    
     print("[FEEDBACK COG] 已成功載入 Feedback Cog")
