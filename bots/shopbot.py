@@ -327,6 +327,15 @@ async def on_ready():
         # 載入模組
         loaded_extensions = await setup_modules(client)
         
+        # ⭐ 註冊所有永久視圖（timeout=None）
+        # 這是解決按鈕交互失敗的關鍵步驟
+        from shared.utils.view_registry import register_all_permanent_views
+        try:
+            register_all_permanent_views(client)
+        except Exception as e:
+            file_log(f"❌ 視圖註冊失敗: {e}")
+            print(f"❌ 視圖註冊失敗: {e}")
+        
         # 同步指令
         synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
         
