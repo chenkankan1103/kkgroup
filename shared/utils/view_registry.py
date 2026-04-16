@@ -18,6 +18,8 @@ def register_all_permanent_views(client):
             register_all_permanent_views(client)
     """
     
+    print("[VIEW_REGISTRY] 開始註冊永久視圖...")
+    
     # 視圖註冊清單（按優先級）
     # 某些視圖需要特殊參數，我們使用 lambda 或工廠函數來創建它們
     views_to_register = []
@@ -51,12 +53,15 @@ def register_all_permanent_views(client):
             VerifyView,
         ]
         
+        print(f"[VIEW_REGISTRY] ✅ UI 視圖導入成功，共 {len(simple_views)} 個")
+        
         for view_class in simple_views:
             views_to_register.append((view_class.__name__, view_class))
         
         # ============================================================
         # Shop 視圖
         # ============================================================
+        print("[VIEW_REGISTRY] 正在導入 Shop 視圖...")
         from cogs.shop.feedback_cog import FeedbackView
         from cogs.shop.HospitalMerchant import HospitalMerchantView
         
@@ -64,6 +69,8 @@ def register_all_permanent_views(client):
             FeedbackView,
             HospitalMerchantView,
         ]
+        
+        print(f"[VIEW_REGISTRY] ✅ Shop 視圖導入成功，共 {len(shop_views)} 個")
         
         for view_class in shop_views:
             views_to_register.append((view_class.__name__, view_class))
@@ -83,13 +90,15 @@ def register_all_permanent_views(client):
         registered_count = 0
         failed_views = []
         
+        print(f"[VIEW_REGISTRY] 開始註冊 {len(views_to_register)} 個視圖...")
+        
         for view_name, view_class in views_to_register:
             try:
                 # 嘗試創建實例並註冊
                 view_instance = view_class()
                 client.add_view(view_instance)
                 registered_count += 1
-                print(f"✅ 已註冊視圖: {view_name}")
+                print(f"[VIEW_REGISTRY] ✅ 已註冊: {view_name}")
             except TypeError as e:
                 # 視圖需要參數，無法直接實例化
                 # 但我們可以直接註冊類型（Discord.py 可以處理）
@@ -133,18 +142,19 @@ def register_all_permanent_views(client):
         except ImportError:
             pass
         
-        print(f"\n📊 已成功註冊 {registered_count} 個永久視圖")
+        print(f"[VIEW_REGISTRY] 📊 已成功註冊 {registered_count}/{len(views_to_register)} 個永久視圖")
         
         if failed_views:
-            print(f"⚠️  無法自動註冊的視圖（由 cog 管理）:")
+            print(f"[VIEW_REGISTRY] ⚠️  無法自動註冊的視圖（由 cog 管理）:")
             for view_info in failed_views:
-                print(f"   - {view_info}")
+                print(f"[VIEW_REGISTRY]    - {view_info}")
         
         return registered_count
         
     except Exception as e:
-        print(f"❌ 視圖註冊系統初始化失敗: {e}")
+        print(f"[VIEW_REGISTRY] ❌ 視圖註冊系統初始化失敗: {e}")
         import traceback
+        print("[VIEW_REGISTRY] 錯誤詳情:")
         traceback.print_exc()
         return 0
 
