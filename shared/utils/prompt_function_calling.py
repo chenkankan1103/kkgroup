@@ -62,9 +62,11 @@ def build_system_prompt_with_tools(base_prompt: str) -> str:
         
         # 添加使用說明
         tools_usage = """
-【工具呼叫格式】
-當你需要呼叫工具時，請按以下格式輸出：
+【工具呼叫格式 - 必須使用此格式】
+⭐ 當用戶要求查詢、檢查、分析、獲取任何信息時，務必呼叫相應工具！
+⭐ 不要用自然語言描述「我可以查」或「如果能查」，而是直接呼叫工具！
 
+正確的工具呼叫格式：
 <FUNCTION_CALL>
 {
   "name": "工具名",
@@ -75,21 +77,16 @@ def build_system_prompt_with_tools(base_prompt: str) -> str:
 }
 </FUNCTION_CALL>
 
-例如，查詢 KK幣時：
-<FUNCTION_CALL>
-{
-  "name": "get_kkcoin_balance",
-  "args": {
-    "user_id": "123456789"
-  }
-}
-</FUNCTION_CALL>
+例如，用戶說「檢查日誌」時：
+- ❌ 錯誤做法：「我可以檢查日誌，但我沒有查詢工具」
+- ✅ 正確做法：<FUNCTION_CALL>{"name": "run_terminal", "args": {"command": "journalctl..."}}</FUNCTION_CALL>
 
-重要：
-1. 只在真正需要時呼叫工具
+重要規則：
+1. 用戶明確要求查詢/檢查/分析任何信息 → 必須呼叫工具，不要用自然語言
 2. 一個回應中可以有多個工具呼叫
 3. 工具呼叫後，系統會在下一輪對話中返回結果
-4. 始終使用上述格式，不要偏離
+4. 始終使用上述 <FUNCTION_CALL> 格式，不要偏離
+5. 如果找不到完全匹配的工具，使用最接近的工具
 """
         
         return base_prompt + "\n" + tools_description + tools_usage

@@ -728,14 +728,43 @@ class AIResponse(commands.Cog):
                                                                     logger.info("═" * 60)
                                                                     return groq_summary
                     
-                    # 如果沒有工具呼叫或工具執行失敗，直接返回 Groq 的第一次回答
+# 情況：沒有工具呼叫或工具執行失敗
                     if first_response:
-                        logger.info(f"✅ 使用以下 API 成功回應:")
-                        logger.info(f"   - API 名稱: {api_name}")
-                        logger.info(f"   - 模型: {model}")
-                        logger.info(f"   - 回應長度: {len(first_response)} 字符")
-                        logger.info("═" * 60)
-                        return first_response
+                        # ⭐ 改進：如果原本需要工具，即使 Groq 沒有生成工具呼叫，
+                        # 也應該將 Groq 的回應作為摘要傳給 Gemini 決策層
+                        # 這樣即使 Groq 用自然語言作答，Gemini 也能進行高層決策
+                        if needs_tools and _PROMPT_FC_AVAILABLE:
+                            logger.warning(f"⚠️ Groq 未生成工具呼叫格式，但原本需要工具")
+                            logger.info(f"🔧 將 Groq 回應作為摘要傳給 Gemini 決策層")
+                            
+                            # 將 Groq 的自然語言回應視為「摘要」
+                            # 這樣 Gemini 可以基於它進行高層決策
+                            groq_fallback_summary = first_response[:300]  # 限制長度避免超量
+                            
+                            gemini_decision = await self._try_gemini_decision(
+                                system_prompt=system_prompt,
+                                original_user_prompt=user_prompt,
+                                groq_summary=groq_fallback_summary,
+                                user_id=user_id
+                            )
+                            
+                            if gemini_decision:
+                                logger.info(f"✅ Gemini 決策完成（基於 Groq 自然語言回應）")
+                                logger.info("═" * 60)
+                                return gemini_decision
+                            else:
+                                # Gemini 決策失敗，直接返回 Groq 回應
+                                logger.info(f"✅ 使用 Groq 回應作為最終答案")
+                                logger.info("═" * 60)
+                                return first_response
+                        else:
+                            # 普通對話，直接返回
+                            logger.info(f"✅ 使用以下 API 成功回應:")
+                            logger.info(f"   - API 名稱: {api_name}")
+                            logger.info(f"   - 模型: {model}")
+                            logger.info(f"   - 回應長度: {len(first_response)} 字符")
+                            logger.info("═" * 60)
+                            return first_response
 
 
             except asyncio.TimeoutError:
