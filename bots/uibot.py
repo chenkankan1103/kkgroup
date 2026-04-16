@@ -68,7 +68,8 @@ intents.messages = True
 intents.reactions = True
 intents.members = True
 
-client = commands.Bot(command_prefix="!", help_command=None, intents=intents)
+client_kwargs = {"command_prefix": "!", "help_command": None, "intents": intents}
+client = commands.AutoShardedBot(**client_kwargs)
 
 # ============================================================
 # 模組載入系統
