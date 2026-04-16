@@ -520,11 +520,18 @@ class ButtonInteraction(commands.Cog):
                 )
                 
                 # 記錄購買日誌
-                import os
-                log_msg = f"[ROLE_PURCHASE] User: {member.id}, Role: {role_name} (ID: {role_id}), Duration: {duration}s, Success: {save_success}"
+                from datetime import datetime, timedelta
+                expires_at = datetime.now() + timedelta(seconds=duration)
+                expire_days = duration // 86400
+                
+                log_msg = (
+                    f"[PURCHASE] {member.id} 購買 {role_name} | "
+                    f"時長: {expire_days}天 | 到期: {expires_at.strftime('%Y-%m-%d %H:%M')} | "
+                    f"DB_Save: {'✅' if save_success else '❌'}"
+                )
+                
                 try:
                     with open("/tmp/role_purchase.log", "a", encoding="utf-8") as f:
-                        from datetime import datetime
                         f.write(f"[{datetime.now().isoformat()}] {log_msg}\n")
                         f.flush()
                 except:
