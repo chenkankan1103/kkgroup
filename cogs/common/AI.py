@@ -57,10 +57,11 @@ except ImportError:
 AI_API_KEY = os.getenv("AI_API_KEY")
 AI_API_KEY_BACKUP = os.getenv("AI_API_KEY_BACKUP")  # 備用 API 金鑰
 AI_API_URL = os.getenv("AI_API_URL")
-AI_API_MODEL = os.getenv("AI_API_MODEL", "gemini-2.0-flash")  # Gemini 預設模型
+AI_API_MODEL = os.getenv("AI_API_MODEL", "gemini-1.5-flash")  # ✅ Gemini 1.5 Flash (相比 2.0 更便宜 ~40%)
 
 # ✅ Gemini API 必須使用 generateContent 接口（而非 start_chat）
 # 正確格式: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+# 版本選擇: gemini-1.5-flash (成本優化, 足夠智能) vs gemini-2.0-flash (更新, 成本更高)
 # 我們手動控制對話歷史（Sliding Window），所以不需要 Chat API 的自動管理
 
 # Groq 備用 API（優先級更高）
