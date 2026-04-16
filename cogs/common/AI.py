@@ -78,15 +78,26 @@ logger = logging.getLogger(__name__)
 
 
 class ContextManager:
-    """管理對話上下文和歷史 - 直接生成 Gemini 原生 contents 格式"""
+    """管理對話上下文和歷史 - 直接生成 Gemini 原生 contents 格式
+    
+    🧠 記憶摘要機制: 防止滑動窗口遺忘重要資訊
+    - 當歷史超過 10 條時，自動提取舊紀錄的關鍵字
+    - 存儲在 summary_cache，並在 system_instruction 中附加
+    - 確保長期對話的智商連續性
+    """
     def __init__(self, max_history: int = 10):
         self.max_history = max_history
         # 改用 deque 格式存儲，直接符合 Gemini API 的 contents 結構
         # 每條對話為 {"role": "user"/"model", "parts": [{"text": "..."}]}
         self.conversation_history: Dict[int, List[Dict]] = {}
+        # 🧠 記憶摘要快取 - 存儲舊對話的關鍵資訊
+        self.summary_cache: Dict[int, str] = {}
     
     def add_exchange(self, user_id: int, user_msg: str, bot_msg: str):
-        """添加一次對話交換，轉為 Gemini 原生格式"""
+        """添加一次對話交換，轉為 Gemini 原生格式
+        
+        🧠 記憶摘要: 當歷史即將超過限制時，先提取舊紀錄的關鍵字
+        """
         if user_id not in self.conversation_history:
             self.conversation_history[user_id] = []
         
@@ -100,9 +111,52 @@ class ContextManager:
             "parts": [{"text": bot_msg}]
         })
         
+        # 🧠 記憶摘要: 超過 10 條訊息時，提取舊紀錄的關鍵字
+        history = self.conversation_history[user_id]
+        if len(history) > 10:
+            # 提取即將被刪除的舊訊息的關鍵字
+            old_messages = history[:-(self.max_history * 2)]
+            if old_messages:
+                # 簡單的關鍵字提取：找出對話中的重要詞彙
+                summary = self._extract_summary(old_messages)
+                if summary:
+                    self.summary_cache[user_id] = summary
+                    logger.debug(f"🧠 提取用戶 {user_id} 的舊對話摘要: {summary[:50]}...")
+        
         # 維持最近 N 輪對話（每輪包括 user + model，所以總數 = max_history * 2）
-        if len(self.conversation_history[user_id]) > self.max_history * 2:
-            self.conversation_history[user_id] = self.conversation_history[user_id][-(self.max_history * 2):]
+        if len(history) > self.max_history * 2:
+            self.conversation_history[user_id] = history[-(self.max_history * 2):]
+    
+    def _extract_summary(self, messages: List[Dict]) -> str:
+        """從舊訊息中提取關鍵字摘要
+        
+        簡單策略：找出對話中的主要詞彙（名詞、關鍵字）
+        """
+        # 提取所有對話中的文字
+        all_text = " ".join([
+            msg.get("parts", [{}])[0].get("text", "")
+            for msg in messages
+            if msg.get("role") == "user"
+        ])
+        
+        if not all_text:
+            return ""
+        
+        # 簡單的關鍵字提取：分割並過濾短單詞
+        words = [w for w in all_text.split() if len(w) > 2]
+        # 取前 5 個不重複的詞作為摘要
+        seen = set()
+        keywords = []
+        for w in words:
+            if w not in seen and len(keywords) < 5:
+                seen.add(w)
+                keywords.append(w)
+        
+        return "、".join(keywords) if keywords else ""
+    
+    def get_summary(self, user_id: int) -> Optional[str]:
+        """獲取用戶的對話摘要"""
+        return self.summary_cache.get(user_id)
     
     def build_gemini_contents(self, user_id: int, new_message: str) -> List[Dict]:
         """構建符合 Gemini API 格式的 contents 列表，包含歷史對話和新訊息
@@ -148,6 +202,10 @@ class AIResponse(commands.Cog):
         
         # 優化：在初始化時一次性構建 API 配置，避免每次調用都重複檢查
         self._api_attempts = self._build_api_config()
+        
+        # ❄️ API 冷却機制 - 避免頻繁撞已超限的 API
+        # 格式: {api_name: cooldown_until_timestamp}
+        self.api_cooldowns: Dict[str, float] = {}
         
         # 初始化全局記憶系統
         try:
@@ -203,7 +261,19 @@ class AIResponse(commands.Cog):
         
         return api_attempts
     
-    def _build_gemini_payload(self, system_prompt: str, contents: List[Dict], use_tools: bool = False) -> Dict:
+    def _detect_task_type(self, user_prompt: str) -> str:
+        """檢測訊息類型，決定回應長度
+        
+        返回: 'code' (代碼相關) 或 'chat' (普通對話)
+        """
+        keywords_code = ['代碼', '程式', '寫', '解釋', '實現', '如何', '方法', '函數', '函式', '算法']
+        prompt_lower = user_prompt.lower()
+        
+        if any(kw in prompt_lower for kw in keywords_code):
+            return 'code'
+        return 'chat'
+    
+    def _build_gemini_payload(self, system_prompt: str, contents: List[Dict], user_prompt: str, use_tools: bool = False) -> Dict:
         """構建 Gemini API 的 payload - 單一責任原則
         
         🎯 Gemini 1.5 Flash generateContent API 規範:
@@ -219,7 +289,7 @@ class AIResponse(commands.Cog):
            
         3. generationConfig - 生成配置
            • temperature: 0.7（降低以獲得更穩定、更簡潔的回應）
-           • maxOutputTokens: 300（控制回應長度，避免超額）
+           • maxOutputTokens: 動態調整（300 普通對話, 800 代碼相關）
            • topP: 0.8（平衡創意度）
            
         4. 注意：NOT start_chat API
@@ -230,21 +300,39 @@ class AIResponse(commands.Cog):
         參數:
             system_prompt: 系統提示詞
             contents: 原生 Gemini contents 列表 [{"role": "user"/"model", "parts": [...]}]
+            user_prompt: 使用者訊息（用於檢測任務類型）
             use_tools: 是否加入工具列表（默認關閉以節省 token）
         
         返回: 符合 Gemini generateContent API 規格的 payload
         """
+        # 📊 動態調整 Token 限制
+        task_type = self._detect_task_type(user_prompt)
+        if task_type == 'code':
+            max_tokens = 800  # 代碼相關：允許更長的回應
+            instruction_hint = ""
+        else:
+            max_tokens = 300  # 普通對話：簡潔回應
+            instruction_hint = "\n請在一句話內回覆，語言簡潔。"
+        
+        # 構建 system_instruction（可能包含簡潔要求）
+        final_system_prompt = system_prompt + instruction_hint
+        
         payload = {
             "system_instruction": {
-                "parts": [{"text": system_prompt}]
+                "parts": [{"text": final_system_prompt}]
             },
             "contents": contents,
             "generationConfig": {
                 "temperature": 0.7,  # ✅ 優化：降低至 0.7 以獲得更穩定的回應
-                "maxOutputTokens": 300,  # ✅ 控制回應長度
+                "maxOutputTokens": max_tokens,  # 📊 動態調整
                 "topP": 0.8  # 平衡創意度
             }
         }
+        
+        if task_type == 'code':
+            logger.debug(f"🔧 檢測到代碼相關任務，maxOutputTokens 調整為 {max_tokens}")
+        else:
+            logger.debug(f"💬 檢測到普通對話，maxOutputTokens 設為 {max_tokens}（簡潔回應）")
         
         # 可選：加入工具列表（如果啟用且可用）
         if use_tools and _TOOLS_AVAILABLE:
@@ -285,12 +373,33 @@ class AIResponse(commands.Cog):
             # 如果沒有 user_id，只使用當前訊息
             contents = [{"role": "user", "parts": [{"text": user_prompt}]}]
         
+        # 🧠 注入對話摘要到 system_prompt，確保長期對話的連貫性
+        effective_system_prompt = system_prompt
+        if user_id is not None:
+            summary = self.context_manager.get_summary(user_id)
+            if summary:
+                effective_system_prompt = f"{system_prompt}\n\n🧠 前文摘要 (記住這些重要信息): {summary}"
+                logger.debug(f"🧠 已為用戶 {user_id} 注入對話摘要: {summary[:50]}...")
+        
         logger.info(f"🔄 開始嘗試 API（共 {len(self._api_attempts)} 個）: {' → '.join([name for name, *_ in self._api_attempts])}")
         
         gemini_failed_reason = None
+        import time  # 用於冷却機制
         
         for api_name, url, api_key, model, api_type in self._api_attempts:
             try:
+                # ❄️ API 冷却機制 - 避免頻繁撞超限 API
+                if api_name in self.api_cooldowns:
+                    cooldown_until = self.api_cooldowns[api_name]
+                    if time.time() < cooldown_until:
+                        remaining = int(cooldown_until - time.time())
+                        logger.warning(f"❄️ {api_name} 仍在冷却中 ({remaining}s 後恢復)，跳過...")
+                        continue
+                    else:
+                        # 冷却時間已過，移除冷却記錄
+                        del self.api_cooldowns[api_name]
+                        logger.info(f"✅ {api_name} 冷却時間已過，重新嘗試...")
+                
                 logger.info(f"⏳ 嘗試使用 {api_name} (模型: {model})...")
                 
                 if api_type == "gemini":
@@ -311,12 +420,12 @@ class AIResponse(commands.Cog):
                     headers = {"Content-Type": "application/json"}
 
                     # 優化：使用 _build_gemini_payload 方法構建 payload（包含 system_instruction）
-                    payload = self._build_gemini_payload(system_prompt, contents, use_tools=False)
+                    payload = self._build_gemini_payload(effective_system_prompt, contents, user_prompt, use_tools=False)
                     
                     logger.debug(f"📨 Gemini generateContent 請求詳情:")
                     logger.debug(f"   - 端點: {url}")
                     logger.debug(f"   - 方式: POST generateContent（手動滑動窗口記憶）")
-                    logger.debug(f"   - System Instruction 字數: {len(system_prompt)}")
+                    logger.debug(f"   - System Instruction 字數: {len(effective_system_prompt)}")
                     logger.debug(f"   - Contents 項數: {len(contents)}")
                     logger.debug(f"   - Temperature: {payload['generationConfig']['temperature']}")
                     logger.debug(f"   - maxOutputTokens: {payload['generationConfig']['maxOutputTokens']}")
@@ -328,7 +437,9 @@ class AIResponse(commands.Cog):
 
                             if resp.status == 429:
                                 gemini_failed_reason = "配額超限 (429)"
-                                logger.warning(f"⚠️ {api_name} 配額超限 (429)，嘗試下一個 API...")
+                                # ❄️ 設置 60 秒冷却，避免頻繁撞 API 限制
+                                self.api_cooldowns[api_name] = time.time() + 60
+                                logger.warning(f"⚠️ {api_name} 配額超限 (429)，設置 60 秒冷却，嘗試下一個 API...")
                                 continue
 
                             if resp.status != 200:
@@ -378,7 +489,7 @@ class AIResponse(commands.Cog):
                     }
                     
                     # 準備系統提示 - 無工具功能，專注於通用 AI 回應
-                    enhanced_system = system_prompt + "\n請在 150 字內簡潔回覆，禁止廢話。"
+                    enhanced_system = effective_system_prompt + "\n請在 150 字內簡潔回覆，禁止廢話。"
                     
                     # 如果之前 Gemini 失敗，添加降級提示
                     if gemini_failed_reason and "Groq" in api_name:
@@ -401,6 +512,9 @@ class AIResponse(commands.Cog):
                             response_text = await resp.text()
 
                             if resp.status == 429:
+                                # ❄️ 設置 60 秒冷却，避免頻繁撞 API 限制
+                                self.api_cooldowns[api_name] = time.time() + 60
+                                logger.warning(f"⚠️ {api_name} 配額超限 (429)，設置 60 秒冷却...")
                                 continue
 
                             if resp.status != 200:
