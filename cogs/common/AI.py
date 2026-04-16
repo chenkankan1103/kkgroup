@@ -187,8 +187,8 @@ class AIResponse(commands.Cog):
         logger.info("═" * 60)
         logger.info("📡 AI API 配置檢查")
         logger.info(f"  ✓ Gemini 主API: {'已配置' if (AI_API_KEY and AI_API_URL) else '未配置'}")
+        logger.info(f"  ✓ Gemini 主API: {'已配置' if (AI_API_KEY and AI_API_URL) else '未配置'}")
         logger.info(f"  ✓ Gemini 備用API: {'已配置' if (AI_API_KEY_BACKUP and AI_API_URL) else '未配置'}")
-        logger.info(f"  ✓ GitHub Models: {'已配置' if (GITHUB_MODELS_API_KEY and GITHUB_MODELS_API_URL) else '未配置'}")
         logger.info(f"  ✓ Groq API: {'已配置' if (GROQ_API_KEY and GROQ_API_URL) else '未配置'}")
         logger.info("═" * 60)
         
@@ -196,8 +196,10 @@ class AIResponse(commands.Cog):
             api_attempts.append(("Gemini (主)", AI_API_URL, AI_API_KEY, AI_API_MODEL, "gemini"))
         if AI_API_KEY_BACKUP and AI_API_URL:
             api_attempts.append(("Gemini (備用)", AI_API_URL, AI_API_KEY_BACKUP, AI_API_MODEL, "gemini"))
-        if GITHUB_MODELS_API_KEY and GITHUB_MODELS_API_URL:
-            api_attempts.append(("GitHub Models", GITHUB_MODELS_API_URL, GITHUB_MODELS_API_KEY, GITHUB_MODELS_API_MODEL, "openai"))
+        # ⚠️ GitHub Models 不支持可用的模型，已禁用
+        # 優先級改為: Gemini (主) → Gemini (備用) → Groq
+        # if GITHUB_MODELS_API_KEY and GITHUB_MODELS_API_URL:
+        #     api_attempts.append(("GitHub Models", GITHUB_MODELS_API_URL, GITHUB_MODELS_API_KEY, GITHUB_MODELS_API_MODEL, "openai"))
         if GROQ_API_KEY and GROQ_API_URL:
             api_attempts.append(("Groq", GROQ_API_URL, GROQ_API_KEY, GROQ_API_MODEL, "openai"))
         
@@ -205,8 +207,6 @@ class AIResponse(commands.Cog):
             logger.error("❌ 沒有可用的 AI API 配置")
             logger.error(f"  - AI_API_KEY: {'有' if AI_API_KEY else '無'}")
             logger.error(f"  - AI_API_URL: {'有' if AI_API_URL else '無'}")
-            logger.error(f"  - GITHUB_MODELS_API_KEY: {'有' if GITHUB_MODELS_API_KEY else '無'}")
-            logger.error(f"  - GITHUB_MODELS_API_URL: {'有' if GITHUB_MODELS_API_URL else '無'}")
             logger.error(f"  - GROQ_API_KEY: {'有' if GROQ_API_KEY else '無'}")
             logger.error(f"  - GROQ_API_URL: {'有' if GROQ_API_URL else '無'}")
             return None
@@ -348,19 +348,12 @@ class AIResponse(commands.Cog):
                     enhanced_system = system_prompt
                     
                     # 如果之前 Gemini 失敗，添加降級提示
-                    if gemini_failed_reason and ("GitHub" in api_name or "Groq" in api_name):
+                    if gemini_failed_reason and "Groq" in api_name:
                         enhanced_system += f"\n\n⚠️ [系統注]: Gemini API {gemini_failed_reason}，已切換至 {api_name}。"
                         logger.warning(f"⚠️ 已切換至 {api_name}（Gemini {gemini_failed_reason}）")
                     
-                    # GitHub Models 可能需要特定的模型名稱格式
-                    api_model = model
-                    if "GitHub" in api_name and model == "gpt-5-turbo":
-                        # GitHub Models 可能不支持 gpt-5-turbo，使用備用模型
-                        api_model = "gpt-4-turbo"
-                        logger.info(f"ℹ️ GitHub Models 改用 {api_model}（原始: {model}）")
-                    
                     payload = {
-                        "model": api_model,
+                        "model": model,
                         "messages": [
                             {"role": "system", "content": enhanced_system},
                             {"role": "user", "content": user_prompt}
@@ -378,15 +371,7 @@ class AIResponse(commands.Cog):
                                 continue
 
                             if resp.status != 200:
-                                # 詳細診斷錯誤
-                                error_detail = response_text[:500] if len(response_text) > 500 else response_text
-                                if api_name == "GitHub Models":
-                                    logger.error(f"❌ GitHub Models 返回 {resp.status}")
-                                    logger.error(f"   URL: {url}")
-                                    logger.error(f"   Model: {model}")
-                                    logger.error(f"   Error: {error_detail}")
-                                else:
-                                    logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
+                                logger.warning(f"⚠️ {api_name} 返回 {resp.status}，嘗試備用 API...")
                                 continue
 
                             try:
