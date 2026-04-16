@@ -2,7 +2,12 @@
 角色過期管理系統
 - 持久化存儲購買的臨時角色
 - 機器人啟動時自動清理過期角色
-- 定期檢查並自動移除已過期角色
+- 定期檢查（每小時）並自動移除已過期角色
+
+重要說明：
+- 「已處理」(is_active=0) 只是標記該過期記錄已被清理，不會禁止用戶再次購買
+- 用戶可以在身分過期後再次購買相同的身分
+- 每次購買都會在數據庫中新增或更新記錄
 """
 
 import sqlite3
@@ -125,7 +130,10 @@ class RoleExpirationManager:
     
     def mark_as_removed(self, user_id: int, guild_id: int, role_id: int) -> bool:
         """
-        標記角色已移除
+        標記角色過期記錄已處理（不會禁止用戶重新購買）
+        
+        此方法只是在數據庫中標記 is_active=0，表示該過期記錄已被清理。
+        用戶仍然可以在任何時間再次購買相同的身分，系統會新增一條新的記錄。
         
         Args:
             user_id: 用戶ID
@@ -133,7 +141,7 @@ class RoleExpirationManager:
             role_id: 角色ID
             
         Returns:
-            是否成功
+            是否成功標記為已處理
         """
         try:
             conn = sqlite3.connect(self.db_path)

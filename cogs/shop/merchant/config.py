@@ -125,7 +125,7 @@ ROLE_SHOP = {
         "duration": 86400  # 1天 = 86400秒
     },
     "進階組員": {
-        "price": 75, 
+        "price": 500, 
         "role_id": VIP_ROLE_ID, 
         "duration": 604800  # 1週 = 604800秒
     }
