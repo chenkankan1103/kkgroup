@@ -418,14 +418,8 @@ class AIResponse(commands.Cog):
             user_id = message.author.id
             user_input = message.clean_content.replace(f"<@{self.bot.user.id}>", "").strip()
             
-            # 使用簡單預設的系統提示詞 - 中控室干部風格
-            system_prompt = f"""你是 KK 園區中控室的監控干部，負責監管整個園區的運營。
-你的語氣應該是專業、有點威嚴但不冷漠的。
-直接回答問題，必要時給出指示或建議。避免過度解釋。
-有需要時使用可用工具查詢園區資訊。
-
-當前聯絡人：{message.author.name} (ID: {user_id})
-當提及『我』、『我的』等時，應使用此 ID。"""
+            # 優化後的簡潔系統提示詞 - 最小化 token 消耗
+            system_prompt = f"""KK園區監控干部。簡潔回應。用戶：{message.author.name}"""
 
             # 記錄到簡單歷史
             add_to_history(user_id, user_input)
