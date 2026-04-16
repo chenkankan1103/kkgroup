@@ -511,19 +511,41 @@ class ButtonInteraction(commands.Cog):
             # ✅ 使用新的持久化系統記錄角色過期時間
             if duration:
                 manager = get_expiration_manager()
-                manager.save_role_purchase(
+                save_success = manager.save_role_purchase(
                     user_id=member.id,
                     guild_id=interaction.guild.id,
                     role_id=role_id,
                     role_name=role_name,
                     duration_seconds=duration
                 )
+                
+                # 記錄購買日誌
+                import os
+                log_msg = f"[ROLE_PURCHASE] User: {member.id}, Role: {role_name} (ID: {role_id}), Duration: {duration}s, Success: {save_success}"
+                try:
+                    with open("/tmp/role_purchase.log", "a", encoding="utf-8") as f:
+                        from datetime import datetime
+                        f.write(f"[{datetime.now().isoformat()}] {log_msg}\n")
+                        f.flush()
+                except:
+                    pass
+                
+                print(f"[SHOP] {log_msg}")
 
             kkcoin_new = await get_user_kkcoin(member.id)
             embed = discord.Embed(
                 title="購買成功", 
                 description=f"你成功購買了 {role_name}，花費了 {price} KKcoin！\n剩餘：{kkcoin_new} KKcoin"
             )
+            if duration:
+                from datetime import datetime, timedelta
+                expires_at = datetime.now() + timedelta(seconds=duration)
+                expire_days = duration // 86400
+                embed.add_field(
+                    name="⏱️ 有效期",
+                    value=f"{expire_days} 天\n到期：{expires_at.strftime('%Y-%m-%d %H:%M')}",
+                    inline=False
+                )
             await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
