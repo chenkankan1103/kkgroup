@@ -30,8 +30,8 @@ except ImportError as e:
     print("   請執行: pip install matplotlib numpy")
 
 # 配置
-FONT_PATH = os.path.join(os.path.dirname(__file__), "..", "fonts", "NotoSansCJKtc-Regular.otf")
-ASSETS_PATH = os.path.join(os.path.dirname(__file__), "..", "assets")
+FONT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "fonts", "NotoSansCJKtc-Regular.otf")
+ASSETS_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "assets")
 
 
 # ============================================================
