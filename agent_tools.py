@@ -927,63 +927,30 @@ def query_vm_logs(service_name: str, lines: int = 50, filter_keyword: str = "", 
         
         output_lines = [f"📊 日誌查詢：{service_unit}"]
         
+        # 無論成功或失敗，都直接返回本地執行的結果
+        # （不自動降級到 gcloud ssh）
         if result.returncode == 0:
             stdout = result.stdout.strip()
             if stdout:
-                # 限制輸出避免超過 Discord 字數限制
                 preview = stdout[:1800] + ("…（截斷）" if len(stdout) > 1800 else "")
                 output_lines.append(f"✅ 查詢成功：\n{preview}")
             else:
                 output_lines.append(f"⚠️ 未找到匹配的日誌行（搜尋關鍵字：'{filter_keyword}'）")
-            
-            return "\n".join(output_lines)
-        
-    except subprocess.TimeoutExpired:
-        return f"⏰ 日誌查詢超時（15 秒）"
-    except Exception as e:
-        # 本地查詢失敗，嘗試降級到 gcloud ssh
-        pass
-    
-    # 【降級方案】本地 journalctl 失敗時，嘗試遠程連接
-    # （適合在開發機上測試）
-    try:
-        if filter_keyword:
-            command = (
-                f"gcloud compute ssh e193752468@instance-20250501-142333 "
-                f"--zone us-central1-c --tunnel-through-iap "
-                f"--command \"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'\""
-            )
         else:
-            command = (
-                f"gcloud compute ssh e193752468@instance-20250501-142333 "
-                f"--zone us-central1-c --tunnel-through-iap "
-                f"--command \"sudo journalctl -u {service_unit} -n {lines} --no-pager\""
-            )
-        
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        
-        if result.returncode == 0:
-            stdout = result.stdout.strip()
-            if stdout:
-                preview = stdout[:1800] + ("…（截斷）" if len(stdout) > 1800 else "")
-                return f"📊 日誌查詢（遠程）：{service_unit}\n✅ 查詢成功：\n{preview}"
+            # 本地執行失敗，返回錯誤訊息
+            stderr = result.stderr.strip() if result.stderr else result.stdout.strip()
+            if stderr:
+                preview = stderr[:800] + ("…（截斷）" if len(stderr) > 800 else "")
+                output_lines.append(f"❌ 查詢失敗 (exit {result.returncode})：\n{preview}")
             else:
-                return f"📊 日誌查詢：{service_unit}\n⚠️ 未找到匹配的日誌行"
-        else:
-            stderr = result.stderr.strip()
-            preview = stderr[:600] + ("…（截斷）" if len(stderr) > 600 else "")
-            return f"❌ 日誌查詢失敗 (exit {result.returncode})：\n{preview}"
+                output_lines.append(f"❌ 查詢失敗 (exit {result.returncode})，無詳細資訊")
+        
+        return "\n".join(output_lines)
     
     except subprocess.TimeoutExpired:
-        return f"⏰ 日誌查詢超時（30 秒）"
+        return f"⏰ 日誌查詢超時（15 秒）：{service_unit}"
     except Exception as e:
-        return f"❌ 日誌查詢失敗：{e}"
+        return f"❌ 日誌查詢異常：{e}"
 
 
 
