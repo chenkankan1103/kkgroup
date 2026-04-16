@@ -23,4 +23,4 @@ grep -q '^export $Name=' ~/.bashrc || \
 
 # execute on remote host
 Write-Host "Running on $Instance (zone $Zone): $cmd"
-gcloud compute ssh $Instance --zone=$Zone --command=$cmd
+gcloud compute ssh $Instance --zone=$Zone --tunnel-through-iap --command=$cmd
