@@ -28,7 +28,7 @@ def register_all_permanent_views(client):
         # ============================================================
         # UI 視圖 - 永久視圖（需要在 bot 啟動時註冊）
         # ============================================================
-        from cogs.ui.views.personal_locker import PersonalLockerView, PersonalItemsView
+        from cogs.ui.views.personal_locker import PersonalLockerView
         from cogs.ui.views.selection_views import (
             GenderSelectionView, 
             ClothingSelectionView, 
@@ -118,9 +118,9 @@ def register_all_permanent_views(client):
         
         # 嘗試導入需要參數的視圖，即使無法直接實例化
         try:
-            from cogs.ui.views.personal_locker import PersonalLockerView, PersonalItemsView
+            from cogs.ui.views.personal_locker import PersonalLockerView
             # 這些視圖由 cog 管理，不需要預先註冊
-            print(f"⚠️  視圖 PersonalLockerView/PersonalItemsView 由 cog 管理，跳過預先註冊")
+            print(f"⚠️  視圖 PersonalLockerView 由 cog 管理，跳過預先註冊")
         except ImportError:
             pass
         
