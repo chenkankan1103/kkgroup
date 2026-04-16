@@ -120,12 +120,12 @@ EQUIPMENT_SHOP = {
 # 角色商店配置 - 直接在這裡定義，不使用外部檔案
 ROLE_SHOP = {
     "七彩披風": {
-        "price": 50, 
+        "price": 500, 
         "role_id": RAINBOW_ROLE_ID, 
         "duration": 86400  # 1天 = 86400秒
     },
     "進階組員": {
-        "price": 500, 
+        "price": 1000, 
         "role_id": VIP_ROLE_ID, 
         "duration": 604800  # 1週 = 604800秒
     }
