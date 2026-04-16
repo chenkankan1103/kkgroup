@@ -856,7 +856,110 @@ def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int
         return f"❌ 指令執行失敗：{e}"
 
 
-# ==================== Git 遠端維護工具 ====================
+# ==================== GCP VM 遠程日誌查詢工具 ====================
+
+@register_tool(
+    name="query_vm_logs",
+    description=(
+        "【遠程日誌查詢工具】透過 gcloud SSH 隧道查詢 GCP VM 上的 systemd 日誌。"
+        "用於診斷 Discord Bot（bot.service）、shopbot.service、uibot.service 的執行狀態和問題。"
+        "自動連接 GCP 實例並獲取日誌，無需手動 SSH。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "service_name": {
+                "type": "STRING",
+                "description": "要查詢的服務名稱：'bot'、'shopbot' 或 'uibot'"
+            },
+            "lines": {
+                "type": "INTEGER",
+                "description": "要查詢的最近日誌行數，預設 50，最大 200"
+            },
+            "filter_keyword": {
+                "type": "STRING",
+                "description": "可選：日誌過濾關鍵字（如 'error', 'warning', '429'），留空則不過濾"
+            }
+        },
+        "required": ["service_name"]
+    }
+)
+@_require_leader
+def query_vm_logs(service_name: str, lines: int = 50, filter_keyword: str = "", *, caller_id: Optional[int] = None) -> str:
+    """
+    透過 gcloud compute ssh 查詢 GCP VM 上的 systemd 日誌。
+    
+    自動連接到 GCP 實例（instance-20250501-142333）並執行 journalctl 查詢。
+    適用於診斷 Discord Bot 服務的運行狀態。
+
+    Args:
+        service_name (str):    服務名稱 ('bot', 'shopbot', 'uibot')
+        lines (int):           查詢的行數（預設 50）
+        filter_keyword (str):  日誌過濾關鍵字（可選）
+        caller_id (int):       呼叫者 ID
+
+    Returns:
+        str: 日誌查詢結果
+    """
+    # 參數驗證
+    valid_services = {"bot", "shopbot", "uibot"}
+    if service_name not in valid_services:
+        return f"❌ 無效的服務名稱：{service_name}。有效選項：{', '.join(valid_services)}"
+    
+    lines = min(max(int(lines), 1), 200)  # 限制 1-200 行
+    
+    # 構建 gcloud ssh 命令
+    # 使用 IAP 隧道連接到 GCP VM
+    service_unit = f"{service_name}.service"
+    
+    if filter_keyword:
+        # 帶過濾的日誌查詢
+        command = (
+            f"gcloud compute ssh e193752468@instance-20250501-142333 "
+            f"--zone us-central1-c --tunnel-through-iap "
+            f"--command \"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'\""
+        )
+    else:
+        # 不帶過濾的日誌查詢
+        command = (
+            f"gcloud compute ssh e193752468@instance-20250501-142333 "
+            f"--zone us-central1-c --tunnel-through-iap "
+            f"--command \"sudo journalctl -u {service_unit} -n {lines} --no-pager\""
+        )
+    
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        output_lines = [f"📊 日誌查詢：{service_unit}"]
+        
+        if result.returncode == 0:
+            stdout = result.stdout.strip()
+            if stdout:
+                # 限制輸出避免超過 Discord 字數限制
+                preview = stdout[:1800] + ("…（截斷）" if len(stdout) > 1800 else "")
+                output_lines.append(f"✅ 查詢成功：\n{preview}")
+            else:
+                output_lines.append(f"⚠️ 未找到匹配的日誌行（搜尋關鍵字：'{filter_keyword}'）")
+        else:
+            stderr = result.stderr.strip()
+            preview = stderr[:600] + ("…（截斷）" if len(stderr) > 600 else "")
+            output_lines.append(f"❌ 查詢失敗 (exit {result.returncode})：\n{preview}")
+        
+        return "\n".join(output_lines)
+    
+    except subprocess.TimeoutExpired:
+        return f"⏰ 日誌查詢超時（30 秒）"
+    except Exception as e:
+        return f"❌ 日誌查詢失敗：{e}"
+
+
+
 
 @register_tool(
     name="read_project_file",
