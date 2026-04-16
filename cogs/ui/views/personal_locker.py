@@ -59,6 +59,9 @@ class PersonalLockerView(discord.ui.View):
 
     async def crop_info_callback(self, interaction: discord.Interaction):
         """作物資訊"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+            return
         try:
             await interaction.response.defer(ephemeral=True)
         except Exception as e:
@@ -68,6 +71,9 @@ class PersonalLockerView(discord.ui.View):
 
     async def personal_items_callback(self, interaction: discord.Interaction):
         """個人物品"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的置物櫃！", ephemeral=True)
+            return
         try:
             await interaction.response.defer(ephemeral=True)
         except Exception as e:
@@ -121,7 +127,7 @@ class PersonalLockerView(discord.ui.View):
 
             # 檢查是否有種子
             if not seeds or not any(qty > 0 for qty in seeds.values()):
-                await interaction.response.send_message("❌ 你沒有種子！請先到商店購買種子。", ephemeral=True)
+                await interaction.followup.send("❌ 你沒有種子！請先到商店購買種子。", ephemeral=True)
                 return
 
             # 顯示種子選擇界面
