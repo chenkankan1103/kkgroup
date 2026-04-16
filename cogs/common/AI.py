@@ -357,7 +357,8 @@ class AIResponse(commands.Cog):
                         "messages": [
                             {"role": "system", "content": enhanced_system},
                             {"role": "user", "content": user_prompt}
-                        ]
+                        ],
+                        "max_tokens": 300  # 限制輸出 token，避免過長回應浪費配額
                     }
 
                     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
