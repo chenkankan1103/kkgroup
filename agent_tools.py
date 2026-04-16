@@ -861,20 +861,20 @@ def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int
 @register_tool(
     name="query_vm_logs",
     description=(
-        "【遠程日誌查詢工具】查詢 systemd journalctl 日誌。"
-        "用於診斷 Discord Bot（bot.service）、shopbot.service、uibot.service 的執行狀態和問題。"
-        "在 GCP VM 上運行時直接呼叫 journalctl；在其他環境則嘗試遠程連接。"
+        "【日誌查詢工具】查詢 systemd journalctl 日誌。"
+        "用於診斷 Discord Bot 三個服務的執行狀態和問題。"
+        "支持查詢單個服務或全部三個服務（'all'）。"
     ),
     parameters={
         "type": "OBJECT",
         "properties": {
             "service_name": {
                 "type": "STRING",
-                "description": "要查詢的服務名稱：'bot'、'shopbot' 或 'uibot'"
+                "description": "要查詢的服務名稱：'bot'、'shopbot'、'uibot' 或 'all'（查詢所有三個服務）"
             },
             "lines": {
                 "type": "INTEGER",
-                "description": "要查詢的最近日誌行數，預設 50，最大 200"
+                "description": "要查詢的最近日誌行數，預設 30，最大 100"
             },
             "filter_keyword": {
                 "type": "STRING",
@@ -885,72 +885,88 @@ def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int
     }
 )
 @_require_leader
-def query_vm_logs(service_name: str, lines: int = 50, filter_keyword: str = "", *, caller_id: Optional[int] = None) -> str:
+def query_vm_logs(service_name: str, lines: int = 30, filter_keyword: str = "", *, caller_id: Optional[int] = None) -> str:
     """
     查詢 systemd journalctl 日誌。
     
-    優先在本地直接執行 journalctl（適合在 GCP VM 上運行的 Bot）。
-    如果本地 journalctl 失敗，再嘗試透過 gcloud ssh 遠程查詢。
-
+    支持查詢單個服務或全部三個服務：
+    - 'bot' / 'shopbot' / 'uibot' ：查詢單個服務
+    - 'all' ：查詢所有三個服務，合併結果
+    
     Args:
-        service_name (str):    服務名稱 ('bot', 'shopbot', 'uibot')
-        lines (int):           查詢的行數（預設 50）
+        service_name (str):    服務名稱 ('bot'、'shopbot'、'uibot' 或 'all')
+        lines (int):           查詢的行數（預設 30，最大 100）
         filter_keyword (str):  日誌過濾關鍵字（可選）
         caller_id (int):       呼叫者 ID
 
     Returns:
         str: 日誌查詢結果
     """
-    # 參數驗證
-    valid_services = {"bot", "shopbot", "uibot"}
-    if service_name not in valid_services:
-        return f"❌ 無效的服務名稱：{service_name}。有效選項：{', '.join(valid_services)}"
+    lines = min(max(int(lines), 1), 100)  # 限制 1-100 行
     
-    lines = min(max(int(lines), 1), 200)  # 限制 1-200 行
-    
-    service_unit = f"{service_name}.service"
-    
-    # 【首選】在本地直接執行 journalctl（Bot 在 VM 上時最快）
-    if filter_keyword:
-        command = f"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'"
+    # 確定要查詢的服務列表
+    if service_name.lower() == "all":
+        services_to_query = ["bot", "shopbot", "uibot"]
     else:
-        command = f"sudo journalctl -u {service_unit} -n {lines} --no-pager"
+        valid_services = {"bot", "shopbot", "uibot"}
+        if service_name not in valid_services:
+            return f"❌ 無效的服務名稱：{service_name}。有效選項：bot、shopbot、uibot 或 all"
+        services_to_query = [service_name]
     
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=15
-        )
+    # 查詢所有指定的服務
+    results = []
+    for service in services_to_query:
+        service_unit = f"{service}.service"
         
-        output_lines = [f"📊 日誌查詢：{service_unit}"]
-        
-        # 無論成功或失敗，都直接返回本地執行的結果
-        # （不自動降級到 gcloud ssh）
-        if result.returncode == 0:
-            stdout = result.stdout.strip()
-            if stdout:
-                preview = stdout[:1800] + ("…（截斷）" if len(stdout) > 1800 else "")
-                output_lines.append(f"✅ 查詢成功：\n{preview}")
-            else:
-                output_lines.append(f"⚠️ 未找到匹配的日誌行（搜尋關鍵字：'{filter_keyword}'）")
+        # 構建查詢命令
+        if filter_keyword:
+            command = f"sudo journalctl -u {service_unit} -n {lines} --no-pager | grep -iE '{filter_keyword}'"
         else:
-            # 本地執行失敗，返回錯誤訊息
-            stderr = result.stderr.strip() if result.stderr else result.stdout.strip()
-            if stderr:
-                preview = stderr[:800] + ("…（截斷）" if len(stderr) > 800 else "")
-                output_lines.append(f"❌ 查詢失敗 (exit {result.returncode})：\n{preview}")
-            else:
-                output_lines.append(f"❌ 查詢失敗 (exit {result.returncode})，無詳細資訊")
+            command = f"sudo journalctl -u {service_unit} -n {lines} --no-pager"
         
-        return "\n".join(output_lines)
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            section = [f"【{service.upper()}】"]
+            
+            if result.returncode == 0:
+                stdout = result.stdout.strip()
+                if stdout:
+                    # 限制輸出長度
+                    lines_list = stdout.split('\n')
+                    preview = '\n'.join(lines_list[:15])  # 最多 15 行
+                    if len(lines_list) > 15:
+                        preview += f"\n…（共 {len(lines_list)} 行，已截斷）"
+                    section.append(f"✅ {preview}")
+                else:
+                    section.append(f"⚠️ 無日誌（或無匹配的關鍵字）")
+            else:
+                stderr = result.stderr.strip() if result.stderr else ""
+                if stderr:
+                    preview = stderr[:200] + ("…" if len(stderr) > 200 else "")
+                    section.append(f"❌ 查詢失敗：{preview}")
+                else:
+                    section.append(f"❌ 查詢失敗 (exit {result.returncode})")
+            
+            results.append("\n".join(section))
+        
+        except subprocess.TimeoutExpired:
+            results.append(f"【{service.upper()}】⏰ 查詢超時（10 秒）")
+        except Exception as e:
+            results.append(f"【{service.upper()}】❌ 查詢異常：{e}")
     
-    except subprocess.TimeoutExpired:
-        return f"⏰ 日誌查詢超時（15 秒）：{service_unit}"
-    except Exception as e:
-        return f"❌ 日誌查詢異常：{e}"
+    # 合併所有結果
+    output_header = [f"📊 日誌查詢結果 ({', '.join(services_to_query)})"]
+    if filter_keyword:
+        output_header.append(f"（過濾：{filter_keyword}）")
+    
+    return "\n\n".join(output_header + results)
 
 
 

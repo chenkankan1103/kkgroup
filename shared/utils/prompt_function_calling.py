@@ -79,14 +79,15 @@ def build_system_prompt_with_tools(base_prompt: str) -> str:
 
 例如，用戶說「檢查日誌」時：
 - ❌ 錯誤做法：「我可以檢查日誌，但我沒有查詢工具」
-- ✅ 正確做法：<FUNCTION_CALL>{"name": "run_terminal", "args": {"command": "journalctl..."}}</FUNCTION_CALL>
+- ✅ 正確做法：<FUNCTION_CALL>{"name": "query_vm_logs", "args": {"service_name": "all"}}</FUNCTION_CALL>
 
 重要規則：
 1. 用戶明確要求查詢/檢查/分析任何信息 → 必須呼叫工具，不要用自然語言
-2. 一個回應中可以有多個工具呼叫
-3. 工具呼叫後，系統會在下一輪對話中返回結果
-4. 始終使用上述 <FUNCTION_CALL> 格式，不要偏離
-5. 如果找不到完全匹配的工具，使用最接近的工具
+2. 查詢日誌時，優先使用 query_vm_logs 工具，並使用 "all" 以查詢全部三個機器人的日誌
+3. 一個回應中可以有多個工具呼叫
+4. 工具呼叫後，系統會在下一輪對話中返回結果
+5. 始終使用上述 <FUNCTION_CALL> 格式，不要偏離
+6. 如果找不到完全匹配的工具，使用最接近的工具
 """
         
         return base_prompt + "\n" + tools_description + tools_usage
