@@ -26,19 +26,6 @@ import logging
 
 # 設置日誌
 logger = setup_utf8_logging(__name__, logging.INFO)
-    
-    try:
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {output}\n")
-            f.flush()
-    except:
-        pass
-    try:
-        syslog.syslog(syslog.LOG_INFO, f"[SHOPBOT_DEBUG] {output}")
-    except:
-        pass
-    print(output, flush=True)
-    sys.stdout.flush()
 
 # ============================================================
 # 配置區 - 根據不同 BOT 修改此區域
