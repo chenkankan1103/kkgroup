@@ -31,14 +31,28 @@ except ImportError:
 
 load_dotenv()
 
-# ⚠️ 工具系統已改為 CLI 模式
-# agent_tools 不再通過 Function Calling 使用
-# 改為通過 /cli_tool 命令直接執行
+# ─── 工具箱導入（agent_tools.py 在專案根目錄）───────────────────────────────
+try:
+    import agent_tools
+    _TOOLS_AVAILABLE = True
+except ImportError:
+    agent_tools = None  # type: ignore
+    _TOOLS_AVAILABLE = False
+    print("⚠️  agent_tools 模組不可用，AI 工具功能已停用")
 
-# ─── 工具系統已改為 CLI Slash Command（不再通過 AI Function Calling）────────────
-# 理由：減少系統提示的 token 消耗，避免工具描述導致 API 超額
-_PROMPT_FC_AVAILABLE = False
-_CLI_MODE = True  # CLI 模式開啟：工具通過 Slash Command 直接執行
+# ─── 基於提示的函數呼叫系統（支援 Groq）─────────────────────────────────
+try:
+    from prompt_function_calling import (
+        build_system_prompt_with_tools,
+        extract_function_calls,
+        extract_response_without_calls,
+        execute_extracted_calls,
+        format_call_results_for_context
+    )
+    _PROMPT_FC_AVAILABLE = True
+except ImportError:
+    _PROMPT_FC_AVAILABLE = False
+    print("⚠️  prompt_function_calling 模組不可用，Groq 工具呼叫功能已停用")
 
 AI_API_KEY = os.getenv("AI_API_KEY")
 AI_API_KEY_BACKUP = os.getenv("AI_API_KEY_BACKUP")  # 備用 API 金鑰
@@ -56,6 +70,57 @@ GROQ_API_URL = os.getenv("GROQ_API_URL")
 GROQ_API_MODEL = os.getenv("GROQ_API_MODEL", "mixtral-8x7b-32768")
 
 # GitHub Models 已移除（改為 Gemini + Groq）
+
+# ==================== 智能工具啟用函數 ====================
+
+def should_enable_agent_mode(user_prompt: str) -> bool:
+    """智能判斷是否應該啟用工具模式（Agent Mode）
+    
+    只在用戶明確需要工具時啟用，避免一般對話時加載工具描述
+    這樣可以減少系統提示的 token 消耗
+    
+    觸發條件（任意一個）：
+    1. 明確的工具相關關鍵字
+    2. 代碼修改、診斷、分析等需要工具的請求
+    3. 訊息較長（可能是複雜任務）
+    
+    Args:
+        user_prompt: 使用者輸入
+    
+    Returns:
+        bool: 是否啟用工具模式
+    """
+    
+    # 🔴 明確禁用（太短的訊息沒必要用工具）
+    if len(user_prompt) < 5:
+        return False
+    
+    prompt_lower = user_prompt.lower()
+    
+    # 🟢 明確啟用的關鍵字
+    agent_keywords = [
+        # 代碼相關
+        "修改代碼", "改動", "改寫", "實現", "寫",
+        "代碼", "程式", "函數", "函式", "類別", "class",
+        # 診斷相關
+        "日誌", "journalctl", "錯誤", "error", "fail", "429",
+        "API", "狀態", "status", "診斷", "問題", "bug",
+        # 系統相關
+        "Git", "git", "推送", "提交", "commit", "push",
+        "shell", "命令", "command", "執行",
+        # 數據相關
+        "數據庫", "資料庫", "database", "查詢", "query",
+        "搜尋", "分析", "統計",
+    ]
+    
+    if any(keyword in prompt_lower for keyword in agent_keywords):
+        return True
+    
+    # 🟡 基於長度的啟用（長訊息可能需要工具協助分析）
+    if len(user_prompt) > 150:
+        return True
+    
+    return False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -319,9 +384,12 @@ class AIResponse(commands.Cog):
             logger.debug(f"💬 檢測到普通對話，maxOutputTokens 設為 {max_tokens}（簡潔回應）")
         
         # 可選：加入工具列表（如果啟用且可用）
-        # 工具現在通過 CLI 執行，不再加入 Gemini payload
-        # 這樣可以節省 ~1000+ tokens
-        logger.debug("ℹ️ 工具系統已改為 CLI 模式（通過 Slash Command 執行）")
+        # 可選：加入工具列表（只在啟用工具模式時）
+        if use_tools and _TOOLS_AVAILABLE:
+            payload["tools"] = agent_tools.get_gemini_tools_spec()
+            logger.info("🔧 工具列表已加入 Gemini payload (消耗 ~1000+ tokens)")
+        else:
+            logger.debug("ℹ️ 工具已禁用，專注於通用 AI 回應")
         
         return payload
     
@@ -402,7 +470,8 @@ class AIResponse(commands.Cog):
                     headers = {"Content-Type": "application/json"}
 
                     # 優化：使用 _build_gemini_payload 方法構建 payload（包含 system_instruction）
-                    payload = self._build_gemini_payload(effective_system_prompt, contents, user_prompt, use_tools=False)
+                    # 智能工具啟用：根據提示內容決定是否加入工具
+                    payload = self._build_gemini_payload(effective_system_prompt, contents, user_prompt, use_tools=should_enable_agent_mode(user_prompt))
                     
                     logger.debug(f"📨 Gemini generateContent 請求詳情:")
                     logger.debug(f"   - 端點: {url}")
