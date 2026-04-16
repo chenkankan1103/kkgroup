@@ -244,14 +244,21 @@ class EnhancedRoleExpirationManager(commands.Cog):
             return []
     
     def _log_action(self, action: str, details: str):
-        """記錄操作到日誌"""
+        """記錄操作到日誌和標準輸出"""
         try:
+            timestamp = datetime.now().isoformat()
+            log_entry = f"[{timestamp}] [{action}] {details}"
+            
+            # 記錄到文件
             with open("/tmp/role_expiration.log", "a", encoding="utf-8") as f:
-                timestamp = datetime.now().isoformat()
-                f.write(f"[{timestamp}] {action}: {details}\n")
+                f.write(log_entry + "\n")
                 f.flush()
+            
+            # 同時打印到控制台
+            print(f"[RoleManager] {log_entry}")
+            
         except Exception as e:
-            print(f"[LOG ERROR] {e}")
+            print(f"[RoleManager] ❌ 日誌記錄失敗: {e}")
 
 
 async def setup(bot: commands.Bot):

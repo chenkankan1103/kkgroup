@@ -87,11 +87,12 @@ class RoleExpirationManager:
             conn.commit()
             conn.close()
             
-            print(f"[RoleExpiration] 已保存 {role_name} 到期時間: {expires_at}")
+            log_msg = f"✅ 數據庫記錄: {role_name} 到期: {expires_at.strftime('%Y-%m-%d %H:%M')} (用戶 {user_id})"
+            print(f"[RoleExpiration] {log_msg}")
             return True
             
         except Exception as e:
-            print(f"[RoleExpiration] 保存失敗: {e}")
+            print(f"[RoleExpiration] ❌ 保存失敗 (用戶 {user_id}, {role_name}): {e}")
             return False
     
     def get_expired_roles(self) -> List[Tuple[int, int, int, str]]:
@@ -166,40 +167,48 @@ class RoleExpirationManager:
         expired_roles = self.get_expired_roles()
         removed_count = 0
         
+        print(f"[RoleExpiration] 清理任務開始，找到 {len(expired_roles)} 個過期角色")
+        
         for user_id, guild_id, role_id, role_name in expired_roles:
             try:
                 guild = bot.get_guild(guild_id)
                 if not guild:
-                    print(f"[RoleExpiration] 找不到伺服器 {guild_id}")
+                    print(f"[RoleExpiration] ⚠️ 伺服器 {guild_id} 不存在，標記為已處理")
                     self.mark_as_removed(user_id, guild_id, role_id)
+                    removed_count += 1
                     continue
                 
                 member = guild.get_member(user_id)
                 if not member:
-                    print(f"[RoleExpiration] 找不到會員 {user_id} 在伺服器 {guild_id}")
+                    print(f"[RoleExpiration] ⚠️ 用戶 {user_id} 不在伺服器 {guild_id}，標記為已處理")
                     self.mark_as_removed(user_id, guild_id, role_id)
+                    removed_count += 1
                     continue
                 
                 role = guild.get_role(role_id)
                 if not role:
-                    print(f"[RoleExpiration] 找不到角色 {role_id}")
+                    print(f"[RoleExpiration] ⚠️ 角色 {role_id} ({role_name}) 不存在，標記為已處理")
                     self.mark_as_removed(user_id, guild_id, role_id)
+                    removed_count += 1
                     continue
                 
-                # 移除角色
+                # 檢查成員是否擁有該角色
                 if role in member.roles:
-                    await member.remove_roles(role)
-                    print(f"[RoleExpiration] ✅ 已移除 {member.display_name} 的 {role_name}")
+                    await member.remove_roles(role, reason="臨時角色已過期")
+                    print(f"[RoleExpiration] ✅ 已移除 {member.display_name} 的 {role_name} 身分")
                     removed_count += 1
+                else:
+                    # 角色已不在成員上，直接標記為已處理
+                    print(f"[RoleExpiration] ℹ️ {member.display_name} 已不擁有 {role_name} 身分")
                 
-                # 標記為已移除
+                # 標記為已移除（無論是否實際移除了角色）
                 self.mark_as_removed(user_id, guild_id, role_id)
                 
             except Exception as e:
-                print(f"[RoleExpiration] 移除失敗 ({user_id}, {role_id}): {e}")
+                print(f"[RoleExpiration] ❌ 移除失敗 (用戶 {user_id}, 角色 {role_id}): {e}")
         
         if removed_count > 0:
-            print(f"[RoleExpiration] ✅ 本次清理移除了 {removed_count} 個過期角色")
+            print(f"[RoleExpiration] ✅ 本次清理完成：移除了 {removed_count} 個過期角色")
         
         return removed_count
 

@@ -309,19 +309,21 @@ class FileEventHandler(FileSystemEventHandler):
 # 狀態更新任務
 # ============================================================
 # ============================================================
-# 定期清理過期角色的任務 (每 5 分鐘檢查一次)
+# 定期清理過期角色的任務 (每 1 小時檢查一次)
 # ============================================================
-@tasks.loop(minutes=5)
+@tasks.loop(hours=1)
 async def cleanup_expired_roles_loop():
-    """定期檢查並移除過期的臨時角色"""
+    """定期檢查並移除過期的臨時角色（每小時執行一次）"""
     try:
         from cogs.shop.role_expiration_manager import get_manager as get_expiration_manager
         manager = get_expiration_manager()
         removed_count = await manager.cleanup_expired_roles(client)
         if removed_count > 0:
-            print(f"[CLEANUP] Removed {removed_count} expired roles")
+            print(f"[CLEANUP] ✅ 已移除 {removed_count} 個過期角色")
+        else:
+            print(f"[CLEANUP] 檢查完成，無過期角色")
     except (ImportError, AttributeError) as e:
-        print(f"[WARNING] Failed to cleanup roles: {e}")
+        print(f"[CLEANUP] ❌ 清理失敗: {e}")
 
 @cleanup_expired_roles_loop.before_loop
 async def before_cleanup_expired_roles():
@@ -563,11 +565,11 @@ async def on_ready():
         try:
             from cogs.shop.role_expiration_manager import get_manager as get_expiration_manager
             manager = get_expiration_manager()
+            print(f"[BOT] 機器人啟動時執行過期角色清理...")
             removed_count = await manager.cleanup_expired_roles(client)
-            if removed_count > 0:
-                print(f"[CLEANUP] Removed {removed_count} expired roles")
+            print(f"[BOT] ✅ 啟動時清理完成：移除 {removed_count} 個過期角色")
         except (ImportError, AttributeError, RuntimeError) as e:
-            print(f"[WARNING] Failed to cleanup expired roles: {e}")
+            print(f"[BOT] ❌ 清理過期角色失敗: {e}")
         
         # ============================================================
         # 初始化監控儀表板及日誌系統（簡化版本 - 僅日誌）
@@ -622,7 +624,7 @@ async def on_ready():
         # 啟動角色過期清理任務
         if not cleanup_expired_roles_loop.is_running():
             cleanup_expired_roles_loop.start()
-            print("[SCHEDULER] Role expiration cleanup started (5 min interval)")
+            print("[SCHEDULER] ✅ 角色過期清理任務已啟動 (每 1 小時檢查一次)")
         
     except (ImportError, OSError, RuntimeError) as e:
         # 錯誤也使用單一 print
