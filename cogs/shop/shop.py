@@ -553,6 +553,15 @@ class ButtonInteraction(commands.Cog):
                     value=f"{expire_days} 天\n到期：{expires_at.strftime('%Y-%m-%d %H:%M')}",
                     inline=False
                 )
+            
+            # 進階組員的權限說明
+            if role_name == "進階組員":
+                embed.add_field(
+                    name="🔧 進階組員權限",
+                    value="✅ 可以刪除別人的訊息\n（此身分為期限制，到期自動移除）",
+                    inline=False
+                )
+            
             await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:

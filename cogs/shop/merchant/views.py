@@ -383,7 +383,7 @@ class RoleShopView(View):
         item = ROLE_SHOP["七彩披風"]
         await self.cog.handle_role_purchase(interaction, "七彩披風", item["price"], item["role_id"], item["duration"])
 
-    @discord.ui.button(label="進階組員 (75 KKcoin/1週)", style=discord.ButtonStyle.blurple, custom_id="persistent_buy_vip")
+    @discord.ui.button(label="進階組員 (500 KKcoin/1週)", style=discord.ButtonStyle.blurple, custom_id="persistent_buy_vip")
     async def vip_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         item = ROLE_SHOP["進階組員"]
         await self.cog.handle_role_purchase(interaction, "進階組員", item["price"], item["role_id"], item["duration"])
