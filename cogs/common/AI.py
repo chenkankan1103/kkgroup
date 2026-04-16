@@ -42,7 +42,7 @@ except ImportError:
 
 # ─── 基於提示的函數呼叫系統（支援 Groq）─────────────────────────────────
 try:
-    from prompt_function_calling import (
+    from shared.utils.prompt_function_calling import (
         build_system_prompt_with_tools,
         extract_function_calls,
         extract_response_without_calls,
@@ -383,13 +383,15 @@ class AIResponse(commands.Cog):
         else:
             logger.debug(f"💬 檢測到普通對話，maxOutputTokens 設為 {max_tokens}（簡潔回應）")
         
-        # 可選：加入工具列表（如果啟用且可用）
         # 可選：加入工具列表（只在啟用工具模式時）
-        if use_tools and _TOOLS_AVAILABLE:
+        # ⚠️ 注意：Gemini 只在非常少量情況下用工具
+        # 大部分工具呼叫應該在 Groq 上進行（見 call_ai_api 的智能排序）
+        # 這裡只保留備用邏輯，不應該經常執行
+        if use_tools and _TOOLS_AVAILABLE and False:  # 暫時禁用 Gemini 工具
             payload["tools"] = agent_tools.get_gemini_tools_spec()
             logger.info("🔧 工具列表已加入 Gemini payload (消耗 ~1000+ tokens)")
         else:
-            logger.debug("ℹ️ 工具已禁用，專注於通用 AI 回應")
+            logger.debug("ℹ️ Gemini 專注於普通對話（工具呼叫已移至 Groq）")
         
         return payload
     
@@ -431,12 +433,29 @@ class AIResponse(commands.Cog):
                 effective_system_prompt = f"{system_prompt}\n\n🧠 前文摘要 (記住這些重要信息): {summary}"
                 logger.debug(f"🧠 已為用戶 {user_id} 注入對話摘要: {summary[:50]}...")
         
-        logger.info(f"🔄 開始嘗試 API（共 {len(self._api_attempts)} 個）: {' → '.join([name for name, *_ in self._api_attempts])}")
+        # 🔧 智能 API 排序：根據是否需要工具來決定優先級
+        needs_tools = should_enable_agent_mode(user_prompt)
+        
+        # 決定使用哪個 API 列表
+        if needs_tools:
+            # 需要工具 → 優先用 Groq（配額寬鬆，支持工具呼叫）
+            # Groq 使用基於提示的工具呼叫，不會導致 token 爆炸
+            api_attempts_to_use = [api for api in self._api_attempts if api[0] == 'Groq']
+            if not api_attempts_to_use:
+                # 備用：Groq 沒有配置，回到原有的優先級
+                api_attempts_to_use = self._api_attempts
+            logger.info(f"🔧 檢測到需要工具，優先使用 Groq 進行工具呼叫")
+        else:
+            # 普通對話 → 優先用 Gemini（節省配額）
+            api_attempts_to_use = self._api_attempts
+            logger.debug(f"💬 普通對話，使用標準 API 優先級")
+        
+        logger.info(f"🔄 開始嘗試 API（共 {len(api_attempts_to_use)} 個）: {' → '.join([name for name, *_ in api_attempts_to_use])}")
         
         gemini_failed_reason = None
         import time  # 用於冷却機制
         
-        for api_name, url, api_key, model, api_type in self._api_attempts:
+        for api_name, url, api_key, model, api_type in api_attempts_to_use:
             try:
                 # ❄️ API 冷却機制 - 避免頻繁撞超限 API
                 if api_name in self.api_cooldowns:
@@ -539,8 +558,16 @@ class AIResponse(commands.Cog):
                         "Content-Type": "application/json"
                     }
                     
-                    # 準備系統提示 - 無工具功能，專注於通用 AI 回應
-                    enhanced_system = effective_system_prompt + "\n請在 150 字內簡潔回覆，禁止廢話。"
+                    # 🔧 Groq 工具支持 - 使用基於提示的工具呼叫
+                    enhanced_system = effective_system_prompt
+                    
+                    if needs_tools and _PROMPT_FC_AVAILABLE and _TOOLS_AVAILABLE:
+                        # 在系統提示中教導 Groq 如何呼叫工具
+                        enhanced_system = build_system_prompt_with_tools(effective_system_prompt)
+                        logger.info(f"🔧 已為 Groq 加入工具支持（基於提示的工具呼叫）")
+                    else:
+                        # 無工具，專注於通用 AI 回應
+                        enhanced_system += "\n請在 150 字內簡潔回覆，禁止廢話。"
                     
                     # 如果之前 Gemini 失敗，添加降級提示
                     if gemini_failed_reason and "Groq" in api_name:
@@ -554,11 +581,11 @@ class AIResponse(commands.Cog):
                             {"role": "user", "content": user_prompt}
                         ],
                         "temperature": 0.7,  # 優化：降低至 0.7 以獲得更穩定的回應
-                        "max_tokens": 300
+                        "max_tokens": 800 if needs_tools else 300  # 工具呼叫需要更多 token
                     }
 
                     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                        # ── 第一次請求 ──────────────────────────────────────────────
+                        # ── 第一次請求（可能返回工具呼叫） ──────────────────
                         async with session.post(full_url, headers=headers, json=payload) as resp:
                             response_text = await resp.text()
 
@@ -582,12 +609,52 @@ class AIResponse(commands.Cog):
                                 first_response = data["choices"][0]["message"]["content"].strip()
                                 
                                 if first_response:
-                                    logger.info(f"✅ 使用以下 API 成功回應:")
-                                    logger.info(f"   - API 名稱: {api_name}")
-                                    logger.info(f"   - 模型: {model}")
-                                    logger.info(f"   - 回應長度: {len(first_response)} 字符")
-                                    logger.info("═" * 60)
-                                    return first_response
+                                    # 🔧 如果啟用了工具，檢測並執行工具呼叫
+                                    if needs_tools and _PROMPT_FC_AVAILABLE:
+                                        # 檢測工具呼叫
+                                        function_calls = extract_function_calls(first_response)
+                                        
+                                        if function_calls:
+                                            logger.info(f"🔧 檢測到工具呼叫（共 {len(function_calls)} 個）")
+                                            
+                                            # 執行工具並獲取結果
+                                            results = execute_extracted_calls(function_calls)
+                                            
+                                            if results:
+                                                # 將工具結果作為上下文發送給 Groq，讓它基於結果生成最終回答
+                                                tool_results_context = format_call_results_for_context(function_calls, results)
+                                                
+                                                # 第二次請求：基於工具結果生成最終回答
+                                                payload["messages"] = [
+                                                    {"role": "system", "content": effective_system_prompt},
+                                                    {"role": "user", "content": user_prompt},
+                                                    {"role": "assistant", "content": first_response},
+                                                    {"role": "user", "content": f"工具執行結果:\n{tool_results_context}\n\n請基於這些結果提供最終回答。"}
+                                                ]
+                                                
+                                                async with session.post(full_url, headers=headers, json=payload) as resp2:
+                                                    response_text2 = await resp2.text()
+                                                    if resp2.status == 200:
+                                                        data2 = _json.loads(response_text2)
+                                                        if "choices" in data2 and data2["choices"]:
+                                                            final_response = data2["choices"][0]["message"]["content"].strip()
+                                                            if final_response:
+                                                                logger.info(f"✅ 使用以下 API 成功回應:")
+                                                                logger.info(f"   - API 名稱: {api_name}")
+                                                                logger.info(f"   - 模型: {model}")
+                                                                logger.info(f"   - 工具呼叫: {len(function_calls)} 個")
+                                                                logger.info(f"   - 最終回應長度: {len(final_response)} 字符")
+                                                                logger.info("═" * 60)
+                                                                return final_response
+                    
+                    # 如果沒有工具呼叫或工具執行失敗，直接返回 Groq 的第一次回答
+                    if first_response:
+                        logger.info(f"✅ 使用以下 API 成功回應:")
+                        logger.info(f"   - API 名稱: {api_name}")
+                        logger.info(f"   - 模型: {model}")
+                        logger.info(f"   - 回應長度: {len(first_response)} 字符")
+                        logger.info("═" * 60)
+                        return first_response
 
 
             except asyncio.TimeoutError:
