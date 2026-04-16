@@ -509,5 +509,15 @@ class HospitalMerchant(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(HospitalMerchant(bot))
+    merchant_cog = HospitalMerchant(bot)
+    await bot.add_cog(merchant_cog)
+    
+    # 預先註冊持久視圖
+    try:
+        stamina_view = PersistentStaminaView(merchant_cog)
+        bot.add_view(stamina_view)
+        logging.info("[HOSPITAL] ✅ 已註冊 PersistentStaminaView 為持久視圖")
+    except Exception as e:
+        logging.error(f"[HOSPITAL] ⚠️  無法註冊 PersistentStaminaView: {e}")
+    
     logging.info("HospitalMerchant Cog 已成功載入")
