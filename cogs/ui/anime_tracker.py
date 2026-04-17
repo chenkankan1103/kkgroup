@@ -1610,6 +1610,11 @@ class AnimeTracker(commands.Cog):
                 try:
                     embed = await self.generate_anime_embed(ep)
                     view = await self.generate_anime_view(ep)
+                    
+                    # 📌 關鍵：註冊永久視圖到 bot，否則按鈕點擊不會被識別
+                    if view:
+                        self.bot.add_view(view)
+                    
                     message = await channel.send(embed=embed, view=view, silent=True)
                     
                     # 記錄已通知
@@ -1744,6 +1749,11 @@ class AnimeTracker(commands.Cog):
                 try:
                     embed = await self.generate_anime_embed(ep)
                     view = await self.generate_anime_view(ep)
+                    
+                    # 📌 關鍵：註冊永久視圖到 bot，否則按鈕點擊不會被識別
+                    if view:
+                        self.bot.add_view(view)
+                    
                     message = await interaction.followup.send(embed=embed, view=view, silent=True)
                     
                     sent_count += 1
