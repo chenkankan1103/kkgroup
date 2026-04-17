@@ -60,6 +60,7 @@ BOOTSTRAP_FLAG_TABLE = "anime_bootstrap"
 ANIME_DETAILS_TABLE = "anime_details"  # 永恆快取動畫詳細信息
 ANIME_STATS_TABLE = "anime_statistics"  # 動畫統計數據（觀看人數、評分趨勢等）
 EPISODE_STATS_TABLE = "episode_statistics"  # 每集統計數據
+ANIME_MESSAGES_TABLE = "anime_messages"  # 消息 ID 追蹤（用於 bot 重啟時恢復 view）
 ANIME_VOTES_TABLE = "anime_votes"  # 匿名投票結果
 ANIME_REWARDS_TABLE = "anime_rewards"  # KK幣獎勵追踪（防止重複發放）
 
@@ -136,6 +137,18 @@ class AnimeDatabase:
                     )
                 """)
                 
+                # 5.5. 消息 ID 追蹤表（用於 bot 重啟時恢復 view）
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {ANIME_MESSAGES_TABLE} (
+                        message_id INTEGER PRIMARY KEY,
+                        videoSn INTEGER NOT NULL,
+                        animeSn INTEGER NOT NULL,
+                        anime_name TEXT NOT NULL,
+                        channel_id INTEGER NOT NULL,
+                        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
                 # 6. 匿名投票結果表
                 cursor.execute(f"""
                     CREATE TABLE IF NOT EXISTS {ANIME_VOTES_TABLE} (
@@ -170,7 +183,7 @@ class AnimeDatabase:
                 existing_tables = {row[0] for row in cursor.fetchall()}
                 required_tables = {
                     NOTIFIED_TABLE, BOOTSTRAP_FLAG_TABLE, ANIME_DETAILS_TABLE,
-                    ANIME_STATS_TABLE, EPISODE_STATS_TABLE
+                    ANIME_STATS_TABLE, EPISODE_STATS_TABLE, ANIME_MESSAGES_TABLE
                 }
                 missing_tables = required_tables - existing_tables
                 
@@ -658,6 +671,47 @@ class AnimeDatabase:
         except Exception as e:
             logger.error(f"❌ Error checking reward: {e}")
             return False
+    
+    def save_message_info(self, message_id: int, video_sn: int, anime_sn: int, anime_name: str, channel_id: int) -> bool:
+        """保存消息 ID 以用於 bot 重啟時恢復 view"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT OR REPLACE INTO {ANIME_MESSAGES_TABLE}
+                    (message_id, videoSn, animeSn, anime_name, channel_id, sent_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (message_id, video_sn, anime_sn, anime_name, channel_id))
+                conn.commit()
+                logger.info(f"💾 [save_message_info] message_id={message_id}, video_sn={video_sn}, anime_name={anime_name}")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Error saving message info: {e}")
+            return False
+    
+    def get_all_message_infos(self) -> List[Dict]:
+        """獲取所有已保存的消息 ID，用於 bot 重啟時恢復"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT message_id, videoSn, animeSn, anime_name, channel_id 
+                    FROM {ANIME_MESSAGES_TABLE}
+                    ORDER BY sent_at DESC
+                """)
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        "message_id": row[0],
+                        "video_sn": row[1],
+                        "anime_sn": row[2],
+                        "anime_name": row[3],
+                        "channel_id": row[4]
+                    })
+                return results
+        except Exception as e:
+            logger.error(f"❌ Error getting message infos: {e}")
+            return []
 
 
 # ==================== 匿名投票 View 類 ====================
@@ -1030,6 +1084,10 @@ class AnimeTracker(commands.Cog):
         logger.info("=" * 50)
         logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
         try:
+            # 首先恢復舊消息的 view
+            logger.info("🎬 [AnimeTracker.cog_load] 準備恢復舊消息 view...")
+            await self._restore_old_message_views()
+            
             logger.info("📺 [AnimeTracker.cog_load] 準備啟動任務...")
             logger.info(f"📺 [AnimeTracker.cog_load] 任務運行狀態: {self.check_new_anime.is_running()}")
             if not self.check_new_anime.is_running():
@@ -1042,6 +1100,77 @@ class AnimeTracker(commands.Cog):
         except Exception as e:
             logger.error(f"❌ [AnimeTracker.cog_load] 任務啟動失敗: {e}", exc_info=True)
         logger.info("=" * 50)
+    
+    async def _restore_old_message_views(self):
+        """恢復舊消息的 view（用於 bot 重啟時）"""
+        logger.info("=" * 50)
+        logger.info("🔄 [_restore_old_message_views] 開始恢復舊消息 view...")
+        
+        try:
+            # 等待 bot 就緒
+            await self.bot.wait_until_ready()
+            
+            # 獲取所有已保存的消息信息
+            message_infos = self.db.get_all_message_infos()
+            if not message_infos:
+                logger.info("ℹ️ [_restore_old_message_views] 沒有舊消息需要恢復")
+                return
+            
+            logger.info(f"📋 [_restore_old_message_views] 發現 {len(message_infos)} 個需要恢復的舊消息")
+            
+            restored_count = 0
+            for msg_info in message_infos:
+                try:
+                    message_id = msg_info["message_id"]
+                    video_sn = msg_info["video_sn"]
+                    anime_sn = msg_info["anime_sn"]
+                    anime_name = msg_info["anime_name"]
+                    channel_id = msg_info["channel_id"]
+                    
+                    # 獲取頻道
+                    channel = self.bot.get_channel(channel_id)
+                    if not channel:
+                        logger.warning(f"⚠️ [_restore_old_message_views] 找不到頻道 ID={channel_id}")
+                        continue
+                    
+                    # 嘗試獲取舊消息
+                    try:
+                        message = await channel.fetch_message(message_id)
+                    except discord.NotFound:
+                        logger.warning(f"⚠️ [_restore_old_message_views] 消息不存在 ID={message_id}")
+                        continue
+                    except discord.Forbidden:
+                        logger.warning(f"⚠️ [_restore_old_message_views] 無權限訪問消息 ID={message_id}")
+                        continue
+                    
+                    # 為這條舊消息創建新的 view
+                    episode_data = {
+                        "videoSn": video_sn,
+                        "animeSn": anime_sn,
+                        "title": anime_name
+                    }
+                    view = await self.generate_anime_view(episode_data)
+                    
+                    if view is None:
+                        logger.warning(f"⚠️ [_restore_old_message_views] 視圖生成失敗 (message_id={message_id})")
+                        continue
+                    
+                    # 註冊視圖到 bot
+                    self.bot.add_view(view)
+                    logger.info(f"🔗 [_restore_old_message_views] 恢復消息 ID={message_id}, video_sn={video_sn}, anime_name={anime_name}")
+                    
+                    restored_count += 1
+                    await asyncio.sleep(0.1)  # 避免 API 限流
+                    
+                except Exception as e:
+                    logger.error(f"❌ [_restore_old_message_views] 恢復單條消息失敗: {e}")
+                    continue
+            
+            logger.info(f"✅ [_restore_old_message_views] 成功恢復 {restored_count}/{len(message_infos)} 個舊消息 view")
+        except Exception as e:
+            logger.error(f"❌ [_restore_old_message_views] 恢復過程失敗: {e}", exc_info=True)
+        finally:
+            logger.info("=" * 50)
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
@@ -1637,6 +1766,16 @@ class AnimeTracker(commands.Cog):
                     message = await channel.send(embed=embed, view=view, silent=True)
                     logger.info(f"✅ [_check_and_send_anime] 消息已發送 (message_id={message.id}, video_sn={ep.get('videoSn')})")
                     
+                    # 💾 保存消息 ID 以用於 bot 重啟時恢復 view
+                    self.db.save_message_info(
+                        message_id=message.id,
+                        video_sn=ep.get("videoSn"),
+                        anime_sn=ep.get("animeSn"),
+                        anime_name=ep.get("title", "Unknown"),
+                        channel_id=channel.id
+                    )
+                    logger.info(f"💾 [_check_and_send_anime] 消息 ID 已保存到數據庫")
+                    
                     # 記錄已通知
                     self.db.add_notified(
                         video_sn=ep.get("videoSn"),
@@ -1781,6 +1920,16 @@ class AnimeTracker(commands.Cog):
                     
                     message = await interaction.followup.send(embed=embed, view=view, silent=True)
                     logger.info(f"✅ [anime_test] 消息已發送 (message_id={message.id}, video_sn={ep.get('videoSn')})")
+                    
+                    # 💾 保存消息 ID 以用於 bot 重啟時恢復 view
+                    self.db.save_message_info(
+                        message_id=message.id,
+                        video_sn=ep.get("videoSn"),
+                        anime_sn=ep.get("animeSn"),
+                        anime_name=ep.get("title", "Unknown"),
+                        channel_id=interaction.channel_id
+                    )
+                    logger.info(f"💾 [anime_test] 消息 ID 已保存到數據庫")
                     
                     sent_count += 1
                     await asyncio.sleep(0.2)  # 避免限流
