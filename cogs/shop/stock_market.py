@@ -38,9 +38,9 @@ from db_adapter import (
     get_dynamic_exchange_rate
 )
 from utils.stock_api import (
-from shared.utils.view_registry import PersistentViewBase
     fetch_price, fetch_chart, get_popular_stocks, fetch_historical_data
 )
+from shared.utils.view_registry import PersistentViewBase
 
 logger = logging.getLogger(__name__)
 
