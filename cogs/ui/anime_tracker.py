@@ -685,7 +685,10 @@ class AnimeVoteView(discord.ui.View):
         self.message_id = None
         self.last_interaction_time = None  # 用於追蹤最後互動時間
         
+        logger.info(f"📌 [AnimeVoteView.__init__] 開始創建視圖，video_sn={self.video_sn}")
+        
         # 添加投票按鈕
+        button_count = 0
         for vote_key, (vote_label, color_emoji) in self.VOTE_TYPES.items():
             # 根據投票類型選擇按鈕樣式
             button_style = discord.ButtonStyle.secondary  # 預設灰色
@@ -704,6 +707,9 @@ class AnimeVoteView(discord.ui.View):
             )
             button.callback = self._vote_callback
             self.add_item(button)
+            button_count += 1
+        
+        logger.info(f"✅ [AnimeVoteView.__init__] 添加了 {button_count} 個投票按鈕")
         
         # 添加評論按鈕
         comment_button = discord.ui.Button(
@@ -713,6 +719,8 @@ class AnimeVoteView(discord.ui.View):
         )
         comment_button.callback = self._comment_callback
         self.add_item(comment_button)
+        
+        logger.info(f"✅ [AnimeVoteView.__init__] 添加了評論按鈕，目前共有 {len(self.children)} 個項目")
     
     async def _vote_callback(self, interaction: discord.Interaction):
         """處理投票按鈕點擊 - 投票 +2000 KK幣（每個用戶每條消息只適用一次）"""
@@ -1480,7 +1488,9 @@ class AnimeTracker(commands.Cog):
     async def generate_anime_view(self, episode: Dict) -> Optional[discord.ui.View]:
         """生成 Discord 按鈕視圖，包括投票按鈕 + 動畫頁與本集連結。"""
         # 創建投票視圖
+        logger.info(f"🔧 [generate_anime_view] 開始創建投票視圖")
         vote_view = AnimeVoteView(episode, self)
+        logger.info(f"✅ [generate_anime_view] 投票視圖創建完成，按鈕數: {len(vote_view.children)}")
         
         # 添加原有的連結按鈕
         anime_sn = episode.get("animeSn")
@@ -1489,10 +1499,14 @@ class AnimeTracker(commands.Cog):
         if anime_sn:
             anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
             vote_view.add_item(discord.ui.Button(label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link))
+            logger.info(f"✅ [generate_anime_view] 添加動畫頁按鈕")
         
         if video_sn:
             video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
             vote_view.add_item(discord.ui.Button(label="▶️ 觀看", url=video_url, style=discord.ButtonStyle.link))
+            logger.info(f"✅ [generate_anime_view] 添加觀看按鈕")
+        
+        logger.info(f"📋 [generate_anime_view] 最終按鈕數: {len(vote_view.children)}")
         
         return vote_view if vote_view.children else None
     
@@ -1611,11 +1625,17 @@ class AnimeTracker(commands.Cog):
                     embed = await self.generate_anime_embed(ep)
                     view = await self.generate_anime_view(ep)
                     
+                    if view is None:
+                        logger.warning(f"⚠️ [_check_and_send_anime] 視圖為 None，無法發送消息 (video_sn={ep.get('videoSn')})")
+                        continue
+                    
                     # 📌 關鍵：註冊永久視圖到 bot，否則按鈕點擊不會被識別
-                    if view:
-                        self.bot.add_view(view)
+                    logger.info(f"🔗 [_check_and_send_anime] 註冊視圖到 bot (video_sn={ep.get('videoSn')})")
+                    self.bot.add_view(view)
+                    logger.info(f"✅ [_check_and_send_anime] 視圖已註冊")
                     
                     message = await channel.send(embed=embed, view=view, silent=True)
+                    logger.info(f"✅ [_check_and_send_anime] 消息已發送 (message_id={message.id}, video_sn={ep.get('videoSn')})")
                     
                     # 記錄已通知
                     self.db.add_notified(
@@ -1750,11 +1770,17 @@ class AnimeTracker(commands.Cog):
                     embed = await self.generate_anime_embed(ep)
                     view = await self.generate_anime_view(ep)
                     
+                    if view is None:
+                        logger.warning(f"⚠️ [anime_test] 視圖為 None，跳過消息 (video_sn={ep.get('videoSn')})")
+                        continue
+                    
                     # 📌 關鍵：註冊永久視圖到 bot，否則按鈕點擊不會被識別
-                    if view:
-                        self.bot.add_view(view)
+                    logger.info(f"🔗 [anime_test] 註冊視圖到 bot (video_sn={ep.get('videoSn')})")
+                    self.bot.add_view(view)
+                    logger.info(f"✅ [anime_test] 視圖已註冊")
                     
                     message = await interaction.followup.send(embed=embed, view=view, silent=True)
+                    logger.info(f"✅ [anime_test] 消息已發送 (message_id={message.id}, video_sn={ep.get('videoSn')})")
                     
                     sent_count += 1
                     await asyncio.sleep(0.2)  # 避免限流
