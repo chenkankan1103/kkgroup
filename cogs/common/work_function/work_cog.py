@@ -16,6 +16,7 @@ from .work_system import (
     get_taiwan_time
 )
 from status_dashboard import add_log
+from shared.utils.view_registry import PersistentViewBase
 
 def get_bot_type(client):
     """根據機器人用戶名確定bot_type"""

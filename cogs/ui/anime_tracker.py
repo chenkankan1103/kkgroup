@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Optional, Dict, List
 import pytz  # 用於台灣時區轉換
 from urllib.parse import quote  # 用於生成 QuickChart URL
+from shared.utils.view_registry import PersistentViewBase
 
 # 台灣時區
 TW_TZ = pytz.timezone('Asia/Taipei')

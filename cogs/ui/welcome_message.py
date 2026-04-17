@@ -16,6 +16,7 @@ import time
 import re
 from datetime import datetime
 from db_adapter import get_user, set_user, get_user_field, set_user_field
+from shared.utils.view_registry import PersistentViewBase
 
 load_dotenv()
 

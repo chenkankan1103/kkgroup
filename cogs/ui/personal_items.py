@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from status_dashboard import add_log
+from shared.utils.view_registry import PersistentViewBase
 
 class PersonalItemsView(discord.ui.View):
     def __init__(self, cog, user_id, thread):

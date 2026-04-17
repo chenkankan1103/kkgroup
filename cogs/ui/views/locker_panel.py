@@ -7,6 +7,7 @@ from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
 from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 from .work_card import WorkCardModal, WorkCardEditView, WorkCardActionView
 from status_dashboard import add_log
+from shared.utils.view_registry import PersistentViewBase
 
 
 class LockerPanelView(discord.ui.View):

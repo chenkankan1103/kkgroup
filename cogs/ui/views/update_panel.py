@@ -1,5 +1,6 @@
 import discord
 import time
+from shared.utils.view_registry import PersistentViewBase
 
 
 class UpdatePanelView(discord.ui.View):
