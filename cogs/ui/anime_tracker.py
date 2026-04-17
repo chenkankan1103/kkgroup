@@ -1688,10 +1688,9 @@ class AnimeTracker(commands.Cog):
                 # 初始化追蹤狀態
                 if scheduled_time_str not in self.anime_retry_queue:
                     self.anime_retry_queue[scheduled_time_str] = {
-                        'checked': False,  # 是否已檢查過
                         'found': False,    # 是否已找到新集
                         'start_time': now,
-                        'last_check_time': now,  # 上次檢查時間，用於計算重試間隔
+                        # checked_at_5, checked_at_10 等會在檢查時動態設置
                     }
                 
                 # 解析預定時刻
@@ -1704,35 +1703,34 @@ class AnimeTracker(commands.Cog):
                 # 計算時間差（分鐘）
                 time_diff_min = (now - scheduled_dt).total_seconds() / 60
                 
-                # 在 +3~+40 分鐘窗口內執行檢查
-                # 注：Bahamut API 更新延遲達 27 分鐘
-                # 策略：找到新集就停止，沒找到就每 3 分鐘重試一次（最多4次）
-                if 3 <= time_diff_min < 40:
+                # 在 +3~+32 分鐘窗口內，於固定的檢查分鐘點執行檢查
+                # 檢查時間點：+5, +10, +15, +20, +25, +30（容差 ±1 分鐘）
+                CHECK_INTERVALS = [5, 10, 15, 20, 25, 30]
+                
+                if 3 <= time_diff_min < 32:
                     state = self.anime_retry_queue[scheduled_time_str]
                     
                     # 如果已找到新集，就不再檢查
                     if state['found']:
                         continue
                     
-                    # 計算距離上次檢查的時間（第一次檢查或重試）
-                    last_check_time = state.get('last_check_time', state['start_time'])
-                    time_since_last_check = (now - last_check_time).total_seconds() / 60
-                    
-                    # 在 +3~+5 分鐘首次檢查，之後每 3 分鐘重試一次
-                    should_check = (time_diff_min < 5 and not state['checked']) or (time_since_last_check >= 3 and state['checked'] and not state['found'])
-                    
-                    if should_check:
-                        logger.info(f"📺 [check_new_anime] 檢查時刻 {scheduled_time_str} ({now.strftime('%H:%M:%S')}, +{time_diff_min:.0f}分鐘)")
+                    # 檢查是否在某個檢查分鐘點附近（容差 ±0.5 分鐘 = ±30秒）
+                    for check_minute in CHECK_INTERVALS:
+                        check_key = f"checked_at_{check_minute}"
                         
-                        # 執行檢查
-                        new_found = await self._check_and_send_anime(scheduled_time_str, channel)
-                        
-                        # 更新狀態
-                        state['checked'] = True
-                        state['last_check_time'] = now
-                        if new_found:
-                            state['found'] = True
-                            logger.info(f"✅ [check_new_anime] 找到新集，停止檢查時刻 {scheduled_time_str}")
+                        # 如果該分鐘點還沒檢查過，且時間接近
+                        if not state.get(check_key, False) and abs(time_diff_min - check_minute) < 0.5:
+                            logger.info(f"📺 [check_new_anime] 在 +{check_minute} 分鐘檢查 {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
+                            
+                            # 執行檢查
+                            new_found = await self._check_and_send_anime(scheduled_time_str, channel)
+                            
+                            # 標記該分鐘點已檢查
+                            state[check_key] = True
+                            if new_found:
+                                state['found'] = True
+                                logger.info(f"✅ [check_new_anime] 找到新集，停止檢查時刻 {scheduled_time_str}")
+                            break
                 
                 # 清理過期的數據（超過 12 小時）
                 if time_diff_min > 720:
