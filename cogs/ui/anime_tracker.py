@@ -1691,6 +1691,7 @@ class AnimeTracker(commands.Cog):
                         'checked': False,  # 是否已檢查過
                         'found': False,    # 是否已找到新集
                         'start_time': now,
+                        'last_check_time': now,  # 上次檢查時間，用於計算重試間隔
                     }
                 
                 # 解析預定時刻
@@ -1703,17 +1704,35 @@ class AnimeTracker(commands.Cog):
                 # 計算時間差（分鐘）
                 time_diff_min = (now - scheduled_dt).total_seconds() / 60
                 
-                # 在 +3~+40 分鐘窗口內執行檢查（只執行一次）
-                # 注：Bahamut API 更新延遲達 27 分鐘，需要較長的檢查窗口
+                # 在 +3~+40 分鐘窗口內執行檢查
+                # 注：Bahamut API 更新延遲達 27 分鐘
+                # 策略：找到新集就停止，沒找到就每 3 分鐘重試一次（最多4次）
                 if 3 <= time_diff_min < 40:
-                    if not self.anime_retry_queue[scheduled_time_str]['checked']:
-                        logger.info(f"📺 [check_new_anime] +3~40分鐘檢查窗口: {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
+                    state = self.anime_retry_queue[scheduled_time_str]
+                    
+                    # 如果已找到新集，就不再檢查
+                    if state['found']:
+                        continue
+                    
+                    # 計算距離上次檢查的時間（第一次檢查或重試）
+                    last_check_time = state.get('last_check_time', state['start_time'])
+                    time_since_last_check = (now - last_check_time).total_seconds() / 60
+                    
+                    # 在 +3~+5 分鐘首次檢查，之後每 3 分鐘重試一次
+                    should_check = (time_diff_min < 5 and not state['checked']) or (time_since_last_check >= 3 and state['checked'] and not state['found'])
+                    
+                    if should_check:
+                        logger.info(f"📺 [check_new_anime] 檢查時刻 {scheduled_time_str} ({now.strftime('%H:%M:%S')}, +{time_diff_min:.0f}分鐘)")
                         
                         # 執行檢查
-                        await self._check_and_send_anime(scheduled_time_str, channel)
+                        new_found = await self._check_and_send_anime(scheduled_time_str, channel)
                         
-                        # 標記已檢查
-                        self.anime_retry_queue[scheduled_time_str]['checked'] = True
+                        # 更新狀態
+                        state['checked'] = True
+                        state['last_check_time'] = now
+                        if new_found:
+                            state['found'] = True
+                            logger.info(f"✅ [check_new_anime] 找到新集，停止檢查時刻 {scheduled_time_str}")
                 
                 # 清理過期的數據（超過 12 小時）
                 if time_diff_min > 720:
@@ -1723,20 +1742,23 @@ class AnimeTracker(commands.Cog):
         except Exception as e:
             logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
     
-    async def _check_and_send_anime(self, scheduled_time_str: str, channel):
+    async def _check_and_send_anime(self, scheduled_time_str: str, channel) -> bool:
         """
         檢查新番集並發送通知（用於多窗口檢查）
         
         Args:
             scheduled_time_str: 預定時刻字符串，例如 "14:30"
             channel: Discord 頻道物件
+            
+        Returns:
+            bool: 是否找到並發送了新集
         """
         try:
             # 獲取最新動畫數據
             episodes = await self.fetch_new_anime_from_api()
             if not episodes:
                 logger.warning(f"⚠️ [_check_and_send_anime] 無法從 API 獲取數據 (時刻: {scheduled_time_str})")
-                return
+                return False
             
             # 檢查新集
             new_episodes = []
@@ -1747,7 +1769,7 @@ class AnimeTracker(commands.Cog):
             
             if not new_episodes:
                 logger.info(f"⏭️  [{scheduled_time_str}] 沒有新集")
-                return
+                return False
             
             # 發送新集通知
             logger.info(f"🆕 [{scheduled_time_str}] 發現 {len(new_episodes)} 個新集，開始推播...")
@@ -1796,9 +1818,11 @@ class AnimeTracker(commands.Cog):
             # 標記為已找到
             self.anime_retry_queue[scheduled_time_str]['found'] = True
             logger.info(f"✅ [{scheduled_time_str}] 推播完成")
+            return True
         
         except Exception as e:
             logger.error(f"❌ Error in _check_and_send_anime: {e}", exc_info=True)
+            return False
     
     async def _get_anime_schedule(self) -> dict:
         """從 API 獲取日程表 (newAnimeSchedule)"""
