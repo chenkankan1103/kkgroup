@@ -1703,10 +1703,11 @@ class AnimeTracker(commands.Cog):
                 # 計算時間差（分鐘）
                 time_diff_min = (now - scheduled_dt).total_seconds() / 60
                 
-                # 在 +3~+5 分鐘窗口內執行檢查（只執行一次）
-                if 3 <= time_diff_min < 5:
+                # 在 +3~+40 分鐘窗口內執行檢查（只執行一次）
+                # 注：Bahamut API 更新延遲達 27 分鐘，需要較長的檢查窗口
+                if 3 <= time_diff_min < 40:
                     if not self.anime_retry_queue[scheduled_time_str]['checked']:
-                        logger.info(f"📺 [check_new_anime] +4分鐘檢查窗口: {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
+                        logger.info(f"📺 [check_new_anime] +3~40分鐘檢查窗口: {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
                         
                         # 執行檢查
                         await self._check_and_send_anime(scheduled_time_str, channel)
