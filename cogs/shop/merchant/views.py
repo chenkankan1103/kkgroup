@@ -5,6 +5,7 @@ import os
 import random
 import traceback
 from .config import RAINBOW_ROLE_ID, VIP_ROLE_ID, EQUIPMENT_SHOP, ROLE_SHOP
+from shared.utils.view_registry import PersistentViewBase
 
 class CustomAmountModal(Modal):
     def __init__(self, slot_machine_view):
@@ -255,9 +256,9 @@ class SlotMachineView(discord.ui.View):
             except:
                 pass  # 如果 followup 也失敗就靜默處理
 
-class PersistentView(View):
+class PersistentView(PersistentViewBase):
     def __init__(self, cog):
-        super().__init__(timeout=None)  # 持久化視圖必須 timeout=None
+        super().__init__()  # 持久化視圖必須 timeout=None
         self.cog = cog
 
     @discord.ui.button(label="探索", style=discord.ButtonStyle.grey, custom_id="persistent_explore")
@@ -270,9 +271,9 @@ class PersistentView(View):
         await interaction.response.send_message("你決定離開這片神秘的黑暗角落。", ephemeral=True)
 
 
-class ExploreView(View):
+class ExploreView(PersistentViewBase):
     def __init__(self, cog):
-        super().__init__(timeout=None)
+        super().__init__()
         self.cog = cog
 
     @discord.ui.button(label="🛒 商品區", style=discord.ButtonStyle.green, custom_id="persistent_products")
@@ -373,9 +374,9 @@ class ExploreView(View):
             except Exception:
                 pass
 
-class RoleShopView(View):
+class RoleShopView(PersistentViewBase):
     def __init__(self, cog):
-        super().__init__(timeout=None)
+        super().__init__()
         self.cog = cog
 
     @discord.ui.button(label="七彩披風 (500 KKcoin/1天)", style=discord.ButtonStyle.blurple, custom_id="persistent_buy_rainbow")
@@ -394,9 +395,9 @@ class RoleShopView(View):
         await interaction.response.edit_message(embed=embed, view=ExploreView(self.cog))
 
 
-class EquipmentShopView(View):
+class EquipmentShopView(PersistentViewBase):
     def __init__(self, cog):
-        super().__init__(timeout=None)  # 持久化視圖
+        super().__init__()  # 持久化視圖
         self.cog = cog
         self.current_category = "hair"
         self.update_items()

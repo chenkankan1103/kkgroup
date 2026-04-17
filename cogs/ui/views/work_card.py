@@ -1,6 +1,7 @@
 import discord
 import datetime
 from db_adapter import set_user_field, get_user
+from shared.utils.view_registry import PersistentViewBase
 
 
 class GenderSelectView(discord.ui.View):

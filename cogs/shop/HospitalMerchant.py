@@ -10,6 +10,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from typing import Optional
 from db_adapter import get_user, set_user_field, get_all_users
+from shared.utils.view_registry import PersistentViewBase
 
 load_dotenv()
 

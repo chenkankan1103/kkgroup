@@ -10,6 +10,7 @@ from discord.ui import Modal, TextInput, View, Button
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+from shared.utils.view_registry import PersistentViewBase
 
 # 載入環境變數
 load_dotenv()
@@ -136,11 +137,11 @@ class FeedbackModal(Modal):
                 pass
 
 
-class FeedbackView(View):
+class FeedbackView(PersistentViewBase):
     """包含回饋按鈕的視圖"""
     
     def __init__(self, bot):
-        super().__init__(timeout=None)
+        super().__init__()
         self.bot = bot
     
     @discord.ui.button(label="📝 提交意見回饋", style=discord.ButtonStyle.primary, custom_id="feedback_button")

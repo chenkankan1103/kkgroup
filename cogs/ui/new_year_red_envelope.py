@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # 用於更新用戶 KKcoin
 from cogs.shop.merchant.database import update_user_kkcoin, get_user_kkcoin
+from shared.utils.view_registry import PersistentViewBase
 
 DATA_PATH = Path("data")
 STORAGE_FILE = DATA_PATH / "red_envelopes.json"

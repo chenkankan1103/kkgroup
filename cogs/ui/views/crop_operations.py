@@ -7,6 +7,7 @@ from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_P
 from cogs.shop.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
 from cogs.shop.merchant.database import update_user_kkcoin
 from status_dashboard import add_log
+from shared.utils.view_registry import PersistentViewBase
 
 
 class CropOperationView(discord.ui.View):

@@ -5,13 +5,14 @@ import traceback
 from .database import get_user_kkcoin, update_user_kkcoin
 from .cannabis_farming import add_inventory, remove_inventory, get_inventory
 from .cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from shared.utils.view_registry import PersistentViewBase
 
 
-class CannabisMerchantView(View):
+class CannabisMerchantView(PersistentViewBase):
     """黑市商人 - 大麻購買選單"""
     
     def __init__(self, cog):
-        super().__init__(timeout=None)
+        super().__init__()
         self.cog = cog
     
     @discord.ui.button(label="購買種子", style=discord.ButtonStyle.success, emoji="🌱", custom_id="cannabis_buy_seeds")

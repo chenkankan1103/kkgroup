@@ -7,6 +7,7 @@ import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime
+from shared.utils.view_registry import PersistentViewBase
 
 load_dotenv()
 
@@ -130,11 +131,11 @@ class FeedbackModal(Modal):
             except:
                 pass  # 交互可能已過期
 
-class AnnouncementButtonView(View):
+class AnnouncementButtonView(PersistentViewBase):
     """公告按鈕選擇視圖"""
     
     def __init__(self, bot=None):
-        super().__init__(timeout=None)  # 永久視圖
+        super().__init__()  # 永久視圖
         self.bot = bot
         self.announcements = self._load_announcements()
         self.current_announcement_id = self.announcements[0]['id'] if self.announcements else None

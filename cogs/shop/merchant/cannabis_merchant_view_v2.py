@@ -6,6 +6,7 @@ import logging
 from .database import get_user_kkcoin, update_user_kkcoin
 from .cannabis_farming import add_inventory, remove_inventory, get_inventory
 from .cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from shared.utils.view_registry import PersistentViewBase
 
 # 取得 logger 用於上報錯誤
 logger = logging.getLogger(__name__)
@@ -23,11 +24,11 @@ def report_interaction_error(interaction: discord.Interaction, error: Exception,
     traceback.print_exc()
 
 
-class CannabisMerchantViewV2(View):
+class CannabisMerchantViewV2(PersistentViewBase):
     """黑市商人 - 大麻購買選單（改進版）"""
     
     def __init__(self, cog):
-        super().__init__(timeout=None)
+        super().__init__()
         self.cog = cog
         self.current_menu = "main"  # 追蹤當前菜單狀態
     
