@@ -738,14 +738,8 @@ class AnimeVoteView(discord.ui.View):
             
             logger.info(f"📊 [vote_callback] {interaction.user} 投票: {vote_label}")
             
-            # 立即回應用戶 (延長 3 秒超時)
+            # 立即回應用戶
             await interaction.response.defer()
-            
-            # 延長視圖超時 (新增)
-            if self.timeout is None:
-                self.timeout = 3  # 設置 3 秒的延長超時
-            else:
-                self.timeout = max(self.timeout + 3, 180)  # 每次加 3 秒，最多 3 分鐘
             
             # === KK幣獎勵邏輯 (投票 +2000) ===
             reward_given = False
@@ -818,12 +812,6 @@ class AnimeVoteView(discord.ui.View):
         try:
             # 記錄互動時間
             self.last_interaction_time = datetime.now(TW_TZ)
-            
-            # 延長視圖超時
-            if self.timeout is None:
-                self.timeout = 3
-            else:
-                self.timeout = max(self.timeout + 3, 180)
             
             # 創建簡單的文本輸入模態框
             class CommentModal(discord.ui.Modal, title="留下匿名評論"):
