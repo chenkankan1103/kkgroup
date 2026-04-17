@@ -717,6 +717,9 @@ class AnimeVoteView(discord.ui.View):
     async def _vote_callback(self, interaction: discord.Interaction):
         """處理投票按鈕點擊 - 投票 +2000 KK幣（每個用戶每條消息只適用一次）"""
         try:
+            logger.info(f"🎯 [_vote_callback] 用戶 {interaction.user.name}({interaction.user.id}) 點擊投票按鈕")
+            logger.info(f"   custom_id={interaction.custom_id}, message_id={interaction.message.id}")
+            
             # 記錄互動時間
             self.last_interaction_time = datetime.now(TW_TZ)
             
@@ -736,10 +739,12 @@ class AnimeVoteView(discord.ui.View):
                 user_hash=user_hash
             )
             
-            logger.info(f"📊 [vote_callback] {interaction.user} 投票: {vote_label}")
+            logger.info(f"✅ [_vote_callback] 投票已記錄: {interaction.user.name} 投票了 {vote_label}")
             
             # 立即回應用戶
+            logger.info(f"⏳ [_vote_callback] 準備 defer() 響應...")
             await interaction.response.defer()
+            logger.info(f"✅ [_vote_callback] defer() 已執行")
             
             # === KK幣獎勵邏輯 (投票 +2000) ===
             reward_given = False
@@ -902,15 +907,19 @@ class AnimeVoteView(discord.ui.View):
     async def _update_message_stats(self, message: discord.Message):
         """更新消息中的投票統計"""
         try:
+            logger.info(f"📝 [_update_message_stats] 開始更新消息 ID={message.id}, 頻道 ID={message.channel.id}")
+            
             if not message.embeds:
-                logger.warning(f"⚠️ [_update_message_stats] 消息沒有 embed")
+                logger.warning(f"⚠️ [_update_message_stats] 消息沒有 embed, message_id={message.id}")
                 return
             
             original_embed = message.embeds[0]
+            logger.info(f"✅ [_update_message_stats] 找到 embed, 標題={original_embed.title}")
             
             # 獲取投票統計和評論
             stats = self.tracker.db.get_vote_stats(message.id)
             comments = self.tracker.db.get_vote_comments(message.id, limit=3)
+            logger.info(f"📊 [_update_message_stats] 投票統計: {stats}, 評論數: {len(comments)}")
             
             # 建立統計內容
             stats_content = ""
@@ -960,8 +969,14 @@ class AnimeVoteView(discord.ui.View):
                 new_embed.set_thumbnail(url=original_embed.thumbnail.url)
             
             # 編輯消息
+            logger.info(f"🔄 [_update_message_stats] 準備編輯消息 ID={message.id}")
             await message.edit(embed=new_embed)
+            logger.info(f"✅ [_update_message_stats] 消息已成功編輯 ID={message.id}")
             
+        except discord.Forbidden as e:
+            logger.error(f"❌ [_update_message_stats] 權限不足（可能缺少 MANAGE_MESSAGES）: {e}", exc_info=True)
+        except discord.NotFound as e:
+            logger.error(f"❌ [_update_message_stats] 消息不存在或已被刪除: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
 
