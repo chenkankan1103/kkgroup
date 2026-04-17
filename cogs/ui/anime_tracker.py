@@ -918,52 +918,62 @@ class AnimeVoteView(discord.ui.View):
                 logger.warning(f"⚠️ [_update_message_stats] 消息沒有 embed")
                 return
             
-            # 複製原始 embed 避免修改原件
-            embed = discord.Embed.from_dict(message.embeds[0].to_dict())
+            original_embed = message.embeds[0]
             
             # 獲取投票統計和評論
             stats = self.tracker.db.get_vote_stats(message.id)
             comments = self.tracker.db.get_vote_comments(message.id, limit=3)
             
-            logger.info(f"📊 [_update_message_stats] message_id={message.id}, stats={stats}, comments_count={len(comments) if comments else 0}")
-            
-            # 清除舊的統計 field（重新創建 embed 的 fields 列表）
-            new_fields = []
-            for field in embed.fields:
-                if field.name not in ["📊 投票統計", "💬 匿名評論"]:
-                    new_fields.append(field)
-            embed._fields = new_fields
-            
-            # 添加新的統計 field
+            # 建立統計內容
+            stats_content = ""
             if stats and any(stats.values()):
                 stat_lines = []
                 for vote_key, (vote_label, color_block) in self.VOTE_TYPES.items():
                     count = stats.get(vote_key, 0)
                     if count > 0:
                         stat_lines.append(f"{color_block} {vote_label}: {count} 票")
-                
-                if stat_lines:
-                    logger.info(f"📊 [_update_message_stats] 添加統計: {stat_lines}")
-                    embed.add_field(
-                        name="📊 投票統計",
-                        value="\n".join(stat_lines),
-                        inline=False
-                    )
+                stats_content = "\n".join(stat_lines) if stat_lines else ""
             
-            # 添加評論 field
+            # 建立評論內容
+            comments_content = ""
             if comments:
-                comment_text = "\n".join([f"• {c}" for c in comments])
-                logger.info(f"💬 [_update_message_stats] 添加評論: {len(comments)} 條")
-                embed.add_field(
-                    name="💬 匿名評論",
-                    value=comment_text,
-                    inline=False
-                )
+                comments_content = "\n".join([f"• {c}" for c in comments])
             
-            # 編輯原始消息
-            await message.edit(embed=embed)
-            logger.info(f"✅ [_update_message_stats] 消息已更新")
-        
+            # 使用 embeds 參數直接編輯，不修改 embed 物件本身
+            # 先重新構建完整的 embed，避免 EmbedProxy 序列化問題
+            new_embed = discord.Embed(
+                title=original_embed.title,
+                description=original_embed.description,
+                color=original_embed.color,
+                timestamp=original_embed.timestamp
+            )
+            
+            # 複製原有的字段，除了統計和評論
+            for field in original_embed.fields:
+                if field.name not in ["📊 投票統計", "💬 匿名評論"]:
+                    new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+            
+            # 添加更新後的統計
+            if stats_content:
+                new_embed.add_field(name="📊 投票統計", value=stats_content, inline=False)
+            
+            # 添加更新後的評論
+            if comments_content:
+                new_embed.add_field(name="💬 匿名評論", value=comments_content, inline=False)
+            
+            # 複製 footer、author 等其他屬性
+            if original_embed.footer:
+                new_embed.set_footer(text=original_embed.footer.text, icon_url=original_embed.footer.icon_url)
+            if original_embed.author:
+                new_embed.set_author(name=original_embed.author.name, url=original_embed.author.url, icon_url=original_embed.author.icon_url)
+            if original_embed.image:
+                new_embed.set_image(url=original_embed.image.url)
+            if original_embed.thumbnail:
+                new_embed.set_thumbnail(url=original_embed.thumbnail.url)
+            
+            # 編輯消息
+            await message.edit(embed=new_embed)
+            
         except Exception as e:
             logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
 
