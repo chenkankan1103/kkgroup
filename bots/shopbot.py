@@ -202,34 +202,27 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
     return loaded_extensions
 
 async def setup_modules(client):
-    """載入所有模組（包括 shop 和 ui cogs）"""
-    all_extensions = []
-    
-    # 載入 shop cogs
+    """載入所有模組"""
+    # 轉換路徑為包名（cogs/shop → cogs.shop）
     package_prefix = COMMANDS_DIR.replace('/', '.')
+    
+    # 從父目錄開始計算路徑（cogs/shop -> cogs_base_path, shop_subdir）
     if '/' in COMMANDS_DIR:
         parts = COMMANDS_DIR.split('/')
+        # 從 bots/ 向上一級到根目錄
         root_path = os.path.dirname(os.path.dirname(__file__))
         full_path = os.path.join(root_path, *parts)
     else:
         full_path = os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
     
-    if os.path.exists(full_path):
-        extensions = await find_and_load_extensions(full_path, package_prefix, client)
-        all_extensions.extend(extensions)
+    if not os.path.exists(full_path):
+        os.makedirs(full_path)
+        init_file = os.path.join(full_path, "__init__.py")
+        with open(init_file, 'w', encoding='utf-8') as f:
+            f.write(f"# {BOT_NAME} Bot Commands Module\n")
+        return []
     
-    # ✨ 新增：載入 ui cogs（anime_tracker 等）
-    ui_commands_dir = "cogs/ui"
-    ui_package_prefix = ui_commands_dir.replace('/', '.')
-    root_path = os.path.dirname(os.path.dirname(__file__))
-    ui_full_path = os.path.join(root_path, ui_commands_dir)
-    
-    if os.path.exists(ui_full_path):
-        ui_extensions = await find_and_load_extensions(ui_full_path, ui_package_prefix, client)
-        all_extensions.extend(ui_extensions)
-        print(f"✨ UI Cogs 載入完成: {len(ui_extensions)} 個擴展")
-    
-    return all_extensions
+    return await find_and_load_extensions(full_path, package_prefix, client)
 
 async def reload_extension_on_change(ext_name):
     """熱重載擴展（防止重複觸發）"""
