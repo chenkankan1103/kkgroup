@@ -581,7 +581,7 @@ class AnimeDatabase:
                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, (video_sn, anime_sn, message_id, vote_type, comment, user_hash))
                 conn.commit()
-                logger.info(f"✅ [record_vote] 投票已記錄: message_id={message_id}, videoSn={video_sn}, animeSn={anime_sn}, vote_type={vote_type}, user_hash={user_hash}")
+                logger.info(f"📊 [record_vote] 記錄投票: videoSn={video_sn}, vote_type={vote_type}")
         except Exception as e:
             logger.error(f"❌ Error recording vote: {e}", exc_info=True)
     
@@ -590,12 +590,6 @@ class AnimeDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
-                # 先檢查表中有沒有這個 message_id 的記錄
-                cursor.execute(f"SELECT COUNT(*) FROM {ANIME_VOTES_TABLE} WHERE message_id = ?", (message_id,))
-                total_votes = cursor.fetchone()[0]
-                logger.info(f"📊 [get_vote_stats] message_id={message_id} 找到 {total_votes} 條投票記錄")
-                
                 cursor.execute(f"""
                     SELECT vote_type, COUNT(*) as count FROM {ANIME_VOTES_TABLE}
                     WHERE message_id = ?
@@ -607,10 +601,9 @@ class AnimeDatabase:
                 for row in cursor.fetchall():
                     stats[row[0]] = row[1]
                 
-                logger.info(f"📊 [get_vote_stats] 查詢結果: {stats}")
                 return stats
         except Exception as e:
-            logger.error(f"❌ Error getting vote stats: {e}", exc_info=True)
+            logger.error(f"❌ Error getting vote stats: {e}")
             return {}
     
     def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
@@ -925,28 +918,21 @@ class AnimeVoteView(discord.ui.View):
                 logger.warning(f"⚠️ [_update_message_stats] 消息沒有 embed")
                 return
             
-            # 創建新的 embed，避免 EmbedProxy 序列化問題
-            original_embed = message.embeds[0]
-            embed = discord.Embed(
-                title=original_embed.title,
-                description=original_embed.description,
-                color=original_embed.color
-            )
-            
-            # 複製原有的字段，跳過統計和評論字段
-            for field in original_embed.fields:
-                if field.name not in ["📊 投票統計", "💬 匿名評論"]:
-                    embed.add_field(
-                        name=field.name,
-                        value=field.value,
-                        inline=field.inline
-                    )
+            # 複製原始 embed 避免修改原件
+            embed = discord.Embed.from_dict(message.embeds[0].to_dict())
             
             # 獲取投票統計和評論
             stats = self.tracker.db.get_vote_stats(message.id)
             comments = self.tracker.db.get_vote_comments(message.id, limit=3)
             
             logger.info(f"📊 [_update_message_stats] message_id={message.id}, stats={stats}, comments_count={len(comments) if comments else 0}")
+            
+            # 清除舊的統計 field（重新創建 embed 的 fields 列表）
+            new_fields = []
+            for field in embed.fields:
+                if field.name not in ["📊 投票統計", "💬 匿名評論"]:
+                    new_fields.append(field)
+            embed._fields = new_fields
             
             # 添加新的統計 field
             if stats and any(stats.values()):
