@@ -63,7 +63,10 @@ class RoleExpirationManager:
         duration_seconds: int
     ) -> bool:
         """
-        保存臨時角色購買記錄
+        保存臨時角色購買記錄 - 支持時間疊加
+        
+        如果用戶已擁有該角色且未過期，新購買的時間會疊加到現有期限
+        如果角色已過期或不存在，則以購買時間作為起點
         
         Args:
             user_id: 用戶ID
@@ -79,10 +82,32 @@ class RoleExpirationManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # 計算過期時間
-            expires_at = datetime.now() + timedelta(seconds=duration_seconds)
+            # 先查詢現有的過期時間
+            cursor.execute("""
+                SELECT expires_at FROM role_expirations
+                WHERE user_id = ? AND guild_id = ? AND role_id = ? AND is_active = 1
+            """, (user_id, guild_id, role_id))
             
-            # 使用 INSERT OR REPLACE 避免重複
+            result = cursor.fetchone()
+            current_time = datetime.now()
+            
+            # 計算新的過期時間
+            if result:
+                existing_expires_at = datetime.fromisoformat(result[0])
+                # 如果現有期限還沒過期，則疊加時間
+                if existing_expires_at > current_time:
+                    expires_at = existing_expires_at + timedelta(seconds=duration_seconds)
+                    action = "⏱️ 時間已疊加到現有期限"
+                else:
+                    # 現有期限已過期，重新開始計算
+                    expires_at = current_time + timedelta(seconds=duration_seconds)
+                    action = "🔄 期限已過期，重新計算"
+            else:
+                # 沒有現有記錄，新開始計算
+                expires_at = current_time + timedelta(seconds=duration_seconds)
+                action = "✨ 首次購買"
+            
+            # 使用 INSERT OR REPLACE 更新或新建記錄
             cursor.execute("""
                 INSERT OR REPLACE INTO role_expirations 
                 (user_id, guild_id, role_id, role_name, expires_at, is_active)
@@ -92,8 +117,8 @@ class RoleExpirationManager:
             conn.commit()
             conn.close()
             
-            log_msg = f"✅ 數據庫記錄: {role_name} 到期: {expires_at.strftime('%Y-%m-%d %H:%M')} (用戶 {user_id})"
-            print(f"[RoleExpiration] {log_msg}")
+            log_msg = f"{action} 數據庫記錄: {role_name} 到期: {expires_at.strftime('%Y-%m-%d %H:%M')} (用戶 {user_id})"
+            print(f"[RoleExpiration] ✅ {log_msg}")
             return True
             
         except Exception as e:

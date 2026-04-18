@@ -12,6 +12,7 @@ import traceback
 import sqlite3
 from pathlib import Path
 from typing import List, Dict, Optional
+from datetime import datetime, timedelta
 
 from .merchant.views import (
     PersistentView, ExploreView, RoleShopView, EquipmentShopView, 
@@ -508,9 +509,45 @@ class ButtonInteraction(commands.Cog):
             await update_user_kkcoin(member.id, -price)
             await member.add_roles(role)
             
-            # ✅ 使用新的持久化系統記錄角色過期時間
+            # ✅ 使用新的持久化系統記錄角色過期時間（支持時間疊加）
+            expires_at = None
+            was_stacked = False
+            
             if duration:
+                import sqlite3
                 manager = get_expiration_manager()
+                
+                # 先查詢現有的過期時間（用於顯示）
+                try:
+                    db_path = manager.db_path
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    
+                    cursor.execute("""
+                        SELECT expires_at FROM role_expirations
+                        WHERE user_id = ? AND guild_id = ? AND role_id = ? AND is_active = 1
+                    """, (member.id, interaction.guild.id, role_id))
+                    
+                    result = cursor.fetchone()
+                    current_time = datetime.now()
+                    
+                    # 計算新的過期時間（與 save_role_purchase 邏輯一致）
+                    if result:
+                        existing_expires_at = datetime.fromisoformat(result[0])
+                        if existing_expires_at > current_time:
+                            expires_at = existing_expires_at + timedelta(seconds=duration)
+                            was_stacked = True
+                        else:
+                            expires_at = current_time + timedelta(seconds=duration)
+                    else:
+                        expires_at = current_time + timedelta(seconds=duration)
+                    
+                    conn.close()
+                except:
+                    # 如果查詢失敗，使用預設邏輯
+                    expires_at = datetime.now() + timedelta(seconds=duration)
+                
+                # 保存購買記錄
                 save_success = manager.save_role_purchase(
                     user_id=member.id,
                     guild_id=interaction.guild.id,
@@ -520,12 +557,11 @@ class ButtonInteraction(commands.Cog):
                 )
                 
                 # 記錄購買日誌
-                from datetime import datetime, timedelta
-                expires_at = datetime.now() + timedelta(seconds=duration)
                 expire_days = duration // 86400
+                stack_info = " (⏱️ 時間已疊加)" if was_stacked else ""
                 
                 log_msg = (
-                    f"[PURCHASE] {member.id} 購買 {role_name} | "
+                    f"[PURCHASE] {member.id} 購買 {role_name}{stack_info} | "
                     f"時長: {expire_days}天 | 到期: {expires_at.strftime('%Y-%m-%d %H:%M')} | "
                     f"DB_Save: {'✅' if save_success else '❌'}"
                 )
@@ -544,21 +580,32 @@ class ButtonInteraction(commands.Cog):
                 title="購買成功", 
                 description=f"你成功購買了 {role_name}，花費了 {price} KKcoin！\n剩餘：{kkcoin_new} KKcoin"
             )
-            if duration:
-                from datetime import datetime, timedelta
-                expires_at = datetime.now() + timedelta(seconds=duration)
-                expire_days = duration // 86400
+            
+            if expires_at:
+                expire_days_total = (expires_at - datetime.now()).days
+                expire_hours_remaining = ((expires_at - datetime.now()).total_seconds() % 86400) // 3600
+                
+                time_info = f"<t:{int(expires_at.timestamp())}:R> (約 {expire_days_total} 天 {expire_hours_remaining} 小時)"
+                if was_stacked:
+                    time_info += "\n⏱️ **時間已疊加到現有期限**"
+                
                 embed.add_field(
-                    name="⏱️ 有效期",
-                    value=f"{expire_days} 天\n到期：{expires_at.strftime('%Y-%m-%d %H:%M')}",
+                    name="⏱️ 有效期至",
+                    value=time_info,
                     inline=False
                 )
             
-            # 進階組員的權限說明
+            # 進階組員和變色龍披風的權限說明
             if role_name == "進階組員":
                 embed.add_field(
                     name="🔧 進階組員權限",
-                    value="✅ 可以刪除別人的訊息\n（此身分為期限制，到期自動移除）",
+                    value="✅ 可以刪除別人的訊息\n✅ 重複購買時間可疊加（此身分為期限制，到期自動移除）",
+                    inline=False
+                )
+            elif role_name == "七彩披風":
+                embed.add_field(
+                    name="🌈 七彩披風效果",
+                    value="✅ 在 Discord 中獲得特殊顏色\n✅ 重複購買時間可疊加（此身分為期限制，到期自動移除）",
                     inline=False
                 )
             
