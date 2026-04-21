@@ -1129,6 +1129,9 @@ class AnimeTracker(commands.Cog):
         # 格式: {"HH:MM": {"checked": bool, "found": bool, "start_time": datetime}}
         self.anime_retry_queue = {}
         
+        # 週統計發送追蹤（防止重複發送）
+        self.last_weekly_stats_sent = None  # 上次發送週統計的日期
+        
         # 注：任務將在 before_loop 中由 Discord.py 自動啟動，不在 __init__ 中啟動
         logger.info("📺 [AnimeTracker.__init__] 任務將在 before_loop 中由框架自動啟動")
         
@@ -1968,6 +1971,119 @@ class AnimeTracker(commands.Cog):
                 print(f"[ANIME_BEFORE_LOOP_ERROR] ❌ {str(e)}", flush=True)
         else:
             logger.info("⚠️ [before_check_new_anime] 任務已在運行")
+    
+    @tasks.loop(hours=1)
+    async def send_weekly_stats(self):
+        """自動發送週統計 - 每週一 台灣時間 00:00 發送"""
+        now = datetime.now(TW_TZ)
+        
+        try:
+            # 檢查是否是週一且時間在午夜時刻（00:00-00:59）
+            is_monday = now.weekday() == 0  # 0 = Monday
+            is_send_time = now.hour == 0  # 台灣時間 00:00-00:59
+            
+            # 檢查是否已在本週發送過（防止重複）
+            week_start = now - timedelta(days=now.weekday())
+            week_start_date = week_start.date()
+            
+            if is_monday and is_send_time and self.last_weekly_stats_sent != week_start_date:
+                logger.info(f"📊 [send_weekly_stats] 週一時間到，準備發送週統計...")
+                
+                # 獲取頻道
+                channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+                if not channel:
+                    logger.error(f"❌ [send_weekly_stats] 找不到頻道 {ANIME_CHANNEL_ID}")
+                    return
+                
+                # 獲取週統計數據
+                weekly_stats = self.db.get_weekly_vote_stats()
+                
+                if not weekly_stats:
+                    logger.info("📊 [send_weekly_stats] 本週無投票數據")
+                    self.last_weekly_stats_sent = week_start_date
+                    return
+                
+                # 創建主統計 embed
+                week_end = now
+                week_start_str = week_start.strftime("%m/%d")
+                week_end_str = week_end.strftime("%m/%d")
+                
+                embed = discord.Embed(
+                    title="📊 本週動畫投票統計",
+                    description=f"**統計週期**: {week_start_str} - {week_end_str}",
+                    color=discord.Color.blue(),
+                    timestamp=now
+                )
+                
+                # 按投票總數排序
+                sorted_animes = sorted(
+                    weekly_stats.items(),
+                    key=lambda x: x[1]['total_votes'],
+                    reverse=True
+                )
+                
+                # 添加各動畫的統計
+                for rank, (anime_sn, stats) in enumerate(sorted_animes[:10], 1):  # 顯示前 10 部
+                    anime_name = stats['anime_name']
+                    total_votes = stats['total_votes']
+                    votes_breakdown = stats['votes']
+                    episode_count = len(stats['episodes'])
+                    
+                    # 構建投票明細
+                    vote_type_names = {
+                        'masterpiece': '🟢 神作',
+                        'great': '⚫ 佳作',
+                        'darkhorse': '⚫ 黑馬',
+                        'decent': '🔵 普作',
+                        'controversial': '⚫ 爭議作',
+                        'disaster': '🔴 雷作'
+                    }
+                    
+                    vote_details = []
+                    for vote_type in sorted(votes_breakdown.keys(), 
+                                           key=lambda x: votes_breakdown[x], reverse=True):
+                        count = votes_breakdown[vote_type]
+                        label = vote_type_names.get(vote_type, vote_type)
+                        vote_details.append(f"{label}: {count}")
+                    
+                    details_str = " | ".join(vote_details) if vote_details else "無投票"
+                    
+                    embed.add_field(
+                        name=f"#{rank} {anime_name}",
+                        value=f"**投票總數**: {total_votes} | **涉及集數**: {episode_count}\n{details_str}",
+                        inline=False
+                    )
+                
+                # 添加總體統計
+                total_all_votes = sum(stats['total_votes'] for stats in weekly_stats.values())
+                unique_animes = len(weekly_stats)
+                
+                embed.set_footer(text=f"總計: {total_all_votes} 投票 | {unique_animes} 部作品")
+                
+                # 發送統計
+                await channel.send(embed=embed)
+                logger.info(f"✅ [send_weekly_stats] 週統計已發送: {unique_animes} 部作品, {total_all_votes} 投票")
+                
+                # 標記已發送
+                self.last_weekly_stats_sent = week_start_date
+        
+        except Exception as e:
+            logger.error(f"❌ [send_weekly_stats] 發送週統計失敗: {e}", exc_info=True)
+    
+    @send_weekly_stats.before_loop
+    async def before_send_weekly_stats(self):
+        """在第一次循環前等待 bot 就緒"""
+        logger.info("📊 [before_send_weekly_stats] 等待 bot 就緒...")
+        await self.bot.wait_until_ready()
+        logger.info("✅ [before_send_weekly_stats] Bot 已就緒，週統計任務準備就緒")
+        
+        # 啟動任務
+        if not self.send_weekly_stats.is_running():
+            try:
+                self.send_weekly_stats.start()
+                logger.info("🚀 [before_send_weekly_stats] 週統計任務已啟動")
+            except Exception as e:
+                logger.error(f"❌ [before_send_weekly_stats] 啟動任務失敗: {e}", exc_info=True)
 
     @app_commands.command(name="anime_test", description="測試動畫通知 - 顯示最近的動畫集")
     async def anime_test(self, interaction: discord.Interaction):
