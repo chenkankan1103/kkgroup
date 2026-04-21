@@ -479,30 +479,24 @@ class AnnouncementButtonView(PersistentViewBase):
         return embed
     
     def update_button_styles(self, active_id: str):
-        """更新按鈕樣式
-        
-        - 活躍的公告按鈕：🟩 綠色
-        - 非活躍的公告按鈕：🟦 藍色
-        - 意見回饋按鈕：始終 🟩 綠色
-        - 更新紀錄按鈕：⚫ 灰色（未選中）或 🟩 綠色（被選中）
-        """
+        """更新按鈕樣式 - 簡單邏輯：只有選中的才是綠色，其他都是藍色"""
         for item in self.children:
             if isinstance(item, Button) and item.custom_id:
-                # 意見回饋按鈕始終綠色
-                if item.custom_id == "feedback_btn":
+                is_active = False
+                
+                # 判斷是否被選中
+                if active_id == "update_log" and item.custom_id == "update_log_btn":
+                    is_active = True
+                elif f"ann_btn_{active_id}" == item.custom_id:
+                    is_active = True
+                elif active_id == "feedback" and item.custom_id == "feedback_btn":
+                    is_active = True
+                
+                # 設定顏色：選中 = 綠色，未選中 = 藍色
+                if is_active:
                     item.style = discord.ButtonStyle.green
-                # 更新紀錄按鈕
-                elif item.custom_id == "update_log_btn":
-                    if active_id == "update_log":
-                        item.style = discord.ButtonStyle.green  # 被選中
-                    else:
-                        item.style = discord.ButtonStyle.secondary  # 未選中，灰色
-                # 其他公告按鈕
-                elif item.custom_id.startswith("ann_btn_"):
-                    if active_id != "update_log" and f"ann_btn_{active_id}" == item.custom_id:
-                        item.style = discord.ButtonStyle.green  # 被選中
-                    else:
-                        item.style = discord.ButtonStyle.blurple  # 未選中，藍色
+                else:
+                    item.style = discord.ButtonStyle.blurple
     
     def create_embed_for_announcement(self, announcement: dict) -> discord.Embed:
         """建立 Embed"""
