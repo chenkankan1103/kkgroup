@@ -32,6 +32,9 @@ except ImportError:
 from shared.utils.trends_collector import TrendsCollector, get_latest_trends
 from shared.utils.trends_lottery_system import TrendsLotterySystem
 
+load_dotenv()
+logger = logging.getLogger(__name__)
+
 # 配置
 TRENDS_UPDATE_INTERVAL = 240  # 4 小時（秒）
 TRENDS_CHANNEL_ID = int(os.getenv("TRENDS_CHANNEL_ID", "0"))  # 需要在 .env 中設置
