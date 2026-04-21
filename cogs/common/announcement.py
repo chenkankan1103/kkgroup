@@ -180,7 +180,7 @@ class AnnouncementButtonView(PersistentViewBase):
         feedback_btn = Button(
             label="意見回饋",
             emoji="💝",
-            style=discord.ButtonStyle.green,
+            style=discord.ButtonStyle.blurple,  # 初始為藍色，點擊後無法變色（直接彈出表單）
             custom_id="feedback_btn"
         )
         feedback_btn.callback = self.feedback_button_callback
@@ -190,7 +190,7 @@ class AnnouncementButtonView(PersistentViewBase):
         update_log_btn = Button(
             label="更新紀錄",
             emoji="📝",
-            style=discord.ButtonStyle.secondary,
+            style=discord.ButtonStyle.blurple,  # 初始為藍色，點擊後變綠色
             custom_id="update_log_btn"
         )
         update_log_btn.callback = self.update_log_button_callback
@@ -235,8 +235,8 @@ class AnnouncementButtonView(PersistentViewBase):
     async def update_log_button_callback(self, interaction: discord.Interaction):
         """更新紀錄按鈕回調 - 在公告區域顯示最近的 Git commits"""
         try:
-            # 讀取 git commits
-            commits = self._get_git_commits(limit=10)
+            # 讀取 git commits - 改為 20 條
+            commits = self._get_git_commits(limit=20)
             
             if not commits:
                 await interaction.response.send_message(
@@ -472,14 +472,9 @@ class AnnouncementButtonView(PersistentViewBase):
             commits_text = []
             for commit in commits_in_category:
                 msg = commit['message']
-                author = commit['author']
-                date = commit['date']
                 
-                # 格式：信息 (作者, 日期) - 已移除 hash
-                commits_text.append(
-                    f"• {msg}\n"
-                    f"  └─ {author} @ {date}"
-                )
+                # 格式：只顯示信息
+                commits_text.append(f"• {msg}")
             
             field_value = "\n".join(commits_text)
             
@@ -506,8 +501,6 @@ class AnnouncementButtonView(PersistentViewBase):
                 if active_id == "update_log" and item.custom_id == "update_log_btn":
                     is_active = True
                 elif f"ann_btn_{active_id}" == item.custom_id:
-                    is_active = True
-                elif active_id == "feedback" and item.custom_id == "feedback_btn":
                     is_active = True
                 
                 # 設定顏色：選中 = 綠色，未選中 = 藍色
