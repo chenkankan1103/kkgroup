@@ -288,17 +288,26 @@ class AnnouncementButtonView(PersistentViewBase):
             # 執行 git log 命令
             # 格式: hash|author|date|time|message
             cmd = f'git log --pretty=format:"%h|%an|%ad|%s" --date=short -n {limit}'
+            
+            # 使用專案根目錄作為工作目錄
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            print(f"[DEBUG] 執行 Git 命令，工作目錄: {project_root}")
+            print(f"[DEBUG] Git 命令: {cmd}")
+            
             result = subprocess.run(
                 cmd,
                 shell=True,
                 capture_output=True,
                 text=True,
                 timeout=10,
-                cwd=os.getcwd()
+                cwd=project_root
             )
             
+            print(f"[DEBUG] Git 返回碼: {result.returncode}")
             if result.returncode != 0:
-                print(f"⚠️ Git 命令執行失敗: {result.stderr}")
+                print(f"❌ Git 命令執行失敗")
+                print(f"   stderr: {result.stderr}")
+                print(f"   stdout: {result.stdout}")
                 return []
             
             commits = []
@@ -319,7 +328,7 @@ class AnnouncementButtonView(PersistentViewBase):
                             capture_output=True,
                             text=True,
                             timeout=5,
-                            cwd=os.getcwd()
+                            cwd=project_root
                         )
                         
                         if time_result.returncode == 0:
@@ -383,31 +392,30 @@ class AnnouncementButtonView(PersistentViewBase):
         return embed
     
     def update_button_styles(self, active_id: str):
-        """更新按鈕樣式"""
+        """更新按鈕樣式
+        
+        - 活躍的公告按鈕：🟩 綠色
+        - 非活躍的公告按鈕：🟦 藍色
+        - 意見回饋按鈕：始終 🟩 綠色
+        - 更新紀錄按鈕：⚫ 灰色（未選中）或 🟩 綠色（被選中）
+        """
         for item in self.children:
             if isinstance(item, Button) and item.custom_id:
-                # 檢查是否是活躍的公告按鈕
-                is_active = False
-                
-                if active_id == "update_log" and item.custom_id == "update_log_btn":
-                    # 「更新紀錄」按鈕被選中
-                    is_active = True
-                elif active_id != "update_log" and f"ann_btn_{active_id}" == item.custom_id:
-                    # 普通公告按鈕被選中
-                    is_active = True
-                
-                # 設定顏色
-                if is_active:
+                # 意見回饋按鈕始終綠色
+                if item.custom_id == "feedback_btn":
                     item.style = discord.ButtonStyle.green
-                elif item.custom_id == "feedback_btn":
-                    # 意見回饋按鈕保持綠色
-                    item.style = discord.ButtonStyle.green
+                # 更新紀錄按鈕
                 elif item.custom_id == "update_log_btn":
-                    # 更新紀錄按鈕在未選中時是灰色
-                    item.style = discord.ButtonStyle.secondary
-                else:
-                    # 其他公告按鈕是藍色
-                    item.style = discord.ButtonStyle.blurple
+                    if active_id == "update_log":
+                        item.style = discord.ButtonStyle.green  # 被選中
+                    else:
+                        item.style = discord.ButtonStyle.secondary  # 未選中，灰色
+                # 其他公告按鈕
+                elif item.custom_id.startswith("ann_btn_"):
+                    if active_id != "update_log" and f"ann_btn_{active_id}" == item.custom_id:
+                        item.style = discord.ButtonStyle.green  # 被選中
+                    else:
+                        item.style = discord.ButtonStyle.blurple  # 未選中，藍色
     
     def create_embed_for_announcement(self, announcement: dict) -> discord.Embed:
         """建立 Embed"""
