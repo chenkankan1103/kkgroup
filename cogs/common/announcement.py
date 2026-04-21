@@ -4,6 +4,7 @@ from discord.ui import View, Button, Modal, TextInput
 import json
 import os
 import asyncio
+import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime
@@ -184,6 +185,16 @@ class AnnouncementButtonView(PersistentViewBase):
         )
         feedback_btn.callback = self.feedback_button_callback
         self.add_item(feedback_btn)
+        
+        # 添加更新紀錄按鈕
+        update_log_btn = Button(
+            label="更新紀錄",
+            emoji="📝",
+            style=discord.ButtonStyle.secondary,
+            custom_id="update_log_btn"
+        )
+        update_log_btn.callback = self.update_log_button_callback
+        self.add_item(update_log_btn)
     
     def make_button_callback(self, announcement_id: str):
         """建立按鈕回調函數"""
@@ -221,13 +232,181 @@ class AnnouncementButtonView(PersistentViewBase):
         modal = FeedbackModal(self.bot)
         await interaction.response.send_modal(modal)
     
+    async def update_log_button_callback(self, interaction: discord.Interaction):
+        """更新紀錄按鈕回調 - 在公告區域顯示最近的 Git commits"""
+        try:
+            # 讀取 git commits
+            commits = self._get_git_commits(limit=10)
+            
+            if not commits:
+                await interaction.response.send_message(
+                    "❌ 無法讀取更新紀錄或沒有找到任何提交",
+                    ephemeral=True
+                )
+                return
+            
+            # 建立 Embed
+            embed = self._create_update_log_embed(commits)
+            
+            # 直接在公告區域編輯消息（和其他公告按鈕邏輯相同）
+            await interaction.response.edit_message(embed=embed, view=self)
+            
+            # 更新按鈕狀態，標記「更新紀錄」為選中
+            self.current_announcement_id = "update_log"
+            self.update_button_styles("update_log")
+            
+            print(f"✅ [更新紀錄] {interaction.user.name} 查看了更新紀錄")
+            
+        except Exception as e:
+            print(f"❌ [更新紀錄] 查看更新紀錄失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message(
+                    f"❌ 查看更新紀錄失敗: {e}",
+                    ephemeral=True
+                )
+            except:
+                pass
+    
+    def _get_git_commits(self, limit: int = 10) -> list:
+        """讀取最近的 git commits
+        
+        返回格式:
+        [
+            {
+                'hash': 'abc123...',
+                'author': 'John Doe',
+                'date': '2026-04-22',
+                'time': '14:30:00',
+                'message': 'Fix: 修復按鈕邏輯'
+            },
+            ...
+        ]
+        """
+        try:
+            # 執行 git log 命令
+            # 格式: hash|author|date|time|message
+            cmd = f'git log --pretty=format:"%h|%an|%ad|%s" --date=short -n {limit}'
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=os.getcwd()
+            )
+            
+            if result.returncode != 0:
+                print(f"⚠️ Git 命令執行失敗: {result.stderr}")
+                return []
+            
+            commits = []
+            for line in result.stdout.strip().split('\n'):
+                if not line.strip():
+                    continue
+                
+                parts = line.split('|')
+                if len(parts) >= 4:
+                    # 嘗試解析時間（如果有）
+                    try:
+                        # 執行額外的 git show 獲取完整時間戳
+                        commit_hash = parts[0]
+                        time_cmd = f'git show -s --format=%ai {commit_hash}'
+                        time_result = subprocess.run(
+                            time_cmd,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            cwd=os.getcwd()
+                        )
+                        
+                        if time_result.returncode == 0:
+                            timestamp = time_result.stdout.strip()  # 格式: 2026-04-22 14:30:00 +0800
+                            date_time = timestamp.split()[0:2]  # ['2026-04-22', '14:30:00']
+                            date_str = date_time[0] if len(date_time) > 0 else parts[2]
+                            time_str = date_time[1] if len(date_time) > 1 else '00:00:00'
+                        else:
+                            date_str = parts[2]
+                            time_str = '00:00:00'
+                    except:
+                        date_str = parts[2]
+                        time_str = '00:00:00'
+                    
+                    commits.append({
+                        'hash': parts[0],
+                        'author': parts[1],
+                        'date': date_str,
+                        'time': time_str,
+                        'message': parts[3]
+                    })
+            
+            print(f"✅ 成功讀取 {len(commits)} 條 commits")
+            return commits
+        
+        except subprocess.TimeoutExpired:
+            print("⚠️ Git 命令執行超時")
+            return []
+        except Exception as e:
+            print(f"❌ 讀取 git commits 失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    def _create_update_log_embed(self, commits: list) -> discord.Embed:
+        """建立更新紀錄 Embed"""
+        embed = discord.Embed(
+            title="📝 更新紀錄",
+            description=f"最近 {len(commits)} 次提交",
+            color=discord.Color.blue()
+        )
+        
+        for idx, commit in enumerate(commits, 1):
+            # 縮短 commit hash
+            short_hash = commit['hash'][:7]
+            
+            # 格式化欄位
+            field_name = f"{idx}. {short_hash} - {commit['author']}"
+            field_value = (
+                f"📅 {commit['date']} {commit['time']}\n"
+                f"💬 {commit['message']}"
+            )
+            
+            embed.add_field(
+                name=field_name,
+                value=field_value,
+                inline=False
+            )
+        
+        embed.set_footer(text="🔄 由 Git 日誌自動生成")
+        return embed
+    
     def update_button_styles(self, active_id: str):
         """更新按鈕樣式"""
         for item in self.children:
             if isinstance(item, Button) and item.custom_id:
-                if active_id in item.custom_id:
+                # 檢查是否是活躍的公告按鈕
+                is_active = False
+                
+                if active_id == "update_log" and item.custom_id == "update_log_btn":
+                    # 「更新紀錄」按鈕被選中
+                    is_active = True
+                elif active_id != "update_log" and f"ann_btn_{active_id}" == item.custom_id:
+                    # 普通公告按鈕被選中
+                    is_active = True
+                
+                # 設定顏色
+                if is_active:
                     item.style = discord.ButtonStyle.green
+                elif item.custom_id == "feedback_btn":
+                    # 意見回饋按鈕保持綠色
+                    item.style = discord.ButtonStyle.green
+                elif item.custom_id == "update_log_btn":
+                    # 更新紀錄按鈕在未選中時是灰色
+                    item.style = discord.ButtonStyle.secondary
                 else:
+                    # 其他公告按鈕是藍色
                     item.style = discord.ButtonStyle.blurple
     
     def create_embed_for_announcement(self, announcement: dict) -> discord.Embed:
