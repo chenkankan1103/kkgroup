@@ -158,6 +158,23 @@ class WorkCardEditView(discord.ui.View):
         await interaction.response.send_modal(WorkCardModal(self.cog, self.user_id))
 
 
+class WorkCardCreateView(PersistentViewBase):
+    """首次領取員工證的視圖"""
+    def __init__(self, cog, user_id: int):
+        super().__init__()
+        self.cog = cog
+        self.user_id = user_id
+    
+    @discord.ui.button(label="填寫員工證", style=discord.ButtonStyle.danger, emoji="✏️", custom_id="create_work_card")
+    async def create_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """開始填寫員工證"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的請求！", ephemeral=True)
+            return
+        
+        await interaction.response.send_modal(WorkCardModal(self.cog, self.user_id))
+
+
 class WorkCardActionView(discord.ui.View):
     """已有工作證時的操作視圖"""
     def __init__(self, cog, user_id: int, user_data: dict):
