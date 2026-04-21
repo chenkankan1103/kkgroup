@@ -638,6 +638,67 @@ class AnimeDatabase:
             logger.error(f"❌ Error getting vote comments: {e}")
             return []
     
+    def get_weekly_vote_stats(self) -> Dict[int, Dict]:
+        """獲取本週的投票統計（按動畫分組）
+        
+        Returns:
+            {
+                animeSn: {
+                    'anime_name': 'xxx',
+                    'total_votes': 10,
+                    'votes': {'masterpiece': 3, 'great': 2, ...},
+                    'episodes': set([videoSn1, videoSn2, ...])
+                },
+                ...
+            }
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # 計算本週一零時（台灣時區）
+            now = datetime.now(TW_TZ)
+            week_start = now - timedelta(days=now.weekday())  # 週一
+            week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 獲取本週的投票
+                cursor.execute(f"""
+                    SELECT animeSn, videoSn, vote_type, COUNT(*) as count
+                    FROM {ANIME_VOTES_TABLE}
+                    WHERE voted_at >= ?
+                    GROUP BY animeSn, videoSn, vote_type
+                    ORDER BY animeSn, count DESC
+                """, (week_start.isoformat(),))
+                
+                # 組織數據
+                stats = {}
+                for anime_sn, video_sn, vote_type, count in cursor.fetchall():
+                    if anime_sn not in stats:
+                        stats[anime_sn] = {
+                            'votes': {},
+                            'episodes': set(),
+                            'total_votes': 0
+                        }
+                    
+                    stats[anime_sn]['votes'][vote_type] = stats[anime_sn]['votes'].get(vote_type, 0) + count
+                    stats[anime_sn]['episodes'].add(video_sn)
+                    stats[anime_sn]['total_votes'] += count
+                
+                # 補充動畫名稱
+                for anime_sn in stats:
+                    anime_details = self.get_anime_details(anime_sn)
+                    if anime_details:
+                        stats[anime_sn]['anime_name'] = anime_details.get('title', f'動畫 {anime_sn}')
+                    else:
+                        stats[anime_sn]['anime_name'] = f'動畫 {anime_sn}'
+                
+                return stats
+        except Exception as e:
+            logger.error(f"❌ Error getting weekly vote stats: {e}", exc_info=True)
+            return {}
+    
     def record_reward(self, user_id: int, message_id: int, reward_type: str, reward_amount: int) -> bool:
         """記錄 KK幣獎勵 - 防止重複發放"""
         try:
@@ -2020,6 +2081,90 @@ class AnimeTracker(commands.Cog):
             logger.info(f"📺 [anime_status] 任務狀態: {'運行中' if task_running else '未運行'}, Bootstrap: {'完成' if bootstrap_done else '未完成'}")
         except Exception as e:
             logger.error(f"❌ [anime_status] 指令執行失敗: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
+            except:
+                pass
+    
+    @app_commands.command(name="anime_weekly", description="查看本週投票統計")
+    async def anime_weekly(self, interaction: discord.Interaction):
+        """顯示本週的動畫投票統計 embed"""
+        try:
+            await interaction.response.defer()
+            
+            # 獲取週統計數據
+            weekly_stats = self.db.get_weekly_vote_stats()
+            
+            if not weekly_stats:
+                await interaction.followup.send("📊 本週暫無投票數據")
+                logger.info("📺 [anime_weekly] 本週無投票數據")
+                return
+            
+            # 計算本週開始日期
+            from datetime import datetime, timedelta
+            now = datetime.now(TW_TZ)
+            week_start = now - timedelta(days=now.weekday())
+            week_start_str = week_start.strftime("%m/%d")
+            week_end_str = now.strftime("%m/%d")
+            
+            # 創建主統計 embed
+            embed = discord.Embed(
+                title="📊 本週動畫投票統計",
+                description=f"**統計週期**: {week_start_str} - {week_end_str}",
+                color=discord.Color.blue(),
+                timestamp=now
+            )
+            
+            # 按投票總數排序
+            sorted_animes = sorted(
+                weekly_stats.items(),
+                key=lambda x: x[1]['total_votes'],
+                reverse=True
+            )
+            
+            # 添加各動畫的統計
+            for rank, (anime_sn, stats) in enumerate(sorted_animes[:10], 1):  # 顯示前 10 部
+                anime_name = stats['anime_name']
+                total_votes = stats['total_votes']
+                votes_breakdown = stats['votes']
+                episode_count = len(stats['episodes'])
+                
+                # 構建投票明細（按數量排序）
+                vote_details = []
+                vote_type_names = {
+                    'masterpiece': '🟢 神作',
+                    'great': '⚫ 佳作',
+                    'darkhorse': '⚫ 黑馬',
+                    'decent': '🔵 普作',
+                    'controversial': '⚫ 爭議作',
+                    'disaster': '🔴 雷作'
+                }
+                
+                for vote_type in sorted(votes_breakdown.keys(), 
+                                       key=lambda x: votes_breakdown[x], reverse=True):
+                    count = votes_breakdown[vote_type]
+                    label = vote_type_names.get(vote_type, vote_type)
+                    vote_details.append(f"{label}: {count}")
+                
+                details_str = " | ".join(vote_details) if vote_details else "無投票"
+                
+                embed.add_field(
+                    name=f"#{rank} {anime_name}",
+                    value=f"**投票總數**: {total_votes} | **涉及集數**: {episode_count}\n{details_str}",
+                    inline=False
+                )
+            
+            # 添加總體統計
+            total_all_votes = sum(stats['total_votes'] for stats in weekly_stats.values())
+            unique_animes = len(weekly_stats)
+            
+            embed.set_footer(text=f"總計: {total_all_votes} 投票 | {unique_animes} 部作品")
+            
+            await interaction.followup.send(embed=embed)
+            logger.info(f"📊 [anime_weekly] 顯示週統計: {unique_animes} 部作品, {total_all_votes} 投票")
+            
+        except Exception as e:
+            logger.error(f"❌ [anime_weekly] 指令執行失敗: {e}", exc_info=True)
             try:
                 await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
             except:
