@@ -289,9 +289,27 @@ class AnnouncementButtonView(PersistentViewBase):
             # 格式: hash|author|date|time|message
             cmd = f'git log --pretty=format:"%h|%an|%ad|%s" --date=short -n {limit}'
             
-            # 使用專案根目錄作為工作目錄
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            # 方式 1：嘗試使用 git rev-parse 獲取項目根目錄（最可靠）
+            try:
+                git_root_cmd = 'git rev-parse --show-toplevel'
+                git_root_result = subprocess.run(
+                    git_root_cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if git_root_result.returncode == 0:
+                    project_root = git_root_result.stdout.strip()
+                else:
+                    # 方式 2：回退到目錄計算
+                    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            except:
+                # 方式 3：最後的回退方案
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            
             print(f"[DEBUG] 執行 Git 命令，工作目錄: {project_root}")
+            print(f"[DEBUG] 目錄是否存在: {os.path.isdir(project_root)}")
             print(f"[DEBUG] Git 命令: {cmd}")
             
             result = subprocess.run(
