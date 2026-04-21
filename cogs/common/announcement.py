@@ -387,7 +387,7 @@ class AnnouncementButtonView(PersistentViewBase):
         
         返回格式:
         {
-            'breaking': [commit, ...],    # 🔴 破壞性改動
+            'breaking': [commit, ...],    # 🔴 重大改動
             'features': [commit, ...],    # ✨ 新功能
             'fixes': [commit, ...],       # 🐛 缺陷修復
             'docs': [commit, ...],        # 📚 文檔
@@ -435,7 +435,7 @@ class AnnouncementButtonView(PersistentViewBase):
         
         # 定義分類的顯示信息
         category_info = {
-            'breaking': {'emoji': '🔴', 'name': '破壞性改動', 'color': discord.Color.red()},
+            'breaking': {'emoji': '🔴', 'name': '重大改動', 'color': discord.Color.red()},
             'features': {'emoji': '✨', 'name': '新功能'},
             'fixes': {'emoji': '🐛', 'name': '缺陷修復'},
             'docs': {'emoji': '📚', 'name': '文檔'},
@@ -444,7 +444,7 @@ class AnnouncementButtonView(PersistentViewBase):
             'others': {'emoji': '📋', 'name': '其他'}
         }
         
-        # 決定 embed 顏色（如果有破壞性改動就用紅色，否則藍色）
+        # 決定 embed 顏色（如果有重大改動就用紅色，否則藍色）
         embed_color = discord.Color.red() if categories['breaking'] else discord.Color.blue()
         
         embed = discord.Embed(
@@ -471,14 +471,13 @@ class AnnouncementButtonView(PersistentViewBase):
             # 格式化該分類下的所有 commits
             commits_text = []
             for commit in commits_in_category:
-                short_hash = commit['hash'][:7]
                 msg = commit['message']
                 author = commit['author']
                 date = commit['date']
                 
-                # 格式：hash - 信息 (作者, 日期)
+                # 格式：信息 (作者, 日期) - 已移除 hash
                 commits_text.append(
-                    f"• `{short_hash}` {msg}\n"
+                    f"• {msg}\n"
                     f"  └─ {author} @ {date}"
                 )
             
