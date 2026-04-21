@@ -295,8 +295,37 @@ class QuantitySelectView(View):
                     await interaction.response.edit_message(embed=error_embed, view=None)
                     return
                 
-                # 扣除 KKcoin 並添加庫存
-                await update_user_kkcoin(interaction.user.id, -total_cost)
+                # ============================================================
+                # 購買稅機制：購買金額的 10% 流入金庫
+                # ============================================================
+                PURCHASE_TAX_RATE = 0.10  # 10% 購買稅
+                purchase_tax = int(total_cost * PURCHASE_TAX_RATE)
+                
+                # 扣除 KKcoin（包含稅款）
+                total_with_tax = total_cost + purchase_tax
+                
+                if user_kkcoin < total_with_tax:
+                    # 含稅後的總額超過上限
+                    error_embed = discord.Embed(
+                        title="❌ KKcoin 不足（含稅款）",
+                        description=f"購買價格：{total_cost}\n購買稅（10%）：{purchase_tax}\n總計：{total_with_tax}\n擁有：{user_kkcoin}",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.edit_message(embed=error_embed, view=None)
+                    return
+                
+                # 扣除 KKcoin（包含稅款）
+                await update_user_kkcoin(interaction.user.id, -total_with_tax)
+                
+                # 稅款流入金庫
+                try:
+                    from db_adapter import add_to_central_reserve
+                    add_to_central_reserve(purchase_tax)
+                    print(f"💎 購買稅流入金庫: {purchase_tax} KK幣 (購買{self.item_type})")
+                except Exception as e:
+                    print(f"⚠️ 購買稅流入失敗: {e}")
+                
+                # 添加到庫存
                 await add_inventory(interaction.user.id, self.item_type, self.item_name, qty)
                 
                 # 取得配置（用於 emoji）
@@ -313,10 +342,12 @@ class QuantitySelectView(View):
                     description=f"成功購買了 {qty} 個 {emoji} {self.item_name}",
                     color=discord.Color.green()
                 )
-                embed.add_field(name="單位價格", value=f"{self.price_per_unit} KKcoin", inline=True)
+                embed.add_field(name="商品價格", value=f"{total_cost} KKcoin", inline=True)
+                embed.add_field(name="購買稅 (10%)", value=f"{purchase_tax} KKcoin", inline=True)
                 embed.add_field(name="數量", value=f"{qty}", inline=True)
-                embed.add_field(name="總花費", value=f"{total_cost} KKcoin", inline=False)
-                embed.add_field(name="剩餘 KKcoin", value=f"{user_kkcoin - total_cost}", inline=False)
+                embed.add_field(name="總花費", value=f"{total_with_tax} KKcoin", inline=False)
+                embed.add_field(name="剩餘 KKcoin", value=f"{user_kkcoin - total_with_tax}", inline=False)
+                embed.set_footer(text="💎 10% 稅款已流入園區金庫")
                 
                 # 在同一個 message 中編輯（移除按鈕）
                 await interaction.response.edit_message(embed=embed, view=None)

@@ -105,9 +105,9 @@ LEVELS = {
         "days_required": 42,
         "xp_required": 8500,
         "role_id": int(os.getenv("ROLE_ACCOUNTING", 0)),
-        "salary_boost": 1.1,
+        "salary_boost": 1.0,
         "xp_boost": 1.0,
-        "description": "掌管金流。特權：薪資加成 +10%。"
+        "description": "掌管金流。負責調度金錢與清帳。"
     },
     5: {
         "title": "機房主任",
@@ -501,6 +501,16 @@ async def process_checkin(user_id, user_obj, guild):
             print(f"  ❌ 保存用戶資料失敗")
             return None, None, None, None
         print(f"  ✓ 資料已保存")
+        
+        # ============================================================
+        # 金庫流入機制：每日薪資 * 100% 流入金庫
+        # ============================================================
+        try:
+            from db_adapter import add_to_central_reserve
+            add_to_central_reserve(kkcoin_gain)
+            print(f"  💎 金庫流入: {kkcoin_gain} KK幣（每日薪資 100%）")
+        except Exception as e:
+            print(f"  ⚠️ 金庫流入失敗: {e}")
 
         updated_user = get_user(user_id)
         if not updated_user:
