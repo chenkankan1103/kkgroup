@@ -2,14 +2,20 @@
 """
 DB 適配層相容層 - 保持向後相容性
 
-このファイルは後方互換性のための相容層です。
-所有的実装已移至 shared/db/adapter.py、shared/db/sheet_driven_db.py 等
+此檔案是向後相容性的相容層。
+所有實現已移至 shared/db/db_adapter.py、shared/db/sheet_driven_db.py 等核心模塊
 
-使用示例（現存コード）:
+使用示例（現存代碼）:
     from db_adapter import get_user_field, set_user_field
     
-新コード應使用:
-    from shared.db.adapter import get_user_field, set_user_field
+新代碼應使用:
+    from shared.db.db_adapter import get_user_field, set_user_field
+    
+說明：
+  - 根目錄 db_adapter.py：相容層轉導文件（重定向 import）
+  - shared/db/db_adapter.py：核心實現文件（實際邏輯）
+  
+  所有 import 都指向同一個實現，保持向後相容性。
 """
 
 # 相容層轉導 - 導入所有公開函數以保持現存代碼正常運作
@@ -54,6 +60,11 @@ try:
         add_to_central_reserve,
         remove_from_central_reserve,
         set_central_reserve,
+        get_central_reserve_digital_usd,
+        add_to_central_reserve_digital_usd,
+        remove_from_central_reserve_digital_usd,
+        set_central_reserve_digital_usd,
+        get_total_reserves,
         # 動態費率與匯率系統
         get_dynamic_fee_rate,
         get_reserve_announcement,

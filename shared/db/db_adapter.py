@@ -556,7 +556,8 @@ def get_user_total_stock_value(
 # ============================================================
 
 SYSTEM_CONFIG_ID = 999999999  # 系統配置的特殊 ID（特殊數字，避免與真實玩家ID衝突）
-CENTRAL_RESERVE_FIELD = "central_reserve"  # 中央儲備池欄位名
+CENTRAL_RESERVE_FIELD = "central_reserve"  # 中央儲備池欄位名 (KK幣)
+CENTRAL_RESERVE_DIGITAL_USD_FIELD = "central_reserve_digital_usd"  # 中央數位美金儲備池欄位名
 
 
 def get_central_reserve() -> int:
@@ -620,6 +621,104 @@ def set_central_reserve(amount: int) -> bool:
         是否成功
     """
     return set_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, amount)
+
+
+# ============================================================
+# 中央儲備池 - 數位美金分支 (D-USD)
+# ============================================================
+
+def get_central_reserve_digital_usd() -> float:
+    """
+    獲取園區中央儲備池中的數位美金總額
+    
+    Returns:
+        儲備池中的 D-USD 總額 (預設 0.0)
+    """
+    value = get_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_DIGITAL_USD_FIELD, default=0)
+    try:
+        if isinstance(value, str):
+            return float(value)
+        return float(value)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def add_to_central_reserve_digital_usd(amount: float) -> bool:
+    """
+    增加中央儲備池的數位美金 (當玩家出售數位資產時)
+    
+    Args:
+        amount: 要加入的 D-USD 數量 (應為正數)
+        
+    Returns:
+        是否成功
+    """
+    if amount < 0:
+        print(f"⚠️ 嘗試向儲備池添加負數 D-USD: {amount}")
+        return False
+    
+    current = get_central_reserve_digital_usd()
+    new_amount = current + amount
+    return set_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_DIGITAL_USD_FIELD, new_amount)
+
+
+def remove_from_central_reserve_digital_usd(amount: float) -> bool:
+    """
+    從中央儲備池中取出數位美金 (當玩家購買數位資產或提現時)
+    
+    Args:
+        amount: 要取出的 D-USD 數量 (應為正數)
+        
+    Returns:
+        是否成功
+    """
+    current = get_central_reserve_digital_usd()
+    if current < amount:
+        print(f"⚠️ 儲備池數位美金餘額不足: 當前 {current:.2f}, 要取 {amount:.2f}")
+        return False
+    
+    new_amount = current - amount
+    return set_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_DIGITAL_USD_FIELD, new_amount)
+
+
+def set_central_reserve_digital_usd(amount: float) -> bool:
+    """
+    直接設置中央儲備池的數位美金 (用於初始化或管理員操作)
+    
+    Args:
+        amount: 新的 D-USD 總額
+        
+    Returns:
+        是否成功
+    """
+    return set_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_DIGITAL_USD_FIELD, amount)
+
+
+def get_total_reserves() -> Dict[str, float]:
+    """
+    獲取中央儲備池的完整狀態（KK + D-USD）
+    
+    Returns:
+        字典包含：
+        - kkcoin: KK 幣總額
+        - digital_usd: 數位美金總額
+        - total_value_in_kk: 總價值（轉換為 KK 幣）
+        - exchange_rate: 當前匯率
+    """
+    kkcoin = get_central_reserve()
+    digital_usd = get_central_reserve_digital_usd()
+    exchange_rate = get_dynamic_exchange_rate()
+    
+    # 將 D-USD 轉為 KK 幣計算總價值
+    usd_as_kk = digital_usd * exchange_rate
+    total_value = kkcoin + usd_as_kk
+    
+    return {
+        'kkcoin': kkcoin,
+        'digital_usd': digital_usd,
+        'total_value_in_kk': total_value,
+        'exchange_rate': exchange_rate
+    }
 
 
 def get_reserve_pressure() -> float:
