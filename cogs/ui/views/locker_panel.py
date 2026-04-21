@@ -240,8 +240,10 @@ class LockerPanelView(discord.ui.View):
                 view = WorkCardActionView(self.cog, owner_user_id, user_data)
                 await interaction.followup.send("✅ 你已經有員工證了！", view=view, ephemeral=True)
             else:
-                # 首次領取，顯示表單（以 followup 形式呈現）
-                await interaction.followup.send("📝 請點擊下方按鈕填寫員工證信息，或稍後從個人置物櫃填寫。", ephemeral=True)
+                # 首次領取，提供填寫按鈕
+                from .work_card import WorkCardCreateView
+                view = WorkCardCreateView(self.cog, owner_user_id)
+                await interaction.followup.send("📝 歡迎申請員工證！請點擊下方按鈕填寫您的信息。", view=view, ephemeral=True)
         
         except Exception as e:
             import traceback
