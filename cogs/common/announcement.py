@@ -363,24 +363,111 @@ class AnnouncementButtonView(PersistentViewBase):
             traceback.print_exc()
             return []
     
+    def _categorize_commits(self, commits: list) -> dict:
+        """按 commit 前綴分類
+        
+        返回格式:
+        {
+            'breaking': [commit, ...],    # 🔴 破壞性改動
+            'features': [commit, ...],    # ✨ 新功能
+            'fixes': [commit, ...],       # 🐛 缺陷修復
+            'docs': [commit, ...],        # 📚 文檔
+            'refactor': [commit, ...],    # 🔄 重構
+            'style': [commit, ...],       # 🎨 代碼風格
+            'others': [commit, ...]       # 📋 其他
+        }
+        """
+        categories = {
+            'breaking': [],
+            'features': [],
+            'fixes': [],
+            'docs': [],
+            'refactor': [],
+            'style': [],
+            'others': []
+        }
+        
+        for commit in commits:
+            msg = commit['message'].lower()
+            
+            # 判斷分類
+            if 'breaking' in msg or 'breaking change' in msg:
+                categories['breaking'].append(commit)
+            elif msg.startswith('feat:') or msg.startswith('feat '):
+                categories['features'].append(commit)
+            elif msg.startswith('fix:') or msg.startswith('fix '):
+                categories['fixes'].append(commit)
+            elif msg.startswith('docs:') or msg.startswith('docs '):
+                categories['docs'].append(commit)
+            elif msg.startswith('refactor:') or msg.startswith('refactor '):
+                categories['refactor'].append(commit)
+            elif msg.startswith('style:') or msg.startswith('style '):
+                categories['style'].append(commit)
+            else:
+                categories['others'].append(commit)
+        
+        return categories
+    
     def _create_update_log_embed(self, commits: list) -> discord.Embed:
-        """建立更新紀錄 Embed"""
+        """建立更新紀錄 Embed - 按類型分類顯示"""
+        
+        # 分類 commits
+        categories = self._categorize_commits(commits)
+        
+        # 定義分類的顯示信息
+        category_info = {
+            'breaking': {'emoji': '🔴', 'name': '破壞性改動', 'color': discord.Color.red()},
+            'features': {'emoji': '✨', 'name': '新功能'},
+            'fixes': {'emoji': '🐛', 'name': '缺陷修復'},
+            'docs': {'emoji': '📚', 'name': '文檔'},
+            'refactor': {'emoji': '🔄', 'name': '重構'},
+            'style': {'emoji': '🎨', 'name': '代碼風格'},
+            'others': {'emoji': '📋', 'name': '其他'}
+        }
+        
+        # 決定 embed 顏色（如果有破壞性改動就用紅色，否則藍色）
+        embed_color = discord.Color.red() if categories['breaking'] else discord.Color.blue()
+        
         embed = discord.Embed(
             title="📝 更新紀錄",
-            description=f"最近 {len(commits)} 次提交",
-            color=discord.Color.blue()
+            description=f"最近 {len(commits)} 次提交（按類型分類）",
+            color=embed_color
         )
         
-        for idx, commit in enumerate(commits, 1):
-            # 縮短 commit hash
-            short_hash = commit['hash'][:7]
+        # 按順序顯示各分類
+        category_order = ['breaking', 'features', 'fixes', 'refactor', 'docs', 'style', 'others']
+        
+        for category_key in category_order:
+            commits_in_category = categories[category_key]
+            if not commits_in_category:
+                continue
             
-            # 格式化欄位
-            field_name = f"{idx}. {short_hash} - {commit['author']}"
-            field_value = (
-                f"📅 {commit['date']} {commit['time']}\n"
-                f"💬 {commit['message']}"
-            )
+            info = category_info[category_key]
+            emoji = info['emoji']
+            name = info['name']
+            
+            # 建立分類欄位
+            field_name = f"{emoji} {name} ({len(commits_in_category)})"
+            
+            # 格式化該分類下的所有 commits
+            commits_text = []
+            for commit in commits_in_category:
+                short_hash = commit['hash'][:7]
+                msg = commit['message']
+                author = commit['author']
+                date = commit['date']
+                
+                # 格式：hash - 信息 (作者, 日期)
+                commits_text.append(
+                    f"• `{short_hash}` {msg}\n"
+                    f"  └─ {author} @ {date}"
+                )
+            
+            field_value = "\n".join(commits_text)
+            
+            # 添加欄位（長度過長會自動截斷）
+            if len(field_value) > 1024:
+                field_value = field_value[:1000] + "\n...（更多內容）"
             
             embed.add_field(
                 name=field_name,
@@ -388,7 +475,7 @@ class AnnouncementButtonView(PersistentViewBase):
                 inline=False
             )
         
-        embed.set_footer(text="🔄 由 Git 日誌自動生成")
+        embed.set_footer(text="🔄 由 Git 日誌自動生成 (按 commit 類型分類)")
         return embed
     
     def update_button_styles(self, active_id: str):
