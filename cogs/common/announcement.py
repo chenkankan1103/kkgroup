@@ -287,11 +287,12 @@ class AnnouncementButtonView(PersistentViewBase):
         try:
             # 執行 git log 命令
             # 格式: hash|author|date|time|message
-            cmd = f'git log --pretty=format:"%h|%an|%ad|%s" --date=short -n {limit}'
+            # 使用完整路徑 /usr/bin/git 避免 PATH 問題
+            cmd = f'/usr/bin/git log --pretty=format:"%h|%an|%ad|%s" --date=short -n {limit}'
             
             # 方式 1：嘗試使用 git rev-parse 獲取項目根目錄（最可靠）
             try:
-                git_root_cmd = 'git rev-parse --show-toplevel'
+                git_root_cmd = '/usr/bin/git rev-parse --show-toplevel'
                 git_root_result = subprocess.run(
                     git_root_cmd,
                     shell=True,
@@ -339,7 +340,7 @@ class AnnouncementButtonView(PersistentViewBase):
                     try:
                         # 執行額外的 git show 獲取完整時間戳
                         commit_hash = parts[0]
-                        time_cmd = f'git show -s --format=%ai {commit_hash}'
+                        time_cmd = f'/usr/bin/git show -s --format=%ai {commit_hash}'
                         time_result = subprocess.run(
                             time_cmd,
                             shell=True,
