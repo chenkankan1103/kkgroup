@@ -27,10 +27,10 @@ class TrendsCollector:
         self.twitter_api_key = os.getenv("TWITTER_API_KEY")
         self.twitter_bearer_token = os.getenv("TWITTER_BEARER_TOKEN")
         
-        # Reddit API
-        self.reddit_client_id = os.getenv("REDDIT_CLIENT_ID")
-        self.reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET")
-        self.reddit_user_agent = os.getenv("REDDIT_USER_AGENT", "TrendsBot/1.0")
+        # Reddit API (已禁用)
+        self.reddit_client_id = None
+        self.reddit_client_secret = None
+        self.reddit_user_agent = "TrendsBot/1.0"
         
         self.session: Optional[aiohttp.ClientSession] = None
     
@@ -91,54 +91,16 @@ class TrendsCollector:
     
     async def get_reddit_trends(self, subreddit: str = "all") -> List[Dict]:
         """
-        獲取 Reddit 趨勢
+        Reddit 趨勢已禁用（聚焦 Twitter 台灣趨勢）
         
         Args:
-            subreddit: Subreddit 名稱 (default: all)
+            subreddit: Subreddit 名稱 (已禁用)
         
         Returns:
-            趨勢列表 [{"trend": "...", "upvotes": 5000}, ...]
+            空列表
         """
-        if not self.reddit_client_id or not self.reddit_client_secret:
-            logger.warning("⚠️  REDDIT 憑證未設定，跳過 Reddit 趨勢")
-            return []
-        
-        try:
-            # 獲取 Reddit OAuth Token
-            auth = aiohttp.BasicAuth(self.reddit_client_id, self.reddit_client_secret)
-            token_url = "https://www.reddit.com/api/v1/access_token"
-            data = {"grant_type": "client_credentials"}
-            
-            async with self.session.post(token_url, auth=auth, data=data) as resp:
-                token_data = await resp.json()
-                access_token = token_data.get("access_token")
-                
-                if not access_token:
-                    logger.error("❌ Reddit Token 獲取失敗")
-                    return []
-            
-            # 獲取熱門帖子
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "User-Agent": self.reddit_user_agent
-            }
-            
-            url = f"https://oauth.reddit.com/r/{subreddit}/hot"
-            params = {"limit": 100}
-            
-            async with self.session.get(url, headers=headers, params=params) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    trends = self._extract_reddit_trends(data)
-                    logger.info(f"✅ Reddit 趨勢已獲取：{len(trends)} 項")
-                    return trends
-                else:
-                    logger.error(f"❌ Reddit API 錯誤: {resp.status}")
-                    return []
-        
-        except Exception as e:
-            logger.error(f"❌ Reddit 趨勢獲取失敗: {e}")
-            return []
+        logger.info("⏭️  Reddit 已禁用，返回空列表")
+        return []
     
     def _extract_twitter_trends(self, data: Dict) -> List[Dict]:
         """從 Twitter 回應中提取趨勢"""
@@ -192,69 +154,47 @@ class TrendsCollector:
     
     async def get_combined_trends(self, limit: int = 10) -> List[Dict]:
         """
-        獲取合併的趨勢（Twitter + Reddit）
+        獲取 Twitter 台灣趨勢（Reddit 已禁用）
         
         Args:
             limit: 返回的最大趨勢數
         
         Returns:
-            合併後的趨勢列表，按熱度排序
+            台灣 Twitter 趨勢列表，按熱度排序
         """
         if not self.session:
             self.session = aiohttp.ClientSession()
         
         try:
-            # 並行獲取兩個平台的趨勢
-            twitter_trends, reddit_trends = await asyncio.gather(
-                self.get_twitter_trends(),
-                self.get_reddit_trends(),
-                return_exceptions=True
-            )
+            # 只獲取 Twitter 台灣趨勢
+            twitter_trends = await self.get_twitter_trends()
             
-            # 處理異常
             if isinstance(twitter_trends, Exception):
                 logger.error(f"Twitter 趨勢獲取異常: {twitter_trends}")
                 twitter_trends = []
             
-            if isinstance(reddit_trends, Exception):
-                logger.error(f"Reddit 趨勢獲取異常: {reddit_trends}")
-                reddit_trends = []
-            
-            # 合併並去重
-            combined = {}
-            
+            # 過濾並格式化趨勢
+            trends_list = []
             for trend in twitter_trends:
-                key = trend["trend"].lower()
-                combined[key] = {
+                trends_list.append({
                     "trend": trend["trend"],
                     "sources": ["twitter"],
-                    "score": trend.get("count", 0)
-                }
-            
-            for trend in reddit_trends:
-                key = trend["trend"].lower()
-                if key in combined:
-                    combined[key]["sources"].append("reddit")
-                    combined[key]["score"] += trend.get("upvotes", 0)
-                else:
-                    combined[key] = {
-                        "trend": trend["trend"],
-                        "sources": ["reddit"],
-                        "score": trend.get("upvotes", 0)
-                    }
+                    "score": trend.get("count", 0),
+                    "region": "Taiwan"
+                })
             
             # 排序並返回前 limit 項
             sorted_trends = sorted(
-                combined.values(),
+                trends_list,
                 key=lambda x: x["score"],
                 reverse=True
             )[:limit]
             
-            logger.info(f"✅ 合併趨勢：{len(sorted_trends)} 項")
+            logger.info(f"✅ 取得台灣 Twitter 趨勢：{len(sorted_trends)} 項")
             return sorted_trends
         
         except Exception as e:
-            logger.error(f"❌ 合併趨勢失敗: {e}")
+            logger.error(f"❌ 趨勢獲取失敗: {e}")
             return []
 
 
