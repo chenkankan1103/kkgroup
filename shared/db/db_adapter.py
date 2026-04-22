@@ -22,7 +22,6 @@ from .sheet_driven_db import SheetDrivenDB, get_db_instance
 from typing import Any, Optional, Union, Dict, List, Tuple
 import asyncio
 import json
-from datetime import datetime
 
 # 獲取全局 DB 實例
 def get_db() -> SheetDrivenDB:
@@ -561,29 +560,6 @@ CENTRAL_RESERVE_FIELD = "central_reserve"  # 中央儲備池欄位名 (KK幣)
 CENTRAL_RESERVE_DIGITAL_USD_FIELD = "central_reserve_digital_usd"  # 中央數位美金儲備池欄位名
 
 
-def _ensure_system_config_exists():
-    """
-    確保系統配置記錄存在
-    如果記錄不存在，自動創建一個新記錄
-    """
-    system_user = get_user(SYSTEM_CONFIG_ID)
-    if not system_user:
-        # 創建系統配置記錄
-        system_data = {
-            'user_id': SYSTEM_CONFIG_ID,
-            'central_reserve': 0,
-            'central_reserve_digital_usd': 0.0,
-            'last_update': str(datetime.now())
-        }
-        success = set_user(SYSTEM_CONFIG_ID, system_data)
-        if success:
-            print(f"✅ 系統配置記錄已創建 (ID: {SYSTEM_CONFIG_ID})")
-        else:
-            print(f"❌ 創建系統配置記錄失敗")
-        return success
-    return True
-
-
 def get_central_reserve() -> int:
     """
     獲取園區中央儲備池的總額
@@ -591,9 +567,6 @@ def get_central_reserve() -> int:
     Returns:
         儲備池中的 KK 幣總額 (預設 0)
     """
-    # 確保系統配置記錄存在
-    _ensure_system_config_exists()
-    
     value = get_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, default=0)
     # 確保返回的是整數（可能從資料庫以字符串形式存儲）
     try:
@@ -614,9 +587,6 @@ def add_to_central_reserve(amount: int) -> bool:
     Returns:
         是否成功
     """
-    # 確保系統配置記錄存在
-    _ensure_system_config_exists()
-    
     if amount < 0:
         print(f"⚠️ 嘗試向儲備池添加負數: {amount}")
         return False
@@ -677,9 +647,6 @@ def get_central_reserve_digital_usd() -> float:
     Returns:
         儲備池中的 D-USD 總額 (預設 0.0)
     """
-    # 確保系統配置記錄存在
-    _ensure_system_config_exists()
-    
     value = get_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_DIGITAL_USD_FIELD, default=0)
     try:
         if isinstance(value, str):
@@ -699,9 +666,6 @@ def add_to_central_reserve_digital_usd(amount: float) -> bool:
     Returns:
         是否成功
     """
-    # 確保系統配置記錄存在
-    _ensure_system_config_exists()
-    
     if amount < 0:
         print(f"⚠️ 嘗試向儲備池添加負數 D-USD: {amount}")
         return False
