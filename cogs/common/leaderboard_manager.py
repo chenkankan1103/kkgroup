@@ -759,24 +759,39 @@ def has_data_changed(new_data, last_data):
         print(f"🔍 資料筆數變化：{len(last_data)} → {len(new_data)}")
         return True
     
-    for i, (member, kkcoin, digital_usd) in enumerate(new_data):
+    for i, item in enumerate(new_data):
         if i >= len(last_data):
             print(f"🔍 索引超出範圍：{i}")
             return True
+        
+        # 處理 4 個元素的元組 (member, kkcoin, digital_usd, stock_value)
+        if len(item) == 4:
+            member, kkcoin, digital_usd, stock_value = item
+        else:
+            # 向後兼容 3 個元素的情況
+            member, kkcoin, digital_usd = item
+            stock_value = 0
             
-        old_member, old_kkcoin, old_digital_usd = last_data[i]
+        old_item = last_data[i]
+        if len(old_item) == 4:
+            old_member, old_kkcoin, old_digital_usd, old_stock_value = old_item
+        else:
+            old_member, old_kkcoin, old_digital_usd = old_item
+            old_stock_value = 0
         
         new_kk = float(kkcoin or 0)
         old_kk = float(old_kkcoin or 0)
         new_usd = float(digital_usd or 0)
         old_usd = float(old_digital_usd or 0)
+        new_stock = float(stock_value or 0)
+        old_stock = float(old_stock_value or 0)
         
         if member.id != old_member.id:
             print(f"🔍 排名變化：位置 {i+1} 從 {old_member.display_name} 變成 {member.display_name}")
             return True
             
-        if new_kk != old_kk or new_usd != old_usd:
-            print(f"🔍 資料變化：{member.display_name} ({old_kk} KK, ${old_usd} USD → {new_kk} KK, ${new_usd} USD)")
+        if new_kk != old_kk or new_usd != old_usd or new_stock != old_stock:
+            print(f"🔍 資料變化：{member.display_name} ({old_kk} KK, ${old_usd} USD, ${old_stock} Stock → {new_kk} KK, ${new_usd} USD, ${new_stock} Stock)")
             return True
     
     print("🔍 資料沒有變化，跳過更新")
