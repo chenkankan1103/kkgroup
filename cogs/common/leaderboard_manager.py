@@ -29,7 +29,8 @@ from shared.db.db_adapter import (
     get_all_users,
     get_dynamic_exchange_rate,
     calculate_inflation_rate,
-    get_inflation_info
+    get_inflation_info,
+    get_user_stocks
 )
 
 # 載入 .env 檔案
@@ -573,7 +574,7 @@ def _sync_build_leaderboard_image(
     descriptions = [
         "KK幣是「未洗淨的髒錢」- 交易/賣出資產時給予",
         "可透過「金流斷點」轉換為 D-USD 數位美金",
-        "排名計算：總資產 = KK幣 + (D-USD × 35)"
+        "排名計算：淨值 = KK幣 + (D-USD × 動態匯率) + 股票市值"
     ]
     draw_info_icon(draw, MARGIN + 5, desc_y + 5, size=12, color=(150, 160, 200))
     draw_text((MARGIN + 20, desc_y), "金流說明：", font=FONT_SMALL, fill=(150, 160, 200))
@@ -590,8 +591,44 @@ def _sync_build_leaderboard_image(
 # 數據提取函數 - KK幣排行榜
 # ======================================================================
 
+def _calculate_stock_value(user_id):
+    """計算用戶持有股票的市值"""
+    try:
+        from utils.stock_api import fetch_price as async_fetch_price
+        import asyncio
+        
+        def fetch_price_sync(symbol: str):
+            """同步包裝 async fetch_price"""
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                return loop.run_until_complete(asyncio.wait_for(async_fetch_price(symbol), timeout=3.0))
+            except Exception as e:
+                print(f"⚠️ 獲取 {symbol} 價格失敗: {e}")
+                return None
+            finally:
+                loop.close()
+        
+        stocks = get_user_stocks(user_id) or []
+        total_value = 0.0
+        
+        for position in stocks:
+            symbol = position.get('symbol')
+            shares = position.get('shares', 0)
+            
+            if symbol:
+                price = fetch_price_sync(symbol)
+                if price:
+                    total_value += shares * price
+        
+        return total_value
+    except Exception as e:
+        print(f"⚠️ 計算股票市值失敗 (user_id={user_id}): {e}")
+        return 0.0
+
+
 def get_current_leaderboard_data(bot, rank_channel_id):
-    """取得當前排行榜資料（包含 KK幣和數位美金，按總資產排序）"""
+    """取得當前排行榜資料（包含 KK幣、數位美金和股票市值，按淨值排序）"""
     if not rank_channel_id:
         return []
         
@@ -611,10 +648,18 @@ def get_current_leaderboard_data(bot, rank_channel_id):
             return 0.0
 
     users = [u for u in all_users if _safe_float(u.get('kkcoin')) > 0 or _safe_float(u.get('digital_usd')) > 0]
-    # 使用動態匯率計算排名
+    # 使用動態匯率和股票市值計算淨值
     dynamic_rate = get_dynamic_exchange_rate()
+    
+    def calculate_net_worth(user):
+        """計算用戶淨值 = KK幣 + D-USD×匯率 + 股票市值"""
+        kkcoin = _safe_float(user.get('kkcoin'))
+        digital_usd = _safe_float(user.get('digital_usd'))
+        stock_value = _calculate_stock_value(int(user['user_id']))
+        return kkcoin + digital_usd * dynamic_rate + stock_value
+    
     users.sort(
-        key=lambda x: float(x.get('kkcoin') or 0) + float(x.get('digital_usd') or 0) * dynamic_rate,
+        key=calculate_net_worth,
         reverse=True
     )
     users = users[:15]
