@@ -100,13 +100,14 @@ class WorkCardModal(discord.ui.Modal):
         """生成工作證卡片 embed"""
         from cogs.common.work_function.work_system import LEVELS
         
-        level = user_data.get('level', 0)
+        level = user_data.get('level') or 0
         level_info = LEVELS.get(level, {})
-        xp = user_data.get('xp', 0)
-        streak = user_data.get('streak', 0)
+        xp = user_data.get('xp') or 0
+        streak = user_data.get('streak') or 0
         
         # 計算下一級 XP
         next_level_xp = LEVELS.get(level + 1, {}).get('xp_required', xp) if level < 6 else xp
+        next_level_xp = next_level_xp or xp
         
         # 生成員工編號
         user_id_suffix = str(self.user_id)[-6:].zfill(6)
