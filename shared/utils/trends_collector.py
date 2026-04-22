@@ -116,20 +116,20 @@ class TrendsCollector:
             return self._get_test_trends()
     
     def _get_test_trends(self) -> List[Dict]:
-        """返回測試數據"""
+        """返回測試數據 - 台灣流行趨勢"""
         test_trends = [
-            {"trend": "#臺灣", "count": 450, "platform": "twitter"},
-            {"trend": "#台灣", "count": 420, "platform": "twitter"},
+            {"trend": "緯創", "count": 450, "platform": "twitter"},
+            {"trend": "友達", "count": 420, "platform": "twitter"},
             {"trend": "鴻海", "count": 380, "platform": "twitter"},
             {"trend": "TSMC", "count": 350, "platform": "twitter"},
             {"trend": "聯發科", "count": 320, "platform": "twitter"},
-            {"trend": "新聞", "count": 300, "platform": "twitter"},
-            {"trend": "天氣", "count": 280, "platform": "twitter"},
-            {"trend": "體育", "count": 250, "platform": "twitter"},
-            {"trend": "股市", "count": 220, "platform": "twitter"},
-            {"trend": "政治", "count": 200, "platform": "twitter"},
+            {"trend": "台積電", "count": 300, "platform": "twitter"},
+            {"trend": "中華電信", "count": 280, "platform": "twitter"},
+            {"trend": "台灣股市", "count": 250, "platform": "twitter"},
+            {"trend": "半導體", "count": 220, "platform": "twitter"},
+            {"trend": "電子產業", "count": 200, "platform": "twitter"},
         ]
-        logger.info(f"✅ 使用測試數據：{len(test_trends)} 項")
+        logger.info(f"✅ 使用測試數據：{len(test_trends)} 項（台灣流行趨勢）")
         return test_trends
     
     async def get_reddit_trends(self, subreddit: str = "all") -> List[Dict]:
