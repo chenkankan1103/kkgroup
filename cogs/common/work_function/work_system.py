@@ -505,12 +505,34 @@ async def process_checkin(user_id, user_obj, guild):
         # ============================================================
         # 金庫流入機制：每日薪資 * 100% 流入金庫
         # ============================================================
-        try:
-            from db_adapter import add_to_central_reserve
-            add_to_central_reserve(kkcoin_gain)
-            print(f"  💎 金庫流入: {kkcoin_gain} KK幣（每日薪資 100%）")
-        except Exception as e:
-            print(f"  ⚠️ 金庫流入失敗: {e}")
+        print(f"  💎 開始金庫流入機制...")
+        print(f"  📊 薪資金額: {kkcoin_gain} KK幣")
+        
+        if kkcoin_gain <= 0:
+            print(f"  ⚠️ 薪資為 0，跳過金庫流入")
+        else:
+            try:
+                from db_adapter import add_to_central_reserve, get_central_reserve
+                
+                # 記錄流入前的金庫金額
+                before_reserve = get_central_reserve()
+                print(f"  📌 流入前金庫: {before_reserve} KK幣")
+                
+                # 執行金庫流入
+                result = add_to_central_reserve(kkcoin_gain)
+                
+                if result:
+                    # 記錄流入後的金庫金額
+                    after_reserve = get_central_reserve()
+                    print(f"  ✅ 金庫流入成功: {kkcoin_gain} KK幣")
+                    print(f"  📌 流入後金庫: {after_reserve} KK幣 (增加 {after_reserve - before_reserve})")
+                else:
+                    print(f"  ❌ 金庫流入失敗：add_to_central_reserve 返回 False")
+                    
+            except Exception as e:
+                print(f"  ❌ 金庫流入異常: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
 
         updated_user = get_user(user_id)
         if not updated_user:
