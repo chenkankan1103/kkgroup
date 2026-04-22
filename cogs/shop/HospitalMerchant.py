@@ -20,7 +20,7 @@ class StaminaItemView(discord.ui.View):
         self.merchant_cog = merchant_cog
         self.user_id = user_id
 
-    @discord.ui.button(label="維他命C軟糖 +5體力", style=discord.ButtonStyle.blurple, emoji="🍬")
+    @discord.ui.button(label="維他命C軟糖 +5體力", style=discord.ButtonStyle.primary, emoji="🍬")
     async def buy_small(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id != self.user_id:
@@ -28,7 +28,7 @@ class StaminaItemView(discord.ui.View):
             return
         await self.merchant_cog.process_purchase(interaction, self.user_id, "small")
 
-    @discord.ui.button(label="紅牛能量飲 +10體力", style=discord.ButtonStyle.green, emoji="🥛")
+    @discord.ui.button(label="紅牛能量飲 +10體力", style=discord.ButtonStyle.success, emoji="🥛")
     async def buy_medium(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id != self.user_id:
@@ -51,12 +51,12 @@ class PersistentStaminaView(discord.ui.View):
         super().__init__(timeout=None)  # 永不過期
         self.merchant_cog = merchant_cog
 
-    @discord.ui.button(label="維他命C軟糖 +5體力", style=discord.ButtonStyle.blurple, emoji="🍬", custom_id="stamina_small")
+    @discord.ui.button(label="維他命C軟糖 +5體力", style=discord.ButtonStyle.primary, emoji="🍬", custom_id="stamina_small")
     async def buy_small(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         await self.merchant_cog.process_purchase(interaction, interaction.user.id, "small")
 
-    @discord.ui.button(label="紅牛能量飲 +10體力", style=discord.ButtonStyle.green, emoji="🥛", custom_id="stamina_medium")
+    @discord.ui.button(label="紅牛能量飲 +10體力", style=discord.ButtonStyle.success, emoji="🥛", custom_id="stamina_medium")
     async def buy_medium(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         await self.merchant_cog.process_purchase(interaction, interaction.user.id, "medium")

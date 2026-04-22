@@ -155,7 +155,7 @@ class CannabisMerchantViewV2(PersistentViewBase):
             except:
                 pass
     
-    @discord.ui.button(label="返回", style=discord.ButtonStyle.grey, custom_id="cannabis_back_v2")
+    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, custom_id="cannabis_back_v2")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """返回主菜單"""
         try:
