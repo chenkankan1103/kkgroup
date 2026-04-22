@@ -427,6 +427,29 @@ async def assign_role(guild, user, new_level):
 async def process_checkin(user_id, user_obj, guild):
     """處理打卡邏輯 - 加入 AI 生成的每日情境"""
     try:
+        # ============================================================
+        # 初始化：確保中央儲備池系統配置記錄存在
+        # ============================================================
+        try:
+            from db_adapter import get_user, set_user, SYSTEM_CONFIG_ID
+            
+            system_config = get_user(SYSTEM_CONFIG_ID)
+            if not system_config:
+                print(f"🔧 初始化系統配置記錄...")
+                system_data = {
+                    'user_id': SYSTEM_CONFIG_ID,
+                    'central_reserve': 0,
+                    'central_reserve_digital_usd': 0.0,
+                    'last_update': get_taiwan_time().isoformat()
+                }
+                set_user(SYSTEM_CONFIG_ID, system_data)
+                print(f"✅ 系統配置記錄已創建")
+        except Exception as e:
+            print(f"⚠️ 系統初始化警告: {e}")
+        
+        # ============================================================
+        # 打卡主邏輯
+        # ============================================================
         user = get_user(user_id)
         
         # 檢查用戶是否成功取得
