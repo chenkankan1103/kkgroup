@@ -132,10 +132,17 @@ class TrendsLotteryCog(commands.Cog):
         self.current_trends: List[str] = []
         self.current_round_id: str = ""
         self._db_initialized = False
+        self.trends_channel_id = None  # 將在 on_ready 時初始化
     
     @commands.Cog.listener()
     async def on_ready(self):
         """Cog 準備就緒時初始化"""
+        # 首先讀取 TRENDS_CHANNEL_ID
+        if not self.trends_channel_id:
+            self.trends_channel_id = int(os.getenv("TRENDS_CHANNEL_ID", "0"))
+            logger.info(f"✅ 初始化 trends_channel_id: {self.trends_channel_id}")
+            temp_debug_log(f"[on_ready] trends_channel_id set to {self.trends_channel_id}")
+        
         if not self._db_initialized:
             try:
                 # 導入 db_adapter
@@ -272,21 +279,21 @@ class TrendsLotteryCog(commands.Cog):
         logger.info(f"🚀 開始廣播趨勢...（{len(trends)} 項）")
         temp_debug_log(f"A. _broadcast_trends_to_discord called with {len(trends)} trends")
         
-        if not TRENDS_CHANNEL_ID:
+        if not self.trends_channel_id:
             logger.warning("⚠️  TRENDS_CHANNEL_ID 未設置")
-            temp_debug_log(f"B. TRENDS_CHANNEL_ID is not set!")
+            temp_debug_log(f"B. trends_channel_id is not set! ({self.trends_channel_id})")
             return
         
-        temp_debug_log(f"C. TRENDS_CHANNEL_ID = {TRENDS_CHANNEL_ID}")
+        temp_debug_log(f"C. trends_channel_id = {self.trends_channel_id}")
         
         try:
-            logger.info(f"📍 目標頻道 ID: {TRENDS_CHANNEL_ID}")
-            temp_debug_log(f"D. Getting channel object...")
-            channel = self.bot.get_channel(TRENDS_CHANNEL_ID)
+            logger.info(f"📍 目標頻道 ID: {self.trends_channel_id}")
+            temp_debug_log(f"D. Getting channel object for ID {self.trends_channel_id}...")
+            channel = self.bot.get_channel(self.trends_channel_id)
             temp_debug_log(f"E. channel object = {channel}")
             
             if not channel:
-                logger.error(f"❌ 找不到頻道：{TRENDS_CHANNEL_ID}")
+                logger.error(f"❌ 找不到頻道：{self.trends_channel_id}")
                 temp_debug_log(f"F. Channel not found!")
                 logger.error(f"   可用頻道數: {len(self.bot.get_all_channels())}")
                 return
@@ -558,17 +565,5 @@ class TrendsLotteryCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     """設置 Cog"""
-    global TRENDS_CHANNEL_ID
-    
-    # 延遲讀取 TRENDS_CHANNEL_ID
-    TRENDS_CHANNEL_ID = int(os.getenv("TRENDS_CHANNEL_ID", "0"))
-    
-    logger.info(f"🔧 [SETUP] TRENDS_CHANNEL_ID: {TRENDS_CHANNEL_ID}")
-    
-    if TRENDS_CHANNEL_ID == 0:
-        logger.error(f"❌ [SETUP] TRENDS_CHANNEL_ID 未設置或為 0")
-    else:
-        logger.info(f"✅ [SETUP] 頻道 ID 已讀取: {TRENDS_CHANNEL_ID}")
-    
     await bot.add_cog(TrendsLotteryCog(bot))
     logger.info("✅ 趨勢樂透 Cog 已安裝")
