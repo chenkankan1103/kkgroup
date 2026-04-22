@@ -123,81 +123,28 @@ class TrendsLotteryCog(commands.Cog):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # 延遲初始化 DB adapter（需要在 on_ready 時初始化）
+        # 延遲初始化 DB adapter（需要在 before_loop 時初始化）
         self.lottery_system: Optional[TrendsLotterySystem] = None
         self.current_trends: List[str] = []
         self.current_round_id: str = ""
         self._db_initialized = False
-        self.trends_channel_id = None  # 將在 on_ready 時初始化
+        self.trends_channel_id = None  # 將在 before_loop 時初始化
         self.round_message_ids: Dict[str, int] = {}  # 儲存 round_id -> message_id 的映射
-    
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """Cog 準備就緒時初始化"""
-        logger.info(f"📍 on_ready 觸發 (_db_initialized={self._db_initialized})")
         
-        # 首先讀取 TRENDS_CHANNEL_ID
-        if not self.trends_channel_id:
-            self.trends_channel_id = int(os.getenv("TRENDS_CHANNEL_ID", "0"))
-            logger.info(f"✅ 初始化 trends_channel_id: {self.trends_channel_id}")
-        
-        if not self._db_initialized:
-            logger.info("🔄 開始初始化 DB 和排程任務...")
-            try:
-                # 導入 db_adapter
-                from db_adapter import get_user_field, set_user_field, get_all_users
-                
-                # 創建簡單的 DB 適配器對象
-                class DBAdapter:
-                    @staticmethod
-                    def get_user_field(user_id, field, default=None):
-                        return get_user_field(user_id, field, default)
-                    
-                    @staticmethod
-                    def set_user_field(user_id, field, value):
-                        return set_user_field(user_id, field, value)
-                    
-                    @staticmethod
-                    def add_user_field(user_id, field, value):
-                        from db_adapter import add_user_field
-                        return add_user_field(user_id, field, value)
-                    
-                    @staticmethod
-                    def get_all_users():
-                        return get_all_users()
-                
-                # 初始化樂透系統
-                self.lottery_system = TrendsLotterySystem(db_adapter=DBAdapter())
-                self._db_initialized = True
-                logger.info("✅ 樂透系統初始化完成")
-                
-            except Exception as e:
-                logger.error(f"❌ DB 初始化失敗: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-        
-        # **重要：確保排程任務一定會啟動（即使已初始化過）**
-        if not self.update_trends_task.is_running():
-            logger.info("📌 排程任務未運行，現在啟動...")
-            try:
-                self.update_trends_task.start()
-                logger.info("✅ 排程任務已啟動")
-            except RuntimeError as e:
-                # 如果任務已經在運行中會拋出 RuntimeError
-                logger.warning(f"⚠️  排程任務狀態: {e}")
-            except Exception as task_err:
-                logger.error(f"❌ 排程任務啟動失敗: {task_err}")
-                import traceback
-                logger.error(traceback.format_exc())
-        else:
-            logger.info("⚠️  排程任務已在運行中")
-        
-        logger.info("✅ 趨勢樂透 Cog 已準備就緒")
+        # 直接啟動排程任務
+        print(f"🔧 [TrendsLotteryCog.__init__] 初始化開始，即將啟動任務...")
+        self.update_trends_task.start()
+        print(f"✅ [TrendsLotteryCog.__init__] 任務已啟動")
     
     async def cog_unload(self):
         """Cog 卸載時清理"""
         self.update_trends_task.cancel()
         logger.info("🛑 趨勢樂透 Cog 已卸載")
+    
+    async def cog_load(self):
+        """Cog 加載時的初始化"""
+        print(f"✅ [cog_load] 趨勢樂透 Cog 已加載")
+        return await super().cog_load()
     
     @tasks.loop(minutes=1)
     async def update_trends_task(self):
@@ -239,8 +186,51 @@ class TrendsLotteryCog(commands.Cog):
     
     @update_trends_task.before_loop
     async def before_update_trends_task(self):
-        """任務啟動前等待 bot 準備"""
+        """任務啟動前初始化數據庫和等待 bot 準備"""
+        print(f"🔧 [before_loop] 開始執行...")
         await self.bot.wait_until_ready()
+        print(f"✅ [before_loop] Bot 已就緒")
+        
+        # 初始化 TRENDS_CHANNEL_ID
+        if not self.trends_channel_id:
+            self.trends_channel_id = int(os.getenv("TRENDS_CHANNEL_ID", "0"))
+            print(f"✅ [before_loop] trends_channel_id: {self.trends_channel_id}")
+        
+        # 初始化 DB 和樂透系統
+        if not self._db_initialized:
+            print(f"🔄 [before_loop] 開始初始化 DB...")
+            try:
+                # 導入 db_adapter
+                from db_adapter import get_user_field, set_user_field, get_all_users
+                
+                # 創建簡單的 DB 適配器對象
+                class DBAdapter:
+                    @staticmethod
+                    def get_user_field(user_id, field, default=None):
+                        return get_user_field(user_id, field, default)
+                    
+                    @staticmethod
+                    def set_user_field(user_id, field, value):
+                        return set_user_field(user_id, field, value)
+                    
+                    @staticmethod
+                    def add_user_field(user_id, field, value):
+                        from db_adapter import add_user_field
+                        return add_user_field(user_id, field, value)
+                    
+                    @staticmethod
+                    def get_all_users():
+                        return get_all_users()
+                
+                # 初始化樂透系統
+                self.lottery_system = TrendsLotterySystem(db_adapter=DBAdapter())
+                self._db_initialized = True
+                print(f"✅ [before_loop] 樂透系統初始化完成")
+                
+            except Exception as e:
+                print(f"❌ [before_loop] DB 初始化失敗: {e}")
+                import traceback
+                print(traceback.format_exc())
     
     async def _fetch_trends_silent(self):
         """靜默抓取趨勢（深夜時段）"""
