@@ -6,9 +6,9 @@
 1. 玩家投注 10 數位美金
 2. 預測下一次趨勢更新（4小時後）的前三名
 3. 開獎時：
-   - 中 1 個：退回本金 (10 USD)
-   - 中 2 個：獲得 10 倍 KK 幣 (100 KK)
-   - 中 3 個：平分中央獎池 (jackpot)
+   - 中 1 個：返回本金 ($10 USD)
+   - 中 2 個：獲得 10 倍 ($100 USD)
+   - 中 3 個：獲得 10 倍 ($100 USD) + 平分中央獎池
 4. 投注款項加入中央獎池
 """
 
@@ -41,9 +41,9 @@ class TrendsLotterySystem:
     """趨勢樂透遊戲系統"""
     
     BET_AMOUNT = 10.0  # 投注金額：10 USD
-    KKCOIN_PAYOUT_2MATCH = 100  # 中2個：100 KK
-    KKCOIN_PAYOUT_1MATCH = 10.0  # 中1個：10 USD（退本金）
-    KKCOIN_PAYOUT_3MATCH_SHARE = 1.0  # 中3個：平分獎池（用系數表示）
+    USD_PAYOUT_1MATCH = 10.0  # 中1個：10 USD（退本金）
+    USD_PAYOUT_2MATCH = 100.0  # 中2個：100 USD
+    USD_PAYOUT_3MATCH = 100.0  # 中3個：100 USD + 獎池
     
     def __init__(self, db_adapter):
         """
@@ -186,28 +186,27 @@ class TrendsLotterySystem:
             payout_type = None
             
             if matches == 1:
-                # 中1個：退回本金
-                payout = self.KKCOIN_PAYOUT_1MATCH
+                # 中1個：返回本金
+                payout = self.USD_PAYOUT_1MATCH
                 payout_type = "digital_usd"
             elif matches == 2:
-                # 中2個：10倍 KK 幣
-                payout = self.KKCOIN_PAYOUT_2MATCH
-                payout_type = "kkcoin"
+                # 中2個：10倍 ($100 USD)
+                payout = self.USD_PAYOUT_2MATCH
+                payout_type = "digital_usd"
             elif matches == 3:
-                # 中3個：記錄，後續平分獎池
+                # 中3個：記錄，後續獲得 $100 + 平分獎池
                 three_match_winners.append(bet.user_id)
-                payout_type = "jackpot_share"
+                payout = self.USD_PAYOUT_3MATCH  # 先給 $100
+                payout_type = "digital_usd_plus_jackpot"
             
             # 發放獎金
-            if payout_type == "digital_usd":
+            if payout_type == "digital_usd" or payout_type == "digital_usd_plus_jackpot":
                 current = self.db.get_user_field(bet.user_id, "digital_usd", default=0.0)
                 try:
                     current = float(current)
                 except (ValueError, TypeError):
                     current = 0.0
                 self.db.set_user_field(bet.user_id, "digital_usd", current + payout)
-            elif payout_type == "kkcoin":
-                self.db.add_user_field(bet.user_id, "kkcoin", int(payout))
             
             # 更新投注記錄
             bet.result = f"{matches}match"
@@ -221,10 +220,11 @@ class TrendsLotterySystem:
                 "payout_type": payout_type
             })
         
-        # 處理3個全中的玩家
+        # 處理3個全中的玩家 - 平分獎池
         if three_match_winners and jackpot > 0:
             share_amount = jackpot / len(three_match_winners)
             for winner_id in three_match_winners:
+                # 已經在上面給了 $100，這裡只需加獎池份額
                 current = self.db.get_user_field(winner_id, "digital_usd", default=0.0)
                 try:
                     current = float(current)
