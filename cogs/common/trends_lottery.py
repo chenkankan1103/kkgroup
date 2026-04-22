@@ -232,15 +232,22 @@ class TrendsLotteryCog(commands.Cog):
     
     async def _broadcast_trends_to_discord(self, trends: List[dict]):
         """將趨勢廣播到 Discord"""
+        logger.info(f"🚀 開始廣播趨勢...（{len(trends)} 項）")
+        
         if not TRENDS_CHANNEL_ID:
             logger.warning("⚠️  TRENDS_CHANNEL_ID 未設置")
             return
         
         try:
+            logger.info(f"📍 目標頻道 ID: {TRENDS_CHANNEL_ID}")
             channel = self.bot.get_channel(TRENDS_CHANNEL_ID)
+            
             if not channel:
                 logger.error(f"❌ 找不到頻道：{TRENDS_CHANNEL_ID}")
+                logger.error(f"   可用頻道數: {len(self.bot.get_all_channels())}")
                 return
+            
+            logger.info(f"✅ 找到頻道: {channel.name}")
             
             # 創建 Embed
             embed = discord.Embed(
@@ -252,18 +259,24 @@ class TrendsLotteryCog(commands.Cog):
             
             # 添加趨勢列表
             trends_text = "\n".join([
-                f"{i+1}. `{t['trend']}` ({', '.join(t['sources'])})"
-                for i, t in enumerate(trends)
+                f"{i+1}. `{t['trend']}` ({', '.join(t.get('sources', ['twitter']))})"
+                for i, t in enumerate(trends[:10])
             ])
-            embed.add_field(name="當前趨勢", value=trends_text, inline=False)
+            embed.add_field(name="當前趨勢", value=trends_text or "無趨勢數據", inline=False)
+            
+            logger.info(f"📊 趨勢文本長度: {len(trends_text)} 字符")
             
             # 獎池信息
-            jackpot_info = await self.lottery_system.get_jackpot_info(self.current_round_id)
-            embed.add_field(
-                name="🎁 中央獎池",
-                value=f"**${jackpot_info['jackpot']:.2f}**\n參與投注：{jackpot_info['total_bets']} 人",
-                inline=False
-            )
+            try:
+                jackpot_info = await self.lottery_system.get_jackpot_info(self.current_round_id)
+                embed.add_field(
+                    name="🎁 中央獎池",
+                    value=f"**${jackpot_info['jackpot']:.2f}**\n參與投注：{jackpot_info['total_bets']} 人",
+                    inline=False
+                )
+            except Exception as e:
+                logger.warning(f"⚠️  獎池信息獲取失敗: {e}")
+                embed.add_field(name="🎁 中央獎池", value="初始化中...", inline=False)
             
             embed.set_footer(text=f"開獎輪次：{self.current_round_id}")
             
@@ -274,10 +287,14 @@ class TrendsLotteryCog(commands.Cog):
                 self.current_round_id
             )
             
-            await channel.send(embed=embed, view=view)
+            logger.info(f"📤 正在發送 embed 到頻道 {channel.name}...")
+            message = await channel.send(embed=embed, view=view)
+            logger.info(f"✅ 趨勢已廣播！消息 ID: {message.id}")
         
         except Exception as e:
             logger.error(f"❌ 廣播趨勢失敗: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def _draw_previous_round(self):
         """開獎上一輪"""
