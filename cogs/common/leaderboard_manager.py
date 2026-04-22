@@ -374,14 +374,16 @@ def _sync_build_leaderboard_image(
     usd_label = "數位美金"
     stock_label = "股票淨值"
     
-    # 計算標籤寬度和位置（與下面數字顯示保持一致）
+    # 使用固定欄位寬度（與下面數字顯示保持一致）
+    field_width = 140  # 每個欄位預留140px
+    
+    stock_label_right = WIDTH - 20
+    usd_label_right = stock_label_right - field_width
+    kk_label_right = usd_label_right - field_width
+    
     kk_label_w = FONT_DESC.getbbox(kk_label)[2] - FONT_DESC.getbbox(kk_label)[0]
     usd_label_w = FONT_DESC.getbbox(usd_label)[2] - FONT_DESC.getbbox(usd_label)[0]
     stock_label_w = FONT_DESC.getbbox(stock_label)[2] - FONT_DESC.getbbox(stock_label)[0]
-    
-    stock_label_right = WIDTH - 20
-    usd_label_right = stock_label_right - stock_label_w - 20
-    kk_label_right = usd_label_right - usd_label_w - 20
     
     draw_text((kk_label_right - kk_label_w, header_y), kk_label, font=FONT_DESC, fill=(160, 160, 180))
     draw_text((usd_label_right - usd_label_w, header_y), usd_label, font=FONT_DESC, fill=(160, 160, 180))
@@ -505,14 +507,19 @@ def _sync_build_leaderboard_image(
         usd_text = f"${float(digital_usd or 0):,.0f}"
         stock_value_text = f"${float(stock_value or 0):,.0f}"
 
-        # 右對齊：股票淨值在最右邊，然後是D-USD，再是KK幣
+        # 固定欄位寬度，確保對齊
+        # 預留足夠的寬度給數字（最多12位數）
+        field_width = 140  # 每個欄位預留140px
+        
+        # 三個欄位的右邊界（從右至左）
+        stock_value_right = WIDTH - 20
+        usd_right = stock_value_right - field_width
+        kk_right = usd_right - field_width
+        
+        # 在各欄位內右對齊
         kkcoin_width = FONT_KKCOIN.getbbox(kkcoin_text)[2] - FONT_KKCOIN.getbbox(kkcoin_text)[0]
         usd_width = FONT_KKCOIN.getbbox(usd_text)[2] - FONT_KKCOIN.getbbox(usd_text)[0]
         stock_value_width = FONT_KKCOIN.getbbox(stock_value_text)[2] - FONT_KKCOIN.getbbox(stock_value_text)[0]
-        
-        stock_value_right = WIDTH - 20
-        usd_right = stock_value_right - stock_value_width - 20  # 股票淨值左邊預留20px間距
-        kk_right = usd_right - usd_width - 20  # D-USD左邊預留20px間距
         
         kkcoin_x = kk_right - kkcoin_width
         usd_x = usd_right - usd_width
@@ -525,7 +532,7 @@ def _sync_build_leaderboard_image(
         # 進度條 - 灰色代表淨值（長度縮短以容納新欄位）
         progress_bar_y = y + 35
         progress_bar_x = rank_x + 100
-        progress_bar_width = kk_right - 120 - progress_bar_x  # 縮短進度條以容納新欄位
+        progress_bar_width = kk_right - 20 - progress_bar_x  # 到KK幣欄位前停止
         progress_bar_height = 16
         
         # 背景框
