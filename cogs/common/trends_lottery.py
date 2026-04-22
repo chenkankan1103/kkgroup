@@ -16,7 +16,7 @@ import asyncio
 import os
 import sys
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 # ⚠️ 在導入其他模塊之前，必須先加載 .env！
 # 使用絕對路徑加載 .env
@@ -49,9 +49,6 @@ logger = logging.getLogger(__name__)
 # 配置
 TRENDS_UPDATE_INTERVAL = 240  # 4 小時（秒）
 TRENDS_UPDATE_HOURS = [8, 12, 16, 20]  # 08:00, 12:00, 16:00, 20:00 台灣時間
-
-# TRENDS_CHANNEL_ID 将在 setup 时读取
-TRENDS_CHANNEL_ID = None
 
 
 class TrendsPredictionView(discord.ui.View):
@@ -132,6 +129,7 @@ class TrendsLotteryCog(commands.Cog):
         self.current_round_id: str = ""
         self._db_initialized = False
         self.trends_channel_id = None  # 將在 on_ready 時初始化
+        self.round_message_ids: Dict[str, int] = {}  # 儲存 round_id -> message_id 的映射
     
     @commands.Cog.listener()
     async def on_ready(self):
@@ -284,7 +282,7 @@ class TrendsLotteryCog(commands.Cog):
             # 創建 Embed
             embed = discord.Embed(
                 title="🔥 最新熱門趨勢",
-                description="預測下一個時段的前三名趨勢！",
+                description="📊 預測下一個時段的前三名趨勢！\n💰 **每次投注需花費 $10.00 USD**",
                 color=discord.Color.gold(),
                 timestamp=datetime.now(TZ_TW)
             )
@@ -297,6 +295,13 @@ class TrendsLotteryCog(commands.Cog):
             embed.add_field(name="當前趨勢", value=trends_text or "無趨勢數據", inline=False)
             
             logger.info(f"📊 趨勢文本長度: {len(trends_text)} 字符")
+            
+            # 投注說明
+            embed.add_field(
+                name="🎯 投注說明",
+                value="• 選擇前三名趨勢進行投注\n• 每次投注 $10.00 USD\n• 開獎時間：下個時段開始時\n• 全中獎池的 50%",
+                inline=False
+            )
             
             # 獎池信息
             try:
@@ -321,7 +326,10 @@ class TrendsLotteryCog(commands.Cog):
             
             logger.info(f"📤 正在發送 embed 到頻道 {channel.name}...")
             message = await channel.send(embed=embed, view=view)
-            logger.info(f"✅ 趨勢已廣播！消息 ID: {message.id}")
+            
+            # 儲存消息 ID 用於後續編輯
+            self.round_message_ids[self.current_round_id] = message.id
+            logger.info(f"✅ 趨勢已廣播！消息 ID: {message.id}，輪次: {self.current_round_id}")
         
         except Exception as e:
             logger.error(f"❌ 廣播趨勢失敗: {e}")
@@ -330,38 +338,126 @@ class TrendsLotteryCog(commands.Cog):
     
     async def _draw_previous_round(self):
         """開獎上一輪"""
-        # 計算上一個時段的 round_id
-        # 由於我們的 round_id 是按小時生成的，上一個就是 4 小時前
         try:
             if not self.current_trends:
                 return
             
-            # 開獎邏輯（實際上應該基於前一個時段）
+            # 計算上一輪 round_id（從當前時間往回 4 小時）
+            now = datetime.now(TZ_TW)
+            # 從目前時間往回找上一個時段
+            prev_hour = now.hour - 4
+            if prev_hour < 0:
+                prev_hour += 24
+            
+            prev_round_id = now.replace(hour=prev_hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d-%H")
+            
+            logger.info(f"🎰 開始開獎上一輪：{prev_round_id}")
+            
+            # 開獎邏輯
             draw_result = await self.lottery_system.draw_lottery(
-                self.current_round_id,
+                prev_round_id,
                 self.current_trends[:3]
             )
             
-            if draw_result:
+            if draw_result and draw_result.get('total_bets', 0) > 0:
+                # 有人投注才顯示結果
+                logger.info(f"✅ 開獎完成，有 {draw_result['total_bets']} 人投注")
+                
+                # 編輯之前的 embed 消息添加結果
+                await self._update_embed_with_result(prev_round_id, draw_result)
+                
+                # 另外發送開獎結果公告
                 await self._announce_draw_result(draw_result)
+            else:
+                logger.info(f"⏭️  上一輪 {prev_round_id} 無投注，跳過開獎")
         
         except Exception as e:
             logger.error(f"❌ 開獎失敗: {e}")
     
+    async def _update_embed_with_result(self, round_id: str, result: dict):
+        """編輯 embed 消息添加開獎結果"""
+        try:
+            if not self.trends_channel_id:
+                logger.warning("⚠️  無法更新 embed，trends_channel_id 未設置")
+                return
+            
+            # 檢查是否有該輪的消息 ID
+            if round_id not in self.round_message_ids:
+                logger.warning(f"⚠️  沒有找到 {round_id} 的消息 ID")
+                return
+            
+            message_id = self.round_message_ids[round_id]
+            channel = self.bot.get_channel(self.trends_channel_id)
+            
+            if not channel:
+                logger.error(f"❌ 無法獲取頻道")
+                return
+            
+            try:
+                message = await channel.fetch_message(message_id)
+                
+                # 獲取原始 embed
+                if message.embeds:
+                    embed = message.embeds[0]
+                    
+                    # 添加開獎結果字段
+                    top3_text = "\n".join([
+                        f"{i+1}. `{trend}`"
+                        for i, trend in enumerate(result['top3'])
+                    ])
+                    embed.add_field(
+                        name="🏆 開獎結果",
+                        value=top3_text,
+                        inline=False
+                    )
+                    
+                    # 添加獲獎信息（只有全中才顯示）
+                    if result.get('jackpot_winners', 0) > 0:
+                        embed.add_field(
+                            name="🎊 全中獲獎",
+                            value=f"恭喜 {result['jackpot_winners']} 位玩家全中！\n每人獲得：${result['jackpot'] / result['jackpot_winners']:.2f}",
+                            inline=False
+                        )
+                    else:
+                        embed.add_field(
+                            name="📊 開獎統計",
+                            value=f"投注人數：{result['total_bets']} 人\n獎池總額：${result['jackpot']:.2f}",
+                            inline=False
+                        )
+                    
+                    # 編輯消息
+                    await message.edit(embed=embed)
+                    logger.info(f"✅ 已編輯 embed 添加開獎結果 ({round_id})")
+                    
+                    # 清理已過期的消息 ID
+                    if round_id in self.round_message_ids:
+                        del self.round_message_ids[round_id]
+                        
+            except discord.NotFound:
+                logger.warning(f"⚠️  消息已被刪除 (ID: {message_id})")
+                if round_id in self.round_message_ids:
+                    del self.round_message_ids[round_id]
+        
+        except Exception as e:
+            logger.error(f"❌ 編輯 embed 失敗: {e}")
+    
     async def _announce_draw_result(self, result: dict):
         """宣布開獎結果"""
-        if not TRENDS_CHANNEL_ID:
+        if not self.trends_channel_id:
+            logger.warning("⚠️  無法宣布結果，trends_channel_id 未設置")
             return
         
         try:
-            channel = self.bot.get_channel(TRENDS_CHANNEL_ID)
+            channel = self.bot.get_channel(self.trends_channel_id)
             if not channel:
+                logger.warning(f"⚠️  找不到頻道 {self.trends_channel_id}")
                 return
             
             embed = discord.Embed(
-                title="🎊 開獎結果",
-                description=f"輪次：{result['round_id']}",
-                color=discord.Color.green()
+                title="🎊 開獎結果公告",
+                description=f"輪次：{result.get('round_id', '未知')}",
+                color=discord.Color.green(),
+                timestamp=datetime.now(TZ_TW)
             )
             
             # 中獎號碼
@@ -372,13 +468,25 @@ class TrendsLotteryCog(commands.Cog):
             embed.add_field(name="🏆 中獎號碼", value=top3_text, inline=False)
             
             # 統計
-            embed.add_field(
-                name="📊 統計",
-                value=f"總投注人數：{result['results'].__len__()}\n獎池總額：${result['jackpot']:.2f}\n全中玩家：{result['jackpot_winners']} 人",
-                inline=False
-            )
+            total_bets = result.get('total_bets', 0)
+            jackpot_winners = result.get('jackpot_winners', 0)
+            
+            if jackpot_winners > 0:
+                winner_earnings = result['jackpot'] / jackpot_winners
+                embed.add_field(
+                    name="🎁 獲獎信息",
+                    value=f"投注人數：{total_bets} 人\n全中玩家：{jackpot_winners} 人\n每人獲得：${winner_earnings:.2f}",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="📊 統計",
+                    value=f"投注人數：{total_bets} 人\n獎池總額：${result['jackpot']:.2f}\n本輪無全中者",
+                    inline=False
+                )
             
             await channel.send(embed=embed)
+            logger.info(f"✅ 開獎結果已發布")
         
         except Exception as e:
             logger.error(f"❌ 宣布開獎結果失敗: {e}")
