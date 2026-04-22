@@ -279,9 +279,16 @@ class TrendsLotteryCog(commands.Cog):
         logger.info(f"🚀 開始廣播趨勢...（{len(trends)} 項）")
         temp_debug_log(f"A. _broadcast_trends_to_discord called with {len(trends)} trends")
         
+        # 備用初始化：如果 on_ready() 沒有執行，這裡初始化
+        if not self.trends_channel_id:
+            temp_debug_log(f"Z1. trends_channel_id is None, attempting backup initialization...")
+            self.trends_channel_id = int(os.getenv("TRENDS_CHANNEL_ID", "0"))
+            temp_debug_log(f"Z2. Backup init set trends_channel_id to {self.trends_channel_id}")
+            logger.info(f"🔧 備用初始化 trends_channel_id: {self.trends_channel_id}")
+        
         if not self.trends_channel_id:
             logger.warning("⚠️  TRENDS_CHANNEL_ID 未設置")
-            temp_debug_log(f"B. trends_channel_id is not set! ({self.trends_channel_id})")
+            temp_debug_log(f"B. trends_channel_id is still not set! ({self.trends_channel_id})")
             return
         
         temp_debug_log(f"C. trends_channel_id = {self.trends_channel_id}")
