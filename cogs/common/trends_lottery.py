@@ -35,6 +35,18 @@ from shared.utils.trends_lottery_system import TrendsLotterySystem
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+# 臨時日誌文件（調試用）
+TEMP_DEBUG_LOG = "/tmp/trends_lottery_debug.log"
+
+def temp_debug_log(msg):
+    """寫入臨時調試日誌"""
+    try:
+        with open(TEMP_DEBUG_LOG, "a", encoding="utf-8") as f:
+            ts = datetime.now(TZ_TW).strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{ts}] {msg}\n")
+    except Exception as e:
+        logger.error(f"臨時日誌寫入失敗: {e}")
+
 # 配置
 TRENDS_UPDATE_INTERVAL = 240  # 4 小時（秒）
 TRENDS_UPDATE_HOURS = [8, 12, 16, 20]  # 08:00, 12:00, 16:00, 20:00 台灣時間
@@ -205,15 +217,20 @@ class TrendsLotteryCog(commands.Cog):
     
     async def _update_and_broadcast_trends(self):
         """更新趨勢並廣播到 Discord"""
+        temp_debug_log("========== START _update_and_broadcast_trends ==========")
         logger.info(f"📝 [_UPDATE_AND_BROADCAST] 開始執行...")
+        temp_debug_log(f"1️⃣  _update_and_broadcast_trends called")
         try:
             # 抓取最新趨勢
             logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_latest_trends()...")
+            temp_debug_log(f"2️⃣  Calling get_latest_trends()...")
             trends = await get_latest_trends(limit=10)
             
+            temp_debug_log(f"3️⃣  get_latest_trends returned {len(trends) if trends else 0} items")
             logger.info(f"📊 [_UPDATE_AND_BROADCAST] 收到 {len(trends) if trends else 0} 項趨勢")
             
             if not trends:
+                temp_debug_log(f"⚠️  No trends returned, returning early")
                 logger.warning("⚠️  無法獲取趨勢")
                 return
             
@@ -226,39 +243,56 @@ class TrendsLotteryCog(commands.Cog):
             self.current_round_id = round_id
             
             logger.info(f"🎯 [_UPDATE_AND_BROADCAST] 輪次 ID: {round_id}")
+            temp_debug_log(f"4️⃣  Round ID: {round_id}")
             
             # 發送趨勢到 Discord 頻道
             logger.info(f"📤 [_UPDATE_AND_BROADCAST] 調用 _broadcast_trends_to_discord()...")
+            temp_debug_log(f"5️⃣  Calling _broadcast_trends_to_discord()...")
             await self._broadcast_trends_to_discord(trends)
+            temp_debug_log(f"6️⃣  _broadcast_trends_to_discord() completed")
             
             # 開獎上一輪（如果存在）
             await self._draw_previous_round()
             
             logger.info(f"✅ 趨勢已更新：{round_id}，{len(self.current_trends)} 項")
+            temp_debug_log(f"7️⃣  Update completed successfully")
         
         except Exception as e:
             logger.error(f"❌ 趨勢更新失敗: {e}")
+            temp_debug_log(f"❌ Exception: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            temp_debug_log(f"Traceback: {traceback.format_exc()}")
+        finally:
+            temp_debug_log("========== END _update_and_broadcast_trends ==========\n")
     
     async def _broadcast_trends_to_discord(self, trends: List[dict]):
         """將趨勢廣播到 Discord"""
+        temp_debug_log("========== START _broadcast_trends_to_discord ==========")
         logger.info(f"🚀 開始廣播趨勢...（{len(trends)} 項）")
+        temp_debug_log(f"A. _broadcast_trends_to_discord called with {len(trends)} trends")
         
         if not TRENDS_CHANNEL_ID:
             logger.warning("⚠️  TRENDS_CHANNEL_ID 未設置")
+            temp_debug_log(f"B. TRENDS_CHANNEL_ID is not set!")
             return
+        
+        temp_debug_log(f"C. TRENDS_CHANNEL_ID = {TRENDS_CHANNEL_ID}")
         
         try:
             logger.info(f"📍 目標頻道 ID: {TRENDS_CHANNEL_ID}")
+            temp_debug_log(f"D. Getting channel object...")
             channel = self.bot.get_channel(TRENDS_CHANNEL_ID)
+            temp_debug_log(f"E. channel object = {channel}")
             
             if not channel:
                 logger.error(f"❌ 找不到頻道：{TRENDS_CHANNEL_ID}")
+                temp_debug_log(f"F. Channel not found!")
                 logger.error(f"   可用頻道數: {len(self.bot.get_all_channels())}")
                 return
             
             logger.info(f"✅ 找到頻道: {channel.name}")
+            temp_debug_log(f"G. Found channel: {channel.name}")
             
             # 創建 Embed
             embed = discord.Embed(
@@ -276,6 +310,7 @@ class TrendsLotteryCog(commands.Cog):
             embed.add_field(name="當前趨勢", value=trends_text or "無趨勢數據", inline=False)
             
             logger.info(f"📊 趨勢文本長度: {len(trends_text)} 字符")
+            temp_debug_log(f"H. Embed created, trends_text length = {len(trends_text)}")
             
             # 獎池信息
             try:
@@ -285,8 +320,10 @@ class TrendsLotteryCog(commands.Cog):
                     value=f"**${jackpot_info['jackpot']:.2f}**\n參與投注：{jackpot_info['total_bets']} 人",
                     inline=False
                 )
+                temp_debug_log(f"I. Jackpot info added")
             except Exception as e:
                 logger.warning(f"⚠️  獎池信息獲取失敗: {e}")
+                temp_debug_log(f"I. Jackpot info failed: {e}")
                 embed.add_field(name="🎁 中央獎池", value="初始化中...", inline=False)
             
             embed.set_footer(text=f"開獎輪次：{self.current_round_id}")
@@ -299,13 +336,19 @@ class TrendsLotteryCog(commands.Cog):
             )
             
             logger.info(f"📤 正在發送 embed 到頻道 {channel.name}...")
+            temp_debug_log(f"J. About to send message to channel...")
             message = await channel.send(embed=embed, view=view)
             logger.info(f"✅ 趨勢已廣播！消息 ID: {message.id}")
+            temp_debug_log(f"K. Message sent! ID = {message.id}")
         
         except Exception as e:
             logger.error(f"❌ 廣播趨勢失敗: {e}")
+            temp_debug_log(f"L. Exception in broadcast: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            temp_debug_log(f"Traceback: {traceback.format_exc()}")
+        finally:
+            temp_debug_log("========== END _broadcast_trends_to_discord ==========\n")
     
     async def _draw_previous_round(self):
         """開獎上一輪"""
