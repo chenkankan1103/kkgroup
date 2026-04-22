@@ -4,6 +4,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import traceback
 from datetime import datetime, timedelta
+from shared.utils.view_registry import PersistentViewBase
 from .merchant.cannabis_farming import (
     init_cannabis_tables, plant_cannabis, get_user_plants, 
     harvest_plant, get_inventory, remove_inventory, add_inventory
@@ -46,13 +47,23 @@ class CannabisCog(commands.Cog):
 
 
 # ==================== 交互界面 ====================
-class CannabisBuyView(discord.ui.View):
+class CannabisBuyView(PersistentViewBase):
     def __init__(self, bot):
         super().__init__(timeout=60)
         self.bot = bot
+        
+        # 使用全域按鈕系統
+        self.add_button(
+            label="🌱 購買種子",
+            callback=self.buy_seeds,
+            style="success"
+        ).add_button(
+            label="💧 購買肥料",
+            callback=self.buy_fertilizer,
+            style="success"
+        )
     
-    @discord.ui.button(label="🌱 購買種子", style=discord.ButtonStyle.success)
-    async def buy_seeds(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_seeds(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=True)
             
@@ -78,8 +89,7 @@ class CannabisBuyView(discord.ui.View):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
     
-    @discord.ui.button(label="💧 購買肥料", style=discord.ButtonStyle.success)
-    async def buy_fertilizer(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_fertilizer(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=True)
             

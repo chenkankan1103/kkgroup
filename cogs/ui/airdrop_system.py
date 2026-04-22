@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import logging
 
 from db_adapter import get_user_field, set_user_field, add_user_field, get_user
+from shared.utils.view_registry import PersistentViewBase
 # 使用標準 print 或 logging
 log = logging.getLogger(__name__)
 
@@ -329,7 +330,7 @@ class AirdropSystem(commands.Cog):
         print(f"🤖 機器人加入的伺服器數: {len(self.bot.guilds)}")
 
 
-class AirdropView(discord.ui.View):
+class AirdropView(PersistentViewBase):
     """空投箱交互按鈕"""
     
     def __init__(self, cog):
@@ -337,9 +338,21 @@ class AirdropView(discord.ui.View):
         self.cog = cog
         self.opened = False
         self.opened_by = None
+        
+        # 使用全域按鈕系統
+        self.add_button(
+            label="打開",
+            callback=self.open_button,
+            style="success",
+            emoji="📦"
+        ).add_button(
+            label="銷毀",
+            callback=self.destroy_button,
+            style="danger",
+            emoji="💣"
+        )
     
-    @discord.ui.button(label="打開", style=discord.ButtonStyle.success, emoji="📦")
-    async def open_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def open_button(self, interaction: discord.Interaction):
         """打開按鈕"""
         await interaction.response.defer()
         
@@ -389,8 +402,7 @@ class AirdropView(discord.ui.View):
         except Exception as e:
             print(f"❌ 編輯消息失敗: {e}")
     
-    @discord.ui.button(label="銷毀", style=discord.ButtonStyle.danger, emoji="💣")
-    async def destroy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def destroy_button(self, interaction: discord.Interaction):
         """銷毀按鈕"""
         await interaction.response.defer()
         
