@@ -143,9 +143,15 @@ class FeedbackView(PersistentViewBase):
     def __init__(self, bot):
         super().__init__()
         self.bot = bot
+        # 使用全域按鈕系統
+        self.add_button(
+            label="📝 提交意見回饋",
+            callback=self.feedback_button,
+            style="primary",
+            custom_id="feedback_button"
+        )
     
-    @discord.ui.button(label="📝 提交意見回饋", style=discord.ButtonStyle.primary, custom_id="feedback_button")
-    async def feedback_button(self, interaction: discord.Interaction, button: Button):
+    async def feedback_button(self, interaction: discord.Interaction):
         """反饋按鈕回調"""
         modal = FeedbackModal(self.bot)
         await interaction.response.show_modal(modal)

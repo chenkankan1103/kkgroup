@@ -14,9 +14,34 @@ class CannabisMerchantView(PersistentViewBase):
     def __init__(self, cog):
         super().__init__()
         self.cog = cog
+        
+        # 使用全域按鈕系統
+        self.add_button(
+            label="購買種子",
+            callback=self.buy_seeds,
+            style="success",
+            emoji="🌱",
+            custom_id="cannabis_buy_seeds"
+        ).add_button(
+            label="購買肥料",
+            callback=self.buy_fertilizer,
+            style="primary",
+            emoji="💧",
+            custom_id="cannabis_buy_fertilizer"
+        ).add_button(
+            label="出售大麻",
+            callback=self.sell_cannabis,
+            style="danger",
+            emoji="💰",
+            custom_id="cannabis_sell"
+        ).add_button(
+            label="返回",
+            callback=self.back_button,
+            style="secondary",
+            custom_id="cannabis_back"
+        )
     
-    @discord.ui.button(label="購買種子", style=discord.ButtonStyle.success, emoji="🌱", custom_id="cannabis_buy_seeds")
-    async def buy_seeds(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_seeds(self, interaction: discord.Interaction):
         """購買種子選擇"""
         try:
             await interaction.response.defer(ephemeral=True)
@@ -42,8 +67,7 @@ class CannabisMerchantView(PersistentViewBase):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
     
-    @discord.ui.button(label="購買肥料", style=discord.ButtonStyle.primary, emoji="💧", custom_id="cannabis_buy_fertilizer")
-    async def buy_fertilizer(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_fertilizer(self, interaction: discord.Interaction):
         """購買肥料選擇"""
         try:
             await interaction.response.defer(ephemeral=True)
@@ -68,8 +92,7 @@ class CannabisMerchantView(PersistentViewBase):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
     
-    @discord.ui.button(label="出售大麻", style=discord.ButtonStyle.danger, emoji="💰", custom_id="cannabis_sell")
-    async def sell_cannabis(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def sell_cannabis(self, interaction: discord.Interaction):
         """出售大麻"""
         try:
             await interaction.response.defer(ephemeral=True)
@@ -103,8 +126,7 @@ class CannabisMerchantView(PersistentViewBase):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
     
-    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, custom_id="cannabis_back")
-    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def back_button(self, interaction: discord.Interaction):
         """返回主菜單"""
         try:
             from .views import ExploreView

@@ -14,30 +14,45 @@ from shared.utils.view_registry import PersistentViewBase
 
 load_dotenv()
 
-class StaminaItemView(discord.ui.View):
+class StaminaItemView(PersistentViewBase):
     def __init__(self, merchant_cog, user_id: int):
         super().__init__(timeout=600)
         self.merchant_cog = merchant_cog
         self.user_id = user_id
+        
+        # 使用全域按鈕系統
+        self.add_button(
+            label="維他命C軟糖 +5體力",
+            callback=self.buy_small,
+            style="primary",
+            emoji="🍬"
+        ).add_button(
+            label="紅牛能量飲 +10體力",
+            callback=self.buy_medium,
+            style="success",
+            emoji="🥛"
+        ).add_button(
+            label="靈芝人蔘燉雞湯 +20體力",
+            callback=self.buy_large,
+            style="danger",
+            emoji="🍲"
+        )
 
-    @discord.ui.button(label="維他命C軟糖 +5體力", style=discord.ButtonStyle.primary, emoji="🍬")
-    async def buy_small(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_small(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id != self.user_id:
             await interaction.followup.send("❌ 這不是你的購買選項！")
             return
         await self.merchant_cog.process_purchase(interaction, self.user_id, "small")
 
-    @discord.ui.button(label="紅牛能量飲 +10體力", style=discord.ButtonStyle.success, emoji="🥛")
-    async def buy_medium(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_medium(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id != self.user_id:
             await interaction.followup.send("❌ 這不是你的購買選項！")
             return
         await self.merchant_cog.process_purchase(interaction, self.user_id, "medium")
 
-    @discord.ui.button(label="靈芝人蔘燉雞湯 +20體力", style=discord.ButtonStyle.danger, emoji="🍲")
-    async def buy_large(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_large(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id != self.user_id:
             await interaction.followup.send("❌ 這不是你的購買選項！")
@@ -46,23 +61,41 @@ class StaminaItemView(discord.ui.View):
 
 
 # 永久視圖類（用於按鈕永久註冊）
-class PersistentStaminaView(discord.ui.View):
+class PersistentStaminaView(PersistentViewBase):
     def __init__(self, merchant_cog):
         super().__init__(timeout=None)  # 永不過期
         self.merchant_cog = merchant_cog
+        
+        # 使用全域按鈕系統
+        self.add_button(
+            label="維他命C軟糖 +5體力",
+            callback=self.buy_small,
+            style="primary",
+            emoji="🍬",
+            custom_id="stamina_small"
+        ).add_button(
+            label="紅牛能量飲 +10體力",
+            callback=self.buy_medium,
+            style="success",
+            emoji="🥛",
+            custom_id="stamina_medium"
+        ).add_button(
+            label="靈芝人蔘燉雞湯 +20體力",
+            callback=self.buy_large,
+            style="danger",
+            emoji="🍲",
+            custom_id="stamina_large"
+        )
 
-    @discord.ui.button(label="維他命C軟糖 +5體力", style=discord.ButtonStyle.primary, emoji="🍬", custom_id="stamina_small")
-    async def buy_small(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_small(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.merchant_cog.process_purchase(interaction, interaction.user.id, "small")
 
-    @discord.ui.button(label="紅牛能量飲 +10體力", style=discord.ButtonStyle.success, emoji="🥛", custom_id="stamina_medium")
-    async def buy_medium(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_medium(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.merchant_cog.process_purchase(interaction, interaction.user.id, "medium")
 
-    @discord.ui.button(label="靈芝人蔘燉雞湯 +20體力", style=discord.ButtonStyle.danger, emoji="🍲", custom_id="stamina_large")
-    async def buy_large(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def buy_large(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.merchant_cog.process_purchase(interaction, interaction.user.id, "large")
 
