@@ -37,8 +37,10 @@ logger = logging.getLogger(__name__)
 
 # 配置
 TRENDS_UPDATE_INTERVAL = 240  # 4 小時（秒）
-TRENDS_CHANNEL_ID = int(os.getenv("TRENDS_CHANNEL_ID", "0"))  # 需要在 .env 中設置
 TRENDS_UPDATE_HOURS = [8, 12, 16, 20]  # 08:00, 12:00, 16:00, 20:00 台灣時間
+
+# TRENDS_CHANNEL_ID 将在 setup 时读取
+TRENDS_CHANNEL_ID = None
 
 
 class TrendsPredictionView(discord.ui.View):
@@ -203,9 +205,13 @@ class TrendsLotteryCog(commands.Cog):
     
     async def _update_and_broadcast_trends(self):
         """更新趨勢並廣播到 Discord"""
+        logger.info(f"📝 [_UPDATE_AND_BROADCAST] 開始執行...")
         try:
             # 抓取最新趨勢
+            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_latest_trends()...")
             trends = await get_latest_trends(limit=10)
+            
+            logger.info(f"📊 [_UPDATE_AND_BROADCAST] 收到 {len(trends) if trends else 0} 項趨勢")
             
             if not trends:
                 logger.warning("⚠️  無法獲取趨勢")
@@ -219,7 +225,10 @@ class TrendsLotteryCog(commands.Cog):
             round_id = now.strftime("%Y-%m-%d-%H")
             self.current_round_id = round_id
             
+            logger.info(f"🎯 [_UPDATE_AND_BROADCAST] 輪次 ID: {round_id}")
+            
             # 發送趨勢到 Discord 頻道
+            logger.info(f"📤 [_UPDATE_AND_BROADCAST] 調用 _broadcast_trends_to_discord()...")
             await self._broadcast_trends_to_discord(trends)
             
             # 開獎上一輪（如果存在）
@@ -229,6 +238,8 @@ class TrendsLotteryCog(commands.Cog):
         
         except Exception as e:
             logger.error(f"❌ 趨勢更新失敗: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def _broadcast_trends_to_discord(self, trends: List[dict]):
         """將趨勢廣播到 Discord"""
@@ -504,5 +515,17 @@ class TrendsLotteryCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     """設置 Cog"""
+    global TRENDS_CHANNEL_ID
+    
+    # 延遲讀取 TRENDS_CHANNEL_ID
+    TRENDS_CHANNEL_ID = int(os.getenv("TRENDS_CHANNEL_ID", "0"))
+    
+    logger.info(f"🔧 [SETUP] TRENDS_CHANNEL_ID: {TRENDS_CHANNEL_ID}")
+    
+    if TRENDS_CHANNEL_ID == 0:
+        logger.error(f"❌ [SETUP] TRENDS_CHANNEL_ID 未設置或為 0")
+    else:
+        logger.info(f"✅ [SETUP] 頻道 ID 已讀取: {TRENDS_CHANNEL_ID}")
+    
     await bot.add_cog(TrendsLotteryCog(bot))
     logger.info("✅ 趨勢樂透 Cog 已安裝")
