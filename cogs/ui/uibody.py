@@ -16,6 +16,7 @@ import hashlib
 from pathlib import Path
 from db_adapter import get_user, set_user_field, get_user_field, get_all_users
 import datetime
+import logging
 from cogs.shop.merchant.cannabis_farming import (
     get_inventory, plant_cannabis, get_user_plants, apply_fertilizer, 
     harvest_plant, remove_inventory, add_inventory
@@ -34,6 +35,9 @@ from .utils import (
 from .tasks import LockerTasks
 
 load_dotenv()
+
+# 設置日誌記錄
+logger = logging.getLogger(__name__)
 
 
 class UserPanel(commands.Cog):
@@ -421,6 +425,9 @@ class UserPanel(commands.Cog):
         
         await self.restore_image_cache_from_storage()
         
+        # 註冊所有員工證視圖（持久化視圖）
+        await self.register_persistent_workcard_views()
+        
         forum_channel = self.bot.get_channel(self.FORUM_CHANNEL_ID)
         if forum_channel and isinstance(forum_channel, discord.ForumChannel):
             await self.create_threads_for_existing_members()
@@ -430,6 +437,33 @@ class UserPanel(commands.Cog):
         
         if not self.check_member_threads.is_running():
             self.check_member_threads.start()
+    
+    async def register_persistent_workcard_views(self):
+        """全域註冊員工證視圖（和 work_cog 的 register_persistent_views 類似邏輯）"""
+        try:
+            from db_adapter import get_all_users
+            from .views import WorkCardActionView, WorkCardEditView
+            
+            all_users = get_all_users()
+            registered_count = 0
+            
+            for user in all_users:
+                # 只為已啟用員工證的用戶註冊視圖
+                if user.get('work_card_enabled'):
+                    try:
+                        # 為已有員工證的用戶註冊操作視圖
+                        view = WorkCardActionView(self, user.get('user_id'), user)
+                        self.bot.add_view(view)
+                        registered_count += 1
+                    except Exception as e:
+                        logger.warning(f"⚠️ 註冊用戶 {user.get('user_id')} 的員工證 View 失敗: {e}")
+                        continue
+            
+            if registered_count > 0:
+                logger.info(f"✅ 已註冊 {registered_count} 個員工證 View（持久化視圖）")
+        
+        except Exception as e:
+            logger.error("⚠️ 註冊員工證 View 時發生錯誤", exc_info=True)
     
     # ============= 定期任務 =============
     
