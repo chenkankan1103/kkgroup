@@ -134,8 +134,8 @@ async def make_leaderboard_image(members_data):
     dynamic_rate = get_dynamic_exchange_rate()
     for member_data in members_data:
         if len(member_data) == 4:
-            _, _, _, net_worth = member_data
-            net_worth = float(net_worth or 0)
+            _, kkcoin, digital_usd, stock_value = member_data
+            net_worth = float(kkcoin or 0) + float(digital_usd or 0) * dynamic_rate + float(stock_value or 0)
         else:
             # 舊格式相容
             _, kkcoin, digital_usd = member_data if len(member_data) == 3 else (member_data[0], member_data[1], 0)
@@ -390,12 +390,14 @@ def _sync_build_leaderboard_image(
     # 畫各行
     for i, (member_data, avatar_img, net_worth) in enumerate(zip(members_data, avatar_images, member_net_worths)):
         if len(member_data) == 4:
-            member, kkcoin, digital_usd, _ = member_data
+            member, kkcoin, digital_usd, stock_value = member_data
         elif len(member_data) == 3:
             member, kkcoin, digital_usd = member_data
+            stock_value = 0
         else:
             member, kkcoin = member_data
             digital_usd = 0
+            stock_value = 0
         
         # 1/2/3 名略微上移以增加視覺層次感
         y = leaderboard_start_y + 75 + i*70
@@ -501,7 +503,7 @@ def _sync_build_leaderboard_image(
         
         kkcoin_text = f"{int(float(kkcoin or 0))}"
         usd_text = f"${float(digital_usd or 0):,.0f}"
-        stock_value_text = f"${net_worth:,.0f}"
+        stock_value_text = f"${float(stock_value or 0):,.0f}"
 
         # 右對齊：股票淨值在最右邊，然後是D-USD，再是KK幣
         kkcoin_width = FONT_KKCOIN.getbbox(kkcoin_text)[2] - FONT_KKCOIN.getbbox(kkcoin_text)[0]
@@ -552,12 +554,12 @@ def _sync_build_leaderboard_image(
             if net_worth_width > 0 and net_worth > 0:
                 kkcoin_value = float(kkcoin or 0)
                 digital_usd_value = float(digital_usd or 0) * dynamic_rate
-                stock_value = net_worth - kkcoin_value - digital_usd_value
+                stock_val = float(stock_value or 0)
                 
                 # 計算每段在進度條內的寬度（按淨值比例）
                 kkcoin_ratio = kkcoin_value / net_worth if net_worth > 0 else 0
                 digital_ratio = digital_usd_value / net_worth if net_worth > 0 else 0
-                stock_ratio = stock_value / net_worth if net_worth > 0 else 0
+                stock_ratio = stock_val / net_worth if net_worth > 0 else 0
                 
                 kkcoin_width = int(net_worth_width * kkcoin_ratio)
                 digital_width = int(net_worth_width * digital_ratio)
@@ -711,12 +713,11 @@ def get_current_leaderboard_data(bot, rank_channel_id):
         kkcoin = float(user.get('kkcoin') or 0)
         digital_usd = float(user.get('digital_usd') or 0)
         stock_value = _calculate_stock_value(user_id)
-        net_worth = kkcoin + digital_usd * dynamic_rate + stock_value
         
         member = guild.get_member(user_id)
         
         if member:
-            members_data.append((member, kkcoin, digital_usd, net_worth))
+            members_data.append((member, kkcoin, digital_usd, stock_value))
         else:
             class FallbackMember:
                 def __init__(self, user_id, nickname):
@@ -736,7 +737,7 @@ def get_current_leaderboard_data(bot, rank_channel_id):
                 user_id,
                 user.get('nickname', user.get('user_name', f'User {user_id}'))
             )
-            members_data.append((fallback, kkcoin, digital_usd, net_worth))
+            members_data.append((fallback, kkcoin, digital_usd, stock_value))
     
     return members_data
 
