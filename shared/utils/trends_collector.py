@@ -67,55 +67,54 @@ class TrendsCollector:
                 "User-Agent": "TrendsBot/1.0"
             }
             
-            # 嘗試多個搜尋查詢以獲得熱門話題
-            search_queries = [
-                "lang:zh -is:retweet",  # 中文推文（不含轉推）
-                "Taiwan lang:zh -is:retweet",  # 台灣相關
-                "-is:retweet has:hashtags",  # 有 hashtag 的推文
-            ]
+            # 簡單搜尋測試
+            logger.info(f"🔍 開始搜尋 Twitter 趨勢...")
             
-            all_trends = {}
+            url = "https://api.twitter.com/2/tweets/search/recent"
+            params = {
+                "query": "lang:zh -is:retweet",
+                "max_results": 100,
+                "tweet.fields": "public_metrics",
+            }
             
-            for query in search_queries:
-                url = "https://api.twitter.com/2/tweets/search/recent"
-                params = {
-                    "query": query,
-                    "max_results": 100,
-                    "tweet.fields": "public_metrics",
-                    "expansions": "author_id"
-                }
+            logger.info(f"📡 API 端點: {url}")
+            logger.info(f"📋 查詢參數: {params}")
+            
+            async with self.session.get(url, headers=headers, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                logger.info(f"📊 API 回應狀態: {resp.status}")
                 
-                logger.info(f"🔍 搜尋 Twitter: {query[:50]}...")
-                
-                async with self.session.get(url, headers=headers, params=params) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        trends = self._extract_twitter_trends(data)
-                        logger.info(f"  ✅ 找到 {len(trends)} 個趨勢")
-                        
-                        # 合併趨勢
-                        for trend in trends:
-                            key = trend["trend"].lower()
-                            if key not in all_trends:
-                                all_trends[key] = trend
-                            else:
-                                all_trends[key]["count"] += trend.get("count", 0)
-                    elif resp.status == 429:
-                        logger.warning("⚠️  Twitter API 限流，等待後重試")
-                        await asyncio.sleep(2)
-                    else:
-                        logger.warning(f"⚠️  Twitter API 狀態: {resp.status}")
-            
-            # 排序並返回前10名
-            sorted_trends = sorted(
-                all_trends.values(),
-                key=lambda x: x.get("count", 0),
-                reverse=True
-            )[:10]
-            
-            logger.info(f"✅ Twitter 趨勢已獲取：{len(sorted_trends)} 項")
-            return sorted_trends
+                if resp.status == 200:
+                    data = await resp.json()
+                    logger.info(f"✅ 收到 API 響應，包含 {len(data.get('data', []))} 條推文")
+                    
+                    # 提取話題標籤
+                    trends = self._extract_twitter_trends(data)
+                    logger.info(f"✅ Twitter 趨勢已獲取：{len(trends)} 項")
+                    
+                    if trends:
+                        for t in trends[:3]:
+                            logger.info(f"   - {t['trend']}: {t['count']} 次")
+                    
+                    return trends
+                    
+                elif resp.status == 429:
+                    logger.warning("⚠️  Twitter API 限流（429）")
+                    await asyncio.sleep(2)
+                    return []
+                elif resp.status == 401:
+                    logger.error(f"❌ Twitter API 認証失敗（401）- Token 可能無效")
+                    text = await resp.text()
+                    logger.error(f"   回應: {text[:200]}")
+                    return []
+                else:
+                    text = await resp.text()
+                    logger.error(f"❌ Twitter API 錯誤: {resp.status}")
+                    logger.error(f"   回應: {text[:200]}")
+                    return []
         
+        except asyncio.TimeoutError:
+            logger.error(f"❌ Twitter API 超時")
+            return []
         except Exception as e:
             logger.error(f"❌ Twitter 趨勢獲取失敗: {e}")
             import traceback
