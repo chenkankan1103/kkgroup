@@ -60,22 +60,18 @@ class TrendsPredictionView(PersistentViewBase):
         self.trends = trends[:10]  # 最多 10 個選項
         self.round_id = round_id
         
-        # 創建選項按鈕（每行 5 個）
+        # 使用全域按鈕系統創建選項按鈕（每行 5 個）
         for i, trend in enumerate(self.trends):
-            button = discord.ui.Button(
+            self.add_button(
                 label=f"{i+1}. {trend[:20]}",
+                callback=lambda inter, idx=i: self._handle_trend_select(inter, idx),
+                style="primary",
                 custom_id=f"trend_select_{round_id}_{i}",
-                style=discord.ButtonStyle.primary
+                row=i // 5  # 每行 5 個按鈕
             )
-            button.callback = self.trend_select_callback
-            self.add_item(button)
     
-    async def trend_select_callback(self, interaction: discord.Interaction):
+    async def _handle_trend_select(self, interaction: discord.Interaction, selected_index: int):
         """處理趨勢選擇"""
-        # 解析 custom_id 獲取選擇的索引
-        parts = interaction.custom_id.split("_")
-        selected_index = int(parts[-1])
-        
         # 取得用戶已選擇的趨勢
         user_id = interaction.user.id
         

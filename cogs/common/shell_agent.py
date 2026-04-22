@@ -28,6 +28,7 @@ import os
 import logging
 from typing import Optional, List, Dict
 from dotenv import load_dotenv
+from shared.utils.view_registry import PersistentViewBase
 
 load_dotenv()
 
@@ -62,7 +63,7 @@ SHELL_AGENT_SYSTEM_PROMPT = """\
 
 # ==================== Discord UI 元件 ====================
 
-class ConfirmCommandView(discord.ui.View):
+class ConfirmCommandView(PersistentViewBase):
     """
     顯示「✅ 執行」與「❌ 取消」按鈕的確認介面
 
@@ -75,6 +76,17 @@ class ConfirmCommandView(discord.ui.View):
         self.command      = command
         self.confirmed    = None   # True / False / None（超時）
         self.requester_id = requester_id
+        
+        # 使用全域按鈕系統
+        self.add_button(
+            label="✅ 執行",
+            callback=self.confirm,
+            style="success"
+        ).add_button(
+            label="❌ 取消任務",
+            callback=self.cancel,
+            style="danger"
+        )
 
     def _check_permission(self, interaction: discord.Interaction) -> bool:
         """只允許有 ADMIN_ROLE_NAME 或是 LEADER_DISCORD_ID 的用戶確認"""
@@ -82,8 +94,7 @@ class ConfirmCommandView(discord.ui.View):
             return True
         return any(r.name == ADMIN_ROLE_NAME for r in getattr(interaction.user, 'roles', []))
 
-    @discord.ui.button(label="✅ 執行", style=discord.ButtonStyle.success)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def confirm(self, interaction: discord.Interaction):
         if not self._check_permission(interaction):
             await interaction.response.send_message("❌ 你沒有權限確認 Shell 指令。", ephemeral=True)
             return
@@ -96,8 +107,7 @@ class ConfirmCommandView(discord.ui.View):
         )
         self.stop()
 
-    @discord.ui.button(label="❌ 取消任務", style=discord.ButtonStyle.danger)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def cancel(self, interaction: discord.Interaction):
         if not self._check_permission(interaction):
             await interaction.response.send_message("❌ 你沒有權限中止任務。", ephemeral=True)
             return
