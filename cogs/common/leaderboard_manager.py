@@ -532,7 +532,7 @@ def _sync_build_leaderboard_image(
         # 進度條 - 灰色代表淨值（長度縮短以容納新欄位）
         progress_bar_y = y + 35
         progress_bar_x = rank_x + 100
-        progress_bar_width = kk_right - 20 - progress_bar_x  # 到KK幣欄位前停止
+        progress_bar_width = kk_right - 50 - progress_bar_x  # 增加間距，不碰到KK幣欄位
         progress_bar_height = 16
         
         # 背景框
