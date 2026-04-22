@@ -459,6 +459,30 @@ class TrendsLotteryCog(commands.Cog):
                 f"❌ 發生錯誤：{str(e)}",
                 ephemeral=True
             )
+    
+    @app_commands.command(name="trends_test", description="🧪 測試推播趨勢（開發者用）")
+    async def test_broadcast(self, interaction: discord.Interaction):
+        """手動測試趨勢推播"""
+        try:
+            # 延遲回應，等待推播完成
+            await interaction.response.defer()
+            
+            logger.info(f"🧪 測試推播已觸發 (by {interaction.user})")
+            
+            # 立即執行推播
+            await self._update_and_broadcast_trends()
+            
+            await interaction.followup.send(
+                "✅ 已推播最新趨勢！",
+                ephemeral=True
+            )
+        
+        except Exception as e:
+            logger.error(f"❌ 測試推播失敗: {e}")
+            await interaction.followup.send(
+                f"❌ 推播失敗：{str(e)}",
+                ephemeral=True
+            )
 
 
 async def setup(bot: commands.Bot):
