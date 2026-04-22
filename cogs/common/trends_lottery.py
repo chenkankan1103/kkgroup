@@ -296,6 +296,13 @@ class TrendsLotteryCog(commands.Cog):
             
             logger.info(f"📊 趨勢文本長度: {len(trends_text)} 字符")
             
+            # 開獎時間表
+            embed.add_field(
+                name="⏰ 開獎時間表",
+                value="• **08:00** 台灣時間 - 第一輪開獎\n• **12:00** 台灣時間 - 第二輪開獎\n• **16:00** 台灣時間 - 第三輪開獎\n• **20:00** 台灣時間 - 第四輪開獎\n• **00:00** 台灣時間（隔日）- 第五輪開獎",
+                inline=False
+            )
+            
             # 投注說明
             embed.add_field(
                 name="🎯 投注說明",
