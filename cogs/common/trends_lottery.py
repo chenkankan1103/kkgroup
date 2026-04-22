@@ -14,10 +14,20 @@ from discord import app_commands
 from discord.ext import commands, tasks
 import asyncio
 import os
+import sys
 from datetime import datetime
 from typing import List, Optional
+
+# ⚠️ 在導入其他模塊之前，必須先加載 .env！
+# 使用絕對路徑加載 .env
+__file_abs = os.path.abspath(__file__)
+ENV_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file_abs))),
+    ".env"
+)
+
 from dotenv import load_dotenv
-import logging
+load_dotenv(ENV_PATH)
 
 # 時區管理（可能需要 pip install pytz）
 try:
@@ -28,18 +38,11 @@ except ImportError:
     from datetime import timezone, timedelta
     TZ_TW = timezone(timedelta(hours=8))
 
+import logging
+
 # 導入自定義模組
 from shared.utils.trends_collector import TrendsCollector, get_latest_trends
 from shared.utils.trends_lottery_system import TrendsLotterySystem
-
-# 使用絕對路徑加載 .env
-# 獲取當前文件的絕對路徑，然後向上 3 層到項目根目錄
-__file_abs = os.path.abspath(__file__)
-ENV_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file_abs))),
-    ".env"
-)
-load_dotenv(ENV_PATH)
 
 logger = logging.getLogger(__name__)
 
