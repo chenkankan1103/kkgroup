@@ -125,28 +125,31 @@ async def make_leaderboard_image(members_data):
     BG_COLOR = (54, 57, 63)
     RANK_COLOR = (240, 200, 80)
 
-    # 先取得每個成員的頭像（或佔位）、計算最大資產值用於進度條
+    # 先取得每個成員的頭像（或佔位）、計算最大淨值用於進度條
     avatar_images = []
-    member_totals = []
-    max_assets = 0
+    member_net_worths = []
+    max_net_worth = 0
     
     # 使用動態匯率
     dynamic_rate = get_dynamic_exchange_rate()
     for member_data in members_data:
-        if len(member_data) == 3:
-            _, kkcoin, digital_usd = member_data
+        if len(member_data) == 4:
+            _, _, _, net_worth = member_data
+            net_worth = float(net_worth or 0)
         else:
-            _, kkcoin = member_data
-            digital_usd = 0
-        total_assets = float(kkcoin or 0) + float(digital_usd or 0) * dynamic_rate
-        member_totals.append(total_assets)
-        if total_assets > max_assets:
-            max_assets = total_assets
+            # 舊格式相容
+            _, kkcoin, digital_usd = member_data if len(member_data) == 3 else (member_data[0], member_data[1], 0)
+            net_worth = float(kkcoin or 0) + float(digital_usd or 0) * dynamic_rate
+        member_net_worths.append(net_worth)
+        if net_worth > max_net_worth:
+            max_net_worth = net_worth
     
     placeholder = create_placeholder_avatar()
     async with aiohttp.ClientSession() as session:
         for i, member_data in enumerate(members_data):
-            if len(member_data) == 3:
+            if len(member_data) == 4:
+                member, _, _, _ = member_data
+            elif len(member_data) == 3:
                 member, _, _ = member_data
             else:
                 member = member_data[0]
@@ -204,8 +207,8 @@ async def make_leaderboard_image(members_data):
         reserve,
         reserve_pressure,
         reserve_announcement,
-        member_totals,
-        max_assets,
+        member_net_worths,
+        max_net_worth,
         inflation_info,
         dynamic_rate,
     )
@@ -225,8 +228,8 @@ def _sync_build_leaderboard_image(
     reserve,
     reserve_pressure,
     reserve_announcement,
-    member_totals,
-    max_assets,
+    member_net_worths,
+    max_net_worth,
     inflation_info,
     dynamic_rate,
 ):
@@ -365,27 +368,34 @@ def _sync_build_leaderboard_image(
     
     draw_text((title_x, leaderboard_start_y + 20), rate_text, font=FONT_DESC, fill=(150, 180, 200))
 
-    # 顯示欄位標題：KK幣 / 數位美金
+    # 顯示欄位標題：KK幣 / 數位美金 / 股票淨值
     header_y = leaderboard_start_y + 45
     kk_label = "KK幣"
     usd_label = "數位美金"
-    kk_right = WIDTH - 140
-    usd_right = WIDTH - 20
-
+    stock_label = "股票淨值"
+    
+    # 計算標籤寬度和位置（與下面數字顯示保持一致）
     kk_label_w = FONT_DESC.getbbox(kk_label)[2] - FONT_DESC.getbbox(kk_label)[0]
     usd_label_w = FONT_DESC.getbbox(usd_label)[2] - FONT_DESC.getbbox(usd_label)[0]
-    draw_text((kk_right - kk_label_w, header_y), kk_label, font=FONT_DESC, fill=(160, 160, 180))
-    draw_text((usd_right - usd_label_w, header_y), usd_label, font=FONT_DESC, fill=(160, 160, 180))
+    stock_label_w = FONT_DESC.getbbox(stock_label)[2] - FONT_DESC.getbbox(stock_label)[0]
+    
+    stock_label_right = WIDTH - 20
+    usd_label_right = stock_label_right - stock_label_w - 20
+    kk_label_right = usd_label_right - usd_label_w - 20
+    
+    draw_text((kk_label_right - kk_label_w, header_y), kk_label, font=FONT_DESC, fill=(160, 160, 180))
+    draw_text((usd_label_right - usd_label_w, header_y), usd_label, font=FONT_DESC, fill=(160, 160, 180))
+    draw_text((stock_label_right - stock_label_w, header_y), stock_label, font=FONT_DESC, fill=(160, 160, 180))
 
     # 畫各行
-    for i, member_data in enumerate(zip(members_data, avatar_images)):
-        if len(member_data[0]) == 3:
-            member, kkcoin, digital_usd = member_data[0]
+    for i, (member_data, avatar_img, net_worth) in enumerate(zip(members_data, avatar_images, member_net_worths)):
+        if len(member_data) == 4:
+            member, kkcoin, digital_usd, _ = member_data
+        elif len(member_data) == 3:
+            member, kkcoin, digital_usd = member_data
         else:
-            member, kkcoin = member_data[0]
+            member, kkcoin = member_data
             digital_usd = 0
-        
-        avatar_img = member_data[1]
         
         # 1/2/3 名略微上移以增加視覺層次感
         y = leaderboard_start_y + 75 + i*70
@@ -491,22 +501,29 @@ def _sync_build_leaderboard_image(
         
         kkcoin_text = f"{int(float(kkcoin or 0))}"
         usd_text = f"${float(digital_usd or 0):,.0f}"
+        stock_value_text = f"${net_worth:,.0f}"
 
-        # 右對齊：KK幣在靠右位置，數位美金緊貼最右邊
+        # 右對齊：股票淨值在最右邊，然後是D-USD，再是KK幣
         kkcoin_width = FONT_KKCOIN.getbbox(kkcoin_text)[2] - FONT_KKCOIN.getbbox(kkcoin_text)[0]
         usd_width = FONT_KKCOIN.getbbox(usd_text)[2] - FONT_KKCOIN.getbbox(usd_text)[0]
-        kk_right = WIDTH - 140
-        usd_right = WIDTH - 20
+        stock_value_width = FONT_KKCOIN.getbbox(stock_value_text)[2] - FONT_KKCOIN.getbbox(stock_value_text)[0]
+        
+        stock_value_right = WIDTH - 20
+        usd_right = stock_value_right - stock_value_width - 20  # 股票淨值左邊預留20px間距
+        kk_right = usd_right - usd_width - 20  # D-USD左邊預留20px間距
+        
         kkcoin_x = kk_right - kkcoin_width
         usd_x = usd_right - usd_width
+        stock_value_x = stock_value_right - stock_value_width
 
         draw_text((kkcoin_x, y+12), kkcoin_text, font=FONT_KKCOIN, fill=(76, 175, 80), shadow=True)  # 綠色
         draw_text((usd_x, y+12), usd_text, font=FONT_KKCOIN, fill=(33, 150, 243), shadow=True)  # 藍色
+        draw_text((stock_value_x, y+12), stock_value_text, font=FONT_KKCOIN, fill=(150, 150, 160), shadow=True)  # 灰色（淨值）
         
-        # 進度條 - 分開顯示 KK幣（綠色）和數位美金（藍色）
+        # 進度條 - 灰色代表淨值（長度縮短以容納新欄位）
         progress_bar_y = y + 35
         progress_bar_x = rank_x + 100
-        progress_bar_width = WIDTH - rank_x - 120 - 300
+        progress_bar_width = kk_right - 120 - progress_bar_x  # 縮短進度條以容納新欄位
         progress_bar_height = 16
         
         # 背景框
@@ -526,45 +543,23 @@ def _sync_build_leaderboard_image(
                 width=1
             )
         
-        # 計算 KK幣和數位美金的部分
-        if max_assets > 0:
-            kkcoin_value = float(kkcoin or 0)
-            digital_usd_value = float(digital_usd or 0) * dynamic_rate
-            total_assets = kkcoin_value + digital_usd_value
+        # 計算淨值的進度條寬度（灰色）
+        if max_net_worth > 0:
+            net_worth_percent = (net_worth / max_net_worth) * 100 if max_net_worth > 0 else 0
+            net_worth_width = int(progress_bar_width * net_worth_percent / 100)
             
-            # 計算寬度百分比
-            kkcoin_percent = (kkcoin_value / max_assets) * 100 if max_assets > 0 else 0
-            digital_percent = (digital_usd_value / max_assets) * 100 if max_assets > 0 else 0
-            
-            kkcoin_width = int(progress_bar_width * kkcoin_percent / 100)
-            digital_width = int(progress_bar_width * digital_percent / 100)
-            
-            # 繪製 KK幣部分（綠色）
-            if kkcoin_width > 0:
+            # 繪製淨值部分（灰色）
+            if net_worth_width > 0:
                 try:
                     draw.rounded_rectangle(
-                        [(progress_bar_x, progress_bar_y), (progress_bar_x + kkcoin_width, progress_bar_y + progress_bar_height)],
+                        [(progress_bar_x, progress_bar_y), (progress_bar_x + net_worth_width, progress_bar_y + progress_bar_height)],
                         radius=8,
-                        fill=(76, 175, 80)  # 綠色
+                        fill=(150, 150, 160)  # 灰色代表淨值
                     )
                 except AttributeError:
                     draw.rectangle(
-                        [(progress_bar_x, progress_bar_y), (progress_bar_x + kkcoin_width, progress_bar_y + progress_bar_height)],
-                        fill=(76, 175, 80)
-                    )
-            
-            # 繪製數位美金部分（藍色）
-            if digital_width > 0:
-                try:
-                    draw.rounded_rectangle(
-                        [(progress_bar_x + kkcoin_width, progress_bar_y), (progress_bar_x + kkcoin_width + digital_width, progress_bar_y + progress_bar_height)],
-                        radius=8,
-                        fill=(33, 150, 243)  # 藍色
-                    )
-                except AttributeError:
-                    draw.rectangle(
-                        [(progress_bar_x + kkcoin_width, progress_bar_y), (progress_bar_x + kkcoin_width + digital_width, progress_bar_y + progress_bar_height)],
-                        fill=(33, 150, 243)
+                        [(progress_bar_x, progress_bar_y), (progress_bar_x + net_worth_width, progress_bar_y + progress_bar_height)],
+                        fill=(150, 150, 160)
                     )
 
     # 第三部分：說明區塊
@@ -668,11 +663,13 @@ def get_current_leaderboard_data(bot, rank_channel_id):
         user_id = int(user["user_id"])
         kkcoin = float(user.get('kkcoin') or 0)
         digital_usd = float(user.get('digital_usd') or 0)
+        stock_value = _calculate_stock_value(user_id)
+        net_worth = kkcoin + digital_usd * dynamic_rate + stock_value
         
         member = guild.get_member(user_id)
         
         if member:
-            members_data.append((member, kkcoin, digital_usd))
+            members_data.append((member, kkcoin, digital_usd, net_worth))
         else:
             class FallbackMember:
                 def __init__(self, user_id, nickname):
@@ -692,7 +689,7 @@ def get_current_leaderboard_data(bot, rank_channel_id):
                 user_id,
                 user.get('nickname', user.get('user_name', f'User {user_id}'))
             )
-            members_data.append((fallback, kkcoin, digital_usd))
+            members_data.append((fallback, kkcoin, digital_usd, net_worth))
     
     return members_data
 
