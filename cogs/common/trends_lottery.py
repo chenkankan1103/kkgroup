@@ -299,7 +299,14 @@ class TrendsLotteryCog(commands.Cog):
             # 投注說明
             embed.add_field(
                 name="🎯 投注說明",
-                value="• 選擇前三名趨勢進行投注\n• 每次投注 $10.00 USD\n• 開獎時間：下個時段開始時\n• 全中獎池的 50%",
+                value="• 選擇前三名趨勢進行投注\n• 每次投注 $10.00 USD\n• 開獎時間：下個時段開始時",
+                inline=False
+            )
+            
+            # 獲獎規則
+            embed.add_field(
+                name="🏆 獲獎規則",
+                value="• 中 1 個：返回本金 $10\n• 中 2 個：獲得 $100 USD\n• 中 3 個：獲得 $100 USD + 平分獎池",
                 inline=False
             )
             
