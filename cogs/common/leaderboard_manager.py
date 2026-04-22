@@ -543,24 +543,71 @@ def _sync_build_leaderboard_image(
                 width=1
             )
         
-        # 計算淨值的進度條寬度（灰色）
+        # 計算進度條：三段顏色（KK幣綠+D-USD藍+股票淨值灰）
         if max_net_worth > 0:
             net_worth_percent = (net_worth / max_net_worth) * 100 if max_net_worth > 0 else 0
             net_worth_width = int(progress_bar_width * net_worth_percent / 100)
             
-            # 繪製淨值部分（灰色）
-            if net_worth_width > 0:
-                try:
-                    draw.rounded_rectangle(
-                        [(progress_bar_x, progress_bar_y), (progress_bar_x + net_worth_width, progress_bar_y + progress_bar_height)],
-                        radius=8,
-                        fill=(150, 150, 160)  # 灰色代表淨值
-                    )
-                except AttributeError:
-                    draw.rectangle(
-                        [(progress_bar_x, progress_bar_y), (progress_bar_x + net_worth_width, progress_bar_y + progress_bar_height)],
-                        fill=(150, 150, 160)
-                    )
+            # 在淨值進度條內部分三段
+            if net_worth_width > 0 and net_worth > 0:
+                kkcoin_value = float(kkcoin or 0)
+                digital_usd_value = float(digital_usd or 0) * dynamic_rate
+                stock_value = net_worth - kkcoin_value - digital_usd_value
+                
+                # 計算每段在進度條內的寬度（按淨值比例）
+                kkcoin_ratio = kkcoin_value / net_worth if net_worth > 0 else 0
+                digital_ratio = digital_usd_value / net_worth if net_worth > 0 else 0
+                stock_ratio = stock_value / net_worth if net_worth > 0 else 0
+                
+                kkcoin_width = int(net_worth_width * kkcoin_ratio)
+                digital_width = int(net_worth_width * digital_ratio)
+                stock_width = net_worth_width - kkcoin_width - digital_width  # 剩余部分給股票
+                
+                current_x = progress_bar_x
+                
+                # 繪製 KK幣部分（綠色）
+                if kkcoin_width > 0:
+                    try:
+                        draw.rounded_rectangle(
+                            [(current_x, progress_bar_y), (current_x + kkcoin_width, progress_bar_y + progress_bar_height)],
+                            radius=8,
+                            fill=(76, 175, 80)  # 綠色
+                        )
+                    except AttributeError:
+                        draw.rectangle(
+                            [(current_x, progress_bar_y), (current_x + kkcoin_width, progress_bar_y + progress_bar_height)],
+                            fill=(76, 175, 80)
+                        )
+                    current_x += kkcoin_width
+                
+                # 繪製 D-USD 部分（藍色）
+                if digital_width > 0:
+                    try:
+                        draw.rounded_rectangle(
+                            [(current_x, progress_bar_y), (current_x + digital_width, progress_bar_y + progress_bar_height)],
+                            radius=8,
+                            fill=(33, 150, 243)  # 藍色
+                        )
+                    except AttributeError:
+                        draw.rectangle(
+                            [(current_x, progress_bar_y), (current_x + digital_width, progress_bar_y + progress_bar_height)],
+                            fill=(33, 150, 243)
+                        )
+                    current_x += digital_width
+                
+                # 繪製股票淨值部分（灰色）
+                if stock_width > 0:
+                    try:
+                        draw.rounded_rectangle(
+                            [(current_x, progress_bar_y), (current_x + stock_width, progress_bar_y + progress_bar_height)],
+                            radius=8,
+                            fill=(150, 150, 160)  # 灰色
+                        )
+                    except AttributeError:
+                        draw.rectangle(
+                            [(current_x, progress_bar_y), (current_x + stock_width, progress_bar_y + progress_bar_height)],
+                            fill=(150, 150, 160)
+                        )
 
     # 第三部分：說明區塊
     desc_y = leaderboard_start_y + 75 + len(members_data) * 70 + 15
