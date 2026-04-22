@@ -32,8 +32,13 @@ except ImportError:
 from shared.utils.trends_collector import TrendsCollector, get_latest_trends
 from shared.utils.trends_lottery_system import TrendsLotterySystem
 
-# 使用絕對路徑加載 .env（確保無論從何處執行都能找到）
-ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+# 使用絕對路徑加載 .env
+# 獲取當前文件的絕對路徑，然後向上 3 層到項目根目錄
+__file_abs = os.path.abspath(__file__)
+ENV_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file_abs))),
+    ".env"
+)
 load_dotenv(ENV_PATH)
 
 logger = logging.getLogger(__name__)
