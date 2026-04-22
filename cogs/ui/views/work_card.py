@@ -7,7 +7,7 @@ from shared.utils.view_registry import PersistentViewBase
 class GenderSelectView(discord.ui.View):
     """性別選擇視圖"""
     def __init__(self, cog, user_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=300)  # 臨時視圖，300秒後過期
         self.cog = cog
         self.user_id = user_id
     
@@ -142,10 +142,10 @@ class WorkCardModal(discord.ui.Modal):
         return embed
 
 
-class WorkCardEditView(discord.ui.View):
+class WorkCardEditView(PersistentViewBase):
     """工作證修改選項視圖"""
     def __init__(self, cog, user_id: int):
-        super().__init__(timeout=None)
+        super().__init__()  # PersistentViewBase 自動設置 timeout=None
         self.cog = cog
         self.user_id = user_id
     
@@ -176,10 +176,10 @@ class WorkCardCreateView(PersistentViewBase):
         await interaction.response.send_modal(WorkCardModal(self.cog, self.user_id))
 
 
-class WorkCardActionView(discord.ui.View):
+class WorkCardActionView(PersistentViewBase):
     """已有工作證時的操作視圖"""
     def __init__(self, cog, user_id: int, user_data: dict):
-        super().__init__(timeout=None)
+        super().__init__()  # PersistentViewBase 自動設置 timeout=None
         self.cog = cog
         self.user_id = user_id
         self.user_data = user_data
