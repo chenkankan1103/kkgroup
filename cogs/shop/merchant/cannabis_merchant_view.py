@@ -103,7 +103,7 @@ class CannabisMerchantView(PersistentViewBase):
             traceback.print_exc()
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
     
-    @discord.ui.button(label="返回", style=discord.ButtonStyle.grey, custom_id="cannabis_back")
+    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, custom_id="cannabis_back")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """返回主菜單"""
         try:

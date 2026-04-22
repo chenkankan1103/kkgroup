@@ -170,7 +170,7 @@ class AnnouncementButtonView(PersistentViewBase):
             btn = Button(
                 label=ann['name'],
                 emoji=ann.get('emoji', '📌'),
-                style=discord.ButtonStyle.blurple,
+                style=discord.ButtonStyle.primary,
                 custom_id=f"ann_btn_{ann['id']}"
             )
             btn.callback = self.make_button_callback(ann['id'])
@@ -180,7 +180,7 @@ class AnnouncementButtonView(PersistentViewBase):
         feedback_btn = Button(
             label="意見回饋",
             emoji="💝",
-            style=discord.ButtonStyle.blurple,  # 初始為藍色，點擊後無法變色（直接彈出表單）
+            style=discord.ButtonStyle.primary,  # 初始為藍色，點擊後無法變色（直接彈出表單）
             custom_id="feedback_btn"
         )
         feedback_btn.callback = self.feedback_button_callback
@@ -190,7 +190,7 @@ class AnnouncementButtonView(PersistentViewBase):
         update_log_btn = Button(
             label="更新紀錄",
             emoji="📝",
-            style=discord.ButtonStyle.blurple,  # 初始為藍色，點擊後變綠色
+            style=discord.ButtonStyle.primary,  # 初始為藍色，點擊後變綠色
             custom_id="update_log_btn"
         )
         update_log_btn.callback = self.update_log_button_callback
@@ -505,9 +505,9 @@ class AnnouncementButtonView(PersistentViewBase):
                 
                 # 設定顏色：選中 = 綠色，未選中 = 藍色
                 if is_active:
-                    item.style = discord.ButtonStyle.green
+                    item.style = discord.ButtonStyle.success
                 else:
-                    item.style = discord.ButtonStyle.blurple
+                    item.style = discord.ButtonStyle.primary
     
     def create_embed_for_announcement(self, announcement: dict) -> discord.Embed:
         """建立 Embed"""
