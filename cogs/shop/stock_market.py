@@ -473,7 +473,7 @@ class PortfolioDetailView(discord.ui.View):
             return
         await interaction.response.send_modal(TradeModal(self, "buy", self.symbol, self.price))
     
-    @discord.ui.button(label="賣出", style=discord.ButtonStyle.red, emoji="📉", row=0)
+    @discord.ui.button(label="賣出", style=discord.ButtonStyle.danger, emoji="📉", row=0)
     async def sell_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """賣出按鈕 - 複用原來的邏輯"""
         if not self.symbol or self.price <= 0:
@@ -587,7 +587,7 @@ class StockDetailView(discord.ui.View):
         self.add_item(TimeframeButton("季", "季", room_view, symbol, row=2))
         self.add_item(UpdateChartButton(room_view, symbol, row=2))
     
-    @discord.ui.button(label="買入", style=discord.ButtonStyle.green, emoji="📈", row=0)
+    @discord.ui.button(label="買入", style=discord.ButtonStyle.success, emoji="📈", row=0)
     async def buy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """買入按鈕"""
         if not self.symbol or self.price <= 0:
@@ -595,7 +595,7 @@ class StockDetailView(discord.ui.View):
             return
         await interaction.response.send_modal(TradeModal(self.room_view, "buy", self.symbol, self.price))
     
-    @discord.ui.button(label="賣出", style=discord.ButtonStyle.red, emoji="📉", row=0)
+    @discord.ui.button(label="賣出", style=discord.ButtonStyle.danger, emoji="📉", row=0)
     async def sell_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """賣出按鈕"""
         if not self.symbol or self.price <= 0:
