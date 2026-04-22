@@ -191,7 +191,7 @@ class KKCoin(commands.Cog):
         # 啟動定時更新任務
         self.auto_update_leaderboard.start()
         self.auto_update_digital_usd_leaderboard.start()
-        self.auto_update_reserve_status.start()
+        # self.auto_update_reserve_status.start()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
         self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
         self.auto_push_leaderboard_to_github.start()  # 📤 [事件驅動] 排行榜生成已改為事件觸發模式
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
@@ -204,7 +204,7 @@ class KKCoin(commands.Cog):
         """當 Cog 卸載時停止定時任務"""
         self.auto_update_leaderboard.cancel()
         self.auto_update_digital_usd_leaderboard.cancel()
-        self.auto_update_reserve_status.cancel()
+        # self.auto_update_reserve_status.cancel()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
         self.auto_check_tunnel_url.cancel()  # 🔄 取消隧道檢查任務
         if self.auto_push_leaderboard_to_github.is_running():
             self.auto_push_leaderboard_to_github.cancel()  # 📤 取消 GitHub 推送任務
