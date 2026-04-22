@@ -32,7 +32,10 @@ except ImportError:
 from shared.utils.trends_collector import TrendsCollector, get_latest_trends
 from shared.utils.trends_lottery_system import TrendsLotterySystem
 
-load_dotenv()
+# 使用絕對路徑加載 .env（確保無論從何處執行都能找到）
+ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+load_dotenv(ENV_PATH)
+
 logger = logging.getLogger(__name__)
 
 # 臨時日誌文件（調試用）
@@ -46,6 +49,11 @@ def temp_debug_log(msg):
             f.write(f"[{ts}] {msg}\n")
     except Exception as e:
         logger.error(f"臨時日誌寫入失敗: {e}")
+
+# 驗證 .env 加載
+temp_debug_log(f"ENV_PATH = {ENV_PATH}")
+temp_debug_log(f"ENV_PATH exists = {os.path.exists(ENV_PATH)}")
+temp_debug_log(f"TRENDS_CHANNEL_ID from env = {os.getenv('TRENDS_CHANNEL_ID', 'NOT_FOUND')}")
 
 # 配置
 TRENDS_UPDATE_INTERVAL = 240  # 4 小時（秒）
