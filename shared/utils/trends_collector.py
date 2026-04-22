@@ -58,35 +58,68 @@ class TrendsCollector:
             logger.warning("⚠️  TWITTER_BEARER_TOKEN 未設定，跳過 Twitter 趨勢")
             return []
         
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+        
         try:
-            # Twitter API v2 需要用 Trends Endpoint（如果有權限）
-            # 否則用替代方案：搜尋熱門詞彙
             headers = {
                 "Authorization": f"Bearer {self.twitter_bearer_token}",
                 "User-Agent": "TrendsBot/1.0"
             }
             
-            # 使用 search/recent 找熱門話題（近7天）
-            url = "https://api.twitter.com/2/tweets/search/recent"
-            params = {
-                "query": "-is:retweet",  # 排除轉推
-                "max_results": 100,
-                "tweet.fields": "public_metrics",
-            }
+            # 嘗試多個搜尋查詢以獲得熱門話題
+            search_queries = [
+                "lang:zh -is:retweet",  # 中文推文（不含轉推）
+                "Taiwan lang:zh -is:retweet",  # 台灣相關
+                "-is:retweet has:hashtags",  # 有 hashtag 的推文
+            ]
             
-            async with self.session.get(url, headers=headers, params=params) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    # 提取話題標籤
-                    trends = self._extract_twitter_trends(data)
-                    logger.info(f"✅ Twitter 趨勢已獲取：{len(trends)} 項")
-                    return trends
-                else:
-                    logger.error(f"❌ Twitter API 錯誤: {resp.status}")
-                    return []
+            all_trends = {}
+            
+            for query in search_queries:
+                url = "https://api.twitter.com/2/tweets/search/recent"
+                params = {
+                    "query": query,
+                    "max_results": 100,
+                    "tweet.fields": "public_metrics",
+                    "expansions": "author_id"
+                }
+                
+                logger.info(f"🔍 搜尋 Twitter: {query[:50]}...")
+                
+                async with self.session.get(url, headers=headers, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        trends = self._extract_twitter_trends(data)
+                        logger.info(f"  ✅ 找到 {len(trends)} 個趨勢")
+                        
+                        # 合併趨勢
+                        for trend in trends:
+                            key = trend["trend"].lower()
+                            if key not in all_trends:
+                                all_trends[key] = trend
+                            else:
+                                all_trends[key]["count"] += trend.get("count", 0)
+                    elif resp.status == 429:
+                        logger.warning("⚠️  Twitter API 限流，等待後重試")
+                        await asyncio.sleep(2)
+                    else:
+                        logger.warning(f"⚠️  Twitter API 狀態: {resp.status}")
+            
+            # 排序並返回前10名
+            sorted_trends = sorted(
+                all_trends.values(),
+                key=lambda x: x.get("count", 0),
+                reverse=True
+            )[:10]
+            
+            logger.info(f"✅ Twitter 趨勢已獲取：{len(sorted_trends)} 項")
+            return sorted_trends
         
         except Exception as e:
             logger.error(f"❌ Twitter 趨勢獲取失敗: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
     
     async def get_reddit_trends(self, subreddit: str = "all") -> List[Dict]:
@@ -106,23 +139,40 @@ class TrendsCollector:
         """從 Twitter 回應中提取趨勢"""
         trends = []
         
-        if "data" not in data:
+        if "data" not in data or len(data["data"]) == 0:
+            logger.debug(f"  無推文數據: {data}")
             return trends
         
         hashtags_count = {}
+        word_count = {}
         
         for tweet in data["data"]:
-            # 從推文中提取 hashtag
+            # 從推文中提取 hashtag 和常見詞彙
             if "text" in tweet:
                 text = tweet["text"]
+                # 獲取推文的互動數
+                metrics = tweet.get("public_metrics", {})
+                engagement = metrics.get("like_count", 0) + metrics.get("retweet_count", 0)
+                
                 words = text.split()
                 for word in words:
+                    word_clean = word.lower().strip(".,!?;:")
+                    
+                    # 提取 hashtag
                     if word.startswith("#") and len(word) > 1:
-                        tag = word.lower()
-                        hashtags_count[tag] = hashtags_count.get(tag, 0) + 1
+                        tag = word_clean
+                        hashtags_count[tag] = hashtags_count.get(tag, 0) + engagement + 1
+                    
+                    # 提取高排名詞彙（長度合理的詞）
+                    elif 2 < len(word_clean) < 50 and not word_clean.startswith("http"):
+                        if word_clean not in ["the", "is", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of"]:
+                            word_count[word_clean] = word_count.get(word_clean, 0) + engagement + 1
+        
+        # 合併 hashtag 和詞彙
+        combined = {**hashtags_count, **word_count}
         
         # 排序並返回前10名
-        sorted_tags = sorted(hashtags_count.items(), key=lambda x: x[1], reverse=True)[:10]
+        sorted_tags = sorted(combined.items(), key=lambda x: x[1], reverse=True)[:10]
         
         for tag, count in sorted_tags:
             trends.append({
@@ -131,6 +181,7 @@ class TrendsCollector:
                 "platform": "twitter"
             })
         
+        logger.debug(f"  提取了 {len(trends)} 個趨勢")
         return trends
     
     def _extract_reddit_trends(self, data: Dict) -> List[Dict]:
