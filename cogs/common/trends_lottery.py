@@ -17,6 +17,7 @@ import os
 import sys
 from datetime import datetime
 from typing import List, Optional, Dict
+import logging
 
 # ⚠️ 在導入其他模塊之前，必須先加載 .env！
 # 使用絕對路徑加載 .env
@@ -38,11 +39,10 @@ except ImportError:
     from datetime import timezone, timedelta
     TZ_TW = timezone(timedelta(hours=8))
 
-import logging
-
 # 導入自定義模組
 from shared.utils.trends_collector import TrendsCollector, get_latest_trends
 from shared.utils.trends_lottery_system import TrendsLotterySystem
+from shared.utils.view_registry import PersistentViewBase
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +51,11 @@ TRENDS_UPDATE_INTERVAL = 240  # 4 小時（秒）
 TRENDS_UPDATE_HOURS = [8, 12, 16, 20]  # 08:00, 12:00, 16:00, 20:00 台灣時間
 
 
-class TrendsPredictionView(discord.ui.View):
+class TrendsPredictionView(PersistentViewBase):
     """趨勢預測交互按鈕"""
     
     def __init__(self, cog, trends: List[str], round_id: str):
-        super().__init__(timeout=None)
+        super().__init__()
         self.cog = cog
         self.trends = trends[:10]  # 最多 10 個選項
         self.round_id = round_id
@@ -135,6 +135,14 @@ class TrendsLotteryCog(commands.Cog):
         logger.info(f"🔧 [TrendsLotteryCog.__init__] 初始化開始，即將啟動任務...")
         self.update_trends_task.start()
         logger.info(f"✅ [TrendsLotteryCog.__init__] 任務已啟動")
+    
+    async def cog_load(self):
+        """Cog 加載時執行 - 全域註冊視圖"""
+        logger.info("🔧 [TrendsLotteryCog.cog_load] 開始全域註冊趨勢視圖...")
+        # 注意：由於趨勢是動態生成的，我們無法預先註冊
+        # 每次推播時會創建新的 TrendsPredictionView
+        # 由於已使用 PersistentViewBase，所有視圖都有 timeout=None
+        logger.info("✅ [TrendsLotteryCog.cog_load] 準備完成，將使用 PersistentViewBase")
     
     async def cog_unload(self):
         """Cog 卸載時清理"""
