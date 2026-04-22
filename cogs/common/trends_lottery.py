@@ -153,12 +153,14 @@ class TrendsLotteryCog(commands.Cog):
             now = datetime.now(TZ_TW)
             
             # 除錯日誌（每分鐘輸出）
-            logger.debug(f"⏰ 趨勢排程檢查: 台灣時間 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"⏰ [UPDATE_TASK] 台灣時間: {now.strftime('%Y-%m-%d %H:%M:%S')} | 時段: {now.hour}:00-{now.hour}:59")
+            logger.info(f"⏰ 趨勢排程檢查: 台灣時間 {now.strftime('%Y-%m-%d %H:%M:%S')}")
             
             # 檢查是否在深夜時段（00:00 - 08:00）
             if 0 <= now.hour < 8:
                 # 深夜時段：靜默抓取但不推播
                 if now.minute == 0:
+                    print(f"🌙 [UPDATE_TASK] 深夜時段 ({now.hour}:00)，靜默抓取趨勢...")
                     logger.info(f"🌙 深夜時段 ({now.hour}:00)，靜默抓取趨勢...")
                     await self._fetch_trends_silent()
                 return
@@ -166,6 +168,7 @@ class TrendsLotteryCog(commands.Cog):
             # 檢查是否是更新時間（08:00, 12:00, 16:00, 20:00）
             # 使用 0-2 分鐘窗口以容納任務延遲
             if now.hour in TRENDS_UPDATE_HOURS and now.minute <= 2:
+                print(f"🚀 [UPDATE_TASK] 觸發推播時間 ({now.hour}:{now.minute:02d})！")
                 logger.info(f"🚀 觸發推播時間 ({now.hour}:{now.minute:02d})，正在推播趨勢...")
                 await self._update_and_broadcast_trends()
             else:
@@ -178,10 +181,13 @@ class TrendsLotteryCog(commands.Cog):
                             break
                     if next_update is None:
                         next_update = TRENDS_UPDATE_HOURS[0]  # 明天的第一個時段
+                    print(f"⏳ [UPDATE_TASK] 下次推播: {next_update:02d}:00 台灣時間")
                     logger.info(f"⏳ 下次推播: {next_update:02d}:00 台灣時間")
         except Exception as e:
+            print(f"❌ [UPDATE_TASK] 排程任務出錯: {e}")
             logger.error(f"❌ 趨勢排程任務出錯: {e}")
             import traceback
+            print(traceback.format_exc())
             logger.error(traceback.format_exc())
     
     @update_trends_task.before_loop
