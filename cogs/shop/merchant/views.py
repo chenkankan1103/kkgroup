@@ -261,12 +261,12 @@ class PersistentView(PersistentViewBase):
         super().__init__()  # 持久化視圖必須 timeout=None
         self.cog = cog
 
-    @discord.ui.button(label="探索", style=discord.ButtonStyle.grey, custom_id="persistent_explore")
+    @discord.ui.button(label="探索", style=discord.ButtonStyle.secondary, custom_id="persistent_explore")
     async def explore_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="黑市商人出現了", description="竟然被你發現了，想要買些什麼，還是...")
         await interaction.response.send_message(embed=embed, view=ExploreView(self.cog), ephemeral=True)
 
-    @discord.ui.button(label="離開", style=discord.ButtonStyle.grey, custom_id="persistent_exit")
+    @discord.ui.button(label="離開", style=discord.ButtonStyle.secondary, custom_id="persistent_exit")
     async def exit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("你決定離開這片神秘的黑暗角落。", ephemeral=True)
 
@@ -276,7 +276,7 @@ class ExploreView(PersistentViewBase):
         super().__init__()
         self.cog = cog
 
-    @discord.ui.button(label="🛒 商品區", style=discord.ButtonStyle.green, custom_id="persistent_products")
+    @discord.ui.button(label="🛒 商品區", style=discord.ButtonStyle.success, custom_id="persistent_products")
     async def products_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(
             title="🛒 商品區",
@@ -287,7 +287,7 @@ class ExploreView(PersistentViewBase):
         view = ProductCategoryView(self.cog)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @discord.ui.button(label="🔫 搶劫商人 (30%機率)", style=discord.ButtonStyle.red, custom_id="persistent_rob")
+    @discord.ui.button(label="🔫 搶劫商人 (30%機率)", style=discord.ButtonStyle.danger, custom_id="persistent_rob")
     async def rob_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_rob_action(interaction)
 
@@ -379,17 +379,17 @@ class RoleShopView(PersistentViewBase):
         super().__init__()
         self.cog = cog
 
-    @discord.ui.button(label="七彩披風 (500 KKcoin/1天)", style=discord.ButtonStyle.blurple, custom_id="persistent_buy_rainbow")
+    @discord.ui.button(label="七彩披風 (500 KKcoin/1天)", style=discord.ButtonStyle.primary, custom_id="persistent_buy_rainbow")
     async def rainbow_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         item = ROLE_SHOP["七彩披風"]
         await self.cog.handle_role_purchase(interaction, "七彩披風", item["price"], item["role_id"], item["duration"])
 
-    @discord.ui.button(label="進階組員 (1000 KKcoin/1週)", style=discord.ButtonStyle.blurple, custom_id="persistent_buy_vip")
+    @discord.ui.button(label="進階組員 (1000 KKcoin/1週)", style=discord.ButtonStyle.primary, custom_id="persistent_buy_vip")
     async def vip_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         item = ROLE_SHOP["進階組員"]
         await self.cog.handle_role_purchase(interaction, "進階組員", item["price"], item["role_id"], item["duration"])
 
-    @discord.ui.button(label="返回", style=discord.ButtonStyle.grey, custom_id="persistent_role_back")
+    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, custom_id="persistent_role_back")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="黑市商人出現了", description="竟然被你發現了，想要買些什麼，還是...")
         await interaction.response.edit_message(embed=embed, view=ExploreView(self.cog))
@@ -440,7 +440,7 @@ class EquipmentShopView(PersistentViewBase):
             button_count += 1
         
         # 返回按鈕
-        back_button = Button(label="返回", style=discord.ButtonStyle.grey, custom_id="persistent_equipment_back")
+        back_button = Button(label="返回", style=discord.ButtonStyle.secondary, custom_id="persistent_equipment_back")
         back_button.callback = self.back_callback
         self.add_item(back_button)
     
@@ -525,14 +525,14 @@ class ItemDetailView(View):
     async def preview_item(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_equipment_preview(interaction, self.item_name, self.item_data, self.category)
     
-    @discord.ui.button(label="直接購買", style=discord.ButtonStyle.green, emoji="💰")
+    @discord.ui.button(label="直接購買", style=discord.ButtonStyle.success, emoji="💰")
     async def buy_item(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.can_afford:
             await interaction.response.send_message("❌ 你的 KKcoin 不足，無法購買此商品！", ephemeral=True)
             return
         await self.cog.handle_equipment_purchase(interaction, self.item_name, self.item_data, self.category)
     
-    @discord.ui.button(label="🔙 返回商店", style=discord.ButtonStyle.grey)
+    @discord.ui.button(label="🔙 返回商店", style=discord.ButtonStyle.secondary)
     async def back_to_shop(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .database import get_user_kkcoin
         kkcoin = await get_user_kkcoin(interaction.user.id)
@@ -901,7 +901,7 @@ class ProductCategoryView(View):
         super().__init__(timeout=300)
         self.cog = cog
 
-    @discord.ui.button(label="購買身份", style=discord.ButtonStyle.green, custom_id="persistent_buy_roles", emoji="👑")
+    @discord.ui.button(label="購買身份", style=discord.ButtonStyle.success, custom_id="persistent_buy_roles", emoji="👑")
     async def buy_roles_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.get_merchant_response(interaction.user, "購買身份", interaction)
 
@@ -915,7 +915,7 @@ class ProductCategoryView(View):
         )
         await interaction.response.send_message(embed=embed, view=CannabisMerchantViewV2(self.cog), ephemeral=True)
 
-    @discord.ui.button(label="⬅️ 返回", style=discord.ButtonStyle.grey, custom_id="persistent_back_to_main")
+    @discord.ui.button(label="⬅️ 返回", style=discord.ButtonStyle.secondary, custom_id="persistent_back_to_main")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(
             title="🏪 神秘的黑市",
