@@ -168,14 +168,21 @@ class TrendsLotteryCog(commands.Cog):
         """定時更新趨勢任務（每分鐘檢查一次是否應該更新）"""
         now = datetime.now(TZ_TW)
         
+        # 除錯日誌（每小時僅在 :00 分時輸出）
+        if now.minute == 0:
+            logger.info(f"⏰ 趨勢任務檢查: 台灣時間 {now.strftime('%H:%M')}")
+        
         # 檢查是否在深夜時段（00:00 - 08:00）
         if 0 <= now.hour < 8:
             # 深夜時段：靜默抓取但不推播
-            await self._fetch_trends_silent()
+            if now.minute == 0:
+                await self._fetch_trends_silent()
             return
         
         # 檢查是否是更新時間（08:00, 12:00, 16:00, 20:00）
-        if now.hour in TRENDS_UPDATE_HOURS and now.minute == 0:
+        # 使用 0-2 分鐘窗口以容納任務延遲
+        if now.hour in TRENDS_UPDATE_HOURS and now.minute <= 2:
+            logger.info(f"🚀 正在推播趨勢 ({now.hour}:00 時段)")
             await self._update_and_broadcast_trends()
     
     @update_trends_task.before_loop
