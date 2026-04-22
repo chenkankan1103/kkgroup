@@ -168,8 +168,16 @@ class TrendsLotteryCog(commands.Cog):
                 self._db_initialized = True
                 
                 # 啟動定時任務
+                logger.info(f"🔍 檢查排程任務狀態: is_running={self.update_trends_task.is_running()}")
                 if not self.update_trends_task.is_running():
-                    self.update_trends_task.start()
+                    logger.info("📌 正在啟動排程任務...")
+                    try:
+                        self.update_trends_task.start()
+                        logger.info("✅ 排程任務已啟動")
+                    except Exception as task_err:
+                        logger.error(f"❌ 排程任務啟動失敗: {task_err}")
+                else:
+                    logger.info("⚠️  排程任務已在運行中")
                 
                 logger.info("✅ 趨勢樂透 Cog 已初始化")
             except Exception as e:
@@ -183,24 +191,40 @@ class TrendsLotteryCog(commands.Cog):
     @tasks.loop(minutes=1)
     async def update_trends_task(self):
         """定時更新趨勢任務（每分鐘檢查一次是否應該更新）"""
-        now = datetime.now(TZ_TW)
-        
-        # 除錯日誌（每小時僅在 :00 分時輸出）
-        if now.minute == 0:
-            logger.info(f"⏰ 趨勢任務檢查: 台灣時間 {now.strftime('%H:%M')}")
-        
-        # 檢查是否在深夜時段（00:00 - 08:00）
-        if 0 <= now.hour < 8:
-            # 深夜時段：靜默抓取但不推播
-            if now.minute == 0:
-                await self._fetch_trends_silent()
-            return
-        
-        # 檢查是否是更新時間（08:00, 12:00, 16:00, 20:00）
-        # 使用 0-2 分鐘窗口以容納任務延遲
-        if now.hour in TRENDS_UPDATE_HOURS and now.minute <= 2:
-            logger.info(f"🚀 正在推播趨勢 ({now.hour}:00 時段)")
-            await self._update_and_broadcast_trends()
+        try:
+            now = datetime.now(TZ_TW)
+            
+            # 除錯日誌（每分鐘輸出）
+            logger.debug(f"⏰ 趨勢排程檢查: 台灣時間 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # 檢查是否在深夜時段（00:00 - 08:00）
+            if 0 <= now.hour < 8:
+                # 深夜時段：靜默抓取但不推播
+                if now.minute == 0:
+                    logger.info(f"🌙 深夜時段 ({now.hour}:00)，靜默抓取趨勢...")
+                    await self._fetch_trends_silent()
+                return
+            
+            # 檢查是否是更新時間（08:00, 12:00, 16:00, 20:00）
+            # 使用 0-2 分鐘窗口以容納任務延遲
+            if now.hour in TRENDS_UPDATE_HOURS and now.minute <= 2:
+                logger.info(f"🚀 觸發推播時間 ({now.hour}:{now.minute:02d})，正在推播趨勢...")
+                await self._update_and_broadcast_trends()
+            else:
+                # 顯示何時下一次推播（每個整點時刻）
+                if now.minute == 0 and now.hour >= 8:
+                    next_update = None
+                    for hour in TRENDS_UPDATE_HOURS:
+                        if hour > now.hour:
+                            next_update = hour
+                            break
+                    if next_update is None:
+                        next_update = TRENDS_UPDATE_HOURS[0]  # 明天的第一個時段
+                    logger.info(f"⏳ 下次推播: {next_update:02d}:00 台灣時間")
+        except Exception as e:
+            logger.error(f"❌ 趨勢排程任務出錯: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     @update_trends_task.before_loop
     async def before_update_trends_task(self):
