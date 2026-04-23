@@ -588,7 +588,7 @@ def add_to_central_reserve(amount: int) -> bool:
         是否成功
     """
     if amount < 0:
-        print(f"⚠️ 嘗試向儲備池添加負數: {amount}")
+        print(f"嘗試向儲備池添加負數: {amount}")
         return False
     
     # 獲取當前金額並累加
@@ -599,9 +599,9 @@ def add_to_central_reserve(amount: int) -> bool:
     result = set_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_FIELD, new_amount)
     
     if result:
-        print(f"✅ 金庫累加成功: {current} + {amount} = {new_amount}")
+        print(f"金庫累加成功: {current} + {amount} = {new_amount}")
     else:
-        print(f"❌ 金庫更新失敗")
+        print(f"金庫更新失敗")
     
     return result
 
@@ -667,7 +667,7 @@ def add_to_central_reserve_digital_usd(amount: float) -> bool:
         是否成功
     """
     if amount < 0:
-        print(f"⚠️ 嘗試向儲備池添加負數 D-USD: {amount}")
+        print(f"嘗試向儲備池添加負數 D-USD: {amount}")
         return False
     
     # 獲取當前金額並累加
@@ -678,9 +678,9 @@ def add_to_central_reserve_digital_usd(amount: float) -> bool:
     result = set_user_field(SYSTEM_CONFIG_ID, CENTRAL_RESERVE_DIGITAL_USD_FIELD, new_amount)
     
     if result:
-        print(f"✅ 數位美金累加成功: {current:.2f} + {amount:.2f} = {new_amount:.2f}")
+        print(f"數位美金累加成功: {current:.2f} + {amount:.2f} = {new_amount:.2f}")
     else:
-        print(f"❌ 數位美金更新失敗")
+        print(f"數位美金更新失敗")
     
     return result
 
