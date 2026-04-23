@@ -39,10 +39,13 @@ CHARACTER_VARIATIONS = {
 }
 
 
-def get_random_character_data() -> dict:
+def get_random_character_data(preserve_gender: str = None) -> dict:
     """
     生成隨機但合理的楓之谷角色配置
     
+    Args:
+        preserve_gender: 如果提供，則保持此性別而不是隨機選擇
+        
     Returns:
         包含角色配置的字典
     """
@@ -54,7 +57,7 @@ def get_random_character_data() -> dict:
         'bottom': random.choice(CHARACTER_VARIATIONS['bottom']),
         'shoes': random.choice(CHARACTER_VARIATIONS['shoes']),
         'is_stunned': 0,
-        'gender': random.choice(['male', 'female'])
+        'gender': preserve_gender if preserve_gender else random.choice(['male', 'female'])
     }
 
 
@@ -144,6 +147,86 @@ def initialize_missing_users_with_defaults() -> dict:
     return result
 
 
+def convert_default_to_random_characters() -> dict:
+    """
+    將所有使用預設角色配置的用戶改為隨機配置
+    
+    邏輯：
+    1. 預設值用戶（所有欄位都匹配預設值）→ 改為隨機
+    2. 非預設值用戶（至少有一個欄位不同）→ 不動
+    3. 空白用戶（任何欄位為 None）→ 隨機填充
+    4. 性別 → 始終保持不變
+    
+    Returns:
+        修復結果統計 {
+            'total_users': 總用戶數,
+            'using_defaults': 使用預設值的用戶數,
+            'converted_to_random': 已轉換為隨機的用戶數,
+            'filled_blanks': 填充空白欄位的用戶數,
+            'unchanged': 保持不變的用戶數,
+            'failed': 修復失敗的用戶數,
+            'details': 詳細訊息列表
+        }
+    """
+    users = get_all_users()
+    
+    result = {
+        'total_users': len(users),
+        'using_defaults': 0,
+        'converted_to_random': 0,
+        'filled_blanks': 0,
+        'unchanged': 0,
+        'failed': 0,
+        'details': []
+    }
+    
+    required_fields = ['face', 'hair', 'skin', 'top', 'bottom', 'shoes']
+    
+    for i, user in enumerate(users, 1):
+        try:
+            user_id = user.get('user_id')
+            current_gender = user.get('gender', 'male')
+            
+            # 檢查當前用戶的配置
+            user_values = {field: user.get(field) for field in required_fields}
+            default_values = {field: DEFAULT_CHARACTER_DATA[field] for field in required_fields}
+            
+            # 檢查是否有空白欄位（包括 None 和空字符串）
+            has_blanks = any(v in (None, '') for v in user_values.values())
+            
+            # 檢查是否完全匹配預設值（排除有空值的用戶）
+            is_all_defaults = (not has_blanks and 
+                             all(user_values[field] == default_values[field] for field in required_fields))
+            
+            if has_blanks:
+                # 填充空白欄位
+                random_data = get_random_character_data(preserve_gender=current_gender)
+                for field in required_fields:
+                    if user.get(field) in (None, ''):
+                        set_user_field(user_id, field, random_data[field])
+                result['filled_blanks'] += 1
+                result['details'].append(f"  {i}. 用戶 {user_id}: ✨ 填充空白欄位")
+            
+            elif is_all_defaults:
+                # 預設值用戶 → 轉換為隨機
+                random_data = get_random_character_data(preserve_gender=current_gender)
+                for field in required_fields:
+                    set_user_field(user_id, field, random_data[field])
+                result['using_defaults'] += 1
+                result['converted_to_random'] += 1
+                result['details'].append(f"  {i}. 用戶 {user_id}: 🎲 預設值 → 隨機值")
+            
+            else:
+                # 非預設值用戶 → 保持不變
+                result['unchanged'] += 1
+        
+        except Exception as e:
+            result['failed'] += 1
+            result['details'].append(f"  ❌ 用戶 {user_id}: 修復失敗 - {e}")
+    
+    return result
+
+
 def batch_fill_missing_fields(field_name: str, default_value) -> dict:
     """
     為所有用戶填充特定缺失欄位
@@ -196,6 +279,25 @@ if __name__ == '__main__':
         elif sys.argv[1] == '--fix':
             # 執行修復
             initialize_missing_users_with_defaults()
+        
+        elif sys.argv[1] == '--randomize':
+            # 將預設值轉為隨機，空白的也隨機填充，非預設值保持不變，性別不動
+            print("🎲 開始轉換預設角色為隨機配置...")
+            print("   (預設值→隨機, 空白→隨機, 非預設值→不動, 性別→保持)\n")
+            
+            result = convert_default_to_random_characters()
+            
+            # 列印詳細訊息
+            for detail in result['details']:
+                print(detail)
+            
+            print(f"\n✅ 轉換完成！")
+            print(f"  - 總用戶: {result['total_users']}")
+            print(f"  - 預設值用戶: {result['using_defaults']}")
+            print(f"  - 已轉換為隨機: {result['converted_to_random']}")
+            print(f"  - 填充空白欄位: {result['filled_blanks']}")
+            print(f"  - 保持不變: {result['unchanged']}")
+            print(f"  - 失敗: {result['failed']}")
         
         elif sys.argv[1] == '--fix-field' and len(sys.argv) > 3:
             # 修復特定欄位: python ... --fix-field face 20005
