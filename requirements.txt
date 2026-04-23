@@ -21,3 +21,4 @@ yfinance
 pandas
 apscheduler
 pytrends
+feedparser
