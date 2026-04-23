@@ -2631,5 +2631,30 @@ class AnimeTracker(commands.Cog):
 
 async def setup(bot: commands.Bot):
     """Discord.py 2.0+ 加載方式"""
-    await bot.add_cog(AnimeTracker(bot))
+    print("[SETUP_START] 🎬 AnimeTracker setup() 開始", flush=True)
+    cog = AnimeTracker(bot)
+    await bot.add_cog(cog)
     logger.info("✅ AnimeTracker Cog 已加載")
+    print("[SETUP] ✅ AnimeTracker Cog 已添加到 bot", flush=True)
+    
+    # 直接啟動任務（不依賴 cog_load hook）
+    print("[SETUP] 準備啟動任務", flush=True)
+    try:
+        if not cog.check_new_anime.is_running():
+            print("[SETUP] 啟動 check_new_anime 任務", flush=True)
+            cog.check_new_anime.start()
+            print("[SETUP] ✅ check_new_anime 已啟動", flush=True)
+        else:
+            print("[SETUP] ⚠️ check_new_anime 已在運行", flush=True)
+        
+        if not cog.send_weekly_stats.is_running():
+            print("[SETUP] 啟動 send_weekly_stats 任務", flush=True)
+            cog.send_weekly_stats.start()
+            print("[SETUP] ✅ send_weekly_stats 已啟動", flush=True)
+        else:
+            print("[SETUP] ⚠️ send_weekly_stats 已在運行", flush=True)
+    except Exception as e:
+        print(f"[SETUP_ERROR] ❌ 任務啟動失敗: {e}", flush=True)
+        logger.error(f"❌ setup() 任務啟動失敗: {e}", exc_info=True)
+    
+    print("[SETUP_END] 🎬 AnimeTracker setup() 完成", flush=True)
