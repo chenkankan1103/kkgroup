@@ -14,6 +14,7 @@ from discord import app_commands
 from datetime import datetime
 from db_adapter import get_all_users, set_user_field, get_user
 import json
+import os
 
 
 class LockerAdminCog(commands.Cog):
@@ -111,8 +112,8 @@ class LockerAdminCog(commands.Cog):
     
     @app_commands.command(name="locker_init", description="為會員初始化置物櫃並建立 thread")
     @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(user="要初始化的會員", channel="要建立 thread 的頻道（留空則自動選擇）")
-    async def locker_init(self, interaction: discord.Interaction, user: discord.User, channel: discord.TextChannel = None):
+    @app_commands.describe(user="要初始化的會員")
+    async def locker_init(self, interaction: discord.Interaction, user: discord.User):
         """為沒有置物櫃的會員初始化，並自動建立 thread 和置物櫃頁面"""
         await interaction.response.defer(ephemeral=True)
         
@@ -170,8 +171,16 @@ class LockerAdminCog(commands.Cog):
             
             # 建立 thread 並發送置物櫃頁面
             try:
-                # 選擇頻道
-                target_channel = channel or interaction.channel
+                # 從環境變數讀取置物櫃頻道
+                locker_channel_id = os.getenv('LOCKER_CHANNEL_ID')
+                if not locker_channel_id:
+                    await interaction.followup.send(
+                        f"❌ 環境變數未設定 LOCKER_CHANNEL_ID，無法建立 thread",
+                        ephemeral=True
+                    )
+                    return
+                
+                target_channel = interaction.guild.get_channel(int(locker_channel_id))
                 if not isinstance(target_channel, discord.TextChannel):
                     await interaction.followup.send(
                         f"❌ 頻道選擇錯誤，必須是文字頻道",
@@ -312,8 +321,7 @@ class LockerAdminCog(commands.Cog):
     
     @app_commands.command(name="locker_fix_missing", description="批量初始化所有缺少置物櫃的會員並建立 thread")
     @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(channel="要建立 thread 的頻道（留空則自動選擇）")
-    async def locker_fix_missing(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+    async def locker_fix_missing(self, interaction: discord.Interaction):
         """批量為所有沒有置物櫃的會員初始化並建立 thread"""
         await interaction.response.defer(ephemeral=True)
         
@@ -325,8 +333,16 @@ class LockerAdminCog(commands.Cog):
             failed_count = 0
             thread_created_count = 0
             
-            # 選擇頻道
-            target_channel = channel or interaction.channel
+            # 從環境變數讀取置物櫃頻道
+            locker_channel_id = os.getenv('LOCKER_CHANNEL_ID')
+            if not locker_channel_id:
+                await interaction.followup.send(
+                    f"❌ 環境變數未設定 LOCKER_CHANNEL_ID，無法建立 thread",
+                    ephemeral=True
+                )
+                return
+            
+            target_channel = interaction.guild.get_channel(int(locker_channel_id))
             if not isinstance(target_channel, discord.TextChannel):
                 await interaction.followup.send(
                     f"❌ 頻道選擇錯誤，必須是文字頻道",
