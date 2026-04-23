@@ -1150,8 +1150,9 @@ class AnimeTracker(commands.Cog):
         logger.info("=" * 50)
         logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
         try:
-            # 跳過恢復舊消息（暫時）- 這可能會阻塞
-            # await self._restore_old_message_views()
+            # 恢復舊消息的視圖 - 在 bot 重啟時重新註冊所有永久視圖
+            # 這樣舊消息上的按鈕在重啟後仍然可以交互
+            await self._restore_old_message_views()
             
             # 啟動動畫檢查任務
             print("[COG_LOAD] 檢查 check_new_anime 任務狀態", flush=True)
