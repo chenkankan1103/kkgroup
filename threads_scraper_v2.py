@@ -60,7 +60,7 @@ edge_options = Options()
 
 # 檢測環境：GCP VM 上無瀏覽器，需要啟用 headless 模式
 IS_HEADLESS = os.environ.get('HEADLESS', 'false').lower() == 'true'
-if IS_HEADLESS or not os.path.exists('C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'):
+if IS_HEADLESS:
     logger.info("🖥️ Headless 模式啟用（無 GUI 環境）")
     edge_options.add_argument("--headless=new")
 else:
@@ -134,21 +134,45 @@ def login_to_threads(max_retries=3):
             input()
             
             # 添加隨機延遲
-            wait_time = random.uniform(1, 2)
+            wait_time = random.uniform(2, 3)
+            logger.info(f"⏳ 等待 {wait_time:.1f} 秒，頁面加載...")
             time.sleep(wait_time)
             
-            # 驗證登入
-            try:
-                driver.find_element(By.XPATH, "//a[contains(@href, '/profile')]")
-                logger.info("✅ 手動登入成功")
-                
+            # 驗證登入 - 檢查多個元素來確認登入成功
+            login_verified = False
+            
+            # 方法 1: 檢查是否在登入頁面（如果 URL 不包含 login，則說明登入成功）
+            current_url = driver.current_url
+            if "login" not in current_url and "threads.com" in current_url:
+                logger.info(f"✅ URL 變化確認登入成功 (當前: {current_url[:50]}...)")
+                login_verified = True
+            
+            # 方法 2: 檢查特定元素
+            if not login_verified:
+                try:
+                    driver.find_element(By.XPATH, "//a[contains(@href, '/profile')] | //div[contains(@aria-label, 'Profile')]")
+                    logger.info("✅ 檢測到個人檔案連結")
+                    login_verified = True
+                except:
+                    pass
+            
+            # 方法 3: 檢查導航元素
+            if not login_verified:
+                try:
+                    driver.find_element(By.XPATH, "//nav | //svg")
+                    logger.info("✅ 檢測到主頁面元素")
+                    login_verified = True
+                except:
+                    pass
+            
+            if login_verified:
                 # 保存 cookies
                 with open(cookies_file, 'w') as f:
                     json.dump(driver.get_cookies(), f, indent=2)
                 logger.info("💾 登入狀態已保存")
                 return True
-            except:
-                raise Exception("手動登入後仍未檢測到登入狀態")
+            else:
+                raise Exception("登入狀態驗證失敗")
         
         except Exception as e:
             logger.error(f"❌ 登入失敗（嘗試 {attempt + 1}）: {e}")
