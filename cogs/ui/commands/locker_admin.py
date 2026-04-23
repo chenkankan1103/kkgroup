@@ -505,6 +505,87 @@ class LockerAdminCog(commands.Cog):
                 ephemeral=True
             )
 
+    @app_commands.command(name="locker_remake_thread", description="手動為使用者重製置物櫃 thread")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def locker_remake_thread(self, interaction: discord.Interaction, user: discord.User):
+        """手動為使用者重製置物櫃 thread（參照置物櫃建立邏輯）"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # 從環境變數讀取論壇頻道 ID
+            forum_channel_id = os.getenv('FORUM_CHANNEL_ID')
+            if not forum_channel_id:
+                await interaction.followup.send(
+                    f"❌ 環境變數未設定 FORUM_CHANNEL_ID，無法建立 thread",
+                    ephemeral=True
+                )
+                return
+            
+            target_channel = interaction.guild.get_channel(int(forum_channel_id))
+            if not isinstance(target_channel, (discord.TextChannel, discord.ForumChannel)):
+                await interaction.followup.send(
+                    f"❌ 頻道選擇錯誤，必須是文字頻道或論壇頻道",
+                    ephemeral=True
+                )
+                return
+            
+            # 建立 thread（根據頻道類型選擇參數）
+            if isinstance(target_channel, discord.ForumChannel):
+                thread = await target_channel.create_thread(
+                    name=f"📦-{user.display_name}-置物櫃"
+                )
+            else:
+                thread = await target_channel.create_thread(
+                    name=f"📦-{user.display_name}-置物櫃",
+                    type=discord.ChannelType.private_thread
+                )
+            
+            # 發送置物櫃 embed（參照 cannabis_locker.py 的邏輯）
+            from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
+            from cogs.ui.views.locker_panel import LockerPanelView
+            from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
+            
+            plants = await get_user_plants(user.id)
+            inventory = await get_inventory(user.id)
+            
+            # 生成 embed
+            embed = await generate_canonical_locker_embed(
+                cog=self.bot.get_cog('PersonalLockerCog'),
+                user_data=get_user(user.id),
+                user_obj=user,
+                include_cannabis_info=True,
+                plants=plants,
+                inventory=inventory
+            )
+            
+            # 建立 view
+            view = LockerPanelView(self.bot.get_cog('PersonalLockerCog'), user.id, thread=thread)
+            
+            # 發送訊息（如果 embed 為空，使用備用訊息）
+            if embed is not None:
+                msg = await thread.send(embed=embed, view=view)
+            else:
+                msg = await thread.send(
+                    f"📦 {user.mention} 的置物櫃\n\n"
+                    f"重製完成！點擊下方按鈕開始管理您的物品。",
+                    view=view
+                )
+            
+            # 保存 locker_message_id
+            set_user_field(user.id, 'locker_message_id', msg.id)
+            
+            await interaction.followup.send(
+                f"✅ 已為 {user.mention} 重製置物櫃 thread\n"
+                f"📍 thread: {thread.mention}",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ 重製置物櫃失敗: {e}",
+                ephemeral=True
+            )
+
 
 async def setup(bot):
     """加載 Cog"""
