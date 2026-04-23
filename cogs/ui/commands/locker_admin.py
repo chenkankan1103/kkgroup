@@ -188,17 +188,16 @@ class LockerAdminCog(commands.Cog):
                     )
                     return
                 
-                # 建立 thread（根據頻道類律選擇參數）
+                # 建立 thread（根據頻道類型選擇參數）
                 if isinstance(target_channel, discord.ForumChannel):
-                    # 論壇頻道：使用 private 參數
+                    # 論壇頻道：建立公開 thread（論壇頻道上的 thread 無法指定為私人）
                     thread = await target_channel.create_thread(
-                        name=f"💾-{user.display_name}-置物櫃",
-                        private=True
+                        name=f"📦-{user.display_name}-置物櫃"
                     )
                 else:
-                    # 文字頻道：使用 type 參數
+                    # 文字頻道：建立私人 thread
                     thread = await target_channel.create_thread(
-                        name=f"💾-{user.display_name}-置物櫃",
+                        name=f"📦-{user.display_name}-置物櫃",
                         type=discord.ChannelType.private_thread
                     )
                 
@@ -406,13 +405,12 @@ class LockerAdminCog(commands.Cog):
                         
                         # 建立 thread（根據頻道類律選擇參數）
                         if isinstance(target_channel, discord.ForumChannel):
-                            # 論壇頻道：使用 private 參數
+                            # 論壇頻道：建立公開 thread（論壇頻道上的 thread 無法指定為私人）
                             thread = await target_channel.create_thread(
-                                name=f"💾-{user_obj.display_name}-置物櫃",
-                                private=True
+                                name=f"📦-{user_obj.display_name}-置物櫃"
                             )
                         else:
-                            # 文字頻道：使用 type 參數
+                            # 文字頻道：建立私人 thread
                             thread = await target_channel.create_thread(
                                 name=f"💾-{user_obj.display_name}-置物櫃",
                                 type=discord.ChannelType.private_thread
