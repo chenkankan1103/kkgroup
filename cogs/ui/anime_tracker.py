@@ -1124,6 +1124,7 @@ class AnimeTracker(commands.Cog):
         
         self.task_started = False
         self.bootstrap_completed = False
+        self.scheduler = None  # APScheduler 實例（在 cog_load 中初始化）
         
         # 跟踪動畫的檢查狀態（單一窗口檢查）
         # 格式: {"HH:MM": {"checked": bool, "found": bool, "start_time": datetime}}
@@ -1132,8 +1133,8 @@ class AnimeTracker(commands.Cog):
         # 週統計發送追蹤（防止重複發送）
         self.last_weekly_stats_sent = None  # 上次發送週統計的日期
         
-        # 注：任務將在 before_loop 中由 Discord.py 自動啟動，不在 __init__ 中啟動
-        logger.info("📺 [AnimeTracker.__init__] 任務將在 before_loop 中由框架自動啟動")
+        # 注：任務將在 cog_load 中由 APScheduler 自動啟動
+        logger.info("📺 [AnimeTracker.__init__] 任務將在 cog_load 中由 APScheduler 啟動")
         
         logger.info("📺 [AnimeTracker.__init__] AnimeTracker Cog 初始化完成")
         logger.info(f"📺 Bot 已就緒? {bot.is_ready()}")
@@ -1157,8 +1158,9 @@ class AnimeTracker(commands.Cog):
             try:
                 from apscheduler.schedulers.asyncio import AsyncIOScheduler
                 
-                if not hasattr(self, 'scheduler') or self.scheduler is None:
+                if self.scheduler is None:
                     self.scheduler = AsyncIOScheduler()
+                    logger.info("📺 [AnimeTracker.cog_load] 新建 AsyncIOScheduler")
                     
                     # 添加精確時刻的任務（只在 +5, 10, 15, 20, 25, 30 分鐘點執行）
                     self.scheduler.add_job(
@@ -1172,15 +1174,18 @@ class AnimeTracker(commands.Cog):
                     )
                     logger.info("✅ [AnimeTracker.cog_load] 精確時刻任務已註冊 (+5, 10, 15, 20, 25, 30 分)")
                     
-                    if not self.scheduler.running:
-                        self.scheduler.start()
-                        logger.info("✅ [AnimeTracker.cog_load] APScheduler 已啟動")
+                    # 啟動 scheduler
+                    self.scheduler.start()
+                    logger.info("✅ [AnimeTracker.cog_load] APScheduler 已啟動")
                 else:
-                    logger.info("⚠️ [AnimeTracker.cog_load] Scheduler 已在運行")
+                    logger.info("⚠️ [AnimeTracker.cog_load] Scheduler 已存在，跳過重複初始化")
                     
                 self.task_started = True
-            except ImportError:
-                logger.error("❌ [AnimeTracker.cog_load] apscheduler 未安裝，請執行: pip install apscheduler")
+            except ImportError as e:
+                logger.error(f"❌ [AnimeTracker.cog_load] apscheduler 未安裝：{e}")
+                raise
+            except Exception as e:
+                logger.error(f"❌ [AnimeTracker.cog_load] APScheduler 初始化失敗：{e}", exc_info=True)
                 raise
         except Exception as e:
             logger.error(f"❌ [AnimeTracker.cog_load] 任務啟動失敗: {e}", exc_info=True)
