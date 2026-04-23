@@ -16,17 +16,34 @@ from db_adapter import get_all_users, set_user_field
 import random
 
 
-# 預設楓之谷角色配置（與 image_utils.py 中的預設值保持一致）
-DEFAULT_CHARACTER_DATA = {
-    'face': 20005,
-    'hair': 30120,
-    'skin': 12000,
-    'top': 1040014,
-    'bottom': 1060096,
-    'shoes': 1072005,
+# 預設楓之谷角色配置（分性別，與 image_utils.py 中的預設值保持一致）
+# 注意：數據庫中所有值都是字符串存儲！
+# 男性預設
+MALE_DEFAULT_CHARACTER_DATA = {
+    'face': '20005',
+    'hair': '30120',
+    'skin': '12000',
+    'top': '1040014',
+    'bottom': '1060096',
+    'shoes': '1072005',
     'is_stunned': 0,
     'gender': 'male'
 }
+
+# 女性預設
+FEMALE_DEFAULT_CHARACTER_DATA = {
+    'face': '21731',
+    'hair': '34410',
+    'skin': '12000',
+    'top': '1041004',
+    'bottom': '1061008',
+    'shoes': '1072005',
+    'is_stunned': 0,
+    'gender': 'female'
+}
+
+# 向後相容性
+DEFAULT_CHARACTER_DATA = MALE_DEFAULT_CHARACTER_DATA
 
 # 楓之谷部位 ID 預設值列表（用於多樣性）
 CHARACTER_VARIATIONS = {
@@ -126,7 +143,7 @@ def initialize_missing_users_with_defaults() -> dict:
             else:
                 char_data = DEFAULT_CHARACTER_DATA.copy()
                 result['fixed_with_defaults'] += 1
-                variant_str = "📋 預設值"
+                variant_str = "預設值"
             
             # 為用戶設置所有角色欄位
             for field, value in char_data.items():
@@ -149,11 +166,11 @@ def initialize_missing_users_with_defaults() -> dict:
 
 def convert_default_to_random_characters() -> dict:
     """
-    將所有使用預設角色配置的用戶改為隨機配置
+    將所有使用預設頭髮的用戶改為隨機配置
     
     邏輯：
-    1. 預設值用戶（所有欄位都匹配預設值）→ 改為隨機
-    2. 非預設值用戶（至少有一個欄位不同）→ 不動
+    1. 預設值用戶（頭髮為預設值）→ 改為隨機
+    2. 非預設值用戶（頭髮不是預設值）→ 不動
     3. 空白用戶（任何欄位為 None）→ 隨機填充
     4. 性別 → 始終保持不變
     
@@ -186,17 +203,17 @@ def convert_default_to_random_characters() -> dict:
         try:
             user_id = user.get('user_id')
             current_gender = user.get('gender', 'male')
-            
-            # 檢查當前用戶的配置
-            user_values = {field: user.get(field) for field in required_fields}
-            default_values = {field: DEFAULT_CHARACTER_DATA[field] for field in required_fields}
+            current_hair = user.get('hair')
             
             # 檢查是否有空白欄位（包括 None 和空字符串）
+            user_values = {field: user.get(field) for field in required_fields}
             has_blanks = any(v in (None, '') for v in user_values.values())
             
-            # 檢查是否完全匹配預設值（排除有空值的用戶）
-            is_all_defaults = (not has_blanks and 
-                             all(user_values[field] == default_values[field] for field in required_fields))
+            # 檢查頭髮是否為預設值（只檢查 hair 欄位）
+            if current_gender == 'female':
+                is_default_hair = current_hair == FEMALE_DEFAULT_CHARACTER_DATA['hair']
+            else:
+                is_default_hair = current_hair == MALE_DEFAULT_CHARACTER_DATA['hair']
             
             if has_blanks:
                 # 填充空白欄位
@@ -205,24 +222,24 @@ def convert_default_to_random_characters() -> dict:
                     if user.get(field) in (None, ''):
                         set_user_field(user_id, field, random_data[field])
                 result['filled_blanks'] += 1
-                result['details'].append(f"  {i}. 用戶 {user_id}: ✨ 填充空白欄位")
+                result['details'].append(f"  {i}. 用戶 {user_id}: 填充空白欄位")
             
-            elif is_all_defaults:
-                # 預設值用戶 → 轉換為隨機
+            elif is_default_hair:
+                # 預設頭髮用戶 → 轉換所有欄位為隨機
                 random_data = get_random_character_data(preserve_gender=current_gender)
                 for field in required_fields:
                     set_user_field(user_id, field, random_data[field])
                 result['using_defaults'] += 1
                 result['converted_to_random'] += 1
-                result['details'].append(f"  {i}. 用戶 {user_id}: 🎲 預設值 → 隨機值")
+                result['details'].append(f"  {i}. 用戶 {user_id}: 預設頭髮 → 隨機值")
             
             else:
-                # 非預設值用戶 → 保持不變
+                # 非預設頭髮用戶 → 保持不變
                 result['unchanged'] += 1
         
         except Exception as e:
             result['failed'] += 1
-            result['details'].append(f"  ❌ 用戶 {user_id}: 修復失敗 - {e}")
+            result['details'].append(f"  {i}. 用戶 {user_id}: 修復失敗 - {e}")
     
     return result
 
@@ -251,7 +268,7 @@ def batch_fill_missing_fields(field_name: str, default_value) -> dict:
                 set_user_field(user_id, field_name, default_value)
                 updated += 1
             except Exception as e:
-                print(f"❌ 用戶 {user_id} 的 {field_name} 更新失敗: {e}")
+                print(f"用戶 {user_id} 的 {field_name} 更新失敗: {e}")
                 failed += 1
     
     return {
@@ -282,7 +299,7 @@ if __name__ == '__main__':
         
         elif sys.argv[1] == '--randomize':
             # 將預設值轉為隨機，空白的也隨機填充，非預設值保持不變，性別不動
-            print("🎲 開始轉換預設角色為隨機配置...")
+            print("開始轉換預設角色為隨機配置...")
             print("   (預設值→隨機, 空白→隨機, 非預設值→不動, 性別→保持)\n")
             
             result = convert_default_to_random_characters()
@@ -291,7 +308,7 @@ if __name__ == '__main__':
             for detail in result['details']:
                 print(detail)
             
-            print(f"\n✅ 轉換完成！")
+            print(f"\n轉換完成！")
             print(f"  - 總用戶: {result['total_users']}")
             print(f"  - 預設值用戶: {result['using_defaults']}")
             print(f"  - 已轉換為隨機: {result['converted_to_random']}")
@@ -304,9 +321,9 @@ if __name__ == '__main__':
             field = sys.argv[2]
             value = int(sys.argv[3]) if sys.argv[3].isdigit() else sys.argv[3]
             result = batch_fill_missing_fields(field, value)
-            print(f"✅ 已為 {result['updated']} 個用戶填充 {field}={value}")
+            print(f"已為 {result['updated']} 個用戶填充 {field}={value}")
             if result['failed']:
-                print(f"❌ {result['failed']} 個用戶修復失敗")
+                print(f"{result['failed']} 個用戶修復失敗")
     else:
         # 默認執行修復
         initialize_missing_users_with_defaults()
