@@ -188,11 +188,19 @@ class LockerAdminCog(commands.Cog):
                     )
                     return
                 
-                # 建立 thread
-                thread = await target_channel.create_thread(
-                    name=f"📦-{user.display_name}-置物櫃",
-                    type=discord.ChannelType.private_thread
-                )
+                # 建立 thread（根據頻道類律選擇參數）
+                if isinstance(target_channel, discord.ForumChannel):
+                    # 論壇頻道：使用 private 參數
+                    thread = await target_channel.create_thread(
+                        name=f"💾-{user.display_name}-置物櫃",
+                        private=True
+                    )
+                else:
+                    # 文字頻道：使用 type 參數
+                    thread = await target_channel.create_thread(
+                        name=f"💾-{user.display_name}-置物櫃",
+                        type=discord.ChannelType.private_thread
+                    )
                 
                 # 發送置物櫃 embed 和 view
                 from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
@@ -396,11 +404,19 @@ class LockerAdminCog(commands.Cog):
                     try:
                         user_obj = await self.bot.fetch_user(user_id)
                         
-                        # 建立 thread
-                        thread = await target_channel.create_thread(
-                            name=f"📦-{user_obj.display_name}-置物櫃",
-                            type=discord.ChannelType.private_thread
-                        )
+                        # 建立 thread（根據頻道類律選擇參數）
+                        if isinstance(target_channel, discord.ForumChannel):
+                            # 論壇頻道：使用 private 參數
+                            thread = await target_channel.create_thread(
+                                name=f"💾-{user_obj.display_name}-置物櫃",
+                                private=True
+                            )
+                        else:
+                            # 文字頻道：使用 type 參數
+                            thread = await target_channel.create_thread(
+                                name=f"💾-{user_obj.display_name}-置物櫃",
+                                type=discord.ChannelType.private_thread
+                            )
                         
                         # 發送置物櫃 embed
                         from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
