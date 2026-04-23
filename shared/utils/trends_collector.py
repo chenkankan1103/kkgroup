@@ -111,20 +111,28 @@ class TrendsCollector:
         
         return trends[:limit]
     
-    async def _fetch_from_twikit(self) -> List[Dict]:
+    async def _fetch_from_twikit(self, retry_count: int = 0, max_retries: int = 3) -> List[Dict]:
         """
-        使用 Twikit 從 Twitter/X 獲取實時趨勢
+        使用 Twikit 從 Twitter/X 獲取實時趨勢（含重試機制）
         
         工作流程：
         1. 使用 Twitter 帳戶登入
         2. 調用 client.get_trends('trending')
         3. 解析並返回格式化的趨勢數據
+        
+        重試策略：
+        - 首次失敗後等待 5 秒再試
+        - 最多重試 3 次
+        - 首次登入可能需要 10-20 秒
         """
         if not TWIKIT_AVAILABLE:
             return []
         
         try:
-            logger.info("🔄 [Twikit] 開始從 Twitter 獲取趨勢...")
+            if retry_count == 0:
+                logger.info("🔄 [Twikit] 開始從 Twitter 獲取趨勢...")
+            else:
+                logger.info(f"🔄 [Twikit] 重試 #{retry_count}/{max_retries}...")
             
             # 初始化 Twikit 客戶端
             client = Client('en-US')
@@ -160,10 +168,23 @@ class TrendsCollector:
                 return trends
             else:
                 logger.warning("⚠️ [Twikit] 獲取到空結果")
+                # 空結果也視為失敗，進行重試
+                if retry_count < max_retries:
+                    logger.info(f"⏳ [Twikit] 等待 5 秒後重試...")
+                    await asyncio.sleep(5)
+                    return await self._fetch_from_twikit(retry_count + 1, max_retries)
                 return []
                 
         except Exception as e:
             logger.error(f"❌ [Twikit 失敗] {type(e).__name__}: {str(e)[:100]}")
+            
+            # 重試機制：失敗後等待 5 秒再試
+            if retry_count < max_retries:
+                logger.info(f"⏳ [Twikit] 等待 5 秒後重試...")
+                await asyncio.sleep(5)
+                return await self._fetch_from_twikit(retry_count + 1, max_retries)
+            
+            logger.error(f"❌ [Twikit] 已達最大重試次數，改用備用方案")
             return []
     
     def _get_fallback_rotated_trends(self) -> List[Dict]:
