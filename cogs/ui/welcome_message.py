@@ -198,8 +198,9 @@ class PersistentWelcomeView(discord.ui.View):
         await self.cog.handle_final_verification(interaction, member)
 
 class TestWelcomeView(discord.ui.View):
-    """A copy of the real welcome view that does **not** mutate any state.
-    Used only for simulating button presses during debugging.
+    """Uses real welcome logic but does **not** mutate database state.
+    Shows actual random paperdoll generation without saving to DB.
+    Used for testing/debugging without affecting user data.
     """
     def __init__(self):
         super().__init__(timeout=None)
@@ -212,18 +213,34 @@ class TestWelcomeView(discord.ui.View):
         ]
     )
     async def gender_select(self, interaction: discord.Interaction, select: discord.ui.Select):
-        await interaction.response.send_message(
-            f"（模擬）已選擇性別：{select.values[0]}",
-            ephemeral=True
+        await interaction.response.defer(ephemeral=True)
+        
+        # 執行真實邏輯：生成隨機紙娃娃
+        selected_gender = select.values[0]
+        random_appearance = get_random_character_data(preserve_gender=selected_gender)
+        
+        # 顯示結果但不寫入數據庫
+        gender_text = "男性" if selected_gender == "male" else "女性"
+        appearance_text = (
+            f"已選擇性別：{gender_text}\n"
+            f"随机生成造型（模拟，未保存）：\n"
+            f"  臉：{random_appearance['face']}\n"
+            f"  髮：{random_appearance['hair']}\n"
+            f"  膚：{random_appearance['skin']}\n"
+            f"  上衣：{random_appearance['top']}\n"
+            f"  褲：{random_appearance['bottom']}\n"
+            f"  鞋：{random_appearance['shoes']}"
         )
+        
+        await interaction.followup.send(appearance_text, ephemeral=True)
 
     @discord.ui.button(label="繳交手機身分證", style=discord.ButtonStyle.secondary, emoji="📱")
     async def submit_items(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("（模擬）已繳交手機和身分證。", ephemeral=True)
+        await interaction.response.send_message("（模擬）已繳交手機和身分證 - 未保存到數據庫。", ephemeral=True)
 
     @discord.ui.button(label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
     async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("（模擬）按下進入園區按鈕，流程結束。", ephemeral=True)
+        await interaction.response.send_message("（模擬）按下進入園區按鈕，流程結束 - 數據庫未被修改。", ephemeral=True)
 
 
 class WelcomeFlow(commands.Cog):
