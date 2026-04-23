@@ -1143,6 +1143,30 @@ class AnimeTracker(commands.Cog):
         print("[ANIME_INIT_COMPLETE] ✅ AnimeTracker.__init__ 執行完成", flush=True)
         sys.stdout.flush()
         logger.info("=" * 50)
+        
+        # 初始化 APScheduler（在 __init__ 中直接啟動）
+        print("[ANIME_SCHEDULER_INIT] 🚀 準備初始化 APScheduler", flush=True)
+        sys.stdout.flush()
+        try:
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            self.scheduler = AsyncIOScheduler()
+            self.scheduler.add_job(
+                self.check_new_anime,
+                'cron',
+                hour='*',
+                minute=[5, 10, 15, 20, 25, 30],
+                id='check_anime_task',
+                replace_existing=True,
+                max_instances=1
+            )
+            self.scheduler.start()
+            print("[ANIME_SCHEDULER_INIT] ✅ APScheduler 已啟動", flush=True)
+            sys.stdout.flush()
+            logger.info("✅ [AnimeTracker.__init__] APScheduler 已在 __init__ 中啟動")
+        except Exception as e:
+            print(f"[ANIME_SCHEDULER_ERROR] ❌ APScheduler 初始化失敗: {e}", flush=True)
+            logger.error(f"❌ [AnimeTracker.__init__] APScheduler 初始化失敗: {e}", exc_info=True)
+            sys.stdout.flush()
     
     async def cog_load(self):
         """Cog 加載時啟動任務（Discord.py 支持此選項卡）"""
