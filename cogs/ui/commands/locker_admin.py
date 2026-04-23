@@ -222,8 +222,16 @@ class LockerAdminCog(commands.Cog):
                 # 建立 view
                 view = LockerPanelView(self.bot.get_cog('PersonalLockerCog'), user.id, thread=thread)
                 
-                # 發送訊息
-                msg = await thread.send(embed=embed, view=view)
+                # 發送訊息（如果 embed 為空，使用備用訊息）
+                if embed is not None:
+                    msg = await thread.send(embed=embed, view=view)
+                else:
+                    # 備用訊息：如果 embed 生成失敗
+                    msg = await thread.send(
+                        f"📦 {user.mention} 的置物櫃\n\n"
+                        f"初始化完成！點擊下方按鈕開始管理您的物品。",
+                        view=view
+                    )
                 
                 # 保存 locker_message_id
                 set_user_field(user.id, 'locker_message_id', msg.id)
@@ -434,7 +442,16 @@ class LockerAdminCog(commands.Cog):
                         )
                         
                         view = LockerPanelView(self.bot.get_cog('PersonalLockerCog'), user_id, thread=thread)
-                        msg = await thread.send(embed=embed, view=view)
+                        
+                        # 發送訊息（如果 embed 為空，使用備用訊息）
+                        if embed is not None:
+                            msg = await thread.send(embed=embed, view=view)
+                        else:
+                            msg = await thread.send(
+                                f"📦 {user_obj.mention} 的置物櫃\n\n"
+                                f"初始化完成！點擊下方按鈕開始管理您的物品。",
+                                view=view
+                            )
                         
                         set_user_field(user_id, 'locker_message_id', msg.id)
                         thread_created_count += 1
