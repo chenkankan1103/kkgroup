@@ -302,9 +302,9 @@ class FileEventHandler(FileSystemEventHandler):
 # ============================================================
 # 定期清理過期角色的任務 (每 1 小時檢查一次)
 # ============================================================
-@tasks.loop(hours=1)
+@tasks.loop(hours=6)
 async def cleanup_expired_roles_loop():
-    """定期檢查並移除過期的臨時角色（每小時執行一次）"""
+    """定期檢查並移除過期的臨時角色（每 6 小時執行一次）"""
     try:
         from cogs.shop.role_expiration_manager import get_manager as get_expiration_manager
         manager = get_expiration_manager()
@@ -321,7 +321,7 @@ async def before_cleanup_expired_roles():
     """等待 Bot 準備完成"""
     await client.wait_until_ready()
 
-@tasks.loop(minutes=2)
+@tasks.loop(minutes=10)
 async def update_status():
     """定期更新 Bot 狀態（日誌更新由 status_dashboard.py 10 分鐘定時任務負責）"""
     try:

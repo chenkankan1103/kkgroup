@@ -297,7 +297,7 @@ class FileEventHandler(FileSystemEventHandler):
 # ============================================================
 # 狀態更新任務
 # ============================================================
-@tasks.loop(minutes=2)
+@tasks.loop(minutes=10)
 async def update_status():
     """定期更新 Bot 狀態和日誌 Embed"""
     try:

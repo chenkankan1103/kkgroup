@@ -263,7 +263,7 @@ class ScamHub(commands.Cog):
         except Exception as e:
             print(f"更新語音狀態失敗: {e}")
 
-    @tasks.loop(seconds=15)
+    @tasks.loop(minutes=5)
     async def scam_event_task(self):
         """定期檢查是否觸發詐騙事件和刪除閒置頻道"""
         now = datetime.utcnow()

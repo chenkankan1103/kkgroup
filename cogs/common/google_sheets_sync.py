@@ -72,9 +72,9 @@ class GoogleSheetsSync(commands.Cog):
         if not self.gc or not self.sheet:
             self._init_gspread()
     
-    @tasks.loop(minutes=1)
+    @tasks.loop(hours=24)
     async def auto_sync_loop(self):
-        """每 1 分鐘檢查 SHEET 是否有手動編輯，若有則同步到資料庫"""
+        """每 24 小時檢查 SHEET 是否有手動編輯，若有則同步到資料庫"""
         try:
             # 使用 loop executor 以避免阻塞事件迴圈
             loop = asyncio.get_event_loop()
@@ -120,9 +120,9 @@ class GoogleSheetsSync(commands.Cog):
             import traceback
             traceback.print_exc()
     
-    @tasks.loop(minutes=5)
+    @tasks.loop(hours=24)
     async def auto_export_loop(self):
-        """每 5 分鐘將資料庫匯出到 SHEET（供管理員查閱）"""
+        """每 24 小時將資料庫匯出到 SHEET（供管理員查閱）"""
         try:
             loop = asyncio.get_event_loop()
             
