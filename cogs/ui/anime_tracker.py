@@ -1152,15 +1152,36 @@ class AnimeTracker(commands.Cog):
             logger.info("🎬 [AnimeTracker.cog_load] 準備恢復舊消息 view...")
             await self._restore_old_message_views()
             
-            logger.info("📺 [AnimeTracker.cog_load] 準備啟動任務...")
-            logger.info(f"📺 [AnimeTracker.cog_load] 任務運行狀態: {self.check_new_anime.is_running()}")
-            if not self.check_new_anime.is_running():
-                logger.info("📺 [AnimeTracker.cog_load] 任務未運行，現在啟動...")
-                self.check_new_anime.start()
+            # 初始化 APScheduler（只在精確時刻觸發）
+            logger.info("📺 [AnimeTracker.cog_load] 準備初始化 APScheduler...")
+            try:
+                from apscheduler.schedulers.asyncio import AsyncIOScheduler
+                
+                if not hasattr(self, 'scheduler') or self.scheduler is None:
+                    self.scheduler = AsyncIOScheduler()
+                    
+                    # 添加精確時刻的任務（只在 +5, 10, 15, 20, 25, 30 分鐘點執行）
+                    self.scheduler.add_job(
+                        self.check_new_anime,
+                        'cron',
+                        hour='*',
+                        minute=[5, 10, 15, 20, 25, 30],
+                        id='check_anime_task',
+                        replace_existing=True,
+                        max_instances=1  # 防止重複執行
+                    )
+                    logger.info("✅ [AnimeTracker.cog_load] 精確時刻任務已註冊 (+5, 10, 15, 20, 25, 30 分)")
+                    
+                    if not self.scheduler.running:
+                        self.scheduler.start()
+                        logger.info("✅ [AnimeTracker.cog_load] APScheduler 已啟動")
+                else:
+                    logger.info("⚠️ [AnimeTracker.cog_load] Scheduler 已在運行")
+                    
                 self.task_started = True
-                logger.info("✅ [AnimeTracker.cog_load] check_new_anime 任務已啟動")
-            else:
-                logger.warning("⚠️ [AnimeTracker.cog_load] 任務已在運行中，跳過重複啟動")
+            except ImportError:
+                logger.error("❌ [AnimeTracker.cog_load] apscheduler 未安裝，請執行: pip install apscheduler")
+                raise
         except Exception as e:
             logger.error(f"❌ [AnimeTracker.cog_load] 任務啟動失敗: {e}", exc_info=True)
         logger.info("=" * 50)
@@ -1238,8 +1259,9 @@ class AnimeTracker(commands.Cog):
     
     def cog_unload(self):
         """Cog 卸載時停止任務"""
-        if self.check_new_anime.is_running():
-            self.check_new_anime.cancel()
+        if hasattr(self, 'scheduler') and self.scheduler and self.scheduler.running:
+            self.scheduler.shutdown(wait=False)
+            logger.info("✅ [AnimeTracker.cog_unload] Scheduler 已關閉")
     
     async def get_quickchart_short_url(self, chart_config: Dict) -> Optional[str]:
         """
@@ -1703,16 +1725,15 @@ class AnimeTracker(commands.Cog):
         
         return vote_view if vote_view.children else None
     
-    @tasks.loop(minutes=1)
     async def check_new_anime(self):
         """
-        單一窗口檢查新番 - 在預定時刻 +4 分鐘左右檢查一次
+        單一窗口檢查新番 - 在精確時刻點 (+5, 10, 15, 20, 25, 30 分鐘) 檢查一次
         
         工作流程：
         1. 獲取 newAnimeSchedule 與預期檢查時刻
-        2. 對於每個預期時刻，在 +3~+5 分鐘窗口進行檢查
+        2. 對於每個預期時刻，在精確時刻點進行檢查
         3. 每個預定時刻的動畫只會戳一次 API（效率優先）
-        4. 每分鐘運行一次，在目標窗口內執行檢查
+        4. APScheduler 在精確時刻點觸發（零空轉成本）
         """
         now = datetime.now(TW_TZ)
         
@@ -1931,46 +1952,7 @@ class AnimeTracker(commands.Cog):
         logger.debug(f"📺 預期更新時刻: {sorted(check_times)}")
         return sorted(list(check_times))
     
-    @check_new_anime.before_loop
-    async def before_check_new_anime(self):
-        """在第一次循環前等待 bot 就緒並啟動任務"""
-        logger.info("📺 [before_check_new_anime] 等待 bot 就緒...")
-        print("[ANIME_BEFORE_LOOP] ⏳ before_loop 開始執行", flush=True)
-        
-        await self.bot.wait_until_ready()
-        
-        logger.info(f"✅ [before_check_new_anime] Bot 已就緒！")
-        print("[ANIME_BEFORE_LOOP] ✅ Bot 就緒，開始檢查頻道", flush=True)
-        logger.info(f"📺 [before_check_new_anime] Bot guilds 數量: {len(self.bot.guilds)}")
-        logger.info(f"📺 [before_check_new_anime] 尋找目標頻道 {ANIME_CHANNEL_ID}...")
-        
-        channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-        if channel:
-            logger.info(f"✅ [before_check_new_anime] 找到頻道: {channel.name} (Guild: {channel.guild.name})")
-            print(f"[ANIME_BEFORE_LOOP] ✅ 找到頻道: {channel.name}", flush=True)
-        else:
-            logger.error(f"❌ [before_check_new_anime] 未找到頻道 {ANIME_CHANNEL_ID}")
-            print(f"[ANIME_BEFORE_LOOP] ❌ 未找到頻道 {ANIME_CHANNEL_ID}", flush=True)
-            # 列出所有頻道以供診斷
-            for guild in self.bot.guilds:
-                logger.info(f"📋 Guild: {guild.name}")
-                for ch in guild.channels[:5]:  # 只列前 5 個
-                    logger.info(f"   - {ch.name} (ID: {ch.id})")
-        
-        # 重要：確保任務已啟動
-        if not self.check_new_anime.is_running():
-            logger.info("🚀 [before_check_new_anime] 啟動 check_new_anime 任務...")
-            print("[ANIME_BEFORE_LOOP] 🚀 即將啟動任務", flush=True)
-            try:
-                self.check_new_anime.start()
-                self.task_started = True
-                logger.info("✅ [before_check_new_anime] 任務已啟動！")
-                print("[ANIME_BEFORE_LOOP] ✅ 任務已啟動", flush=True)
-            except Exception as e:
-                logger.error(f"❌ [before_check_new_anime] 啟動任務失敗: {e}", exc_info=True)
-                print(f"[ANIME_BEFORE_LOOP_ERROR] ❌ {str(e)}", flush=True)
-        else:
-            logger.info("⚠️ [before_check_new_anime] 任務已在運行")
+
     
     @tasks.loop(hours=1)
     async def send_weekly_stats(self):
