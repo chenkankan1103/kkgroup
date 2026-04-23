@@ -188,8 +188,8 @@ class KKCoin(commands.Cog):
         self.tunnel_url_lock = asyncio.Lock()
         self.last_synced_tunnel_url = None  # 追蹤上一次同步的 URL
         
-        # 啟動定時更新任務
-        self.auto_update_leaderboard.start()
+        # 🔧 [改為事件驅動] 只在資料庫資產有變化時觸發更新，不做定時輪詢
+        # 啟動必要的背景任務
         self.auto_update_digital_usd_leaderboard.start()
         # self.auto_update_reserve_status.start()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
         self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
@@ -202,7 +202,6 @@ class KKCoin(commands.Cog):
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
-        self.auto_update_leaderboard.cancel()
         self.auto_update_digital_usd_leaderboard.cancel()
         # self.auto_update_reserve_status.cancel()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
         self.auto_check_tunnel_url.cancel()  # 🔄 取消隧道檢查任務
@@ -541,6 +540,39 @@ class KKCoin(commands.Cog):
                 print(f"❌ 讀取隧道 URL 失敗: {e}")
                 return None
     
+    async def _ensure_leaderboard_initialized(self):
+        """確保排行榜訊息存在（啟動時一次性初始化）"""
+        if not self.rank_channel_id:
+            print("❌ 未設定排行榜頻道 ID")
+            return
+        
+        try:
+            channel = self.bot.get_channel(self.rank_channel_id)
+            if not channel:
+                print(f"❌ 找不到排行榜頻道 {self.rank_channel_id}")
+                return
+            
+            # 如果已有訊息 ID，驗證訊息是否還存在
+            if self.rank_message_id:
+                try:
+                    msg = await channel.fetch_message(self.rank_message_id)
+                    print(f"✅ 排行榜訊息已存在 (ID: {self.rank_message_id})")
+                    return
+                except discord.NotFound:
+                    print(f"⚠️ 排行榜訊息已被刪除，重新創建...")
+                    self.rank_message_id = 0
+                    save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
+                except Exception as e:
+                    print(f"⚠️ 驗證訊息失敗: {e}")
+            
+            # 需要創建新訊息
+            await self.create_leaderboard()
+        
+        except Exception as e:
+            print(f"❌ 初始化排行榜失敗: {e}")
+            import traceback
+            traceback.print_exc()
+    
     @commands.Cog.listener()
     async def on_ready(self):
         """機器人啟動時執行 - 嘗試獲取 Tunnel URL 並同步到 GitHub Pages"""
@@ -585,6 +617,10 @@ class KKCoin(commands.Cog):
         # 🔥 執行 Nginx 健康檢查
         print("\n🔍 正在執行 Nginx 健康檢查...")
         await self.check_nginx_health()
+        
+        # 🎯 [事件驅動模式] 初始化排行榜訊息（啟動時一次性）
+        print("\n📊 正在初始化排行榜...")
+        await self._ensure_leaderboard_initialized()
 
     async def check_nginx_health(self):
         """✅ 檢查 Nginx 是否正確提供排行榜圖片
@@ -722,24 +758,15 @@ class KKCoin(commands.Cog):
         # 立即執行一次檢查
         await self.auto_check_tunnel_url()
 
-    @tasks.loop(minutes=5)
-    async def auto_update_leaderboard(self):
-        """每 5 分鐘自動更新排行榜"""
-        if not self.rank_channel_id:
-            return
-            
-        # 如果沒有訊息 ID，嘗試創建排行榜（只有在 before_loop 失敗時才會執行）
-        if not self.rank_message_id:
-            await self.create_leaderboard()
-        else:
-            # 否則更新現有排行榜
-            await self.update_leaderboard(min_interval=0)
-
-    @auto_update_leaderboard.before_loop
-    async def before_auto_update(self):
-        """等待 bot 準備完成，並在啟動時查找/創建排行榜和儲備狀態"""
+    # 🔧 [改為事件驅動] 不再有每5分鐘的定時任務
+    # 排行榜只在以下情況更新：
+    # 1. on_message - 玩家發送訊息獲得KK幣
+    # 2. 各個命令操作 - 玩家進行交易、轉換等操作
+    
+    async def _init_leaderboard_on_startup(self):
+        """Bot 啟動時初始化排行榜（一次性）"""
         await self.bot.wait_until_ready()
-        print("✅ 排行榜自動更新任務已啟動，正在查找舊訊息...")
+        print("✅ KKCoin 系統啟動，初始化排行榜...")
         # 確保儲備狀態訊息已初始化
         await self.ensure_reserve_status_initialized()
         

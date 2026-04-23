@@ -130,12 +130,13 @@ async def make_leaderboard_image(members_data):
     member_net_worths = []
     max_net_worth = 0
     
-    # 使用動態匯率
+    # 使用動態匯率（只計算 KK幣 和 D-USD，不包含股票市值）
     dynamic_rate = get_dynamic_exchange_rate()
     for member_data in members_data:
         if len(member_data) == 4:
             _, kkcoin, digital_usd, stock_value = member_data
-            net_worth = float(kkcoin or 0) + float(digital_usd or 0) * dynamic_rate + float(stock_value or 0)
+            # 🔧 只用KK幣和D-USD計算淨值，股票市值只用於顯示
+            net_worth = float(kkcoin or 0) + float(digital_usd or 0) * dynamic_rate
         else:
             # 舊格式相容
             _, kkcoin, digital_usd = member_data if len(member_data) == 3 else (member_data[0], member_data[1], 0)
@@ -699,15 +700,14 @@ def get_current_leaderboard_data(bot, rank_channel_id):
             return 0.0
 
     users = [u for u in all_users if _safe_float(u.get('kkcoin')) > 0 or _safe_float(u.get('digital_usd')) > 0]
-    # 使用動態匯率和股票市值計算淨值
+    # 使用動態匯率計算淨值（只用 KK幣 和 D-USD，不包括股票市值）
     dynamic_rate = get_dynamic_exchange_rate()
     
     def calculate_net_worth(user):
-        """計算用戶淨值 = KK幣 + D-USD×匯率 + 股票市值"""
+        """計算用戶淨值 = KK幣 + D-USD×匯率 (不包含股票市值，只在用戶主動操作時查詢)"""
         kkcoin = _safe_float(user.get('kkcoin'))
         digital_usd = _safe_float(user.get('digital_usd'))
-        stock_value = _calculate_stock_value(int(user['user_id']))
-        return kkcoin + digital_usd * dynamic_rate + stock_value
+        return kkcoin + digital_usd * dynamic_rate
     
     users.sort(
         key=calculate_net_worth,
@@ -789,10 +789,16 @@ def has_data_changed(new_data, last_data):
         if member.id != old_member.id:
             print(f"🔍 排名變化：位置 {i+1} 從 {old_member.display_name} 變成 {member.display_name}")
             return True
-            
-        if new_kk != old_kk or new_usd != old_usd or new_stock != old_stock:
-            print(f"🔍 資料變化：{member.display_name} ({old_kk} KK, ${old_usd} USD, ${old_stock} Stock → {new_kk} KK, ${new_usd} USD, ${new_stock} Stock)")
+        
+        # 🔧 優化：只監測主動資產（KK幣和D-USD），忽略股票市值波動
+        # 這樣可以避免24小時波動的加密貨幣導致圖片頻繁更新
+        if new_kk != old_kk or new_usd != old_usd:
+            print(f"🔍 主動資產變化：{member.display_name} (KK幣: {old_kk}→{new_kk}, D-USD: ${old_usd}→${new_usd})")
             return True
+        
+        # 股票市值只用於顯示，不觸發圖片更新
+        if new_stock != old_stock:
+            print(f"📈 股票市值波動（不觸發更新）：{member.display_name} (${old_stock}→${new_stock})")
     
     print("🔍 資料沒有變化，跳過更新")
     return False
