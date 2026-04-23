@@ -109,11 +109,11 @@ class LockerAdminCog(commands.Cog):
                 ephemeral=True
             )
     
-    @app_commands.command(name="locker_init", description="為會員初始化置物櫃")
+    @app_commands.command(name="locker_init", description="為會員初始化置物櫃並建立 thread")
     @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(user="要初始化的會員")
-    async def locker_init(self, interaction: discord.Interaction, user: discord.User):
-        """為沒有置物櫃的會員初始化"""
+    @app_commands.describe(user="要初始化的會員", channel="要建立 thread 的頻道（留空則自動選擇）")
+    async def locker_init(self, interaction: discord.Interaction, user: discord.User, channel: discord.TextChannel = None):
+        """為沒有置物櫃的會員初始化，並自動建立 thread 和置物櫃頁面"""
         await interaction.response.defer(ephemeral=True)
         
         try:
@@ -161,15 +161,69 @@ class LockerAdminCog(commands.Cog):
             success &= set_user_field(user.id, 'cannabis_plants', '[]')
             success &= set_user_field(user.id, 'cannabis_inventory', '{}')
             
-            if success:
+            if not success:
+                await interaction.followup.send(
+                    f"❌ 初始化失敗，請檢查資料庫連接",
+                    ephemeral=True
+                )
+                return
+            
+            # 建立 thread 並發送置物櫃頁面
+            try:
+                # 選擇頻道
+                target_channel = channel or interaction.channel
+                if not isinstance(target_channel, discord.TextChannel):
+                    await interaction.followup.send(
+                        f"❌ 頻道選擇錯誤，必須是文字頻道",
+                        ephemeral=True
+                    )
+                    return
+                
+                # 建立 thread
+                thread = await target_channel.create_thread(
+                    name=f"📦-{user.display_name}-置物櫃",
+                    type=discord.ChannelType.private_thread
+                )
+                
+                # 發送置物櫃 embed 和 view
+                from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
+                from cogs.ui.views.locker_panel import LockerPanelView
+                from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
+                
+                plants = await get_user_plants(user.id)
+                inventory = await get_inventory(user.id)
+                
+                # 生成 embed
+                embed = await generate_canonical_locker_embed(
+                    cog=self.bot.get_cog('PersonalLockerCog'),
+                    user_data=get_user(user.id),
+                    user_obj=user,
+                    include_cannabis_info=True,
+                    plants=plants,
+                    inventory=inventory
+                )
+                
+                # 建立 view
+                view = LockerPanelView(self.bot.get_cog('PersonalLockerCog'), user.id, thread=thread)
+                
+                # 發送訊息
+                msg = await thread.send(embed=embed, view=view)
+                
+                # 保存 locker_message_id
+                set_user_field(user.id, 'locker_message_id', msg.id)
+                
                 await interaction.followup.send(
                     f"✅ 已為 {user.mention} 初始化置物櫃\n"
+                    f"📍 thread: {thread.mention}\n"
                     f"現在可以開始種植和管理物品了！",
                     ephemeral=True
                 )
-            else:
+            except Exception as thread_err:
+                # 即使 thread 建立失敗，置物櫃數據已初始化
                 await interaction.followup.send(
-                    f"❌ 初始化失敗，請檢查資料庫連接",
+                    f"✅ 已初始化置物櫃 (資料庫)\n"
+                    f"⚠️ 但建立 thread 失敗: {thread_err}\n"
+                    f"請手動為使用者建立 thread",
                     ephemeral=True
                 )
             
@@ -256,10 +310,11 @@ class LockerAdminCog(commands.Cog):
                 ephemeral=True
             )
     
-    @app_commands.command(name="locker_fix_missing", description="批量初始化所有缺少置物櫃的會員")
+    @app_commands.command(name="locker_fix_missing", description="批量初始化所有缺少置物櫃的會員並建立 thread")
     @app_commands.checks.has_permissions(administrator=True)
-    async def locker_fix_missing(self, interaction: discord.Interaction):
-        """批量為所有沒有置物櫃的會員初始化"""
+    @app_commands.describe(channel="要建立 thread 的頻道（留空則自動選擇）")
+    async def locker_fix_missing(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+        """批量為所有沒有置物櫃的會員初始化並建立 thread"""
         await interaction.response.defer(ephemeral=True)
         
         try:
@@ -268,6 +323,21 @@ class LockerAdminCog(commands.Cog):
             fixed_count = 0
             already_have_count = 0
             failed_count = 0
+            thread_created_count = 0
+            
+            # 選擇頻道
+            target_channel = channel or interaction.channel
+            if not isinstance(target_channel, discord.TextChannel):
+                await interaction.followup.send(
+                    f"❌ 頻道選擇錯誤，必須是文字頻道",
+                    ephemeral=True
+                )
+                return
+            
+            await interaction.followup.send(
+                f"🔄 開始批量初始化（共 {len(all_users)} 個會員）...",
+                ephemeral=True
+            )
             
             for user_data in all_users:
                 user_id = user_data.get('user_id')
@@ -300,10 +370,49 @@ class LockerAdminCog(commands.Cog):
                     success &= set_user_field(user_id, 'cannabis_plants', '[]')
                     success &= set_user_field(user_id, 'cannabis_inventory', '{}')
                     
-                    if success:
-                        fixed_count += 1
-                    else:
+                    if not success:
                         failed_count += 1
+                        continue
+                    
+                    fixed_count += 1
+                    
+                    # 嘗試建立 thread 並發送置物櫃
+                    try:
+                        user_obj = await self.bot.fetch_user(user_id)
+                        
+                        # 建立 thread
+                        thread = await target_channel.create_thread(
+                            name=f"📦-{user_obj.display_name}-置物櫃",
+                            type=discord.ChannelType.private_thread
+                        )
+                        
+                        # 發送置物櫃 embed
+                        from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
+                        from cogs.ui.views.locker_panel import LockerPanelView
+                        from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
+                        
+                        plants = await get_user_plants(user_id)
+                        inventory = await get_inventory(user_id)
+                        
+                        embed = await generate_canonical_locker_embed(
+                            cog=self.bot.get_cog('PersonalLockerCog'),
+                            user_data=get_user(user_id),
+                            user_obj=user_obj,
+                            include_cannabis_info=True,
+                            plants=plants,
+                            inventory=inventory
+                        )
+                        
+                        view = LockerPanelView(self.bot.get_cog('PersonalLockerCog'), user_id, thread=thread)
+                        msg = await thread.send(embed=embed, view=view)
+                        
+                        set_user_field(user_id, 'locker_message_id', msg.id)
+                        thread_created_count += 1
+                        
+                    except Exception as thread_err:
+                        # thread 建立失敗但不影響計數
+                        pass
+                        
                 except Exception:
                     failed_count += 1
             
@@ -317,6 +426,12 @@ class LockerAdminCog(commands.Cog):
             embed.add_field(
                 name="🔧 已修復",
                 value=f"{fixed_count} 個會員",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="📍 已建立 thread",
+                value=f"{thread_created_count} 個",
                 inline=True
             )
             
