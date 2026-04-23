@@ -1150,12 +1150,8 @@ class AnimeTracker(commands.Cog):
         logger.info("=" * 50)
         logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
         try:
-            # 恢復舊消息的 view
-            print("[COG_LOAD] 恢復舊消息 view 中...", flush=True)
-            logger.info("🎬 [AnimeTracker.cog_load] 開始恢復舊消息 view")
-            await self._restore_old_message_views()
-            print("[COG_LOAD] ✅ 舊消息 view 恢復完成", flush=True)
-            logger.info("✅ [AnimeTracker.cog_load] 舊消息 view 恢復完成")
+            # 跳過恢復舊消息（暫時）- 這可能會阻塞
+            # await self._restore_old_message_views()
             
             # 啟動動畫檢查任務
             print("[COG_LOAD] 檢查 check_new_anime 任務狀態", flush=True)
