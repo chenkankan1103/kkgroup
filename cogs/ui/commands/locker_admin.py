@@ -171,16 +171,16 @@ class LockerAdminCog(commands.Cog):
             
             # 建立 thread 並發送置物櫃頁面
             try:
-                # 從環境變數讀取置物櫃頻道
-                locker_channel_id = os.getenv('LOCKER_CHANNEL_ID')
-                if not locker_channel_id:
+                # 從環境變數讀取宿舍論壇頻道（置物櫃 thread 頻道）
+                forum_channel_id = os.getenv('FORUM_CHANNEL_ID')
+                if not forum_channel_id:
                     await interaction.followup.send(
-                        f"❌ 環境變數未設定 LOCKER_CHANNEL_ID，無法建立 thread",
+                        f"❌ 環境變數未設定 FORUM_CHANNEL_ID，無法建立 thread",
                         ephemeral=True
                     )
                     return
                 
-                target_channel = interaction.guild.get_channel(int(locker_channel_id))
+                target_channel = interaction.guild.get_channel(int(forum_channel_id))
                 if not isinstance(target_channel, discord.TextChannel):
                     await interaction.followup.send(
                         f"❌ 頻道選擇錯誤，必須是文字頻道",
@@ -333,16 +333,16 @@ class LockerAdminCog(commands.Cog):
             failed_count = 0
             thread_created_count = 0
             
-            # 從環境變數讀取置物櫃頻道
-            locker_channel_id = os.getenv('LOCKER_CHANNEL_ID')
-            if not locker_channel_id:
+            # 從環境變數讀取宿舍論壇頻道（置物櫃 thread 頻道）
+            forum_channel_id = os.getenv('FORUM_CHANNEL_ID')
+            if not forum_channel_id:
                 await interaction.followup.send(
-                    f"❌ 環境變數未設定 LOCKER_CHANNEL_ID，無法建立 thread",
+                    f"❌ 環境變數未設定 FORUM_CHANNEL_ID，無法建立 thread",
                     ephemeral=True
                 )
                 return
             
-            target_channel = interaction.guild.get_channel(int(locker_channel_id))
+            target_channel = interaction.guild.get_channel(int(forum_channel_id))
             if not isinstance(target_channel, discord.TextChannel):
                 await interaction.followup.send(
                     f"❌ 頻道選擇錯誤，必須是文字頻道",
