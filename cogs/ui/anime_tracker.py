@@ -1152,7 +1152,10 @@ class AnimeTracker(commands.Cog):
         try:
             # 恢復舊消息的 view
             print("[COG_LOAD] 恢復舊消息 view 中...", flush=True)
+            logger.info("🎬 [AnimeTracker.cog_load] 開始恢復舊消息 view")
             await self._restore_old_message_views()
+            print("[COG_LOAD] ✅ 舊消息 view 恢復完成", flush=True)
+            logger.info("✅ [AnimeTracker.cog_load] 舊消息 view 恢復完成")
             
             # 啟動動畫檢查任務
             print("[COG_LOAD] 檢查 check_new_anime 任務狀態", flush=True)
@@ -1175,10 +1178,12 @@ class AnimeTracker(commands.Cog):
                 logger.info("✅ [AnimeTracker.cog_load] send_weekly_stats 已啟動")
             else:
                 print("[COG_LOAD] ⚠️ send_weekly_stats 已在運行", flush=True)
+            
+            print("[COG_LOAD_END] ✅ cog_load() 執行完成", flush=True)
+            logger.info("✅ [AnimeTracker.cog_load] cog_load() 執行完成")
         except Exception as e:
             print(f"[COG_LOAD_ERROR] ❌ 任務啟動失敗: {e}", flush=True)
             logger.error(f"❌ [AnimeTracker.cog_load] 任務啟動失敗: {e}", exc_info=True)
-        print("[COG_LOAD_END] 🎬 cog_load() 執行完成", flush=True)
         logger.info("=" * 50)
     
     def cog_unload(self):
@@ -2630,31 +2635,8 @@ class AnimeTracker(commands.Cog):
     
 
 async def setup(bot: commands.Bot):
-    """Discord.py 2.0+ 加載方式"""
+    """Discord.py 2.0+ 加載方式 - cog_load() 會自動被調用"""
     print("[SETUP_START] 🎬 AnimeTracker setup() 開始", flush=True)
-    cog = AnimeTracker(bot)
-    await bot.add_cog(cog)
-    logger.info("✅ AnimeTracker Cog 已加載")
-    print("[SETUP] ✅ AnimeTracker Cog 已添加到 bot", flush=True)
-    
-    # 直接啟動任務（不依賴 cog_load hook）
-    print("[SETUP] 準備啟動任務", flush=True)
-    try:
-        if not cog.check_new_anime.is_running():
-            print("[SETUP] 啟動 check_new_anime 任務", flush=True)
-            cog.check_new_anime.start()
-            print("[SETUP] ✅ check_new_anime 已啟動", flush=True)
-        else:
-            print("[SETUP] ⚠️ check_new_anime 已在運行", flush=True)
-        
-        if not cog.send_weekly_stats.is_running():
-            print("[SETUP] 啟動 send_weekly_stats 任務", flush=True)
-            cog.send_weekly_stats.start()
-            print("[SETUP] ✅ send_weekly_stats 已啟動", flush=True)
-        else:
-            print("[SETUP] ⚠️ send_weekly_stats 已在運行", flush=True)
-    except Exception as e:
-        print(f"[SETUP_ERROR] ❌ 任務啟動失敗: {e}", flush=True)
-        logger.error(f"❌ setup() 任務啟動失敗: {e}", exc_info=True)
-    
-    print("[SETUP_END] 🎬 AnimeTracker setup() 完成", flush=True)
+    await bot.add_cog(AnimeTracker(bot))
+    logger.info("✅ AnimeTracker Cog 已加載（任務將在 cog_load() 中啟動）")
+    print("[SETUP_END] 🎬 AnimeTracker setup() 完成 - cog_load() 將自動被調用", flush=True)
