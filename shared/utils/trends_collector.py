@@ -28,6 +28,10 @@ import time
 import os
 from typing import List, Dict, Optional
 
+# 確保 .env 被加載（必須在所有 os.getenv() 之前）
+from dotenv import load_dotenv
+load_dotenv()
+
 # 嘗試導入 Twikit（Twitter 趨勢爬蟲）
 try:
     from twikit import Client
