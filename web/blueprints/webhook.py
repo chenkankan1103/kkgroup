@@ -28,8 +28,10 @@ from dotenv import load_dotenv
 # 設置日誌
 logger = logging.getLogger(__name__)
 
-# 加載環境變數
-load_dotenv()
+# 加載環境變數 - 明確指定 .env 路徑
+env_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
+load_dotenv(env_path)
+logger.info(f"📁 加載 .env 文件: {env_path} (存在: {os.path.exists(env_path)})")
 
 # 建立 Blueprint
 webhook_bp = Blueprint('webhook', __name__, url_prefix='/webhook')
