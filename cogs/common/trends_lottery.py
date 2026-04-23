@@ -677,18 +677,37 @@ class TrendsLotteryCog(commands.Cog):
             
             logger.info(f"🧪 測試推播已觸發 (by {interaction.user})")
             
+            # 嘗試在嚴格模式下獲取趨勢
+            logger.info(f"📡 測試推播：嘗試獲取真實 Twitter 趨勢...")
+            trends = await get_latest_trends(limit=10, strict=True)
+            
+            if not trends:
+                logger.warning("⚠️ 測試推播：無法獲得 Twitter 真實趨勢")
+                await interaction.followup.send(
+                    "⚠️ **無法推播**：Twikit 無法獲取 Twitter 趨勢\n\n"
+                    "可能原因：\n"
+                    "• Twitter 帳戶認證失敗\n"
+                    "• 帳戶被 Twitter 限制\n"
+                    "• 網路連接問題\n\n"
+                    "系統會在下一個排程時段自動重試。",
+                    ephemeral=True
+                )
+                return
+            
             # 立即執行推播
             await self._update_and_broadcast_trends()
             
             await interaction.followup.send(
-                "✅ 已推播最新趨勢！",
+                f"✅ 已推播最新趨勢！({len(trends)} 項 Twitter 數據)",
                 ephemeral=True
             )
         
         except Exception as e:
             logger.error(f"❌ 測試推播失敗: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             await interaction.followup.send(
-                f"❌ 推播失敗：{str(e)}",
+                f"❌ 推播失敗：{str(e)[:100]}",
                 ephemeral=True
             )
 

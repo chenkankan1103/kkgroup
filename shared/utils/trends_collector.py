@@ -50,30 +50,62 @@ TWITTER_EMAIL = os.getenv("TWITTER_EMAIL", "")
 TWITTER_PASSWORD = os.getenv("TWITTER_PASSWORD", "")
 TWITTER_COOKIES_FILE = "/tmp/twitter_cookies.json"
 
+# ========================
+# Meta Threads 配置
+# ========================
+# 說明：Meta Threads 沒有官方公開 API
+# 可選方案：
+# 1. 使用非官方爬蟲（threads-api, threads-py等）
+# 2. 在此實現簡單的 HTTP 爬蟲
+# 3. 整合已有的 Threads 社群 API（如果有）
+# 
+# 目前預設使用硬編碼的台灣 Threads 熱門話題作為備用方案
+
+THREADS_ENABLED = os.getenv("THREADS_ENABLED", "false").lower() == "true"
+THREADS_USERNAME = os.getenv("THREADS_USERNAME", "")  # 可選：用於爬蟲認證
+
 
 # ========================
 # 數據集備用方案（輪轉）
 # ========================
 
 FALLBACK_TREND_DATASETS = [
+    # 台灣科技新聞
     ["台積電", "聯發科", "鴻海", "聯電", "日月光"],
+    # AI & 科技趨勢
     ["AI晶片", "ChatGPT", "機器學習", "大型語言模型", "深度學習"],
+    # 台灣製造業
     ["緯創", "友達", "群創", "技嘉", "廣達"],
+    # 區塊鏈 & Web3
     ["元宇宙", "NFT", "區塊鏈", "加密貨幣", "Web3"],
+    # 綠能 & 能源
     ["自動駕駛", "電動車", "新能源", "綠能", "永續發展"],
+    # 5G & 通訊
     ["雲計算", "邊緣計算", "量子計算", "5G", "6G"],
+    # 生物科技 & 醫療
     ["生物科技", "基因編輯", "疫苗", "醫療", "藥物"],
+    # 半導體產業
     ["元器件", "晶圓代工", "半導體", "IC設計", "電子產業"],
+    # Threads 台灣時事（Meta Threads 熱門話題）
+    ["政治新聞", "體育賽事", "娛樂八卦", "社會新聞", "財經焦點"],
+    # Threads 生活趨勢
+    ["旅遊分享", "美食推薦", "居家佈置", "時尚穿搭", "健身運動"],
 ]
 
 
 class TrendsCollector:
     """
-    趨勢收集器 - 優先使用 Twitter/X 趨勢（Twikit）
+    趨勢收集器 - 多平台支持
     
-    優先級：
-    1. 🎯 Twitter/X 實時趨勢（Twikit 爬蟲，主方案）
-    2. 🔄 時間輪轉數據集（備用方案）
+    優先級（嚴格模式）：
+    1. 🐦 Twitter/X 實時趨勢（Twikit 爬蟲，主方案）
+    2. 🧵 Meta Threads 台灣時事（未來實現）
+    3. 🔄 時間輪轉數據集（備用方案）
+    
+    說明：
+    - Twikit 使用 Twitter 官方 API（不需要 API Key）
+    - Threads 目前無官方 API，備用使用時間輪轉台灣時事數據
+    - 關鍵詞：Twikit, Threads, 趨勢爬蟲, 實時數據
     """
     
     def __init__(self):
@@ -83,6 +115,11 @@ class TrendsCollector:
             logger.info("✅ [Twikit] 帳戶已配置，使用 Twitter 實時趨勢")
         else:
             logger.warning("⚠️ [Twikit] 帳戶信息不完整，將使用備用方案")
+        
+        if THREADS_ENABLED and THREADS_USERNAME:
+            logger.info("✅ [Threads] 帳戶已配置，將嘗試蒐集 Threads 趨勢")
+        else:
+            logger.info("ℹ️ [Threads] 未配置，將使用台灣時事備用數據")
     
     async def __aenter__(self):
         return self
@@ -92,17 +129,18 @@ class TrendsCollector:
     
     async def get_combined_trends(self, limit: int = 10, strict: bool = False) -> List[Dict]:
         """
-        主入口：獲取實時趨勢
+        主入口：獲取實時趨勢（多平台）
         
         參數：
         - limit: 返回趨勢數量
         - strict: 嚴格模式
-          - True: 只返回 Twitter 真實趨勢，失敗返回空列表
-          - False: Twikit 失敗則使用備用方案（預設）
+          - True: 只返回真實平台數據，失敗返回空列表
+          - False: 失敗時使用備用方案（預設）
         
         優先級：
         1. Twitter/X 趨勢（Twikit）- 帶重試機制
-        2. 時間輪轉備用數據集（非嚴格模式）
+        2. Meta Threads 趨勢（未來支持）
+        3. 時間輪轉備用數據集（非嚴格模式）
         """
         # 1. 嘗試 Twikit 獲取 Twitter 趨勢
         if TWIKIT_AVAILABLE and TWITTER_USERNAME:
@@ -111,12 +149,19 @@ class TrendsCollector:
                 logger.info(f"✅ [成功] 從 Twitter 獲取 {len(trends)} 項趨勢")
                 return trends[:limit]
         
-        # 嚴格模式：如果 Twikit 失敗，不使用備用方案
+        # 2. 嘗試 Threads 獲取台灣時事趨勢（未來實現）
+        if THREADS_ENABLED and THREADS_USERNAME:
+            trends = await self._fetch_from_threads()
+            if trends:
+                logger.info(f"✅ [成功] 從 Threads 獲取 {len(trends)} 項台灣時事趨勢")
+                return trends[:limit]
+        
+        # 嚴格模式：如果所有真實平台都失敗，不使用備用方案
         if strict:
-            logger.warning("⚠️ [嚴格模式] Twikit 失敗，返回空列表（跳過本次發布）")
+            logger.warning("⚠️ [嚴格模式] 所有真實平台失敗，返回空列表（跳過本次發布）")
             return []
         
-        # 2. 備用：時間輪轉數據集
+        # 3. 備用：時間輪轉數據集
         logger.debug("🔄 [備用方案] 使用時間輪轉數據集")
         trends = self._get_fallback_rotated_trends()
         
@@ -196,6 +241,46 @@ class TrendsCollector:
                 return await self._fetch_from_twikit(retry_count + 1, max_retries)
             
             logger.error(f"❌ [Twikit] 已達最大重試次數，改用備用方案")
+            return []
+    
+    async def _fetch_from_threads(self) -> List[Dict]:
+        """
+        使用 Meta Threads API 獲取台灣時事趨勢（未來實現）
+        
+        實現方案（可選）：
+        1. GitHub: https://github.com/iSarabjitDhiman/MetaThreads
+           - 安裝：pip install threads-api
+           - 使用：from threads_api import Client
+           - 獲取趨勢：client.get_trends('Taiwan') 或類似 API
+        
+        2. 自定義爬蟲
+           - 爬取 threads.net 的探索頁面
+           - 解析熱門話題標籤
+        
+        3. Threads 官方 API（如果未來開放）
+        
+        目前狀態：
+        - 框架已準備
+        - 返回空列表（未實現真實爬蟲）
+        - 系統會自動回退到備用方案
+        """
+        if not THREADS_ENABLED:
+            return []
+        
+        try:
+            logger.info("🔄 [Threads] 開始從 Meta Threads 獲取台灣時事趨勢...")
+            
+            # TODO: 在此實現真實的 Threads 爬蟲
+            # 例如：
+            # from threads_api import Client
+            # client = Client(username=THREADS_USERNAME)
+            # trends = client.get_trends('Taiwan')
+            
+            logger.debug("ℹ️ [Threads] 尚未實現真實爬蟲，返回空列表")
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ [Threads 失敗] {type(e).__name__}: {str(e)[:100]}")
             return []
     
     def _get_fallback_rotated_trends(self) -> List[Dict]:
