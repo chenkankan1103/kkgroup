@@ -17,6 +17,7 @@ import re
 from datetime import datetime
 from db_adapter import get_user, set_user, get_user_field, set_user_field
 from shared.utils.view_registry import PersistentViewBase
+from cogs.ui.utils.init_missing_character_data import get_random_character_data
 
 load_dotenv()
 
@@ -40,14 +41,19 @@ class GenderSelectView(discord.ui.View):
             await interaction.followup.send("❌ 這不是你的選項！")
             return
 
+        # 使用隨機紙娃娃配置，保持性別不變
+        selected_gender = select.values[0]
+        random_appearance = get_random_character_data(preserve_gender=selected_gender)
+        
+        # 轉換為字符串形式（數據庫存儲格式）
         appearance = {
-            'face': 20005 if select.values[0] == "male" else 21731,
-            'hair': 30120 if select.values[0] == "male" else 34410,
-            'skin': 12000,
-            'top': 1040014 if select.values[0] == "male" else 1041004,
-            'bottom': 1060096 if select.values[0] == "male" else 1061008,
-            'shoes': 1072005,
-            'gender': select.values[0]
+            'face': str(random_appearance['face']),
+            'hair': str(random_appearance['hair']),
+            'skin': str(random_appearance['skin']),
+            'top': str(random_appearance['top']),
+            'bottom': str(random_appearance['bottom']),
+            'shoes': str(random_appearance['shoes']),
+            'gender': selected_gender
         }
 
         try:
@@ -56,7 +62,7 @@ class GenderSelectView(discord.ui.View):
         except Exception as e:
             print(f"❌ 更新用戶性別失敗: {e}")
         
-        gender_text = "男性" if select.values[0] == "male" else "女性"
+        gender_text = "男性" if selected_gender == "male" else "女性"
         await interaction.followup.send(f"✅ 已設定為{gender_text}！")
 
 class WelcomeActionView(discord.ui.View):
@@ -131,20 +137,25 @@ class PersistentWelcomeView(discord.ui.View):
             await interaction.followup.send("❌ 這不是你的選項！", ephemeral=True)
             return
 
+        # 使用隨機紙娃娃配置，保持性別不變
+        selected_gender = select.values[0]
+        random_appearance = get_random_character_data(preserve_gender=selected_gender)
+        
+        # 轉換為字符串形式（數據庫存儲格式）
         appearance = {
-            "face": 20005 if select.values[0] == "male" else 21731,
-            "hair": 30120 if select.values[0] == "male" else 34410,
-            "skin": 12000,
-            "top": 1040014 if select.values[0] == "male" else 1041004,
-            "bottom": 1060096 if select.values[0] == "male" else 1061008,
-            "shoes": 1072005,
-            "gender": select.values[0]
+            "face": str(random_appearance['face']),
+            "hair": str(random_appearance['hair']),
+            "skin": str(random_appearance['skin']),
+            "top": str(random_appearance['top']),
+            "bottom": str(random_appearance['bottom']),
+            "shoes": str(random_appearance['shoes']),
+            "gender": selected_gender
         }
 
         await self.cog.update_user_data(target_user_id, appearance)
         await self.cog.update_welcome_message(interaction, target_user_id)
 
-        gender_text = "男性" if select.values[0] == "male" else "女性"
+        gender_text = "男性" if selected_gender == "male" else "女性"
         await interaction.followup.send(f"✅ 已設定為{gender_text}！", ephemeral=True)
 
     @discord.ui.button(custom_id="welcome_submit_items", label="繳交手機身分證", style=discord.ButtonStyle.secondary, emoji="📱")
