@@ -12,8 +12,10 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import logging
 
-# 載入環境變數
-load_dotenv()
+# 載入環境變數 - 明確指定 .env 路徑確保正確加載
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent / '.env'
+load_dotenv(env_path)
 
 # 定義靜態文件路徑
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
