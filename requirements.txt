@@ -20,5 +20,6 @@ google-cloud-billing
 yfinance
 pandas
 apscheduler
-pytrends
-feedparser
+twikit
+beautifulsoup4
+html5lib

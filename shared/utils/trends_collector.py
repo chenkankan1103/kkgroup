@@ -1,19 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-趨勢收集器 - Google Trends API Alpha
-======================================
+趨勢收集器 - Twitter/X 趨勢（Twikit）+ 備用系統
+================================================
 
-主要功能：從 Google Trends API Alpha 獲取台灣實時趨勢
+主要功能：從 Twitter/X 獲取實時趨勢（使用 Twikit 爬蟲）
 
 使用狀態：
-✅ API 申請中 - 待 Google 批准
-🔄 備用方案 - 使用時間輪轉數據集（直到 API 啟用）
+✅ Twikit 實現 - 活躍使用中，需要 Twitter 帳戶認證
+🔄 備用方案 - 時間輪轉數據集（當 Twikit 失敗時）
 
-API 集成步驟（當 API 批准後）：
-1. 獲取 API 金鑰
-2. 配置到環境變數：GOOGLE_TRENDS_API_KEY
-3. 啟用 _fetch_from_google_trends_api() 方法
-4. 更新 logger 信息為 "platform": "google_trends_api_alpha"
+環境變數配置（必需）：
+  TWITTER_USERNAME = "your_twitter_username"
+  TWITTER_EMAIL = "your_email@example.com"
+  TWITTER_PASSWORD = "your_twitter_password"
+
+注意事項：
+- Twikit 使用 Twitter 官方 API（不需要 API Key）
+- 需要真實 Twitter 帳戶和正確的認證信息
+- Cookie 會自動保存以避免頻繁重新登入
+- Twitter 可能因頻繁登入而限制帳戶
 """
 
 import asyncio
@@ -23,22 +28,23 @@ import time
 import os
 from typing import List, Dict, Optional
 
-# 嘗試導入 Google 官方 API 客戶端（未來使用）
+# 嘗試導入 Twikit（Twitter 趨勢爬蟲）
 try:
-    # 當 API 可用時，安裝：pip install google-trends-api
-    # 或使用官方 Google API 客戶端
-    GOOGLE_TRENDS_API_AVAILABLE = False  # 等待 API 批准
+    from twikit import Client
+    TWIKIT_AVAILABLE = True
 except ImportError:
-    GOOGLE_TRENDS_API_AVAILABLE = False
+    TWIKIT_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 # ========================
-# Google Trends API Alpha
+# Twikit 配置（Twitter 趨勢）
 # ========================
 
-GOOGLE_TRENDS_API_KEY = os.getenv("GOOGLE_TRENDS_API_KEY", "")
-GOOGLE_TRENDS_API_ENDPOINT = "https://trends.googleapis.com/v1/trends/top"  # 待驗證
+TWITTER_USERNAME = os.getenv("TWITTER_USERNAME", "")
+TWITTER_EMAIL = os.getenv("TWITTER_EMAIL", "")
+TWITTER_PASSWORD = os.getenv("TWITTER_PASSWORD", "")
+TWITTER_COOKIES_FILE = "/tmp/twitter_cookies.json"
 
 
 # ========================
@@ -59,18 +65,20 @@ FALLBACK_TREND_DATASETS = [
 
 class TrendsCollector:
     """
-    趨勢收集器 - 專注於 Google Trends API Alpha
+    趨勢收集器 - 優先使用 Twitter/X 趨勢（Twikit）
     
     優先級：
-    1. 🎯 Google Trends API Alpha（主方案，待啟用）
-    2. 🔄 輪轉數據集（備用方案，現在使用）
+    1. 🎯 Twitter/X 實時趨勢（Twikit 爬蟲，主方案）
+    2. 🔄 時間輪轉數據集（備用方案）
     """
     
     def __init__(self):
-        if GOOGLE_TRENDS_API_KEY:
-            logger.info("🔐 [Google Trends API Alpha] API Key 已配置，等待初始化")
+        if not TWIKIT_AVAILABLE:
+            logger.warning("⚠️ [Twikit] 未安裝，只能使用備用方案")
+        elif TWITTER_USERNAME and TWITTER_EMAIL and TWITTER_PASSWORD:
+            logger.info("✅ [Twikit] 帳戶已配置，使用 Twitter 實時趨勢")
         else:
-            logger.info("⏳ [Google Trends API Alpha] 申請中，使用數據集輪轉備用方案")
+            logger.warning("⚠️ [Twikit] 帳戶信息不完整，將使用備用方案")
     
     async def __aenter__(self):
         return self
@@ -80,62 +88,78 @@ class TrendsCollector:
     
     async def get_combined_trends(self, limit: int = 10) -> List[Dict]:
         """
-        主入口：獲取台灣實時趨勢
+        主入口：獲取實時趨勢
         
         優先級：
-        1. Google Trends API Alpha
-        2. 輪轉數據集（備用）
+        1. Twitter/X 趨勢（Twikit）
+        2. 時間輪轉備用數據集
         """
-        # 1. 嘗試 Google Trends API Alpha
-        if GOOGLE_TRENDS_API_KEY and GOOGLE_TRENDS_API_AVAILABLE:
-            trends = await self._fetch_from_google_trends_api()
+        # 1. 嘗試 Twikit 獲取 Twitter 趨勢
+        if TWIKIT_AVAILABLE and TWITTER_USERNAME:
+            trends = await self._fetch_from_twikit()
             if trends:
+                logger.info(f"✅ [成功] 從 Twitter 獲取 {len(trends)} 項趨勢")
                 return trends[:limit]
         
-        # 2. 備用：輪轉數據集
-        logger.debug("📊 [備用方案] 使用時間輪轉數據集")
+        # 2. 備用：時間輪轉數據集
+        logger.debug("🔄 [備用方案] 使用時間輪轉數據集")
         trends = self._get_fallback_rotated_trends()
         
         return trends[:limit]
     
-    async def _fetch_from_google_trends_api(self) -> List[Dict]:
+    async def _fetch_from_twikit(self) -> List[Dict]:
         """
-        從 Google Trends API Alpha 獲取數據
+        使用 Twikit 從 Twitter/X 獲取實時趨勢
         
-        文檔：https://developers.google.com/trends/api
-        
-        當 API 啟用後，此方法將：
-        1. 調用 Google Trends API
-        2. 解析台灣地區的實時趨勢
-        3. 返回格式化的趨勢列表
+        工作流程：
+        1. 使用 Twitter 帳戶登入
+        2. 調用 client.get_trends('trending')
+        3. 解析並返回格式化的趨勢數據
         """
-        if not GOOGLE_TRENDS_API_KEY:
+        if not TWIKIT_AVAILABLE:
             return []
         
         try:
-            logger.info("🚀 [Google Trends API Alpha] 開始調用...")
+            logger.info("🔄 [Twikit] 開始從 Twitter 獲取趨勢...")
             
-            # 實現 API 調用邏輯
-            # 示例（待實現）：
-            # response = await asyncio.to_thread(
-            #     lambda: requests.get(
-            #         GOOGLE_TRENDS_API_ENDPOINT,
-            #         headers={"Authorization": f"Bearer {GOOGLE_TRENDS_API_KEY}"},
-            #         params={"geo": "TW", "limit": 10}
-            #     )
-            # )
-            # 
-            # if response.status_code == 200:
-            #     data = response.json()
-            #     trends = data.get("trends", [])
-            #     logger.info(f"✅ [API 成功] 獲取 {len(trends)} 項趨勢")
-            #     return [{"trend": t, "platform": "google_trends_api_alpha"} for t in trends]
+            # 初始化 Twikit 客戶端
+            client = Client('en-US')
             
-            logger.warning("⏳ [API] 等待 Google Trends API Alpha 批准")
-            return []
+            # 登入 Twitter（在線程中執行，避免阻塞）
+            await asyncio.to_thread(
+                client.login,
+                auth_info_1=TWITTER_USERNAME,
+                auth_info_2=TWITTER_EMAIL,
+                password=TWITTER_PASSWORD,
+                cookies_file=TWITTER_COOKIES_FILE
+            )
             
+            # 獲取實時趨勢
+            trends_data = await asyncio.to_thread(
+                client.get_trends,
+                'trending'
+            )
+            
+            # 解析趨勢數據
+            trends = []
+            if trends_data:
+                for trend in trends_data:
+                    trend_text = str(trend).strip()
+                    if trend_text:
+                        trends.append({
+                            "trend": trend_text,
+                            "platform": "twitter_twikit"
+                        })
+            
+            if trends:
+                logger.info(f"✅ [Twikit 成功] 獲取 {len(trends)} 項 Twitter 趨勢")
+                return trends
+            else:
+                logger.warning("⚠️ [Twikit] 獲取到空結果")
+                return []
+                
         except Exception as e:
-            logger.error(f"❌ [API] 調用失敗: {type(e).__name__}: {e}")
+            logger.error(f"❌ [Twikit 失敗] {type(e).__name__}: {str(e)[:100]}")
             return []
     
     def _get_fallback_rotated_trends(self) -> List[Dict]:
