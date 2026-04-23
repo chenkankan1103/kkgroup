@@ -143,10 +143,14 @@ class UserRecoveryCog(commands.Cog):
                         time_diff = now - injury_time
                         hours_passed = time_diff.total_seconds() / 3600
                         
-                        if hours_passed >= 1.0:
-                            # 體力恢復 (每小時 +25)
-                            recovery_cycles = int(hours_passed)
-                            stamina_recovery = recovery_cycles * 25
+                        if hours_passed >= 0.1:  # 為避免浮點數誤差，改為 0.1 小時（6 分鐘）
+                            # 體力恢復 - 改用連續恢復計算（每小時 +25）
+                            stamina_recovery = int(hours_passed * 25)
+                            
+                            # 確保至少恢復 1 點（6 分鐘後）
+                            if stamina_recovery == 0 and hours_passed > 0.05:
+                                stamina_recovery = 1
+                                
                             new_stamina = min(stamina + stamina_recovery, 100)
                             
                             # 檢查是否完全恢復
@@ -173,14 +177,22 @@ class UserRecoveryCog(commands.Cog):
                                 recovered_count += 1
                     else:
                         # 正常狀態下的血量回復邏輯
+                        # 📝 修復：改用連續恢復計算，而不是離散周期
                         last_recovery = self.parse_recovery_time(last_recovery_value)
                         time_diff = now - last_recovery
                         hours_passed = time_diff.total_seconds() / 3600
                         
-                        if hours_passed >= 1.0:
-                            recovery_cycles = int(hours_passed)
-                            hp_recovery = recovery_cycles * 1
-                            stamina_recovery = recovery_cycles * 5
+                        if hours_passed >= 0.1:  # 為避免浮點數誤差，改為 0.1 小時（6 分鐘）
+                            # 根據實際時間計算恢復量（線性恢復，不是離散周期）
+                            # 每小時恢復：10 點血 + 10 點體力
+                            hp_recovery = int(hours_passed * 10)  # 每小時 10 點
+                            stamina_recovery = int(hours_passed * 10)  # 每小時 10 點
+                            
+                            # 確保至少恢復 1 點（6 分鐘後）
+                            if hp_recovery == 0 and hours_passed > 0.05:
+                                hp_recovery = 1
+                            if stamina_recovery == 0 and hours_passed > 0.05:
+                                stamina_recovery = 1
                             
                             new_hp = min(hp + hp_recovery, 100)
                             new_stamina = min(stamina + stamina_recovery, 100)
