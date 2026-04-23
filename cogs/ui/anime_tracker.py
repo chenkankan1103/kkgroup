@@ -1146,25 +1146,39 @@ class AnimeTracker(commands.Cog):
     
     async def cog_load(self):
         """Cog 加載時啟動任務"""
+        print("[COG_LOAD_START] 🎬 cog_load() 開始執行", flush=True)
         logger.info("=" * 50)
         logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
         try:
             # 恢復舊消息的 view
+            print("[COG_LOAD] 恢復舊消息 view 中...", flush=True)
             await self._restore_old_message_views()
             
             # 啟動動畫檢查任務
+            print("[COG_LOAD] 檢查 check_new_anime 任務狀態", flush=True)
             if not self.check_new_anime.is_running():
+                print("[COG_LOAD] ✅ 啟動 check_new_anime 任務", flush=True)
                 logger.info("🚀 [AnimeTracker.cog_load] 啟動 check_new_anime 任務")
                 self.check_new_anime.start()
+                print("[COG_LOAD] ✅ check_new_anime 已啟動", flush=True)
                 logger.info("✅ [AnimeTracker.cog_load] check_new_anime 已啟動")
+            else:
+                print("[COG_LOAD] ⚠️ check_new_anime 已在運行", flush=True)
             
             # 啟動週統計任務
+            print("[COG_LOAD] 檢查 send_weekly_stats 任務狀態", flush=True)
             if not self.send_weekly_stats.is_running():
+                print("[COG_LOAD] ✅ 啟動 send_weekly_stats 任務", flush=True)
                 logger.info("🚀 [AnimeTracker.cog_load] 啟動 send_weekly_stats 任務")
                 self.send_weekly_stats.start()
+                print("[COG_LOAD] ✅ send_weekly_stats 已啟動", flush=True)
                 logger.info("✅ [AnimeTracker.cog_load] send_weekly_stats 已啟動")
+            else:
+                print("[COG_LOAD] ⚠️ send_weekly_stats 已在運行", flush=True)
         except Exception as e:
+            print(f"[COG_LOAD_ERROR] ❌ 任務啟動失敗: {e}", flush=True)
             logger.error(f"❌ [AnimeTracker.cog_load] 任務啟動失敗: {e}", exc_info=True)
+        print("[COG_LOAD_END] 🎬 cog_load() 執行完成", flush=True)
         logger.info("=" * 50)
     
     def cog_unload(self):
