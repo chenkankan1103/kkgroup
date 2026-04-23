@@ -248,22 +248,30 @@ class TrendsLotteryCog(commands.Cog):
             logger.error(f"❌ 深夜趨勢抓取失敗: {e}")
     
     async def _update_and_broadcast_trends(self):
-        """更新趨勢並廣播到 Discord"""
+        """更新趨勢並廣播到 Discord（嚴格模式：等待真實 Twitter 趨勢）"""
         logger.info(f"📝 [_UPDATE_AND_BROADCAST] 開始執行...")
         try:
-            # 抓取最新趨勢
-            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_latest_trends()...")
-            trends = await get_latest_trends(limit=10)
+            # 抓取最新趨勢（嚴格模式：只要真實 Twitter 數據）
+            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_latest_trends(strict=True)...")
+            trends = await get_latest_trends(limit=10, strict=True)
             logger.info(f"📊 [_UPDATE_AND_BROADCAST] 收到 {len(trends) if trends else 0} 項趨勢")
             
             if not trends:
-                logger.warning("⚠️  無法獲取趨勢")
+                logger.warning("⚠️ [嚴格模式] 無法獲取 Twitter 真實趨勢，跳過本次發布，等待下一個時段")
                 return
+            
+            # 驗證是否都是真實的 Twitter 趨勢
+            twitter_count = sum(1 for t in trends if t.get("platform") == "twitter_twikit")
+            if twitter_count == 0:
+                logger.warning("⚠️ [品質檢查] 獲得的都是備用數據，跳過本次發布")
+                return
+            
+            logger.info(f"✅ [品質檢查] 收到 {twitter_count}/{len(trends)} 真實 Twitter 趨勢")
             
             # 更新當前趨勢
             self.current_trends = [t["trend"] for t in trends]
             
-            # 生成本輪 ID（格式：2024-04-22-08）
+            # 生成本輪 ID（格式：2026-04-24-08）
             now = datetime.now(TZ_TW)
             round_id = now.strftime("%Y-%m-%d-%H")
             self.current_round_id = round_id
@@ -277,7 +285,7 @@ class TrendsLotteryCog(commands.Cog):
             # 開獎上一輪（如果存在）
             await self._draw_previous_round()
             
-            logger.info(f"✅ 趨勢已更新：{round_id}，{len(self.current_trends)} 項")
+            logger.info(f"✅ 趨勢已更新：{round_id}，{len(self.current_trends)} 項 (Twitter 真實數據)")
         
         except Exception as e:
             logger.error(f"❌ 趨勢更新失敗: {e}")

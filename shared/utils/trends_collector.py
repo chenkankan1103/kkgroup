@@ -90,13 +90,19 @@ class TrendsCollector:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
     
-    async def get_combined_trends(self, limit: int = 10) -> List[Dict]:
+    async def get_combined_trends(self, limit: int = 10, strict: bool = False) -> List[Dict]:
         """
         主入口：獲取實時趨勢
         
+        參數：
+        - limit: 返回趨勢數量
+        - strict: 嚴格模式
+          - True: 只返回 Twitter 真實趨勢，失敗返回空列表
+          - False: Twikit 失敗則使用備用方案（預設）
+        
         優先級：
-        1. Twitter/X 趨勢（Twikit）
-        2. 時間輪轉備用數據集
+        1. Twitter/X 趨勢（Twikit）- 帶重試機制
+        2. 時間輪轉備用數據集（非嚴格模式）
         """
         # 1. 嘗試 Twikit 獲取 Twitter 趨勢
         if TWIKIT_AVAILABLE and TWITTER_USERNAME:
@@ -104,6 +110,11 @@ class TrendsCollector:
             if trends:
                 logger.info(f"✅ [成功] 從 Twitter 獲取 {len(trends)} 項趨勢")
                 return trends[:limit]
+        
+        # 嚴格模式：如果 Twikit 失敗，不使用備用方案
+        if strict:
+            logger.warning("⚠️ [嚴格模式] Twikit 失敗，返回空列表（跳過本次發布）")
+            return []
         
         # 2. 備用：時間輪轉數據集
         logger.debug("🔄 [備用方案] 使用時間輪轉數據集")
@@ -211,14 +222,27 @@ class TrendsCollector:
 # 便利函數
 # ========================
 
-async def get_latest_trends(limit: int = 10) -> List[Dict]:
+async def get_latest_trends(limit: int = 10, strict: bool = False) -> List[Dict]:
     """
     獲取最新趨勢
     
+    參數：
+    - limit: 返回趨勢數量（預設 10）
+    - strict: 嚴格模式（預設 False）
+      - True: 只發布真實 Twitter 趨勢，失敗返回空列表
+      - False: 失敗時使用時間輪轉備用數據集
+    
     使用示例：
+        # 標準模式（失敗用備用數據）
         trends = await get_latest_trends(limit=5)
-        for trend in trends:
-            print(f"• {trend['trend']} ({trend['platform']})")
+        
+        # 嚴格模式（只要真實 Twitter 數據）
+        trends = await get_latest_trends(limit=5, strict=True)
+        if not trends:
+            logger.warning("未能獲得 Twitter 趨勢，跳過本次發布")
+    
+    返回：
+        List[Dict] - [{"trend": "...", "platform": "twitter_twikit"或"fallback_rotated"}, ...]
     """
     async with TrendsCollector() as collector:
-        return await collector.get_combined_trends(limit)
+        return await collector.get_combined_trends(limit, strict=strict)
