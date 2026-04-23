@@ -59,26 +59,31 @@ class TrendsPredictionView(PersistentViewBase):
         self.cog = cog
         self.trends = trends[:10]  # 最多 10 個選項
         self.round_id = round_id
+        self.user_selections = {}  # 初始化用戶選擇紀錄
         
-        # 使用全域按鈕系統創建選項按鈕（每行 5 個）
+        # 使用 discord.ui.Button 動態創建按鈕（每行 5 個）
         for i, trend in enumerate(self.trends):
-            self.add_button(
+            button = discord.ui.Button(
                 label=f"{i+1}. {trend[:20]}",
-                callback=lambda inter, idx=i: self._handle_trend_select(inter, idx),
-                style="primary",
+                style=discord.ButtonStyle.primary,
                 custom_id=f"trend_select_{round_id}_{i}",
                 row=i // 5  # 每行 5 個按鈕
             )
+            # 綁定回調函數
+            button.callback = self._make_callback(i)
+            self.add_item(button)
+    
+    def _make_callback(self, index: int):
+        """製造回調函數（解決 lambda 閉包問題）"""
+        async def callback(interaction: discord.Interaction):
+            await self._handle_trend_select(interaction, index)
+        return callback
     
     async def _handle_trend_select(self, interaction: discord.Interaction, selected_index: int):
         """處理趨勢選擇"""
-        # 取得用戶已選擇的趨勢
         user_id = interaction.user.id
         
-        # 檢查用戶是否已經在選擇中
-        if not hasattr(self, 'user_selections'):
-            self.user_selections = {}
-        
+        # 初始化用戶選擇記錄
         if user_id not in self.user_selections:
             self.user_selections[user_id] = []
         
