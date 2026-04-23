@@ -211,9 +211,9 @@ class AirdropSystem(commands.Cog):
         return embed, view
     
     # ==================== 後臺任務 ====================
-    @tasks.loop(seconds=60)
+    @tasks.loop(minutes=30)
     async def airdrop_loop(self):
-        """後臺空投循環任"""
+        """後臺空投循環任務 - 每 30 分鐘檢查一次"""
         try:
             if self.next_airdrop_time is None:
                 delay = random.randint(60, 120)  # 1-2 小時

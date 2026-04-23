@@ -193,7 +193,7 @@ class KKCoin(commands.Cog):
         self.auto_update_digital_usd_leaderboard.start()
         # self.auto_update_reserve_status.start()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
         self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
-        self.auto_push_leaderboard_to_github.start()  # 📤 [事件驅動] 排行榜生成已改為事件觸發模式
+        # self.auto_push_leaderboard_to_github.start()  # 📤 ⏸️ 暫停：網頁開發的部分先停用
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
         print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
         print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
