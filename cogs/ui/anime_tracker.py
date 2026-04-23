@@ -1124,7 +1124,7 @@ class AnimeTracker(commands.Cog):
         
         self.task_started = False
         self.bootstrap_completed = False
-        self.scheduler = None  # APScheduler 實例（在 cog_load 中初始化）
+        self.scheduler = None  # APScheduler 實例（可選）
         
         # 跟踪動畫的檢查狀態（單一窗口檢查）
         # 格式: {"HH:MM": {"checked": bool, "found": bool, "start_time": datetime}}
@@ -1133,8 +1133,8 @@ class AnimeTracker(commands.Cog):
         # 週統計發送追蹤（防止重複發送）
         self.last_weekly_stats_sent = None  # 上次發送週統計的日期
         
-        # 注：任務將在 cog_load 中由 APScheduler 自動啟動
-        logger.info("📺 [AnimeTracker.__init__] 任務將在 cog_load 中由 APScheduler 啟動")
+        # 注：任務將在 cog_load 中由 @tasks.loop 自動啟動
+        logger.info("📺 [AnimeTracker.__init__] 任務將在 cog_load 中由 @tasks.loop 啟動")
         
         logger.info("📺 [AnimeTracker.__init__] AnimeTracker Cog 初始化完成")
         logger.info(f"📺 Bot 已就緒? {bot.is_ready()}")
@@ -1143,76 +1143,44 @@ class AnimeTracker(commands.Cog):
         print("[ANIME_INIT_COMPLETE] ✅ AnimeTracker.__init__ 執行完成", flush=True)
         sys.stdout.flush()
         logger.info("=" * 50)
-        
-        # 初始化 APScheduler（在 __init__ 中直接啟動）
-        print("[ANIME_SCHEDULER_INIT] 🚀 準備初始化 APScheduler", flush=True)
-        sys.stdout.flush()
-        try:
-            from apscheduler.schedulers.asyncio import AsyncIOScheduler
-            self.scheduler = AsyncIOScheduler()
-            self.scheduler.add_job(
-                self.check_new_anime,
-                'cron',
-                hour='*',
-                minute=[5, 10, 15, 20, 25, 30],
-                id='check_anime_task',
-                replace_existing=True,
-                max_instances=1
-            )
-            self.scheduler.start()
-            print("[ANIME_SCHEDULER_INIT] ✅ APScheduler 已啟動", flush=True)
-            sys.stdout.flush()
-            logger.info("✅ [AnimeTracker.__init__] APScheduler 已在 __init__ 中啟動")
-        except Exception as e:
-            print(f"[ANIME_SCHEDULER_ERROR] ❌ APScheduler 初始化失敗: {e}", flush=True)
-            logger.error(f"❌ [AnimeTracker.__init__] APScheduler 初始化失敗: {e}", exc_info=True)
-            sys.stdout.flush()
     
     async def cog_load(self):
-        """Cog 加載時啟動任務（Discord.py 支持此選項卡）"""
+        """Cog 加載時啟動任務"""
         logger.info("=" * 50)
         logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
         try:
-            # 首先恢復舊消息的 view
-            logger.info("🎬 [AnimeTracker.cog_load] 準備恢復舊消息 view...")
+            # 恢復舊消息的 view
             await self._restore_old_message_views()
             
-            # 初始化 APScheduler（只在精確時刻觸發）
-            logger.info("📺 [AnimeTracker.cog_load] 準備初始化 APScheduler...")
-            try:
-                from apscheduler.schedulers.asyncio import AsyncIOScheduler
-                
-                if self.scheduler is None:
-                    self.scheduler = AsyncIOScheduler()
-                    logger.info("📺 [AnimeTracker.cog_load] 新建 AsyncIOScheduler")
-                    
-                    # 添加精確時刻的任務（只在 +5, 10, 15, 20, 25, 30 分鐘點執行）
-                    self.scheduler.add_job(
-                        self.check_new_anime,
-                        'cron',
-                        hour='*',
-                        minute=[5, 10, 15, 20, 25, 30],
-                        id='check_anime_task',
-                        replace_existing=True,
-                        max_instances=1  # 防止重複執行
-                    )
-                    logger.info("✅ [AnimeTracker.cog_load] 精確時刻任務已註冊 (+5, 10, 15, 20, 25, 30 分)")
-                    
-                    # 啟動 scheduler
-                    self.scheduler.start()
-                    logger.info("✅ [AnimeTracker.cog_load] APScheduler 已啟動")
-                else:
-                    logger.info("⚠️ [AnimeTracker.cog_load] Scheduler 已存在，跳過重複初始化")
-                    
-                self.task_started = True
-            except ImportError as e:
-                logger.error(f"❌ [AnimeTracker.cog_load] apscheduler 未安裝：{e}")
-                raise
-            except Exception as e:
-                logger.error(f"❌ [AnimeTracker.cog_load] APScheduler 初始化失敗：{e}", exc_info=True)
-                raise
+            # 啟動動畫檢查任務
+            if not self.check_new_anime.is_running():
+                logger.info("🚀 [AnimeTracker.cog_load] 啟動 check_new_anime 任務")
+                self.check_new_anime.start()
+                logger.info("✅ [AnimeTracker.cog_load] check_new_anime 已啟動")
+            
+            # 啟動週統計任務
+            if not self.send_weekly_stats.is_running():
+                logger.info("🚀 [AnimeTracker.cog_load] 啟動 send_weekly_stats 任務")
+                self.send_weekly_stats.start()
+                logger.info("✅ [AnimeTracker.cog_load] send_weekly_stats 已啟動")
         except Exception as e:
             logger.error(f"❌ [AnimeTracker.cog_load] 任務啟動失敗: {e}", exc_info=True)
+        logger.info("=" * 50)
+    
+    def cog_unload(self):
+        """Cog 卸載時停止任務"""
+        logger.info("=" * 50)
+        logger.info("🛑 [AnimeTracker.cog_unload] cog_unload() 被調用")
+        try:
+            if self.check_new_anime.is_running():
+                self.check_new_anime.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] check_new_anime 已停止")
+            
+            if self.send_weekly_stats.is_running():
+                self.send_weekly_stats.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] send_weekly_stats 已停止")
+        except Exception as e:
+            logger.error(f"❌ [AnimeTracker.cog_unload] 任務停止失敗: {e}", exc_info=True)
         logger.info("=" * 50)
     
     async def _restore_old_message_views(self):
@@ -1754,15 +1722,16 @@ class AnimeTracker(commands.Cog):
         
         return vote_view if vote_view.children else None
     
+    @tasks.loop(minutes=1)  # 臨時恢復：每分鐘檢查，但邏輯上只在特定分鐘點執行
     async def check_new_anime(self):
         """
-        單一窗口檢查新番 - 在精確時刻點 (+5, 10, 15, 20, 25, 30 分鐘) 檢查一次
+        單一窗口檢查新番 - 在預定時刻 +3~+32 分鐘窗口檢查一次
         
         工作流程：
         1. 獲取 newAnimeSchedule 與預期檢查時刻
-        2. 對於每個預期時刻，在精確時刻點進行檢查
+        2. 對於每個預期時刻，在 +3~+32 分鐘窗口進行檢查
         3. 每個預定時刻的動畫只會戳一次 API（效率優先）
-        4. APScheduler 在精確時刻點觸發（零空轉成本）
+        4. 每分鐘運行一次，在目標窗口內執行檢查
         """
         now = datetime.now(TW_TZ)
         
@@ -1852,6 +1821,12 @@ class AnimeTracker(commands.Cog):
         
         except Exception as e:
             logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
+    
+    @check_new_anime.before_loop
+    async def before_check_new_anime(self):
+        """等待 bot 就緒才開始檢查動畫"""
+        await self.bot.wait_until_ready()
+        logger.info("✅ [check_new_anime] Bot 已就緒，開始檢查新番")
     
     async def _check_and_send_anime(self, scheduled_time_str: str, channel) -> bool:
         """
