@@ -708,14 +708,12 @@ class StockRoomView(discord.ui.View):
         
         view = StockSelectionView(self)
         
-        # 發送新的私人訊息（不編輯原來的回應）
-        if is_new_message or not interaction.response.is_done():
-            msg = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-            self.current_message = msg
-        else:
-            # 如果已經有過一次 defer/response，就用 followup 發送
-            msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            self.current_message = msg
+        # 統一使用 followup.send() 確保獲得 discord.Message 對象（可編輯）
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        
+        msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        self.current_message = msg
     
     async def update_selection_view(self, interaction: discord.Interaction):
         """更新商品選擇視圖（編輯現有訊息）"""
@@ -736,13 +734,29 @@ class StockRoomView(discord.ui.View):
         
         view = StockSelectionView(self, self.asset_class)
         
-        await interaction.response.defer(ephemeral=True)
-        # 編輯現有訊息
+        # 編輯現有訊息或發送新訊息
         if self.current_message:
             try:
-                await self.current_message.edit(embed=embed, view=view)
-            except:
-                pass
+                # 確保 current_message 有 edit() 方法
+                if hasattr(self.current_message, 'edit'):
+                    await self.current_message.edit(embed=embed, view=view)
+                else:
+                    # 如果不支持 edit()，發送新訊息
+                    if not interaction.response.is_done():
+                        await interaction.response.defer(ephemeral=True)
+                    msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                    self.current_message = msg
+            except Exception as e:
+                logger.warning(f"⚠️ 編輯消息失敗: {e}，發送新消息")
+                if not interaction.response.is_done():
+                    await interaction.response.defer(ephemeral=True)
+                msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                self.current_message = msg
+        else:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+            msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            self.current_message = msg
     
     async def show_selection_view_followup(self, interaction: discord.Interaction):
         """使用 followup 發送商品選擇視圖（用於已 defer 的情況）"""
@@ -777,7 +791,10 @@ class StockRoomView(discord.ui.View):
         try:
             price = await fetch_price(symbol)
             if price is None:
-                await interaction.response.send_message("❌ 無法取得該股票價格", ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 無法取得該股票價格", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 無法取得該股票價格", ephemeral=True)
                 return
             
             self.selected_symbol = symbol
@@ -806,13 +823,12 @@ class StockRoomView(discord.ui.View):
             embed = self._build_detail_embed(symbol, price, chart_url, avg_cost, balance)
             view = StockDetailView(self, symbol, price)
             
-            # 發送新的私人訊息
-            if is_new_message or not interaction.response.is_done():
-                msg = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-                self.current_message = msg
-            else:
-                msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-                self.current_message = msg
+            # 統一使用 followup.send() 確保獲得 discord.Message 對象
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+            
+            msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            self.current_message = msg
         
         except Exception as e:
             logger.error(f"❌ 顯示股票詳細失敗: {e}")
@@ -885,17 +901,27 @@ class StockRoomView(discord.ui.View):
             if self.current_message:
                 try:
                     logger.info(f"📝 [UPDATE] 編輯訊息 ID: {self.current_message.id}")
-                    await self.current_message.edit(embed=embed, view=view)
-                    logger.info(f"✅ [UPDATE] 訊息編輯成功")
+                    # 確保 current_message 是 discord.Message 對象
+                    if hasattr(self.current_message, 'edit'):
+                        await self.current_message.edit(embed=embed, view=view)
+                        logger.info(f"✅ [UPDATE] 訊息編輯成功")
+                    else:
+                        logger.warning(f"⚠️ [UPDATE] current_message 不支持 edit()，重新發送訊息")
+                        msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                        self.current_message = msg
                 except Exception as edit_err:
                     logger.error(f"❌ [UPDATE] 編輯訊息失敗: {edit_err}")
+                    # 失敗時重新發送訊息
+                    try:
+                        msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                        self.current_message = msg
+                        logger.info(f"✅ [UPDATE] 已發送新訊息 ID: {msg.id}")
+                    except Exception as send_err:
+                        logger.error(f"❌ [UPDATE] 發送訊息失敗: {send_err}")
             else:
                 logger.warning(f"⚠️ [UPDATE] 沒有可編輯的訊息（current_message 為 None）。發送新訊息...")
                 try:
-                    if not interaction.response.is_done():
-                        msg = await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-                    else:
-                        msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                    msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
                     self.current_message = msg
                     logger.info(f"✅ [UPDATE] 已發送新訊息 ID: {msg.id}")
                 except Exception as send_err:
