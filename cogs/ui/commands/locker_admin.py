@@ -181,9 +181,9 @@ class LockerAdminCog(commands.Cog):
                     return
                 
                 target_channel = interaction.guild.get_channel(int(forum_channel_id))
-                if not isinstance(target_channel, discord.TextChannel):
+                if not isinstance(target_channel, (discord.TextChannel, discord.ForumChannel)):
                     await interaction.followup.send(
-                        f"❌ 頻道選擇錯誤，必須是文字頻道",
+                        f"❌ 頻道選擇錯誤，必須是文字頻道或論壇頻道",
                         ephemeral=True
                     )
                     return
@@ -343,9 +343,9 @@ class LockerAdminCog(commands.Cog):
                 return
             
             target_channel = interaction.guild.get_channel(int(forum_channel_id))
-            if not isinstance(target_channel, discord.TextChannel):
+            if not isinstance(target_channel, (discord.TextChannel, discord.ForumChannel)):
                 await interaction.followup.send(
-                    f"❌ 頻道選擇錯誤，必須是文字頻道",
+                    f"❌ 頻道選擇錯誤，必須是文字頻道或論壇頻道",
                     ephemeral=True
                 )
                 return
