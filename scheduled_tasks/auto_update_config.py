@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-🔄 隧道 URL 自動監控與 config.json 自動更新
-只有一個工作：不斷監控隧道 URL 變更 → 自動更新 config.json
+🔄 隧道 URL 自動監控、config.json 自動更新 + GitHub Webhook 自動更新
+功能:
+1. 監控隧道 URL 變更
+2. 自動更新 config.json
+3. 自動更新 GitHub webhook 配置
+4. 自動 git commit 和 push
 """
 
 import subprocess
@@ -9,8 +13,11 @@ import json
 import re
 import time
 import sys
+import os
+import requests
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
 
 def log(msg):
     """帶時間戳的日誌"""
@@ -84,6 +91,63 @@ def git_commit_changes(new_url):
     except Exception as e:
         log(f"⚠️ Git 操作失敗: {e}")
 
+def update_github_webhook(new_url):
+    """自動更新 GitHub Webhook URL
+    
+    需要環境變數:
+    - GITHUB_TOKEN: GitHub Personal Access Token（需要 repo/admin:repo_hook 權限）
+    - GITHUB_REPO: 倉庫名（格式: owner/repo）
+    - GITHUB_WEBHOOK_ID: Webhook ID（可從 repo 設定找到）
+    """
+    try:
+        github_token = os.getenv("GITHUB_TOKEN")
+        github_repo = os.getenv("GITHUB_REPO", "chenkankan1103/kkgroup")
+        webhook_id = os.getenv("GITHUB_WEBHOOK_ID")
+        
+        if not github_token:
+            log("⚠️ 未設置 GITHUB_TOKEN，跳過 webhook 更新")
+            return False
+        
+        if not webhook_id:
+            log("⚠️ 未設置 GITHUB_WEBHOOK_ID，跳過 webhook 更新")
+            return False
+        
+        # 構建 webhook payload URL
+        webhook_url = f"{new_url}/webhook/github"
+        
+        # GitHub API URL
+        api_url = f"https://api.github.com/repos/{github_repo}/hooks/{webhook_id}"
+        
+        # 請求 header
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        # 更新 webhook 的 payload URL
+        payload = {
+            "config": {
+                "url": webhook_url,
+                "content_type": "json",
+                "secret": os.getenv("GITHUB_WEBHOOK_SECRET", "")
+            },
+            "active": True
+        }
+        
+        response = requests.patch(api_url, json=payload, headers=headers, timeout=10)
+        
+        if response.status_code in [200, 201]:
+            log(f"✅ GitHub Webhook 已更新: {webhook_url}")
+            return True
+        else:
+            error_msg = response.text[:200]
+            log(f"❌ GitHub Webhook 更新失敗 ({response.status_code}): {error_msg}")
+            return False
+            
+    except Exception as e:
+        log(f"⚠️ 更新 GitHub Webhook 異常: {e}")
+        return False
+
 def main():
     log("=" * 60)
     log("🚀 隧道 URL 自動監控服務已啟動")
@@ -108,6 +172,10 @@ def main():
                     if update_config_json(current_url):
                         # 提交 Git
                         git_commit_changes(current_url)
+                        
+                        # 更新 GitHub Webhook（如果配置了）
+                        update_github_webhook(current_url)
+                        
                         last_url = current_url
                         wait_count = 0
                         log("✅ 更新完成，現在持續監控...")
