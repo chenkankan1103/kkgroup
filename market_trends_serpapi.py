@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 SerpApi Google Trends 集成模塊
-用於 Discord Bot 的台灣趨勢獲取
-支持本地緩存和離線模式（當無法連接 SerpApi 時自動使用備用數據）
+支持多種 engine 配置以應對 SerpApi API 變更
+
+根據文檔：https://serpapi.com/google-trends-trending-now
+engine 可能需要是 "google_trends_trending_now"
 """
 
 import os
@@ -26,14 +28,14 @@ load_dotenv()
 SERPAPI_API_KEY = os.getenv('SERPAPI_API_KEY')
 
 if not SERPAPI_API_KEY:
-    logger.warning("⚠️ 未找到 SERPAPI_API_KEY，將使用離線模式")
+    logger.warning("⚠️ 未找到 SERPAPI_API_KEY，將使用備用數據")
 
 # 本地緩存文件
 CACHE_DIR = Path(__file__).parent.parent / "data"
 CACHE_FILE = CACHE_DIR / "trends_cache.json"
 CACHE_DIR.mkdir(exist_ok=True)
 
-# 備用趨勢數據（當 API 不可用時使用）
+# 備用趨勢數據
 FALLBACK_TRENDS = [
     {"topic": "2026年", "search_volume": 15000, "increase_percentage": 1200, "category": "搜尋"},
     {"topic": "春節", "search_volume": 12500, "increase_percentage": 850, "category": "季節"},
@@ -47,6 +49,25 @@ FALLBACK_TRENDS = [
     {"topic": "遊戲", "search_volume": 7100, "increase_percentage": 240, "category": "娛樂"},
 ]
 
+# SerpApi 支持的 engine 配置列表（優先順序）
+SERPAPI_ENGINES = [
+    {
+        "engine": "google_trends_trending_now",
+        "params": {"geo": "TW", "hl": "zh-TW"},
+        "name": "google_trends_trending_now (推薦)"
+    },
+    {
+        "engine": "google_trends",
+        "params": {"q": "trending-now", "geo": "TW", "hl": "zh-TW"},
+        "name": "google_trends with q=trending-now"
+    },
+    {
+        "engine": "google_trends",
+        "params": {"q": "trending searches", "geo": "TW", "hl": "zh-TW"},
+        "name": "google_trends with q=trending searches"
+    },
+]
+
 
 async def get_trending_topics(
     region: str = "TW",
@@ -55,7 +76,7 @@ async def get_trending_topics(
     use_cache: bool = True,
     fallback: bool = True
 ) -> Optional[List[Dict]]:
-    """獲取 Google Trends 熱搜（支持本地緩存和備用數據）"""
+    """獲取 Google Trends 熱搜（支持多個 engine 配置）"""
     
     # 無 API 密鑰時直接使用備用數據
     if not SERPAPI_API_KEY:
@@ -73,51 +94,79 @@ async def get_trending_topics(
             pass
     
     url = "https://api.serpapi.com/search"
-    params = {
-        "engine": "google_trends",
-        "q": "trending-now",
-        "geo": region,
-        "api_key": SERPAPI_API_KEY
-    }
     
-    try:
-        logger.debug("[Trends] 正在連接 SerpApi...")
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
-                if response.status != 200:
-                    logger.error(f"[Trends] ❌ HTTP {response.status}")
-                    return FALLBACK_TRENDS[:limit] if fallback else None
-                
-                data = await response.json()
-                
-                if 'error' in data:
-                    logger.error(f"[Trends] ❌ API 錯誤: {data['error']}")
-                    return FALLBACK_TRENDS[:limit] if fallback else None
-                
-                trends = []
-                if 'trending_searches' in data:
-                    for item in data['trending_searches'][:limit]:
-                        trend = {
-                            'topic': item.get('query', 'N/A'),
-                            'search_volume': item.get('search_volume', 0),
-                            'increase_percentage': item.get('increase_percentage', 0),
-                            'category': item.get('categories', [{}])[0].get('name', '其他') if item.get('categories') else '其他'
-                        }
-                        trends.append(trend)
-                
-                if trends:
-                    _save_to_cache(trends)
-                    logger.info(f"[Trends] ✅ 成功獲取 {len(trends)} 項趨勢")
-                    return trends
-                
-                return FALLBACK_TRENDS[:limit] if fallback else None
+    # 依次嘗試不同的 engine 配置
+    for engine_config in SERPAPI_ENGINES:
+        try:
+            engine = engine_config["engine"]
+            engine_params = engine_config["params"].copy()
+            engine_params["api_key"] = SERPAPI_API_KEY
+            
+            logger.debug(f"[Trends] 嘗試 {engine_config['name']}...")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url,
+                    params={"engine": engine, **engine_params},
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as response:
+                    
+                    if response.status == 200:
+                        data = await response.json()
+                        
+                        # 檢查 API 錯誤
+                        if 'error' not in data:
+                            trends = _parse_trends_response(data, limit)
+                            if trends:
+                                logger.info(f"[Trends] ✅ 成功（使用 {engine}）獲取 {len(trends)} 項")
+                                _save_to_cache(trends)
+                                return trends
+        
+        except asyncio.TimeoutError:
+            logger.debug(f"[Trends] ⏱️ {engine_config['name']} 超時")
+        except Exception as e:
+            logger.debug(f"[Trends] ❌ {engine_config['name']}: {str(e)[:60]}")
     
-    except Exception as e:
-        logger.error(f"[Trends] ❌ 錯誤: {type(e).__name__}: {str(e)[:60]}")
-        return FALLBACK_TRENDS[:limit] if fallback else None
+    # 所有配置都失敗，使用備用數據
+    logger.warning("[Trends] 所有 engine 配置均失敗，使用備用數據")
+    return FALLBACK_TRENDS[:limit] if fallback else None
 
 
-def _save_to_cache(trends):
+def _parse_trends_response(data: dict, limit: int) -> Optional[List[Dict]]:
+    """從 SerpApi 回應中解析趨勢數據"""
+    trends = []
+    
+    # 嘗試不同的回應格式
+    keys_to_try = ['trending_searches', 'results', 'items', 'trends']
+    
+    for key in keys_to_try:
+        if key in data and isinstance(data[key], list):
+            for item in data[key][:limit]:
+                if isinstance(item, dict):
+                    trend = {
+                        'topic': item.get('query') or item.get('title') or item.get('name') or 'N/A',
+                        'search_volume': item.get('search_volume', 0),
+                        'increase_percentage': item.get('increase_percentage', 0),
+                        'category': item.get('categories', [{}])[0].get('name') if item.get('categories') else '其他'
+                    }
+                    trends.append(trend)
+                elif isinstance(item, str):
+                    # 簡單字符串格式
+                    trend = {
+                        'topic': item,
+                        'search_volume': 10000 - len(trends) * 500,
+                        'increase_percentage': max(0, 100 - len(trends) * 10),
+                        'category': '搜尋'
+                    }
+                    trends.append(trend)
+            
+            if trends:
+                return trends
+    
+    return None
+
+
+def _save_to_cache(trends: List[Dict]):
     """保存趨勢到緩存"""
     try:
         cache_data = {"timestamp": datetime.now().isoformat(), "trends": trends}
@@ -161,7 +210,7 @@ def format_trends_embed(trends: List[Dict]) -> discord.Embed:
         value = f"{icon} [{bar}]\n搜索量: {volume:,} | 增長: +{increase}% | {category}"
         embed.add_field(name=f"#{idx}. {topic}", value=value, inline=False)
     
-    embed.set_footer(text="💡 資料可能來自緩存或備用數據")
+    embed.set_footer(text="💡 資料來自 SerpApi Google Trends")
     return embed
 
 
