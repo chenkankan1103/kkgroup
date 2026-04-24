@@ -226,81 +226,151 @@ try:
     time.sleep(wait_time)
     
     # ============================================================================
-    # 3. 提取趨勢
+    # 3. 提取趨勢 - 改進方案
     # ============================================================================
     
-    # 使用 Selenium 直接從 JavaScript 加載的 DOM 中提取
+    print("\n🔍 開始提取趨勢（多方法組合）...")
     trends = []
     
-    # 方法 1: 查找所有可點擊元素，過濾出趨勢
-    clickable_elements = driver.find_elements(By.CSS_SELECTOR, "a, [role='button'], [onclick]")
+    # 步驟 1: 模擬用戶操作 - 滾動頁面讓 JS 加載更多內容
+    print("📜 模擬滾動操作，觸發動態加載...")
+    for scroll_step in range(3):
+        driver.execute_script("window.scrollBy(0, 500);")
+        time.sleep(random.uniform(1, 2))
     
-    print(f"\n找到 {len(clickable_elements)} 個可點擊元素")
+    # 回到頁面頂部
+    driver.execute_script("window.scrollTo(0, 0);")
+    time.sleep(1)
     
-    # ============================================================================
-    # 4. 異常告警 - 監控反爬蟲檢測信號
-    # ============================================================================
-    if len(clickable_elements) < 20:
-        logger.warning(f"🚨 異常告警：可點擊元素過少 ({len(clickable_elements)}) - 可能被反爬蟲檢測或頁面加載不完全")
-        # 不中斷執行，繼續嘗試提取
-    
-    # 排除的 UI 文本（包括具體的 UI 描述）
-    excluded_patterns = ['為你推薦', '新串文', '搜尋', '通知', '動態', '個人檔案', 
-                        '洞察報告', '已儲存', '編輯', '追蹤', '登出', '登入',
-                        '附帶原始貼文', '大家討論', '精選最新', '篩選取消']
-    
-    # 提取趨勢
-    for idx, elem in enumerate(clickable_elements):
+    # 步驟 2: 等待頁面穩定（讓所有 JS 執行完成）
+    print("⏳ 等待頁面穩定...")
+    for i in range(5):
         try:
-            text = elem.text.strip()
-            
-            if not text or len(text) < 3:
-                continue
-            
-            # 跳過 UI 元素
-            if any(pattern in text for pattern in excluded_patterns):
-                continue
-            
-            # 只關心包含中文的元素（趨勢通常是中文）
-            if not any('\u4e00' <= c <= '\u9fff' for c in text):
-                continue
-            
-            # 只取第一行作為趨勢標題（忽略詳細描述和計數）
-            first_line = text.split('\n')[0].strip()
-            
-            # 再次檢查是否有效
-            if not first_line or len(first_line) < 3 or len(first_line) > 150:
-                continue
-            
-            if first_line not in [t['trend'] for t in trends]:
-                print(f"  找到趨勢 {len(trends)+1}: {first_line[:60]}")
-                trends.append({"trend": first_line, "platform": "threads"})
-                
-                if len(trends) >= 5:
-                    break
-        except Exception as e:
-            pass
+            driver.find_elements(By.TAG_NAME, "button")  # 等待至少有按鈕
+            break
+        except:
+            time.sleep(1)
     
-    # 如果用 Selenium 方法沒找到足夠的趨勢，嘗試 BeautifulSoup + regex
-    if len(trends) < 5:
-        print("\n📊 使用 BeautifulSoup 備用方法...")
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        all_text = soup.get_text()
+    # 步驟 3: 智能提取趨勢
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    
+    # 定義排除的關鍵字
+    excluded_keywords = [
+        '使用', 'Instagram', '帳號', '繼續', '登入', '服務條款',
+        '隱私政策', 'Cookie', '政策', '回報問題', '編輯', '追蹤',
+        '按鈕', '連結', '點擊', '搜尋', '通知', '動態', '個人檔案',
+        '首頁', '訊息', '書籤', '設定', '更多', '分享', '評論',
+        'Threads', 'Meta', 'Facebook', '廣告', '推薦', '為你推薦',
+        '精選', '熱門', '最新', '活動', '活躍', '用戶', '追蹤者'
+    ]
+    
+    # 定義趨勢的特徵
+    def is_likely_trend(text):
+        """判斷文本是否看起來像趨勢"""
+        if not text or len(text) < 2 or len(text) > 50:
+            return False
         
-        # 分割成行並尋找合理長度的中文文本
-        lines = [line.strip() for line in all_text.split('\n') if line.strip()]
+        # 排除關鍵字
+        if any(kw in text for kw in excluded_keywords):
+            return False
         
-        for line in lines:
-            if (5 < len(line) < 150 and
-                any('\u4e00' <= c <= '\u9fff' for c in line) and
-                not any(pattern in line for pattern in excluded_patterns) and
-                line not in [t['trend'] for t in trends]):
-                
-                print(f"  找到趨勢 {len(trends)+1}: {line[:60]}")
-                trends.append({"trend": line, "platform": "threads"})
-                
-                if len(trends) >= 5:
-                    break
+        # 必須包含中文
+        if not any('\u4e00' <= c <= '\u9fff' for c in text):
+            return False
+        
+        # 不能是單個字
+        if len(text) == 1:
+            return False
+        
+        return True
+    
+    # 方法 1: 從所有文本節點提取
+    print("\n📍 方法 1: 文本節點掃描...")
+    text_nodes = []
+    for elem in soup.find_all(text=True):
+        text = elem.strip()
+        if is_likely_trend(text):
+            text_nodes.append(text)
+    
+    print(f"   找到 {len(text_nodes)} 個候選文本")
+    
+    # 方法 2: 從特定容器提取
+    print("\n📍 方法 2: 容器分析...")
+    
+    containers = [
+        soup.find_all('button'),
+        soup.find_all('a'),
+        soup.find_all('span'),
+        soup.find_all('div', {'role': 'button'}),
+    ]
+    
+    for container_list in containers:
+        for container in container_list:
+            text = container.get_text().strip()
+            if is_likely_trend(text):
+                text_nodes.append(text)
+    
+    # 去重
+    unique_trends = list(set(text_nodes))
+    print(f"   找到 {len(unique_trends)} 個唯一候選詞彙")
+    
+    # 方法 3: 排序並選擇最可能的趨勢
+    print("\n📍 方法 3: 趨勢評分...")
+    
+    def score_trend(text):
+        """給趨勢評分（看起來越像趨勢分數越高）"""
+        score = 0
+        
+        # 長度在 5-20 字最好
+        if 5 <= len(text) <= 20:
+            score += 10
+        
+        # 包含數字的通常是熱度或話題
+        if any(c.isdigit() for c in text):
+            score += 3
+        
+        # 常見話題符號
+        if '#' in text or '@' in text:
+            score += 5
+        
+        # 常見詞尾
+        if any(text.endswith(end) for end in ['?', '！', '!', '嗎', '了', '中', '過', '著']):
+            score += 2
+        
+        # 避免太簡短的
+        if len(text) < 4:
+            score -= 10
+        
+        return score
+    
+    scored_trends = [(t, score_trend(t)) for t in unique_trends]
+    scored_trends.sort(key=lambda x: x[1], reverse=True)
+    
+    print("   📊 排名前 10 的候選趨勢:")
+    for i, (trend, score) in enumerate(scored_trends[:10], 1):
+        print(f"      {i}. [{score}分] {trend}")
+    
+    # 方法 4: 最終篩選
+    print("\n📍 方法 4: 最終篩選...")
+    final_trends = []
+    
+    for trend, score in scored_trends:
+        # 至少要 2 分才算趨勢
+        if score >= 2 and len(final_trends) < 5:
+            # 再次檢查不是 UI 元素
+            if not any(ui in trend for ui in ['使用', '登入', '帳號', '服務', '條款', '隱私', '回報']):
+                final_trends.append({"trend": trend, "platform": "threads"})
+                print(f"  ✅ 確認趨勢 {len(final_trends)}: {trend}")
+    
+    # 如果還是找不到，用文本節點作為備用
+    if len(final_trends) < 5:
+        print("\n⚠️  備用方案：使用文本節點...")
+        for trend in text_nodes[:5]:
+            if trend not in [t['trend'] for t in final_trends]:
+                final_trends.append({"trend": trend, "platform": "threads"})
+                print(f"  ✅ 備用趨勢 {len(final_trends)}: {trend}")
+    
+    trends = final_trends
     
     # 顯示結果
     if trends:
