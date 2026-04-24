@@ -125,54 +125,72 @@ def login_to_threads(max_retries=3):
                     logger.warning("⚠️ Cookie 已過期，需要重新登入")
                     os.remove(cookies_file)
             
-            # 2. 手動登入
-            logger.info("📌 需要手動登入 (首次或 Cookie 過期)")
-            driver.get("https://www.threads.com/login")
-            print("\n" + "=" * 60)
-            print("🔓 請在瀏覽器中手動登入，完成後按 Enter 鍵...")
-            print("=" * 60 + "\n")
-            input()
-            
-            # 添加隨機延遲
-            wait_time = random.uniform(2, 3)
-            logger.info(f"⏳ 等待 {wait_time:.1f} 秒，頁面加載...")
-            time.sleep(wait_time)
-            
-            # 驗證登入 - 檢查多個元素來確認登入成功
-            login_verified = False
-            
-            # 方法 1: 檢查是否在登入頁面（如果 URL 不包含 login，則說明登入成功）
-            current_url = driver.current_url
-            if "login" not in current_url and "threads.com" in current_url:
-                logger.info(f"✅ URL 變化確認登入成功 (當前: {current_url[:50]}...)")
-                login_verified = True
-            
-            # 方法 2: 檢查特定元素
-            if not login_verified:
-                try:
-                    driver.find_element(By.XPATH, "//a[contains(@href, '/profile')] | //div[contains(@aria-label, 'Profile')]")
-                    logger.info("✅ 檢測到個人檔案連結")
-                    login_verified = True
-                except:
-                    pass
-            
-            # 方法 3: 檢查導航元素
-            if not login_verified:
-                try:
-                    driver.find_element(By.XPATH, "//nav | //svg")
-                    logger.info("✅ 檢測到主頁面元素")
-                    login_verified = True
-                except:
-                    pass
-            
-            if login_verified:
-                # 保存 cookies
-                with open(cookies_file, 'w') as f:
-                    json.dump(driver.get_cookies(), f, indent=2)
-                logger.info("💾 登入狀態已保存")
-                return True
+            # 2. 首次登入 - 等待用戶在瀏覽器中手動登入
             else:
-                raise Exception("登入狀態驗證失敗")
+                logger.info("📌 Cookies 不存在，等待首次登入...")
+                
+                # 檢查是否在 Headless 模式（VM 環境）
+                if IS_HEADLESS:
+                    logger.error("❌ Headless 模式下無法進行首次登入。請先在本地環境中運行爬蟲以生成 cookies。")
+                    raise Exception("Headless 環境下缺少有效的 cookies 文件")
+                
+                # GUI 模式：訪問 Threads 並等待用戶登入
+                driver.get("https://www.threads.com")
+                logger.info("⏳ 等待用戶在瀏覽器中登入... (120 秒超時)")
+                
+                # 等待用戶登入（120 秒 - 給足夠時間）
+                try:
+                    wait_time = 0
+                    max_wait = 120  # 增加到 120 秒
+                    check_interval = 3
+                    
+                    while wait_time < max_wait:
+                        time.sleep(check_interval)
+                        wait_time += check_interval
+                        
+                        try:
+                            # 方法 1: 檢查 URL 是否變化（從登入頁面進入主頁）
+                            current_url = driver.current_url
+                            if 'threads.com' in current_url and 'login' not in current_url.lower():
+                                logger.info(f"✅ 登入成功！(URL 變化: {current_url[:50]}...)")
+                                
+                                # 等待 3 秒讓頁面穩定
+                                time.sleep(3)
+                                
+                                # 保存 cookies
+                                with open(cookies_file, 'w') as f:
+                                    json.dump(driver.get_cookies(), f, indent=2)
+                                logger.info("💾 登入狀態已保存")
+                                return True
+                        except:
+                            pass
+                        
+                        # 每 20 秒提示一次
+                        if wait_time % 20 == 0:
+                            logger.info(f"⏳ 還在等待... ({wait_time}/{max_wait} 秒)")
+                    
+                    # 超時
+                    logger.error("❌ 等待登入超時（120 秒）")
+                    logger.error(f"最後 URL: {driver.current_url}")
+                    
+                    # 嘗試一次性保存（萬一已登入但檢測失敗）
+                    try:
+                        cookies = driver.get_cookies()
+                        if len(cookies) > 5:  # 如果有很多 cookies，可能已登入
+                            logger.warning("⚠️ 檢測到 Cookies，雖然 URL 檢查失敗，仍然嘗試保存")
+                            with open(cookies_file, 'w') as f:
+                                json.dump(cookies, f, indent=2)
+                            logger.info("💾 Cookies 已保存（基於 Cookie 數量判斷）")
+                            return True
+                    except:
+                        pass
+                    
+                    raise Exception("首次登入超時，請在瀏覽器中登入 Threads")
+                
+                except Exception as e:
+                    raise Exception(f"首次登入失敗: {str(e)}")
+            
+            # 此時應該已經返回或拋出異常
         
         except Exception as e:
             logger.error(f"❌ 登入失敗（嘗試 {attempt + 1}）: {e}")
@@ -184,29 +202,10 @@ def login_to_threads(max_retries=3):
                 return False
     
     return False
-    
-    # 訪問搜尋頁面
-    print("\n🔍 訪問搜尋頁面...")
-    driver.get("https://www.threads.com/search/")
-    
-    # 添加隨機延遲 - 防止檢測
-    wait_time = random.uniform(3, 5)
-    logger.info(f"⏳ 隨機延遲 {wait_time:.1f} 秒，等待頁面加載...")
-    time.sleep(wait_time)
-    
-    # 使用 Selenium 等待，直到找到可點擊的趨勢容器
-    print("⏳ 等待趨勢容器加載...")
-    try:
-        # 等待任何包含中文的可點擊元素
-        wait.until(EC.presence_of_all_elements_located((By.XPATH, "//*[contains(text(), '傳說')]|//*[contains(text(), '楓')]|//*[contains(text(), '洪')]")))
-        print("✓ 趨勢容器已加載")
-    except Exception as wait_err:
-        # 即使等待超時也繼續（可能趨勢已加載但文本不同）
-        logger.warning(f"⚠️ 等待特定趨勢超時（但可能已加載其他趨勢）: {wait_err}")
-    
-    # 添加隨機延遲 - 防止檢測
-    wait_time = random.uniform(1.5, 3)
-    time.sleep(wait_time)
+
+# ============================================================================
+# 主程式入口
+# ============================================================================
 
 try:
     # ============================================================================
@@ -216,7 +215,18 @@ try:
         raise Exception("❌ 無法登入 Threads，請檢查帳號或網絡連接")
     
     # ============================================================================
-    # 2. 提取趨勢
+    # 2. 訪問搜尋頁面
+    # ============================================================================
+    print("\n🔍 訪問搜尋頁面...")
+    driver.get("https://www.threads.com/search/")
+    
+    # 添加隨機延遲 - 防止檢測
+    wait_time = random.uniform(3, 5)
+    logger.info(f"⏳ 隨機延遲 {wait_time:.1f} 秒，等待頁面加載...")
+    time.sleep(wait_time)
+    
+    # ============================================================================
+    # 3. 提取趨勢
     # ============================================================================
     
     # 使用 Selenium 直接從 JavaScript 加載的 DOM 中提取
@@ -228,7 +238,7 @@ try:
     print(f"\n找到 {len(clickable_elements)} 個可點擊元素")
     
     # ============================================================================
-    # 3. 異常告警 - 監控反爬蟲檢測信號
+    # 4. 異常告警 - 監控反爬蟲檢測信號
     # ============================================================================
     if len(clickable_elements) < 20:
         logger.warning(f"🚨 異常告警：可點擊元素過少 ({len(clickable_elements)}) - 可能被反爬蟲檢測或頁面加載不完全")
