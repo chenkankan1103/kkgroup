@@ -50,21 +50,22 @@ FALLBACK_TRENDS = [
 ]
 
 # SerpApi 支持的 engine 配置列表（優先順序）
+# 根據官方文檔：https://serpapi.com/google-trends-trending-now
 SERPAPI_ENGINES = [
     {
         "engine": "google_trends_trending_now",
-        "params": {"geo": "TW", "hl": "zh-TW"},
-        "name": "google_trends_trending_now (推薦)"
+        "params": {"geo": "taiwan", "hl": "zh-TW"},
+        "name": "google_trends_trending_now with geo=taiwan ✅"
     },
     {
-        "engine": "google_trends",
-        "params": {"q": "trending-now", "geo": "TW", "hl": "zh-TW"},
-        "name": "google_trends with q=trending-now"
+        "engine": "google_trends_trending_now",
+        "params": {"geo": "Taiwan", "hl": "zh-TW"},
+        "name": "google_trends_trending_now with geo=Taiwan (大寫)"
     },
     {
-        "engine": "google_trends",
-        "params": {"q": "trending searches", "geo": "TW", "hl": "zh-TW"},
-        "name": "google_trends with q=trending searches"
+        "engine": "google_trends_trending_now",
+        "params": {"geo": "TW"},
+        "name": "google_trends_trending_now with geo=TW"
     },
 ]
 
@@ -100,14 +101,21 @@ async def get_trending_topics(
         try:
             engine = engine_config["engine"]
             engine_params = engine_config["params"].copy()
-            engine_params["api_key"] = SERPAPI_API_KEY
+            
+            # 構建完整的請求參數
+            request_params = {
+                "engine": engine,
+                "api_key": SERPAPI_API_KEY,
+                **engine_params
+            }
             
             logger.debug(f"[Trends] 嘗試 {engine_config['name']}...")
+            logger.debug(f"[Trends] 參數: {{{', '.join(f'{k}: {v}' for k, v in request_params.items() if k != 'api_key')}}}")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     url,
-                    params={"engine": engine, **engine_params},
+                    params=request_params,
                     timeout=aiohttp.ClientTimeout(total=timeout)
                 ) as response:
                     
@@ -121,6 +129,8 @@ async def get_trending_topics(
                                 logger.info(f"[Trends] ✅ 成功（使用 {engine}）獲取 {len(trends)} 項")
                                 _save_to_cache(trends)
                                 return trends
+                        else:
+                            logger.debug(f"[Trends] API 錯誤: {data.get('error')}")
         
         except asyncio.TimeoutError:
             logger.debug(f"[Trends] ⏱️ {engine_config['name']} 超時")
@@ -136,34 +146,20 @@ def _parse_trends_response(data: dict, limit: int) -> Optional[List[Dict]]:
     """從 SerpApi 回應中解析趨勢數據"""
     trends = []
     
-    # 嘗試不同的回應格式
-    keys_to_try = ['trending_searches', 'results', 'items', 'trends']
+    # 官方文檔中的正確字段名稱
+    if 'trending_searches' in data and isinstance(data['trending_searches'], list):
+        for item in data['trending_searches'][:limit]:
+            if isinstance(item, dict):
+                # 根據官方文檔，字段應該是：query, search_volume, increase_percentage, categories
+                trend = {
+                    'topic': item.get('query') or item.get('title') or item.get('name') or 'N/A',
+                    'search_volume': item.get('search_volume', 0),
+                    'increase_percentage': item.get('increase_percentage', 0),
+                    'category': (item.get('categories', [{}])[0].get('name') if item.get('categories') else '其他')
+                }
+                trends.append(trend)
     
-    for key in keys_to_try:
-        if key in data and isinstance(data[key], list):
-            for item in data[key][:limit]:
-                if isinstance(item, dict):
-                    trend = {
-                        'topic': item.get('query') or item.get('title') or item.get('name') or 'N/A',
-                        'search_volume': item.get('search_volume', 0),
-                        'increase_percentage': item.get('increase_percentage', 0),
-                        'category': item.get('categories', [{}])[0].get('name') if item.get('categories') else '其他'
-                    }
-                    trends.append(trend)
-                elif isinstance(item, str):
-                    # 簡單字符串格式
-                    trend = {
-                        'topic': item,
-                        'search_volume': 10000 - len(trends) * 500,
-                        'increase_percentage': max(0, 100 - len(trends) * 10),
-                        'category': '搜尋'
-                    }
-                    trends.append(trend)
-            
-            if trends:
-                return trends
-    
-    return None
+    return trends if trends else None
 
 
 def _save_to_cache(trends: List[Dict]):
