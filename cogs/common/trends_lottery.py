@@ -533,6 +533,17 @@ class TrendsLotteryCog(commands.Cog):
         - 中3個：平分獎池
         """
         try:
+            # 檢查 lottery_system 是否已初始化
+            if self.lottery_system is None:
+                logger.error("❌ lottery_system 尚未初始化，無法執行投注")
+                embed = discord.Embed(
+                    title="❌ 系統尚未就緒",
+                    description="樂透系統正在初始化中，請稍後再試。\n如果問題持續，請聯繫管理員。",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
             user_id = interaction.user.id
             prediction = [trend1.lower(), trend2.lower(), trend3.lower()]
             
@@ -572,6 +583,15 @@ class TrendsLotteryCog(commands.Cog):
     async def view_history(self, interaction: discord.Interaction):
         """查看玩家的投注歷史"""
         try:
+            # 檢查 lottery_system 是否已初始化
+            if self.lottery_system is None:
+                logger.error("❌ lottery_system 尚未初始化，無法查看歷史")
+                await interaction.response.send_message(
+                    "❌ 系統尚未就緒，請稍後再試。",
+                    ephemeral=True
+                )
+                return
+            
             user_id = interaction.user.id
             bets = await self.lottery_system.get_user_bets(user_id)
             
@@ -615,6 +635,15 @@ class TrendsLotteryCog(commands.Cog):
     async def check_jackpot(self, interaction: discord.Interaction):
         """查看當前獎池信息"""
         try:
+            # 檢查 lottery_system 是否已初始化
+            if self.lottery_system is None:
+                logger.error("❌ lottery_system 尚未初始化，無法查看獎池")
+                await interaction.response.send_message(
+                    "❌ 系統尚未就緒，請稍後再試。",
+                    ephemeral=True
+                )
+                return
+            
             jackpot_info = await self.lottery_system.get_jackpot_info(self.current_round_id)
             
             embed = discord.Embed(
