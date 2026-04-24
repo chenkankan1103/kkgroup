@@ -51,21 +51,17 @@ FALLBACK_TRENDS = [
 
 # SerpApi 支持的 engine 配置列表（優先順序）
 # 根據官方文檔：https://serpapi.com/google-trends-trending-now
+# geo 應使用縮寫 (如 TW, US, BR等)，hl 用語言代碼
 SERPAPI_ENGINES = [
     {
         "engine": "google_trends_trending_now",
-        "params": {"geo": "taiwan", "hl": "zh-TW"},
-        "name": "google_trends_trending_now with geo=taiwan ✅"
-    },
-    {
-        "engine": "google_trends_trending_now",
-        "params": {"geo": "Taiwan", "hl": "zh-TW"},
-        "name": "google_trends_trending_now with geo=Taiwan (大寫)"
+        "params": {"geo": "TW", "hl": "zh-TW"},
+        "name": "google_trends_trending_now with geo=TW ✅"
     },
     {
         "engine": "google_trends_trending_now",
         "params": {"geo": "TW"},
-        "name": "google_trends_trending_now with geo=TW"
+        "name": "google_trends_trending_now with geo=TW (無 hl)"
     },
 ]
 
