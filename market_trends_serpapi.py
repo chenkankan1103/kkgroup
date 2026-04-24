@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SerpApi Google Trends 集成模塊
-支持多種 engine 配置以應對 SerpApi API 變更
+SerpApi Google Trends 集成模塊 (使用官方 serpapi SDK)
 
 根據文檔：https://serpapi.com/google-trends-trending-now
-engine 可能需要是 "google_trends_trending_now"
 """
 
 import os
-import aiohttp
 import asyncio
 import logging
 import json
@@ -18,6 +15,7 @@ from dotenv import load_dotenv
 from typing import List, Dict, Optional
 from datetime import datetime
 import discord
+from serpapi import Client
 
 # 設定 logging
 logger = logging.getLogger(__name__)
@@ -50,20 +48,54 @@ FALLBACK_TRENDS = [
 ]
 
 # SerpApi 支持的 engine 配置列表（優先順序）
-# 根據官方文檔：https://serpapi.com/google-trends-trending-now
-# geo 應使用縮寫 (如 TW, US, BR等)，hl 用語言代碼
 SERPAPI_ENGINES = [
     {
         "engine": "google_trends_trending_now",
-        "params": {"geo": "TW", "hl": "zh-TW"},
+        "params": {"geo": "TW"},
         "name": "google_trends_trending_now with geo=TW ✅"
     },
-    {
-        "engine": "google_trends_trending_now",
-        "params": {"geo": "TW"},
-        "name": "google_trends_trending_now with geo=TW (無 hl)"
-    },
 ]
+
+
+def _fetch_trends_sync(limit: int, timeout: int) -> Optional[List[Dict]]:
+    """同步版本的趨勢獲取（用於在執行器中運行）"""
+    if not SERPAPI_API_KEY:
+        return None
+    
+    try:
+        client = Client(api_key=SERPAPI_API_KEY)
+        
+        for engine_config in SERPAPI_ENGINES:
+            try:
+                engine = engine_config["engine"]
+                engine_params = engine_config["params"].copy()
+                
+                search_params = {
+                    "engine": engine,
+                    **engine_params
+                }
+                
+                logger.debug(f"[Trends] 嘗試 {engine_config['name']}...")
+                logger.debug(f"[Trends] 參數: {search_params}")
+                
+                results = client.search(search_params)
+                
+                # 檢查 API 錯誤
+                if 'error' not in results:
+                    trends = _parse_trends_response(results, limit)
+                    if trends:
+                        logger.info(f"[Trends] ✅ 成功（使用 {engine}）獲取 {len(trends)} 項")
+                        return trends
+                else:
+                    logger.debug(f"[Trends] API 錯誤: {results.get('error')}")
+            
+            except Exception as e:
+                logger.debug(f"[Trends] ❌ {engine_config['name']}: {str(e)[:60]}")
+    
+    except Exception as e:
+        logger.error(f"[Trends] Client 初始化失敗: {str(e)[:80]}")
+    
+    return None
 
 
 async def get_trending_topics(
@@ -73,7 +105,7 @@ async def get_trending_topics(
     use_cache: bool = True,
     fallback: bool = True
 ) -> Optional[List[Dict]]:
-    """獲取 Google Trends 熱搜（支持多個 engine 配置）"""
+    """獲取 Google Trends 熱搜（使用官方 SDK）"""
     
     # 無 API 密鑰時直接使用備用數據
     if not SERPAPI_API_KEY:
@@ -90,51 +122,16 @@ async def get_trending_topics(
         except:
             pass
     
-    url = "https://api.serpapi.com/search"
+    # 在執行器中運行同步 SDK 調用（避免阻塞事件循環）
+    loop = asyncio.get_event_loop()
+    trends = await loop.run_in_executor(None, _fetch_trends_sync, limit, timeout)
     
-    # 依次嘗試不同的 engine 配置
-    for engine_config in SERPAPI_ENGINES:
-        try:
-            engine = engine_config["engine"]
-            engine_params = engine_config["params"].copy()
-            
-            # 構建完整的請求參數
-            request_params = {
-                "engine": engine,
-                "api_key": SERPAPI_API_KEY,
-                **engine_params
-            }
-            
-            logger.debug(f"[Trends] 嘗試 {engine_config['name']}...")
-            logger.debug(f"[Trends] 參數: {{{', '.join(f'{k}: {v}' for k, v in request_params.items() if k != 'api_key')}}}")
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url,
-                    params=request_params,
-                    timeout=aiohttp.ClientTimeout(total=timeout)
-                ) as response:
-                    
-                    if response.status == 200:
-                        data = await response.json()
-                        
-                        # 檢查 API 錯誤
-                        if 'error' not in data:
-                            trends = _parse_trends_response(data, limit)
-                            if trends:
-                                logger.info(f"[Trends] ✅ 成功（使用 {engine}）獲取 {len(trends)} 項")
-                                _save_to_cache(trends)
-                                return trends
-                        else:
-                            logger.debug(f"[Trends] API 錯誤: {data.get('error')}")
-        
-        except asyncio.TimeoutError:
-            logger.debug(f"[Trends] ⏱️ {engine_config['name']} 超時")
-        except Exception as e:
-            logger.debug(f"[Trends] ❌ {engine_config['name']}: {str(e)[:60]}")
+    if trends:
+        _save_to_cache(trends)
+        return trends
     
-    # 所有配置都失敗，使用備用數據
-    logger.warning("[Trends] 所有 engine 配置均失敗，使用備用數據")
+    # 所有嘗試都失敗，使用備用數據
+    logger.warning("[Trends] API 調用失敗，使用備用數據")
     return FALLBACK_TRENDS[:limit] if fallback else None
 
 
