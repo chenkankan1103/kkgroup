@@ -148,10 +148,30 @@ def login_to_threads(max_retries=3):
                         time.sleep(check_interval)
                         wait_time += check_interval
                         
+                        # 每 20 秒提示一次
+                        if wait_time % 20 == 0:
+                            logger.info(f"⏳ 還在等待... ({wait_time}/{max_wait} 秒)")
+                            
+                            # 嘗試自動點擊中間的登入按鈕
+                            try:
+                                # 尋找登入按鈕
+                                login_buttons = driver.find_elements(By.XPATH, "//button[contains(text(), '登入')]|//button[contains(text(), '登錄')]|//a[contains(text(), '登入')]")
+                                
+                                if login_buttons:
+                                    logger.info("🔘 找到登入按鈕，自動點擊...")
+                                    # 點擊第一個登入按鈕
+                                    driver.execute_script("arguments[0].scrollIntoView(true);", login_buttons[0])
+                                    time.sleep(1)
+                                    login_buttons[0].click()
+                                    logger.info("✅ 已點擊登入按鈕")
+                                    time.sleep(2)  # 等待頁面反應
+                            except:
+                                pass
+                        
                         try:
-                            # 方法 1: 檢查 URL 是否變化（從登入頁面進入主頁）
+                            # 檢查是否已登入（URL 變化）
                             current_url = driver.current_url
-                            if 'threads.com' in current_url and 'login' not in current_url.lower():
+                            if 'threads.com' in current_url and 'login' not in current_url.lower() and '/threads.com' in current_url:
                                 logger.info(f"✅ 登入成功！(URL 變化: {current_url[:50]}...)")
                                 
                                 # 等待 3 秒讓頁面穩定
@@ -164,10 +184,6 @@ def login_to_threads(max_retries=3):
                                 return True
                         except:
                             pass
-                        
-                        # 每 20 秒提示一次
-                        if wait_time % 20 == 0:
-                            logger.info(f"⏳ 還在等待... ({wait_time}/{max_wait} 秒)")
                     
                     # 超時
                     logger.error("❌ 等待登入超時（120 秒）")
@@ -215,10 +231,10 @@ try:
         raise Exception("❌ 無法登入 Threads，請檢查帳號或網絡連接")
     
     # ============================================================================
-    # 2. 訪問搜尋頁面
+    # 2. 訪問主頁而不是搜尋頁面（主頁有 Explore/趨勢側欄）
     # ============================================================================
-    print("\n🔍 訪問搜尋頁面...")
-    driver.get("https://www.threads.com/search/")
+    print("\n🔍 訪問主頁...")
+    driver.get("https://www.threads.com/")
     
     # 添加隨機延遲 - 防止檢測
     wait_time = random.uniform(3, 5)
