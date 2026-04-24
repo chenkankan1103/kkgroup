@@ -16,6 +16,7 @@ import hmac
 import hashlib
 import subprocess
 import asyncio
+import threading
 from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, request, jsonify
@@ -185,57 +186,86 @@ def restart_services():
 # Discord 通知
 # ============================================================
 
-async def send_discord_notification(title, description, color, details=None):
+def send_discord_notification_thread(title, description, color, details=None):
     """
-    發送 Discord 通知
+    在後臺線程中發送 Discord 通知（避免 Flask 異步問題）
     """
     if not DISCORD_BOT_TOKEN or not DISCORD_SYS_CHANNEL_ID:
         logger.warning("⚠️ 缺少 Discord 配置，跳過通知")
         return
     
-    intents = discord.Intents.default()
-    intents.message_content = True
-    bot = commands.Bot(command_prefix="!", intents=intents)
-    
-    @bot.event
-    async def on_ready():
-        try:
-            channel_id = int(DISCORD_SYS_CHANNEL_ID)
-            channel = bot.get_channel(channel_id)
-            
-            if not channel:
-                channel = await bot.fetch_channel(channel_id)
-            
-            embed = discord.Embed(
-                title=title,
-                description=description,
-                color=color,
-                timestamp=datetime.now()
-            )
-            
-            if details:
-                for name, value in details.items():
-                    embed.add_field(
-                        name=name,
-                        value=f"```\n{value}\n```" if len(value) > 50 else value,
-                        inline=False
-                    )
-            
-            embed.set_footer(text="🪝 GitHub Webhook 自動部署")
-            await channel.send(embed=embed)
-            logger.info("📢 Discord 通知已發送")
-            
-        except Exception as e:
-            logger.error(f"❌ Discord 通知失敗: {e}")
-        finally:
-            await bot.close()
-    
     try:
+        # 在新的事件循環中運行異步代碼
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_send_discord_embed(title, description, color, details))
+        loop.close()
+    except Exception as e:
+        logger.error(f"❌ Discord 線程異常: {e}")
+
+
+async def _send_discord_embed(title, description, color, details=None):
+    """
+    異步發送 Discord embed
+    """
+    try:
+        intents = discord.Intents.default()
+        intents.message_content = True
+        bot = commands.Bot(command_prefix="!", intents=intents)
+        
+        @bot.event
+        async def on_ready():
+            try:
+                channel_id = int(DISCORD_SYS_CHANNEL_ID)
+                channel = bot.get_channel(channel_id)
+                
+                if not channel:
+                    channel = await bot.fetch_channel(channel_id)
+                
+                embed = discord.Embed(
+                    title=title,
+                    description=description,
+                    color=color,
+                    timestamp=datetime.now()
+                )
+                
+                if details:
+                    for name, value in details.items():
+                        embed.add_field(
+                            name=name,
+                            value=f"```\n{value}\n```" if len(value) > 50 else value,
+                            inline=False
+                        )
+                
+                embed.set_footer(text="🪝 GitHub Webhook 自動部署")
+                await channel.send(embed=embed)
+                logger.info("✅ Discord 通知已發送")
+                
+            except Exception as e:
+                logger.error(f"❌ Discord 通知失敗: {e}")
+            finally:
+                await bot.close()
+        
+        # 用超時保護防止掛起
         await asyncio.wait_for(bot.start(DISCORD_BOT_TOKEN), timeout=15)
+        
     except asyncio.TimeoutError:
         logger.warning("⏱️ Discord 通知超時")
     except Exception as e:
         logger.error(f"❌ Discord 通知異常: {e}")
+
+
+def notify_discord(title, description, color, details=None):
+    """
+    在後臺線程中異步發送 Discord 通知
+    """
+    thread = threading.Thread(
+        target=send_discord_notification_thread,
+        args=(title, description, color, details),
+        daemon=True
+    )
+    thread.start()
+    # 不等待線程完成，立即返回
 
 
 # ============================================================
@@ -271,10 +301,12 @@ def github_webhook():
         return jsonify({"status": "error", "message": "JSON 解析失敗"}), 400
     
     try:
-        # 檢查推送事件
-        if not (payload.get('action') == 'opened' or 'push' in request.headers.get('X-GitHub-Event', '')):
-            logger.info("⏭️ 忽略非 push 事件")
-            return jsonify({"status": "ok", "message": "已忽略非 push 事件"}), 200
+        # 檢查事件類型 - 只處理 push 事件
+        event_type = request.headers.get('X-GitHub-Event', '')
+        
+        if event_type != 'push':
+            logger.info(f"⏭️ 忽略非 push 事件 (類型: {event_type})")
+            return jsonify({"status": "ok", "message": f"已忽略 {event_type} 事件"}), 200
         
         logger.info("🔔 收到 GitHub push 事件")
         
@@ -298,13 +330,13 @@ def github_webhook():
         
         if not pull_success:
             logger.error(f"❌ 部署失敗: {pull_msg}")
-            # 發送失敗通知
-            asyncio.run(send_discord_notification(
+            # 發送失敗通知（在後臺線程中）
+            notify_discord(
                 "❌ GitHub Webhook 部署失敗",
                 f"Git pull 失敗: {pull_msg}",
                 0xFF0000,
                 {"錯誤": pull_msg}
-            ))
+            )
             return jsonify({
                 "status": "error",
                 "message": "Git pull 失敗",
@@ -326,12 +358,12 @@ def github_webhook():
                 "服務狀態": "✅ 所有服務已重啟"
             }
             
-            asyncio.run(send_discord_notification(
+            notify_discord(
                 "✅ GitHub Webhook 自動部署成功",
                 f"已成功拉取 {len(commits)} 個提交並重啟所有服務",
                 0x00FF00,
                 details
-            ))
+            )
             
             return jsonify({
                 "status": "success",
@@ -344,12 +376,12 @@ def github_webhook():
         else:
             logger.error(f"❌ 部分服務重啟失敗: {restart_msg}")
             
-            asyncio.run(send_discord_notification(
+            notify_discord(
                 "⚠️ GitHub Webhook 部分部署失敗",
                 f"Git pull 成功，但某些服務重啟失敗: {restart_msg}",
                 0xFFFF00,
                 {"錯誤": restart_msg}
-            ))
+            )
             
             return jsonify({
                 "status": "partial",
