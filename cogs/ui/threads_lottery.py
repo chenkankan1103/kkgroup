@@ -12,7 +12,8 @@ from discord.ui import Button, View, Modal, TextInput
 import json
 import asyncio
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import List, Optional
 import logging
 
@@ -21,6 +22,9 @@ from shared.utils.threads_lottery_manager import get_manager as get_lottery_mana
 from status_dashboard import add_log
 
 log = logging.getLogger("threads_lottery_cog")
+
+# 台灣時區 (UTC+8)
+TW_TZ = ZoneInfo('Asia/Taipei')
 
 
 class TrendSelectionView(PersistentViewBase):
@@ -166,7 +170,7 @@ async def finalize_bet(cog, interaction: discord.Interaction, trends: List[str],
         if custom_keyword:
             embed.add_field(name="🔑 自訂關鍵字", value=f"`{custom_keyword}`", inline=False)
         
-        drawing_time = datetime.now() + timedelta(hours=4)
+        drawing_time = datetime.now(TW_TZ) + timedelta(hours=4)
         embed.add_field(
             name="⏰ 兌獎時間",
             value=f"<t:{int(drawing_time.timestamp())}:f>",
@@ -196,6 +200,7 @@ class ThreadsLotteryCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.check_settlement.start()
+        self.update_trends_scheduled.start()  # 啟動 4 小時排程任務
     
     @commands.command(name="threads_lottery", aliases=["趨勢樂透", "tl"])
     async def threads_lottery_cmd(self, ctx: commands.Context):
@@ -290,12 +295,64 @@ class ThreadsLotteryCog(commands.Cog):
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, run_scraper)
     
+    @tasks.loop(hours=4)
+    async def update_trends_scheduled(self):
+        """
+        每 4 小時自動執行爬蟲更新趨勢 (台灣時間)
+        執行時間: 00:00, 08:00, 12:00, 16:00, 20:00 (台灣時間)
+        """
+        try:
+            # 使用台灣時區獲取當前時間
+            now = datetime.now(TW_TZ)
+            current_hour = now.hour
+            
+            # ✅ 只在指定時間執行 (0=00:00, 8, 12, 16, 20) 台灣時間
+            allowed_hours = [0, 8, 12, 16, 20]
+            
+            if current_hour not in allowed_hours:
+                # 不在允許的時間，跳過本次執行
+                return
+            
+            # 只執行一次（確保同一小時不會重複執行）
+            current_minute = now.minute
+            if current_minute > 5:  # 如果已經超過 5 分鐘，說明已經執行過了，跳過
+                return
+            
+            log.info(f"⏰ 開始定時爬蟲任務 ({now.strftime('%Y-%m-%d %H:%M:%S %Z')})")
+            
+            # 執行爬蟲
+            success = await self.update_threads_trends_async()
+            
+            if success:
+                log.info("✅ 爬蟲執行成功，趨勢已更新")
+                
+                # 發送更新通知到日誌頻道
+                log_channel = self.bot.get_channel(int(os.getenv("LOG_CHANNEL_ID", "0")) or 0)
+                if log_channel:
+                    embed = discord.Embed(
+                        title="🎰 Threads 趨勢已更新",
+                        description=f"定時爬蟲已執行，新趨勢已保存",
+                        color=0x00FF00,
+                        timestamp=now
+                    )
+                    embed.add_field(name="執行時間", value=now.strftime('%Y-%m-%d %H:%M:%S %Z'))
+                    await log_channel.send(embed=embed)
+                
+                add_log("scheduler", f"[Scheduler] 爬蟲執行成功 at {now.strftime('%H:%M:%S')}")
+            else:
+                log.warning("⚠️ 爬蟲執行失敗")
+                add_log("scheduler", f"[Scheduler] 爬蟲執行失敗 at {now.strftime('%H:%M:%S')}")
+        
+        except Exception as e:
+            log.error(f"排程爬蟲執行出錯: {e}")
+            add_log("scheduler", f"[Scheduler] 排程爬蟲出錯: {e}")
+    
     @tasks.loop(hours=1)
     async def check_settlement(self):
-        """定期檢查並結算已到期的投注"""
+        """定期檢查並結算已到期的投注 (台灣時間)"""
         try:
             manager = get_lottery_manager()
-            now = datetime.now()
+            now = datetime.now(TW_TZ)  # 使用台灣時間
             
             # 找出所有待結算的投注
             for bet_id, bet in list(manager.bets.items()):
