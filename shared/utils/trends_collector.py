@@ -27,6 +27,7 @@ import random
 import time
 import os
 from typing import List, Dict, Optional
+from pathlib import Path
 
 # 確保 .env 被加載（必須在所有 os.getenv() 之前）
 from dotenv import load_dotenv
@@ -39,7 +40,20 @@ try:
 except ImportError:
     TWIKIT_AVAILABLE = False
 
+# 嘗試導入官方 SerpApi SDK（Google Trends）
+try:
+    from serpapi import Client as SerpApiClient
+    SERPAPI_AVAILABLE = True
+except ImportError:
+    SERPAPI_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+# ========================
+# SerpApi 配置（Google Trends）
+# ========================
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
+SERPAPI_ENABLED = bool(SERPAPI_API_KEY)
 
 # ========================
 # Twikit 配置（Twitter 趨勢）
@@ -98,23 +112,30 @@ class TrendsCollector:
     趨勢收集器 - 多平台支持
     
     優先級（嚴格模式）：
-    1. 🐦 Twitter/X 實時趨勢（Twikit 爬蟲，主方案）
-    2. 🧵 Meta Threads 台灣時事（未來實現）
-    3. 🔄 時間輪轉數據集（備用方案）
+    1. � Google Trends（SerpApi 官方 SDK，主方案）
+    2. 🐦 Twitter/X 實時趨勢（Twikit 爬蟲）
+    3. 🧵 Meta Threads 台灣時事（未來實現）
+    4. 🔄 時間輪轉數據集（備用方案）
     
     說明：
+    - SerpApi 使用官方 SDK（需要 API Key）
     - Twikit 使用 Twitter 官方 API（不需要 API Key）
     - Threads 目前無官方 API，備用使用時間輪轉台灣時事數據
-    - 關鍵詞：Twikit, Threads, 趨勢爬蟲, 實時數據
+    - 關鍵詞：Google Trends, Twikit, Threads, 趨勢爬蟲, 實時數據
     """
     
     def __init__(self):
+        if SERPAPI_ENABLED:
+            logger.info("✅ [Google Trends] SerpApi 已配置，使用官方 SDK")
+        else:
+            logger.warning("⚠️ [Google Trends] SERPAPI_API_KEY 未設置")
+        
         if not TWIKIT_AVAILABLE:
-            logger.warning("⚠️ [Twikit] 未安裝，只能使用備用方案")
+            logger.warning("⚠️ [Twikit] 未安裝，只能使用其他方案")
         elif TWITTER_USERNAME and TWITTER_EMAIL and TWITTER_PASSWORD:
             logger.info("✅ [Twikit] 帳戶已配置，使用 Twitter 實時趨勢")
         else:
-            logger.warning("⚠️ [Twikit] 帳戶信息不完整，將使用備用方案")
+            logger.warning("⚠️ [Twikit] 帳戶信息不完整，將跳過 Twitter 方案")
         
         if THREADS_ENABLED and THREADS_USERNAME:
             logger.info("✅ [Threads] 帳戶已配置，將嘗試蒐集 Threads 趨勢")
@@ -138,18 +159,26 @@ class TrendsCollector:
           - False: 失敗時使用備用方案（預設）
         
         優先級：
-        1. Twitter/X 趨勢（Twikit）- 帶重試機制
-        2. Meta Threads 趨勢（未來支持）
-        3. 時間輪轉備用數據集（非嚴格模式）
+        1. Google Trends（SerpApi）- 台灣地區
+        2. Twitter/X 趨勢（Twikit）- 需要帳戶認證
+        3. Meta Threads 趨勢（未來支持）
+        4. 時間輪轉備用數據集（非嚴格模式）
         """
-        # 1. 嘗試 Twikit 獲取 Twitter 趨勢
+        # 1. 嘗試 SerpApi 獲取 Google Trends
+        if SERPAPI_ENABLED:
+            trends = await self._fetch_from_google_trends()
+            if trends:
+                logger.info(f"✅ [成功] 從 Google Trends 獲取 {len(trends)} 項台灣趨勢")
+                return trends[:limit]
+        
+        # 2. 嘗試 Twikit 獲取 Twitter 趨勢
         if TWIKIT_AVAILABLE and TWITTER_USERNAME:
             trends = await self._fetch_from_twikit()
             if trends:
                 logger.info(f"✅ [成功] 從 Twitter 獲取 {len(trends)} 項趨勢")
                 return trends[:limit]
         
-        # 2. 嘗試 Threads 獲取台灣時事趨勢（未來實現）
+        # 3. 嘗試 Threads 獲取台灣時事趨勢（未來實現）
         if THREADS_ENABLED and THREADS_USERNAME:
             trends = await self._fetch_from_threads()
             if trends:
@@ -161,11 +190,75 @@ class TrendsCollector:
             logger.warning("⚠️ [嚴格模式] 所有真實平台失敗，返回空列表（跳過本次發布）")
             return []
         
-        # 3. 備用：時間輪轉數據集
+        # 4. 備用：時間輪轉數據集
         logger.debug("🔄 [備用方案] 使用時間輪轉數據集")
         trends = self._get_fallback_rotated_trends()
         
         return trends[:limit]
+    
+    async def _fetch_from_google_trends(self) -> List[Dict]:
+        """
+        使用 SerpApi 官方 SDK 從 Google Trends 獲取台灣地區熱搜
+        
+        特點：
+        - 使用官方 SerpApi 包（已克服 DNS 阻止問題）
+        - 地區限制：台灣 (geo=TW)
+        - 語言：繁體中文 (hl=zh-TW，可選)
+        - 穩定性：官方 SDK 比 requests 更可靠
+        
+        返回：
+            List[Dict] - [{"trend": "...", "platform": "google_trends", ...}, ...]
+        """
+        if not SERPAPI_ENABLED:
+            return []
+        
+        try:
+            logger.info("🔍 [Google Trends] 開始從 SerpApi 獲取台灣趨勢...")
+            
+            # 在執行器中運行同步 SDK 調用（避免阻塞事件循環）
+            loop = asyncio.get_event_loop()
+            trends = await loop.run_in_executor(
+                None,
+                self._fetch_google_trends_sync
+            )
+            
+            if trends:
+                logger.info(f"✅ [Google Trends] 成功獲取 {len(trends)} 項")
+                return trends
+            else:
+                logger.warning("⚠️ [Google Trends] 未能解析趨勢數據")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ [Google Trends 失敗] {type(e).__name__}: {str(e)[:100]}")
+            return []
+    
+    def _fetch_google_trends_sync(self) -> List[Dict]:
+        """
+        同步版本的 Google Trends 獲取（在執行器中運行）
+        """
+        try:
+            client = SerpApiClient(api_key=SERPAPI_API_KEY)
+            results = client.search({
+                'engine': 'google_trends_trending_now',
+                'geo': 'TW'
+            })
+            
+            trends_list = []
+            for item in results.get('trending_searches', []):
+                trend_text = item.get('query') or item.get('title') or 'Unknown'
+                trends_list.append({
+                    "trend": trend_text,
+                    "platform": "google_trends",
+                    "search_volume": item.get('search_volume', 0),
+                    "increase_percentage": item.get('increase_percentage', 0)
+                })
+            
+            return trends_list
+            
+        except Exception as e:
+            logger.error(f"❌ [Google Trends SDK] {type(e).__name__}: {str(e)[:100]}")
+            return []
     
     async def _fetch_from_twikit(self, retry_count: int = 0, max_retries: int = 3) -> List[Dict]:
         """
