@@ -15,9 +15,13 @@ SerpApi Google Trends 集成模塊
 import os
 import aiohttp
 import asyncio
+import logging
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
 from datetime import datetime
+
+# 設定 logging
+logger = logging.getLogger(__name__)
 
 # 加載 .env
 load_dotenv()
@@ -57,23 +61,27 @@ async def get_trending_topics(
     }
     
     try:
+        logger.debug(f"[Trends] 正在連接 SerpApi... URL: {url}")
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
+                logger.debug(f"[Trends] 收到回應: HTTP {response.status}")
                 
                 if response.status != 200:
-                    print(f"❌ API 錯誤 (HTTP {response.status})")
+                    logger.error(f"[Trends] ❌ API 錯誤 - HTTP {response.status}")
                     return None
                 
                 data = await response.json()
+                logger.debug(f"[Trends] 📊 回應 keys: {list(data.keys())}")
                 
                 # 檢查 API 錯誤
                 if 'error' in data:
-                    print(f"❌ API 錯誤：{data['error']}")
+                    logger.error(f"[Trends] ❌ SerpApi 錯誤: {data['error']}")
                     return None
                 
                 # 提取趨勢
                 trends = []
                 if 'trending_searches' in data:
+                    logger.info(f"[Trends] 📊 找到 {len(data['trending_searches'])} 項趨勢")
                     for item in data['trending_searches'][:limit]:
                         # 從 SerpApi 實際回傳的字段提取數據
                         trend = {
@@ -84,17 +92,20 @@ async def get_trending_topics(
                         }
                         trends.append(trend)
                 
+                logger.info(f"[Trends] ✅ 成功獲取 {len(trends)} 項趨勢")
                 return trends if trends else None
     
     except asyncio.TimeoutError:
-        print(f"❌ 請求超時 (>{timeout}秒)")
+        logger.error(f"[Trends] ❌ 請求超時 (>{timeout}秒)")
+        return None
+    except aiohttp.ClientConnectorError as e:
+        logger.error(f"[Trends] ❌ DNS/連接錯誤: {type(e).__name__}: {e}")
         return None
     except aiohttp.ClientError as e:
-        print(f"❌ 網路錯誤：{e}")
+        logger.error(f"[Trends] ❌ aiohttp 客戶端錯誤: {type(e).__name__}: {e}")
         return None
     except Exception as e:
-        print(f"❌ 未知錯誤：{e}")
-        return None
+        logger.exception(f"[Trends] ❌ 未知錯誤: {type(e).__name__}: {e}")
 
 
 def format_trends_embed(trends: List[Dict[str, str]]) -> Optional[object]:
