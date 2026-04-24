@@ -231,10 +231,10 @@ try:
         raise Exception("❌ 無法登入 Threads，請檢查帳號或網絡連接")
     
     # ============================================================================
-    # 2. 訪問主頁而不是搜尋頁面（主頁有 Explore/趨勢側欄）
+    # 2. 訪問搜尋頁面（有趨勢列表）
     # ============================================================================
-    print("\n🔍 訪問主頁...")
-    driver.get("https://www.threads.com/")
+    print("\n🔍 訪問搜尋頁面...")
+    driver.get("https://www.threads.com/search")
     
     # 添加隨機延遲 - 防止檢測
     wait_time = random.uniform(3, 5)
@@ -283,11 +283,21 @@ try:
     # 定義趨勢的特徵
     def is_likely_trend(text):
         """判斷文本是否看起來像趨勢"""
-        if not text or len(text) < 2 or len(text) > 50:
+        if not text or len(text) < 2 or len(text) > 100:
             return False
         
         # 排除關鍵字
         if any(kw in text for kw in excluded_keywords):
+            return False
+        
+        # 排除互動數統計文本
+        interaction_keywords = ['讚', '轉發', '回覆', '分享', '人喜歡', '人回覆', '人轉發', 
+                               '人分享', '秒前', '分鐘前', '小時前', '天前']
+        if any(kw in text for kw in interaction_keywords):
+            return False
+        
+        # 排除長的幫助文本
+        if len(text) > 30:
             return False
         
         # 必須包含中文
@@ -296,6 +306,11 @@ try:
         
         # 不能是單個字
         if len(text) == 1:
+            return False
+        
+        # 排除純數字或過多數字
+        digit_ratio = sum(1 for c in text if c.isdigit()) / len(text)
+        if digit_ratio > 0.3:  # 超過 30% 數字
             return False
         
         return True
@@ -337,11 +352,13 @@ try:
         """給趨勢評分（看起來越像趨勢分數越高）"""
         score = 0
         
-        # 長度在 5-20 字最好
-        if 5 <= len(text) <= 20:
+        # 長度在 4-25 字最好（趨勢通常不會太長）
+        if 4 <= len(text) <= 25:
             score += 10
+        elif len(text) < 4:
+            score -= 10
         
-        # 包含數字的通常是熱度或話題
+        # 包含數字的通常是熱度或排名
         if any(c.isdigit() for c in text):
             score += 3
         
@@ -349,13 +366,13 @@ try:
         if '#' in text or '@' in text:
             score += 5
         
-        # 常見詞尾
-        if any(text.endswith(end) for end in ['?', '！', '!', '嗎', '了', '中', '過', '著']):
+        # 常見詞尾（通常趨勢會以這些結尾）
+        if any(text.endswith(end) for end in ['?', '！', '!', '嗎', '了', '中', '過', '著', '熱', '榜', '排']):
             score += 2
         
-        # 避免太簡短的
-        if len(text) < 4:
-            score -= 10
+        # 避免互動數
+        if any(word in text for word in ['讚', '轉發', '回覆', '分享']):
+            score -= 100
         
         return score
     
