@@ -213,3 +213,116 @@ def format_trends_text(trends: List[Dict]) -> str:
         lines.append(f"{idx}. {t['topic']} | 搜索: {t['search_volume']:,} | 增長: +{t['increase_percentage']}%")
     
     return "\n".join(lines)
+
+
+def format_lottery_embed(
+    trends: List[Dict],
+    jackpot_amount: float = 0.0,
+    total_bets: int = 0,
+    current_round_id: str = "",
+    timezone_obj = None
+) -> discord.Embed:
+    """
+    統一合併 Embed - 趨勢詳情 + 投注系統
+    
+    參數：
+    - trends: 趨勢列表（來自 get_latest_trends）
+      格式: [{"trend": "...", "search_volume": ..., "increase_percentage": ..., ...}, ...]
+    - jackpot_amount: 當前獎池金額 (USD)
+    - total_bets: 投注人數
+    - current_round_id: 輪次 ID
+    - timezone_obj: 時區對象（可選）
+    
+    返回：
+        統一的 Discord Embed，包含趨勢詳情和投注資訊
+    """
+    if not trends:
+        return discord.Embed(
+            title="❌ 暫無數據",
+            color=discord.Color.red()
+        )
+    
+    embed = discord.Embed(
+        title="🔥 台灣趨勢樂透",
+        description="📊 投注趨勢預測 • 每 4 小時開獎一次",
+        color=discord.Color.gold(),
+        timestamp=datetime.now(timezone_obj) if timezone_obj else datetime.now()
+    )
+    
+    # ==================== 第一部分：趨勢詳情（前 8 個） ====================
+    trends_field_value = ""
+    for idx, trend in enumerate(trends[:8], 1):
+        # 處理數據格式 - trend 可能來自 get_latest_trends，使用 'trend' 字段
+        topic = trend.get('trend') or trend.get('topic', 'N/A')
+        volume = trend.get('search_volume', 0)
+        increase = trend.get('increase_percentage', 0)
+        
+        # 增長指示 icon
+        if increase >= 1000:
+            icon = "🚀"
+        elif increase >= 500:
+            icon = "📈"
+        elif increase >= 100:
+            icon = "↗️"
+        else:
+            icon = "➡️"
+        
+        # 進度條
+        filled = int(15 * min(volume / 20000, 1))
+        bar = '█' * filled + '░' * (15 - filled)
+        
+        trends_field_value += f"{idx}. `{topic}` {icon}\n"
+        trends_field_value += f"   [{bar}] {volume:,} | +{increase}%\n"
+    
+    embed.add_field(
+        name="🔥 熱門趨勢排行",
+        value=trends_field_value or "無數據",
+        inline=False
+    )
+    
+    # ==================== 第二部分：投注規則 ====================
+    embed.add_field(
+        name="💰 投注說明",
+        value=(
+            "• 每次投注: **$10.00 USD**\n"
+            "• 選擇下一輪前 3 名趨勢\n"
+            "• 開獎間隔: **4 小時**\n"
+            "• 開獎時間: 08:00 / 12:00 / 16:00 / 20:00 台灣時間"
+        ),
+        inline=False
+    )
+    
+    # ==================== 第三部分：獲獎規則 ====================
+    embed.add_field(
+        name="🏆 獲獎規則",
+        value=(
+            "• 🥇 中 3 個: $100 + 平分獎池\n"
+            "• 🥈 中 2 個: $100 USD\n"
+            "• 🥉 中 1 個: $10 USD (退本金)\n"
+            "• ❌ 中 0 個: 投注入獎池"
+        ),
+        inline=False
+    )
+    
+    # ==================== 第四部分：獎池資訊 ====================
+    if jackpot_amount > 0:
+        jackpot_value = f"{jackpot_amount:.2f}"
+    else:
+        jackpot_value = "0.00"
+    
+    jackpot_info = f"💵 **${jackpot_value}**\n👥 投注人數: {total_bets} 人"
+    
+    embed.add_field(
+        name="🎁 中央獎池",
+        value=jackpot_info,
+        inline=False
+    )
+    
+    # ==================== 頁腳 ====================
+    footer_text = "💡 數據來自 SerpApi Google Trends"
+    if current_round_id:
+        footer_text = f"開獎輪次: {current_round_id} • " + footer_text
+    
+    embed.set_footer(text=footer_text)
+    
+    return embed
