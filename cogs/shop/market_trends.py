@@ -12,7 +12,14 @@ Discord Bot Cog：台灣 Google Trends 市場趨勢
 import discord
 from discord.ext import commands, tasks
 import os
+import sys
 from dotenv import load_dotenv
+
+# 添加根目錄到 sys.path，以便正確導入 market_trends_serpapi
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 from market_trends_serpapi import get_trending_topics, format_trends_embed, format_trends_text
 
 load_dotenv()
