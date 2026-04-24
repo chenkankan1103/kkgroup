@@ -43,6 +43,7 @@ except ImportError:
 from shared.utils.trends_collector import TrendsCollector, get_latest_trends
 from shared.utils.trends_lottery_system import TrendsLotterySystem
 from shared.utils.view_registry import PersistentViewBase
+from market_trends_serpapi import format_lottery_embed
 
 logger = logging.getLogger(__name__)
 
@@ -316,57 +317,24 @@ class TrendsLotteryCog(commands.Cog):
             
             logger.info(f"✅ 找到頻道: {channel.name}")
             
-            # 創建 Embed
-            embed = discord.Embed(
-                title="🔥 最新熱門趨勢",
-                description="📊 預測下一個時段的前三名趨勢！\n💰 **每次投注需花費 $10.00 USD**",
-                color=discord.Color.gold(),
-                timestamp=datetime.now(TZ_TW)
-            )
-            
-            # 添加趨勢列表
-            trends_text = "\n".join([
-                f"{i+1}. `{t['trend']}` ({', '.join(t.get('sources', ['twitter']))})"
-                for i, t in enumerate(trends[:10])
-            ])
-            embed.add_field(name="當前趨勢", value=trends_text or "無趨勢數據", inline=False)
-            
-            logger.info(f"📊 趨勢文本長度: {len(trends_text)} 字符")
-            
-            # 開獎時間表
-            embed.add_field(
-                name="⏰ 開獎時間表",
-                value="• **08:00** 台灣時間 - 第一輪開獎\n• **12:00** 台灣時間 - 第二輪開獎\n• **16:00** 台灣時間 - 第三輪開獎\n• **20:00** 台灣時間 - 第四輪開獎\n• **00:00** 台灣時間（隔日）- 第五輪開獎",
-                inline=False
-            )
-            
-            # 投注說明
-            embed.add_field(
-                name="🎯 投注說明",
-                value="• 選擇前三名趨勢進行投注\n• 每次投注 $10.00 USD\n• 開獎時間：下個時段開始時",
-                inline=False
-            )
-            
-            # 獲獎規則
-            embed.add_field(
-                name="🏆 獲獎規則",
-                value="• 中 1 個：返回本金 $10\n• 中 2 個：獲得 $100 USD\n• 中 3 個：獲得 $100 USD + 平分獎池",
-                inline=False
-            )
-            
-            # 獎池信息
+            # 獲取獎池信息
+            jackpot_amount = 0.0
+            total_bets = 0
             try:
                 jackpot_info = await self.lottery_system.get_jackpot_info(self.current_round_id)
-                embed.add_field(
-                    name="🎁 中央獎池",
-                    value=f"**${jackpot_info['jackpot']:.2f}**\n參與投注：{jackpot_info['total_bets']} 人",
-                    inline=False
-                )
+                jackpot_amount = jackpot_info.get('jackpot', 0.0)
+                total_bets = jackpot_info.get('total_bets', 0)
             except Exception as e:
-                logger.warning(f"⚠️  獎池信息獲取失敗: {e}")
-                embed.add_field(name="🎁 中央獎池", value="初始化中...", inline=False)
+                logger.warning(f"⚠️ 獎池信息獲取失敗: {e}")
             
-            embed.set_footer(text=f"開獎輪次：{self.current_round_id}")
+            # ==================== 使用統一的 format_lottery_embed 生成 Embed ====================
+            embed = format_lottery_embed(
+                trends=trends,
+                jackpot_amount=jackpot_amount,
+                total_bets=total_bets,
+                current_round_id=self.current_round_id,
+                timezone_obj=TZ_TW
+            )
             
             # 發送消息並添加按鈕
             view = TrendsPredictionView(
@@ -375,7 +343,7 @@ class TrendsLotteryCog(commands.Cog):
                 self.current_round_id
             )
             
-            logger.info(f"📤 正在發送 embed 到頻道 {channel.name}...")
+            logger.info(f"📤 正在發送統一 embed 到頻道 {channel.name}...")
             message = await channel.send(embed=embed, view=view)
             
             # 儲存消息 ID 用於後續編輯
