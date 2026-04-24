@@ -249,25 +249,21 @@ class TrendsLotteryCog(commands.Cog):
             logger.error(f"❌ 深夜趨勢抓取失敗: {e}")
     
     async def _update_and_broadcast_trends(self):
-        """更新趨勢並廣播到 Discord（嚴格模式：等待真實 Twitter 趨勢）"""
+        """更新趨勢並廣播到 Discord（寬鬆模式：接受 Google Trends 備用數據）"""
         logger.info(f"📝 [_UPDATE_AND_BROADCAST] 開始執行...")
         try:
-            # 抓取最新趨勢（嚴格模式：只要真實 Twitter 數據）
-            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_latest_trends(strict=True)...")
-            trends = await get_latest_trends(limit=10, strict=True)
+            # 抓取最新趨勢（寬鬆模式：接受 Google Trends 備用數據）
+            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_latest_trends(strict=False)...")
+            trends = await get_latest_trends(limit=10, strict=False)
             logger.info(f"📊 [_UPDATE_AND_BROADCAST] 收到 {len(trends) if trends else 0} 項趨勢")
             
             if not trends:
-                logger.warning("⚠️ [嚴格模式] 無法獲取 Twitter 真實趨勢，跳過本次發布，等待下一個時段")
+                logger.warning("⚠️ 無法獲取任何趨勢數據，跳過本次發布")
                 return
             
-            # 驗證是否都是真實的 Twitter 趨勢
+            # 顯示數據來源（僅記錄，不再阻止發布）
             twitter_count = sum(1 for t in trends if t.get("platform") == "twitter_twikit")
-            if twitter_count == 0:
-                logger.warning("⚠️ [品質檢查] 獲得的都是備用數據，跳過本次發布")
-                return
-            
-            logger.info(f"✅ [品質檢查] 收到 {twitter_count}/{len(trends)} 真實 Twitter 趨勢")
+            logger.info(f"✅ [品質檢查] 收到 {twitter_count}/{len(trends)} Twitter 趨勢，其餘為備用數據")
             
             # 更新當前趨勢
             self.current_trends = [t["trend"] for t in trends]
@@ -674,19 +670,18 @@ class TrendsLotteryCog(commands.Cog):
             
             logger.info(f"🧪 測試推播已觸發 (by {interaction.user})")
             
-            # 嘗試在嚴格模式下獲取趨勢
-            logger.info(f"📡 測試推播：嘗試獲取真實 Twitter 趨勢...")
-            trends = await get_latest_trends(limit=10, strict=True)
+            # 嘗試在寬鬆模式下獲取趨勢
+            logger.info(f"📡 測試推播：嘗試獲取趨勢數據（寬鬆模式）...")
+            trends = await get_latest_trends(limit=10, strict=False)
             
             if not trends:
-                logger.warning("⚠️ 測試推播：無法獲得 Twitter 真實趨勢")
+                logger.warning("⚠️ 測試推播：無法獲得任何趨勢數據")
                 await interaction.followup.send(
-                    "⚠️ **無法推播**：Twikit 無法獲取 Twitter 趨勢\n\n"
+                    "⚠️ **無法推播**：無法獲取任何趨勢數據\n\n"
                     "可能原因：\n"
-                    "• Twitter 帳戶認證失敗\n"
-                    "• 帳戶被 Twitter 限制\n"
+                    "• SerpApi API 金鑰無效\n"
                     "• 網路連接問題\n\n"
-                    "系統會在下一個排程時段自動重試。",
+                    "請檢查 SERPAPI_API_KEY 環境變數。",
                     ephemeral=True
                 )
                 return
@@ -695,7 +690,7 @@ class TrendsLotteryCog(commands.Cog):
             await self._update_and_broadcast_trends()
             
             await interaction.followup.send(
-                f"✅ 已推播最新趨勢！({len(trends)} 項 Twitter 數據)",
+                f"✅ 已推播最新趨勢！({len(trends)} 項數據)",
                 ephemeral=True
             )
         
