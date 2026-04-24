@@ -689,8 +689,12 @@ class TrendsLotteryCog(commands.Cog):
             # 立即執行推播
             await self._update_and_broadcast_trends()
             
+            # 顯示數據來源
+            twitter_count = sum(1 for t in trends if t.get("platform") == "twitter_twikit")
+            data_source = f"Twitter ({twitter_count}項)" if twitter_count > 0 else "Google Trends"
+            
             await interaction.followup.send(
-                f"✅ 已推播最新趨勢！({len(trends)} 項數據)",
+                f"✅ 已推播最新趨勢！({len(trends)} 項 {data_source})",
                 ephemeral=True
             )
         
