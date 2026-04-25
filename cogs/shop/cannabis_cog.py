@@ -49,7 +49,7 @@ class CannabisCog(commands.Cog):
 # ==================== 交互界面 ====================
 class CannabisBuyView(PersistentViewBase):
     def __init__(self, bot):
-        super().__init__(timeout=60)
+        super().__init__()
         self.bot = bot
         
         # 使用全域按鈕系統
@@ -115,9 +115,9 @@ class CannabisBuyView(PersistentViewBase):
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
-class SeedSelectView(discord.ui.View):
+class SeedSelectView(PersistentViewBase):
     def __init__(self, bot, user_id):
-        super().__init__(timeout=60)
+        super().__init__()
         self.bot = bot
         self.user_id = user_id
         
@@ -180,9 +180,9 @@ class SeedButton(discord.ui.Button):
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
-class CannabisPlantsView(discord.ui.View):
+class CannabisPlantsView(PersistentViewBase):
     def __init__(self, bot, plants, user_id):
-        super().__init__(timeout=60)
+        super().__init__()
         self.bot = bot
         self.plants = plants
         self.user_id = user_id
@@ -258,9 +258,9 @@ class PlantActionButton(discord.ui.Button):
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
-class CannabisSellView(discord.ui.View):
+class CannabisSellView(PersistentViewBase):
     def __init__(self, bot, inventory):
-        super().__init__(timeout=60)
+        super().__init__()
         self.bot = bot
         self.inventory = inventory
         
