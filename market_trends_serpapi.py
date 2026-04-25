@@ -249,9 +249,9 @@ def format_lottery_embed(
         timestamp=datetime.now(timezone_obj) if timezone_obj else datetime.now()
     )
     
-    # ==================== 第一部分：趨勢詳情（前 8 個） ====================
+    # ==================== 第一部分：趨勢詳情（前 10 個） ====================
     trends_field_value = ""
-    for idx, trend in enumerate(trends[:8], 1):
+    for idx, trend in enumerate(trends[:10], 1):
         # 處理數據格式 - trend 可能來自 get_latest_trends，使用 'trend' 字段
         topic = trend.get('trend') or trend.get('topic', 'N/A')
         volume = trend.get('search_volume', 0)

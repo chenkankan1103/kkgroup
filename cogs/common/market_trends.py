@@ -35,8 +35,8 @@ class MarketTrends(commands.Cog):
         self.trends_cache = None
         self.last_update = None
         
-        # 啟動定時任務
-        self.send_trends.start()
+        # 禁用定時任務（與 trends_lottery 功能重複）
+        # self.send_trends.start()
     
     def cog_unload(self):
         """卸載 Cog 時停止定時任務"""
