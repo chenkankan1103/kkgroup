@@ -158,7 +158,7 @@ class TrendsLotteryCog(commands.Cog):
             now = datetime.now(TZ_TW)
             
             # 定期檢查日誌
-            logger.debug(f"⏰ 趨勢排程檢查: 台灣時間 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"⏰ 趨勢排程檢查: 台灣時間 {now.strftime('%Y-%m-%d %H:%M:%S')}")
             
             # 檢查是否在深夜時段（00:00 - 08:00）
             if 0 <= now.hour < 8:
