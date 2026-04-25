@@ -139,11 +139,11 @@ class CannabisMerchantView(PersistentViewBase):
             traceback.print_exc()
 
 
-class SeedCategoryView(View):
+class SeedCategoryView(PersistentViewBase):
     """種子購買選擇"""
     
     def __init__(self, cog):
-        super().__init__(timeout=60)
+        super().__init__()
         self.cog = cog
         
         for seed_name in CANNABIS_SHOP["種子"].keys():
@@ -230,11 +230,11 @@ class BuySeedModal(Modal):
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
-class FertilizerCategoryView(View):
+class FertilizerCategoryView(PersistentViewBase):
     """肥料購買選擇"""
     
     def __init__(self, cog):
-        super().__init__(timeout=60)
+        super().__init__()
         self.cog = cog
         
         for fert_name in CANNABIS_SHOP["肥料"].keys():
@@ -321,11 +321,11 @@ class BuyFertilizerModal(Modal):
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
-class SellCannabisCategoryView(View):
+class SellCannabisCategoryView(PersistentViewBase):
     """出售大麻選擇"""
     
     def __init__(self, cog, cannabis):
-        super().__init__(timeout=60)
+        super().__init__()
         self.cog = cog
         self.cannabis = cannabis
         
