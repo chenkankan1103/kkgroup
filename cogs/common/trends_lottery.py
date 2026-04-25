@@ -308,7 +308,8 @@ class TrendsLotteryCog(commands.Cog):
             
             if not channel:
                 logger.error(f"❌ 找不到頻道：{self.trends_channel_id}")
-                logger.error(f"   可用頻道數: {len(self.bot.get_all_channels())}")
+                all_channels = list(self.bot.get_all_channels())
+                logger.error(f"   可用頻道數: {len(all_channels)}")
                 return
             
             logger.info(f"✅ 找到頻道: {channel.name}")
