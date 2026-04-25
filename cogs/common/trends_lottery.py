@@ -578,6 +578,33 @@ class TrendsLotteryCog(commands.Cog):
                 embed.color = discord.Color.red()
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            # 投注成功後編輯原始 embed 更新投注人數
+            if success and self.current_round_id in self.round_message_ids:
+                try:
+                    message_id = self.round_message_ids[self.current_round_id]
+                    channel = self.bot.get_channel(self.trends_channel_id)
+                    if channel:
+                        message = await channel.fetch_message(message_id)
+                        
+                        # 獲取最新的獎池信息
+                        jackpot_info = await self.lottery_system.get_jackpot_info(self.current_round_id)
+                        jackpot_amount = jackpot_info.get('jackpot', 0.0)
+                        total_bets = jackpot_info.get('total_bets', 0)
+                        
+                        # 重新生成 embed
+                        new_embed = format_lottery_embed(
+                            trends=[{"trend": t} for t in self.current_trends[:10]],
+                            jackpot_amount=jackpot_amount,
+                            total_bets=total_bets,
+                            current_round_id=self.current_round_id,
+                            timezone_obj=TZ_TW
+                        )
+                        
+                        await message.edit(embed=new_embed)
+                        logger.info(f"✅ 已編輯 embed 更新投注人數：{total_bets} 人")
+                except Exception as e:
+                    logger.error(f"❌ 編輯 embed 失敗: {e}")
         
         except Exception as e:
             logger.error(f"❌ 預測投注失敗: {e}")
