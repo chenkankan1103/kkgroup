@@ -59,10 +59,6 @@ def verify_github_signature(payload_body, signature_header):
     Returns:
         bool: 簽名是否有效
     """
-    # 暫時禁用簽名驗證用於調試
-    logger.warning("⚠️ 簽名驗證已禁用（調試模式）")
-    return True
-    
     if not GITHUB_WEBHOOK_SECRET:
         logger.warning("⚠️ 未設置 GITHUB_WEBHOOK_SECRET，跳過簽名驗證")
         return True
