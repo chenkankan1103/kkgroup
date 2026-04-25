@@ -254,6 +254,11 @@ class TrendsCollector:
                     "increase_percentage": item.get('increase_percentage', 0)
                 })
             
+            # 輸出前 5 項趨勢用於調試
+            if trends_list:
+                top_5 = [t['trend'] for t in trends_list[:5]]
+                logger.info(f"📊 [Google Trends 前5項] {', '.join(top_5)}")
+            
             return trends_list
             
         except Exception as e:

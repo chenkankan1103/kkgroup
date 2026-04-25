@@ -307,9 +307,19 @@ class TrendsLotteryCog(commands.Cog):
             channel = self.bot.get_channel(self.trends_channel_id)
             
             if not channel:
+                logger.warning(f"⚠️ 緩存中找不到頻道，嘗試從所有 guild 中查找...")
+                # 遍歷所有 guild 查找頻道
+                for guild in self.bot.guilds:
+                    channel = guild.get_channel(self.trends_channel_id)
+                    if channel:
+                        logger.info(f"✅ 在 guild '{guild.name}' 中找到頻道")
+                        break
+                
+            if not channel:
                 logger.error(f"❌ 找不到頻道：{self.trends_channel_id}")
                 all_channels = list(self.bot.get_all_channels())
                 logger.error(f"   可用頻道數: {len(all_channels)}")
+                logger.error(f"   可用 guilds: {[g.name for g in self.bot.guilds]}")
                 return
             
             logger.info(f"✅ 找到頻道: {channel.name}")
