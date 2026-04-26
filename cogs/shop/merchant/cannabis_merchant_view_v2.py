@@ -26,37 +26,27 @@ def report_interaction_error(interaction: discord.Interaction, error: Exception,
 
 class CannabisMerchantViewV2(PersistentViewBase):
     """黑市商人 - 大麻購買選單（改進版）"""
-    
+
     def __init__(self, cog):
         super().__init__()
         self.cog = cog
         self.current_menu = "main"  # 追蹤當前菜單狀態
-        
-        # 使用全域按鈕系統
-        self.add_button(
-            label="購買種子",
-            callback=self.buy_seeds,
-            style="success",
-            emoji="🌱",
-            custom_id="cannabis_buy_seeds_v2"
-        ).add_button(
-            label="購買肥料",
-            callback=self.buy_fertilizer,
-            style="primary",
-            emoji="💧",
-            custom_id="cannabis_buy_fertilizer_v2"
-        ).add_button(
-            label="出售大麻",
-            callback=self.sell_cannabis,
-            style="danger",
-            emoji="💰",
-            custom_id="cannabis_sell_v2"
-        ).add_button(
-            label="返回",
-            callback=self.back_button,
-            style="secondary",
-            custom_id="cannabis_back_v2"
-        )
+
+    @discord.ui.button(label="購買種子", style=discord.ButtonStyle.success, emoji="🌱", custom_id="cannabis_buy_seeds_v2")
+    async def buy_seeds_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.buy_seeds(interaction)
+
+    @discord.ui.button(label="購買肥料", style=discord.ButtonStyle.primary, emoji="💧", custom_id="cannabis_buy_fertilizer_v2")
+    async def buy_fertilizer_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.buy_fertilizer(interaction)
+
+    @discord.ui.button(label="出售大麻", style=discord.ButtonStyle.danger, emoji="💰", custom_id="cannabis_sell_v2")
+    async def sell_cannabis_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.sell_cannabis(interaction)
+
+    @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, custom_id="cannabis_back_v2")
+    async def back_button_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.back_button(interaction)
     
     async def buy_seeds(self, interaction: discord.Interaction):
         """購買種子 - 使用 Select Menu"""
