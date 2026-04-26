@@ -191,11 +191,11 @@ class CannabisMerchantViewV2(PersistentViewBase):
             report_interaction_error(interaction, e, "返回按鈕")
 
 
-class SeedSelectView(View):
+class SeedSelectView(PersistentViewBase):
     """種子選擇菜單"""
     
     def __init__(self, cog, options):
-        super().__init__(timeout=60)
+        super().__init__()
         self.cog = cog
         
         select = Select(
@@ -283,11 +283,11 @@ class SeedSelectView(View):
             await interaction.followup.send(f"❌ 發生錯誤：{str(e)[:100]}", ephemeral=True)
 
 
-class QuantitySelectView(View):
+class QuantitySelectView(PersistentViewBase):
     """通用數量選擇按鈕"""
     
     def __init__(self, cog, item_type, item_name, buy_type, price_per_unit):
-        super().__init__(timeout=30)
+        super().__init__()
         self.cog = cog
         self.item_type = item_type  # "種子" or "肥料"
         self.item_name = item_name
@@ -389,11 +389,11 @@ class QuantitySelectView(View):
         return callback
 
 
-class FertilizerSelectView(View):
+class FertilizerSelectView(PersistentViewBase):
     """肥料選擇菜單"""
     
     def __init__(self, cog, options):
-        super().__init__(timeout=60)
+        super().__init__()
         self.cog = cog
         
         select = Select(
@@ -444,11 +444,11 @@ class FertilizerSelectView(View):
 
 
 
-class SellSelectView(View):
+class SellSelectView(PersistentViewBase):
     """出售大麻選擇菜單"""
     
     def __init__(self, cog, inventory):
-        super().__init__(timeout=60)
+        super().__init__()
         self.cog = cog
         self.inventory = inventory
         
