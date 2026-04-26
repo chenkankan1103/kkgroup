@@ -173,15 +173,23 @@ class TrendsLotteryCog(commands.Cog):
             if now.hour in TRENDS_UPDATE_HOURS and now.minute <= 5:
                 logger.info(f"🚀 觸發推播時間 ({now.hour}:{now.minute:02d})，正在推播趨勢...")
                 await self._update_and_broadcast_trends()
-                self.last_pushed_round_id = now.strftime("%Y-%m-%d-%H")
+                # 標記為已推送
+                current_round_id = now.strftime("%Y-%m-%d-%H")
+                push_key = f"trends_pushed_{current_round_id}"
+                self.lottery_system.db.set_user_field("LOTTERY_SYSTEM", push_key, True)
             # 檢查是否錯過了最近的推送時間（補發機制）
             elif now.hour in TRENDS_UPDATE_HOURS and now.minute > 5:
                 # 如果在 5-59 分鐘之間，檢查本小時是否已經推送過
                 current_round_id = now.strftime("%Y-%m-%d-%H")
-                if not hasattr(self, 'last_pushed_round_id') or self.last_pushed_round_id != current_round_id:
+                # 使用資料庫檢查是否已經推送過
+                push_key = f"trends_pushed_{current_round_id}"
+                already_pushed = self.lottery_system.db.get_user_field("LOTTERY_SYSTEM", push_key, default=False)
+                
+                if not already_pushed:
                     logger.warning(f"⚠️ 檢測到可能錯過推送時間 ({now.hour}:00)，正在補發...")
                     await self._update_and_broadcast_trends()
-                    self.last_pushed_round_id = current_round_id
+                    # 標記為已推送
+                    self.lottery_system.db.set_user_field("LOTTERY_SYSTEM", push_key, True)
             else:
                 # 顯示何時下一次推播（每個整點時刻）
                 if now.minute == 0 and now.hour >= 8:
