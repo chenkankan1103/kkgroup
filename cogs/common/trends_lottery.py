@@ -151,9 +151,9 @@ class TrendsLotteryCog(commands.Cog):
         self.update_trends_task.cancel()
         logger.info("🛑 趨勢樂透 Cog 已卸載")
     
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=10)
     async def update_trends_task(self):
-        """定時更新趨勢任務（每小時檢查一次是否應該更新）"""
+        """定時更新趨勢任務（每 10 分鐘檢查一次是否應該更新）"""
         try:
             now = datetime.now(TZ_TW)
             
@@ -169,10 +169,19 @@ class TrendsLotteryCog(commands.Cog):
                 return
             
             # 檢查是否是更新時間（08:00, 12:00, 16:00, 20:00）
-            # 使用 0-2 分鐘窗口以容納任務延遲
-            if now.hour in TRENDS_UPDATE_HOURS and now.minute <= 2:
+            # 使用 0-5 分鐘窗口以容納任務延遲和 Bot 重連
+            if now.hour in TRENDS_UPDATE_HOURS and now.minute <= 5:
                 logger.info(f"🚀 觸發推播時間 ({now.hour}:{now.minute:02d})，正在推播趨勢...")
                 await self._update_and_broadcast_trends()
+                self.last_pushed_round_id = now.strftime("%Y-%m-%d-%H")
+            # 檢查是否錯過了最近的推送時間（補發機制）
+            elif now.hour in TRENDS_UPDATE_HOURS and now.minute > 5:
+                # 如果在 5-59 分鐘之間，檢查本小時是否已經推送過
+                current_round_id = now.strftime("%Y-%m-%d-%H")
+                if not hasattr(self, 'last_pushed_round_id') or self.last_pushed_round_id != current_round_id:
+                    logger.warning(f"⚠️ 檢測到可能錯過推送時間 ({now.hour}:00)，正在補發...")
+                    await self._update_and_broadcast_trends()
+                    self.last_pushed_round_id = current_round_id
             else:
                 # 顯示何時下一次推播（每個整點時刻）
                 if now.minute == 0 and now.hour >= 8:

@@ -303,6 +303,12 @@ class TrendsLotterySystem:
             
             for user_data in all_users:
                 user_id = user_data.get("user_id")
+                # 確保 user_id 是整數
+                if isinstance(user_id, str):
+                    try:
+                        user_id = int(user_id)
+                    except (ValueError, TypeError):
+                        continue
                 bets_json = user_data.get("lottery_bets", "[]")
                 
                 try:
