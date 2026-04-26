@@ -6,6 +6,7 @@ import traceback
 from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 from cogs.shop.merchant.cannabis_farming import get_inventory, get_user_plants, add_inventory, remove_inventory, plant_cannabis, harvest_plant
 from cogs.shop.merchant.database import update_user_kkcoin
+from db_adapter import get_user_field
 from status_dashboard import add_log
 from shared.utils.view_registry import PersistentViewBase
 
@@ -300,11 +301,19 @@ class PersonalLockerView(discord.ui.View):
         try:
             # defer 已在 personal_items_callback 中完成，此處不需重複 defer
             inventory = await get_inventory(self.user_id)
+            digital_usd = float(get_user_field(self.user_id, 'digital_usd', default=0) or 0)
 
             embed = discord.Embed(
                 title="🎒 個人物品",
                 description="你的物品庫存",
                 color=discord.Color.blue()
+            )
+
+            # 顯示數位美金（在最上面）
+            embed.add_field(
+                name="💵 數位美金",
+                value=f"**${digital_usd:,.2f} USD**",
+                inline=False
             )
 
             # 顯示種子
