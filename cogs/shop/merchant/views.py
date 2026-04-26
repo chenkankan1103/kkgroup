@@ -896,9 +896,9 @@ class PurchaseConfirmView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=None)
 
 
-class ProductCategoryView(View):
+class ProductCategoryView(PersistentViewBase):
     def __init__(self, cog):
-        super().__init__(timeout=300)
+        super().__init__()
         self.cog = cog
 
     @discord.ui.button(label="購買身份", style=discord.ButtonStyle.success, custom_id="persistent_buy_roles", emoji="👑")
