@@ -151,9 +151,9 @@ class TrendsLotteryCog(commands.Cog):
         self.update_trends_task.cancel()
         logger.info("🛑 趨勢樂透 Cog 已卸載")
     
-    @tasks.loop(minutes=10)
+    @tasks.loop(minutes=15)
     async def update_trends_task(self):
-        """定時更新趨勢任務（每 10 分鐘檢查一次是否應該更新）"""
+        """定時更新趨勢任務（每 15 分鐘檢查一次是否應該更新）"""
         try:
             now = datetime.now(TZ_TW)
             
