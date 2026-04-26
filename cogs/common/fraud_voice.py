@@ -84,7 +84,7 @@ class ScamHub(commands.Cog):
                 room_id, guild_id, owner_id, room_name, message_id, last_active_str, next_event_str = row
 
                 # 檢查頻道是否仍然存在
-                vc = self.bot.get_channel(room_id)
+                vc = await self._resolve_voice_channel(room_id)
                 if not vc:
                     print(f"[ScamHub] 恢復: 頻道 {room_id} 不存在，標記為非活躍")
                     await self._delete_room_from_db(room_id)
@@ -115,12 +115,58 @@ class ScamHub(commands.Cog):
                     except (discord.NotFound, discord.HTTPException):
                         self.room_messages.pop(room_id, None)
 
+                # 如果頻道仍有成員，重啟後立即同步狀態消息
+                if await self._get_voice_members(vc):
+                    await self.update_voice_status(vc)
+
                 restored += 1
                 print(f"[ScamHub] 已恢復房間: {room_name} (ID: {room_id})")
 
             print(f"[ScamHub] 共恢復 {restored} 個活躍房間")
         except Exception as e:
             print(f"[ScamHub] 加載活躍房間時發生錯誤: {e}")
+
+    async def _resolve_voice_channel(self, channel_id: int):
+        """從 cache 或 API 還原語音頻道對象。"""
+        vc = self.bot.get_channel(channel_id)
+        if vc:
+            return vc
+        try:
+            vc = await self.bot.fetch_channel(channel_id)
+            print(f"[ScamHub] 從 API 取得語音頻道 {channel_id}")
+            return vc
+        except discord.NotFound:
+            return None
+        except Exception as e:
+            print(f"[ScamHub] 嘗試 fetch channel {channel_id} 時失敗: {e}")
+            return None
+
+    async def _get_voice_members(self, vc):
+        """返回頻道中的成員清單，必要時使用 voice state 進行回退。"""
+        if not vc or not getattr(vc, 'guild', None):
+            return []
+
+        members = list(vc.members) if getattr(vc, 'members', None) else []
+        if members:
+            return members
+
+        # Cache 可能尚未填滿，使用 guild.voice_states 做補救
+        fallback = []
+        for vs in vc.guild.voice_states.values():
+            if vs.channel_id == vc.id:
+                if getattr(vs, 'member', None):
+                    fallback.append(vs.member)
+                    continue
+                member = vc.guild.get_member(vs.user_id)
+                if member:
+                    fallback.append(member)
+                    continue
+                try:
+                    member = await vc.guild.fetch_member(vs.user_id)
+                    fallback.append(member)
+                except Exception:
+                    pass
+        return fallback
 
     async def _save_room_to_db(self, room_id: int, guild_id: int, owner_id: int, room_name: str, next_event_time: datetime):
         """新房間創建時保存到數據庫"""
@@ -218,21 +264,26 @@ class ScamHub(commands.Cog):
                 
             owner_id = self.active_rooms[vc.id]['owner_id']
             owner = vc.guild.get_member(owner_id)
+            owner_mention = owner.mention if owner else f"<@{owner_id}>"
+
+            members = await self._get_voice_members(vc)
+            online_count = len(members)
 
             embed = discord.Embed(
                 title="📢 詐騙小組活動狀態",
                 description="💰 等待詐騙事件中..." if not event_text else f"💰 **當前詐騙行動**\n{event_text}",
                 color=discord.Color.green()
             )
-            embed.add_field(name="🏆 組長", value=f"{owner.mention}", inline=True)
-            embed.add_field(name="👥 在線人數", value=f"{len(vc.members)} 人", inline=True)
+            embed.add_field(name="🏆 組長", value=owner_mention, inline=True)
+            embed.add_field(name="👥 在線人數", value=f"{online_count} 人", inline=True)
             
             if rewards:
                 reward_text = "**📊 詐騙收入分配**\n"
                 for user_id, amount in rewards.items():
                     user = vc.guild.get_member(user_id)
+                    display_name = user.display_name if user else f"<@{user_id}>"
                     role = "👑 組長" if user_id == owner_id else "🧑‍🤝‍🧑 組員"
-                    reward_text += f"{role} {user.display_name}: **+{amount} KK幣**\n"
+                    reward_text += f"{role} {display_name}: **+{amount} KK幣**\n"
                 embed.add_field(name="🎁 詐騙所得", value=reward_text, inline=False)
             else:
                 embed.add_field(
@@ -272,6 +323,8 @@ class ScamHub(commands.Cog):
             try:
                 vc = self.bot.get_channel(vc_id)
                 if not vc:
+                    vc = await self._resolve_voice_channel(vc_id)
+                if not vc:
                     print(f"頻道 {vc_id} 不存在，從活動房間列表中移除")
                     self.active_rooms.pop(vc_id, None)
                     self.room_messages.pop(vc_id, None)
@@ -279,7 +332,7 @@ class ScamHub(commands.Cog):
                     continue
 
                 # 檢查是否有人在頻道中
-                current_members = len(vc.members)
+                current_members = len(await self._get_voice_members(vc))
                 
                 if current_members == 0:
                     # 頻道無人，檢查是否超過閒置時間
@@ -318,6 +371,7 @@ class ScamHub(commands.Cog):
                     event_text = await self.generate_scam_event(current_members)
                     
                     # 計算每個人的獎勵
+                    members = await self._get_voice_members(vc)
                     rewards = {}
                     owner_id = data['owner_id']
                     
@@ -334,7 +388,7 @@ class ScamHub(commands.Cog):
                         remaining_reward = total_reward - leader_reward
                         member_reward = round(remaining_reward / (current_members - 1)) if current_members > 1 else 0
                         
-                        for member in vc.members:
+                        for member in members:
                             if member.id != owner_id:
                                 rewards[member.id] = member_reward
                     
@@ -440,9 +494,16 @@ class ScamHub(commands.Cog):
             # 初始化狀態消息
             await self.update_voice_status(new_channel)
         
+        # 處理用戶加入現有詐騙小組頻道的情況
+        if after.channel and after.channel.id in self.active_rooms:
+            current_members = len(await self._get_voice_members(after.channel))
+            self.active_rooms[after.channel.id]['last_active'] = datetime.utcnow()
+            print(f"用戶 {member.display_name} 加入頻道 {after.channel.name}, 目前人數: {current_members}")
+            await self.update_voice_status(after.channel)
+
         # 處理用戶離開詐騙小組頻道的情況
         if before.channel and before.channel.id in self.active_rooms:
-            current_members = len(before.channel.members)
+            current_members = len(await self._get_voice_members(before.channel))
             print(f"用戶 {member.display_name} 離開頻道 {before.channel.name}, 剩餘人數: {current_members}")
             
             if current_members > 0:
