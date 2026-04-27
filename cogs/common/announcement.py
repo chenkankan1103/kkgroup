@@ -382,113 +382,215 @@ class AnnouncementButtonView(PersistentViewBase):
             traceback.print_exc()
             return []
     
-    def _categorize_commits(self, commits: list) -> dict:
-        """按 commit 前綴分類
+    def _get_commit_category(self, message: str) -> str:
+        """判斷 commit 屬於哪個類別"""
+        msg = message.lower()
+        
+        if 'breaking' in msg or 'breaking change' in msg:
+            return 'breaking'
+        elif msg.startswith('feat:') or msg.startswith('feat '):
+            return 'features'
+        elif msg.startswith('fix:') or msg.startswith('fix '):
+            return 'fixes'
+        elif msg.startswith('docs:') or msg.startswith('docs '):
+            return 'docs'
+        elif msg.startswith('refactor:') or msg.startswith('refactor '):
+            return 'refactor'
+        elif msg.startswith('style:') or msg.startswith('style '):
+            return 'style'
+        else:
+            return 'others'
+    
+    def _group_commits_by_date(self, commits: list) -> dict:
+        """按日期分組，日期內按重要性分類
         
         返回格式:
         {
-            'breaking': [commit, ...],    # 🔴 重大改動
-            'features': [commit, ...],    # ✨ 新功能
-            'fixes': [commit, ...],       # 🐛 缺陷修復
-            'docs': [commit, ...],        # 📚 文檔
-            'refactor': [commit, ...],    # 🔄 重構
-            'style': [commit, ...],       # 🎨 代碼風格
-            'others': [commit, ...]       # 📋 其他
+            '2026-04-27': {
+                'breaking': [commit, ...],
+                'features': [commit, ...],
+                'fixes': [commit, ...],
+                ...
+            },
+            '2026-04-26': {...},
+            ...
         }
         """
-        categories = {
-            'breaking': [],
-            'features': [],
-            'fixes': [],
-            'docs': [],
-            'refactor': [],
-            'style': [],
-            'others': []
-        }
+        grouped = {}
         
         for commit in commits:
-            msg = commit['message'].lower()
+            date = commit['date']  # 格式: 2026-04-27
             
-            # 判斷分類
-            if 'breaking' in msg or 'breaking change' in msg:
-                categories['breaking'].append(commit)
-            elif msg.startswith('feat:') or msg.startswith('feat '):
-                categories['features'].append(commit)
-            elif msg.startswith('fix:') or msg.startswith('fix '):
-                categories['fixes'].append(commit)
-            elif msg.startswith('docs:') or msg.startswith('docs '):
-                categories['docs'].append(commit)
-            elif msg.startswith('refactor:') or msg.startswith('refactor '):
-                categories['refactor'].append(commit)
-            elif msg.startswith('style:') or msg.startswith('style '):
-                categories['style'].append(commit)
-            else:
-                categories['others'].append(commit)
+            if date not in grouped:
+                grouped[date] = {
+                    'breaking': [],
+                    'features': [],
+                    'fixes': [],
+                    'docs': [],
+                    'refactor': [],
+                    'style': [],
+                    'others': []
+                }
+            
+            category = self._get_commit_category(commit['message'])
+            grouped[date][category].append(commit)
         
-        return categories
+        return grouped
     
-    def _create_update_log_embed(self, commits: list) -> discord.Embed:
-        """建立更新紀錄 Embed - 按類型分類顯示"""
+    def _calculate_field_length(self, field_name: str, field_value: str) -> int:
+        """計算欄位的字數（含名字和內容）"""
+        # 粗略估計：每個欄位額外占用約 50 字（格式化開銷）
+        return len(field_name) + len(field_value) + 50
+    
+    def _format_date_commits(self, date: str, date_commits: dict, remaining_chars: int = 3500) -> tuple:
+        """格式化一個日期的 commits，智能削減非重要提交
         
-        # 分類 commits
-        categories = self._categorize_commits(commits)
+        優先級：
+        1. 重大改動 - 全顯示
+        2. 新功能 - 全顯示
+        3. 其他類型 - 自動削減（顯示 x/y 表示剩餘未顯示）
         
-        # 定義分類的顯示信息
+        返回: (field_name, field_value, actual_chars_used)
+        """
         category_info = {
-            'breaking': {'emoji': '🔴', 'name': '重大改動', 'color': discord.Color.red()},
-            'features': {'emoji': '✨', 'name': '新功能'},
-            'fixes': {'emoji': '🐛', 'name': '缺陷修復'},
-            'docs': {'emoji': '📚', 'name': '文檔'},
-            'refactor': {'emoji': '🔄', 'name': '重構'},
-            'style': {'emoji': '🎨', 'name': '代碼風格'},
-            'others': {'emoji': '📋', 'name': '其他'}
+            'breaking': {'emoji': '🔴', 'name': '重大改動', 'important': True},
+            'features': {'emoji': '✨', 'name': '新功能', 'important': True},
+            'fixes': {'emoji': '🐛', 'name': '缺陷修復', 'important': False},
+            'docs': {'emoji': '📚', 'name': '文檔', 'important': False},
+            'refactor': {'emoji': '🔄', 'name': '重構', 'important': False},
+            'style': {'emoji': '🎨', 'name': '代碼風格', 'important': False},
+            'others': {'emoji': '📋', 'name': '其他', 'important': False}
         }
         
-        # 決定 embed 顏色（如果有重大改動就用紅色，否則藍色）
-        embed_color = discord.Color.red() if categories['breaking'] else discord.Color.blue()
+        # 優先顯示的順序
+        priority_order = ['breaking', 'features', 'fixes', 'refactor', 'docs', 'style', 'others']
+        
+        # 格式化
+        lines = []
+        used_chars = 0
+        
+        for category in priority_order:
+            commits = date_commits[category]
+            if not commits:
+                continue
+            
+            info = category_info[category]
+            emoji = info['emoji']
+            name = info['name']
+            is_important = info['important']
+            
+            # 重大改動和新功能全顯示，其他則需要根據剩餘空間削減
+            if is_important:
+                # 全顯示
+                for commit in commits:
+                    msg = commit['message']
+                    line = f"{emoji} {msg}"
+                    lines.append(line)
+                    used_chars += len(line) + 1  # +1 for newline
+            else:
+                # 智能削減：預留足夠空間給重要項目
+                available = remaining_chars - used_chars
+                
+                # 計算最多能顯示多少個
+                commits_to_show = 0
+                temp_chars = 0
+                for commit in commits:
+                    msg = commit['message']
+                    line = f"{emoji} {msg}"
+                    temp_chars += len(line) + 1
+                    if temp_chars < available * 0.3:  # 只用 30% 的剩餘空間給非重要項
+                        commits_to_show += 1
+                    else:
+                        break
+                
+                # 顯示前 N 個，其他用 "x/y" 表示
+                if commits_to_show > 0:
+                    for i, commit in enumerate(commits[:commits_to_show]):
+                        msg = commit['message']
+                        line = f"{emoji} {msg}"
+                        lines.append(line)
+                        used_chars += len(line) + 1
+                
+                # 添加 "x/y" 指示符（如果有未顯示的）
+                if len(commits) > commits_to_show:
+                    indicator = f"  ({commits_to_show}/{len(commits)}) 還有 {len(commits) - commits_to_show} 條"
+                    lines.append(indicator)
+                    used_chars += len(indicator) + 1
+        
+        # 組合結果
+        field_value = "\n".join(lines)
+        field_name = f"📅 {date}"
+        
+        return field_name, field_value, used_chars
+    
+    def _create_update_log_embed(self, commits: list) -> discord.Embed:
+        """建立更新紀錄 Embed - 按日期分組，重大改動優先顯示"""
+        
+        if not commits:
+            embed = discord.Embed(
+                title="📝 更新紀錄",
+                description="暫無更新",
+                color=discord.Color.greyple()
+            )
+            return embed
+        
+        # 按日期分組
+        grouped = self._group_commits_by_date(commits)
+        
+        # 決定顏色（如果有重大改動就用紅色）
+        has_breaking = any(
+            grouped[date]['breaking']
+            for date in grouped
+        )
+        embed_color = discord.Color.red() if has_breaking else discord.Color.blue()
+        
+        # 計算總日期和 commits
+        total_dates = len(grouped)
+        total_commits = len(commits)
         
         embed = discord.Embed(
             title="📝 更新紀錄",
-            description=f"最近 {len(commits)} 次提交（按類型分類）",
+            description=f"最近 {total_commits} 次提交（{total_dates} 個日期）\n🔴✨ = 優先顯示 | 🐛📋 = 自動適配",
             color=embed_color
         )
         
-        # 按順序顯示各分類
-        category_order = ['breaking', 'features', 'fixes', 'refactor', 'docs', 'style', 'others']
+        # 按日期倒序（最新在前）
+        dates_sorted = sorted(grouped.keys(), reverse=True)
         
-        for category_key in category_order:
-            commits_in_category = categories[category_key]
-            if not commits_in_category:
-                continue
+        # 動態控制：確保不超過 Discord 3000 字欄位限制
+        max_chars_per_embed = 3500  # 留一些緩衝空間
+        total_embed_chars = len(embed.description)
+        
+        for date in dates_sorted:
+            date_commits = grouped[date]
             
-            info = category_info[category_key]
-            emoji = info['emoji']
-            name = info['name']
-            
-            # 建立分類欄位
-            field_name = f"{emoji} {name} ({len(commits_in_category)})"
-            
-            # 格式化該分類下的所有 commits
-            commits_text = []
-            for commit in commits_in_category:
-                msg = commit['message']
-                
-                # 格式：只顯示信息
-                commits_text.append(f"• {msg}")
-            
-            field_value = "\n".join(commits_text)
-            
-            # 添加欄位（長度過長會自動截斷）
-            if len(field_value) > 1024:
-                field_value = field_value[:1000] + "\n...（更多內容）"
-            
-            embed.add_field(
-                name=field_name,
-                value=field_value,
-                inline=False
+            # 格式化這個日期的 commits
+            field_name, field_value, chars_used = self._format_date_commits(
+                date, 
+                date_commits,
+                remaining_chars=max_chars_per_embed - total_embed_chars
             )
+            
+            # 檢查是否會超過限制
+            if total_embed_chars + chars_used > max_chars_per_embed:
+                # 添加截斷提示
+                embed.set_footer(text="🔄 由 Git 日誌自動生成 | 部分舊日期已省略")
+                break
+            
+            # 添加欄位
+            if field_value.strip():  # 只在有內容時添加
+                embed.add_field(
+                    name=field_name,
+                    value=field_value,
+                    inline=False
+                )
+                total_embed_chars += chars_used
         
-        embed.set_footer(text="🔄 由 Git 日誌自動生成 (按 commit 類型分類)")
+        if not embed.fields:
+            embed.set_footer(text="🔄 由 Git 日誌自動生成 | 無可顯示的更新")
+        else:
+            embed.set_footer(text="🔄 由 Git 日誌自動生成 (按日期分類)")
+        
         return embed
     
     def update_button_styles(self, active_id: str):
