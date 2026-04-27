@@ -236,9 +236,12 @@ class AnnouncementButtonView(PersistentViewBase):
         """更新紀錄按鈕回調 - 在公告區域顯示最近的 Git commits"""
         try:
             # 讀取 git commits - 改為 20 條
+            print(f"[DEBUG] update_log_button_callback 開始執行...")
             commits = self._get_git_commits(limit=20)
             
+            print(f"[DEBUG] 收到 {len(commits)} 條 commits")
             if not commits:
+                print(f"[DEBUG] commits 為空，發送錯誤消息")
                 await interaction.response.send_message(
                     "❌ 無法讀取更新紀錄或沒有找到任何提交",
                     ephemeral=True
@@ -246,16 +249,19 @@ class AnnouncementButtonView(PersistentViewBase):
                 return
             
             # 建立 Embed
+            print(f"[DEBUG] 開始建立 Embed...")
             embed = self._create_update_log_embed(commits)
+            print(f"[DEBUG] Embed 建立完成，欄位數: {len(embed.fields)}")
             
             # 直接在公告區域編輯消息（和其他公告按鈕邏輯相同）
+            print(f"[DEBUG] 開始編輯消息...")
             await interaction.response.edit_message(embed=embed, view=self)
             
             # 更新按鈕狀態，標記「更新紀錄」為選中
             self.current_announcement_id = "update_log"
             self.update_button_styles("update_log")
             
-            print(f"✅ [更新紀錄] {interaction.user.name} 查看了更新紀錄")
+            print(f"✅ [更新紀錄] {interaction.user.name} 查看了更新紀錄 ({len(commits)} commits)")
             
         except Exception as e:
             print(f"❌ [更新紀錄] 查看更新紀錄失敗: {e}")
@@ -526,6 +532,8 @@ class AnnouncementButtonView(PersistentViewBase):
     def _create_update_log_embed(self, commits: list) -> discord.Embed:
         """建立更新紀錄 Embed - 按日期分組，重大改動優先顯示"""
         
+        print(f"[DEBUG _create_update_log_embed] 開始，commits 數量: {len(commits)}")
+        
         if not commits:
             embed = discord.Embed(
                 title="📝 更新紀錄",
@@ -536,6 +544,8 @@ class AnnouncementButtonView(PersistentViewBase):
         
         # 按日期分組
         grouped = self._group_commits_by_date(commits)
+        print(f"[DEBUG _create_update_log_embed] 分組完成，日期數: {len(grouped)}")
+        print(f"[DEBUG _create_update_log_embed] 日期列表: {list(grouped.keys())}")
         
         # 決定顏色（如果有重大改動就用紅色）
         has_breaking = any(
@@ -556,6 +566,7 @@ class AnnouncementButtonView(PersistentViewBase):
         
         # 按日期倒序（最新在前）
         dates_sorted = sorted(grouped.keys(), reverse=True)
+        print(f"[DEBUG _create_update_log_embed] 排序後日期: {dates_sorted}")
         
         # 動態控制：確保不超過 Discord 3000 字欄位限制
         max_chars_per_embed = 3500  # 留一些緩衝空間
@@ -563,6 +574,7 @@ class AnnouncementButtonView(PersistentViewBase):
         
         for date in dates_sorted:
             date_commits = grouped[date]
+            print(f"[DEBUG _create_update_log_embed] 處理日期 {date}: {sum(len(date_commits[cat]) for cat in date_commits)} commits")
             
             # 格式化這個日期的 commits
             field_name, field_value, chars_used = self._format_date_commits(
@@ -571,10 +583,13 @@ class AnnouncementButtonView(PersistentViewBase):
                 remaining_chars=max_chars_per_embed - total_embed_chars
             )
             
+            print(f"[DEBUG _create_update_log_embed] 日期 {date} 格式化完成: {len(field_value)} 字")
+            
             # 檢查是否會超過限制
             if total_embed_chars + chars_used > max_chars_per_embed:
                 # 添加截斷提示
                 embed.set_footer(text="🔄 由 Git 日誌自動生成 | 部分舊日期已省略")
+                print(f"[DEBUG _create_update_log_embed] 達到字數限制，停止添加")
                 break
             
             # 添加欄位
@@ -585,6 +600,11 @@ class AnnouncementButtonView(PersistentViewBase):
                     inline=False
                 )
                 total_embed_chars += chars_used
+                print(f"[DEBUG _create_update_log_embed] 欄位已添加，當前 embed 字數: {total_embed_chars}")
+            else:
+                print(f"[DEBUG _create_update_log_embed] 日期 {date} 的 field_value 為空，跳過")
+        
+        print(f"[DEBUG _create_update_log_embed] 完成，embed 共有 {len(embed.fields)} 個欄位")
         
         if not embed.fields:
             embed.set_footer(text="🔄 由 Git 日誌自動生成 | 無可顯示的更新")
