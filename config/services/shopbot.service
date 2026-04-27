@@ -1,5 +1,5 @@
 [Unit]
-Description=Discord Main Bot
+Description=Discord Shop Bot
 After=network.target
 Wants=network-online.target
 After=network-online.target
@@ -18,12 +18,12 @@ Environment=LC_ALL=C.UTF-8
 Environment=LANG=C.UTF-8
 Environment=LANGUAGE=zh_TW.UTF-8
 Environment=TZ=Asia/Taipei
-ExecStart=/home/e193752468/kkgroup/venv/bin/python /home/e193752468/kkgroup/bots/bot.py
+ExecStart=/home/e193752468/kkgroup/venv/bin/python /home/e193752468/kkgroup/bots/shopbot.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=bot
+SyslogIdentifier=shopbot
 SyslogFacility=daemon
 SyslogLevel=info
 
