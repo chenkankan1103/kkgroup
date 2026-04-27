@@ -399,7 +399,7 @@ class TrendsLotteryCog(commands.Cog):
             # 發送消息並添加按鈕
             view = TrendsPredictionView(
                 self,
-                [t["trend"] for t in trends],
+                [t["topic"] for t in trends],
                 self.current_round_id
             )
             
