@@ -102,6 +102,7 @@ class UserPanel(commands.Cog):
                 'level': user.get('level', 1),
                 'xp': user.get('xp', 0),
                 'kkcoin': user.get('kkcoin', 0),
+                'digital_usd': user.get('digital_usd', 0),
                 'title': user.get('title', '新手'),
                 'hp': user.get('hp', 100),
                 'stamina': user.get('stamina', 100),
