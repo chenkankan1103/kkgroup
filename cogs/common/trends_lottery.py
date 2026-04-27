@@ -40,12 +40,53 @@ except ImportError:
     TZ_TW = timezone(timedelta(hours=8))
 
 # 導入自定義模組
-from shared.utils.trends_collector import TrendsCollector, get_latest_trends
+import json
+from pathlib import Path
 from shared.utils.trends_lottery_system import TrendsLotterySystem
 from shared.utils.view_registry import PersistentViewBase
-from market_trends_serpapi import format_lottery_embed
+from market_trends_serpapi import get_trending_topics, format_lottery_embed
 
 logger = logging.getLogger(__name__)
+
+# 全局狀態存儲（JSON 文件）
+LOTTERY_STATE_FILE = Path(__file__).parent.parent.parent / "data" / "lottery_state.json"
+LOTTERY_STATE_FILE.parent.mkdir(exist_ok=True)
+
+
+def load_lottery_state() -> Dict:
+    """加載全局狀態"""
+    try:
+        if LOTTERY_STATE_FILE.exists():
+            with open(LOTTERY_STATE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"⚠️ 加載狀態失敗: {e}")
+    return {"pushed_rounds": {}}
+
+
+def save_lottery_state(state: Dict):
+    """保存全局狀態"""
+    try:
+        LOTTERY_STATE_FILE.parent.mkdir(exist_ok=True)
+        with open(LOTTERY_STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"❌ 保存狀態失敗: {e}")
+
+
+def is_round_pushed(round_id: str) -> bool:
+    """檢查某輪是否已推送"""
+    state = load_lottery_state()
+    return state.get("pushed_rounds", {}).get(round_id, False)
+
+
+def mark_round_pushed(round_id: str):
+    """標記某輪為已推送"""
+    state = load_lottery_state()
+    if "pushed_rounds" not in state:
+        state["pushed_rounds"] = {}
+    state["pushed_rounds"][round_id] = True
+    save_lottery_state(state)
 
 # 配置
 TRENDS_UPDATE_INTERVAL = 240  # 4 小時（秒）
@@ -175,21 +216,18 @@ class TrendsLotteryCog(commands.Cog):
                 await self._update_and_broadcast_trends()
                 # 標記為已推送
                 current_round_id = now.strftime("%Y-%m-%d-%H")
-                push_key = f"trends_pushed_{current_round_id}"
-                self.lottery_system.db.set_user_field("LOTTERY_SYSTEM", push_key, True)
+                mark_round_pushed(current_round_id)
             # 檢查是否錯過了最近的推送時間（補發機制）
             elif now.hour in TRENDS_UPDATE_HOURS and now.minute > 5:
                 # 如果在 5-59 分鐘之間，檢查本小時是否已經推送過
                 current_round_id = now.strftime("%Y-%m-%d-%H")
-                # 使用資料庫檢查是否已經推送過
-                push_key = f"trends_pushed_{current_round_id}"
-                already_pushed = self.lottery_system.db.get_user_field("LOTTERY_SYSTEM", push_key, default=False)
+                already_pushed = is_round_pushed(current_round_id)
                 
                 if not already_pushed:
                     logger.warning(f"⚠️ 檢測到可能錯過推送時間 ({now.hour}:00)，正在補發...")
                     await self._update_and_broadcast_trends()
                     # 標記為已推送
-                    self.lottery_system.db.set_user_field("LOTTERY_SYSTEM", push_key, True)
+                    mark_round_pushed(current_round_id)
             else:
                 # 顯示何時下一次推播（每個整點時刻）
                 if now.minute == 0 and now.hour >= 8:
@@ -257,33 +295,31 @@ class TrendsLotteryCog(commands.Cog):
     async def _fetch_trends_silent(self):
         """靜默抓取趨勢（深夜時段）"""
         try:
-            trends = await get_latest_trends(limit=10)
+            trends = await get_trending_topics(region="TW", limit=10)
             
             if trends:
-                self.current_trends = [t["trend"] for t in trends]
+                self.current_trends = [t.get("topic", t.get("trend", "")) for t in trends]
                 logger.info(f"✅ 深夜趨勢已抓取（靜默）：{len(self.current_trends)} 項")
         except Exception as e:
             logger.error(f"❌ 深夜趨勢抓取失敗: {e}")
     
     async def _update_and_broadcast_trends(self):
-        """更新趨勢並廣播到 Discord（寬鬆模式：接受 Google Trends 備用數據）"""
+        """更新趨勢並廣播到 Discord"""
         logger.info(f"📝 [_UPDATE_AND_BROADCAST] 開始執行...")
         try:
-            # 抓取最新趨勢（寬鬆模式：接受 Google Trends 備用數據）
-            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_latest_trends(strict=False)...")
-            trends = await get_latest_trends(limit=10, strict=False)
+            # 抓取最新趨勢（使用 SerpApi Google Trends）
+            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_trending_topics...")
+            trends = await get_trending_topics(region="TW", limit=10)
             logger.info(f"📊 [_UPDATE_AND_BROADCAST] 收到 {len(trends) if trends else 0} 項趨勢")
             
             if not trends:
                 logger.warning("⚠️ 無法獲取任何趨勢數據，跳過本次發布")
                 return
             
-            # 顯示數據來源（僅記錄，不再阻止發布）
-            twitter_count = sum(1 for t in trends if t.get("platform") == "twitter_twikit")
-            logger.info(f"✅ [品質檢查] 收到 {twitter_count}/{len(trends)} Twitter 趨勢，其餘為備用數據")
+            logger.info(f"✅ [品質檢查] 成功獲取 Google Trends 數據")
             
             # 更新當前趨勢
-            self.current_trends = [t["trend"] for t in trends]
+            self.current_trends = [t.get("topic", t.get("trend", "")) for t in trends]
             
             # 生成本輪 ID（格式：2026-04-24-08）
             now = datetime.now(TZ_TW)
@@ -725,9 +761,9 @@ class TrendsLotteryCog(commands.Cog):
             
             logger.info(f"🧪 測試推播已觸發 (by {interaction.user})")
             
-            # 嘗試在寬鬆模式下獲取趨勢
-            logger.info(f"📡 測試推播：嘗試獲取趨勢數據（寬鬆模式）...")
-            trends = await get_latest_trends(limit=10, strict=False)
+            # 嘗試獲取趨勢
+            logger.info(f"📡 測試推播：嘗試獲取趨勢數據...")
+            trends = await get_trending_topics(region="TW", limit=10)
             
             if not trends:
                 logger.warning("⚠️ 測試推播：無法獲得任何趨勢數據")
