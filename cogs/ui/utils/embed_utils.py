@@ -169,7 +169,9 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
     embed.add_field(name="🆔 使用者ID", value=f"`{user_data['user_id']}`", inline=True)
     embed.add_field(name="⭐ 等級", value=f"**{user_data['level'] or 1}**", inline=True)
     embed.add_field(name="✨ 經驗值", value=f"{user_data['xp'] or 0} XP", inline=True)
-    embed.add_field(name="💰 金錢", value=f"{user_data['kkcoin'] or 0} KKCoin", inline=True)    embed.add_field(name="💵 數位美金", value=f"${float(user_data.get('digital_usd') or 0):,.2f}", inline=True)    embed.add_field(name="🏆 職位", value=user_data['title'] or '新手', inline=True)
+    embed.add_field(name="💰 金錢", value=f"{user_data['kkcoin'] or 0} KKCoin", inline=True)
+    embed.add_field(name="💵 數位美金", value=f"${float(user_data.get('digital_usd') or 0):,.2f}", inline=True)
+    embed.add_field(name="🏆 職位", value=user_data['title'] or '新手', inline=True)
     embed.add_field(name="\u200b", value="\u200b", inline=True)
 
     hp = user_data['hp'] or 100
