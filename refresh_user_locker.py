@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from cogs.ui.utils.paperdoll_manager import build_api_url, validate
-from cogs.ui.utils.locker_cache import clear_cache_for_user
+from cogs.ui.utils.locker_cache import locker_cache
 
 
 def get_user_data(user_id: str):
@@ -66,8 +66,10 @@ def update_user_locker(user_id: str, force_recreate: bool = False):
     
     # 4. 清除緩存
     try:
-        cache_cleared = clear_cache_for_user(user_id)
-        print(f"✅ 紙娃娃緩存已清除 ({cache_cleared} 個條目)")
+        # 計算該用戶的 paperdoll hash 並清除
+        paperdoll_hash = locker_cache.build_paperdoll_hash(user_data)
+        locker_cache.invalidate_hash(paperdoll_hash)
+        print(f"✅ 紙娃娃緩存已清除 (hash: {paperdoll_hash[:16]}...)")
     except Exception as e:
         print(f"⚠️  緩存清除失敗 (非致命): {e}")
     
