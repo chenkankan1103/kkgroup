@@ -1076,6 +1076,34 @@ class WelcomeFlow(commands.Cog):
             print(f"✅ 發送入園成功訊息給 {member.name}")
             await interaction.followup.send(embed=embed_response, ephemeral=True)
 
+            # 🎁 立即建立置物櫃（後台任務，不阻塞交互）
+            async def create_locker_after_entry():
+                """入園後立即建立置物櫃，包含紙娃娃圖片"""
+                try:
+                    await asyncio.sleep(1)  # 稍等，確保用戶數據已完全更新
+                    
+                    # 取得 UserPanel cog（位於 uibody.py）
+                    user_panel_cog = self.bot.get_cog("UserPanel")
+                    if user_panel_cog:
+                        print(f"🎁 開始為 {member.name} 建立置物櫃...")
+                        thread = await user_panel_cog.get_or_create_user_thread(member)
+                        if thread:
+                            print(f"✅ 【{member.name}】置物櫃已建立: {thread.id}")
+                            # 嘗試向用戶發送通知（非關鍵）
+                            try:
+                                await member.send(f"✨ 你的置物櫃已準備好：{thread.jump_url}")
+                            except:
+                                pass
+                        else:
+                            print(f"⚠️ 【{member.name}】置物櫃建立失敗")
+                    else:
+                        print(f"⚠️ 找不到 UserPanel cog，無法建立置物櫃")
+                        
+                except Exception as locker_err:
+                    print(f"❌ 置物櫃建立任務錯誤: {locker_err}")
+
+            self.bot.loop.create_task(create_locker_after_entry())
+
             # 5分鐘後移除臨時身分組並完成處理（後台執行，不阻塞交互）
             async def cleanup_after_delay():
                 try:
