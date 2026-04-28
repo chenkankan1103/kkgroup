@@ -113,19 +113,14 @@ def get_paperdoll_image(user_id: str):
         
         use_cache = request.args.get('cache', 'true').lower() == 'true'
         
-        if paperdoll_system is None:
-            return jsonify({"error": "Paperdoll system not initialized"}), 500
-        
-        # 使用 maplestory.io API 直接返回圖片 URL
-        # 前端可以直接訪問該 URL，無需異步
-        
-        # 構建項目列表
-        items = paperdoll_system._build_character_items(user)
-        is_stunned = user.get('is_stunned', 0) == 1
-        image_url = paperdoll_system._build_api_url(items, is_stunned)
-        
-        # 重定向到 MapleStory.io API
-        return redirect(image_url, code=302)
+        # 使用統一的 paperdoll_manager 取得圖片 URL
+        try:
+            from cogs.ui.utils import paperdoll_manager
+            image_url = paperdoll_manager.build_api_url(user)
+            # 重定向到 MapleStory.io API
+            return redirect(image_url, code=302)
+        except Exception as inner_e:
+            return jsonify({"error": str(inner_e)}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
