@@ -17,7 +17,7 @@ import re
 from datetime import datetime
 from db_adapter import get_user, set_user, get_user_field, set_user_field
 from shared.utils.view_registry import PersistentViewBase
-from cogs.ui.utils.init_missing_character_data import get_random_character_data
+from cogs.ui.utils import paperdoll_manager
 
 load_dotenv()
 
@@ -43,18 +43,7 @@ class GenderSelectView(discord.ui.View):
 
         # 使用隨機紙娃娃配置，保持性別不變
         selected_gender = select.values[0]
-        random_appearance = get_random_character_data(preserve_gender=selected_gender)
-        
-        # random_appearance 已經是字符串格式
-        appearance = {
-            'face': random_appearance['face'],
-            'hair': random_appearance['hair'],
-            'skin': random_appearance['skin'],
-            'top': random_appearance['top'],
-            'bottom': random_appearance['bottom'],
-            'shoes': random_appearance['shoes'],
-            'gender': selected_gender
-        }
+        appearance = paperdoll_manager.get_random(preserve_gender=selected_gender)
 
         try:
             await self.cog.update_user_data(self.user_id, appearance)
@@ -139,18 +128,7 @@ class PersistentWelcomeView(discord.ui.View):
 
         # 使用隨機紙娃娃配置，保持性別不變
         selected_gender = select.values[0]
-        random_appearance = get_random_character_data(preserve_gender=selected_gender)
-        
-        # random_appearance 已經是字符串格式
-        appearance = {
-            "face": random_appearance['face'],
-            "hair": random_appearance['hair'],
-            "skin": random_appearance['skin'],
-            "top": random_appearance['top'],
-            "bottom": random_appearance['bottom'],
-            "shoes": random_appearance['shoes'],
-            "gender": selected_gender
-        }
+        appearance = paperdoll_manager.get_random(preserve_gender=selected_gender)
 
         await self.cog.update_user_data(target_user_id, appearance)
         await self.cog.update_welcome_message(interaction, target_user_id)
@@ -658,37 +636,15 @@ class WelcomeFlow(commands.Cog):
 
     async def get_character_image_url(self, user_data: dict) -> Optional[str]:
         """
-        使用用戶的實際紙娃娃配置生成圖片 API URL
-        
-        重要修復：原本只使用預設配置，導致所有用戶看到相同圖片。
-        現在改為使用用戶自訂的 face、hair、top、bottom、shoes。
+        使用用戶的實際紙娃娃配置生成圖片 API URL。
+        委派給 paperdoll_manager.build_api_url() 統一處理。
         """
-        try:
-            # 從用戶數據中提取紙娃娃配置（字符串格式存儲）
-            items = [
-                {"itemId": int(user_data.get('face', 20005)), "region": "TWMS", "version": "256"},
-                {"itemId": int(user_data.get('hair', 30120)), "region": "TWMS", "version": "256"},
-                {"itemId": int(user_data.get('top', 1040014)), "region": "TWMS", "version": "256"},
-                {"itemId": int(user_data.get('bottom', 1060096)), "region": "TWMS", "version": "256"},
-                {"itemId": int(user_data.get('shoes', 1072005)), "region": "TWMS", "version": "256"},
-            ]
-            
-            # 選擇姿勢
-            pose = 'prone' if user_data.get('is_stunned', 0) == 1 else 'stand1'
-            
-            # 構建 API URL
-            item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
-            api_url = f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
-            
-            print(f"🎭 【get_character_image_url】用戶紙娃娃配置: face={user_data.get('face')}, hair={user_data.get('hair')}, top={user_data.get('top')}")
-            print(f"   ✅ 已生成自訂紙娃娃 API URL (姿勢: {pose})")
-            return api_url
-            
-        except Exception as e:
-            print(f"❌ 【get_character_image_url】異常: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+        url = paperdoll_manager.build_api_url(user_data)
+        if url:
+            print(f"🎭 【get_character_image_url】face={user_data.get('face')}, hair={user_data.get('hair')}, top={user_data.get('top')}")
+        else:
+            print(f"❌ 【get_character_image_url】build_api_url 回傳 None")
+        return url
 
     async def create_welcome_embed(self, user_data: dict, user: discord.User) -> discord.Embed:
         try:
