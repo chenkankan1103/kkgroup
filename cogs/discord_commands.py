@@ -88,6 +88,18 @@ class CommandManager(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.registry = CommandRegistry()
+        self._register_commands()
+    
+    def _register_commands(self):
+        """註冊所有活躍的指令"""
+        # UI 模組命令
+        self.registry.register_active(
+            'admin_refresh_all_paperdolls',
+            category='UI / 紙娃娃',
+            handler=None,  # 指令由 admin_ui_commands.py 定義
+            description='[UIBot 管理員] 刷新所有置物櫃的紙娃娃圖片 - 驗證 URL 生成狀態',
+            permissions='administrator'
+        )
     
     @app_commands.command(
         name="commands_list",
