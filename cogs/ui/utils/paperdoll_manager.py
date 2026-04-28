@@ -154,22 +154,14 @@ def build_api_url(
             pose = 'prone'
 
         # ── 建立部件列表 ──────────────────────────────────────
-        # ⚠️ 移除 itemId 2000（無效的 item ID）
-        # MapleStory item ID 範圍：Face(20000-29999), Hair(30000-39999), Cap(40000-49999), Coat(60000-69999), Bottom(70000-79999), Shoes(80000-89999), Skin(10000-19999)
+        # MapleStory API：skinId 必須包含（決定膚色/臉部外觀）
         items: list = [
-            {
-                "itemId": skin_id,  # 🎯 皮膚色（必須包含，否則無法正確渲染臉部）
-                "region": region, "version": version,
-            },
-            {
-                "itemId": face_id,
-                **({"animationName": "stunned"} if is_stunned else {}),
-                "region": region, "version": version,
-            },
-            {"itemId": hair_id,   "region": region, "version": version},
-            {"itemId": top_id,    "region": region, "version": version},
-            {"itemId": bottom_id, "region": region, "version": version},
-            {"itemId": shoes_id,  "region": region, "version": version},
+            {"itemId": skin_id},  # 🎯 皮膚色（必須包含，否則無法正確渲染臉部）
+            {"itemId": face_id, **({"animationName": "stunned"} if is_stunned else {})},
+            {"itemId": hair_id},
+            {"itemId": top_id},
+            {"itemId": bottom_id},
+            {"itemId": shoes_id},
         ]
 
         # ── 附屬裝備（商店試穿等場景使用）────────────────────
@@ -193,11 +185,15 @@ def build_api_url(
             f"showears=false&showLefEars=false&showHighLefEars=false"
             f"&resize={resize}&flipX={flip_param}"
         )
-        maplestory_url = f"{MAPLESTORY_API_BASE}/{item_path}/{pose}/animated?{params}"
+        
+        # 使用舊的 API 格式：/api/character/{items}/{animation}/animated
+        # 其中 items 包含 skin_id 作為第一個 item
+        maplestory_url = f"https://maplestory.io/api/character/{item_path}/{pose}/animated?{params}"
         
         # ✅ 調試：URL 成功生成
         if maplestory_url and len(maplestory_url) > 100:
             print(f"[paperdoll_manager] ✅ MapleStory URL 生成成功 (長度: {len(maplestory_url)})")
+            print(f"[paperdoll_manager]    skinId: {skin_id}, pose: {pose}")
         
         # 🔄 使用代理 URL 來解決 Discord 無法加載紙娃娃的問題
         # 原因：MapleStory API 要求 User-Agent header，Discord 沒有發送 → 403 Forbidden
