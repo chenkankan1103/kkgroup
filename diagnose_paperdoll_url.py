@@ -18,7 +18,14 @@ from cogs.ui.utils.paperdoll_manager import build_api_url, validate
 def test_url(url: str) -> bool:
     """測試 URL 是否可訪問"""
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
+        # 加上 User-Agent 防止被阻擋
+        req = urllib.request.Request(
+            url,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
             status = response.status
             if status == 200:
                 content_type = response.headers.get('Content-Type', 'N/A')
