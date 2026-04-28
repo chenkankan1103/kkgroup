@@ -45,14 +45,14 @@ class GenderSelectView(discord.ui.View):
         selected_gender = select.values[0]
         random_appearance = get_random_character_data(preserve_gender=selected_gender)
         
-        # 轉換為字符串形式（數據庫存儲格式）
+        # random_appearance 已經是字符串格式
         appearance = {
-            'face': str(random_appearance['face']),
-            'hair': str(random_appearance['hair']),
-            'skin': str(random_appearance['skin']),
-            'top': str(random_appearance['top']),
-            'bottom': str(random_appearance['bottom']),
-            'shoes': str(random_appearance['shoes']),
+            'face': random_appearance['face'],
+            'hair': random_appearance['hair'],
+            'skin': random_appearance['skin'],
+            'top': random_appearance['top'],
+            'bottom': random_appearance['bottom'],
+            'shoes': random_appearance['shoes'],
             'gender': selected_gender
         }
 
@@ -141,14 +141,14 @@ class PersistentWelcomeView(discord.ui.View):
         selected_gender = select.values[0]
         random_appearance = get_random_character_data(preserve_gender=selected_gender)
         
-        # 轉換為字符串形式（數據庫存儲格式）
+        # random_appearance 已經是字符串格式
         appearance = {
-            "face": str(random_appearance['face']),
-            "hair": str(random_appearance['hair']),
-            "skin": str(random_appearance['skin']),
-            "top": str(random_appearance['top']),
-            "bottom": str(random_appearance['bottom']),
-            "shoes": str(random_appearance['shoes']),
+            "face": random_appearance['face'],
+            "hair": random_appearance['hair'],
+            "skin": random_appearance['skin'],
+            "top": random_appearance['top'],
+            "bottom": random_appearance['bottom'],
+            "shoes": random_appearance['shoes'],
             "gender": selected_gender
         }
 
