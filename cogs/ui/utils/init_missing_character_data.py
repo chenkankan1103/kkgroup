@@ -20,12 +20,6 @@ MALE_DEFAULT_CHARACTER_DATA = paperdoll_manager.MALE_DEFAULT
 FEMALE_DEFAULT_CHARACTER_DATA = paperdoll_manager.FEMALE_DEFAULT
 DEFAULT_CHARACTER_DATA = paperdoll_manager.MALE_DEFAULT
 CHARACTER_VARIATIONS = paperdoll_manager.CHARACTER_VARIATIONS
-    'hair': [30000, 30030, 30120, 30220, 30260, 30300, 30320],
-    'skin': [10000, 10001, 10002, 12000, 12100],
-    'top': [1040010, 1040014, 1041002, 1040060, 1042003],
-    'bottom': [1060002, 1060096, 1060127, 1061112],
-    'shoes': [1072005, 1072014, 1072267, 1072410],
-}
 
 
 def get_random_character_data(preserve_gender: str = None) -> dict:
