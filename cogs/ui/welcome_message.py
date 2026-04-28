@@ -497,6 +497,16 @@ class WelcomeFlow(commands.Cog):
                 if key in allowed_fields:
                     set_user_field(user_id, key, value)
             
+            # ✅ 新增備份邏輯：如果 hp 和 stamina 都是 100，自動清除 is_stunned
+            # 這是 recovery_cog 的備份邏輯，確保昏倒狀態被正確清除
+            hp = data.get('hp') or get_user_field(user_id, 'hp', default=0)
+            stamina = data.get('stamina') or get_user_field(user_id, 'stamina', default=0)
+            is_stunned = get_user_field(user_id, 'is_stunned', default=0)
+            
+            if hp == 100 and stamina == 100 and is_stunned == 1:
+                set_user_field(user_id, 'is_stunned', 0)
+                print(f"✅ 用戶 {user_id} 已完全恢復，清除昏倒狀態")
+            
         except Exception as e:
             print(f"❌ 更新用戶資料錯誤: {e}")
 
