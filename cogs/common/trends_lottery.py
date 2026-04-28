@@ -295,7 +295,7 @@ class TrendsLotteryCog(commands.Cog):
     async def _fetch_trends_silent(self):
         """靜默抓取趨勢（深夜時段）"""
         try:
-            trends = await get_trending_topics(region="TW", limit=10)
+            trends = await get_trending_topics(region="TW", limit=10, use_cache=False)
             
             if trends:
                 self.current_trends = [t.get("topic", t.get("trend", "")) for t in trends]
@@ -307,9 +307,9 @@ class TrendsLotteryCog(commands.Cog):
         """更新趨勢並廣播到 Discord"""
         logger.info(f"📝 [_UPDATE_AND_BROADCAST] 開始執行...")
         try:
-            # 抓取最新趨勢（使用 SerpApi Google Trends）
-            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_trending_topics...")
-            trends = await get_trending_topics(region="TW", limit=10)
+            # 抓取最新趨勢（使用 SerpApi Google Trends，強制不用緩存確保最新數據）
+            logger.info(f"📡 [_UPDATE_AND_BROADCAST] 調用 get_trending_topics (use_cache=False)...")
+            trends = await get_trending_topics(region="TW", limit=10, use_cache=False)
             logger.info(f"📊 [_UPDATE_AND_BROADCAST] 收到 {len(trends) if trends else 0} 項趨勢")
             
             if not trends:
@@ -762,8 +762,8 @@ class TrendsLotteryCog(commands.Cog):
             logger.info(f"🧪 測試推播已觸發 (by {interaction.user})")
             
             # 嘗試獲取趨勢
-            logger.info(f"📡 測試推播：嘗試獲取趨勢數據...")
-            trends = await get_trending_topics(region="TW", limit=10)
+            logger.info(f"📡 測試推播：嘗試獲取趨勢數據 (use_cache=False)...")
+            trends = await get_trending_topics(region="TW", limit=10, use_cache=False)
             
             if not trends:
                 logger.warning("⚠️ 測試推播：無法獲得任何趨勢數據")
