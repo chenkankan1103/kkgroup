@@ -126,11 +126,9 @@ class UserPanel(commands.Cog):
         return await create_user_embed(self, user_data, user)
     
     async def get_character_image_url(self, user_data: dict) -> Optional[str]:
-        """獲取角色圖片URL"""
-        return await get_character_image_url(
-            self.bot, user_data, self.image_cache,
-            self.image_storage_channel_id, self.welcome_channel_id
-        )
+        """獲取角色圖片URL，委派給 paperdoll_manager"""
+        from cogs.ui.utils import paperdoll_manager
+        return paperdoll_manager.build_api_url(user_data)
     
     def generate_character_cache_key(self, user_data: dict) -> str:
         """生成角色快取鍵"""

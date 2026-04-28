@@ -107,10 +107,10 @@ def build_maplestory_api_url(user_data: dict, animated: bool = True) -> str:
 
 async def get_character_image_url(bot, user_data: dict, image_cache: dict, image_storage_channel_id: int, 
                                   welcome_channel_id: int) -> Optional[str]:
-    """獲取角色圖片 API URL（直接返回 MapleStory API URL）"""
+    """獲取角色圖片 API URL，委派給 paperdoll_manager"""
     try:
-        # 直接構建並返回 API URL，無需下載圖片
-        api_url = build_maplestory_api_url(user_data, animated=True)
+        from . import paperdoll_manager
+        api_url = paperdoll_manager.build_api_url(user_data)
         return api_url
         
     except Exception as e:

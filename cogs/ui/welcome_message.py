@@ -195,19 +195,19 @@ class TestWelcomeView(discord.ui.View):
         
         # 執行真實邏輯：生成隨機紙娃娃
         selected_gender = select.values[0]
-        random_appearance = get_random_character_data(preserve_gender=selected_gender)
+        appearance = paperdoll_manager.get_random(preserve_gender=selected_gender)
         
         # 顯示結果但不寫入數據庫
         gender_text = "男性" if selected_gender == "male" else "女性"
         appearance_text = (
             f"已選擇性別：{gender_text}\n"
             f"随机生成造型（模拟，未保存）：\n"
-            f"  臉：{random_appearance['face']}\n"
-            f"  髮：{random_appearance['hair']}\n"
-            f"  膚：{random_appearance['skin']}\n"
-            f"  上衣：{random_appearance['top']}\n"
-            f"  褲：{random_appearance['bottom']}\n"
-            f"  鞋：{random_appearance['shoes']}"
+            f"  臉：{appearance['face']}\n"
+            f"  髮：{appearance['hair']}\n"
+            f"  膚：{appearance['skin']}\n"
+            f"  上衣：{appearance['top']}\n"
+            f"  褲：{appearance['bottom']}\n"
+            f"  鞋：{appearance['shoes']}"
         )
         
         await interaction.followup.send(appearance_text, ephemeral=True)

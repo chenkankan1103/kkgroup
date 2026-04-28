@@ -122,7 +122,9 @@ class EnhancedPaperDollSystem:
         return items
     
     def _build_api_url(self, items: List[dict], is_stunned: bool = False) -> str:
-        """構建 API URL"""
+        """構建 API URL，現已委派給 paperdoll_manager"""
+        from cogs.ui.utils import paperdoll_manager
+        # 將 items 列表轉換回 user_data 格式，然後使用統一 manager
         item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
         pose = "prone" if is_stunned else "stand1"
         return f"{self.api_base_url}/{item_path}/{pose}/0?showears=false&resize=2&flipX=true"
