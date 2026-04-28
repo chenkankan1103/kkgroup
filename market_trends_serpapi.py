@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import discord
 from serpapi import Client
 
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 SERPAPI_API_KEY = os.getenv('SERPAPI_API_KEY')
+CACHE_EXPIRY_MINUTES = 30  # 緩存 30 分鐘後過期
 
 if not SERPAPI_API_KEY:
     logger.warning("⚠️ 未找到 SERPAPI_API_KEY，將使用備用數據")
@@ -112,15 +113,22 @@ async def get_trending_topics(
         logger.warning("[Trends] ⚠️ 無 API 密鑰，使用備用數據")
         return FALLBACK_TRENDS[:limit]
     
-    # 嘗試讀取本地緩存
+    # 嘗試讀取本地緩存（檢查是否過期）
     if use_cache and CACHE_FILE.exists():
         try:
             with open(CACHE_FILE, 'r', encoding='utf-8') as f:
                 cached = json.load(f)
-                logger.info(f"[Trends] 📦 使用本地緩存")
-                return cached.get('trends', [])[:limit]
-        except:
-            pass
+                # 檢查緩存是否過期
+                if 'timestamp' in cached:
+                    cache_time = datetime.fromisoformat(cached['timestamp'])
+                    age_minutes = (datetime.now() - cache_time).total_seconds() / 60
+                    if age_minutes < CACHE_EXPIRY_MINUTES:
+                        logger.info(f"[Trends] 📦 使用本地緩存 ({age_minutes:.1f} 分鐘前)")
+                        return cached.get('trends', [])[:limit]
+                    else:
+                        logger.info(f"[Trends] ⏰ 緩存已過期 ({age_minutes:.1f} 分鐘)，重新獲取...")
+        except Exception as e:
+            logger.debug(f"[Trends] 緩存讀取失敗: {e}")
     
     # 在執行器中運行同步 SDK 調用（避免阻塞事件循環）
     loop = asyncio.get_event_loop()
