@@ -17,6 +17,8 @@
 
 import random
 import json
+import base64
+import os
 from typing import Optional, Dict, Any
 
 # ============================================================
@@ -185,12 +187,18 @@ def build_api_url(
             f"showears=false&showLefEars=false&showHighLefEars=false"
             f"&resize={resize}&flipX={flip_param}"
         )
-        url = f"{MAPLESTORY_API_BASE}/{item_path}/{pose}/animated?{params}"
+        maplestory_url = f"{MAPLESTORY_API_BASE}/{item_path}/{pose}/animated?{params}"
+        
         # ✅ 調試：URL 成功生成
-        if url and len(url) > 100:
-            # print(f"[paperdoll_manager] ✅ 生成 URL 成功 (長度: {len(url)})")
+        if maplestory_url and len(maplestory_url) > 100:
+            # print(f"[paperdoll_manager] ✅ 生成 URL 成功 (長度: {len(maplestory_url)})")
             pass
-        return url
+        
+        # 🔄 使用代理 URL 來解決 Discord 無法加載紙娃娃的問題
+        # 原因：MapleStory API 要求 User-Agent header，Discord 沒有發送 → 403 Forbidden
+        # 解決：我們的統一 API 提供代理端點，轉發請求並添加 User-Agent header
+        proxy_url = _wrap_with_proxy(maplestory_url)
+        return proxy_url
 
     except Exception as e:
         import traceback
@@ -198,6 +206,52 @@ def build_api_url(
         print(f"[paperdoll_manager]    數據: {user_data}")
         print(f"[paperdoll_manager]    堆棧:\n{traceback.format_exc()}")
         return None
+
+
+def _wrap_with_proxy(maplestory_url: str) -> str:
+    """
+    將 MapleStory API URL 包裝為代理 URL
+    
+    使用統一 API 的代理端點轉發請求，添加必要的 User-Agent header
+    來解決 Discord 無法加載紙娃娃的問題。
+    
+    Args:
+        maplestory_url: 原始 MapleStory API URL
+        
+    Returns:
+        代理 URL，格式：{base_url}/api/proxy/paperdoll?url=<base64_encoded_maplestory_url>
+    """
+    try:
+        # Base64 編碼原始 URL
+        encoded = base64.b64encode(maplestory_url.encode()).decode()
+        
+        # 優先從 config.json 取得隧道 URL
+        api_url = None
+        try:
+            import json as json_lib
+            config_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'config', 'config.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json_lib.load(f)
+                    api_url = config.get('url') or config.get('API_BASE')
+        except Exception as e:
+            pass
+        
+        # 回退到環境變數
+        if not api_url:
+            api_url = os.getenv('UNIFIED_API_URL')
+        
+        # 再回退到本地主機
+        if not api_url:
+            api_url = 'http://localhost:5000'
+        
+        proxy_url = f"{api_url}/api/proxy/paperdoll?url={encoded}"
+        
+        return proxy_url
+    except Exception as e:
+        print(f"[paperdoll_manager] ⚠️ 代理 URL 包裝失敗: {e}")
+        # 失敗時回退到原始 URL
+        return maplestory_url
 
 
 def validate(user_data: Dict[str, Any]) -> bool:
