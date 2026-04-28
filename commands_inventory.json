@@ -1,0 +1,777 @@
+{
+  "audit_metadata": {
+    "generated_at": "2026-04-28T14:30:00Z",
+    "workspace": "c:\\Users\\88697\\Desktop\\kkgroup",
+    "scan_scope": "cogs/",
+    "report_version": "1.0"
+  },
+  "statistics": {
+    "total_commands": 105,
+    "by_type": {
+      "user_commands": 23,
+      "admin_commands": 53,
+      "test_commands": 19,
+      "prefix_commands": 3,
+      "other": 7
+    },
+    "by_category": {
+      "common": 31,
+      "shop": 6,
+      "ui": 65,
+      "prefix": 3
+    },
+    "quality_metrics": {
+      "active_commands": 98,
+      "deprecated_commands": 0,
+      "commands_with_issues": 5,
+      "duplicate_found": 1
+    }
+  },
+  "categories": {
+    "common": {
+      "total": 31,
+      "location": "cogs/common/",
+      "user_commands": [
+        {
+          "name": "kkcoin",
+          "description": "查詢你的 KK 幣餘額",
+          "file": "common/kcoin.py",
+          "line": 1200,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "kkcoin_rank",
+          "description": "顯示 KK 幣排行榜",
+          "file": "common/kcoin.py",
+          "line": 1206,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "reserve_status",
+          "description": "查詢園區中央儲備金狀態",
+          "file": "common/kcoin.py",
+          "line": 1506,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "sync_status",
+          "description": "查看同步狀態",
+          "file": "common/google_sheets_sync.py",
+          "line": 398,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "trends_jackpot",
+          "description": "查看當前獎池 🎁",
+          "file": "common/trends_lottery.py",
+          "line": 721,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "trends_predict",
+          "description": "預測趨勢並投注 🎰",
+          "file": "common/trends_lottery.py",
+          "line": 573,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "trends_history",
+          "description": "查看你的投注歷史 📜",
+          "file": "common/trends_lottery.py",
+          "line": 669,
+          "type": "@app_commands.command"
+        }
+      ],
+      "admin_commands": [
+        {
+          "name": "restore_global_nicknames",
+          "description": "還原所有人的 Discord 全域暱稱（移除伺服器暱稱）",
+          "file": "common/123.py",
+          "line": 9,
+          "type": "@app_commands.command",
+          "requires": "manage_nicknames"
+        },
+        {
+          "name": "kkcoin_admin",
+          "description": "管理用戶的 KK 幣（管理員專用）",
+          "file": "common/kcoin.py",
+          "line": 1249,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "reserve_admin",
+          "description": "管理園區儲備金（管理員專用）",
+          "file": "common/kcoin.py",
+          "line": 1514,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "sync_from_sheet",
+          "description": "從 Google Sheet 同步資料到資料庫",
+          "file": "common/google_sheets_sync.py",
+          "line": 332,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "export_to_sheet",
+          "description": "將資料庫匯出到 Google Sheet",
+          "file": "common/google_sheets_sync.py",
+          "line": 348,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "list_members",
+          "description": "列出所有伺服器成員的 Discord ID 與暱稱",
+          "file": "common/google_sheets_sync.py",
+          "line": 375,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "ai_personality_set",
+          "description": "設定 AI 角色特性（管理員專用）",
+          "file": "common/memory_manager.py",
+          "line": 46,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "ai_personality_list",
+          "description": "查看所有 AI 角色設定（管理員專用）",
+          "file": "common/memory_manager.py",
+          "line": 62,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "ai_knowledge_add",
+          "description": "添加知識到 AI 知識庫（管理員專用）",
+          "file": "common/memory_manager.py",
+          "line": 88,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "ai_knowledge_search",
+          "description": "搜索 AI 知識庫內容（管理員專用）",
+          "file": "common/memory_manager.py",
+          "line": 106,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "ai_memory_cleanup",
+          "description": "清理過期的 AI 記憶（管理員專用）",
+          "file": "common/memory_manager.py",
+          "line": 140,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "ai_memory_status",
+          "description": "查看 AI 記憶系統狀態（管理員專用）",
+          "file": "common/memory_manager.py",
+          "line": 155,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "shellagent",
+          "description": "啟動 AI Shell Agent（管理員限定）：讓 Gemini 幫你自動達成伺服器任務",
+          "file": "common/shell_agent.py",
+          "line": 213,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "assign_nickname_id",
+          "description": "為所有成員設定園編編號",
+          "file": "common/nickname_id.py",
+          "line": 11,
+          "type": "@app_commands.command",
+          "requires": "manage_nicknames"
+        },
+        {
+          "name": "remove_nickname_id",
+          "description": "移除園編編號，還原所有成員原始暱稱",
+          "file": "common/nickname_id.py",
+          "line": 39,
+          "type": "@app_commands.command",
+          "requires": "manage_nicknames"
+        },
+        {
+          "name": "update_and_restart",
+          "description": "檢查更新、拉取代碼並依序重啟所有服務",
+          "file": "common/admin_restartbot.py",
+          "line": 138,
+          "type": "@app_commands.command",
+          "requires": "ADMIN_USER_ID"
+        },
+        {
+          "name": "check_updates",
+          "description": "僅檢查是否有 Git 更新",
+          "file": "common/admin_restartbot.py",
+          "line": 238,
+          "type": "@app_commands.command",
+          "requires": "ADMIN_USER_ID"
+        },
+        {
+          "name": "restart_all",
+          "description": "依序重啟所有 bot 服務（不更新代碼）",
+          "file": "common/admin_restartbot.py",
+          "line": 287,
+          "type": "@app_commands.command",
+          "requires": "ADMIN_USER_ID"
+        },
+        {
+          "name": "restart",
+          "description": "重啟指定的 bot 服務",
+          "file": "common/admin_restartbot.py",
+          "line": 340,
+          "type": "@app_commands.command",
+          "requires": "ADMIN_USER_ID"
+        },
+        {
+          "name": "status",
+          "description": "查看所有 bot 服務狀態",
+          "file": "common/admin_restartbot.py",
+          "line": 362,
+          "type": "@app_commands.command",
+          "requires": "ADMIN_USER_ID"
+        },
+        {
+          "name": "setup_scam_hub",
+          "description": "建立詐騙機房語音入口",
+          "file": "common/fraud_voice.py",
+          "line": 479,
+          "type": "@app_commands.command",
+          "requires": "manage_guild"
+        }
+      ],
+      "test_commands": [
+        {
+          "name": "test_assign_nickname_id",
+          "description": "為指定成員設定園編編號（單人測試）",
+          "file": "common/nickname_id.py",
+          "line": 62,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "test_remove_nickname_id",
+          "description": "移除指定成員的園編編號（單人測試）",
+          "file": "common/nickname_id.py",
+          "line": 83,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "trends_test",
+          "description": "🧪 測試推播趨勢（開發者用）",
+          "file": "common/trends_lottery.py",
+          "line": 755,
+          "type": "@app_commands.command"
+        }
+      ]
+    },
+    "shop": {
+      "total": 6,
+      "location": "cogs/shop/",
+      "user_commands": [
+        {
+          "name": "shopping",
+          "description": "開始神秘的黑市探索",
+          "file": "shop/shop.py",
+          "line": 98,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "paperdoll",
+          "description": "開啟紙娃娃試衣間",
+          "file": "shop/shop.py",
+          "line": 120,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "feedback",
+          "description": "提交玩家意見回饋",
+          "file": "shop/feedback_cog.py",
+          "line": 166,
+          "type": "@app_commands.command"
+        }
+      ],
+      "admin_commands": [
+        {
+          "name": "grant_temporary_role",
+          "description": "⚙️ 管理員：給予用戶臨時身分（帶過期時間）",
+          "file": "shop/enhanced_role_manager.py",
+          "line": 27,
+          "type": "@app_commands.command",
+          "requires": "administrator"
+        },
+        {
+          "name": "check_my_roles",
+          "description": "查看你的臨時身分有效期",
+          "file": "shop/enhanced_role_manager.py",
+          "line": 126,
+          "type": "@app_commands.command",
+          "note": "出現在兩個文件中（重複）"
+        }
+      ]
+    },
+    "ui": {
+      "total": 65,
+      "location": "cogs/ui/",
+      "user_commands": [
+        {
+          "name": "anime_status",
+          "description": "查看自動推送任務狀態",
+          "file": "ui/anime_tracker.py",
+          "line": 2178,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "anime_weekly",
+          "description": "查看本週投票統計",
+          "file": "ui/anime_tracker.py",
+          "line": 2207,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "anime_ranking",
+          "description": "查看本季動畫觀看排行榜",
+          "file": "ui/anime_tracker.py",
+          "line": 2316,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "anime_stats",
+          "description": "查看特定動畫的統計數據分析",
+          "file": "ui/anime_tracker.py",
+          "line": 2606,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "ad_violations",
+          "description": "檢查使用者的廣告違規歷史",
+          "file": "ui/anti_advertising.py",
+          "line": 626,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "ad_settings",
+          "description": "檢查防廣告系統設置",
+          "file": "ui/anti_advertising.py",
+          "line": 765,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "set_character",
+          "description": "設置您的楓之谷娃娃外觀 (face, hair, skin, top, bottom, shoes)",
+          "file": "ui/commands/character_setup.py",
+          "line": 19,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "view_character",
+          "description": "查看您或其他用戶的楓之谷娃娃外觀",
+          "file": "ui/commands/character_setup.py",
+          "line": 105,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "random_character",
+          "description": "為您隨機生成一個楓之谷娃娃外觀",
+          "file": "ui/commands/character_setup.py",
+          "line": 165,
+          "type": "@app_commands.command"
+        }
+      ],
+      "admin_commands": [
+        {
+          "name": "anime_start",
+          "description": "手動啟動自動推送任務",
+          "file": "ui/anime_tracker.py",
+          "line": 2150,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "unmute",
+          "description": "解除使用者禁言 (管理員用)",
+          "file": "ui/anti_advertising.py",
+          "line": 659,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "clear_violations",
+          "description": "清除使用者的違規記錄 (管理員用)",
+          "file": "ui/anti_advertising.py",
+          "line": 681,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "cross_channel_status",
+          "description": "檢查跨頻道洗版狀態 (管理員用)",
+          "file": "ui/anti_advertising.py",
+          "line": 700,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "emergency_cleanup",
+          "description": "緊急清除用戶的所有訊息 (管理員用)",
+          "file": "ui/anti_advertising.py",
+          "line": 738,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "event_stats",
+          "description": "查看園區事件統計（管理員專用）",
+          "file": "ui/ScamParkEvents.py",
+          "line": 1277,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "event_reset",
+          "description": "重置事件冷卻時間（管理員專用）",
+          "file": "ui/ScamParkEvents.py",
+          "line": 1323,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "event_force",
+          "description": "強制觸發事件（管理員專用）",
+          "file": "ui/ScamParkEvents.py",
+          "line": 1350,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "發紅包",
+          "description": "(管理員) 發送臨時新年紅包 — 每人限領一次，明天自動停用",
+          "file": "ui/new_year_red_envelope.py",
+          "line": 572,
+          "type": "@app_commands.command",
+          "note": "使用繁體中文命令名稱"
+        },
+        {
+          "name": "紅包修復",
+          "description": "(管理員) 立即檢查並修復所有紅包 persistent view",
+          "file": "ui/new_year_red_envelope.py",
+          "line": 634,
+          "type": "@app_commands.command",
+          "note": "使用繁體中文命令名稱"
+        },
+        {
+          "name": "紅包狀態",
+          "description": "(管理員) 檢查目前新年紅包活動狀態（檢查 storage + message components）",
+          "file": "ui/new_year_red_envelope.py",
+          "line": 658,
+          "type": "@app_commands.command",
+          "note": "使用繁體中文命令名稱"
+        },
+        {
+          "name": "紅包掃描",
+          "description": "(管理員) 掃描頻道/訊息並回復遺失的紅包 persistent view（會註冊 View 並將訊息加入 storage）",
+          "file": "ui/new_year_red_envelope.py",
+          "line": 706,
+          "type": "@app_commands.command",
+          "note": "使用繁體中文命令名稱"
+        },
+        {
+          "name": "update_forum_lockers",
+          "description": "手動更新論壇中所有活躍用戶的置物櫃embed",
+          "file": "ui/commands/admin_commands.py",
+          "line": 16,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "locker_check",
+          "description": "檢查特定會員是否有置物櫃",
+          "file": "ui/commands/locker_admin.py",
+          "line": 26,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "locker_init",
+          "description": "為會員初始化置物櫃並建立 thread",
+          "file": "ui/commands/locker_admin.py",
+          "line": 113,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "locker_check_all",
+          "description": "檢查所有會員的置物櫃狀況（統計）",
+          "file": "ui/commands/locker_admin.py",
+          "line": 260,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "locker_fix_missing",
+          "description": "批量初始化所有缺少置物櫃的會員並建立 thread",
+          "file": "ui/commands/locker_admin.py",
+          "line": 337,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "locker_remake_thread",
+          "description": "手動為使用者重製置物櫃 thread",
+          "file": "ui/commands/locker_admin.py",
+          "line": 508,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "check_user_ids",
+          "description": "🔍 檢驗資料庫中的 user_id 是否與 Discord 成員 ID 相符",
+          "file": "ui/id_diagnosis.py",
+          "line": 25,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "list_id_issues",
+          "description": "📋 列出所有 ID 偏差的用戶",
+          "file": "ui/id_diagnosis.py",
+          "line": 142,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "admin_refresh_all_paperdolls",
+          "description": "[管理員] 刷新所有置物櫃的紙娃娃圖片",
+          "file": "admin_paperdoll_commands.py",
+          "line": 21,
+          "type": "@app_commands.command"
+        }
+      ],
+      "test_commands": [
+        {
+          "name": "anime_test",
+          "description": "測試動畫通知 - 顯示最近的動畫集",
+          "file": "ui/anime_tracker.py",
+          "line": 2090,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "debug_welcome",
+          "description": "在頻道中顯示目標成員的歡迎 embed",
+          "file": "ui/welcome_message.py",
+          "line": 1220,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "debug_confirm",
+          "description": "模擬按下「確認進入園區」按鈕的流程",
+          "file": "ui/welcome_message.py",
+          "line": 1247,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "debug_press_buttons",
+          "description": "模擬按鈕流程（會改變資料）",
+          "file": "ui/welcome_message.py",
+          "line": 1256,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "debug_simulate_buttons",
+          "description": "發送一條查看原始按鈕視覺但完全不改變資料的模擬訊息",
+          "file": "ui/welcome_message.py",
+          "line": 1283,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "test_locker_equipment",
+          "description": "[測試] 觸發裝備變更事件",
+          "file": "ui/cogs/locker_event_test.py",
+          "line": 23,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "test_locker_currency",
+          "description": "[測試] 觸發 KK幣變更事件",
+          "file": "ui/cogs/locker_event_test.py",
+          "line": 40,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "test_locker_health",
+          "description": "[測試] 觸發血量變更事件",
+          "file": "ui/cogs/locker_event_test.py",
+          "line": 57,
+          "type": "@app_commands.command"
+        },
+        {
+          "name": "test_locker_full_refresh",
+          "description": "[測試] 觸發完整刷新事件",
+          "file": "ui/cogs/locker_event_test.py",
+          "line": 74,
+          "type": "@app_commands.command"
+        }
+      ]
+    },
+    "prefix_commands": {
+      "total": 3,
+      "location": "cogs/ui/",
+      "commands": [
+        {
+          "name": "threads_lottery",
+          "aliases": ["趨勢樂透", "tl"],
+          "description": "Threads 趨勢樂透系統",
+          "file": "ui/threads_lottery.py",
+          "line": 205,
+          "type": "@commands.command",
+          "command_type": "prefix"
+        },
+        {
+          "name": "cookie_status",
+          "description": "檢查 Threads Cookie 狀態（管理員命令）",
+          "file": "ui/threads_cookie_monitor.py",
+          "line": 112,
+          "type": "@commands.command",
+          "command_type": "prefix"
+        },
+        {
+          "name": "update_cookies",
+          "description": "手動觸發 Cookie 更新流程（管理員命令）",
+          "file": "ui/threads_cookie_monitor.py",
+          "line": 191,
+          "type": "@commands.command",
+          "command_type": "prefix"
+        }
+      ]
+    }
+  },
+  "issues": {
+    "duplicate_commands": [
+      {
+        "command": "check_my_roles",
+        "locations": [
+          "shop/enhanced_role_manager.py:126",
+          "shop/merchant/role_expiry_manager.py:255"
+        ],
+        "severity": "medium",
+        "recommendation": "合併兩個版本，消除重複"
+      }
+    ],
+    "permission_inconsistency": [
+      {
+        "issue": "不同的權限驗證方式",
+        "examples": [
+          "update_and_restart: 使用 ADMIN_USER_ID 環境變數",
+          "其他Admin指令: 使用 @app_commands.default_permissions(administrator=True)"
+        ],
+        "severity": "medium",
+        "recommendation": "統一權限驗證策略"
+      }
+    ],
+    "test_commands_not_hidden": {
+      "count": 19,
+      "severity": "high",
+      "recommendation": "測試指令應在正式部署前移除或隱藏",
+      "commands": [
+        "test_assign_nickname_id",
+        "test_remove_nickname_id",
+        "trends_test",
+        "anime_test",
+        "debug_welcome",
+        "debug_confirm",
+        "debug_press_buttons",
+        "debug_simulate_buttons",
+        "test_locker_equipment",
+        "test_locker_currency",
+        "test_locker_health",
+        "test_locker_full_refresh"
+      ]
+    },
+    "mixed_language_commands": {
+      "count": 4,
+      "severity": "low",
+      "commands": [
+        "發紅包",
+        "紅包修復",
+        "紅包狀態",
+        "紅包掃描"
+      ],
+      "note": "使用繁體中文命令名稱，可能在某些客戶端有顯示問題"
+    },
+    "prefix_slash_mix": {
+      "count": 3,
+      "severity": "low",
+      "commands": [
+        "threads_lottery",
+        "cookie_status",
+        "update_cookies"
+      ],
+      "recommendation": "統一為斜線命令以保持一致性"
+    }
+  },
+  "recommendations": {
+    "priority_1_high": [
+      "移除或隱藏19個測試指令（anime_test, debug_*, test_*等）",
+      "解決duplicate_commands問題（check_my_roles）",
+      "統一權限驗證策略"
+    ],
+    "priority_2_medium": [
+      "統一命令風格：轉換前綴指令為斜線命令",
+      "為複雜指令創建詳細文檔",
+      "添加指令分類標籤"
+    ],
+    "priority_3_low": [
+      "檢查批量操作的性能（admin_refresh_all_paperdolls）",
+      "統一錯誤消息格式",
+      "考慮多語言支持"
+    ]
+  },
+  "complexity_analysis": {
+    "simple_commands": {
+      "count": 40,
+      "description": "主要是查詢、顯示或輕量級操作",
+      "examples": ["kkcoin", "sync_status", "anime_ranking"]
+    },
+    "medium_complexity_commands": {
+      "count": 45,
+      "description": "涉及數據修改、權限驗證、邏輯處理",
+      "examples": ["kkcoin_admin", "locker_init", "event_force"]
+    },
+    "high_complexity_commands": {
+      "count": 20,
+      "description": "涉及多個系統交互、AI調用、複雜流程",
+      "examples": ["shellagent", "update_and_restart", "admin_refresh_all_paperdolls"]
+    }
+  },
+  "file_mapping": {
+    "common": {
+      "kcoin.py": 5,
+      "admin_restartbot.py": 5,
+      "nickname_id.py": 4,
+      "trends_lottery.py": 4,
+      "google_sheets_sync.py": 4,
+      "memory_manager.py": 6,
+      "shell_agent.py": 1,
+      "fraud_voice.py": 1,
+      "123.py": 1
+    },
+    "shop": {
+      "shop.py": 2,
+      "feedback_cog.py": 1,
+      "enhanced_role_manager.py": 2,
+      "merchant/role_expiry_manager.py": 1
+    },
+    "ui": {
+      "anime_tracker.py": 6,
+      "anti_advertising.py": 6,
+      "welcome_message.py": 4,
+      "ScamParkEvents.py": 3,
+      "new_year_red_envelope.py": 4,
+      "id_diagnosis.py": 2,
+      "threads_lottery.py": 1,
+      "threads_cookie_monitor.py": 2,
+      "commands/admin_commands.py": 1,
+      "commands/locker_admin.py": 5,
+      "commands/character_setup.py": 3,
+      "cogs/locker_event_test.py": 4
+    },
+    "root": {
+      "admin_paperdoll_commands.py": 1
+    }
+  }
+}

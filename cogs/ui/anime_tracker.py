@@ -2147,63 +2147,6 @@ class AnimeTracker(commands.Cog):
             except:
                 pass
     
-    @app_commands.command(name="anime_start", description="手動啟動自動推送任務")
-    async def anime_start(self, interaction: discord.Interaction):
-        """手動啟動 check_new_anime 任務"""
-        try:
-            await interaction.response.defer()
-            
-            task_running = self.check_new_anime.is_running()
-            logger.info(f"📺 [anime_start] 當前任務狀態: {'運行中' if task_running else '未運行'}")
-            
-            if task_running:
-                await interaction.followup.send("✅ 任務已在運行中")
-            else:
-                logger.info("📺 [anime_start] 嘗試啟動任務...")
-                try:
-                    self.check_new_anime.start()
-                    self.task_started = True
-                    await interaction.followup.send("✅ 任務已啟動！自動推送已開始")
-                    logger.info("✅ [anime_start] 任務成功啟動")
-                except Exception as e:
-                    await interaction.followup.send(f"❌ 啟動失敗: {str(e)}")
-                    logger.error(f"❌ [anime_start] 任務啟動失敗: {e}", exc_info=True)
-        except Exception as e:
-            logger.error(f"❌ [anime_start] 指令執行失敗: {e}", exc_info=True)
-            try:
-                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
-            except:
-                pass
-    
-    @app_commands.command(name="anime_status", description="查看自動推送任務狀態")
-    async def anime_status(self, interaction: discord.Interaction):
-        """查看 check_new_anime 任務的狀態"""
-        try:
-            await interaction.response.defer()
-            
-            task_running = self.check_new_anime.is_running()
-            bootstrap_done = self.db.is_bootstrap_completed()
-            
-            status_text = f"""
-📊 **動畫推送系統狀態**
-
-🔄 **循環任務**: {'✅ 運行中' if task_running else '❌ 未運行'}
-🚀 **Bootstrap**: {'✅ 已完成' if bootstrap_done else '⏳ 未完成'}
-💾 **數據庫**: {ANIME_DB_PATH}
-📺 **目標頻道**: {ANIME_CHANNEL_ID}
-
-若任務未運行，請使用 `/anime_start` 手動啟動
-"""
-            
-            await interaction.followup.send(status_text)
-            logger.info(f"📺 [anime_status] 任務狀態: {'運行中' if task_running else '未運行'}, Bootstrap: {'完成' if bootstrap_done else '未完成'}")
-        except Exception as e:
-            logger.error(f"❌ [anime_status] 指令執行失敗: {e}", exc_info=True)
-            try:
-                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
-            except:
-                pass
-    
     @app_commands.command(name="anime_weekly", description="查看本週投票統計")
     async def anime_weekly(self, interaction: discord.Interaction):
         """顯示本週的動畫投票統計 embed"""

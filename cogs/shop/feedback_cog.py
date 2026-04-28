@@ -162,47 +162,6 @@ class FeedbackCog(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-    
-    @app_commands.command(name="feedback", description="提交玩家意見回饋")
-    async def feedback_command(self, interaction: discord.Interaction):
-        """
-        /feedback 命令 - 主要用來觸發回饋系統
-        """
-        try:
-            embed = discord.Embed(
-                title="📝 玩家意見回饋系統",
-                description="我們很重視你的意見！點擊下方按鈕提交你的建議、問題或讚美。",
-                color=discord.Color.blue()
-            )
-            
-            embed.add_field(
-                name="ℹ️ 我們欣然接受",
-                value="✅ 功能建議\n✅ 遊戲平衡問題\n✅ Bug 回報\n✅ 社群建議\n✅ 任何反饋！",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="💡 提示",
-                value="• 請盡可能詳細描述\n• 我們會根據情況回覆\n• 你的反饋幫助我們改進遊戲",
-                inline=False
-            )
-            
-            view = FeedbackView(self.bot)
-            
-            await interaction.response.send_message(
-                embed=embed,
-                view=view,
-                ephemeral=False
-            )
-        
-        except Exception as e:
-            print(f"[FEEDBACK] 命令執行失敗: {e}")
-            await interaction.response.send_message(
-                f"❌ 發生錯誤: {str(e)}",
-                ephemeral=True
-            )
-
-
 async def setup(bot):
     """將 cog 加入 bot"""
     cog = FeedbackCog(bot)
