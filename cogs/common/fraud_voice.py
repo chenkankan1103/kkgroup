@@ -45,6 +45,10 @@ class ScamHub(commands.Cog):
 
     def cog_unload(self):
         self.scam_event_task.cancel()
+        # 取消所有掛起的刪除任務
+        for room_data in self.active_rooms.values():
+            if 'deletion_task' in room_data and room_data['deletion_task']:
+                room_data['deletion_task'].cancel()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -105,6 +109,7 @@ class ScamHub(commands.Cog):
                     'owner_id': owner_id,
                     'last_active': last_active,
                     'next_event_time': next_event_time,
+                    'deletion_task': None  # ✅ 倒數計時任務
                 }
 
                 # 恢復消息對象（透過 message_id 獲取）
@@ -217,6 +222,70 @@ class ScamHub(commands.Cog):
         except Exception as e:
             print(f"[ScamHub] 刪除房間 {room_id} 數據庫記錄時發生錯誤: {e}")
 
+    async def _schedule_deletion(self, room_id: int):
+        """✅ 新邏輯：啟動 5 分鐘倒數計時，無人則自動刪除"""
+        if room_id not in self.active_rooms:
+            return
+        
+        room_data = self.active_rooms[room_id]
+        
+        # 如果已經有倒數任務，不要重複啟動
+        if room_data.get('deletion_task') and not room_data['deletion_task'].done():
+            print(f"[ScamHub] 房間 {room_id} 已有倒數計時中，忽略")
+            return
+        
+        async def deletion_countdown():
+            try:
+                print(f"[ScamHub] 房間 {room_id} 無人，5 分鐘後將自動刪除")
+                await asyncio.sleep(INACTIVE_TIMEOUT)  # 等待 5 分鐘
+                
+                # 5 分鐘後檢查是否還是無人
+                if room_id not in self.active_rooms:
+                    return
+                
+                vc = self.bot.get_channel(room_id)
+                if not vc:
+                    vc = await self._resolve_voice_channel(room_id)
+                
+                if not vc:
+                    self.active_rooms.pop(room_id, None)
+                    self.room_messages.pop(room_id, None)
+                    await self._delete_room_from_db(room_id)
+                    return
+                
+                # 檢查是否確實還是無人
+                members = await self._get_voice_members(vc)
+                if len(members) == 0:
+                    print(f"[ScamHub] 刪除無人頻道: {vc.name} (ID: {room_id})")
+                    await vc.delete(reason="自動刪除無人語音頻道")
+                    self.active_rooms.pop(room_id, None)
+                    self.room_messages.pop(room_id, None)
+                    await self._delete_room_from_db(room_id)
+                    print(f"[ScamHub] 成功刪除無人頻道 {room_id}")
+                else:
+                    print(f"[ScamHub] 倒數計時中檢查到有人加入，取消刪除")
+                    room_data['deletion_task'] = None
+            except asyncio.CancelledError:
+                print(f"[ScamHub] 房間 {room_id} 的刪除倒數計時已取消")
+            except Exception as e:
+                print(f"[ScamHub] 刪除房間 {room_id} 時發生錯誤: {e}")
+        
+        # 建立並保存倒數任務
+        room_data['deletion_task'] = asyncio.create_task(deletion_countdown())
+
+    async def _cancel_deletion(self, room_id: int):
+        """✅ 新邏輯：取消倒數計時（有人加入時調用）"""
+        if room_id not in self.active_rooms:
+            return
+        
+        room_data = self.active_rooms[room_id]
+        deletion_task = room_data.get('deletion_task')
+        
+        if deletion_task and not deletion_task.done():
+            print(f"[ScamHub] 房間 {room_id} 有人加入，取消倒數計時")
+            deletion_task.cancel()
+            room_data['deletion_task'] = None
+
     async def generate_scam_event(self, member_count):
         """使用AI生成詐騙事件（只使用 Groq）"""
         try:
@@ -316,7 +385,7 @@ class ScamHub(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def scam_event_task(self):
-        """定期檢查是否觸發詐騙事件和刪除閒置頻道"""
+        """✅ 優化：定期檢查詐騙事件（刪除邏輯由事件驅動倒數計時接管）"""
         now = datetime.utcnow()
         
         for vc_id, data in list(self.active_rooms.items()):
@@ -331,63 +400,48 @@ class ScamHub(commands.Cog):
                     await self._delete_room_from_db(vc_id)
                     continue
 
-                # 檢查是否有人在頻道中
-                current_members = len(await self._get_voice_members(vc))
+                # 🔧 Fix #1, #3: 先獲取實際成員列表，避免時序競態
+                # 所有後續計算都基於這個成員列表，確保一致性
+                members = await self._get_voice_members(vc)
+                actual_member_count = len(members)
                 
-                if current_members == 0:
-                    # 頻道無人，檢查是否超過閒置時間
-                    idle_seconds = (now - data['last_active']).total_seconds()
-                    print(f"頻道 {vc.name} (ID: {vc_id}) 無人已 {idle_seconds:.1f} 秒")
-                    
-                    if idle_seconds >= INACTIVE_TIMEOUT:
-                        try:
-                            print(f"刪除閒置頻道: {vc.name} (ID: {vc_id})")
-                            await vc.delete(reason="自動刪除閒置語音頻道")
-                            self.active_rooms.pop(vc_id, None)
-                            self.room_messages.pop(vc_id, None)
-                            await self._delete_room_from_db(vc_id)
-                            print(f"成功刪除閒置頻道 {vc_id}")
-                        except discord.NotFound:
-                            print(f"頻道 {vc_id} 已經不存在")
-                            self.active_rooms.pop(vc_id, None)
-                            self.room_messages.pop(vc_id, None)
-                            await self._delete_room_from_db(vc_id)
-                        except Exception as e:
-                            print(f"刪除頻道 {vc_id} 時發生錯誤: {e}")
+                if actual_member_count == 0:
+                    # ✅ 刪除邏輯已由 _schedule_deletion() 事件驅動倒數計時接管
+                    # 這裡只做清理（以防倒數任務在執行時出錯）
                     continue
                 
-                # 有人在頻道中，更新最後活動時間
-                data['last_active'] = now
+                # 有人在頻道中，確保倒數計時已取消
+                data['deletion_task'] = None
                 
                 # 檢查是否需要觸發詐騙事件
                 if 'next_event_time' not in data or now >= data['next_event_time']:
-                    print(f"觸發詐騙事件 - 頻道: {vc.name}, 人數: {current_members}")
+                    print(f"觸發詐騙事件 - 頻道: {vc.name}, 人數: {actual_member_count}")
                     
-                    # 根據人數計算獎勵（人越多，獎勵越高）×10倍
-                    max_reward = min(current_members * 400, 5000)  # 最多5000KK幣
+                    # 根據實際人數計算獎勵（人越多，獎勵越高）
+                    max_reward = min(actual_member_count * 400, 5000)  # 最多5000KK幣
                     total_reward = random.randint(max(0, max_reward - 1000), max_reward)
                     
                     # 生成詐騙事件描述
-                    event_text = await self.generate_scam_event(current_members)
+                    event_text = await self.generate_scam_event(actual_member_count)
                     
-                    # 計算每個人的獎勵
-                    members = await self._get_voice_members(vc)
+                    # 計算每個人的獎勵 - 使用實際成員列表
                     rewards = {}
                     owner_id = data['owner_id']
                     
-                    if current_members == 1:
+                    if actual_member_count == 1:
                         # 如果只有組長一人
                         rewards[owner_id] = total_reward
                     else:
                         # 組長獎勵（1.5倍於普通成員）
-                        leader_portion = 1.5 / (current_members - 1 + 1.5)
+                        leader_portion = 1.5 / (actual_member_count - 1 + 1.5)
                         leader_reward = round(total_reward * leader_portion)
                         rewards[owner_id] = leader_reward
                         
                         # 剩餘獎勵平分給成員
                         remaining_reward = total_reward - leader_reward
-                        member_reward = round(remaining_reward / (current_members - 1)) if current_members > 1 else 0
+                        member_reward = round(remaining_reward / (actual_member_count - 1)) if actual_member_count > 1 else 0
                         
+                        # 遍歷實際成員列表分配獎勵
                         for member in members:
                             if member.id != owner_id:
                                 rewards[member.id] = member_reward
@@ -474,7 +528,8 @@ class ScamHub(commands.Cog):
             self.active_rooms[new_channel.id] = {
                 'owner_id': member.id,
                 'last_active': datetime.utcnow(),
-                'next_event_time': next_event_time
+                'next_event_time': next_event_time,
+                'deletion_task': None  # ✅ 初始化倒數計時任務
             }
             await self._save_room_to_db(new_channel.id, guild.id, member.id, new_channel.name, next_event_time)
             
@@ -497,7 +552,13 @@ class ScamHub(commands.Cog):
         # 處理用戶加入現有詐騙小組頻道的情況
         if after.channel and after.channel.id in self.active_rooms:
             current_members = len(await self._get_voice_members(after.channel))
-            self.active_rooms[after.channel.id]['last_active'] = datetime.utcnow()
+            # 🔧 Fix #2: 移除此處的 last_active 更新
+            # 理由：last_active 應只在 5分鐘循環中更新，代表「最後無人」的時間
+            # 不應在用戶加入時重置，否則會破壞閒置計時邏輯
+            
+            # ✅ 新邏輯：有人加入時取消倒數計時
+            await self._cancel_deletion(after.channel.id)
+            
             print(f"用戶 {member.display_name} 加入頻道 {after.channel.name}, 目前人數: {current_members}")
             await self.update_voice_status(after.channel)
 
@@ -510,9 +571,9 @@ class ScamHub(commands.Cog):
                 # 更新頻道信息
                 await self.update_voice_status(before.channel)
             else:
-                # 頻道空了，更新最後活動時間開始計時
-                self.active_rooms[before.channel.id]['last_active'] = datetime.utcnow()
-                print(f"頻道 {before.channel.name} 已空，開始計算閒置時間")
+                # ✅ 頻道空了，啟動 5 分鐘倒數計時
+                await self._schedule_deletion(before.channel.id)
+                print(f"頻道 {before.channel.name} 已空，啟動 5 分鐘自動刪除倒數")
 
 async def setup(bot):
     await bot.add_cog(ScamHub(bot))
