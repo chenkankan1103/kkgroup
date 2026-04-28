@@ -60,8 +60,8 @@ async def generate_canonical_locker_embed(
             
         if not img_url:
             try:
-                from .image_utils import build_maplestory_api_url
-                api_url = build_maplestory_api_url(user_data, animated=True)
+                from . import paperdoll_manager
+                api_url = paperdoll_manager.build_api_url(user_data)
                 if api_url:
                     embed.set_image(url=api_url)
                     embed.set_footer(text="💫 由 MapleStory.io API 提供角色外觀")
@@ -84,8 +84,8 @@ async def generate_canonical_locker_embed(
         
         # 仍然嘗試添加動態圖片
         try:
-            from .image_utils import build_maplestory_api_url
-            api_url = build_maplestory_api_url(user_data, animated=True)
+            from . import paperdoll_manager
+            api_url = paperdoll_manager.build_api_url(user_data)
             if api_url:
                 embed.set_image(url=api_url)
                 embed.set_footer(text="💫 由 MapleStory.io API 提供角色外觀")

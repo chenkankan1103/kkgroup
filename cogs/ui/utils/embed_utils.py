@@ -157,8 +157,8 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
     
     # 添加角色圖片（動態生成 MapleStory API URL，即時計算不存儲）
     try:
-        from .image_utils import build_maplestory_api_url
-        api_url = build_maplestory_api_url(user_data, animated=True)
+        from . import paperdoll_manager
+        api_url = paperdoll_manager.build_api_url(user_data)
         embed.set_image(url=api_url)
         # 不添加 image_source field 文字顯示，只顯示圖片
     except Exception as e:

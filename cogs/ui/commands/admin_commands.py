@@ -160,8 +160,8 @@ class AdminCommands(commands.Cog):
                         img_url = None
                     if not img_url:
                         try:
-                            from ..utils.image_utils import build_maplestory_api_url
-                            api_url = build_maplestory_api_url(user_data, animated=True)
+                            from cogs.ui.utils import paperdoll_manager
+                            api_url = paperdoll_manager.build_api_url(user_data)
                             embed.set_image(url=api_url)
                         except Exception:
                             pass

@@ -148,8 +148,8 @@ class CharacterSetupCog(commands.Cog):
                 embed.add_field(name=name, value=f"`{value}`", inline=True)
             
             # 生成 API URL 並顯示圖片
-            from cogs.ui.utils.image_utils import build_maplestory_api_url
-            api_url = build_maplestory_api_url(user_data, animated=True)
+            from cogs.ui.utils import paperdoll_manager
+            api_url = paperdoll_manager.build_api_url(user_data)
             if api_url:
                 embed.set_image(url=api_url)
                 embed.set_footer(text="💫 由 MapleStory.io API 提供")
@@ -218,8 +218,8 @@ class CharacterSetupCog(commands.Cog):
                     embed.add_field(name=name, value=f"`{char_data[field]}`", inline=True)
             
             # 生成 API URL 並顯示圖片
-            from cogs.ui.utils.image_utils import build_maplestory_api_url
-            api_url = build_maplestory_api_url(char_data, animated=True)
+            from cogs.ui.utils import paperdoll_manager
+            api_url = paperdoll_manager.build_api_url(char_data)
             if api_url:
                 embed.set_image(url=api_url)
                 embed.set_footer(text="💫 喜歡嗎？用 /set_character 自訂吧！")

@@ -5,7 +5,7 @@ Locker Cache System
 import hashlib
 import time
 from typing import Optional, Dict, Tuple
-from .image_utils import build_maplestory_api_url
+from . import paperdoll_manager
 
 
 class LockerCache:
@@ -78,7 +78,7 @@ class LockerCache:
         
         # 快取未命中或過期 → 生成新 URL
         self.miss_count += 1
-        api_url = build_maplestory_api_url(user_data, animated=True)
+        api_url = paperdoll_manager.build_api_url(user_data)
         
         # 快取新 URL
         self.paperdoll_cache[current_hash] = (api_url, now)
