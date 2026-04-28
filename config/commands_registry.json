@@ -1,0 +1,133 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "lastUpdated": "2026-04-28",
+    "description": "KKGroup 統一指令註冊表 - 所有系統指令的中央管理",
+    "usage": "使用 scripts/commands_manager.py 執行這些指令"
+  },
+  
+  "gcp": {
+    "connection": {
+      "instance": "e193752468@instance-20250501-142333",
+      "zone": "us-central1-c",
+      "tunnel": "iap",
+      "description": "GCP VM SSH 連接參數"
+    }
+  },
+
+  "services": {
+    "bot": {
+      "name": "主要 Discord Bot",
+      "service_name": "bot.service",
+      "restart": "sudo systemctl restart bot.service",
+      "status": "sudo systemctl status bot.service --no-pager",
+      "logs": {
+        "recent_100": "sudo journalctl -u bot.service -n 100 --no-pager",
+        "recent_50": "sudo journalctl -u bot.service -n 50 --no-pager",
+        "recent_20": "sudo journalctl -u bot.service -n 20 --no-pager",
+        "errors_100": "sudo journalctl -u bot.service -n 100 --no-pager | grep -iE 'error|update|fail|critical'",
+        "errors_50": "sudo journalctl -u bot.service -n 50 --no-pager | grep -iE 'error|fail|failed|critical'"
+      }
+    },
+    "shopbot": {
+      "name": "商店功能 Bot",
+      "service_name": "shopbot.service",
+      "restart": "sudo systemctl restart shopbot.service",
+      "status": "sudo systemctl status shopbot.service --no-pager",
+      "logs": {
+        "recent_100": "sudo journalctl -u shopbot.service -n 100 --no-pager",
+        "recent_50": "sudo journalctl -u shopbot.service -n 50 --no-pager",
+        "recent_20": "sudo journalctl -u shopbot.service -n 20 --no-pager",
+        "errors_100": "sudo journalctl -u shopbot.service -n 100 --no-pager | grep -iE 'error|fail|critical'",
+        "errors_50": "sudo journalctl -u shopbot.service -n 50 --no-pager | grep -iE 'error|fail|critical'"
+      }
+    },
+    "uibot": {
+      "name": "UI 功能 Bot",
+      "service_name": "uibot.service",
+      "restart": "sudo systemctl restart uibot.service",
+      "status": "sudo systemctl status uibot.service --no-pager",
+      "logs": {
+        "recent_100": "sudo journalctl -u uibot.service -n 100 --no-pager",
+        "recent_50": "sudo journalctl -u uibot.service -n 50 --no-pager",
+        "recent_20": "sudo journalctl -u uibot.service -n 20 --no-pager",
+        "errors_100": "sudo journalctl -u uibot.service -n 100 --no-pager | grep -iE 'error|fail|critical'",
+        "errors_50": "sudo journalctl -u uibot.service -n 50 --no-pager | grep -iE 'error|fail|critical'"
+      }
+    },
+    "kkgroup-api": {
+      "name": "KKGroup Flask API",
+      "service_name": "kkgroup-api.service",
+      "restart": "sudo systemctl restart kkgroup-api.service",
+      "status": "sudo systemctl status kkgroup-api.service --no-pager",
+      "logs": {
+        "recent_100": "sudo journalctl -u kkgroup-api.service -n 100 --no-pager",
+        "recent_50": "sudo journalctl -u kkgroup-api.service -n 50 --no-pager",
+        "recent_20": "sudo journalctl -u kkgroup-api.service -n 20 --no-pager"
+      }
+    },
+    "cloudflared": {
+      "name": "Cloudflare 隧道",
+      "service_name": "cloudflared.service",
+      "restart": "sudo systemctl restart cloudflared.service",
+      "status": "sudo systemctl status cloudflared.service --no-pager",
+      "logs": {
+        "recent_100": "sudo journalctl -u cloudflared.service -n 100 --no-pager",
+        "recent_50": "sudo journalctl -u cloudflared.service -n 50 --no-pager",
+        "tail_30": "sudo journalctl -u cloudflared.service -n 50 --no-pager | tail -30"
+      }
+    }
+  },
+
+  "diagnostics": {
+    "tunnel_config": {
+      "name": "隧道配置診斷",
+      "command": "echo '=== 1. 隧道進程狀態 ===' && sudo systemctl status cloudflared --no-pager | head -20 && echo '' && echo '=== 2. cloudflared 配置 ===' && cat /root/.cloudflared/*.json 2>/dev/null | grep -o 'http.*' | head -5 && echo '' && echo '=== 3. 隧道聆聽地址 ===' && sudo netstat -tlnp 2>/dev/null | grep cloudflare || echo '(netstat 無法取得)' && echo '' && echo '=== 4. cloudflared ExecStart ===' && sudo systemctl cat cloudflared 2>/dev/null | grep ExecStart"
+    },
+    "tunnel_nginx": {
+      "name": "隧道和 Nginx 診斷",
+      "command": "echo '=== 隧道配置檢查 ===' && sudo cat /etc/systemd/system/cloudflared.service | grep ExecStart && echo '' && echo '=== 隧道進程狀態 ===' && sudo systemctl status cloudflared --no-pager | grep -E 'Active|PID' && echo '' && echo '=== Nginx 最新 50 行日誌 ===' && sudo tail -50 /var/log/nginx/access.log | tail -10"
+    },
+    "all_services": {
+      "name": "檢查所有服務狀態",
+      "command": "echo '=== Bot 服務 ===' && sudo systemctl status bot.service --no-pager | grep 'Active:' && echo '=== ShopBot 服務 ===' && sudo systemctl status shopbot.service --no-pager | grep 'Active:' && echo '=== UIBot 服務 ===' && sudo systemctl status uibot.service --no-pager | grep 'Active:' && echo '=== KKGroup API ===' && sudo systemctl status kkgroup-api.service --no-pager | grep 'Active:' && echo '=== Cloudflared ===' && sudo systemctl status cloudflared.service --no-pager | grep 'Active:'"
+    },
+    "system_health": {
+      "name": "系統健康檢查",
+      "command": "echo '=== 磁盤空間 ===' && df -h | head -5 && echo '' && echo '=== 記憶體使用 ===' && free -h && echo '' && echo '=== CPU 使用 ===' && top -bn1 | head -5"
+    }
+  },
+
+  "management": {
+    "restart_all": {
+      "name": "重啟所有服務",
+      "commands": [
+        "sudo systemctl restart bot.service",
+        "sudo systemctl restart shopbot.service",
+        "sudo systemctl restart uibot.service",
+        "sudo systemctl restart kkgroup-api.service"
+      ]
+    },
+    "restart_bots": {
+      "name": "重啟所有 Discord Bot",
+      "commands": [
+        "sudo systemctl restart bot.service",
+        "sudo systemctl restart shopbot.service",
+        "sudo systemctl restart uibot.service"
+      ]
+    },
+    "reload_systemd": {
+      "name": "重新載入 systemd 配置",
+      "commands": [
+        "sudo systemctl daemon-reload"
+      ]
+    }
+  },
+
+  "git": {
+    "status": "git status",
+    "pull": "git pull",
+    "push": "git push",
+    "commit": "git commit -m \"message\""
+  }
+}
