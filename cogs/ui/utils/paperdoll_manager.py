@@ -197,13 +197,14 @@ def build_api_url(
         
         # ✅ 調試：URL 成功生成
         if maplestory_url and len(maplestory_url) > 100:
-            # print(f"[paperdoll_manager] ✅ 生成 URL 成功 (長度: {len(maplestory_url)})")
-            pass
+            print(f"[paperdoll_manager] ✅ MapleStory URL 生成成功 (長度: {len(maplestory_url)})")
         
         # 🔄 使用代理 URL 來解決 Discord 無法加載紙娃娃的問題
         # 原因：MapleStory API 要求 User-Agent header，Discord 沒有發送 → 403 Forbidden
         # 解決：我們的統一 API 提供代理端點，轉發請求並添加 User-Agent header
+        print(f"[paperdoll_manager] 📍 即將調用 _wrap_with_proxy...")
         proxy_url = _wrap_with_proxy(maplestory_url)
+        print(f"[paperdoll_manager] 📍 _wrap_with_proxy 返回: {proxy_url[:100] if proxy_url else 'None'}")
         return proxy_url
 
     except Exception as e:
@@ -228,34 +229,49 @@ def _wrap_with_proxy(maplestory_url: str) -> str:
         代理 URL，格式：{base_url}/api/proxy/paperdoll?url=<base64_encoded_maplestory_url>
     """
     try:
+        print(f"[paperdoll_manager._wrap_with_proxy] 📍 開始處理 URL (長度: {len(maplestory_url)})")
+        
         # Base64 編碼原始 URL
         encoded = base64.b64encode(maplestory_url.encode()).decode()
+        print(f"[paperdoll_manager._wrap_with_proxy] 📍 Base64 編碼完成 (編碼後長度: {len(encoded)})")
         
         # 優先從 config.json 取得隧道 URL
         api_url = None
         try:
             import json as json_lib
             config_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'config', 'config.json')
+            print(f"[paperdoll_manager._wrap_with_proxy] 📍 嘗試讀取 config.json: {config_path}")
+            print(f"[paperdoll_manager._wrap_with_proxy] 📍 config.json 是否存在: {os.path.exists(config_path)}")
+            
             if os.path.exists(config_path):
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json_lib.load(f)
                     api_url = config.get('url') or config.get('API_BASE')
+                    print(f"[paperdoll_manager._wrap_with_proxy] 📍 從 config.json 取得 api_url: {api_url}")
         except Exception as e:
-            pass
+            print(f"[paperdoll_manager._wrap_with_proxy] ⚠️ 讀取 config.json 失敗: {e}")
+            import traceback
+            traceback.print_exc()
         
         # 回退到環境變數
         if not api_url:
             api_url = os.getenv('UNIFIED_API_URL')
+            print(f"[paperdoll_manager._wrap_with_proxy] 📍 從環境變數取得 api_url: {api_url}")
         
         # 再回退到本地主機
         if not api_url:
             api_url = 'http://localhost:5000'
+            print(f"[paperdoll_manager._wrap_with_proxy] 📍 使用預設本地主機 URL: {api_url}")
         
         proxy_url = f"{api_url}/api/proxy/paperdoll?url={encoded}"
+        print(f"[paperdoll_manager._wrap_with_proxy] ✅ 最終代理 URL 已生成 (長度: {len(proxy_url)})")
+        print(f"[paperdoll_manager._wrap_with_proxy] ✅ 代理 URL 預覽: {proxy_url[:150]}...")
         
         return proxy_url
     except Exception as e:
         print(f"[paperdoll_manager] ⚠️ 代理 URL 包裝失敗: {e}")
+        import traceback
+        print(f"[paperdoll_manager]    堆棧:\n{traceback.format_exc()}")
         # 失敗時回退到原始 URL
         return maplestory_url
 
