@@ -185,9 +185,18 @@ def build_api_url(
             f"showears=false&showLefEars=false&showHighLefEars=false"
             f"&resize={resize}&flipX={flip_param}"
         )
-        return f"{MAPLESTORY_API_BASE}/{item_path}/{pose}/animated?{params}"
+        url = f"{MAPLESTORY_API_BASE}/{item_path}/{pose}/animated?{params}"
+        # ✅ 調試：URL 成功生成
+        if url and len(url) > 100:
+            # print(f"[paperdoll_manager] ✅ 生成 URL 成功 (長度: {len(url)})")
+            pass
+        return url
 
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"[paperdoll_manager] ❌ 構建 API URL 失敗: {e}")
+        print(f"[paperdoll_manager]    數據: {user_data}")
+        print(f"[paperdoll_manager]    堆棧:\n{traceback.format_exc()}")
         return None
 
 

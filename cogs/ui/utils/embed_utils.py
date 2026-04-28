@@ -159,10 +159,16 @@ async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord
     try:
         from . import paperdoll_manager
         api_url = paperdoll_manager.build_api_url(user_data)
-        embed.set_image(url=api_url)
-        # 不添加 image_source field 文字顯示，只顯示圖片
+        if api_url:
+            embed.set_image(url=api_url)
+            # print(f"[embed_utils] ✅ 成功添加紙娃娃圖片 (用戶: {user_data.get('user_id')})")
+        else:
+            print(f"[embed_utils] ⚠️ paperdoll_manager 返回 None (用戶: {user_data.get('user_id')})")
+            print(f"[embed_utils]    用戶數據: {user_data.get('face', 'N/A')}, {user_data.get('hair', 'N/A')}")
     except Exception as e:
-        print(f"獲取角色圖片URL失敗: {e}")
+        import traceback
+        print(f"[embed_utils] ❌ 添加紙娃娃圖片失敗 (用戶: {user_data.get('user_id')}): {e}")
+        print(f"[embed_utils]    堆棧:\n{traceback.format_exc()}")
 
 
 

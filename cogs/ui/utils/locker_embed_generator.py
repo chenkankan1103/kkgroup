@@ -64,9 +64,14 @@ async def generate_canonical_locker_embed(
                 api_url = paperdoll_manager.build_api_url(user_data)
                 if api_url:
                     embed.set_image(url=api_url)
-                    embed.set_footer(text="💫 由 MapleStory.io API 提供角色外觀")
+                    # print(f"[Locker] ✅ 新增圖片 (用戶: {user_data.get('user_id')})")
+                else:
+                    print(f"[Locker] ⚠️ 紙娃娃 URL 為 None (用戶: {user_data.get('user_id')})")
             except Exception as img_err:
-                print(f"⚠️ [Locker Embed Generator] Embed 無法添加圖片: {img_err}")
+                print(f"[Locker] ❌ Embed 無法添加圖片: {img_err}")
+                print(f"[Locker]    用戶: {user_data.get('user_id')}")
+    else:
+        print(f"[Locker] ⚠️ 無法生成主 embed (用戶: {user_data.get('user_id')})")
     
     # Step 3: 若完全失敗，建立基本 embed + 動態圖片
     if not embed:
