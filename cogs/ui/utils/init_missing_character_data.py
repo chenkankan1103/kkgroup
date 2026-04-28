@@ -64,15 +64,15 @@ def get_random_character_data(preserve_gender: str = None) -> dict:
         preserve_gender: 如果提供，則保持此性別而不是隨機選擇
         
     Returns:
-        包含角色配置的字典
+        包含角色配置的字典（所有值都是字符串格式，與數據庫一致）
     """
     return {
-        'face': random.choice(CHARACTER_VARIATIONS['face']),
-        'hair': random.choice(CHARACTER_VARIATIONS['hair']),
-        'skin': random.choice(CHARACTER_VARIATIONS['skin']),
-        'top': random.choice(CHARACTER_VARIATIONS['top']),
-        'bottom': random.choice(CHARACTER_VARIATIONS['bottom']),
-        'shoes': random.choice(CHARACTER_VARIATIONS['shoes']),
+        'face': str(random.choice(CHARACTER_VARIATIONS['face'])),
+        'hair': str(random.choice(CHARACTER_VARIATIONS['hair'])),
+        'skin': str(random.choice(CHARACTER_VARIATIONS['skin'])),
+        'top': str(random.choice(CHARACTER_VARIATIONS['top'])),
+        'bottom': str(random.choice(CHARACTER_VARIATIONS['bottom'])),
+        'shoes': str(random.choice(CHARACTER_VARIATIONS['shoes'])),
         'is_stunned': 0,
         'gender': preserve_gender if preserve_gender else random.choice(['male', 'female'])
     }
