@@ -13,41 +13,13 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
 from db_adapter import get_all_users, set_user_field
-import random
+from . import paperdoll_manager
 
-
-# 預設楓之谷角色配置（分性別，與 image_utils.py 中的預設值保持一致）
-# 注意：數據庫中所有值都是字符串存儲！
-# 男性預設
-MALE_DEFAULT_CHARACTER_DATA = {
-    'face': '20005',
-    'hair': '30120',
-    'skin': '12000',
-    'top': '1040014',
-    'bottom': '1060096',
-    'shoes': '1072005',
-    'is_stunned': 0,
-    'gender': 'male'
-}
-
-# 女性預設
-FEMALE_DEFAULT_CHARACTER_DATA = {
-    'face': '21731',
-    'hair': '34410',
-    'skin': '12000',
-    'top': '1041004',
-    'bottom': '1061008',
-    'shoes': '1072005',
-    'is_stunned': 0,
-    'gender': 'female'
-}
-
-# 向後相容性
-DEFAULT_CHARACTER_DATA = MALE_DEFAULT_CHARACTER_DATA
-
-# 楓之谷部位 ID 預設值列表（用於多樣性）
-CHARACTER_VARIATIONS = {
-    'face': [20000, 20001, 20005, 20100, 20400, 20402, 20405],
+# 委派到統一的 paperdoll_manager
+MALE_DEFAULT_CHARACTER_DATA = paperdoll_manager.MALE_DEFAULT
+FEMALE_DEFAULT_CHARACTER_DATA = paperdoll_manager.FEMALE_DEFAULT
+DEFAULT_CHARACTER_DATA = paperdoll_manager.MALE_DEFAULT
+CHARACTER_VARIATIONS = paperdoll_manager.CHARACTER_VARIATIONS
     'hair': [30000, 30030, 30120, 30220, 30260, 30300, 30320],
     'skin': [10000, 10001, 10002, 12000, 12100],
     'top': [1040010, 1040014, 1041002, 1040060, 1042003],
@@ -65,17 +37,11 @@ def get_random_character_data(preserve_gender: str = None) -> dict:
         
     Returns:
         包含角色配置的字典（所有值都是字符串格式，與數據庫一致）
+        
+    Note:
+        此函式現已委派給 paperdoll_manager.get_random() 進行統一管理。
     """
-    return {
-        'face': str(random.choice(CHARACTER_VARIATIONS['face'])),
-        'hair': str(random.choice(CHARACTER_VARIATIONS['hair'])),
-        'skin': str(random.choice(CHARACTER_VARIATIONS['skin'])),
-        'top': str(random.choice(CHARACTER_VARIATIONS['top'])),
-        'bottom': str(random.choice(CHARACTER_VARIATIONS['bottom'])),
-        'shoes': str(random.choice(CHARACTER_VARIATIONS['shoes'])),
-        'is_stunned': 0,
-        'gender': preserve_gender if preserve_gender else random.choice(['male', 'female'])
-    }
+    return paperdoll_manager.get_random(preserve_gender=preserve_gender)
 
 
 def find_users_with_missing_character_data() -> list:
