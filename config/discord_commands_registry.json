@@ -1,0 +1,431 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "lastUpdated": "2026-04-28",
+    "description": "KKGroup Discord Bot 統一指令註冊表",
+    "totalCommands": 105,
+    "summary": {
+      "activeCommands": 98,
+      "testCommands": 19,
+      "deprecatedCommands": 0,
+      "toClean": 5
+    }
+  },
+
+  "command_categories": {
+    "GAME": {
+      "description": "遊戲系統相關指令",
+      "subcategories": {
+        "趨勢樂透": {
+          "active": ["trends_predict", "trends_history", "trends_jackpot"],
+          "test": ["trends_test"]
+        },
+        "紙娃娃系統": {
+          "active": ["paperdoll", "set_character", "view_character", "list_paperdoll"],
+          "admin": ["admin_paperdoll"]
+        },
+        "置物櫃系統": {
+          "active": ["locker_panel", "crop", "harvest"],
+          "admin": ["locker_init", "locker_check", "locker_fix_missing", "locker_check_all", "locker_remake_thread"]
+        },
+        "園區事件": {
+          "active": ["進行園區活動"],
+          "admin": ["event_stats", "event_reset", "event_force"]
+        }
+      }
+    },
+
+    "ECONOMY": {
+      "description": "經濟系統相關指令",
+      "subcategories": {
+        "KK幣系統": {
+          "active": ["kkcoin", "kkcoin_rank"],
+          "admin": ["kkcoin_admin"]
+        },
+        "儲備金系統": {
+          "active": ["reserve_status"],
+          "admin": ["reserve_admin"]
+        },
+        "購物系統": {
+          "active": ["shopping"],
+          "admin": ["grant_temporary_role", "check_my_roles"]
+        }
+      }
+    },
+
+    "CHARACTER": {
+      "description": "角色系統相關指令",
+      "subcategories": {
+        "角色管理": {
+          "active": ["select_character", "view_character"],
+          "admin": ["character_setup"]
+        },
+        "紅包系統": {
+          "admin": ["發紅包", "紅包修復", "紅包狀態", "紅包掃描"]
+        }
+      }
+    },
+
+    "ENTERTAINMENT": {
+      "description": "娛樂和跟蹤相關指令",
+      "subcategories": {
+        "動畫追蹤": {
+          "active": ["anime_status", "anime_weekly", "anime_ranking", "anime_stats"],
+          "admin": ["anime_test", "anime_start"],
+          "note": "需要定期維護，考慮移到獨立服務"
+        },
+        "工作系統": {
+          "active": ["work_info", "work_stats"],
+          "admin": ["work_health", "work_rebuild", "work_deploy"]
+        }
+      }
+    },
+
+    "ADMIN": {
+      "description": "管理員系統維護指令",
+      "subcategories": {
+        "系統控制": {
+          "commands": ["update_and_restart", "check_updates", "restart_all", "restart", "status"]
+        },
+        "資料同步": {
+          "commands": ["sync_from_sheet", "export_to_sheet", "list_members", "sync_status"]
+        },
+        "安全防護": {
+          "commands": ["unmute", "clear_violations", "emergency_cleanup", "ad_violations", "ad_settings"]
+        },
+        "AI系統": {
+          "commands": ["ai_personality_set", "ai_personality_list", "ai_knowledge_add", "ai_knowledge_search", "ai_memory_cleanup", "ai_memory_status"]
+        },
+        "特殊操作": {
+          "commands": ["setup_scam_hub", "assign_nickname_id", "remove_nickname_id", "restore_global_nicknames", "feedback", "shellagent"]
+        }
+      }
+    }
+  },
+
+  "commands": {
+    "common": {
+      "kcoin": {
+        "name": "kkcoin",
+        "description": "查詢你的 KK 幣餘額",
+        "type": "user",
+        "file": "common/kcoin.py",
+        "line": 1200,
+        "usage": "/kkcoin",
+        "status": "✅ 活躍"
+      },
+      "kkcoin_rank": {
+        "name": "kkcoin_rank",
+        "description": "顯示 KK 幣排行榜",
+        "type": "user",
+        "file": "common/kcoin.py",
+        "line": 1206,
+        "usage": "/kkcoin_rank",
+        "status": "✅ 活躍"
+      },
+      "kkcoin_admin": {
+        "name": "kkcoin_admin",
+        "description": "管理用戶的 KK 幣（管理員專用）",
+        "type": "admin",
+        "file": "common/kcoin.py",
+        "line": 1249,
+        "usage": "/kkcoin_admin @user amount",
+        "status": "✅ 活躍"
+      },
+      "trends_predict": {
+        "name": "trends_predict",
+        "description": "預測趨勢並投注 🎰",
+        "type": "user",
+        "file": "common/trends_lottery.py",
+        "line": 573,
+        "usage": "/trends_predict",
+        "status": "✅ 活躍",
+        "category": "核心遊戲"
+      },
+      "trends_history": {
+        "name": "trends_history",
+        "description": "查看你的投注歷史 📜",
+        "type": "user",
+        "file": "common/trends_lottery.py",
+        "line": 669,
+        "usage": "/trends_history",
+        "status": "✅ 活躍",
+        "category": "核心遊戲"
+      },
+      "trends_jackpot": {
+        "name": "trends_jackpot",
+        "description": "查看當前獎池 🎁",
+        "type": "user",
+        "file": "common/trends_lottery.py",
+        "line": 721,
+        "usage": "/trends_jackpot",
+        "status": "✅ 活躍"
+      },
+      "trends_test": {
+        "name": "trends_test",
+        "description": "🧪 測試推播趨勢（開發者用）",
+        "type": "test",
+        "file": "common/trends_lottery.py",
+        "line": 755,
+        "status": "⚠️ 測試指令",
+        "recommendation": "部署前應移除或隱藏"
+      },
+      "restore_global_nicknames": {
+        "name": "restore_global_nicknames",
+        "description": "還原所有人的 Discord 全域暱稱",
+        "type": "admin",
+        "file": "common/123.py",
+        "line": 9,
+        "usage": "/restore_global_nicknames",
+        "status": "✅ 活躍",
+        "note": "早期開發指令，文件名為 123.py"
+      },
+      "update_and_restart": {
+        "name": "update_and_restart",
+        "description": "檢查更新、拉取代碼並依序重啟所有服務",
+        "type": "admin",
+        "file": "common/admin_restartbot.py",
+        "line": 138,
+        "status": "✅ 活躍",
+        "category": "系統維護"
+      },
+      "check_updates": {
+        "name": "check_updates",
+        "description": "僅檢查是否有 Git 更新",
+        "type": "admin",
+        "file": "common/admin_restartbot.py",
+        "line": 238,
+        "status": "✅ 活躍"
+      },
+      "restart_all": {
+        "name": "restart_all",
+        "description": "依序重啟所有 bot 服務（不更新代碼）",
+        "type": "admin",
+        "file": "common/admin_restartbot.py",
+        "line": 287,
+        "status": "✅ 活躍"
+      },
+      "restart": {
+        "name": "restart",
+        "description": "重啟指定的 bot 服務",
+        "type": "admin",
+        "file": "common/admin_restartbot.py",
+        "line": 340,
+        "status": "✅ 活躍"
+      },
+      "status": {
+        "name": "status",
+        "description": "查看所有 bot 服務狀態",
+        "type": "admin",
+        "file": "common/admin_restartbot.py",
+        "line": 362,
+        "status": "✅ 活躍"
+      },
+      "ai_personality_set": {
+        "name": "ai_personality_set",
+        "description": "設定 AI 角色特性（管理員專用）",
+        "type": "admin",
+        "file": "common/memory_manager.py",
+        "line": 46,
+        "status": "✅ 活躍",
+        "category": "AI系統"
+      },
+      "shellagent": {
+        "name": "shellagent",
+        "description": "啟動 AI Shell Agent（管理員限定）",
+        "type": "admin",
+        "file": "common/shell_agent.py",
+        "line": 213,
+        "status": "✅ 活躍",
+        "category": "AI系統"
+      },
+      "sync_from_sheet": {
+        "name": "sync_from_sheet",
+        "description": "從 Google Sheet 同步資料到資料庫",
+        "type": "admin",
+        "file": "common/google_sheets_sync.py",
+        "line": 332,
+        "status": "✅ 活躍",
+        "category": "資料同步"
+      }
+    },
+
+    "shop": {
+      "shopping": {
+        "name": "shopping",
+        "description": "開始神秘的黑市探索",
+        "type": "user",
+        "file": "shop/shop.py",
+        "line": 98,
+        "usage": "/shopping",
+        "status": "✅ 活躍",
+        "category": "核心遊戲"
+      },
+      "paperdoll": {
+        "name": "paperdoll",
+        "description": "開啟紙娃娃試衣間",
+        "type": "user",
+        "file": "shop/shop.py",
+        "line": 120,
+        "usage": "/paperdoll",
+        "status": "✅ 活躍",
+        "category": "核心遊戲"
+      },
+      "feedback": {
+        "name": "feedback",
+        "description": "提交玩家意見回饋",
+        "type": "user",
+        "file": "shop/feedback_cog.py",
+        "line": 166,
+        "usage": "/feedback message",
+        "status": "✅ 活躍"
+      },
+      "grant_temporary_role": {
+        "name": "grant_temporary_role",
+        "description": "給予用戶臨時身分（帶過期時間）",
+        "type": "admin",
+        "file": "shop/enhanced_role_manager.py",
+        "line": 27,
+        "status": "✅ 活躍"
+      },
+      "check_my_roles": {
+        "name": "check_my_roles",
+        "description": "查看你的臨時身分有效期",
+        "type": "user",
+        "file": "shop/enhanced_role_manager.py",
+        "line": 126,
+        "status": "⚠️ 重複定義",
+        "note": "也在 shop/merchant/role_expiry_manager.py:255"
+      }
+    },
+
+    "ui": {
+      "locker_init": {
+        "name": "locker_init",
+        "description": "為會員初始化置物櫃並建立 thread",
+        "type": "admin",
+        "file": "ui/commands/locker_admin.py",
+        "line": 113,
+        "status": "✅ 活躍",
+        "category": "置物櫃系統"
+      },
+      "locker_check": {
+        "name": "locker_check",
+        "description": "檢查特定會員是否有置物櫃",
+        "type": "admin",
+        "file": "ui/commands/locker_admin.py",
+        "line": 26,
+        "status": "✅ 活躍"
+      },
+      "anime_status": {
+        "name": "anime_status",
+        "description": "查看自動推送任務狀態",
+        "type": "user",
+        "file": "ui/anime_tracker.py",
+        "line": 2178,
+        "status": "✅ 活躍",
+        "category": "動畫追蹤"
+      },
+      "anime_weekly": {
+        "name": "anime_weekly",
+        "description": "查看本週投票統計",
+        "type": "user",
+        "file": "ui/anime_tracker.py",
+        "line": 2207,
+        "status": "✅ 活躍"
+      },
+      "unmute": {
+        "name": "unmute",
+        "description": "解除使用者禁言 (管理員用)",
+        "type": "admin",
+        "file": "ui/anti_advertising.py",
+        "line": 659,
+        "status": "✅ 活躍",
+        "category": "安全防護"
+      },
+      "event_stats": {
+        "name": "event_stats",
+        "description": "查看園區事件統計（管理員專用）",
+        "type": "admin",
+        "file": "ui/ScamParkEvents.py",
+        "line": 1277,
+        "status": "✅ 活躍",
+        "category": "園區事件"
+      }
+    }
+  },
+
+  "cleanup_recommendations": {
+    "test_commands": {
+      "description": "應在正式部署前移除或隱藏的測試指令",
+      "commands": [
+        "trends_test",
+        "debug_welcome",
+        "debug_confirm",
+        "debug_press_buttons",
+        "debug_simulate_buttons",
+        "test_assign_nickname_id",
+        "test_remove_nickname_id",
+        "anime_test",
+        "anime_start",
+        "locker_health_check",
+        "test_locker_equipment"
+      ],
+      "priority": "高",
+      "action": "建議移到 /test 分類或用 app_commands.checks.is_owner() 限制"
+    },
+    "chinese_command_names": {
+      "description": "使用繁體中文作為指令名稱（可能有相容性問題）",
+      "commands": ["發紅包", "紅包修復", "紅包狀態", "紅包掃描"],
+      "priority": "低",
+      "action": "考慮添加英文別名或改為英文命令名稱"
+    },
+    "duplicate_commands": {
+      "description": "在多個地方定義的重複指令",
+      "duplicates": [
+        {
+          "name": "check_my_roles",
+          "locations": [
+            "shop/enhanced_role_manager.py:126",
+            "shop/merchant/role_expiry_manager.py:255"
+          ],
+          "action": "合併兩個定義，保留一個"
+        }
+      ],
+      "priority": "中"
+    },
+    "inconsistent_permissions": {
+      "description": "權限驗證方式不一致",
+      "note": "有些用 @app_commands.checks.has_permissions，有些用 ADMIN_USER_ID",
+      "priority": "中",
+      "action": "統一使用 Discord 權限系統"
+    },
+    "prefix_commands": {
+      "description": "仍使用前綴指令的舊代碼",
+      "commands": [
+        "threads_lottery (cogs/ui/threads_lottery.py)",
+        "cookie_status (cogs/ui/threads_cookie_monitor.py)",
+        "update_cookies (cogs/ui/threads_cookie_monitor.py)"
+      ],
+      "priority": "低",
+      "action": "遷移到斜線命令"
+    }
+  },
+
+  "organization_structure": {
+    "recommended_groups": {
+      "user_commands": {
+        "core_games": ["shopping", "paperdoll", "trends_predict", "trends_history"],
+        "character": ["select_character", "view_character"],
+        "info": ["kkcoin", "kkcoin_rank", "anime_status", "work_stats"]
+      },
+      "admin_commands": {
+        "system": ["update_and_restart", "restart_all", "status"],
+        "roles": ["grant_temporary_role", "check_my_roles"],
+        "maintenance": ["sync_from_sheet", "locker_check", "event_stats"],
+        "ai": ["ai_personality_set", "ai_knowledge_add", "shellagent"]
+      }
+    },
+    "notes": "建議在 cogs 中為不同功能創建子目錄，集中管理相關指令"
+  }
+}
