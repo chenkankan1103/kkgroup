@@ -2,6 +2,7 @@ import discord
 import datetime
 from db_adapter import set_user_field, get_user
 from shared.utils.view_registry import PersistentViewBase
+from cogs.ui.utils import paperdoll_manager
 
 
 class GenderSelectView(discord.ui.View):
@@ -25,20 +26,11 @@ class GenderSelectView(discord.ui.View):
             await interaction.followup.send("❌ 這不是你的選項！", ephemeral=True)
             return
         
-        # 更新性別
+        # 使用 paperdoll_manager 生成隨機配置，保持性別不變
         gender = select.values[0]
-        set_user_field(self.user_id, 'gender', gender)
-        
-        # 更新外觀數據
-        appearance_updates = {
-            'face': 20005 if gender == "male" else 21731,
-            'hair': 30120 if gender == "male" else 34410,
-            'top': 1040014 if gender == "male" else 1041004,
-            'bottom': 1060096 if gender == "male" else 1061008,
-            'gender': gender
-        }
-        
-        for key, value in appearance_updates.items():
+        appearance = paperdoll_manager.get_random(preserve_gender=gender)
+
+        for key, value in appearance.items():
             set_user_field(self.user_id, key, value)
         
         gender_text = "男性" if gender == "male" else "女性"

@@ -14,6 +14,8 @@ import logging
 
 # 匯入新的 DB 適配層
 from db_adapter import get_user, set_user_field, get_user_field
+from cogs.ui.utils import paperdoll_manager
+from cogs.ui.utils import paperdoll_manager
 
 load_dotenv()
 
@@ -186,51 +188,35 @@ class Ai(commands.Cog):
             return {}
 
     async def generate_punishment_character_image(self, user_data: dict, is_stunned: bool = True) -> Optional[str]:
-        """生成懲罰狀態的角色圖片"""
+        """生成懲罰狀態的角色圖片，委派給 paperdoll_manager。"""
         try:
             gender = user_data.get('gender', 'male')
-            preset_key = f"{gender}_{'stunned' if is_stunned else 'normal'}"
-            
-            # 檢查緩存
-            if preset_key in self.cached_punishment_images:
-                return self.cached_punishment_images[preset_key]
-            
-            preset = self.punishment_presets.get(preset_key)
-            if not preset:
+            # 若用戶資料缺少關鍵欄位，以性別預設補充
+            if not paperdoll_manager.validate(user_data):
+                user_data = {**paperdoll_manager.get_defaults(gender), **user_data}
+
+            pose = 'prone' if is_stunned else 'stand1'
+            patched = {**user_data, 'is_stunned': 1 if is_stunned else 0}
+
+            # 懲罰功能原始使用 GMS 伺服器區域配置
+            api_url = paperdoll_manager.build_api_url(
+                patched, pose=pose, region='GMS', version='217', resize=2
+            )
+            if not api_url:
                 return None
-            
-            # 使用用戶的外觀數據，但應用懲罰狀態的姿勢和面部動畫
-            items = [
-                {"itemId": 2000, "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('skin', preset['skin']), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('face', preset['face']), "animationName": preset['face_animation'], "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('hair', preset['hair']), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('top', preset['top']), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('bottom', preset['bottom']), "region": "GMS", "version": "217"},
-                {"itemId": user_data.get('shoes', preset['shoes']), "region": "GMS", "version": "217"}
-            ]
-            
-            # 如果是眩晕状态，添加眩晕效果
-            if is_stunned:
-                items.append({"itemId": 1005411, "region": "GMS", "version": "217"})
-            
-            item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
-            api_url = f"https://maplestory.io/api/character/{item_path}/{preset['pose']}/animated?showears=false&resize=2&flipX=true"
-            
+
+            preset_key = f"{gender}_{'stunned' if is_stunned else 'normal'}"
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
                 async with session.get(api_url) as response:
                     if response.status == 200:
                         image_data = await response.read()
                         if len(image_data) > 100:
-                            # 上傳到 Discord 儲存
                             discord_url = await self.upload_punishment_image_to_storage(image_data, preset_key)
                             if discord_url:
                                 self.cached_punishment_images[preset_key] = discord_url
                                 return discord_url
-        
         except Exception as e:
             logger.error(f"生成懲罰角色圖片錯誤: {e}")
-        
         return None
 
     async def upload_punishment_image_to_storage(self, image_data: bytes, cache_key: str) -> Optional[str]:

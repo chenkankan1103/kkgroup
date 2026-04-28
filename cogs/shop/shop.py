@@ -23,6 +23,7 @@ from .merchant.database import (
     get_user_kkcoin, update_user_kkcoin, update_user_equipment, get_user_equipment
 )
 from .merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID, VIP_ROLE_ID, RAINBOW_ROLE_ID
+from cogs.ui.utils import paperdoll_manager
 from .role_expiration_manager import get_manager as get_expiration_manager
 
 class ButtonInteraction(commands.Cog):
@@ -72,46 +73,14 @@ class ButtonInteraction(commands.Cog):
         return [dict(zip(['id', 'name', 'category', 'region', 'version', 'image_url'], row)) for row in cursor.fetchall()]
 
     async def generate_character_image_url(self, user_data: dict, preview_item: Optional[Dict] = None) -> Optional[str]:
-        try:
-# 生成圖片時只用允許的部件，skin 移除
-            items = [
-                {"itemId": 2000, "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('face', 20005), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('hair', 30120), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('hat', 0), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('overall', 0) or user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('bottom', 1060096), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('face_accessory', 0), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('eye_decoration', 0), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('earrings', 0), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('glove', 0), "region": "TWMS", "version": "256"}
-            ]
-            # 移除 itemId 為 0 的項目
-            items = [it for it in items if it.get('itemId')]
-
-            if preview_item:
-                category_map = {
-                    "Hair": "hair", "Face": "face", "Hat": "hat",
-                    "Top": "top", "Overall": "overall", "Bottom": "bottom",
-                    "Shoes": "shoes", "Face Accessory": "face_accessory",
-                    "Eye Decoration": "eye_decoration", "Earrings": "earrings",
-                    "Glove": "glove"
-                }
-                part = category_map.get(preview_item['category'])
-                if part:
-                    for item in items:
-                        # 只替換存在的欄位
-                        if item.get('itemId') == user_data.get(part):
-                            item['itemId'] = preview_item['id']
-                            break
-
-            item_path = ",".join(json.dumps(item, separators=(',', ':')) for item in items)
-            api_url = f"https://maplestory.io/api/character/{item_path}/stand1/0?showears=false&resize=2"
-            return api_url
-        except Exception as e:
-            print(f"❌ 生成圖片URL錯誤: {e}")
-            return None
+        """委派給 paperdoll_manager，支援附屬裝備與試穿預覽。"""
+        return paperdoll_manager.build_api_url(
+            user_data,
+            preview_item=preview_item,
+            include_accessories=True,
+            resize=2,
+            flip_x=False,
+        )
 
     async def get_user_data(self, user_id):
         # 從現有資料庫獲取用戶裝備
