@@ -153,8 +153,9 @@ def build_api_url(
             pose = 'prone'
 
         # ── 建立部件列表 ──────────────────────────────────────
+        # ⚠️ 移除 itemId 2000（無效的 item ID）
+        # MapleStory item ID 範圍：Face(20000-29999), Hair(30000-39999), Cap(40000-49999), Coat(60000-69999), Bottom(70000-79999), Shoes(80000-89999)
         items: list = [
-            {"itemId": 2000,     "region": region, "version": version},
             {
                 "itemId": face_id,
                 **({"animationName": "stunned"} if is_stunned else {}),
