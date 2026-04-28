@@ -91,15 +91,168 @@ class CommandManager(commands.Cog):
         self._register_commands()
     
     def _register_commands(self):
-        """註冊所有活躍的指令"""
-        # UI 模組命令
+        """註冊所有活躍的指令（共 45 個）"""
+        
+        # ========================================
+        # UI 模組指令 (24 個)
+        # ========================================
+        
+        # 置物櫃管理 (7 個)
+        locker_commands = [
+            ('admin_refresh_all_lockers', '批量刷新所有用戶置物櫃', 'administrator'),
+            ('locker_check', '查看自己的置物櫃', 'user'),
+            ('locker_init', '初始化新用戶置物櫃', 'user'),
+            ('locker_check_all', '管理員查看所有置物櫃', 'administrator'),
+            ('locker_fix_missing', '修復缺失的置物櫃數據', 'administrator'),
+            ('locker_remake_thread', '重建置物櫃論壇線程', 'administrator'),
+            ('update_forum_lockers', '更新論壇置物櫃顯示', 'administrator'),
+        ]
+        for cmd_name, desc, perm in locker_commands:
+            self.registry.register_active(cmd_name, 'UI / 置物櫃', None, desc, perm)
+        
+        # 紙娃娃系統 (1 個)
         self.registry.register_active(
             'admin_refresh_all_paperdolls',
-            category='UI / 紙娃娃',
-            handler=None,  # 指令由 admin_ui_commands.py 定義
-            description='[UIBot 管理員] 刷新所有置物櫃的紙娃娃圖片 - 驗證 URL 生成狀態',
-            permissions='administrator'
+            'UI / 紙娃娃',
+            None,
+            '刷新所有置物櫃的紙娃娃圖片',
+            'administrator'
         )
+        
+        # 動畫追蹤 (4 個)
+        anime_commands = [
+            ('anime_test', '測試動畫推送系統', 'administrator'),
+            ('anime_weekly', '查看本週動畫推送', 'user'),
+            ('anime_ranking', '查看動畫排行榜', 'user'),
+            ('anime_stats', '查看動畫統計數據', 'user'),
+        ]
+        for cmd_name, desc, perm in anime_commands:
+            self.registry.register_active(cmd_name, 'UI / 動畫追蹤', None, desc, perm)
+        
+        # 新年紅包系統 (4 個)
+        redenvelope_commands = [
+            ('發紅包', '發送新年紅包', 'user'),
+            ('紅包修復', '修復紅包分配問題', 'administrator'),
+            ('紅包狀態', '查看紅包發放狀態', 'user'),
+            ('紅包掃描', '掃描未領取紅包', 'administrator'),
+        ]
+        for cmd_name, desc, perm in redenvelope_commands:
+            self.registry.register_active(cmd_name, 'UI / 紅包系統', None, desc, perm)
+        
+        # 歡迎系統 (4 個)
+        welcome_commands = [
+            ('debug_welcome', '調試歡迎消息', 'administrator'),
+            ('debug_confirm', '調試確認按鈕', 'administrator'),
+            ('debug_press_buttons', '調試按鈕按下', 'administrator'),
+            ('debug_simulate_buttons', '模擬按鈕交互', 'administrator'),
+        ]
+        for cmd_name, desc, perm in welcome_commands:
+            self.registry.register_active(cmd_name, 'UI / 歡迎系統', None, desc, perm)
+        
+        # ID 診斷 (2 個)
+        id_commands = [
+            ('check_user_ids', '檢查用戶 ID 映射', 'administrator'),
+            ('list_id_issues', '列出 ID 不匹配的用戶', 'administrator'),
+        ]
+        for cmd_name, desc, perm in id_commands:
+            self.registry.register_active(cmd_name, 'UI / ID 診斷', None, desc, perm)
+        
+        # 角色設置 (3 個)
+        character_commands = [
+            ('set_character', '設置紙娃娃外觀', 'user'),
+            ('view_character', '查看紙娃娃外觀', 'user'),
+            ('random_character', '隨機生成紙娃娃', 'user'),
+        ]
+        for cmd_name, desc, perm in character_commands:
+            self.registry.register_active(cmd_name, 'UI / 角色設置', None, desc, perm)
+        
+        # 置物櫃事件測試 (4 個)
+        locker_test_commands = [
+            ('test_locker_equipment', '測試裝備變更', 'administrator'),
+            ('test_locker_currency', '測試 KK幣變更', 'administrator'),
+            ('test_locker_health', '測試血量變更', 'administrator'),
+            ('test_locker_full_refresh', '測試完整刷新', 'administrator'),
+        ]
+        for cmd_name, desc, perm in locker_test_commands:
+            self.registry.register_active(cmd_name, 'UI / 置物櫃測試', None, desc, perm)
+        
+        # ========================================
+        # Common 模組指令 (16 個)
+        # ========================================
+        
+        # KK 幣系統 (2 個)
+        kkcoin_commands = [
+            ('kkcoin_admin', 'KK幣管理工具', 'administrator'),
+            ('reserve_admin', '園區儲備金管理', 'administrator'),
+        ]
+        for cmd_name, desc, perm in kkcoin_commands:
+            self.registry.register_active(cmd_name, 'Common / 經濟系統', None, desc, perm)
+        
+        # 趨勢樂透 (2 個)
+        trends_commands = [
+            ('trends_predict', '預測趨勢走向', 'user'),
+            ('trends_test', '測試樂透系統', 'administrator'),
+        ]
+        for cmd_name, desc, perm in trends_commands:
+            self.registry.register_active(cmd_name, 'Common / 趨勢樂透', None, desc, perm)
+        
+        # 暱稱管理 (5 個)
+        nickname_commands = [
+            ('assign_nickname_id', '分配用戶 ID 暱稱', 'manage_nicknames'),
+            ('remove_nickname_id', '移除暱稱映射', 'manage_nicknames'),
+            ('test_assign_nickname_id', '測試暱稱分配', 'administrator'),
+            ('test_remove_nickname_id', '測試暱稱移除', 'administrator'),
+            ('restore_global_nicknames', '恢復全域暱稱', 'administrator'),
+        ]
+        for cmd_name, desc, perm in nickname_commands:
+            self.registry.register_active(cmd_name, 'Common / 暱稱管理', None, desc, perm)
+        
+        # AI 工具 (1 個)
+        self.registry.register_active(
+            'shellagent',
+            'Common / AI 工具',
+            None,
+            '啟動 AI Shell Agent',
+            'administrator'
+        )
+        
+        # 語音頻道 (1 個)
+        self.registry.register_active(
+            'setup_scam_hub',
+            'Common / 語音管理',
+            None,
+            '設置詐騙中樞語音頻道',
+            'manage_guild'
+        )
+        
+        # 系統工具 (4 個)
+        system_commands = [
+            ('commands_list', '列出所有活躍指令', 'user'),
+            ('update_and_restart', '檢查更新並重啟', 'administrator'),
+            ('status', '查看系統狀態', 'user'),
+            ('restart_all', '重啟所有 Bot 服務', 'administrator'),
+        ]
+        for cmd_name, desc, perm in system_commands:
+            self.registry.register_active(cmd_name, 'Common / 系統工具', None, desc, perm)
+        
+        # ========================================
+        # Shop 模組指令 (3 個)
+        # ========================================
+        
+        shop_commands = [
+            ('grant_temporary_role', '授予臨時身分', 'administrator'),
+            ('check_my_roles', '查看臨時身分', 'user'),
+            ('shopping', '打開商店', 'user'),
+        ]
+        for cmd_name, desc, perm in shop_commands:
+            self.registry.register_active(cmd_name, 'Shop / 商店', None, desc, perm)
+        
+        # ========================================
+        # 統計
+        # ========================================
+        stats = self.registry.get_stats()
+        logger.info(f"✅ 已註冊 {stats['total_active']} 個指令")
+        logger.info(f"   分類: {stats['by_category']}")
     
     @app_commands.command(
         name="commands_list",
