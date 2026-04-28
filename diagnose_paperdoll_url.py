@@ -1,20 +1,42 @@
 # -*- coding: utf-8 -*-
 """
-診斷紙娃娃 API URL 是否可以訪問
-檢查：
-1. URL 是否有效
-2. API 是否能返回圖片
-3. Discord embed 是否能加載該圖片
+簡化版診斷 - 只使用標準庫，無需 requests
 """
 
 import sqlite3
 import sys
-import requests
+import json
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from cogs.ui.utils.paperdoll_manager import build_api_url, validate
+
+
+def test_url(url: str) -> bool:
+    """測試 URL 是否可訪問"""
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            status = response.status
+            if status == 200:
+                content_type = response.headers.get('Content-Type', 'N/A')
+                print(f"   ✅ 成功 (HTTP {status})")
+                print(f"      Content-Type: {content_type}")
+                return True
+            else:
+                print(f"   ⚠️  HTTP {status}")
+                return False
+    except urllib.error.HTTPError as e:
+        print(f"   ❌ HTTP {e.code}: {e.reason}")
+        return False
+    except urllib.error.URLError as e:
+        print(f"   ❌ URL 錯誤: {e.reason}")
+        return False
+    except Exception as e:
+        print(f"   ❌ 錯誤: {e}")
+        return False
 
 
 def diagnose_paperdoll_url(user_id: str):
@@ -47,60 +69,42 @@ def diagnose_paperdoll_url(user_id: str):
     
     print(f"✅ 紙娃娃數據完整")
     
-    # 3. 生成 URL（stand1）
-    print(f"\n📍 測試 stand1 姿勢：")
-    url_stand1 = build_api_url(user_data, pose='stand1')
-    if url_stand1:
-        print(f"   URL: {url_stand1[:120]}...")
+    # 3. 生成 URL
+    print(f"\n📍 生成 API URL：")
+    url = build_api_url(user_data, pose='stand1')
+    if url:
+        print(f"✅ URL 已生成")
+        print(f"   長度: {len(url)} 字元")
+        print(f"   前 150 字: {url[:150]}...")
     else:
         print(f"❌ 無法生成 URL")
         return False
     
-    # 4. 生成 URL（prone - 暈倒）
-    print(f"\n📍 測試 prone 姿勢（暈倒）：")
-    url_prone = build_api_url(user_data, pose='prone')
-    if url_prone:
-        print(f"   URL: {url_prone[:120]}...")
+    # 4. 測試 URL 可訪問性
+    print(f"\n🌐 測試 URL 可訪問性...")
+    test_url(url)
+    
+    # 5. 檢查 URL 格式
+    print(f"\n📋 URL 格式檢查:")
+    if "maplestory.io" in url:
+        print(f"   ✅ 來源正確 (maplestory.io)")
     else:
-        print(f"❌ 無法生成 prone URL")
-        return False
+        print(f"   ❌ 來源不正確")
     
-    # 5. 測試 API 連接
-    print(f"\n🌐 測試 API 連接...")
-    for pose_name, url in [("stand1", url_stand1), ("prone", url_prone)]:
-        try:
-            print(f"\n   【{pose_name}】")
-            response = requests.head(url, timeout=10, allow_redirects=True)
-            
-            if response.status_code == 200:
-                print(f"   ✅ API 連接成功 (HTTP {response.status_code})")
-                print(f"      Content-Type: {response.headers.get('Content-Type', 'N/A')}")
-                print(f"      Content-Length: {response.headers.get('Content-Length', 'N/A')}")
-            else:
-                print(f"   ⚠️  API 返回 HTTP {response.status_code}")
-                if response.status_code == 404:
-                    print(f"      ❌ 圖片不存在 (404)")
-                elif response.status_code >= 500:
-                    print(f"      ⚠️  伺服器錯誤")
-        except requests.Timeout:
-            print(f"   ❌ 超時 - API 無反應")
-        except requests.RequestException as e:
-            print(f"   ❌ 連接失敗: {e}")
-    
-    # 6. 檢查是否被 Discord 支持
-    print(f"\n📦 Discord Embed 支持檢查：")
-    if "maplestory.io" in url_stand1.lower():
-        print(f"   ✅ URL 來自 maplestory.io （Discord 應支持）")
+    if "/animated" in url:
+        print(f"   ✅ 格式正確 (animated)")
     else:
-        print(f"   ⚠️  URL 不來自 maplestory.io")
+        print(f"   ❌ 格式錯誤")
     
-    # 7. 用戶狀態檢查
-    print(f"\n👤 用戶狀態：")
+    # 6. 用戶狀態
+    print(f"\n👤 用戶配置:")
     print(f"   - Face: {user_data.get('face')}")
     print(f"   - Hair: {user_data.get('hair')}")
     print(f"   - Skin: {user_data.get('skin')}")
+    print(f"   - Top: {user_data.get('top')}")
+    print(f"   - Bottom: {user_data.get('bottom')}")
+    print(f"   - Shoes: {user_data.get('shoes')}")
     print(f"   - 暈倒: {'是' if user_data.get('is_stunned') == 1 else '否'}")
-    print(f"   - 性別: {user_data.get('gender')}")
     
     print(f"\n✅ 診斷完成！")
     return True
