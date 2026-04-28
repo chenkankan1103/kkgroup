@@ -38,38 +38,50 @@ async def generate_canonical_locker_embed(
         discord.Embed: 生成的 canonical embed
     """
     embed = None
+    user_id = user_data.get('user_id')
     
     # Step 1: 優先使用 UserPanel.create_user_embed
+    print(f"[Locker] 🔍 開始為用戶 {user_id} 生成 Embed")
     try:
         if hasattr(cog, 'create_user_embed'):
+            print(f"[Locker]   → 使用 cog.create_user_embed()")
             embed = await cog.create_user_embed(user_data, user_obj)
         else:
             # 嘗試從 utils 導入
+            print(f"[Locker]   → 使用 embed_utils.create_user_embed()")
             from .embed_utils import create_user_embed as util_create
-            embed = await util_create(cog, user_data, user_obj or discord.Object(id=user_data.get('user_id')))
+            embed = await util_create(cog, user_data, user_obj or discord.Object(id=user_id))
+        print(f"[Locker]   ✅ Step 1 成功：已生成主 Embed")
     except Exception as e:
-        print(f"⚠️ [Locker Embed Generator] 無法呼叫 create_user_embed: {e}")
+        print(f"[Locker]   ❌ Step 1 失敗：{e}")
         embed = None
     
     # Step 2: 確保 embed 有圖片（Fallback with dynamic API）
     if embed:
+        print(f"[Locker] 🖼️  Step 2：檢查 Embed 圖片...")
         try:
             img_url = (embed.image.url if getattr(embed, 'image', None) else None)
+            print(f"[Locker]   → 當前圖片 URL: {img_url[:50] if img_url else 'None'}")
         except Exception:
             img_url = None
+            print(f"[Locker]   ⚠️  無法讀取圖片 URL")
             
         if not img_url:
+            print(f"[Locker]   → 圖片缺失，嘗試生成紙娃娃 URL...")
             try:
                 from . import paperdoll_manager
                 api_url = paperdoll_manager.build_api_url(user_data)
                 if api_url:
+                    print(f"[Locker]   ✅ 生成的 URL: {api_url[:80]}...")
+                    print(f"[Locker]   → 呼叫 embed.set_image()")
                     embed.set_image(url=api_url)
-                    # print(f"[Locker] ✅ 新增圖片 (用戶: {user_data.get('user_id')})")
+                    print(f"[Locker]   ✅ 成功調用 set_image()")
                 else:
-                    print(f"[Locker] ⚠️ 紙娃娃 URL 為 None (用戶: {user_data.get('user_id')})")
+                    print(f"[Locker]   ❌ build_api_url() 返回 None")
             except Exception as img_err:
-                print(f"[Locker] ❌ Embed 無法添加圖片: {img_err}")
-                print(f"[Locker]    用戶: {user_data.get('user_id')}")
+                print(f"[Locker]   ❌ 添加圖片失敗: {img_err}")
+                import traceback
+                traceback.print_exc()
     else:
         print(f"[Locker] ⚠️ 無法生成主 embed (用戶: {user_data.get('user_id')})")
     
@@ -81,6 +93,7 @@ async def generate_canonical_locker_embed(
         except Exception:
             user_name = f"用戶{user_id}"
         
+        print(f"[Locker] 🆘 Step 3：主 Embed 生成失敗，建立 Fallback Embed")
         embed = discord.Embed(
             title=f"📦 {user_name} 的置物櫃",
             description="個人置物櫃",
@@ -92,10 +105,16 @@ async def generate_canonical_locker_embed(
             from . import paperdoll_manager
             api_url = paperdoll_manager.build_api_url(user_data)
             if api_url:
+                print(f"[Locker]   → Step 3 生成的 URL: {api_url[:80]}...")
                 embed.set_image(url=api_url)
+                print(f"[Locker]   ✅ Step 3 成功添加紙娃娃圖片")
                 embed.set_footer(text="💫 由 MapleStory.io API 提供角色外觀")
+            else:
+                print(f"[Locker]   ❌ Step 3 build_api_url() 返回 None")
         except Exception as img_err:
-            print(f"⚠️ [Locker Embed Generator] Fallback embed 無法添加圖片: {img_err}")
+            print(f"[Locker]   ❌ Step 3 Fallback embed 無法添加圖片: {img_err}")
+            import traceback
+            traceback.print_exc()
     
     # Step 4: 附加大麻系統信息（可選）
     if include_cannabis_info and plants:
