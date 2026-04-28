@@ -142,6 +142,7 @@ def build_api_url(
         # ── 核心部件 ──────────────────────────────────────────
         face_id   = _to_int(user_data.get('face'),   20005)
         hair_id   = _to_int(user_data.get('hair'),   30120)
+        skin_id   = _to_int(user_data.get('skin'),   12000)  # 皮膚色 ID（必須）
         # 支援 overall（整套服）優先於 top
         top_id    = _to_int(user_data.get('overall') or user_data.get('top'), 1040014)
         bottom_id = _to_int(user_data.get('bottom'), 1060096)
@@ -154,8 +155,12 @@ def build_api_url(
 
         # ── 建立部件列表 ──────────────────────────────────────
         # ⚠️ 移除 itemId 2000（無效的 item ID）
-        # MapleStory item ID 範圍：Face(20000-29999), Hair(30000-39999), Cap(40000-49999), Coat(60000-69999), Bottom(70000-79999), Shoes(80000-89999)
+        # MapleStory item ID 範圍：Face(20000-29999), Hair(30000-39999), Cap(40000-49999), Coat(60000-69999), Bottom(70000-79999), Shoes(80000-89999), Skin(10000-19999)
         items: list = [
+            {
+                "itemId": skin_id,  # 🎯 皮膚色（必須包含，否則無法正確渲染臉部）
+                "region": region, "version": version,
+            },
             {
                 "itemId": face_id,
                 **({"animationName": "stunned"} if is_stunned else {}),
