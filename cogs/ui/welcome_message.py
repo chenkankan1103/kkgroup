@@ -657,24 +657,37 @@ class WelcomeFlow(commands.Cog):
         return None
 
     async def get_character_image_url(self, user_data: dict) -> Optional[str]:
-        """獲取用戶對應的角色圖片 API URL"""
+        """
+        使用用戶的實際紙娃娃配置生成圖片 API URL
+        
+        重要修復：原本只使用預設配置，導致所有用戶看到相同圖片。
+        現在改為使用用戶自訂的 face、hair、top、bottom、shoes。
+        """
         try:
-            preset_key = self.get_preset_key_for_user(user_data)
-            print(f"🎭 【get_character_image_url】用戶角色鍵: {preset_key}")
+            # 從用戶數據中提取紙娃娃配置（字符串格式存儲）
+            items = [
+                {"itemId": int(user_data.get('face', 20005)), "region": "TWMS", "version": "256"},
+                {"itemId": int(user_data.get('hair', 30120)), "region": "TWMS", "version": "256"},
+                {"itemId": int(user_data.get('top', 1040014)), "region": "TWMS", "version": "256"},
+                {"itemId": int(user_data.get('bottom', 1060096)), "region": "TWMS", "version": "256"},
+                {"itemId": int(user_data.get('shoes', 1072005)), "region": "TWMS", "version": "256"},
+            ]
             
-            # 直接構建並返回 API URL
-            if preset_key in self.preset_characters:
-                config = self.preset_characters[preset_key]
-                api_url = await self.generate_and_cache_preset_image(preset_key, config)
-                if api_url:
-                    print(f"   ✅ 已返回 API URL")
-                    return api_url
+            # 選擇姿勢
+            pose = 'prone' if user_data.get('is_stunned', 0) == 1 else 'stand1'
             
-            print(f"   ❌ 無可用的圖片 URL")
-            return None
+            # 構建 API URL
+            item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
+            api_url = f"https://maplestory.io/api/character/{item_path}/{pose}/animated?showears=false&showLefEars=false&showHighLefEars=false&resize=3&flipX=true"
+            
+            print(f"🎭 【get_character_image_url】用戶紙娃娃配置: face={user_data.get('face')}, hair={user_data.get('hair')}, top={user_data.get('top')}")
+            print(f"   ✅ 已生成自訂紙娃娃 API URL (姿勢: {pose})")
+            return api_url
             
         except Exception as e:
             print(f"❌ 【get_character_image_url】異常: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     async def create_welcome_embed(self, user_data: dict, user: discord.User) -> discord.Embed:
