@@ -144,14 +144,25 @@ async def get_plant_progress_info(plant: dict) -> dict:
 
 async def create_user_embed(cog, user_data: dict, user: discord.User) -> discord.Embed:
     """創建用戶置物櫃embed"""
+    
+    # 處理 user=None 或 user 沒有 display_name 屬性的情況
+    if user and hasattr(user, 'display_name'):
+        user_name = user.display_name or user.name
+    elif user and hasattr(user, 'name'):
+        user_name = user.name
+    else:
+        user_name = f"用戶 {user_data.get('user_id', '未知')}"
+    
     embed = discord.Embed(
-        title=f"📊 {user.display_name or user.name} 的置物櫃",
+        title=f"📊 {user_name} 的置物櫃",
         color=0x00ff88,
         timestamp=discord.utils.utcnow()
     )
     
+    # 嘗試設置頭像（若 user 有正確的屬性）
     try:
-        embed.set_thumbnail(url=user.display_avatar.url)
+        if user and hasattr(user, 'display_avatar'):
+            embed.set_thumbnail(url=user.display_avatar.url)
     except:
         pass
     
