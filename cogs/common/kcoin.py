@@ -1196,56 +1196,6 @@ class KKCoin(commands.Cog):
     def has_digital_usd_data_changed(self, new_data):
         """檢查數位美金排行榜資料是否有變化（已移至 leaderboard_manager）"""
         return has_digital_usd_data_changed(new_data, self.last_digital_usd_data)
-
-    @app_commands.command(name="kkcoin", description="查詢你的 KK 幣餘額")
-    async def kkcoin(self, interaction: discord.Interaction, member: discord.Member = None):
-        member = member or interaction.user
-        balance = get_user_balance(str(member.id))
-        await interaction.response.send_message(f"💰 {member.display_name} 目前擁有 KK 幣：{balance}", ephemeral=True)
-
-    @app_commands.command(name="kkcoin_rank", description="顯示 KK 幣排行榜")
-    async def kkcoin_rank(self, interaction: discord.Interaction):
-        """手動創建排行榜（如果需要的話）"""
-        await interaction.response.defer()
-        
-        guild = interaction.guild
-        members_data = self.get_current_leaderboard_data()
-
-        if not members_data:
-            await interaction.followup.send("❌ 沒有找到任何使用者資料", ephemeral=True)
-            return
-
-        try:
-            image = await make_leaderboard_image(members_data)
-
-            # 立即上傳並更新 URL（避免舊圖緩存、確保最新顏色）
-            await self._upload_leaderboard_to_discord(image, len(members_data))
-
-            leaderboard_url = get_from_env("LEADERBOARD_URL", "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png?t=0")
-            embed = discord.Embed(title="🏆 KK幣排行榜", color=discord.Color.gold())
-            embed.set_image(url=leaderboard_url)
-            msg = await interaction.followup.send(embed=embed)
-
-            # 更新設定
-            save_to_env("KKCOIN_RANK_CHANNEL_ID", interaction.channel.id)
-            save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
-            self.rank_channel_id = interaction.channel.id
-            self.rank_message_id = msg.id
-            
-            self.last_leaderboard_data = [m[:3] if len(m) >= 3 else m for m in members_data]
-            self.last_update_time = time.time()
-
-            print(f"✅ 排行榜已手動建立 (Discord CDN) 頻道 {interaction.channel.id}，訊息 ID: {msg.id}")
-        except Exception as e:
-            print(f"❌ 建立排行榜時發生錯誤: {e}")
-            await interaction.followup.send("❌ 建立排行榜時發生錯誤", ephemeral=True)
-
-
-
-
-
-
-
     @app_commands.command(name="kkcoin_admin", description="管理用戶的 KK 幣（管理員專用）")
     @app_commands.describe(
         member="要修改 KK 幣的用戶",
@@ -1502,14 +1452,6 @@ class KKCoin(commands.Cog):
 
         # 排行榜更新不等待，透過 create_task 並靠內部節流控制頻率
         asyncio.create_task(self.update_leaderboard())
-
-    @app_commands.command(name="reserve_status", description="查詢園區中央儲備金狀態")
-    async def reserve_status(self, interaction: discord.Interaction):
-        """顯示園區中央儲備金的狀態"""
-        await interaction.response.defer()
-        
-        embed = self.create_reserve_embed()
-        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="reserve_admin", description="管理園區儲備金（管理員專用）")
     @app_commands.describe(

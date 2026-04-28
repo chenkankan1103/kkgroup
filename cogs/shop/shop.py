@@ -116,42 +116,6 @@ class ButtonInteraction(commands.Cog):
                 await interaction.followup.send("❌ 發生錯誤，請稍後再試。", ephemeral=True)
             else:
                 await interaction.response.send_message("❌ 發生錯誤，請稍後再試。", ephemeral=True)
-
-    @app_commands.command(name="paperdoll", description="開啟紙娃娃試衣間")
-    async def start_paperdoll(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer()
-            
-            user_data = await self.get_user_data(interaction.user.id)
-            if not user_data:
-                await interaction.followup.send("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
-                return
-            
-            embed = discord.Embed(
-                title="👗 紙娃娃試衣間",
-                description=f"歡迎來到試衣間，{interaction.user.mention}！\n在這裡你可以預覽不同裝備的搭配效果。\n\n💡 線上版預覽: https://maplestory.studio/ (TWMS 256)",
-                color=discord.Color.purple()
-            )
-            
-            character_image = await self.fetch_character_image(user_data)
-            files = []
-            if character_image:
-                files.append(character_image)
-                embed.set_image(url="attachment://character.png")
-            
-            view = PaperDollPreviewView(self, user_data)
-            await interaction.followup.send(embed=embed, view=view, files=files)
-            
-        except Exception as e:
-            traceback.print_exc()
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 紙娃娃功能暫時無法使用，請稍後再試。", ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 紙娃娃功能暫時無法使用，請稍後再試。", ephemeral=True)
-            except:
-                pass
-    
     async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int,
                          history=None, original_message=None):
         """處理拉霸機下注 - 統一更新同一個 Embed（作為 ButtonInteraction 的方法）"""
