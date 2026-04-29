@@ -1956,8 +1956,6 @@ class AnimeTracker(commands.Cog):
                     logger.error(f"❌ Error sending anime embed for {scheduled_time_str}: {e}")
                     await asyncio.sleep(1)
             
-            # 標記為已找到
-            self.anime_retry_queue[scheduled_time_str]['found'] = True
             logger.info(f"✅ [{scheduled_time_str}] 推播完成")
             return True
         
