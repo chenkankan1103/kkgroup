@@ -1847,32 +1847,31 @@ class AnimeTracker(commands.Cog):
                 return
             
             # 對於每個預期時刻，檢查是否在 +3~+32 分鐘窗口內
-            for scheduled_time_str in expected_times:
+            for scheduled_dt in expected_times:
                 try:
-                    # 解析預定時刻
-                    scheduled_time = datetime.strptime(scheduled_time_str, "%H:%M").time()
-                    scheduled_dt = datetime.combine(now.date(), scheduled_time, tzinfo=TW_TZ)
-                except:
+                    # 計算時間差（分鐘）
+                    time_diff_min = (now - scheduled_dt).total_seconds() / 60
+                    
+                    # 在 +3~+32 分鐘窗口內執行檢查（即預定時刻後 3-32 分鐘）
+                    if 3 <= time_diff_min < 32:
+                        # ✅ 新的檢查邏輯：使用數據庫追蹤，防止 Bot 重啟導致重複檢查
+                        scheduled_time_str = scheduled_dt.strftime("%H:%M")
+                        
+                        if self.db.is_time_checked_today(scheduled_time_str, scheduled_dt.date()):
+                            logger.info(f"⏭️  [{scheduled_time_str}] 已在 {scheduled_dt.date()} 檢查過，跳過")
+                            continue
+                        
+                        logger.info(f"📺 [check_new_anime] 檢查時刻 {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
+                        
+                        # 執行檢查
+                        await self._check_and_send_anime(scheduled_time_str, channel)
+                        
+                        # 標記該時刻已檢查（用於防止重複）
+                        self.db.mark_time_checked(scheduled_time_str, scheduled_dt.date())
+                        logger.info(f"✅ [check_new_anime] 時刻 {scheduled_time_str} 已標記為已檢查")
+                except Exception as e:
+                    logger.error(f"❌ Error processing scheduled time: {e}", exc_info=True)
                     continue
-                
-                # 計算時間差（分鐘）
-                time_diff_min = (now - scheduled_dt).total_seconds() / 60
-                
-                # 在 +3~+32 分鐘窗口內執行檢查
-                if 3 <= time_diff_min < 32:
-                    # ✅ 新的檢查邏輯：使用數據庫追蹤，防止 Bot 重啟導致重複檢查
-                    if self.db.is_time_checked_today(scheduled_time_str):
-                        logger.info(f"⏭️  [{scheduled_time_str}] 已在 {now.date()} 檢查過，跳過")
-                        continue
-                    
-                    logger.info(f"📺 [check_new_anime] 檢查時刻 {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
-                    
-                    # 執行檢查
-                    await self._check_and_send_anime(scheduled_time_str, channel)
-                    
-                    # 標記該時刻已檢查（用於防止重複）
-                    self.db.mark_time_checked(scheduled_time_str)
-                    logger.info(f"✅ [check_new_anime] 時刻 {scheduled_time_str} 已標記為已檢查")
         
         except Exception as e:
             logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
@@ -1981,13 +1980,12 @@ class AnimeTracker(commands.Cog):
     
     def _get_expected_check_times(self, schedule: dict, now: datetime) -> list:
         """
-        計算出今天和明天的所有預期檢查時刻
-        （用於檢查當前時間是否在預定時刻後約 1 分鐘內）
+        計算出今天和明天的所有預期檢查時刻，返回帶日期的 datetime 對象
         
         Returns:
-            預期檢查時刻列表，格式為 ["HH:MM", ...]
+            預期檢查時刻列表，格式為 [datetime, ...] 帶有正確的日期
         """
-        check_times = set()
+        check_times = []
         
         # 計算今天和明天的星期（1-7）
         weekday_today = (now.weekday() + 1) % 7
@@ -1995,19 +1993,22 @@ class AnimeTracker(commands.Cog):
             weekday_today = 7  # Sunday is 7
         weekday_tomorrow = (weekday_today % 7) + 1
         
-        # 從日程表中獲取時刻
-        for weekday in [str(weekday_today), str(weekday_tomorrow)]:
+        # 從日程表中獲取時刻（帶日期）
+        for day_offset, weekday in [(0, str(weekday_today)), (1, str(weekday_tomorrow))]:
+            target_date = (now + timedelta(days=day_offset)).date()
+            
             for anime_info in schedule.get(weekday, []):
                 schedule_time = anime_info.get("scheduleTime", "")  # 格式: "22:00"
                 if schedule_time:
                     try:
-                        # 直接使用原始時刻（不再加 +1 分鐘）
-                        check_times.add(schedule_time)
+                        scheduled_time = datetime.strptime(schedule_time, "%H:%M").time()
+                        scheduled_dt = datetime.combine(target_date, scheduled_time, tzinfo=TW_TZ)
+                        check_times.append(scheduled_dt)
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to parse schedule time '{schedule_time}': {e}")
         
-        logger.debug(f"📺 預期更新時刻: {sorted(check_times)}")
-        return sorted(list(check_times))
+        logger.debug(f"📺 預期更新時刻: {[dt.strftime('%Y-%m-%d %H:%M') for dt in check_times]}")
+        return sorted(check_times)
     
 
     
