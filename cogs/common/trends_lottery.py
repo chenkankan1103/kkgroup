@@ -377,13 +377,30 @@ class TrendsLotteryCog(commands.Cog):
             
             logger.info(f"✅ 找到頻道: {channel.name}")
             
-            # 獲取獎池信息
+            # 計算前一輪 round_id（查詢已結束的輪次的獎池）
+            now = datetime.now(TZ_TW)
+            current_hour = now.hour
+            prev_hour = None
+            
+            for hour in reversed(TRENDS_UPDATE_HOURS):
+                if hour < current_hour:
+                    prev_hour = hour
+                    break
+            
+            if prev_hour is None:
+                prev_hour = TRENDS_UPDATE_HOURS[-1]
+                prev_round_id = (now - timedelta(days=1)).replace(hour=prev_hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d-%H")
+            else:
+                prev_round_id = now.replace(hour=prev_hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d-%H")
+            
+            # 獲取前一輪的獎池信息
             jackpot_amount = 0.0
             total_bets = 0
             try:
-                jackpot_info = await self.lottery_system.get_jackpot_info(self.current_round_id)
+                jackpot_info = await self.lottery_system.get_jackpot_info(prev_round_id)
                 jackpot_amount = jackpot_info.get('jackpot', 0.0)
                 total_bets = jackpot_info.get('total_bets', 0)
+                logger.info(f"📊 前一輪 {prev_round_id} 的獎池: ${jackpot_amount}")
             except Exception as e:
                 logger.warning(f"⚠️ 獎池信息獲取失敗: {e}")
             
