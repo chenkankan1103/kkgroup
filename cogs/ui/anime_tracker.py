@@ -64,6 +64,7 @@ EPISODE_STATS_TABLE = "episode_statistics"  # 每集統計數據
 ANIME_MESSAGES_TABLE = "anime_messages"  # 消息 ID 追蹤（用於 bot 重啟時恢復 view）
 ANIME_VOTES_TABLE = "anime_votes"  # 匿名投票結果
 ANIME_REWARDS_TABLE = "anime_rewards"  # KK幣獎勵追踪（防止重複發放）
+ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（防止重複檢查，解決 Bot 重啟問題）
 
 
 class AnimeDatabase:
@@ -177,6 +178,17 @@ class AnimeDatabase:
                     )
                 """)
                 
+                # 8. 每日時刻檢查歷史（防止 Bot 重啟導致同一時刻被重複檢查）
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {ANIME_CHECK_HISTORY_TABLE} (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        check_date DATE NOT NULL,
+                        scheduled_time TEXT NOT NULL,
+                        checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(check_date, scheduled_time)
+                    )
+                """)
+                
                 conn.commit()
                 
                 # 驗證所有表都被創建
@@ -184,7 +196,8 @@ class AnimeDatabase:
                 existing_tables = {row[0] for row in cursor.fetchall()}
                 required_tables = {
                     NOTIFIED_TABLE, BOOTSTRAP_FLAG_TABLE, ANIME_DETAILS_TABLE,
-                    ANIME_STATS_TABLE, EPISODE_STATS_TABLE, ANIME_MESSAGES_TABLE
+                    ANIME_STATS_TABLE, EPISODE_STATS_TABLE, ANIME_MESSAGES_TABLE,
+                    ANIME_CHECK_HISTORY_TABLE
                 }
                 missing_tables = required_tables - existing_tables
                 
@@ -732,6 +745,58 @@ class AnimeDatabase:
                 return cursor.fetchone() is not None
         except Exception as e:
             logger.error(f"❌ Error checking reward: {e}")
+            return False
+    
+    def is_time_checked_today(self, scheduled_time: str, check_date=None) -> bool:
+        """檢查某個時刻在指定日期是否已檢查過（防止重複檢查）
+        
+        Args:
+            scheduled_time: 預定時刻，格式 "HH:MM"
+            check_date: 檢查日期，如果為 None 使用今天（台灣時區）
+        
+        Returns:
+            bool: 如果已檢查過則返回 True，否則返回 False
+        """
+        try:
+            if check_date is None:
+                check_date = datetime.now(TW_TZ).date()
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT 1 FROM {ANIME_CHECK_HISTORY_TABLE}
+                    WHERE check_date = ? AND scheduled_time = ?
+                """, (check_date, scheduled_time))
+                return cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"❌ Error checking time history: {e}")
+            return False
+    
+    def mark_time_checked(self, scheduled_time: str, check_date=None) -> bool:
+        """標記某個時刻已檢查過（用於防止重複檢查）
+        
+        Args:
+            scheduled_time: 預定時刻，格式 "HH:MM"
+            check_date: 檢查日期，如果為 None 使用今天（台灣時區）
+        
+        Returns:
+            bool: 如果成功標記則返回 True，否則返回 False
+        """
+        try:
+            if check_date is None:
+                check_date = datetime.now(TW_TZ).date()
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT OR IGNORE INTO {ANIME_CHECK_HISTORY_TABLE}
+                    (check_date, scheduled_time, checked_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """, (check_date, scheduled_time))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ Error marking time checked: {e}")
             return False
     
     def save_message_info(self, message_id: int, video_sn: int, anime_sn: int, anime_name: str, channel_id: int) -> bool:
@@ -1781,18 +1846,10 @@ class AnimeTracker(commands.Cog):
                 logger.info("✅ [check_new_anime] Bootstrap 完成")
                 return
             
-            # 對於每個預期時刻，檢查是否在 +3~+5 分鐘窗口內
+            # 對於每個預期時刻，檢查是否在 +3~+32 分鐘窗口內
             for scheduled_time_str in expected_times:
-                # 初始化追蹤狀態
-                if scheduled_time_str not in self.anime_retry_queue:
-                    self.anime_retry_queue[scheduled_time_str] = {
-                        'found': False,    # 是否已找到新集
-                        'start_time': now,
-                        # checked_at_5, checked_at_10 等會在檢查時動態設置
-                    }
-                
-                # 解析預定時刻
                 try:
+                    # 解析預定時刻
                     scheduled_time = datetime.strptime(scheduled_time_str, "%H:%M").time()
                     scheduled_dt = datetime.combine(now.date(), scheduled_time, tzinfo=TW_TZ)
                 except:
@@ -1801,39 +1858,21 @@ class AnimeTracker(commands.Cog):
                 # 計算時間差（分鐘）
                 time_diff_min = (now - scheduled_dt).total_seconds() / 60
                 
-                # 在 +3~+32 分鐘窗口內，於固定的檢查分鐘點執行檢查
-                # 檢查時間點：+5, +10, +15, +20, +25, +30（容差 ±1 分鐘）
-                CHECK_INTERVALS = [5, 10, 15, 20, 25, 30]
-                
+                # 在 +3~+32 分鐘窗口內執行檢查
                 if 3 <= time_diff_min < 32:
-                    state = self.anime_retry_queue[scheduled_time_str]
-                    
-                    # 如果已找到新集，就不再檢查
-                    if state['found']:
+                    # ✅ 新的檢查邏輯：使用數據庫追蹤，防止 Bot 重啟導致重複檢查
+                    if self.db.is_time_checked_today(scheduled_time_str):
+                        logger.info(f"⏭️  [{scheduled_time_str}] 已在 {now.date()} 檢查過，跳過")
                         continue
                     
-                    # 檢查是否在某個檢查分鐘點附近（容差 ±0.5 分鐘 = ±30秒）
-                    for check_minute in CHECK_INTERVALS:
-                        check_key = f"checked_at_{check_minute}"
-                        
-                        # 如果該分鐘點還沒檢查過，且時間接近
-                        if not state.get(check_key, False) and abs(time_diff_min - check_minute) < 0.5:
-                            logger.info(f"📺 [check_new_anime] 在 +{check_minute} 分鐘檢查 {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
-                            
-                            # 執行檢查
-                            new_found = await self._check_and_send_anime(scheduled_time_str, channel)
-                            
-                            # 標記該分鐘點已檢查
-                            state[check_key] = True
-                            if new_found:
-                                state['found'] = True
-                                logger.info(f"✅ [check_new_anime] 找到新集，停止檢查時刻 {scheduled_time_str}")
-                            break
-                
-                # 清理過期的數據（超過 12 小時）
-                if time_diff_min > 720:
-                    if scheduled_time_str in self.anime_retry_queue:
-                        del self.anime_retry_queue[scheduled_time_str]
+                    logger.info(f"📺 [check_new_anime] 檢查時刻 {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
+                    
+                    # 執行檢查
+                    await self._check_and_send_anime(scheduled_time_str, channel)
+                    
+                    # 標記該時刻已檢查（用於防止重複）
+                    self.db.mark_time_checked(scheduled_time_str)
+                    logger.info(f"✅ [check_new_anime] 時刻 {scheduled_time_str} 已標記為已檢查")
         
         except Exception as e:
             logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
