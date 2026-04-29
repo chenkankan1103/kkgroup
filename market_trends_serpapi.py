@@ -313,16 +313,11 @@ def format_lottery_embed(
     )
     
     # ==================== 第四部分：獎池資訊 ====================
-    if jackpot_amount > 0:
-        jackpot_value = f"{jackpot_amount:.2f}"
-    else:
-        jackpot_value = "0.00"
-    
-    jackpot_info = f"💵 **${jackpot_value}**\n👥 投注人數: {total_bets} 人"
+    jackpot_value = f"{jackpot_amount:.2f}"
     
     embed.add_field(
         name="🎁 中央獎池",
-        value=jackpot_info,
+        value=f"💵 **${jackpot_value}**",
         inline=False
     )
     
