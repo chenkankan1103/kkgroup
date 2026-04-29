@@ -90,7 +90,7 @@ def mark_round_pushed(round_id: str):
 
 # 配置
 TRENDS_UPDATE_INTERVAL = 240  # 4 小時（秒）
-TRENDS_UPDATE_HOURS = [8, 12, 16, 20]  # 08:00, 12:00, 16:00, 20:00 台灣時間
+TRENDS_UPDATE_HOURS = [8, 11, 14, 17, 20, 23]  # 08:00, 11:00, 14:00, 17:00, 20:00, 23:00 台灣時間
 
 
 class TrendsPredictionView(PersistentViewBase):
