@@ -48,17 +48,79 @@ FEMALE_DEFAULT: Dict[str, Any] = {
 }
 
 # ============================================================
-# 常數：隨機生成時使用的部件 ID 候選列表（整數，生成時轉字串）
+# 常數：從 fashion DB 動態載入的部件 ID 候選列表
 # ============================================================
 
-CHARACTER_VARIATIONS: Dict[str, list] = {
-    'face':   [20000, 20001, 20005, 20100, 20400, 20402, 20405],
-    'hair':   [30000, 30030, 30120, 30220, 30260, 30300, 30320],
-    'skin':   [10000, 10001, 10002, 12000, 12100],
-    'top':    [1040010, 1040014, 1041002, 1040060, 1042003],
-    'bottom': [1060002, 1060096, 1060127, 1061112],
-    'shoes':  [1072005, 1072014, 1072267, 1072410],
-}
+# 快取的 fashion DB 和部件 ID 列表（避免每次生成都讀取文件）
+_FASHION_DB_CACHE = None
+CHARACTER_VARIATIONS: Dict[str, list] = {}
+
+def _load_fashion_db():
+    """
+    從 twms_fashion_db.json 載入有效的物品 ID
+    結果會被快取以提高性能
+    """
+    global _FASHION_DB_CACHE, CHARACTER_VARIATIONS
+    
+    if _FASHION_DB_CACHE is not None:
+        return _FASHION_DB_CACHE
+    
+    try:
+        # 找到 twms_fashion_db.json 的路徑
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        fashion_db_path = os.path.join(base_dir, 'twms_fashion_db.json')
+        
+        if not os.path.exists(fashion_db_path):
+            raise FileNotFoundError(f"找不到 fashion DB: {fashion_db_path}")
+        
+        with open(fashion_db_path, 'r', encoding='utf-8') as f:
+            fashion_items = json.load(f)
+        
+        _FASHION_DB_CACHE = fashion_items
+        
+        # 按部件分類並提取 ID
+        CHARACTER_VARIATIONS.clear()
+        categories = {
+            'face': 'Face',
+            'hair': 'Hair',
+            'skin': 'Skin',  # 注意：MapleStory 中沒有 "Skin" 分類，用 10000-12100 範圍代替
+            'top': 'Top',
+            'bottom': 'Bottom',
+            'shoes': 'Shoes',
+        }
+        
+        for part, category in categories.items():
+            if part == 'skin':
+                # 特殊處理：從所有物品中提取常見的膚色 ID
+                CHARACTER_VARIATIONS['skin'] = [10000, 10001, 10002, 12000, 12100]
+            else:
+                item_ids = [str(item['id']) for item in fashion_items if item['category'] == category]
+                CHARACTER_VARIATIONS[part] = item_ids
+        
+        print(f"✓ 成功載入 fashion DB")
+        print(f"  Face: {len(CHARACTER_VARIATIONS.get('face', []))} 個")
+        print(f"  Hair: {len(CHARACTER_VARIATIONS.get('hair', []))} 個")
+        print(f"  Top: {len(CHARACTER_VARIATIONS.get('top', []))} 個")
+        print(f"  Bottom: {len(CHARACTER_VARIATIONS.get('bottom', []))} 個")
+        print(f"  Shoes: {len(CHARACTER_VARIATIONS.get('shoes', []))} 個")
+        
+        return fashion_items
+    
+    except Exception as e:
+        print(f"⚠️ 載入 fashion DB 失敗，使用預設值: {e}")
+        # 回退到預設值
+        CHARACTER_VARIATIONS.update({
+            'face':   ['20000', '20001', '20005', '20100', '20400', '20402', '20405'],
+            'hair':   ['30000', '30030', '30120', '30220', '30260', '30300', '30320'],
+            'skin':   ['10000', '10001', '10002', '12000', '12100'],
+            'top':    ['1040010', '1040014', '1041002', '1040060', '1042003'],
+            'bottom': ['1060002', '1060096', '1060108', '1060119'],  # 移除無效的 1060127 和 1061112
+            'shoes':  ['1072005', '1072014', '1072267', '1072410'],
+        })
+        return None
+
+# 首次導入時載入 fashion DB
+_load_fashion_db()
 
 # MapleStory API 基底網址
 MAPLESTORY_API_BASE = "https://maplestory.io/api/character"
@@ -83,6 +145,9 @@ def get_defaults(gender: str = 'male') -> Dict[str, Any]:
 def get_random(preserve_gender: Optional[str] = None) -> Dict[str, Any]:
     """
     生成隨機角色配置。
+    
+    從 twms_fashion_db.json 中隨機選擇有效的物品 ID，
+    確保不會出現無效的物品 ID（如已刪除的 1060127）。
 
     Args:
         preserve_gender: 指定性別 ('male'/'female')；None 則隨機選擇。
@@ -90,13 +155,17 @@ def get_random(preserve_gender: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         包含角色配置的字典，所有部件值皆為字串（與資料庫一致）。
     """
+    # 確保 CHARACTER_VARIATIONS 已載入
+    if not CHARACTER_VARIATIONS or all(len(v) == 0 for v in CHARACTER_VARIATIONS.values()):
+        _load_fashion_db()
+    
     return {
-        'face':      str(random.choice(CHARACTER_VARIATIONS['face'])),
-        'hair':      str(random.choice(CHARACTER_VARIATIONS['hair'])),
-        'skin':      str(random.choice(CHARACTER_VARIATIONS['skin'])),
-        'top':       str(random.choice(CHARACTER_VARIATIONS['top'])),
-        'bottom':    str(random.choice(CHARACTER_VARIATIONS['bottom'])),
-        'shoes':     str(random.choice(CHARACTER_VARIATIONS['shoes'])),
+        'face':      str(random.choice(CHARACTER_VARIATIONS.get('face', ['20005']))),
+        'hair':      str(random.choice(CHARACTER_VARIATIONS.get('hair', ['30120']))),
+        'skin':      str(random.choice(CHARACTER_VARIATIONS.get('skin', ['12000']))),
+        'top':       str(random.choice(CHARACTER_VARIATIONS.get('top', ['1040014']))),
+        'bottom':    str(random.choice(CHARACTER_VARIATIONS.get('bottom', ['1060096']))),
+        'shoes':     str(random.choice(CHARACTER_VARIATIONS.get('shoes', ['1072005']))),
         'is_stunned': 0,
         'gender':    preserve_gender if preserve_gender else random.choice(['male', 'female']),
     }
