@@ -55,10 +55,26 @@ FEMALE_DEFAULT: Dict[str, Any] = {
 _FASHION_DB_CACHE = None
 CHARACTER_VARIATIONS: Dict[str, list] = {}
 
+def _extract_gender_from_name(name: str) -> Optional[str]:
+    """
+    從物品名稱中提取性別標籤 (male/female/None)。
+    
+    例如：
+    - "黑色艾連臉型(女)" → 'female'
+    - "黑色艾連臉型(男)" → 'male'
+    - "黑色挑戰的臉型" → None（中性）
+    """
+    name_lower = name.lower()
+    if '女' in name or 'female' in name_lower:
+        return 'female'
+    elif '男' in name or 'male' in name_lower:
+        return 'male'
+    return None
+
 def _load_fashion_db():
     """
-    從 twms_fashion_db.json 載入有效的物品 ID
-    結果會被快取以提高性能
+    從 twms_fashion_db.json 載入有效的物品 ID，按性別分類。
+    結果會被快取以提高性能。
     """
     global _FASHION_DB_CACHE, CHARACTER_VARIATIONS
     
@@ -78,7 +94,7 @@ def _load_fashion_db():
         
         _FASHION_DB_CACHE = fashion_items
         
-        # 按部件分類並提取 ID
+        # 按部件和性別分類並提取 ID
         CHARACTER_VARIATIONS.clear()
         categories = {
             'face': 'Face',
@@ -91,18 +107,33 @@ def _load_fashion_db():
         
         for part, category in categories.items():
             if part == 'skin':
-                # 特殊處理：從所有物品中提取常見的膚色 ID
+                # 特殊處理：膚色不區分性別
                 CHARACTER_VARIATIONS['skin'] = [10000, 10001, 10002, 12000, 12100]
+                CHARACTER_VARIATIONS['skin_male'] = CHARACTER_VARIATIONS['skin']
+                CHARACTER_VARIATIONS['skin_female'] = CHARACTER_VARIATIONS['skin']
             else:
-                item_ids = [str(item['id']) for item in fashion_items if item['category'] == category]
-                CHARACTER_VARIATIONS[part] = item_ids
+                # 提取所有 ID 和按性別分類的 ID
+                items_in_cat = [item for item in fashion_items if item['category'] == category]
+                all_ids = [str(item['id']) for item in items_in_cat]
+                
+                # 按名稱中的性別標籤分類
+                male_ids = [str(item['id']) for item in items_in_cat if _extract_gender_from_name(item.get('name', '')) == 'male']
+                female_ids = [str(item['id']) for item in items_in_cat if _extract_gender_from_name(item.get('name', '')) == 'female']
+                neutral_ids = [str(item['id']) for item in items_in_cat if _extract_gender_from_name(item.get('name', '')) is None]
+                
+                # 保存所有 ID
+                CHARACTER_VARIATIONS[part] = all_ids
+                
+                # 如果沒有性別標籤，就用中性的；否則用特定性別 + 中性
+                CHARACTER_VARIATIONS[f'{part}_male'] = male_ids + neutral_ids if male_ids else all_ids
+                CHARACTER_VARIATIONS[f'{part}_female'] = female_ids + neutral_ids if female_ids else all_ids
         
-        print(f"✓ 成功載入 fashion DB")
-        print(f"  Face: {len(CHARACTER_VARIATIONS.get('face', []))} 個")
-        print(f"  Hair: {len(CHARACTER_VARIATIONS.get('hair', []))} 個")
-        print(f"  Top: {len(CHARACTER_VARIATIONS.get('top', []))} 個")
-        print(f"  Bottom: {len(CHARACTER_VARIATIONS.get('bottom', []))} 個")
-        print(f"  Shoes: {len(CHARACTER_VARIATIONS.get('shoes', []))} 個")
+        print(f"✓ 成功載入 fashion DB（含性別分類）")
+        print(f"  Face: {len(CHARACTER_VARIATIONS.get('face', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('face_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('face_female', []))})")
+        print(f"  Hair: {len(CHARACTER_VARIATIONS.get('hair', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('hair_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('hair_female', []))})")
+        print(f"  Top: {len(CHARACTER_VARIATIONS.get('top', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('top_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('top_female', []))})")
+        print(f"  Bottom: {len(CHARACTER_VARIATIONS.get('bottom', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('bottom_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('bottom_female', []))})")
+        print(f"  Shoes: {len(CHARACTER_VARIATIONS.get('shoes', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('shoes_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('shoes_female', []))})")
         
         return fashion_items
     
@@ -111,11 +142,23 @@ def _load_fashion_db():
         # 回退到預設值
         CHARACTER_VARIATIONS.update({
             'face':   ['20000', '20001', '20005', '20100', '20400', '20402', '20405'],
+            'face_male': ['20000', '20001', '20005', '20100', '20400', '20402', '20405'],
+            'face_female': ['20000', '20001', '20005', '20100', '20400', '20402', '20405'],
             'hair':   ['30000', '30030', '30120', '30220', '30260', '30300', '30320'],
+            'hair_male': ['30000', '30030', '30120', '30220', '30260', '30300', '30320'],
+            'hair_female': ['30000', '30030', '30120', '30220', '30260', '30300', '30320'],
             'skin':   ['10000', '10001', '10002', '12000', '12100'],
+            'skin_male': ['10000', '10001', '10002', '12000', '12100'],
+            'skin_female': ['10000', '10001', '10002', '12000', '12100'],
             'top':    ['1040010', '1040014', '1041002', '1040060', '1042003'],
-            'bottom': ['1060002', '1060096', '1060108', '1060119'],  # 移除無效的 1060127 和 1061112
+            'top_male': ['1040010', '1040014', '1041002', '1040060', '1042003'],
+            'top_female': ['1040010', '1040014', '1041002', '1040060', '1042003'],
+            'bottom': ['1060002', '1060096', '1060108', '1060119'],
+            'bottom_male': ['1060002', '1060096', '1060108', '1060119'],
+            'bottom_female': ['1060002', '1060096', '1060108', '1060119'],
             'shoes':  ['1072005', '1072014', '1072267', '1072410'],
+            'shoes_male': ['1072005', '1072014', '1072267', '1072410'],
+            'shoes_female': ['1072005', '1072014', '1072267', '1072410'],
         })
         return None
 
@@ -144,10 +187,13 @@ def get_defaults(gender: str = 'male') -> Dict[str, Any]:
 
 def get_random(preserve_gender: Optional[str] = None) -> Dict[str, Any]:
     """
-    生成隨機角色配置。
+    生成隨機角色配置，根據性別選擇對應的部件。
     
     從 twms_fashion_db.json 中隨機選擇有效的物品 ID，
-    確保不會出現無效的物品 ID（如已刪除的 1060127）。
+    確保：
+    1. 不會出現無效的物品 ID（如已刪除的 1060127）
+    2. 女性角色選擇女性臉型/髮型/衣服
+    3. 男性角色選擇男性臉型/髮型/衣服
 
     Args:
         preserve_gender: 指定性別 ('male'/'female')；None 則隨機選擇。
@@ -159,15 +205,21 @@ def get_random(preserve_gender: Optional[str] = None) -> Dict[str, Any]:
     if not CHARACTER_VARIATIONS or all(len(v) == 0 for v in CHARACTER_VARIATIONS.values()):
         _load_fashion_db()
     
+    # 決定性別
+    gender = preserve_gender if preserve_gender else random.choice(['male', 'female'])
+    
+    # 根據性別選擇對應的部件
+    gender_suffix = f'_{gender}'
+    
     return {
-        'face':      str(random.choice(CHARACTER_VARIATIONS.get('face', ['20005']))),
-        'hair':      str(random.choice(CHARACTER_VARIATIONS.get('hair', ['30120']))),
-        'skin':      str(random.choice(CHARACTER_VARIATIONS.get('skin', ['12000']))),
-        'top':       str(random.choice(CHARACTER_VARIATIONS.get('top', ['1040014']))),
-        'bottom':    str(random.choice(CHARACTER_VARIATIONS.get('bottom', ['1060096']))),
-        'shoes':     str(random.choice(CHARACTER_VARIATIONS.get('shoes', ['1072005']))),
+        'face':      str(random.choice(CHARACTER_VARIATIONS.get(f'face{gender_suffix}', CHARACTER_VARIATIONS.get('face', ['20005'])))),
+        'hair':      str(random.choice(CHARACTER_VARIATIONS.get(f'hair{gender_suffix}', CHARACTER_VARIATIONS.get('hair', ['30120'])))),
+        'skin':      str(random.choice(CHARACTER_VARIATIONS.get('skin', ['12000']))),  # Skin 不分性別
+        'top':       str(random.choice(CHARACTER_VARIATIONS.get(f'top{gender_suffix}', CHARACTER_VARIATIONS.get('top', ['1040014'])))),
+        'bottom':    str(random.choice(CHARACTER_VARIATIONS.get(f'bottom{gender_suffix}', CHARACTER_VARIATIONS.get('bottom', ['1060096'])))),
+        'shoes':     str(random.choice(CHARACTER_VARIATIONS.get(f'shoes{gender_suffix}', CHARACTER_VARIATIONS.get('shoes', ['1072005'])))),
         'is_stunned': 0,
-        'gender':    preserve_gender if preserve_gender else random.choice(['male', 'female']),
+        'gender':    gender,
     }
 
 
