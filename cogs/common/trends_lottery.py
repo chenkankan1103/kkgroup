@@ -15,7 +15,7 @@ from discord.ext import commands, tasks
 import asyncio
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 import logging
 
@@ -421,26 +421,35 @@ class TrendsLotteryCog(commands.Cog):
             if not self.current_trends:
                 return
             
-            # 計算上一輪 round_id（從當前時間往回 4 小時）
+            # 計算上一輪 round_id（從當前時間往回 3 小時到上一個推播時段）
             now = datetime.now(TZ_TW)
-            # 從目前時間往回找上一個時段
-            prev_hour = now.hour - 4
-            if prev_hour < 0:
-                prev_hour += 24
+            current_hour = now.hour
+            prev_hour = None
             
-            prev_round_id = now.replace(hour=prev_hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d-%H")
+            # 從推播時段中找出前一個時段
+            for hour in reversed(TRENDS_UPDATE_HOURS):
+                if hour < current_hour:
+                    prev_hour = hour
+                    break
             
-            logger.info(f"🎰 開始開獎上一輪：{prev_round_id}")
+            # 如果沒找到（現在是 08:00 之前），取前一天的最後一個時段
+            if prev_hour is None:
+                prev_hour = TRENDS_UPDATE_HOURS[-1]
+                prev_round_id = (now - timedelta(days=1)).replace(hour=prev_hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d-%H")
+            else:
+                prev_round_id = now.replace(hour=prev_hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d-%H")
             
-            # 開獎邏輯
+            logger.info(f"🎰 開始開獎上一輪：{prev_round_id}，使用前 10 名趨勢")
+            
+            # 開獎邏輯（傳遞前 10 名趨勢）
             draw_result = await self.lottery_system.draw_lottery(
                 prev_round_id,
-                self.current_trends[:3]
+                self.current_trends[:10]
             )
             
-            if draw_result and draw_result.get('total_bets', 0) > 0:
-                # 有人投注才顯示結果
-                logger.info(f"✅ 開獎完成，有 {draw_result['total_bets']} 人投注")
+            if draw_result and draw_result.get('jackpot_winners', 0) >= 0:
+                # 有開獎就記錄結果
+                logger.info(f"✅ 開獎完成，{draw_result.get('jackpot_winners', 0)} 人全中，獎池分配：{draw_result.get('jackpot_distributed', 0)} USD")
                 
                 # 編輯之前的 embed 消息添加結果
                 await self._update_embed_with_result(prev_round_id, draw_result)
