@@ -228,7 +228,8 @@ def format_lottery_embed(
     jackpot_amount: float = 0.0,
     total_bets: int = 0,
     current_round_id: str = "",
-    timezone_obj = None
+    timezone_obj = None,
+    is_kkcoin_pool: bool = True
 ) -> discord.Embed:
     """
     統一合併 Embed - 趨勢詳情 + 投注系統
@@ -236,10 +237,11 @@ def format_lottery_embed(
     參數：
     - trends: 趨勢列表（來自 get_latest_trends）
       格式: [{"trend": "...", "search_volume": ..., "increase_percentage": ..., ...}, ...]
-    - jackpot_amount: 當前獎池金額 (USD)
-    - total_bets: 投注人數
+    - jackpot_amount: 中央彩池金額 (KK幣 或 USD，取決於 is_kkcoin_pool)
+    - total_bets: 投注人數（已廢棄，僅保留向後相容）
     - current_round_id: 輪次 ID
     - timezone_obj: 時區對象（可選）
+    - is_kkcoin_pool: 是否為 KK幣池（True）還是 USD 池（False）
     
     返回：
         統一的 Discord Embed，包含趨勢詳情和投注資訊
@@ -252,7 +254,7 @@ def format_lottery_embed(
     
     embed = discord.Embed(
         title="🔥 台灣趨勢樂透",
-        description="📊 投注趨勢預測 • 每 4 小時開獎一次",
+        description="📊 投注趨勢預測 • 每 3 小時開獎一次",
         color=discord.Color.gold(),
         timestamp=datetime.now(timezone_obj) if timezone_obj else datetime.now()
     )
@@ -313,11 +315,16 @@ def format_lottery_embed(
     )
     
     # ==================== 第四部分：獎池資訊 ====================
-    jackpot_value = f"{jackpot_amount:.2f}"
+    jackpot_value = f"{jackpot_amount:.0f}"
+    
+    if is_kkcoin_pool:
+        pool_display = f"🎁 **{jackpot_value} KK幣**"
+    else:
+        pool_display = f"💵 **${jackpot_value}**"
     
     embed.add_field(
-        name="🎁 中央獎池",
-        value=f"💵 **${jackpot_value}**",
+        name="🎁 中央彩池",
+        value=pool_display,
         inline=False
     )
     

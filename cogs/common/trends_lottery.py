@@ -45,6 +45,7 @@ from pathlib import Path
 from shared.utils.trends_lottery_system import TrendsLotterySystem
 from shared.utils.view_registry import PersistentViewBase
 from market_trends_serpapi import get_trending_topics, format_lottery_embed
+from shared.db.db_adapter import get_central_reserve
 
 logger = logging.getLogger(__name__)
 
@@ -393,24 +394,23 @@ class TrendsLotteryCog(commands.Cog):
             else:
                 prev_round_id = now.replace(hour=prev_hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d-%H")
             
-            # 獲取前一輪的獎池信息
+            # 獲取 KK幣排行榜的中央彩池（而不是趨勢投注獎池）
             jackpot_amount = 0.0
-            total_bets = 0
             try:
-                jackpot_info = await self.lottery_system.get_jackpot_info(prev_round_id)
-                jackpot_amount = jackpot_info.get('jackpot', 0.0)
-                total_bets = jackpot_info.get('total_bets', 0)
-                logger.info(f"📊 前一輪 {prev_round_id} 的獎池: ${jackpot_amount}")
+                kkcoin_reserve = get_central_reserve()  # 獲取 KK幣中央儲備
+                jackpot_amount = float(kkcoin_reserve) if kkcoin_reserve else 0.0
+                logger.info(f"📊 KK幣排行榜中央彩池: {jackpot_amount} KK幣")
             except Exception as e:
-                logger.warning(f"⚠️ 獎池信息獲取失敗: {e}")
+                logger.warning(f"⚠️ 中央彩池查詢失敗: {e}")
             
             # ==================== 使用統一的 format_lottery_embed 生成 Embed ====================
             embed = format_lottery_embed(
                 trends=trends,
                 jackpot_amount=jackpot_amount,
-                total_bets=total_bets,
+                total_bets=0,  # 不再顯示投注人數
                 current_round_id=self.current_round_id,
-                timezone_obj=TZ_TW
+                timezone_obj=TZ_TW,
+                is_kkcoin_pool=True  # 顯示 KK幣中央彩池
             )
             
             # 發送消息並添加按鈕
@@ -658,7 +658,7 @@ class TrendsLotteryCog(commands.Cog):
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
-            # 投注成功後編輯原始 embed 更新投注人數
+            # 投注成功後編輯原始 embed 更新中央彩池
             if success and self.current_round_id in self.round_message_ids:
                 try:
                     message_id = self.round_message_ids[self.current_round_id]
@@ -666,22 +666,22 @@ class TrendsLotteryCog(commands.Cog):
                     if channel:
                         message = await channel.fetch_message(message_id)
                         
-                        # 獲取最新的獎池信息
-                        jackpot_info = await self.lottery_system.get_jackpot_info(self.current_round_id)
-                        jackpot_amount = jackpot_info.get('jackpot', 0.0)
-                        total_bets = jackpot_info.get('total_bets', 0)
+                        # 獲取最新的 KK幣中央彩池
+                        kkcoin_reserve = get_central_reserve()
+                        jackpot_amount = float(kkcoin_reserve) if kkcoin_reserve else 0.0
                         
                         # 重新生成 embed
                         new_embed = format_lottery_embed(
                             trends=[{"trend": t} for t in self.current_trends[:10]],
                             jackpot_amount=jackpot_amount,
-                            total_bets=total_bets,
+                            total_bets=0,  # 不再顯示投注人數
                             current_round_id=self.current_round_id,
-                            timezone_obj=TZ_TW
+                            timezone_obj=TZ_TW,
+                            is_kkcoin_pool=True  # 顯示 KK幣中央彩池
                         )
                         
                         await message.edit(embed=new_embed)
-                        logger.info(f"✅ 已編輯 embed 更新投注人數：{total_bets} 人")
+                        logger.info(f"✅ 已編輯 embed 更新中央彩池：{jackpot_amount} KK幣")
                 except Exception as e:
                     logger.error(f"❌ 編輯 embed 失敗: {e}")
         
