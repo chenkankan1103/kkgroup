@@ -1,0 +1,17 @@
+# 設置環境變量
+SHELL=/bin/bash
+LANG=C.UTF-8
+LC_ALL=C.UTF-8
+PYTHONIOENCODING=utf-8
+TZ=Asia/Taipei
+
+# m h  dom mon dow   command
+
+# 週一 3AM 備份
+0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python weekly_backup.py >> /tmp/weekly_backup.log 2>&1
+
+# 週日 3AM 紙娃娃刷新
+0 3 * * 0 cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /var/log/kkgroup_locker_refresh.log 2>&1
+
+# 每 5 分鐘檢查隧道 URL 變化並自動更新 webhook
+*/5 * * * * cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/auto_update_webhook.py >> /var/log/webhook_auto_update.log 2>&1

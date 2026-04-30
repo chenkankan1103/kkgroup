@@ -1,0 +1,26 @@
+﻿[Unit]
+Description=KKCoin Unified API Server
+Documentation=https://github.com/chenkankan1103/kkgroup
+After=network-online.target systemd-resolved.service
+
+[Service]
+Type=simple
+User=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=/home/e193752468/kkgroup:/home/e193752468/kkgroup/web"
+Environment="PYTHONIOENCODING=utf-8"
+Environment="LANG=C.UTF-8"
+Environment="LC_ALL=C.UTF-8"
+Environment="FLASK_DEBUG=False"
+Environment="API_HOST=127.0.0.1"
+Environment="API_PORT=5000"
+Environment="PATH=/home/e193752468/kkgroup/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/e193752468/kkgroup/venv/bin/python3 /home/e193752468/kkgroup/web/api/unified_api.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/tmp/kkgroup-api.log
+StandardError=append:/tmp/kkgroup-api.log
+
+[Install]
+WantedBy=multi-user.target
