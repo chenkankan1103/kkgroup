@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 # 配置
 WEBHOOK_CONFIG_FILE = '/home/e193752468/kkgroup/config/webhook_config.json'
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GITHUB_WEBHOOK_SECRET = os.getenv('GITHUB_WEBHOOK_SECRET', '321qwe321')
 REPO_OWNER = 'chenkankan1103'
 REPO_NAME = 'kkgroup'
 WEBHOOK_ENDPOINT = '/webhook/github'
@@ -143,7 +144,7 @@ def update_github_webhook(tunnel_url):
         curl -s -X PATCH \
              -H "Authorization: token {GITHUB_TOKEN}" \
              -H "Accept: application/vnd.github.v3+json" \
-             -d '{{"config": {{"url": "{webhook_url}", "content_type": "json", "secret": ""}}}}' \
+             -d '{{"config": {{"url": "{webhook_url}", "content_type": "json", "secret": "{GITHUB_WEBHOOK_SECRET}"}}}}' \
              https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks/{webhook_id}
         """
         result = subprocess.run(update_cmd, shell=True, capture_output=True, text=True, timeout=10)
