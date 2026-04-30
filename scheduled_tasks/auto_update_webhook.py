@@ -19,6 +19,11 @@ import sys
 from pathlib import Path
 from datetime import datetime
 import logging
+from dotenv import load_dotenv
+
+# 加載 .env 文件
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(env_path)
 
 # 設置日誌
 logging.basicConfig(
