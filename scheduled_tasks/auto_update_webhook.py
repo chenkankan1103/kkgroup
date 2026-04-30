@@ -48,7 +48,7 @@ def get_current_tunnel_url():
     """從 cloudflared 日誌提取當前隧道 URL"""
     try:
         result = subprocess.run(
-            "sudo journalctl -u cloudflared.service -n 50 --no-pager | grep -oP 'https://[a-z0-9\-]+\.trycloudflare\.com' | head -1",
+            "sudo journalctl -u cloudflared.service -n 50 --no-pager | grep -oP 'https://[a-z0-9\-]+\.trycloudflare\.com' | tail -1",
             shell=True,
             capture_output=True,
             text=True,
@@ -211,24 +211,24 @@ def main():
     
     # 3. 檢查是否有變化
     if current_tunnel_url == saved_tunnel_url:
-        logger.info(f"✅ 隧道 URL 無變化，無需更新")
-        return True
+        logger.info(f"✅ 隧道 URL 無變化")
+    else:
+        logger.warning(f"⚠️ 隧道 URL 已變化！")
+        logger.warning(f"   舊: {saved_tunnel_url}")
+        logger.warning(f"   新: {current_tunnel_url}")
     
-    logger.warning(f"⚠️ 隧道 URL 已變化！")
-    logger.warning(f"   舊: {saved_tunnel_url}")
-    logger.warning(f"   新: {current_tunnel_url}")
-    
-    # 4. 更新本地 config.json
+    # 4. 始終更新本地 config.json（即使 URL 無變化，也要確保配置同步）
     if not update_local_config(current_tunnel_url):
         logger.error("❌ 更新本地配置失敗")
         return False
     
-    # 5. 更新 GitHub webhook（如果有 token）
-    if GITHUB_TOKEN:
-        if update_github_webhook(current_tunnel_url):
-            logger.info("✅ GitHub webhook 已更新")
-        else:
-            logger.warning("⚠️ GitHub webhook 更新失敗，但本地配置已更新")
+    # 5. 僅在 URL 變化時才更新 GitHub webhook
+    if current_tunnel_url != saved_tunnel_url:
+        if GITHUB_TOKEN:
+            if update_github_webhook(current_tunnel_url):
+                logger.info("✅ GitHub webhook 已更新")
+            else:
+                logger.warning("⚠️ GitHub webhook 更新失敗，但本地配置已更新")
     
     # 6. 保存新配置
     save_webhook_config(current_tunnel_url, saved_config.get('webhook_id'))
