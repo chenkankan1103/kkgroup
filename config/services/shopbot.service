@@ -1,8 +1,8 @@
 [Unit]
 Description=Discord Shop Bot
-After=network.target
+After=network-online.target systemd-resolved.service
 Wants=network-online.target
-After=network-online.target
+Requires=systemd-resolved.service
 
 [Service]
 Type=simple
@@ -19,8 +19,10 @@ Environment=LANG=C.UTF-8
 Environment=LANGUAGE=zh_TW.UTF-8
 Environment=TZ=Asia/Taipei
 ExecStart=/home/e193752468/kkgroup/venv/bin/python /home/e193752468/kkgroup/bots/shopbot.py
-Restart=always
-RestartSec=10
+Restart=on-failure
+RestartSec=30
+StartLimitBurst=3
+StartLimitInterval=60
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=shopbot
