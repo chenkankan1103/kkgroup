@@ -147,31 +147,21 @@ class ScamHub(commands.Cog):
             return None
 
     async def _get_voice_members(self, vc):
-        """返回頻道中的成員清單，必要時使用 voice state 進行回退。"""
-        if not vc or not getattr(vc, 'guild', None):
+        """返回頻道中的成員清單。
+        
+        注意：discord.py 中 Guild 沒有 voice_states 屬性，
+        只能依靠 VoiceChannel.members 屬性（已緩存）。
+        """
+        if not vc:
             return []
-
-        members = list(vc.members) if getattr(vc, 'members', None) else []
-        if members:
+        
+        # 直接返回頻道成員，該屬性已由 Discord 緩存
+        try:
+            members = list(vc.members) if hasattr(vc, 'members') else []
             return members
-
-        # Cache 可能尚未填滿，使用 guild.voice_states 做補救
-        fallback = []
-        for vs in vc.guild.voice_states.values():
-            if vs.channel_id == vc.id:
-                if getattr(vs, 'member', None):
-                    fallback.append(vs.member)
-                    continue
-                member = vc.guild.get_member(vs.user_id)
-                if member:
-                    fallback.append(member)
-                    continue
-                try:
-                    member = await vc.guild.fetch_member(vs.user_id)
-                    fallback.append(member)
-                except Exception:
-                    pass
-        return fallback
+        except Exception as e:
+            print(f"[ScamHub] ⚠️ _get_voice_members 取得成員時發生錯誤: {e}")
+            return []
 
     async def _save_room_to_db(self, room_id: int, guild_id: int, owner_id: int, room_name: str, next_event_time: datetime):
         """新房間創建時保存到數據庫"""
@@ -554,7 +544,10 @@ class ScamHub(commands.Cog):
                 description="歡迎來到詐騙小組語音機房，在這裡你可以在每30-60分鐘詐騙獲取kk幣，招集組長可獲取1.5倍獎勵，組員越多越有機會幹到一大票！",
                 color=discord.Color.blurple()
             )
-            await new_channel.send(content=member.mention, embed=embed, view=RoomControlView(), flags=discord.MessageFlags(suppress_notifications=True))
+            try:
+                await new_channel.send(content=member.mention, embed=embed, view=RoomControlView())
+            except Exception as e:
+                print(f"[ScamHub] ⚠️ 發送歡迎消息時發生錯誤: {e}")
             
             # 初始化狀態消息
             await self.update_voice_status(new_channel)
