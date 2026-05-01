@@ -411,7 +411,7 @@ class ScamHub(commands.Cog):
                     continue
                 
                 # 有人在頻道中，確保倒數計時已取消
-                data['deletion_task'] = None
+                await self._cancel_deletion(vc_id)
                 
                 # 檢查是否需要觸發詐騙事件
                 if 'next_event_time' not in data or now >= data['next_event_time']:
