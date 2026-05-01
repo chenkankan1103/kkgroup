@@ -487,8 +487,23 @@ async def on_ready():
             file_log(f"❌ 視圖註冊失敗: {e}")
             print(f"❌ 視圖註冊失敗: {e}")
         
-        # 同步指令
-        synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
+        # 同步指令（帶異常處理）
+        synced = []
+        try:
+            synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
+        except discord.errors.HTTPException as e:
+            if "Entry Point command" in str(e):
+                # Entry Point 命令衝突 - Discord 限制，不影響 Bot 運行
+                file_log(f"⚠️  Entry Point 命令同步警告（已忽略）: {e}")
+                print(f"⚠️  Entry Point command sync warning (ignored): {e}", flush=True)
+            else:
+                # 其他 HTTP 錯誤，記錄但不中斷
+                file_log(f"⚠️  命令同步失敗: {e}")
+                print(f"⚠️  Command sync failed: {e}", flush=True)
+        except Exception as e:
+            # 其他所有異常，記錄但不中斷
+            file_log(f"⚠️  命令同步異常: {e}")
+            print(f"⚠️  Command sync exception: {e}", flush=True)
         
         # 前綴指令
         prefix_cmds = list(client.commands)
