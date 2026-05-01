@@ -427,21 +427,24 @@ class WelcomeFlow(commands.Cog):
             return None
 
     def create_user_data(self, user_id: int) -> bool:
-        """Create new user data with default values. Returns True if successful. Includes retry logic."""
+        """Create new user data with random appearance and default values. Returns True if successful. Includes retry logic."""
         max_retries = 3
         default_inventory = json.dumps(["手機", "身分證"])
+        
+        # 🎭 為新用戶生成隨機造型（男/女各占 50%）
+        random_appearance = paperdoll_manager.get_random()
         
         user_data = {
             'user_id': user_id,
             'inventory': default_inventory,
             'character_config': '{}',
-            'face': 20005,
-            'hair': 30120,
-            'skin': 12000,
-            'top': 1040014,
-            'bottom': 1060096,
-            'shoes': 1072005,
-            'gender': 'male',
+            'face': int(random_appearance['face']),
+            'hair': int(random_appearance['hair']),
+            'skin': int(random_appearance['skin']),
+            'top': int(random_appearance['top']),
+            'bottom': int(random_appearance['bottom']),
+            'shoes': int(random_appearance['shoes']),
+            'gender': random_appearance['gender'],
             'level': 1,
             'xp': 0,
             'kkcoin': 0,
