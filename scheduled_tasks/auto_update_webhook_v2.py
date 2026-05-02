@@ -34,11 +34,9 @@ except ImportError:
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
-# 設置日誌
-log_dir = Path('/var/log')
-if not log_dir.exists():
-    log_dir = Path(__file__).parent.parent / 'logs'
-    log_dir.mkdir(exist_ok=True)
+# 設置日誌 - 優先使用本地 logs 目錄（權限更寬鬆）
+log_dir = Path(__file__).parent.parent / 'logs'
+log_dir.mkdir(parents=True, exist_ok=True)
 
 log_file = log_dir / 'webhook_auto_update_v2.log'
 
