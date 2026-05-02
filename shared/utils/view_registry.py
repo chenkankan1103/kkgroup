@@ -11,6 +11,8 @@
 """
 
 import discord
+from typing import Optional, Callable, Any
+import asyncio
 
 
 class PersistentViewBase(discord.ui.View):
@@ -18,6 +20,7 @@ class PersistentViewBase(discord.ui.View):
     永久視圖基類 - 自動設置 timeout=None
     
     所有需要在機器人重啟後仍然有效的視圖應該繼承此類。
+    支持通過 add_button 動態添加按鈕。
     
     使用方式：
         from shared.utils.view_registry import PersistentViewBase
@@ -31,11 +34,96 @@ class PersistentViewBase(discord.ui.View):
     - ✅ timeout=None: 按鈕永不過期
     - ✅ 自動註冊: cog 在 setup() 時調用 bot.add_view(instance)
     - ✅ 跨重啟有效: 機器人重啟後按鈕仍然可用
+    - ✅ add_button: 動態添加按鈕，支持鏈式調用
     """
     
     def __init__(self):
         """初始化永久視圖，自動設置 timeout=None"""
         super().__init__(timeout=None)
+        self.buttons_config = {}
+    
+    def add_button(
+        self,
+        label: str,
+        callback: Callable,
+        style: str = "primary",
+        emoji: Optional[str] = None,
+        custom_id: Optional[str] = None,
+        disabled: bool = False,
+        row: Optional[int] = None
+    ) -> "PersistentViewBase":
+        """
+        添加按鈕到視圖
+        
+        Args:
+            label: 按鈕文本
+            callback: 按鈕點擊回調函數 (async def callback(interaction: discord.Interaction))
+            style: 按鈕樣式 ("primary", "secondary", "success", "danger", "link")
+            emoji: 按鈕 emoji
+            custom_id: 自定義 ID（用於持久視圖）
+            disabled: 是否禁用按鈕
+            row: 按鈕所在行（0-4）
+            
+        Returns:
+            self: 便於鏈式調用
+        """
+        # 轉換樣式為 discord.ButtonStyle
+        try:
+            btn_style = getattr(discord.ButtonStyle, style.upper())
+        except AttributeError:
+            btn_style = discord.ButtonStyle.primary
+        
+        # 生成 custom_id
+        button_id = custom_id or f"btn_{len(self.buttons_config)}"
+        
+        # 保存回調函數
+        self.buttons_config[button_id] = {
+            "callback": callback,
+            "label": label
+        }
+        
+        # 創建按鈕
+        button = discord.ui.Button(
+            label=label,
+            style=btn_style,
+            emoji=emoji,
+            custom_id=button_id,
+            disabled=disabled,
+            row=row
+        )
+        
+        # 綁定按鈕回調
+        button.callback = lambda interaction: self._button_callback(interaction, button_id)
+        
+        self.add_item(button)
+        return self
+    
+    async def _button_callback(self, interaction: discord.Interaction, button_id: str):
+        """
+        內部按鈕回調處理
+        
+        Args:
+            interaction: Discord 交互對象
+            button_id: 按鈕 ID
+        """
+        if button_id not in self.buttons_config:
+            await interaction.response.defer()
+            return
+        
+        callback = self.buttons_config[button_id]["callback"]
+        
+        try:
+            # 執行用戶定義的回調
+            if asyncio.iscoroutinefunction(callback):
+                await callback(interaction)
+            else:
+                callback(interaction)
+        except Exception as e:
+            try:
+                await interaction.response.defer()
+            except:
+                pass
+            print(f"[PersistentViewBase] 按鈕回調錯誤: {e}")
 
 
 def register_all_permanent_views(client):
