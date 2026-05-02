@@ -334,7 +334,7 @@ class AirdropView(PersistentViewBase):
     """空投箱交互按鈕"""
     
     def __init__(self, cog):
-        super().__init__(timeout=600)  # 10 分鐘超時
+        super().__init__()
         self.cog = cog
         self.opened = False
         self.opened_by = None

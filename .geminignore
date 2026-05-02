@@ -1,0 +1,8 @@
+# 排除大型二進制檔與無關目錄
+*.db
+*.sqlite3
+*.bin
+venv/
+node_modules/
+.git/
+assets/

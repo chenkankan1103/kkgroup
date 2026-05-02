@@ -16,7 +16,7 @@ load_dotenv()
 
 class StaminaItemView(PersistentViewBase):
     def __init__(self, merchant_cog, user_id: int):
-        super().__init__(timeout=600)
+        super().__init__()
         self.merchant_cog = merchant_cog
         self.user_id = user_id
         
@@ -63,7 +63,7 @@ class StaminaItemView(PersistentViewBase):
 # 永久視圖類（用於按鈕永久註冊）
 class PersistentStaminaView(PersistentViewBase):
     def __init__(self, merchant_cog):
-        super().__init__(timeout=None)  # 永不過期
+        super().__init__()
         self.merchant_cog = merchant_cog
         
         # 使用全域按鈕系統
