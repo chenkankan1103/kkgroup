@@ -8,6 +8,8 @@
 2. 驗證 webhook 簽名（安全）
 3. 執行 git pull + systemctl restart
 4. 發送結果回報到 Discord
+5. 審計日誌 - 記錄所有 webhook 請求
+6. 速率限制 - 防止暴力觸發
 """
 
 import os
@@ -17,7 +19,7 @@ import hashlib
 import subprocess
 import asyncio
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Blueprint, request, jsonify
 import logging
@@ -25,6 +27,7 @@ import json
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from collections import defaultdict
 
 # 設置日誌
 logger = logging.getLogger(__name__)
@@ -45,12 +48,70 @@ DISCORD_SYS_CHANNEL_ID = os.getenv("DISCORD_SYS_CHANNEL_ID", "")
 SYSTEMD_SERVICES = ["bot.service", "shopbot.service", "uibot.service"]
 
 # ============================================================
+# 速率限制 & 審計
+# ============================================================
+
+# 速率限制：最多每 60 秒允許 1 次觸發
+WEBHOOK_RATE_LIMIT = 60  # 秒
+webhook_last_trigger = {}  # IP -> timestamp
+
+# 審計日誌
+audit_log_file = Path(__file__).parent.parent.parent / 'logs' / 'webhook_audit.log'
+audit_log_file.parent.mkdir(parents=True, exist_ok=True)
+
+
+def log_audit(ip, status, message, payload_info=""):
+    """
+    記錄 webhook 審計日誌
+    
+    Args:
+        ip: 請求來源 IP
+        status: 'ALLOWED', 'REJECTED', 'RATE_LIMITED', 'INVALID_SIGNATURE'
+        message: 詳細信息
+        payload_info: 載荷信息（commit 數、分支等）
+    """
+    try:
+        timestamp = datetime.utcnow().isoformat() + "Z"
+        log_entry = {
+            "timestamp": timestamp,
+            "ip": ip,
+            "status": status,
+            "message": message,
+            "payload": payload_info
+        }
+        
+        with open(audit_log_file, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
+        
+        logger.info(f"📋 [AUDIT] {status} | IP: {ip} | {message}")
+    except Exception as e:
+        logger.error(f"❌ 審計日誌記錄失敗: {e}")
+
+
+def check_rate_limit(ip):
+    """
+    檢查速率限制
+    
+    Returns:
+        (is_allowed, time_remaining)
+    """
+    now = datetime.utcnow().timestamp()
+    last_time = webhook_last_trigger.get(ip, 0)
+    time_diff = now - last_time
+    
+    if time_diff < WEBHOOK_RATE_LIMIT:
+        return False, WEBHOOK_RATE_LIMIT - time_diff
+    
+    webhook_last_trigger[ip] = now
+    return True, 0
+
+# ============================================================
 # Webhook 簽名驗證
 # ============================================================
 
 def verify_github_signature(payload_body, signature_header):
     """
-    驗證 GitHub webhook 簽名
+    驗證 GitHub webhook 簽名 (強制檢查版本)
     
     Args:
         payload_body (bytes): webhook 的原始 body
@@ -58,22 +119,46 @@ def verify_github_signature(payload_body, signature_header):
     
     Returns:
         bool: 簽名是否有效
+        
+    安全考量:
+    - 如果未設置 SECRET，則拒絕所有 webhook（不是跳過驗證）
+    - 使用常時間比較防止時序攻擊
+    - 記錄所有簽名驗證失敗
     """
+    # 🔴 強制檢查：未設置 SECRET 時拒絕 webhook
     if not GITHUB_WEBHOOK_SECRET:
-        logger.warning("⚠️ 未設置 GITHUB_WEBHOOK_SECRET，跳過簽名驗證")
-        return True
+        logger.error("🚨 CRITICAL: GITHUB_WEBHOOK_SECRET 未設置！無法驗證 webhook 簽名")
+        logger.error("🚨 為了安全起見，已拒絕此 webhook 請求")
+        logger.error("🚨 請在 .env 文件中設置 GITHUB_WEBHOOK_SECRET")
+        return False
+    
+    if not signature_header:
+        logger.warning("⚠️ 缺少 X-Hub-Signature-256 header")
+        return False
     
     # GitHub 使用 SHA-256，格式為 "sha256=xxxxx"
-    signature = hmac.new(
-        GITHUB_WEBHOOK_SECRET.encode(),
-        payload_body,
-        hashlib.sha256
-    ).hexdigest()
+    try:
+        signature = hmac.new(
+            GITHUB_WEBHOOK_SECRET.encode(),
+            payload_body,
+            hashlib.sha256
+        ).hexdigest()
+        
+        expected = f"sha256={signature}"
+        
+        # 常時間比較（防止時序攻擊）
+        is_valid = hmac.compare_digest(expected, signature_header)
+        
+        if not is_valid:
+            logger.warning(f"⚠️ Webhook 簽名不匹配")
+            logger.debug(f"   期望: {expected[:20]}...")
+            logger.debug(f"   收到: {signature_header[:20]}...")
+        
+        return is_valid
     
-    expected = f"sha256={signature}"
-    
-    # 常時間比較（防止時序攻擊）
-    return hmac.compare_digest(expected, signature_header)
+    except Exception as e:
+        logger.error(f"❌ 簽名驗證異常: {e}")
+        return False
 
 
 # ============================================================
@@ -275,7 +360,7 @@ def notify_discord(title, description, color, details=None):
 @webhook_bp.route('/github', methods=['POST'])
 def github_webhook():
     """
-    接收 GitHub webhook 推送事件
+    接收 GitHub webhook 推送事件 (帶審計和速率限制)
     
     GitHub 配置:
     1. 進入倉庫設置 → Webhooks
@@ -286,26 +371,58 @@ def github_webhook():
     6. Active: 打勾
     """
     
-    # 驗證簽名
+    # 獲取客戶端 IP（考慮代理）
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if ',' in client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    
+    logger.info(f"📥 收到 webhook 請求 | IP: {client_ip}")
+    
+    # ============================================================
+    # 第 1 層：速率限制檢查
+    # ============================================================
+    is_allowed, time_remaining = check_rate_limit(client_ip)
+    if not is_allowed:
+        logger.warning(f"🚫 速率限制 | IP: {client_ip} | 剩餘等待時間: {time_remaining:.1f}s")
+        log_audit(client_ip, 'RATE_LIMITED', f'須等待 {time_remaining:.1f}s', '')
+        return jsonify({
+            "status": "rate_limited",
+            "message": f"請求過於頻繁，請在 {time_remaining:.1f} 秒後再試",
+            "retry_after": int(time_remaining) + 1
+        }), 429
+    
+    # ============================================================
+    # 第 2 層：簽名驗證
+    # ============================================================
     signature_header = request.headers.get('X-Hub-Signature-256', '')
     payload_body = request.get_data()
     
     if not verify_github_signature(payload_body, signature_header):
-        logger.warning("❌ Webhook 簽名驗證失敗")
+        logger.warning(f"🔐 簽名驗證失敗 | IP: {client_ip}")
+        log_audit(client_ip, 'INVALID_SIGNATURE', 'Webhook 簽名驗證失敗', '')
         return jsonify({"status": "error", "message": "簽名驗證失敗"}), 401
     
+    logger.info(f"✅ 簽名驗證成功 | IP: {client_ip}")
+    
+    # ============================================================
+    # 第 3 層：JSON 解析
+    # ============================================================
     try:
         payload = request.get_json()
     except Exception as e:
         logger.error(f"❌ JSON 解析失敗: {e}")
+        log_audit(client_ip, 'REJECTED', f'JSON 解析失敗: {str(e)}', '')
         return jsonify({"status": "error", "message": "JSON 解析失敗"}), 400
     
     try:
-        # 檢查事件類型 - 只處理 push 事件
+        # ============================================================
+        # 第 4 層：事件類型和分支檢查
+        # ============================================================
         event_type = request.headers.get('X-GitHub-Event', '')
         
         if event_type != 'push':
             logger.info(f"⏭️ 忽略非 push 事件 (類型: {event_type})")
+            log_audit(client_ip, 'ALLOWED', f'已忽略 {event_type} 事件', f'event_type={event_type}')
             return jsonify({"status": "ok", "message": f"已忽略 {event_type} 事件"}), 200
         
         logger.info("🔔 收到 GitHub push 事件")
@@ -314,22 +431,30 @@ def github_webhook():
         ref = payload.get('ref', '')
         branch_name = ref.replace('refs/heads/', '')
         commits = payload.get('commits', [])
+        commit_messages = [c.get('message', '').split('\n')[0] for c in commits[:3]]
         
         logger.info(f"📌 分支: {branch_name}")
         logger.info(f"📝 提交數: {len(commits)}")
+        if commit_messages:
+            logger.info(f"📋 最近提交: {commit_messages[0][:50]}...")
+        
+        payload_info = f"branch={branch_name}, commits={len(commits)}"
         
         # 只處理 main 分支
         if branch_name != 'main':
             logger.info(f"⏭️ 忽略分支 {branch_name}，僅監控 main")
+            log_audit(client_ip, 'ALLOWED', f'已忽略分支 {branch_name}', payload_info)
             return jsonify({"status": "ok", "message": "已忽略該分支"}), 200
         
-        # 執行更新和重啟
         logger.info("🚀 開始執行自動部署流程...")
+        log_audit(client_ip, 'ALLOWED', f'開始部署 {branch_name}', payload_info)
         
+        # 執行更新和重啟
         pull_success, pull_msg = execute_git_pull()
         
         if not pull_success:
             logger.error(f"❌ 部署失敗: {pull_msg}")
+            log_audit(client_ip, 'REJECTED', f'Git pull 失敗: {pull_msg}', payload_info)
             # 發送失敗通知（在後臺線程中）
             notify_discord(
                 "❌ GitHub Webhook 部署失敗",
@@ -348,6 +473,7 @@ def github_webhook():
         
         if restart_success:
             logger.info("✅ 部署成功！所有服務已重啟")
+            log_audit(client_ip, 'ALLOWED', f'部署成功 | {restart_msg}', payload_info)
             
             # 構建通知內容
             commit_msgs = [c.get('message', '').split('\n')[0] for c in commits[:5]]
@@ -375,6 +501,7 @@ def github_webhook():
             }), 200
         else:
             logger.error(f"❌ 部分服務重啟失敗: {restart_msg}")
+            log_audit(client_ip, 'ALLOWED', f'部分部署失敗 | {restart_msg}', payload_info)
             
             notify_discord(
                 "⚠️ GitHub Webhook 部分部署失敗",
