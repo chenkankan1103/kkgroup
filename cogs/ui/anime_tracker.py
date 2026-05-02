@@ -229,6 +229,8 @@ class AnimeDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                # 確保表中至少有一行
+                cursor.execute(f"INSERT OR IGNORE INTO {BOOTSTRAP_FLAG_TABLE} (id, bootstrap_completed) VALUES (1, 0)")
                 cursor.execute(f"SELECT bootstrap_completed FROM {BOOTSTRAP_FLAG_TABLE} WHERE id = 1")
                 result = cursor.fetchone()
                 return result and result[0] == 1
@@ -1820,12 +1822,18 @@ class AnimeTracker(commands.Cog):
             # 獲取日程表
             schedule = await self._get_anime_schedule()
             if not schedule:
+                logger.warning(f"⚠️ [check_new_anime] 無法獲取日程表 (schedule 為空或 API 失敗)")
                 return
+            
+            logger.info(f"📺 [check_new_anime] 成功獲取日程表，共 {len(schedule)} 個日期")
             
             # 獲取今日的預期檢查時刻
             expected_times = self._get_expected_check_times(schedule, now)
             if not expected_times:
+                logger.warning(f"⚠️ [check_new_anime] 沒有找到預期檢查時刻")
                 return
+            
+            logger.info(f"📺 [check_new_anime] 今日/明日預期時刻: {len(expected_times)} 個")
             
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
@@ -1841,6 +1849,7 @@ class AnimeTracker(commands.Cog):
                 episodes = await self.fetch_new_anime_from_api()
                 if episodes:
                     self.db.bootstrap_add_all(episodes)
+                    logger.info(f"✅ [check_new_anime] Bootstrap 已記錄 {len(episodes)} 個集")
                 self.db.mark_bootstrap_completed()
                 self.bootstrap_completed = True
                 logger.info("✅ [check_new_anime] Bootstrap 完成")
@@ -1849,28 +1858,53 @@ class AnimeTracker(commands.Cog):
             # 對於每個預期時刻，檢查是否在 +3~+32 分鐘窗口內
             for scheduled_dt in expected_times:
                 try:
+                    scheduled_time_str = scheduled_dt.strftime("%H:%M")
+                    scheduled_date = scheduled_dt.date()
+                    
                     # 計算時間差（分鐘）
                     time_diff_min = (now - scheduled_dt).total_seconds() / 60
+                    
+                    # 調試：打印時間差（確認是否在窗口內）
+                    logger.info(f"⏰ [{scheduled_time_str}] 時間差: {time_diff_min:.1f} 分鐘 (窗口: 3-32 分鐘)")
                     
                     # 在 +3~+32 分鐘窗口內執行檢查（即預定時刻後 3-32 分鐘）
                     if 3 <= time_diff_min < 32:
                         # ✅ 新的檢查邏輯：使用數據庫追蹤，防止 Bot 重啟導致重複檢查
-                        scheduled_time_str = scheduled_dt.strftime("%H:%M")
                         
-                        if self.db.is_time_checked_today(scheduled_time_str, scheduled_dt.date()):
-                            logger.info(f"⏭️  [{scheduled_time_str}] 已在 {scheduled_dt.date()} 檢查過，跳過")
+                        # 檢查該時刻今日是否已檢查過
+                        try:
+                            already_checked = self.db.is_time_checked_today(scheduled_time_str, scheduled_date)
+                        except Exception as db_err:
+                            logger.error(f"❌ [check_new_anime] 資料庫查詢失敗: {db_err}", exc_info=True)
+                            already_checked = False  # 發生錯誤時，假設未檢查過（允許重試）
+                        
+                        if already_checked:
+                            logger.info(f"⏭️  [{scheduled_time_str}] 已在 {scheduled_date} 檢查過，跳過")
                             continue
                         
-                        logger.info(f"📺 [check_new_anime] 檢查時刻 {scheduled_time_str} ({now.strftime('%H:%M:%S')})")
+                        logger.info(f"🔍 [check_new_anime] 開始檢查 {scheduled_time_str} ({now.strftime('%Y-%m-%d %H:%M:%S')})")
                         
                         # 執行檢查
-                        await self._check_and_send_anime(scheduled_time_str, channel)
+                        try:
+                            await self._check_and_send_anime(scheduled_time_str, channel)
+                        except Exception as check_err:
+                            logger.error(f"❌ [check_new_anime] 檢查執行失敗: {check_err}", exc_info=True)
+                            continue  # 失敗時不標記為已檢查，下次重試
                         
                         # 標記該時刻已檢查（用於防止重複）
-                        self.db.mark_time_checked(scheduled_time_str, scheduled_dt.date())
-                        logger.info(f"✅ [check_new_anime] 時刻 {scheduled_time_str} 已標記為已檢查")
+                        try:
+                            success = self.db.mark_time_checked(scheduled_time_str, scheduled_date)
+                            if success:
+                                logger.info(f"✅ [check_new_anime] 時刻 {scheduled_time_str} 已標記為已檢查")
+                            else:
+                                logger.warning(f"⚠️ [check_new_anime] 標記時刻失敗（無行被插入）: {scheduled_time_str}")
+                        except Exception as mark_err:
+                            logger.error(f"❌ [check_new_anime] 標記時刻異常: {mark_err}", exc_info=True)
+                    else:
+                        # 時間不在窗口內，只記錄（不要 continue，讓其他時刻也能被檢查）
+                        logger.debug(f"⏭️  [{scheduled_time_str}] 時間差 {time_diff_min:.1f} 分鐘不在窗口內")
                 except Exception as e:
-                    logger.error(f"❌ Error processing scheduled time: {e}", exc_info=True)
+                    logger.error(f"❌ Error processing scheduled time {scheduled_dt}: {e}", exc_info=True)
                     continue
         
         except Exception as e:
@@ -2007,7 +2041,11 @@ class AnimeTracker(commands.Cog):
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to parse schedule time '{schedule_time}': {e}")
         
-        logger.debug(f"📺 預期更新時刻: {[dt.strftime('%Y-%m-%d %H:%M') for dt in check_times]}")
+        # 改用 INFO 級別，確保能在 journalctl 中看到
+        if check_times:
+            logger.info(f"📺 [_get_expected_check_times] 預期更新時刻 ({len(check_times)} 個): {[dt.strftime('%Y-%m-%d %H:%M') for dt in check_times[:5]]}...")
+        else:
+            logger.warning(f"⚠️ [_get_expected_check_times] 沒有找到預期時刻 (weekday_today={weekday_today}, schedule 鍵數={len(schedule)})")
         return sorted(check_times)
     
 
