@@ -72,7 +72,7 @@ class ConfirmCommandView(PersistentViewBase):
     """
 
     def __init__(self, command: str, step: int, total: int, requester_id: int):
-        super().__init__(timeout=CONFIRM_TIMEOUT)
+        super().__init__()
         self.command      = command
         self.confirmed    = None   # True / False / None（超時）
         self.requester_id = requester_id
