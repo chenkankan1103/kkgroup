@@ -1894,13 +1894,16 @@ class AnimeTracker(commands.Cog):
             
             if not expected_times:
                 logger.warning(f"⚠️ [check_new_anime] 沒有找到預期檢查時刻")
+                print("[DEBUG] 沒有預期時刻，退出", flush=True)
                 return
             
             logger.info(f"📺 [check_new_anime] 今日/明日預期時刻: {len(expected_times)} 個")
+            print(f"[DEBUG] 預期時刻數: {len(expected_times)}", flush=True)
             
             # 取得頻道
             print(f"[DEBUG] 準備取得頻道 ID={ANIME_CHANNEL_ID}...", flush=True)
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+            print(f"[DEBUG] 頻道獲取完成: {channel is not None}", flush=True)
             if not channel:
                 logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
                 return
@@ -1910,6 +1913,7 @@ class AnimeTracker(commands.Cog):
             print("[DEBUG] 準備檢查 Bootstrap 狀態...", flush=True)
             bootstrap_status = self.db.is_bootstrap_completed()
             print(f"[DEBUG] Bootstrap 狀態: {bootstrap_status}", flush=True)
+            logger.info(f"✅ [check_new_anime] Bootstrap 狀態已檢查: {bootstrap_status}")
             if not bootstrap_status:
                 # 首次運行：Bootstrap
                 logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
@@ -1923,6 +1927,7 @@ class AnimeTracker(commands.Cog):
                 return
             
             # 對於每個預期時刻，檢查是否在 +3~+32 分鐘窗口內
+            print(f"[DEBUG] 開始檢查 {len(expected_times)} 個預期時刻的窗口...", flush=True)
             for scheduled_dt in expected_times:
                 try:
                     scheduled_time_str = scheduled_dt.strftime("%H:%M")
