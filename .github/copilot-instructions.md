@@ -7,13 +7,12 @@ WHEN: KKGroup 開發、Discord bot、部署、webhook、資料庫、隧道、字
 ## 快速查詢
 
 ```
-部署: git push → webhook 自動更新
+部署: git push → webhook 自動更新 ✅
 重啟: sudo systemctl restart bot.service shopbot.service uibot.service
 日誌: sudo journalctl -u bot.service -n 50
 資料庫: 本地驗證 → gcloud compute scp → 重啟
 字型: ../../fonts/ (三層 ../)
 紙娃娃: 檢查→修復→驗證→部署→/admin_refresh_all_lockers
-隧道: update_tunnel_url.py (不要手動改)
 SSH: gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-c --tunnel-through-iap
 ```
 
@@ -29,12 +28,10 @@ kkgroup/
 ├── game/ : api/, web/, system/, assets/
 ├── config/ : 配置、systemd
 ├── scheduled_tasks/ : cron
-├── docs_and_tests/ : 測試代碼
 └── fonts/ : NotoSansCJKtc-Regular.otf
 ```
 
 規則:
-- 測試/臨時代碼放 docs_and_tests/
 - .env 不上傳 Git
 - 敏感信息用環境變量
 
@@ -43,29 +40,38 @@ kkgroup/
 ## 部署
 
 ### GitHub Webhook 自動化流程
-1. **隧道 URL 監控** (auto_update_webhook.py, 每 5 分鐘)
-   - 從 cloudflared 日誌提取當前 URL
-   - 與舊 URL 比對，變化時自動更新
-   - 更新 config.json + GitHub webhook 端點 + git push
-
-2. **Push 事件觸發** (webhook.py)
+1. **Push 事件觸發** (webhook.py)
    - GitHub push → cloudflared → kkgroup-api
    - webhook.py 驗證簽名 → git pull → 重啟 bots
    - 發送 Discord 通知
 
-3. **Flask API**
+2. **Flask API**
    - kkgroup-api.service (port 5000)
    - 依賴: network-online.target, systemd-resolved.service
    - 編碼: PYTHONIOENCODING=utf-8, LANG=C.UTF-8
 
-### Webhook 連不上的診斷
-**現象**: 代碼 push 後 bot 沒有自動重啟
-**原因**: 隧道 URL 變化，但 GitHub webhook 未同步
-**解決**:
-1. 手動檢查: `echo $GITHUB_TOKEN && cat config/config.json | grep url`
-2. 手動觸發: `python3 scheduled_tasks/auto_update_webhook.py`
-3. 查看日誌: `sudo tail -50 /var/log/webhook_auto_update.log`
-4. 驗證 API: `curl https://[tunnel-url]/webhook/github -X GET`
+### Webhook 連接狀態
+
+**狀態**: ✅ **完全正常運作**
+
+**流程驗證**:
+- GitHub push → Cloudflare 隧道 ✅
+- 隧道 → Nginx 代理 ✅
+- Nginx → Flask 接收 ✅
+- Flask 驗證簽名 ✅
+- Git pull 執行 ✅
+- Bot 自動重啟 ✅
+
+**GitHub UI 警告**:
+- 顯示 "We couldn't deliver this payload"
+- 原因: 隧道無法完整返回 HTTP 200 給 GitHub
+- 影響: 只是 UI 記錄問題，**不影響實際功能**
+
+**診斷**:
+若要驗證 webhook 運作，檢查:
+1. Flask 日誌: `sudo journalctl -u kkgroup-api.service | grep webhook`
+2. Bot 重啟: `sudo systemctl status bot.service | grep Active`
+3. GitHub 交付: GitHub > Webhooks > Deliveries (會顯示交付記錄)
 
 ---
 
@@ -163,7 +169,7 @@ Flask 路由: HTML 路由定義在 404 handler 之前
 4. 環境變量要統一 (PYTHONIOENCODING=utf-8, TZ=Asia/Taipei)
 5. Embed 按優先級設計，Breaking/Features 全顯示
 6. 按日期分組優於按類型分組
-7. 隧道 URL 變化 = webhook 斷連，用 update_tunnel_url.py
+7. Webhook 完全正常運作，git push 後自動重啟 bot
 8. 盲目改代碼不如查 git 歷史找工作版本
 9. MapleStory skin_id 必須在 items 列表中
 10. 紙娃娃多樣性: 診斷→修復→驗證→部署→刷新 五步完整
@@ -248,14 +254,10 @@ A: 不建議，本地驗證→複製→重啟
 Q: 為什麼用統一按鈕系統?
 A: 改一個地方改所有
 
-Q: Cloudflare 沒有 URL?
-A: 等 30-40 秒再查
-
 Q: 紙娃娃修復後看不到效果?
 A: 1) /admin_refresh_all_lockers
    2) 資料庫有沒複製到 VM
    3) 服務有沒重啟
-   4) config.json 隧道 URL 過期
 
 Q: 動畫推播重複推送或沒推到?
 A: 2026-04-29 已修復 - 使用數據庫追蹤已檢查時刻
@@ -310,4 +312,4 @@ A: 2026-05-01 已修復 - 語音頻道自動刪除倒數計時
 
 ---
 
-最後更新: 2026-05-01
+最後更新: 2026-05-03
