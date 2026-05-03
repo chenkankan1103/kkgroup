@@ -1888,7 +1888,10 @@ class AnimeTracker(commands.Cog):
             logger.info(f"📺 [check_new_anime] 成功獲取日程表，共 {len(schedule)} 個日期")
             
             # 獲取今日的預期檢查時刻
+            print("[DEBUG] 準備調用 _get_expected_check_times()...", flush=True)
             expected_times = self._get_expected_check_times(schedule, now)
+            print(f"[DEBUG] _get_expected_check_times() 返回: {len(expected_times)} 個時刻", flush=True)
+            
             if not expected_times:
                 logger.warning(f"⚠️ [check_new_anime] 沒有找到預期檢查時刻")
                 return
@@ -1896,13 +1899,17 @@ class AnimeTracker(commands.Cog):
             logger.info(f"📺 [check_new_anime] 今日/明日預期時刻: {len(expected_times)} 個")
             
             # 取得頻道
+            print(f"[DEBUG] 準備取得頻道 ID={ANIME_CHANNEL_ID}...", flush=True)
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
             if not channel:
                 logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
                 return
+            print(f"[DEBUG] 頻道成功取得: {channel.name}", flush=True)
             
             # 檢查 Bootstrap 狀態
+            print("[DEBUG] 準備檢查 Bootstrap 狀態...", flush=True)
             bootstrap_status = self.db.is_bootstrap_completed()
+            print(f"[DEBUG] Bootstrap 狀態: {bootstrap_status}", flush=True)
             if not bootstrap_status:
                 # 首次運行：Bootstrap
                 logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
