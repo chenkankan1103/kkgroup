@@ -1850,10 +1850,15 @@ class AnimeTracker(commands.Cog):
         """每 5 分鐘檢查一次新番 - 只在預定時刻 +5 分鐘時執行一次"""
         now = datetime.now(TW_TZ)
         
+        # 心跳日誌
+        print(f"[HEARTBEAT] check_new_anime 執行 - {now.strftime('%H:%M:%S')}", flush=True)
+        print(f"[HEARTBEAT] check_new_anime 執行 - {now.strftime('%H:%M:%S')}", file=open('/tmp/anime_debug.log', 'a'))
+        
         try:
             # 獲取日程表和預期檢查時刻
             schedule = await self._get_anime_schedule()
             if not schedule:
+                print(f"[ANIME] 無法取得日程表", flush=True)
                 return
             
             expected_times = self._get_expected_check_times(schedule, now)
@@ -1895,8 +1900,12 @@ class AnimeTracker(commands.Cog):
                 # 計算距離預定時刻的時間差
                 time_diff_min = (now - next_scheduled).total_seconds() / 60
                 
+                # 詳細日誌
+                print(f"[ANIME] 最近時刻: {scheduled_time_str}, 時差: {time_diff_min:.1f} 分", flush=True)
+                
                 # 只在 +4 到 +6 分鐘時執行一次（5 分鐘檢查周期的容差）
                 if 4 <= time_diff_min <= 6:
+                    print(f"[ANIME] ✅ 時間在窗口內，執行檢查", flush=True)
                     # 防止重複檢查
                     if not self.db.is_time_checked_today(scheduled_time_str, scheduled_date):
                         try:
