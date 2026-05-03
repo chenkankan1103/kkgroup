@@ -1853,7 +1853,7 @@ class AnimeTracker(commands.Cog):
     
     @tasks.loop(minutes=5)
     async def check_new_anime(self):
-        """每 5 分鐘檢查一次新番 - 在預定時刻 +3~+32 分鐘窗口執行"""
+        """每 5 分鐘檢查一次新番 - 只在預定時刻 +5 分鐘時執行一次"""
         now = datetime.now(TW_TZ)
         
         try:
@@ -1883,18 +1883,20 @@ class AnimeTracker(commands.Cog):
                 self.bootstrap_completed = True
                 return
             
-            # 檢查每個預期時刻的窗口 (+3~+32 分鐘)
+            # 只在預定時刻 +5 分鐘時執行一次
             for scheduled_dt in expected_times:
                 try:
                     scheduled_time_str = scheduled_dt.strftime("%H:%M")
                     scheduled_date = scheduled_dt.date()
+                    
+                    # 計算距離預定時刻的時間差
                     time_diff_min = (now - scheduled_dt).total_seconds() / 60
                     
-                    # 檢查是否在窗口內
-                    if not (3 <= time_diff_min < 32):
+                    # 只在 +4 到 +6 分鐘時執行一次（5 分鐘檢查周期的容差）
+                    if not (4 <= time_diff_min <= 6):
                         continue
                     
-                    # 防止重複檢查（使用資料庫追蹤）
+                    # 防止重複檢查
                     try:
                         if self.db.is_time_checked_today(scheduled_time_str, scheduled_date):
                             continue
