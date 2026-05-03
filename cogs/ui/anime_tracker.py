@@ -873,14 +873,8 @@ class AnimeVoteView(discord.ui.View):
         # 添加投票按鈕
         button_count = 0
         for vote_key, (vote_label, color_emoji) in self.VOTE_TYPES.items():
-            # 根據投票類型選擇按鈕樣式
-            button_style = discord.ButtonStyle.secondary  # 預設灰色
-            if vote_key == "masterpiece":
-                button_style = discord.ButtonStyle.success  # 綠色
-            elif vote_key == "decent":
-                button_style = discord.ButtonStyle.primary  # 藍色
-            elif vote_key == "disaster":
-                button_style = discord.ButtonStyle.danger  # 紅色
+            # 所有投票按鈕都用灰色
+            button_style = discord.ButtonStyle.secondary  # 灰色
             
             button = discord.ui.Button(
                 label=f"{color_emoji} {vote_label}",
@@ -897,7 +891,7 @@ class AnimeVoteView(discord.ui.View):
         comment_button = discord.ui.Button(
             label="💬 留言",
             custom_id=f"anime_comment_{self.video_sn}",
-            style=discord.ButtonStyle.success  # 綠色
+            style=discord.ButtonStyle.secondary  # 灰色
         )
         comment_button.callback = self._comment_callback
         self.add_item(comment_button)
