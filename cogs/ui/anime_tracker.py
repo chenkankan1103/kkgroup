@@ -1872,8 +1872,15 @@ class AnimeTracker(commands.Cog):
         sys.stdout.flush()
         
         try:
-            # 獲取日程表
+            # 獲取日程表 - 添加調試日誌
+            logger.info("[check_new_anime] 準備調用 _get_anime_schedule()...")
+            print("[DEBUG] 準備調用 _get_anime_schedule()...", flush=True)
+            
             schedule = await self._get_anime_schedule()
+            
+            logger.info(f"[check_new_anime] _get_anime_schedule() 返回: {type(schedule)}, 長度={len(schedule) if schedule else 0}")
+            print(f"[DEBUG] _get_anime_schedule() 返回: {type(schedule)}, 長度={len(schedule) if schedule else 0}", flush=True)
+            
             if not schedule:
                 logger.warning(f"⚠️ [check_new_anime] 無法獲取日程表 (schedule 為空或 API 失敗)")
                 return
