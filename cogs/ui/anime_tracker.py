@@ -1882,16 +1882,11 @@ class AnimeTracker(commands.Cog):
                 self.bootstrap_completed = True
                 return
             
-            # 找到最近的下一個預定時刻（只執行一次）
+            # 找到最近的已過時刻（時間已經超過，用於判斷是否在窗口內）
             next_scheduled = None
             for dt in expected_times:
-                if dt > now:
-                    next_scheduled = dt
-                    break
-            
-            # 如果沒有未來的時刻，檢查當天最後一個已過的時刻
-            if not next_scheduled and expected_times:
-                next_scheduled = expected_times[-1]
+                if dt <= now:  # 只找已過的時刻
+                    next_scheduled = dt  # 保持更新，找最後一個已過的
             
             if next_scheduled:
                 scheduled_time_str = next_scheduled.strftime("%H:%M")
