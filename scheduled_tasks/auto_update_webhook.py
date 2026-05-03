@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🔄 自動更新 GitHub Webhook 隧道 URL
+🔄 自動更新 GitHub Webhook 隧道 URL (Python requests 版本)
 監控隧道 URL 變化，自動更新 GitHub webhook 設定
 
 使用方式：
@@ -16,6 +16,7 @@ import os
 import json
 import subprocess
 import sys
+import requests
 from pathlib import Path
 from datetime import datetime
 import logging
@@ -36,32 +37,57 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 配置
-WEBHOOK_CONFIG_FILE = '/home/e193752468/kkgroup/config/webhook_config.json'
+# 配置（使用絕對路徑）
+PROJECT_DIR = Path('/home/e193752468/kkgroup')
+WEBHOOK_CONFIG_FILE = PROJECT_DIR / 'config' / 'webhook_config.json'
+CONFIG_FILE = PROJECT_DIR / 'config' / 'config.json'
+
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 GITHUB_WEBHOOK_SECRET = os.getenv('GITHUB_WEBHOOK_SECRET', '321qwe321')
 REPO_OWNER = 'chenkankan1103'
 REPO_NAME = 'kkgroup'
 WEBHOOK_ENDPOINT = '/webhook/github'
 
+# API 相關
+GITHUB_API_BASE = 'https://api.github.com'
+GITHUB_API_TIMEOUT = 10
+RETRY_ATTEMPTS = 3
+RETRY_DELAY = 1  # 秒
+
 
 def get_current_tunnel_url():
-    """從 cloudflared 日誌提取當前隧道 URL"""
+    """從 cloudflared 日誌提取當前隧道 URL (改進版本)"""
     try:
+        # 使用 Python subprocess 而不是複雜的 shell 管道
         result = subprocess.run(
-            "sudo journalctl -u cloudflared.service -n 50 --no-pager | grep -oP 'https://[a-z0-9\-]+\.trycloudflare\.com' | tail -1",
-            shell=True,
+            ['sudo', 'journalctl', '-u', 'cloudflared.service', '-n', '50', '--no-pager'],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
+            check=False
         )
-        url = result.stdout.strip()
-        if url:
-            logger.info(f"✅ 當前隧道 URL: {url}")
-            return url
-        else:
-            logger.warning("⚠️ 無法從日誌提取隧道 URL")
+        
+        if result.returncode != 0:
+            logger.error(f"❌ journalctl 執行失敗: {result.stderr}")
             return None
+        
+        # 從日誌中解析 URL
+        for line in reversed(result.stdout.split('\n')):
+            if 'trycloudflare.com' in line:
+                # 提取 URL
+                import re
+                match = re.search(r'https://[a-z0-9\-]+\.trycloudflare\.com', line)
+                if match:
+                    url = match.group(0)
+                    logger.info(f"✅ 當前隧道 URL: {url}")
+                    return url
+        
+        logger.warning("⚠️ 日誌中未找到隧道 URL")
+        return None
+        
+    except subprocess.TimeoutExpired:
+        logger.error("❌ journalctl 命令超時")
+        return None
     except Exception as e:
         logger.error(f"❌ 提取隧道 URL 失敗: {e}")
         return None
@@ -69,14 +95,15 @@ def get_current_tunnel_url():
 
 def load_webhook_config():
     """加載上次保存的 webhook 配置"""
-    if os.path.exists(WEBHOOK_CONFIG_FILE):
-        try:
+    try:
+        if WEBHOOK_CONFIG_FILE.exists():
             with open(WEBHOOK_CONFIG_FILE, 'r') as f:
                 config = json.load(f)
-                logger.info(f"✅ 加載 webhook 配置: {config.get('tunnel_url')}")
+                logger.info(f"✅ 加載 webhook 配置: tunnel_url={config.get('tunnel_url')}")
                 return config
-        except Exception as e:
-            logger.error(f"❌ 加載配置失敗: {e}")
+    except Exception as e:
+        logger.error(f"⚠️ 加載配置失敗: {e}")
+    
     return {'tunnel_url': None, 'webhook_id': None}
 
 
@@ -88,86 +115,170 @@ def save_webhook_config(tunnel_url, webhook_id):
             'webhook_id': webhook_id,
             'last_updated': datetime.now().isoformat()
         }
-        os.makedirs(os.path.dirname(WEBHOOK_CONFIG_FILE), exist_ok=True)
+        WEBHOOK_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(WEBHOOK_CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
-        logger.info(f"✅ 保存 webhook 配置")
+        logger.info(f"✅ 已保存 webhook 配置")
     except Exception as e:
         logger.error(f"❌ 保存配置失敗: {e}")
 
 
-def update_github_webhook(tunnel_url):
-    """
-    使用 GitHub API 更新 webhook URL
-    需要環境變量 GITHUB_TOKEN
-    """
+def get_github_webhooks():
+    """使用 requests 獲取 GitHub webhook 列表"""
     if not GITHUB_TOKEN:
-        logger.warning("⚠️ 未設置 GITHUB_TOKEN，跳過 GitHub webhook 更新")
-        logger.info("💡 設置方法: export GITHUB_TOKEN='your_token'")
+        logger.warning("⚠️ GITHUB_TOKEN 未設置，無法獲取 webhook 列表")
+        return None
+    
+    url = f"{GITHUB_API_BASE}/repos/{REPO_OWNER}/{REPO_NAME}/hooks"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            logger.info(f"🔍 查詢 GitHub webhook 列表 (嘗試 {attempt + 1}/{RETRY_ATTEMPTS})...")
+            response = requests.get(url, headers=headers, timeout=GITHUB_API_TIMEOUT)
+            
+            logger.debug(f"HTTP 狀態碼: {response.status_code}")
+            
+            if response.status_code == 200:
+                webhooks = response.json()
+                logger.info(f"✅ 成功獲取 {len(webhooks)} 個 webhook")
+                return webhooks
+            
+            elif response.status_code == 401:
+                logger.error(f"❌ 認證失敗 (401): GitHub Token 無效或已過期")
+                return None
+            
+            elif response.status_code == 403:
+                logger.error(f"❌ 權限不足 (403): 檢查 GitHub Token 是否有 'repo_hook' 權限")
+                return None
+            
+            else:
+                logger.warning(f"⚠️ HTTP {response.status_code}: {response.text[:100]}")
+                if attempt < RETRY_ATTEMPTS - 1:
+                    logger.info(f"⏳ 稍後重試...")
+                    import time
+                    time.sleep(RETRY_DELAY)
+                    continue
+                return None
+        
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ 請求超時 (嘗試 {attempt + 1}/{RETRY_ATTEMPTS})")
+            if attempt < RETRY_ATTEMPTS - 1:
+                import time
+                time.sleep(RETRY_DELAY)
+        
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ 連接失敗 (嘗試 {attempt + 1}/{RETRY_ATTEMPTS}): {e}")
+            if attempt < RETRY_ATTEMPTS - 1:
+                import time
+                time.sleep(RETRY_DELAY)
+        
+        except Exception as e:
+            logger.error(f"❌ 未知錯誤 (嘗試 {attempt + 1}/{RETRY_ATTEMPTS}): {e}")
+            return None
+    
+    return None
+
+
+def find_webhook_id(webhooks):
+    """在 webhook 列表中查找目標 webhook ID"""
+    if not webhooks:
+        return None
+    
+    for hook in webhooks:
+        hook_url = hook.get('config', {}).get('url', '')
+        if WEBHOOK_ENDPOINT in hook_url:
+            webhook_id = hook.get('id')
+            logger.info(f"✅ 找到目標 webhook ID: {webhook_id}")
+            logger.debug(f"   現有 URL: {hook_url}")
+            return webhook_id
+    
+    logger.warning(f"⚠️ 未找到包含 '{WEBHOOK_ENDPOINT}' 的 webhook")
+    return None
+
+
+def update_github_webhook_url(tunnel_url, webhook_id):
+    """使用 requests 更新 GitHub webhook URL"""
+    if not webhook_id:
+        logger.warning("⚠️ webhook_id 為 None，跳過 GitHub webhook 更新")
         return False
     
-    webhook_url = f"{tunnel_url}{WEBHOOK_ENDPOINT}"
+    new_webhook_url = f"{tunnel_url}{WEBHOOK_ENDPOINT}"
+    url = f"{GITHUB_API_BASE}/repos/{REPO_OWNER}/{REPO_NAME}/hooks/{webhook_id}"
     
-    try:
-        # 1. 列出現有的 webhooks
-        logger.info("🔍 查詢現有 webhook...")
-        list_cmd = f"""
-        curl -s -H "Authorization: token {GITHUB_TOKEN}" \
-             -H "Accept: application/vnd.github.v3+json" \
-             https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks
-        """
-        result = subprocess.run(list_cmd, shell=True, capture_output=True, text=True, timeout=10)
-        webhooks = json.loads(result.stdout)
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    payload = {
+        "config": {
+            "url": new_webhook_url,
+            "content_type": "json",
+            "secret": GITHUB_WEBHOOK_SECRET
+        }
+    }
+    
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            logger.info(f"🔄 更新 GitHub webhook URL (嘗試 {attempt + 1}/{RETRY_ATTEMPTS})...")
+            logger.info(f"   新 URL: {new_webhook_url}")
+            
+            response = requests.patch(url, json=payload, headers=headers, timeout=GITHUB_API_TIMEOUT)
+            
+            logger.debug(f"HTTP 狀態碼: {response.status_code}")
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Webhook URL 已成功更新")
+                return True
+            
+            elif response.status_code == 404:
+                logger.error(f"❌ Webhook 未找到 (404): ID={webhook_id}")
+                return False
+            
+            elif response.status_code == 422:
+                logger.error(f"❌ 無效的 webhook 配置 (422): {response.json()}")
+                return False
+            
+            else:
+                logger.warning(f"⚠️ HTTP {response.status_code}: {response.text[:200]}")
+                if attempt < RETRY_ATTEMPTS - 1:
+                    logger.info(f"⏳ 稍後重試...")
+                    import time
+                    time.sleep(RETRY_DELAY)
+                    continue
+                return False
         
-        if not isinstance(webhooks, list):
-            logger.error(f"❌ GitHub API 返回錯誤: {webhooks}")
-            return False
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ 請求超時 (嘗試 {attempt + 1}/{RETRY_ATTEMPTS})")
+            if attempt < RETRY_ATTEMPTS - 1:
+                import time
+                time.sleep(RETRY_DELAY)
         
-        # 2. 查找包含 webhook/github 的 webhook
-        webhook_id = None
-        for hook in webhooks:
-            if WEBHOOK_ENDPOINT in hook.get('config', {}).get('url', ''):
-                webhook_id = hook.get('id')
-                old_url = hook.get('config', {}).get('url')
-                logger.info(f"✅ 找到 webhook ID: {webhook_id}")
-                logger.info(f"   舊 URL: {old_url}")
-                break
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ 連接失敗 (嘗試 {attempt + 1}/{RETRY_ATTEMPTS}): {e}")
+            if attempt < RETRY_ATTEMPTS - 1:
+                import time
+                time.sleep(RETRY_DELAY)
         
-        if not webhook_id:
-            logger.warning(f"⚠️ 找不到現有的 webhook，將跳過更新")
-            logger.info(f"💡 新 webhook URL 應該是: {webhook_url}")
-            return False
-        
-        # 3. 更新 webhook URL
-        logger.info(f"🔄 更新 webhook URL...")
-        update_cmd = f"""
-        curl -s -X PATCH \
-             -H "Authorization: token {GITHUB_TOKEN}" \
-             -H "Accept: application/vnd.github.v3+json" \
-             -d '{{"config": {{"url": "{webhook_url}", "content_type": "json", "secret": "{GITHUB_WEBHOOK_SECRET}"}}}}' \
-             https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks/{webhook_id}
-        """
-        result = subprocess.run(update_cmd, shell=True, capture_output=True, text=True, timeout=10)
-        response = json.loads(result.stdout)
-        
-        if response.get('id'):
-            logger.info(f"✅ webhook 已更新: {webhook_url}")
-            return True
-        else:
-            logger.error(f"❌ webhook 更新失敗: {response}")
+        except Exception as e:
+            logger.error(f"❌ 未知錯誤 (嘗試 {attempt + 1}/{RETRY_ATTEMPTS}): {e}")
             return False
     
-    except Exception as e:
-        logger.error(f"❌ 更新 GitHub webhook 失敗: {e}")
-        return False
+    return False
 
 
 def update_local_config(tunnel_url):
     """更新本地 config.json"""
     try:
-        config_file = Path('/home/e193752468/kkgroup/config/config.json')
+        if not CONFIG_FILE.exists():
+            logger.error(f"❌ config.json 不存在: {CONFIG_FILE}")
+            return False
         
-        with open(config_file, 'r') as f:
+        with open(CONFIG_FILE, 'r') as f:
             config = json.load(f)
         
         old_url = config.get('url')
@@ -176,14 +287,14 @@ def update_local_config(tunnel_url):
             return True
         
         logger.info(f"🔄 更新 config.json...")
-        logger.info(f"   舊: {old_url}")
-        logger.info(f"   新: {tunnel_url}")
+        logger.info(f"   舊 URL: {old_url}")
+        logger.info(f"   新 URL: {tunnel_url}")
         
         config['url'] = tunnel_url
         config['API_BASE'] = tunnel_url
         config['lastUpdated'] = datetime.now().isoformat()
         
-        with open(config_file, 'w') as f:
+        with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
         
         logger.info(f"✅ config.json 已更新")
@@ -196,47 +307,55 @@ def update_local_config(tunnel_url):
 
 def main():
     """主程序"""
-    logger.info("=" * 60)
-    logger.info("🔄 自動更新 GitHub Webhook")
-    logger.info("=" * 60)
+    logger.info("=" * 70)
+    logger.info("🔄 GitHub Webhook 自動更新 (Python requests 版本)")
+    logger.info("=" * 70)
     
     # 1. 獲取當前隧道 URL
     current_tunnel_url = get_current_tunnel_url()
     if not current_tunnel_url:
         logger.error("❌ 無法獲取當前隧道 URL，退出")
+        logger.info("💡 請檢查 cloudflared 服務狀態")
         return False
     
     # 2. 加載上次保存的配置
     saved_config = load_webhook_config()
     saved_tunnel_url = saved_config.get('tunnel_url')
+    saved_webhook_id = saved_config.get('webhook_id')
     
     # 3. 檢查是否有變化
     if current_tunnel_url == saved_tunnel_url:
-        logger.info(f"✅ 隧道 URL 無變化")
-    else:
-        logger.warning(f"⚠️ 隧道 URL 已變化！")
-        logger.warning(f"   舊: {saved_tunnel_url}")
-        logger.warning(f"   新: {current_tunnel_url}")
+        logger.info(f"✅ 隧道 URL 無變化，流程完成")
+        return True
     
-    # 4. 始終更新本地 config.json（即使 URL 無變化，也要確保配置同步）
+    logger.warning(f"⚠️ 隧道 URL 已變化！")
+    logger.warning(f"   舊: {saved_tunnel_url}")
+    logger.warning(f"   新: {current_tunnel_url}")
+    
+    # 4. 更新本地 config.json
     if not update_local_config(current_tunnel_url):
         logger.error("❌ 更新本地配置失敗")
         return False
     
-    # 5. 僅在 URL 變化時才更新 GitHub webhook
-    if current_tunnel_url != saved_tunnel_url:
-        if GITHUB_TOKEN:
-            if update_github_webhook(current_tunnel_url):
-                logger.info("✅ GitHub webhook 已更新")
+    # 5. 更新 GitHub webhook
+    if GITHUB_TOKEN:
+        webhooks = get_github_webhooks()
+        if webhooks:
+            webhook_id = find_webhook_id(webhooks) or saved_webhook_id
+            
+            if update_github_webhook_url(current_tunnel_url, webhook_id):
+                logger.info("✅ GitHub webhook 已成功更新")
+                save_webhook_config(current_tunnel_url, webhook_id)
             else:
                 logger.warning("⚠️ GitHub webhook 更新失敗，但本地配置已更新")
+        else:
+            logger.warning("⚠️ 無法獲取 GitHub webhook 列表，但本地配置已更新")
+    else:
+        logger.warning("⚠️ GITHUB_TOKEN 未設置，跳過 GitHub webhook 更新")
     
-    # 6. 保存新配置
-    save_webhook_config(current_tunnel_url, saved_config.get('webhook_id'))
-    
-    logger.info("=" * 60)
-    logger.info("✅ 自動更新完成")
-    logger.info("=" * 60)
+    logger.info("=" * 70)
+    logger.info("✅ 自動更新流程完成")
+    logger.info("=" * 70)
     return True
 
 
