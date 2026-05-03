@@ -1883,36 +1883,34 @@ class AnimeTracker(commands.Cog):
                 self.bootstrap_completed = True
                 return
             
-            # 只在預定時刻 +5 分鐘時執行一次
-            for scheduled_dt in expected_times:
-                try:
-                    scheduled_time_str = scheduled_dt.strftime("%H:%M")
-                    scheduled_date = scheduled_dt.date()
-                    
-                    # 計算距離預定時刻的時間差
-                    time_diff_min = (now - scheduled_dt).total_seconds() / 60
-                    
-                    # 只在 +4 到 +6 分鐘時執行一次（5 分鐘檢查周期的容差）
-                    if not (4 <= time_diff_min <= 6):
-                        continue
-                    
+            # 找到最近的下一個預定時刻（只執行一次）
+            next_scheduled = None
+            for dt in expected_times:
+                if dt > now:
+                    next_scheduled = dt
+                    break
+            
+            # 如果沒有未來的時刻，檢查當天最後一個已過的時刻
+            if not next_scheduled and expected_times:
+                next_scheduled = expected_times[-1]
+            
+            if next_scheduled:
+                scheduled_time_str = next_scheduled.strftime("%H:%M")
+                scheduled_date = next_scheduled.date()
+                
+                # 計算距離預定時刻的時間差
+                time_diff_min = (now - next_scheduled).total_seconds() / 60
+                
+                # 只在 +4 到 +6 分鐘時執行一次（5 分鐘檢查周期的容差）
+                if 4 <= time_diff_min <= 6:
                     # 防止重複檢查
-                    try:
-                        if self.db.is_time_checked_today(scheduled_time_str, scheduled_date):
-                            continue
-                    except Exception as db_err:
-                        logger.error(f"資料庫查詢失敗: {db_err}", exc_info=True)
-                        continue
-                    
-                    # 執行檢查
-                    try:
-                        await self._check_and_send_anime(scheduled_time_str, channel)
-                        self.db.mark_time_checked(scheduled_time_str, scheduled_date)
-                        logger.info(f"檢查完成: {scheduled_time_str}")
-                    except Exception as check_err:
-                        logger.error(f"檢查失敗: {check_err}", exc_info=True)
-                except Exception as e:
-                    logger.error(f"處理時刻異常: {e}", exc_info=True)
+                    if not self.db.is_time_checked_today(scheduled_time_str, scheduled_date):
+                        try:
+                            await self._check_and_send_anime(scheduled_time_str, channel)
+                            self.db.mark_time_checked(scheduled_time_str, scheduled_date)
+                            logger.info(f"檢查完成: {scheduled_time_str}")
+                        except Exception as e:
+                            logger.error(f"檢查失敗: {e}", exc_info=True)
         
         except Exception as e:
             logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
