@@ -1872,33 +1872,8 @@ class AnimeTracker(commands.Cog):
         sys.stdout.flush()
         
         try:
-            # 調試：添加文件日誌來避免亂碼
-            now_str = now.strftime('%H:%M:%S')
-            debug_log_path = "/tmp/anime_debug.log"
-            try:
-                with open(debug_log_path, "a", encoding="utf-8") as debug_file:
-                    debug_file.write(f"[{now_str}] === check_new_anime 任務啟動 ===\n")
-                    debug_file.flush()
-            except Exception as file_err:
-                logger.warning(f"無法寫入調試日誌: {file_err}")
-            
-            # 獲取日程表 - 添加調試日誌
-            logger.info("[check_new_anime] 準備調用 _get_anime_schedule()...")
-            print("[DEBUG] 準備調用 _get_anime_schedule()...", flush=True)
-            
+            # 獲取日程表
             schedule = await self._get_anime_schedule()
-            
-            logger.info(f"[check_new_anime] _get_anime_schedule() 返回: {type(schedule)}, 長度={len(schedule) if schedule else 0}")
-            print(f"[DEBUG] _get_anime_schedule() 返回: {type(schedule)}, 長度={len(schedule) if schedule else 0}", flush=True)
-            
-            # 寫入文件日誌
-            try:
-                with open(debug_log_path, "a", encoding="utf-8") as debug_file:
-                    debug_file.write(f"[{now_str}] API 返回成功，長度={len(schedule)}\n")
-                    debug_file.flush()
-            except:
-                pass
-            
             if not schedule:
                 logger.warning(f"⚠️ [check_new_anime] 無法獲取日程表 (schedule 為空或 API 失敗)")
                 return
@@ -1906,53 +1881,21 @@ class AnimeTracker(commands.Cog):
             logger.info(f"📺 [check_new_anime] 成功獲取日程表，共 {len(schedule)} 個日期")
             
             # 獲取今日的預期檢查時刻
-            print("[DEBUG] 準備調用 _get_expected_check_times()...", flush=True)
             expected_times = self._get_expected_check_times(schedule, now)
-            print(f"[DEBUG] _get_expected_check_times() 返回: {len(expected_times)} 個時刻", flush=True)
-            
-            try:
-                with open(debug_log_path, "a", encoding="utf-8") as debug_file:
-                    debug_file.write(f"[{now_str}] 預期時刻數: {len(expected_times)}\n")
-                    debug_file.flush()
-            except:
-                pass
-            
             if not expected_times:
                 logger.warning(f"⚠️ [check_new_anime] 沒有找到預期檢查時刻")
-                print("[DEBUG] 沒有預期時刻，退出", flush=True)
-                try:
-                    with open(debug_log_path, "a", encoding="utf-8") as debug_file:
-                        debug_file.write(f"[{now_str}] 無預期時刻，退出\n")
-                        debug_file.flush()
-                except:
-                    pass
                 return
             
             logger.info(f"📺 [check_new_anime] 今日/明日預期時刻: {len(expected_times)} 個")
-            print(f"[DEBUG] 預期時刻數: {len(expected_times)}", flush=True)
             
             # 取得頻道
-            print(f"[DEBUG] 準備取得頻道 ID={ANIME_CHANNEL_ID}...", flush=True)
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-            print(f"[DEBUG] 頻道獲取完成: {channel is not None}", flush=True)
             if not channel:
                 logger.error(f"❌ [check_new_anime] 動畫頻道 {ANIME_CHANNEL_ID} 未找到")
                 return
-            print(f"[DEBUG] 頻道成功取得: {channel.name}", flush=True)
             
             # 檢查 Bootstrap 狀態
-            print("[DEBUG] 準備檢查 Bootstrap 狀態...", flush=True)
             bootstrap_status = self.db.is_bootstrap_completed()
-            print(f"[DEBUG] Bootstrap 狀態: {bootstrap_status}", flush=True)
-            logger.info(f"✅ [check_new_anime] Bootstrap 狀態已檢查: {bootstrap_status}")
-            
-            try:
-                with open(debug_log_path, "a", encoding="utf-8") as debug_file:
-                    debug_file.write(f"[{now_str}] Bootstrap 已檢查: {bootstrap_status}\n")
-                    debug_file.flush()
-            except:
-                pass
-            
             if not bootstrap_status:
                 # 首次運行：Bootstrap
                 logger.info("🚀 [check_new_anime] 首次運行，執行 bootstrap...")
@@ -1966,13 +1909,6 @@ class AnimeTracker(commands.Cog):
                 return
             
             # 對於每個預期時刻，檢查是否在 +3~+32 分鐘窗口內
-            print(f"[DEBUG] 開始檢查 {len(expected_times)} 個預期時刻的窗口...", flush=True)
-            try:
-                with open(debug_log_path, "a", encoding="utf-8") as debug_file:
-                    debug_file.write(f"[{now_str}] 開始檢查迴圈 ({len(expected_times)} 個時刻)\n")
-                    debug_file.flush()
-            except:
-                pass
             for scheduled_dt in expected_times:
                 try:
                     scheduled_time_str = scheduled_dt.strftime("%H:%M")
@@ -2028,12 +1964,6 @@ class AnimeTracker(commands.Cog):
         
         except Exception as e:
             logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
-            try:
-                with open(debug_log_path, "a", encoding="utf-8") as debug_file:
-                    debug_file.write(f"[{now_str}] === 異常發生 ===\n{str(e)}\n")
-                    debug_file.flush()
-            except:
-                pass
     
     @check_new_anime.before_loop
     async def before_check_new_anime(self):
