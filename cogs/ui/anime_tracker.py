@@ -1862,10 +1862,14 @@ class AnimeTracker(commands.Cog):
         3. 每個預定時刻的動畫只會戳一次 API（效率優先）
         4. 每分鐘運行一次，在目標窗口內執行檢查
         """
+        import sys
         now = datetime.now(TW_TZ)
         
         # 心跳日誌：每分鐘輸出一次，便於監控任務是否還在運行
-        logger.info(f"💓 [check_new_anime] 心跳 - {now.strftime('%Y-%m-%d %H:%M:%S')}")
+        heartbeat_msg = f"💓 [check_new_anime] 心跳 - {now.strftime('%Y-%m-%d %H:%M:%S')}"
+        logger.info(heartbeat_msg)
+        print(f"[TASK_HEARTBEAT] {heartbeat_msg}", flush=True)
+        sys.stdout.flush()
         
         try:
             # 獲取日程表
