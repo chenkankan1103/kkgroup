@@ -471,22 +471,6 @@ async def on_ready():
             
             success_setup = f"[SETUP] setup_modules() completed, loaded {len(loaded_extensions)} extensions"
             file_log(success_setup)
-            
-            # ⭐ 額外加載 ui cogs（包括 AnimeTracker）
-            try:
-                file_log("[SETUP] 準備加載 ui cogs...")
-                ui_extensions = await find_and_load_extensions(
-                    os.path.join(os.path.dirname(__file__), "../cogs/ui"),
-                    "cogs.ui",
-                    client
-                )
-                file_log(f"[SETUP] 成功加載 {len(ui_extensions)} 個 ui 擴展: {ui_extensions}")
-            except Exception as ui_err:
-                file_log(f"[SETUP] ❌ ui cogs 加載失敗: {ui_err}")
-                import traceback
-                traceback.print_exc()
-                # 不中斷流程，繼續執行其他初始化
-            
         except Exception as e:
             error_setup = f"[SETUP] ❌ setup_modules() failed: {e}"
             file_log(error_setup)
