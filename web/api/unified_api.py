@@ -195,6 +195,18 @@ def serve_web_portal(filename):
 @app.errorhandler(Exception)
 def handle_exception(e):
     """捕捉所有未處理的異常，返回 JSON"""
+    from werkzeug.exceptions import HTTPException
+    
+    # HTTP 異常（如 405 Method Not Allowed）應該返回原狀態碼而不是 500
+    if isinstance(e, HTTPException):
+        return jsonify({
+            "status": "error",
+            "message": e.description,
+            "error_code": e.code,
+            "timestamp": datetime.now().isoformat()
+        }), e.code
+    
+    # 其他異常才返回 500
     logger.error(f"❌ 未捕捉的異常: {e}")
     import traceback
     logger.error(traceback.format_exc())
