@@ -1226,10 +1226,22 @@ class AnimeTracker(commands.Cog):
             if not self.check_new_anime.is_running():
                 print("[COG_LOAD] ✅ 啟動 check_new_anime 任務", flush=True)
                 logger.info("🚀 [AnimeTracker.cog_load] 啟動 check_new_anime 任務")
-                self.check_new_anime.start()
-                print("[COG_LOAD] ✅ check_new_anime 已啟動", flush=True)
-                logger.info("✅ [AnimeTracker.cog_load] check_new_anime 已啟動")
+                try:
+                    self.check_new_anime.start()
+                    logger.info(f"✅ [AnimeTracker.cog_load] check_new_anime 已啟動 (is_running={self.check_new_anime.is_running()})")
+                    print("[COG_LOAD] ✅ check_new_anime 已啟動", flush=True)
+                except Exception as start_err:
+                    logger.error(f"❌ [AnimeTracker.cog_load] 啟動 check_new_anime 失敗: {start_err}", exc_info=True)
+                    # 重試一次
+                    try:
+                        await asyncio.sleep(1)
+                        logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 check_new_anime...")
+                        self.check_new_anime.start()
+                        logger.info("✅ [AnimeTracker.cog_load] 重試成功，check_new_anime 已啟動")
+                    except Exception as retry_err:
+                        logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
             else:
+                logger.info(f"⏭️  [AnimeTracker.cog_load] check_new_anime 已在運行 (is_running=True)")
                 print("[COG_LOAD] ⚠️ check_new_anime 已在運行", flush=True)
             
             # 啟動週統計任務
@@ -1237,10 +1249,22 @@ class AnimeTracker(commands.Cog):
             if not self.send_weekly_stats.is_running():
                 print("[COG_LOAD] ✅ 啟動 send_weekly_stats 任務", flush=True)
                 logger.info("🚀 [AnimeTracker.cog_load] 啟動 send_weekly_stats 任務")
-                self.send_weekly_stats.start()
-                print("[COG_LOAD] ✅ send_weekly_stats 已啟動", flush=True)
-                logger.info("✅ [AnimeTracker.cog_load] send_weekly_stats 已啟動")
+                try:
+                    self.send_weekly_stats.start()
+                    logger.info(f"✅ [AnimeTracker.cog_load] send_weekly_stats 已啟動 (is_running={self.send_weekly_stats.is_running()})")
+                    print("[COG_LOAD] ✅ send_weekly_stats 已啟動", flush=True)
+                except Exception as start_err:
+                    logger.error(f"❌ [AnimeTracker.cog_load] 啟動 send_weekly_stats 失敗: {start_err}", exc_info=True)
+                    # 重試一次
+                    try:
+                        await asyncio.sleep(1)
+                        logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 send_weekly_stats...")
+                        self.send_weekly_stats.start()
+                        logger.info("✅ [AnimeTracker.cog_load] 重試成功，send_weekly_stats 已啟動")
+                    except Exception as retry_err:
+                        logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
             else:
+                logger.info(f"⏭️  [AnimeTracker.cog_load] send_weekly_stats 已在運行 (is_running=True)")
                 print("[COG_LOAD] ⚠️ send_weekly_stats 已在運行", flush=True)
             
             print("[COG_LOAD_END] ✅ cog_load() 執行完成", flush=True)
@@ -1818,6 +1842,9 @@ class AnimeTracker(commands.Cog):
         """
         now = datetime.now(TW_TZ)
         
+        # 心跳日誌：每分鐘輸出一次，便於監控任務是否還在運行
+        logger.info(f"💓 [check_new_anime] 心跳 - {now.strftime('%Y-%m-%d %H:%M:%S')}")
+        
         try:
             # 獲取日程表
             schedule = await self._get_anime_schedule()
@@ -1877,6 +1904,7 @@ class AnimeTracker(commands.Cog):
                         except Exception as db_err:
                             logger.error(f"❌ [check_new_anime] 資料庫查詢失敗: {db_err}", exc_info=True)
                             already_checked = False  # 發生錯誤時，假設未檢查過（允許重試）
+                            continue  # 跳過本次檢查，防止數據庫問題堆積
                         
                         if already_checked:
                             logger.info(f"⏭️  [{scheduled_time_str}] 已在 {scheduled_date} 檢查過，跳過")
@@ -1900,6 +1928,7 @@ class AnimeTracker(commands.Cog):
                                 logger.warning(f"⚠️ [check_new_anime] 標記時刻失敗（無行被插入）: {scheduled_time_str}")
                         except Exception as mark_err:
                             logger.error(f"❌ [check_new_anime] 標記時刻異常: {mark_err}", exc_info=True)
+                            # 不re-raise，允許下次重試
                     else:
                         # 時間不在窗口內，只記錄（不要 continue，讓其他時刻也能被檢查）
                         logger.debug(f"⏭️  [{scheduled_time_str}] 時間差 {time_diff_min:.1f} 分鐘不在窗口內")
@@ -1915,6 +1944,22 @@ class AnimeTracker(commands.Cog):
         """等待 bot 就緒才開始檢查動畫"""
         await self.bot.wait_until_ready()
         logger.info("✅ [check_new_anime] Bot 已就緒，開始檢查新番")
+    
+    @check_new_anime.error
+    async def check_new_anime_error(self, error):
+        """處理 check_new_anime 任務的異常"""
+        logger.error(f"❌ [check_new_anime] 任務異常: {error}", exc_info=True)
+        logger.warning(f"⚠️ [check_new_anime] 嘗試重啟任務...")
+        
+        # 短暫延遲後重新啟動任務
+        try:
+            await asyncio.sleep(5)
+            if not self.check_new_anime.is_running():
+                logger.info(f"🔄 [check_new_anime] 重新啟動任務...")
+                self.check_new_anime.restart()
+                logger.info(f"✅ [check_new_anime] 任務已重新啟動")
+        except Exception as restart_error:
+            logger.error(f"❌ [check_new_anime] 重啟失敗: {restart_error}", exc_info=True)
     
     async def _check_and_send_anime(self, scheduled_time_str: str, channel) -> bool:
         """
@@ -1937,9 +1982,13 @@ class AnimeTracker(commands.Cog):
             # 檢查新集
             new_episodes = []
             for ep in episodes:
-                video_sn = ep.get("videoSn")
-                if video_sn and not self.db.is_notified(video_sn):
-                    new_episodes.append(ep)
+                try:
+                    video_sn = ep.get("videoSn")
+                    if video_sn and not self.db.is_notified(video_sn):
+                        new_episodes.append(ep)
+                except Exception as check_err:
+                    logger.error(f"❌ [_check_and_send_anime] 檢查集 {ep.get('videoSn')} 時異常: {check_err}", exc_info=True)
+                    continue
             
             if not new_episodes:
                 logger.info(f"⏭️  [{scheduled_time_str}] 沒有新集")
@@ -1947,6 +1996,8 @@ class AnimeTracker(commands.Cog):
             
             # 發送新集通知
             logger.info(f"🆕 [{scheduled_time_str}] 發現 {len(new_episodes)} 個新集，開始推播...")
+            sent_count = 0
+            
             for ep in new_episodes:
                 try:
                     embed = await self.generate_anime_embed(ep)
@@ -1965,32 +2016,43 @@ class AnimeTracker(commands.Cog):
                     logger.info(f"✅ [_check_and_send_anime] 消息已發送 (message_id={message.id}, video_sn={ep.get('videoSn')})")
                     
                     # 💾 保存消息 ID 以用於 bot 重啟時恢復 view
-                    self.db.save_message_info(
-                        message_id=message.id,
-                        video_sn=ep.get("videoSn"),
-                        anime_sn=ep.get("animeSn"),
-                        anime_name=ep.get("title", "Unknown"),
-                        channel_id=channel.id
-                    )
-                    logger.info(f"💾 [_check_and_send_anime] 消息 ID 已保存到數據庫")
+                    try:
+                        self.db.save_message_info(
+                            message_id=message.id,
+                            video_sn=ep.get("videoSn"),
+                            anime_sn=ep.get("animeSn"),
+                            anime_name=ep.get("title", "Unknown"),
+                            channel_id=channel.id
+                        )
+                        logger.info(f"💾 [_check_and_send_anime] 消息 ID 已保存到數據庫")
+                    except Exception as db_save_err:
+                        logger.error(f"❌ [_check_and_send_anime] 保存消息 ID 失敗: {db_save_err}", exc_info=True)
+                        # 不中斷流程，消息已發送，只是記錄失敗
                     
                     # 記錄已通知
-                    self.db.add_notified(
-                        video_sn=ep.get("videoSn"),
-                        anime_sn=ep.get("animeSn"),
-                        anime_name=ep.get("title", "Unknown"),
-                        volume=ep.get("volume", ""),
-                        cover_url=ep.get("cover", "")
-                    )
+                    try:
+                        self.db.add_notified(
+                            video_sn=ep.get("videoSn"),
+                            anime_sn=ep.get("animeSn"),
+                            anime_name=ep.get("title", "Unknown"),
+                            volume=ep.get("volume", ""),
+                            cover_url=ep.get("cover", "")
+                        )
+                    except Exception as db_notify_err:
+                        logger.error(f"❌ [_check_and_send_anime] 記錄已通知失敗: {db_notify_err}", exc_info=True)
+                        # 不中斷流程，消息已發送，只是記錄失敗
                     
+                    sent_count += 1
                     # 避免 Discord 限流
                     await asyncio.sleep(0.2)
-                except Exception as e:
-                    logger.error(f"❌ Error sending anime embed for {scheduled_time_str}: {e}")
+                    
+                except Exception as send_err:
+                    logger.error(f"❌ [_check_and_send_anime] 發送集異常 (video_sn={ep.get('videoSn')}): {send_err}", exc_info=True)
                     await asyncio.sleep(1)
+                    continue  # 繼續發送其他集
             
-            logger.info(f"✅ [{scheduled_time_str}] 推播完成")
-            return True
+            logger.info(f"✅ [{scheduled_time_str}] 推播完成 (發送 {sent_count}/{len(new_episodes)} 集)")
+            return sent_count > 0
         
         except Exception as e:
             logger.error(f"❌ Error in _check_and_send_anime: {e}", exc_info=True)
@@ -2162,6 +2224,22 @@ class AnimeTracker(commands.Cog):
                 logger.info("🚀 [before_send_weekly_stats] 週統計任務已啟動")
             except Exception as e:
                 logger.error(f"❌ [before_send_weekly_stats] 啟動任務失敗: {e}", exc_info=True)
+    
+    @send_weekly_stats.error
+    async def send_weekly_stats_error(self, error):
+        """處理 send_weekly_stats 任務的異常"""
+        logger.error(f"❌ [send_weekly_stats] 任務異常: {error}", exc_info=True)
+        logger.warning(f"⚠️ [send_weekly_stats] 嘗試重啟任務...")
+        
+        # 短暫延遲後重新啟動任務
+        try:
+            await asyncio.sleep(5)
+            if not self.send_weekly_stats.is_running():
+                logger.info(f"🔄 [send_weekly_stats] 重新啟動任務...")
+                self.send_weekly_stats.restart()
+                logger.info(f"✅ [send_weekly_stats] 任務已重新啟動")
+        except Exception as restart_error:
+            logger.error(f"❌ [send_weekly_stats] 重啟失敗: {restart_error}", exc_info=True)
 
     @app_commands.command(name="anime_test", description="測試動畫通知 - 顯示最近的動畫集")
     async def anime_test(self, interaction: discord.Interaction):
