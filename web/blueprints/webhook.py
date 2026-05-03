@@ -357,6 +357,14 @@ def notify_discord(title, description, color, details=None):
 # Webhook 路由
 # ============================================================
 
+@webhook_bp.route('/github', methods=['HEAD', 'OPTIONS'])
+def github_webhook_head():
+    """
+    允許 HEAD 和 OPTIONS 請求用於 webhook 連線測試和 CORS 預檢
+    """
+    return '', 200
+
+
 @webhook_bp.route('/github', methods=['POST'])
 def github_webhook():
     """
