@@ -11,7 +11,6 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import logging
-import requests
 import base64
 from urllib.parse import unquote
 
@@ -78,76 +77,6 @@ logger.info(f"  - Game API (紙娃娃 RPG)")
 # ============================================================
 # 網頁遊戲服務 (必須在 Blueprint 之後、404 handler 之前)
 # ============================================================
-
-@app.route('/api/proxy/paperdoll', methods=['GET'])
-def proxy_paperdoll():
-    """
-    紙娃娃 API 代理端點
-    解決 Discord 無法加載 MapleStory API 圖片的問題
-    
-    原因：MapleStory API 要求 User-Agent header，Discord 沒有發送
-    解決：我們充當代理，轉發請求並添加 User-Agent header
-    
-    使用方法：
-    - 生成 MapleStory API URL
-    - Base64 編碼該 URL
-    - 訪問 /api/proxy/paperdoll?url=<base64_url>
-    - Discord 加載此代理 URL，獲取圖片
-    
-    無額外出站流量（只是轉發），無下載/上傳浪費
-    """
-    try:
-        encoded_url = request.args.get('url', '')
-        if not encoded_url:
-            return jsonify({'error': '缺少 url 參數'}), 400
-        
-        # 解碼 URL
-        try:
-            decoded_url = base64.b64decode(encoded_url).decode('utf-8')
-        except Exception as e:
-            logger.error(f"❌ Base64 解碼失敗: {e}")
-            return jsonify({'error': 'Base64 解碼失敗'}), 400
-        
-        # 驗證 URL 來自 MapleStory API
-        if not decoded_url.startswith('https://maplestory.io/'):
-            logger.warning(f"⚠️ 拒絕非 MapleStory API 的 URL: {decoded_url[:50]}")
-            return jsonify({'error': '只接受 MapleStory API 的 URL'}), 400
-        
-        logger.info(f"🔄 代理紙娃娃請求: {decoded_url[:80]}...")
-        
-        # 轉發到 MapleStory API，添加 User-Agent header
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        response = requests.get(decoded_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        # 驗證是圖片內容
-        content_type = response.headers.get('content-type', '')
-        if not content_type.startswith('image/'):
-            logger.error(f"❌ 非圖片內容類型: {content_type}")
-            return jsonify({'error': '非圖片內容'}), 400
-        
-        # 返回圖片給 Discord，帶有緩存控制
-        return Response(
-            response.content,
-            content_type=content_type,
-            headers={
-                'Cache-Control': 'public, max-age=86400',  # 緩存 1 天
-                'Access-Control-Allow-Origin': '*'
-            }
-        )
-        
-    except requests.Timeout:
-        logger.error(f"❌ MapleStory API 超時")
-        return jsonify({'error': 'API 超時'}), 504
-    except requests.RequestException as e:
-        logger.error(f"❌ 代理請求失敗: {e}")
-        return jsonify({'error': f'代理失敗: {str(e)[:100]}'}), 502
-    except Exception as e:
-        logger.error(f"❌ 代理錯誤: {e}")
-        return jsonify({'error': f'代理錯誤: {str(e)[:100]}'}), 500
 
 @app.route('/rpg-game', methods=['GET'])
 @app.route('/rpg-game.html', methods=['GET'])
