@@ -1851,25 +1851,18 @@ class AnimeTracker(commands.Cog):
         
         return vote_view if vote_view.children else None
     
-    @tasks.loop(minutes=1)  # 臨時恢復：每分鐘檢查，但邏輯上只在特定分鐘點執行
+    @tasks.loop(minutes=5)
     async def check_new_anime(self):
         """
-        單一窗口檢查新番 - 在預定時刻 +3~+32 分鐘窗口檢查一次
+        每 5 分鐘檢查一次新番 - 在預定時刻 +3~+32 分鐘窗口檢查
         
         工作流程：
         1. 獲取 newAnimeSchedule 與預期檢查時刻
         2. 對於每個預期時刻，在 +3~+32 分鐘窗口進行檢查
         3. 每個預定時刻的動畫只會戳一次 API（效率優先）
-        4. 每分鐘運行一次，在目標窗口內執行檢查
+        4. 每 5 分鐘運行一次，檢查是否在目標窗口內
         """
-        import sys
         now = datetime.now(TW_TZ)
-        
-        # 心跳日誌：每分鐘輸出一次，便於監控任務是否還在運行
-        heartbeat_msg = f"💓 [check_new_anime] 心跳 - {now.strftime('%Y-%m-%d %H:%M:%S')}"
-        logger.info(heartbeat_msg)
-        print(f"[TASK_HEARTBEAT] {heartbeat_msg}", flush=True)
-        sys.stdout.flush()
         
         try:
             # 獲取日程表
@@ -1878,15 +1871,11 @@ class AnimeTracker(commands.Cog):
                 logger.warning(f"⚠️ [check_new_anime] 無法獲取日程表 (schedule 為空或 API 失敗)")
                 return
             
-            logger.info(f"📺 [check_new_anime] 成功獲取日程表，共 {len(schedule)} 個日期")
-            
             # 獲取今日的預期檢查時刻
             expected_times = self._get_expected_check_times(schedule, now)
             if not expected_times:
                 logger.warning(f"⚠️ [check_new_anime] 沒有找到預期檢查時刻")
                 return
-            
-            logger.info(f"📺 [check_new_anime] 今日/明日預期時刻: {len(expected_times)} 個")
             
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
