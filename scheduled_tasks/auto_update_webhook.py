@@ -58,35 +58,50 @@ RETRY_DELAY = 1  # 秒
 def get_current_tunnel_url():
     """從 cloudflared 日誌提取當前隧道 URL (改進版本)"""
     try:
-        # 使用 Python subprocess 而不是複雜的 shell 管道
+        # 使用 shell 命令方式，提高兼容性
+        cmd = 'sudo journalctl -u cloudflared.service -n 100 --no-pager | grep -o "https://[a-z0-9\\-]*\\.trycloudflare\\.com" | tail -1'
         result = subprocess.run(
-            ['sudo', 'journalctl', '-u', 'cloudflared.service', '-n', '50', '--no-pager'],
+            cmd,
+            shell=True,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=15,
             check=False
         )
         
-        if result.returncode != 0:
-            logger.error(f"❌ journalctl 執行失敗: {result.stderr}")
-            return None
+        url = result.stdout.strip() if result.stdout else None
         
-        # 從日誌中解析 URL
-        for line in reversed(result.stdout.split('\n')):
-            if 'trycloudflare.com' in line:
-                # 提取 URL
+        if url and 'trycloudflare.com' in url:
+            logger.info(f"✅ 當前隧道 URL: {url}")
+            return url
+        
+        # 備用方法：從 cloudflared 配置文件尋找 URL
+        logger.warning("⚠️ 從日誌解析失敗，嘗試備用方法...")
+        try:
+            result2 = subprocess.run(
+                'cat /root/.cloudflared/*.json 2>/dev/null || cat ~/.cloudflared/*.json 2>/dev/null || echo ""',
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False
+            )
+            
+            if result2.stdout:
                 import re
-                match = re.search(r'https://[a-z0-9\-]+\.trycloudflare\.com', line)
+                match = re.search(r'"url":"(https://[a-z0-9\-]+\.trycloudflare\.com)"', result2.stdout)
                 if match:
-                    url = match.group(0)
-                    logger.info(f"✅ 當前隧道 URL: {url}")
+                    url = match.group(1)
+                    logger.info(f"✅ 從配置文件獲取隧道 URL: {url}")
                     return url
+        except:
+            pass
         
-        logger.warning("⚠️ 日誌中未找到隧道 URL")
+        logger.error("❌ 無法獲取隧道 URL")
         return None
         
     except subprocess.TimeoutExpired:
-        logger.error("❌ journalctl 命令超時")
+        logger.error("❌ 命令執行超時（超過 15 秒）")
         return None
     except Exception as e:
         logger.error(f"❌ 提取隧道 URL 失敗: {e}")
