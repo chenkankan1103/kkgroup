@@ -457,14 +457,27 @@ def github_webhook():
         logger.info("🚀 開始執行自動部署流程...")
         log_audit(client_ip, 'ALLOWED', f'開始部署 {branch_name}', payload_info)
         
-        # [TEST MODE] 跳過 git pull，只記錄
-        logger.info("⏭️ [TEST MODE] 跳過 git pull 執行，僅驗證 webhook 觸發")
-        pull_success = True
-        pull_msg = "[TEST MODE] Webhook 已觸發，已跳過 git pull"
+        # 執行更新和重啟
+        pull_success, pull_msg = execute_git_pull()
         
-        # 也跳過服務重啟
-        restart_success = True
-        restart_msg = "[TEST MODE] 已跳過服務重啟"
+        if not pull_success:
+            logger.error(f"❌ 部署失敗: {pull_msg}")
+            log_audit(client_ip, 'REJECTED', f'Git pull 失敗: {pull_msg}', payload_info)
+            # 發送失敗通知（在後臺線程中）
+            notify_discord(
+                "❌ GitHub Webhook 部署失敗",
+                f"Git pull 失敗: {pull_msg}",
+                0xFF0000,
+                {"錯誤": pull_msg}
+            )
+            return jsonify({
+                "status": "error",
+                "message": "Git pull 失敗",
+                "details": pull_msg
+            }), 500
+        
+        # Git pull 成功，重啟服務
+        restart_success, restart_msg = restart_services()
         
         if restart_success:
             logger.info("✅ 部署成功！所有服務已重啟")
