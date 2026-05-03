@@ -1213,13 +1213,19 @@ class AnimeTracker(commands.Cog):
     
     async def cog_load(self):
         """Cog 加載時啟動任務"""
+        import sys
         print("[COG_LOAD_START] 🎬 cog_load() 開始執行", flush=True)
+        sys.stdout.flush()
+        
         logger.info("=" * 50)
         logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
+        
         try:
             # 恢復舊消息的視圖 - 在 bot 重啟時重新註冊所有永久視圖
             # 這樣舊消息上的按鈕在重啟後仍然可以交互
+            print("[COG_LOAD] 嘗試恢復舊消息 view...", flush=True)
             await self._restore_old_message_views()
+            print("[COG_LOAD] ✅ 舊消息 view 恢復完成", flush=True)
             
             # 啟動動畫檢查任務
             print("[COG_LOAD] 檢查 check_new_anime 任務狀態", flush=True)
@@ -1232,14 +1238,17 @@ class AnimeTracker(commands.Cog):
                     print("[COG_LOAD] ✅ check_new_anime 已啟動", flush=True)
                 except Exception as start_err:
                     logger.error(f"❌ [AnimeTracker.cog_load] 啟動 check_new_anime 失敗: {start_err}", exc_info=True)
+                    print(f"[COG_LOAD] ❌ 啟動 check_new_anime 失敗: {start_err}", flush=True)
                     # 重試一次
                     try:
                         await asyncio.sleep(1)
                         logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 check_new_anime...")
                         self.check_new_anime.start()
                         logger.info("✅ [AnimeTracker.cog_load] 重試成功，check_new_anime 已啟動")
+                        print("[COG_LOAD] ✅ 重試成功，check_new_anime 已啟動", flush=True)
                     except Exception as retry_err:
                         logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
+                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
             else:
                 logger.info(f"⏭️  [AnimeTracker.cog_load] check_new_anime 已在運行 (is_running=True)")
                 print("[COG_LOAD] ⚠️ check_new_anime 已在運行", flush=True)
@@ -1255,19 +1264,32 @@ class AnimeTracker(commands.Cog):
                     print("[COG_LOAD] ✅ send_weekly_stats 已啟動", flush=True)
                 except Exception as start_err:
                     logger.error(f"❌ [AnimeTracker.cog_load] 啟動 send_weekly_stats 失敗: {start_err}", exc_info=True)
+                    print(f"[COG_LOAD] ❌ 啟動 send_weekly_stats 失敗: {start_err}", flush=True)
                     # 重試一次
                     try:
                         await asyncio.sleep(1)
                         logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 send_weekly_stats...")
                         self.send_weekly_stats.start()
                         logger.info("✅ [AnimeTracker.cog_load] 重試成功，send_weekly_stats 已啟動")
+                        print("[COG_LOAD] ✅ 重試成功，send_weekly_stats 已啟動", flush=True)
                     except Exception as retry_err:
                         logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
+                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
             else:
                 logger.info(f"⏭️  [AnimeTracker.cog_load] send_weekly_stats 已在運行 (is_running=True)")
                 print("[COG_LOAD] ⚠️ send_weekly_stats 已在運行", flush=True)
             
             print("[COG_LOAD_END] ✅ cog_load() 執行完成", flush=True)
+            sys.stdout.flush()
+            logger.info("✅ [AnimeTracker.cog_load] 任務啟動完成")
+        
+        except Exception as cog_load_error:
+            import traceback
+            error_msg = f"❌ [cog_load] 執行失敗: {cog_load_error}"
+            print(f"[COG_LOAD_ERROR] {error_msg}", flush=True)
+            print(f"[COG_LOAD_ERROR] Traceback:\n{traceback.format_exc()}", flush=True)
+            logger.error(error_msg, exc_info=True)
+            raise
             logger.info("✅ [AnimeTracker.cog_load] cog_load() 執行完成")
         except Exception as e:
             print(f"[COG_LOAD_ERROR] ❌ 任務啟動失敗: {e}", flush=True)
@@ -2730,7 +2752,20 @@ class AnimeTracker(commands.Cog):
 
 async def setup(bot: commands.Bot):
     """Discord.py 2.0+ 加載方式 - cog_load() 會自動被調用"""
+    import sys
     print("[SETUP_START] 🎬 AnimeTracker setup() 開始", flush=True)
-    await bot.add_cog(AnimeTracker(bot))
-    logger.info("✅ AnimeTracker Cog 已加載（任務將在 cog_load() 中啟動）")
-    print("[SETUP_END] 🎬 AnimeTracker setup() 完成 - cog_load() 將自動被調用", flush=True)
+    sys.stdout.flush()
+    
+    try:
+        cog = AnimeTracker(bot)
+        await bot.add_cog(cog)
+        logger.info("✅ AnimeTracker Cog 已加載（任務將在 cog_load() 中啟動）")
+        print("[SETUP_END] 🎬 AnimeTracker setup() 完成 - cog_load() 將自動被調用", flush=True)
+        sys.stdout.flush()
+    except Exception as setup_err:
+        import traceback
+        error_msg = f"❌ [setup] AnimeTracker setup() 失敗: {setup_err}"
+        print(f"[SETUP_ERROR] {error_msg}", flush=True)
+        print(f"[SETUP_ERROR] Traceback:\n{traceback.format_exc()}", flush=True)
+        logger.error(error_msg, exc_info=True)
+        raise
