@@ -1306,31 +1306,7 @@ class AnimeTracker(commands.Cog):
             await self._restore_old_message_views()
             print("[COG_LOAD] ✅ 舊消息 view 恢復完成", flush=True)
             
-            # 啟動動畫檢查任務
-            print("[COG_LOAD] 檢查 check_new_anime 任務狀態", flush=True)
-            if not self.check_new_anime.is_running():
-                print("[COG_LOAD] ✅ 啟動 check_new_anime 任務", flush=True)
-                logger.info("🚀 [AnimeTracker.cog_load] 啟動 check_new_anime 任務")
-                try:
-                    self.check_new_anime.start()
-                    logger.info(f"✅ [AnimeTracker.cog_load] check_new_anime 已啟動 (is_running={self.check_new_anime.is_running()})")
-                    print("[COG_LOAD] ✅ check_new_anime 已啟動", flush=True)
-                except Exception as start_err:
-                    logger.error(f"❌ [AnimeTracker.cog_load] 啟動 check_new_anime 失敗: {start_err}", exc_info=True)
-                    print(f"[COG_LOAD] ❌ 啟動 check_new_anime 失敗: {start_err}", flush=True)
-                    # 重試一次
-                    try:
-                        await asyncio.sleep(1)
-                        logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 check_new_anime...")
-                        self.check_new_anime.start()
-                        logger.info("✅ [AnimeTracker.cog_load] 重試成功，check_new_anime 已啟動")
-                        print("[COG_LOAD] ✅ 重試成功，check_new_anime 已啟動", flush=True)
-                    except Exception as retry_err:
-                        logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
-                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
-            else:
-                logger.info(f"⏭️  [AnimeTracker.cog_load] check_new_anime 已在運行 (is_running=True)")
-                print("[COG_LOAD] ⚠️ check_new_anime 已在運行", flush=True)
+            # ✅ check_new_anime 任務已移除（使用新的 refresh_weekly_schedule + check_scheduled_push）
             
             # 啟動週統計任務
             print("[COG_LOAD] 檢查 send_weekly_stats 任務狀態", flush=True)
@@ -1422,13 +1398,19 @@ class AnimeTracker(commands.Cog):
         logger.info("=" * 50)
         logger.info("🛑 [AnimeTracker.cog_unload] cog_unload() 被調用")
         try:
-            if self.check_new_anime.is_running():
-                self.check_new_anime.cancel()
-                logger.info("✅ [AnimeTracker.cog_unload] check_new_anime 已停止")
+            # ✅ check_new_anime 已移除
             
             if self.send_weekly_stats.is_running():
                 self.send_weekly_stats.cancel()
                 logger.info("✅ [AnimeTracker.cog_unload] send_weekly_stats 已停止")
+            
+            if self.refresh_weekly_schedule.is_running():
+                self.refresh_weekly_schedule.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] refresh_weekly_schedule 已停止")
+            
+            if self.check_scheduled_push.is_running():
+                self.check_scheduled_push.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] check_scheduled_push 已停止")
         except Exception as e:
             logger.error(f"❌ [AnimeTracker.cog_unload] 任務停止失敗: {e}", exc_info=True)
         logger.info("=" * 50)
@@ -1972,115 +1954,9 @@ class AnimeTracker(commands.Cog):
         
         return vote_view if vote_view.children else None
     
-    @tasks.loop(minutes=5)
-    async def check_new_anime(self):
-        """每 5 分鐘檢查一次新番 - 只在預定時刻 +5 分鐘時執行一次"""
-        now = datetime.now(TW_TZ)
-        
-        # 心跳日誌
-        print(f"[HEARTBEAT] check_new_anime 執行 - {now.strftime('%H:%M:%S')}", flush=True)
-        print(f"[HEARTBEAT] check_new_anime 執行 - {now.strftime('%H:%M:%S')}", file=open('/tmp/anime_debug.log', 'a'))
-        
-        try:
-            # 獲取日程表和預期檢查時刻
-            schedule = await self._get_anime_schedule()
-            if not schedule:
-                print(f"[ANIME] 無法取得日程表", flush=True)
-                return
-            
-            expected_times = self._get_expected_check_times(schedule, now)
-            if not expected_times:
-                msg = f"[ANIME] 預期時刻為空"
-                print(msg, flush=True)
-                print(msg, file=open('/tmp/anime_debug.log', 'a'))
-                return
-            
-            # 診斷：打印預期時刻
-            times_str = ", ".join([dt.strftime("%H:%M") for dt in sorted(expected_times)])
-            msg = f"[ANIME] 預期檢查時刻: {times_str}"
-            print(msg, flush=True)
-            print(msg, file=open('/tmp/anime_debug.log', 'a'))
-            
-            # 取得頻道
-            channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-            if not channel:
-                logger.error(f"動畫頻道 {ANIME_CHANNEL_ID} 未找到")
-                return
-            
-            # 首次運行時執行 Bootstrap
-            if not self.db.is_bootstrap_completed():
-                logger.info("執行 Bootstrap...")
-                episodes = await self.fetch_new_anime_from_api()
-                if episodes:
-                    self.db.bootstrap_add_all(episodes)
-                    logger.info(f"Bootstrap 完成：{len(episodes)} 個集")
-                self.db.mark_bootstrap_completed()
-                self.bootstrap_completed = True
-                return
-            
-            # 找到最近的已過時刻（時間已經超過，用於判斷是否在窗口內）
-            # 重要：只檢查「今天」的時刻，不能提前檢查「明天」的時刻
-            # 這防止了凌晨時誤認為「明天的 01:00 已經過了」的 bug
-            today_date = now.date()
-            next_scheduled = None
-            debug_log = open('/tmp/anime_debug.log', 'a')
-            for dt in expected_times:
-                if dt.date() == today_date and dt <= now:  # 只找今天已過的時刻
-                    next_scheduled = dt  # 保持更新，找最後一個已過的
-                    msg = f"[ANIME] 候選時刻: {dt.strftime('%H:%M')} (日期符合, 已過)"
-                    print(msg, flush=True)
-                    print(msg, file=debug_log)
-                else:
-                    reason = "日期不符" if dt.date() != today_date else "未過"
-                    msg = f"[ANIME] 跳過時刻: {dt.strftime('%H:%M')} ({reason})"
-                    print(msg, flush=True)
-                    print(msg, file=debug_log)
-            debug_log.close()
-            
-            if next_scheduled:
-                scheduled_time_str = next_scheduled.strftime("%H:%M")
-                scheduled_date = next_scheduled.date()
-                
-                # 計算距離預定時刻的時間差
-                time_diff_min = (now - next_scheduled).total_seconds() / 60
-                
-                # 詳細日誌
-                msg = f"[ANIME] 最近時刻: {scheduled_time_str}, 時差: {time_diff_min:.1f} 分"
-                print(msg, flush=True)
-                print(msg, file=open('/tmp/anime_debug.log', 'a'))
-                
-                # 只在 +4 到 +6 分鐘時執行一次（5 分鐘檢查周期的容差）
-                if 4 <= time_diff_min <= 6:
-                    msg = f"[ANIME] ✅ 時間在窗口內，執行檢查"
-                    print(msg, flush=True)
-                    print(msg, file=open('/tmp/anime_debug.log', 'a'))
-                    # 防止重複檢查
-                    if not self.db.is_time_checked_today(scheduled_time_str, scheduled_date):
-                        try:
-                            await self._check_and_send_anime(scheduled_time_str, channel)
-                            self.db.mark_time_checked(scheduled_time_str, scheduled_date)
-                            logger.info(f"檢查完成: {scheduled_time_str}")
-                        except Exception as e:
-                            logger.error(f"檢查失敗: {e}", exc_info=True)
-        
-        except Exception as e:
-            logger.error(f"❌ Error in check_new_anime: {e}", exc_info=True)
-    
-    @check_new_anime.before_loop
-    async def before_check_new_anime(self):
-        """等待 bot 就緒才開始檢查"""
-        await self.bot.wait_until_ready()
-    
-    @check_new_anime.error
-    async def check_new_anime_error(self, error):
-        """處理任務異常並重啟"""
-        logger.error(f"任務異常: {error}", exc_info=True)
-        try:
-            await asyncio.sleep(5)
-            if not self.check_new_anime.is_running():
-                self.check_new_anime.restart()
-        except Exception as e:
-            logger.error(f"重啟失敗: {e}", exc_info=True)
+    # ✅ check_new_anime 任務已刪除（2026-05-04）
+    # 原因：新的週表系統 (refresh_weekly_schedule + check_scheduled_push) 已取代
+    # 改進：API 呼叫從 288/天 → 1/週，節省 99.65% 流量
     
     async def _check_and_send_anime(self, scheduled_time_str: str, channel) -> bool:
         """
@@ -2428,7 +2304,8 @@ class AnimeTracker(commands.Cog):
             # 獲取今天的時程表
             today_schedule = self.db.get_today_schedule()
             if not today_schedule:
-                # 表示還沒有週表，繼續使用舊的 check_new_anime 任務
+                # 週表為空，可能是週表還未初始化（首次執行或 API 失敗）
+                # 靜默返回，等待 refresh_weekly_schedule 下次執行
                 return
             
             # 尋找符合現在時刻的項目
