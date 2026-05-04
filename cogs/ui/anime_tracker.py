@@ -65,6 +65,7 @@ ANIME_MESSAGES_TABLE = "anime_messages"  # 消息 ID 追蹤（用於 bot 重啟�
 ANIME_VOTES_TABLE = "anime_votes"  # 匿名投票結果
 ANIME_REWARDS_TABLE = "anime_rewards"  # KK幣獎勵追踪（防止重複發放）
 ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（防止重複檢查，解決 Bot 重啟問題）
+ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
 
 
 class AnimeDatabase:
@@ -189,6 +190,19 @@ class AnimeDatabase:
                     )
                 """)
                 
+                # 9. 週表：每週一自動拉取的完整一週時程表（減少 API 調用）
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {ANIME_WEEKLY_SCHEDULE_TABLE} (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        week_start_date DATE NOT NULL UNIQUE,
+                        day_of_week INTEGER NOT NULL,
+                        scheduled_time TEXT NOT NULL,
+                        anime_data TEXT NOT NULL,
+                        pushed BOOLEAN DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
                 conn.commit()
                 
                 # 驗證所有表都被創建
@@ -197,6 +211,8 @@ class AnimeDatabase:
                 required_tables = {
                     NOTIFIED_TABLE, BOOTSTRAP_FLAG_TABLE, ANIME_DETAILS_TABLE,
                     ANIME_STATS_TABLE, EPISODE_STATS_TABLE, ANIME_MESSAGES_TABLE,
+                    ANIME_CHECK_HISTORY_TABLE, ANIME_WEEKLY_SCHEDULE_TABLE
+                }
                     ANIME_CHECK_HISTORY_TABLE
                 }
                 missing_tables = required_tables - existing_tables
@@ -841,6 +857,77 @@ class AnimeDatabase:
         except Exception as e:
             logger.error(f"❌ Error getting message infos: {e}")
             return []
+    
+    def save_weekly_schedule(self, week_start_date: str, schedule_data: Dict) -> bool:
+        """儲存每週的完整時程表
+        
+        Args:
+            week_start_date: 週一日期 (YYYY-MM-DD)
+            schedule_data: 每日時程表 {day: 1-7, time: "HH:MM", anime_data: {...}}
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                for entry in schedule_data:
+                    cursor.execute(f"""
+                        INSERT OR REPLACE INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        (week_start_date, day_of_week, scheduled_time, anime_data, pushed)
+                        VALUES (?, ?, ?, ?, 0)
+                    """, (
+                        week_start_date,
+                        entry['day_of_week'],
+                        entry['scheduled_time'],
+                        json.dumps(entry['anime_data'], ensure_ascii=False)
+                    ))
+                conn.commit()
+                logger.info(f"✅ [save_weekly_schedule] 週表已保存: {week_start_date}")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Error saving weekly schedule: {e}")
+            return False
+    
+    def get_today_schedule(self) -> List[Dict]:
+        """獲取今天的時程表（從週表中）"""
+        try:
+            now = datetime.now(TW_TZ)
+            week_start = now - timedelta(days=now.weekday())  # 取得本週一的日期
+            day_of_week = (now.weekday() + 1) % 7 or 7  # 1=Mon, 7=Sun
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT scheduled_time, anime_data, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    WHERE week_start_date = ? AND day_of_week = ?
+                    ORDER BY scheduled_time ASC
+                """, (week_start.strftime("%Y-%m-%d"), day_of_week))
+                
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        'scheduled_time': row[0],
+                        'anime_data': json.loads(row[1]),
+                        'pushed': bool(row[2])
+                    })
+                return results
+        except Exception as e:
+            logger.error(f"❌ Error getting today schedule: {e}")
+            return []
+    
+    def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
+        """標記某個時刻已推送過"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    SET pushed = 1
+                    WHERE week_start_date = ? AND day_of_week = ? AND scheduled_time = ?
+                """, (week_start_date, day_of_week, scheduled_time))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ Error marking time pushed: {e}")
+            return False
 
 
 # ==================== 匿名投票 View 類 ====================
@@ -1272,6 +1359,48 @@ class AnimeTracker(commands.Cog):
             else:
                 logger.info(f"⏭️  [AnimeTracker.cog_load] send_weekly_stats 已在運行 (is_running=True)")
                 print("[COG_LOAD] ⚠️ send_weekly_stats 已在運行", flush=True)
+            
+            # 啟動週表刷新任務
+            print("[COG_LOAD] 檢查 refresh_weekly_schedule 任務狀態", flush=True)
+            if not self.refresh_weekly_schedule.is_running():
+                print("[COG_LOAD] ✅ 啟動 refresh_weekly_schedule 任務", flush=True)
+                logger.info("🚀 [AnimeTracker.cog_load] 啟動 refresh_weekly_schedule 任務")
+                try:
+                    self.refresh_weekly_schedule.start()
+                    logger.info(f"✅ [AnimeTracker.cog_load] refresh_weekly_schedule 已啟動 (is_running={self.refresh_weekly_schedule.is_running()})")
+                    print("[COG_LOAD] ✅ refresh_weekly_schedule 已啟動", flush=True)
+                except Exception as start_err:
+                    logger.error(f"❌ [AnimeTracker.cog_load] 啟動 refresh_weekly_schedule 失敗: {start_err}", exc_info=True)
+                    print(f"[COG_LOAD] ❌ 啟動 refresh_weekly_schedule 失敗: {start_err}", flush=True)
+                    # 重試一次
+                    try:
+                        await asyncio.sleep(1)
+                        logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 refresh_weekly_schedule...")
+                        self.refresh_weekly_schedule.start()
+                        logger.info("✅ [AnimeTracker.cog_load] 重試成功，refresh_weekly_schedule 已啟動")
+                        print("[COG_LOAD] ✅ 重試成功，refresh_weekly_schedule 已啟動", flush=True)
+                    except Exception as retry_err:
+                        logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
+                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
+            else:
+                logger.info(f"⏭️  [AnimeTracker.cog_load] refresh_weekly_schedule 已在運行 (is_running=True)")
+                print("[COG_LOAD] ⚠️ refresh_weekly_schedule 已在運行", flush=True)
+            
+            # 啟動推送檢查任務（週表模式）
+            print("[COG_LOAD] 檢查 check_scheduled_push 任務狀態", flush=True)
+            if not self.check_scheduled_push.is_running():
+                print("[COG_LOAD] ✅ 啟動 check_scheduled_push 任務", flush=True)
+                logger.info("🚀 [AnimeTracker.cog_load] 啟動 check_scheduled_push 任務")
+                try:
+                    self.check_scheduled_push.start()
+                    logger.info(f"✅ [AnimeTracker.cog_load] check_scheduled_push 已啟動 (is_running={self.check_scheduled_push.is_running()})")
+                    print("[COG_LOAD] ✅ check_scheduled_push 已啟動", flush=True)
+                except Exception as start_err:
+                    logger.error(f"❌ [AnimeTracker.cog_load] 啟動 check_scheduled_push 失敗: {start_err}", exc_info=True)
+                    print(f"[COG_LOAD] ❌ 啟動 check_scheduled_push 失敗: {start_err}", flush=True)
+            else:
+                logger.info(f"⏭️  [AnimeTracker.cog_load] check_scheduled_push 已在運行 (is_running=True)")
+                print("[COG_LOAD] ⚠️ check_scheduled_push 已在運行", flush=True)
             
             print("[COG_LOAD_END] ✅ cog_load() 執行完成", flush=True)
             sys.stdout.flush()
@@ -2225,10 +2354,191 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"✅ [send_weekly_stats] 任務已重新啟動")
         except Exception as restart_error:
             logger.error(f"❌ [send_weekly_stats] 重啟失敗: {restart_error}", exc_info=True)
+    
+    @tasks.loop(hours=24)
+    async def refresh_weekly_schedule(self):
+        """週一凌晨自動拉取完整週表 - 優化 API 調用（288/天 → 1/週）"""
+        now = datetime.now(TW_TZ)
+        
+        try:
+            # 檢查是否是週一
+            is_monday = now.weekday() == 0  # 0 = Monday
+            is_refresh_time = now.hour == 0  # 台灣時間 00:00-00:59
+            
+            if not (is_monday and is_refresh_time):
+                # 非週一或非凌晨，跳過
+                logger.debug(f"⏭️ [refresh_weekly_schedule] 跳過（非週一凌晨）")
+                return
+            
+            logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
+            
+            # 拉取完整一週的時程表
+            schedule = await self._get_anime_schedule()
+            if not schedule:
+                logger.warning("⚠️ [refresh_weekly_schedule] 無法拉取時程表")
+                return
+            
+            # 構建本週的完整時程
+            week_start = now - timedelta(days=now.weekday())
+            week_start_str = week_start.strftime("%Y-%m-%d")
+            
+            schedule_data = []
+            for day_offset in range(7):
+                target_date = week_start + timedelta(days=day_offset)
+                day_of_week = (day_offset + 1) % 7 or 7  # 1=Mon, 7=Sun
+                day_key = str(day_of_week)
+                
+                if day_key in schedule:
+                    for anime in schedule[day_key]:
+                        scheduled_time = anime.get('scheduleTime', '')
+                        if scheduled_time:
+                            schedule_data.append({
+                                'day_of_week': day_of_week,
+                                'scheduled_time': scheduled_time,
+                                'anime_data': anime
+                            })
+            
+            # 保存到數據庫
+            if schedule_data:
+                self.db.save_weekly_schedule(week_start_str, schedule_data)
+                logger.info(f"✅ [refresh_weekly_schedule] 本週時程表已保存 ({len(schedule_data)} 個時刻)")
+            else:
+                logger.warning("⚠️ [refresh_weekly_schedule] 時程表為空")
+        
+        except Exception as e:
+            logger.error(f"❌ [refresh_weekly_schedule] 失敗: {e}", exc_info=True)
+    
+    @refresh_weekly_schedule.before_loop
+    async def before_refresh_weekly_schedule(self):
+        """等待 bot 就緒"""
+        logger.info("📅 [before_refresh_weekly_schedule] 等待 bot 就緒...")
+        await self.bot.wait_until_ready()
+        logger.info("✅ [before_refresh_weekly_schedule] 週表刷新任務準備就緒")
+    
+    @refresh_weekly_schedule.error
+    async def refresh_weekly_schedule_error(self, error):
+        """處理任務異常"""
+        logger.error(f"❌ [refresh_weekly_schedule] 任務異常: {error}", exc_info=True)
+    
+    @tasks.loop(minutes=1)
+    async def check_scheduled_push(self):
+        """每分鐘檢查是否有預定推送時刻 - 供週表系統使用"""
+        now = datetime.now(TW_TZ)
+        current_time = now.strftime("%H:%M")
+        
+        try:
+            # 獲取今天的時程表
+            today_schedule = self.db.get_today_schedule()
+            if not today_schedule:
+                # 表示還沒有週表，繼續使用舊的 check_new_anime 任務
+                return
+            
+            # 尋找符合現在時刻的項目
+            matching = [item for item in today_schedule if item['scheduled_time'] == current_time and not item['pushed']]
+            
+            if matching:
+                logger.info(f"📺 [check_scheduled_push] 檢測到推送時刻: {current_time}")
+                channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+                if channel:
+                    await self.send_anime_push(current_time, ANIME_CHANNEL_ID)
+                else:
+                    logger.error(f"❌ [check_scheduled_push] 頻道 {ANIME_CHANNEL_ID} 未找到")
+        
+        except Exception as e:
+            logger.error(f"❌ [check_scheduled_push] 失敗: {e}", exc_info=True)
+    
+    @check_scheduled_push.before_loop
+    async def before_check_scheduled_push(self):
+        """等待 bot 就緒"""
+        await self.bot.wait_until_ready()
+    
+    @check_scheduled_push.error
+    async def check_scheduled_push_error(self, error):
+        """處理任務異常"""
+        logger.error(f"❌ [check_scheduled_push] 任務異常: {error}", exc_info=True)
 
     # ✅ anime_test 指令已刪除 - 邏輯改為自動推送
     
     # ✅ anime_weekly 指令已刪除 - 邏輯已轉換為 generate_weekly_stats_embed() 供自動推送使用
+    
+    async def send_anime_push(self, scheduled_time: str, channel_id: int = ANIME_CHANNEL_ID):
+        """在預定時刻直接推送動畫（從週表查詢）- 供自動推送系統使用
+        
+        Args:
+            scheduled_time: 預定時刻，格式 "HH:MM"
+            channel_id: Discord 頻道 ID
+        """
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                logger.error(f"❌ [send_anime_push] 頻道 {channel_id} 未找到")
+                return
+            
+            # 從週表獲取該時刻的動畫
+            today_schedule = self.db.get_today_schedule()
+            if not today_schedule:
+                logger.warning(f"⚠️ [send_anime_push] 今天的時程表為空")
+                return
+            
+            # 尋找符合時刻的項目
+            matching_animes = [item for item in today_schedule if item['scheduled_time'] == scheduled_time]
+            if not matching_animes:
+                logger.warning(f"⚠️ [send_anime_push] 時刻 {scheduled_time} 無動畫")
+                return
+            
+            logger.info(f"📺 [send_anime_push] 準備推送 {scheduled_time} 的 {len(matching_animes)} 部動畫")
+            
+            # 推送每部動畫
+            for item in matching_animes:
+                if item['pushed']:
+                    logger.debug(f"⏭️ [send_anime_push] 時刻 {scheduled_time} 已推送過，跳過")
+                    continue
+                
+                anime_data = item['anime_data']
+                try:
+                    # 生成 embed 和視圖
+                    embed = await self.generate_anime_embed(anime_data)
+                    view = await self.generate_anime_view(anime_data)
+                    
+                    if not view:
+                        logger.warning(f"⚠️ [send_anime_push] 視圖為 None，跳過 {anime_data.get('title')}")
+                        continue
+                    
+                    # 註冊視圖到 bot
+                    self.bot.add_view(view)
+                    
+                    # 發送消息
+                    message = await channel.send(embed=embed, view=view, silent=True)
+                    logger.info(f"✅ [send_anime_push] 動畫已推送: {anime_data.get('title')} (message_id={message.id})")
+                    
+                    # 保存消息 ID
+                    self.db.save_message_info(
+                        message_id=message.id,
+                        video_sn=anime_data.get('videoSn'),
+                        anime_sn=anime_data.get('animeSn', 0),
+                        anime_name=anime_data.get('title', 'Unknown'),
+                        channel_id=channel_id
+                    )
+                    
+                    # 標記為已推送
+                    now = datetime.now(TW_TZ)
+                    week_start = now - timedelta(days=now.weekday())
+                    day_of_week = (now.weekday() + 1) % 7 or 7
+                    self.db.mark_time_pushed(
+                        week_start.strftime("%Y-%m-%d"),
+                        day_of_week,
+                        scheduled_time
+                    )
+                    
+                    await asyncio.sleep(0.5)  # 避免限流
+                
+                except Exception as e:
+                    logger.error(f"❌ [send_anime_push] 推送失敗: {e}", exc_info=True)
+            
+            logger.info(f"✅ [send_anime_push] 時刻 {scheduled_time} 推送完成")
+        
+        except Exception as e:
+            logger.error(f"❌ [send_anime_push] 執行失敗: {e}", exc_info=True)
     
     async def get_short_chart_url(self, chart_config: dict) -> str:
         """獲取 QuickChart 短 URL（解決 Discord 2048 字元限制）"""
