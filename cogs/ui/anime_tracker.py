@@ -1883,9 +1883,12 @@ class AnimeTracker(commands.Cog):
                 return
             
             # 找到最近的已過時刻（時間已經超過，用於判斷是否在窗口內）
+            # 重要：只檢查「今天」的時刻，不能提前檢查「明天」的時刻
+            # 這防止了凌晨時誤認為「明天的 01:00 已經過了」的 bug
+            today_date = now.date()
             next_scheduled = None
             for dt in expected_times:
-                if dt <= now:  # 只找已過的時刻
+                if dt.date() == today_date and dt <= now:  # 只找今天已過的時刻
                     next_scheduled = dt  # 保持更新，找最後一個已過的
             
             if next_scheduled:
@@ -2056,7 +2059,9 @@ class AnimeTracker(commands.Cog):
                     try:
                         scheduled_time = datetime.strptime(schedule_time, "%H:%M").time()
                         scheduled_dt = datetime.combine(target_date, scheduled_time, tzinfo=TW_TZ)
-                        check_times.append(scheduled_dt)
+                        # 只添加未來的時刻，不添加已過期太久的時刻
+                        if scheduled_dt >= now - timedelta(hours=1):
+                            check_times.append(scheduled_dt)
                     except:
                         pass
         
