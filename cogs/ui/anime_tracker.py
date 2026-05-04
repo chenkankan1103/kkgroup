@@ -2069,7 +2069,11 @@ class AnimeTracker(commands.Cog):
             return {}
     
     def _get_expected_check_times(self, schedule: dict, now: datetime) -> list:
-        """取得今天和明天的所有預期檢查時刻"""
+        """取得今天和明天的所有預期檢查時刻
+        
+        修復: 移除 1 小時過濾，改用日期過濾，防止凌晨時同日時刻被篩除
+        例如: 凌晨 03:59 時 01:00 不應被過濾
+        """
         check_times = []
         weekday_today = (now.weekday() + 1) % 7 or 7
         weekday_tomorrow = (weekday_today % 7) + 1
@@ -2082,8 +2086,9 @@ class AnimeTracker(commands.Cog):
                     try:
                         scheduled_time = datetime.strptime(schedule_time, "%H:%M").time()
                         scheduled_dt = datetime.combine(target_date, scheduled_time, tzinfo=TW_TZ)
-                        # 只添加未來的時刻，不添加已過期太久的時刻
-                        if scheduled_dt >= now - timedelta(hours=1):
+                        # ✅ 改用日期過濾：超過 1 天的時刻才篩除，同日所有時刻都保留
+                        # 這防止凌晨時早晨時刻被篩除（例如: 凌晨 03:59 時 01:00 不應被篩除）
+                        if scheduled_dt.date() >= (now - timedelta(days=1)).date():
                             check_times.append(scheduled_dt)
                     except:
                         pass
