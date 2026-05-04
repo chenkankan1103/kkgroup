@@ -222,18 +222,24 @@ class ScamHub(commands.Cog):
         
         # 如果已經有倒數任務，不要重複啟動
         if room_data.get('deletion_task') and not room_data['deletion_task'].done():
-            print(f"[ScamHub] 房間 {room_id} 已有倒數計時中，忽略")
+            print(f"[ScamHub] 房間 {room_id} 已有倒數計時中，忽略重複啟動")
             return
         
         async def deletion_countdown():
+            start_time = datetime.utcnow()
             try:
-                print(f"[ScamHub] 🕐 房間 {room_id} 無人，5 分鐘後將自動刪除 - 倒數計時已啟動")
+                vc = await self._resolve_voice_channel(room_id)
+                room_name = vc.name if vc else f"Unknown-{room_id}"
+                
+                print(f"[ScamHub] 🕐 房間 {room_name} (ID: {room_id}) 無人，5 分鐘後將自動刪除 - 倒數計時已啟動")
                 await asyncio.sleep(INACTIVE_TIMEOUT)  # 等待 5 分鐘
                 
-                print(f"[ScamHub] 🕐 倒數計時結束，檢查房間 {room_id} 是否仍無人")
+                elapsed = (datetime.utcnow() - start_time).total_seconds()
+                print(f"[ScamHub] 🕐 倒數計時結束 (耗時 {elapsed:.1f} 秒)，檢查房間 {room_id} 是否仍無人")
+                
                 # 5 分鐘後檢查是否還是無人
                 if room_id not in self.active_rooms:
-                    print(f"[ScamHub] ⚠️ 房間 {room_id} 已從 active_rooms 中移除，停止刪除")
+                    print(f"[ScamHub] ⚠️ 房間 {room_id} 已從 active_rooms 中移除，停止刪除程序")
                     return
                 
                 vc = self.bot.get_channel(room_id)
@@ -249,11 +255,13 @@ class ScamHub(commands.Cog):
                 
                 # 檢查是否確實還是無人
                 members = await self._get_voice_members(vc)
-                if len(members) == 0:
-                    print(f"[ScamHub] 🗑️ 執行刪除: {vc.name} (ID: {room_id}) - 無人語音頻道")
+                member_count = len(members)
+                
+                if member_count == 0:
+                    print(f"[ScamHub] 🗑️ 執行刪除: {vc.name} (ID: {room_id}) - 無人語音頻道 (成員數: 0)")
                     try:
                         await vc.delete(reason="自動刪除無人語音頻道 (5分鐘)")
-                        print(f"[ScamHub] ✅ 成功刪除無人頻道 {room_id}")
+                        print(f"[ScamHub] ✅ 成功刪除無人頻道 {vc.name} (ID: {room_id})")
                     except discord.Forbidden:
                         print(f"[ScamHub] ❌ 權限不足：無法刪除頻道 {room_id} (需要 manage_channels 權限)")
                     except discord.HTTPException as e:
@@ -263,28 +271,38 @@ class ScamHub(commands.Cog):
                         self.room_messages.pop(room_id, None)
                         await self._delete_room_from_db(room_id)
                 else:
-                    print(f"[ScamHub] ⏸️ 倒數計時完成但檢查到 {len(members)} 人在頻道中，取消刪除")
+                    print(f"[ScamHub] ⏸️ 倒數計時完成但檢查到 {member_count} 人在頻道中 {[m.name for m in members]}，取消刪除")
+                    # 清空倒數任務標記，以便下次無人時可以重新啟動
                     room_data['deletion_task'] = None
+                    
             except asyncio.CancelledError:
-                print(f"[ScamHub] ⏹️ 房間 {room_id} 的刪除倒數計時已被取消")
+                print(f"[ScamHub] ⏹️ 房間 {room_id} 的刪除倒數計時已被取消 (有人加入)")
+                
             except Exception as e:
                 print(f"[ScamHub] ❌ 刪除房間 {room_id} 時發生未預期的錯誤: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
         
         # 建立並保存倒數任務
-        room_data['deletion_task'] = asyncio.create_task(deletion_countdown())
+        deletion_task = asyncio.create_task(deletion_countdown())
+        room_data['deletion_task'] = deletion_task
+        print(f"[ScamHub] 🔔 倒數任務已建立: {deletion_task}")
 
     async def _cancel_deletion(self, room_id: int):
         """✅ 新邏輯：取消倒數計時（有人加入時調用）"""
         if room_id not in self.active_rooms:
+            print(f"[ScamHub] ⚠️ _cancel_deletion: 房間 {room_id} 不在 active_rooms 中")
             return
         
         room_data = self.active_rooms[room_id]
         deletion_task = room_data.get('deletion_task')
         
         if deletion_task and not deletion_task.done():
-            print(f"[ScamHub] 房間 {room_id} 有人加入，取消倒數計時")
+            print(f"[ScamHub] 🔔 房間 {room_id} 有人加入，取消倒數計時任務")
             deletion_task.cancel()
             room_data['deletion_task'] = None
+        else:
+            print(f"[ScamHub] 📌 房間 {room_id} 沒有進行中的倒數計時任務")
 
     async def generate_scam_event(self, member_count):
         """使用AI生成詐騙事件（只使用 Groq）"""
@@ -561,24 +579,24 @@ class ScamHub(commands.Cog):
             # 不應在用戶加入時重置，否則會破壞閒置計時邏輯
             
             # ✅ 新邏輯：有人加入時取消倒數計時
+            print(f"[ScamHub] 👥 用戶 {member.display_name} 加入頻道 {after.channel.name}, 目前人數: {current_members}")
             await self._cancel_deletion(after.channel.id)
             
-            print(f"用戶 {member.display_name} 加入頻道 {after.channel.name}, 目前人數: {current_members}")
             await self.update_voice_status(after.channel)
 
         # 處理用戶離開詐騙小組頻道的情況
         if before.channel and before.channel.id in self.active_rooms:
             current_members = len(await self._get_voice_members(before.channel))
-            print(f"用戶 {member.display_name} 離開頻道 {before.channel.name}, 剩餘人數: {current_members}")
+            print(f"[ScamHub] 👤 用戶 {member.display_name} 離開頻道 {before.channel.name}, 剩餘人數: {current_members}")
             
             if current_members > 0:
                 # 更新頻道信息
                 await self.update_voice_status(before.channel)
             else:
                 # ✅ 頻道空了，啟動 5 分鐘倒數計時
-                print(f"[DEBUG] 頻道無人，調用 _schedule_deletion({before.channel.id})")
+                print(f"[ScamHub] ⚡ 頻道無人! 調用 _schedule_deletion({before.channel.id})")
                 await self._schedule_deletion(before.channel.id)
-                print(f"頻道 {before.channel.name} 已空，啟動 5 分鐘自動刪除倒數")
+                print(f"[ScamHub] ✏️ 頻道 {before.channel.name} (ID: {before.channel.id}) 已空，倒數計時已啟動")
 
 async def setup(bot):
     await bot.add_cog(ScamHub(bot))
