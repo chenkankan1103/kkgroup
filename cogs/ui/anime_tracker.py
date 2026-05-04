@@ -213,8 +213,6 @@ class AnimeDatabase:
                     ANIME_STATS_TABLE, EPISODE_STATS_TABLE, ANIME_MESSAGES_TABLE,
                     ANIME_CHECK_HISTORY_TABLE, ANIME_WEEKLY_SCHEDULE_TABLE
                 }
-                    ANIME_CHECK_HISTORY_TABLE
-                }
                 missing_tables = required_tables - existing_tables
                 
                 if missing_tables:
