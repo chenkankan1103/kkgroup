@@ -2102,20 +2102,20 @@ class AnimeTracker(commands.Cog):
     
     @tasks.loop(hours=1)
     async def send_weekly_stats(self):
-        """自動發送週統計 - 每週一 台灣時間 00:00 發送"""
+        """自動發送週統計 - 每週天 台灣時間 23:00 發送"""
         now = datetime.now(TW_TZ)
         
         try:
-            # 檢查是否是週一且時間在午夜時刻（00:00-00:59）
-            is_monday = now.weekday() == 0  # 0 = Monday
-            is_send_time = now.hour == 0  # 台灣時間 00:00-00:59
+            # 檢查是否是禮拜天且時間在晚上 23:00-23:59
+            is_sunday = now.weekday() == 6  # 6 = Sunday
+            is_send_time = now.hour == 23  # 台灣時間 23:00-23:59
             
             # 檢查是否已在本週發送過（防止重複）
             week_start = now - timedelta(days=now.weekday())
             week_start_date = week_start.date()
             
-            if is_monday and is_send_time and self.last_weekly_stats_sent != week_start_date:
-                logger.info(f"📊 [send_weekly_stats] 週一時間到，準備發送週統計...")
+            if is_sunday and is_send_time and self.last_weekly_stats_sent != week_start_date:
+                logger.info(f"📊 [send_weekly_stats] 禮拜天時間到，準備發送週統計...")
                 
                 # 獲取頻道
                 channel = self.bot.get_channel(ANIME_CHANNEL_ID)
@@ -2231,17 +2231,17 @@ class AnimeTracker(commands.Cog):
     
     @tasks.loop(hours=24)
     async def refresh_weekly_schedule(self):
-        """週一凌晨自動拉取完整週表 - 優化 API 調用（288/天 → 1/週）"""
+        """禮拜天晚上 10 點自動拉取完整週表 - 優化 API 調用（288/天 → 1/週）"""
         now = datetime.now(TW_TZ)
         
         try:
-            # 檢查是否是週一
-            is_monday = now.weekday() == 0  # 0 = Monday
-            is_refresh_time = now.hour == 0  # 台灣時間 00:00-00:59
+            # 檢查是否是禮拜天晚上 22:00
+            is_sunday = now.weekday() == 6  # 6 = Sunday
+            is_refresh_time = now.hour == 22  # 台灣時間 22:00-22:59
             
-            if not (is_monday and is_refresh_time):
-                # 非週一或非凌晨，跳過
-                logger.debug(f"⏭️ [refresh_weekly_schedule] 跳過（非週一凌晨）")
+            if not (is_sunday and is_refresh_time):
+                # 非禮拜天或非晚上 10 點，跳過
+                logger.debug(f"⏭️ [refresh_weekly_schedule] 跳過（非禮拜天晚上 10 點）")
                 return
             
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
