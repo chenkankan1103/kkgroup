@@ -2226,149 +2226,9 @@ class AnimeTracker(commands.Cog):
         except Exception as restart_error:
             logger.error(f"❌ [send_weekly_stats] 重啟失敗: {restart_error}", exc_info=True)
 
-    @app_commands.command(name="anime_test", description="測試動畫通知 - 顯示最近的動畫集")
-    async def anime_test(self, interaction: discord.Interaction):
-        """測試指令：獲取最近的動畫數據並在當前頻道發送"""
-        try:
-            await interaction.response.defer()  # 延遲回應，因為可能需要時間
-            
-            logger.info(f"📺 [anime_test] 被 {interaction.user} 在頻道 {interaction.channel} 調用")
-            
-            # 獲取最新動畫數據
-            episodes = await self.fetch_new_anime_from_api()
-            if not episodes:
-                await interaction.followup.send("❌ 無法從 API 獲取動畫數據")
-                logger.warning("📺 [anime_test] API 返回空結果")
-                return
-            
-            logger.info(f"📺 [anime_test] 獲得 {len(episodes)} 集")
-            
-            # 生成並發送前 3 集的 embed
-            sent_count = 0
-            for ep in episodes[:3]:
-                try:
-                    embed = await self.generate_anime_embed(ep)
-                    view = await self.generate_anime_view(ep)
-                    
-                    if view is None:
-                        logger.warning(f"⚠️ [anime_test] 視圖為 None，跳過消息 (video_sn={ep.get('videoSn')})")
-                        continue
-                    
-                    # 📌 關鍵：註冊永久視圖到 bot，否則按鈕點擊不會被識別
-                    logger.info(f"🔗 [anime_test] 註冊視圖到 bot (video_sn={ep.get('videoSn')})")
-                    self.bot.add_view(view)
-                    logger.info(f"✅ [anime_test] 視圖已註冊")
-                    
-                    message = await interaction.followup.send(embed=embed, view=view, silent=True)
-                    logger.info(f"✅ [anime_test] 消息已發送 (message_id={message.id}, video_sn={ep.get('videoSn')})")
-                    
-                    # 💾 保存消息 ID 以用於 bot 重啟時恢復 view
-                    self.db.save_message_info(
-                        message_id=message.id,
-                        video_sn=ep.get("videoSn"),
-                        anime_sn=ep.get("animeSn"),
-                        anime_name=ep.get("title", "Unknown"),
-                        channel_id=interaction.channel_id
-                    )
-                    logger.info(f"💾 [anime_test] 消息 ID 已保存到數據庫")
-                    
-                    sent_count += 1
-                    await asyncio.sleep(0.2)  # 避免限流
-                except Exception as e:
-                    logger.error(f"❌ [anime_test] 發送 embed 失敗: {e}")
-            
-            logger.info(f"✅ [anime_test] 成功發送 {sent_count} 個 embed")
-            
-        except Exception as e:
-            logger.error(f"❌ [anime_test] 指令執行失敗: {e}", exc_info=True)
-            try:
-                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
-            except:
-                pass
+    # ✅ anime_test 指令已刪除 - 邏輯改為自動推送
     
-    @app_commands.command(name="anime_weekly", description="查看本週投票統計")
-    async def anime_weekly(self, interaction: discord.Interaction):
-        """顯示本週的動畫投票統計 embed"""
-        try:
-            await interaction.response.defer()
-            
-            # 獲取週統計數據
-            weekly_stats = self.db.get_weekly_vote_stats()
-            
-            if not weekly_stats:
-                await interaction.followup.send("📊 本週暫無投票數據")
-                logger.info("📺 [anime_weekly] 本週無投票數據")
-                return
-            
-            # 計算本週開始日期
-            from datetime import datetime, timedelta
-            now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())
-            week_start_str = week_start.strftime("%m/%d")
-            week_end_str = now.strftime("%m/%d")
-            
-            # 創建主統計 embed
-            embed = discord.Embed(
-                title="📊 本週動畫投票統計",
-                description=f"**統計週期**: {week_start_str} - {week_end_str}",
-                color=discord.Color.blue(),
-                timestamp=now
-            )
-            
-            # 按投票總數排序
-            sorted_animes = sorted(
-                weekly_stats.items(),
-                key=lambda x: x[1]['total_votes'],
-                reverse=True
-            )
-            
-            # 添加各動畫的統計
-            for rank, (anime_sn, stats) in enumerate(sorted_animes[:10], 1):  # 顯示前 10 部
-                anime_name = stats['anime_name']
-                total_votes = stats['total_votes']
-                votes_breakdown = stats['votes']
-                episode_count = len(stats['episodes'])
-                
-                # 構建投票明細（按數量排序）
-                vote_details = []
-                vote_type_names = {
-                    'masterpiece': '🟢 神作',
-                    'great': '⚫ 佳作',
-                    'darkhorse': '⚫ 黑馬',
-                    'decent': '🔵 普作',
-                    'controversial': '⚫ 爭議作',
-                    'disaster': '🔴 雷作'
-                }
-                
-                for vote_type in sorted(votes_breakdown.keys(), 
-                                       key=lambda x: votes_breakdown[x], reverse=True):
-                    count = votes_breakdown[vote_type]
-                    label = vote_type_names.get(vote_type, vote_type)
-                    vote_details.append(f"{label}: {count}")
-                
-                details_str = " | ".join(vote_details) if vote_details else "無投票"
-                
-                embed.add_field(
-                    name=f"#{rank} {anime_name}",
-                    value=f"**投票總數**: {total_votes} | **涉及集數**: {episode_count}\n{details_str}",
-                    inline=False
-                )
-            
-            # 添加總體統計
-            total_all_votes = sum(stats['total_votes'] for stats in weekly_stats.values())
-            unique_animes = len(weekly_stats)
-            
-            embed.set_footer(text=f"總計: {total_all_votes} 投票 | {unique_animes} 部作品")
-            
-            await interaction.followup.send(embed=embed)
-            logger.info(f"📊 [anime_weekly] 顯示週統計: {unique_animes} 部作品, {total_all_votes} 投票")
-            
-        except Exception as e:
-            logger.error(f"❌ [anime_weekly] 指令執行失敗: {e}", exc_info=True)
-            try:
-                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
-            except:
-                pass
+    # ✅ anime_weekly 指令已刪除 - 邏輯已轉換為 generate_weekly_stats_embed() 供自動推送使用
     
     async def get_short_chart_url(self, chart_config: dict) -> str:
         """獲取 QuickChart 短 URL（解決 Discord 2048 字元限制）"""
@@ -2395,11 +2255,9 @@ class AnimeTracker(commands.Cog):
             logger.warning(f"⚠️ [get_short_chart_url] 請求失敗: {e}")
             return None
     
-    @app_commands.command(name="anime_ranking", description="查看本季動畫觀看排行榜")
-    async def anime_ranking(self, interaction: discord.Interaction):
-        """顯示本季動畫的觀看排行榜（實時從 API 獲取或從歷史數據統計）"""
+    async def generate_ranking_embed(self) -> discord.Embed:
+        """生成本季動畫觀看排行榜 embed（供自動推送使用）"""
         try:
-            await interaction.response.defer()
             
             # 確保 episode_statistics 表存在（修復初始化問題）
             try:
@@ -2416,22 +2274,21 @@ class AnimeTracker(commands.Cog):
                         )
                     """)
                     conn.commit()
-                    logger.info("✅ [anime_ranking] 確保 episode_statistics 表存在")
+                    logger.info("✅ [generate_ranking_embed] 確保 episode_statistics 表存在")
             except Exception as e:
-                logger.warning(f"⚠️ [anime_ranking] 表初始化失敗: {e}")
+                logger.warning(f"⚠️ [generate_ranking_embed] 表初始化失敗: {e}")
             
             # 先嘗試從数據庫取歷史統計數據
             top_anime = self.db.get_top_anime_by_views(limit=10)
             
             # 如果沒有歷史數據，則實時從 API 獲取最近的動畫
             if not top_anime:
-                logger.info("📺 [anime_ranking] 數據庫無歷史數據，改為實時從 API 獲取")
+                logger.info("📺 [generate_ranking_embed] 數據庫無歷史數據，改為實時從 API 獲取")
                 episodes = await self.fetch_all_recent_anime_from_api()
                 
                 if not episodes:
-                    await interaction.followup.send("❌ 無法獲取動畫數據，請稍後再試")
-                    logger.warning("📺 [anime_ranking] API 無數據")
-                    return
+                    logger.warning("📺 [generate_ranking_embed] 無法獲取動畫數據")
+                    return None
                 
                 # 按觀看人數排序
                 anime_list = {}
@@ -2453,7 +2310,7 @@ class AnimeTracker(commands.Cog):
                                 # 使用 API 返回的正確動畫名稱
                                 if details.get("title"):
                                     anime_name = details.get("title")
-                                    logger.info(f"📺 [anime_ranking] 獲得動畫名稱: {anime_name} (animeSn={anime_sn})")
+                                    logger.info(f"📺 [generate_ranking_embed] 獲得動畫名稱: {anime_name} (animeSn={anime_sn})")
                     except Exception as e:
                         logger.warning(f"⚠️ 無法取得 videoSn={video_sn} 的詳細信息: {e}")
                     
@@ -2475,7 +2332,7 @@ class AnimeTracker(commands.Cog):
                 top_anime = []
                 for anime_sn, data in anime_list.items():
                     if data["total_episodes"] > 0:
-                        logger.info(f"📺 [anime_ranking] 排行動畫: {data['name']} (animeSn={anime_sn}, views={data['total_views']})")
+                        logger.info(f"📺 [generate_ranking_embed] 排行動畫: {data['name']} (animeSn={anime_sn}, views={data['total_views']})")
                         top_anime.append({
                             "anime_sn": anime_sn,
                             "name": data["name"],
@@ -2488,16 +2345,15 @@ class AnimeTracker(commands.Cog):
                 top_anime = top_anime[:10]
                 
                 if not top_anime:
-                    await interaction.followup.send("📊 目前還沒有動畫數據，請稍後再試")
-                    logger.info("📺 [anime_ranking] 無有效的動畫數據")
-                    return
+                    logger.info("📺 [generate_ranking_embed] 無有效的動畫數據")
+                    return None
                 
-                logger.info(f"📺 [anime_ranking] 實時獲取了 {len(top_anime)} 部動畫的數據")
+                logger.info(f"📺 [generate_ranking_embed] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
             # 嘗試獲取有多集的動畫數據（用於多線圖）
             # 使用短 URL API 無視 URL 長度限制
             multi_anime = self.db.get_multi_episode_anime_for_chart(limit=10, min_episodes=1)
-            logger.info(f"📺 [anime_ranking] 查詢 multi_anime 結果: {len(multi_anime) if multi_anime else 0} 部動畫")
+            logger.info(f"📺 [generate_ranking_embed] 查詢 multi_anime 結果: {len(multi_anime) if multi_anime else 0} 部動畫")
             if multi_anime:
                 for i, anime in enumerate(multi_anime[:3]):
                     logger.info(f"  📺 [{i+1}] {anime['name']}: {len(anime['episodes'])} 集, {anime['total_views']} 次觀看")
@@ -2566,24 +2422,24 @@ class AnimeTracker(commands.Cog):
                     short_url = await self.get_short_chart_url(chart_config)
                     if short_url:
                         chart_url = short_url
-                        logger.info(f"✅ [anime_ranking] 多線趨勢圖短 URL 已取得")
+                        logger.info(f"✅ [generate_ranking_embed] 多線趨勢圖短 URL 已取得")
                     else:
                         # 改用直接 URL（只要長度不超過 2048）
                         config_json = json.dumps(chart_config, separators=(',', ':'), ensure_ascii=False)
                         encoded = quote(config_json)
                         chart_url = f"https://quickchart.io/chart?bkg=white&w=950&h=400&c={encoded}"
                         
-                        logger.info(f"📺 [anime_ranking] 直接 URL 長度: {len(chart_url)}")
+                        logger.info(f"📺 [generate_ranking_embed] 直接 URL 長度: {len(chart_url)}")
                         
                         if len(chart_url) > 2048:
-                            logger.warning(f"⚠️ [anime_ranking] URL {len(chart_url)} 字元超過限制，改用文字顯示")
+                            logger.warning(f"⚠️ [generate_ranking_embed] URL {len(chart_url)} 字元超過限制，改用文字顯示")
                             multi_anime = None  # 改用模式 B
                             chart_url = None
                     
                     # 直接使用圖表 URL
                     if chart_url:
                         embed.set_image(url=chart_url)
-                        logger.info(f"✅ [anime_ranking] 多線趨勢圖已設置")
+                        logger.info(f"✅ [generate_ranking_embed] 多線趨勢圖已設置")
                     
                     # 添加參賽動畫排名信息
                     anime_ranking_info = []
@@ -2613,7 +2469,7 @@ class AnimeTracker(commands.Cog):
                             inline=False
                         )
                 except Exception as e:
-                    logger.warning(f"⚠️ [anime_ranking] 生成多線圖失敗: {e}，改用文字顯示")
+                    logger.warning(f"⚠️ [generate_ranking_embed] 生成多線圖失敗: {e}，改用文字顯示")
                     multi_anime = None  # 改用模式 B
             
             # === 模式 B：文字排行列表（當無多集數據或圖表生成失敗）===
@@ -2661,9 +2517,9 @@ class AnimeTracker(commands.Cog):
                     
                     if len(chart_url) <= 2048:
                         embed.set_image(url=chart_url)
-                        logger.info(f"📺 [anime_ranking] 單線聚合圖 URL 已設置 (長度: {len(chart_url)})")
+                        logger.info(f"📺 [generate_ranking_embed] 單線聚合圖 URL 已設置 (長度: {len(chart_url)})")
                 except Exception as e:
-                    logger.warning(f"⚠️ [anime_ranking] 生成單線圖 URL 失敗: {e}")
+                    logger.warning(f"⚠️ [generate_ranking_embed] 生成單線圖 URL 失敗: {e}")
                 
                 # 添加文字排行
                 ranking_text = []
@@ -2676,41 +2532,13 @@ class AnimeTracker(commands.Cog):
             
             embed.set_footer(text="📊 集數觀看趨勢分析" if multi_anime and len(multi_anime) >= 1 else "📈 本季熱度聚合排行")
             
-            await interaction.followup.send(embed=embed)
-            logger.info(f"📺 [anime_ranking] 顯示排行榜（模式: {'多線趨勢' if multi_anime and len(multi_anime) >= 1 else '聚合排行'}）")
+            logger.info(f"📺 [generate_ranking_embed] 排行榜已生成（模式: {'多線趨勢' if multi_anime and len(multi_anime) >= 1 else '聚合排行'}）")
+            return embed
         except Exception as e:
-            logger.error(f"❌ [anime_ranking] 指令執行失敗: {e}", exc_info=True)
-            try:
-                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
-            except:
-                pass
+            logger.error(f"❌ [generate_ranking_embed] 生成失敗: {e}", exc_info=True)
+            return None
     
-    @app_commands.command(name="anime_stats", description="查看特定動畫的統計數據分析")
-    async def anime_stats(self, interaction: discord.Interaction, anime_name: str):
-        """查看某部動畫的詳細統計數據"""
-        try:
-            await interaction.response.defer()
-            
-            # 簡單的搜索：從數據庫中查找名稱相符的動畫
-            # 這需要先更新系統，但我們可以返回提示
-            await interaction.followup.send(
-                "📊 **動畫統計分析功能**\n\n"
-                "此功能用於查看特定動畫的詳細數據分析。\n\n"
-                "目前支持的數據指標：\n"
-                "• 👥 本季總觀看人數\n"
-                "• ⭐ 平均評分趨勢\n"
-                "• 📈 集數 vs 觀看人數趨勢\n"
-                "• 🔢 排名變化\n\n"
-                f"查詢動畫: **{anime_name}**\n"
-                "更多統計功能開發中... 請使用 `/anime_ranking` 查看排行榜"
-            )
-            logger.info(f"📺 [anime_stats] 查詢動畫: {anime_name}")
-        except Exception as e:
-            logger.error(f"❌ [anime_stats] 指令執行失敗: {e}", exc_info=True)
-            try:
-                await interaction.followup.send(f"❌ 錯誤: {str(e)[:100]}")
-            except:
-                pass
+    # ✅ anime_stats 指令已刪除 - 邏輯改為自動推送
     
 
 async def setup(bot: commands.Bot):
