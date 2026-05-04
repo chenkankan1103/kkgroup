@@ -1863,7 +1863,16 @@ class AnimeTracker(commands.Cog):
             
             expected_times = self._get_expected_check_times(schedule, now)
             if not expected_times:
+                msg = f"[ANIME] 預期時刻為空"
+                print(msg, flush=True)
+                print(msg, file=open('/tmp/anime_debug.log', 'a'))
                 return
+            
+            # 診斷：打印預期時刻
+            times_str = ", ".join([dt.strftime("%H:%M") for dt in sorted(expected_times)])
+            msg = f"[ANIME] 預期檢查時刻: {times_str}"
+            print(msg, flush=True)
+            print(msg, file=open('/tmp/anime_debug.log', 'a'))
             
             # 取得頻道
             channel = self.bot.get_channel(ANIME_CHANNEL_ID)
@@ -1887,9 +1896,19 @@ class AnimeTracker(commands.Cog):
             # 這防止了凌晨時誤認為「明天的 01:00 已經過了」的 bug
             today_date = now.date()
             next_scheduled = None
+            debug_log = open('/tmp/anime_debug.log', 'a')
             for dt in expected_times:
                 if dt.date() == today_date and dt <= now:  # 只找今天已過的時刻
                     next_scheduled = dt  # 保持更新，找最後一個已過的
+                    msg = f"[ANIME] 候選時刻: {dt.strftime('%H:%M')} (日期符合, 已過)"
+                    print(msg, flush=True)
+                    print(msg, file=debug_log)
+                else:
+                    reason = "日期不符" if dt.date() != today_date else "未過"
+                    msg = f"[ANIME] 跳過時刻: {dt.strftime('%H:%M')} ({reason})"
+                    print(msg, flush=True)
+                    print(msg, file=debug_log)
+            debug_log.close()
             
             if next_scheduled:
                 scheduled_time_str = next_scheduled.strftime("%H:%M")
@@ -1899,11 +1918,15 @@ class AnimeTracker(commands.Cog):
                 time_diff_min = (now - next_scheduled).total_seconds() / 60
                 
                 # 詳細日誌
-                print(f"[ANIME] 最近時刻: {scheduled_time_str}, 時差: {time_diff_min:.1f} 分", flush=True)
+                msg = f"[ANIME] 最近時刻: {scheduled_time_str}, 時差: {time_diff_min:.1f} 分"
+                print(msg, flush=True)
+                print(msg, file=open('/tmp/anime_debug.log', 'a'))
                 
                 # 只在 +4 到 +6 分鐘時執行一次（5 分鐘檢查周期的容差）
                 if 4 <= time_diff_min <= 6:
-                    print(f"[ANIME] ✅ 時間在窗口內，執行檢查", flush=True)
+                    msg = f"[ANIME] ✅ 時間在窗口內，執行檢查"
+                    print(msg, flush=True)
+                    print(msg, file=open('/tmp/anime_debug.log', 'a'))
                     # 防止重複檢查
                     if not self.db.is_time_checked_today(scheduled_time_str, scheduled_date):
                         try:
