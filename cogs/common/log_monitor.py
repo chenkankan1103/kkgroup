@@ -115,10 +115,15 @@ class LogMonitorEngine:
             + [arg for svc in _SERVICES for arg in ("-u", svc)]
             + ["-f", "-n", "0", "--output=cat", "--no-pager"]
         )
+        # 設定 UTF-8 locale，避免 subprocess 讀到亂碼
+        env = os.environ.copy()
+        env["LANG"]   = "C.UTF-8"
+        env["LC_ALL"] = "C.UTF-8"
         self._proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            env=env,
         )
         logger.info("[LogMonitor] journalctl -f 已啟動（事件驅動模式）")
 
@@ -258,11 +263,12 @@ class LogMonitor(commands.Cog):
         return any(r.name == _ADMIN_ROLE for r in getattr(interaction.user, "roles", []))
 
     @app_commands.command(name="logmonitor", description="日誌監控控制（管理員限定）")
-    @app_commands.describe(action="pause=暫停 / resume=恢復 / status=狀態")
+    @app_commands.describe(action="pause=暫停 / resume=恢復 / status=狀態 / test=測試")
     @app_commands.choices(action=[
         app_commands.Choice(name="status",  value="status"),
         app_commands.Choice(name="pause",   value="pause"),
         app_commands.Choice(name="resume",  value="resume"),
+        app_commands.Choice(name="test",    value="test"),
     ])
     async def logmonitor(self, interaction: discord.Interaction, action: str):
         if not self._check_perm(interaction):
@@ -293,6 +299,24 @@ class LogMonitor(commands.Cog):
             if not self._task or self._task.done():
                 self._task = asyncio.create_task(self._engine.start())
             await interaction.response.send_message("▶️ 日誌監控已恢復。")
+
+        elif action == "test":
+            await interaction.response.defer(ephemeral=True)
+            fake_lines = [
+                "[TEST] ERROR: 這是一筆測試錯誤日誌 — LogMonitor test triggered",
+                "[TEST] Traceback (most recent call last):",
+                "[TEST]   File 'cogs/common/AI.py', line 99, in run",
+                "[TEST] RuntimeError: 模擬錯誤：用於驗證 LogMonitor 分析流程",
+            ]
+            # 繞過冷却，直接呼叫分析
+            self._engine._cooldowns.clear()
+            asyncio.create_task(self._engine._analyze_and_notify(fake_lines))
+            await interaction.followup.send(
+                "🧪 測試觸發成功！\n"
+                "已注入假錯誤日誌並呼叫 LLM 分析，"
+                f"結果將送至 <#{_ALERT_CHANNEL_ID}>（約 5-15 秒後出現）。",
+                ephemeral=True,
+            )
 
 
 async def setup(bot: commands.Bot):
