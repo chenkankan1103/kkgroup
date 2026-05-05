@@ -39,12 +39,14 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ─── 設定 ─────────────────────────────────────────────────────────────────────
-_LOG_CHANNEL_ID:   int = int(os.getenv("LOG_CHANNEL_ID",   "0"))
-_ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID", "0"))
-_LEADER_ID:        int = int(os.getenv("LEADER_DISCORD_ID","0"))
+_LOG_CHANNEL_ID:   int = int(os.getenv("LOG_CHANNEL_ID",      "0"))
+_STAFF_CHANNEL_ID: int = int(os.getenv("STAFF_ID_CHANNEL_ID", "0"))
+_ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID",    "0"))
+_LEADER_ID:        int = int(os.getenv("LEADER_DISCORD_ID",   "0"))
 _ADMIN_ROLE:       str = os.getenv("ADMIN_ROLE_NAME", "管理員")
 
-_ALERT_CHANNEL_ID: int = _LOG_CHANNEL_ID or _ADMIN_CHANNEL_ID  # 優先 LOG_CHANNEL_ID
+# 通知頻道優先順序：LOG_CHANNEL_ID > STAFF_ID_CHANNEL_ID > ADMIN_CHANNEL_ID
+_ALERT_CHANNEL_ID: int = _LOG_CHANNEL_ID or _STAFF_CHANNEL_ID or _ADMIN_CHANNEL_ID
 
 _SERVICES = ["bot.service", "shopbot.service", "uibot.service"]
 
