@@ -361,26 +361,6 @@ async def on_ready():
         # 載入模組
         loaded_extensions = await setup_modules(client)
         
-        # ⭐ 明確加載 uibody（UserPanel cog）- 置物櫃系統所需
-        try:
-            from cogs.ui.uibody import setup as uibody_setup
-            await uibody_setup(client)
-            file_log("✅ uibody (UserPanel) 已加載")
-        except Exception as e:
-            file_log(f"❌ 加載 uibody 失敗: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        # ⭐ 明確加載 recovery_cog（恢復系統）- 自動清除昏倒狀態
-        try:
-            from cogs.ui.recovery_cog import setup as recovery_setup
-            await recovery_setup(client)
-            file_log("✅ recovery_cog (自動恢復系統) 已加載")
-        except Exception as e:
-            file_log(f"❌ 加載 recovery_cog 失敗: {e}")
-            import traceback
-            traceback.print_exc()
-        
         # ⭐ 註冊所有永久視圖（timeout=None）
         # 這是解決按鈕交互失敗的關鍵步驟
         from shared.utils.view_registry import register_all_permanent_views
