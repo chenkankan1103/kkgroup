@@ -2316,9 +2316,13 @@ class AnimeTracker(commands.Cog):
                 logger.warning("⚠️ [refresh_weekly_schedule] 無法拉取時程表")
                 return
             
-            # 構建本週的完整時程
-            week_start = now - timedelta(days=now.weekday())
+            # 構建下週的完整時程（在禮拜天晚上為下週一開始的那週）
+            # Bug fix: 禮拜天時 now.weekday()=6，若用 now - 6 days = 上週一
+            # 但我們應存為「下週一」，因為 get_today_schedule() 在週一查詢時
+            # 會用「本週一」作為 week_start，所以需要提前存好下週的資料
+            week_start = now - timedelta(days=now.weekday()) + timedelta(weeks=1)
             week_start_str = week_start.strftime("%Y-%m-%d")
+            logger.info(f"📅 [refresh_weekly_schedule] 將保存為下週起始: {week_start_str}")
             
             schedule_data = []
             for day_offset in range(7):
