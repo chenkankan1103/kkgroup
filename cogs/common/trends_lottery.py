@@ -517,16 +517,19 @@ class TrendsLotteryCog(commands.Cog):
                     )
                     
                     # 添加獲獎信息（只有全中才顯示）
-                    if result.get('jackpot_winners', 0) > 0:
+                    jackpot_winners = result.get('jackpot_winners', 0)
+                    total_bets_count = result.get('total_bets', 0)
+                    jackpot_total = result.get('jackpot_total', result.get('jackpot', 0))
+                    if jackpot_winners > 0:
                         embed.add_field(
                             name="🎊 全中獲獎",
-                            value=f"恭喜 {result['jackpot_winners']} 位玩家全中！\n每人獲得：${result.get('jackpot_total', 0) / result['jackpot_winners']:.2f}",
+                            value=f"恭喜 {jackpot_winners} 位玩家全中！\n每人獲得：${jackpot_total / jackpot_winners:.2f}",
                             inline=False
                         )
                     else:
                         embed.add_field(
                             name="📊 開獎統計",
-                            value=f"投注人數：{result['total_bets']} 人\n獎池總額：${result.get('jackpot_total', 0):.2f}",
+                            value=f"投注人數：{total_bets_count} 人\n獎池總額：${jackpot_total:.2f}",
                             inline=False
                         )
                     
@@ -570,14 +573,15 @@ class TrendsLotteryCog(commands.Cog):
                 f"{i+1}. `{trend}`"
                 for i, trend in enumerate(result.get('top10', []))
             ])
-            embed.add_field(name="🏆 中獎號碼", value=top3_text, inline=False)
+            embed.add_field(name="🏆 中獎號碼", value=top3_text or "無趨勢數據", inline=False)
             
             # 統計
             total_bets = result.get('total_bets', 0)
             jackpot_winners = result.get('jackpot_winners', 0)
+            jackpot_total = result.get('jackpot_total', result.get('jackpot', 0))
             
             if jackpot_winners > 0:
-                winner_earnings = result.get('jackpot_total', 0) / jackpot_winners
+                winner_earnings = jackpot_total / jackpot_winners
                 embed.add_field(
                     name="🎁 獲獎信息",
                     value=f"投注人數：{total_bets} 人\n全中玩家：{jackpot_winners} 人\n每人獲得：${winner_earnings:.2f}",
@@ -586,7 +590,7 @@ class TrendsLotteryCog(commands.Cog):
             else:
                 embed.add_field(
                     name="📊 統計",
-                    value=f"投注人數：{total_bets} 人\n獎池總額：${result.get('jackpot_total', 0):.2f}\n本輪無全中者",
+                    value=f"投注人數：{total_bets} 人\n獎池總額：${jackpot_total:.2f}\n本輪無全中者",
                     inline=False
                 )
             

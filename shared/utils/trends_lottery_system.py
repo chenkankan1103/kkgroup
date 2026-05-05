@@ -254,6 +254,7 @@ class TrendsLotterySystem:
             "jackpot_total": jackpot,
             "jackpot_distributed": jackpot_distributed,
             "jackpot_winners": len(three_match_winners),
+            "total_bets": len(all_bets),
             "timestamp": datetime.now().isoformat()
         }
         
