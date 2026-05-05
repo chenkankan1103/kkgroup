@@ -56,6 +56,16 @@ _ERROR_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# 排除這些誤報：Entry Point 警告、單獨的 JSON 欄位片段、已知忽略訊息
+_IGNORE_PATTERNS = re.compile(
+    r"(Entry Point.*(?:warning|ignored)|"
+    r"error code: 50240|"
+    r'^\s*"error":\s*\{|'
+    r"command sync warning|"
+    r"已忽略)",
+    re.IGNORECASE,
+)
+
 _DEBOUNCE_SEC:  int   = 30    # 累積錯誤的時間窗口（秒）
 _COOLDOWN_SEC:  int   = 600   # 同類錯誤再次通知的最短間隔（秒）
 _MAX_LOG_LINES: int   = 20    # 送給 LLM 分析的最大行數
@@ -129,7 +139,7 @@ class LogMonitorEngine:
 
         async for raw in self._proc.stdout:
             line = raw.decode("utf-8", errors="replace").rstrip()
-            if _ERROR_PATTERNS.search(line):
+            if _ERROR_PATTERNS.search(line) and not _IGNORE_PATTERNS.search(line):
                 self._on_error_line(line)
 
         await self._proc.wait()
