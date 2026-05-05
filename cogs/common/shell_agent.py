@@ -30,8 +30,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ─── 設定 ────────────────────────────────────────────────────────────────────
-LEADER_DISCORD_ID: int = int(os.getenv("LEADER_DISCORD_ID", "0"))
-ADMIN_ROLE_NAME:   str = os.getenv("ADMIN_ROLE_NAME", "管理員")
+ADMIN_USER_ID:  int = int(os.getenv("ADMIN_USER_ID", "0"))
+ADMIN_ROLE_NAME: str = os.getenv("ADMIN_ROLE_NAME", "管理員")
 MAX_STEPS:          int = 10
 CONFIRM_TIMEOUT:    int = 60  # Discord Button 等待秒數
 
@@ -72,7 +72,7 @@ class ConfirmCommandView(PersistentViewBase):
 
     @staticmethod
     def _check_perm(interaction: discord.Interaction) -> bool:
-        if interaction.user.id == LEADER_DISCORD_ID:
+        if interaction.user.id == ADMIN_USER_ID:
             return True
         return any(r.name == ADMIN_ROLE_NAME for r in getattr(interaction.user, "roles", []))
 
@@ -339,7 +339,7 @@ class ShellAgent(commands.Cog):
             logger.warning("⚠️ agent_tools 未載入，ShellAgent 無工具支援")
 
     def _has_permission(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id == LEADER_DISCORD_ID:
+        if interaction.user.id == ADMIN_USER_ID:
             return True
         return any(r.name == ADMIN_ROLE_NAME for r in getattr(interaction.user, "roles", []))
 
