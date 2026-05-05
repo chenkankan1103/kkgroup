@@ -1331,6 +1331,11 @@ class AnimeTracker(commands.Cog):
             await self._init_weekly_schedule_if_empty()
             print("[COG_LOAD] ✅ 週表初始化檢查完成", flush=True)
             
+            # 補推：若 bot 重啟前有未推送的動畫，啟動時補發
+            print("[COG_LOAD] 檢查是否有錯過的動畫推送...", flush=True)
+            await self._catchup_missed_pushes()
+            print("[COG_LOAD] ✅ 補推檢查完成", flush=True)
+            
             # 啟動週統計任務
             print("[COG_LOAD] 檢查 send_weekly_stats 任務狀態", flush=True)
             if not self.send_weekly_stats.is_running():
@@ -1437,6 +1442,59 @@ class AnimeTracker(commands.Cog):
         except Exception as e:
             logger.error(f"❌ [AnimeTracker.cog_unload] 任務停止失敗: {e}", exc_info=True)
         logger.info("=" * 50)
+    
+    async def _catchup_missed_pushes(self):
+        """Bot 重啟時補推今天未發送的動畫（限 4 小時內）"""
+        try:
+            await self.bot.wait_until_ready()
+            now = datetime.now(TW_TZ)
+            today_schedule = self.db.get_today_schedule()
+            if not today_schedule:
+                return
+            
+            # 找出今天已過時刻但未推送的項目（2 分鐘前 ~ 4 小時前）
+            missed = []
+            for item in today_schedule:
+                if item['pushed']:
+                    continue
+                try:
+                    sched_dt = datetime.strptime(item['scheduled_time'], "%H:%M").replace(
+                        year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                    )
+                    diff_min = (now - sched_dt).total_seconds() / 60
+                    if 2 <= diff_min <= 240:  # 2 分鐘 ~ 4 小時前
+                        missed.append(item)
+                except Exception:
+                    pass
+            
+            if not missed:
+                return
+            
+            missed_times = sorted(set(item['scheduled_time'] for item in missed))
+            logger.info(f"🔄 [_catchup_missed_pushes] 發現 {len(missed)} 筆未推送（{missed_times}），嘗試補推...")
+            
+            channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+            if not channel:
+                logger.warning("⚠️ [_catchup_missed_pushes] 找不到推送頻道")
+                return
+            
+            # 查詢 API 推送（一次即可，_check_and_send_anime 已做去重）
+            earliest_time = missed_times[0]
+            success = await self._check_and_send_anime(f"catchup/{earliest_time}", channel)
+            
+            # 無論成功與否，將所有過去時刻標記為已推送（避免無限重試）
+            week_start = now - timedelta(days=now.weekday())
+            week_start_str = week_start.strftime("%Y-%m-%d")
+            day_of_week = (now.weekday() + 1) % 7 or 7
+            for t in missed_times:
+                self.db.mark_time_pushed(week_start_str, day_of_week, t)
+            
+            if success:
+                logger.info(f"✅ [_catchup_missed_pushes] 補推成功，已標記 {missed_times}")
+            else:
+                logger.info(f"⏭️ [_catchup_missed_pushes] API 無新集或已推送過，已標記 {missed_times}")
+        except Exception as e:
+            logger.error(f"❌ [_catchup_missed_pushes] 失敗: {e}", exc_info=True)
     
     async def _init_weekly_schedule_if_empty(self):
         """如果本週的週表為空，立即從 API 拉取（解決首次部署/非禮拜天重啟問題）"""
@@ -2381,11 +2439,29 @@ class AnimeTracker(commands.Cog):
                 return
             
             # 尋找符合現在時刻的項目（尚未推送的）
-            matching = [item for item in today_schedule if item['scheduled_time'] == current_time and not item['pushed']]
+            # 同時支援補推機制：15 分鐘內的未推送項目（防止 bot 重啟錯過時刻）
+            catchup_minutes = 15
+            matching = []
+            for item in today_schedule:
+                if item['pushed']:
+                    continue
+                scheduled = item['scheduled_time']
+                try:
+                    sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
+                        year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                    )
+                    diff = (now - sched_dt).total_seconds()
+                    # 精確時刻 OR 在 catchup 窗口內（剛過去 0~15 分鐘）
+                    if 0 <= diff < catchup_minutes * 60:
+                        matching.append(item)
+                except Exception:
+                    pass
             
             if matching:
-                logger.info(f"📺 [check_scheduled_push] 檢測到推送時刻: {current_time} ({len(matching)} 部動畫)")
-                await self.send_anime_push(current_time, ANIME_CHANNEL_ID)
+                # 只取最早那個時刻的推送（避免補推時一次推很多）
+                earliest_time = min(item['scheduled_time'] for item in matching)
+                logger.info(f"📺 [check_scheduled_push] 推送時刻: {earliest_time}（現在 {current_time}，共 {len(matching)} 部）")
+                await self.send_anime_push(earliest_time, ANIME_CHANNEL_ID)
         
         except Exception as e:
             logger.error(f"❌ [check_scheduled_push] 失敗: {e}", exc_info=True)
