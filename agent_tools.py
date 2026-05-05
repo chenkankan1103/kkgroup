@@ -827,12 +827,17 @@ def run_terminal(command: str, timeout_sec: int = 30, *, caller_id: Optional[int
             return f"⛔ 指令包含危險關鍵字「{danger}」，已拒絕執行。"
 
     try:
+        # 確保 PATH 包含常用工具目錄
+        env = os.environ.copy()
+        env.setdefault("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=timeout_sec
+            timeout=timeout_sec,
+            env=env,
         )
         stdout = result.stdout.strip()
         stderr = result.stderr.strip()
