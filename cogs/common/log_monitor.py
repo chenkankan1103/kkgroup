@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 _LOG_CHANNEL_ID:   int = int(os.getenv("LOG_CHANNEL_ID",      "0"))
 _STAFF_CHANNEL_ID: int = int(os.getenv("STAFF_ID_CHANNEL_ID", "0"))
 _ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID",    "0"))
-_LEADER_ID:        int = int(os.getenv("LEADER_DISCORD_ID",   "0"))
+_ADMIN_USER_ID:    int = int(os.getenv("ADMIN_USER_ID",       "0"))
 _ADMIN_ROLE:       str = os.getenv("ADMIN_ROLE_NAME", "管理員")
 
 # 通知頻道優先順序：LOG_CHANNEL_ID > STAFF_ID_CHANNEL_ID > ADMIN_CHANNEL_ID
@@ -258,7 +258,7 @@ class LogMonitor(commands.Cog):
             self._task.cancel()
 
     def _check_perm(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id == _LEADER_ID:
+        if interaction.user.id == _ADMIN_USER_ID:
             return True
         return any(r.name == _ADMIN_ROLE for r in getattr(interaction.user, "roles", []))
 
