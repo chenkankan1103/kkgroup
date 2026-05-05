@@ -111,7 +111,7 @@ class LogMonitorEngine:
 
     async def _run_once(self):
         cmd = (
-            ["journalctl"]
+            ["/usr/bin/journalctl"]
             + [arg for svc in _SERVICES for arg in ("-u", svc)]
             + ["-f", "-n", "0", "--output=cat", "--no-pager"]
         )
