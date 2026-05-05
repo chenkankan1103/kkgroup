@@ -508,7 +508,7 @@ class TrendsLotteryCog(commands.Cog):
                     # 添加開獎結果字段
                     top3_text = "\n".join([
                         f"{i+1}. `{trend}`"
-                        for i, trend in enumerate(result['top3'])
+                        for i, trend in enumerate(result.get('top10', []))
                     ])
                     embed.add_field(
                         name="🏆 開獎結果",
@@ -568,7 +568,7 @@ class TrendsLotteryCog(commands.Cog):
             # 中獎號碼
             top3_text = "\n".join([
                 f"{i+1}. `{trend}`"
-                for i, trend in enumerate(result['top3'])
+                for i, trend in enumerate(result.get('top10', []))
             ])
             embed.add_field(name="🏆 中獎號碼", value=top3_text, inline=False)
             

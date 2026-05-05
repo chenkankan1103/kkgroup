@@ -264,7 +264,7 @@ class TrendsLotterySystem:
         """將金額加入獎池"""
         try:
             jackpot_key = f"lottery_jackpot_{round_id}"
-            current = self.db.get_user_field("LOTTERY_SYSTEM", jackpot_key, default=0.0)
+            current = self.db.get_user_field(0, jackpot_key, default=0.0)
             
             try:
                 current = float(current)
@@ -272,7 +272,7 @@ class TrendsLotterySystem:
                 current = 0.0
             
             new_jackpot = current + amount
-            self.db.set_user_field("LOTTERY_SYSTEM", jackpot_key, new_jackpot)
+            self.db.set_user_field(0, jackpot_key, new_jackpot)
             
             return True
         except Exception as e:
@@ -283,7 +283,7 @@ class TrendsLotterySystem:
         """獲取獎池金額"""
         try:
             jackpot_key = f"lottery_jackpot_{round_id}"
-            jackpot = self.db.get_user_field("LOTTERY_SYSTEM", jackpot_key, default=0.0)
+            jackpot = self.db.get_user_field(0, jackpot_key, default=0.0)
             
             try:
                 return float(jackpot)
@@ -297,7 +297,7 @@ class TrendsLotterySystem:
         """清空獎池（開獎後）"""
         try:
             jackpot_key = f"lottery_jackpot_{round_id}"
-            self.db.set_user_field("LOTTERY_SYSTEM", jackpot_key, 0.0)
+            self.db.set_user_field(0, jackpot_key, 0.0)
             return True
         except Exception as e:
             logger.error(f"❌ 獎池清空失敗: {e}")
