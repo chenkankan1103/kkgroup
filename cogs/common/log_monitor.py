@@ -73,6 +73,44 @@ _RESTART_DELAY: int   = 60    # subprocess 死亡後等待重啟的秒數
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# AutoFixView — 「啟動自動修復」按鈕
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AutoFixView(discord.ui.View):
+    """錯誤通知 Embed 下方的「🔧 啟動自動修復」按鈕。
+
+    點擊後在同一頻道啟動 ShellAgentRunner，以 AI 分析摘要作為修復目標。
+    """
+
+    def __init__(self, runner, goal: str, channel: discord.TextChannel):
+        super().__init__(timeout=300)  # 5 分鐘內可點擊
+        self._runner  = runner
+        self._goal    = goal
+        self._channel = channel
+
+    @discord.ui.button(label="🔧 啟動自動修復", style=discord.ButtonStyle.danger)
+    async def auto_fix(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 權限檢查
+        is_admin = interaction.user.id == _ADMIN_USER_ID
+        has_role = any(r.name == _ADMIN_ROLE for r in getattr(interaction.user, "roles", []))
+        if not (is_admin or has_role):
+            await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
+            return
+
+        # 禁用按鈕，防止重複點擊
+        button.disabled = True
+        button.label    = "⏳ 修復中…"
+        await interaction.response.edit_message(view=self)
+
+        await self._channel.send(
+            f"🚀 **自動修復啟動** — 由 {interaction.user.mention} 觸發"
+        )
+        asyncio.create_task(
+            self._runner.run(self._goal, self._channel, _ADMIN_USER_ID)
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # LogMonitorEngine — 核心事件驅動引擎
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -84,10 +122,11 @@ class LogMonitorEngine:
     - Discord 通知（帶冷却）
     """
 
-    def __init__(self, bot: commands.Bot, llm: LLMClient):
-        self.bot     = bot
-        self.llm     = llm
-        self.enabled = True
+    def __init__(self, bot: commands.Bot, llm: LLMClient, shell_runner=None):
+        self.bot          = bot
+        self.llm          = llm
+        self.shell_runner = shell_runner  # ShellAgentRunner，可為 None
+        self.enabled      = True
 
         self._proc:          Optional[asyncio.subprocess.Process] = None
         self._error_buffer:  list[str] = []
@@ -234,8 +273,16 @@ class LogMonitorEngine:
         )
         embed.set_footer(text=f"事件驅動監控 · 冷却 {_COOLDOWN_SEC//60} 分鐘")
 
+        # 組合修復目標（給 ShellAgentRunner 用）
+        fix_goal = (
+            f"根據以下 Bot 錯誤日誌，請診斷並嘗試修復問題。\n"
+            f"AI 分析摘要：{ai_text[:400]}\n"
+            f"原始錯誤日誌：{log_text[:300]}"
+        )
+        view = AutoFixView(self.shell_runner, fix_goal, channel) if self.shell_runner else None
+
         try:
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, view=view)
             logger.info("[LogMonitor] 已送出 Discord 通知")
         except Exception as e:
             logger.error(f"[LogMonitor] 送出通知失敗: {e}")
@@ -249,9 +296,20 @@ class LogMonitor(commands.Cog):
     """日誌事件監控 Cog（事件驅動）。"""
 
     def __init__(self, bot: commands.Bot):
-        self.bot    = bot
-        self._llm   = LLMClient()
-        self._engine = LogMonitorEngine(bot, self._llm)
+        self.bot = bot
+        self._llm = LLMClient()
+
+        # 嘗試載入 ShellAgentRunner（需要 agent_tools）
+        _shell_runner = None
+        try:
+            from cogs.common.shell_agent import ShellAgentRunner
+            import agent_tools as _at
+            _shell_runner = ShellAgentRunner(_at)
+            logger.info("[LogMonitor] ✅ ShellAgentRunner 已載入，支援自動修復")
+        except Exception as e:
+            logger.warning(f"[LogMonitor] ShellAgentRunner 未載入（{e}），自動修復按鈕不可用")
+
+        self._engine = LogMonitorEngine(bot, self._llm, shell_runner=_shell_runner)
         self._task: Optional[asyncio.Task] = None
         logger.info("✅ LogMonitor Cog 已載入")
 
