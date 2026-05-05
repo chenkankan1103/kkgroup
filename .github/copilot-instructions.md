@@ -134,6 +134,26 @@ Cron:
 - 每 5 分: update_restart.py, sync_to_sheet.py
 - 每週一 3AM: weekly_backup.py
 
+### VM 自動重啟與穩定性
+- 三個 bot 服務必須啟用才能在 VM 重開機後自動啟動:
+  - `sudo systemctl enable bot.service shopbot.service uibot.service`
+- 服務應該設定重啟策略，建議:
+  - `Restart=on-failure`
+  - `RestartSec=10`
+  - `StartLimitBurst=10`
+  - `StartLimitIntervalSec=600`
+- e2-micro RAM 很有限，請務必加 swap 作為緩衝:
+  - `sudo fallocate -l 1G /swapfile`
+  - `sudo chmod 600 /swapfile`
+  - `sudo mkswap /swapfile`
+  - `sudo swapon /swapfile`
+  - `echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab`
+- 常用檢查命令:
+  - `free -m`
+  - `df -h /`
+  - `systemctl status bot.service shopbot.service uibot.service`
+  - `systemctl is-enabled bot.service shopbot.service uibot.service`
+
 ---
 
 ## 安全
