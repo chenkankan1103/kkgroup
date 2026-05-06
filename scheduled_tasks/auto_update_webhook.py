@@ -53,32 +53,38 @@ GITHUB_API_BASE = 'https://api.github.com'
 GITHUB_API_TIMEOUT = 10
 RETRY_ATTEMPTS = 3
 RETRY_DELAY = 1  # 秒
+TUNNEL_WAIT_TIME = 30  # 初始等待隧道生成的時間
+TUNNEL_RETRY_WAIT = 30  # 重試前的等待時間
+TUNNEL_TIMEOUT = 30  # 命令超時時間
 
 
 def get_current_tunnel_url():
-    """從 cloudflared 日誌提取當前隧道 URL (改進版本)"""
-    try:
-        # 使用 shell 命令方式，提高兼容性
-        cmd = 'sudo journalctl -u cloudflared.service -n 100 --no-pager | grep -o "https://[a-z0-9\\-]*\\.trycloudflare\\.com" | tail -1'
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False
-        )
-        
-        url = result.stdout.strip() if result.stdout else None
-        
-        if url and 'trycloudflare.com' in url:
-            logger.info(f"✅ 當前隧道 URL: {url}")
-            return url
-        
-        # 備用方法：從 cloudflared 配置文件尋找 URL
-        logger.warning("⚠️ 從日誌解析失敗，嘗試備用方法...")
+    """從 cloudflared 日誌提取當前隧道 URL (帶重試機制)"""
+    import time
+    
+    def _try_get_url():
+        """嘗試從日誌獲取 URL"""
         try:
-            result2 = subprocess.run(
+            cmd = 'sudo journalctl -u cloudflared.service -n 100 --no-pager | grep -o "https://[a-z0-9\\-]*\\.trycloudflare\\.com" | tail -1'
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=TUNNEL_TIMEOUT,
+                check=False
+            )
+            url = result.stdout.strip() if result.stdout else None
+            if url and 'trycloudflare.com' in url:
+                return url
+        except:
+            pass
+        return None
+    
+    def _try_get_url_from_config():
+        """從配置文件嘗試獲取 URL"""
+        try:
+            result = subprocess.run(
                 'cat /root/.cloudflared/*.json 2>/dev/null || cat ~/.cloudflared/*.json 2>/dev/null || echo ""',
                 shell=True,
                 capture_output=True,
@@ -86,22 +92,52 @@ def get_current_tunnel_url():
                 timeout=5,
                 check=False
             )
-            
-            if result2.stdout:
+            if result.stdout:
                 import re
-                match = re.search(r'"url":"(https://[a-z0-9\-]+\.trycloudflare\.com)"', result2.stdout)
+                match = re.search(r'"url":"(https://[a-z0-9\-]+\.trycloudflare\.com)"', result.stdout)
                 if match:
-                    url = match.group(1)
-                    logger.info(f"✅ 從配置文件獲取隧道 URL: {url}")
-                    return url
+                    return match.group(1)
         except:
             pass
+        return None
+    
+    try:
+        # 第一次嘗試：等待初始時間讓 tunnel 生成
+        logger.info(f"⏳ 等待 {TUNNEL_WAIT_TIME} 秒讓隧道生成...")
+        time.sleep(TUNNEL_WAIT_TIME)
         
-        logger.error("❌ 無法獲取隧道 URL")
+        url = _try_get_url()
+        if url:
+            logger.info(f"✅ 當前隧道 URL: {url}")
+            return url
+        
+        # 嘗試備用方法
+        logger.warning("⚠️ 從日誌解析失敗，嘗試配置文件...")
+        url = _try_get_url_from_config()
+        if url:
+            logger.info(f"✅ 從配置文件獲取隧道 URL: {url}")
+            return url
+        
+        # 第二次嘗試：再等待後重試
+        logger.warning(f"⚠️ 第一次嘗試失敗，等待 {TUNNEL_RETRY_WAIT} 秒後重試...")
+        time.sleep(TUNNEL_RETRY_WAIT)
+        
+        url = _try_get_url()
+        if url:
+            logger.info(f"✅ 重試成功，隧道 URL: {url}")
+            return url
+        
+        # 最後嘗試配置文件
+        url = _try_get_url_from_config()
+        if url:
+            logger.info(f"✅ 重試時從配置文件獲取 URL: {url}")
+            return url
+        
+        logger.error("❌ 無法獲取隧道 URL（已嘗試 2 次）")
         return None
         
     except subprocess.TimeoutExpired:
-        logger.error("❌ 命令執行超時（超過 15 秒）")
+        logger.error(f"❌ 命令執行超時（超過 {TUNNEL_TIMEOUT} 秒）")
         return None
     except Exception as e:
         logger.error(f"❌ 提取隧道 URL 失敗: {e}")
