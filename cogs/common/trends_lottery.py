@@ -15,7 +15,7 @@ from discord.ext import commands, tasks
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from typing import List, Optional, Dict
 import logging
 
@@ -193,53 +193,23 @@ class TrendsLotteryCog(commands.Cog):
         self.update_trends_task.cancel()
         logger.info("🛑 趨勢樂透 Cog 已卸載")
     
-    @tasks.loop(minutes=15)
+    @tasks.loop(time=[
+        time(hour=8, minute=0, tzinfo=TZ_TW),
+        time(hour=11, minute=0, tzinfo=TZ_TW),
+        time(hour=14, minute=0, tzinfo=TZ_TW),
+        time(hour=17, minute=0, tzinfo=TZ_TW),
+        time(hour=20, minute=0, tzinfo=TZ_TW),
+        time(hour=23, minute=0, tzinfo=TZ_TW),
+    ])
     async def update_trends_task(self):
-        """定時更新趨勢任務（每 15 分鐘檢查一次是否應該更新）"""
+        """定時更新趨勢任務（在指定台灣時間精確執行）"""
         try:
             now = datetime.now(TZ_TW)
-            
-            # 定期檢查日誌
-            logger.info(f"⏰ 趨勢排程檢查: 台灣時間 {now.strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            # 檢查是否在深夜時段（00:00 - 08:00）
-            if 0 <= now.hour < 8:
-                # 深夜時段：靜默抓取但不推播
-                if now.minute == 0:
-                    logger.info(f"🌙 深夜時段 ({now.hour}:00)，靜默抓取趨勢...")
-                    await self._fetch_trends_silent()
-                return
-            
-            # 檢查是否是更新時間（08:00, 12:00, 16:00, 20:00）
-            # 使用 0-5 分鐘窗口以容納任務延遲和 Bot 重連
-            if now.hour in TRENDS_UPDATE_HOURS and now.minute <= 5:
-                logger.info(f"🚀 觸發推播時間 ({now.hour}:{now.minute:02d})，正在推播趨勢...")
-                await self._update_and_broadcast_trends()
-                # 標記為已推送
-                current_round_id = now.strftime("%Y-%m-%d-%H")
-                mark_round_pushed(current_round_id)
-            # 檢查是否錯過了最近的推送時間（補發機制）
-            elif now.hour in TRENDS_UPDATE_HOURS and now.minute > 5:
-                # 如果在 5-59 分鐘之間，檢查本小時是否已經推送過
-                current_round_id = now.strftime("%Y-%m-%d-%H")
-                already_pushed = is_round_pushed(current_round_id)
-                
-                if not already_pushed:
-                    logger.warning(f"⚠️ 檢測到可能錯過推送時間 ({now.hour}:00)，正在補發...")
-                    await self._update_and_broadcast_trends()
-                    # 標記為已推送
-                    mark_round_pushed(current_round_id)
-            else:
-                # 顯示何時下一次推播（每個整點時刻）
-                if now.minute == 0 and now.hour >= 8:
-                    next_update = None
-                    for hour in TRENDS_UPDATE_HOURS:
-                        if hour > now.hour:
-                            next_update = hour
-                            break
-                    if next_update is None:
-                        next_update = TRENDS_UPDATE_HOURS[0]  # 明天的第一個時段
-                    logger.info(f"⏳ 下次推播: {next_update:02d}:00 台灣時間")
+            logger.info(f"🚀 觸發推播時間 ({now.hour}:{now.minute:02d})，正在推播趨勢...")
+            await self._update_and_broadcast_trends()
+            # 標記為已推送
+            current_round_id = now.strftime("%Y-%m-%d-%H")
+            mark_round_pushed(current_round_id)
         except Exception as e:
             logger.error(f"❌ 趨勢排程任務出錯: {e}")
             import traceback
