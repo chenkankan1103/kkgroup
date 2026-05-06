@@ -418,7 +418,6 @@ async def on_ready():
     
     # 立即寫入標記來驗證 on_ready 被調用
     file_log("=== ON_READY CALLED ===")
-    _on_ready_called = True
     
     # 調試：打印到 journalctl 以確保追蹤執行
     debug1 = "[ON_READY_DEBUG] Starting on_ready execution..."
@@ -460,23 +459,21 @@ async def on_ready():
         if guild and STAGE != "prod":
             await client.tree.clear_commands(guild=guild)
         
-        # 載入模組 - 添加分步驟日誌
-        try:
-            file_log("[SETUP_TRACE] 準備調用 setup_modules()...")
-            
-            debug_setup = "[SETUP] About to call setup_modules()..."
-            file_log(debug_setup)
-            
-            loaded_extensions = await setup_modules(client)
-            
-            success_setup = f"[SETUP] setup_modules() completed, loaded {len(loaded_extensions)} extensions"
-            file_log(success_setup)
-        except Exception as e:
-            error_setup = f"[SETUP] ❌ setup_modules() failed: {e}"
-            file_log(error_setup)
-            import traceback
-            traceback.print_exc()
-            raise
+        # 載入模組（只在第一次 on_ready 執行，避免重連時重複載入 Cog）
+        if not _on_ready_called:
+            _on_ready_called = True
+            try:
+                file_log("[SETUP_TRACE] 準備調用 setup_modules()...")
+                loaded_extensions = await setup_modules(client)
+                file_log(f"[SETUP] setup_modules() completed, loaded {len(loaded_extensions)} extensions")
+            except Exception as e:
+                file_log(f"[SETUP] ❌ setup_modules() failed: {e}")
+                import traceback
+                traceback.print_exc()
+                raise
+        else:
+            file_log("[on_ready] 重連觸發，跳過 setup_modules（已載入）")
+            loaded_extensions = list(client.extensions.keys())
         
         # ⭐ 註冊所有永久視圖（timeout=None）
         # 這是解決按鈕交互失敗的關鍵步驟
