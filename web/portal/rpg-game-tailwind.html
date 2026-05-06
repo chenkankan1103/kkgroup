@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KK 群紙娃娃 RPG 遊戲 Pro</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'game-dark': '#0a0a1a',
+                        'game-purple': '#1a1a3e',
+                        'game-blue': '#4a9eff',
+                        'game-cyan': '#22d3ee',
+                        'game-purple-accent': '#a855f7',
+                        'game-success': '#51cf66',
+                        'game-warning': '#ffd93d',
+                        'game-danger': '#ff6b6b',
+                    },
+                    fontFamily: {
+                        'title': ['ZCOOL KuaiLe', 'Noto Sans TC', 'cursive'],
+                        'body': ['Noto Sans TC', 'Inter', 'sans-serif'],
+                        'mono': ['JetBrains Mono', 'monospace'],
+                    },
+                    animation: {
+                        'gradient': 'gradient 4s ease infinite',
+                        'shimmer': 'shimmer 2s ease-in-out infinite',
+                        'float': 'float 6s ease-in-out infinite',
+                        'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
+                        'slide-up': 'slideUp 0.3s ease',
+                        'fade-in': 'fadeIn 0.3s ease',
+                    },
+                    keyframes: {
+                        gradient: {
+                            '0%, 100%': { backgroundPosition: '0% 50%' },
+                            '50%': { backgroundPosition: '100% 50%' },
+                        },
+                        shimmer: {
+                            '0%, 100%': { backgroundPosition: '0% 50%' },
+                            '50%': { backgroundPosition: '100% 50%' },
+                        },
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        },
+                        'pulse-glow': {
+                            '0%, 100%': { boxShadow: '0 0 20px rgba(74, 158, 255, 0.3)' },
+                            '50%': { boxShadow: '0 0 30px rgba(74, 158, 255, 0.6)' },
+                        },
+                        slideUp: {
+                            from: { transform: 'translateY(30px)', opacity: '0' },
+                            to: { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        fadeIn: {
+                            from: { opacity: '0' },
+                            to: { opacity: '1' },
+                        },
+                    },
+                },
+            },
+        }
+    </script>
+    
+    <!-- Custom Styles -->
+    <style>
+        body {
+            font-family: 'Noto Sans TC', 'Inter', sans-serif;
+            background: 
+                radial-gradient(ellipse at 20% 80%, rgba(120, 119, 198, 0.25) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(74, 158, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(168, 85, 247, 0.1) 0%, transparent 70%),
+                linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0f0c29 100%);
+            min-height: 100vh;
+        }
+        
+        /* Glassmorphism utilities */
+        .glass {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        
+        .glass-strong {
+            background: rgba(26, 26, 62, 0.85);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(74, 158, 255, 0.2);
+        }
+        
+        .glass-hover:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(74, 158, 255, 0.3);
+            box-shadow: 0 0 30px rgba(74, 158, 255, 0.2);
+        }
+        
+        /* Glow effects */
+        .glow-blue {
+            box-shadow: 0 0 20px rgba(74, 158, 255, 0.4);
+        }
+        
+        .glow-purple {
+            box-shadow: 0 0 25px rgba(168, 85, 247, 0.4);
+        }
+        
+        /* Gradient text */
+        .text-gradient {
+            background: linear-gradient(135deg, #4a9eff, #a855f7, #22d3ee);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradient 4s ease infinite;
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(74, 158, 255, 0.3);
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(74, 158, 255, 0.5);
+        }
+        
+        /* Button shine effect */
+        .btn-shine {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-shine::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .btn-shine:hover::before {
+            left: 100%;
+        }
+        
+        /* XP bar animation */
+        .xp-bar-fill {
+            background: linear-gradient(90deg, #51cf66, #4a9eff, #a855f7);
+            background-size: 200% 100%;
+            animation: shimmer 2s ease-in-out infinite;
+        }
+        
+        /* Card hover lift */
+        .card-lift {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .card-lift:hover {
+            transform: translateY(-5px);
+        }
+        
+        /* Neon border */
+        .neon-border {
+            position: relative;
+        }
+        
+        .neon-border::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            background: linear-gradient(135deg, #4a9eff, #a855f7, #22d3ee);
+            border-radius: inherit;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .neon-border:hover::after {
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body class="text-white overflow-hidden">
+    <div class="h-screen flex flex-col">
+        <!-- Header -->
+        <header class="glass border-b border-white/10 px-6 py-4 flex items-center justify-between shadow-lg">
+            <div class="flex items-center gap-3">
+                <i data-lucide="gamepad-2" class="w-8 h-8 text-game-blue"></i>
+                <h1 class="font-title text-2xl text-gradient">KK 群紙娃娃 RPG</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="glass px-4 py-2 rounded-full flex items-center gap-2 hover:border-game-blue/40 hover:bg-game-blue/20 transition-all duration-300 cursor-pointer">
+                    <i data-lucide="user" class="w-4 h-4 text-game-cyan"></i>
+                    <span id="user-name" class="text-sm font-medium">玩家</span>
+                </div>
+                <div class="glass px-4 py-2 rounded-full flex items-center gap-2 border-game-purple-accent/30 bg-game-purple-accent/10">
+                    <i data-lucide="zap" class="w-4 h-4 text-game-warning"></i>
+                    <span id="user-level" class="text-sm font-bold">Lv. 1</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex gap-5 p-5 overflow-hidden">
+            <!-- Left: Character Display -->
+            <aside class="w-64 flex flex-col">
+                <div class="glass rounded-2xl p-5 card-lift glow-blue">
+                    <div class="aspect-square rounded-xl bg-gradient-to-br from-white/10 to-white/5 border-2 border-game-blue/50 flex items-center justify-center mb-4 relative overflow-hidden">
+                        <div class="absolute inset-0 bg-gradient-to-br from-game-blue/10 to-game-purple-accent/10"></div>
+                        <img id="character-image" src="" alt="角色" class="relative z-10 max-w-[80%] max-h-[80%] drop-shadow-2xl animate-float">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+                    </div>
+                    <h3 id="character-name" class="font-title text-lg text-center text-white/90">角色名稱</h3>
+                </div>
+            </aside>
+
+            <!-- Center: Main Interaction Area -->
+            <section class="flex-1 flex flex-col gap-4 min-w-0">
+                <!-- Menu -->
+                <div class="glass rounded-2xl p-5">
+                    <h2 class="text-xs font-semibold text-white/50 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <i data-lucide="menu" class="w-4 h-4"></i>
+                        選擇操作
+                    </h2>
+                    <div class="grid grid-cols-4 gap-3">
+                        <button onclick="openModal('wardrobe')" class="btn-shine group glass rounded-xl p-4 flex flex-col items-center gap-2 hover:border-game-blue/60 hover:bg-game-blue/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-game-blue/30">
+                            <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-game-blue/30 to-game-purple-accent/30 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i data-lucide="shirt" class="w-5 h-5 text-game-blue"></i>
+                            </div>
+                            <span class="text-xs font-semibold">衣櫃</span>
+                        </button>
+                        <button onclick="openModal('profile')" class="btn-shine group glass rounded-xl p-4 flex flex-col items-center gap-2 hover:border-game-cyan/60 hover:bg-game-cyan/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-game-cyan/30">
+                            <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-game-cyan/30 to-game-blue/30 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i data-lucide="bar-chart-3" class="w-5 h-5 text-game-cyan"></i>
+                            </div>
+                            <span class="text-xs font-semibold">檔案</span>
+                        </button>
+                        <button onclick="openModal('shop')" class="btn-shine group glass rounded-xl p-4 flex flex-col items-center gap-2 hover:border-game-warning/60 hover:bg-game-warning/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-game-warning/30">
+                            <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-game-warning/30 to-game-danger/30 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i data-lucide="shopping-bag" class="w-5 h-5 text-game-warning"></i>
+                            </div>
+                            <span class="text-xs font-semibold">商店</span>
+                        </button>
+                        <button onclick="openModal('battle')" class="btn-shine group glass rounded-xl p-4 flex flex-col items-center gap-2 hover:border-game-danger/60 hover:bg-game-danger/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-game-danger/30">
+                            <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-game-danger/30 to-game-purple-accent/30 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i data-lucide="swords" class="w-5 h-5 text-game-danger"></i>
+                            </div>
+                            <span class="text-xs font-semibold">對戰</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Content Area -->
+                <div class="glass rounded-2xl p-6 flex-1 overflow-y-auto">
+                    <div class="text-center py-12">
+                        <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-game-blue/20 to-game-purple-accent/20 flex items-center justify-center animate-pulse-glow">
+                            <i data-lucide="sparkles" class="w-10 h-10 text-game-blue"></i>
+                        </div>
+                        <h3 class="font-title text-xl text-gradient mb-3">歡迎來到 KK 群紙娃娃 RPG！</h3>
+                        <p class="text-white/60 text-sm max-w-md mx-auto leading-relaxed">
+                            選擇上方的選項開始遊戲。你可以在衣櫃中更換裝扮，在商店購買新物品，或與其他玩家對戰。
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right: Stats Panel -->
+            <aside class="w-56 flex flex-col gap-4">
+                <!-- Stats -->
+                <div class="glass rounded-2xl p-5">
+                    <h3 class="text-xs font-semibold text-white/50 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <i data-lucide="activity" class="w-4 h-4"></i>
+                        屬性
+                    </h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <div class="text-[10px] text-white/40 font-semibold uppercase tracking-wider mb-1">等級</div>
+                            <div id="stat-level" class="text-2xl font-bold font-mono text-white drop-shadow-[0_0_10px_rgba(74,158,255,0.5)]">1</div>
+                        </div>
+                        
+                        <div>
+                            <div class="text-[10px] text-white/40 font-semibold uppercase tracking-wider mb-2">經驗值</div>
+                            <div class="h-3 bg-white/10 rounded-full overflow-hidden border border-white/10">
+                                <div id="exp-fill" class="h-full xp-bar-fill rounded-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                            <div id="exp-text" class="text-[10px] text-white/50 mt-1 font-mono">0/1000</div>
+                        </div>
+                        
+                        <div>
+                            <div class="text-[10px] text-white/40 font-semibold uppercase tracking-wider mb-1">KKcoin</div>
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="coins" class="w-4 h-4 text-game-warning"></i>
+                                <span id="stat-kkcoin" class="text-xl font-bold font-mono text-white">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Equipment -->
+                <div class="glass rounded-2xl p-5 flex-1 overflow-y-auto">
+                    <h3 class="text-xs font-semibold text-white/50 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <i data-lucide="settings" class="w-4 h-4"></i>
+                        目前穿著
+                    </h3>
+                    <div class="space-y-2">
+                        <div class="glass-hover flex justify-between items-center px-3 py-2.5 rounded-lg transition-all">
+                            <span class="text-[10px] text-white/40 font-semibold uppercase">臉</span>
+                            <span id="eq-face" class="text-sm text-white/80 truncate max-w-[80px]">-</span>
+                        </div>
+                        <div class="glass-hover flex justify-between items-center px-3 py-2.5 rounded-lg transition-all">
+                            <span class="text-[10px] text-white/40 font-semibold uppercase">髮</span>
+                            <span id="eq-hair" class="text-sm text-white/80 truncate max-w-[80px]">-</span>
+                        </div>
+                        <div class="glass-hover flex justify-between items-center px-3 py-2.5 rounded-lg transition-all">
+                            <span class="text-[10px] text-white/40 font-semibold uppercase">上衣</span>
+                            <span id="eq-top" class="text-sm text-white/80 truncate max-w-[80px]">-</span>
+                        </div>
+                        <div class="glass-hover flex justify-between items-center px-3 py-2.5 rounded-lg transition-all">
+                            <span class="text-[10px] text-white/40 font-semibold uppercase">下衣</span>
+                            <span id="eq-bottom" class="text-sm text-white/80 truncate max-w-[80px]">-</span>
+                        </div>
+                        <div class="glass-hover flex justify-between items-center px-3 py-2.5 rounded-lg transition-all">
+                            <span class="text-[10px] text-white/40 font-semibold uppercase">鞋</span>
+                            <span id="eq-shoes" class="text-sm text-white/80 truncate max-w-[80px]">-</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <!-- Footer -->
+        <footer class="glass border-t border-white/10 px-6 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2 text-white/50 text-xs">
+                <i data-lucide="info" class="w-4 h-4"></i>
+                <span>選擇衣櫃查看並更改你的紙娃娃配置</span>
+            </div>
+            <div class="text-white/30 text-xs font-mono">v1.0.0 Pro | Tailwind Edition</div>
+        </footer>
+    </div>
+
+    <!-- Modals -->
+    <!-- Wardrobe Modal -->
+    <div id="modal-wardrobe" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
+        <div class="glass-strong rounded-2xl w-[90%] max-w-2xl max-h-[80vh] flex flex-col animate-slide-up overflow-hidden shadow-2xl shadow-game-blue/20">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-game-blue/20 flex items-center justify-center">
+                        <i data-lucide="shirt" class="w-4 h-4 text-game-blue"></i>
+                    </div>
+                    <h2 class="font-title text-lg">我的衣櫃</h2>
+                </div>
+                <button onclick="closeModal('wardrobe')" class="w-8 h-8 rounded-full bg-game-danger/10 border border-game-danger/30 text-game-danger flex items-center justify-center hover:bg-game-danger/20 hover:rotate-90 transition-all duration-300">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1" id="wardrobe-content">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div id="modal-profile" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
+        <div class="glass-strong rounded-2xl w-[90%] max-w-xl max-h-[80vh] flex flex-col animate-slide-up overflow-hidden shadow-2xl shadow-game-cyan/20">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-game-cyan/20 flex items-center justify-center">
+                        <i data-lucide="bar-chart-3" class="w-4 h-4 text-game-cyan"></i>
+                    </div>
+                    <h2 class="font-title text-lg">我的檔案</h2>
+                </div>
+                <button onclick="closeModal('profile')" class="w-8 h-8 rounded-full bg-game-danger/10 border border-game-danger/30 text-game-danger flex items-center justify-center hover:bg-game-danger/20 hover:rotate-90 transition-all duration-300">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1" id="profile-content">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Shop Modal -->
+    <div id="modal-shop" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
+        <div class="glass-strong rounded-2xl w-[90%] max-w-3xl max-h-[80vh] flex flex-col animate-slide-up overflow-hidden shadow-2xl shadow-game-warning/20">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-game-warning/20 flex items-center justify-center">
+                        <i data-lucide="shopping-bag" class="w-4 h-4 text-game-warning"></i>
+                    </div>
+                    <h2 class="font-title text-lg">紙娃娃商店</h2>
+                </div>
+                <button onclick="closeModal('shop')" class="w-8 h-8 rounded-full bg-game-danger/10 border border-game-danger/30 text-game-danger flex items-center justify-center hover:bg-game-danger/20 hover:rotate-90 transition-all duration-300">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1" id="shop-content">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Battle Modal -->
+    <div id="modal-battle" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
+        <div class="glass-strong rounded-2xl w-[90%] max-w-2xl max-h-[80vh] flex flex-col animate-slide-up overflow-hidden shadow-2xl shadow-game-danger/20">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-game-danger/20 flex items-center justify-center">
+                        <i data-lucide="swords" class="w-4 h-4 text-game-danger"></i>
+                    </div>
+                    <h2 class="font-title text-lg">對戰競技場</h2>
+                </div>
+                <button onclick="closeModal('battle')" class="w-8 h-8 rounded-full bg-game-danger/10 border border-game-danger/30 text-game-danger flex items-center justify-center hover:bg-game-danger/20 hover:rotate-90 transition-all duration-300">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1">
+                <div class="text-center py-8">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-game-danger/10 flex items-center justify-center">
+                        <i data-lucide="swords" class="w-8 h-8 text-game-danger"></i>
+                    </div>
+                    <h3 class="font-title text-xl mb-2">對戰功能開發中</h3>
+                    <p class="text-white/50 text-sm">敬請期待！</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+        
+        // Modal functions
+        function openModal(name) {
+            const modal = document.getElementById(`modal-${name}`);
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+        
+        function closeModal(name) {
+            const modal = document.getElementById(`modal-${name}`);
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+        
+        // Close modal on backdrop click
+        document.querySelectorAll('[id^="modal-"]').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }
+            });
+        });
+        
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('[id^="modal-"]').forEach(modal => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                });
+            }
+        });
+    </script>
+</body>
+</html>
