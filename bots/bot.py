@@ -492,10 +492,14 @@ async def on_ready():
         try:
             synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
         except discord.errors.HTTPException as e:
-            if "Entry Point command" in str(e):
+            if "Entry Point command" in str(e) or "50240" in str(e):
                 # Entry Point 命令衝突 - Discord 限制，不影響 Bot 運行
-                file_log(f"⚠️  Entry Point 命令同步警告（已忽略）: {e}")
-                print(f"⚠️  Entry Point command sync warning (ignored): {e}", flush=True)
+                # 只寫入檔案，不輸出 stdout/syslog，避免 log_monitor 誤報
+                try:
+                    with open(LOG_FILE, "a", encoding="utf-8") as _f:
+                        _f.write(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️  Entry Point 命令同步警告（已忽略）: {e}\n")
+                except Exception:
+                    pass
             else:
                 # 其他 HTTP 錯誤，記錄但不中斷
                 file_log(f"⚠️  命令同步失敗: {e}")
