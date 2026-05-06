@@ -354,7 +354,6 @@ async def on_ready():
     global _on_ready_called
     
     file_log("=== ON_READY CALLED ===")
-    _on_ready_called = True
     
     stage_text = "DEV" if STAGE != "prod" else "PROD"
     
@@ -363,8 +362,13 @@ async def on_ready():
         if guild and STAGE != "prod":
             await client.tree.clear_commands(guild=guild)
         
-        # 載入模組
-        loaded_extensions = await setup_modules(client)
+        # 載入模組（只在第一次 on_ready 執行，避免重連時重複載入 Cog）
+        if not _on_ready_called:
+            _on_ready_called = True
+            loaded_extensions = await setup_modules(client)
+        else:
+            file_log("[on_ready] 重連觸發，跳過 setup_modules（已載入）")
+            loaded_extensions = list(client.extensions.keys())
         
         # ⭐ 註冊所有永久視圖（timeout=None）
         # 這是解決按鈕交互失敗的關鍵步驟

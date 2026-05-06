@@ -317,5 +317,8 @@ class UserRecoveryCog(commands.Cog):
 
 
 async def setup(bot):
+    if bot.get_cog("UserRecoveryCog") is not None:
+        logging.warning("UserRecoveryCog 已存在，跳過重複載入")
+        return
     await bot.add_cog(UserRecoveryCog(bot))
     logging.info("UserRecoveryCog 已成功載入")
