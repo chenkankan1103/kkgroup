@@ -58,11 +58,13 @@ _ERROR_PATTERNS = re.compile(
 
 # 排除這些誤報：Entry Point 警告、單獨的 JSON 欄位片段、已知忽略訊息
 _IGNORE_PATTERNS = re.compile(
-    r"(Entry Point.*(?:warning|ignored)|"
+    r"(Entry Point.*(?:warning|ignored|警告|命令)|"
     r"error code: 50240|"
-    r'^\s*"error":\s*\{|'
+    r'"error":\s*[{\[]|'                        # JSON error 欄位（任何開頭，無 ^ anchor）
     r"command sync warning|"
-    r"已忽略)",
+    r"已忽略|"
+    r"FILE_LOG.*Entry Point|"
+    r"BOT_DEBUG.*Entry Point)",
     re.IGNORECASE,
 )
 
