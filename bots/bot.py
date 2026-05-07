@@ -184,6 +184,9 @@ async def find_and_load_extensions(base_path, package_prefix="", bot_client=None
                 await bot_client.load_extension(ext_name)
                 loaded_extensions.append(ext_name)
                 print(f"✅ 載入成功: {ext_name}")
+            except commands.errors.ExtensionAlreadyLoaded:
+                # 跳過已加載的擴展（在重連時可能會發生）
+                print(f"⏭️ 已跳過（已加載）: {ext_name}")
             except Exception as e:
                 import traceback
                 print(f"❌ 載入失敗: {ext_name}")
