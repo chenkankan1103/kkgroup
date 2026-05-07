@@ -53,12 +53,17 @@ class AdminLockerCommands(commands.Cog):
             success_count = 0
             fail_count = 0
             
-            # 取得 UserPanel cog（在 uibody.py）
+            # 取得 UserPanel cog（在 uibody.py）— 可選，找不到也繼續
             user_panel_cog = self.bot.get_cog("UserPanel")
             if not user_panel_cog:
-                logger.error("❌ 找不到 UserPanel cog")
-                await interaction.followup.send("❌ 找不到 UserPanel cog，無法刷新")
-                return
+                logger.warning("⚠️ 找不到 UserPanel cog，將跳過「新增置物櫃」邏輯，僅更新已有置物櫃")
+            
+            # FORUM_CHANNEL_ID：優先從 UserPanel 取，否則從環境變數取
+            import os
+            forum_channel_id = (
+                getattr(user_panel_cog, 'FORUM_CHANNEL_ID', None)
+                or int(os.getenv('FORUM_CHANNEL_ID', '0'))
+            )
             
             # 遍歷所有用戶，更新置物櫃
             for i, user_data in enumerate(all_users):
@@ -75,7 +80,7 @@ class AdminLockerCommands(commands.Cog):
                         # === 路徑 A：用戶已有置物櫃，直接更新 ===
                         try:
                             # 獲取 thread 物件
-                            forum_channel = self.bot.get_channel(user_panel_cog.FORUM_CHANNEL_ID)
+                            forum_channel = self.bot.get_channel(forum_channel_id)
                             if not forum_channel:
                                 fail_count += 1
                                 logger.warning(f"⚠️ 無法獲取論壇頻道")
@@ -134,26 +139,31 @@ class AdminLockerCommands(commands.Cog):
                             logger.warning(f"⚠️ 更新用戶 {user_id} 失敗: {e}")
                     
                     else:
-                        # === 路徑 B：用戶無置物櫃，創建新的 ===
-                        try:
-                            user = await self.bot.fetch_user(int(user_id))
-                            if user:
-                                # 呼叫 get_or_create_user_thread 創建新的
-                                thread = await user_panel_cog.get_or_create_user_thread(user)
-                                if thread:
-                                    success_count += 1
-                                    logger.debug(f"✅ 已為用戶 {user_id} 創建新置物櫃")
+                        # === 路徑 B：用戶無置物櫃，需要 UserPanel 才能創建 ===
+                        if not user_panel_cog:
+                            # 找不到 UserPanel，跳過此用戶
+                            fail_count += 1
+                            logger.debug(f"⚠️ 用戶 {user_id} 無置物櫃且 UserPanel 不可用，跳過")
+                        else:
+                            try:
+                                user = await self.bot.fetch_user(int(user_id))
+                                if user:
+                                    # 呼叫 get_or_create_user_thread 創建新的
+                                    thread = await user_panel_cog.get_or_create_user_thread(user)
+                                    if thread:
+                                        success_count += 1
+                                        logger.debug(f"✅ 已為用戶 {user_id} 創建新置物櫃")
+                                    else:
+                                        fail_count += 1
+                                        logger.warning(f"⚠️ 用戶 {user_id} 的置物櫃建立失敗（無法建立）")
                                 else:
                                     fail_count += 1
-                                    logger.warning(f"⚠️ 用戶 {user_id} 的置物櫃建立失敗（無法建立）")
-                            else:
+                            except discord.NotFound:
                                 fail_count += 1
-                        except discord.NotFound:
-                            fail_count += 1
-                            logger.warning(f"⚠️ 用戶 {user_id} 不存在")
-                        except Exception as user_err:
-                            fail_count += 1
-                            logger.warning(f"⚠️ 建立用戶 {user_id} 置物櫃失敗: {user_err}")
+                                logger.warning(f"⚠️ 用戶 {user_id} 不存在")
+                            except Exception as user_err:
+                                fail_count += 1
+                                logger.warning(f"⚠️ 建立用戶 {user_id} 置物櫃失敗: {user_err}")
                     
                     # 每 5 個更新一次進度顯示
                     if (i + 1) % 5 == 0 or i == total - 1:
