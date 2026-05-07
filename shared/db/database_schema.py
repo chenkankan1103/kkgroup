@@ -75,6 +75,12 @@ FIELD_TYPE_HINTS = {
     "is_muted": "INTEGER",
     "verified": "INTEGER",
     "is_verified": "INTEGER",
+
+    # 堡壘保衛戰 / 興趣標籤
+    "user_interests": "TEXT",           # JSON 陣列，如 ["科技/AI","動漫/遊戲"]
+    "trend_alert_enabled": "INTEGER",   # 0/1，預設 1
+    "fortress_total_damage": "INTEGER", # 累計貢獻傷害（排行榜用）
+    "fortress_wins": "INTEGER",         # 累計守城次數
 }
 
 # ============================================================

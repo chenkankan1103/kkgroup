@@ -18,8 +18,72 @@ from datetime import datetime
 from db_adapter import get_user, set_user, get_user_field, set_user_field
 from shared.utils.view_registry import PersistentViewBase
 from cogs.ui.utils import paperdoll_manager
+from shared.utils import fortress_system as _fs
 
 load_dotenv()
+
+# ─── 入園後興趣標籤選擇 ──────────────────────────────────────
+
+class InterestOnboardingView(discord.ui.View):
+    """入園成功後顯示的興趣標籤選擇（不強制，可跳過）"""
+
+    _INTEREST_OPTS = [
+        discord.SelectOption(label="科技/AI", emoji="🤖"),
+        discord.SelectOption(label="動漫/遊戲", emoji="🎮"),
+        discord.SelectOption(label="體育", emoji="⚽"),
+        discord.SelectOption(label="娛樂/明星", emoji="🌟"),
+        discord.SelectOption(label="財經時事", emoji="📈"),
+        discord.SelectOption(label="健康/美食", emoji="🍜"),
+        discord.SelectOption(label="旅遊/生活", emoji="✈️"),
+        discord.SelectOption(label="政治", emoji="🏛️"),
+    ]
+
+    def __init__(self, user_id: int):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+
+    @discord.ui.select(
+        placeholder="選擇你感興趣的話題（可複選，最多 5 個）",
+        min_values=0,
+        max_values=5,
+        options=[
+            discord.SelectOption(label="科技/AI", emoji="🤖"),
+            discord.SelectOption(label="動漫/遊戲", emoji="🎮"),
+            discord.SelectOption(label="體育", emoji="⚽"),
+            discord.SelectOption(label="娛樂/明星", emoji="🌟"),
+            discord.SelectOption(label="財經時事", emoji="📈"),
+            discord.SelectOption(label="健康/美食", emoji="🍜"),
+            discord.SelectOption(label="旅遊/生活", emoji="✈️"),
+            discord.SelectOption(label="政治", emoji="🏛️"),
+        ],
+    )
+    async def interest_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的選項！", ephemeral=True)
+            return
+        selected = select.values
+        set_user_field(self.user_id, "user_interests", json.dumps(selected, ensure_ascii=False))
+        set_user_field(self.user_id, "trend_alert_enabled", 1)
+        tags_text = " / ".join(selected) if selected else "（跳過）"
+        await interaction.response.send_message(
+            f"✅ 興趣標籤已設定：**{tags_text}**\n"
+            "🏰 當你的標籤話題出現在熱搜時，堡壘保衛戰攻擊力將 **×2**！",
+            ephemeral=True,
+        )
+        self.stop()
+
+    @discord.ui.button(label="跳過", style=discord.ButtonStyle.secondary)
+    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ 這不是你的按鈕！", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            "已跳過。你可以隨時使用 `/my_interests` 設定標籤。", ephemeral=True
+        )
+        self.stop()
+
+
+# ─────────────────────────────────────────────────────────
 
 class GenderSelectView(discord.ui.View):
     def __init__(self, cog, user_id):
@@ -1088,6 +1152,23 @@ class WelcomeFlow(commands.Cog):
 
             print(f"✅ 發送入園成功訊息給 {member.name}")
             await interaction.followup.send(embed=embed_response, ephemeral=True)
+
+            # 🏷️ 發送興趣標籤選擇（堡壘保衛戰用，不強制）
+            try:
+                interest_embed = discord.Embed(
+                    title="🏰 KK 園區堡壘保衛戰 — 選擇你的興趣標籤",
+                    description=(
+                        "每 4 小時，Google 熱搜話題會化為**入侵敵軍**攻打 KK 園區！\n\n"
+                        "選擇你感興趣的話題，當相關趨勢入侵時：\n"
+                        "⚔️ 你的攻擊力將會 **×2**！\n\n"
+                        "選擇後即生效，也可隨時用 `/my_interests` 修改。"
+                    ),
+                    color=0xE74C3C,
+                )
+                interest_view = InterestOnboardingView(member.id)
+                await interaction.followup.send(embed=interest_embed, view=interest_view, ephemeral=True)
+            except Exception as ie:
+                print(f"⚠️ 發送興趣選擇失敗（不影響入園）: {ie}")
 
             # 📌 置物櫃將由 on_member_update 事件自動建立（當獲得正式會員角色時）
 
