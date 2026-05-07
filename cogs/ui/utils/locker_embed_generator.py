@@ -324,6 +324,22 @@ async def update_locker_message(
         else:
             view = None
         
+        # 若未傳入 message_obj，嘗試從 thread 歷史找 bot 發的 embed 訊息（避免重複發送）
+        if not message_obj and bot:
+            try:
+                async for msg in thread.history(limit=30, oldest_first=True):
+                    if msg.author.id == bot.user.id and msg.embeds:
+                        message_obj = msg
+                        # 同步更新 DB，避免下次再掃
+                        try:
+                            set_user_field(user_id, 'locker_message_id', msg.id)
+                        except Exception:
+                            pass
+                        print(f"🔍 [Update Locker Message] 在 thread 中找到已有 embed 訊息 {msg.id}，將直接編輯")
+                        break
+            except Exception as scan_err:
+                print(f"⚠️ [Update Locker Message] 掃描 thread 歷史失敗: {scan_err}")
+
         # 嘗試編輯現有訊息
         if message_obj:
             try:
@@ -337,7 +353,7 @@ async def update_locker_message(
                 print(f"⚠️ [Update Locker Message] 編輯訊息失敗: {e}")
                 message_obj = None
         
-        # 若無現有訊息，發送新訊息並更新 DB
+        # 若無現有訊息（thread 全新或 bot 訊息已被刪），才發送新訊息
         if not message_obj:
             try:
                 new_msg = await thread.send(embed=embed, view=view)
