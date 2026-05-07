@@ -2008,17 +2008,18 @@ class AnimeTracker(commands.Cog):
             embed.set_image(url=cover_url)
         
         # 添加詳細的人氣度與評分字段
+        # 注意：popular 為系列人氣累計值（Bahamut API anime.popular），非單集獨立觀看數
         stats_lines = [
-            f"**本集**: {popularity_text} 觀看 | {score_text} 評分"
+            f"**系列人氣**: {popularity_text} | {score_text} 評分"
         ]
         if anime_stats and anime_stats['total_episodes'] > 0:
             avg_views = anime_stats['avg_views']
             avg_score = anime_stats['avg_score']
-            stats_lines.append(f"**本季均值**: 👥 {avg_views:,.0f} 觀看 | ⭐ {avg_score:.1f} 評分")
-            stats_lines.append(f"**本季統計**: {anime_stats['total_episodes']} 集, 共 {anime_stats['total_views']:,} 觀看")
+            stats_lines.append(f"**本季均值**: 👥 {avg_views:,.0f} 人氣 | ⭐ {avg_score:.1f} 評分")
+            stats_lines.append(f"**本季統計**: {anime_stats['total_episodes']} 集累積記錄")
         
         embed.add_field(
-            name="📊 觀看數據",
+            name="📊 人氣數據",
             value="\n".join(stats_lines),
             inline=False
         )
@@ -2310,9 +2311,25 @@ class AnimeTracker(commands.Cog):
                 
                 embed.set_footer(text=f"總計: {total_all_votes} 投票 | {unique_animes} 部作品")
                 
-                # 發送統計
+                # 發送投票統計
                 await channel.send(embed=embed)
-                logger.info(f"✅ [send_weekly_stats] 週統計已發送: {unique_animes} 部作品, {total_all_votes} 投票")
+                logger.info(f"✅ [send_weekly_stats] 週投票統計已發送: {unique_animes} 部作品, {total_all_votes} 投票")
+                
+                # 發送觀看量趨勢折線圖（前幾名動畫集數人氣變化）
+                try:
+                    ranking_embed = await self.generate_ranking_embed()
+                    if ranking_embed:
+                        ranking_embed.title = "📈 本季動畫人氣趨勢折線圖"
+                        ranking_embed.description = (
+                            f"**{week_start_str} - {week_end_str}** 各動畫人氣消長一覽\n"
+                            "折線圖顯示各動畫每集的系列人氣值累計，可看出口碑走勢"
+                        )
+                        await channel.send(embed=ranking_embed)
+                        logger.info("✅ [send_weekly_stats] 觀看趨勢折線圖已發送")
+                    else:
+                        logger.info("⚠️ [send_weekly_stats] 無足夠集數數據生成折線圖，跳過")
+                except Exception as chart_err:
+                    logger.warning(f"⚠️ [send_weekly_stats] 折線圖生成失敗（不影響投票統計）: {chart_err}")
                 
                 # 標記已發送
                 self.last_weekly_stats_sent = week_start_date
