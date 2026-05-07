@@ -356,7 +356,7 @@ async def update_locker_message(
         # 若無現有訊息（thread 全新或 bot 訊息已被刪），才發送新訊息
         if not message_obj:
             try:
-                new_msg = await thread.send(embed=embed, view=view)
+                new_msg = await thread.send(embed=embed, view=view, suppress_notifications=True)
                 try:
                     set_user_field(user_id, 'locker_message_id', new_msg.id)
                 except Exception:
