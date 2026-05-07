@@ -284,7 +284,7 @@ class LogMonitorEngine:
         view = AutoFixView(self.shell_runner, fix_goal, channel) if self.shell_runner else None
 
         try:
-            await channel.send(embed=embed, view=view)
+            await channel.send(embed=embed, view=view, flags=discord.MessageFlags(suppress_notifications=True))
             logger.info("[LogMonitor] 已送出 Discord 通知")
         except Exception as e:
             logger.error(f"[LogMonitor] 送出通知失敗: {e}")
@@ -355,6 +355,7 @@ class LogMonitor(commands.Cog):
                 color=discord.Color.green() if (running and enabled) else discord.Color.orange(),
             )
             embed.add_field(name="監控",     value="✅ 運行中" if (running and enabled) else "⏸️ 已暫停", inline=True)
+            embed.add_field(name="🔕 靜音旗幟", value="未啟用" if enabled else "已啟用",          inline=True)
             embed.add_field(name="監控服務", value="\n".join(_SERVICES),                                  inline=True)
             embed.add_field(name="緩衝行數", value=str(buf_len),                                          inline=True)
             embed.add_field(name="通知頻道", value=f"<#{_ALERT_CHANNEL_ID}>",                            inline=True)
