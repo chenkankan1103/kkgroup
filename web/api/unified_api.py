@@ -6,6 +6,7 @@
 """
 
 import os
+import requests as req_lib
 from flask import Flask, jsonify, request, send_from_directory, render_template_string, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -117,6 +118,59 @@ def serve_web_portal(filename):
         return send_from_directory(WEB_PORTAL_FOLDER, filename)
     return jsonify({"error": "文件不存在"}), 404
 
+
+# ============================================================
+# 紙娃娃代理端點（解決 Discord 無法直接載入 maplestory.io 圖片的問題）
+# ============================================================
+
+@app.route('/api/proxy/paperdoll', methods=['GET'])
+def proxy_paperdoll():
+    """代理 MapleStory 紙娃娃 API 請求
+    
+    Discord 無法直接載入 maplestory.io 圖片（缺少 User-Agent 會返回 403）。
+    此端點接收 base64 編碼的原始 URL，代為請求並回傳圖片。
+    """
+    encoded_url = request.args.get('url', '')
+    if not encoded_url:
+        return jsonify({"error": "缺少 url 參數"}), 400
+
+    try:
+        # Base64 解碼原始 URL
+        maplestory_url = base64.b64decode(encoded_url).decode('utf-8')
+
+        # 安全性：只允許代理 maplestory.io 的 URL
+        if 'maplestory.io' not in maplestory_url:
+            logger.warning(f"[proxy_paperdoll] 拒絕非 maplestory.io URL: {maplestory_url[:80]}")
+            return jsonify({"error": "不支援的代理目標"}), 403
+
+        # 代理請求，加上必要的 User-Agent
+        resp = req_lib.get(
+            maplestory_url,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'image/gif, image/webp, image/apng, image/png, image/*',
+                'Referer': 'https://maplestory.io/',
+            },
+            timeout=15,
+            stream=True
+        )
+
+        if resp.status_code != 200:
+            logger.warning(f"[proxy_paperdoll] maplestory.io 返回 {resp.status_code}")
+            return jsonify({"error": f"上游返回 {resp.status_code}"}), 502
+
+        content_type = resp.headers.get('Content-Type', 'image/gif')
+        return Response(
+            resp.content,
+            status=200,
+            mimetype=content_type
+        )
+
+    except Exception as e:
+        logger.error(f"[proxy_paperdoll] 錯誤: {e}")
+        return jsonify({"error": "代理失敗"}), 502
+
+
 # ============================================================
 # 全局錯誤處理器
 # ============================================================
@@ -174,7 +228,8 @@ def handle_not_found(e):
             "/api/export",
             "/api/clean-virtual",
             "/api/user/<id>",
-            "/api/game/*"
+            "/api/game/*",
+            "/api/proxy/paperdoll?url=<base64>"
         ],
         "timestamp": datetime.now().isoformat()
     }), 404
