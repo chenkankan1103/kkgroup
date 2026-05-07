@@ -546,7 +546,7 @@ class AntiAdvertising(commands.Cog):
         for link, records in self.duplicate_links.items():
             # 保留時間窗口內的記錄
             self.duplicate_links[link] = [
-                (uid, ts) for uid, ts in records
+                ts for ts in records
                 if (now - ts).total_seconds() < DUPLICATE_LINK_TIME_WINDOW
             ]
             

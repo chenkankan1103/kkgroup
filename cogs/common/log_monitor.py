@@ -39,7 +39,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ─── 設定 ─────────────────────────────────────────────────────────────────────
-_LOG_CHANNEL_ID:   int = int(os.getenv("LOG_CHANNEL_ID",      "0"))
+_LOG_CHANNEL_ID:   int = int(os.getenv("LOG_CHANNEL_ID") or os.getenv("DASHBOARD_CHANNEL_ID", "1470272652429099125"))
 _STAFF_CHANNEL_ID: int = int(os.getenv("STAFF_ID_CHANNEL_ID", "0"))
 _ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID",    "0"))
 _ADMIN_USER_ID:    int = int(os.getenv("ADMIN_USER_ID",       "0"))
