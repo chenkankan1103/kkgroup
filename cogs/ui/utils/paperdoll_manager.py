@@ -313,16 +313,10 @@ def build_api_url(
         )
         maplestory_url = f"{MAPLESTORY_API_BASE}/{item_path}/{pose}/animated?{params}"
         
-        # ✅ 調試：URL 成功生成
-        if maplestory_url and len(maplestory_url) > 100:
-            # print(f"[paperdoll_manager] ✅ 生成 URL 成功 (長度: {len(maplestory_url)})")
-            pass
-        
-        # 🔄 使用代理 URL 來解決 Discord 無法加載紙娃娃的問題
-        # 原因：MapleStory API 要求 User-Agent header，Discord 沒有發送 → 403 Forbidden
-        # 解決：我們的統一 API 提供代理端點，轉發請求並添加 User-Agent header
-        proxy_url = _wrap_with_proxy(maplestory_url)
-        return proxy_url
+        # ✅ 直接回傳 maplestory.io URL
+        # Discord 顯示 embed 圖片時會通過自己的 CDN proxy（media.discordapp.net）抓取，
+        # 會帶上 User-Agent，maplestory.io 不需要額外代理。
+        return maplestory_url
 
     except Exception as e:
         import traceback
