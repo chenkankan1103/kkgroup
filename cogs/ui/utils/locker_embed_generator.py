@@ -319,6 +319,7 @@ async def update_locker_message(
     Returns:
         bool: 是否成功更新
     """
+    restore_archived = False
     try:
         from db_adapter import get_user, set_user_field
         
@@ -329,6 +330,15 @@ async def update_locker_message(
             return False
 
         resolved_cog = _resolve_user_panel_cog(cog, bot)
+
+        if getattr(thread, 'archived', False):
+            try:
+                await thread.edit(archived=False)
+                restore_archived = True
+                print(f"🔓 [Update Locker Message] 暫時解除封存 thread {thread.id}")
+            except Exception as unarchive_err:
+                print(f"❌ [Update Locker Message] 無法解除封存 thread {thread.id}: {unarchive_err}")
+                return False
         
         # 生成 canonical embed
         user_obj = None
@@ -392,7 +402,13 @@ async def update_locker_message(
             except Exception as e:
                 print(f"❌ [Update Locker Message] 發送新訊息失敗: {e}")
                 return False
-    
     except Exception as e:
         print(f"❌ [Update Locker Message] 異常: {e}")
         return False
+    finally:
+        if restore_archived:
+            try:
+                await thread.edit(archived=True)
+                print(f"🔒 [Update Locker Message] 已恢復封存 thread {thread.id}")
+            except Exception as archive_err:
+                print(f"⚠️ [Update Locker Message] 恢復封存失敗 thread {thread.id}: {archive_err}")
