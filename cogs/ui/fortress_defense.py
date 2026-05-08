@@ -334,7 +334,7 @@ class TowerPlacementSelect(Select):
             await interaction.followup.send(msg, ephemeral=True)
             return
 
-        await self.cog.refresh_battle_embed(interaction)
+        await self.cog.refresh_battle_embed(interaction, force=True)
         prev_text = f"（原本在 {_tower_slot_label(result, state)}）" if result else ""
         await interaction.followup.send(
             f"✅ 已在【{_tower_slot_label(slot_id, state)}】架設砲台 {prev_text}\n"
@@ -368,6 +368,20 @@ def _enemy_progress_index(enemy: fs.EnemyUnit, layout: Dict[str, object]) -> int
     path_len = len(layout["path_coords"])
     hp_pct = enemy.current_hp / enemy.max_hp if enemy.max_hp else 0
     return min(int((1 - hp_pct) * path_len), path_len - 1)
+
+
+def _progress_step_percent(layout: Dict[str, object]) -> float:
+    path_len = max(1, len(layout["path_coords"]))
+    return 100 / path_len
+
+
+def _movement_rule_text(layout: Dict[str, object]) -> str:
+    step_pct = _progress_step_percent(layout)
+    path_len = len(layout["path_coords"])
+    return (
+        f"目前為血量映射推進，不是定時自動走格；本圖共 {path_len} 格，"
+        f"約每損失 {step_pct:.1f}% 血量就前進 1 格。"
+    )
 
 
 def _tower_slot_label(slot_id: str, state: Optional[fs.FortressState] = None) -> str:
@@ -482,6 +496,7 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
         f"`{state.fortress_hp_bar()}`\n\n"
         f"{td_map}\n\n"
         f"⬅️ 敵軍由左側入侵路線前進，🗼 砲台自動射擊\n"
+        f"📏 {_movement_rule_text(layout)}\n"
         f"⏱️ 距結算剩餘 **{remaining_min}** 分鐘　"
         f"💀 已殲滅 **{defeated_count}/{len(state.enemies)}** 敵"
     )
@@ -515,7 +530,10 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
     )
     embed.add_field(
         name="🗺️ 戰線說明",
-        value=f"{layout['name']} 會依輪次自動切換；🔲 可蓋塔，🗼 已架設砲台，🏯 是園區核心。",
+        value=(
+            f"{layout['name']} 會依輪次自動切換；🔲 可蓋塔，🗼 已架設砲台，🏯 是園區核心。\n"
+            f"📏 {_movement_rule_text(layout)}"
+        ),
         inline=False,
     )
     embed.add_field(
@@ -782,7 +800,7 @@ class FortressDefenseCog(commands.Cog):
 
         log.info(f"[Fortress] 結算完成: {result['status']}")
 
-    async def refresh_battle_embed(self, interaction: discord.Interaction):
+    async def refresh_battle_embed(self, interaction: discord.Interaction, force: bool = False):
         """在有人出兵後更新戰況 Embed"""
         try:
             if not self._battle_message_id or not self._battle_channel_id:
@@ -793,7 +811,7 @@ class FortressDefenseCog(commands.Cog):
                 return
 
             now = datetime.now(TW_TZ)
-            if state.status == "active" and self._last_embed_refresh_at:
+            if not force and state.status == "active" and self._last_embed_refresh_at:
                 elapsed = (now - self._last_embed_refresh_at).total_seconds()
                 if elapsed < EMBED_REFRESH_COOLDOWN_SECONDS:
                     return
