@@ -24,6 +24,8 @@ from shared.db.db_adapter import (
 
 log = logging.getLogger("fortress_defense")
 TW_TZ = ZoneInfo("Asia/Taipei")
+FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
+EMBED_REFRESH_COOLDOWN_SECONDS = 5
 
 _TD_GRID_ROWS = 6
 _TD_GRID_COLS = 13
@@ -553,13 +555,16 @@ class FortressDefenseCog(commands.Cog):
         self._battle_message_id: Optional[int] = None
         self._battle_channel_id: int = _get_fortress_channel_id()
         self._settled_round_ids: set[str] = set()
+        self._last_embed_refresh_at: Optional[datetime] = None
         self.settle_task.start()
         self.update_trends_scheduled.start()
+        self.command_poll_task.start()
         log.info("[Fortress] Cog 已初始化")
 
     def cog_unload(self):
         self.settle_task.cancel()
         self.update_trends_scheduled.cancel()
+        self.command_poll_task.cancel()
 
     # ── 斜線指令 ───────────────────────────────────────────
 
@@ -687,14 +692,25 @@ class FortressDefenseCog(commands.Cog):
         try:
             if not self._battle_message_id or not self._battle_channel_id:
                 return
+
+            state = fs.get_current_battle()
+            if not state:
+                return
+
+            now = datetime.now(TW_TZ)
+            if state.status == "active" and self._last_embed_refresh_at:
+                elapsed = (now - self._last_embed_refresh_at).total_seconds()
+                if elapsed < EMBED_REFRESH_COOLDOWN_SECONDS:
+                    return
+
             channel = self.bot.get_channel(self._battle_channel_id)
             if not channel:
                 return
             msg = await channel.fetch_message(self._battle_message_id)
-            state = fs.get_current_battle()
             if state:
                 view = None if state.status != "active" else FortressEnemyView(self)
                 await msg.edit(embed=build_battle_embed(state), view=view)
+                self._last_embed_refresh_at = now
         except discord.NotFound:
             pass
         except Exception as e:
@@ -760,6 +776,35 @@ class FortressDefenseCog(commands.Cog):
 
     @update_trends_scheduled.before_loop
     async def before_trends(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(seconds=15)
+    async def command_poll_task(self):
+        """輪詢伺服器端命令檔，作為 Discord slash 故障時的 fallback。"""
+        try:
+            if not os.path.exists(FORTRESS_COMMAND_FILE):
+                return
+
+            with open(FORTRESS_COMMAND_FILE, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            os.remove(FORTRESS_COMMAND_FILE)
+            if payload.get("command") != "start":
+                return
+
+            log.info("[Fortress] 接收到伺服器端手動開戰命令")
+            success, msg, count = await self._start_battle_from_trends()
+            if success:
+                log.info(f"[Fortress] 伺服器端手動開戰成功，敵人數={count}")
+            else:
+                log.warning(f"[Fortress] 伺服器端手動開戰失敗: {msg}")
+        except FileNotFoundError:
+            return
+        except Exception as e:
+            log.error(f"[Fortress] 命令輪詢失敗: {e}")
+
+    @command_poll_task.before_loop
+    async def before_command_poll(self):
         await self.bot.wait_until_ready()
 
     # ── 管理員手動開戰 ────────────────────────────────────
