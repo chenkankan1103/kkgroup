@@ -465,53 +465,23 @@ class PersonalLockerCog(commands.Cog):
         - 編輯現有 canonical 訊息（DB 中的 locker_message_id）或發送新訊息
         """
         try:
-            from db_adapter import get_user, set_user_field
-            from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
+            from cogs.ui.utils.locker_embed_generator import update_locker_message
             
             plants = await get_user_plants(user_id)
             inventory = await get_inventory(user_id)
-            user_data = get_user(user_id) or {}
-            user_obj = None
-            
-            try:
-                user_obj = await self.bot.fetch_user(user_id) if user_id else None
-            except Exception:
-                pass
-
-            # 取得或建立 view
-            from cogs.ui.views import LockerPanelView
-            view = LockerPanelView(self.bot, self, user_id, thread.guild.id, thread.id, plants, self) if hasattr(thread, 'guild') else None
-
-            # 使用中心化生成器
-            embed = await generate_canonical_locker_embed(
-                cog=self.bot.get_cog('UserPanel') or self,
-                user_data=user_data,
-                user_obj=user_obj,
-                include_cannabis_info=True,
+            success = await update_locker_message(
+                thread=thread,
+                user_id=user_id,
+                bot=self.bot,
+                cog=self.bot.get_cog('UserPanel'),
                 plants=plants,
-                inventory=inventory
+                inventory=inventory,
             )
 
-            # 嘗試編輯 canonical message（若存在）
-            user_row = get_user(user_id)
-            locker_msg_id = user_row.get('locker_message_id') if user_row else None
-            if locker_msg_id:
-                try:
-                    msg = await thread.fetch_message(locker_msg_id)
-                    await msg.edit(embed=embed, view=view)
-                    print(f"✅ [Locker Update] 已編輯用戶 {user_id} 的置物櫃訊息 (locker_message_id={locker_msg_id})")
-                    return
-                except Exception as _e:
-                    print(f"🔶 [Locker Update] 編輯 canonical message 失敗，將發送新訊息: {_e}")
-
-            # 發送新訊息並回填 locker_message_id
-            new_msg = await thread.send(embed=embed, view=view)
-            try:
-                set_user_field(user_id, 'locker_message_id', new_msg.id)
-            except Exception as db_err:
-                print(f"⚠️ [Locker Update] 更新 DB 失敗: {db_err}")
-            
-            print(f"✅ [Locker Update] 已發送新置物櫃訊息給用戶 {user_id} (message_id={new_msg.id})")
+            if success:
+                print(f"✅ [Locker Update] 已同步更新用戶 {user_id} 的置物櫃訊息")
+            else:
+                print(f"⚠️ [Locker Update] 更新用戶 {user_id} 的置物櫃訊息失敗")
 
         except Exception as e:
             print(f"❌ [Locker Update] 更新置物櫃 embed 失敗: {e}")
