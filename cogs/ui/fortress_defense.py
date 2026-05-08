@@ -26,7 +26,7 @@ log = logging.getLogger("fortress_defense")
 TW_TZ = ZoneInfo("Asia/Taipei")
 FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
-FORTRESS_ALLOWED_HOURS = {0, 8, 12, 16, 20}
+FORTRESS_ALLOWED_HOURS = {8, 11, 14, 17, 20, 23}
 
 _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
     {
@@ -831,11 +831,11 @@ class FortressDefenseCog(commands.Cog):
     async def before_settle(self):
         await self.bot.wait_until_ready()
 
-    # ── 趨勢排程（每 4 小時抓 Google Trends，開啟新一輪堡壘戰）────
+    # ── 趨勢排程（依台灣時鐘固定時段抓 Google Trends，開啟新一輪堡壘戰）────
 
     @tasks.loop(minutes=1)
     async def update_trends_scheduled(self):
-        """每分鐘檢查台灣時鐘，於 00/08/12/16/20 點自動開啟新一輪堡壘保衛戰。"""
+        """每分鐘檢查台灣時鐘，於 08/11/14/17/20/23 點自動開啟新一輪堡壘保衛戰。"""
         try:
             now = datetime.now(TW_TZ)
             if now.hour not in FORTRESS_ALLOWED_HOURS:
