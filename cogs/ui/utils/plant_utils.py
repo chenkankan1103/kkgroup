@@ -1,5 +1,8 @@
+import json
 from typing import Optional
 from db_adapter import get_user, set_user
+
+from . import paperdoll_manager
 
 
 def ensure_user_exists(user_id: int) -> bool:
@@ -9,6 +12,8 @@ def ensure_user_exists(user_id: int) -> bool:
         
         if user_data:
             return True
+
+        random_appearance = paperdoll_manager.get_random()
         
         # 創建新使用者
         set_user(user_id, {
@@ -19,16 +24,16 @@ def ensure_user_exists(user_id: int) -> bool:
             'title': '新手',
             'hp': 100,
             'stamina': 100,
-            'inventory': '[]',
+            'inventory': json.dumps(["手機", "身分證"], ensure_ascii=False),
             'character_config': '{}',
-            'face': 20000,
-            'hair': 30000,
-            'skin': 12000,
-            'top': 1040010,
-            'bottom': 1060096,
-            'shoes': 1072288,
+            'face': int(random_appearance['face']),
+            'hair': int(random_appearance['hair']),
+            'skin': int(random_appearance['skin']),
+            'top': int(random_appearance['top']),
+            'bottom': int(random_appearance['bottom']),
+            'shoes': int(random_appearance['shoes']),
             'is_stunned': 0,
-            'gender': 'male',
+            'gender': random_appearance['gender'],
             'thread_id': 0,
             # 初始化週統計快照字段
             'last_kkcoin_snapshot': 0,
