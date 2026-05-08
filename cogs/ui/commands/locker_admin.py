@@ -201,40 +201,23 @@ class LockerAdminCog(commands.Cog):
                         type=discord.ChannelType.private_thread
                     )
                 
-                # 發送置物櫃 embed 和 view
-                from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
-                from cogs.ui.views.locker_panel import LockerPanelView
+                # 發送 canonical 置物櫃訊息
+                from cogs.ui.utils.locker_embed_generator import update_locker_message
                 from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
                 
                 plants = await get_user_plants(user.id)
                 inventory = await get_inventory(user.id)
-                
-                # 生成 embed
-                embed = await generate_canonical_locker_embed(
-                    cog=self.bot.get_cog('PersonalLockerCog'),
-                    user_data=get_user(user.id),
-                    user_obj=user,
-                    include_cannabis_info=True,
+
+                success = await update_locker_message(
+                    thread=thread,
+                    user_id=user.id,
+                    bot=self.bot,
+                    cog=self.bot.get_cog('UserPanel'),
                     plants=plants,
-                    inventory=inventory
+                    inventory=inventory,
                 )
-                
-                # 建立 view
-                view = LockerPanelView(self.bot.get_cog('PersonalLockerCog'), user.id, thread=thread)
-                
-                # 發送訊息（如果 embed 為空，使用備用訊息）
-                if embed is not None:
-                    msg = await thread.send(embed=embed, view=view)
-                else:
-                    # 備用訊息：如果 embed 生成失敗
-                    msg = await thread.send(
-                        f"📦 {user.mention} 的置物櫃\n\n"
-                        f"初始化完成！點擊下方按鈕開始管理您的物品。",
-                        view=view
-                    )
-                
-                # 保存 locker_message_id
-                set_user_field(user.id, 'locker_message_id', msg.id)
+                if not success:
+                    raise RuntimeError("無法建立 canonical 置物櫃訊息")
                 
                 await interaction.followup.send(
                     f"✅ 已為 {user.mention} 初始化置物櫃\n"
@@ -424,36 +407,24 @@ class LockerAdminCog(commands.Cog):
                                 type=discord.ChannelType.private_thread
                             )
                         
-                        # 發送置物櫃 embed
-                        from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
-                        from cogs.ui.views.locker_panel import LockerPanelView
+                        # 發送 canonical 置物櫃訊息
+                        from cogs.ui.utils.locker_embed_generator import update_locker_message
                         from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
                         
                         plants = await get_user_plants(user_id)
                         inventory = await get_inventory(user_id)
                         
-                        embed = await generate_canonical_locker_embed(
-                            cog=self.bot.get_cog('PersonalLockerCog'),
-                            user_data=get_user(user_id),
-                            user_obj=user_obj,
-                            include_cannabis_info=True,
+                        success = await update_locker_message(
+                            thread=thread,
+                            user_id=user_id,
+                            bot=self.bot,
+                            cog=self.bot.get_cog('UserPanel'),
                             plants=plants,
-                            inventory=inventory
+                            inventory=inventory,
                         )
-                        
-                        view = LockerPanelView(self.bot.get_cog('PersonalLockerCog'), user_id, thread=thread)
-                        
-                        # 發送訊息（如果 embed 為空，使用備用訊息）
-                        if embed is not None:
-                            msg = await thread.send(embed=embed, view=view)
-                        else:
-                            msg = await thread.send(
-                                f"📦 {user_obj.mention} 的置物櫃\n\n"
-                                f"初始化完成！點擊下方按鈕開始管理您的物品。",
-                                view=view
-                            )
-                        
-                        set_user_field(user_id, 'locker_message_id', msg.id)
+                        if not success:
+                            raise RuntimeError("無法建立 canonical 置物櫃訊息")
+
                         thread_created_count += 1
                         
                     except Exception as thread_err:
@@ -540,39 +511,23 @@ class LockerAdminCog(commands.Cog):
                     type=discord.ChannelType.private_thread
                 )
             
-            # 發送置物櫃 embed（參照 cannabis_locker.py 的邏輯）
-            from cogs.ui.utils.locker_embed_generator import generate_canonical_locker_embed
-            from cogs.ui.views.locker_panel import LockerPanelView
+            # 發送 canonical 置物櫃訊息
+            from cogs.ui.utils.locker_embed_generator import update_locker_message
             from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
             
             plants = await get_user_plants(user.id)
             inventory = await get_inventory(user.id)
             
-            # 生成 embed
-            embed = await generate_canonical_locker_embed(
-                cog=self.bot.get_cog('PersonalLockerCog'),
-                user_data=get_user(user.id),
-                user_obj=user,
-                include_cannabis_info=True,
+            success = await update_locker_message(
+                thread=thread,
+                user_id=user.id,
+                bot=self.bot,
+                cog=self.bot.get_cog('UserPanel'),
                 plants=plants,
-                inventory=inventory
+                inventory=inventory,
             )
-            
-            # 建立 view
-            view = LockerPanelView(self.bot.get_cog('PersonalLockerCog'), user.id, thread=thread)
-            
-            # 發送訊息（如果 embed 為空，使用備用訊息）
-            if embed is not None:
-                msg = await thread.send(embed=embed, view=view)
-            else:
-                msg = await thread.send(
-                    f"📦 {user.mention} 的置物櫃\n\n"
-                    f"重製完成！點擊下方按鈕開始管理您的物品。",
-                    view=view
-                )
-            
-            # 保存 locker_message_id
-            set_user_field(user.id, 'locker_message_id', msg.id)
+            if not success:
+                raise RuntimeError("無法建立 canonical 置物櫃訊息")
             
             await interaction.followup.send(
                 f"✅ 已為 {user.mention} 重製置物櫃 thread\n"

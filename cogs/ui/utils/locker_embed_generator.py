@@ -10,6 +10,33 @@ from typing import Optional, Dict, Any
 from db_adapter import get_user
 
 
+def _resolve_user_panel_cog(cog=None, bot=None):
+    """盡量解析出真正負責置物櫃主 embed 的 UserPanel cog。"""
+    if cog and hasattr(cog, 'create_user_embed') and hasattr(cog, 'bot'):
+        return cog
+
+    candidate_bot = bot or getattr(cog, 'bot', None)
+    if candidate_bot:
+        resolved = candidate_bot.get_cog('UserPanel')
+        if resolved:
+            return resolved
+
+    return cog
+
+
+def _build_locker_view(cog, bot, user_id: int, thread: Optional[discord.Thread]):
+    """統一建立永久置物櫃按鈕視圖。"""
+    if not thread:
+        return None
+
+    resolved_cog = _resolve_user_panel_cog(cog, bot)
+    if not resolved_cog or not hasattr(resolved_cog, 'bot'):
+        return None
+
+    from ..views import LockerPanelView
+    return LockerPanelView(resolved_cog, user_id, thread)
+
+
 async def generate_canonical_locker_embed(
     cog,
     user_data: Dict[str, Any],
@@ -37,6 +64,7 @@ async def generate_canonical_locker_embed(
     Returns:
         discord.Embed: 生成的 canonical embed
     """
+    cog = _resolve_user_panel_cog(cog)
     embed = None
     user_id = user_data.get('user_id')
     
@@ -293,13 +321,14 @@ async def update_locker_message(
     """
     try:
         from db_adapter import get_user, set_user_field
-        from ..views import LockerPanelView
         
         # 獲取用戶數據
         user_data = get_user(user_id)
         if not user_data:
             print(f"❌ [Update Locker Message] 無法找到用戶 {user_id} 的數據")
             return False
+
+        resolved_cog = _resolve_user_panel_cog(cog, bot)
         
         # 生成 canonical embed
         user_obj = None
@@ -310,7 +339,7 @@ async def update_locker_message(
                 pass
         
         embed = await generate_canonical_locker_embed(
-            cog or bot,
+            resolved_cog or cog or bot,
             user_data,
             user_obj,
             include_cannabis_info=bool(plants or inventory),
@@ -319,10 +348,7 @@ async def update_locker_message(
         )
         
         # 建立 view
-        if cog and bot:
-            view = LockerPanelView(cog, user_id, thread)
-        else:
-            view = None
+        view = _build_locker_view(resolved_cog, bot, user_id, thread)
         
         # 若未傳入 message_obj，嘗試從 thread 歷史找 bot 發的 embed 訊息（避免重複發送）
         if not message_obj and bot:

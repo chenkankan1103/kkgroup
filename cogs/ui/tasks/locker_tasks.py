@@ -89,28 +89,19 @@ class LockerTasks:
                         backfilled_count += 1
                     else:
                         try:
-                            user_obj = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-                            
-                            summary_embed = await self.cog.create_user_embed(user_data, user_obj)
-                            summary_embed.set_image(url=None)
-                            
-                            appearance_embed = discord.Embed(
-                                title=f"📦 {user_obj.display_name or user_obj.name} - 裝備",
-                                color=0x9933ff,
+                            from ..utils.locker_embed_generator import update_locker_message
+
+                            success = await update_locker_message(
+                                thread=thread,
+                                user_id=user_id,
+                                bot=self.bot,
+                                cog=self.cog,
                             )
-                            
-                            from ..utils.locker_cache import locker_cache
-                            paperdoll_url = await locker_cache.get_paperdoll_image(user_data)
-                            if paperdoll_url:
-                                appearance_embed.set_image(url=paperdoll_url)
-                            
-                            from ..views import LockerPanelView
-                            view = LockerPanelView(self.cog, user_id, thread)
-                            
-                            new_msg = await thread.send(embeds=[summary_embed, appearance_embed], view=view)
-                            set_user_field(user_id, 'locker_message_id', new_msg.id)
-                            print(f"✅ 建立新 message: user {user_id} → {new_msg.id}")
-                            backfilled_count += 1
+                            if success:
+                                backfilled_count += 1
+                                print(f"✅ 建立 canonical locker message: user {user_id}")
+                            else:
+                                print(f"⚠️ 建立 canonical locker message 失敗: user {user_id}")
                         
                         except Exception as _e:
                             print(f"⚠️ 無法為 user {user_id} 建立訊息: {_e}")

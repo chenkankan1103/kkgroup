@@ -5,6 +5,7 @@ from discord.ext import commands
 from discord import app_commands
 from db_adapter import get_all_users, set_user_field
 from ..views import LockerPanelView
+from ..utils.locker_embed_generator import message_needs_update, update_locker_message
 
 
 class AdminCommands(commands.Cog):
@@ -53,7 +54,7 @@ class AdminCommands(commands.Cog):
                 thread_id = user_data.get('thread_id')
                 locker_message_id = user_data.get('locker_message_id')
 
-                if not user_id or not thread_id or not locker_message_id:
+                if not user_id or not thread_id:
                     continue
 
                 try:
@@ -66,70 +67,18 @@ class AdminCommands(commands.Cog):
                     if getattr(thread, 'archived', False):
                         continue
 
-                    message = await thread.fetch_message(locker_message_id)
-                    if not message:
-                        continue
+                    message = None
+                    if locker_message_id:
+                        try:
+                            message = await thread.fetch_message(locker_message_id)
+                        except discord.NotFound:
+                            set_user_field(user_id, 'locker_message_id', None)
+                        except Exception:
+                            message = None
 
                     # Safety check: only update messages that are non-canonical to avoid
                     # regressing fixes (missing image or legacy buttons).
-                    try:
-                        from ..utils.locker_embed_generator import message_needs_update
-                        if not message_needs_update(message):
-                            # message is canonical — but still ensure the new `locker_change_gender`
-                            # button exists. If present, skip; otherwise fall through to update.
-                            def _has_gender_button(msg):
-                                try:
-                                    for row in msg.components or []:
-                                        for comp in row.children:
-                                            cid = getattr(comp, 'custom_id', None) or comp.get('custom_id')
-                                            if cid == 'locker_change_gender':
-                                                return True
-                                except Exception:
-                                    pass
-                                return False
-
-                            if _has_gender_button(message):
-                                continue
-                            # else: proceed to update so the missing button will be added
-                    except Exception:
-                        # fallback to existing checks if helper not available
-                        current_embed = None
-                        try:
-                            current_embed = message.embeds[0] if message.embeds else None
-                        except Exception:
-                            current_embed = None
-
-                        current_image = None
-                        current_footer = ''
-                        try:
-                            if current_embed and getattr(current_embed, 'image', None):
-                                current_image = getattr(current_embed.image, 'url', None)
-                            if current_embed and getattr(current_embed, 'footer', None):
-                                current_footer = (getattr(current_embed.footer, 'text', '') or '')
-                        except Exception:
-                            current_image = None
-                            current_footer = ''
-
-                        def has_legacy_button(msg):
-                            try:
-                                for row in msg.components or []:
-                                    for comp in row.children:
-                                        cid = getattr(comp, 'custom_id', None) or comp.get('custom_id')
-                                        if cid == 'locker_crop_info':
-                                            return True
-                            except Exception:
-                                pass
-                            return False
-
-                        needs_update = False
-                        if not current_image:
-                            needs_update = True
-                        elif 'MapleStory' not in (current_footer or ''):
-                            needs_update = True
-                        elif has_legacy_button(message):
-                            needs_update = True
-
-                        # if message looks canonical but lacks our new button, force an update
+                    if message:
                         def _has_gender_button(msg):
                             try:
                                 for row in msg.components or []:
@@ -141,40 +90,22 @@ class AdminCommands(commands.Cog):
                                 pass
                             return False
 
-                        if not needs_update and _has_gender_button(message):
-                            continue
-                        if not needs_update and not _has_gender_button(message):
-                            needs_update = True
-
-                        if not needs_update:
+                        if not message_needs_update(message) and _has_gender_button(message):
                             continue
 
-                    # Build canonical embed (create_user_embed already applies MapleStory fallback)
-                    user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-                    embed = await user_panel_cog.create_user_embed(user_data, user)
+                    success = await update_locker_message(
+                        thread=thread,
+                        user_id=user_id,
+                        message_obj=message,
+                        bot=self.bot,
+                        cog=user_panel_cog,
+                    )
 
-                    # Ensure embed has an image (defensive) — compute MapleStory fallback if necessary
-                    try:
-                        img_url = (embed.image.url if getattr(embed, 'image', None) else None)
-                    except Exception:
-                        img_url = None
-                    if not img_url:
-                        try:
-                            from cogs.ui.utils import paperdoll_manager
-                            api_url = paperdoll_manager.build_api_url(user_data)
-                            embed.set_image(url=api_url)
-                        except Exception:
-                            pass
+                    if not success:
+                        failed_count += 1
+                        continue
 
-                    view = LockerPanelView(user_panel_cog, user_id, thread)
-
-                    await message.edit(embed=embed, view=view)
                     updated_count += 1
-                    # 發送短暫消息來提升線程排序（會在 1 秒後自動刪除）
-                    try:
-                        await thread.send(content="🔼 活躍用戶更新", delete_after=1)
-                    except Exception:
-                        pass
                 except Exception as e:
                     print(f"⚠️ 更新用戶 {user_id} 的embed失敗: {e}")
                     failed_count += 1
