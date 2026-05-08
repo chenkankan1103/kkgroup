@@ -27,28 +27,89 @@ TW_TZ = ZoneInfo("Asia/Taipei")
 FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
 
-_TD_GRID_ROWS = 6
-_TD_GRID_COLS = 13
-_TD_PATH_COORDS = [
-    (0, 0), (0, 1), (0, 2), (0, 3),
-    (1, 3), (2, 3),
-    (2, 2), (2, 1), (2, 0),
-    (3, 0), (4, 0),
-    (4, 1), (4, 2), (4, 3), (4, 4),
-    (3, 4), (2, 4), (1, 4),
-    (1, 5), (1, 6), (1, 7),
-    (2, 7), (3, 7), (4, 7), (5, 7),
-    (5, 8), (5, 9), (5, 10), (5, 11),
+_TD_MAP_LAYOUTS: List[Dict[str, object]] = [
+    {
+        "id": "snake_river",
+        "name": "蛇行河道",
+        "rows": 6,
+        "cols": 13,
+        "path_tile": "🟫",
+        "ground_tile": "🟩",
+        "path_coords": [
+            (0, 0), (0, 1), (0, 2), (0, 3),
+            (1, 3), (2, 3),
+            (2, 2), (2, 1), (2, 0),
+            (3, 0), (4, 0),
+            (4, 1), (4, 2), (4, 3), (4, 4),
+            (3, 4), (2, 4), (1, 4),
+            (1, 5), (1, 6), (1, 7),
+            (2, 7), (3, 7), (4, 7), (5, 7),
+            (5, 8), (5, 9), (5, 10), (5, 11),
+        ],
+        "fort_coord": (5, 12),
+        "tower_slots": {
+            "north_gate": {"label": "北門入口", "desc": "開局壓制第一波", "coord": (0, 4)},
+            "west_corner": {"label": "西側急彎", "desc": "專打轉角卡位", "coord": (1, 1)},
+            "mid_choke": {"label": "中央瓶頸", "desc": "火力最密集的彎道", "coord": (3, 2)},
+            "inner_curve": {"label": "內圈彎道", "desc": "攔截中段推進", "coord": (2, 5)},
+            "east_bridge": {"label": "東側橋頭", "desc": "守住後段長線", "coord": (3, 8)},
+            "last_stand": {"label": "園區前哨", "desc": "最後防線", "coord": (4, 11)},
+        },
+    },
+    {
+        "id": "desert_switchback",
+        "name": "沙丘折返",
+        "rows": 7,
+        "cols": 13,
+        "path_tile": "🟨",
+        "ground_tile": "🟧",
+        "path_coords": [
+            (0, 0), (1, 0), (2, 0), (2, 1), (2, 2), (2, 3),
+            (1, 3), (0, 3), (0, 4), (0, 5), (0, 6),
+            (1, 6), (2, 6), (3, 6),
+            (3, 5), (3, 4), (3, 3),
+            (4, 3), (5, 3), (5, 4), (5, 5), (5, 6),
+            (5, 7), (4, 7), (3, 7), (2, 7),
+            (2, 8), (2, 9), (2, 10), (3, 10), (4, 10), (5, 10),
+            (5, 11),
+        ],
+        "fort_coord": (5, 12),
+        "tower_slots": {
+            "sand_entry": {"label": "沙門入口", "desc": "截斷第一段直線", "coord": (1, 1)},
+            "high_dune": {"label": "高坡沙丘", "desc": "俯射上路折返", "coord": (1, 4)},
+            "sun_pit": {"label": "烈日坑道", "desc": "壓制中段會車點", "coord": (2, 5)},
+            "crosswind": {"label": "側風轉盤", "desc": "打擊右側長走廊", "coord": (4, 6)},
+            "oasis_wall": {"label": "綠洲外牆", "desc": "最後封口", "coord": (4, 11)},
+        },
+    },
+    {
+        "id": "forest_spiral",
+        "name": "密林回旋",
+        "rows": 7,
+        "cols": 13,
+        "path_tile": "🟫",
+        "ground_tile": "🌲",
+        "path_coords": [
+            (0, 0), (0, 1), (0, 2), (0, 3), (0, 4),
+            (1, 4), (2, 4),
+            (2, 3), (2, 2), (2, 1),
+            (3, 1), (4, 1),
+            (4, 2), (4, 3), (4, 4), (4, 5),
+            (3, 5), (2, 5), (1, 5),
+            (1, 6), (1, 7), (1, 8),
+            (2, 8), (3, 8), (4, 8), (5, 8),
+            (5, 9), (5, 10), (5, 11),
+        ],
+        "fort_coord": (5, 12),
+        "tower_slots": {
+            "wood_gate": {"label": "林地前哨", "desc": "卡死最前段入口", "coord": (1, 2)},
+            "spiral_top": {"label": "回旋上緣", "desc": "覆蓋雙重折返", "coord": (1, 3)},
+            "spiral_core": {"label": "回旋核心", "desc": "地圖中心火力井", "coord": (3, 4)},
+            "fern_bridge": {"label": "蕨橋彎口", "desc": "攔截右路進軍", "coord": (2, 7)},
+            "fort_watch": {"label": "堡前瞭望", "desc": "園區前最後一塔", "coord": (4, 11)},
+        },
+    },
 ]
-_TD_FORT_COORD = (5, 12)
-_TD_TOWER_SLOTS: Dict[str, Dict[str, object]] = {
-    "north_gate": {"label": "北門入口", "desc": "開局壓制第一波", "coord": (0, 4)},
-    "west_corner": {"label": "西側急彎", "desc": "專打轉角卡位", "coord": (1, 1)},
-    "mid_choke": {"label": "中央瓶頸", "desc": "火力最密集的彎道", "coord": (3, 2)},
-    "inner_curve": {"label": "內圈彎道", "desc": "攔截中段推進", "coord": (2, 5)},
-    "east_bridge": {"label": "東側橋頭", "desc": "守住後段長線", "coord": (3, 8)},
-    "last_stand": {"label": "園區前哨", "desc": "最後防線", "coord": (4, 11)},
-}
 
 # 從 .env 讀取堡壘頻道 ID（與其他 channel ID 的模式相同）
 def _get_fortress_channel_id() -> int:
@@ -230,6 +291,9 @@ class TowerPlacementSelect(Select):
 
     def __init__(self, cog: "FortressDefenseCog"):
         self.cog = cog
+        state = fs.get_current_battle()
+        layout = _get_map_layout(state)
+        tower_slots = layout["tower_slots"]
         options = [
             discord.SelectOption(
                 label=meta["label"],
@@ -237,7 +301,7 @@ class TowerPlacementSelect(Select):
                 description=meta["desc"],
                 emoji="🗼",
             )
-            for slot_id, meta in _TD_TOWER_SLOTS.items()
+            for slot_id, meta in tower_slots.items()
         ]
         super().__init__(
             placeholder="🗼 選擇你的砲台架設位置",
@@ -260,7 +324,7 @@ class TowerPlacementSelect(Select):
         if not success:
             if result == "occupied":
                 owner_name = _find_slot_owner_name(state, slot_id, interaction.client)
-                label = _tower_slot_label(slot_id)
+                label = _tower_slot_label(slot_id, state)
                 msg = f"❌ 【{label}】已被 {owner_name} 佔用。"
             else:
                 msg = f"❌ {result}"
@@ -268,9 +332,9 @@ class TowerPlacementSelect(Select):
             return
 
         await self.cog.refresh_battle_embed(interaction)
-        prev_text = f"（原本在 {_tower_slot_label(result)}）" if result else ""
+        prev_text = f"（原本在 {_tower_slot_label(result, state)}）" if result else ""
         await interaction.followup.send(
-            f"✅ 已在【{_tower_slot_label(slot_id)}】架設砲台 {prev_text}\n"
+            f"✅ 已在【{_tower_slot_label(slot_id, state)}】架設砲台 {prev_text}\n"
             f"這座塔位會直接顯示在主戰場地圖上。",
             ephemeral=True,
         )
@@ -281,25 +345,31 @@ class TowerPlacementSelect(Select):
 
 def _rank_to_icon(rank: int) -> str:
     """根據敵軍排名回傳戰場 emoji"""
-    if rank == 1:   return '👑'
-    if rank <= 3:   return '⚡'
-    if rank <= 6:   return '🔥'
-    return '💀'
+    if rank == 1:
+        return "👹"
+    if rank <= 3:
+        return "👺"
+    if rank <= 6:
+        return "😈"
+    return "👾"
 
 
-def _enemy_path_pos(enemy: fs.EnemyUnit) -> int:
-    """計算敵人在路徑上的格子（0=剛入口, 路徑尾端=緊逼堡壘）
-    血量越低 → 位置越靠右（越接近 KK 園區）
-    """
-    if enemy.max_hp == 0:
-        return 0
-    hp_pct = enemy.current_hp / enemy.max_hp
-    path_len = len(_TD_PATH_COORDS)
+def _get_map_layout(state: Optional[fs.FortressState]) -> Dict[str, object]:
+    if not state:
+        return _TD_MAP_LAYOUTS[0]
+    seed = sum(ord(char) for char in state.round_id)
+    return _TD_MAP_LAYOUTS[seed % len(_TD_MAP_LAYOUTS)]
+
+
+def _enemy_progress_index(enemy: fs.EnemyUnit, layout: Dict[str, object]) -> int:
+    path_len = len(layout["path_coords"])
+    hp_pct = enemy.current_hp / enemy.max_hp if enemy.max_hp else 0
     return min(int((1 - hp_pct) * path_len), path_len - 1)
 
 
-def _tower_slot_label(slot_id: str) -> str:
-    meta = _TD_TOWER_SLOTS.get(slot_id)
+def _tower_slot_label(slot_id: str, state: Optional[fs.FortressState] = None) -> str:
+    layout = _get_map_layout(state)
+    meta = layout["tower_slots"].get(slot_id)
     return str(meta["label"]) if meta else slot_id
 
 
@@ -307,7 +377,7 @@ def _get_tower_label_for_user(state: Optional[fs.FortressState], user_id: int) -
     if not state:
         return ""
     slot_id = state.tower_slots.get(user_id)
-    return _tower_slot_label(slot_id) if slot_id else ""
+    return _tower_slot_label(slot_id, state) if slot_id else ""
 
 
 def _find_slot_owner_name(state: fs.FortressState, slot_id: str, bot: discord.Client) -> str:
@@ -321,29 +391,33 @@ def _find_slot_owner_name(state: fs.FortressState, slot_id: str, bot: discord.Cl
 
 def _build_td_map(state: fs.FortressState) -> str:
     """建立蛇形塔防地圖。"""
-    grid = [["🟩" for _ in range(_TD_GRID_COLS)] for _ in range(_TD_GRID_ROWS)]
+    layout = _get_map_layout(state)
+    rows = layout["rows"]
+    cols = layout["cols"]
+    grid = [[layout["ground_tile"] for _ in range(cols)] for _ in range(rows)]
 
-    for row, col in _TD_PATH_COORDS:
-        grid[row][col] = "🟫"
+    for row, col in layout["path_coords"]:
+        grid[row][col] = layout["path_tile"]
 
     occupied_slots = set(state.tower_slots.values())
-    for slot_id, meta in _TD_TOWER_SLOTS.items():
+    for slot_id, meta in layout["tower_slots"].items():
         row, col = meta["coord"]
         grid[row][col] = "🗼" if slot_id in occupied_slots else "🔲"
 
-    grid[_TD_FORT_COORD[0]][_TD_FORT_COORD[1]] = "🏯"
+    fort_row, fort_col = layout["fort_coord"]
+    grid[fort_row][fort_col] = "🏯"
 
     alive = sorted([e for e in state.enemies if not e.defeated], key=lambda enemy: enemy.rank)
     occupied_path_cells = set()
     for enemy in alive:
         icon = _rank_to_icon(enemy.rank)
-        target = _enemy_path_pos(enemy)
+        target = _enemy_progress_index(enemy, layout)
         chosen_index = None
-        for distance in range(len(_TD_PATH_COORDS)):
+        for distance in range(len(layout["path_coords"])):
             for try_index in (target - distance, target + distance):
-                if not 0 <= try_index < len(_TD_PATH_COORDS):
+                if not 0 <= try_index < len(layout["path_coords"]):
                     continue
-                coord = _TD_PATH_COORDS[try_index]
+                coord = layout["path_coords"][try_index]
                 if coord not in occupied_path_cells:
                     chosen_index = try_index
                     occupied_path_cells.add(coord)
@@ -352,20 +426,21 @@ def _build_td_map(state: fs.FortressState) -> str:
                 break
         if chosen_index is None:
             continue
-        row, col = _TD_PATH_COORDS[chosen_index]
+        row, col = layout["path_coords"][chosen_index]
         grid[row][col] = icon
 
     return "\n".join("".join(row) for row in grid)
 
 
 def _tower_summary_lines(state: fs.FortressState) -> List[str]:
+    layout = _get_map_layout(state)
     lines = []
-    for slot_id, meta in _TD_TOWER_SLOTS.items():
+    for slot_id, meta in layout["tower_slots"].items():
         owner_id = next((uid for uid, owned_slot in state.tower_slots.items() if owned_slot == slot_id), None)
         if owner_id is None:
-            lines.append(f"▫️ {_tower_slot_label(slot_id)}：空位")
+            lines.append(f"▫️ {_tower_slot_label(slot_id, state)}：空位")
             continue
-        lines.append(f"🗼 {_tower_slot_label(slot_id)}：玩家 {owner_id}")
+        lines.append(f"🗼 {_tower_slot_label(slot_id, state)}：玩家 {owner_id}")
     return lines
 
 
@@ -375,6 +450,7 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
     """塔防風格戰鬥 Embed"""
     now = datetime.now(TW_TZ)
     ends = datetime.fromisoformat(state.ends_at)
+    layout = _get_map_layout(state)
     # 相容 naive/aware：統一轉為 aware 再比較
     if ends.tzinfo is None:
         ends = ends.replace(tzinfo=TW_TZ)
@@ -399,6 +475,7 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
 
     description = (
         f"🏯 **KK 詐騙園區** {fort_status}\n"
+        f"🗺️ 本輪地圖：**{layout['name']}**\n"
         f"`{state.fortress_hp_bar()}`\n\n"
         f"{td_map}\n\n"
         f"⬅️ 敵軍由左側入侵路線前進，🗼 砲台自動射擊\n"
@@ -414,10 +491,10 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
     )
 
     # 敵軍詳細列表（含推進進度）
-    rank_labels = {1: "👑 BOSS", 2: "⚡ 精英", 3: "⚡ 精英"}
+    rank_labels = {1: "👹 BOSS", 2: "👺 菁英", 3: "👺 菁英"}
     enemy_lines = []
     for e in sorted(state.enemies, key=lambda x: x.rank):
-        label = rank_labels.get(e.rank, f"💀 #{e.rank}")
+        label = rank_labels.get(e.rank, f"👾 先鋒 #{e.rank}")
         if e.defeated:
             enemy_lines.append(f"~~{label} · {e.name}~~ ✅ 已消滅")
         else:
@@ -435,7 +512,7 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
     )
     embed.add_field(
         name="🗺️ 戰線說明",
-        value="蛇形戰線會一路彎進 KK 園區；🔲 可蓋塔，🗼 已架設砲台，🏯 是園區核心。",
+        value=f"{layout['name']} 會依輪次自動切換；🔲 可蓋塔，🗼 已架設砲台，🏯 是園區核心。",
         inline=False,
     )
     embed.add_field(
