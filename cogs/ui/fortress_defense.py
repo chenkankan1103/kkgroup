@@ -626,6 +626,27 @@ class FortressDefenseCog(commands.Cog):
         self._battle_message_id = msg.id
         log.info(f"[Fortress] 戰鬥 Embed 發送成功 msg={msg.id}")
 
+    async def _start_battle_from_trends(self) -> tuple[bool, str, int]:
+        """抓取趨勢並啟動戰鬥，供 slash 與文字指令共用。"""
+        log.info("[Fortress] 手動開戰流程開始")
+        try:
+            from market_trends_serpapi import get_trending_topics
+
+            trends_data = await asyncio.wait_for(get_trending_topics(limit=10), timeout=25)
+            if not trends_data:
+                log.warning("[Fortress] 手動開戰失敗：趨勢資料為空")
+                return False, "無法取得趨勢資料，請稍後再試", 0
+
+            await self.start_battle(trends_data)
+            log.info(f"[Fortress] 手動開戰成功，敵人數={len(trends_data)}")
+            return True, "堡壘保衛戰已手動啟動！", len(trends_data)
+        except asyncio.TimeoutError:
+            log.error("[Fortress] 手動開戰逾時：SerpApi 超過 25 秒未返回")
+            return False, "取得趨勢資料逾時，請稍後再試", 0
+        except Exception as e:
+            log.exception(f"[Fortress] 手動開戰失敗: {e}")
+            return False, f"開戰失敗：{e}", 0
+
     async def _finalize_and_announce_battle(self):
         """統一處理戰鬥結算、獎勵發放與公告。"""
         state_before = fs.get_current_battle()
@@ -747,21 +768,35 @@ class FortressDefenseCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def fortress_admin_start(self, interaction: discord.Interaction):
         """管理員手動觸發堡壘保衛戰（補發用）"""
+        log.info(f"[Fortress] slash /fortress_admin_start invoked by {interaction.user.id}")
         await interaction.response.defer(ephemeral=True)
-        try:
-            from market_trends_serpapi import get_trending_topics
-            trends_data = await get_trending_topics(limit=10)
-            if not trends_data:
-                await interaction.followup.send("❌ 無法取得趨勢資料，請稍後再試", ephemeral=True)
-                return
-            await self.start_battle(trends_data)
-            await interaction.followup.send(
-                f"✅ 堡壘保衛戰已手動啟動！共 {len(trends_data)} 個趨勢敵人。",
-                ephemeral=True
-            )
-        except Exception as e:
-            log.error(f"[Fortress] 管理員強制開戰失敗: {e}")
-            await interaction.followup.send(f"❌ 開戰失敗：{e}", ephemeral=True)
+        success, msg, count = await self._start_battle_from_trends()
+        if not success:
+            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
+            return
+        await interaction.followup.send(
+            f"✅ {msg} 共 {count} 個趨勢敵人。",
+            ephemeral=True
+        )
+
+    @fortress_admin_start.error
+    async def fortress_admin_start_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        log.exception(f"[Fortress] slash /fortress_admin_start error: {error}")
+        if interaction.response.is_done():
+            await interaction.followup.send(f"❌ 開戰失敗：{error}", ephemeral=True)
+            return
+        await interaction.response.send_message(f"❌ 開戰失敗：{error}", ephemeral=True)
+
+    @commands.command(name="fortress_start")
+    @commands.has_permissions(administrator=True)
+    async def fortress_start_text(self, ctx: commands.Context):
+        """文字指令 fallback：!fortress_start"""
+        log.info(f"[Fortress] text !fortress_start invoked by {ctx.author.id}")
+        success, msg, count = await self._start_battle_from_trends()
+        if not success:
+            await ctx.send(f"❌ {msg}")
+            return
+        await ctx.send(f"✅ {msg} 共 {count} 個趨勢敵人。")
 
 
 # ─── 興趣管理視圖（/my_interests 用）─────────────────────
