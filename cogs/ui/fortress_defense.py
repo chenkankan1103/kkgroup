@@ -508,19 +508,22 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
         timestamp=now,
     )
 
-    # 敵軍詳細列表（含推進進度）
+    # 敵軍詳細列表：時事標題優先，推進與血量退為次要資訊
     rank_labels = {1: "👹 BOSS", 2: "👺 菁英", 3: "👺 菁英"}
     enemy_lines = []
     for e in sorted(state.enemies, key=lambda x: x.rank):
         label = rank_labels.get(e.rank, f"👾 先鋒 #{e.rank}")
         if e.defeated:
-            enemy_lines.append(f"~~{label} · {e.name}~~ ✅ 已消滅")
+            enemy_lines.append(
+                f"~~**{e.name}**~~\n"
+                f"└ {label} · ✅ 已消滅"
+            )
         else:
             advance = int((1 - e.current_hp / e.max_hp) * 100) if e.max_hp else 100
-            warn    = "‼️" if advance >= 80 else ("⚠️" if advance >= 50 else "")
+            warn = "‼️" if advance >= 80 else ("⚠️" if advance >= 50 else "")
             enemy_lines.append(
-                f"{warn}{label} **{e.name}**（推進 {advance}%）\n"
-                f"└ `{e.hp_bar(8)}`"
+                f"{warn}**{e.name}**\n"
+                f"└ {label} · 推進 {advance}% · HP {e.current_hp}/{e.max_hp}"
             )
 
     embed.add_field(
