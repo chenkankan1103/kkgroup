@@ -26,6 +26,7 @@ log = logging.getLogger("fortress_defense")
 TW_TZ = ZoneInfo("Asia/Taipei")
 FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
+FORTRESS_ALLOWED_HOURS = {0, 8, 12, 16, 20}
 
 _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
     {
@@ -633,6 +634,7 @@ class FortressDefenseCog(commands.Cog):
         self._battle_channel_id: int = _get_fortress_channel_id()
         self._settled_round_ids: set[str] = set()
         self._last_embed_refresh_at: Optional[datetime] = None
+        self._last_started_schedule_round_id: str = ""
         self.settle_task.start()
         self.update_trends_scheduled.start()
         self.command_poll_task.start()
@@ -800,7 +802,14 @@ class FortressDefenseCog(commands.Cog):
         """每 10 分鐘檢查是否到結算時間"""
         try:
             state = fs.get_current_battle()
-            if not state or state.status != "active":
+            if not state:
+                return
+
+            if state.status == "victory" and not state.settled_at:
+                await self._finalize_and_announce_battle()
+                return
+
+            if state.status != "active":
                 return
 
             now = datetime.now(TW_TZ)
@@ -824,18 +833,27 @@ class FortressDefenseCog(commands.Cog):
 
     # ── 趨勢排程（每 4 小時抓 Google Trends，開啟新一輪堡壘戰）────
 
-    @tasks.loop(hours=4)
+    @tasks.loop(minutes=1)
     async def update_trends_scheduled(self):
-        """每 4 小時自動抓 Google Trends 並開啟新一輪堡壘保衛戰
-        執行時間: 00:00, 08:00, 12:00, 16:00, 20:00 (台灣時間)
-        """
+        """每分鐘檢查台灣時鐘，於 00/08/12/16/20 點自動開啟新一輪堡壘保衛戰。"""
         try:
             now = datetime.now(TW_TZ)
-            allowed_hours = [0, 8, 12, 16, 20]
-            if now.hour not in allowed_hours:
+            if now.hour not in FORTRESS_ALLOWED_HOURS:
                 return
             if now.minute > 5:
                 return
+
+            scheduled_round_id = now.strftime("%Y-%m-%d-%H")
+            if self._last_started_schedule_round_id == scheduled_round_id:
+                return
+
+            current_state = fs.get_current_battle()
+            if current_state and current_state.round_id == scheduled_round_id:
+                self._last_started_schedule_round_id = scheduled_round_id
+                return
+
+            if current_state and current_state.status == "victory" and not current_state.settled_at:
+                await self._finalize_and_announce_battle()
 
             log.info(f"[Fortress] ⏰ 趨勢排程啟動 {now.strftime('%H:%M %Z')}")
 
@@ -846,6 +864,7 @@ class FortressDefenseCog(commands.Cog):
                 return
 
             await self.start_battle(trends_data)
+            self._last_started_schedule_round_id = scheduled_round_id
             log.info(f"[Fortress] ✅ 新一輪堡壘保衛戰已開啟（{len(trends_data)} 個趨勢）")
 
         except Exception as e:
