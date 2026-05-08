@@ -123,6 +123,8 @@ class ScamHub(commands.Cog):
                 # 如果頻道仍有成員，重啟後立即同步狀態消息
                 if await self._get_voice_members(vc):
                     await self.update_voice_status(vc)
+                else:
+                    await self._schedule_deletion(room_id)
 
                 restored += 1
                 print(f"[ScamHub] 已恢復房間: {room_name} (ID: {room_id})")
