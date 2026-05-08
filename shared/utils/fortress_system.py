@@ -19,20 +19,21 @@ TW_TZ = ZoneInfo("Asia/Taipei")
 
 # ── 遊戲常數 ──────────────────────────────────────────────
 FORTRESS_MAX_HP = 10000         # 堡壘最大 HP
-BASE_DAMAGE_FREE = 100          # 免費出兵基礎傷害
-BASE_DAMAGE_PAID = 500          # 付費強化基礎傷害
+BASE_DAMAGE_FREE = 350          # 免費出兵基礎傷害
+BASE_DAMAGE_PAID = 1200         # 付費強化基礎傷害
 TAG_BONUS_MULTIPLIER = 2.0      # 興趣標籤加乘倍率
-FREE_ACTIONS_PER_ROUND = 3      # 每輪免費出兵次數
+FREE_ACTIONS_PER_ROUND = 10     # 每輪免費出兵次數
 PAID_COST_KKCOIN = 100          # 付費強化費用（KKCoin）
+BASE_VICTORY_REWARD_KKCOIN = 600
 
 # 封測標誌：True = 失守時無懲罰
 BETA_NO_PENALTY = True
 
 # 各排名對應的敵人 HP（1=Boss, 10=雜兵）
 ENEMY_HP_BY_RANK = {
-    1: 5000, 2: 4000, 3: 3000,
-    4: 2500, 5: 2000, 6: 1500,
-    7: 1200, 8: 1000, 9: 700, 10: 500
+    1: 2200, 2: 1800, 3: 1400,
+    4: 1100, 5: 900, 6: 800,
+    7: 700, 8: 600, 9: 500, 10: 400
 }
 
 # 興趣標籤 → 關鍵字對應表（用於比對趨勢詞）
@@ -96,6 +97,7 @@ class FortressState:
     started_at: str
     ends_at: str                                 # 自動結算時間（4小時後）
     tower_slots: Dict[int, str] = field(default_factory=dict)  # user_id → slot_id
+    settled_at: str = ""
 
     # 獎池（封測期間累積供測試）
     prize_pool_kkcoin: int = 0
@@ -216,6 +218,7 @@ def _load_state() -> Optional[FortressState]:
             status=data["status"],
             started_at=data["started_at"],
             ends_at=data["ends_at"],
+            settled_at=data.get("settled_at", ""),
             prize_pool_kkcoin=data.get("prize_pool_kkcoin", 0),
         )
     except Exception as e:
@@ -243,6 +246,7 @@ def _save_state(state: FortressState):
             "status": state.status,
             "started_at": state.started_at,
             "ends_at": state.ends_at,
+            "settled_at": state.settled_at,
             "prize_pool_kkcoin": state.prize_pool_kkcoin,
         }
         with open(STATE_FILE, "w", encoding="utf-8") as f:
@@ -276,6 +280,7 @@ def start_new_battle(trends: List[Dict]) -> FortressState:
         status="active",
         started_at=now.isoformat(),
         ends_at=ends_at,
+        settled_at="",
         prize_pool_kkcoin=0,
     )
     _save_state(state)
@@ -374,6 +379,32 @@ def assign_tower_slot(user_id: int, slot_id: str) -> Tuple[bool, str]:
     return True, current_slot or ""
 
 
+def _early_bonus_multiplier(remaining_minutes: int) -> float:
+    if remaining_minutes >= 120:
+        return 2.0
+    if remaining_minutes >= 60:
+        return 1.5
+    return 1.0
+
+
+def _split_reward(total_reward: int, damage_map: Dict[int, int]) -> Dict[str, int]:
+    if total_reward <= 0 or not damage_map:
+        return {}
+
+    total_damage = sum(damage_map.values()) or 1
+    allocations: Dict[str, int] = {}
+    used_reward = 0
+    items = sorted(damage_map.items(), key=lambda item: item[1], reverse=True)
+    for index, (uid, dmg) in enumerate(items):
+        if index == len(items) - 1:
+            reward = max(0, total_reward - used_reward)
+        else:
+            reward = round(total_reward * dmg / total_damage)
+            used_reward += reward
+        allocations[str(uid)] = reward
+    return allocations
+
+
 def apply_fortress_damage(damage: int) -> Tuple[FortressState, bool]:
     """對堡壘造成傷害（每輪結算時呼叫）。回傳 (state, defeated)"""
     state = _load_state()
@@ -392,20 +423,26 @@ def settle_battle() -> Dict:
     若敵人未全滅 → 計算剩餘敵人總傷害 → 打堡壘。
     """
     state = _load_state()
-    if not state or state.status != "active":
+    if not state:
+        return {"success": False, "reason": "無活躍戰況"}
+    if state.settled_at:
+        return {"success": False, "reason": "本輪已結算"}
+    if state.status not in ("active", "victory"):
         return {"success": False, "reason": "無活躍戰況"}
 
     # 計算未消滅敵人的「潰堤傷害」
-    alive_damage = sum(e.current_hp for e in state.enemies if not e.defeated)
-    if alive_damage > 0:
-        state.fortress_hp = max(0, state.fortress_hp - alive_damage)
+    if state.status == "active":
+        alive_damage = sum(e.current_hp for e in state.enemies if not e.defeated)
+        if alive_damage > 0:
+            state.fortress_hp = max(0, state.fortress_hp - alive_damage)
 
-    if state.fortress_hp <= 0 or any(not e.defeated for e in state.enemies):
-        state.status = "defeat"
-    else:
-        state.status = "victory"
+        if state.fortress_hp <= 0 or any(not e.defeated for e in state.enemies):
+            state.status = "defeat"
+        else:
+            state.status = "victory"
 
-    _save_state(state)
+    settled_at = datetime.now(TW_TZ)
+    state.settled_at = settled_at.isoformat()
 
     # 計算每位防守者的貢獻比例（用於獎勵分配）
     damage_map = state.total_damage_by_user()
@@ -414,6 +451,16 @@ def settle_battle() -> Dict:
         uid: round(dmg / total_damage * 100, 1)
         for uid, dmg in damage_map.items()
     }
+
+    ends_at = datetime.fromisoformat(state.ends_at)
+    if ends_at.tzinfo is None:
+        ends_at = ends_at.replace(tzinfo=TW_TZ)
+    remaining_minutes = max(0, int((ends_at - settled_at).total_seconds() / 60))
+    reward_multiplier = _early_bonus_multiplier(remaining_minutes) if state.status == "victory" else 1.0
+    total_reward_kkcoin = int(BASE_VICTORY_REWARD_KKCOIN * reward_multiplier) if state.status == "victory" else 0
+    reward_map = _split_reward(total_reward_kkcoin, damage_map)
+
+    _save_state(state)
 
     result = {
         "success": True,
@@ -425,6 +472,10 @@ def settle_battle() -> Dict:
         "contributions": contributions,       # {user_id: 貢獻%}
         "damage_map": damage_map,             # {user_id: total_damage}
         "prize_pool_kkcoin": state.prize_pool_kkcoin,
+        "remaining_minutes": remaining_minutes,
+        "reward_multiplier": reward_multiplier,
+        "total_reward_kkcoin": total_reward_kkcoin,
+        "reward_map": reward_map,
         "beta_no_penalty": BETA_NO_PENALTY,
     }
     logger.info(f"[Fortress] 結算完成: {state.status}, round={state.round_id}")
