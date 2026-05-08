@@ -95,6 +95,7 @@ class FortressState:
     status: str                                  # "active" | "victory" | "defeat"
     started_at: str
     ends_at: str                                 # 自動結算時間（4小時後）
+    tower_slots: Dict[int, str] = field(default_factory=dict)  # user_id → slot_id
 
     # 獎池（封測期間累積供測試）
     prize_pool_kkcoin: int = 0
@@ -200,6 +201,10 @@ def _load_state() -> Optional[FortressState]:
         defenders = {}
         for uid_str, actions in data.get("defenders", {}).items():
             defenders[int(uid_str)] = [DefenseAction(**a) for a in actions]
+        tower_slots = {
+            int(uid_str): slot_id
+            for uid_str, slot_id in data.get("tower_slots", {}).items()
+        }
 
         return FortressState(
             round_id=data["round_id"],
@@ -207,6 +212,7 @@ def _load_state() -> Optional[FortressState]:
             fortress_max_hp=data["fortress_max_hp"],
             enemies=enemies,
             defenders=defenders,
+            tower_slots=tower_slots,
             status=data["status"],
             started_at=data["started_at"],
             ends_at=data["ends_at"],
@@ -229,6 +235,10 @@ def _save_state(state: FortressState):
             "defenders": {
                 str(uid): [asdict(a) for a in actions]
                 for uid, actions in state.defenders.items()
+            },
+            "tower_slots": {
+                str(uid): slot_id
+                for uid, slot_id in state.tower_slots.items()
             },
             "status": state.status,
             "started_at": state.started_at,
@@ -262,6 +272,7 @@ def start_new_battle(trends: List[Dict]) -> FortressState:
         fortress_max_hp=fortress_hp,
         enemies=enemies,
         defenders={},
+        tower_slots={},
         status="active",
         started_at=now.isoformat(),
         ends_at=ends_at,
@@ -342,6 +353,25 @@ def apply_defense_action(
 
     bonus_text = "（🏷️ 標籤加乘 ×2）" if has_bonus else ""
     return True, f"造成 **{damage}** 傷害 {bonus_text}", damage
+
+
+def assign_tower_slot(user_id: int, slot_id: str) -> Tuple[bool, str]:
+    """為玩家分配本輪塔位。一個塔位同時只能由一名玩家占用。"""
+    state = _load_state()
+    if not state or not state.is_active():
+        return False, "目前沒有進行中的戰鬥"
+
+    current_slot = state.tower_slots.get(user_id)
+    if current_slot == slot_id:
+        return True, slot_id
+
+    for owner_id, occupied_slot in state.tower_slots.items():
+        if owner_id != user_id and occupied_slot == slot_id:
+            return False, "occupied"
+
+    state.tower_slots[user_id] = slot_id
+    _save_state(state)
+    return True, current_slot or ""
 
 
 def apply_fortress_damage(damage: int) -> Tuple[FortressState, bool]:
