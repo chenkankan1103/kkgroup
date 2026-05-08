@@ -191,7 +191,10 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
     """戰鬥 Embed：顯示所有敵人 HP + 堡壘 HP"""
     now = datetime.now(TW_TZ)
     ends = datetime.fromisoformat(state.ends_at)
-    remaining_min = max(0, int((ends - now.replace(tzinfo=None)).total_seconds() / 60))
+    # 相容 naive/aware：統一轉為 aware 再比較
+    if ends.tzinfo is None:
+        ends = ends.replace(tzinfo=TW_TZ)
+    remaining_min = max(0, int((ends - now).total_seconds() / 60))
 
     embed = discord.Embed(
         title="⚔️ KK 園區堡壘保衛戰！",
@@ -500,6 +503,28 @@ class FortressDefenseCog(commands.Cog):
     @update_trends_scheduled.before_loop
     async def before_trends(self):
         await self.bot.wait_until_ready()
+
+    # ── 管理員手動開戰 ────────────────────────────────────
+
+    @app_commands.command(name="fortress_admin_start", description="[管理員] 立即抓取趨勢並開啟新一輪堡壘保衛戰")
+    @app_commands.default_permissions(administrator=True)
+    async def fortress_admin_start(self, interaction: discord.Interaction):
+        """管理員手動觸發堡壘保衛戰（補發用）"""
+        await interaction.response.defer(ephemeral=True)
+        try:
+            from market_trends_serpapi import get_trending_topics
+            trends_data = await get_trending_topics(limit=10)
+            if not trends_data:
+                await interaction.followup.send("❌ 無法取得趨勢資料，請稍後再試", ephemeral=True)
+                return
+            await self.start_battle(trends_data)
+            await interaction.followup.send(
+                f"✅ 堡壘保衛戰已手動啟動！共 {len(trends_data)} 個趨勢敵人。",
+                ephemeral=True
+            )
+        except Exception as e:
+            log.error(f"[Fortress] 管理員強制開戰失敗: {e}")
+            await interaction.followup.send(f"❌ 開戰失敗：{e}", ephemeral=True)
 
 
 # ─── 興趣管理視圖（/my_interests 用）─────────────────────
