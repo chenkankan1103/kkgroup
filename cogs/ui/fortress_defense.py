@@ -27,6 +27,8 @@ TW_TZ = ZoneInfo("Asia/Taipei")
 FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
 FORTRESS_ALLOWED_HOURS = {8, 11, 14, 17, 20, 23}
+FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS = 8
+FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS = 12
 
 _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
     {
@@ -714,9 +716,16 @@ class FortressDefenseCog(commands.Cog):
         """抓取趨勢並啟動戰鬥，供 slash 與文字指令共用。"""
         log.info("[Fortress] 手動開戰流程開始")
         try:
-            from market_trends_serpapi import get_trending_topics
+            from market_trends_serpapi import (
+                get_cached_trending_topics,
+                get_fallback_trending_topics,
+                get_trending_topics,
+            )
 
-            trends_data = await asyncio.wait_for(get_trending_topics(limit=10), timeout=25)
+            trends_data = await asyncio.wait_for(
+                get_trending_topics(limit=10),
+                timeout=FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS,
+            )
             if not trends_data:
                 log.warning("[Fortress] 手動開戰失敗：趨勢資料為空")
                 return False, "無法取得趨勢資料，請稍後再試", 0
@@ -725,8 +734,15 @@ class FortressDefenseCog(commands.Cog):
             log.info(f"[Fortress] 手動開戰成功，敵人數={len(trends_data)}")
             return True, "堡壘保衛戰已手動啟動！", len(trends_data)
         except asyncio.TimeoutError:
-            log.error("[Fortress] 手動開戰逾時：SerpApi 超過 25 秒未返回")
-            return False, "取得趨勢資料逾時，請稍後再試", 0
+            log.warning(
+                f"[Fortress] 手動開戰逾時：趨勢來源超過 {FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS} 秒未返回，改用快取/備援資料"
+            )
+            trends_data = get_cached_trending_topics(limit=10, allow_stale=True) or get_fallback_trending_topics(limit=10)
+            if not trends_data:
+                return False, "取得趨勢資料逾時，且沒有可用快取", 0
+
+            await self.start_battle(trends_data)
+            return True, "趨勢來源逾時，已用快取/備援資料啟動堡壘戰。", len(trends_data)
         except Exception as e:
             log.exception(f"[Fortress] 手動開戰失敗: {e}")
             return False, f"開戰失敗：{e}", 0
@@ -857,8 +873,21 @@ class FortressDefenseCog(commands.Cog):
 
             log.info(f"[Fortress] ⏰ 趨勢排程啟動 {now.strftime('%H:%M %Z')}")
 
-            from market_trends_serpapi import get_trending_topics
-            trends_data = await get_trending_topics(limit=10)
+            from market_trends_serpapi import (
+                get_cached_trending_topics,
+                get_fallback_trending_topics,
+                get_trending_topics,
+            )
+            try:
+                trends_data = await asyncio.wait_for(
+                    get_trending_topics(limit=10),
+                    timeout=FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                log.warning(
+                    f"[Fortress] 排程抓趨勢逾時，改用快取/備援資料（>{FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS} 秒）"
+                )
+                trends_data = get_cached_trending_topics(limit=10, allow_stale=True) or get_fallback_trending_topics(limit=10)
             if not trends_data:
                 log.warning("[Fortress] ⚠️ 取得趨勢資料失敗，跳過本輪")
                 return
