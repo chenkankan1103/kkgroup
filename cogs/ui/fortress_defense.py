@@ -185,10 +185,77 @@ class FortressEnemyView(PersistentViewBase):
             return []
 
 
+# ─── 塔防地圖生成 ─────────────────────────────────────────
+
+_TD_PATH_LEN = 10   # 路徑格數（不含堡壘本身）
+
+
+def _rank_to_icon(rank: int) -> str:
+    """根據敵軍排名回傳戰場 emoji"""
+    if rank == 1:   return '👑'
+    if rank <= 3:   return '⚡'
+    if rank <= 6:   return '🔥'
+    return '💀'
+
+
+def _enemy_path_pos(enemy: fs.EnemyUnit) -> int:
+    """計算敵人在路徑上的格子（0=剛入口, _TD_PATH_LEN-1=緊逼堡壘）
+    血量越低 → 位置越靠右（越接近 KK 園區）
+    """
+    if enemy.max_hp == 0:
+        return 0
+    hp_pct = enemy.current_hp / enemy.max_hp
+    return min(int((1 - hp_pct) * _TD_PATH_LEN), _TD_PATH_LEN - 1)
+
+
+def _build_td_map(state: fs.FortressState) -> str:
+    """回傳 5 行塔防地圖字串：
+        🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲
+        🗼🗼🗼🗼🗼🗼🗼🗼🗼🗼🗼
+        👑🟫⚡🟫🔥🟫💀🟫🟫🟫🏯
+        🗼🗼🗼🗼🗼🗼🗼🗼🗼🗼🗼
+        🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲
+    """
+    EMPTY = '🟫'
+    FORT  = '🏯'
+    TREE  = '🌲'
+    TOWER = '🗼'
+    WIDTH = _TD_PATH_LEN + 1   # 路徑格 + 堡壘 = 11 格寬
+
+    cells = [EMPTY] * _TD_PATH_LEN
+
+    # 依 rank 升序放（Boss rank=1 優先佔據正確格，雜兵往旁邊移）
+    alive = sorted(
+        [e for e in state.enemies if not e.defeated],
+        key=lambda x: x.rank
+    )
+    for e in alive:
+        icon   = _rank_to_icon(e.rank)
+        target = _enemy_path_pos(e)
+        if cells[target] == EMPTY:
+            cells[target] = icon
+        else:
+            placed = False
+            for d in range(1, _TD_PATH_LEN):
+                for try_pos in (target - d, target + d):
+                    if 0 <= try_pos < _TD_PATH_LEN and cells[try_pos] == EMPTY:
+                        cells[try_pos] = icon
+                        placed = True
+                        break
+                if placed:
+                    break
+
+    path_row  = ''.join(cells) + FORT
+    border    = TREE  * WIDTH
+    tower_row = TOWER * WIDTH
+
+    return '\n'.join([border, tower_row, path_row, tower_row, border])
+
+
 # ─── Embed 建構函數 ────────────────────────────────────────
 
 def build_battle_embed(state: fs.FortressState) -> discord.Embed:
-    """戰鬥 Embed：顯示所有敵人 HP + 堡壘 HP"""
+    """塔防風格戰鬥 Embed"""
     now = datetime.now(TW_TZ)
     ends = datetime.fromisoformat(state.ends_at)
     # 相容 naive/aware：統一轉為 aware 再比較
@@ -196,56 +263,73 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
         ends = ends.replace(tzinfo=TW_TZ)
     remaining_min = max(0, int((ends - now).total_seconds() / 60))
 
+    alive         = [e for e in state.enemies if not e.defeated]
+    defeated_count = len(state.enemies) - len(alive)
+
+    # 堡壘狀態 → 動態顏色與警示
+    fort_pct = state.fortress_hp / state.fortress_max_hp if state.fortress_max_hp else 1.0
+    if fort_pct > 0.6:
+        embed_color = 0xE74C3C
+        fort_status = "🟢 穩固"
+    elif fort_pct > 0.3:
+        embed_color = 0xE67E22
+        fort_status = "🟡 受損"
+    else:
+        embed_color = 0x922B21
+        fort_status = "🔴 危急！"
+
+    td_map = _build_td_map(state)
+
+    description = (
+        f"🏯 **KK 詐騙園區** {fort_status}\n"
+        f"`{state.fortress_hp_bar()}`\n\n"
+        f"{td_map}\n\n"
+        f"⬅️ 敵軍由左側入侵路線前進，🗼 砲台自動射擊\n"
+        f"⏱️ 距結算剩餘 **{remaining_min}** 分鐘　"
+        f"💀 已殲滅 **{defeated_count}/{len(state.enemies)}** 敵"
+    )
+
     embed = discord.Embed(
         title="⚔️ KK 園區堡壘保衛戰！",
-        description=(
-            f"熱搜大軍正在入侵！全服玩家聯合防守，守住有獎！\n"
-            f"⏱️ 距離結算剩餘 **{remaining_min}** 分鐘"
-        ),
-        color=0xE74C3C,
+        description=description,
+        color=embed_color,
         timestamp=now,
     )
 
-    # 敵人列表
-    boss_labels = {1: "👑 Boss", 2: "⚡ 精英", 3: "🔥 精英"}
-    alive = [e for e in state.enemies if not e.defeated]
-    defeated_count = sum(1 for e in state.enemies if e.defeated)
-
+    # 敵軍詳細列表（含推進進度）
+    rank_labels = {1: "👑 BOSS", 2: "⚡ 精英", 3: "⚡ 精英"}
     enemy_lines = []
     for e in sorted(state.enemies, key=lambda x: x.rank):
-        prefix = boss_labels.get(e.rank, "👾 雜兵")
+        label = rank_labels.get(e.rank, f"💀 #{e.rank}")
         if e.defeated:
-            enemy_lines.append(f"~~{prefix} [{e.name}]~~ ✅ 已消滅")
+            enemy_lines.append(f"~~{label} · {e.name}~~ ✅ 已消滅")
         else:
-            enemy_lines.append(f"{prefix} **[{e.name}]**\n`{e.hp_bar()}`")
+            advance = int((1 - e.current_hp / e.max_hp) * 100) if e.max_hp else 100
+            warn    = "‼️" if advance >= 80 else ("⚠️" if advance >= 50 else "")
+            enemy_lines.append(
+                f"{warn}{label} **{e.name}**（推進 {advance}%）\n"
+                f"└ `{e.hp_bar(8)}`"
+            )
 
     embed.add_field(
-        name=f"🗡️ 入侵敵軍（{len(alive)}/{len(state.enemies)} 存活）",
-        value="\n".join(enemy_lines) or "無",
+        name=f"🗡️ 入侵敵軍（{len(alive)} 存活 / {len(state.enemies)} 總計）",
+        value="\n".join(enemy_lines) or "所有敵軍已消滅！",
         inline=False,
     )
 
-    # 堡壘 HP
     embed.add_field(
-        name="🏰 KK 詐騙園區堡壘",
-        value=f"`{state.fortress_hp_bar()}`",
-        inline=False,
-    )
-
-    # 參與人數
-    embed.add_field(
-        name="🛡️ 防守玩家",
-        value=f"{len(state.defenders)} 人已出兵",
+        name="🛡️ 防守狀況",
+        value=f"**{len(state.defenders)}** 名英雄出兵\n每人 {fs.FREE_ACTIONS_PER_ROUND} 次免費出兵",
         inline=True,
     )
     embed.add_field(
-        name="🏆 免費出兵",
-        value=f"每人每輪 {fs.FREE_ACTIONS_PER_ROUND} 次",
+        name="💎 強化攻擊",
+        value=f"消耗 **{fs.PAID_COST_KKCOIN}** KKCoin\n傷害 ×5（興趣標籤再 ×2）",
         inline=True,
     )
     embed.add_field(
         name="🏷️ 標籤加乘",
-        value="興趣匹配 → 攻擊 ×2",
+        value="設定興趣標籤\n攻擊力 ×2！",
         inline=True,
     )
 
