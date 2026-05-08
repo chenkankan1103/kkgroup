@@ -43,6 +43,7 @@ _LOG_CHANNEL_ID:   int = int(os.getenv("LOG_CHANNEL_ID") or os.getenv("DASHBOARD
 _STAFF_CHANNEL_ID: int = int(os.getenv("STAFF_ID_CHANNEL_ID", "0"))
 _ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID",    "0"))
 _ADMIN_USER_ID:    int = int(os.getenv("ADMIN_USER_ID",       "0"))
+_ADMIN_ROLE_ID:    int = int(os.getenv("ADMIN_ROLE_ID",       "0"))
 _ADMIN_ROLE:       str = os.getenv("ADMIN_ROLE_NAME", "管理員")
 
 # 通知頻道優先順序：LOG_CHANNEL_ID > STAFF_ID_CHANNEL_ID > ADMIN_CHANNEL_ID
@@ -52,7 +53,13 @@ _SERVICES = ["bot.service", "shopbot.service", "uibot.service"]
 
 # 監控的模式（任一匹配就算「錯誤事件」）
 _ERROR_PATTERNS = re.compile(
-    r"(ERROR|CRITICAL|Traceback|Exception|Fatal|Unhandled|failed to load)",
+    r"(" 
+    r"ERROR|CRITICAL|Traceback|Exception|Fatal|Unhandled|"
+    r"failed to load|failed with result|status=\d+/FAILURE|"
+    r"timeout|timed out|crash(?:ed)?|panic|oom|killed process|"
+    r"connection (?:reset|refused|closed)|cannot connect|can't connect|"
+    r"permission denied|429|5\d\d"
+    r")",
     re.IGNORECASE,
 )
 
@@ -72,44 +79,82 @@ _DEBOUNCE_SEC:  int   = 30    # 累積錯誤的時間窗口（秒）
 _COOLDOWN_SEC:  int   = 600   # 同類錯誤再次通知的最短間隔（秒）
 _MAX_LOG_LINES: int   = 20    # 送給 LLM 分析的最大行數
 _RESTART_DELAY: int   = 60    # subprocess 死亡後等待重啟的秒數
+_MAX_ACTIVE_INCIDENTS: int = 8
+_MAX_EMBED_INCIDENTS: int = 5
+
+
+def _has_admin_access(user) -> bool:
+    if getattr(user, "id", 0) == _ADMIN_USER_ID:
+        return True
+    return any(
+        (_ADMIN_ROLE_ID and r.id == _ADMIN_ROLE_ID) or r.name == _ADMIN_ROLE
+        for r in getattr(user, "roles", [])
+    )
+
+
+def _truncate_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _extract_severity(ai_text: str) -> str:
+    match = re.search(r"【緊急程度】\s*(高|中|低)", ai_text)
+    return match.group(1) if match else "未標註"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AutoFixView — 「啟動自動修復」按鈕
 # ══════════════════════════════════════════════════════════════════════════════
 
-class AutoFixView(discord.ui.View):
-    """錯誤通知 Embed 下方的「🔧 啟動自動修復」按鈕。
+class LogMonitorSummaryView(discord.ui.View):
+    """單一彙整訊息的操作按鈕。"""
 
-    點擊後在同一頻道啟動 ShellAgentRunner，以 AI 分析摘要作為修復目標。
-    """
-
-    def __init__(self, runner, goal: str, channel: discord.TextChannel):
-        super().__init__(timeout=300)  # 5 分鐘內可點擊
-        self._runner  = runner
-        self._goal    = goal
+    def __init__(self, engine, runner, channel: discord.TextChannel):
+        super().__init__(timeout=None)
+        self._engine = engine
+        self._runner = runner
         self._channel = channel
 
-    @discord.ui.button(label="🔧 啟動自動修復", style=discord.ButtonStyle.danger)
+    @discord.ui.button(
+        label="🔧 啟動自動修復",
+        style=discord.ButtonStyle.danger,
+        custom_id="logmonitor:auto_fix",
+    )
     async def auto_fix(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 權限檢查
-        is_admin = interaction.user.id == _ADMIN_USER_ID
-        has_role = any(r.name == _ADMIN_ROLE for r in getattr(interaction.user, "roles", []))
-        if not (is_admin or has_role):
+        if not _has_admin_access(interaction.user):
             await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
             return
 
-        # 禁用按鈕，防止重複點擊
-        button.disabled = True
-        button.label    = "⏳ 修復中…"
-        await interaction.response.edit_message(view=self)
+        if not self._runner:
+            await interaction.response.send_message("❌ 自動修復模組未載入。", ephemeral=True)
+            return
 
+        fix_goal = self._engine.build_fix_goal()
+        if not fix_goal:
+            await interaction.response.send_message("✅ 目前沒有待修復的彙整錯誤。", ephemeral=True)
+            return
+
+        await interaction.response.send_message("🚀 已啟動自動修復，請稍候。", ephemeral=True)
         await self._channel.send(
             f"🚀 **自動修復啟動** — 由 {interaction.user.mention} 觸發"
         )
         asyncio.create_task(
-            self._runner.run(self._goal, self._channel, _ADMIN_USER_ID)
+            self._runner.run(fix_goal, self._channel, _ADMIN_USER_ID)
         )
+
+    @discord.ui.button(
+        label="✅ 已修復，清空",
+        style=discord.ButtonStyle.success,
+        custom_id="logmonitor:clear",
+    )
+    async def clear_errors(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _has_admin_access(interaction.user):
+            await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
+            return
+
+        embed = self._engine.clear_summary(interaction.user.display_name)
+        await interaction.response.edit_message(embed=embed, view=None)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -134,6 +179,9 @@ class LogMonitorEngine:
         self._error_buffer:  list[str] = []
         self._debounce_task: Optional[asyncio.Task]               = None
         self._cooldowns:     dict[str, float]                     = {}
+        self._active_incidents: list[dict[str, str]]              = []
+        self._summary_message: Optional[discord.Message]          = None
+        self._message_lock = asyncio.Lock()
 
     # ── 公開控制 ──────────────────────────────────────────────────────────────
 
@@ -258,36 +306,89 @@ class LogMonitorEngine:
             logger.warning(f"[LogMonitor] 找不到通知頻道 ID={_ALERT_CHANNEL_ID}")
             return
 
+        self._active_incidents.append({
+            "created_at": datetime.utcnow().strftime("%m-%d %H:%M:%S UTC"),
+            "log_text": log_text,
+            "ai_text": ai_text,
+            "severity": _extract_severity(ai_text),
+        })
+        self._active_incidents = self._active_incidents[-_MAX_ACTIVE_INCIDENTS:]
+
+        try:
+            await self._upsert_summary_message(channel)
+            logger.info("[LogMonitor] 已更新 Discord 彙整通知")
+        except Exception as e:
+            logger.error(f"[LogMonitor] 送出通知失敗: {e}")
+
+    def build_fix_goal(self) -> str:
+        if not self._active_incidents:
+            return ""
+
+        parts = []
+        for index, incident in enumerate(self._active_incidents[-3:], start=1):
+            parts.append(
+                f"事件 {index}（{incident['created_at']} / 緊急程度 {incident['severity']}）\n"
+                f"AI 分析摘要：{_truncate_text(incident['ai_text'], 350)}\n"
+                f"原始錯誤日誌：{_truncate_text(incident['log_text'], 280)}"
+            )
+        return "根據以下 Bot 未清除錯誤彙整，請診斷並嘗試修復問題。\n\n" + "\n\n".join(parts)
+
+    def clear_summary(self, cleared_by: str) -> discord.Embed:
+        self._active_incidents.clear()
         embed = discord.Embed(
-            title="🚨 Bot 日誌偵測到錯誤",
+            title="✅ Bot 日誌錯誤已清空",
+            description="目前沒有待處理的錯誤彙整。新錯誤發生時會更新同一則訊息。",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow(),
+        )
+        embed.set_footer(text=f"由 {cleared_by} 清空")
+        return embed
+
+    def _build_summary_embed(self) -> discord.Embed:
+        incident_count = len(self._active_incidents)
+        latest = self._active_incidents[-_MAX_EMBED_INCIDENTS:]
+        embed = discord.Embed(
+            title="🚨 Bot 日誌錯誤彙整",
+            description=(
+                f"目前累積 **{incident_count}** 筆未清除事件。\n"
+                "新的重大錯誤會更新這則訊息，而不是持續新增新訊息。"
+            ),
             color=discord.Color.red(),
             timestamp=datetime.utcnow(),
         )
-        embed.add_field(
-            name="📋 錯誤日誌",
-            value=f"```\n{log_text[:800]}\n```",
-            inline=False,
-        )
-        embed.add_field(
-            name="🤖 AI 分析",
-            value=ai_text[:1000],
-            inline=False,
-        )
-        embed.set_footer(text=f"事件驅動監控 · 冷却 {_COOLDOWN_SEC//60} 分鐘")
 
-        # 組合修復目標（給 ShellAgentRunner 用）
-        fix_goal = (
-            f"根據以下 Bot 錯誤日誌，請診斷並嘗試修復問題。\n"
-            f"AI 分析摘要：{ai_text[:400]}\n"
-            f"原始錯誤日誌：{log_text[:300]}"
-        )
-        view = AutoFixView(self.shell_runner, fix_goal, channel) if self.shell_runner else None
+        for index, incident in enumerate(latest, start=max(1, incident_count - len(latest) + 1)):
+            log_excerpt = _truncate_text(incident["log_text"], 280)
+            ai_excerpt = _truncate_text(incident["ai_text"], 420)
+            embed.add_field(
+                name=f"【事件 #{index}】{incident['created_at']} · 緊急程度 {incident['severity']}",
+                value=(
+                    f"**錯誤段**\n```\n{log_excerpt}\n```\n"
+                    f"**AI 總結**\n{ai_excerpt}"
+                )[:1024],
+                inline=False,
+            )
 
-        try:
-            await channel.send(embed=embed, view=view, flags=discord.MessageFlags(suppress_notifications=True))
-            logger.info("[LogMonitor] 已送出 Discord 通知")
-        except Exception as e:
-            logger.error(f"[LogMonitor] 送出通知失敗: {e}")
+        embed.set_footer(text="事件驅動監控 · 修復後可按下「已修復，清空」")
+        return embed
+
+    async def _upsert_summary_message(self, channel: discord.TextChannel):
+        embed = self._build_summary_embed()
+        view = LogMonitorSummaryView(self, self.shell_runner, channel)
+
+        async with self._message_lock:
+            if self._summary_message and self._summary_message.channel.id == channel.id:
+                try:
+                    await self._summary_message.edit(embed=embed, view=view)
+                    return
+                except discord.NotFound:
+                    self._summary_message = None
+
+            self._summary_message = await channel.send(
+                embed=embed,
+                view=view,
+                flags=discord.MessageFlags(suppress_notifications=True),
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -328,9 +429,7 @@ class LogMonitor(commands.Cog):
             self._task.cancel()
 
     def _check_perm(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id == _ADMIN_USER_ID:
-            return True
-        return any(r.name == _ADMIN_ROLE for r in getattr(interaction.user, "roles", []))
+        return _has_admin_access(interaction.user)
 
     @app_commands.command(name="logmonitor", description="日誌監控控制（管理員限定）")
     @app_commands.describe(action="pause=暫停 / resume=恢復 / status=狀態 / test=測試")
@@ -350,6 +449,7 @@ class LogMonitor(commands.Cog):
             running = proc is not None and proc.returncode is None
             enabled = self._engine.enabled
             buf_len = len(self._engine._error_buffer)
+            incident_len = len(self._engine._active_incidents)
             embed   = discord.Embed(
                 title="📊 日誌監控狀態",
                 color=discord.Color.green() if (running and enabled) else discord.Color.orange(),
@@ -358,6 +458,7 @@ class LogMonitor(commands.Cog):
             embed.add_field(name="🔕 靜音旗幟", value="未啟用" if enabled else "已啟用",          inline=True)
             embed.add_field(name="監控服務", value="\n".join(_SERVICES),                                  inline=True)
             embed.add_field(name="緩衝行數", value=str(buf_len),                                          inline=True)
+            embed.add_field(name="未清除事件", value=str(incident_len),                                   inline=True)
             embed.add_field(name="通知頻道", value=f"<#{_ALERT_CHANNEL_ID}>",                            inline=True)
             await interaction.response.send_message(embed=embed)
 
