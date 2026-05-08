@@ -14,7 +14,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from shared.utils.view_registry import PersistentViewBase
 from shared.utils import fortress_system as fs
@@ -24,6 +24,29 @@ from shared.db.db_adapter import (
 
 log = logging.getLogger("fortress_defense")
 TW_TZ = ZoneInfo("Asia/Taipei")
+
+_TD_GRID_ROWS = 6
+_TD_GRID_COLS = 13
+_TD_PATH_COORDS = [
+    (0, 0), (0, 1), (0, 2), (0, 3),
+    (1, 3), (2, 3),
+    (2, 2), (2, 1), (2, 0),
+    (3, 0), (4, 0),
+    (4, 1), (4, 2), (4, 3), (4, 4),
+    (3, 4), (2, 4), (1, 4),
+    (1, 5), (1, 6), (1, 7),
+    (2, 7), (3, 7), (4, 7), (5, 7),
+    (5, 8), (5, 9), (5, 10), (5, 11),
+]
+_TD_FORT_COORD = (5, 12)
+_TD_TOWER_SLOTS: Dict[str, Dict[str, object]] = {
+    "north_gate": {"label": "北門入口", "desc": "開局壓制第一波", "coord": (0, 4)},
+    "west_corner": {"label": "西側急彎", "desc": "專打轉角卡位", "coord": (1, 1)},
+    "mid_choke": {"label": "中央瓶頸", "desc": "火力最密集的彎道", "coord": (3, 2)},
+    "inner_curve": {"label": "內圈彎道", "desc": "攔截中段推進", "coord": (2, 5)},
+    "east_bridge": {"label": "東側橋頭", "desc": "守住後段長線", "coord": (3, 8)},
+    "last_stand": {"label": "園區前哨", "desc": "最後防線", "coord": (4, 11)},
+}
 
 # 從 .env 讀取堡壘頻道 ID（與其他 channel ID 的模式相同）
 def _get_fortress_channel_id() -> int:
@@ -84,6 +107,7 @@ class FortressEnemyView(PersistentViewBase):
     def __init__(self, cog: "FortressDefenseCog"):
         super().__init__()
         self.cog = cog
+        self.add_item(TowerPlacementSelect(cog))
 
     @discord.ui.button(
         label="⚔️ 出兵（免費）",
@@ -110,8 +134,11 @@ class FortressEnemyView(PersistentViewBase):
 
         # 更新戰況 Embed
         await self.cog.refresh_battle_embed(interaction)
+        state = fs.get_current_battle()
+        tower_label = _get_tower_label_for_user(state, user_id)
+        tower_suffix = f"\n🗼 你的砲台【{tower_label}】同步開火" if tower_label else ""
         await interaction.followup.send(
-            f"🗡️ **{interaction.user.display_name}** {msg}", ephemeral=True
+            f"🗡️ **{interaction.user.display_name}** {msg}{tower_suffix}", ephemeral=True
         )
 
     @discord.ui.button(
@@ -148,8 +175,11 @@ class FortressEnemyView(PersistentViewBase):
 
         add_user_field(user_id, "fortress_total_damage", damage)
         await self.cog.refresh_battle_embed(interaction)
+        state = fs.get_current_battle()
+        tower_label = _get_tower_label_for_user(state, user_id)
+        tower_suffix = f"\n🗼 你的砲台【{tower_label}】同步開火" if tower_label else ""
         await interaction.followup.send(
-            f"💥 **{interaction.user.display_name}** {msg}", ephemeral=True
+            f"💥 **{interaction.user.display_name}** {msg}{tower_suffix}", ephemeral=True
         )
 
     @discord.ui.button(
@@ -185,9 +215,58 @@ class FortressEnemyView(PersistentViewBase):
             return []
 
 
-# ─── 塔防地圖生成 ─────────────────────────────────────────
+class TowerPlacementSelect(Select):
+    """主戰場下拉選單：選擇本輪塔位"""
 
-_TD_PATH_LEN = 10   # 路徑格數（不含堡壘本身）
+    def __init__(self, cog: "FortressDefenseCog"):
+        self.cog = cog
+        options = [
+            discord.SelectOption(
+                label=meta["label"],
+                value=slot_id,
+                description=meta["desc"],
+                emoji="🗼",
+            )
+            for slot_id, meta in _TD_TOWER_SLOTS.items()
+        ]
+        super().__init__(
+            placeholder="🗼 選擇你的砲台架設位置",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="fortress:tower_slot",
+            row=2,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        state = fs.get_current_battle()
+        if not state or state.status != "active":
+            await interaction.followup.send("目前沒有進行中的戰鬥。", ephemeral=True)
+            return
+
+        slot_id = self.values[0]
+        success, result = fs.assign_tower_slot(interaction.user.id, slot_id)
+        if not success:
+            if result == "occupied":
+                owner_name = _find_slot_owner_name(state, slot_id, interaction.client)
+                label = _tower_slot_label(slot_id)
+                msg = f"❌ 【{label}】已被 {owner_name} 佔用。"
+            else:
+                msg = f"❌ {result}"
+            await interaction.followup.send(msg, ephemeral=True)
+            return
+
+        await self.cog.refresh_battle_embed(interaction)
+        prev_text = f"（原本在 {_tower_slot_label(result)}）" if result else ""
+        await interaction.followup.send(
+            f"✅ 已在【{_tower_slot_label(slot_id)}】架設砲台 {prev_text}\n"
+            f"這座塔位會直接顯示在主戰場地圖上。",
+            ephemeral=True,
+        )
+
+
+# ─── 塔防地圖生成 ─────────────────────────────────────────
 
 
 def _rank_to_icon(rank: int) -> str:
@@ -199,57 +278,85 @@ def _rank_to_icon(rank: int) -> str:
 
 
 def _enemy_path_pos(enemy: fs.EnemyUnit) -> int:
-    """計算敵人在路徑上的格子（0=剛入口, _TD_PATH_LEN-1=緊逼堡壘）
+    """計算敵人在路徑上的格子（0=剛入口, 路徑尾端=緊逼堡壘）
     血量越低 → 位置越靠右（越接近 KK 園區）
     """
     if enemy.max_hp == 0:
         return 0
     hp_pct = enemy.current_hp / enemy.max_hp
-    return min(int((1 - hp_pct) * _TD_PATH_LEN), _TD_PATH_LEN - 1)
+    path_len = len(_TD_PATH_COORDS)
+    return min(int((1 - hp_pct) * path_len), path_len - 1)
+
+
+def _tower_slot_label(slot_id: str) -> str:
+    meta = _TD_TOWER_SLOTS.get(slot_id)
+    return str(meta["label"]) if meta else slot_id
+
+
+def _get_tower_label_for_user(state: Optional[fs.FortressState], user_id: int) -> str:
+    if not state:
+        return ""
+    slot_id = state.tower_slots.get(user_id)
+    return _tower_slot_label(slot_id) if slot_id else ""
+
+
+def _find_slot_owner_name(state: fs.FortressState, slot_id: str, bot: discord.Client) -> str:
+    for owner_id, owned_slot in state.tower_slots.items():
+        if owned_slot != slot_id:
+            continue
+        user = bot.get_user(owner_id)
+        return user.display_name if user else f"玩家 {owner_id}"
+    return "其他玩家"
 
 
 def _build_td_map(state: fs.FortressState) -> str:
-    """回傳 5 行塔防地圖字串：
-        🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲
-        🗼🗼🗼🗼🗼🗼🗼🗼🗼🗼🗼
-        👑🟫⚡🟫🔥🟫💀🟫🟫🟫🏯
-        🗼🗼🗼🗼🗼🗼🗼🗼🗼🗼🗼
-        🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲
-    """
-    EMPTY = '🟫'
-    FORT  = '🏯'
-    TREE  = '🌲'
-    TOWER = '🗼'
-    WIDTH = _TD_PATH_LEN + 1   # 路徑格 + 堡壘 = 11 格寬
+    """建立蛇形塔防地圖。"""
+    grid = [["🟩" for _ in range(_TD_GRID_COLS)] for _ in range(_TD_GRID_ROWS)]
 
-    cells = [EMPTY] * _TD_PATH_LEN
+    for row, col in _TD_PATH_COORDS:
+        grid[row][col] = "🟫"
 
-    # 依 rank 升序放（Boss rank=1 優先佔據正確格，雜兵往旁邊移）
-    alive = sorted(
-        [e for e in state.enemies if not e.defeated],
-        key=lambda x: x.rank
-    )
-    for e in alive:
-        icon   = _rank_to_icon(e.rank)
-        target = _enemy_path_pos(e)
-        if cells[target] == EMPTY:
-            cells[target] = icon
-        else:
-            placed = False
-            for d in range(1, _TD_PATH_LEN):
-                for try_pos in (target - d, target + d):
-                    if 0 <= try_pos < _TD_PATH_LEN and cells[try_pos] == EMPTY:
-                        cells[try_pos] = icon
-                        placed = True
-                        break
-                if placed:
+    occupied_slots = set(state.tower_slots.values())
+    for slot_id, meta in _TD_TOWER_SLOTS.items():
+        row, col = meta["coord"]
+        grid[row][col] = "🗼" if slot_id in occupied_slots else "🔲"
+
+    grid[_TD_FORT_COORD[0]][_TD_FORT_COORD[1]] = "🏯"
+
+    alive = sorted([e for e in state.enemies if not e.defeated], key=lambda enemy: enemy.rank)
+    occupied_path_cells = set()
+    for enemy in alive:
+        icon = _rank_to_icon(enemy.rank)
+        target = _enemy_path_pos(enemy)
+        chosen_index = None
+        for distance in range(len(_TD_PATH_COORDS)):
+            for try_index in (target - distance, target + distance):
+                if not 0 <= try_index < len(_TD_PATH_COORDS):
+                    continue
+                coord = _TD_PATH_COORDS[try_index]
+                if coord not in occupied_path_cells:
+                    chosen_index = try_index
+                    occupied_path_cells.add(coord)
                     break
+            if chosen_index is not None:
+                break
+        if chosen_index is None:
+            continue
+        row, col = _TD_PATH_COORDS[chosen_index]
+        grid[row][col] = icon
 
-    path_row  = ''.join(cells) + FORT
-    border    = TREE  * WIDTH
-    tower_row = TOWER * WIDTH
+    return "\n".join("".join(row) for row in grid)
 
-    return '\n'.join([border, tower_row, path_row, tower_row, border])
+
+def _tower_summary_lines(state: fs.FortressState) -> List[str]:
+    lines = []
+    for slot_id, meta in _TD_TOWER_SLOTS.items():
+        owner_id = next((uid for uid, owned_slot in state.tower_slots.items() if owned_slot == slot_id), None)
+        if owner_id is None:
+            lines.append(f"▫️ {_tower_slot_label(slot_id)}：空位")
+            continue
+        lines.append(f"🗼 {_tower_slot_label(slot_id)}：玩家 {owner_id}")
+    return lines
 
 
 # ─── Embed 建構函數 ────────────────────────────────────────
@@ -316,6 +423,16 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
         value="\n".join(enemy_lines) or "所有敵軍已消滅！",
         inline=False,
     )
+    embed.add_field(
+        name="🗺️ 戰線說明",
+        value="蛇形戰線會一路彎進 KK 園區；🔲 可蓋塔，🗼 已架設砲台，🏯 是園區核心。",
+        inline=False,
+    )
+    embed.add_field(
+        name="🗼 塔位部署",
+        value="\n".join(_tower_summary_lines(state)),
+        inline=False,
+    )
 
     embed.add_field(
         name="🛡️ 防守狀況",
@@ -356,6 +473,12 @@ def build_status_embed(state: fs.FortressState, user_id: int) -> discord.Embed:
     embed.add_field(
         name="興趣標籤",
         value=" / ".join(interests) if interests else "尚未設定",
+        inline=False,
+    )
+    tower_label = _get_tower_label_for_user(state, user_id)
+    embed.add_field(
+        name="砲台位置",
+        value=tower_label if tower_label else "尚未架設（可直接用下拉選單選塔位）",
         inline=False,
     )
     embed.add_field(
