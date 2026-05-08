@@ -135,6 +135,10 @@ class FortressEnemyView(PersistentViewBase):
         # 更新戰況 Embed
         await self.cog.refresh_battle_embed(interaction)
         state = fs.get_current_battle()
+        if state and state.status == "victory":
+            await self.cog._finalize_and_announce_battle()
+            state = fs.get_current_battle()
+        state = fs.get_current_battle()
         tower_label = _get_tower_label_for_user(state, user_id)
         tower_suffix = f"\n🗼 你的砲台【{tower_label}】同步開火" if tower_label else ""
         await interaction.followup.send(
@@ -175,6 +179,10 @@ class FortressEnemyView(PersistentViewBase):
 
         add_user_field(user_id, "fortress_total_damage", damage)
         await self.cog.refresh_battle_embed(interaction)
+        state = fs.get_current_battle()
+        if state and state.status == "victory":
+            await self.cog._finalize_and_announce_battle()
+            state = fs.get_current_battle()
         state = fs.get_current_battle()
         tower_label = _get_tower_label_for_user(state, user_id)
         tower_suffix = f"\n🗼 你的砲台【{tower_label}】同步開火" if tower_label else ""
@@ -441,12 +449,12 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
     )
     embed.add_field(
         name="💎 強化攻擊",
-        value=f"消耗 **{fs.PAID_COST_KKCOIN}** KKCoin\n傷害 ×5（興趣標籤再 ×2）",
+        value=f"消耗 **{fs.PAID_COST_KKCOIN}** KKCoin\n{fs.BASE_DAMAGE_PAID} 傷害（標籤再 ×2）",
         inline=True,
     )
     embed.add_field(
-        name="🏷️ 標籤加乘",
-        value="設定興趣標籤\n攻擊力 ×2！",
+        name="🏷️ 加倍獎勵",
+        value="前 2 小時勝利 x2\n前 3 小時勝利 x1.5",
         inline=True,
     )
 
@@ -496,7 +504,17 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
 
     if won:
         title = "🎉 守城成功！KK 園區安全了！"
-        desc = f"全服英雄合力消滅 {result['enemies_defeated']}/{result['enemies_total']} 個敵人！"
+        reward_text = ""
+        if result.get("total_reward_kkcoin", 0) > 0:
+            reward_text = (
+                f"\n💰 本輪獎勵：{result['total_reward_kkcoin']:,} KKCoin"
+                f"（x{result.get('reward_multiplier', 1.0):.1f}）"
+            )
+        desc = (
+            f"全服英雄合力消滅 {result['enemies_defeated']}/{result['enemies_total']} 個敵人！"
+            f"\n⏱️ 提前完成：剩餘 {result.get('remaining_minutes', 0)} 分鐘"
+            f"{reward_text}"
+        )
     else:
         title = "💀 堡壘失守..."
         desc = (
@@ -516,7 +534,9 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
             user = bot.get_user(int(uid))
             name = user.display_name if user else f"玩家 {uid}"
             pct = result["contributions"].get(uid, result["contributions"].get(str(uid), 0))
-            lines.append(f"{medals[i]} **{name}** — {dmg:,} 傷害 ({pct}%)")
+            reward = result.get("reward_map", {}).get(str(uid), 0)
+            reward_suffix = f" | +{reward:,} KKCoin" if reward else ""
+            lines.append(f"{medals[i]} **{name}** — {dmg:,} 傷害 ({pct}%){reward_suffix}")
         embed.add_field(name="🏆 防守英雄榜", value="\n".join(lines), inline=False)
 
     embed.set_footer(text=f"輪次 {result['round_id']}")
@@ -532,6 +552,7 @@ class FortressDefenseCog(commands.Cog):
         self.bot = bot
         self._battle_message_id: Optional[int] = None
         self._battle_channel_id: int = _get_fortress_channel_id()
+        self._settled_round_ids: set[str] = set()
         self.settle_task.start()
         self.update_trends_scheduled.start()
         log.info("[Fortress] Cog 已初始化")
@@ -605,6 +626,41 @@ class FortressDefenseCog(commands.Cog):
         self._battle_message_id = msg.id
         log.info(f"[Fortress] 戰鬥 Embed 發送成功 msg={msg.id}")
 
+    async def _finalize_and_announce_battle(self):
+        """統一處理戰鬥結算、獎勵發放與公告。"""
+        state_before = fs.get_current_battle()
+        if not state_before or state_before.round_id in self._settled_round_ids:
+            return
+
+        result = fs.settle_battle()
+        if not result.get("success"):
+            return
+
+        self._settled_round_ids.add(result["round_id"])
+
+        if result["status"] == "victory":
+            for uid in result["damage_map"]:
+                add_user_field(int(uid), "fortress_wins", 1)
+            for uid, reward in result.get("reward_map", {}).items():
+                if reward > 0:
+                    add_user_field(int(uid), "kkcoin", reward)
+
+        channel = self.bot.get_channel(self._battle_channel_id)
+        if channel:
+            embed = build_settlement_embed(result, self.bot)
+            await channel.send(embed=embed)
+
+            if self._battle_message_id:
+                try:
+                    msg = await channel.fetch_message(self._battle_message_id)
+                    state_final = fs.get_current_battle()
+                    if state_final:
+                        await msg.edit(embed=build_battle_embed(state_final), view=None)
+                except Exception:
+                    pass
+
+        log.info(f"[Fortress] 結算完成: {result['status']}")
+
     async def refresh_battle_embed(self, interaction: discord.Interaction):
         """在有人出兵後更新戰況 Embed"""
         try:
@@ -616,7 +672,8 @@ class FortressDefenseCog(commands.Cog):
             msg = await channel.fetch_message(self._battle_message_id)
             state = fs.get_current_battle()
             if state:
-                await msg.edit(embed=build_battle_embed(state))
+                view = None if state.status != "active" else FortressEnemyView(self)
+                await msg.edit(embed=build_battle_embed(state), view=view)
         except discord.NotFound:
             pass
         except Exception as e:
@@ -642,34 +699,7 @@ class FortressDefenseCog(commands.Cog):
 
             if now < ends:
                 return  # 尚未結算
-
-            # 執行結算
-            result = fs.settle_battle()
-            if not result.get("success"):
-                return
-
-            # 守城成功 → 更新獲勝次數
-            if result["status"] == "victory":
-                for uid in result["damage_map"]:
-                    add_user_field(int(uid), "fortress_wins", 1)
-
-            # 發送結算 Embed
-            channel = self.bot.get_channel(self._battle_channel_id)
-            if channel:
-                embed = build_settlement_embed(result, self.bot)
-                await channel.send(embed=embed)
-
-            # 更新舊戰鬥訊息（移除按鈕）
-            if self._battle_message_id:
-                try:
-                    msg = await channel.fetch_message(self._battle_message_id)
-                    state_final = fs.get_current_battle()
-                    if state_final:
-                        await msg.edit(embed=build_battle_embed(state_final), view=None)
-                except Exception:
-                    pass
-
-            log.info(f"[Fortress] 結算完成: {result['status']}")
+            await self._finalize_and_announce_battle()
 
         except Exception as e:
             log.error(f"[Fortress] 結算排程出錯: {e}")
