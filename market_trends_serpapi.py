@@ -99,6 +99,41 @@ def _fetch_trends_sync(limit: int, timeout: int) -> Optional[List[Dict]]:
     return None
 
 
+def get_cached_trending_topics(limit: int = 10, allow_stale: bool = True) -> Optional[List[Dict]]:
+    """讀取本地快取趨勢；allow_stale=True 時即使過期也可作為降級資料。"""
+    if not CACHE_FILE.exists():
+        return None
+
+    try:
+        with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+            cached = json.load(f)
+
+        trends = cached.get('trends', [])
+        if not trends:
+            return None
+
+        if allow_stale:
+            return trends[:limit]
+
+        cache_time_raw = cached.get('timestamp')
+        if not cache_time_raw:
+            return None
+
+        cache_time = datetime.fromisoformat(cache_time_raw)
+        age_minutes = (datetime.now() - cache_time).total_seconds() / 60
+        if age_minutes < CACHE_EXPIRY_MINUTES:
+            return trends[:limit]
+    except Exception as e:
+        logger.debug(f"[Trends] 緩存讀取失敗: {e}")
+
+    return None
+
+
+def get_fallback_trending_topics(limit: int = 10) -> List[Dict]:
+    """取得內建備援趨勢。"""
+    return FALLBACK_TRENDS[:limit]
+
+
 async def get_trending_topics(
     region: str = "TW",
     limit: int = 10,
@@ -140,7 +175,7 @@ async def get_trending_topics(
     
     # 所有嘗試都失敗，使用備用數據
     logger.warning("[Trends] API 調用失敗，使用備用數據")
-    return FALLBACK_TRENDS[:limit] if fallback else None
+    return get_fallback_trending_topics(limit) if fallback else None
 
 
 def _parse_trends_response(data: dict, limit: int) -> Optional[List[Dict]]:
