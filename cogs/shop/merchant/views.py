@@ -355,7 +355,7 @@ class ExploreView(PersistentViewBase):
             )
 
             # 動態導入View
-            from cogs.shop import DressingRoomView
+            from cogs.shop.shop import DressingRoomView
             view = DressingRoomView(self.cog, interaction.user.id)
 
             new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
@@ -709,7 +709,7 @@ class PaperDollPreviewView(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=view)
             return
 
-        from cogs.shop import EditView
+        from cogs.shop.shop import EditView
         view = EditView(self.cog, interaction.user.id, category, items, page=0, embed=embed, original_message=getattr(self, 'original_message', interaction.message))
         try:
             await interaction.response.edit_message(embed=embed, view=view)
