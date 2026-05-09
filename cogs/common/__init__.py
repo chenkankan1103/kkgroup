@@ -15,7 +15,7 @@ async def setup_commands(tree, client):
         
         try:
             # 動態導入模組
-            module = import_module(f"commands.{module_name}")
+            module = import_module(f"cogs.common.{module_name}")
             
             # 尋找並呼叫 setup_* 函數
             # 支持兩種模式: setup_{module_name} 或 setup
