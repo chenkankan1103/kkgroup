@@ -738,7 +738,7 @@ class KKCoin(commands.Cog):
                                 )
                                 embed.add_field(name="📡 狀態", value="✅ GitHub Pages 已同步", inline=False)
                                 embed.add_field(name="🔗 入口網址", value="https://chenkankan1103.github.io/kkgroup/", inline=False)
-                                await channel.send(embed=embed, flags=discord.MessageFlags(suppress_notifications=True))
+                                await channel.send(embed=embed, silent=True)
                                 print(f"✅ Discord 通知已發送到頻道 {notify_channel_id}")
                         except Exception as e:
                             print(f"⚠️  無法發送 Discord 通知: {e}")
@@ -969,7 +969,7 @@ class KKCoin(commands.Cog):
                 return
             
             embed = self.create_reserve_embed()
-            msg = await channel.send(embed=embed, flags=discord.MessageFlags(suppress_notifications=True))
+            msg = await channel.send(embed=embed, silent=True)
             
             # 立即儲存訊息 ID
             self.reserve_message_id = msg.id

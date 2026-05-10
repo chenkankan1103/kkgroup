@@ -7,6 +7,7 @@
 - [Command Registry](entities/command-registry.md)
 - [VM Operations](entities/vm-operations.md)
 - [Webhook and Tunnel](concepts/webhook-and-tunnel.md)
+- [Discord 靜音訊息寫法](concepts/discord-silent-messages.md)
 - [Paperdoll Workflow](concepts/paperdoll-workflow.md)
 - [Coding Rules and Paths](concepts/coding-rules-and-paths.md)
 - [Knowledge Maintenance Workflow](concepts/knowledge-maintenance-workflow.md)
