@@ -3,9 +3,15 @@
 ## 核心入口
 
 - [AI Fast Read](concepts/ai-fast-read.md)
+- [專案架構總覽](concepts/project-architecture.md)
+- [Discord Bot 系統詳解](concepts/discord-bot-system.md)
+- [Web API 和遊戲系統](concepts/web-api-and-game-system.md)
+- [部署和維運指南](concepts/deployment-and-operations.md)
+- [開發工具和流程](concepts/development-tools-and-workflow.md)
 - [Bot Services](entities/bot-services.md)
 - [Command Registry](entities/command-registry.md)
 - [VM Operations](entities/vm-operations.md)
+- [VM 實際配置狀況](entities/vm-actual-configuration.md)
 - [Webhook and Tunnel](concepts/webhook-and-tunnel.md)
 - [Discord 靜音訊息寫法](concepts/discord-silent-messages.md)
 - [Paperdoll Workflow](concepts/paperdoll-workflow.md)
