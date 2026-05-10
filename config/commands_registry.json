@@ -25,8 +25,8 @@
         "recent_100": "sudo journalctl -u bot.service -n 100 --no-pager",
         "recent_50": "sudo journalctl -u bot.service -n 50 --no-pager",
         "recent_20": "sudo journalctl -u bot.service -n 20 --no-pager",
-        "errors_100": "sudo journalctl -u bot.service -n 100 --no-pager | grep -iE 'error|update|fail|critical'",
-        "errors_50": "sudo journalctl -u bot.service -n 50 --no-pager | grep -iE 'error|fail|failed|critical'"
+        "errors_100": "sudo journalctl -u bot.service -n 100 --no-pager | grep -iE 'error|warning|fail|failed|critical|traceback|exception|http [45][0-9][0-9]|429|gemini|groq|cooldown|冷却'",
+        "errors_50": "sudo journalctl -u bot.service -n 50 --no-pager | grep -iE 'error|warning|fail|failed|critical|traceback|exception|http [45][0-9][0-9]|429|gemini|groq|cooldown|冷却'"
       }
     },
     "shopbot": {
