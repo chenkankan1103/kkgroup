@@ -28,6 +28,14 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+import os
+import sys
+
+# 添加項目根目錄到Python路徑
+parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 import discord
 from discord.ext import commands
 from discord import app_commands
