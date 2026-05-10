@@ -66,7 +66,19 @@ _ERROR_PATTERNS = re.compile(
     r"failed to load|failed with result|status=\d+/FAILURE|"
     r"timeout|timed out|crash(?:ed)?|panic|oom|killed process|"
     r"connection (?:reset|refused|closed)|cannot connect|can't connect|"
-    r"permission denied|429|5\d\d"
+    r"permission denied|\b429\b|(?:HTTP|http)\s*[45]\d\d|"
+    r"Gemini HTTP|Groq HTTP|rate limit|quota"
+    r")",
+    re.IGNORECASE,
+)
+
+_BENIGN_PATTERNS = re.compile(
+    r"("
+    r"\bINFO\b|"
+    r"✅|成功|已更新|已編輯|編輯成功|"
+    r"SET_USER|成功寫入數據庫|欄位數=|"
+    r"編輯事件訊息|工作系統訊息|公告已編輯|"
+    r"冷却中|進入冷却|cooldown"
     r")",
     re.IGNORECASE,
 )
@@ -109,6 +121,22 @@ def _truncate_text(text: str, limit: int) -> str:
 def _extract_severity(ai_text: str) -> str:
     match = re.search(r"【緊急程度】\s*(高|中|低)", ai_text)
     return match.group(1) if match else "未標註"
+
+
+def _extract_relevant_lines(blob: str) -> list[str]:
+    relevant_lines: list[str] = []
+    for raw_line in blob.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _IGNORE_PATTERNS.search(line):
+            continue
+        if not _ERROR_PATTERNS.search(line):
+            continue
+        if _BENIGN_PATTERNS.search(line) and not re.search(r"\b(ERROR|CRITICAL|Traceback|Exception|Fatal|Unhandled)\b", line, re.IGNORECASE):
+            continue
+        relevant_lines.append(line)
+    return relevant_lines
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -235,8 +263,8 @@ class LogMonitorEngine:
         logger.info("[LogMonitor] journalctl -f 已啟動（事件驅動模式）")
 
         async for raw in self._proc.stdout:
-            line = raw.decode("utf-8", errors="replace").rstrip()
-            if _ERROR_PATTERNS.search(line) and not _IGNORE_PATTERNS.search(line):
+            decoded = raw.decode("utf-8", errors="replace").rstrip()
+            for line in _extract_relevant_lines(decoded):
                 self._on_error_line(line)
 
         await self._proc.wait()
@@ -395,7 +423,6 @@ class LogMonitorEngine:
             self._summary_message = await channel.send(
                 embed=embed,
                 view=view,
-                flags=discord.MessageFlags(suppress_notifications=True),
             )
 
 
