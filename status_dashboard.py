@@ -447,7 +447,7 @@ async def update_dashboard_logs(bot, bot_type: str):
                 if bot_type not in QUIET_UPDATE_BOTS:
                     print(f"[UPDATE LOGS] {bot_type} log message does not exist, recreating")
                 try:
-                    message = await channel.send(embed=embed, flags=discord.MessageFlags(suppress_notifications=True))
+                    message = await channel.send(embed=embed, silent=True)
                     save_message_id(bot_type, "logs", str(message.id))
                     if bot_type not in QUIET_UPDATE_BOTS:
                         print(f"[UPDATE LOGS] {bot_type} log message recreated: {message.id}")
@@ -492,7 +492,7 @@ async def update_dashboard_logs(bot, bot_type: str):
                         print(f"[UPDATE LOGS] {bot_type} updated existing logs embed: {latest_msg.id}")
                 else:
                     # No embed found, create new one
-                    message = await channel.send(embed=embed, flags=discord.MessageFlags(suppress_notifications=True))
+                    message = await channel.send(embed=embed, silent=True)
                     message_ids[bot_type]["logs"] = message.id
                     save_message_ids(bot_type)
                     if bot_type not in QUIET_UPDATE_BOTS:
@@ -611,7 +611,7 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
                 logs_msg = await channel.send(embed=logs_embed)
                 # Try to edit with suppress_notifications flag
                 try:
-                    await logs_msg.edit(flags=discord.MessageFlags(suppress_notifications=True))
+                    await logs_msg.edit(suppress=True)
                 except:
                     pass  # Flag setting is optional, don't fail if not supported
                 message_ids[bot_type_str]["logs"] = logs_msg.id

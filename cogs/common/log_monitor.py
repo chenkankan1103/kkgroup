@@ -139,6 +139,40 @@ def _extract_relevant_lines(blob: str) -> list[str]:
     return relevant_lines
 
 
+def _is_benign_yfinance_line(line: str) -> bool:
+    return bool(re.search(r"\[yfinance\].*possibly delisted; no price data found", line, re.IGNORECASE))
+
+
+def _build_local_fallback_summary(lines: list[str]) -> str:
+    if lines and all(_is_benign_yfinance_line(line) for line in lines):
+        return (
+            "【根本原因】資料來源 yfinance 對部分商品代號暫時取不到價格，屬外部資料缺口，不一定是 Bot 程式異常。\n"
+            "【建議修復】1. 檢查代號是否仍有效 2. 對無資料情況改為跳過或降級為 warning 3. 避免將此類訊息列入重大錯誤通知\n"
+            "【緊急程度】低"
+        )
+
+    joined = "\n".join(lines)
+    if re.search(r"\b429\b|rate limit|quota", joined, re.IGNORECASE):
+        return (
+            "【根本原因】外部 AI 或 API 配額／速率限制觸發。\n"
+            "【建議修復】1. 檢查 API 配額 2. 增加退避與重試 3. 降低短時間內請求量\n"
+            "【緊急程度】中"
+        )
+
+    if re.search(r"Traceback|Exception|CRITICAL|Fatal|Unhandled", joined, re.IGNORECASE):
+        return (
+            "【根本原因】Bot 執行流程拋出未處理例外，需依 traceback 定位故障點。\n"
+            "【建議修復】1. 依錯誤堆疊檢查對應函式 2. 補上防呆與例外處理 3. 修正後重新驗證相同行為\n"
+            "【緊急程度】高"
+        )
+
+    return (
+        "【根本原因】LogMonitor 偵測到異常日誌，但 LLM 分析不可用，需人工判讀。\n"
+        "【建議修復】1. 檢查原始錯誤段 2. 驗證對應模組近期變更 3. 如屬已知誤報則加入排除規則\n"
+        "【緊急程度】中"
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # AutoFixView — 「啟動自動修復」按鈕
 # ══════════════════════════════════════════════════════════════════════════════
@@ -299,6 +333,10 @@ class LogMonitorEngine:
     # ── Debounce：累積 → 批量分析 ─────────────────────────────────────────────
 
     def _on_error_line(self, line: str):
+        if _is_benign_yfinance_line(line):
+            logger.info(f"[LogMonitor] 略過已知 yfinance 誤報: {line}")
+            return
+
         self._error_buffer.append(line)
 
         # 重置 debounce 計時器
@@ -361,7 +399,7 @@ class LogMonitorEngine:
                 {"role": "system", "content": "你是 DevOps 工程師，分析 Discord Bot 日誌。繁體中文，簡潔。"},
                 {"role": "user",   "content": f"錯誤日誌：\n{log_text}\n\n請分析根本原因和建議修復。"},
             ], max_tokens=300)
-            ai_text = ai_text_raw or "LLM 分析失敗，請手動檢查日誌。"
+            ai_text = ai_text_raw or _build_local_fallback_summary(lines)
 
         # 送出 Discord Embed
         channel = self.bot.get_channel(_ALERT_CHANNEL_ID)
@@ -458,7 +496,7 @@ class LogMonitorEngine:
             self._summary_message = await channel.send(
                 embed=embed,
                 view=view,
-                suppress_notifications=True,
+                silent=True,
             )
 
 
@@ -542,7 +580,7 @@ class LogMonitor(commands.Cog):
                 color=discord.Color.green() if (running and enabled) else discord.Color.orange(),
             )
             embed.add_field(name="監控",     value="✅ 運行中" if (running and enabled) else "⏸️ 已暫停", inline=True)
-            embed.add_field(name="🔕 靜音旗幟", value="未啟用" if enabled else "已啟用",          inline=True)
+            embed.add_field(name="🔕 靜音送出", value="已啟用", inline=True)
             embed.add_field(name="監控服務", value="\n".join(_SERVICES),                                  inline=True)
             embed.add_field(name="緩衝行數", value=str(buf_len),                                          inline=True)
             embed.add_field(name="未清除事件", value=str(incident_len),                                   inline=True)
