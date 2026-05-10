@@ -140,6 +140,34 @@ class WelcomeActionView(discord.ui.View):
         
         await interaction.followup.send("✅ 已繳交手機和身分證！")
 
+    @discord.ui.button(label="隨機造型", style=discord.ButtonStyle.primary, emoji="🎲")
+    async def random_appearance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        if interaction.user.id != self.user_id:
+            await interaction.followup.send("❌ 這不是你的按鈕！")
+            return
+
+        # 獲取當前用戶資料以保持性別
+        user_data = self.cog.get_user_data(self.user_id)
+        current_gender = user_data.get('gender') if user_data else None
+        
+        # 生成新的隨機造型（保持性別）
+        new_appearance = paperdoll_manager.get_random(preserve_gender=current_gender)
+        
+        # 更新用戶資料
+        try:
+            await self.cog.update_user_data(self.user_id, new_appearance)
+            await self.cog.update_welcome_message(interaction, self.user_id)
+        except Exception as e:
+            print(f"❌ 更新隨機造型失敗: {e}")
+        
+        gender_text = "男性" if new_appearance['gender'] == 'male' else "女性"
+        await interaction.followup.send(
+            f"🎲 已重新生成{gender_text}造型！\n"
+            f"臉型: {new_appearance['face']} | 髮型: {new_appearance['hair']} | 上衣: {new_appearance['top']}"
+        )
+
     @discord.ui.button(label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
     async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
@@ -212,6 +240,33 @@ class PersistentWelcomeView(discord.ui.View):
         await self.cog.remove_items_from_inventory(target_user_id, ["手機", "身分證"])
         await self.cog.update_welcome_message(interaction, target_user_id)
         await interaction.followup.send("✅ 已繳交手機和身分證！", ephemeral=True)
+
+    @discord.ui.button(custom_id="welcome_random_appearance", label="隨機造型", style=discord.ButtonStyle.primary, emoji="🎲")
+    async def random_appearance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        target_user_id = self._extract_target_user_id(interaction.message) or interaction.user.id
+
+        if interaction.user.id != target_user_id:
+            await interaction.followup.send("❌ 這不是你的按鈕！", ephemeral=True)
+            return
+
+        # 獲取當前用戶資料以保持性別
+        user_data = self.cog.get_user_data(target_user_id)
+        current_gender = user_data.get('gender') if user_data else None
+        
+        # 生成新的隨機造型（保持性別）
+        new_appearance = paperdoll_manager.get_random(preserve_gender=current_gender)
+        
+        # 更新用戶資料
+        await self.cog.update_user_data(target_user_id, new_appearance)
+        await self.cog.update_welcome_message(interaction, target_user_id)
+        
+        gender_text = "男性" if new_appearance['gender'] == 'male' else "女性"
+        await interaction.followup.send(
+            f"🎲 已重新生成{gender_text}造型！\n"
+            f"臉型: {new_appearance['face']} | 髮型: {new_appearance['hair']} | 上衣: {new_appearance['top']}",
+            ephemeral=True
+        )
 
     @discord.ui.button(custom_id="welcome_confirm_entry", label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
     async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -926,27 +981,35 @@ class WelcomeFlow(commands.Cog):
                     print(f"⚠️ 第 {attempt}/3 次獲取用戶資料失敗，重試...")
                     await asyncio.sleep(0.3)
             
-            # 如果仍然無法獲取，使用預設值
+            # 如果仍然無法獲取，使用隨機造型而非預設男性
             if not user_data:
-                print(f"❌ 無法獲取用戶資料，使用預設值")
+                print(f"❌ 無法獲取用戶資料，生成隨機造型")
+                # 🎭 生成隨機造型（男/女各占 50%）
+                random_appearance = paperdoll_manager.get_random()
                 user_data = {
                     'user_id': member.id,
-                    'gender': 'male',
-                    'is_stunned': 0,
-                    'hp': 100,
-                    'stamina': 100,
+                    'inventory': '["手機", "身分證"]',
+                    'character_config': '{}',
+                    'face': int(random_appearance['face']),
+                    'hair': int(random_appearance['hair']),
+                    'skin': int(random_appearance['skin']),
+                    'top': int(random_appearance['top']),
+                    'bottom': int(random_appearance['bottom']),
+                    'shoes': int(random_appearance['shoes']),
+                    'gender': random_appearance['gender'],
                     'level': 1,
+                    'xp': 0,
                     'kkcoin': 0,
                     'title': '新手',
-                    'inventory': '["手機", "身分證"]',
-                    'face': 20005,
-                    'hair': 30120,
-                    'skin': 12000,
-                    'top': 1040014,
-                    'bottom': 1060096,
-                    'shoes': 1072005
+                    'hp': 100,
+                    'stamina': 100,
+                    'is_stunned': 0,
+                    'thread_id': 0,
+                    'last_kkcoin_snapshot': 0,
+                    'last_xp_snapshot': 0,
+                    'last_level_snapshot': 1
                 }
-                print(f"⚠️ 將使用臨時預設資料發送歡迎訊息")
+                print(f"✅ 已生成隨機造型: {random_appearance['gender']} - face:{random_appearance['face']} hair:{random_appearance['hair']}")
 
             # 發送歡迎訊息
             channel = None
