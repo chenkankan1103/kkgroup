@@ -146,7 +146,7 @@ def _extract_relevant_lines(blob: str) -> list[str]:
 class LogMonitorSummaryView(discord.ui.View):
     """單一彙整訊息的操作按鈕。"""
 
-    def __init__(self, engine, runner, channel: discord.TextChannel):
+    def __init__(self, engine, runner, channel: Optional[discord.TextChannel] = None):
         super().__init__(timeout=None)
         self._engine = engine
         self._runner = runner
@@ -158,26 +158,44 @@ class LogMonitorSummaryView(discord.ui.View):
         custom_id="logmonitor:auto_fix",
     )
     async def auto_fix(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not _has_admin_access(interaction.user):
-            await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
-            return
+        try:
+            logger.info(f"[LogMonitorView] auto_fix 按鈕被點擊，用戶: {interaction.user}")
+            
+            if not _has_admin_access(interaction.user):
+                logger.warning(f"[LogMonitorView] 用戶 {interaction.user} 無管理員權限")
+                await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
+                return
 
-        if not self._runner:
-            await interaction.response.send_message("❌ 自動修復模組未載入。", ephemeral=True)
-            return
+            if not self._runner:
+                logger.warning("[LogMonitorView] ShellAgentRunner 未載入")
+                await interaction.response.send_message("❌ 自動修復模組未載入。", ephemeral=True)
+                return
 
-        fix_goal = self._engine.build_fix_goal()
-        if not fix_goal:
-            await interaction.response.send_message("✅ 目前沒有待修復的彙整錯誤。", ephemeral=True)
-            return
+            if not self._channel:
+                logger.warning("[LogMonitorView] _channel 為 None")
+                await interaction.response.send_message("❌ 通知頻道未設定。", ephemeral=True)
+                return
 
-        await interaction.response.send_message("🚀 已啟動自動修復，請稍候。", ephemeral=True)
-        await self._channel.send(
-            f"🚀 **自動修復啟動** — 由 {interaction.user.mention} 觸發"
-        )
-        asyncio.create_task(
-            self._runner.run(fix_goal, self._channel, _ADMIN_USER_ID)
-        )
+            fix_goal = self._engine.build_fix_goal()
+            if not fix_goal:
+                logger.info("[LogMonitorView] 沒有待修復的錯誤")
+                await interaction.response.send_message("✅ 目前沒有待修復的彙整錯誤。", ephemeral=True)
+                return
+
+            await interaction.response.send_message("🚀 已啟動自動修復，請稍候。", ephemeral=True)
+            await self._channel.send(
+                f"🚀 **自動修復啟動** — 由 {interaction.user.mention} 觸發"
+            )
+            asyncio.create_task(
+                self._runner.run(fix_goal, self._channel, _ADMIN_USER_ID)
+            )
+            logger.info("[LogMonitorView] auto_fix 執行完成")
+        except Exception as e:
+            logger.error(f"[LogMonitorView] auto_fix 異常: {e}", exc_info=True)
+            try:
+                await interaction.response.send_message(f"❌ 發生錯誤: {e}", ephemeral=True)
+            except Exception as e2:
+                logger.error(f"[LogMonitorView] 發送錯誤訊息失敗: {e2}")
 
     @discord.ui.button(
         label="✅ 已修復，清空",
@@ -185,12 +203,20 @@ class LogMonitorSummaryView(discord.ui.View):
         custom_id="logmonitor:clear",
     )
     async def clear_errors(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not _has_admin_access(interaction.user):
-            await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
-            return
+        try:
+            logger.info(f"[LogMonitorView] clear_errors 按鈕被點擊，用戶: {interaction.user}")
+            
+            if not _has_admin_access(interaction.user):
+                logger.warning(f"[LogMonitorView] 用戶 {interaction.user} 無管理員權限")
+                await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
+                return
 
-        embed = self._engine.clear_summary(interaction.user.display_name)
-        await interaction.response.edit_message(embed=embed, view=None)
+            embed = self._engine.clear_summary(interaction.user.display_name)
+            await interaction.response.edit_message(embed=embed, view=None)
+            logger.info("[LogMonitorView] clear_errors 執行完成")
+        except Exception as e:
+            logger.error(f"[LogMonitorView] clear_errors 異常: {e}", exc_info=True)
+            await interaction.response.send_message(f"❌ 發生錯誤: {e}", ephemeral=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -210,6 +236,7 @@ class LogMonitorEngine:
         self.llm          = llm
         self.shell_runner = shell_runner  # ShellAgentRunner，可為 None
         self.enabled      = True
+        self.cog_instance = None  # 引用 Cog 實例（由 Cog.__init__ 設定）
 
         self._proc:          Optional[asyncio.subprocess.Process] = None
         self._error_buffer:  list[str] = []
@@ -410,7 +437,15 @@ class LogMonitorEngine:
 
     async def _upsert_summary_message(self, channel: discord.TextChannel):
         embed = self._build_summary_embed()
-        view = LogMonitorSummaryView(self, self.shell_runner, channel)
+        
+        # ✅ 使用已註冊的全局視圖（而非每次都新建）
+        view = None
+        if self.cog_instance and self.cog_instance._global_view:
+            view = self.cog_instance._global_view
+            # 更新視圖的引用，確保指向最新的引擎狀態
+            view._engine = self
+            view._runner = self.shell_runner
+            view._channel = channel
 
         async with self._message_lock:
             if self._summary_message and self._summary_message.channel.id == channel.id:
@@ -423,6 +458,7 @@ class LogMonitorEngine:
             self._summary_message = await channel.send(
                 embed=embed,
                 view=view,
+                suppress_notifications=True,
             )
 
 
@@ -448,15 +484,31 @@ class LogMonitor(commands.Cog):
             logger.warning(f"[LogMonitor] ShellAgentRunner 未載入（{e}），自動修復按鈕不可用")
 
         self._engine = LogMonitorEngine(bot, self._llm, shell_runner=_shell_runner)
+        self._engine.cog_instance = self  # ✅ 設定引用，讓 engine 能訪問全局視圖
         self._task: Optional[asyncio.Task] = None
-        logger.info("✅ LogMonitor Cog 已載入")
+        self._global_view = None  # 全局視圖實例，用於持久化按鈕
+        
+        # ✅ 直接在 __init__ 時註冊持久化視圖（而不是等待 cog_load）
+        try:
+            if _ALERT_CHANNEL_ID and _ALERT_CHANNEL_ID > 0:
+                # 建立模板視圖實例
+                self._global_view = LogMonitorSummaryView(self._engine, self._engine.shell_runner, None)
+                self.bot.add_view(self._global_view)
+                logger.info(f"[LogMonitor] ✅ 持久化視圖已在 __init__ 註冊到 bot（頻道 {_ALERT_CHANNEL_ID}）")
+            else:
+                logger.warning(f"[LogMonitor] ⚠️ _ALERT_CHANNEL_ID 無效或未設定 ({_ALERT_CHANNEL_ID})")
+        except Exception as e:
+            logger.error(f"[LogMonitor] ❌ 在 __init__ 中視圖註冊失敗: {e}", exc_info=True)
+        
+        logger.info("✅ LogMonitor Cog 已初始化")
 
     async def cog_load(self):
-        if _ALERT_CHANNEL_ID:
+        """Cog 載入時啟動監控。"""
+        if _ALERT_CHANNEL_ID and _ALERT_CHANNEL_ID > 0:
             self._task = asyncio.create_task(self._engine.start())
-            logger.info(f"[LogMonitor] 監控已啟動（通知頻道 {_ALERT_CHANNEL_ID}）")
+            logger.info(f"[LogMonitor] 監控已在 cog_load 中啟動（通知頻道 {_ALERT_CHANNEL_ID}）")
         else:
-            logger.warning("[LogMonitor] LOG_CHANNEL_ID / ADMIN_CHANNEL_ID 未設定，監控未啟動")
+            logger.warning("[LogMonitor] 通知頻道未設定，監控未啟動")
 
     async def cog_unload(self):
         if self._task:
@@ -527,4 +579,12 @@ class LogMonitor(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(LogMonitor(bot))
+    cog = LogMonitor(bot)
+    await bot.add_cog(cog)
+    
+    # ℹ️ 視圖已在 Cog.__init__() 中註冊，此處無需重複註冊
+    # 但我們驗證視圖是否成功創建
+    if cog._global_view:
+        print(f"[LogMonitor] ✅ 視圖已正確初始化並註冊（custom_ids: {[b.custom_id for b in cog._global_view.children]}）")
+    else:
+        print(f"[LogMonitor] ⚠️ 警告：視圖未被創建（_ALERT_CHANNEL_ID={_ALERT_CHANNEL_ID}）")
