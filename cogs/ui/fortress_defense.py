@@ -412,38 +412,59 @@ def _build_td_map(state: fs.FortressState) -> str:
     cols = layout["cols"]
     grid = [[layout["ground_tile"] for _ in range(cols)] for _ in range(rows)]
 
+    # 先畫出路徑
     for row, col in layout["path_coords"]:
         grid[row][col] = layout["path_tile"]
 
+    # 畫砲台
     occupied_slots = set(state.tower_slots.values())
     for slot_id, meta in layout["tower_slots"].items():
         row, col = meta["coord"]
         grid[row][col] = "🗼" if slot_id in occupied_slots else "🔲"
 
+    # 畫堡壘
     fort_row, fort_col = layout["fort_coord"]
     grid[fort_row][fort_col] = "🏯"
 
+    # 畫敵人（根據實際位置）
     alive = sorted([e for e in state.enemies if not e.defeated], key=lambda enemy: enemy.rank)
     occupied_path_cells = set()
+    
     for enemy in alive:
         icon = _rank_to_icon(enemy.rank)
-        target = _enemy_progress_index(enemy, layout)
-        chosen_index = None
-        for distance in range(len(layout["path_coords"])):
-            for try_index in (target - distance, target + distance):
-                if not 0 <= try_index < len(layout["path_coords"]):
-                    continue
-                coord = layout["path_coords"][try_index]
-                if coord not in occupied_path_cells:
-                    chosen_index = try_index
-                    occupied_path_cells.add(coord)
-                    break
-            if chosen_index is not None:
-                break
-        if chosen_index is None:
-            continue
-        row, col = layout["path_coords"][chosen_index]
-        grid[row][col] = icon
+        position = enemy.path_position
+        
+        # 確保位置在有效範圍內
+        if 0 <= position < len(layout["path_coords"]):
+            row, col = layout["path_coords"][position]
+            # 如果位置已被佔用，找最近空位
+            if (row, col) in occupied_path_cells:
+                for distance in range(1, min(5, len(layout["path_coords"]))):
+                    for try_offset in [-distance, distance]:
+                        try_pos = position + try_offset
+                        if 0 <= try_pos < len(layout["path_coords"]):
+                            try_row, try_col = layout["path_coords"][try_pos]
+                            if (try_row, try_col) not in occupied_path_cells:
+                                row, col = try_row, try_col
+                                break
+                    if (row, col) not in occupied_path_cells:
+                        break
+            
+            grid[row][col] = icon
+            occupied_path_cells.add((row, col))
+            
+            # 添加推進效果（在敵人後面顯示移動軌跡）
+            for trail_offset in range(1, min(4, len(layout["path_coords"]) - position)):
+                trail_pos = position - trail_offset
+                if trail_pos >= 0:
+                    trail_row, trail_col = layout["path_coords"][trail_pos]
+                    if (trail_row, trail_col) not in occupied_path_cells and grid[trail_row][trail_col] == layout["path_tile"]:
+                        # 根據敵人類型顯示不同軌跡
+                        if enemy.rank <= 3:  # Boss和菁英
+                            grid[trail_row][trail_col] = "🔥"
+                        else:  # 一般敵人
+                            grid[trail_row][trail_col] = "💨"
+                        occupied_path_cells.add((trail_row, trail_col))
 
     return "\n".join("".join(row) for row in grid)
 
