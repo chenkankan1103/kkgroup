@@ -535,18 +535,18 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
         label = rank_labels.get(e.rank, f"👾 先鋒 #{e.rank}")
         if e.defeated:
             enemy_lines.append(
-                f"~~**{e.name}**~~\n"
-                f"└ {label} · ✅ 已消滅"
+                f"~~**{e.name}**~~- {label} · ✅ 已消滅"
             )
         else:
             position = e.path_position
             layout = _get_map_layout(state)
             path_len = len(layout["path_coords"])
             progress_pct = int((position / path_len) * 100) if path_len > 0 else 0
-            warn = "‼️" if progress_pct >= 80 else ("⚠️" if progress_pct >= 50 else "")
+            # 對齊格式：實事標題加粗並保持突出，其他資訊對齊
+            progress_str = f"推進 {progress_pct:>2}%"
+            hp_str = f"HP {e.current_hp:>4}/{e.max_hp}"
             enemy_lines.append(
-                f"{warn}**{e.name}**\n"
-                f"└ {label} · 位置 {position}/{path_len} ({progress_pct}%) · HP {e.current_hp}/{e.max_hp}"
+                f"**{e.name}**- {label} · {progress_str} · {hp_str}"
             )
 
     embed.add_field(
