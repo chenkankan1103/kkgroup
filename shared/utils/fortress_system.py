@@ -62,6 +62,8 @@ class EnemyUnit:
     category: str = ""          # 來自 Google Trends 的分類
     defeated: bool = False
     reached_fortress: bool = False  # 是否已到達堡壘
+    path_position: int = 0       # 在路徑上的位置（0-based index）
+    last_move_time: str = ""      # 上次移動時間
 
     def hp_bar(self, width: int = 10) -> str:
         """生成 HP 血量條"""
@@ -202,9 +204,13 @@ def _load_state() -> Optional[FortressState]:
 
         enemies = []
         for e in data["enemies"]:
-            # 確保 reached_fortress 欄位存在
+            # 確保新欄位存在
             if "reached_fortress" not in e:
                 e["reached_fortress"] = False
+            if "path_position" not in e:
+                e["path_position"] = 0
+            if "last_move_time" not in e:
+                e["last_move_time"] = ""
             enemies.append(EnemyUnit(**e))
         defenders = {}
         for uid_str, actions in data.get("defenders", {}).items():
@@ -447,6 +453,79 @@ def apply_fortress_damage(damage: int) -> Tuple[FortressState, bool]:
         state.status = "defeat"
     _save_state(state)
     return state, state.status == "defeat"
+
+
+def move_enemies_forward() -> Tuple[bool, str]:
+    """
+    定時移動所有敵人前進一格
+    小怪移動更快，大怪移動較慢
+    """
+    state = _load_state()
+    if not state or not state.is_active():
+        return False, "無活躍戰況"
+    
+    now = datetime.now(TW_TZ).isoformat()
+    moved_enemies = []
+    total_fortress_damage = 0
+    
+    for enemy in state.enemies:
+        if enemy.defeated or enemy.reached_fortress:
+            continue
+        
+        # 根據敵人排名決定移動間隔（小怪移動快）
+        move_interval_seconds = {
+            1: 30,  # Boss 30秒移動一次
+            2: 25, 3: 25,  # 菁英 25秒
+            4: 20, 5: 20,  # 中等 20秒
+            6: 15, 7: 15,  # 較快 15秒
+            8: 12, 9: 12,  # 快速 12秒
+            10: 10  # 雜兵 10秒
+        }.get(enemy.rank, 15)
+        
+        # 檢查是否該移動
+        if enemy.last_move_time:
+            last_move = datetime.fromisoformat(enemy.last_move_time)
+            time_since_move = (datetime.now(TW_TZ) - last_move).total_seconds()
+            if time_since_move < move_interval_seconds:
+                continue
+        
+        # 移動到下一格
+        enemy.path_position += 1
+        enemy.last_move_time = now
+        moved_enemies.append(f"{enemy.name} 前進到位置 {enemy.path_position}")
+        
+        # 檢查是否到達堡壘
+        # 使用本地地圖配置避免循環導入
+        from . import fortress_system as fs
+        path_length = 32  # 預設路徑長度，實際應從地圖配置取得
+        if enemy.path_position >= path_length:
+            enemy.reached_fortress = True
+            # 剩餘HP即為攻擊力
+            fortress_damage = enemy.current_hp
+            total_fortress_damage += fortress_damage
+            logger.info(f"[Fortress] {enemy.name} 到達堡壘！造成 {fortress_damage} 傷害")
+    
+    # 對堡壘造成傷害
+    if total_fortress_damage > 0:
+        state.fortress_hp = max(0, state.fortress_hp - total_fortress_damage)
+        if state.fortress_hp <= 0:
+            state.fortress_hp = 0
+            state.status = "defeat"
+            logger.info(f"[Fortress] 堡壘失守！總傷害: {total_fortress_damage}")
+    
+    _save_state(state)
+    
+    if moved_enemies:
+        return True, f"敵人移動: {', '.join(moved_enemies)}"
+    return False, "無敵人移動"
+
+
+def _get_map_layout_for_state(state: Optional[FortressState]) -> Dict[str, object]:
+    """取得地圖配置（避免循環導入）"""
+    if not state:
+        return {}
+    seed = sum(ord(char) for char in state.round_id)
+    return _TD_MAP_LAYOUTS[seed % len(_TD_MAP_LAYOUTS)]
 
 
 
