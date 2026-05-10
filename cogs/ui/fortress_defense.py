@@ -987,7 +987,7 @@ class FortressDefenseCog(commands.Cog):
                 # 更新戰況 Embed
                 state = fs.get_current_battle()
                 if state and state.is_active():
-                    await self.refresh_battle_embed()
+                    await self._refresh_battle_embed_scheduled()
                     log.info(f"[Fortress] 敵人移動更新: {msg}")
         except Exception as e:
             log.error(f"[Fortress] 敵人移動任務出錯: {e}")
@@ -995,6 +995,34 @@ class FortressDefenseCog(commands.Cog):
     @enemy_movement_task.before_loop
     async def before_enemy_movement(self):
         await self.bot.wait_until_ready()
+
+    async def _refresh_battle_embed_scheduled(self):
+        """排程更新戰況 Embed（不需要 interaction）"""
+        try:
+            if not self._battle_message_id or not self._battle_channel_id:
+                return
+            
+            channel = self.bot.get_channel(self._battle_channel_id)
+            if not channel:
+                return
+            
+            state = fs.get_current_battle()
+            if not state or not state.is_active():
+                return
+            
+            try:
+                message = await channel.fetch_message(self._battle_message_id)
+                embed = build_status_embed(state, None)
+                await message.edit(embed=embed, view=FortressBattleView(self.bot))
+            except discord.NotFound:
+                log.warning("[Fortress] 戰況訊息不存在，停止更新")
+                self._battle_message_id = None
+            except discord.Forbidden:
+                log.warning("[Fortress] 無權限編輯戰況訊息")
+            except Exception as e:
+                log.error(f"[Fortress] 更新戰況失敗: {e}")
+        except Exception as e:
+            log.error(f"[Fortress] 排程更新戰況出錯: {e}")
 
     # ── 管理員手動開戰 ────────────────────────────────────
 
