@@ -78,6 +78,8 @@ Thumbs.db
 # GCP 和本地開發工具（包含敏感信息，不追踪）
 scripts/gcp-ssh.ps1
 scripts/*.ps1
+!scripts/open-knowledge-vault.ps1
+!scripts/sync-knowledge-to-vm.ps1
 
 # ===============================================
 # CRITICAL: 绝不追踪敏感信息

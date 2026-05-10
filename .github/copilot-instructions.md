@@ -2,6 +2,18 @@
 
 WHEN: KKGroup 開發、Discord bot、部署、webhook、資料庫、隧道、字型、紙娃娃
 
+## AI 快速閱讀順序
+
+若只是先理解專案，不要先掃整個 repo。
+
+優先讀:
+- `knowledge/_wiki/concepts/ai-fast-read.md`
+- `knowledge/_wiki/entities/bot-services.md`
+- `knowledge/_wiki/entities/command-registry.md`
+- `knowledge/_wiki/concepts/webhook-and-tunnel.md`
+
+只有在摘要不足以回答問題時，才往原始程式碼或完整規則下鑽。
+
 ---
 
 ## 快速查詢
