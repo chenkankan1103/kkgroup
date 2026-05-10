@@ -366,8 +366,8 @@ def _get_map_layout(state: Optional[fs.FortressState]) -> Dict[str, object]:
 
 def _enemy_progress_index(enemy: fs.EnemyUnit, layout: Dict[str, object]) -> int:
     path_len = len(layout["path_coords"])
-    hp_pct = enemy.current_hp / enemy.max_hp if enemy.max_hp else 0
-    return min(int((1 - hp_pct) * path_len), path_len - 1)
+    # 使用實際位置而不是HP百分比
+    return min(enemy.path_position, path_len - 1)
 
 
 def _progress_step_percent(layout: Dict[str, object]) -> float:
@@ -376,11 +376,10 @@ def _progress_step_percent(layout: Dict[str, object]) -> float:
 
 
 def _movement_rule_text(layout: Dict[str, object]) -> str:
-    step_pct = _progress_step_percent(layout)
     path_len = len(layout["path_coords"])
     return (
-        f"目前為血量映射推進，不是定時自動走格；本圖共 {path_len} 格，"
-        f"約每損失 {step_pct:.1f}% 血量就前進 1 格。"
+        f"定時自動走格系統；小怪移動較快，大怪移動較慢。"
+        f"本圖共 {path_len} 格，敵人會按排名間隔自動前進。"
     )
 
 
@@ -519,11 +518,14 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
                 f"└ {label} · ✅ 已消滅"
             )
         else:
-            advance = int((1 - e.current_hp / e.max_hp) * 100) if e.max_hp else 100
-            warn = "‼️" if advance >= 80 else ("⚠️" if advance >= 50 else "")
+            position = e.path_position
+            layout = _get_map_layout(state)
+            path_len = len(layout["path_coords"])
+            progress_pct = int((position / path_len) * 100) if path_len > 0 else 0
+            warn = "‼️" if progress_pct >= 80 else ("⚠️" if progress_pct >= 50 else "")
             enemy_lines.append(
                 f"{warn}**{e.name}**\n"
-                f"└ {label} · 推進 {advance}% · HP {e.current_hp}/{e.max_hp}"
+                f"└ {label} · 位置 {position}/{path_len} ({progress_pct}%) · HP {e.current_hp}/{e.max_hp}"
             )
 
     embed.add_field(
@@ -661,12 +663,14 @@ class FortressDefenseCog(commands.Cog):
         self.settle_task.start()
         self.update_trends_scheduled.start()
         self.command_poll_task.start()
+        self.enemy_movement_task.start()
         log.info("[Fortress] Cog 已初始化")
 
     def cog_unload(self):
         self.settle_task.cancel()
         self.update_trends_scheduled.cancel()
         self.command_poll_task.cancel()
+        self.enemy_movement_task.cancel()
 
     # ── 斜線指令 ───────────────────────────────────────────
 
@@ -951,6 +955,24 @@ class FortressDefenseCog(commands.Cog):
 
     @command_poll_task.before_loop
     async def before_command_poll(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(seconds=10)
+    async def enemy_movement_task(self):
+        """每10秒檢查並移動敵人"""
+        try:
+            success, msg = fs.move_enemies_forward()
+            if success:
+                # 更新戰況 Embed
+                state = fs.get_current_battle()
+                if state and state.is_active():
+                    await self.refresh_battle_embed()
+                    log.info(f"[Fortress] 敵人移動更新: {msg}")
+        except Exception as e:
+            log.error(f"[Fortress] 敵人移動任務出錯: {e}")
+
+    @enemy_movement_task.before_loop
+    async def before_enemy_movement(self):
         await self.bot.wait_until_ready()
 
     # ── 管理員手動開戰 ────────────────────────────────────
