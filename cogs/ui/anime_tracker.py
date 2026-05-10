@@ -515,8 +515,9 @@ class AnimeDatabase:
             logger.error(f"❌ Error getting top anime: {e}")
             return []
     
-    def get_multi_episode_anime_for_chart(self, limit: int = 10, min_episodes: int = 2) -> List[Dict]:
+    def get_multi_episode_anime_for_chart(self, limit: int = 10, min_episodes: int = 1) -> List[Dict]:
         """獲取有多集數據的動畫（用於多線坐標圖），按總觀看次數排序
+        改進：降低 min_episodes 預設值為 1，讓更多動畫能納入統計
         
         Returns:
             [{
@@ -2315,21 +2316,22 @@ class AnimeTracker(commands.Cog):
                 await channel.send(embed=embed)
                 logger.info(f"✅ [send_weekly_stats] 週投票統計已發送: {unique_animes} 部作品, {total_all_votes} 投票")
                 
-                # 發送觀看量趨勢折線圖（前幾名動畫集數人氣變化）
+                # 發送觀看量趨勢折線圖（改進：按集數累計顯示）
                 try:
                     ranking_embed = await self.generate_ranking_embed()
                     if ranking_embed:
-                        ranking_embed.title = "📈 本季動畫人氣趨勢折線圖"
+                        ranking_embed.title = "📈 本週動畫集數累計觀看數趨勢"
                         ranking_embed.description = (
-                            f"**{week_start_str} - {week_end_str}** 各動畫人氣消長一覽\n"
-                            "折線圖顯示各動畫每集的系列人氣值累計，可看出口碑走勢"
+                            f"**統計週期**: {week_start_str} - {week_end_str}\n"
+                            "📊 折線圖顯示各動畫每集觀看數的累計成長趨勢\n"
+                            "🔍 可看出動畫的人氣變化和口碑傳播效果"
                         )
                         await channel.send(embed=ranking_embed)
-                        logger.info("✅ [send_weekly_stats] 觀看趨勢折線圖已發送")
+                        logger.info("✅ [send_weekly_stats] 集數累計觀看趨勢圖已發送")
                     else:
-                        logger.info("⚠️ [send_weekly_stats] 無足夠集數數據生成折線圖，跳過")
+                        logger.info("⚠️ [send_weekly_stats] 無足夠集數數據生成趨勢圖，跳過")
                 except Exception as chart_err:
-                    logger.warning(f"⚠️ [send_weekly_stats] 折線圖生成失敗（不影響投票統計）: {chart_err}")
+                    logger.warning(f"⚠️ [send_weekly_stats] 趨勢圖生成失敗（不影響投票統計）: {chart_err}")
                 
                 # 標記已發送
                 self.last_weekly_stats_sent = week_start_date
@@ -2653,11 +2655,11 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"📺 [generate_ranking_embed] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
             # 嘗試獲取有多集的動畫數據（用於多線圖）
-            # 使用短 URL API 無視 URL 長度限制
-            multi_anime = self.db.get_multi_episode_anime_for_chart(limit=10, min_episodes=1)
+            # 改進：增加 limit 到 15，降低 min_episodes 到 1，讓更多動畫納入統計
+            multi_anime = self.db.get_multi_episode_anime_for_chart(limit=15, min_episodes=1)
             logger.info(f"📺 [generate_ranking_embed] 查詢 multi_anime 結果: {len(multi_anime) if multi_anime else 0} 部動畫")
             if multi_anime:
-                for i, anime in enumerate(multi_anime[:3]):
+                for i, anime in enumerate(multi_anime[:5]):  # 顯示前 5 部的詳細資訊
                     logger.info(f"  📺 [{i+1}] {anime['name']}: {len(anime['episodes'])} 集, {anime['total_views']} 次觀看")
             
             embed = discord.Embed(
@@ -2680,32 +2682,74 @@ class AnimeTracker(commands.Cog):
                     "#F7DC6F", "#BB8FCE", "#85C1E2", "#F8B88B", "#ABEBC6"
                 ]
                 
-                # 找出所有集數編號（X 軸）
+                # 找出所有集數編號（X 軸）- 改進標準化處理
                 all_episodes = set()
                 for anime in multi_anime:
                     for ep in anime['episodes']:
-                        all_episodes.add(ep['num'])
+                        ep_num = ep['num']
+                        # 標準化集數格式：提取數字部分
+                        if isinstance(ep_num, str):
+                            # 提取數字（如 "第1集" -> 1, "EP.1" -> 1）
+                            import re
+                            numbers = re.findall(r'\d+', ep_num)
+                            if numbers:
+                                ep_num = int(numbers[0])
+                            else:
+                                continue
+                        elif isinstance(ep_num, (int, float)):
+                            ep_num = int(ep_num)
+                        else:
+                            continue
+                        
+                        all_episodes.add(ep_num)
                 
-                episode_labels = sorted(list(all_episodes))
+                # 排序並生成標籤（使用更清楚的集數格式）
+                episode_labels = [f"第{ep}集" for ep in sorted(list(all_episodes))]
                 
                 # 為每部動畫建立一條線
                 for idx, anime in enumerate(multi_anime):
-                    name = anime['name'][:10]  # 最多 10 個字
+                    name = anime['name'][:12]  # 增加到 12 個字以便識別
                     color = colors[idx % len(colors)]
                     
-                    # 建立該動畫的數據點（缺失集用 None）
-                    ep_dict = {ep['num']: ep['views'] for ep in anime['episodes']}
+                    # 建立該動畫的數據點（缺失集用 None）- 配合新標籤格式
+                    ep_dict = {}
+                    for ep in anime['episodes']:
+                        # 標準化集數格式以匹配 episode_labels ("第X集")
+                        ep_num = ep['num']
+                        if isinstance(ep_num, str):
+                            import re
+                            numbers = re.findall(r'\d+', ep_num)
+                            if numbers:
+                                ep_num = f"第{int(numbers[0])}集"
+                            else:
+                                continue
+                        elif isinstance(ep_num, (int, float)):
+                            ep_num = f"第{int(ep_num)}集"
+                        else:
+                            continue
+                        
+                        ep_dict[ep_num] = ep['views']
+                    
                     data = [ep_dict.get(label) for label in episode_labels]
+                    
+                    # 改進：處理累計觀看數（如果需要顯示累計趨勢）
+                    cumulative_data = []
+                    cumulative_sum = 0
+                    for views in data:
+                        if views is not None:
+                            cumulative_sum += views
+                        cumulative_data.append(cumulative_sum if cumulative_sum > 0 else None)
                     
                     datasets.append({
                         "label": name,
-                        "data": data,
+                        "data": cumulative_data,  # 使用累計數據顯示成長趨勢
                         "borderColor": color,
                         "fill": False,
-                        "showLine": True
+                        "showLine": True,
+                        "tension": 0.1  # 添加輕微的曲線效果
                     })
                 
-                # 構建圖表配置（極速優化版）
+                # 構建圖表配置（改進版 - 適合集數累計觀看數顯示）
                 try:
                     chart_config = {
                         "type": "line",
@@ -2714,8 +2758,28 @@ class AnimeTracker(commands.Cog):
                             "datasets": datasets
                         },
                         "options": {
+                            "responsive": True,
                             "plugins": {
-                                "legend": {"position": "top"}
+                                "legend": {"position": "top"},
+                                "title": {
+                                    "display": True,
+                                    "text": "動畫集數累計觀看數趨勢"
+                                }
+                            },
+                            "scales": {
+                                "x": {
+                                    "title": {
+                                        "display": True,
+                                        "text": "集數"
+                                    }
+                                },
+                                "y": {
+                                    "title": {
+                                        "display": True,
+                                        "text": "累計觀看數"
+                                    },
+                                    "beginAtZero": True
+                                }
                             }
                         }
                     }
