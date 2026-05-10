@@ -11,10 +11,14 @@
             "id": "84ae43ef8614eb20",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "README.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "新分頁"
+              "title": "README"
             }
           }
         ]
@@ -90,6 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "README.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -99,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "反向連結"
+              "title": "README 的反向連結"
             }
           },
           {
@@ -108,11 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
+                "file": "README.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "對外連結"
+              "title": "README 的對外連結"
             }
           },
           {
@@ -150,12 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
+                "file": "README.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "大綱"
+              "title": "README 的大綱"
             }
           }
         ]
@@ -179,6 +186,9 @@
   "active": "84ae43ef8614eb20",
   "lastOpenFiles": [
     "_wiki/concepts/ai-fast-read.md",
+    "Inbox/README.md",
+    "README.md",
+    "未命名.base",
     "_wiki/sources/operational-sources.md",
     "_wiki/sources",
     "_wiki/concepts/knowledge-maintenance-workflow.md",
