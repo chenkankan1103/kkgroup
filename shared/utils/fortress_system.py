@@ -18,11 +18,11 @@ logger = logging.getLogger("fortress_system")
 TW_TZ = ZoneInfo("Asia/Taipei")
 
 # ── 遊戲常數 ──────────────────────────────────────────────
-FORTRESS_MAX_HP = 10000         # 堡壘最大 HP
-BASE_DAMAGE_FREE = 350          # 免費出兵基礎傷害
-BASE_DAMAGE_PAID = 1200         # 付費強化基礎傷害
+FORTRESS_MAX_HP = 15000         # 堡壘最大 HP
+BASE_DAMAGE_FREE = 250          # 免費出兵基礎傷害
+BASE_DAMAGE_PAID = 800          # 付費強化基礎傷害
 TAG_BONUS_MULTIPLIER = 2.0      # 興趣標籤加乘倍率
-FREE_ACTIONS_PER_ROUND = 10     # 每輪免費出兵次數
+FREE_ACTIONS_PER_ROUND = 8      # 每輪免費出兵次數
 PAID_COST_KKCOIN = 100          # 付費強化費用（KKCoin）
 BASE_VICTORY_REWARD_KKCOIN = 600
 
@@ -31,9 +31,9 @@ BETA_NO_PENALTY = True
 
 # 各排名對應的敵人 HP（1=Boss, 10=雜兵）
 ENEMY_HP_BY_RANK = {
-    1: 2200, 2: 1800, 3: 1400,
-    4: 1100, 5: 900, 6: 800,
-    7: 700, 8: 600, 9: 500, 10: 400
+    1: 3000, 2: 2500, 3: 2000,
+    4: 1600, 5: 1300, 6: 1100,
+    7: 900, 8: 750, 9: 600, 10: 500
 }
 
 # 興趣標籤 → 關鍵字對應表（用於比對趨勢詞）
@@ -61,6 +61,7 @@ class EnemyUnit:
     current_hp: int
     category: str = ""          # 來自 Google Trends 的分類
     defeated: bool = False
+    reached_fortress: bool = False  # 是否已到達堡壘
 
     def hp_bar(self, width: int = 10) -> str:
         """生成 HP 血量條"""
@@ -199,7 +200,12 @@ def _load_state() -> Optional[FortressState]:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        enemies = [EnemyUnit(**e) for e in data["enemies"]]
+        enemies = []
+        for e in data["enemies"]:
+            # 確保 reached_fortress 欄位存在
+            if "reached_fortress" not in e:
+                e["reached_fortress"] = False
+            enemies.append(EnemyUnit(**e))
         defenders = {}
         for uid_str, actions in data.get("defenders", {}).items():
             defenders[int(uid_str)] = [DefenseAction(**a) for a in actions]
@@ -354,6 +360,32 @@ def apply_defense_action(
         state.status = "victory"
         logger.info(f"[Fortress] 🎉 勝利！round={state.round_id}")
 
+    # 檢查是否有敵人到達堡壘（推進到100%時）
+    enemies_reached_fortress = []
+    for enemy in state.enemies:
+        if not enemy.defeated and not enemy.reached_fortress:
+            # 計算推進百分比
+            advance_pct = int((1 - enemy.current_hp / enemy.max_hp) * 100) if enemy.max_hp else 0
+            if advance_pct >= 100:
+                enemy.reached_fortress = True
+                enemies_reached_fortress.append(enemy)
+                logger.info(f"[Fortress] 敵人 [{enemy.name}] 已到達堡壘！剩餘攻擊力: {enemy.current_hp}")
+    
+    # 對堡壘造成傷害（剩餘HP即為攻擊力）
+    total_fortress_damage = 0
+    for enemy in enemies_reached_fortress:
+        # 剩餘HP就是攻擊力
+        fortress_damage = enemy.current_hp
+        total_fortress_damage += fortress_damage
+        logger.info(f"[Fortress] {enemy.name} 對堡壘造成 {fortress_damage} 傷害（剩餘HP）")
+    
+    if total_fortress_damage > 0:
+        state.fortress_hp = max(0, state.fortress_hp - total_fortress_damage)
+        if state.fortress_hp <= 0:
+            state.fortress_hp = 0
+            state.status = "defeat"
+            logger.info(f"[Fortress] 堡壘失守！總傷害: {total_fortress_damage}")
+
     _save_state(state)
 
     bonus_text = "（🏷️ 標籤加乘 ×2）" if has_bonus else ""
@@ -417,6 +449,8 @@ def apply_fortress_damage(damage: int) -> Tuple[FortressState, bool]:
     return state, state.status == "defeat"
 
 
+
+
 def settle_battle() -> Dict:
     """
     4 小時後強制結算，回傳結算結果。
@@ -430,16 +464,27 @@ def settle_battle() -> Dict:
     if state.status not in ("active", "victory"):
         return {"success": False, "reason": "無活躍戰況"}
 
-    # 計算未消滅敵人的「潰堤傷害」
+    # 計算未消滅且未到達堡壘的敵人造成的傷害
     if state.status == "active":
-        alive_damage = sum(e.current_hp for e in state.enemies if not e.defeated)
-        if alive_damage > 0:
-            state.fortress_hp = max(0, state.fortress_hp - alive_damage)
+        # 對於還在路徑上的敵人，直接對堡壘造成剩餘HP傷害（攻擊力）
+        remaining_enemies = [e for e in state.enemies if not e.defeated and not e.reached_fortress]
+        if remaining_enemies:
+            total_remaining_damage = sum(e.current_hp for e in remaining_enemies)
+            state.fortress_hp = max(0, state.fortress_hp - total_remaining_damage)
+            logger.info(f"[Fortress] 結算時剩餘敵人總攻擊力: {total_remaining_damage}")
 
-        if state.fortress_hp <= 0 or any(not e.defeated for e in state.enemies):
+        # 檢查已到達堡壘的敵人（已經在攻擊時處理過了）
+        enemies_at_fortress = [e for e in state.enemies if e.reached_fortress and not e.defeated]
+        for enemy in enemies_at_fortress:
+            logger.info(f"[Fortress] 結算時確認 {enemy.name} 已到達堡壘")
+
+        # 判定勝負
+        if state.fortress_hp <= 0:
             state.status = "defeat"
-        else:
+        elif all(e.defeated for e in state.enemies):
             state.status = "victory"
+        else:
+            state.status = "defeat"  # 有未消滅的敵人視為失守
 
     settled_at = datetime.now(TW_TZ)
     state.settled_at = settled_at.isoformat()
