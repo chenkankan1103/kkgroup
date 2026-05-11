@@ -30,7 +30,7 @@ jobs:
     
     - name: 安裝依賴
       run: |
-        pip install requests aiohttp python-dotenv
+        pip install requests aiohttp python-dotenv pytz
     
     - name: AI 錯誤分析器
       env:
@@ -46,10 +46,18 @@ jobs:
         import random
         import subprocess
         from datetime import datetime, timedelta
+        import pytz
         
         # Gemini API配置
         GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
         DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
+        
+        # 台灣時區設定
+        taiwan_tz = pytz.timezone('Asia/Taipei')
+        
+        def get_taiwan_time():
+            """獲取台灣時間"""
+            return datetime.now(taiwan_tz)
         
         async def analyze_error_with_ai():
             """使用LiteLLM AI分析最近錯誤日誌（含自動降級和速率限制保護）"""
@@ -78,22 +86,51 @@ jobs:
                 shopbot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u shopbot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
                 uibot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u uibot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
                 
-                error_logs = f"""
-                服務狀態：
-                - bot.service: {bot_status}
-                - shopbot.service: {shopbot_status}
-                - uibot.service: {uibot_status}
+                # 檢查是否有實際錯誤
+                has_errors = any([
+                    "failed" in bot_status.lower() or "inactive" in bot_status.lower(),
+                    "failed" in shopbot_status.lower() or "inactive" in shopbot_status.lower(),
+                    "failed" in uibot_status.lower() or "inactive" in uibot_status.lower(),
+                    "error" in bot_logs.lower() or "exception" in bot_logs.lower(),
+                    "error" in shopbot_logs.lower() or "exception" in shopbot_logs.lower(),
+                    "error" in uibot_logs.lower() or "exception" in uibot_logs.lower()
+                ])
                 
-                最近錯誤日誌：
-                bot.service:
-                {bot_logs[-1000:] if bot_logs else "無日誌"}
-                
-                shopbot.service:
-                {shopbot_logs[-1000:] if shopbot_logs else "無日誌"}
-                
-                uibot.service:
-                {uibot_logs[-1000:] if uibot_logs else "無日誌"}
-                """
+                if not has_errors:
+                    # 如果沒有實際錯誤，創建一個模擬錯誤用於測試
+                    error_logs = f"""
+                    服務狀態：
+                    - bot.service: {bot_status or 'active'}
+                    - shopbot.service: {shopbot_status or 'active'}
+                    - uibot.service: {uibot_status or 'active'}
+                    
+                    最近錯誤日誌：
+                    bot.service:
+                    [模擬測試] 系統運行正常，無實際錯誤。這是一個測試用例，用於驗證AI分析系統。
+                    
+                    shopbot.service:
+                    [模擬測試] 系統運行正常，無實際錯誤。
+                    
+                    uibot.service:
+                    [模擬測試] 系統運行正常，無實際錯誤。
+                    """
+                else:
+                    error_logs = f"""
+                    服務狀態：
+                    - bot.service: {bot_status}
+                    - shopbot.service: {shopbot_status}
+                    - uibot.service: {uibot_status}
+                    
+                    最近錯誤日誌：
+                    bot.service:
+                    {bot_logs[-1000:] if bot_logs else "無日誌"}
+                    
+                    shopbot.service:
+                    {shopbot_logs[-1000:] if shopbot_logs else "無日誌"}
+                    
+                    uibot.service:
+                    {uibot_logs[-1000:] if uibot_logs else "無日誌"}
+                    """
                 
             except Exception as e:
                 error_logs = f"無法獲取VM日誌: {str(e)}"
@@ -142,8 +179,8 @@ jobs:
             
             else:
                 # 傳統API（降級方案）
-                max_retries = 3
-                base_delay = 2
+                max_retries = 5  # 增加重試次數
+                base_delay = 3   # 增加基礎延遲
                 
                 for attempt in range(max_retries):
                     try:
@@ -231,15 +268,16 @@ jobs:
                 print("❌ 未設定Discord Webhook")
                 return
             
+            taiwan_now = get_taiwan_time()
             webhook_data = {
-                "content": f"🤖 **AI除錯報告** - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                "content": f"🤖 **AI除錯報告** - {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}",
                 "embeds": [{
                     "title": "🔍 系統錯誤分析",
                     "description": message,
                     "color": 15158332,  # Orange
                     "fields": [
                         {"name": "🤖 AI引擎", "value": "LiteLLM 4層降級", "inline": True},
-                        {"name": "📊 分析時間", "value": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "inline": True},
+                        {"name": "📊 分析時間", "value": f"{taiwan_now.strftime('%Y-%m-%d %H:%M:%S')} (台灣時間)", "inline": True},
                         {"name": "🔧 自動修復", "value": "已生成" if fix_code else "僅分析", "inline": True}
                     ]
                 }]
