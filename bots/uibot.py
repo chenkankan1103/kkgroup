@@ -361,6 +361,16 @@ async def on_ready():
         if not _on_ready_called:
             _on_ready_called = True
             loaded_extensions = await setup_modules(client)
+            
+            # 🔧 確保 recovery_cog 被載入
+            try:
+                if not client.get_cog("UserRecoveryCog"):
+                    await client.load_extension("cogs.ui.recovery_cog")
+                    file_log("✅ 手動載入 recovery_cog 成功")
+                else:
+                    file_log("✅ recovery_cog 已存在")
+            except Exception as e:
+                file_log(f"❌ 載入 recovery_cog 失敗: {e}")
         else:
             file_log("[on_ready] 重連觸發，跳過 setup_modules（已載入）")
             loaded_extensions = list(client.extensions.keys())

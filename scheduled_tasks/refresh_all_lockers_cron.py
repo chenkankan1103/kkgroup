@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 批量刷新所有用戶置物櫃的 Cron 腳本
-排程設定：每三天執行一次
-配置：*/72 * * * * cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_all_lockers_cron.py
+排程設定：每周三、周六固定時間執行
+配置：0 14 * * 3,6 cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_all_lockers_cron.py
 
 使用 Discord bot 通過 webhook 觸發置物櫃批量刷新
 """
@@ -54,20 +54,31 @@ async def refresh_all_user_lockers_via_webhook():
         logger.info(f"⏱️ 執行時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info("=" * 60)
         
-        # 取得 webhook URL
+        # 取得 webhook URL - 優先使用 ADMIN_WEBHOOK_URL，否則使用現有的 STARTUP_WEBHOOK
         webhook_url = os.getenv('ADMIN_WEBHOOK_URL')
-        if not webhook_url:
-            logger.error("❌ 未設定 ADMIN_WEBHOOK_URL 環境變量")
-            logger.info("💡 提示：需要在 .env 中設定 ADMIN_WEBHOOK_URL")
+        webhook_channel_id = os.getenv('STARTUP_WEBHOOK_CHANNEL_ID')
+        
+        if not webhook_url and webhook_channel_id:
+            # 創建臨時 webhook URL 使用現有頻道
+            webhook_token = os.getenv('STARTUP_WEBHOOK_TOKEN')
+            if webhook_token:
+                webhook_url = f"https://discord.com/api/webhooks/{webhook_channel_id}/{webhook_token}"
+                logger.info("✅ 使用現有 webhook 配置")
+            else:
+                logger.error("❌ 缺少 STARTUP_WEBHOOK_TOKEN")
+                return False
+        elif not webhook_url:
+            logger.error("❌ 未設定任何 webhook 配置")
+            logger.info("💡 提示：需要在 .env 中設定 ADMIN_WEBHOOK_URL 或 STARTUP_WEBHOOK_TOKEN")
             return False
         
         # 構建 webhook 訊息
         embed_data = {
             "title": "🔄 定時置物櫃批量刷新已觸發",
-            "description": f"系統每三天自動執行一次置物櫃批量刷新\n\n📊 待刷新用戶數：**{total}**",
+            "description": f"系統每周三、周六下午2點自動執行置物櫃批量刷新\n\n📊 待刷新用戶數：**{total}**",
             "color": 0xFFA500,
             "footer": {
-                "text": "系統排程任務"
+                "text": "系統排程任務 - 每周三、六執行"
             },
             "timestamp": datetime.utcnow().isoformat() + "Z"
         }
