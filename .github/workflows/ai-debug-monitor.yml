@@ -270,7 +270,7 @@ jobs:
             
             taiwan_now = get_taiwan_time()
             webhook_data = {
-                "content": f"🤖 **AI除錯報告** - {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}",
+                "content": f"@silent 🤖 **AI除錯報告** - {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}",
                 "embeds": [{
                     "title": "🔍 系統錯誤分析",
                     "description": message,
