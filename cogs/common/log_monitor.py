@@ -25,6 +25,7 @@ import os
 import re
 import time
 import logging
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -101,6 +102,64 @@ _MAX_LOG_LINES: int   = 20    # 送給 LLM 分析的最大行數
 _RESTART_DELAY: int   = 60    # subprocess 死亡後等待重啟的秒數
 _MAX_ACTIVE_INCIDENTS: int = 8
 _MAX_EMBED_INCIDENTS: int = 5
+
+
+def _save_message_state(message_id: int):
+    """保存訊息 ID 到 .env 檔案"""
+    try:
+        env_file = os.path.join(parent_dir, ".env")
+        
+        # 讀取現有 .env 內容
+        lines = []
+        if os.path.exists(env_file):
+            with open(env_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        
+        # 移除舊的 LOGMONITOR_MESSAGE_ID 行
+        lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_MESSAGE_ID=')]
+        
+        # 添加新的 message ID
+        lines.append(f"LOGMONITOR_MESSAGE_ID={message_id}\n")
+        
+        # 寫回檔案
+        with open(env_file, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+        
+        logger.info(f"[LogMonitor] 已保存訊息 ID 到 .env: {message_id}")
+    except Exception as e:
+        logger.error(f"[LogMonitor] 保存訊息 ID 到 .env 失敗: {e}")
+
+
+def _load_message_state() -> Optional[int]:
+    """從 .env 載入訊息 ID"""
+    try:
+        message_id = os.getenv("LOGMONITOR_MESSAGE_ID")
+        if message_id:
+            logger.info(f"[LogMonitor] 已從 .env 載入訊息 ID: {message_id}")
+            return int(message_id)
+        return None
+    except Exception as e:
+        logger.error(f"[LogMonitor] 從 .env 載入訊息 ID 失敗: {e}")
+        return None
+
+
+def _clear_message_state():
+    """從 .env 清除訊息 ID"""
+    try:
+        env_file = os.path.join(parent_dir, ".env")
+        if os.path.exists(env_file):
+            with open(env_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # 移除 LOGMONITOR_MESSAGE_ID 行
+            lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_MESSAGE_ID=')]
+            
+            with open(env_file, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+            
+            logger.info("[LogMonitor] 已從 .env 清除訊息 ID")
+    except Exception as e:
+        logger.error(f"[LogMonitor] 從 .env 清除訊息 ID 失敗: {e}")
 
 
 def _has_admin_access(user) -> bool:
@@ -279,6 +338,46 @@ class LogMonitorEngine:
         self._active_incidents: list[dict[str, str]]              = []
         self._summary_message: Optional[discord.Message]          = None
         self._message_lock = asyncio.Lock()
+        
+        # 標記需要恢復訊息引用
+        self._need_restore = True
+
+    async def _restore_message_reference(self):
+        """嘗試恢復舊訊息的引用"""
+        if not self._need_restore:
+            return
+            
+        message_id = _load_message_state()
+        if not message_id:
+            self._need_restore = False
+            return
+        
+        try:
+            # 等待 bot 準備就緒
+            await self.bot.wait_until_ready()
+            
+            channel = self.bot.get_channel(_ALERT_CHANNEL_ID)
+            if not channel:
+                logger.warning(f"[LogMonitor] 找不到通知頻道 {_ALERT_CHANNEL_ID}，無法恢復訊息")
+                self._need_restore = False
+                return
+            
+            # 嘗試獲取舊訊息
+            try:
+                message = await channel.fetch_message(message_id)
+                self._summary_message = message
+                logger.info(f"[LogMonitor] ✅ 成功恢復舊訊息引用: {message_id}")
+            except discord.NotFound:
+                logger.info(f"[LogMonitor] 舊訊息 {message_id} 已被刪除，將創建新訊息")
+                _clear_message_state()
+            except discord.Forbidden:
+                logger.warning(f"[LogMonitor] 沒有權限存取訊息 {message_id}")
+                _clear_message_state()
+                
+        except Exception as e:
+            logger.error(f"[LogMonitor] 恢復訊息引用時發生錯誤: {e}")
+        finally:
+            self._need_restore = False
 
     # ── 公開控制 ──────────────────────────────────────────────────────────────
 
@@ -436,6 +535,8 @@ class LogMonitorEngine:
 
     def clear_summary(self, cleared_by: str) -> discord.Embed:
         self._active_incidents.clear()
+        # 清除 .env 中的訊息 ID，因為訊息內容已經改變
+        _clear_message_state()
         embed = discord.Embed(
             title="✅ Bot 日誌錯誤已清空",
             description="目前沒有待處理的錯誤彙整。新錯誤發生時會更新同一則訊息。",
@@ -493,11 +594,13 @@ class LogMonitorEngine:
                 except discord.NotFound:
                     self._summary_message = None
 
+            # 創建新訊息並保存 ID 到 .env
             self._summary_message = await channel.send(
                 embed=embed,
                 view=view,
                 silent=True,
             )
+            _save_message_state(self._summary_message.id)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
