@@ -38,6 +38,7 @@ jobs:
         import requests
         import aiohttp
         import asyncio
+        import random
         from datetime import datetime, timedelta
         
         # Gemini API配置
@@ -45,7 +46,7 @@ jobs:
         DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
         
         async def analyze_error_with_ai():
-            """使用Gemini AI分析最近錯誤日誌"""
+            """使用Gemini AI分析最近錯誤日誌（含速率限制保護）"""
             
             # 模擬獲取VM日誌（實際應通過SSH或API獲取）
             error_logs = """
@@ -83,29 +84,49 @@ jobs:
             }}
             """
             
-            try:
-                # 呼叫Gemini API
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-                payload = {
-                    "contents": [{
-                        "parts": [{"text": analysis_prompt}]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.3,
-                        "maxOutputTokens": 1000
+            # 速率限制保護
+            max_retries = 3
+            base_delay = 2
+            
+            for attempt in range(max_retries):
+                try:
+                    # 呼叫Gemini API
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+                    payload = {
+                        "contents": [{
+                            "parts": [{"text": analysis_prompt}]
+                        }],
+                        "generationConfig": {
+                            "temperature": 0.3,
+                            "maxOutputTokens": 800  # 減少token使用
+                        }
                     }
-                }
-                
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json=payload) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
-                            return content
-                        else:
-                            return f"API呼叫失敗: {response.status}"
-            except Exception as e:
-                return f"AI分析錯誤: {str(e)}"
+                    
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                        async with session.post(url, json=payload) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                                return content
+                            elif response.status == 429:
+                                # 速率限制 - 指數退避
+                                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                                print(f"⏳ API速率限制，等待 {delay:.1f} 秒後重試 (嘗試 {attempt + 1}/{max_retries})")
+                                if attempt < max_retries - 1:
+                                    await asyncio.sleep(delay)
+                                    continue
+                                else:
+                                    return "API速率限制，請稍後再試"
+                            else:
+                                return f"API呼叫失敗: {response.status}"
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(base_delay * (attempt + 1))
+                        continue
+                    else:
+                        return f"AI分析錯誤: {str(e)}"
+            
+            return "分析失敗，已達最大重試次數"
         
         async def create_auto_fix(ai_analysis):
             """根據AI分析生成修復代碼"""
