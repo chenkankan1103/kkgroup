@@ -1012,8 +1012,8 @@ class FortressDefenseCog(commands.Cog):
             
             try:
                 message = await channel.fetch_message(self._battle_message_id)
-                embed = build_status_embed(state, None)
-                await message.edit(embed=embed, view=FortressBattleView(self.bot))
+                embed = build_battle_embed(state)
+                await message.edit(embed=embed, view=FortressEnemyView(self))
             except discord.NotFound:
                 log.warning("[Fortress] 戰況訊息不存在，停止更新")
                 self._battle_message_id = None
