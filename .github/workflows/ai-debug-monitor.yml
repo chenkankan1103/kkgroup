@@ -2,7 +2,14 @@ name: AI Debug Monitor
 on:
   push:
     branches: [ main, master ]
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - '.gitignore'
   workflow_dispatch:
+  schedule:
+    # 每天凌晨 3 點執行一次（台灣時間）
+    - cron: '0 19 * * *'  # UTC 19:00 = 台灣時間 03:00
 
 jobs:
   ai-debug:
@@ -97,23 +104,9 @@ jobs:
                 ])
                 
                 if not has_errors:
-                    # 如果沒有實際錯誤，創建一個模擬錯誤用於測試
-                    error_logs = f"""
-                    服務狀態：
-                    - bot.service: {bot_status or 'active'}
-                    - shopbot.service: {shopbot_status or 'active'}
-                    - uibot.service: {uibot_status or 'active'}
-                    
-                    最近錯誤日誌：
-                    bot.service:
-                    [模擬測試] 系統運行正常，無實際錯誤。這是一個測試用例，用於驗證AI分析系統。
-                    
-                    shopbot.service:
-                    [模擬測試] 系統運行正常，無實際錯誤。
-                    
-                    uibot.service:
-                    [模擬測試] 系統運行正常，無實際錯誤。
-                    """
+                    # 如果沒有實際錯誤，跳過 AI 分析以節省 API 配額
+                    print("✅ 系統運行正常，跳過 AI 分析以節省 API 配額")
+                    return "系統運行正常，無需分析"
                 else:
                     error_logs = f"""
                     服務狀態：
@@ -179,8 +172,8 @@ jobs:
             
             else:
                 # 傳統API（降級方案）
-                max_retries = 5  # 增加重試次數
-                base_delay = 3   # 增加基礎延遲
+                max_retries = 3  # 減少重試次數以節省配額
+                base_delay = 5   # 增加延遲以避免速率限制
                 
                 for attempt in range(max_retries):
                     try:
