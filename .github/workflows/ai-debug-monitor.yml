@@ -11,6 +11,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+      id-token: write
     
     steps:
     - name: 檢出代碼
@@ -31,7 +32,7 @@ jobs:
       run: |
         pip install requests aiohttp python-dotenv
     
-    - name: AI錯誤分析器
+    - name: AI 錯誤分析器
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -43,6 +44,7 @@ jobs:
         import aiohttp
         import asyncio
         import random
+        import subprocess
         from datetime import datetime, timedelta
         
         # Gemini API配置
@@ -53,21 +55,48 @@ jobs:
             """使用LiteLLM AI分析最近錯誤日誌（含自動降級和速率限制保護）"""
             
             try:
+                import sys
+                sys.path.append('/home/e193752468/kkgroup')
                 from ai_client_liteLLM import LiteLLMClient
                 client = LiteLLMClient()
                 use_litellm = True
                 print("✅ 使用 LiteLLM 進行AI分析")
-            except ImportError:
+            except ImportError as e:
                 use_litellm = False
-                print("⚠️ LiteLLM 未安裝，使用傳統API")
+                print(f"⚠️ LiteLLM 載入失敗: {e}")
+                print("🔄 降級到傳統API")
             
-            # 模擬獲取VM日誌（實際應通過SSH或API獲取）
-            error_logs = """
-            最近錯誤摘要：
-            - bot.service: 記憶體使用過高導致OOM Killer觸發
-            - shopbot.service: 依賴套件版本衝突
-            - uibot.service: 資料庫連線超時
-            """
+            # 獲取真實VM日誌
+            try:
+                # 使用 gcloud 獲取服務狀態
+                bot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active bot.service'], capture_output=True, text=True).stdout.strip()
+                shopbot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active shopbot.service'], capture_output=True, text=True).stdout.strip()
+                uibot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active uibot.service'], capture_output=True, text=True).stdout.strip()
+                
+                # 獲取最近錯誤日誌
+                bot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
+                shopbot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u shopbot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
+                uibot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u uibot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
+                
+                error_logs = f"""
+                服務狀態：
+                - bot.service: {bot_status}
+                - shopbot.service: {shopbot_status}
+                - uibot.service: {uibot_status}
+                
+                最近錯誤日誌：
+                bot.service:
+                {bot_logs[-1000:] if bot_logs else "無日誌"}
+                
+                shopbot.service:
+                {shopbot_logs[-1000:] if shopbot_logs else "無日誌"}
+                
+                uibot.service:
+                {uibot_logs[-1000:] if uibot_logs else "無日誌"}
+                """
+                
+            except Exception as e:
+                error_logs = f"無法獲取VM日誌: {str(e)}"
             
             # AI分析提示
             analysis_prompt = f"""
@@ -165,38 +194,36 @@ jobs:
             {ai_analysis}
             
             請生成：
-            1. 修復代碼（Python）
-            2. 測試腳本
-            3. 部署指令
+            1. 具體的修復腳本
+            2. 修復後的驗證方法
+            3. 預防措施建議
             
-            格式要求：
-            - 使用markdown代碼區塊
-            - 包含詳細說明
-            - 考慮向後兼容性
+            請以JSON格式回覆：
+            {{
+                "fix_script": "修復代碼",
+                "verification": "驗證方法",
+                "prevention": "預防措施"
+            }}
             """
             
+            # 使用相同的API呼叫邏輯
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-                payload = {
-                    "contents": [{
-                        "parts": [{"text": fix_prompt}]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.2,
-                        "maxOutputTokens": 1500
-                    }
-                }
+                import sys
+                sys.path.append('/home/e193752468/kkgroup')
+                from ai_client_liteLLM import LiteLLMClient
+                client = LiteLLMClient()
+                messages = [
+                    {"role": "system", "content": "你是KKGroup Discord Bot系統的修復專家。"},
+                    {"role": "user", "content": fix_prompt}
+                ]
                 
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json=payload) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
-                            return content
-                        else:
-                            return "修復代碼生成失敗"
-            except Exception as e:
-                return f"修復生成錯誤: {str(e)}"
+                response = await client.acomplete(messages)
+                if response:
+                    return response["content"]
+                else:
+                    return "修復代碼生成失敗"
+            except ImportError:
+                return "修復代碼生成失敗"
         
         async def send_discord_notification(message, fix_code=""):
             """發送Discord通知"""
@@ -211,7 +238,7 @@ jobs:
                     "description": message,
                     "color": 15158332,  # Orange
                     "fields": [
-                        {"name": "🤖 AI引擎", "value": "Gemini 2.0 Flash", "inline": True},
+                        {"name": "🤖 AI引擎", "value": "LiteLLM 4層降級", "inline": True},
                         {"name": "📊 分析時間", "value": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "inline": True},
                         {"name": "🔧 自動修復", "value": "已生成" if fix_code else "僅分析", "inline": True}
                     ]
@@ -263,13 +290,63 @@ jobs:
         echo "🔍 AI除錯分析完成"
         echo "📊 分析報告已發送到Discord"
         echo "🔧 修復建議已生成"
-        echo "📋 請檢查Discord頻道獲取詳細報告"
+        echo "📋 請請檢查Discord頻道獲取詳細報告"
     
     - name: 自動修復（可選）
       if: github.event_name == 'workflow_dispatch'
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: |
-        echo "🔧 執行自動修復流程..."
-        # 這裡可以加入自動提交修復代碼的邏輯
-        # 例如：自動創建PR、修改配置文件等
+        python3 << 'EOF'
+        import os
+        import subprocess
+        import json
+        
+        GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        
+        async def execute_vm_repair():
+            """執行VM修復操作"""
+            try:
+                # 獲取AI分析結果
+                print("🔍 獲取AI分析結果...")
+                
+                # 使用 gcloud 獲取服務狀態
+                bot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active bot.service'], capture_output=True, text=True).stdout.strip()
+                shopbot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active shopbot.service'], capture_output=True, text=True).stdout.strip()
+                uibot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active uibot.service'], capture_output=True, text=True).stdout.strip()
+                
+                print(f"📊 服務狀態:")
+                print(f"  - bot.service: {bot_status}")
+                print(f"  - shopbot.service: {shopbot_status}")
+                print(f"  - uibot.service: {uibot_status}")
+                
+                # 智能修復邏輯
+                if bot_status == "inactive" or "failed" in bot_status:
+                    print("🔄 重啟 bot.service...")
+                    result = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl restart bot.service'], capture_output=True, text=True)
+                    print(f"重啟結果: {result.stdout}")
+                
+                if shopbot_status == "inactive" or "failed" in shopbot_status:
+                    print("🔄 重啟 shopbot.service...")
+                    result = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl restart shopbot.service'], capture_output=True, text=True)
+                    print(f"重啟結果: {result.stdout}")
+                
+                if uibot_status == "inactive" or "failed" in uibot_status:
+                    print("🔄 重啟 uibot.service...")
+                    result = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl restart uibot.service'], capture_output=True, text=True)
+                    print(f"重啟結果: {result.stdout}")
+                
+                # 檢查記憶體使用情況
+                print("🧹 檢查記憶體使用情況...")
+                memory_result = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'free -h'], capture_output=True, text=True)
+                print(f"記憶體狀態: {memory_result.stdout}")
+                
+                return "VM修復操作完成"
+                
+            except Exception as e:
+                return f"VM修復失敗: {str(e)}"
+        
+        import asyncio
+        result = asyncio.run(execute_vm_repair())
+        print(f"✅ 修復操作完成: {result}")
+        EOF
