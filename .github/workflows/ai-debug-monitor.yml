@@ -50,7 +50,16 @@ jobs:
         DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
         
         async def analyze_error_with_ai():
-            """使用Gemini AI分析最近錯誤日誌（含速率限制保護）"""
+            """使用LiteLLM AI分析最近錯誤日誌（含自動降級和速率限制保護）"""
+            
+            try:
+                from ai_client_liteLLM import LiteLLMClient
+                client = LiteLLMClient()
+                use_litellm = True
+                print("✅ 使用 LiteLLM 進行AI分析")
+            except ImportError:
+                use_litellm = False
+                print("⚠️ LiteLLM 未安裝，使用傳統API")
             
             # 模擬獲取VM日誌（實際應通過SSH或API獲取）
             error_logs = """
@@ -60,7 +69,7 @@ jobs:
             - uibot.service: 資料庫連線超時
             """
             
-            # Gemini AI分析提示
+            # AI分析提示
             analysis_prompt = f"""
             你是KKGroup Discord Bot系統的AI除錯專家。
             
@@ -88,49 +97,64 @@ jobs:
             }}
             """
             
-            # 速率限制保護
-            max_retries = 3
-            base_delay = 2
+            if use_litellm:
+                # 使用 LiteLLM
+                messages = [
+                    {"role": "system", "content": "你是KKGroup Discord Bot系統的AI除錯專家。"},
+                    {"role": "user", "content": analysis_prompt}
+                ]
+                
+                response = await client.acomplete(messages)
+                if response:
+                    print(f"✅ AI分析完成，使用模型: {response.get('model', 'unknown')}")
+                    return response["content"]
+                else:
+                    return "LiteLLM 分析失敗"
             
-            for attempt in range(max_retries):
-                try:
-                    # 呼叫Gemini API
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-                    payload = {
-                        "contents": [{
-                            "parts": [{"text": analysis_prompt}]
-                        }],
-                        "generationConfig": {
-                            "temperature": 0.3,
-                            "maxOutputTokens": 800  # 減少token使用
+            else:
+                # 傳統API（降級方案）
+                max_retries = 3
+                base_delay = 2
+                
+                for attempt in range(max_retries):
+                    try:
+                        # 呼叫Gemini API
+                        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+                        payload = {
+                            "contents": [{
+                                "parts": [{"text": analysis_prompt}]
+                            }],
+                            "generationConfig": {
+                                "temperature": 0.3,
+                                "maxOutputTokens": 800
+                            }
                         }
-                    }
-                    
-                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                        async with session.post(url, json=payload) as response:
-                            if response.status == 200:
-                                data = await response.json()
-                                content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
-                                return content
-                            elif response.status == 429:
-                                # 速率限制 - 指數退避
-                                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                                print(f"⏳ API速率限制，等待 {delay:.1f} 秒後重試 (嘗試 {attempt + 1}/{max_retries})")
-                                if attempt < max_retries - 1:
-                                    await asyncio.sleep(delay)
-                                    continue
+                        
+                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                            async with session.post(url, json=payload) as response:
+                                if response.status == 200:
+                                    data = await response.json()
+                                    content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                                    return content
+                                elif response.status == 429:
+                                    # 速率限制 - 指數退避
+                                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                                    print(f"⏳ API速率限制，等待 {delay:.1f} 秒後重試 (嘗試 {attempt + 1}/{max_retries})")
+                                    if attempt < max_retries - 1:
+                                        await asyncio.sleep(delay)
+                                        continue
+                                    else:
+                                        return "API速率限制，請稍後再試"
                                 else:
-                                    return "API速率限制，請稍後再試"
-                            else:
-                                return f"API呼叫失敗: {response.status}"
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(base_delay * (attempt + 1))
-                        continue
-                    else:
-                        return f"AI分析錯誤: {str(e)}"
-            
-            return "分析失敗，已達最大重試次數"
+                                    return f"API呼叫失敗: {response.status}"
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(base_delay * (attempt + 1))
+                            continue
+                        else:
+                            return f"AI分析錯誤: {str(e)}"
+                
+                return "分析失敗，已達最大重試次數"
         
         async def create_auto_fix(ai_analysis):
             """根據AI分析生成修復代碼"""
