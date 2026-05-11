@@ -121,9 +121,12 @@ class ScamHub(commands.Cog):
                         self.room_messages.pop(room_id, None)
 
                 # 如果頻道仍有成員，重啟後立即同步狀態消息
-                if await self._get_voice_members(vc):
+                members = await self._get_voice_members(vc)
+                if members:
                     await self.update_voice_status(vc)
+                    print(f"[ScamHub] 啟動檢查: 頻道 {room_name} 有 {len(members)} 人，恢復正常運作")
                 else:
+                    print(f"[ScamHub] 啟動檢查: 頻道 {room_name} 為空，啟動刪除倒數")
                     await self._schedule_deletion(room_id)
 
                 restored += 1
@@ -151,15 +154,19 @@ class ScamHub(commands.Cog):
     async def _get_voice_members(self, vc):
         """返回頻道中的成員清單。
         
-        注意：discord.py 中 Guild 沒有 voice_states 屬性，
-        只能依靠 VoiceChannel.members 屬性（已緩存）。
+        注意：使用 fetch_channel 確保獲取最新狀態，避免依賴過期緩存。
         """
         if not vc:
             return []
         
-        # 直接返回頻道成員，該屬性已由 Discord 緩存
         try:
+            # 先嘗試獲取最新頻道狀態
+            fresh_vc = await self._resolve_voice_channel(vc.id)
+            if fresh_vc:
+                vc = fresh_vc
+            
             members = list(vc.members) if hasattr(vc, 'members') else []
+            print(f"[ScamHub] 🔍 _get_voice_members: 頻道 {vc.name} (ID: {vc.id}) 成員: {[m.name for m in members]}")
             return members
         except Exception as e:
             print(f"[ScamHub] ⚠️ _get_voice_members 取得成員時發生錯誤: {e}")
@@ -210,7 +217,6 @@ class ScamHub(commands.Cog):
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute("UPDATE scam_rooms SET is_active=0 WHERE room_id=?", (room_id,))
                 await db.commit()
-            print(f"[ScamHub] 房間 {room_id} 已從數據庫標記為非活躍")
         except Exception as e:
             print(f"[ScamHub] 刪除房間 {room_id} 數據庫記錄時發生錯誤: {e}")
 
@@ -229,6 +235,7 @@ class ScamHub(commands.Cog):
         
         async def deletion_countdown():
             start_time = datetime.utcnow()
+            room_name = "Unknown"
             try:
                 vc = await self._resolve_voice_channel(room_id)
                 room_name = vc.name if vc else f"Unknown-{room_id}"
@@ -244,9 +251,8 @@ class ScamHub(commands.Cog):
                     print(f"[ScamHub] ⚠️ 房間 {room_id} 已從 active_rooms 中移除，停止刪除程序")
                     return
                 
-                vc = self.bot.get_channel(room_id)
-                if not vc:
-                    vc = await self._resolve_voice_channel(room_id)
+                # 再次獲取最新頻道狀態
+                vc = await self._resolve_voice_channel(room_id)
                 
                 if not vc:
                     print(f"[ScamHub] ⚠️ 房間 {room_id} 不存在或無法取得，清理資料")
@@ -255,9 +261,11 @@ class ScamHub(commands.Cog):
                     await self._delete_room_from_db(room_id)
                     return
                 
-                # 檢查是否確實還是無人
+                # 檢查是否確實還是無人 - 使用最新狀態
                 members = await self._get_voice_members(vc)
                 member_count = len(members)
+                
+                print(f"[ScamHub] 🔍 檢查結果: 頻道 {room_name} 成員數: {member_count}, 成員列表: {[m.name for m in members]}")
                 
                 if member_count == 0:
                     print(f"[ScamHub] 🗑️ 執行刪除: {vc.name} (ID: {room_id}) - 無人語音頻道 (成員數: 0)")
@@ -268,22 +276,34 @@ class ScamHub(commands.Cog):
                         print(f"[ScamHub] ❌ 權限不足：無法刪除頻道 {room_id} (需要 manage_channels 權限)")
                     except discord.HTTPException as e:
                         print(f"[ScamHub] ❌ HTTP 錯誤：刪除頻道 {room_id} 失敗 - {e}")
+                    except Exception as e:
+                        print(f"[ScamHub] ❌ 刪除頻道 {room_id} 時發生未預期錯誤: {type(e).__name__}: {e}")
                     finally:
+                        # 確保清理所有相關數據
                         self.active_rooms.pop(room_id, None)
                         self.room_messages.pop(room_id, None)
                         await self._delete_room_from_db(room_id)
+                        print(f"[ScamHub] 🧹 已清理房間 {room_id} 的所有相關數據")
                 else:
                     print(f"[ScamHub] ⏸️ 倒數計時完成但檢查到 {member_count} 人在頻道中 {[m.name for m in members]}，取消刪除")
                     # 清空倒數任務標記，以便下次無人時可以重新啟動
-                    room_data['deletion_task'] = None
+                    if room_id in self.active_rooms:
+                        self.active_rooms[room_id]['deletion_task'] = None
                     
             except asyncio.CancelledError:
                 print(f"[ScamHub] ⏹️ 房間 {room_id} 的刪除倒數計時已被取消 (有人加入)")
+                # 確保清理任務引用
+                if room_id in self.active_rooms:
+                    self.active_rooms[room_id]['deletion_task'] = None
                 
             except Exception as e:
                 print(f"[ScamHub] ❌ 刪除房間 {room_id} 時發生未預期的錯誤: {type(e).__name__}: {e}")
                 import traceback
                 traceback.print_exc()
+                # 確保在錯誤情況下也清理數據
+                self.active_rooms.pop(room_id, None)
+                self.room_messages.pop(room_id, None)
+                await self._delete_room_from_db(room_id)
         
         # 建立並保存倒數任務
         deletion_task = asyncio.create_task(deletion_countdown())
@@ -320,7 +340,7 @@ class ScamHub(commands.Cog):
             
             async with aiohttp.ClientSession() as session:
                 headers = {
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Authorization": f"Bearer {AI_API_KEY}",
                     "Content-Type": "application/json"
                 }
                 payload = {
@@ -402,6 +422,7 @@ class ScamHub(commands.Cog):
             
         except Exception as e:
             print(f"更新語音狀態失敗: {e}")
+
 
     @tasks.loop(minutes=5)
     async def scam_event_task(self):
@@ -588,6 +609,9 @@ class ScamHub(commands.Cog):
 
         # 處理用戶離開詐騙小組頻道的情況
         if before.channel and before.channel.id in self.active_rooms:
+            # 等待一小段時間讓 Discord 狀態同步
+            await asyncio.sleep(0.5)
+            
             current_members = len(await self._get_voice_members(before.channel))
             print(f"[ScamHub] 👤 用戶 {member.display_name} 離開頻道 {before.channel.name}, 剩餘人數: {current_members}")
             
