@@ -270,7 +270,7 @@ jobs:
             
             taiwan_now = get_taiwan_time()
             webhook_data = {
-                "content": f"@silent 🤖 **AI除錯報告** - {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}",
+                "content": f"🤖 **AI除錯報告** - {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}",
                 "embeds": [{
                     "title": "🔍 系統錯誤分析",
                     "description": message,
@@ -280,7 +280,8 @@ jobs:
                         {"name": "📊 分析時間", "value": f"{taiwan_now.strftime('%Y-%m-%d %H:%M:%S')} (台灣時間)", "inline": True},
                         {"name": "🔧 自動修復", "value": "已生成" if fix_code else "僅分析", "inline": True}
                     ]
-                }]
+                }],
+                "flags": 4096  # SUPPRESS_NOTIFICATIONS flag
             }
             
             if fix_code:
