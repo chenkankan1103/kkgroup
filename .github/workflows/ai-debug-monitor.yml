@@ -3,11 +3,6 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
-  inputs:
-    trigger_debug:
-      description: '手動觸發AI除錯'
-      required: false
-      default: 'manual'
 
 jobs:
   ai-debug:
