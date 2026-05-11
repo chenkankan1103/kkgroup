@@ -181,46 +181,82 @@ class LiteLLMClient:
         return None
     
     async def _fallback_completion(self, messages: List[Dict[str, str]], tools_spec: Optional[List[Dict]] = None) -> Optional[Dict]:
-        """降級到傳統 API 呼叫"""
+        """降級到傳統 API 呼叫 - 直接實現避免循環導入"""
         try:
-            from .AI import LLMClient
-            client = LLMClient()
-            
-            # 嘗試 Gemini
+            # 嘗試 Gemini 原生 API
             if GEMINI_KEY:
+                import aiohttp
+                
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": GEMINI_KEY
+                }
+                
+                # 轉換訊息格式
                 contents = []
+                system_prompt = ""
                 for msg in messages:
-                    role = "user" if msg["role"] == "user" else "model"
-                    contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+                    if msg["role"] == "system":
+                        system_prompt = msg["content"]
+                    elif msg["role"] == "user":
+                        contents.append({"role": "user", "parts": [{"text": msg["content"]}]})
+                    elif msg["role"] == "assistant":
+                        contents.append({"role": "model", "parts": [{"text": msg["content"]}]})
                 
-                result = await client.gemini(
-                    GEMINI_KEY, 
-                    "gemini-2.0-flash",
-                    "你是一個 AI 助手",
-                    contents,
-                    tools_spec
-                )
-                
-                if result:
-                    parts = result.get("content", {}).get("parts", [])
-                    if parts and "text" in parts[0]:
-                        return {
-                            "content": parts[0]["text"],
-                            "tool_calls": None,
-                            "model": "gemini-fallback",
-                            "usage": {}
-                        }
-            
-            # 嘗試 Groq
-            if GROQ_KEY:
-                result = await client.groq(messages)
-                if result:
-                    return {
-                        "content": result,
-                        "tool_calls": None,
-                        "model": "groq-fallback", 
-                        "usage": {}
+                data = {
+                    "contents": contents,
+                    "systemInstruction": {"parts": [{"text": system_prompt or "你是一個 AI 助手"}]},
+                    "generationConfig": {
+                        "temperature": 0.7,
+                        "maxOutputTokens": 1000
                     }
+                }
+                
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            if "candidates" in result and result["candidates"]:
+                                content = result["candidates"][0]["content"]["parts"][0]["text"]
+                                return {
+                                    "content": content,
+                                    "tool_calls": None,
+                                    "model": "gemini-fallback",
+                                    "usage": {}
+                                }
+            
+            # 嘗試 Groq 原生 API
+            if GROQ_KEY:
+                import aiohttp
+                
+                headers = {
+                    "Authorization": f"Bearer {GROQ_KEY}",
+                    "Content-Type": "application/json"
+                }
+                
+                data = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": messages,
+                    "max_tokens": 500,
+                    "temperature": 0.7
+                }
+                
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            if "choices" in result and result["choices"]:
+                                content = result["choices"][0]["message"]["content"]
+                                return {
+                                    "content": content,
+                                    "tool_calls": None,
+                                    "model": "groq-fallback", 
+                                    "usage": {}
+                                }
         
         except Exception as e:
             logger.error(f"❌ 降級 API 呼叫失敗: {e}")
