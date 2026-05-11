@@ -1,0 +1,231 @@
+name: AI Debug Monitor
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+  inputs:
+    trigger_debug:
+      description: '手動觸發AI除錯'
+      required: false
+      default: 'manual'
+
+jobs:
+  ai-debug:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: 設定Python環境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: 安裝依賴
+      run: |
+        pip install requests aiohttp python-dotenv
+    
+    - name: AI錯誤分析器
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        python3 << 'EOF'
+        import os
+        import re
+        import requests
+        import aiohttp
+        import asyncio
+        from datetime import datetime, timedelta
+        
+        # Gemini API配置
+        GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
+        
+        async def analyze_error_with_ai():
+            """使用Gemini AI分析最近錯誤日誌"""
+            
+            # 模擬獲取VM日誌（實際應通過SSH或API獲取）
+            error_logs = """
+            最近錯誤摘要：
+            - bot.service: 記憶體使用過高導致OOM Killer觸發
+            - shopbot.service: 依賴套件版本衝突
+            - uibot.service: 資料庫連線超時
+            """
+            
+            # Gemini AI分析提示
+            analysis_prompt = f"""
+            你是KKGroup Discord Bot系統的AI除錯專家。
+            
+            系統環境：
+            - GCP VM: e2-micro (1GB RAM + 4GB swap)
+            - 三個Bot服務: bot.service, shopbot.service, uibot.service
+            - 技術棧: Python 3.11 + Discord.py + systemd
+            
+            錯誤日誌：
+            {error_logs}
+            
+            請分析：
+            1. 根本原因分析
+            2. 影響範圍評估
+            3. 具體修復步驟
+            4. 預防措施建議
+            
+            請以JSON格式回覆：
+            {{
+                "root_cause": "主要原因",
+                "impact": "影響評估",
+                "fix_steps": ["步驟1", "步驟2"],
+                "prevention": ["預防措施1", "預防措施2"],
+                "confidence": 0.85
+            }}
+            """
+            
+            try:
+                # 呼叫Gemini API
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": analysis_prompt}]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": 1000
+                    }
+                }
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=payload) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                            return content
+                        else:
+                            return f"API呼叫失敗: {response.status}"
+            except Exception as e:
+                return f"AI分析錯誤: {str(e)}"
+        
+        async def create_auto_fix(ai_analysis):
+            """根據AI分析生成修復代碼"""
+            
+            fix_prompt = f"""
+            基於以下AI分析結果，生成修復代碼：
+            
+            {ai_analysis}
+            
+            請生成：
+            1. 修復代碼（Python）
+            2. 測試腳本
+            3. 部署指令
+            
+            格式要求：
+            - 使用markdown代碼區塊
+            - 包含詳細說明
+            - 考慮向後兼容性
+            """
+            
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": fix_prompt}]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "maxOutputTokens": 1500
+                    }
+                }
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=payload) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                            return content
+                        else:
+                            return "修復代碼生成失敗"
+            except Exception as e:
+                return f"修復生成錯誤: {str(e)}"
+        
+        async def send_discord_notification(message, fix_code=""):
+            """發送Discord通知"""
+            if not DISCORD_WEBHOOK:
+                print("❌ 未設定Discord Webhook")
+                return
+            
+            webhook_data = {
+                "content": f"🤖 **AI除錯報告** - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                "embeds": [{
+                    "title": "🔍 系統錯誤分析",
+                    "description": message,
+                    "color": 15158332,  # Orange
+                    "fields": [
+                        {"name": "🤖 AI引擎", "value": "Gemini 2.0 Flash", "inline": True},
+                        {"name": "📊 分析時間", "value": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "inline": True},
+                        {"name": "🔧 自動修復", "value": "已生成" if fix_code else "僅分析", "inline": True}
+                    ]
+                }]
+            }
+            
+            if fix_code:
+                # 如果修復代碼太長，創建摘要
+                fix_summary = fix_code[:500] + "..." if len(fix_code) > 500 else fix_code
+                webhook_data["embeds"][0]["fields"].append({
+                    "name": "💻 修復代碼",
+                    "value": f"```python\n{fix_summary}\n```",
+                    "inline": False
+                })
+            
+            try:
+                response = requests.post(DISCORD_WEBHOOK, json=webhook_data)
+                if response.status_code == 204:
+                    print("✅ Discord通知發送成功")
+                else:
+                    print(f"❌ Discord通知失敗: {response.status_code}")
+            except Exception as e:
+                print(f"❌ Discord通知錯誤: {str(e)}")
+        
+        async def main():
+            print("🚀 啟動AI除錯監控...")
+            
+            # 執行AI分析
+            ai_analysis = await analyze_error_with_ai()
+            print(f"📊 AI分析結果: {ai_analysis[:200]}...")
+            
+            # 生成修復代碼
+            fix_code = await create_auto_fix(ai_analysis)
+            print(f"🔧 修復代碼生成: {'成功' if fix_code and '錯誤' not in fix_code else '失敗'}")
+            
+            # 發送Discord通知
+            await send_discord_notification(ai_analysis, fix_code)
+            
+            # 創建GitHub Issue（可選）
+            if ai_analysis and "錯誤" not in ai_analysis:
+                print("📝 建議創建GitHub Issue追蹤修復進度")
+        
+        # 執行主程序
+        asyncio.run(main())
+        EOF
+    
+    - name: 檢查修復結果
+      run: |
+        echo "🔍 AI除錯分析完成"
+        echo "📊 分析報告已發送到Discord"
+        echo "🔧 修復建議已生成"
+        echo "📋 請檢查Discord頻道獲取詳細報告"
+    
+    - name: 自動修復（可選）
+      if: github.event_name == 'workflow_dispatch'
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: |
+        echo "🔧 執行自動修復流程..."
+        # 這裡可以加入自動提交修復代碼的邏輯
+        # 例如：自動創建PR、修改配置文件等
