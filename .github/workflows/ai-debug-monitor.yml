@@ -255,10 +255,15 @@ jobs:
             except ImportError:
                 return "修復代碼生成失敗"
         
-        async def send_discord_notification(message, fix_code=""):
-            """發送Discord通知"""
+        async def send_discord_notification(message, fix_code="", message_id=None):
+            """發送或編輯Discord通知"""
             if not DISCORD_WEBHOOK:
                 print("❌ 未設定Discord Webhook")
+                return
+            
+            # 如果沒有錯誤，直接返回不發送通知
+            if "系統運行正常" in message or "無需分析" in message:
+                print("✅ 系統正常，跳過Discord通知")
                 return
             
             taiwan_now = get_taiwan_time()
@@ -287,13 +292,30 @@ jobs:
                 })
             
             try:
-                response = requests.post(DISCORD_WEBHOOK, json=webhook_data)
-                if response.status_code == 204:
-                    print("✅ Discord通知發送成功")
+                if message_id:
+                    # 編輯現有訊息
+                    edit_url = f"{DISCORD_WEBHOOK}/messages/{message_id}"
+                    response = requests.patch(edit_url, json=webhook_data)
+                    if response.status_code == 204:
+                        print(f"✅ Discord通知編輯成功 (ID: {message_id})")
+                    else:
+                        print(f"❌ Discord通知編輯失敗: {response.status_code}")
                 else:
-                    print(f"❌ Discord通知失敗: {response.status_code}")
+                    # 發送新訊息
+                    response = requests.post(DISCORD_WEBHOOK, json=webhook_data)
+                    if response.status_code == 204:
+                        print("✅ Discord通知發送成功")
+                        # 嘗試獲取 message_id（從響應頭中）
+                        message_id = response.headers.get('X-Message-ID')
+                        if message_id:
+                            print(f"📝 訊息ID已註冊: {message_id}")
+                            return message_id
+                    else:
+                        print(f"❌ Discord通知失敗: {response.status_code}")
             except Exception as e:
                 print(f"❌ Discord通知錯誤: {str(e)}")
+            
+            return None
         
         async def main():
             print("🚀 啟動AI除錯監控...")
@@ -302,12 +324,17 @@ jobs:
             ai_analysis = await analyze_error_with_ai()
             print(f"📊 AI分析結果: {ai_analysis[:200]}...")
             
+            # 如果系統正常，直接結束
+            if "系統運行正常" in ai_analysis or "無需分析" in ai_analysis:
+                print("✅ 系統正常，無需發送通知")
+                return
+            
             # 生成修復代碼
             fix_code = await create_auto_fix(ai_analysis)
             print(f"🔧 修復代碼生成: {'成功' if fix_code and '錯誤' not in fix_code else '失敗'}")
             
             # 發送Discord通知
-            await send_discord_notification(ai_analysis, fix_code)
+            message_id = await send_discord_notification(ai_analysis, fix_code)
             
             # 創建GitHub Issue（可選）
             if ai_analysis and "錯誤" not in ai_analysis:
