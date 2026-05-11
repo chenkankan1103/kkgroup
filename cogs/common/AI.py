@@ -72,17 +72,27 @@ MAX_HISTORY   = 10  # 每用戶保留的最大對話輪數
 # ══════════════════════════════════════════════════════════════════════════════
 
 class LLMClient:
-    """統一的 LLM API 客戶端。
+    """統一的 LLM API 客戶端 (使用 LiteLLM)。
     
     - gemini()：呼叫 Gemini generateContent，支援原生 Function Calling
     - groq()  ：呼叫 Groq（OpenAI 相容格式），純文字，無工具
-    - 內建 429 冷却機制，避免頻繁撞配額限制
+    - 內建自動降級、重試、速率限制保護
     """
 
     def __init__(self):
-        self._cooldowns: Dict[str, float] = {}
+        try:
+            from .ai_client_liteLLM import LiteLLMClient
+            self._litellm_client = LiteLLMClient()
+            self._use_litellm = True
+            logger.info("✅ LLMClient 使用 LiteLLM")
+        except ImportError:
+            self._use_litellm = False
+            self._cooldowns: Dict[str, float] = {}
+            logger.warning("⚠️ LiteLLM 未安裝，使用傳統 API")
 
     def _is_cooling(self, name: str) -> bool:
+        if self._use_litellm:
+            return False
         exp = self._cooldowns.get(name, 0)
         if time.time() < exp:
             logger.warning(f"❄️ {name} 冷却中（{int(exp - time.time())}s 後恢復）")
@@ -91,6 +101,8 @@ class LLMClient:
         return False
 
     def _cool(self, name: str, secs: int = 60):
+        if self._use_litellm:
+            return
         self._cooldowns[name] = time.time() + secs
         logger.warning(f"⏸️ {name} 進入冷却 {secs}s")
 
@@ -108,6 +120,61 @@ class LLMClient:
         
         caller 透過 candidate["content"]["parts"] 解析文字或 functionCall。
         """
+        if self._use_litellm:
+            return await self._gemini_with_litellm(api_key, model, system, contents, tools_spec, label)
+        else:
+            return await self._gemini_traditional(api_key, model, system, contents, tools_spec, label)
+
+    async def _gemini_with_litellm(
+        self,
+        api_key: str,
+        model: str,
+        system: str,
+        contents: List[Dict],
+        tools_spec: Optional[List[Dict]] = None,
+        label: str = "Gemini",
+    ) -> Optional[Dict]:
+        """使用 LiteLLM 呼叫 Gemini"""
+        # 轉換格式
+        messages = [{"role": "system", "content": system}]
+        
+        for content in contents:
+            role = content["role"]
+            parts = content.get("parts", [])
+            if parts and "text" in parts[0]:
+                messages.append({"role": role, "content": parts[0]["text"]})
+            elif parts and "functionCall" in parts[0]:
+                # 處理工具調用
+                fc = parts[0]["functionCall"]
+                messages.append({
+                    "role": "assistant", 
+                    "content": f"調用工具: {fc['name']}({fc.get('args', {})})"
+                })
+        
+        response = await self._litellm_client.acomplete(messages, tools_spec)
+        
+        if response:
+            # 轉換回原始格式
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{"text": response["content"]}]
+                    }
+                }]
+            }
+        
+        return None
+
+    async def _gemini_traditional(
+        self,
+        api_key: str,
+        model: str,
+        system: str,
+        contents: List[Dict],
+        tools_spec: Optional[List[Dict]] = None,
+        label: str = "Gemini",
+    ) -> Optional[Dict]:
+        """傳統 Gemini API 呼叫"""
         if self._is_cooling(label):
             return None
 
@@ -156,6 +223,28 @@ class LLMClient:
         max_tokens: int = 500,
     ) -> Optional[str]:
         """呼叫 Groq，回傳文字或 None。"""
+        if self._use_litellm:
+            return await self._groq_with_litellm(messages, model, max_tokens)
+        else:
+            return await self._groq_traditional(messages, model, max_tokens)
+
+    async def _groq_with_litellm(
+        self,
+        messages: List[Dict],
+        model: str = "",
+        max_tokens: int = 500,
+    ) -> Optional[str]:
+        """使用 LiteLLM 呼叫 Groq"""
+        response = await self._litellm_client.acomplete(messages)
+        return response["content"] if response else None
+
+    async def _groq_traditional(
+        self,
+        messages: List[Dict],
+        model: str = "",
+        max_tokens: int = 500,
+    ) -> Optional[str]:
+        """傳統 Groq API 呼叫"""
         if not GROQ_KEY:
             return None
         if self._is_cooling("Groq"):
