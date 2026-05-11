@@ -123,21 +123,29 @@ if __name__ == "__main__":
     update_and_restart()
 ```
 
-### 2. Cron 排程設定
-**Cron 任務**:
+### 2. 自動部署機制
+**GitHub Webhook 部署**:
 ```bash
-# 編輯 crontab
-crontab -e
+# 主要部署方式：GitHub Webhook 即時觸發
+# 當代碼 push 到 main 分支時自動部署
+# 流程：Git Push → GitHub Webhook → VM Webhook 接收器 → Git Pull → 重啟服務
 
-# 每5分鐘檢查更新並重啟
-*/5 * * * * /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/update_restart.py
-
-# 每5分鐘同步到 Google Sheets
+# 備用 Cron 任務（僅用於監控和維護）
 */5 * * * * /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/sync_to_sheet.py
+
+# 置物櫃批量更新（每周三、六下午2點）
+0 14 * * 3,6 /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/refresh_all_lockers_cron.py
 
 # 每週一凌晨3點備份
 0 3 * * 1 /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/weekly_backup.py
 ```
+
+**Webhook 部署詳情**:
+- **觸發條件**: Push 到 main/master 分支
+- **執行位置**: `/web/blueprints/webhook.py`
+- **操作流程**: Git Pull → 重啟所有服務
+- **服務列表**: `bot.service`, `shopbot.service`, `uibot.service`
+- **通知機制**: 部署結果發送到 Discord 頻道
 
 ### 3. 部署腳本
 **自動部署腳本** (`config/scripts/deploy_gcp.sh`):

@@ -66,12 +66,23 @@ tcp6       0      0 :::80                   :::*                    LISTEN
 
 ## 自動化任務
 
-### Cron 排程
+### 自動化任務配置
 ```bash
+# 主要部署方式：GitHub Webhook 即時觸發
+# 當代碼 push 到 main 分支時自動部署
+# 流程：Git Push → GitHub Webhook → VM Webhook 接收器 → Git Pull → 重啟服務
+
+# Cron 排程（僅用於維護任務）
 # m h  dom mon dow   command
-0 3 * * 0 cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /var/log/kkgroup_locker_refresh.log 2>&1
+0 14 * * 3,6 cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /var/log/kkgroup_locker_refresh.log 2>&1
 0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python weekly_backup.py >> /tmp/weekly_backup.log 2>&1
 ```
+
+**部署機制說明**:
+- **即時部署**: GitHub Webhook 觸發，無需等待定時任務
+- **Webhook 接收器**: `/web/blueprints/webhook.py`
+- **執行操作**: `git pull` + `systemctl restart` 所有服務
+- **通知機制**: 部署結果發送到 Discord 系統頻道
 
 ### 環境變數設定
 ```bash
