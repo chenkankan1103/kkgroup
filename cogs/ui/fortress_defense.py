@@ -416,11 +416,23 @@ def _build_td_map(state: fs.FortressState) -> str:
     for row, col in layout["path_coords"]:
         grid[row][col] = layout["path_tile"]
 
-    # 畫砲台
+    # 畫砲台和攻擊範圍
     occupied_slots = set(state.tower_slots.values())
     for slot_id, meta in layout["tower_slots"].items():
         row, col = meta["coord"]
         grid[row][col] = "🗼" if slot_id in occupied_slots else "🔲"
+        
+        # 如果砲台被被佔用，顯示攻擊範圍（2格範圍）
+        if slot_id in occupied_slots:
+            for dr in range(-2, 3):
+                for dc in range(-2, 3):
+                    nr, nc = row + dr, col + dc
+                    # 曼哈頓距離 <= 2
+                    if abs(dr) + abs(dc) <= 2 and 0 <= nr < rows and 0 <= nc < cols:
+                        # 不覆蓋路徑、堡壘、其他砲台
+                        if (grid[nr][nc] == layout["ground_tile"] or 
+                            grid[nr][nc] == "🔲"):
+                            grid[nr][nc] = "⚡"
 
     # 畫堡壘
     fort_row, fort_col = layout["fort_coord"]
@@ -557,8 +569,9 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
     embed.add_field(
         name="🗺️ 戰線說明",
         value=(
-            f"{layout['name']} 會依輪次自動切換；🔲 可蓋塔，🗼 已架設砲台，🏯 是園區核心。\n"
-            f"📏 {_movement_rule_text(layout)}"
+            f"{layout['name']} 會依輪次自動切換；🔲 可蓋塔，🗼 已架設砲台，⚡ 砲台攻擊範圍，🏯 是園區核心。\n"
+            f"📏 {_movement_rule_text(layout)}\n"
+            f"🔥 砲台每30秒自動攻擊範圍內敵人（2格範圍）"
         ),
         inline=False,
     )
@@ -685,6 +698,7 @@ class FortressDefenseCog(commands.Cog):
         self.update_trends_scheduled.start()
         self.command_poll_task.start()
         self.enemy_movement_task.start()
+        self.tower_attack_task.start()
         log.info("[Fortress] Cog 已初始化")
 
     def cog_unload(self):
@@ -692,6 +706,7 @@ class FortressDefenseCog(commands.Cog):
         self.update_trends_scheduled.cancel()
         self.command_poll_task.cancel()
         self.enemy_movement_task.cancel()
+        self.tower_attack_task.cancel()
 
     # ── 斜線指令 ───────────────────────────────────────────
 
@@ -994,6 +1009,24 @@ class FortressDefenseCog(commands.Cog):
 
     @enemy_movement_task.before_loop
     async def before_enemy_movement(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(seconds=30)
+    async def tower_attack_task(self):
+        """每30秒執行砲台自動攻擊"""
+        try:
+            success, msg = fs.tower_auto_attack()
+            if success:
+                # 更新戰況 Embed
+                state = fs.get_current_battle()
+                if state and state.is_active():
+                    await self._refresh_battle_embed_scheduled()
+                    log.info(f"[Fortress] 砲台攻擊: {msg}")
+        except Exception as e:
+            log.error(f"[Fortress] 砲台攻擊任務出錯: {e}")
+
+    @tower_attack_task.before_loop
+    async def before_tower_attack(self):
         await self.bot.wait_until_ready()
 
     async def _refresh_battle_embed_scheduled(self):

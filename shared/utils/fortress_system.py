@@ -19,8 +19,8 @@ TW_TZ = ZoneInfo("Asia/Taipei")
 
 # ── 遊戲常數 ──────────────────────────────────────────────
 FORTRESS_MAX_HP = 15000         # 堡壘最大 HP
-BASE_DAMAGE_FREE = 250          # 免費出兵基礎傷害
-BASE_DAMAGE_PAID = 800          # 付費強化基礎傷害
+BASE_DAMAGE_FREE = 80           # 免費出兵基礎傷害（降低）
+BASE_DAMAGE_PAID = 250          # 付費強化基礎傷害（降低）
 TAG_BONUS_MULTIPLIER = 2.0      # 興趣標籤加乘倍率
 FREE_ACTIONS_PER_ROUND = 8      # 每輪免費出兵次數
 PAID_COST_KKCOIN = 100          # 付費強化費用（KKCoin）
@@ -30,10 +30,11 @@ BASE_VICTORY_REWARD_KKCOIN = 600
 BETA_NO_PENALTY = True
 
 # 各排名對應的敵人 HP（1=Boss, 10=雜兵）
+# 設計目標：單人需要3.5小時完成
 ENEMY_HP_BY_RANK = {
-    1: 3000, 2: 2500, 3: 2000,
-    4: 1600, 5: 1300, 6: 1100,
-    7: 900, 8: 750, 9: 600, 10: 500
+    1: 30000, 2: 25000, 3: 20000,
+    4: 16000, 5: 13000, 6: 11000,
+    7: 9000, 8: 7500, 9: 6000, 10: 5000
 }
 
 # 興趣標籤 → 關鍵字對應表（用於比對趨勢詞）
@@ -453,6 +454,99 @@ def apply_fortress_damage(damage: int) -> Tuple[FortressState, bool]:
         state.status = "defeat"
     _save_state(state)
     return state, state.status == "defeat"
+
+
+def tower_auto_attack() -> Tuple[bool, str]:
+    """
+    砲台自動攻擊：每分鐘攻擊範圍內的敵人
+    範圍：砲台周圍1-2格
+    傷害：基於砲台所有者的免費攻擊力
+    """
+    state = _load_state()
+    if not state or not state.is_active():
+        return False, "無活躍戰況"
+    
+    now = datetime.now(TW_TZ).isoformat()
+    attacked_enemies = []
+    total_damage_dealt = 0
+    
+    # 取得地圖配置
+    from cogs.ui.fortress_defense import _get_map_layout
+    layout = _get_map_layout(state)
+    path_coords = layout["path_coords"]
+    tower_slots = layout["tower_slots"]
+    
+    for user_id, slot_id in state.tower_slots.items():
+        if slot_id not in tower_slots:
+            continue
+            
+        tower_coord = tower_slots[slot_id]["coord"]
+        tower_row, tower_col = tower_coord
+        
+        # 計算砲台攻擊範圍內的敵人
+        enemies_in_range = []
+        for enemy in state.enemies:
+            if enemy.defeated:
+                continue
+                
+            # 檢查敵人是否在路徑範圍內
+            if 0 <= enemy.path_position < len(path_coords):
+                enemy_row, enemy_col = path_coords[enemy.path_position]
+                
+                # 計算距離（曼哈頓距離）
+                distance = abs(enemy_row - tower_row) + abs(enemy_col - tower_col)
+                if distance <= 2:  # 範圍2格
+                    enemies_in_range.append(enemy)
+        
+        if not enemies_in_range:
+            continue
+            
+        # 計算砲台傷害（基於玩家免費攻擊力）
+        # 取得玩家興趣標籤
+        from shared.db.db_adapter import get_user_field
+        import json
+        interests_raw = get_user_field(user_id, "user_interests", default="[]")
+        try:
+            interests = json.loads(interests_raw) if isinstance(interests_raw, str) else []
+        except Exception:
+            interests = []
+        
+        # 判斷是否有標籤加乘
+        alive_enemies = [e.name for e in state.enemies if not e.defeated]
+        has_bonus = any(
+            user_interests_match(interests, name)
+            for name in alive_enemies
+        )
+        
+        tower_damage = calculate_player_damage("free", has_bonus)
+        
+        # 對範圍內敵人造成傷害（平均分配）
+        damage_per_enemy = tower_damage // len(enemies_in_range)
+        remaining_damage = tower_damage % len(enemies_in_range)
+        
+        for i, enemy in enumerate(enemies_in_range):
+            damage = damage_per_enemy + (remaining_damage if i == 0 else 0)
+            damage = min(damage, enemy.current_hp)
+            enemy.current_hp -= damage
+            total_damage_dealt += damage
+            
+            if enemy.current_hp <= 0:
+                enemy.current_hp = 0
+                enemy.defeated = True
+                attacked_enemies.append(f"🗼 砲台消滅了 {enemy.name}!")
+            else:
+                attacked_enemies.append(f"🗼 砲台對 {enemy.name} 造成 {damage} 傷害")
+    
+    # 勝利判定
+    if all(e.defeated for e in state.enemies):
+        state.status = "victory"
+        logger.info(f"[Fortress] 🎉 塔防勝利！round={state.round_id}")
+    
+    _save_state(state)
+    
+    if attacked_enemies:
+        return True, f"砲台攻擊: {', '.join(attacked_enemies[:5])}" + ("..." if len(attacked_enemies) > 5 else "")
+    return False, "無砲台攻擊"
 
 
 def move_enemies_forward() -> Tuple[bool, str]:
