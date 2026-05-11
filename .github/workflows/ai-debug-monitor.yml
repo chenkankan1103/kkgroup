@@ -23,6 +23,10 @@ jobs:
       with:
         python-version: '3.11'
     
+    - name: 設定 Python 路徑
+      run: |
+        echo "PYTHONPATH=/home/e193752468/kkgroup:$PYTHONPATH" >> $GITHUB_ENV
+    
     - name: 安裝依賴
       run: |
         pip install requests aiohttp python-dotenv
