@@ -7,11 +7,27 @@ on:
       - 'README.md'
       - '.gitignore'
   workflow_dispatch:
+    inputs:
+      debug_type:
+        description: 'Debug 類型'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - force
+          - test
+      log_content:
+        description: '自定義日誌內容（可選）'
+        required: false
+        type: string
   repository_dispatch:
     types: [error_analysis]  # 🔥 新增：接收來自 LogMonitor 的實時錯誤分析請求
   schedule:
     # 每天凌晨 3 點執行一次（台灣時間）
     - cron: '0 19 * * *'  # UTC 19:00 = 台灣時間 03:00
+    # 每 6 小時執行一次檢查（更頻繁的監控）
+    - cron: '0 */6 * * *'  # 每 6 小時執行一次
 
 jobs:
   ai-debug:
@@ -82,6 +98,14 @@ jobs:
         async def analyze_error_with_ai():
             """使用NVIDIA AI分析最近錯誤日誌"""
             
+            # 獲取手動觸發參數
+            debug_type = os.getenv("DEBUG_TYPE", "auto")
+            custom_log = os.getenv("LOG_CONTENT", "")
+            
+            print(f"🔧 Debug 類型: {debug_type}")
+            if custom_log:
+                print(f"📝 自定義日誌: {custom_log[:100]}...")
+            
             try:
                 import sys
                 import os
@@ -101,32 +125,107 @@ jobs:
                 print(f"⚠️ NVIDIA AI 初始化失敗: {e}")
                 print("🔄 降級到傳統API")
             
-            # 使用模擬日誌進行測試（避免 gcloud SSH 複雜性）
+            # 根據觸發類型決定日誌來源
             try:
-                # 模擬錯誤日誌用於測試
-                error_logs = """
-                模擬錯誤日誌：
-                [ERROR] 2024-05-12 20:15:00 - Discord bot disconnected
-                Traceback (most recent call last):
-                  File "/home/e193752468/kkgroup/bots/bot.py", line 150, in on_ready
-                    await tree.sync()
-                discord.errors.HTTPException: 429 Too Many Requests
-                
-                [ERROR] 2024-05-12 20:16:30 - Memory usage too high
-                Memory: 950MB/1000MB used, triggering OOM protection
-                
-                [ERROR] 2024-05-12 20:17:45 - Database connection failed
-                sqlite3.OperationalError: database is locked
-                """
-                
-                has_errors = True  # 強制觸發 AI 分析進行測試
-                
-                if not has_errors:
-                    print("✅ 系統運行正常，跳過 AI 分析以節省 API 配額")
-                    return "系統運行正常，無需分析"
+                if debug_type == "force":
+                    # 強制模式：使用自定義日誌或預設測試日誌
+                    error_logs = custom_log if custom_log else """
+                    強制觸發的測試日誌：
+                    [ERROR] 2024-05-12 20:15:00 - Discord bot disconnected
+                    Traceback (most recent call last):
+                      File "/home/e193752468/kkgroup/bots/bot.py", line 150, in on_ready
+                        await tree.sync()
+                    discord.errors.HTTPException: 429 Too Many Requests
+                    
+                    [ERROR] 2024-05-12 20:16:30 - Memory usage too high
+                    Memory: 950MB/1000MB used, triggering OOM protection
+                    
+                    [ERROR] 2024-05-12 20:17:45 - Database connection failed
+                    sqlite3.OperationalError: database is locked
+                    """
+                    has_errors = True
+                    print("🔥 強制觸發 AI 分析")
+                    
+                elif debug_type == "test":
+                    # 測試模式：簡單的測試日誌
+                    error_logs = """
+                    測試模式日誌：
+                    [ERROR] 2024-05-12 20:00:00 - Test error for NVIDIA API
+                    [INFO] 2024-05-12 20:01:00 - Testing NVIDIA deepseek-v4-pro model
+                    [ERROR] 2024-05-12 20:02:00 - Sample exception for debugging
+                    """
+                    has_errors = True
+                    print("🧪 測試模式觸發 AI 分析")
+                    
+                else:
+                    # 自動模式：嘗試獲取真實 VM 日誌，失敗則使用模擬日誌
+                    try:
+                        # 嘗試獲取真實 VM 日誌（如果 GCP 認證可用）
+                        bot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active bot.service'], capture_output=True, text=True).stdout.strip()
+                        shopbot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active shopbot.service'], capture_output=True, text=True).stdout.strip()
+                        uibot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active uibot.service'], capture_output=True, text=True).stdout.strip()
+                        
+                        # 獲取最近錯誤日誌
+                        bot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
+                        shopbot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u shopbot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
+                        uibot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u uibot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
+                        
+                        # 檢查是否有實際錯誤
+                        has_errors = any([
+                            "failed" in bot_status.lower() or "inactive" in bot_status.lower(),
+                            "failed" in shopbot_status.lower() or "inactive" in shopbot_status.lower(),
+                            "failed" in uibot_status.lower() or "inactive" in uibot_status.lower(),
+                            "error" in bot_logs.lower() or "exception" in bot_logs.lower(),
+                            "error" in shopbot_logs.lower() or "exception" in shopbot_logs.lower(),
+                            "error" in uibot_logs.lower() or "exception" in uibot_logs.lower()
+                        ])
+                        
+                        if not has_errors:
+                            print("✅ 系統運行正常，跳過 AI 分析以節省 API 配額")
+                            return "系統運行正常，無需分析"
+                        else:
+                            error_logs = f"""
+                            服務狀態：
+                            - bot.service: {bot_status}
+                            - shopbot.service: {shopbot_status}
+                            - uibot.service: {uibot_status}
+                            
+                            最近錯誤日誌：
+                            bot.service:
+                            {bot_logs[-1000:] if bot_logs else "無日誌"}
+                            
+                            shopbot.service:
+                            {shopbot_logs[-1000:] if shopbot_logs else "無日誌"}
+                            
+                            uibot.service:
+                            {uibot_logs[-1000:] if uibot_logs else "無日誌"}
+                            """
+                        print("🔍 獲取真實 VM 日誌進行分析")
+                        
+                    except Exception as gcp_error:
+                        # GCP 連接失敗，使用模擬日誌
+                        print(f"⚠️ GCP 連接失敗: {gcp_error}")
+                        print("🔄 使用模擬日誌進行分析")
+                        
+                        error_logs = """
+                        模擬錯誤日誌（GCP 連接失敗）：
+                        [ERROR] 2024-05-12 20:15:00 - Discord bot disconnected
+                        Traceback (most recent call last):
+                          File "/home/e193752468/kkgroup/bots/bot.py", line 150, in on_ready
+                            await tree.sync()
+                        discord.errors.HTTPException: 429 Too Many Requests
+                        
+                        [ERROR] 2024-05-12 20:16:30 - Memory usage too high
+                        Memory: 950MB/1000MB used, triggering OOM protection
+                        
+                        [ERROR] 2024-05-12 20:17:45 - Database connection failed
+                        sqlite3.OperationalError: database is locked
+                        """
+                        has_errors = True
                 
             except Exception as e:
-                error_logs = f"無法生成測試日誌: {str(e)}"
+                error_logs = f"無法生成日誌: {str(e)}"
+                has_errors = True
             
             # AI分析提示
             analysis_prompt = f"""
