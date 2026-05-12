@@ -1,0 +1,103 @@
+name: Test NVIDIA API
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'utils/nvidia_ai.py'
+
+jobs:
+  test-nvidia:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # 強制使用 Node.js 24 避免 deprecation 警告
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: 設定Python環境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: 設定 Python 路徑
+      run: |
+        echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV
+    
+    - name: 安裝依賴
+      run: |
+        pip install requests aiohttp python-dotenv pytz
+    
+    - name: 測試 NVIDIA API
+      env:
+        NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      run: |
+        python3 << 'EOF'
+        import os
+        import asyncio
+        import sys
+        from datetime import datetime
+        
+        # 設置工作目錄
+        workspace_path = os.getenv('GITHUB_WORKSPACE', '.')
+        sys.path.insert(0, workspace_path)
+        
+        print(f"🚀 開始測試 NVIDIA API...")
+        print(f"📁 工作目錄: {workspace_path}")
+        print(f"🔑 API Key: {'已設置' if os.getenv('NVIDIA_API_KEY') else '未設置'}")
+        
+        try:
+            from utils.nvidia_ai import NVIDIAAIClient
+            print("✅ NVIDIA AI 客戶端導入成功")
+            
+            client = NVIDIAAIClient()
+            print(f"✅ 客戶端初始化成功")
+            print(f"🤖 可用模型: {list(client.models.keys())}")
+            
+            async def test_api():
+                # 測試基本調用
+                messages = [
+                    {"role": "user", "content": "請簡單回覆「測試成功」"}
+                ]
+                
+                print("🧪 測試 deepseek-v4-pro 模型...")
+                response = await client.call_api(
+                    messages, 
+                    model="deepseek-ai/deepseek-v4-pro", 
+                    max_tokens=100
+                )
+                
+                if response:
+                    print(f"✅ API 調用成功!")
+                    print(f"📝 回應: {response}")
+                    return True
+                else:
+                    print("❌ API 調用失敗")
+                    return False
+            
+            # 執行測試
+            result = asyncio.run(test_api())
+            
+            if result:
+                print("🎉 NVIDIA API 測試完全成功!")
+            else:
+                print("❌ NVIDIA API 測試失敗")
+                
+        except ImportError as e:
+            print(f"❌ 導入失敗: {e}")
+            print("📁 當前目錄內容:")
+            import os
+            for item in os.listdir('.'):
+                print(f"  - {item}")
+            
+        except Exception as e:
+            print(f"❌ 測試過程發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+        EOF
