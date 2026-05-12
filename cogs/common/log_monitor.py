@@ -26,6 +26,7 @@ import re
 import time
 import logging
 import json
+import requests
 from datetime import datetime
 from typing import Optional
 
@@ -500,6 +501,9 @@ class LogMonitorEngine:
             ], max_tokens=300)
             ai_text = ai_text_raw or _build_local_fallback_summary(lines)
 
+        # 🔥 新增：觸發 GitHub Actions AI 分析
+        await self._trigger_github_actions_analysis(log_text, ai_text)
+        
         # 送出 Discord Embed
         channel = self.bot.get_channel(_ALERT_CHANNEL_ID)
         if not channel:
@@ -520,6 +524,59 @@ class LogMonitorEngine:
         except Exception as e:
             logger.error(f"[LogMonitor] 送出通知失敗: {e}")
 
+    async def _trigger_github_actions_analysis(self, log_text: str, ai_text: str):
+        """觸發 GitHub Actions 進行更深入的 AI 分析"""
+        try:
+            # 檢查是否需要觸發（高緊急程度或特定錯誤類型）
+            severity = _extract_severity(ai_text)
+            should_trigger = (
+                severity == "高" or
+                "Traceback" in log_text or
+                "Exception" in log_text or
+                "CRITICAL" in log_text or
+                "Fatal" in log_text
+            )
+            
+            if not should_trigger:
+                logger.info(f"[LogMonitor] 錯誤緊急程度為{severity}，跳過 GitHub Actions 觸發")
+                return
+            
+            # 準備 webhook 資料
+            webhook_data = {
+                "event_type": "error_analysis",
+                "client_payload": {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "log_text": log_text[:2000],  # 限制長度
+                    "ai_analysis": ai_text[:1000],  # 限制長度
+                    "severity": severity,
+                    "source": "log_monitor_realtime"
+                }
+            }
+            
+            # 發送到 GitHub repository_dispatch webhook
+            repo_url = "https://api.github.com/repos/chenkankan1103/kkgroup/dispatches"
+            token = os.getenv("GITHUB_TOKEN")  # 需要在 .env 中設定 GitHub Token
+            
+            if not token:
+                logger.warning("[LogMonitor] GITHUB_TOKEN 未設定，無法觸發 GitHub Actions")
+                return
+            
+            headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3+json",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(repo_url, json=webhook_data, headers=headers, timeout=10)
+            
+            if response.status_code == 204:
+                logger.info(f"[LogMonitor] ✅ 已觸發 GitHub Actions AI 分析 (緊急程度: {severity})")
+            else:
+                logger.error(f"[LogMonitor] ❌ 觸發 GitHub Actions 失敗: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            logger.error(f"[LogMonitor] 觸發 GitHub Actions 時發生錯誤: {e}", exc_info=True)
+    
     def build_fix_goal(self) -> str:
         if not self._active_incidents:
             return ""
