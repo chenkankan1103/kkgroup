@@ -7,6 +7,8 @@ on:
       - 'README.md'
       - '.gitignore'
   workflow_dispatch:
+  repository_dispatch:
+    types: [error_analysis]  # 🔥 新增：接收來自 LogMonitor 的實時錯誤分析請求
   schedule:
     # 每天凌晨 3 點執行一次（台灣時間）
     - cron: '0 19 * * *'  # UTC 19:00 = 台灣時間 03:00
@@ -342,6 +344,123 @@ jobs:
         
         # 執行主程序
         asyncio.run(main())
+        EOF
+    
+    - name: 實時錯誤分析（來自 LogMonitor）
+      if: github.event_name == 'repository_dispatch' && github.event.action == 'error_analysis'
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        echo "🚀 接收到來自 LogMonitor 的實時錯誤分析請求"
+        echo "📊 錯誤時間：${{ github.event.client_payload.timestamp }}"
+        echo "🔥 緊急程度：${{ github.event.client_payload.severity }}"
+        echo "📝 來源：${{ github.event.client_payload.source }}"
+        
+        python3 << 'EOF'
+        import os
+        import json
+        import requests
+        from datetime import datetime
+        
+        # 獲取來自 LogMonitor 的資料
+        log_text = os.getenv("LOG_TEXT", "")
+        ai_analysis = os.getenv("AI_ANALYSIS", "")
+        severity = os.getenv("SEVERITY", "未知")
+        timestamp = os.getenv("TIMESTAMP", "")
+        
+        # 從 GitHub event 中獲取資料
+        event_data = '''${{ toJSON(github.event) }}'''
+        event = json.loads(event_data)
+        
+        if 'client_payload' in event:
+            payload = event['client_payload']
+            log_text = payload.get('log_text', '')
+            ai_analysis = payload.get('ai_analysis', '')
+            severity = payload.get('severity', '未知')
+            timestamp = payload.get('timestamp', '')
+        
+        print(f"📋 分析日誌（{len(log_text)} 字符，緊急程度：{severity}）")
+        
+        # 深度 AI 分析
+        analysis_prompt = f"""
+        你是KKGroup Discord Bot系統的資深AI除錯專家。
+        
+        接收到來自實時監控系統的錯誤報告：
+        
+        時間：{timestamp}
+        緊急程度：{severity}
+        
+        LogMonitor 初步分析：
+        {ai_analysis}
+        
+        原始錯誤日誌：
+        {log_text}
+        
+        請進行深度分析：
+        1. 根本原因的技術細節
+        2. 影響範圍和風險評估
+        3. 具體的修復代碼建議
+        4. 預防措施和長期解決方案
+        
+        請以JSON格式回覆：
+        {{
+            "root_cause": "技術根本原因",
+            "impact_assessment": "影響範圍評估",
+            "fix_code": "具體修復代碼",
+            "prevention": "預防措施",
+            "urgency": "{severity}",
+            "estimated_fix_time": "預估修復時間"
+        }}
+        """
+        
+        # Gemini API 分析
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if gemini_api_key and log_text:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_api_key}"
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": analysis_prompt}]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": 1200
+                    }
+                }
+                
+                response = requests.post(url, json=payload, timeout=30)
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "分析失敗")
+                    
+                    # 發送深度分析結果到 Discord
+                    discord_webhook = os.getenv("DISCORD_WEBHOOK")
+                    if discord_webhook:
+                        webhook_data = {
+                            "content": f"🧠 **深度AI分析報告** - {severity}緊急",
+                            "embeds": [{
+                                "title": "🔍 實時錯誤深度分析",
+                                "description": content[:1000] + "..." if len(content) > 1000 else content,
+                                "color": 15158332,
+                                "fields": [
+                                    {"name": "⏰ 錯誤時間", "value": timestamp[:19], "inline": True},
+                                    {"name": "🚨 緊急程度", "value": severity, "inline": True},
+                                    {"name": "🤖 分析引擎", "value": "Gemini 2.0 Flash", "inline": True}
+                                ]
+                            }]
+                        }
+                        
+                        requests.post(discord_webhook, json=webhook_data)
+                        print("✅ 深度分析結果已發送到 Discord")
+                    
+                else:
+                    print(f"❌ Gemini API 呼叫失敗: {response.status_code}")
+                    
+            except Exception as e:
+                print(f"❌ 深度分析過程發生錯誤: {e}")
+        else:
+            print("⚠️ 缺少 API Key 或日誌資料")
         EOF
     
     - name: 檢查修復結果
