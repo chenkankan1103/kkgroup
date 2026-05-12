@@ -1,33 +1,36 @@
 name: AI Debug Monitor
+
+concurrency:
+  group: ai-debug-monitor-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
     paths-ignore:
-      - 'docs/**'
-      - 'README.md'
-      - '.gitignore'
+      - docs/**
+      - README.md
+      - .gitignore
   workflow_dispatch:
     inputs:
       debug_type:
-        description: 'Debug 類型'
+        description: Debug 類型
         required: false
-        default: 'auto'
+        default: auto
         type: choice
         options:
           - auto
           - force
           - test
       log_content:
-        description: '自定義日誌內容（可選）'
+        description: 自定義日誌內容（可選）
         required: false
         type: string
   repository_dispatch:
-    types: [error_analysis]  # 🔥 新增：接收來自 LogMonitor 的實時錯誤分析請求
+    types: [error_analysis]
   schedule:
-    # 每天凌晨 3 點執行一次（台灣時間）
-    - cron: '0 19 * * *'  # UTC 19:00 = 台灣時間 03:00
-    # 每 6 小時執行一次檢查（更頻繁的監控）
-    - cron: '0 */6 * * *'  # 每 6 小時執行一次
+    - cron: '0 19 * * *'
+    - cron: '0 */6 * * *'
 
 jobs:
   ai-debug:
@@ -38,600 +41,142 @@ jobs:
       pull-requests: write
       id-token: write
     env:
-      # 強制使用 Node.js 24 避免 deprecation 警告
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-    
+
     steps:
-    - name: 檢出代碼
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: 設定Python環境
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: 設定 Python 路徑
-      run: |
-        echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV
-    
-    - name: 安裝依賴
-      run: |
-        pip install requests aiohttp python-dotenv pytz google-cloud-compute
-    
-    - name: 設置 GCP 認證
-      env:
-        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-      run: |
-        echo "$GCP_SA_KEY" > gcp-key.json
-        export GOOGLE_APPLICATION_CREDENTIALS=gcp-key.json
-        gcloud auth activate-service-account --key-file=gcp-key.json --project=kkgroup
-    
-    - name: AI 錯誤分析器
-      env:
-        NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      run: |
-        python3 << 'EOF'
-        import os
-        import re
-        import requests
-        import aiohttp
-        import asyncio
-        import random
-        import subprocess
-        from datetime import datetime, timedelta
-        import pytz
-        
-        # NVIDIA API配置
-        NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-        DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
-        
-        # 台灣時區設定
-        taiwan_tz = pytz.timezone('Asia/Taipei')
-        
-        def get_taiwan_time():
-            """獲取台灣時間"""
-            return datetime.now(taiwan_tz)
-        
-        async def analyze_error_with_ai():
-            """使用NVIDIA AI分析最近錯誤日誌"""
-            
-            # 獲取手動觸發參數
-            debug_type = os.getenv("DEBUG_TYPE", "auto")
-            custom_log = os.getenv("LOG_CONTENT", "")
-            
-            print(f"🔧 Debug 類型: {debug_type}")
-            if custom_log:
-                print(f"📝 自定義日誌: {custom_log[:100]}...")
-            
-            try:
-                import sys
-                import os
-                workspace_path = os.getenv('GITHUB_WORKSPACE', '.')
-                sys.path.insert(0, workspace_path)
-                from utils.nvidia_ai import NVIDIAAIClient
-                client = NVIDIAAIClient()
-                use_nvidia = True
-                print("✅ 使用 NVIDIA AI 進行AI分析")
-                print(f"📁 工作目錄: {workspace_path}")
-            except ImportError as e:
-                use_nvidia = False
-                print(f"⚠️ NVIDIA AI 載入失敗: {e}")
-                print("🔄 降級到傳統API")
-            except Exception as e:
-                use_nvidia = False
-                print(f"⚠️ NVIDIA AI 初始化失敗: {e}")
-                print("🔄 降級到傳統API")
-            
-            # 根據觸發類型決定日誌來源
-            try:
-                if debug_type == "force":
-                    # 強制模式：使用自定義日誌或預設測試日誌
-                    error_logs = custom_log if custom_log else """
-                    強制觸發的測試日誌：
-                    [ERROR] 2024-05-12 20:15:00 - Discord bot disconnected
-                    Traceback (most recent call last):
-                      File "/home/e193752468/kkgroup/bots/bot.py", line 150, in on_ready
-                        await tree.sync()
-                    discord.errors.HTTPException: 429 Too Many Requests
-                    
-                    [ERROR] 2024-05-12 20:16:30 - Memory usage too high
-                    Memory: 950MB/1000MB used, triggering OOM protection
-                    
-                    [ERROR] 2024-05-12 20:17:45 - Database connection failed
-                    sqlite3.OperationalError: database is locked
-                    """
-                    has_errors = True
-                    print("🔥 強制觸發 AI 分析")
-                    
-                elif debug_type == "test":
-                    # 測試模式：簡單的測試日誌
-                    error_logs = """
-                    測試模式日誌：
-                    [ERROR] 2024-05-12 20:00:00 - Test error for NVIDIA API
-                    [INFO] 2024-05-12 20:01:00 - Testing NVIDIA deepseek-v4-pro model
-                    [ERROR] 2024-05-12 20:02:00 - Sample exception for debugging
-                    """
-                    has_errors = True
-                    print("🧪 測試模式觸發 AI 分析")
-                    
-                else:
-                    # 自動模式：嘗試獲取真實 VM 日誌，失敗則使用模擬日誌
-                    try:
-                        # 嘗試獲取真實 VM 日誌（如果 GCP 認證可用）
-                        bot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active bot.service'], capture_output=True, text=True).stdout.strip()
-                        shopbot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active shopbot.service'], capture_output=True, text=True).stdout.strip()
-                        uibot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active uibot.service'], capture_output=True, text=True).stdout.strip()
-                        
-                        # 獲取最近錯誤日誌
-                        bot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
-                        shopbot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u shopbot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
-                        uibot_logs = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo journalctl -u uibot.service --since "1 hour ago" --no-pager -n 20'], capture_output=True, text=True).stdout
-                        
-                        # 檢查是否有實際錯誤
-                        has_errors = any([
-                            "failed" in bot_status.lower() or "inactive" in bot_status.lower(),
-                            "failed" in shopbot_status.lower() or "inactive" in shopbot_status.lower(),
-                            "failed" in uibot_status.lower() or "inactive" in uibot_status.lower(),
-                            "error" in bot_logs.lower() or "exception" in bot_logs.lower(),
-                            "error" in shopbot_logs.lower() or "exception" in shopbot_logs.lower(),
-                            "error" in uibot_logs.lower() or "exception" in uibot_logs.lower()
-                        ])
-                        
-                        if not has_errors:
-                            print("✅ 系統運行正常，跳過 AI 分析以節省 API 配額")
-                            return "系統運行正常，無需分析"
-                        else:
-                            error_logs = f"""
-                            服務狀態：
-                            - bot.service: {bot_status}
-                            - shopbot.service: {shopbot_status}
-                            - uibot.service: {uibot_status}
-                            
-                            最近錯誤日誌：
-                            bot.service:
-                            {bot_logs[-1000:] if bot_logs else "無日誌"}
-                            
-                            shopbot.service:
-                            {shopbot_logs[-1000:] if shopbot_logs else "無日誌"}
-                            
-                            uibot.service:
-                            {uibot_logs[-1000:] if uibot_logs else "無日誌"}
-                            """
-                        print("🔍 獲取真實 VM 日誌進行分析")
-                        
-                    except Exception as gcp_error:
-                        # GCP 連接失敗，使用模擬日誌
-                        print(f"⚠️ GCP 連接失敗: {gcp_error}")
-                        print("🔄 使用模擬日誌進行分析")
-                        
-                        error_logs = """
-                        模擬錯誤日誌（GCP 連接失敗）：
-                        [ERROR] 2024-05-12 20:15:00 - Discord bot disconnected
-                        Traceback (most recent call last):
-                          File "/home/e193752468/kkgroup/bots/bot.py", line 150, in on_ready
-                            await tree.sync()
-                        discord.errors.HTTPException: 429 Too Many Requests
-                        
-                        [ERROR] 2024-05-12 20:16:30 - Memory usage too high
-                        Memory: 950MB/1000MB used, triggering OOM protection
-                        
-                        [ERROR] 2024-05-12 20:17:45 - Database connection failed
-                        sqlite3.OperationalError: database is locked
-                        """
-                        has_errors = True
-                
-            except Exception as e:
-                error_logs = f"無法生成日誌: {str(e)}"
-                has_errors = True
-            
-            # AI分析提示
-            analysis_prompt = f"""
-            你是KKGroup Discord Bot系統的AI除錯專家。
-            
-            系統環境：
-            - GCP VM: e2-micro (1GB RAM + 4GB swap)
-            - 三個Bot服務: bot.service, shopbot.service, uibot.service
-            - 技術棧: Python 3.11 + Discord.py + systemd
-            
-            錯誤日誌：
-            {error_logs}
-            
-            請分析：
-            1. 根本原因分析
-            2. 影響範圍評估
-            3. 具體修復步驟
-            4. 預防措施建議
-            
-            請以JSON格式回覆：
-            {{
-                "root_cause": "主要原因",
-                "impact": "影響評估",
-                "fix_steps": ["步驟1", "步驟2"],
-                "prevention": ["預防措施1", "預防措施2"],
-                "confidence": 0.85
-            }}
-            """
-            
-            if use_nvidia:
-                # 使用 NVIDIA AI
-                messages = [
-                    {"role": "system", "content": "你是KKGroup Discord Bot系統的AI除錯專家。"},
-                    {"role": "user", "content": analysis_prompt}
-                ]
-                
-                response = await client.call_api(messages, model="deepseek-ai/deepseek-v4-pro", max_tokens=1500)
-                if response:
-                    print(f"✅ AI分析完成，使用模型: deepseek-v4-pro")
-                    return response
-                else:
-                    return "NVIDIA AI 分析失敗"
-            
-            else:
-                # 傳統API（降級方案）
-                max_retries = 3  # 減少重試次數以節省配額
-                base_delay = 5   # 增加延遲以避免速率限制
-                
-                for attempt in range(max_retries):
-                    try:
-                        # 呼叫Gemini API (降級方案)
-                        gemini_api_key = os.getenv("GEMINI_API_KEY")  # 備用API
-                        if not gemini_api_key:
-                            return "無可用的API Key"
-                        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_api_key}"
-                        payload = {
-                            "contents": [{
-                                "parts": [{"text": analysis_prompt}]
-                            }],
-                            "generationConfig": {
-                                "temperature": 0.3,
-                                "maxOutputTokens": 800
-                            }
-                        }
-                        
-                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                            async with session.post(url, json=payload) as response:
-                                if response.status == 200:
-                                    data = await response.json()
-                                    content = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
-                                    return content
-                                elif response.status == 429:
-                                    # 速率限制 - 指數退避
-                                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                                    print(f"⏳ API速率限制，等待 {delay:.1f} 秒後重試 (嘗試 {attempt + 1}/{max_retries})")
-                                    if attempt < max_retries - 1:
-                                        await asyncio.sleep(delay)
-                                        continue
-                                    else:
-                                        return "API速率限制，請稍後再試"
-                                else:
-                                    return f"API呼叫失敗: {response.status}"
-                    except Exception as e:
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(base_delay * (attempt + 1))
-                            continue
-                        else:
-                            return f"AI分析錯誤: {str(e)}"
-                
-                return "分析失敗，已達最大重試次數"
-        
-        async def create_auto_fix(ai_analysis):
-            """根據AI分析生成修復代碼"""
-            
-            fix_prompt = f"""
-            基於以下AI分析結果，生成修復代碼：
-            
-            {ai_analysis}
-            
-            請生成：
-            1. 具體的修復腳本
-            2. 修復後的驗證方法
-            3. 預防措施建議
-            
-            請以JSON格式回覆：
-            {{
-                "fix_script": "修復代碼",
-                "verification": "驗證方法",
-                "prevention": "預防措施"
-            }}
-            """
-            
-            # 使用相同的API呼叫邏輯
-            try:
-                import sys
-                import os
-                workspace_path = os.getenv('GITHUB_WORKSPACE', '.')
-                sys.path.insert(0, workspace_path)
-                from utils.nvidia_ai import NVIDIAAIClient
-                client = NVIDIAAIClient()
-                messages = [
-                    {"role": "system", "content": "你是KKGroup Discord Bot系統的修復專家。"},
-                    {"role": "user", "content": fix_prompt}
-                ]
-                
-                response = await client.call_api(messages, model="deepseek-ai/deepseek-v4-pro", max_tokens=2000)
-                if response:
-                    return response
-                else:
-                    return "修復代碼生成失敗"
-            except ImportError as e:
-                return f"修復代碼生成失敗 - ImportError: {e}"
-            except Exception as e:
-                return f"修復代碼生成失敗 - Exception: {e}"
-        
-        async def send_discord_notification(message, fix_code="", message_id=None):
-            """發送或編輯Discord通知"""
-            if not DISCORD_WEBHOOK:
-                print("❌ 未設定Discord Webhook")
-                return
-            
-            # 如果沒有錯誤，直接返回不發送通知
-            if "系統運行正常" in message or "無需分析" in message:
-                print("✅ 系統正常，跳過Discord通知")
-                return
-            
-            taiwan_now = get_taiwan_time()
-            webhook_data = {
-                "content": f"🤖 **AI除錯報告** - {taiwan_now.strftime('%Y-%m-%d %H:%M:%S')}",
-                "embeds": [{
-                    "title": "🔍 系統錯誤分析",
-                    "description": message,
-                    "color": 15158332,  # Orange
-                    "fields": [
-                        {"name": "🤖 AI引擎", "value": "NVIDIA deepseek-v4-pro", "inline": True},
-                        {"name": "📊 分析時間", "value": f"{taiwan_now.strftime('%Y-%m-%d %H:%M:%S')} (台灣時間)", "inline": True},
-                        {"name": "🔧 自動修復", "value": "已生成" if fix_code else "僅分析", "inline": True}
-                    ]
+      - name: 檢出代碼
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安裝依賴
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests aiohttp python-dotenv pytz google-cloud-compute
+
+      - name: 設置 GCP 認證
+        if: ${{ secrets.GCP_SA_KEY != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: 安裝 gcloud CLI
+        if: ${{ secrets.GCP_SA_KEY != '' }}
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: kkgroup
+
+      - name: AI 錯誤分析
+        env:
+          DEBUG_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_type || (github.event_name == 'repository_dispatch' && 'force' || 'auto') }}
+          LOG_CONTENT: ${{ github.event_name == 'workflow_dispatch' && inputs.log_content || github.event.client_payload.log_text || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python <<'PY'
+          import asyncio
+          import json
+          import os
+          import subprocess
+          from datetime import datetime
+
+          import requests
+
+          payload = json.loads(os.getenv('EVENT_PAYLOAD') or '{}')
+          debug_type = os.getenv('DEBUG_TYPE', 'auto')
+          log_content = (os.getenv('LOG_CONTENT') or '').strip()
+          event_name = os.getenv('EVENT_NAME', '')
+
+          error_logs = ''
+          used_source = 'none'
+
+          if event_name == 'repository_dispatch' and log_content:
+            error_logs = log_content
+            used_source = payload.get('source', 'repository_dispatch')
+          elif debug_type == 'force':
+            error_logs = log_content or '[FORCE] 未提供日誌，使用強制分析模式'
+            used_source = 'workflow_dispatch'
+          elif debug_type == 'test':
+            error_logs = '[TEST] Sample exception for AI debug monitor'
+            used_source = 'workflow_dispatch'
+          else:
+            gcloud_ok = subprocess.run(['gcloud', '--version'], capture_output=True, text=True).returncode == 0
+            if gcloud_ok:
+              bot_status = subprocess.run([
+                'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
+                '--project=kkgroup', '--zone=us-central1-c',
+                '--command', 'sudo systemctl is-active bot.service'
+              ], capture_output=True, text=True).stdout.strip()
+              bot_logs = subprocess.run([
+                'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
+                '--project=kkgroup', '--zone=us-central1-c',
+                '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 30'
+              ], capture_output=True, text=True).stdout
+              if any(token in (bot_status + '\n' + bot_logs).lower() for token in ['error', 'exception', 'failed', 'traceback', 'inactive']):
+                error_logs = 'bot.service: ' + bot_status + '\n\n' + bot_logs[-2000:]
+                used_source = 'gcp'
+
+          if not error_logs:
+            print('系統運行正常，跳過分析')
+            raise SystemExit(0)
+
+          try:
+            from utils.nvidia_ai import NVIDIAAIClient
+
+            prompt = (
+              '你是 KKGroup Discord Bot 除錯專家。請根據以下錯誤日誌用繁體中文輸出精簡 JSON，'
+              '包含 root_cause、impact、fix_steps、prevention、confidence。\n\n'
+              f'來源: {used_source}\n\n日誌:\n{error_logs[:6000]}'
+            )
+            analysis = asyncio.run(NVIDIAAIClient().call_api(
+              [
+                {'role': 'system', 'content': '請只輸出 JSON。'},
+                {'role': 'user', 'content': prompt},
+              ],
+              model='deepseek-ai/deepseek-v4-pro',
+              max_tokens=1200,
+            )) or ''
+          except Exception as exc:
+            analysis = json.dumps({
+              'root_cause': 'AI 分析失敗',
+              'impact': str(exc),
+              'fix_steps': ['檢查 NVIDIA_API_KEY', '檢查 workflow 執行日誌'],
+              'prevention': ['保留 repository_dispatch payload', '保留 gcloud 認證'],
+              'confidence': 0.2,
+            }, ensure_ascii=False)
+
+          print(analysis)
+
+          webhook = os.getenv('DISCORD_WEBHOOK')
+          if webhook:
+            requests.post(
+              webhook,
+              json={
+                'content': '🤖 AI Debug Monitor',
+                'embeds': [{
+                  'title': '系統錯誤分析',
+                  'description': f'來源: {used_source}',
+                  'color': 15158332,
+                  'fields': [
+                    {
+                      'name': '分析結果',
+                      'value': (analysis[:1000] + ('...' if len(analysis) > 1000 else '')) or '無',
+                    },
+                    {
+                      'name': '時間',
+                      'value': datetime.utcnow().isoformat(),
+                      'inline': True,
+                    },
+                  ],
                 }],
-                "flags": 4096  # SUPPRESS_NOTIFICATIONS flag
-            }
-            
-            if fix_code:
-                # 如果修復代碼太長，創建摘要
-                fix_summary = fix_code[:500] + "..." if len(fix_code) > 500 else fix_code
-                webhook_data["embeds"][0]["fields"].append({
-                    "name": "💻 修復代碼",
-                    "value": f"```python\n{fix_summary}\n```",
-                    "inline": False
-                })
-            
-            try:
-                if message_id:
-                    # 編輯現有訊息
-                    edit_url = f"{DISCORD_WEBHOOK}/messages/{message_id}"
-                    response = requests.patch(edit_url, json=webhook_data)
-                    if response.status_code == 204:
-                        print(f"✅ Discord通知編輯成功 (ID: {message_id})")
-                    else:
-                        print(f"❌ Discord通知編輯失敗: {response.status_code}")
-                else:
-                    # 發送新訊息
-                    response = requests.post(DISCORD_WEBHOOK, json=webhook_data)
-                    if response.status_code == 204:
-                        print("✅ Discord通知發送成功")
-                        # 嘗試獲取 message_id（從響應頭中）
-                        message_id = response.headers.get('X-Message-ID')
-                        if message_id:
-                            print(f"📝 訊息ID已註冊: {message_id}")
-                            return message_id
-                    else:
-                        print(f"❌ Discord通知失敗: {response.status_code}")
-            except Exception as e:
-                print(f"❌ Discord通知錯誤: {str(e)}")
-            
-            return None
-        
-        async def main():
-            print("🚀 啟動AI除錯監控...")
-            
-            # 執行AI分析
-            ai_analysis = await analyze_error_with_ai()
-            print(f"📊 AI分析結果: {ai_analysis[:200]}...")
-            
-            # 如果系統正常，直接結束
-            if "系統運行正常" in ai_analysis or "無需分析" in ai_analysis:
-                print("✅ 系統正常，無需發送通知")
-                return
-            
-            # 生成修復代碼
-            fix_code = await create_auto_fix(ai_analysis)
-            print(f"🔧 修復代碼生成: {'成功' if fix_code and '錯誤' not in fix_code else '失敗'}")
-            
-            # 發送Discord通知
-            message_id = await send_discord_notification(ai_analysis, fix_code)
-            
-            # 創建GitHub Issue（可選）
-            if ai_analysis and "錯誤" not in ai_analysis:
-                print("📝 建議創建GitHub Issue追蹤修復進度")
-        
-        # 執行主程序
-        asyncio.run(main())
-        EOF
-    
-    - name: 實時錯誤分析（來自 LogMonitor）
-      if: github.event_name == 'repository_dispatch' && github.event.action == 'error_analysis'
-      env:
-        NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      run: |
-        echo "🚀 接收到來自 LogMonitor 的實時錯誤分析請求"
-        echo "📊 錯誤時間：${{ github.event.client_payload.timestamp }}"
-        echo "🔥 緊急程度：${{ github.event.client_payload.severity }}"
-        echo "📝 來源：${{ github.event.client_payload.source }}"
-        
-        python3 << 'EOF'
-        import os
-        import json
-        import requests
-        from datetime import datetime
-        
-        # 獲取來自 LogMonitor 的資料
-        log_text = os.getenv("LOG_TEXT", "")
-        ai_analysis = os.getenv("AI_ANALYSIS", "")
-        severity = os.getenv("SEVERITY", "未知")
-        timestamp = os.getenv("TIMESTAMP", "")
-        
-        # 從 GitHub event 中獲取資料
-        event_data = '''${{ toJSON(github.event) }}'''
-        event = json.loads(event_data)
-        
-        if 'client_payload' in event:
-            payload = event['client_payload']
-            log_text = payload.get('log_text', '')
-            ai_analysis = payload.get('ai_analysis', '')
-            severity = payload.get('severity', '未知')
-            timestamp = payload.get('timestamp', '')
-        
-        print(f"📋 分析日誌（{len(log_text)} 字符，緊急程度：{severity}）")
-        
-        # 深度 AI 分析
-        analysis_prompt = f"""
-        你是KKGroup Discord Bot系統的資深AI除錯專家。
-        
-        接收到來自實時監控系統的錯誤報告：
-        
-        時間：{timestamp}
-        緊急程度：{severity}
-        
-        LogMonitor 初步分析：
-        {ai_analysis}
-        
-        原始錯誤日誌：
-        {log_text}
-        
-        請進行深度分析：
-        1. 根本原因的技術細節
-        2. 影響範圍和風險評估
-        3. 具體的修復代碼建議
-        4. 預防措施和長期解決方案
-        
-        請以JSON格式回覆：
-        {{
-            "root_cause": "技術根本原因",
-            "impact_assessment": "影響範圍評估",
-            "fix_code": "具體修復代碼",
-            "prevention": "預防措施",
-            "urgency": "{severity}",
-            "estimated_fix_time": "預估修復時間"
-        }}
-        """
-        
-        # NVIDIA API 分析
-        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
-        if nvidia_api_key and log_text:
-            try:
-                import sys
-                import os
-                workspace_path = os.getenv('GITHUB_WORKSPACE', '.')
-                sys.path.insert(0, workspace_path)
-                from utils.nvidia_ai import NVIDIAAIClient
-                
-                client = NVIDIAAIClient()
-                messages = [
-                    {"role": "system", "content": "你是KKGroup Discord Bot系統的資深AI除錯專家。"},
-                    {"role": "user", "content": analysis_prompt}
-                ]
-                
-                response = await client.call_api(messages, model="deepseek-ai/deepseek-v4-pro", max_tokens=1200)
-                
-                if response:
-                    content = response
-                    
-                    # 發送深度分析結果到 Discord
-                    discord_webhook = os.getenv("DISCORD_WEBHOOK")
-                    if discord_webhook:
-                        webhook_data = {
-                            "content": f"🧠 **深度AI分析報告** - {severity}緊急",
-                            "embeds": [{
-                                "title": "🔍 實時錯誤深度分析",
-                                "description": content[:1000] + "..." if len(content) > 1000 else content,
-                                "color": 15158332,
-                                "fields": [
-                                    {"name": "⏰ 錯誤時間", "value": timestamp[:19], "inline": True},
-                                    {"name": "🚨 緊急程度", "value": severity, "inline": True},
-                                    {"name": "🤖 分析引擎", "value": "NVIDIA deepseek-v4-pro", "inline": True}
-                                ]
-                            }]
-                        }
-                        
-                        requests.post(discord_webhook, json=webhook_data)
-                        print("✅ 深度分析結果已發送到 Discord")
-                    
-                else:
-                    print(f"❌ NVIDIA API 呼叫失敗")
-                    
-            except ImportError as e:
-                print(f"❌ NVIDIA AI 載入失敗: {e}")
-            except Exception as e:
-                print(f"❌ 深度分析過程發生錯誤: {e}")
-        else:
-            print("⚠️ 缺少 API Key 或日誌資料")
-        EOF
-    
-    - name: 檢查修復結果
-      run: |
-        echo "🔍 AI除錯分析完成"
-        echo "📊 分析報告已發送到Discord"
-        echo "🔧 修復建議已生成"
-        echo "📋 請請檢查Discord頻道獲取詳細報告"
-    
-    - name: 自動修復（可選）
-      if: github.event_name == 'workflow_dispatch'
-      env:
-        NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-      run: |
-        python3 << 'EOF'
-        import os
-        import subprocess
-        import json
-        
-        NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-        
-        async def execute_vm_repair():
-            """執行VM修復操作"""
-            try:
-                # 獲取AI分析結果
-                print("🔍 獲取AI分析結果...")
-                
-                # 使用 gcloud 獲取服務狀態
-                bot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active bot.service'], capture_output=True, text=True).stdout.strip()
-                shopbot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active shopbot.service'], capture_output=True, text=True).stdout.strip()
-                uibot_status = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl is-active uibot.service'], capture_output=True, text=True).stdout.strip()
-                
-                print(f"📊 服務狀態:")
-                print(f"  - bot.service: {bot_status}")
-                print(f"  - shopbot.service: {shopbot_status}")
-                print(f"  - uibot.service: {uibot_status}")
-                
-                # 智能修復邏輯
-                if bot_status == "inactive" or "failed" in bot_status:
-                    print("🔄 重啟 bot.service...")
-                    result = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl restart bot.service'], capture_output=True, text=True)
-                    print(f"重啟結果: {result.stdout}")
-                
-                if shopbot_status == "inactive" or "failed" in shopbot_status:
-                    print("🔄 重啟 shopbot.service...")
-                    result = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl restart shopbot.service'], capture_output=True, text=True)
-                    print(f"重啟結果: {result.stdout}")
-                
-                if uibot_status == "inactive" or "failed" in uibot_status:
-                    print("🔄 重啟 uibot.service...")
-                    result = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'sudo systemctl restart uibot.service'], capture_output=True, text=True)
-                    print(f"重啟結果: {result.stdout}")
-                
-                # 檢查記憶體使用情況
-                print("🧹 檢查記憶體使用情況...")
-                memory_result = subprocess.run(['gcloud', 'compute', 'ssh', 'instance-20250501-142333', '--project=kkgroup', '--zone=us-central1-c', '--command', 'free -h'], capture_output=True, text=True)
-                print(f"記憶體狀態: {memory_result.stdout}")
-                
-                return "VM修復操作完成"
-                
-            except Exception as e:
-                return f"VM修復失敗: {str(e)}"
-        
-        import asyncio
-        result = asyncio.run(execute_vm_repair())
-        print(f"✅ 修復操作完成: {result}")
-        EOF
+              },
+              timeout=15,
+            )
+          PY

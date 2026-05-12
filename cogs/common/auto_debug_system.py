@@ -21,7 +21,11 @@ class AutoDebugSystem:
         self.github_token = os.getenv("GITHUB_TOKEN") or os.getenv("DISCORD_GITHUB_TOKEN")
         self.repo_owner = "chenkankan1103"
         self.repo_name = "kkgroup"
-        self.webhook_url = os.getenv("GITHUB_WEBHOOK_URL", "")
+        self.webhook_url = (
+            os.getenv("DISCORD_WEBHOOK_URL")
+            or os.getenv("DISCORD_WEBHOOK")
+            or os.getenv("GITHUB_WEBHOOK_URL", "")
+        )
         self.last_error_time = {}
         self.error_threshold = 3  # 同類型錯誤觸發閾值
         
@@ -90,11 +94,14 @@ class AutoDebugSystem:
             
             # 準備觸發數據
             payload = {
-                "error_type": "system_debug",
-                "timestamp": error_data["timestamp"],
-                "severity": error_data["severity"],
-                "error_logs": error_data["errors"],
-                "source": "auto_debug_system"
+                "event_type": "system_debug",
+                "client_payload": {
+                    "timestamp": error_data["timestamp"],
+                    "severity": error_data["severity"],
+                    "error_logs": error_data["errors"],
+                    "error_data": error_data,
+                    "source": "auto_debug_system"
+                }
             }
             
             headers = {
