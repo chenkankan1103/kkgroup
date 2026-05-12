@@ -370,7 +370,7 @@ def _get_map_layout(state: Optional[fs.FortressState]) -> Dict[str, object]:
     return _TD_MAP_LAYOUTS[seed % len(_TD_MAP_LAYOUTS)]
 
 
-def _enemy_progress_index(enemy: fs.EnemyUnit, layout: Dict[str, object]) -> int:
+def _enemy_progress_index(enemy: fs.PoliceUnit, layout: Dict[str, object]) -> int:
     path_len = len(layout["path_coords"])
     # 使用實際位置而不是HP百分比
     return min(enemy.path_position, path_len - 1)
