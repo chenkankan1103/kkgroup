@@ -1,0 +1,84 @@
+name: Fix Name Self Error
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: '測試類型'
+        required: false
+        default: 'fix'
+        type: choice
+        options:
+          - reproduce
+          - fix
+          - test
+      error_context:
+        description: '錯誤上下文（可選）'
+        required: false
+        type: string
+
+jobs:
+  fix-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: 設定Python環境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: 設定 Python 路徑
+      run: |
+        echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV
+    
+    - name: 安裝依賴
+      run: |
+        pip install requests aiohttp python-dotenv pytz
+    
+    - name: 執行修復腳本
+      env:
+        TEST_TYPE: ${{ github.event.inputs.test_type }}
+        ERROR_CONTEXT: ${{ github.event.inputs.error_context }}
+      run: |
+        echo "🔧 開始執行修復腳本"
+        echo "📊 測試類型: $TEST_TYPE"
+        echo "📝 錯誤上下文: $ERROR_CONTEXT"
+        
+        python3 scripts/fix_name_self_error.py
+    
+    - name: 發送 Discord 通知
+      if: always()
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        if [ "$DISCORD_WEBHOOK" != "" ]; then
+          echo "📢 發送 Discord 通知"
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "content": "🔧 **Name Self Error 修復完成**",
+              "embeds": [{
+                "title": "自動修復執行報告",
+                "description": "GitHub Actions 自動修復 name self is not defined 錯誤",
+                "color": 5814783,
+                "fields": [
+                  {"name": "🤖 執行環境", "value": "GitHub Actions", "inline": true},
+                  {"name": "📊 測試類型", "value": "'"$TEST_TYPE"'", "inline": true},
+                  {"name": "⏰ 執行時間", "value": "'$(date +'%Y-%m-%d %H:%M:%S')'", "inline": true}
+                ]
+              }]
+            }'
+        else
+          echo "⚠️ 未設置 Discord Webhook，跳過通知"
+        fi
