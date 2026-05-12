@@ -589,8 +589,6 @@ def move_enemies_forward() -> Tuple[bool, str]:
         moved_enemies.append(f"{enemy.name} 前進到位置 {enemy.path_position}")
         
         # 檢查是否到達堡壘
-        # 使用本地地圖配置避免循環導入
-        from . import fortress_system as fs
         path_length = 32  # 預設路徑長度，實際應從地圖配置取得
         if enemy.path_position >= path_length:
             enemy.reached_fortress = True
