@@ -26,31 +26,6 @@ class AutoErrorDetector:
             "import_error": r"ImportError",
             "attribute_error": r"AttributeError"
         }
-
-    def parse_timestamp(self, timestamp):
-        """盡量把不同格式的時間轉成 datetime，失敗則回退到現在。"""
-        if isinstance(timestamp, datetime):
-            return timestamp
-
-        if not timestamp:
-            return datetime.now()
-
-        for fmt in (
-            None,
-            "%b %d %H:%M:%S",
-            "%m/%d/%Y %H:%M:%S",
-        ):
-            try:
-                if fmt is None:
-                    return datetime.fromisoformat(str(timestamp))
-                parsed = datetime.strptime(str(timestamp), fmt)
-                if fmt == "%b %d %H:%M:%S":
-                    return parsed.replace(year=datetime.now().year)
-                return parsed
-            except ValueError:
-                continue
-
-        return datetime.now()
         
     async def check_system_logs(self):
         """檢查系統日誌中的錯誤"""
@@ -112,15 +87,45 @@ class AutoErrorDetector:
                 return match.group(1)
         
         return datetime.now().isoformat()
+
+    def normalize_timestamp(self, timestamp):
+        """標準化時間戳，避免非 ISO 格式導致冷卻判斷失敗"""
+        if isinstance(timestamp, datetime):
+            return timestamp
+
+        if not isinstance(timestamp, str):
+            return datetime.now()
+
+        candidates = [
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%b %d %H:%M:%S",
+            "%m/%d/%Y %H:%M:%S",
+        ]
+
+        for fmt in candidates:
+            try:
+                parsed = datetime.strptime(timestamp, fmt)
+                if fmt == "%b %d %H:%M:%S":
+                    parsed = parsed.replace(year=datetime.now().year)
+                return parsed
+            except ValueError:
+                continue
+
+        try:
+            return datetime.fromisoformat(timestamp)
+        except ValueError:
+            return datetime.now()
     
     def should_trigger_error(self, error_type, timestamp):
         """判斷是否應該觸發錯誤處理"""
-        current_time = self.parse_timestamp(timestamp)
+        current_time = self.normalize_timestamp(timestamp)
 
         # 檢查冷卻時間（避免重複觸發）
         if error_type in self.last_error_time:
             last_time = self.last_error_time[error_type]
-
+            
             # 如果同一類型錯誤在 10 分鐘內已經觸發過，則跳過
             if current_time - last_time < timedelta(minutes=10):
                 return False
@@ -136,24 +141,25 @@ class AutoErrorDetector:
                 print("❌ 未設置 GITHUB_TOKEN，無法觸發 GitHub Actions")
                 return False
 
+            normalized_timestamp = self.normalize_timestamp(error_data.get("timestamp")).isoformat()
+
             # 準備觸發數據
             payload = {
                 "event_type": "system_debug",
                 "client_payload": {
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": normalized_timestamp,
                     "severity": "high",
-                    "source": "auto_error_detector",
-                    "error_type": error_data.get("type", "unknown"),
                     "error_logs": {
-                        error_data.get("file", "unknown"): error_data.get("message", "")
+                        error_data.get("file", "log"): error_data.get("message", "")
                     },
                     "error_data": error_data,
+                    "source": "auto_error_detector"
                 }
             }
             
             headers = {
                 "Authorization": f"token {self.github_token}",
-                "Accept": "application/vnd.github.v3+json",
+                "Accept": "application/vnd.github+json",
                 "Content-Type": "application/json"
             }
             
