@@ -24,14 +24,14 @@ BASE_DAMAGE_PAID = 250          # 付費強化基礎傷害（降低）
 TAG_BONUS_MULTIPLIER = 2.0      # 興趣標籤加乘倍率
 FREE_ACTIONS_PER_ROUND = 8      # 每輪免費出兵次數
 PAID_COST_KKCOIN = 100          # 付費強化費用（KKCoin）
-BASE_VICTORY_REWARD_KKCOIN = 600
+BASE_VICTORY_REWARD_KKCOIN = 5000
 
 # 封測標誌：True = 失守時無懲罰
 BETA_NO_PENALTY = True
 
-# 各排名對應的敵人 HP（1=Boss, 10=雜兵）
+# 各排名對應的刑警 HP（1=局長, 10=警員）
 # 設計目標：單人需要3.5小時完成
-ENEMY_HP_BY_RANK = {
+POLICE_HP_BY_RANK = {
     1: 30000, 2: 25000, 3: 20000,
     4: 16000, 5: 13000, 6: 11000,
     7: 9000, 8: 7500, 9: 6000, 10: 5000
@@ -55,7 +55,7 @@ STATE_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortre
 # ── 資料結構 ──────────────────────────────────────────────
 
 @dataclass
-class EnemyUnit:
+class PoliceUnit:
     name: str
     rank: int
     max_hp: int
@@ -95,7 +95,7 @@ class FortressState:
     round_id: str
     fortress_hp: int
     fortress_max_hp: int
-    enemies: List[EnemyUnit]
+    enemies: List[PoliceUnit]
     defenders: Dict[int, List[DefenseAction]]   # user_id → actions
     status: str                                  # "active" | "victory" | "defeat"
     started_at: str
@@ -131,9 +131,9 @@ class FortressState:
 
 # ── 核心計算函數 ──────────────────────────────────────────
 
-def calculate_enemy_hp(rank: int, search_volume: Optional[int] = None) -> int:
-    """根據排名計算敵人 HP，可選用搜尋量微調"""
-    base = ENEMY_HP_BY_RANK.get(rank, 500)
+def calculate_police_hp(rank: int, search_volume: Optional[int] = None) -> int:
+    """根據排名計算刑警 HP，可選用搜尋量微調"""
+    base = POLICE_HP_BY_RANK.get(rank, 500)
     if search_volume:
         # 搜尋量 >10000 額外 +20% HP
         if search_volume > 10000:
@@ -170,9 +170,9 @@ def calculate_player_damage(
     return base
 
 
-def trends_to_enemies(trends: List[Dict]) -> List[EnemyUnit]:
+def trends_to_enemies(trends: List[Dict]) -> List[PoliceUnit]:
     """
-    將 Google Trends 資料轉換為入侵敵人
+    將 Google Trends 資料轉換為刑警大隊
     trends: [{"topic": str, "search_volume": int, "rank": int, ...}, ...]
     """
     enemies = []
@@ -180,9 +180,9 @@ def trends_to_enemies(trends: List[Dict]) -> List[EnemyUnit]:
         rank = trend.get("rank", i + 1)
         name = trend.get("topic", trend.get("name", f"未知趨勢{i+1}"))
         volume = trend.get("search_volume", 0)
-        hp = calculate_enemy_hp(rank, volume)
+        hp = calculate_police_hp(rank, volume)
         category = trend.get("category", "")
-        enemies.append(EnemyUnit(
+        enemies.append(PoliceUnit(
             name=name,
             rank=rank,
             max_hp=hp,
@@ -212,7 +212,7 @@ def _load_state() -> Optional[FortressState]:
                 e["path_position"] = 0
             if "last_move_time" not in e:
                 e["last_move_time"] = ""
-            enemies.append(EnemyUnit(**e))
+            enemies.append(PoliceUnit(**e))
         defenders = {}
         for uid_str, actions in data.get("defenders", {}).items():
             defenders[int(uid_str)] = [DefenseAction(**a) for a in actions]
@@ -297,7 +297,7 @@ def start_new_battle(trends: List[Dict]) -> FortressState:
         prize_pool_kkcoin=0,
     )
     _save_state(state)
-    logger.info(f"[Fortress] 新一輪開始 round={round_id}, 敵人={len(enemies)}, 堡壘HP={fortress_hp}")
+    logger.info(f"[Fortress] 新一輪開始 round={round_id}, 刑警={len(enemies)}, 堡壘HP={fortress_hp}")
     return state
 
 
@@ -326,7 +326,7 @@ def apply_defense_action(
         if used >= FREE_ACTIONS_PER_ROUND:
             return False, f"本輪免費出兵次數已用完（上限 {FREE_ACTIONS_PER_ROUND} 次）", 0
 
-    # 判斷標籤加乘：只要用戶興趣標籤與任一存活敵人匹配即觸發
+    # 判斷標籤加乘：只要用戶興趣標籤與任一存活刑警匹配即觸發
     alive_enemies = [e.name for e in state.enemies if not e.defeated]
     has_bonus = any(
         user_interests_match(user_interests, name)
@@ -335,7 +335,7 @@ def apply_defense_action(
 
     damage = calculate_player_damage(action_type, has_bonus)
 
-    # 依序對存活敵人扣血（從排名最高的開始）
+    # 依序對存活刑警扣血（從排名最高的開始）
     remaining = damage
     for enemy in sorted(state.enemies, key=lambda e: e.rank):
         if enemy.defeated:
@@ -346,7 +346,7 @@ def apply_defense_action(
         if enemy.current_hp <= 0:
             enemy.current_hp = 0
             enemy.defeated = True
-            logger.info(f"[Fortress] 敵人 [{enemy.name}] 已被消滅！")
+            logger.info(f"[Fortress] 刑警 [{enemy.name}] 已被擊退！")
         if remaining <= 0:
             break
 
@@ -367,7 +367,7 @@ def apply_defense_action(
         state.status = "victory"
         logger.info(f"[Fortress] 🎉 勝利！round={state.round_id}")
 
-    # 檢查是否有敵人到達堡壘（推進到100%時）
+    # 檢查是否有刑警到達堡壘（推進到100%時）
     enemies_reached_fortress = []
     for enemy in state.enemies:
         if not enemy.defeated and not enemy.reached_fortress:
@@ -376,7 +376,7 @@ def apply_defense_action(
             if advance_pct >= 100:
                 enemy.reached_fortress = True
                 enemies_reached_fortress.append(enemy)
-                logger.info(f"[Fortress] 敵人 [{enemy.name}] 已到達堡壘！剩餘攻擊力: {enemy.current_hp}")
+                logger.info(f"[Fortress] 刑警 [{enemy.name}] 已到達堡壘！剩餘執法力: {enemy.current_hp}")
     
     # 對堡壘造成傷害（剩餘HP即為攻擊力）
     total_fortress_damage = 0
@@ -458,7 +458,7 @@ def apply_fortress_damage(damage: int) -> Tuple[FortressState, bool]:
 
 def tower_auto_attack() -> Tuple[bool, str]:
     """
-    砲台自動攻擊：每分鐘攻擊範圍內的敵人
+    砲台自動攻擊：每分鐘攻擊範圍內的刑警
     範圍：砲台周圍1-2格
     傷害：基於砲台所有者的免費攻擊力
     """
@@ -483,13 +483,13 @@ def tower_auto_attack() -> Tuple[bool, str]:
         tower_coord = tower_slots[slot_id]["coord"]
         tower_row, tower_col = tower_coord
         
-        # 計算砲台攻擊範圍內的敵人
+        # 計算砲台攻擊範圍內的刑警
         enemies_in_range = []
         for enemy in state.enemies:
             if enemy.defeated:
                 continue
                 
-            # 檢查敵人是否在路徑範圍內
+            # 檢查刑警是否在路徑範圍內
             if 0 <= enemy.path_position < len(path_coords):
                 enemy_row, enemy_col = path_coords[enemy.path_position]
                 
@@ -520,7 +520,7 @@ def tower_auto_attack() -> Tuple[bool, str]:
         
         tower_damage = calculate_player_damage("free", has_bonus)
         
-        # 對範圍內敵人造成傷害（平均分配）
+        # 對範圍內刑警造成傷害（平均分配）
         damage_per_enemy = tower_damage // len(enemies_in_range)
         remaining_damage = tower_damage % len(enemies_in_range)
         
@@ -533,7 +533,7 @@ def tower_auto_attack() -> Tuple[bool, str]:
             if enemy.current_hp <= 0:
                 enemy.current_hp = 0
                 enemy.defeated = True
-                attacked_enemies.append(f"🗼 砲台消滅了 {enemy.name}!")
+                attacked_enemies.append(f"🗼 砲台擊退了 {enemy.name}!")
             else:
                 attacked_enemies.append(f"🗼 砲台對 {enemy.name} 造成 {damage} 傷害")
     
@@ -551,8 +551,8 @@ def tower_auto_attack() -> Tuple[bool, str]:
 
 def move_enemies_forward() -> Tuple[bool, str]:
     """
-    定時移動所有敵人前進一格
-    小怪移動更快，大怪移動較慢
+    定時移動所有刑警前進一格
+    警員移動更快，高階警官移動較慢
     """
     state = _load_state()
     if not state or not state.is_active():
@@ -566,14 +566,14 @@ def move_enemies_forward() -> Tuple[bool, str]:
         if enemy.defeated or enemy.reached_fortress:
             continue
         
-        # 根據敵人排名決定移動間隔（小怪移動快）
+        # 根據刑警階級決定移動間隔（警員移動快）
         move_interval_seconds = {
-            1: 600,  # Boss 10分鐘移動一次
-            2: 540, 3: 540,  # 菁英 9分鐘
+            1: 600,  # 局長 10分鐘移動一次
+            2: 540, 3: 540,  # 隊長 9分鐘
             4: 480, 5: 480,  # 中等 8分鐘
             6: 420, 7: 420,  # 較快 7分鐘
             8: 360, 9: 360,  # 快速 6分鐘
-            10: 300  # 雜兵 5分鐘
+            10: 300  # 警員 5分鐘
         }.get(enemy.rank, 450)
         
         # 檢查是否該移動
@@ -610,8 +610,8 @@ def move_enemies_forward() -> Tuple[bool, str]:
     _save_state(state)
     
     if moved_enemies:
-        return True, f"敵人移動: {', '.join(moved_enemies)}"
-    return False, "無敵人移動"
+        return True, f"刑警移動: {', '.join(moved_enemies)}"
+    return False, "無刑警移動"
 
 
 def _get_map_layout_for_state(state: Optional[FortressState]) -> Dict[str, object]:
@@ -627,7 +627,7 @@ def _get_map_layout_for_state(state: Optional[FortressState]) -> Dict[str, objec
 def settle_battle() -> Dict:
     """
     4 小時後強制結算，回傳結算結果。
-    若敵人未全滅 → 計算剩餘敵人總傷害 → 打堡壘。
+    若刑警未全退 → 計算剩餘刑警總傷害 → 打堡壘。
     """
     state = _load_state()
     if not state:
@@ -637,16 +637,16 @@ def settle_battle() -> Dict:
     if state.status not in ("active", "victory"):
         return {"success": False, "reason": "無活躍戰況"}
 
-    # 計算未消滅且未到達堡壘的敵人造成的傷害
+    # 計算未擊退且未到達堡壘的刑警造成的傷害
     if state.status == "active":
-        # 對於還在路徑上的敵人，直接對堡壘造成剩餘HP傷害（攻擊力）
+        # 對於還在路徑上的刑警，直接對堡壘造成剩餘HP傷害（執法力）
         remaining_enemies = [e for e in state.enemies if not e.defeated and not e.reached_fortress]
         if remaining_enemies:
             total_remaining_damage = sum(e.current_hp for e in remaining_enemies)
             state.fortress_hp = max(0, state.fortress_hp - total_remaining_damage)
-            logger.info(f"[Fortress] 結算時剩餘敵人總攻擊力: {total_remaining_damage}")
+            logger.info(f"[Fortress] 結算時剩餘刑警總執法力: {total_remaining_damage}")
 
-        # 檢查已到達堡壘的敵人（已經在攻擊時處理過了）
+        # 檢查已到達堡壘的刑警（已經在攻擊時處理過了）
         enemies_at_fortress = [e for e in state.enemies if e.reached_fortress and not e.defeated]
         for enemy in enemies_at_fortress:
             logger.info(f"[Fortress] 結算時確認 {enemy.name} 已到達堡壘")
@@ -657,7 +657,7 @@ def settle_battle() -> Dict:
         elif all(e.defeated for e in state.enemies):
             state.status = "victory"
         else:
-            state.status = "defeat"  # 有未消滅的敵人視為失守
+            state.status = "defeat"  # 有未擊退的刑警視為失守
 
     settled_at = datetime.now(TW_TZ)
     state.settled_at = settled_at.isoformat()
