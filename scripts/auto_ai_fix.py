@@ -12,6 +12,25 @@ import subprocess
 from datetime import datetime
 import pytz
 
+
+def extract_client_payload(event_data):
+    """正規化不同觸發來源送進來的 payload。"""
+    payload = event_data.get('client_payload', {})
+
+    error_logs = payload.get('error_logs')
+    if not error_logs and payload.get('error_data'):
+        error_data = payload['error_data']
+        error_logs = {
+            error_data.get('file', 'unknown'): error_data.get('message', '')
+        }
+
+    if not error_logs and payload.get('log_text'):
+        error_logs = {
+            payload.get('source', 'repository_dispatch'): payload.get('log_text', '')
+        }
+
+    return payload, error_logs or {}
+
 async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
     """AI 分析和生成修復代碼"""
     try:
@@ -24,10 +43,10 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
         print("✅ NVIDIA AI 客戶端初始化成功")
         
         # 獲取錯誤日誌
-        payload = event_data.get('client_payload', {})
-        error_logs = payload.get('error_logs', {})
+        payload, error_logs = extract_client_payload(event_data)
         timestamp = payload.get('timestamp', datetime.now().isoformat())
         severity = payload.get('severity', 'medium')
+        ai_analysis = payload.get('ai_analysis', '')
         
         # 構建分析提示
         analysis_prompt = f"""你是KKGroup Discord Bot系統的AI除錯和修復專家。
@@ -39,6 +58,9 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
         
         錯誤日誌：
         {json.dumps(error_logs, ensure_ascii=False, indent=2)}
+
+        既有 AI/監控分析：
+        {ai_analysis or '無'}
         
         時間：{timestamp}
         緊急程度：{severity}
@@ -135,6 +157,11 @@ AI 分析結果: {fix_data.get('root_cause', 'N/A')}
         
         # 添加文件到 Git
         subprocess.run(['git', 'add', file_path], check=True)
+
+        diff_result = subprocess.run(['git', 'diff', '--cached', '--quiet'])
+        if diff_result.returncode == 0:
+            print(f"ℹ️ {file_path} 沒有實際變更，跳過 commit/push")
+            return True
         
         # 提交修復
         commit_message = f"""fix: AI 自動修復 - {fix_data.get('root_cause', '未知錯誤')}
@@ -209,7 +236,7 @@ async def main():
     
     if fix_data:
         # 獲取錯誤信息
-        payload = event_data.get('client_payload', {})
+        payload, _ = extract_client_payload(event_data)
         timestamp = payload.get('timestamp', datetime.now().isoformat())
         severity = payload.get('severity', 'medium')
         

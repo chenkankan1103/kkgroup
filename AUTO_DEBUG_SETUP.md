@@ -81,7 +81,7 @@ sudo nano /etc/environment
 # 添加以下內容
 GITHUB_TOKEN=your_github_token_here
 DISCORD_WEBHOOK_URL=your_discord_webhook_here
-GITHUB_WEBHOOK_URL=your_discord_webhook_here
+GITHUB_WEBHOOK_URL=optional_legacy_webhook_here
 
 # 重新載入環境變數
 source /etc/environment
@@ -98,6 +98,11 @@ source /etc/environment
 - 自動提交修復代碼到專案
 - 發送 Discord 通知
 
+### 閉環關鍵要求
+
+- repository_dispatch 必須送出 event_type 與 client_payload
+- client_payload 至少要包含 timestamp、severity、source、error_logs
+- GitHub Actions 若要讀取 GCP VM 日誌，必須先完成 gcloud 安裝與認證
 ### 手動觸發
 
 1. **進入 GitHub Actions**

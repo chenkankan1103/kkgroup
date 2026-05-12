@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands, ui
 import asyncio
 import aiosqlite
@@ -40,11 +40,9 @@ class ScamHub(commands.Cog):
         self.bot = bot
         self.active_rooms = {}
         self.room_messages = {}  # 存儲每個語音頻道的消息ID
-        self.scam_event_task.start()
         print("[ScamHub] cog initialized, active_rooms cleared")
 
     def cog_unload(self):
-        self.scam_event_task.cancel()
         # 取消所有掛起的刪除任務
         for room_data in self.active_rooms.values():
             if 'deletion_task' in room_data and room_data['deletion_task']:
@@ -344,7 +342,7 @@ class ScamHub(commands.Cog):
                     "Content-Type": "application/json"
                 }
                 payload = {
-                    "model": GROQ_API_MODEL,
+                    "model": AI_API_MODEL,
                     "messages": [
                         {"role": "system", "content": "你是一個創意詐騙事件生成器，用於遊戲內容。"},
                         {"role": "user", "content": base_prompt}
@@ -353,7 +351,7 @@ class ScamHub(commands.Cog):
                     "max_tokens": 150
                 }
                 
-                async with session.post(GROQ_API_URL, headers=headers, json=payload) as response:
+                async with session.post(AI_API_URL, headers=headers, json=payload) as response:
                     if response.status == 200:
                         result = await response.json()
                         return result["choices"][0]["message"]["content"].strip()
