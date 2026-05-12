@@ -1,0 +1,122 @@
+name: Auto Error Detector
+on:
+  schedule:
+    # 每 10 分鐘檢查一次
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: '測試模式'
+        required: false
+        default: 'normal'
+        type: choice
+        options:
+          - normal
+          - test
+          - debug
+
+jobs:
+  error-detection:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: 設定Python環境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: 設定 Python 路徑
+      run: |
+        echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV
+    
+    - name: 安裝依賴
+      run: |
+        pip install aiohttp python-dotenv pytz
+    
+    - name: 運行自動錯誤檢測器
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        TEST_MODE: ${{ github.event.inputs.test_mode }}
+      run: |
+        echo "🚀 啟動自動錯誤檢測器"
+        echo "📊 測試模式: $TEST_MODE"
+        echo "⏰ 開始時間: $(date)"
+        
+        # 運行自動錯誤檢測器
+        python3 scripts/auto_error_detector.py &
+        
+        # 根據模式決定運行時間
+        if [ "$TEST_MODE" = "test" ]; then
+          echo "🧪 測試模式：運行 2 分鐘"
+          sleep 120
+        elif [ "$TEST_MODE" = "debug" ]; then
+          echo "🔍 Debug 模式：運行 5 分鐘"
+          sleep 300
+        else
+          echo "🔄 正常模式：運行 10 分鐘"
+          sleep 600
+        fi
+        
+        # 停止檢測器
+        pkill -f "python3 scripts/auto_error_detector.py" || true
+        
+        echo "✅ 自動錯誤檢測器完成"
+        echo "⏰ 結束時間: $(date)"
+    
+    - name: 檢查 GitHub Actions 修復狀態
+      if: always()
+      run: |
+        echo "📊 檢查最近的 GitHub Actions 執行狀態"
+        
+        # 檢查是否有新的修復提交
+        if git log --oneline --since="10 minutes ago" | grep -q "fix.*name.*self.*error"; then
+          echo "✅ 檢測到自動修復提交"
+          echo "🔗 修復已通過 GitHub Actions 自動處理"
+        else
+          echo "ℹ️ 最近 10 分鐘內無自動修復提交"
+        fi
+        
+        # 檢查修復工作流程狀態
+        echo "📋 最近的修復工作流程："
+        gh run list --workflow="Fix Name Self Error" --limit=3 --json | \
+          jq -r '.[] | "\(.status): \(.conclusion) - \(.created_at)"' || echo "無法獲取工作流程狀態"
+    
+    - name: 發送狀態報告
+      if: always()
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        if [ "$DISCORD_WEBHOOK" != "" ]; then
+          echo "📢 發送狀態報告到 Discord"
+          
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "content": "🤖 **自動錯誤檢測器狀態報告**",
+              "embeds": [{
+                "title": "系統監控狀態",
+                "description": "自動錯誤檢測器和 GitHub Actions 修復系統狀態",
+                "color": 5814783,
+                "fields": [
+                  {"name": "🤖 檢測器狀態", "value": "'"$TEST_MODE"' 模式執行完成", "inline": true},
+                  {"name": "⏰ 執行時間", "value": "'$(date +'%Y-%m-%d %H:%M:%S')'", "inline": true},
+                  {"name": "🔗 修復系統", "value": "GitHub Actions 自動修復", "inline": true},
+                  {"name": "📊 監控頻率", "value": "每 10 分鐘檢查", "inline": true}
+                ]
+              }]
+            }'
+        else
+          echo "⚠️ 未設置 Discord Webhook，跳過狀態報告"
+        fi
