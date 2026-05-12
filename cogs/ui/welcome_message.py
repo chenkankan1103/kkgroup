@@ -1219,9 +1219,9 @@ class WelcomeFlow(commands.Cog):
             # 🏷️ 發送興趣標籤選擇（堡壘保衛戰用，不強制）
             try:
                 interest_embed = discord.Embed(
-                    title="🏰 KK 園區堡壘保衛戰 — 選擇你的興趣標籤",
+                    title="🏰 KK 園區對抗刑警大隊 — 選擇你的興趣標籤",
                     description=(
-                        "每 4 小時，Google 熱搜話題會化為**入侵敵軍**攻打 KK 園區！\n\n"
+                        "每 4 小時，Google 熱搜話題會化為**刑警大隊**前來 KK 園區執法！\n\n"
                         "選擇你感興趣的話題，當相關趨勢入侵時：\n"
                         "⚔️ 你的攻擊力將會 **×2**！\n\n"
                         "選擇後即生效，也可隨時用 `/my_interests` 修改。"

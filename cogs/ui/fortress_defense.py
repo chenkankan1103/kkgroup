@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8 */
 """
-KK 園區堡壘保衛戰 - Discord Cog
-玩家透過按鈕參與塔防遊戲，防守 Google Trends 入侵的熱搜大軍
+KK 園區對抗刑警大隊 - Discord Cog
+玩家透過按鈕參與塔防遊戲，對抗 Google Trends 前來執法的刑警大隊
 """
 
 import discord
@@ -35,7 +35,7 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
         "id": "snake_river",
         "name": "蛇行河道",
         "rows": 6,
-        "cols": 13,
+        "cols": 18,
         "path_tile": "🟫",
         "ground_tile": "🟩",
         "path_coords": [
@@ -43,27 +43,29 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
             (1, 3), (2, 3),
             (2, 2), (2, 1), (2, 0),
             (3, 0), (4, 0),
-            (4, 1), (4, 2), (4, 3), (4, 4),
-            (3, 4), (2, 4), (1, 4),
-            (1, 5), (1, 6), (1, 7),
-            (2, 7), (3, 7), (4, 7), (5, 7),
-            (5, 8), (5, 9), (5, 10), (5, 11),
+            (4, 1), (4, 2), (4, 3), (4, 4), (4, 5),
+            (3, 5), (2, 5), (1, 5),
+            (1, 6), (1, 7), (1, 8), (1, 9), (1, 10),
+            (2, 10), (3, 10), (4, 10), (5, 10),
+            (5, 11), (5, 12), (5, 13), (5, 14), (5, 15), (5, 16),
         ],
-        "fort_coord": (5, 12),
+        "fort_coord": (5, 17),
         "tower_slots": {
             "north_gate": {"label": "北門入口", "desc": "開局壓制第一波", "coord": (0, 4)},
             "west_corner": {"label": "西側急彎", "desc": "專打轉角卡位", "coord": (1, 1)},
             "mid_choke": {"label": "中央瓶頸", "desc": "火力最密集的彎道", "coord": (3, 2)},
             "inner_curve": {"label": "內圈彎道", "desc": "攔截中段推進", "coord": (2, 5)},
             "east_bridge": {"label": "東側橋頭", "desc": "守住後段長線", "coord": (3, 8)},
-            "last_stand": {"label": "園區前哨", "desc": "最後防線", "coord": (4, 11)},
+            "last_stand": {"label": "園區前哨", "desc": "最後防線", "coord": (4, 16)},
+            "new_tower_1": {"label": "東側高地", "desc": "俯射東路直線", "coord": (0, 7)},
+            "new_tower_2": {"label": "中央要塞", "desc": "覆蓋核心路段", "coord": (3, 10)},
         },
     },
     {
         "id": "desert_switchback",
         "name": "沙丘折返",
         "rows": 7,
-        "cols": 13,
+        "cols": 18,
         "path_tile": "🟨",
         "ground_tile": "🟧",
         "path_coords": [
@@ -74,22 +76,24 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
             (4, 3), (5, 3), (5, 4), (5, 5), (5, 6),
             (5, 7), (4, 7), (3, 7), (2, 7),
             (2, 8), (2, 9), (2, 10), (3, 10), (4, 10), (5, 10),
-            (5, 11),
+            (5, 11), (5, 12), (5, 13), (5, 14), (5, 15), (5, 16),
         ],
-        "fort_coord": (5, 12),
+        "fort_coord": (6, 17),
         "tower_slots": {
             "sand_entry": {"label": "沙門入口", "desc": "截斷第一段直線", "coord": (1, 1)},
             "high_dune": {"label": "高坡沙丘", "desc": "俯射上路折返", "coord": (1, 4)},
             "sun_pit": {"label": "烈日坑道", "desc": "壓制中段會車點", "coord": (2, 5)},
             "crosswind": {"label": "側風轉盤", "desc": "打擊右側長走廊", "coord": (4, 6)},
-            "oasis_wall": {"label": "綠洲外牆", "desc": "最後封口", "coord": (4, 11)},
+            "oasis_wall": {"label": "綠洲外牆", "desc": "最後封口", "coord": (4, 16)},
+            "desert_tower_1": {"label": "沙丘頂點", "desc": "制高點打擊", "coord": (0, 5)},
+            "desert_tower_2": {"label": "綠洲守衛", "desc": "保護終點前線", "coord": (3, 10)},
         },
     },
     {
         "id": "forest_spiral",
         "name": "密林回旋",
         "rows": 7,
-        "cols": 13,
+        "cols": 18,
         "path_tile": "🟫",
         "ground_tile": "🌲",
         "path_coords": [
@@ -97,19 +101,21 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
             (1, 4), (2, 4),
             (2, 3), (2, 2), (2, 1),
             (3, 1), (4, 1),
-            (4, 2), (4, 3), (4, 4), (4, 5),
-            (3, 5), (2, 5), (1, 5),
-            (1, 6), (1, 7), (1, 8),
-            (2, 8), (3, 8), (4, 8), (5, 8),
-            (5, 9), (5, 10), (5, 11),
+            (4, 2), (4, 3), (4, 4), (4, 5), (4, 6),
+            (3, 6), (2, 6), (1, 6),
+            (1, 7), (1, 8), (1, 9), (1, 10), (1, 11),
+            (2, 11), (3, 11), (4, 11), (5, 11),
+            (5, 12), (5, 13), (5, 14), (5, 15), (5, 16),
         ],
-        "fort_coord": (5, 12),
+        "fort_coord": (6, 17),
         "tower_slots": {
             "wood_gate": {"label": "林地前哨", "desc": "卡死最前段入口", "coord": (1, 2)},
             "spiral_top": {"label": "回旋上緣", "desc": "覆蓋雙重折返", "coord": (1, 3)},
             "spiral_core": {"label": "回旋核心", "desc": "地圖中心火力井", "coord": (3, 4)},
             "fern_bridge": {"label": "蕨橋彎口", "desc": "攔截右路進軍", "coord": (2, 7)},
-            "fort_watch": {"label": "堡前瞭望", "desc": "園區前最後一塔", "coord": (4, 11)},
+            "fort_watch": {"label": "堡前瞭望", "desc": "園區前最後一塔", "coord": (4, 16)},
+            "forest_tower_1": {"label": "樹冠狙擊點", "desc": "高遠打擊位置", "coord": (0, 8)},
+            "forest_tower_2": {"label": "林間哨站", "desc": "中段支援火力", "coord": (3, 11)},
         },
     },
 ]
@@ -158,7 +164,7 @@ class TagEditModal(Modal, title="🏷️ 設定你的興趣標籤"):
         if valid:
             await interaction.response.send_message(
                 f"✅ 已設定興趣標籤：**{' / '.join(valid)}**\n"
-                "當你感興趣的話題出現在熱搜時，你的攻擊力將會 ×2！",
+                "🏰 當你的標籤話題出現在熱搜時，對抗刑警大隊攻擊力將 **×2**！",
                 ephemeral=True
             )
         else:
@@ -347,14 +353,14 @@ class TowerPlacementSelect(Select):
 
 
 def _rank_to_icon(rank: int) -> str:
-    """根據敵軍排名回傳戰場 emoji"""
+    """根據刑警階級回傳戰場 emoji"""
     if rank == 1:
-        return "👹"
+        return "�"
     if rank <= 3:
-        return "👺"
+        return "�"
     if rank <= 6:
-        return "😈"
-    return "👾"
+        return "�"
+    return "�"
 
 
 def _get_map_layout(state: Optional[fs.FortressState]) -> Dict[str, object]:
@@ -378,8 +384,8 @@ def _progress_step_percent(layout: Dict[str, object]) -> float:
 def _movement_rule_text(layout: Dict[str, object]) -> str:
     path_len = len(layout["path_coords"])
     return (
-        f"定時自動走格系統；小怪移動較快，大怪移動較慢。"
-        f"本圖共 {path_len} 格，敵人會按排名間隔自動前進。"
+        f"定時自動走格系統；警員移動較快，高階警官移動較慢。"
+        f"本圖共 {path_len} 格，刑警會按階級間隔自動前進。"
     )
 
 
@@ -401,7 +407,7 @@ def _find_slot_owner_name(state: fs.FortressState, slot_id: str, bot: discord.Cl
         if owned_slot != slot_id:
             continue
         user = bot.get_user(owner_id)
-        return user.display_name if user else f"玩家 {owner_id}"
+        return user.display_name if user else f"玩家{owner_id}"
     return "其他玩家"
 
 
@@ -438,7 +444,7 @@ def _build_td_map(state: fs.FortressState) -> str:
     fort_row, fort_col = layout["fort_coord"]
     grid[fort_row][fort_col] = "🏯"
 
-    # 畫敵人（根據實際位置）
+    # 畫刑警（根據實際位置）
     alive = sorted([e for e in state.enemies if not e.defeated], key=lambda enemy: enemy.rank)
     occupied_path_cells = set()
     
@@ -465,23 +471,23 @@ def _build_td_map(state: fs.FortressState) -> str:
             grid[row][col] = icon
             occupied_path_cells.add((row, col))
             
-            # 添加推進效果（在敵人後面顯示移動軌跡）
+            # 添加推進效果（在刑警後面顯示移動軌跡）
             for trail_offset in range(1, min(4, len(layout["path_coords"]) - position)):
                 trail_pos = position - trail_offset
                 if trail_pos >= 0:
                     trail_row, trail_col = layout["path_coords"][trail_pos]
                     if (trail_row, trail_col) not in occupied_path_cells and grid[trail_row][trail_col] == layout["path_tile"]:
-                        # 根據敵人類型顯示不同軌跡
-                        if enemy.rank <= 3:  # Boss和菁英
+                        # 根據刑警階級顯示不同軌跡
+                        if enemy.rank <= 3:  # 局長和隊長
                             grid[trail_row][trail_col] = "🔥"
-                        else:  # 一般敵人
+                        else:  # 一般警員
                             grid[trail_row][trail_col] = "💨"
                         occupied_path_cells.add((trail_row, trail_col))
 
     return "\n".join("".join(row) for row in grid)
 
 
-def _tower_summary_lines(state: fs.FortressState) -> List[str]:
+def _tower_summary_lines(state: fs.FortressState, bot: discord.Client) -> List[str]:
     layout = _get_map_layout(state)
     lines = []
     for slot_id, meta in layout["tower_slots"].items():
@@ -489,7 +495,10 @@ def _tower_summary_lines(state: fs.FortressState) -> List[str]:
         if owner_id is None:
             lines.append(f"▫️ {_tower_slot_label(slot_id, state)}：空位")
             continue
-        lines.append(f"🗼 {_tower_slot_label(slot_id, state)}：玩家 {owner_id}")
+        # 獲取玩家中文暱稱
+        user = bot.get_user(owner_id)
+        display_name = user.display_name if user else f"玩家{owner_id}"
+        lines.append(f"🗼 {_tower_slot_label(slot_id, state)}：{display_name}")
     return lines
 
 
@@ -527,43 +536,56 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
         f"🗺️ 本輪地圖：**{layout['name']}**\n"
         f"`{state.fortress_hp_bar()}`\n\n"
         f"{td_map}\n\n"
-        f"⬅️ 敵軍由左側入侵路線前進，🗼 砲台自動射擊\n"
+        f"⬅️ 刑警大隊由左側路線前進，🗼 砲台自動射擊\n"
         f"📏 {_movement_rule_text(layout)}\n"
         f"⏱️ 距結算剩餘 **{remaining_min}** 分鐘　"
-        f"💀 已殲滅 **{defeated_count}/{len(state.enemies)}** 敵"
+        f"💀 已攔截 **{defeated_count}/{len(state.enemies)}** 名刑警"
     )
 
+    # 刑警大隊詳細列表：使用表格格式讓資訊更對齊醒目
+    rank_labels = {1: "👮 局長", 2: "🚔 隊長", 3: "🚔 隊長"}
+    
+    # 建立表格標題
+    table_header = "**🚨 刑警大隊戰況表**\n"
+    table_header += "```\n"
+    table_header += f"{'階級':<8} {'熱搜標題':<20} {'推進':<8} {'血量':<12} {'狀態':<8}\n"
+    table_header += "─" * 60 + "\n"
+    
+    enemy_lines = [table_header]
+    for e in sorted(state.enemies, key=lambda x: x.rank):
+        label = rank_labels.get(e.rank, f"🚨 警員 #{e.rank}")
+        if e.defeated:
+            status = "✅ 擊退"
+            hp_display = f"---/{e.max_hp}"
+            progress_display = "---%"
+        else:
+            status = "⚔️ 作戰中"
+            position = e.path_position
+            layout = _get_map_layout(state)
+            path_len = len(layout["path_coords"])
+            progress_pct = int((position / path_len) * 100) if path_len > 0 else 0
+            hp_display = f"{e.current_hp:>4}/{e.max_hp}"
+            progress_display = f"{progress_pct:>3}%"
+        
+        # 限制標題長度避免表格破壞
+        display_name = e.name[:18] + "..." if len(e.name) > 18 else e.name
+        
+        line = f"{label:<8} {display_name:<20} {progress_display:<8} {hp_display:<12} {status:<8}"
+        enemy_lines.append(line)
+    
+    enemy_lines.append("```")
+    enemy_text = "\n".join(enemy_lines)
+
     embed = discord.Embed(
-        title="⚔️ KK 園區堡壘保衛戰！",
+        title="⚔️ KK 園區對抗刑警大隊！",
         description=description,
         color=embed_color,
         timestamp=now,
     )
 
-    # 敵軍詳細列表：時事標題優先，推進與血量退為次要資訊
-    rank_labels = {1: "👹 BOSS", 2: "👺 菁英", 3: "👺 菁英"}
-    enemy_lines = []
-    for e in sorted(state.enemies, key=lambda x: x.rank):
-        label = rank_labels.get(e.rank, f"👾 先鋒 #{e.rank}")
-        if e.defeated:
-            enemy_lines.append(
-                f"~~**{e.name}**~~- {label} · ✅ 已消滅"
-            )
-        else:
-            position = e.path_position
-            layout = _get_map_layout(state)
-            path_len = len(layout["path_coords"])
-            progress_pct = int((position / path_len) * 100) if path_len > 0 else 0
-            # 對齊格式：實事標題加粗並保持突出，其他資訊對齊
-            progress_str = f"推進 {progress_pct:>2}%"
-            hp_str = f"HP {e.current_hp:>4}/{e.max_hp}"
-            enemy_lines.append(
-                f"**{e.name}**- {label} · {progress_str} · {hp_str}"
-            )
-
     embed.add_field(
-        name=f"🗡️ 入侵敵軍（{len(alive)} 存活 / {len(state.enemies)} 總計）",
-        value="\n".join(enemy_lines) or "所有敵軍已消滅！",
+        name=f" 前來執法的刑警大隊（{len(alive)} 在場 / {len(state.enemies)} 總計）",
+        value=enemy_text or "所有刑警已撤離！",
         inline=False,
     )
     embed.add_field(
@@ -571,18 +593,18 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
         value=(
             f"{layout['name']} 會依輪次自動切換；🔲 可蓋塔，🗼 已架設砲台，⚡ 砲台攻擊範圍，🏯 是園區核心。\n"
             f"📏 {_movement_rule_text(layout)}\n"
-            f"🔥 砲台每30秒自動攻擊範圍內敵人（2格範圍）"
+            f"🔥 砲台每30秒自動攻擊範圍內刑警（2格範圍）"
         ),
         inline=False,
     )
     embed.add_field(
         name="🗼 塔位部署",
-        value="\n".join(_tower_summary_lines(state)),
+        value="\n".join(_tower_summary_lines(state, self.bot)),
         inline=False,
     )
 
     embed.add_field(
-        name="🛡️ 防守狀況",
+        name="🛡️ 對抗狀況",
         value=f"**{len(state.defenders)}** 名英雄出兵\n每人 {fs.FREE_ACTIONS_PER_ROUND} 次免費出兵",
         inline=True,
     )
@@ -676,7 +698,7 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
             reward = result.get("reward_map", {}).get(str(uid), 0)
             reward_suffix = f" | +{reward:,} KKCoin" if reward else ""
             lines.append(f"{medals[i]} **{name}** — {dmg:,} 傷害 ({pct}%){reward_suffix}")
-        embed.add_field(name="🏆 防守英雄榜", value="\n".join(lines), inline=False)
+        embed.add_field(name="🏆 對抗英雄榜", value="\n".join(lines), inline=False)
 
     embed.set_footer(text=f"輪次 {result['round_id']}")
     return embed
@@ -685,7 +707,7 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
 # ─── 主 Cog ───────────────────────────────────────────────
 
 class FortressDefenseCog(commands.Cog):
-    """KK 園區堡壘保衛戰"""
+    """KK 園區對抗刑警大隊"""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -710,7 +732,7 @@ class FortressDefenseCog(commands.Cog):
 
     # ── 斜線指令 ───────────────────────────────────────────
 
-    @app_commands.command(name="fortress_status", description="查看堡壘保衛戰當前戰況")
+    @app_commands.command(name="fortress_status", description="查看對抗刑警大隊當前戰況")
     async def fortress_status(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         state = fs.get_current_battle()
@@ -745,13 +767,13 @@ class FortressDefenseCog(commands.Cog):
         view = InterestManageView(interaction.user.id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="my_defense_stats", description="查看你的累計防守貢獻")
+    @app_commands.command(name="my_defense_stats", description="查看你的累計對抗貢獻")
     async def my_defense_stats(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         uid = interaction.user.id
         total_dmg = get_user_field(uid, "fortress_total_damage", default=0)
         wins = get_user_field(uid, "fortress_wins", default=0)
-        embed = discord.Embed(title="🛡️ 我的防守紀錄", color=0x1ABC9C)
+        embed = discord.Embed(title="🛡️ 我的對抗紀錄", color=0x1ABC9C)
         embed.add_field(name="累計造成傷害", value=f"{total_dmg:,}", inline=True)
         embed.add_field(name="累計守城次數", value=str(wins), inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
