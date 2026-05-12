@@ -65,26 +65,41 @@ jobs:
     
     - name: 發送 Discord 通知
       if: always()
+      continue-on-error: true
       env:
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        TEST_TYPE: ${{ github.event.inputs.test_type || 'push-auto' }}
       run: |
         if [ "$DISCORD_WEBHOOK" != "" ]; then
           echo "📢 發送 Discord 通知"
-          curl -X POST "$DISCORD_WEBHOOK" \
-            -H "Content-Type: application/json" \
-            -d '{
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime
+
+          import requests
+
+          payload = {
               "content": "🔧 **Name Self Error 修復完成**",
               "embeds": [{
-                "title": "自動修復執行報告",
-                "description": "GitHub Actions 自動修復 name self is not defined 錯誤",
-                "color": 5814783,
-                "fields": [
-                  {"name": "🤖 執行環境", "value": "GitHub Actions", "inline": true},
-                  {"name": "📊 測試類型", "value": "'"$TEST_TYPE"'", "inline": true},
-                  {"name": "⏰ 執行時間", "value": "'$(date +'%Y-%m-%d %H:%M:%S')'", "inline": true}
-                ]
-              }]
-            }'
+                  "title": "自動修復執行報告",
+                  "description": "GitHub Actions 自動修復 name self is not defined 錯誤",
+                  "color": 5814783,
+                  "fields": [
+                      {"name": "🤖 執行環境", "value": "GitHub Actions", "inline": True},
+                      {"name": "📊 測試類型", "value": os.getenv("TEST_TYPE", "push-auto"), "inline": True},
+                      {"name": "⏰ 執行時間", "value": datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'), "inline": True},
+                  ],
+              }],
+          }
+
+          try:
+              response = requests.post(os.environ["DISCORD_WEBHOOK"], json=payload, timeout=15)
+              response.raise_for_status()
+              print("Discord notification sent")
+          except Exception as exc:
+              print(f"Discord notification skipped: {exc}")
+          PY
         else
           echo "⚠️ 未設置 Discord Webhook，跳過通知"
         fi
