@@ -7,8 +7,28 @@
 import os
 import subprocess
 import sys
-import importlib.util
+import re
 from datetime import datetime
+
+
+FORTRESS_FILE = "cogs/ui/fortress_defense.py"
+
+
+def _validate_fortress_fix(content: str):
+    signature_ok = "def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.Embed:" in content
+
+    helper_match = re.search(
+        r"def build_battle_embed\(.*?\n(?=def build_status_embed)",
+        content,
+        re.DOTALL,
+    )
+    helper_body = helper_match.group(0) if helper_match else ""
+    has_invalid_self = "self." in helper_body
+
+    return signature_ok and not has_invalid_self, {
+        "signature_ok": signature_ok,
+        "has_invalid_self": has_invalid_self,
+    }
 
 def fix_name_self_error():
     """修復 'name self is not defined' 錯誤"""
@@ -16,10 +36,7 @@ def fix_name_self_error():
     
     # 可能出現錯誤的文件列表
     error_files = [
-        "cogs/common/fortress_defense.py",
-        "cogs/shop/merchant.py", 
-        "cogs/ui/views/crop_operations.py",
-        "cogs/common/work_function/work_cog.py"
+        FORTRESS_FILE,
     ]
     
     fixed_count = 0
@@ -33,11 +50,32 @@ def fix_name_self_error():
                 content = f.read()
             
             # 檢查並修復錯誤
-            if "name 'self' is not defined" in content:
+            fixed_content = content
+
+            if file_path == FORTRESS_FILE:
+                fixed_content = fixed_content.replace(
+                    "def build_battle_embed(state: fs.FortressState) -> discord.Embed:",
+                    "def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.Embed:",
+                )
+                fixed_content = fixed_content.replace(
+                    'value="\\n".join(_tower_summary_lines(state, self.bot)),',
+                    'value="\\n".join(_tower_summary_lines(state, bot)),',
+                )
+                fixed_content = fixed_content.replace(
+                    'embed = build_battle_embed(state)',
+                    'embed = build_battle_embed(state, self.bot)',
+                )
+                fixed_content = fixed_content.replace(
+                    'await msg.edit(embed=build_battle_embed(state_final), view=None)',
+                    'await msg.edit(embed=build_battle_embed(state_final, self.bot), view=None)',
+                )
+                fixed_content = fixed_content.replace(
+                    'await msg.edit(embed=build_battle_embed(state), view=view)',
+                    'await msg.edit(embed=build_battle_embed(state, self.bot), view=view)',
+                )
+
+            if fixed_content != content:
                 print(f"⚠️ 發現錯誤在: {file_path}")
-                
-                # 修復錯誤：將 'name self' 替換為 'name "self"'
-                fixed_content = content.replace("name 'self' is not defined", 'name "self" is not defined')
                 
                 # 寫回修復後的內容
                 with open(file_path, 'w', encoding='utf-8') as f:
@@ -69,8 +107,8 @@ def fix_name_self_error():
 ⏰ 修復時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 修復內容：
-- 將 'name 'self' is not defined' 替換為 'name "self" is not defined'
-- 檢查並修復所有相關 Python 文件
+- 修正 fortress_defense 模組級 helper 中誤用 self 的問題
+- 同步更新 build_battle_embed 呼叫點
 - 自動提交修復到 Git
 """
             
@@ -93,8 +131,7 @@ def test_fix():
     
     # 測試文件列表
     test_files = [
-        "cogs/common/fortress_defense.py",
-        "cogs/shop/merchant.py"
+        FORTRESS_FILE,
     ]
     
     results = []
@@ -102,14 +139,20 @@ def test_fix():
     for file_path in test_files:
         if os.path.exists(file_path):
             try:
-                # 嘗試導入模組
-                module_name = file_path.replace('/', '.').replace('.py', '')
-                spec = importlib.util.spec_from_file_location(module_name, file_path)
-                module = importlib.util.module_from_spec(spec)
-                
-                # 檢查是否有語法錯誤
-                print(f"✅ {file_path}: 導入成功")
-                results.append({"file": file_path, "status": "success", "error": None})
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                if file_path == FORTRESS_FILE:
+                    is_valid, details = _validate_fortress_fix(content)
+                    if is_valid:
+                        print(f"✅ {file_path}: fortress self 錯誤檢查通過")
+                        results.append({"file": file_path, "status": "success", "error": None})
+                    else:
+                        print(f"❌ {file_path}: fortress 驗證失敗 - {details}")
+                        results.append({"file": file_path, "status": "error", "error": str(details)})
+                else:
+                    print(f"✅ {file_path}: 無額外測試")
+                    results.append({"file": file_path, "status": "success", "error": None})
                 
             except Exception as e:
                 error_msg = str(e)

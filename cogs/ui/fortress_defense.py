@@ -504,7 +504,7 @@ def _tower_summary_lines(state: fs.FortressState, bot: discord.Client) -> List[s
 
 # ─── Embed 建構函數 ────────────────────────────────────────
 
-def build_battle_embed(state: fs.FortressState) -> discord.Embed:
+def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.Embed:
     """塔防風格戰鬥 Embed"""
     now = datetime.now(TW_TZ)
     ends = datetime.fromisoformat(state.ends_at)
@@ -599,7 +599,7 @@ def build_battle_embed(state: fs.FortressState) -> discord.Embed:
     )
     embed.add_field(
         name="🗼 塔位部署",
-        value="\n".join(_tower_summary_lines(state, self.bot)),
+        value="\n".join(_tower_summary_lines(state, bot)),
         inline=False,
     )
 
@@ -789,7 +789,7 @@ class FortressDefenseCog(commands.Cog):
             log.warning(f"[Fortress] 找不到頻道 {self._battle_channel_id}")
             return
 
-        embed = build_battle_embed(state)
+        embed = build_battle_embed(state, self.bot)
         view = FortressEnemyView(self)
         msg = await channel.send(embed=embed, view=view)
         self._battle_message_id = msg.id
@@ -859,7 +859,7 @@ class FortressDefenseCog(commands.Cog):
                     msg = await channel.fetch_message(self._battle_message_id)
                     state_final = fs.get_current_battle()
                     if state_final:
-                        await msg.edit(embed=build_battle_embed(state_final), view=None)
+                        await msg.edit(embed=build_battle_embed(state_final, self.bot), view=None)
                 except Exception:
                     pass
 
@@ -887,7 +887,7 @@ class FortressDefenseCog(commands.Cog):
             msg = await channel.fetch_message(self._battle_message_id)
             if state:
                 view = None if state.status != "active" else FortressEnemyView(self)
-                await msg.edit(embed=build_battle_embed(state), view=view)
+                await msg.edit(embed=build_battle_embed(state, self.bot), view=view)
                 self._last_embed_refresh_at = now
         except discord.NotFound:
             pass
@@ -1067,7 +1067,7 @@ class FortressDefenseCog(commands.Cog):
             
             try:
                 message = await channel.fetch_message(self._battle_message_id)
-                embed = build_battle_embed(state)
+                embed = build_battle_embed(state, self.bot)
                 await message.edit(embed=embed, view=FortressEnemyView(self))
             except discord.NotFound:
                 log.warning("[Fortress] 戰況訊息不存在，停止更新")
