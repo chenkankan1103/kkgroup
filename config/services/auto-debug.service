@@ -1,0 +1,18 @@
+[Unit]
+Description=Auto Debug System
+After=network.target
+
+[Service]
+Type=simple
+User=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/home/e193752468/kkgroup
+ExecStart=/usr/bin/python3 -m cogs.common.auto_debug_system
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
