@@ -1,5 +1,11 @@
 name: Fix Name Self Error
 on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'cogs/ui/fortress_defense.py'
+      - 'scripts/fix_name_self_error.py'
+      - '.github/workflows/fix-name-self-error.yml'
   workflow_dispatch:
     inputs:
       test_type:
@@ -48,8 +54,8 @@ jobs:
     
     - name: 執行修復腳本
       env:
-        TEST_TYPE: ${{ github.event.inputs.test_type }}
-        ERROR_CONTEXT: ${{ github.event.inputs.error_context }}
+        TEST_TYPE: ${{ github.event.inputs.test_type || 'push-auto' }}
+        ERROR_CONTEXT: ${{ github.event.inputs.error_context || 'fortress_defense name self regression check' }}
       run: |
         echo "🔧 開始執行修復腳本"
         echo "📊 測試類型: $TEST_TYPE"
