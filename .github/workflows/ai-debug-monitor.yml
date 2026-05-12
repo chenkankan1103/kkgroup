@@ -1,7 +1,7 @@
 name: AI Debug Monitor
 
 concurrency:
-  group: ai-debug-monitor-${{ github.ref }}
+  group: ai-debug-monitor-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
