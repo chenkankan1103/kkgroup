@@ -80,12 +80,19 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
         )
 
         if not response:
-            print("⚠️ NVIDIA 無回應，改用 Gemini 備援")
-            response = await GoogleAIClient().call_api(
-                messages,
-                temperature=0.2,
-                max_tokens=2000,
-            )
+            # 只有在緊急程度為高時才使用 Gemini 備援以節省配額
+            sev_norm = str(severity).strip().lower()
+            is_high = sev_norm in ('high', 'h', '高')
+            if is_high:
+                print("⚠️ NVIDIA 無回應，改用 Gemini 備援")
+                response = await GoogleAIClient().call_api(
+                    messages,
+                    temperature=0.2,
+                    max_tokens=2000,
+                )
+            else:
+                print(f"⚠️ NVIDIA 無回應且緊急程度為 {severity}，跳過 Gemini 備援以節省配額")
+                response = None
         
         if response:
             try:

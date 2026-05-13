@@ -153,12 +153,24 @@ jobs:
               model='deepseek-ai/deepseek-v4-pro',
               max_tokens=1200,
             )) or ''
-            if not analysis and os.getenv('AI_API_KEY'):
-              analysis = asyncio.run(GoogleAIClient().call_api(
-                messages,
-                temperature=0.2,
-                max_tokens=1200,
-              )) or ''
+
+            # 根據日誌內容推估嚴重度（只在 high 時才呼叫 Gemini 備援）
+            import re
+            sev = 'low'
+            if re.search(r"(Traceback|CRITICAL|Fatal|Unhandled|oom|killed process|failed with result|status=\d+/FAILURE|panic|permission denied|cannot connect|connection (?:reset|refused|closed))", error_logs, re.IGNORECASE):
+              sev = 'high'
+            elif re.search(r"\b429\b|rate limit|quota|(?:HTTP|http)\s*[45]\d\d", error_logs, re.IGNORECASE):
+              sev = 'medium'
+
+            if not analysis:
+              if os.getenv('AI_API_KEY') and sev == 'high':
+                analysis = asyncio.run(GoogleAIClient().call_api(
+                  messages,
+                  temperature=0.2,
+                  max_tokens=1200,
+                )) or ''
+              else:
+                print(f"⚠️ NVIDIA 無回應且 severity={sev}，跳過 Gemini 備援以節省配額")
           except Exception as exc:
             analysis = json.dumps({
               'root_cause': 'AI 分析失敗',
