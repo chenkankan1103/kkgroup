@@ -13,11 +13,51 @@ class GoogleAIClient:
     
     def __init__(self):
         self.api_key = os.getenv("AI_API_KEY")
+        self.backup_api_key = os.getenv("AI_API_KEY_BACKUP")
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"  # 更新為 v1beta
         self.model = os.getenv("AI_API_MODEL", "gemini-2.0-flash")  # 使用 .env 的模型，預設為 gemini-2.0-flash
         
         if not self.api_key:
             print("❌ AI_API_KEY 未設置")
+
+    async def _call_with_key(
+        self,
+        api_key: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> Optional[str]:
+        """使用指定 key 呼叫 Google Generative AI。"""
+        contents = self._convert_messages(messages)
+        url = f"{self.base_url}/models/{self.model}:generateContent?key={api_key}"
+
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            }
+        }
+
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get('candidates'):
+                        content = result['candidates'][0].get('content', {})
+                        if content.get('parts'):
+                            return content['parts'][0].get('text', '')
+                    return None
+
+                error_text = await response.text()
+                print(f"❌ Google API 錯誤 {response.status}: {error_text}")
+                if response.status == 429:
+                    raise RuntimeError("google_quota_exhausted")
+                return None
     
     async def call_api(
         self, 
@@ -41,38 +81,15 @@ class GoogleAIClient:
             if not self.api_key:
                 print("❌ AI_API_KEY 未設置")
                 return None
-            
-            # 將訊息轉換為 Google 格式
-            contents = self._convert_messages(messages)
-            
-            url = f"{self.base_url}/models/{self.model}:generateContent?key={self.api_key}"
-            
-            payload = {
-                "contents": contents,
-                "generationConfig": {
-                    "temperature": temperature,
-                    "maxOutputTokens": max_tokens,
-                }
-            }
-            
-            headers = {
-                "Content-Type": "application/json"
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        # 提取生成的文本
-                        if result.get('candidates'):
-                            content = result['candidates'][0].get('content', {})
-                            if content.get('parts'):
-                                return content['parts'][0].get('text', '')
-                        return None
-                    else:
-                        error_text = await response.text()
-                        print(f"❌ Google API 錯誤 {response.status}: {error_text}")
-                        return None
+
+            try:
+                return await self._call_with_key(self.api_key, messages, temperature, max_tokens)
+            except RuntimeError as exc:
+                if str(exc) != "google_quota_exhausted" or not self.backup_api_key:
+                    raise
+
+                print("⚠️ Google 主 API Key 配額不足，嘗試備用 Key")
+                return await self._call_with_key(self.backup_api_key, messages, temperature, max_tokens)
         
         except Exception as e:
             print(f"❌ Google API 調用失敗: {e}")
