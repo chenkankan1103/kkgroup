@@ -282,6 +282,24 @@ class LogMonitorSummaryView(discord.ui.View):
         self._engine = engine
         self._channel = channel
 
+    def _build_ephemeral_embed(
+        self,
+        title: str,
+        description: str,
+        color: discord.Color,
+        detail: Optional[str] = None,
+    ) -> discord.Embed:
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=color,
+            timestamp=_current_tw_datetime(),
+        )
+        if detail:
+            embed.add_field(name="詳細資訊", value=_truncate_text(detail, 900), inline=False)
+        embed.set_footer(text="僅自己可見")
+        return embed
+
     @discord.ui.button(
         label="🧠 送交 Debug",
         style=discord.ButtonStyle.primary,
@@ -297,21 +315,58 @@ class LogMonitorSummaryView(discord.ui.View):
 
             latest = self._engine.get_latest_incident()
             if not latest:
-                await interaction.response.send_message("✅ 目前沒有可送交 Debug 的錯誤。", ephemeral=True)
+                await interaction.response.send_message(
+                    embed=self._build_ephemeral_embed(
+                        "✅ 無可送交 Debug 的錯誤",
+                        "目前沒有可送交 GitHub Debug 的事件。",
+                        discord.Color.green(),
+                    ),
+                    ephemeral=True,
+                )
                 return
 
             await interaction.response.defer(ephemeral=True)
             dispatched = await self._engine.manual_debug_latest_incident(triggered_by=interaction.user.display_name)
             if dispatched:
-                await interaction.followup.send("🧠 已手動送交 GitHub Debug，面板狀態稍後會自動更新。", ephemeral=True)
+                await interaction.followup.send(
+                    embed=self._build_ephemeral_embed(
+                        "🧠 已送交 GitHub Debug",
+                        "這次是手動要求 GitHub 進一步分析。主面板不會直接被按鈕互動覆寫。",
+                        discord.Color.blurple(),
+                        detail=latest.get("log_text", ""),
+                    ),
+                    ephemeral=True,
+                )
             else:
-                await interaction.followup.send("⚠️ 送交 Debug 失敗，請檢查 GITHUB_TOKEN 或 GitHub workflow 狀態。", ephemeral=True)
+                await interaction.followup.send(
+                    embed=self._build_ephemeral_embed(
+                        "⚠️ 送交 Debug 失敗",
+                        "請檢查 GITHUB_TOKEN、GitHub workflow 狀態或網路連線。",
+                        discord.Color.orange(),
+                        detail=latest.get("log_text", ""),
+                    ),
+                    ephemeral=True,
+                )
         except Exception as e:
             logger.error(f"[LogMonitorView] debug_now 異常: {e}", exc_info=True)
             try:
-                await interaction.followup.send(f"❌ 發生錯誤: {e}", ephemeral=True)
+                await interaction.followup.send(
+                    embed=self._build_ephemeral_embed(
+                        "❌ Debug 操作失敗",
+                        str(e),
+                        discord.Color.red(),
+                    ),
+                    ephemeral=True,
+                )
             except Exception:
-                await interaction.response.send_message(f"❌ 發生錯誤: {e}", ephemeral=True)
+                await interaction.response.send_message(
+                    embed=self._build_ephemeral_embed(
+                        "❌ Debug 操作失敗",
+                        str(e),
+                        discord.Color.red(),
+                    ),
+                    ephemeral=True,
+                )
 
     @discord.ui.button(
         label="✅ 已修復，清空",
@@ -327,12 +382,30 @@ class LogMonitorSummaryView(discord.ui.View):
                 await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
                 return
 
+            cleared_count = len(self._engine._active_incidents)
             embed = self._engine.clear_summary(interaction.user.display_name)
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.send_message(
+                embed=self._build_ephemeral_embed(
+                    "✅ 已清空偵錯狀態",
+                    "已清除目前暫存的錯誤事件。主面板不會直接被按鈕互動覆寫。",
+                    discord.Color.green(),
+                    detail=f"本次清除事件數：{cleared_count}",
+                ),
+                ephemeral=True,
+            )
+            if self._channel:
+                await self._engine._upsert_summary_message(self._channel)
             logger.info("[LogMonitorView] clear_errors 執行完成")
         except Exception as e:
             logger.error(f"[LogMonitorView] clear_errors 異常: {e}", exc_info=True)
-            await interaction.response.send_message(f"❌ 發生錯誤: {e}", ephemeral=True)
+            await interaction.response.send_message(
+                embed=self._build_ephemeral_embed(
+                    "❌ 清空失敗",
+                    str(e),
+                    discord.Color.red(),
+                ),
+                ephemeral=True,
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
