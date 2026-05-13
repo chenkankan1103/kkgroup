@@ -79,6 +79,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_API_KEY_BACKUP: ${{ secrets.AI_API_KEY_BACKUP }}
+          AI_API_MODEL: ${{ secrets.AI_API_MODEL }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python <<'PY'
@@ -134,20 +137,28 @@ jobs:
 
           try:
             from utils.nvidia_ai import NVIDIAAIClient
+            from utils.google_ai import GoogleAIClient
 
             prompt = (
               '你是 KKGroup Discord Bot 除錯專家。請根據以下錯誤日誌用繁體中文輸出精簡 JSON，'
               '包含 root_cause、impact、fix_steps、prevention、confidence。\n\n'
               f'來源: {used_source}\n\n日誌:\n{error_logs[:6000]}'
             )
+            messages = [
+              {'role': 'system', 'content': '請只輸出 JSON。'},
+              {'role': 'user', 'content': prompt},
+            ]
             analysis = asyncio.run(NVIDIAAIClient().call_api(
-              [
-                {'role': 'system', 'content': '請只輸出 JSON。'},
-                {'role': 'user', 'content': prompt},
-              ],
+              messages,
               model='deepseek-ai/deepseek-v4-pro',
               max_tokens=1200,
             )) or ''
+            if not analysis and os.getenv('AI_API_KEY'):
+              analysis = asyncio.run(GoogleAIClient().call_api(
+                messages,
+                temperature=0.2,
+                max_tokens=1200,
+              )) or ''
           except Exception as exc:
             analysis = json.dumps({
               'root_cause': 'AI 分析失敗',

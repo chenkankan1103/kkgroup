@@ -18,6 +18,7 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
         import sys
         workspace_path = os.getenv('GITHUB_WORKSPACE', '.')
         sys.path.insert(0, workspace_path)
+        from utils.google_ai import GoogleAIClient
         from utils.nvidia_ai import NVIDIAAIClient
         
         client = NVIDIAAIClient()
@@ -77,6 +78,14 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
             model="deepseek-ai/deepseek-v4-pro", 
             max_tokens=2000
         )
+
+        if not response:
+            print("⚠️ NVIDIA 無回應，改用 Gemini 備援")
+            response = await GoogleAIClient().call_api(
+                messages,
+                temperature=0.2,
+                max_tokens=2000,
+            )
         
         if response:
             try:

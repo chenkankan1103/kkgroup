@@ -44,6 +44,8 @@ from discord import app_commands
 from dotenv import load_dotenv
 
 from cogs.common.AI import LLMClient
+from utils.google_ai import GoogleAIClient
+from utils.nvidia_ai import NVIDIAAIClient
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -343,6 +345,47 @@ class LogMonitorEngine:
         # 標記需要恢復訊息引用
         self._need_restore = True
 
+    async def _analyze_with_debug_ai(self, log_text: str) -> Optional[str]:
+        prompt = (
+            "你是 KK園區的 DevOps 工程師，專門分析 Discord Bot 的系統日誌。\n"
+            "請用繁體中文回覆，格式如下：\n"
+            "【根本原因】一句話說明\n"
+            "【建議修復】1~3 個具體步驟\n"
+            "【緊急程度】高 / 中 / 低\n\n"
+            f"以下是剛發生的錯誤日誌：\n```\n{log_text}\n```\n請分析。"
+        )
+        messages = [
+            {"role": "system", "content": "你是 KK園區的 DevOps 工程師。請依指定格式輸出。"},
+            {"role": "user", "content": prompt},
+        ]
+
+        try:
+            response = await NVIDIAAIClient().call_api(
+                messages,
+                model="deepseek-ai/deepseek-v4-pro",
+                temperature=0.2,
+                max_tokens=500,
+            )
+            if response:
+                logger.info("[LogMonitor] 使用 NVIDIA 完成日誌分析")
+                return response.strip()
+        except Exception as exc:
+            logger.warning(f"[LogMonitor] NVIDIA 分析失敗: {exc}")
+
+        try:
+            response = await GoogleAIClient().call_api(
+                messages,
+                temperature=0.2,
+                max_tokens=500,
+            )
+            if response:
+                logger.info("[LogMonitor] 使用 Gemini 備援完成日誌分析")
+                return response.strip()
+        except Exception as exc:
+            logger.warning(f"[LogMonitor] Gemini 備援分析失敗: {exc}")
+
+        return None
+
     async def _restore_message_reference(self):
         """嘗試恢復舊訊息的引用"""
         if not self._need_restore:
@@ -472,28 +515,8 @@ class LogMonitorEngine:
         log_text = "\n".join(lines)
         logger.info(f"[LogMonitor] 觸發分析（{len(lines)} 行錯誤）")
 
-        # Gemini 分析
-        analysis = await self.llm.gemini(
-            api_key=os.getenv("AI_API_KEY", ""),
-            model=os.getenv("AI_API_MODEL", "gemini-2.0-flash"),
-            system=(
-                "你是 KK園區的 DevOps 工程師，專門分析 Discord Bot 的系統日誌。\n"
-                "請用繁體中文回覆，格式如下：\n"
-                "【根本原因】一句話說明\n"
-                "【建議修復】1~3 個具體步驟\n"
-                "【緊急程度】高 / 中 / 低"
-            ),
-            contents=[{
-                "role": "user",
-                "parts": [{"text": f"以下是剛發生的錯誤日誌：\n```\n{log_text}\n```\n請分析。"}],
-            }],
-        )
-
-        # 解析分析結果
-        if analysis:
-            parts = analysis.get("content", {}).get("parts", [])
-            ai_text = parts[0].get("text", "（無法解析分析結果）").strip() if parts else "（LLM 無回應）"
-        else:
+        ai_text = await self._analyze_with_debug_ai(log_text)
+        if not ai_text:
             # Groq 降級
             ai_text_raw = await self.llm.groq([
                 {"role": "system", "content": "你是 DevOps 工程師，分析 Discord Bot 日誌。繁體中文，簡潔。"},
