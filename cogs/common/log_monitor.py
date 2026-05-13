@@ -29,6 +29,7 @@ import json
 import requests
 from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import os
 import sys
@@ -111,6 +112,7 @@ _MAX_LOG_LINES: int   = 20    # 送給 LLM 分析的最大行數
 _RESTART_DELAY: int   = 60    # subprocess 死亡後等待重啟的秒數
 _MAX_ACTIVE_INCIDENTS: int = 8
 _MAX_EMBED_INCIDENTS: int = 5
+_TW_TZ = ZoneInfo("Asia/Taipei")
 
 
 def _save_message_state(message_id: int):
@@ -189,6 +191,22 @@ def _truncate_text(text: str, limit: int) -> str:
 def _extract_severity(ai_text: str) -> str:
     match = re.search(r"【緊急程度】\s*(高|中|低)", ai_text)
     return match.group(1) if match else "未標註"
+
+
+def _severity_label_from_hint(severity_hint: str) -> str:
+    return {
+        "high": "高",
+        "medium": "中",
+        "low": "低",
+    }.get(severity_hint, "未標註")
+
+
+def _current_tw_datetime() -> datetime:
+    return datetime.now(_TW_TZ)
+
+
+def _format_tw_time() -> str:
+    return _current_tw_datetime().strftime("%m-%d %H:%M:%S 台灣時間")
 
 
 def _estimate_severity_from_lines(lines: list[str]) -> str:
@@ -556,11 +574,15 @@ class LogMonitorEngine:
             logger.warning(f"[LogMonitor] 找不到通知頻道 ID={_ALERT_CHANNEL_ID}")
             return
 
+        severity = _extract_severity(ai_text)
+        if severity == "未標註":
+            severity = _severity_label_from_hint(severity_hint)
+
         self._active_incidents.append({
-            "created_at": datetime.utcnow().strftime("%m-%d %H:%M:%S UTC"),
+            "created_at": _format_tw_time(),
             "log_text": log_text,
             "ai_text": ai_text,
-            "severity": _extract_severity(ai_text),
+            "severity": severity,
         })
         self._active_incidents = self._active_incidents[-_MAX_ACTIVE_INCIDENTS:]
 
@@ -575,6 +597,8 @@ class LogMonitorEngine:
         try:
             # 檢查是否需要觸發（高緊急程度或特定錯誤類型）
             severity = _extract_severity(ai_text)
+            if severity == "未標註":
+                severity = _severity_label_from_hint(_estimate_severity_from_lines(log_text.splitlines()))
             should_trigger = (
                 severity == "高" or
                 "Traceback" in log_text or
@@ -591,7 +615,7 @@ class LogMonitorEngine:
             webhook_data = {
                 "event_type": "error_analysis",
                 "client_payload": {
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": _current_tw_datetime().isoformat(),
                     "log_text": log_text[:2000],  # 限制長度
                     "ai_analysis": ai_text[:1000],  # 限制長度
                     "severity": severity,
@@ -644,7 +668,7 @@ class LogMonitorEngine:
             title="✅ Bot 日誌錯誤已清空",
             description="目前沒有待處理的錯誤彙整。新錯誤發生時會更新同一則訊息。",
             color=discord.Color.green(),
-            timestamp=datetime.utcnow(),
+            timestamp=_current_tw_datetime(),
         )
         embed.set_footer(text=f"由 {cleared_by} 清空")
         return embed
@@ -659,7 +683,7 @@ class LogMonitorEngine:
                 "新的重大錯誤會更新這則訊息，而不是持續新增新訊息。"
             ),
             color=discord.Color.red(),
-            timestamp=datetime.utcnow(),
+            timestamp=_current_tw_datetime(),
         )
 
         for index, incident in enumerate(latest, start=max(1, incident_count - len(latest) + 1)):
@@ -674,7 +698,7 @@ class LogMonitorEngine:
                 inline=False,
             )
 
-        embed.set_footer(text="事件驅動監控 · 修復後可按下「已修復，清空」")
+        embed.set_footer(text="事件驅動監控 · 台灣時間 · 修復後可按下「已修復，清空」")
         return embed
 
     async def _upsert_summary_message(self, channel: discord.TextChannel):
