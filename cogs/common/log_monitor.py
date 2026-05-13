@@ -99,6 +99,12 @@ _IGNORE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# 高危錯誤判斷（只要命中此模式，視為需要升級到 Gemini 的情況）
+_HIGH_SEVERITY_PATTERNS = re.compile(
+    r"(Traceback|CRITICAL|Fatal|Unhandled|oom|killed process|failed with result|status=\d+/FAILURE|panic|permission denied|cannot connect|connection (?:reset|refused|closed))",
+    re.IGNORECASE,
+)
+
 _DEBOUNCE_SEC:  int   = 30    # 累積錯誤的時間窗口（秒）
 _COOLDOWN_SEC:  int   = 600   # 同類錯誤再次通知的最短間隔（秒）
 _MAX_LOG_LINES: int   = 20    # 送給 LLM 分析的最大行數
@@ -183,6 +189,16 @@ def _truncate_text(text: str, limit: int) -> str:
 def _extract_severity(ai_text: str) -> str:
     match = re.search(r"【緊急程度】\s*(高|中|低)", ai_text)
     return match.group(1) if match else "未標註"
+
+
+def _estimate_severity_from_lines(lines: list[str]) -> str:
+    """根據原始日誌行推估嚴重度：返回 'high'/'medium'/'low'"""
+    joined = "\n".join(lines)
+    if _HIGH_SEVERITY_PATTERNS.search(joined):
+        return "high"
+    if re.search(r"\b429\b|rate limit|quota|(?:HTTP|http)\s*[45]\d\d", joined, re.IGNORECASE):
+        return "medium"
+    return "low"
 
 
 def _extract_relevant_lines(blob: str) -> list[str]:
@@ -345,7 +361,7 @@ class LogMonitorEngine:
         # 標記需要恢復訊息引用
         self._need_restore = True
 
-    async def _analyze_with_debug_ai(self, log_text: str) -> Optional[str]:
+    async def _analyze_with_debug_ai(self, log_text: str, severity_hint: str = "low") -> Optional[str]:
         prompt = (
             "你是 KK園區的 DevOps 工程師，專門分析 Discord Bot 的系統日誌。\n"
             "請用繁體中文回覆，格式如下：\n"
@@ -371,6 +387,11 @@ class LogMonitorEngine:
                 return response.strip()
         except Exception as exc:
             logger.warning(f"[LogMonitor] NVIDIA 分析失敗: {exc}")
+
+        # 只有在推估為高危的情況下才使用 Gemini（以節省配額）
+        if severity_hint != "high":
+            logger.info(f"[LogMonitor] severity_hint={severity_hint} 且 NVIDIA 無回應，跳過 Gemini 以節省配額")
+            return None
 
         try:
             response = await GoogleAIClient().call_api(
@@ -515,7 +536,9 @@ class LogMonitorEngine:
         log_text = "\n".join(lines)
         logger.info(f"[LogMonitor] 觸發分析（{len(lines)} 行錯誤）")
 
-        ai_text = await self._analyze_with_debug_ai(log_text)
+        # 根據原始日誌先推估嚴重度，供備援策略使用
+        severity_hint = _estimate_severity_from_lines(lines)
+        ai_text = await self._analyze_with_debug_ai(log_text, severity_hint)
         if not ai_text:
             # Groq 降級
             ai_text_raw = await self.llm.groq([
