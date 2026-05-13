@@ -283,6 +283,37 @@ class LogMonitorSummaryView(discord.ui.View):
         self._channel = channel
 
     @discord.ui.button(
+        label="🧠 送交 Debug",
+        style=discord.ButtonStyle.primary,
+        custom_id="logmonitor:debug",
+    )
+    async def debug_now(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            logger.info(f"[LogMonitorView] debug_now 按鈕被點擊，用戶: {interaction.user}")
+
+            if not _has_admin_access(interaction.user):
+                await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
+                return
+
+            latest = self._engine.get_latest_incident()
+            if not latest:
+                await interaction.response.send_message("✅ 目前沒有可送交 Debug 的錯誤。", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+            dispatched = await self._engine.manual_debug_latest_incident(triggered_by=interaction.user.display_name)
+            if dispatched:
+                await interaction.followup.send("🧠 已手動送交 GitHub Debug，面板狀態稍後會自動更新。", ephemeral=True)
+            else:
+                await interaction.followup.send("⚠️ 送交 Debug 失敗，請檢查 GITHUB_TOKEN 或 GitHub workflow 狀態。", ephemeral=True)
+        except Exception as e:
+            logger.error(f"[LogMonitorView] debug_now 異常: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(f"❌ 發生錯誤: {e}", ephemeral=True)
+            except Exception:
+                await interaction.response.send_message(f"❌ 發生錯誤: {e}", ephemeral=True)
+
+    @discord.ui.button(
         label="✅ 已修復，清空",
         style=discord.ButtonStyle.success,
         custom_id="logmonitor:clear",
@@ -637,6 +668,21 @@ class LogMonitorEngine:
 
     async def _trigger_github_actions_analysis(self, log_text: str, ai_text: str) -> bool:
         """觸發 GitHub Actions 進行更深入的 AI 分析"""
+        return await self._dispatch_github_actions_analysis(
+            log_text,
+            ai_text,
+            force=False,
+            source="log_monitor_realtime",
+        )
+
+    async def _dispatch_github_actions_analysis(
+        self,
+        log_text: str,
+        ai_text: str,
+        force: bool = False,
+        source: str = "log_monitor_realtime",
+    ) -> bool:
+        """發送 repository_dispatch 到 GitHub；force=True 時忽略原本的高危門檻。"""
         try:
             # 檢查是否需要觸發（高緊急程度或特定錯誤類型）
             severity = _extract_severity(ai_text)
@@ -650,7 +696,7 @@ class LogMonitorEngine:
                 "Fatal" in log_text
             )
             
-            if not should_trigger:
+            if not should_trigger and not force:
                 logger.info(f"[LogMonitor] 錯誤緊急程度為{severity}，跳過 GitHub Actions 觸發")
                 self._pipeline_status["dispatch_status"] = "未送出"
                 self._pipeline_status["dispatch_detail"] = f"緊急程度 {severity}，未達 GitHub 自動處理門檻"
@@ -663,8 +709,8 @@ class LogMonitorEngine:
                     "timestamp": _current_tw_datetime().isoformat(),
                     "log_text": log_text[:2000],  # 限制長度
                     "ai_analysis": ai_text[:1000],  # 限制長度
-                    "severity": severity,
-                    "source": "log_monitor_realtime"
+                    "severity": severity if not force else "高",
+                    "source": source
                 }
             }
             
@@ -689,7 +735,8 @@ class LogMonitorEngine:
             if response.status_code == 204:
                 logger.info(f"[LogMonitor] ✅ 已觸發 GitHub Actions AI 分析 (緊急程度: {severity})")
                 self._pipeline_status["dispatch_status"] = "已送出"
-                self._pipeline_status["dispatch_detail"] = f"error_analysis / 緊急程度 {severity} / source=log_monitor_realtime"
+                detail_severity = severity if not force else "高(手動)"
+                self._pipeline_status["dispatch_detail"] = f"error_analysis / 緊急程度 {detail_severity} / source={source}"
                 asyncio.create_task(self._refresh_pipeline_status_later())
                 return True
             else:
@@ -703,6 +750,31 @@ class LogMonitorEngine:
             self._pipeline_status["dispatch_status"] = "送出失敗"
             self._pipeline_status["dispatch_detail"] = _truncate_text(str(e), 120)
             return False
+
+    def get_latest_incident(self) -> Optional[dict[str, str]]:
+        return self._active_incidents[-1] if self._active_incidents else None
+
+    async def manual_debug_latest_incident(self, triggered_by: str) -> bool:
+        latest = self.get_latest_incident()
+        if not latest:
+            return False
+
+        self._pipeline_status["dispatch_status"] = "手動送出中"
+        self._pipeline_status["dispatch_detail"] = f"由 {triggered_by} 手動要求 GitHub Debug"
+        channel = self.bot.get_channel(_ALERT_CHANNEL_ID)
+        if channel:
+            await self._upsert_summary_message(channel)
+
+        result = await self._dispatch_github_actions_analysis(
+            latest["log_text"],
+            latest["ai_text"],
+            force=True,
+            source="log_monitor_manual_debug",
+        )
+        await self._refresh_pipeline_status()
+        if channel:
+            await self._upsert_summary_message(channel)
+        return result
     
     def build_fix_goal(self) -> str:
         if not self._active_incidents:
@@ -726,9 +798,8 @@ class LogMonitorEngine:
             timestamp=_current_tw_datetime(),
         )
         embed.add_field(name="檢測到 BUG", value="目前沒有待處理錯誤", inline=False)
-        embed.add_field(name="GitHub Actions 接收並自動修復", value="等待下一筆符合條件的事件", inline=False)
-        embed.add_field(name="已同步 GitHub", value=f"最新 main: {self._pipeline_status['sync_commit']}\n{self._pipeline_status['sync_message']}", inline=False)
-        embed.add_field(name="Webhook / 流程資訊", value=f"{self._pipeline_status['webhook']}\n由 {cleared_by} 清空", inline=False)
+        embed.add_field(name="Debug 流程", value="等待下一筆事件。若是小錯誤，可按「🧠 送交 Debug」手動決定是否送 GitHub。", inline=False)
+        embed.add_field(name="同步 / Webhook", value=f"最新 main: {self._pipeline_status['sync_commit']}\n{self._pipeline_status['webhook']}\n由 {cleared_by} 清空", inline=False)
         embed.set_footer(text="同一則面板持續重用 · 台灣時間")
         return embed
 
@@ -739,10 +810,8 @@ class LogMonitorEngine:
             title="🚨 Bot 偵錯流程總覽",
             description=(
                 "```text\n"
-                "*-------------------*------------------------------*-------------------*\n"
-                "檢測到 BUG           GitHub Actions 接收並自動修復   已同步 GitHub\n"
-                "(簡述 BUG)           (更動了什麼 / 執行狀態)          (commit)\n"
-                "*-------------------*------------------------------*-------------------*\n"
+                "BUG  ->  GitHub Debug  ->  GitHub Sync\n"
+                "偵測 -> 分析/修復 -> commit/status\n"
                 "```\n"
                 f"目前累積 **{incident_count}** 筆未清除事件，同一則面板會持續更新。"
             ),
@@ -763,29 +832,23 @@ class LogMonitorEngine:
 
         embed.add_field(name="檢測到 BUG", value=bug_summary, inline=False)
         embed.add_field(
-            name="GitHub Actions 接收並自動修復",
+            name="GitHub Debug / 自動修復",
             value=(
                 f"送出狀態: {self._pipeline_status['dispatch_status']}\n"
                 f"Dispatch: {self._pipeline_status['dispatch_detail']}\n"
                 f"AI Debug Monitor: {self._pipeline_status['debug_run']}\n"
                 f"Auto AI Fix: {self._pipeline_status['auto_fix_run']}\n"
-                f"分析摘要: {analysis_summary}"
+                f"摘要: {analysis_summary}"
             )[:1024],
             inline=False,
         )
         embed.add_field(
-            name="已同步 GitHub",
+            name="同步 / Webhook",
             value=(
                 f"main commit: {self._pipeline_status['sync_commit']}\n"
-                f"提交摘要: {self._pipeline_status['sync_message']}"
-            ),
-            inline=False,
-        )
-        embed.add_field(
-            name="Webhook / 流程資訊",
-            value=(
+                f"提交摘要: {self._pipeline_status['sync_message']}\n"
                 f"{self._pipeline_status['webhook']}\n"
-                "按鈕保留: ✅ 已修復，清空"
+                "按鈕: 🧠 送交 Debug / ✅ 已修復，清空"
             ),
             inline=False,
         )
