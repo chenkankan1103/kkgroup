@@ -1,7 +1,7 @@
 name: Auto AI Fix
 on:
   repository_dispatch:
-    types: [system_debug]  # 接收來自自動 Debug 系統的請求
+    types: [system_debug, error_analysis]  # 接收來自自動 Debug 系統與 LogMonitor 的請求
 
 jobs:
   ai-fix:

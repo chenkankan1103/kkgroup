@@ -8,9 +8,50 @@
 import os
 import asyncio
 import json
+import re
 import subprocess
 from datetime import datetime
 import pytz
+
+
+def _normalize_log_text(error_logs):
+    if isinstance(error_logs, str):
+        return error_logs
+    return json.dumps(error_logs, ensure_ascii=False, indent=2)
+
+
+def should_attempt_code_fix(event_data):
+    """只對高危且偏程式碼層面的錯誤啟用自動修復。"""
+    payload = event_data.get('client_payload', {})
+    severity = str(payload.get('severity') or event_data.get('severity') or 'medium').strip().lower()
+    error_logs = (
+        payload.get('error_logs')
+        or payload.get('error_data')
+        or payload.get('log_text')
+        or event_data.get('error_logs')
+        or ''
+    )
+    log_text = _normalize_log_text(error_logs)
+
+    is_high = severity in ('high', 'h', '高')
+    has_code_failure_signal = bool(re.search(
+        r'(Traceback|Exception|CRITICAL|Fatal|Unhandled|NameError|AttributeError|TypeError|ImportError|SyntaxError|failed with result|status=\d+/FAILURE)',
+        log_text,
+        re.IGNORECASE,
+    ))
+    looks_external_or_infra = bool(re.search(
+        r'(503 Service Unavailable|upstream connect error|remote connection failure|No such file or directory|connection reset by peer|temporarily unavailable|cloudflared|nginx)',
+        log_text,
+        re.IGNORECASE,
+    ))
+
+    if looks_external_or_infra and not has_code_failure_signal:
+        return False, '外部服務或基礎設施異常，跳過自動改碼'
+    if not is_high:
+        return False, f'緊急程度為 {severity}，未達自動改碼門檻'
+    if not has_code_failure_signal:
+        return False, '缺少明確程式碼錯誤訊號，跳過自動改碼'
+    return True, '符合高危程式錯誤條件，允許自動改碼'
 
 async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
     """AI 分析和生成修復代碼"""
@@ -232,6 +273,11 @@ async def main():
     event_data = json.loads(event_data_str)
     
     print(f"📊 事件數據: {event_data}")
+
+    should_fix, reason = should_attempt_code_fix(event_data)
+    print(f"🧭 自動修復判定: {reason}")
+    if not should_fix:
+        return
     
     # AI 分析和生成修復代碼
     fix_data = await analyze_and_fix(event_data, nvidia_api_key, discord_webhook)
