@@ -22,6 +22,7 @@ FORTRESS_MAX_HP = 15000         # 堡壘最大 HP
 BASE_DAMAGE_FREE = 80           # 免費出兵基礎傷害（降低）
 BASE_DAMAGE_PAID = 250          # 付費強化基礎傷害（降低）
 TAG_BONUS_MULTIPLIER = 2.0      # 興趣標籤加乘倍率
+DIFFICULTY_MULTIPLIER = 0.33    # 敵人整體強度倍率（約降低 2/3）
 FREE_ACTIONS_PER_ROUND = 8      # 每輪免費出兵次數
 PAID_COST_KKCOIN = 100          # 付費強化費用（KKCoin）
 BASE_VICTORY_REWARD_KKCOIN = 5000
@@ -138,7 +139,7 @@ def calculate_police_hp(rank: int, search_volume: Optional[int] = None) -> int:
         # 搜尋量 >10000 額外 +20% HP
         if search_volume > 10000:
             base = int(base * 1.2)
-    return base
+    return max(1, int(base * DIFFICULTY_MULTIPLIER))
 
 
 def user_interests_match(user_interests: List[str], trend_name: str) -> bool:

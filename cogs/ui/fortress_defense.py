@@ -355,12 +355,12 @@ class TowerPlacementSelect(Select):
 def _rank_to_icon(rank: int) -> str:
     """根據刑警階級回傳戰場 emoji"""
     if rank == 1:
-        return "�"
+        return "👮‍♂️"
     if rank <= 3:
-        return "�"
+        return "🚔"
     if rank <= 6:
-        return "�"
-    return "�"
+        return "👮"
+    return "🚨"
 
 
 def _get_map_layout(state: Optional[fs.FortressState]) -> Dict[str, object]:
