@@ -113,6 +113,7 @@ _RESTART_DELAY: int   = 60    # subprocess 死亡後等待重啟的秒數
 _MAX_ACTIVE_INCIDENTS: int = 8
 _MAX_EMBED_INCIDENTS: int = 5
 _TW_TZ = ZoneInfo("Asia/Taipei")
+_GITHUB_REPO = "chenkankan1103/kkgroup"
 
 
 def _save_message_state(message_id: int):
@@ -276,56 +277,10 @@ def _build_local_fallback_summary(lines: list[str]) -> str:
 class LogMonitorSummaryView(discord.ui.View):
     """單一彙整訊息的操作按鈕。"""
 
-    def __init__(self, engine, runner, channel: Optional[discord.TextChannel] = None):
+    def __init__(self, engine, channel: Optional[discord.TextChannel] = None):
         super().__init__(timeout=None)
         self._engine = engine
-        self._runner = runner
         self._channel = channel
-
-    @discord.ui.button(
-        label="🔧 啟動自動修復",
-        style=discord.ButtonStyle.danger,
-        custom_id="logmonitor:auto_fix",
-    )
-    async def auto_fix(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            logger.info(f"[LogMonitorView] auto_fix 按鈕被點擊，用戶: {interaction.user}")
-            
-            if not _has_admin_access(interaction.user):
-                logger.warning(f"[LogMonitorView] 用戶 {interaction.user} 無管理員權限")
-                await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
-                return
-
-            if not self._runner:
-                logger.warning("[LogMonitorView] ShellAgentRunner 未載入")
-                await interaction.response.send_message("❌ 自動修復模組未載入。", ephemeral=True)
-                return
-
-            if not self._channel:
-                logger.warning("[LogMonitorView] _channel 為 None")
-                await interaction.response.send_message("❌ 通知頻道未設定。", ephemeral=True)
-                return
-
-            fix_goal = self._engine.build_fix_goal()
-            if not fix_goal:
-                logger.info("[LogMonitorView] 沒有待修復的錯誤")
-                await interaction.response.send_message("✅ 目前沒有待修復的彙整錯誤。", ephemeral=True)
-                return
-
-            await interaction.response.send_message("🚀 已啟動自動修復，請稍候。", ephemeral=True)
-            await self._channel.send(
-                f"🚀 **自動修復啟動** — 由 {interaction.user.mention} 觸發"
-            )
-            asyncio.create_task(
-                self._runner.run(fix_goal, self._channel, _ADMIN_USER_ID)
-            )
-            logger.info("[LogMonitorView] auto_fix 執行完成")
-        except Exception as e:
-            logger.error(f"[LogMonitorView] auto_fix 異常: {e}", exc_info=True)
-            try:
-                await interaction.response.send_message(f"❌ 發生錯誤: {e}", ephemeral=True)
-            except Exception as e2:
-                logger.error(f"[LogMonitorView] 發送錯誤訊息失敗: {e2}")
 
     @discord.ui.button(
         label="✅ 已修復，清空",
@@ -342,7 +297,7 @@ class LogMonitorSummaryView(discord.ui.View):
                 return
 
             embed = self._engine.clear_summary(interaction.user.display_name)
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message(embed=embed, view=self)
             logger.info("[LogMonitorView] clear_errors 執行完成")
         except Exception as e:
             logger.error(f"[LogMonitorView] clear_errors 異常: {e}", exc_info=True)
@@ -375,9 +330,95 @@ class LogMonitorEngine:
         self._active_incidents: list[dict[str, str]]              = []
         self._summary_message: Optional[discord.Message]          = None
         self._message_lock = asyncio.Lock()
+        self._pipeline_status: dict[str, str]                     = {
+            "dispatch_status": "尚未觸發",
+            "dispatch_detail": "等待下一筆高危錯誤",
+            "debug_run": "尚未查詢",
+            "auto_fix_run": "尚未查詢",
+            "sync_commit": "尚未查詢",
+            "sync_message": "尚未查詢",
+            "webhook": f"Discord <#{_ALERT_CHANNEL_ID}> / GitHub {_GITHUB_REPO}",
+        }
         
         # 標記需要恢復訊息引用
         self._need_restore = True
+
+    def _github_headers(self) -> Optional[dict[str, str]]:
+        token = os.getenv("GITHUB_TOKEN")
+        if not token:
+            return None
+        return {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+    def _fetch_pipeline_status_sync(self) -> dict[str, str]:
+        headers = self._github_headers()
+        if not headers:
+            return {
+                "debug_run": "未設定 GITHUB_TOKEN",
+                "auto_fix_run": "未設定 GITHUB_TOKEN",
+                "sync_commit": "未設定 GITHUB_TOKEN",
+                "sync_message": "無法查詢 GitHub main",
+            }
+
+        try:
+            runs_resp = requests.get(
+                f"https://api.github.com/repos/{_GITHUB_REPO}/actions/runs?per_page=30",
+                headers=headers,
+                timeout=10,
+            )
+            runs_resp.raise_for_status()
+            workflow_runs = runs_resp.json().get("workflow_runs", [])
+
+            debug_run = next((run for run in workflow_runs if run.get("name") == "AI Debug Monitor"), None)
+            auto_fix_run = next((run for run in workflow_runs if run.get("name") == "Auto AI Fix"), None)
+
+            commit_resp = requests.get(
+                f"https://api.github.com/repos/{_GITHUB_REPO}/commits/main",
+                headers=headers,
+                timeout=10,
+            )
+            commit_resp.raise_for_status()
+            commit_data = commit_resp.json()
+            commit_sha = (commit_data.get("sha") or "")[:7] or "unknown"
+            commit_message = (commit_data.get("commit", {}).get("message", "") or "").splitlines()[0] or "無提交訊息"
+
+            return {
+                "debug_run": self._format_run_status(debug_run, "AI Debug Monitor"),
+                "auto_fix_run": self._format_run_status(auto_fix_run, "Auto AI Fix"),
+                "sync_commit": commit_sha,
+                "sync_message": _truncate_text(commit_message, 120),
+            }
+        except Exception as exc:
+            return {
+                "debug_run": f"查詢失敗: {exc}",
+                "auto_fix_run": f"查詢失敗: {exc}",
+                "sync_commit": "查詢失敗",
+                "sync_message": _truncate_text(str(exc), 120),
+            }
+
+    def _format_run_status(self, run: Optional[dict], fallback_name: str) -> str:
+        if not run:
+            return f"{fallback_name}: 尚未觸發"
+        run_id = run.get("id", "?")
+        status = run.get("status", "unknown")
+        conclusion = run.get("conclusion") or "pending"
+        event = run.get("event", "unknown")
+        sha = (run.get("head_sha") or "")[:7] or "unknown"
+        return f"id {run_id} / {status} / {conclusion} / {event} / {sha}"
+
+    async def _refresh_pipeline_status(self):
+        snapshot = await asyncio.to_thread(self._fetch_pipeline_status_sync)
+        self._pipeline_status.update(snapshot)
+
+    async def _refresh_pipeline_status_later(self, delay: int = 20):
+        await asyncio.sleep(delay)
+        await self._refresh_pipeline_status()
+        channel = self.bot.get_channel(_ALERT_CHANNEL_ID)
+        if channel:
+            await self._upsert_summary_message(channel)
 
     async def _analyze_with_debug_ai(self, log_text: str, severity_hint: str = "low") -> Optional[str]:
         prompt = (
@@ -450,6 +491,7 @@ class LogMonitorEngine:
                 message = await channel.fetch_message(message_id)
                 self._summary_message = message
                 logger.info(f"[LogMonitor] ✅ 成功恢復舊訊息引用: {message_id}")
+                await self._refresh_pipeline_status()
             except discord.NotFound:
                 logger.info(f"[LogMonitor] 舊訊息 {message_id} 已被刪除，將創建新訊息")
                 _clear_message_state()
@@ -566,7 +608,8 @@ class LogMonitorEngine:
             ai_text = ai_text_raw or _build_local_fallback_summary(lines)
 
         # 🔥 新增：觸發 GitHub Actions AI 分析
-        await self._trigger_github_actions_analysis(log_text, ai_text)
+        dispatch_ok = await self._trigger_github_actions_analysis(log_text, ai_text)
+        await self._refresh_pipeline_status()
         
         # 送出 Discord Embed
         channel = self.bot.get_channel(_ALERT_CHANNEL_ID)
@@ -592,7 +635,7 @@ class LogMonitorEngine:
         except Exception as e:
             logger.error(f"[LogMonitor] 送出通知失敗: {e}")
 
-    async def _trigger_github_actions_analysis(self, log_text: str, ai_text: str):
+    async def _trigger_github_actions_analysis(self, log_text: str, ai_text: str) -> bool:
         """觸發 GitHub Actions 進行更深入的 AI 分析"""
         try:
             # 檢查是否需要觸發（高緊急程度或特定錯誤類型）
@@ -609,7 +652,9 @@ class LogMonitorEngine:
             
             if not should_trigger:
                 logger.info(f"[LogMonitor] 錯誤緊急程度為{severity}，跳過 GitHub Actions 觸發")
-                return
+                self._pipeline_status["dispatch_status"] = "未送出"
+                self._pipeline_status["dispatch_detail"] = f"緊急程度 {severity}，未達 GitHub 自動處理門檻"
+                return False
             
             # 準備 webhook 資料
             webhook_data = {
@@ -629,7 +674,9 @@ class LogMonitorEngine:
             
             if not token:
                 logger.warning("[LogMonitor] GITHUB_TOKEN 未設定，無法觸發 GitHub Actions")
-                return
+                self._pipeline_status["dispatch_status"] = "送出失敗"
+                self._pipeline_status["dispatch_detail"] = "GITHUB_TOKEN 未設定"
+                return False
             
             headers = {
                 "Authorization": f"token {token}",
@@ -641,11 +688,21 @@ class LogMonitorEngine:
             
             if response.status_code == 204:
                 logger.info(f"[LogMonitor] ✅ 已觸發 GitHub Actions AI 分析 (緊急程度: {severity})")
+                self._pipeline_status["dispatch_status"] = "已送出"
+                self._pipeline_status["dispatch_detail"] = f"error_analysis / 緊急程度 {severity} / source=log_monitor_realtime"
+                asyncio.create_task(self._refresh_pipeline_status_later())
+                return True
             else:
                 logger.error(f"[LogMonitor] ❌ 觸發 GitHub Actions 失敗: {response.status_code} - {response.text}")
+                self._pipeline_status["dispatch_status"] = "送出失敗"
+                self._pipeline_status["dispatch_detail"] = f"HTTP {response.status_code}: {_truncate_text(response.text, 120)}"
+                return False
                 
         except Exception as e:
             logger.error(f"[LogMonitor] 觸發 GitHub Actions 時發生錯誤: {e}", exc_info=True)
+            self._pipeline_status["dispatch_status"] = "送出失敗"
+            self._pipeline_status["dispatch_detail"] = _truncate_text(str(e), 120)
+            return False
     
     def build_fix_goal(self) -> str:
         if not self._active_incidents:
@@ -662,43 +719,78 @@ class LogMonitorEngine:
 
     def clear_summary(self, cleared_by: str) -> discord.Embed:
         self._active_incidents.clear()
-        # 清除 .env 中的訊息 ID，因為訊息內容已經改變
-        _clear_message_state()
         embed = discord.Embed(
-            title="✅ Bot 日誌錯誤已清空",
-            description="目前沒有待處理的錯誤彙整。新錯誤發生時會更新同一則訊息。",
+            title="✅ Bot 偵錯流程面板已清空",
+            description="同一則面板會持續重用。下一筆重大錯誤會直接更新這則訊息，而不是新增新訊息。",
             color=discord.Color.green(),
             timestamp=_current_tw_datetime(),
         )
-        embed.set_footer(text=f"由 {cleared_by} 清空")
+        embed.add_field(name="檢測到 BUG", value="目前沒有待處理錯誤", inline=False)
+        embed.add_field(name="GitHub Actions 接收並自動修復", value="等待下一筆符合條件的事件", inline=False)
+        embed.add_field(name="已同步 GitHub", value=f"最新 main: {self._pipeline_status['sync_commit']}\n{self._pipeline_status['sync_message']}", inline=False)
+        embed.add_field(name="Webhook / 流程資訊", value=f"{self._pipeline_status['webhook']}\n由 {cleared_by} 清空", inline=False)
+        embed.set_footer(text="同一則面板持續重用 · 台灣時間")
         return embed
 
     def _build_summary_embed(self) -> discord.Embed:
         incident_count = len(self._active_incidents)
-        latest = self._active_incidents[-_MAX_EMBED_INCIDENTS:]
+        latest_incident = self._active_incidents[-1] if self._active_incidents else None
         embed = discord.Embed(
-            title="🚨 Bot 日誌錯誤彙整",
+            title="🚨 Bot 偵錯流程總覽",
             description=(
-                f"目前累積 **{incident_count}** 筆未清除事件。\n"
-                "新的重大錯誤會更新這則訊息，而不是持續新增新訊息。"
+                "```text\n"
+                "*-------------------*------------------------------*-------------------*\n"
+                "檢測到 BUG           GitHub Actions 接收並自動修復   已同步 GitHub\n"
+                "(簡述 BUG)           (更動了什麼 / 執行狀態)          (commit)\n"
+                "*-------------------*------------------------------*-------------------*\n"
+                "```\n"
+                f"目前累積 **{incident_count}** 筆未清除事件，同一則面板會持續更新。"
             ),
             color=discord.Color.red(),
             timestamp=_current_tw_datetime(),
         )
 
-        for index, incident in enumerate(latest, start=max(1, incident_count - len(latest) + 1)):
-            log_excerpt = _truncate_text(incident["log_text"], 280)
-            ai_excerpt = _truncate_text(incident["ai_text"], 420)
-            embed.add_field(
-                name=f"【事件 #{index}】{incident['created_at']} · 緊急程度 {incident['severity']}",
-                value=(
-                    f"**錯誤段**\n```\n{log_excerpt}\n```\n"
-                    f"**AI 總結**\n{ai_excerpt}"
-                )[:1024],
-                inline=False,
+        if latest_incident:
+            bug_summary = (
+                f"時間: {latest_incident['created_at']}\n"
+                f"緊急程度: {latest_incident['severity']}\n"
+                f"簡述: {_truncate_text(latest_incident['log_text'], 220)}"
             )
+            analysis_summary = _truncate_text(latest_incident['ai_text'], 360)
+        else:
+            bug_summary = "目前沒有待處理錯誤"
+            analysis_summary = "等待下一筆重大錯誤事件"
 
-        embed.set_footer(text="事件驅動監控 · 台灣時間 · 修復後可按下「已修復，清空」")
+        embed.add_field(name="檢測到 BUG", value=bug_summary, inline=False)
+        embed.add_field(
+            name="GitHub Actions 接收並自動修復",
+            value=(
+                f"送出狀態: {self._pipeline_status['dispatch_status']}\n"
+                f"Dispatch: {self._pipeline_status['dispatch_detail']}\n"
+                f"AI Debug Monitor: {self._pipeline_status['debug_run']}\n"
+                f"Auto AI Fix: {self._pipeline_status['auto_fix_run']}\n"
+                f"分析摘要: {analysis_summary}"
+            )[:1024],
+            inline=False,
+        )
+        embed.add_field(
+            name="已同步 GitHub",
+            value=(
+                f"main commit: {self._pipeline_status['sync_commit']}\n"
+                f"提交摘要: {self._pipeline_status['sync_message']}"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Webhook / 流程資訊",
+            value=(
+                f"{self._pipeline_status['webhook']}\n"
+                "按鈕保留: ✅ 已修復，清空"
+            ),
+            inline=False,
+        )
+
+        embed.set_footer(text="單則流程面板 · 台灣時間 · 只編輯同一則訊息")
         return embed
 
     async def _upsert_summary_message(self, channel: discord.TextChannel):
@@ -710,7 +802,6 @@ class LogMonitorEngine:
             view = self.cog_instance._global_view
             # 更新視圖的引用，確保指向最新的引擎狀態
             view._engine = self
-            view._runner = self.shell_runner
             view._channel = channel
 
         async with self._message_lock:
@@ -741,17 +832,7 @@ class LogMonitor(commands.Cog):
         self.bot = bot
         self._llm = LLMClient()
 
-        # 嘗試載入 ShellAgentRunner（需要 agent_tools）
-        _shell_runner = None
-        try:
-            from cogs.common.shell_agent import ShellAgentRunner
-            import agent_tools as _at
-            _shell_runner = ShellAgentRunner(_at)
-            logger.info("[LogMonitor] ✅ ShellAgentRunner 已載入，支援自動修復")
-        except Exception as e:
-            logger.warning(f"[LogMonitor] ShellAgentRunner 未載入（{e}），自動修復按鈕不可用")
-
-        self._engine = LogMonitorEngine(bot, self._llm, shell_runner=_shell_runner)
+        self._engine = LogMonitorEngine(bot, self._llm, shell_runner=None)
         self._engine.cog_instance = self  # ✅ 設定引用，讓 engine 能訪問全局視圖
         self._task: Optional[asyncio.Task] = None
         self._global_view = None  # 全局視圖實例，用於持久化按鈕
@@ -760,7 +841,7 @@ class LogMonitor(commands.Cog):
         try:
             if _ALERT_CHANNEL_ID and _ALERT_CHANNEL_ID > 0:
                 # 建立模板視圖實例
-                self._global_view = LogMonitorSummaryView(self._engine, self._engine.shell_runner, None)
+                self._global_view = LogMonitorSummaryView(self._engine, None)
                 self.bot.add_view(self._global_view)
                 logger.info(f"[LogMonitor] ✅ 持久化視圖已在 __init__ 註冊到 bot（頻道 {_ALERT_CHANNEL_ID}）")
             else:
@@ -773,6 +854,7 @@ class LogMonitor(commands.Cog):
     async def cog_load(self):
         """Cog 載入時啟動監控。"""
         if _ALERT_CHANNEL_ID and _ALERT_CHANNEL_ID > 0:
+            await self._engine._restore_message_reference()
             self._task = asyncio.create_task(self._engine.start())
             logger.info(f"[LogMonitor] 監控已在 cog_load 中啟動（通知頻道 {_ALERT_CHANNEL_ID}）")
         else:
