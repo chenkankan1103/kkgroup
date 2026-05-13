@@ -198,7 +198,7 @@ class FortressEnemyView(PersistentViewBase):
             user_interests=interests,
         )
         if not success:
-            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
+            await interaction.edit_original_response(content=f"❌ {msg}", embed=None, view=None)
             return
 
         # 更新全域傷害統計
@@ -211,11 +211,16 @@ class FortressEnemyView(PersistentViewBase):
             await self.cog._finalize_and_announce_battle()
             state = fs.get_current_battle()
         state = fs.get_current_battle()
-        tower_label = _get_tower_label_for_user(state, user_id)
-        tower_suffix = f"\n🗼 你的砲台【{tower_label}】同步開火" if tower_label else ""
-        await interaction.followup.send(
-            f"🗡️ **{interaction.user.display_name}** {msg}{tower_suffix}", ephemeral=True
+        balance_after = get_user_field(user_id, "kkcoin", default=0)
+        action_embed = self._build_action_result_embed(
+            state=state,
+            user=interaction.user,
+            action_type="free",
+            action_message=msg,
+            damage=damage,
+            kkcoin_balance=balance_after,
         )
+        await interaction.edit_original_response(content=None, embed=action_embed, view=None)
 
     @discord.ui.button(
         label=f"💎 強化防禦（{fs.PAID_COST_KKCOIN} KKCoin）",
@@ -230,9 +235,10 @@ class FortressEnemyView(PersistentViewBase):
         # 扣款
         balance = get_user_field(user_id, "kkcoin", default=0)
         if balance < fs.PAID_COST_KKCOIN:
-            await interaction.followup.send(
-                f"❌ KKCoin 不足！需要 {fs.PAID_COST_KKCOIN}，你只有 {balance}。",
-                ephemeral=True,
+            await interaction.edit_original_response(
+                content=f"❌ KKCoin 不足！需要 {fs.PAID_COST_KKCOIN}，你只有 {balance}。",
+                embed=None,
+                view=None,
             )
             return
         add_user_field(user_id, "kkcoin", -fs.PAID_COST_KKCOIN)
@@ -246,7 +252,7 @@ class FortressEnemyView(PersistentViewBase):
         if not success:
             # 退款
             add_user_field(user_id, "kkcoin", fs.PAID_COST_KKCOIN)
-            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
+            await interaction.edit_original_response(content=f"❌ {msg}", embed=None, view=None)
             return
 
         add_user_field(user_id, "fortress_total_damage", damage)
@@ -256,11 +262,16 @@ class FortressEnemyView(PersistentViewBase):
             await self.cog._finalize_and_announce_battle()
             state = fs.get_current_battle()
         state = fs.get_current_battle()
-        tower_label = _get_tower_label_for_user(state, user_id)
-        tower_suffix = f"\n🗼 你的砲台【{tower_label}】同步開火" if tower_label else ""
-        await interaction.followup.send(
-            f"💥 **{interaction.user.display_name}** {msg}{tower_suffix}", ephemeral=True
+        balance_after = get_user_field(user_id, "kkcoin", default=0)
+        action_embed = self._build_action_result_embed(
+            state=state,
+            user=interaction.user,
+            action_type="paid",
+            action_message=msg,
+            damage=damage,
+            kkcoin_balance=balance_after,
         )
+        await interaction.edit_original_response(content=None, embed=action_embed, view=None)
 
     @discord.ui.button(
         label="📊 查看戰況",
@@ -272,10 +283,10 @@ class FortressEnemyView(PersistentViewBase):
         await interaction.response.defer(ephemeral=True)
         state = fs.get_current_battle()
         if not state:
-            await interaction.followup.send("目前沒有進行中的戰鬥。", ephemeral=True)
+            await interaction.edit_original_response(content="目前沒有進行中的戰鬥。", embed=None, view=None)
             return
         embed = build_status_embed(state, interaction.user.id)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.edit_original_response(content=None, embed=embed, view=None)
 
     @discord.ui.button(
         label="🏷️ 設定興趣標籤",
@@ -293,6 +304,55 @@ class FortressEnemyView(PersistentViewBase):
             return json.loads(raw) if isinstance(raw, str) else (raw or [])
         except Exception:
             return []
+
+    @staticmethod
+    def _build_action_result_embed(
+        state: Optional[fs.FortressState],
+        user: discord.abc.User,
+        action_type: str,
+        action_message: str,
+        damage: int,
+        kkcoin_balance: int,
+    ) -> discord.Embed:
+        actions = state.defenders.get(user.id, []) if state else []
+        free_count = sum(1 for action in actions if action.action_type == "free")
+        paid_count = sum(1 for action in actions if action.action_type == "paid")
+        total_damage = sum(action.damage for action in actions)
+        total_spent = sum(action.spent_kkcoin for action in actions)
+        tower_label = _get_tower_label_for_user(state, user.id)
+
+        title = "💎 強化攻擊完成" if action_type == "paid" else "⚔️ 出兵完成"
+        icon = "💥" if action_type == "paid" else "🗡️"
+        color = 0xF1C40F if action_type == "paid" else 0x2ECC71
+        description = f"{icon} **{user.display_name}** {action_message}"
+        if tower_label:
+            description += f"\n🗼 你的砲台【{tower_label}】同步開火"
+
+        embed = discord.Embed(title=title, description=description, color=color)
+        embed.add_field(
+            name="📈 本輪統計",
+            value=(
+                f"總出兵：**{len(actions)}** 次\n"
+                f"免費：**{free_count}/{fs.FREE_ACTIONS_PER_ROUND}** 次\n"
+                f"強化：**{paid_count}** 次"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="⚔️ 傷害統計",
+            value=(
+                f"本次傷害：**{damage:,}**\n"
+                f"累積傷害：**{total_damage:,}**\n"
+                f"已花費：**{total_spent:,}** KKCoin"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="💰 KKCoin",
+            value=f"目前餘額：**{kkcoin_balance:,}**",
+            inline=False,
+        )
+        return embed
 
 
 class TowerPlacementSelect(Select):
