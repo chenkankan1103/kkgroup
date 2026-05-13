@@ -45,6 +45,12 @@ def should_attempt_code_fix(event_data):
         re.IGNORECASE,
     ))
 
+    # severity 若缺失、亂碼、或非標準值，回退用日誌內容推估
+    if severity not in ('high', 'h', '高', 'medium', 'm', '中', 'low', 'l', '低'):
+        severity = 'high' if has_code_failure_signal else 'medium'
+
+    is_high = severity in ('high', 'h', '高')
+
     if looks_external_or_infra and not has_code_failure_signal:
         return False, '外部服務或基礎設施異常，跳過自動改碼'
     if not is_high:
