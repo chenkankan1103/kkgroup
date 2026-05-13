@@ -20,6 +20,18 @@ def _normalize_log_text(error_logs):
     return json.dumps(error_logs, ensure_ascii=False, indent=2)
 
 
+def _normalize_repo_path(file_path: str) -> str:
+    return os.path.normpath(file_path).replace('\\', '/')
+
+
+def should_allow_commit(event_data):
+    payload = event_data.get('client_payload', {})
+    source = str(payload.get('source') or event_data.get('source') or '').strip().lower()
+    if source.startswith('manual_test'):
+        return False, f'來源為 {source}，僅做閉環測試，禁止提交修復 commit'
+    return True, '允許提交修復 commit'
+
+
 def should_attempt_code_fix(event_data):
     """只對高危且偏程式碼層面的錯誤啟用自動修復。"""
     payload = event_data.get('client_payload', {})
@@ -174,9 +186,17 @@ async def create_fix_file(fix_data, timestamp, severity):
     try:
         # 獲取修復代碼和文件路徑
         fix_code = fix_data.get('fix_code', '')
-        file_path = fix_data.get('file_path', 'fixes/auto_fix.py')
+        file_path = _normalize_repo_path(fix_data.get('file_path', 'fixes/auto_fix.py'))
         
         print(f"📝 創建修復文件: {file_path}")
+
+        if os.path.isabs(file_path) or file_path.startswith('../') or '/../' in file_path:
+            print(f"❌ 拒絕不安全修復路徑: {file_path}")
+            return False
+
+        if not os.path.exists(file_path):
+            print(f"❌ 目標文件不存在，拒絕建立新文件: {file_path}")
+            return False
         
         # 確保目錄存在
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -279,6 +299,11 @@ async def main():
     event_data = json.loads(event_data_str)
     
     print(f"📊 事件數據: {event_data}")
+
+    should_commit, commit_reason = should_allow_commit(event_data)
+    print(f"🧾 提交判定: {commit_reason}")
+    if not should_commit:
+        return
 
     should_fix, reason = should_attempt_code_fix(event_data)
     print(f"🧭 自動修復判定: {reason}")
