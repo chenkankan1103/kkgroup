@@ -95,28 +95,42 @@ jobs:
     
     - name: 發送狀態報告
       if: always()
+      continue-on-error: true
       env:
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        TEST_MODE: ${{ github.event.inputs.test_mode || 'normal' }}
       run: |
         if [ "$DISCORD_WEBHOOK" != "" ]; then
           echo "📢 發送狀態報告到 Discord"
-          
-          curl -X POST "$DISCORD_WEBHOOK" \
-            -H "Content-Type: application/json" \
-            -d '{
+
+          python3 - <<'PY'
+          import os
+          from datetime import datetime
+
+          import requests
+
+          payload = {
               "content": "🤖 **自動錯誤檢測器狀態報告**",
               "embeds": [{
-                "title": "系統監控狀態",
-                "description": "自動錯誤檢測器和 GitHub Actions 修復系統狀態",
-                "color": 5814783,
-                "fields": [
-                  {"name": "🤖 檢測器狀態", "value": "'"$TEST_MODE"' 模式執行完成", "inline": true},
-                  {"name": "⏰ 執行時間", "value": "'$(date +'%Y-%m-%d %H:%M:%S')'", "inline": true},
-                  {"name": "🔗 修復系統", "value": "GitHub Actions 自動修復", "inline": true},
-                  {"name": "📊 監控頻率", "value": "每 10 分鐘檢查", "inline": true}
-                ]
-              }]
-            }'
+                  "title": "系統監控狀態",
+                  "description": "自動錯誤檢測器和 GitHub Actions 修復系統狀態",
+                  "color": 5814783,
+                  "fields": [
+                      {"name": "🤖 檢測器狀態", "value": f"{os.getenv('TEST_MODE', 'normal')} 模式執行完成", "inline": True},
+                      {"name": "⏰ 執行時間", "value": datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'), "inline": True},
+                      {"name": "🔗 修復系統", "value": "GitHub Actions 自動修復", "inline": True},
+                      {"name": "📊 監控頻率", "value": "每 10 分鐘檢查", "inline": True},
+                  ],
+              }],
+          }
+
+          try:
+              response = requests.post(os.environ["DISCORD_WEBHOOK"], json=payload, timeout=15)
+              response.raise_for_status()
+              print("Discord status report sent")
+          except Exception as exc:
+              print(f"Discord status report skipped: {exc}")
+          PY
         else
           echo "⚠️ 未設置 Discord Webhook，跳過狀態報告"
         fi
