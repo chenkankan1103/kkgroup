@@ -24,6 +24,8 @@ from shared.db.db_adapter import (
 
 log = logging.getLogger("fortress_defense")
 TW_TZ = ZoneInfo("Asia/Taipei")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
 FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
 FORTRESS_ALLOWED_HOURS = {8, 11, 14, 17, 20, 23}
@@ -125,6 +127,54 @@ def _get_fortress_channel_id() -> int:
     return int(os.getenv("FORTRESS_CHANNEL_ID", "0") or 0)
 
 
+def _save_battle_message_state(message_id: int):
+    try:
+        lines = []
+        if os.path.exists(ENV_FILE):
+            with open(ENV_FILE, "r", encoding="utf-8") as file:
+                lines = file.readlines()
+
+        lines = [line for line in lines if not line.strip().startswith("FORTRESS_BATTLE_MESSAGE_ID=")]
+        lines.append(f"FORTRESS_BATTLE_MESSAGE_ID={message_id}\n")
+
+        with open(ENV_FILE, "w", encoding="utf-8") as file:
+            file.writelines(lines)
+    except Exception as exc:
+        log.warning(f"[Fortress] 保存戰場訊息 ID 失敗: {exc}")
+
+
+def _load_battle_message_state() -> Optional[int]:
+    try:
+        if not os.path.exists(ENV_FILE):
+            return None
+
+        with open(ENV_FILE, "r", encoding="utf-8") as file:
+            for line in file:
+                if line.strip().startswith("FORTRESS_BATTLE_MESSAGE_ID="):
+                    _, value = line.split("=", 1)
+                    value = value.strip()
+                    return int(value) if value else None
+    except Exception as exc:
+        log.warning(f"[Fortress] 讀取戰場訊息 ID 失敗: {exc}")
+    return None
+
+
+def _clear_battle_message_state():
+    try:
+        if not os.path.exists(ENV_FILE):
+            return
+
+        with open(ENV_FILE, "r", encoding="utf-8") as file:
+            lines = file.readlines()
+
+        lines = [line for line in lines if not line.strip().startswith("FORTRESS_BATTLE_MESSAGE_ID=")]
+
+        with open(ENV_FILE, "w", encoding="utf-8") as file:
+            file.writelines(lines)
+    except Exception as exc:
+        log.warning(f"[Fortress] 清除戰場訊息 ID 失敗: {exc}")
+
+
 # ─── 興趣標籤 Modal ────────────────────────────────────────
 
 class TagEditModal(Modal, title="🏷️ 設定你的興趣標籤"):
@@ -203,9 +253,6 @@ class FortressEnemyView(PersistentViewBase):
 
         # 更新全域傷害統計
         add_user_field(user_id, "fortress_total_damage", damage)
-
-        # 更新戰況 Embed
-        await self.cog.refresh_battle_embed(interaction)
         state = fs.get_current_battle()
         if state and state.status == "victory":
             await self.cog._finalize_and_announce_battle()
@@ -256,7 +303,6 @@ class FortressEnemyView(PersistentViewBase):
             return
 
         add_user_field(user_id, "fortress_total_damage", damage)
-        await self.cog.refresh_battle_embed(interaction)
         state = fs.get_current_battle()
         if state and state.status == "victory":
             await self.cog._finalize_and_announce_battle()
@@ -771,7 +817,7 @@ class FortressDefenseCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self._battle_message_id: Optional[int] = None
+        self._battle_message_id: Optional[int] = _load_battle_message_state()
         self._battle_channel_id: int = _get_fortress_channel_id()
         self._settled_round_ids: set[str] = set()
         self._last_embed_refresh_at: Optional[datetime] = None
@@ -782,6 +828,9 @@ class FortressDefenseCog(commands.Cog):
         self.enemy_movement_task.start()
         self.tower_attack_task.start()
         log.info("[Fortress] Cog 已初始化")
+
+    async def cog_load(self):
+        await self._restore_battle_message_reference()
 
     def cog_unload(self):
         self.settle_task.cancel()
@@ -853,6 +902,7 @@ class FortressDefenseCog(commands.Cog):
         view = FortressEnemyView(self)
         msg = await channel.send(embed=embed, view=view)
         self._battle_message_id = msg.id
+        _save_battle_message_state(msg.id)
         log.info(f"[Fortress] 戰鬥 Embed 發送成功 msg={msg.id}")
 
     async def _start_battle_from_trends(self) -> tuple[bool, str, int]:
@@ -923,6 +973,8 @@ class FortressDefenseCog(commands.Cog):
                 except Exception:
                     pass
 
+        _clear_battle_message_state()
+
         log.info(f"[Fortress] 結算完成: {result['status']}")
 
     async def refresh_battle_embed(self, interaction: discord.Interaction, force: bool = False):
@@ -953,6 +1005,32 @@ class FortressDefenseCog(commands.Cog):
             pass
         except Exception as e:
             log.warning(f"[Fortress] 更新 Embed 失敗: {e}")
+
+    async def _restore_battle_message_reference(self):
+        try:
+            await self.bot.wait_until_ready()
+            if not self._battle_message_id or not self._battle_channel_id:
+                return
+
+            state = fs.get_current_battle()
+            if not state or not state.is_active():
+                return
+
+            channel = self.bot.get_channel(self._battle_channel_id)
+            if not channel:
+                return
+
+            message = await channel.fetch_message(self._battle_message_id)
+            await message.edit(view=FortressEnemyView(self))
+            log.info(f"[Fortress] 已恢復戰場訊息引用: {self._battle_message_id}")
+        except discord.NotFound:
+            log.warning("[Fortress] 重啟後找不到舊的戰場訊息，已清除引用")
+            self._battle_message_id = None
+            _clear_battle_message_state()
+        except discord.Forbidden:
+            log.warning("[Fortress] 重啟後無權限恢復戰場訊息")
+        except Exception as exc:
+            log.warning(f"[Fortress] 恢復戰場訊息引用失敗: {exc}")
 
     # ── 結算排程 ──────────────────────────────────────────
 
@@ -1132,6 +1210,7 @@ class FortressDefenseCog(commands.Cog):
             except discord.NotFound:
                 log.warning("[Fortress] 戰況訊息不存在，停止更新")
                 self._battle_message_id = None
+                _clear_battle_message_state()
             except discord.Forbidden:
                 log.warning("[Fortress] 無權限編輯戰況訊息")
             except Exception as e:
