@@ -238,7 +238,7 @@ class FortressEnemyView(PersistentViewBase):
         row=0,
     )
     async def free_attack(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         user_id = interaction.user.id
         interests = self._get_user_interests(user_id)
 
@@ -276,7 +276,7 @@ class FortressEnemyView(PersistentViewBase):
         row=0,
     )
     async def paid_attack(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         user_id = interaction.user.id
 
         # 扣款
@@ -326,7 +326,7 @@ class FortressEnemyView(PersistentViewBase):
         row=1,
     )
     async def show_status(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         state = fs.get_current_battle()
         if not state:
             await interaction.edit_original_response(content="目前沒有進行中的戰鬥。", embed=None, view=None)
@@ -428,7 +428,7 @@ class TowerPlacementSelect(Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         state = fs.get_current_battle()
         if not state or state.status != "active":
             await interaction.followup.send("目前沒有進行中的戰鬥。", ephemeral=True)
