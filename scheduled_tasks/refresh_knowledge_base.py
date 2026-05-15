@@ -27,9 +27,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from shared.utils.llm_text_router import complete_text_with_fallback
+from shared.db.knowledge_vector_index import KnowledgeVectorIndex
 
 LOCK_FILE = PROJECT_ROOT / ".knowledge_refresh.lock"
 STATE_FILE = PROJECT_ROOT / ".knowledge_refresh_state.json"
+STATUS_FILE = PROJECT_ROOT / "status" / "knowledge_refresh_status.json"
 WEBHOOK_DEDUP_SECONDS = 300
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -119,6 +121,53 @@ def release_lock() -> None:
         pass
 
 
+def truncate_field(value: str, limit: int = 1000) -> str:
+    value = (value or "").strip()
+    if not value:
+        return "未提供"
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3].rstrip() + "..."
+
+
+def parse_analysis_sections(text: str) -> dict[str, str]:
+    pattern = re.compile(
+        r"\[SUMMARY\](.*?)\[RISKS\](.*?)\[ACTIONS\](.*?)\[PRIORITY\](.*)",
+        re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        return {
+            "summary": text.strip(),
+            "risks": "模型未按區塊格式輸出。",
+            "actions": "請檢查 AI prompt 或 fallback 模型輸出格式。",
+            "priority": "1. 修正輸出格式",
+        }
+    return {
+        "summary": match.group(1).strip(),
+        "risks": match.group(2).strip(),
+        "actions": match.group(3).strip(),
+        "priority": match.group(4).strip(),
+    }
+
+
+def write_status(status: str, outputs: list[str], steps: int, error_message: str = "") -> None:
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    analysis_text = next((chunk[len("AI_ANALYSIS:\n"):] for chunk in outputs if chunk.startswith("AI_ANALYSIS:\n")), "")
+    analysis_provider = next((chunk.split(":", 1)[1] for chunk in outputs if chunk.startswith("AI_PROVIDER:")), "")
+    payload = {
+        "status": status,
+        "updated_at": get_taipei_timestamp(),
+        "hostname": os.getenv("HOSTNAME", "vm"),
+        "steps": steps,
+        "provider": analysis_provider,
+        "error": error_message,
+        "outputs": [chunk[:2000] for chunk in outputs if chunk],
+        "analysis": parse_analysis_sections(analysis_text) if analysis_text else {},
+    }
+    STATUS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def send_webhook(status: str, outputs: list[str], error_message: str = "") -> None:
     webhook_url = get_webhook_url()
     if not webhook_url:
@@ -193,36 +242,6 @@ def send_webhook(status: str, outputs: list[str], error_message: str = "") -> No
                 }
             )
 
-
-def truncate_field(value: str, limit: int = 1000) -> str:
-    value = (value or "").strip()
-    if not value:
-        return "未提供"
-    if len(value) <= limit:
-        return value
-    return value[: limit - 3].rstrip() + "..."
-
-
-def parse_analysis_sections(text: str) -> dict[str, str]:
-    pattern = re.compile(
-        r"\[SUMMARY\](.*?)\[RISKS\](.*?)\[ACTIONS\](.*?)\[PRIORITY\](.*)",
-        re.DOTALL,
-    )
-    match = pattern.search(text)
-    if not match:
-        return {
-            "summary": text.strip(),
-            "risks": "模型未按區塊格式輸出。",
-            "actions": "請檢查 AI prompt 或 fallback 模型輸出格式。",
-            "priority": "1. 修正輸出格式",
-        }
-    return {
-        "summary": match.group(1).strip(),
-        "risks": match.group(2).strip(),
-        "actions": match.group(3).strip(),
-        "priority": match.group(4).strip(),
-    }
-
     if should_skip_webhook(status, details):
         return
 
@@ -247,7 +266,10 @@ def main() -> int:
     try:
         for command in steps:
             outputs.append(run_step(command))
+        indexed = KnowledgeVectorIndex().rebuild_from_database()
+        outputs.append(json.dumps({"semantic_indexed": indexed}, ensure_ascii=False))
     except Exception as exc:
+        write_status("failure", outputs, len(steps), str(exc))
         send_webhook("failure", outputs, str(exc))
         raise
     finally:
@@ -293,6 +315,7 @@ def main() -> int:
             outputs.append(f"AI_PROVIDER:{provider}")
             outputs.append("AI_ANALYSIS:\n" + analysis_text)
 
+    write_status("success", outputs, len(steps))
     send_webhook("success", outputs)
     return 0
 

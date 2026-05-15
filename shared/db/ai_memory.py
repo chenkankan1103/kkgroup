@@ -485,6 +485,51 @@ class KnowledgeBase:
         except Exception as e:
             logger.exception("❌ 取得近期知識失敗: %s", e)
             return []
+
+    @staticmethod
+    def get_all_items(category: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """取得全部或指定分類的知識條目。"""
+        try:
+            ensure_db_exists()
+            conn = sqlite3.connect(MEMORY_DB_PATH)
+            cursor = conn.cursor()
+
+            base_sql = (
+                "SELECT topic, content, category, source_path, source_type, metadata_json, related_topics, updated_at "
+                "FROM knowledge_base"
+            )
+            params: List[Any] = []
+
+            if category:
+                base_sql += " WHERE category = ?"
+                params.append(category)
+
+            base_sql += " ORDER BY updated_at DESC, created_at DESC"
+
+            if limit is not None:
+                base_sql += " LIMIT ?"
+                params.append(limit)
+
+            cursor.execute(base_sql, tuple(params))
+            rows = cursor.fetchall()
+            conn.close()
+
+            return [
+                {
+                    "topic": row[0],
+                    "content": row[1],
+                    "category": row[2],
+                    "source_path": row[3],
+                    "source_type": row[4],
+                    "metadata": json.loads(row[5] or "{}"),
+                    "related_topics": json.loads(row[6] or "[]"),
+                    "updated_at": row[7],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logger.exception("❌ 取得全部知識失敗: %s", e)
+            return []
     
     @staticmethod
     def get_all_knowledge(max_tokens: int = 2000) -> str:
