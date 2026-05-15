@@ -406,9 +406,3 @@ response = await client.call_api(messages)
 - [GitHub Actions 工作流程](../github-actions-workflows.md)
 - [系統部署指南](../../deployment/system-deployment.md)
 - [故障排除手冊](../troubleshooting/nvidia-ai-troubleshooting.md)
-
----
-
-**更新時間**：2024-05-12  
-**版本**：1.0.0  
-**維護者**：NVIDIA AI Integration Team

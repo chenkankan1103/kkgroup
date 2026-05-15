@@ -563,4 +563,7 @@ if __name__ == "__main__":
 - [Discord Bot 系統詳解](discord-bot-system.md)
 - [Web API 和遊戲系統](web-api-and-game-system.md)
 - [部署和維運指南](deployment-and-operations.md)
+- [開發工作流程](development-workflow.md)
+- [LogMonitor 與 Auto AI Fix 流程總覽](log_monitor_pipeline.md)
+- [GitHub Actions AI 除錯系統](../github-actions-ai-debugging.md)
 - [編碼規則和路徑](coding-rules-and-paths.md)

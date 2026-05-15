@@ -560,9 +560,3 @@ sudo journalctl -u auto-debug.service --since "1 week" | audit
 - [NVIDIA AI 集成](nvidia-ai-integration.md)
 - [GitHub Actions 工作流程](github-actions-workflows.md)
 - [故障排除手冊](../troubleshooting/system-troubleshooting.md)
-
----
-
-**更新時間**：2024-05-12  
-**版本**：1.0.0  
-**維護者**：System Deployment Team

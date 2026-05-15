@@ -19,3 +19,10 @@
 - fashion DB 中不存在的物品 ID
 - 性別不一致
 - VM 未同步最新資料或最新代碼
+
+## 相關文檔
+
+- [KK 園區系統地圖](kk-park-system-map.md)
+- [專案架構總覽](project-architecture.md)
+- [Coding Rules and Paths](coding-rules-and-paths.md)
+- [部署和維運指南](deployment-and-operations.md)

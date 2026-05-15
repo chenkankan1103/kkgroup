@@ -171,6 +171,7 @@ graph TD
 ## 相關文檔
 
 - [Discord Bot 系統詳情](../entities/bot-services.md)
+- [KK 園區經濟系統](kk-park-economy-system.md)
 - [VM 操作指南](../entities/vm-operations.md)
 - [Webhook 和隧道設定](webhook-and-tunnel.md)
 - [編碼規則和路徑](coding-rules-and-paths.md)

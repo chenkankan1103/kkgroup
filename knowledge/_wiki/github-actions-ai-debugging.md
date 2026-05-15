@@ -233,15 +233,12 @@ sudo journalctl -u bot.service -n 20 --no-pager
    - 使用最小權限原則
    - 監控API使用量
 
-### 📚 相關文檔
+## 相關文檔
 
 - [Shell Agent使用指南](./shell-agent-guide.md)
 - [GitHub Actions配置](./github-actions-setup.md)
 - [Gemini API文檔](https://ai.google.dev/gemini-api)
 - [Discord Bot開發](./discord-bot-development.md)
-
----
-
-**最後更新**: 2026-05-11
-**維護者**: KKGroup開發團隊
-**版本**: v1.0.0
+- [LogMonitor 與 Auto AI Fix 流程總覽](concepts/log_monitor_pipeline.md)
+- [開發工具和流程](concepts/development-tools-and-workflow.md)
+- [部署和維運指南](concepts/deployment-and-operations.md)

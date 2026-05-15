@@ -295,6 +295,7 @@ async def status_command(interaction: discord.Interaction):
 ## 相關文檔
 
 - [專案架構總覽](project-architecture.md)
+- [KK 園區經濟系統](kk-park-economy-system.md)
 - [Bot 服務詳情](../entities/bot-services.md)
 - [編碼規則和路徑](coding-rules-and-paths.md)
 - [Discord 靜音訊息寫法](discord-silent-messages.md)

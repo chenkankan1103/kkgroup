@@ -534,3 +534,5 @@ git reset --hard HEAD~1
 - [VM 操作指南](../entities/vm-operations.md)
 - [Webhook 和隧道設定](webhook-and-tunnel.md)
 - [Discord Bot 系統詳解](discord-bot-system.md)
+- [LogMonitor 與 Auto AI Fix 流程總覽](log_monitor_pipeline.md)
+- [GitHub Actions AI 除錯系統](../github-actions-ai-debugging.md)

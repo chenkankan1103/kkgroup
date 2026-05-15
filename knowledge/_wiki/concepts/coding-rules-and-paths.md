@@ -24,3 +24,10 @@
 - 要寫 Discord bot 功能時，看 `.copilot-instructions.md`
 - 要看部署、VM、字型、紙娃娃規則時，看 `.github/copilot-instructions.md`
 - 要執行遠端操作時，看 `config/commands_registry.json` 與 `scripts/commands_manager.py`
+
+## 相關文檔
+
+- [Discord Bot 系統詳解](discord-bot-system.md)
+- [Paperdoll Workflow](paperdoll-workflow.md)
+- [部署和維運指南](deployment-and-operations.md)
+- [Operational Sources](../sources/operational-sources.md)

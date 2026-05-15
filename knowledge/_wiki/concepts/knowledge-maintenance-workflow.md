@@ -32,3 +32,22 @@
 - 每次完成一個修復就補 `log.md`
 - 每週一次整理 `Inbox/`
 - 每次新增高頻命令就同步更新 registry 與 wiki
+
+## 補鏈原則
+
+- 新增主題頁時，至少要掛到一個總覽頁，例如 [KK 園區系統地圖](kk-park-system-map.md)
+- 若是維護或除錯主題，要補到 [開發工具和流程](development-tools-and-workflow.md) 或 [部署和維運指南](deployment-and-operations.md)
+- 定期檢查 [Knowledge Link Audit](knowledge-link-audit.md)，避免產生孤島頁
+
+## 頁面模板
+
+一般知識頁預設採用這個收尾格式：
+
+1. 正文主題區塊
+2. 必要時加入快速入口或功能索引
+3. 最後固定用 `## 相關文檔`
+
+例外頁面只有兩種：
+
+- [knowledge/_wiki/index.md](../index.md)：總索引頁
+- [knowledge/_wiki/log.md](../log.md)：演進紀錄頁

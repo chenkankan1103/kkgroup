@@ -15,3 +15,10 @@ GitHub push -> Cloudflare tunnel -> Nginx -> Flask webhook -> git pull -> restar
 - `sudo journalctl -u kkgroup-api.service | grep webhook`
 - `sudo systemctl status bot.service | grep Active`
 - `sudo journalctl -u cloudflared.service -n 50 --no-pager`
+
+## 相關文檔
+
+- [部署和維運指南](deployment-and-operations.md)
+- [VM Operations](../entities/vm-operations.md)
+- [Command Registry](../entities/command-registry.md)
+- [Operational Sources](../sources/operational-sources.md)
