@@ -7,9 +7,12 @@ AI 記憶系統 - 全局共享的對話/角色/知識記憶庫
 import sqlite3
 import json
 import os
+import hashlib
+import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Tuple
-from ..utils.logger import print
+from typing import List, Dict, Optional, Tuple, Any
+
+logger = logging.getLogger(__name__)
 
 # ==================== 配置 ====================
 # 使用絕對路徑確保所有執行上下文都指向同一個資料庫
@@ -30,7 +33,7 @@ def ensure_db_exists():
     os.makedirs(DATA_DIR, exist_ok=True)
     
     # 顯示當前使用的資料庫路徑，便於除錯
-    print(f"🔍 使用 AI 記憶資料庫: {MEMORY_DB_PATH}")
+    logger.info("🔍 使用 AI 記憶資料庫: %s", MEMORY_DB_PATH)
     
     conn = sqlite3.connect(MEMORY_DB_PATH)
     cursor = conn.cursor()
@@ -72,10 +75,45 @@ def ensure_db_exists():
             accessed_count INTEGER DEFAULT 0
         )
     """)
+
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_topic_category ON knowledge_base(topic, category)")
+
+    _ensure_knowledge_schema(cursor)
     
     conn.commit()
     conn.close()
-    print("✅ AI 記憶數據庫已初始化")
+    logger.info("✅ AI 記憶數據庫已初始化")
+
+
+def _ensure_knowledge_schema(cursor: sqlite3.Cursor):
+    """向後相容地補齊 knowledge_base 所需欄位。"""
+    cursor.execute("PRAGMA table_info(knowledge_base)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    migrations = {
+        "source_path": "ALTER TABLE knowledge_base ADD COLUMN source_path TEXT",
+        "source_type": "ALTER TABLE knowledge_base ADD COLUMN source_type TEXT DEFAULT 'manual'",
+        "content_hash": "ALTER TABLE knowledge_base ADD COLUMN content_hash TEXT",
+        "metadata_json": "ALTER TABLE knowledge_base ADD COLUMN metadata_json TEXT DEFAULT '{}'",
+        "related_topics": "ALTER TABLE knowledge_base ADD COLUMN related_topics TEXT DEFAULT '[]'",
+        "updated_at": "ALTER TABLE knowledge_base ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    }
+
+    for column_name, sql in migrations.items():
+        if column_name not in existing_columns:
+            cursor.execute(sql)
+
+
+def _serialize_json(value: Any, default: str) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return default
+
+
+def _content_hash(topic: str, category: str, content: str) -> str:
+    raw = f"{topic}\n{category}\n{content}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 # ==================== 對話記憶管理 ====================
@@ -103,9 +141,9 @@ class DialogueMemory:
             conn.commit()
             conn.close()
             
-            print(f"💭 記憶已存儲: {user_query[:30]}... ({total_tokens} tokens)")
+            logger.info("💭 記憶已存儲: %s... (%s tokens)", user_query[:30], total_tokens)
         except Exception as e:
-            print(f"❌ 添加記憶失敗: {e}")
+            logger.exception("❌ 添加記憶失敗: %s", e)
     
     @staticmethod
     def get_recent_dialogue(max_tokens: int = MAX_TOKENS_FOR_CONTEXT) -> str:
@@ -139,7 +177,7 @@ class DialogueMemory:
             
             return "\n\n---\n\n".join(context) if context else ""
         except Exception as e:
-            print(f"❌ 無法檢索記憶: {e}")
+            logger.exception("❌ 無法檢索記憶: %s", e)
             return ""
     
     @staticmethod
@@ -162,9 +200,9 @@ class DialogueMemory:
             conn.close()
             
             if deleted_count > 0:
-                print(f"🧹 已清理 {deleted_count} 條過期對話記憶")
+                logger.info("🧹 已清理 %s 條過期對話記憶", deleted_count)
         except Exception as e:
-            print(f"❌ 清理失敗: {e}")
+            logger.exception("❌ 清理失敗: %s", e)
 
 
 # ==================== 角色記憶管理 ====================
@@ -190,9 +228,9 @@ class PersonalityMemory:
             conn.commit()
             conn.close()
             
-            print(f"👤 角色特性已設定: {key}")
+            logger.info("👤 角色特性已設定: %s", key)
         except Exception as e:
-            print(f"❌ 設定角色失敗: {e}")
+            logger.exception("❌ 設定角色失敗: %s", e)
     
     @staticmethod
     def get_personality_context() -> str:
@@ -220,7 +258,7 @@ class PersonalityMemory:
             
             return "\n".join(context_parts)
         except Exception as e:
-            print(f"❌ 無法獲取角色設定: {e}")
+            logger.exception("❌ 無法獲取角色設定: %s", e)
             return ""
     
     @staticmethod
@@ -238,7 +276,7 @@ class PersonalityMemory:
             
             return results
         except Exception as e:
-            print(f"❌ 列表失敗: {e}")
+            logger.exception("❌ 列表失敗: %s", e)
             return []
 
 
@@ -247,27 +285,73 @@ class KnowledgeBase:
     """知識庫管理"""
     
     @staticmethod
-    def add_knowledge(topic: str, content: str, category: str = "general"):
-        """添加知識到庫"""
+    def add_knowledge(
+        topic: str,
+        content: str,
+        category: str = "general",
+        source_path: Optional[str] = None,
+        source_type: str = "manual",
+        metadata: Optional[Dict[str, Any]] = None,
+        related_topics: Optional[List[str]] = None,
+    ):
+        """添加或更新知識到庫。"""
         try:
             ensure_db_exists()
-            
+
             token_count = estimate_tokens(content)
-            
+            metadata_json = _serialize_json(metadata or {}, "{}")
+            related_topics_json = _serialize_json(related_topics or [], "[]")
+            content_hash = _content_hash(topic, category, content)
+
             conn = sqlite3.connect(MEMORY_DB_PATH)
             cursor = conn.cursor()
-            
+
             cursor.execute("""
-                INSERT INTO knowledge_base (topic, content, token_count, category)
-                VALUES (?, ?, ?, ?)
-            """, (topic, content, token_count, category))
-            
+                INSERT INTO knowledge_base (
+                    topic, content, token_count, category, source_path,
+                    source_type, content_hash, metadata_json, related_topics, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(topic, category) DO UPDATE SET
+                    content = excluded.content,
+                    token_count = excluded.token_count,
+                    source_path = excluded.source_path,
+                    source_type = excluded.source_type,
+                    content_hash = excluded.content_hash,
+                    metadata_json = excluded.metadata_json,
+                    related_topics = excluded.related_topics,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                topic,
+                content,
+                token_count,
+                category,
+                source_path,
+                source_type,
+                content_hash,
+                metadata_json,
+                related_topics_json,
+            ))
+
             conn.commit()
             conn.close()
-            
-            print(f"📚 知識已添加: {topic} ({token_count} tokens)")
+
+            logger.info("📚 知識已寫入: %s (%s tokens)", topic, token_count)
         except Exception as e:
-            print(f"❌ 添加知識失敗: {e}")
+            logger.exception("❌ 添加知識失敗: %s", e)
+
+    @staticmethod
+    def delete_by_source_path(source_path: str):
+        """刪除指定來源路徑的知識條目。"""
+        try:
+            ensure_db_exists()
+            conn = sqlite3.connect(MEMORY_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM knowledge_base WHERE source_path = ?", (source_path,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.exception("❌ 刪除來源知識失敗: %s", e)
     
     @staticmethod
     def search_knowledge(keyword: str, max_tokens: int = 1000) -> str:
@@ -310,8 +394,97 @@ class KnowledgeBase:
             
             return "\n\n".join(context) if context else ""
         except Exception as e:
-            print(f"❌ 搜索失敗: {e}")
+            logger.exception("❌ 搜索失敗: %s", e)
             return ""
+
+    @staticmethod
+    def search_knowledge_items(keyword: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """以結構化格式返回知識條目。"""
+        try:
+            ensure_db_exists()
+            conn = sqlite3.connect(MEMORY_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT topic, content, category, source_path, source_type, metadata_json, related_topics, updated_at
+                FROM knowledge_base
+                WHERE topic LIKE ? OR content LIKE ? OR related_topics LIKE ?
+                ORDER BY accessed_count DESC, updated_at DESC
+                LIMIT ?
+                """,
+                (f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", limit),
+            )
+            rows = cursor.fetchall()
+            conn.close()
+            items = []
+            for row in rows:
+                metadata_json = row[5] or "{}"
+                related_topics = row[6] or "[]"
+                items.append(
+                    {
+                        "topic": row[0],
+                        "content": row[1],
+                        "category": row[2],
+                        "source_path": row[3],
+                        "source_type": row[4],
+                        "metadata": json.loads(metadata_json),
+                        "related_topics": json.loads(related_topics),
+                        "updated_at": row[7],
+                    }
+                )
+            return items
+        except Exception as e:
+            logger.exception("❌ 結構化搜索失敗: %s", e)
+            return []
+
+    @staticmethod
+    def get_recent_items(limit: int = 20, category: Optional[str] = None) -> List[Dict[str, Any]]:
+        """取得最近更新的知識條目。"""
+        try:
+            ensure_db_exists()
+            conn = sqlite3.connect(MEMORY_DB_PATH)
+            cursor = conn.cursor()
+            if category:
+                cursor.execute(
+                    """
+                    SELECT topic, content, category, source_path, source_type, metadata_json, related_topics, updated_at
+                    FROM knowledge_base
+                    WHERE category = ?
+                    ORDER BY updated_at DESC, created_at DESC
+                    LIMIT ?
+                    """,
+                    (category, limit),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT topic, content, category, source_path, source_type, metadata_json, related_topics, updated_at
+                    FROM knowledge_base
+                    ORDER BY updated_at DESC, created_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+            rows = cursor.fetchall()
+            conn.close()
+            items = []
+            for row in rows:
+                items.append(
+                    {
+                        "topic": row[0],
+                        "content": row[1],
+                        "category": row[2],
+                        "source_path": row[3],
+                        "source_type": row[4],
+                        "metadata": json.loads(row[5] or "{}"),
+                        "related_topics": json.loads(row[6] or "[]"),
+                        "updated_at": row[7],
+                    }
+                )
+            return items
+        except Exception as e:
+            logger.exception("❌ 取得近期知識失敗: %s", e)
+            return []
     
     @staticmethod
     def get_all_knowledge(max_tokens: int = 2000) -> str:
@@ -342,7 +515,7 @@ class KnowledgeBase:
             
             return "\n\n".join(context) if context else ""
         except Exception as e:
-            print(f"❌ 獲取知識失敗: {e}")
+            logger.exception("❌ 獲取知識失敗: %s", e)
             return ""
 
 
@@ -382,7 +555,7 @@ def build_memory_context() -> Dict[str, str]:
             )
         }
     except Exception as e:
-        print(f"❌ 構建記憶上下文失敗: {e}")
+        logger.exception("❌ 構建記憶上下文失敗: %s", e)
         return {
             "system_instructions": "你是一個有幫助的助手。",
             "dialogue_history": "",
@@ -400,9 +573,9 @@ def initialize_memory_system():
         # 清理過期記憶
         DialogueMemory.cleanup_old_dialogue()
         
-        print("✅ AI 記憶系統已初始化")
+        logger.info("✅ AI 記憶系統已初始化")
     except Exception as e:
-        print(f"❌ 記憶系統初始化失敗: {e}")
+        logger.exception("❌ 記憶系統初始化失敗: %s", e)
 
 
 if __name__ == "__main__":

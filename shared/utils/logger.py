@@ -9,9 +9,20 @@ import hashlib
 from collections import deque
 from datetime import datetime, timedelta
 import random
+from dotenv import load_dotenv
 
-# ✅ 填入你的 Webhook
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1423172112763584573/4esYiK_mCjLLw-ROffN2Bo7ZLHMtKAMka8FcUMfIyxGmZ657bVPjo61mGhJKaSDPcKqc"
+load_dotenv()
+
+
+def _get_discord_webhook_url():
+    for key in ["DISCORD_WEBHOOK_URL", "DISCORD_WEBHOOK", "KNOWLEDGE_WEBHOOK_URL", "STARTUP_WEBHOOK_URL"]:
+        value = os.getenv(key, "").strip()
+        if value:
+            return value
+    return ""
+
+
+DISCORD_WEBHOOK_URL = _get_discord_webhook_url()
 
 # ✅ 自動偵測目前是執行哪一隻 bot
 BOT_NAME = os.path.basename(sys.argv[0]).replace(".py", "").upper()
@@ -98,6 +109,9 @@ def send_with_retry(content, max_retries=3, is_error=False):
 
 def _send_embed(content, color, is_error, max_retries=3):
     """實際發送 Embed 的函數"""
+    if not DISCORD_WEBHOOK_URL:
+        return False
+
     for attempt in range(max_retries):
         try:
             payload = {
