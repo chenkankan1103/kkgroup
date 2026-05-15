@@ -2,7 +2,7 @@
 ====================================================================
 架構設計（官方 Agent Stack 規範）：
 
-  LLMClient     → 低層 API 呼叫（Gemini 原生 Function Calling + Groq 備用）
+    LLMClient     → 低層 API 呼叫（NVIDIA 文字主路徑 + Gemini 工具/備援 + Groq 最終降級）
   AgentSession  → 每用戶的 Session 記憶（短期，最近 N 輪對話）
   KKBotAgent    → ADK 風格 Agent（系統提示、工具清單、Agentic Loop）
   AIResponse    → Discord Cog（事件監聽、訊息路由）
@@ -12,9 +12,9 @@ Agentic Loop（官方 Sequential Workflow）：
   → 重複直到 LLM 給出最終文字回覆
 
 API 優先級：
-  1. Gemini 2.0 Flash（原生 Function Calling，主要 Key）
-  2. Gemini 2.0 Flash（備用 Key，相同 API）
-  3. Groq llama-3.3-70b（降級，純文字，無工具）
+    1. NVIDIA API（一般文字回覆主路徑）
+    2. Gemini 2.0 Flash（工具呼叫與文字備援）
+    3. Groq llama-3.3-70b（最終降級，純文字，無工具）
 """
 
 import discord
@@ -27,6 +27,7 @@ import json
 import logging
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
+from shared.utils.llm_text_router import complete_text_with_fallback
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -393,12 +394,38 @@ class KKBotAgent:
         )
         return "\n\n".join(part for part in prompt_parts if part)
 
+    @staticmethod
+    def _contents_to_messages(system_prompt: str, contents: List[Dict]) -> List[Dict[str, str]]:
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        for content in contents:
+            role = content.get("role", "user")
+            text = ""
+            for part in content.get("parts", []):
+                if "text" in part:
+                    text = part["text"]
+                    break
+            if not text:
+                continue
+            messages.append({
+                "role": "assistant" if role == "model" else "user",
+                "content": text,
+            })
+        return messages
+
     async def run(self, user_id: int, user_msg: str) -> str:
         """主入口：給定用戶 ID 和訊息，回傳 AI 回應文字。"""
         contents   = self.session.build_contents(user_id, user_msg)
         needs_tools = self._needs_tools(user_msg)
         tools_spec  = self._tools_spec if (needs_tools and _TOOLS_AVAILABLE) else None
         system_prompt = self._build_system_prompt(user_msg)
+
+        if not needs_tools:
+            text_messages = self._contents_to_messages(system_prompt, contents)
+            text_result, provider = await complete_text_with_fallback(text_messages, max_tokens=800)
+            if text_result:
+                logger.info("✅ 文字回覆使用 %s", provider)
+                self._save(user_id, user_msg, text_result)
+                return text_result
 
         # ── 嘗試 Gemini（主要 Key → 備用 Key）────────────────────────────
         for key, label in [
