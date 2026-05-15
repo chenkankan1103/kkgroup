@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 import hashlib
@@ -21,6 +23,11 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from shared.utils.llm_text_router import complete_text_with_fallback
+
 LOCK_FILE = PROJECT_ROOT / ".knowledge_refresh.lock"
 STATE_FILE = PROJECT_ROOT / ".knowledge_refresh_state.json"
 WEBHOOK_DEDUP_SECONDS = 300
@@ -123,10 +130,10 @@ def send_webhook(status: str, outputs: list[str], error_message: str = "") -> No
     details = "\n".join(chunk for chunk in outputs if chunk).strip() or "(無額外輸出)"
 
     payload = {
-        "content": "🤖 KK 中控室知識庫排程回報",
+        "content": "🤖 KK 中控室日報",
         "embeds": [
             {
-                "title": title,
+                "title": "KK 中控室日報" if status == "success" else title,
                 "description": description,
                 "color": color,
                 "fields": [
@@ -141,12 +148,79 @@ def send_webhook(status: str, outputs: list[str], error_message: str = "") -> No
                         "inline": True,
                     },
                     {
-                        "name": "輸出摘要",
+                        "name": "刷新結果",
                         "value": f"```json\n{details[:1000]}\n```",
                     },
                 ],
             }
         ],
+    }
+
+    if status == "success":
+        analysis_text = next((chunk[len("AI_ANALYSIS:\n"):] for chunk in outputs if chunk.startswith("AI_ANALYSIS:\n")), "")
+        analysis_provider = next((chunk.split(":", 1)[1] for chunk in outputs if chunk.startswith("AI_PROVIDER:")), "")
+        if analysis_text:
+            sections = parse_analysis_sections(analysis_text)
+            payload["embeds"][0]["fields"].append(
+                {
+                    "name": "分析模型",
+                    "value": analysis_provider or "unknown",
+                    "inline": True,
+                }
+            )
+            payload["embeds"][0]["fields"].append(
+                {
+                    "name": "系統摘要",
+                    "value": truncate_field(sections.get("summary", analysis_text)),
+                }
+            )
+            payload["embeds"][0]["fields"].append(
+                {
+                    "name": "風險與異常",
+                    "value": truncate_field(sections.get("risks", "未提供")),
+                }
+            )
+            payload["embeds"][0]["fields"].append(
+                {
+                    "name": "可執行建議",
+                    "value": truncate_field(sections.get("actions", "未提供")),
+                }
+            )
+            payload["embeds"][0]["fields"].append(
+                {
+                    "name": "優先順序",
+                    "value": truncate_field(sections.get("priority", "未提供")),
+                }
+            )
+
+
+def truncate_field(value: str, limit: int = 1000) -> str:
+    value = (value or "").strip()
+    if not value:
+        return "未提供"
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3].rstrip() + "..."
+
+
+def parse_analysis_sections(text: str) -> dict[str, str]:
+    pattern = re.compile(
+        r"\[SUMMARY\](.*?)\[RISKS\](.*?)\[ACTIONS\](.*?)\[PRIORITY\](.*)",
+        re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        return {
+            "summary": text.strip(),
+            "risks": "模型未按區塊格式輸出。",
+            "actions": "請檢查 AI prompt 或 fallback 模型輸出格式。",
+            "priority": "1. 修正輸出格式",
+        }
+    return {
+        "summary": match.group(1).strip(),
+        "risks": match.group(2).strip(),
+        "actions": match.group(3).strip(),
+        "priority": match.group(4).strip(),
     }
 
     if should_skip_webhook(status, details):
@@ -182,6 +256,43 @@ def main() -> int:
     summary = json.dumps({"status": "ok", "steps": len(steps)}, ensure_ascii=False)
     print(summary)
     outputs.append(summary)
+
+    scan_report_path = PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "vm-scan-latest.md"
+    if scan_report_path.exists():
+        scan_report = scan_report_path.read_text(encoding="utf-8")
+        analysis_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是 KK 園區中控 AI 分析官。請根據 VM 掃描報告與刷新結果，"
+                    "輸出繁體中文建議，內容務必基於輸入，不要虛構不存在的異常。"
+                    "輸出必須嚴格遵守以下區塊格式："
+                    "[SUMMARY]、[RISKS]、[ACTIONS]、[PRIORITY]。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "請整理以下資訊。\n"
+                    "輸出必須完全符合這個格式，不要加入其他標題或前言：\n"
+                    "[SUMMARY]\n- 今日系統狀態摘要\n"
+                    "[RISKS]\n- 需要關注的風險或異常（若無則明說）\n"
+                    "[ACTIONS]\n- 2 到 3 個可執行的功能或維運建議\n"
+                    "[PRIORITY]\n1. 建議優先順序\n\n"
+                    "[VM 掃描報告]\n"
+                    f"{scan_report[:5000]}\n\n"
+                    "[本次刷新輸出]\n"
+                    f"{' '.join(outputs)[:1200]}"
+                ),
+            },
+        ]
+        analysis_text, provider = asyncio.run(complete_text_with_fallback(analysis_messages, max_tokens=700))
+        if analysis_text:
+            print(f"AI_PROVIDER:{provider}")
+            print("AI_ANALYSIS:\n" + analysis_text)
+            outputs.append(f"AI_PROVIDER:{provider}")
+            outputs.append("AI_ANALYSIS:\n" + analysis_text)
+
     send_webhook("success", outputs)
     return 0
 
