@@ -23,6 +23,7 @@
 - [Coding Rules and Paths](concepts/coding-rules-and-paths.md)
 - [Knowledge Maintenance Workflow](concepts/knowledge-maintenance-workflow.md)
 - [Knowledge Link Audit](concepts/knowledge-link-audit.md)
+- [AI 記憶與 VM 知識更新流程](concepts/ai-memory-and-vm-knowledge-pipeline.md)
 
 ## 延伸入口
 

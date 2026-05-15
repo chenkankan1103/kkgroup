@@ -45,6 +45,7 @@ try:
     from shared.db.ai_memory import (
         build_memory_context,
         DialogueMemory,
+        KnowledgeBase,
         initialize_memory_system,
     )
     _MEMORY_AVAILABLE = True
@@ -55,6 +56,11 @@ except ImportError:
     class DialogueMemory:  # type: ignore
         @staticmethod
         def add_dialogue(q, a, importance=0.5): pass
+    class KnowledgeBase:  # type: ignore
+        @staticmethod
+        def search_knowledge(keyword, max_tokens=1000): return ""
+        @staticmethod
+        def get_recent_items(limit=20, category=None): return []
     def initialize_memory_system(): pass
 
 # ─── 環境變數 ────────────────────────────────────────────────────────────────
@@ -316,6 +322,7 @@ _SYSTEM_PROMPT = """\
 職責：
 - 回答用戶問題，簡潔（150 字以內）
 - 必要時呼叫工具查詢數據
+- 你同時是中控室 NPC，要善用長期記憶、知識庫與 VM 掃描報告回答問題
 - 使用繁體中文，語氣親切但專業
 
 工具使用規則：
@@ -349,11 +356,49 @@ class KKBotAgent:
             agent_tools.get_gemini_tools_spec() if _TOOLS_AVAILABLE else None
         )
 
+    @staticmethod
+    def _build_system_prompt(user_msg: str) -> str:
+        if not _MEMORY_AVAILABLE:
+            return _SYSTEM_PROMPT
+
+        memory_context = build_memory_context()
+        related_knowledge = KnowledgeBase.search_knowledge(user_msg, max_tokens=500)
+        recent_vm_items = KnowledgeBase.get_recent_items(limit=3, category="vm_scan")
+
+        vm_lines = []
+        for item in recent_vm_items:
+            vm_lines.append(f"- {item['topic']}: {item['content'][:180]}")
+
+        prompt_parts = [_SYSTEM_PROMPT]
+
+        system_instructions = memory_context.get("system_instructions", "").strip()
+        if system_instructions:
+            prompt_parts.append(f"=== 長期角色設定 ===\n{system_instructions}")
+
+        knowledge_context = memory_context.get("knowledge_context", "").strip()
+        if knowledge_context:
+            prompt_parts.append(f"=== 全域知識摘要 ===\n{knowledge_context}")
+
+        if related_knowledge:
+            prompt_parts.append(f"=== 與目前問題最相關的知識 ===\n{related_knowledge}")
+
+        if vm_lines:
+            prompt_parts.append("=== 最近 VM 掃描摘要 ===\n" + "\n".join(vm_lines))
+
+        prompt_parts.append(
+            "=== 回答規則 ===\n"
+            "- 若知識庫或 VM 掃描已有答案，優先引用這些內容。\n"
+            "- 若你根據 repo 結構推測可擴充功能，請明確說出依據。\n"
+            "- 若資料不足，直接說你需要再掃描或查工具。"
+        )
+        return "\n\n".join(part for part in prompt_parts if part)
+
     async def run(self, user_id: int, user_msg: str) -> str:
         """主入口：給定用戶 ID 和訊息，回傳 AI 回應文字。"""
         contents   = self.session.build_contents(user_id, user_msg)
         needs_tools = self._needs_tools(user_msg)
         tools_spec  = self._tools_spec if (needs_tools and _TOOLS_AVAILABLE) else None
+        system_prompt = self._build_system_prompt(user_msg)
 
         # ── 嘗試 Gemini（主要 Key → 備用 Key）────────────────────────────
         for key, label in [
@@ -362,7 +407,7 @@ class KKBotAgent:
         ]:
             if not key:
                 continue
-            result = await self._gemini_loop(key, label, contents, tools_spec, user_id)
+            result = await self._gemini_loop(key, label, system_prompt, contents, tools_spec, user_id)
             if result:
                 self._save(user_id, user_msg, result)
                 return result
@@ -370,7 +415,7 @@ class KKBotAgent:
         # ── Gemini 全部失敗 → 降級至 Groq（無工具）─────────────────────
         logger.warning("⚠️ Gemini 全部不可用，降級至 Groq")
         groq_result = await self.llm.groq([
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_msg},
         ])
         if groq_result:
@@ -383,6 +428,7 @@ class KKBotAgent:
         self,
         api_key: str,
         label: str,
+        system_prompt: str,
         initial_contents: List[Dict],
         tools_spec: Optional[List[Dict]],
         user_id: int,
@@ -393,7 +439,7 @@ class KKBotAgent:
         for _round in range(_MAX_TOOL_ROUNDS + 1):
             # 最後一輪不帶工具，強制 LLM 輸出文字
             candidate = await self.llm.gemini(
-                api_key, GEMINI_MODEL, _SYSTEM_PROMPT, contents,
+                api_key, GEMINI_MODEL, system_prompt, contents,
                 tools_spec=(tools_spec if _round < _MAX_TOOL_ROUNDS else None),
                 label=label,
             )

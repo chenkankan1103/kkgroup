@@ -4,6 +4,14 @@
 
 ## 2026-05-15
 
+- 建立 [AI 記憶與 VM 知識更新流程](concepts/ai-memory-and-vm-knowledge-pipeline.md)，把 VM 掃描、wiki 匯入、長期記憶與 AI prompt 串成單一管線。
+- 新增 `scripts/scan_vm_state.py`、`scripts/ingest_knowledge.py`、`scheduled_tasks/refresh_knowledge_base.py`，可在 VM 上每 24 小時更新一次知識庫。
+- 擴充 `shared/db/ai_memory.py`，讓知識條目保存來源路徑、metadata、related topics，供 AI 回答時引用。
+- 更新 `cogs/common/AI.py`，讓中控室 NPC 回答時會帶入長期人格、相關知識與最近 VM 掃描摘要。
+- 在 `config/commands_registry.json` 補上 `refresh_knowledge_base` 管理命令，方便從既有維運入口手動重建知識。
+- 已在 VM crontab 設定每天台灣時間 18:00 執行 `scheduled_tasks/refresh_knowledge_base.py`，並讓排程支援 Discord webhook 成功/失敗通知。
+- 已將知識庫排程專用 webhook 寫入 VM `.env` 的 `KNOWLEDGE_WEBHOOK_URL`，供每日刷新結果回報使用。
+
 - 新增 [KK 園區經濟系統](concepts/kk-park-economy-system.md) 整理頁，將 KK 幣、商店、UI 獎勵、活動成本與 DB 入口串成單一閱讀節點。
 - 在索引頁、AI Fast Read、專案架構與 Discord Bot 系統頁加入回鏈，讓經濟系統不再只靠資料夾樹狀定位。
 - 新增 [KK 園區系統地圖](concepts/kk-park-system-map.md) 作為跨主題導航頁，將經濟、紙娃娃、訊息持久化、部署維運、AI Debug、Web/API、開發維護串成可跳轉入口。

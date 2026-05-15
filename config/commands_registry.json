@@ -1,7 +1,7 @@
 {
   "metadata": {
     "version": "1.0.0",
-    "lastUpdated": "2026-04-28",
+    "lastUpdated": "2026-05-15",
     "description": "KKGroup 統一指令註冊表 - 所有系統指令的中央管理",
     "usage": "使用 scripts/commands_manager.py 執行這些指令"
   },
@@ -120,6 +120,12 @@
       "name": "重新載入 systemd 配置",
       "commands": [
         "sudo systemctl daemon-reload"
+      ]
+    },
+    "refresh_knowledge_base": {
+      "name": "更新 AI 知識庫",
+      "commands": [
+        "cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_knowledge_base.py"
       ]
     }
   },

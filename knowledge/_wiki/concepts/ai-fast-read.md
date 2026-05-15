@@ -11,6 +11,7 @@ KKGroup 是一個以 Discord 多 Bot 為核心、結合 Google Sheets/SQLite、F
 3. `knowledge/_wiki/entities/command-registry.md`
 4. `knowledge/_wiki/concepts/webhook-and-tunnel.md`
 5. 如果在查 KK 幣、商店、獎勵，先讀 `knowledge/_wiki/concepts/kk-park-economy-system.md`
+6. 如果在查 AI 記憶、VM 掃描或 NPC 知識更新，讀 `knowledge/_wiki/concepts/ai-memory-and-vm-knowledge-pipeline.md`
 6. 只有需要時才下鑽原始程式碼
 
 ## 專案分區

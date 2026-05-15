@@ -74,8 +74,10 @@ tcp6       0      0 :::80                   :::*                    LISTEN
 
 # Cron 排程（僅用於維護任務）
 # m h  dom mon dow   command
-0 14 * * 3,6 cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /var/log/kkgroup_locker_refresh.log 2>&1
+0 3 * * 0 cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /var/log/kkgroup_locker_refresh.log 2>&1
 0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python weekly_backup.py >> /tmp/weekly_backup.log 2>&1
+CRON_TZ=Asia/Taipei
+0 18 * * * cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_knowledge_base.py >> /home/e193752468/kkgroup/knowledge_refresh.log 2>&1
 ```
 
 **部署機制說明**:
@@ -83,6 +85,7 @@ tcp6       0      0 :::80                   :::*                    LISTEN
 - **Webhook 接收器**: `/web/blueprints/webhook.py`
 - **執行操作**: `git pull` + `systemctl restart` 所有服務
 - **通知機制**: 部署結果發送到 Discord 系統頻道
+- **AI 知識庫排程**: 每天台灣時間 18:00 掃描 VM 與 repo，更新中控室 NPC 的知識庫
 
 ### 環境變數設定
 ```bash
@@ -91,6 +94,14 @@ LC_ALL=C.UTF-8
 PYTHONIOENCODING=utf-8
 TZ=Asia/Taipei
 ```
+
+### AI 知識庫通知
+- `scheduled_tasks/refresh_knowledge_base.py` 會嘗試從 `.env` 讀取以下 webhook 設定：
+	- `KNOWLEDGE_WEBHOOK_URL`
+	- `DISCORD_WEBHOOK_URL`
+	- `DISCORD_WEBHOOK`
+	- `STARTUP_WEBHOOK_URL`
+- VM 目前已設定 `KNOWLEDGE_WEBHOOK_URL`，供每日知識庫刷新排程回報 Discord 狀態
 
 ## 環境配置
 
