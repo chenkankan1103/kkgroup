@@ -32,3 +32,8 @@ await message.edit(embed=embed, suppress=True)
 - 盡量用 `silent=True` 發送所有不需要推播通知的 bot 訊息。
 - 用 `suppress=True` 編輯現有訊息時保持靜音。
 - 只有在特殊情況下需要精細控制 `MessageFlags` 時，才使用 `flags=discord.MessageFlags(...)`。
+
+## 相關文檔
+
+- [Discord 訊息 ID 持久化實踐](discord-message-id-persistence.md)
+- [Discord Bot 系統詳解](discord-bot-system.md)

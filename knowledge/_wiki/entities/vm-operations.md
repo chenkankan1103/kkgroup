@@ -16,3 +16,10 @@
 - 先在本地驗證，再同步到 VM
 - 盡量不要直接在 VM 上做資料庫主修復
 - 系統服務文件在 VM 管理，不上傳 Git
+
+## 相關文檔
+
+- [部署和維運指南](../concepts/deployment-and-operations.md)
+- [Webhook and Tunnel](../concepts/webhook-and-tunnel.md)
+- [VM 實際配置狀況](vm-actual-configuration.md)
+- [Command Registry](command-registry.md)

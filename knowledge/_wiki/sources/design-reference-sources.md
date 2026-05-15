@@ -19,3 +19,9 @@
 - 在需要調整 UI 方向、頁面氣質、字體與色彩系統時優先參考
 - 若要落地到 kkgroup，先挑選符合產品調性的單一風格，再轉成專案自己的設計規範
 - 不要直接照抄品牌識別或專屬資產，僅取可重用的設計結構與表達方式
+
+## 相關文檔
+
+- [Web API 和遊戲系統](../concepts/web-api-and-game-system.md)
+- [開發工具和流程](../concepts/development-tools-and-workflow.md)
+- [Knowledge Maintenance Workflow](../concepts/knowledge-maintenance-workflow.md)

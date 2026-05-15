@@ -22,3 +22,10 @@
 
 - 這三個 bot 是 VM 開機後需要自動啟動的核心服務。
 - 若只更新單一 bot，也要確認其餘服務沒有被連帶影響。
+
+## 相關文檔
+
+- [Discord Bot 系統詳解](../concepts/discord-bot-system.md)
+- [部署和維運指南](../concepts/deployment-and-operations.md)
+- [VM Operations](vm-operations.md)
+- [Command Registry](command-registry.md)

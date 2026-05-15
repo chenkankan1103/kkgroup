@@ -167,7 +167,9 @@ async def _restore_message_reference(self):
 - 訊息被刪除時要及時清除對應的 ID
 - 頻道 ID 變更時需要清除舊的訊息 ID
 
-## 相關文件
+## 相關文檔
 
 - [SECURITY_GUIDE_TW.md](../sources/SECURITY_GUIDE_TW.md) - 安全最佳實踐
 - [discord-silent-messages.md](discord-silent-messages.md) - Discord 訊息機制
+- [Discord Bot 系統詳解](discord-bot-system.md) - Bot 與訊息模組分工
+- [KK 園區系統地圖](kk-park-system-map.md) - 總覽入口

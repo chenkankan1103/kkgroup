@@ -336,9 +336,3 @@ model="mistralai/mistral-medium-3.5-128b"  # 平衡性能
 - [GitHub Actions 工作流程](../github-actions-workflows.md)
 - [系統部署指南](../../deployment/system-deployment.md)
 - [故障排除手冊](../troubleshooting/debug-system-troubleshooting.md)
-
----
-
-**更新時間**：2024-05-12  
-**版本**：1.0.0  
-**維護者**：AI Auto Debug System

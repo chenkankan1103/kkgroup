@@ -55,6 +55,12 @@ Invoke-RestMethod -Method Post -Uri 'https://api.github.com/repos/OWNER/REPO/dis
 - 方便未來維運快速理解自動修復的 guard rails，避免重複引入測試污染。
 - 提供回溯路徑（檔案與 commit）以利安全變更與審查。
 
----
 檔案位置：`knowledge/_wiki/concepts/log_monitor_pipeline.md`
 如需我將此檔案同時存進 Agent 記憶（/memories/repo/）請告知，我會嘗試建立 repository-scoped memory 條目（若系統允許）。
+
+## 相關文檔
+
+- [GitHub Actions AI 除錯系統](../github-actions-ai-debugging.md)
+- [部署和維運指南](deployment-and-operations.md)
+- [開發工具和流程](development-tools-and-workflow.md)
+- [KK 園區系統地圖](kk-park-system-map.md)

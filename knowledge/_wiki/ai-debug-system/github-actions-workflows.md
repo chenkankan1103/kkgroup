@@ -357,9 +357,3 @@ permissions:
 - [NVIDIA AI 集成](nvidia-ai-integration.md)
 - [系統部署指南](../../deployment/system-deployment.md)
 - [故障排除手冊](../troubleshooting/github-actions-troubleshooting.md)
-
----
-
-**更新時間**：2024-05-12  
-**版本**：1.0.0  
-**維護者**：GitHub Actions Workflow Team

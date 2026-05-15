@@ -184,13 +184,6 @@ source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-## 相關文檔
-
-- [部署和維運指南](deployment-and-operations.md)
-- [VM 實際配置](../entities/vm-actual-configuration.md)
-- [專案架構總覽](project-architecture.md)
-- [Discord Bot 系統詳解](discord-bot-system.md)
-
 ## 最佳實踐
 
 ### 開發建議
@@ -209,6 +202,11 @@ pip install -r requirements.txt
 2. **資源管理**: 適當釋放資源，避免記憶體洩漏
 3. **錯誤處理**: 完善的異常處理機制
 
----
+## 相關文檔
 
-**記住：每次修改後都要上傳 GitHub，系統會自動部署！**
+- [開發工具和流程](development-tools-and-workflow.md)
+- [部署和維運指南](deployment-and-operations.md)
+- [VM 實際配置](../entities/vm-actual-configuration.md)
+- [專案架構總覽](project-architecture.md)
+- [Discord Bot 系統詳解](discord-bot-system.md)
+- [KK 園區系統地圖](kk-park-system-map.md)

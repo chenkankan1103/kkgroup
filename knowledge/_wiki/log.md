@@ -2,6 +2,15 @@
 
 ## 2026-05-10
 
+## 2026-05-15
+
+- 新增 [KK 園區經濟系統](concepts/kk-park-economy-system.md) 整理頁，將 KK 幣、商店、UI 獎勵、活動成本與 DB 入口串成單一閱讀節點。
+- 在索引頁、AI Fast Read、專案架構與 Discord Bot 系統頁加入回鏈，讓經濟系統不再只靠資料夾樹狀定位。
+- 新增 [KK 園區系統地圖](concepts/kk-park-system-map.md) 作為跨主題導航頁，將經濟、紙娃娃、訊息持久化、部署維運、AI Debug、Web/API、開發維護串成可跳轉入口。
+- 新增 [Knowledge Link Audit](concepts/knowledge-link-audit.md) 稽核頁，記錄孤島頁與弱連結頁，並補強 index 與相關文檔連結。
+- 將原本弱連結的 [開發工作流程](concepts/development-workflow.md)、[Discord 訊息 ID 持久化實踐](concepts/discord-message-id-persistence.md)、[LogMonitor 與 Auto AI Fix 流程總覽](concepts/log_monitor_pipeline.md)、[GitHub Actions AI 除錯系統](github-actions-ai-debugging.md) 掛回主知識網。
+- 統一知識頁收尾格式：一般頁面固定以 `## 相關文檔` 收尾，移除舊式 `---` 與版本型頁尾，並把 entities、sources、ai-debug-system 一起納入同一套導覽格式。
+
 - 建立 KKGroup 專案知識庫骨架，供本機用 Obsidian 開啟，並透過 Git 同步到 VM。
 - 初始主題包含 bot 服務、VM 操作、Webhook/隧道、紙娃娃流程。
 - 補充指引與指令註冊表的整理頁，新增編碼規則、指令註冊表、知識維護流程與來源頁。

@@ -10,7 +10,8 @@ KKGroup 是一個以 Discord 多 Bot 為核心、結合 Google Sheets/SQLite、F
 2. `knowledge/_wiki/entities/bot-services.md`
 3. `knowledge/_wiki/entities/command-registry.md`
 4. `knowledge/_wiki/concepts/webhook-and-tunnel.md`
-5. 只有需要時才下鑽原始程式碼
+5. 如果在查 KK 幣、商店、獎勵，先讀 `knowledge/_wiki/concepts/kk-park-economy-system.md`
+6. 只有需要時才下鑽原始程式碼
 
 ## 專案分區
 
@@ -37,6 +38,7 @@ KKGroup 是一個以 Discord 多 Bot 為核心、結合 Google Sheets/SQLite、F
 - 結構上以 Google Sheets 驅動欄位與同步
 - 穩定入口是 `shared/db/db_adapter.py`
 - 核心引擎是 `shared/db/sheet_driven_db.py`
+- 經濟系統要從 `cogs/common/kcoin.py`、`cogs/shop/`、`cogs/ui/` 一起看，不是只看商店
 
 ## 高頻維運入口
 
@@ -68,3 +70,10 @@ KKGroup 是一個以 Discord 多 Bot 為核心、結合 Google Sheets/SQLite、F
 - 只是需要知道某功能大概在哪一層
 
 這些情況先用 knowledge 頁，不要直接全域搜索整個 repo。
+
+## 相關文檔
+
+- [KK 園區系統地圖](kk-park-system-map.md)
+- [專案架構總覽](project-architecture.md)
+- [Discord Bot 系統詳解](discord-bot-system.md)
+- [Command Registry](../entities/command-registry.md)
