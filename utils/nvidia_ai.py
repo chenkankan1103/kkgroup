@@ -14,6 +14,7 @@ class NVIDIAAIClient:
     def __init__(self):
         self.api_key = os.getenv("NVIDIA_API_KEY")
         self.base_url = "https://integrate.api.nvidia.com/v1"
+        self.timeout = int(os.getenv("NVIDIA_API_TIMEOUT", "120"))
         
         # 推薦的強大模型，適用於 debug 和代碼分析
         self.models = {
@@ -72,7 +73,7 @@ class NVIDIAAIClient:
                 "Content-Type": "application/json"
             }
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
                 async with session.post(url, json=payload, headers=headers) as response:
                     if response.status == 200:
                         result = await response.json()
@@ -87,7 +88,7 @@ class NVIDIAAIClient:
                         return None
         
         except Exception as e:
-            print(f"❌ NVIDIA API 調用失敗: {e}")
+            print(f"❌ NVIDIA API 調用失敗: {type(e).__name__}: {e}")
             return None
     
     async def analyze_error_logs(
