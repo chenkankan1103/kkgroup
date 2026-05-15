@@ -49,6 +49,7 @@ try:
         KnowledgeBase,
         initialize_memory_system,
     )
+    from shared.db.knowledge_vector_index import KnowledgeVectorIndex
     _MEMORY_AVAILABLE = True
 except ImportError:
     _MEMORY_AVAILABLE = False
@@ -62,6 +63,8 @@ except ImportError:
         def search_knowledge(keyword, max_tokens=1000): return ""
         @staticmethod
         def get_recent_items(limit=20, category=None): return []
+    class KnowledgeVectorIndex:  # type: ignore
+        def hybrid_search(self, query, limit=5, category=None): return []
     def initialize_memory_system(): pass
 
 # ─── 環境變數 ────────────────────────────────────────────────────────────────
@@ -363,12 +366,20 @@ class KKBotAgent:
             return _SYSTEM_PROMPT
 
         memory_context = build_memory_context()
+        vector_index = KnowledgeVectorIndex()
+        semantic_items = vector_index.hybrid_search(user_msg, limit=4)
         related_knowledge = KnowledgeBase.search_knowledge(user_msg, max_tokens=500)
         recent_vm_items = KnowledgeBase.get_recent_items(limit=3, category="vm_scan")
 
         vm_lines = []
         for item in recent_vm_items:
             vm_lines.append(f"- {item['topic']}: {item['content'][:180]}")
+
+        semantic_lines = []
+        for item in semantic_items:
+            semantic_lines.append(
+                f"- ({item.get('match_mode', 'semantic')}/{item.get('score', 0)}) {item['topic']}: {item['content'][:180]}"
+            )
 
         prompt_parts = [_SYSTEM_PROMPT]
 
@@ -382,6 +393,9 @@ class KKBotAgent:
 
         if related_knowledge:
             prompt_parts.append(f"=== 與目前問題最相關的知識 ===\n{related_knowledge}")
+
+        if semantic_lines:
+            prompt_parts.append("=== 語意檢索命中的知識 ===\n" + "\n".join(semantic_lines))
 
         if vm_lines:
             prompt_parts.append("=== 最近 VM 掃描摘要 ===\n" + "\n".join(vm_lines))
