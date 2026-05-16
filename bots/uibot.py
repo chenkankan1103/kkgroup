@@ -20,6 +20,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from shared.utils.bot_status import build_discord_activity
+from shared.db.feature_usage import track_discord_interaction
 from status_dashboard import initialize_dashboard, load_message_ids, update_dashboard_logs
 import syslog
 import logging
@@ -339,6 +340,13 @@ async def on_resumed():
     if current_time - _last_resumed_log_time >= _GATEWAY_LOG_INTERVAL:
         print("[DISCORD] session resumed")
         _last_resumed_log_time = current_time
+
+@client.event
+async def on_interaction(interaction: discord.Interaction):
+    try:
+        await track_discord_interaction(interaction, BOT_TYPE)
+    except Exception as e:
+        file_log(f"⚠️ 功能使用量追蹤失敗: {e}")
 
 # ============================================================
 # Bot 事件處理
