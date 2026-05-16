@@ -19,6 +19,7 @@ from discord.ext.commands import ExtensionError
 from datetime import datetime
 from dotenv import load_dotenv
 from shared.utils.bot_status import build_discord_activity
+from shared.db.feature_usage import track_discord_interaction
 from watchdog.events import FileSystemEventHandler
 import logging
 
@@ -413,6 +414,13 @@ async def on_resumed():
     except (ImportError, OSError, RuntimeError) as e:
         print(f"[on_resumed] log refresh failed: {e}")
     # metrics 功能已被禁用，移除相關代碼
+
+@client.event
+async def on_interaction(interaction: discord.Interaction):
+    try:
+        await track_discord_interaction(interaction, BOT_TYPE)
+    except Exception as e:
+        file_log(f"⚠️ 功能使用量追蹤失敗: {e}")
 
 @client.event
 async def on_ready():

@@ -258,6 +258,7 @@ def main() -> int:
 
     steps = [
         [sys.executable, "scripts/scan_vm_state.py"],
+        [sys.executable, "scripts/generate_feature_usage_report.py"],
         [sys.executable, "scripts/ingest_knowledge.py"],
     ]
 
@@ -280,13 +281,15 @@ def main() -> int:
     outputs.append(summary)
 
     scan_report_path = PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "vm-scan-latest.md"
+    feature_report_path = PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "feature-usage-report.md"
     if scan_report_path.exists():
         scan_report = scan_report_path.read_text(encoding="utf-8")
+        feature_report = feature_report_path.read_text(encoding="utf-8") if feature_report_path.exists() else ""
         analysis_messages = [
             {
                 "role": "system",
                 "content": (
-                    "你是 KK 園區中控 AI 分析官。請根據 VM 掃描報告與刷新結果，"
+                    "你是 KK 園區中控 AI 分析官。請根據 VM 掃描報告、功能使用量報表與刷新結果，"
                     "輸出繁體中文建議，內容務必基於輸入，不要虛構不存在的異常。"
                     "輸出必須嚴格遵守以下區塊格式："
                     "[SUMMARY]、[RISKS]、[ACTIONS]、[PRIORITY]。"
@@ -303,6 +306,8 @@ def main() -> int:
                     "[PRIORITY]\n1. 建議優先順序\n\n"
                     "[VM 掃描報告]\n"
                     f"{scan_report[:5000]}\n\n"
+                    "[功能使用量報表]\n"
+                    f"{feature_report[:2500]}\n\n"
                     "[本次刷新輸出]\n"
                     f"{' '.join(outputs)[:1200]}"
                 ),
