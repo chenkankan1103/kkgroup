@@ -118,6 +118,9 @@ _MAX_EMBED_INCIDENTS: int = 5
 _TW_TZ = ZoneInfo("Asia/Taipei")
 _GITHUB_REPO = "chenkankan1103/kkgroup"
 _KNOWN_DEBUGS_PATH = os.path.join(parent_dir, "data", "logmonitor_known_debugs.json")
+_GITHUB_SYNC_INITIAL_DELAY_SEC = 20
+_GITHUB_SYNC_RETRY_DELAY_SEC = 15
+_GITHUB_SYNC_MAX_ATTEMPTS = 20
 
 
 def _save_message_state(message_id: int):
@@ -662,8 +665,17 @@ class LogMonitorEngine:
             logger.warning(f"[LogMonitor] 讀取 GitHub 分析 artifact 失敗: {exc}")
             return None
 
-    async def _sync_incident_analysis_from_github(self, signature: str, attempts: int = 6, delay: int = 15):
+    async def _sync_incident_analysis_from_github(
+        self,
+        signature: str,
+        attempts: int = _GITHUB_SYNC_MAX_ATTEMPTS,
+        delay: int = _GITHUB_SYNC_RETRY_DELAY_SEC,
+        initial_delay: int = _GITHUB_SYNC_INITIAL_DELAY_SEC,
+    ):
         try:
+            if initial_delay > 0:
+                await asyncio.sleep(initial_delay)
+
             for _ in range(attempts):
                 payload = await asyncio.to_thread(self._fetch_github_analysis_result_sync, signature)
                 if payload:
@@ -698,6 +710,7 @@ class LogMonitorEngine:
 
                 await asyncio.sleep(delay)
 
+            self._pipeline_status["dispatch_status"] = "等待 GitHub 回寫逾時"
             self._pipeline_status["dispatch_detail"] = "GitHub 分析尚未回寫，保留本地分析結果"
         finally:
             self._analysis_sync_tasks.pop(signature, None)
