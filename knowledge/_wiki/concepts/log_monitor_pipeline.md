@@ -8,6 +8,7 @@
 - GitHub：當判定為高危或包含 traceback/Exception 等程式錯誤時，會發送 `repository_dispatch`（`event_type=error_analysis`）到 GitHub，觸發 `AI Debug Monitor` 與 `Auto AI Fix` 工作流程。
 - 閉環：`AI Debug Monitor` 會輸出帶 `incident_signature` 的分析 artifact，`LogMonitor` 會自動拉回結果並寫入 `data/logmonitor_known_debugs.json`，之後相同簽名錯誤可直接命中既有案例，不必每次重送 GitHub。
 - Auto AI Fix：只對高危且明確為程式碼錯誤的事件執行自動修復產生並提交；加入多重保護避免誤提交。
+- Mutual Rescue：`bot`、`shopbot`、`uibot` 啟動後都會掛上 `shared/utils/mutual_rescue.py` 的 watchdog，定期檢查另外兩個 `systemd` 服務；若同伴非 `active`，會送出 `repository_dispatch` 讓 `Auto AI Fix` agent 嘗試遠端重啟與驗證。
 
 ### 重要設計與保護（要點）
 1. 單則流程面板（`cogs/common/log_monitor.py`）：
@@ -36,6 +37,13 @@
 6. 若下次出現同 `incident_signature` 的錯誤，面板會顯示「已命中已知案例」，沿用歷史分析，不再自動重送 GitHub。
 7. 若允許，AI 生成修復代碼、產生修復檔並提交；否則只在面板註記為「已分析／跳過自動改碼」。
 
+### 2026-05-18 實機驗證
+- 已再次驗證部署鏈：`git push` 到 `main` 後，VM 會透過 webhook 自動 `git pull` 到最新 commit，無需手動 SSH 同步。
+- 已用實機測試驗證 mutual rescue 的前半段：手動停止 `uibot.service` 後，`bot` 與 `shopbot` 都在 60 秒內偵測到 `uibot.service = inactive`，並成功送出 `repository_dispatch`。
+- `Auto AI Fix` 的 `repository_dispatch` run 也已成功啟動並產出 `ai-heal-result-*` artifact，表示 agent 真的有接手修復，而不是只有分析。
+- 當前阻塞點不在 bot 端，而在 GitHub Actions 的 GCP 權限：`github-actions-vm-repair@kkgroup.iam.gserviceaccount.com` 目前缺少對 `862486124810-compute@developer.gserviceaccount.com` 的 `roles/iam.serviceAccountUser`，導致 `gcloud compute ssh` 無法寫入 SSH metadata，遠端重啟因此失敗。
+- 結論：目前 mutual rescue 已經做到「同伴偵測 -> 派單 -> agent 接手」，但尚未達成「agent 真正重啟 VM 上服務」；要完成最後一段，需先補足上述 IAM 權限。
+
 ### 維運／排查指引（快速命令）
 - 檢查 LogMonitor 狀態（VM）：
 ```bash
@@ -57,6 +65,7 @@ Invoke-RestMethod -Method Post -Uri 'https://api.github.com/repos/OWNER/REPO/dis
 ### 為什麼記錄在知識庫
 - 方便未來維運快速理解自動修復的 guard rails，避免重複引入測試污染。
 - 提供回溯路徑（檔案與 commit）以利安全變更與審查。
+- 記錄 mutual rescue 的實機驗證結果與前置權限，避免再次誤判為 bot 邏輯失效。
 
 檔案位置：`knowledge/_wiki/concepts/log_monitor_pipeline.md`
 如需我將此檔案同時存進 Agent 記憶（/memories/repo/）請告知，我會嘗試建立 repository-scoped memory 條目（若系統允許）。
