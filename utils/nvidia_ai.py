@@ -3,13 +3,21 @@ NVIDIA AI API 封装模块
 提供與 OpenAI 相容的介面，專門用於 GitHub debug 和錯誤分析
 """
 
+import asyncio
+import logging
 import os
 import aiohttp
 import json
 from typing import List, Dict, Optional
 
+
+logger = logging.getLogger(__name__)
+
 class NVIDIAAIClient:
     """NVIDIA AI 用戶端"""
+    _last_timeout_log_key = ""
+    _last_timeout_log_at = 0.0
+    _timeout_log_cooldown_sec = 300
     
     def __init__(self):
         self.api_key = os.getenv("NVIDIA_API_KEY")
@@ -52,11 +60,12 @@ class NVIDIAAIClient:
         """
         try:
             if not self.api_key:
-                print("❌ NVIDIA_API_KEY 未設置")
+                logger.warning("NVIDIA_API_KEY 未設置")
                 return None
             
             # 使用指定模型或預設模型
             selected_model = model or self.model
+            request_timeout = int(kwargs.get("timeout") or self.timeout)
             
             url = f"{self.base_url}/chat/completions"
             
@@ -73,7 +82,7 @@ class NVIDIAAIClient:
                 "Content-Type": "application/json"
             }
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=request_timeout)) as session:
                 async with session.post(url, json=payload, headers=headers) as response:
                     if response.status == 200:
                         result = await response.json()
@@ -84,12 +93,29 @@ class NVIDIAAIClient:
                         return None
                     else:
                         error_text = await response.text()
-                        print(f"❌ NVIDIA API 錯誤 {response.status}: {error_text}")
+                        logger.warning(f"NVIDIA API 錯誤 {response.status}: {error_text}")
                         return None
-        
-        except Exception as e:
-            print(f"❌ NVIDIA API 調用失敗: {type(e).__name__}: {e}")
+
+        except (asyncio.TimeoutError, aiohttp.ServerTimeoutError):
+            self._log_timeout_once(selected_model, request_timeout)
             return None
+        except Exception as e:
+            logger.warning(f"NVIDIA API 調用失敗: {type(e).__name__}: {e}")
+            return None
+
+    @classmethod
+    def _log_timeout_once(cls, model: str, timeout_sec: int):
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+        log_key = f"{model}:{timeout_sec}"
+        if log_key == cls._last_timeout_log_key and now - cls._last_timeout_log_at < cls._timeout_log_cooldown_sec:
+            return
+
+        cls._last_timeout_log_key = log_key
+        cls._last_timeout_log_at = now
+        logger.warning(
+            f"NVIDIA API timeout / model={model} / timeout={timeout_sec}s；本次已改走 fallback，5 分鐘內不重複刷同類 timeout"
+        )
     
     async def analyze_error_logs(
         self, 
