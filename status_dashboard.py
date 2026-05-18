@@ -63,9 +63,7 @@ DASHBOARD_FORUM_CHANNEL_ID = int(
     or DEFAULT_FORUM_CHANNEL_ID
 )
 LEGACY_DASHBOARD_CHANNEL_ID = int(
-    os.getenv("DASHBOARD_CHANNEL_ID")
-    or os.getenv("LOG_CHANNEL_ID")
-    or "0"
+    "0"
 )
 LOGS_CAPACITY = 10  # 保存最近 10 條日誌（目前未使用）
 
