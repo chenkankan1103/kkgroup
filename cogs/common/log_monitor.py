@@ -1667,6 +1667,9 @@ class LogMonitor(commands.Cog):
         """Cog 載入時啟動監控。"""
         if _ALERT_CHANNEL_ID and _ALERT_CHANNEL_ID > 0:
             await self._engine._restore_message_reference()
+            channel = await self._engine._resolve_alert_channel()
+            if channel:
+                await self._engine._upsert_summary_message(channel)
             self._task = asyncio.create_task(self._engine.start())
             logger.info(f"[LogMonitor] 監控已在 cog_load 中啟動（通知頻道 {_ALERT_CHANNEL_ID}）")
         else:
