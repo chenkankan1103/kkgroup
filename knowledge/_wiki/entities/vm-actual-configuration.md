@@ -87,7 +87,7 @@ CRON_TZ=Asia/Taipei
 - **通知機制**: 部署結果發送到 Discord 系統頻道
 - **AI 知識庫排程**: 每天台灣時間 18:00 掃描 VM 與 repo，更新中控室 NPC 的知識庫
 - **2026-05-18 再驗證**: push 到 `main` 後，VM 已自動同步到最新 commit（實測 commit `d4094c3d`），證明 webhook 自動部署鏈正常。
-- **Mutual Rescue 前置權限**: 若要讓 GitHub Actions 透過 `gcloud compute ssh` 遠端修復 bot 服務，`github-actions-vm-repair@kkgroup.iam.gserviceaccount.com` 需對 `862486124810-compute@developer.gserviceaccount.com` 具備 `roles/iam.serviceAccountUser`；缺少時 agent 只能派單，無法真正 SSH 進 VM 重啟服務。
+- **Mutual Rescue 前置權限**: GitHub Actions 已補上 `github-actions-vm-repair@kkgroup.iam.gserviceaccount.com` -> `862486124810-compute@developer.gserviceaccount.com` 的 `roles/iam.serviceAccountUser`。目前 agent 已可透過 `gcloud compute ssh` 遠端修復 bot 服務。
 
 ### 環境變數設定
 ```bash

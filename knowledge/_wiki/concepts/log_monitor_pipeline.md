@@ -39,10 +39,11 @@
 
 ### 2026-05-18 實機驗證
 - 已再次驗證部署鏈：`git push` 到 `main` 後，VM 會透過 webhook 自動 `git pull` 到最新 commit，無需手動 SSH 同步。
-- 已用實機測試驗證 mutual rescue 的前半段：手動停止 `uibot.service` 後，`bot` 與 `shopbot` 都在 60 秒內偵測到 `uibot.service = inactive`，並成功送出 `repository_dispatch`。
-- `Auto AI Fix` 的 `repository_dispatch` run 也已成功啟動並產出 `ai-heal-result-*` artifact，表示 agent 真的有接手修復，而不是只有分析。
-- 當前阻塞點不在 bot 端，而在 GitHub Actions 的 GCP 權限：`github-actions-vm-repair@kkgroup.iam.gserviceaccount.com` 目前缺少對 `862486124810-compute@developer.gserviceaccount.com` 的 `roles/iam.serviceAccountUser`，導致 `gcloud compute ssh` 無法寫入 SSH metadata，遠端重啟因此失敗。
-- 結論：目前 mutual rescue 已經做到「同伴偵測 -> 派單 -> agent 接手」，但尚未達成「agent 真正重啟 VM 上服務」；要完成最後一段，需先補足上述 IAM 權限。
+- 手動停止 `uibot.service` 後，`bot` 與 `shopbot` 都在 60 秒左右偵測到 `uibot.service = inactive`，並成功送出 `repository_dispatch`。
+- `Auto AI Fix` 的 `repository_dispatch` run 已成功接手修復，且在補上 IAM 權限後，`gcloud compute ssh` 能真正登入 VM 重啟 `uibot.service`。
+- 成功案例：`uibot.service` 於 `14:16:31` 被手動停止，`14:17:32` 由 agent 自動重新啟動，約 61 秒後恢復 `active`。
+- 必要前置權限：`github-actions-vm-repair@kkgroup.iam.gserviceaccount.com` 需對 `862486124810-compute@developer.gserviceaccount.com` 具備 `roles/iam.serviceAccountUser`；未補前會卡在 SSH metadata 寫入失敗。
+- 結論：mutual rescue 已達成完整閉環「同伴偵測 -> 派單 -> agent 接手 -> SSH VM -> 重啟 service -> 服務恢復 active」。
 
 ### 維運／排查指引（快速命令）
 - 檢查 LogMonitor 狀態（VM）：
