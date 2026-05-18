@@ -22,6 +22,7 @@ from shared.utils.bot_status import build_discord_activity
 from shared.db.feature_usage import track_discord_interaction
 from watchdog.events import FileSystemEventHandler
 import logging
+import requests
 
 # ============================================================
 # 日誌配置 (使用全局 UTF-8 編碼處理)
@@ -128,6 +129,62 @@ intents.members = True
 intents.voice_states = True  # needed to receive on_voice_state_update events
 
 client = commands.Bot(command_prefix="!", help_command=None, intents=intents)
+
+
+def _delete_stale_entry_point_commands_sync(application_id: int) -> int:
+    """刪除殘留的 Entry Point command，避免 bulk sync 被 50240 擋住。"""
+    if not application_id:
+        raise RuntimeError("application_id 不存在，無法清理 Entry Point commands")
+
+    headers = {
+        "Authorization": f"Bot {TOKEN}",
+        "Content-Type": "application/json",
+    }
+    commands_url = f"https://discord.com/api/v10/applications/{application_id}/commands"
+
+    response = requests.get(commands_url, headers=headers, timeout=15)
+    response.raise_for_status()
+    commands_payload = response.json()
+
+    deleted = 0
+    for command in commands_payload:
+        if int(command.get("type", 0)) != 4:
+            continue
+
+        delete_response = requests.delete(
+            f"{commands_url}/{command['id']}",
+            headers=headers,
+            timeout=15,
+        )
+        if delete_response.status_code not in (200, 204):
+            raise RuntimeError(
+                f"刪除 Entry Point command 失敗: {delete_response.status_code} {delete_response.text}"
+            )
+        deleted += 1
+
+    return deleted
+
+
+async def _sync_app_commands_with_entry_point_recovery() -> list:
+    """同步 slash commands；若碰到 50240，先清殘留 Entry Point command 再重試。"""
+    try:
+        return await client.tree.sync(guild=guild) if guild else await client.tree.sync()
+    except discord.errors.HTTPException as exc:
+        if "Entry Point command" not in str(exc) and "50240" not in str(exc):
+            raise
+
+        application_id = client.application_id
+        if not application_id:
+            app_info = await client.application_info()
+            application_id = app_info.id
+
+        deleted = await asyncio.to_thread(_delete_stale_entry_point_commands_sync, application_id)
+        if deleted > 0:
+            file_log(f"[SYNC] 已刪除 {deleted} 個殘留 Entry Point commands，重新同步 slash commands")
+        else:
+            file_log("[SYNC] 偵測到 50240，但未找到殘留 Entry Point command；仍重試一次同步")
+
+        return await client.tree.sync(guild=guild) if guild else await client.tree.sync()
 
 # ============================================================
 # 模組載入系統
@@ -498,20 +555,11 @@ async def on_ready():
         # 同步指令（帶異常處理）
         synced = []
         try:
-            synced = await client.tree.sync(guild=guild) if guild else await client.tree.sync()
+            synced = await _sync_app_commands_with_entry_point_recovery()
         except discord.errors.HTTPException as e:
-            if "Entry Point command" in str(e) or "50240" in str(e):
-                # Entry Point 命令衝突 - Discord 限制，不影響 Bot 運行
-                # 只寫入檔案，不輸出 stdout/syslog，避免 log_monitor 誤報
-                try:
-                    with open(LOG_FILE, "a", encoding="utf-8") as _f:
-                        _f.write(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️  Entry Point 命令同步警告（已忽略）: {e}\n")
-                except Exception:
-                    pass
-            else:
-                # 其他 HTTP 錯誤，記錄但不中斷
-                file_log(f"⚠️  命令同步失敗: {e}")
-                print(f"⚠️  Command sync failed: {e}", flush=True)
+            # 其他 HTTP 錯誤，記錄但不中斷
+            file_log(f"⚠️  命令同步失敗: {e}")
+            print(f"⚠️  Command sync failed: {e}", flush=True)
         except Exception as e:
             # 其他所有異常，記錄但不中斷
             file_log(f"⚠️  命令同步異常: {e}")
