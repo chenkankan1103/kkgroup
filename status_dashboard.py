@@ -412,6 +412,11 @@ def save_thread_id(bot_type: str, thread_id: int):
 
 async def resolve_dashboard_target(bot, bot_type: str, create_if_missing: bool = False):
     forum_channel = bot.get_channel(DASHBOARD_FORUM_CHANNEL_ID) if DASHBOARD_FORUM_CHANNEL_ID else None
+    if forum_channel is None and DASHBOARD_FORUM_CHANNEL_ID:
+        try:
+            forum_channel = await bot.fetch_channel(DASHBOARD_FORUM_CHANNEL_ID)
+        except Exception:
+            forum_channel = None
     if isinstance(forum_channel, discord.ForumChannel):
         saved_thread_id = get_thread_id(bot_type)
         thread = None
@@ -422,6 +427,11 @@ async def resolve_dashboard_target(bot, bot_type: str, create_if_missing: bool =
                     thread = guild.get_thread(saved_thread_id)
                     if thread:
                         break
+            if thread is None:
+                try:
+                    thread = await bot.fetch_channel(saved_thread_id)
+                except Exception:
+                    thread = None
         if thread is None and create_if_missing:
             created = await forum_channel.create_thread(
                 name=THREAD_NAMES[bot_type],
