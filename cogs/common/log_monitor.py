@@ -122,6 +122,9 @@ _KNOWN_DEBUGS_PATH = os.path.join(parent_dir, "data", "logmonitor_known_debugs.j
 _GITHUB_SYNC_INITIAL_DELAY_SEC = 20
 _GITHUB_SYNC_RETRY_DELAY_SEC = 15
 _GITHUB_SYNC_MAX_ATTEMPTS = 20
+_LOGMONITOR_NVIDIA_MODEL = os.getenv("LOGMONITOR_NVIDIA_MODEL", "deepseek-ai/deepseek-v4-flash")
+_LOGMONITOR_NVIDIA_TIMEOUT_SEC = int(os.getenv("LOGMONITOR_NVIDIA_TIMEOUT", "30"))
+_LOGMONITOR_NVIDIA_MAX_TOKENS = int(os.getenv("LOGMONITOR_NVIDIA_MAX_TOKENS", "350"))
 
 
 def _save_message_state(message_id: int):
@@ -866,12 +869,13 @@ class LogMonitorEngine:
         try:
             response = await NVIDIAAIClient().call_api(
                 messages,
-                model="deepseek-ai/deepseek-v4-pro",
+                model=_LOGMONITOR_NVIDIA_MODEL,
                 temperature=0.2,
-                max_tokens=500,
+                max_tokens=_LOGMONITOR_NVIDIA_MAX_TOKENS,
+                timeout=_LOGMONITOR_NVIDIA_TIMEOUT_SEC,
             )
             if response:
-                logger.info("[LogMonitor] 使用 NVIDIA 完成日誌分析")
+                logger.info(f"[LogMonitor] 使用 NVIDIA 完成日誌分析 / model={_LOGMONITOR_NVIDIA_MODEL}")
                 return response.strip()
         except Exception as exc:
             logger.warning(f"[LogMonitor] NVIDIA 分析失敗: {exc}")
