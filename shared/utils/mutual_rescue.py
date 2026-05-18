@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -19,6 +20,8 @@ _HEALTHY_STATUSES = {'active', 'activating', 'reloading'}
 _MUTUAL_RESCUE_INTERVAL_SEC = int(os.getenv('MUTUAL_RESCUE_INTERVAL_SEC', '60'))
 _MUTUAL_RESCUE_COOLDOWN_SEC = int(os.getenv('MUTUAL_RESCUE_COOLDOWN_SEC', '300'))
 _MUTUAL_RESCUE_LOG_LINES = int(os.getenv('MUTUAL_RESCUE_LOG_LINES', '20'))
+_SYSTEMCTL_BIN = shutil.which('systemctl') or '/usr/bin/systemctl'
+_JOURNALCTL_BIN = shutil.which('journalctl') or '/usr/bin/journalctl'
 
 
 def _artifact_key_from_signature(signature: str) -> str:
@@ -36,13 +39,13 @@ def _run_command(command: list[str]) -> subprocess.CompletedProcess:
 
 
 def _read_service_snapshot(service: str) -> dict[str, str]:
-    status_proc = _run_command(['systemctl', 'is-active', service])
+    status_proc = _run_command([_SYSTEMCTL_BIN, 'is-active', service])
     detail_proc = _run_command([
-        'systemctl', 'show', service,
+        _SYSTEMCTL_BIN, 'show', service,
         '--property=ActiveState,SubState,Result,ExecMainCode,ExecMainStatus',
     ])
     log_proc = _run_command([
-        'journalctl', '-u', service, '-n', str(_MUTUAL_RESCUE_LOG_LINES), '--no-pager'
+        _JOURNALCTL_BIN, '-u', service, '-n', str(_MUTUAL_RESCUE_LOG_LINES), '--no-pager'
     ])
 
     status = (status_proc.stdout or status_proc.stderr or 'unknown').strip().splitlines()
