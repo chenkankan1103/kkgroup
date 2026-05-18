@@ -653,6 +653,9 @@ class LogMonitorEngine:
     def _artifact_name_for_signature(self, signature: str) -> str:
         return f"ai-debug-result-{_artifact_key_from_signature(signature)}"
 
+    def _heal_artifact_name_for_signature(self, signature: str) -> str:
+        return f"ai-heal-result-{_artifact_key_from_signature(signature)}"
+
     def _get_incident_by_signature(self, signature: str) -> Optional[dict[str, str]]:
         return next(
             (incident for incident in reversed(self._active_incidents) if incident.get("signature") == signature),
@@ -677,12 +680,11 @@ class LogMonitorEngine:
         self._known_debugs = list(known_by_signature.values())[-50:]
         _save_known_debugs(self._known_debugs)
 
-    def _fetch_github_analysis_result_sync(self, signature: str) -> Optional[dict]:
+    def _fetch_github_artifact_payload_sync(self, artifact_name: str, signature: str) -> Optional[dict]:
         headers = self._github_headers()
         if not headers:
             return None
 
-        artifact_name = self._artifact_name_for_signature(signature)
         try:
             artifacts_resp = requests.get(
                 f"https://api.github.com/repos/{_GITHUB_REPO}/actions/artifacts?per_page=100",
@@ -716,8 +718,20 @@ class LogMonitorEngine:
             payload["artifact_created_at"] = artifact.get("created_at")
             return payload
         except Exception as exc:
-            logger.warning(f"[LogMonitor] 讀取 GitHub 分析 artifact 失敗: {exc}")
+            logger.warning(f"[LogMonitor] 讀取 GitHub artifact 失敗: {exc}")
             return None
+
+    def _fetch_github_analysis_result_sync(self, signature: str) -> Optional[dict]:
+        return self._fetch_github_artifact_payload_sync(
+            self._artifact_name_for_signature(signature),
+            signature,
+        )
+
+    def _fetch_github_heal_result_sync(self, signature: str) -> Optional[dict]:
+        return self._fetch_github_artifact_payload_sync(
+            self._heal_artifact_name_for_signature(signature),
+            signature,
+        )
 
     async def _sync_incident_analysis_from_github(
         self,
@@ -730,39 +744,93 @@ class LogMonitorEngine:
             if initial_delay > 0:
                 await asyncio.sleep(initial_delay)
 
+            analysis_synced = False
+            heal_synced = False
+            any_synced = False
+
             for _ in range(attempts):
-                payload = await asyncio.to_thread(self._fetch_github_analysis_result_sync, signature)
-                if payload:
-                    formatted_analysis = _format_debug_analysis_text(payload.get("analysis"))
+                analysis_payload = None if analysis_synced else await asyncio.to_thread(self._fetch_github_analysis_result_sync, signature)
+                heal_payload = None if heal_synced else await asyncio.to_thread(self._fetch_github_heal_result_sync, signature)
+
+                if analysis_payload:
+                    formatted_analysis = _format_debug_analysis_text(analysis_payload.get("analysis"))
                     incident = self._get_incident_by_signature(signature)
                     if incident:
                         incident["github_analysis"] = formatted_analysis
-                        incident["github_analysis_synced_at"] = payload.get("completed_at") or payload.get("artifact_created_at") or _format_tw_time()
-                        incident["github_analysis_source"] = payload.get("source", "github-actions")
+                        incident["github_analysis_synced_at"] = analysis_payload.get("completed_at") or analysis_payload.get("artifact_created_at") or _format_tw_time()
+                        incident["github_analysis_source"] = analysis_payload.get("source", "github-actions")
 
                     self._upsert_known_debug_entry({
                         "signature": signature,
-                        "severity": payload.get("severity", "未標註"),
+                        "severity": analysis_payload.get("severity", "未標註"),
                         "ai_text": formatted_analysis,
                         "github_analysis": formatted_analysis,
-                        "sample_log": str(payload.get("log_excerpt") or ""),
-                        "first_seen_at": payload.get("timestamp") or payload.get("completed_at") or _format_tw_time(),
-                        "last_seen_at": payload.get("completed_at") or _format_tw_time(),
-                        "last_resolved_at": payload.get("completed_at") or _format_tw_time(),
+                        "sample_log": str(analysis_payload.get("log_excerpt") or ""),
+                        "first_seen_at": analysis_payload.get("timestamp") or analysis_payload.get("completed_at") or _format_tw_time(),
+                        "last_seen_at": analysis_payload.get("completed_at") or _format_tw_time(),
+                        "last_resolved_at": analysis_payload.get("completed_at") or _format_tw_time(),
                         "last_resolved_by": "GitHub AI Debug Monitor",
                         "resolved_count": 1,
                         "repeat_count": 1,
-                        "source": payload.get("source", "github-actions"),
+                        "source": analysis_payload.get("source", "github-actions"),
                     })
 
+                    analysis_synced = True
+                    any_synced = True
+
+                if heal_payload:
+                    incident = self._get_incident_by_signature(signature)
+                    if incident:
+                        incident["heal_summary"] = heal_payload.get("summary", "")
+                        incident["heal_service"] = heal_payload.get("service", "")
+                        incident["heal_success"] = bool(heal_payload.get("success"))
+                        incident["heal_synced_at"] = heal_payload.get("completed_at") or heal_payload.get("artifact_created_at") or _format_tw_time()
+
+                    heal_summary = str(heal_payload.get("summary") or "")
+                    heal_service = str(heal_payload.get("service") or "未知服務")
+                    heal_success = bool(heal_payload.get("success"))
+                    heal_status = "成功" if heal_success else "失敗"
+                    entry = {
+                        "signature": signature,
+                        "last_heal_service": heal_service,
+                        "last_heal_status": heal_status,
+                        "last_heal_summary": heal_summary,
+                        "last_heal_source": heal_payload.get("source", "auto-ai-fix"),
+                        "sample_log": str(heal_payload.get("log_excerpt") or ""),
+                    }
+                    if heal_success:
+                        entry["last_resolved_at"] = heal_payload.get("completed_at") or _format_tw_time()
+                        entry["last_resolved_by"] = f"Auto AI Fix Agent / {heal_service}"
+                    self._upsert_known_debug_entry(entry)
+
+                    heal_synced = True
+                    any_synced = True
+
                     self._pipeline_status["dispatch_status"] = "已回寫已知案例"
-                    self._pipeline_status["dispatch_detail"] = f"GitHub 分析已同步回本地案例庫 / {payload.get('source', 'github-actions')}"
+                    self._pipeline_status["dispatch_detail"] = f"GitHub 自癒結果已同步回本地案例庫 / {heal_payload.get('source', 'auto-ai-fix')} / {heal_status}"
+
+                if analysis_synced and heal_synced:
                     channel = await self._resolve_alert_channel()
                     if channel:
                         await self._upsert_summary_message(channel)
                     return
 
+                if any_synced:
+                    self._pipeline_status["dispatch_status"] = "已回寫已知案例"
+                    detail_parts = []
+                    if analysis_synced:
+                        detail_parts.append("GitHub 分析已同步")
+                    if heal_synced:
+                        detail_parts.append("Agent 自癒結果已同步")
+                    self._pipeline_status["dispatch_detail"] = " / ".join(detail_parts)
+                    channel = await self._resolve_alert_channel()
+                    if channel:
+                        await self._upsert_summary_message(channel)
+
                 await asyncio.sleep(delay)
+
+            if any_synced:
+                return
 
             self._pipeline_status["dispatch_status"] = "等待 GitHub 回寫逾時"
             self._pipeline_status["dispatch_detail"] = "GitHub 分析尚未回寫，保留本地分析結果"
@@ -838,6 +906,7 @@ class LogMonitorEngine:
             f"命中既有案例 / 緊急程度 {known.get('severity', '未標註')}\n"
             f"最後清除: {known.get('last_resolved_at', '未知')} / {known.get('last_resolved_by', '未知')}\n"
             f"累積解決次數: {known.get('resolved_count', 1)}\n"
+            f"最近自癒: {_truncate_text(known.get('last_heal_summary', '尚無自癒結果'), 140)}\n"
             f"建議: {_truncate_text(known.get('github_analysis') or known.get('ai_text', ''), 220)}"
         )
 

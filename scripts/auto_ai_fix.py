@@ -14,6 +14,12 @@ from datetime import datetime
 import pytz
 
 
+_KNOWN_SERVICES = ('bot.service', 'shopbot.service', 'uibot.service')
+_GCP_INSTANCE = os.getenv('GCP_INSTANCE_NAME', 'instance-20250501-142333')
+_GCP_ZONE = os.getenv('GCP_ZONE', 'us-central1-c')
+_GCP_PROJECT = os.getenv('GCP_PROJECT_ID', 'kkgroup')
+
+
 def _normalize_log_text(error_logs):
     if isinstance(error_logs, str):
         return error_logs
@@ -70,6 +76,190 @@ def should_attempt_code_fix(event_data):
     if not has_code_failure_signal:
         return False, '缺少明確程式碼錯誤訊號，跳過自動改碼'
     return True, '符合高危程式錯誤條件，允許自動改碼'
+
+
+def _extract_payload(event_data):
+    payload = event_data.get('client_payload', {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _extract_error_log_text(event_data):
+    payload = _extract_payload(event_data)
+    error_logs = (
+        payload.get('error_logs')
+        or payload.get('error_data')
+        or payload.get('log_text')
+        or event_data.get('error_logs')
+        or ''
+    )
+    return _normalize_log_text(error_logs)
+
+
+def _extract_incident_metadata(event_data):
+    payload = _extract_payload(event_data)
+    return {
+        'incident_signature': str(payload.get('incident_signature') or '').strip(),
+        'incident_key': str(payload.get('incident_key') or '').strip(),
+        'source': str(payload.get('source') or event_data.get('source') or 'auto-ai-fix').strip(),
+        'severity': str(payload.get('severity') or event_data.get('severity') or 'medium').strip(),
+        'timestamp': str(payload.get('timestamp') or event_data.get('timestamp') or datetime.now().isoformat()).strip(),
+    }
+
+
+def write_heal_result_artifact(event_data, heal_result):
+    if not heal_result or not heal_result.get('attempted'):
+        return False
+
+    metadata = _extract_incident_metadata(event_data)
+    result_payload = {
+        'incident_signature': metadata['incident_signature'],
+        'incident_key': metadata['incident_key'],
+        'source': metadata['source'],
+        'severity': metadata['severity'],
+        'timestamp': metadata['timestamp'],
+        'completed_at': datetime.utcnow().isoformat(),
+        'service': heal_result.get('service'),
+        'attempted': bool(heal_result.get('attempted')),
+        'success': bool(heal_result.get('success')),
+        'summary': heal_result.get('summary', ''),
+        'status_before': heal_result.get('status_before', 'unknown'),
+        'status_after': heal_result.get('status_after', 'unknown'),
+        'log_excerpt': heal_result.get('log_excerpt', ''),
+    }
+    with open('ai-heal-result.json', 'w', encoding='utf-8') as result_file:
+        json.dump(result_payload, result_file, ensure_ascii=False, indent=2)
+    return True
+
+
+def infer_target_service(event_data):
+    payload = _extract_payload(event_data)
+    explicit = str(payload.get('service_hint') or payload.get('service') or '').strip()
+    if explicit in _KNOWN_SERVICES:
+        return explicit
+
+    log_text = _extract_error_log_text(event_data)
+    for service in _KNOWN_SERVICES:
+        if service in log_text:
+            return service
+
+    lowered = log_text.lower()
+    if 'shopbot' in lowered:
+        return 'shopbot.service'
+    if 'uibot' in lowered:
+        return 'uibot.service'
+    if 'bot' in lowered:
+        return 'bot.service'
+    return None
+
+
+def should_attempt_operational_heal(event_data):
+    payload = _extract_payload(event_data)
+    severity = str(payload.get('severity') or event_data.get('severity') or 'medium').strip().lower()
+    log_text = _extract_error_log_text(event_data)
+    service = infer_target_service(event_data)
+
+    if severity not in ('high', 'h', '高'):
+        return False, '緊急程度未達營運自癒門檻', service
+
+    if not service:
+        return False, '無法判斷目標服務，跳過營運自癒', None
+
+    restartable_signal = bool(re.search(
+        r'(failed with result|status=\d+/FAILURE|Main process exited|inactive|dead|restart|connection reset|connection refused|temporarily unavailable|timeout|timed out|websocket closed|shard .* disconnect|rate limit|429|upstream connect error)',
+        log_text,
+        re.IGNORECASE,
+    ))
+    code_bug_signal = bool(re.search(
+        r'(SyntaxError|IndentationError|ImportError|ModuleNotFoundError|NameError|AttributeError|TypeError|ValueError|KeyError|Traceback)',
+        log_text,
+        re.IGNORECASE,
+    ))
+
+    if code_bug_signal and not restartable_signal:
+        return False, '較像程式碼缺陷，優先走自動改碼', service
+    if not restartable_signal:
+        return False, '缺少可安全重啟的營運異常訊號', service
+    return True, f'偵測到可安全自癒的服務異常，目標 {service}', service
+
+
+def _run_subprocess(command):
+    return subprocess.run(command, capture_output=True, text=True, check=False)
+
+
+def _run_remote_command(remote_command):
+    command = [
+        'gcloud', 'compute', 'ssh', _GCP_INSTANCE,
+        f'--project={_GCP_PROJECT}',
+        f'--zone={_GCP_ZONE}',
+        '--command', remote_command,
+    ]
+    return _run_subprocess(command)
+
+
+def execute_operational_heal(event_data):
+    should_heal, reason, service = should_attempt_operational_heal(event_data)
+    if not should_heal or not service:
+        return {
+            'attempted': False,
+            'success': False,
+            'service': service,
+            'summary': reason,
+            'status_before': 'unknown',
+            'status_after': 'unknown',
+            'log_excerpt': '',
+        }
+
+    dry_run = os.getenv('AUTO_HEAL_DRY_RUN', '').strip().lower() in ('1', 'true', 'yes')
+    if dry_run:
+        return {
+            'attempted': True,
+            'success': True,
+            'service': service,
+            'summary': f'[DRY RUN] 將對 {service} 執行 restart -> status -> journalctl 驗證',
+            'status_before': 'simulated-active',
+            'status_after': 'simulated-active',
+            'log_excerpt': 'dry run validation only',
+        }
+
+    gcloud_check = _run_subprocess(['gcloud', '--version'])
+    if gcloud_check.returncode != 0:
+        return {
+            'attempted': True,
+            'success': False,
+            'service': service,
+            'summary': 'gcloud CLI 不可用，無法執行遠端自癒',
+            'status_before': 'unknown',
+            'status_after': 'unknown',
+            'log_excerpt': gcloud_check.stderr.strip() or gcloud_check.stdout.strip(),
+        }
+
+    before = _run_remote_command(f'systemctl is-active {service} || true')
+    restart = _run_remote_command(f'sudo systemctl restart {service}')
+    after = _run_remote_command(f'systemctl is-active {service} || true')
+    logs = _run_remote_command(f'sudo journalctl -u {service} -n 30 --no-pager')
+
+    status_before = (before.stdout or before.stderr or 'unknown').strip().splitlines()[-1] if (before.stdout or before.stderr) else 'unknown'
+    status_after = (after.stdout or after.stderr or 'unknown').strip().splitlines()[-1] if (after.stdout or after.stderr) else 'unknown'
+    log_excerpt = (logs.stdout or logs.stderr or '').strip()[-1200:]
+    success = restart.returncode == 0 and status_after == 'active'
+
+    summary = (
+        f'已對 {service} 執行 restart，狀態 {status_before} -> {status_after}'
+        if success else
+        f'{service} 自癒失敗，狀態 {status_before} -> {status_after}'
+    )
+    if restart.returncode != 0 and restart.stderr:
+        summary += f' / {restart.stderr.strip()[:160]}'
+
+    return {
+        'attempted': True,
+        'success': success,
+        'service': service,
+        'summary': summary,
+        'status_before': status_before,
+        'status_after': status_after,
+        'log_excerpt': log_excerpt,
+    }
 
 async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
     """AI 分析和生成修復代碼"""
@@ -253,7 +443,7 @@ AI 分析結果: {fix_data.get('root_cause', 'N/A')}
         print(f"❌ 創建修復文件失敗: {e}")
         return False
 
-async def send_discord_notification(fix_data, success, discord_webhook):
+async def send_discord_notification(fix_data, success, discord_webhook, heal_result=None):
     """發送 Discord 通知"""
     if not discord_webhook:
         return
@@ -275,6 +465,13 @@ async def send_discord_notification(fix_data, success, discord_webhook):
             ]
         }]
     }
+
+    if heal_result and heal_result.get('attempted'):
+        webhook_data['embeds'][0]['fields'].insert(0, {
+            "name": "🩺 Agent 自癒",
+            "value": heal_result.get('summary', 'N/A')[:1000],
+            "inline": False,
+        })
     
     try:
         import requests
@@ -307,7 +504,22 @@ async def main():
 
     should_fix, reason = should_attempt_code_fix(event_data)
     print(f"🧭 自動修復判定: {reason}")
+    heal_result = execute_operational_heal(event_data)
+    print(f"🩺 Agent 自癒結果: {json.dumps(heal_result, ensure_ascii=False)}")
+    write_heal_result_artifact(event_data, heal_result)
+    if heal_result.get('attempted') and heal_result.get('success'):
+        await send_discord_notification({
+            'root_cause': heal_result.get('summary', '營運自癒成功'),
+            'file_path': heal_result.get('service', 'N/A'),
+        }, True, discord_webhook, heal_result=heal_result)
+        return
+
     if not should_fix:
+        if heal_result.get('attempted'):
+            await send_discord_notification({
+                'root_cause': heal_result.get('summary', reason),
+                'file_path': heal_result.get('service', 'N/A'),
+            }, False, discord_webhook, heal_result=heal_result)
         return
     
     # AI 分析和生成修復代碼
@@ -323,7 +535,7 @@ async def main():
         success = await create_fix_file(fix_data, timestamp, severity)
         
         # 發送通知
-        await send_discord_notification(fix_data, success, discord_webhook)
+        await send_discord_notification(fix_data, success, discord_webhook, heal_result=heal_result)
     else:
         print("❌ 無法生成修復代碼")
 
