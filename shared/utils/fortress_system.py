@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 KK 園區堡壘保衛戰 - 遊戲引擎
-每 4 小時 Google Trends 更新 → 熱搜詞化為入侵敵軍
-全服玩家聯合防守，守住有獎，失守…（封測暫無懲罰）
+每天 08:00 開啟單日戰役，後續時段追加新波次敵軍
+全服玩家聯合防守，午夜統一結算
 """
 
 import json
@@ -61,6 +61,7 @@ class PoliceUnit:
     rank: int
     max_hp: int
     current_hp: int
+    wave_number: int = 1
     category: str = ""          # 來自 Google Trends 的分類
     defeated: bool = False
     reached_fortress: bool = False  # 是否已到達堡壘
@@ -89,11 +90,13 @@ class DefenseAction:
     has_tag_bonus: bool
     spent_kkcoin: int
     timestamp: str
+    wave_id: str = ""
 
 
 @dataclass
 class FortressState:
     round_id: str
+    battle_date: str
     fortress_hp: int
     fortress_max_hp: int
     enemies: List[PoliceUnit]
@@ -101,8 +104,12 @@ class FortressState:
     status: str                                  # "active" | "victory" | "defeat"
     started_at: str
     ends_at: str                                 # 自動結算時間（4小時後）
+    current_wave_id: str = ""
+    current_wave_number: int = 1
     tower_slots: Dict[int, str] = field(default_factory=dict)  # user_id → slot_id
     settled_at: str = ""
+    daily_trend_titles: List[str] = field(default_factory=list)
+    wave_history: List[Dict[str, object]] = field(default_factory=list)
 
     # 獎池（封測期間累積供測試）
     prize_pool_kkcoin: int = 0
@@ -113,9 +120,10 @@ class FortressState:
             result[uid] = sum(a.damage for a in actions)
         return result
 
-    def free_actions_used(self, user_id: int) -> int:
+    def free_actions_used(self, user_id: int, wave_id: Optional[str] = None) -> int:
         actions = self.defenders.get(user_id, [])
-        return sum(1 for a in actions if a.action_type == "free")
+        target_wave_id = wave_id or self.current_wave_id
+        return sum(1 for a in actions if a.action_type == "free" and a.wave_id == target_wave_id)
 
     def is_active(self) -> bool:
         return self.status == "active"
@@ -171,7 +179,7 @@ def calculate_player_damage(
     return base
 
 
-def trends_to_enemies(trends: List[Dict]) -> List[PoliceUnit]:
+def trends_to_enemies(trends: List[Dict], wave_number: int = 1) -> List[PoliceUnit]:
     """
     將 Google Trends 資料轉換為刑警大隊
     trends: [{"topic": str, "search_volume": int, "rank": int, ...}, ...]
@@ -188,10 +196,24 @@ def trends_to_enemies(trends: List[Dict]) -> List[PoliceUnit]:
             rank=rank,
             max_hp=hp,
             current_hp=hp,
+            wave_number=wave_number,
             category=category,
             defeated=False
         ))
     return enemies
+
+
+def _extract_trend_titles(trends: List[Dict]) -> List[str]:
+    titles: List[str] = []
+    for i, trend in enumerate(trends[:10]):
+        title = str(trend.get("topic", trend.get("name", f"未知趨勢{i+1}"))).strip()
+        if title:
+            titles.append(title)
+    return titles
+
+
+def _next_midnight(now: datetime) -> datetime:
+    return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 # ── 狀態管理 ──────────────────────────────────────────────
@@ -207,6 +229,8 @@ def _load_state() -> Optional[FortressState]:
         enemies = []
         for e in data["enemies"]:
             # 確保新欄位存在
+            if "wave_number" not in e:
+                e["wave_number"] = 1
             if "reached_fortress" not in e:
                 e["reached_fortress"] = False
             if "path_position" not in e:
@@ -215,24 +239,45 @@ def _load_state() -> Optional[FortressState]:
                 e["last_move_time"] = ""
             enemies.append(PoliceUnit(**e))
         defenders = {}
+        current_wave_id = data.get("current_wave_id", data.get("round_id", ""))
         for uid_str, actions in data.get("defenders", {}).items():
-            defenders[int(uid_str)] = [DefenseAction(**a) for a in actions]
+            normalized_actions = []
+            for action in actions:
+                if "wave_id" not in action:
+                    action["wave_id"] = current_wave_id
+                normalized_actions.append(DefenseAction(**action))
+            defenders[int(uid_str)] = normalized_actions
         tower_slots = {
             int(uid_str): slot_id
             for uid_str, slot_id in data.get("tower_slots", {}).items()
         }
 
+        battle_date = data.get("battle_date") or str(data.get("round_id", ""))[:10]
+        current_wave_number = data.get("current_wave_number", 1)
+        daily_trend_titles = data.get("daily_trend_titles") or [enemy.name for enemy in enemies]
+        wave_history = data.get("wave_history") or [{
+            "wave_id": current_wave_id,
+            "wave_number": current_wave_number,
+            "started_at": data.get("started_at", ""),
+            "titles": daily_trend_titles,
+        }]
+
         return FortressState(
             round_id=data["round_id"],
+            battle_date=battle_date,
             fortress_hp=data["fortress_hp"],
             fortress_max_hp=data["fortress_max_hp"],
             enemies=enemies,
             defenders=defenders,
-            tower_slots=tower_slots,
             status=data["status"],
             started_at=data["started_at"],
             ends_at=data["ends_at"],
+            current_wave_id=current_wave_id,
+            current_wave_number=current_wave_number,
+            tower_slots=tower_slots,
             settled_at=data.get("settled_at", ""),
+            daily_trend_titles=daily_trend_titles,
+            wave_history=wave_history,
             prize_pool_kkcoin=data.get("prize_pool_kkcoin", 0),
         )
     except Exception as e:
@@ -246,6 +291,7 @@ def _save_state(state: FortressState):
         os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
         data = {
             "round_id": state.round_id,
+            "battle_date": state.battle_date,
             "fortress_hp": state.fortress_hp,
             "fortress_max_hp": state.fortress_max_hp,
             "enemies": [e.to_dict() for e in state.enemies],
@@ -260,7 +306,11 @@ def _save_state(state: FortressState):
             "status": state.status,
             "started_at": state.started_at,
             "ends_at": state.ends_at,
+            "current_wave_id": state.current_wave_id,
+            "current_wave_number": state.current_wave_number,
             "settled_at": state.settled_at,
+            "daily_trend_titles": state.daily_trend_titles,
+            "wave_history": state.wave_history,
             "prize_pool_kkcoin": state.prize_pool_kkcoin,
         }
         with open(STATE_FILE, "w", encoding="utf-8") as f:
@@ -271,34 +321,76 @@ def _save_state(state: FortressState):
 
 # ── 公開 API ──────────────────────────────────────────────
 
-def start_new_battle(trends: List[Dict]) -> FortressState:
+def start_new_battle(trends: List[Dict], started_at: Optional[datetime] = None) -> FortressState:
     """
     開始新一輪戰鬥，由趨勢更新排程呼叫。
     trends: get_trending_topics() 的回傳值
     """
-    now = datetime.now(TW_TZ)
-    round_id = now.strftime("%Y-%m-%d-%H")
-    ends_at = (now + timedelta(hours=4)).isoformat()
+    now = started_at or datetime.now(TW_TZ)
+    round_id = now.strftime("%Y-%m-%d")
+    battle_date = now.strftime("%Y-%m-%d")
+    wave_id = now.strftime("%Y-%m-%d-%H")
+    ends_at = _next_midnight(now).isoformat()
 
-    enemies = trends_to_enemies(trends)
+    enemies = trends_to_enemies(trends, wave_number=1)
+    trend_titles = _extract_trend_titles(trends)
     total_enemy_hp = sum(e.max_hp for e in enemies)
     fortress_hp = max(FORTRESS_MAX_HP, total_enemy_hp // 2)
 
     state = FortressState(
         round_id=round_id,
+        battle_date=battle_date,
         fortress_hp=fortress_hp,
         fortress_max_hp=fortress_hp,
         enemies=enemies,
         defenders={},
-        tower_slots={},
         status="active",
         started_at=now.isoformat(),
         ends_at=ends_at,
+        current_wave_id=wave_id,
+        current_wave_number=1,
+        tower_slots={},
         settled_at="",
+        daily_trend_titles=trend_titles,
+        wave_history=[{
+            "wave_id": wave_id,
+            "wave_number": 1,
+            "started_at": now.isoformat(),
+            "titles": trend_titles,
+        }],
         prize_pool_kkcoin=0,
     )
     _save_state(state)
-    logger.info(f"[Fortress] 新一輪開始 round={round_id}, 刑警={len(enemies)}, 堡壘HP={fortress_hp}")
+    logger.info(f"[Fortress] 單日戰役開始 round={round_id}, wave=1, 刑警={len(enemies)}, 堡壘HP={fortress_hp}")
+    return state
+
+
+def append_wave(trends: List[Dict], started_at: Optional[datetime] = None) -> FortressState:
+    now = started_at or datetime.now(TW_TZ)
+    state = _load_state()
+    if not state or state.battle_date != now.strftime("%Y-%m-%d") or state.settled_at:
+        return start_new_battle(trends, started_at=now)
+
+    next_wave_number = state.current_wave_number + 1
+    wave_id = now.strftime("%Y-%m-%d-%H")
+    trend_titles = _extract_trend_titles(trends)
+    new_enemies = trends_to_enemies(trends, wave_number=next_wave_number)
+
+    state.enemies.extend(new_enemies)
+    state.current_wave_id = wave_id
+    state.current_wave_number = next_wave_number
+    state.status = "active"
+    for title in trend_titles:
+        if title not in state.daily_trend_titles:
+            state.daily_trend_titles.append(title)
+    state.wave_history.append({
+        "wave_id": wave_id,
+        "wave_number": next_wave_number,
+        "started_at": now.isoformat(),
+        "titles": trend_titles,
+    })
+    _save_state(state)
+    logger.info(f"[Fortress] 追加波次 wave={next_wave_number}, 新增刑警={len(new_enemies)}, 當日趨勢數={len(state.daily_trend_titles)}")
     return state
 
 
@@ -359,14 +451,9 @@ def apply_defense_action(
         has_tag_bonus=has_bonus,
         spent_kkcoin=PAID_COST_KKCOIN if action_type == "paid" else 0,
         timestamp=datetime.now(TW_TZ).isoformat(),
+        wave_id=state.current_wave_id,
     )
     state.defenders.setdefault(user_id, []).append(action)
-
-    # 勝利判定
-    all_defeated = all(e.defeated for e in state.enemies)
-    if all_defeated:
-        state.status = "victory"
-        logger.info(f"[Fortress] 🎉 勝利！round={state.round_id}")
 
     # 檢查是否有刑警到達堡壘（推進到100%時）
     enemies_reached_fortress = []
@@ -538,11 +625,6 @@ def tower_auto_attack() -> Tuple[bool, str]:
             else:
                 attacked_enemies.append(f"🗼 砲台對 {enemy.name} 造成 {damage} 傷害")
     
-    # 勝利判定
-    if all(e.defeated for e in state.enemies):
-        state.status = "victory"
-        logger.info(f"[Fortress] 🎉 塔防勝利！round={state.round_id}")
-    
     _save_state(state)
     
     if attacked_enemies:
@@ -633,11 +715,11 @@ def settle_battle() -> Dict:
         return {"success": False, "reason": "無活躍戰況"}
     if state.settled_at:
         return {"success": False, "reason": "本輪已結算"}
-    if state.status not in ("active", "victory"):
+    if state.status not in ("active", "victory", "defeat"):
         return {"success": False, "reason": "無活躍戰況"}
 
     # 計算未擊退且未到達堡壘的刑警造成的傷害
-    if state.status == "active":
+    if state.status in ("active", "victory"):
         # 對於還在路徑上的刑警，直接對堡壘造成剩餘HP傷害（執法力）
         remaining_enemies = [e for e in state.enemies if not e.defeated and not e.reached_fortress]
         if remaining_enemies:
@@ -682,6 +764,7 @@ def settle_battle() -> Dict:
     result = {
         "success": True,
         "round_id": state.round_id,
+        "battle_date": state.battle_date,
         "status": state.status,
         "fortress_hp_remaining": state.fortress_hp,
         "enemies_defeated": sum(1 for e in state.enemies if e.defeated),
@@ -694,6 +777,8 @@ def settle_battle() -> Dict:
         "total_reward_kkcoin": total_reward_kkcoin,
         "reward_map": reward_map,
         "beta_no_penalty": BETA_NO_PENALTY,
+        "daily_trend_titles": state.daily_trend_titles,
+        "wave_history": state.wave_history,
     }
     logger.info(f"[Fortress] 結算完成: {state.status}, round={state.round_id}")
     return result
