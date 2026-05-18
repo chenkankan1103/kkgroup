@@ -55,7 +55,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ─── 設定 ─────────────────────────────────────────────────────────────────────
-_LOG_CHANNEL_ID:   int = int(os.getenv("LOG_FORUM_CHANNEL_ID") or os.getenv("LOG_CHANNEL_ID") or os.getenv("DASHBOARD_CHANNEL_ID", "1504438347974705152"))
+_LOG_CHANNEL_ID:   int = int(os.getenv("LOG_FORUM_CHANNEL_ID") or os.getenv("DASHBOARD_FORUM_CHANNEL_ID") or "1504438347974705152")
 _STAFF_CHANNEL_ID: int = int(os.getenv("STAFF_ID_CHANNEL_ID", "0"))
 _ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID",    "0"))
 _ADMIN_USER_ID:    int = int(os.getenv("ADMIN_USER_ID",       "0"))
@@ -85,7 +85,7 @@ _THREAD_STARTERS = {
     "heal": "🛠️ 這裡只記錄 Auto AI Fix / 自癒回寫結果。",
 }
 
-# 通知頻道優先順序：LOG_CHANNEL_ID > STAFF_ID_CHANNEL_ID > ADMIN_CHANNEL_ID
+# 通知頻道優先順序：LOG_FORUM_CHANNEL_ID > STAFF_ID_CHANNEL_ID > ADMIN_CHANNEL_ID
 _ALERT_CHANNEL_ID: int = _LOG_CHANNEL_ID or _STAFF_CHANNEL_ID or _ADMIN_CHANNEL_ID
 
 _SERVICES = ["bot.service", "shopbot.service", "uibot.service"]
