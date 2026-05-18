@@ -207,7 +207,14 @@ jobs:
             json.dump(result_payload, result_file, ensure_ascii=False, indent=2)
 
           webhook = os.getenv('DISCORD_WEBHOOK')
-          if webhook:
+          analysis_text = analysis.strip() if isinstance(analysis, str) else json.dumps(parsed_analysis, ensure_ascii=False)
+          should_notify_discord = (
+            bool(webhook)
+            and not used_source.startswith('manual_test')
+            and analysis_text
+            and analysis_text != '無'
+          )
+          if should_notify_discord:
             requests.post(
               webhook,
               json={
@@ -219,7 +226,7 @@ jobs:
                   'fields': [
                     {
                       'name': '分析結果',
-                      'value': (analysis[:1000] + ('...' if len(analysis) > 1000 else '')) or '無',
+                      'value': (analysis_text[:1000] + ('...' if len(analysis_text) > 1000 else '')) or '無',
                     },
                     {
                       'name': '時間',
