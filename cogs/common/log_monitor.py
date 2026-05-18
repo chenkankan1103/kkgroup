@@ -528,6 +528,7 @@ class LogMonitorSummaryView(discord.ui.View):
                 ephemeral=True,
             )
             if self._channel:
+                await self._engine._post_clear_history_message(self._channel, interaction.user.display_name, cleared_count)
                 await self._engine._upsert_summary_message(self._channel)
             logger.info("[LogMonitorView] clear_errors 執行完成")
         except Exception as e:
@@ -778,6 +779,11 @@ class LogMonitorEngine:
                     analysis_synced = True
                     any_synced = True
 
+                    channel = await self._resolve_alert_channel()
+                    if incident and channel and not incident.get("github_history_posted_at"):
+                        await self._post_incident_history_message(channel, incident, stage="github_sync")
+                        incident["github_history_posted_at"] = _format_tw_time()
+
                 if heal_payload:
                     incident = self._get_incident_by_signature(signature)
                     if incident:
@@ -805,6 +811,11 @@ class LogMonitorEngine:
 
                     heal_synced = True
                     any_synced = True
+
+                    channel = await self._resolve_alert_channel()
+                    if incident and channel and not incident.get("heal_history_posted_at"):
+                        await self._post_incident_history_message(channel, incident, stage="heal_result")
+                        incident["heal_history_posted_at"] = _format_tw_time()
 
                     self._pipeline_status["dispatch_status"] = "已回寫已知案例"
                     self._pipeline_status["dispatch_detail"] = f"GitHub 自癒結果已同步回本地案例庫 / {heal_payload.get('source', 'auto-ai-fix')} / {heal_status}"
@@ -1018,10 +1029,22 @@ class LogMonitorEngine:
             except Exception as exc:
                 logger.warning(f"[LogMonitor] 無法解除封存 thread {thread.id}: {exc}")
 
+    async def _resolve_history_channel(self, channel):
+        target_channel = channel
+        if isinstance(channel, discord.ForumChannel):
+            thread = await self._restore_summary_thread(channel)
+            if not thread:
+                await self._upsert_summary_message(channel)
+                thread = self._summary_thread
+            if thread:
+                await self._ensure_thread_writable(thread)
+                target_channel = thread
+        return target_channel
+
     async def _create_summary_thread(self, forum_channel: discord.ForumChannel, embed: discord.Embed, view):
         thread, message = await forum_channel.create_thread(
             name=_LOGMONITOR_THREAD_NAME,
-            content="🤖 LogMonitor 偵錯流程面板，後續會持續編輯這則首帖。",
+            content="🤖 LogMonitor 固定控制面板。後續偵錯事件、GitHub 分析、自癒結果都會另外追加在這個 thread，保留完整歷史。",
             embed=embed,
             view=view,
         )
@@ -1194,6 +1217,7 @@ class LogMonitorEngine:
             (incident for incident in reversed(self._active_incidents) if incident.get("signature") == incident_signature),
             None,
         )
+        incident_stage = "repeat" if existing_incident else "detected"
         if existing_incident:
             existing_incident["last_seen_at"] = now_label
             existing_incident["repeat_count"] = existing_incident.get("repeat_count", 1) + 1
@@ -1236,6 +1260,7 @@ class LogMonitorEngine:
 
         try:
             await self._upsert_summary_message(channel)
+            await self._post_incident_history_message(channel, incident, stage=incident_stage)
             logger.info("[LogMonitor] 已更新 Discord 彙整通知")
         except Exception as e:
             logger.error(f"[LogMonitor] 送出通知失敗: {e}")
@@ -1354,6 +1379,7 @@ class LogMonitorEngine:
             self._schedule_incident_analysis_sync(latest.get("signature") or _build_incident_signature(latest.get("log_text", ""), latest.get("severity", "未標註")))
         await self._refresh_pipeline_status()
         if channel:
+            await self._post_incident_history_message(channel, latest, stage="manual_debug")
             await self._upsert_summary_message(channel)
         return result
     
@@ -1390,68 +1416,110 @@ class LogMonitorEngine:
         return embed
 
     def _build_summary_embed(self) -> discord.Embed:
-        incident_count = len(self._active_incidents)
-        latest_incident = self._active_incidents[-1] if self._active_incidents else None
         embed = discord.Embed(
-            title="🚨 Bot 偵錯流程總覽",
+            title="🤖 LogMonitor 偵錯流程面板",
             description=(
                 "```text\n"
                 "BUG  ->  GitHub Debug  ->  GitHub Sync\n"
                 "偵測 -> 分析/修復 -> commit/status\n"
                 "```\n"
-                f"目前累積 **{incident_count}** 筆未清除事件，同一則面板會持續更新。"
+                "這則是固定控制面板。新錯誤、GitHub Debug 回寫、自癒結果都會另外新增訊息，不覆寫歷史。"
             ),
-            color=discord.Color.red(),
+            color=discord.Color.blurple(),
             timestamp=_current_tw_datetime(),
         )
-
-        if latest_incident:
-            repeat_summary = ""
-            repeat_count = latest_incident.get("repeat_count", 1)
-            if repeat_count > 1:
-                repeat_summary = (
-                    f"重複次數: {repeat_count}\n"
-                    f"最近出現: {latest_incident.get('last_seen_at', latest_incident['created_at'])}\n"
-                )
-            bug_summary = (
-                f"時間: {latest_incident['created_at']}\n"
-                f"緊急程度: {latest_incident['severity']}\n"
-                f"{repeat_summary}"
-                f"簡述: {_truncate_text(latest_incident['log_text'], 220)}"
-            )
-            analysis_summary = _truncate_text(latest_incident['ai_text'], 360)
-        else:
-            bug_summary = "目前沒有待處理錯誤"
-            analysis_summary = "等待下一筆重大錯誤事件"
-
-        known_debug_summary = self._build_known_debug_summary(latest_incident)
-
-        embed.add_field(name="檢測到 BUG", value=bug_summary, inline=False)
         embed.add_field(
-            name="GitHub Debug / 自動修復",
+            name="這則面板的用途",
             value=(
-                f"送出狀態: {self._pipeline_status['dispatch_status']}\n"
-                f"Dispatch: {self._pipeline_status['dispatch_detail']}\n"
+                "1. 保留按鈕操作入口\n"
+                "2. 讓新錯誤另外發文保留歷史\n"
+                "3. 讓 GitHub 回寫和自癒結果以追加訊息呈現"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="按鈕說明",
+            value=(
+                "🧠 送交 Debug: 把最新事件送去 GitHub 深度分析\n"
+                "✅ 已修復，清空: 清除 active 狀態，但 thread 歷史會保留"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="目前 GitHub / Webhook 狀態",
+            value=(
+                f"Dispatch: {self._pipeline_status['dispatch_status']}\n"
+                f"Detail: {_truncate_text(self._pipeline_status['dispatch_detail'], 200)}\n"
                 f"AI Debug Monitor: {self._pipeline_status['debug_run']}\n"
                 f"Auto AI Fix: {self._pipeline_status['auto_fix_run']}\n"
-                f"摘要: {analysis_summary}"
+                f"main commit: {self._pipeline_status['sync_commit']}\n"
+                f"{_truncate_text(self._pipeline_status['webhook'], 180)}"
             )[:1024],
             inline=False,
         )
-        embed.add_field(name="已知 Debug 案例", value=_truncate_text(known_debug_summary, 1024), inline=False)
-        embed.add_field(
-            name="同步 / Webhook",
-            value=(
-                f"main commit: {self._pipeline_status['sync_commit']}\n"
-                f"提交摘要: {self._pipeline_status['sync_message']}\n"
-                f"{self._pipeline_status['webhook']}\n"
-                "按鈕: 🧠 送交 Debug / ✅ 已修復，清空"
-            ),
-            inline=False,
-        )
 
-        embed.set_footer(text="單則流程面板 · 台灣時間 · 只編輯同一則訊息")
+        embed.set_footer(text="固定控制面板 · 歷史錯誤改用追加訊息保留")
         return embed
+
+    def _build_incident_history_embed(self, incident: dict[str, str], stage: str) -> discord.Embed:
+        stage_map = {
+            "detected": ("🚨 偵測到錯誤", discord.Color.red()),
+            "repeat": ("🔁 錯誤再次出現", discord.Color.orange()),
+            "manual_debug": ("🧠 已手動送交 GitHub Debug", discord.Color.blurple()),
+            "github_sync": ("📥 GitHub Debug 已回寫", discord.Color.blue()),
+            "heal_result": ("🛠️ 自癒結果已回寫", discord.Color.green() if incident.get("heal_success") else discord.Color.orange()),
+            "cleared": ("✅ 偵錯狀態已清空", discord.Color.green()),
+        }
+        title, color = stage_map.get(stage, ("ℹ️ LogMonitor 事件", discord.Color.blurple()))
+        embed = discord.Embed(title=title, color=color, timestamp=_current_tw_datetime())
+
+        if stage == "cleared":
+            embed.description = incident.get("summary") or "本次 active incident 已清空。"
+            embed.set_footer(text="歷史保留於 thread")
+            return embed
+
+        repeat_count = int(incident.get("repeat_count", 1) or 1)
+        bug_summary = (
+            f"首次時間: {incident.get('created_at', '未知')}\n"
+            f"最近出現: {incident.get('last_seen_at', incident.get('created_at', '未知'))}\n"
+            f"緊急程度: {incident.get('severity', '未標註')}\n"
+            f"重複次數: {repeat_count}"
+        )
+        embed.add_field(name="事件摘要", value=bug_summary, inline=False)
+        embed.add_field(name="原始錯誤", value=_truncate_text(incident.get("log_text", "無"), 1000), inline=False)
+
+        if stage in {"detected", "repeat", "manual_debug"}:
+            embed.add_field(name="本地分析", value=_truncate_text(incident.get("ai_text", "無"), 1000), inline=False)
+            embed.add_field(name="已知案例", value=_truncate_text(self._build_known_debug_summary(incident), 1000), inline=False)
+
+        if stage == "github_sync":
+            embed.add_field(name="GitHub 分析", value=_truncate_text(incident.get("github_analysis", "GitHub 未回傳內容"), 1000), inline=False)
+
+        if stage == "heal_result":
+            heal_status = "成功" if incident.get("heal_success") else "失敗"
+            heal_value = (
+                f"服務: {incident.get('heal_service', '未知')}\n"
+                f"結果: {heal_status}\n"
+                f"時間: {incident.get('heal_synced_at', '未知')}\n"
+                f"摘要: {_truncate_text(incident.get('heal_summary', '無'), 850)}"
+            )
+            embed.add_field(name="自癒回寫", value=heal_value, inline=False)
+
+        embed.set_footer(text=f"signature: {_artifact_key_from_signature(incident.get('signature', 'unknown'))}")
+        return embed
+
+    async def _post_incident_history_message(self, channel, incident: dict[str, str], stage: str):
+        target_channel = await self._resolve_history_channel(channel)
+        if not target_channel:
+            return
+        embed = self._build_incident_history_embed(incident, stage)
+        await target_channel.send(embed=embed)
+
+    async def _post_clear_history_message(self, channel, cleared_by: str, cleared_count: int):
+        payload = {
+            "summary": f"由 {cleared_by} 清除 active 狀態，共 {cleared_count} 筆。先前錯誤歷史仍保留在本 thread。"
+        }
+        await self._post_incident_history_message(channel, payload, stage="cleared")
 
     async def _upsert_summary_message(self, channel):
         embed = self._build_summary_embed()
@@ -1487,12 +1555,7 @@ class LogMonitorEngine:
                     view._channel = target_channel
 
             if self._summary_message and self._summary_message.channel.id == target_channel.id:
-                try:
-                    await self._summary_message.edit(embed=embed, view=view)
-                    return
-                except discord.NotFound:
-                    self._summary_message = None
-                    _clear_message_state()
+                return
 
             # 創建新訊息並保存 ID 到 .env
             self._summary_message = await target_channel.send(
