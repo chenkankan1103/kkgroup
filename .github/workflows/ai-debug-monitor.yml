@@ -73,6 +73,7 @@ jobs:
           project_id: kkgroup
 
       - name: AI 錯誤分析
+        id: analyze
         env:
           DEBUG_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_type || (github.event_name == 'repository_dispatch' && 'force' || 'auto') }}
           LOG_CONTENT: ${{ github.event_name == 'workflow_dispatch' && inputs.log_content || github.event.client_payload.log_text || '' }}
@@ -97,6 +98,8 @@ jobs:
           debug_type = os.getenv('DEBUG_TYPE', 'auto')
           log_content = (os.getenv('LOG_CONTENT') or '').strip()
           event_name = os.getenv('EVENT_NAME', '')
+          incident_signature = str(payload.get('incident_signature') or '').strip()
+          incident_key = str(payload.get('incident_key') or '').strip()
 
           error_logs = ''
           used_source = 'none'
@@ -135,6 +138,7 @@ jobs:
             print('系統運行正常，跳過分析')
             raise SystemExit(0)
 
+          sev = 'unknown'
           try:
             from utils.nvidia_ai import NVIDIAAIClient
             from utils.google_ai import GoogleAIClient
@@ -182,6 +186,24 @@ jobs:
 
           print(analysis)
 
+          try:
+            parsed_analysis = json.loads(analysis)
+          except Exception:
+            parsed_analysis = analysis
+
+          result_payload = {
+            'incident_signature': incident_signature,
+            'incident_key': incident_key,
+            'source': used_source,
+            'severity': sev,
+            'timestamp': datetime.utcnow().isoformat(),
+            'completed_at': datetime.utcnow().isoformat(),
+            'log_excerpt': error_logs[:2000],
+            'analysis': parsed_analysis,
+          }
+          with open('ai-debug-result.json', 'w', encoding='utf-8') as result_file:
+            json.dump(result_payload, result_file, ensure_ascii=False, indent=2)
+
           webhook = os.getenv('DISCORD_WEBHOOK')
           if webhook:
             requests.post(
@@ -208,3 +230,11 @@ jobs:
               timeout=15,
             )
           PY
+
+      - name: 上傳 AI 分析結果 Artifact
+        if: ${{ hashFiles('ai-debug-result.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-debug-result-${{ github.event.client_payload.incident_key || github.run_id }}
+          path: ai-debug-result.json
+          if-no-files-found: error

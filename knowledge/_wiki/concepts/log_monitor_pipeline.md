@@ -6,6 +6,7 @@
 - LogMonitor：在 VM 上使用 `journalctl -u bot.service -u shopbot.service -u uibot.service -f` 事件驅動偵測錯誤日誌，debounce 後交給 LLM（NVIDIA 首選，Gemini 備援）分析。
 - Discord：將結果顯示在單一持久化的 Embed（流程面板），不再無限新增訊息；面板會持續編輯（使用 `LOGMONITOR_MESSAGE_ID` 存於 `.env`）。
 - GitHub：當判定為高危或包含 traceback/Exception 等程式錯誤時，會發送 `repository_dispatch`（`event_type=error_analysis`）到 GitHub，觸發 `AI Debug Monitor` 與 `Auto AI Fix` 工作流程。
+- 閉環：`AI Debug Monitor` 會輸出帶 `incident_signature` 的分析 artifact，`LogMonitor` 會自動拉回結果並寫入 `data/logmonitor_known_debugs.json`，之後相同簽名錯誤可直接命中既有案例，不必每次重送 GitHub。
 - Auto AI Fix：只對高危且明確為程式碼錯誤的事件執行自動修復產生並提交；加入多重保護避免誤提交。
 
 ### 重要設計與保護（要點）
@@ -31,7 +32,9 @@
 2. 組成 embed 並 upsert 到 Discord（使用已記錄的 message id）；面板內顯示簡述、AI 分析、dispatch 與 sync 狀態。
 3. 若符合觸發條件（高危或有 traceback 等），發 `repository_dispatch` (event_type=error_analysis) 到 GitHub。
 4. GitHub `Auto AI Fix` workflow 被觸發，但 `scripts/auto_ai_fix.py` 會先判定是否允許提交（高危 + 程式錯誤指標且非 manual_test，且目標檔案存在）。
-5. 若允許，AI 生成修復代碼、產生修復檔並提交；否則只在面板註記為「已分析／跳過自動改碼」。
+5. `AI Debug Monitor` 會將分析結果輸出為 artifact；Bot 端背景輪詢後自動回寫本地 known debug。
+6. 若下次出現同 `incident_signature` 的錯誤，面板會顯示「已命中已知案例」，沿用歷史分析，不再自動重送 GitHub。
+7. 若允許，AI 生成修復代碼、產生修復檔並提交；否則只在面板註記為「已分析／跳過自動改碼」。
 
 ### 維運／排查指引（快速命令）
 - 檢查 LogMonitor 狀態（VM）：

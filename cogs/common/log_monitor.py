@@ -26,6 +26,9 @@ import re
 import time
 import logging
 import json
+import io
+import hashlib
+import zipfile
 import requests
 from datetime import datetime
 from typing import Optional
@@ -114,6 +117,7 @@ _MAX_ACTIVE_INCIDENTS: int = 8
 _MAX_EMBED_INCIDENTS: int = 5
 _TW_TZ = ZoneInfo("Asia/Taipei")
 _GITHUB_REPO = "chenkankan1103/kkgroup"
+_KNOWN_DEBUGS_PATH = os.path.join(parent_dir, "data", "logmonitor_known_debugs.json")
 
 
 def _save_message_state(message_id: int):
@@ -174,6 +178,29 @@ def _clear_message_state():
         logger.error(f"[LogMonitor] 從 .env 清除訊息 ID 失敗: {e}")
 
 
+def _load_known_debugs() -> list[dict[str, str]]:
+    try:
+        if not os.path.exists(_KNOWN_DEBUGS_PATH):
+            return []
+        with open(_KNOWN_DEBUGS_PATH, 'r', encoding='utf-8') as f:
+            payload = json.load(f)
+        if isinstance(payload, list):
+            return payload
+        logger.warning("[LogMonitor] 已知 debug 檔案格式錯誤，忽略既有內容")
+    except Exception as e:
+        logger.error(f"[LogMonitor] 載入已知 debug 失敗: {e}")
+    return []
+
+
+def _save_known_debugs(entries: list[dict[str, str]]):
+    try:
+        os.makedirs(os.path.dirname(_KNOWN_DEBUGS_PATH), exist_ok=True)
+        with open(_KNOWN_DEBUGS_PATH, 'w', encoding='utf-8') as f:
+            json.dump(entries, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"[LogMonitor] 儲存已知 debug 失敗: {e}")
+
+
 def _has_admin_access(user) -> bool:
     if getattr(user, "id", 0) == _ADMIN_USER_ID:
         return True
@@ -208,6 +235,55 @@ def _current_tw_datetime() -> datetime:
 
 def _format_tw_time() -> str:
     return _current_tw_datetime().strftime("%m-%d %H:%M:%S 台灣時間")
+
+
+def _normalize_incident_signature(text: str) -> str:
+    normalized = text.lower()
+    normalized = re.sub(r"0x[0-9a-f]+", "0x*", normalized)
+    normalized = re.sub(r"\b\d{4,}\b", "#", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()[:240]
+
+
+def _build_incident_signature(log_text: str, severity: str) -> str:
+    first_line = next((line.strip() for line in log_text.splitlines() if line.strip()), log_text.strip())
+    return f"{severity}|{_normalize_incident_signature(first_line)}"
+
+
+def _artifact_key_from_signature(signature: str) -> str:
+    return hashlib.sha256(signature.encode('utf-8')).hexdigest()[:16]
+
+
+def _format_debug_analysis_text(analysis_payload) -> str:
+    if isinstance(analysis_payload, dict):
+        root_cause = str(analysis_payload.get('root_cause') or '未提供')
+        impact = str(analysis_payload.get('impact') or '未提供')
+        fix_steps = analysis_payload.get('fix_steps') or []
+        prevention = analysis_payload.get('prevention') or []
+
+        if not isinstance(fix_steps, list):
+            fix_steps = [str(fix_steps)]
+        if not isinstance(prevention, list):
+            prevention = [str(prevention)]
+
+        steps_text = ' / '.join(str(step) for step in fix_steps[:3] if str(step).strip()) or '未提供'
+        prevention_text = ' / '.join(str(item) for item in prevention[:2] if str(item).strip()) or '未提供'
+        return (
+            f"【GitHub 根因】{root_cause}\n"
+            f"【影響】{impact}\n"
+            f"【建議修復】{steps_text}\n"
+            f"【預防】{prevention_text}"
+        )
+
+    raw_text = str(analysis_payload or '').strip()
+    if not raw_text:
+        return 'GitHub 未返回分析內容'
+
+    try:
+        parsed = json.loads(raw_text)
+    except Exception:
+        return raw_text
+    return _format_debug_analysis_text(parsed)
 
 
 def _estimate_severity_from_lines(lines: list[str]) -> str:
@@ -325,6 +401,8 @@ class LogMonitorSummaryView(discord.ui.View):
                 )
                 return
 
+            known_debug_detail = self._engine._build_known_debug_summary(latest)
+
             await interaction.response.defer(ephemeral=True)
             dispatched = await self._engine.manual_debug_latest_incident(triggered_by=interaction.user.display_name)
             if dispatched:
@@ -333,7 +411,7 @@ class LogMonitorSummaryView(discord.ui.View):
                         "🧠 已送交 GitHub Debug",
                         "這次是手動要求 GitHub 進一步分析。主面板不會直接被按鈕互動覆寫。",
                         discord.Color.blurple(),
-                        detail=latest.get("log_text", ""),
+                        detail=f"{known_debug_detail}\n\n原始日誌：\n{latest.get('log_text', '')}",
                     ),
                     ephemeral=True,
                 )
@@ -343,7 +421,7 @@ class LogMonitorSummaryView(discord.ui.View):
                         "⚠️ 送交 Debug 失敗",
                         "請檢查 GITHUB_TOKEN、GitHub workflow 狀態或網路連線。",
                         discord.Color.orange(),
-                        detail=latest.get("log_text", ""),
+                        detail=f"{known_debug_detail}\n\n原始日誌：\n{latest.get('log_text', '')}",
                     ),
                     ephemeral=True,
                 )
@@ -434,6 +512,8 @@ class LogMonitorEngine:
         self._active_incidents: list[dict[str, str]]              = []
         self._summary_message: Optional[discord.Message]          = None
         self._message_lock = asyncio.Lock()
+        self._analysis_sync_tasks: dict[str, asyncio.Task]        = {}
+        self._known_debugs: list[dict[str, str]]                  = _load_known_debugs()
         self._pipeline_status: dict[str, str]                     = {
             "dispatch_status": "尚未觸發",
             "dispatch_detail": "等待下一筆高危錯誤",
@@ -512,6 +592,187 @@ class LogMonitorEngine:
         event = run.get("event", "unknown")
         sha = (run.get("head_sha") or "")[:7] or "unknown"
         return f"id {run_id} / {status} / {conclusion} / {event} / {sha}"
+
+    def _artifact_name_for_signature(self, signature: str) -> str:
+        return f"ai-debug-result-{_artifact_key_from_signature(signature)}"
+
+    def _get_incident_by_signature(self, signature: str) -> Optional[dict[str, str]]:
+        return next(
+            (incident for incident in reversed(self._active_incidents) if incident.get("signature") == signature),
+            None,
+        )
+
+    def _upsert_known_debug_entry(self, entry: dict[str, str]):
+        signature = entry.get("signature")
+        if not signature:
+            return
+
+        known_by_signature = {
+            item.get("signature"): item
+            for item in self._known_debugs
+            if item.get("signature")
+        }
+        existing = known_by_signature.get(signature, {})
+        existing.update(entry)
+        existing.setdefault("resolved_count", 0)
+        existing.setdefault("repeat_count", 1)
+        known_by_signature[signature] = existing
+        self._known_debugs = list(known_by_signature.values())[-50:]
+        _save_known_debugs(self._known_debugs)
+
+    def _fetch_github_analysis_result_sync(self, signature: str) -> Optional[dict]:
+        headers = self._github_headers()
+        if not headers:
+            return None
+
+        artifact_name = self._artifact_name_for_signature(signature)
+        try:
+            artifacts_resp = requests.get(
+                f"https://api.github.com/repos/{_GITHUB_REPO}/actions/artifacts?per_page=100",
+                headers=headers,
+                timeout=15,
+            )
+            artifacts_resp.raise_for_status()
+            artifacts = artifacts_resp.json().get("artifacts", [])
+            matched = [artifact for artifact in artifacts if artifact.get("name") == artifact_name and not artifact.get("expired")]
+            if not matched:
+                return None
+
+            artifact = sorted(matched, key=lambda item: item.get("created_at") or "", reverse=True)[0]
+            archive_resp = requests.get(
+                artifact.get("archive_download_url"),
+                headers=headers,
+                timeout=20,
+            )
+            archive_resp.raise_for_status()
+
+            with zipfile.ZipFile(io.BytesIO(archive_resp.content)) as zipped:
+                json_member = next((name for name in zipped.namelist() if name.endswith('.json')), None)
+                if not json_member:
+                    return None
+                with zipped.open(json_member) as artifact_file:
+                    payload = json.loads(artifact_file.read().decode('utf-8'))
+
+            if payload.get("incident_signature") != signature:
+                return None
+            payload["artifact_name"] = artifact_name
+            payload["artifact_created_at"] = artifact.get("created_at")
+            return payload
+        except Exception as exc:
+            logger.warning(f"[LogMonitor] 讀取 GitHub 分析 artifact 失敗: {exc}")
+            return None
+
+    async def _sync_incident_analysis_from_github(self, signature: str, attempts: int = 6, delay: int = 15):
+        try:
+            for _ in range(attempts):
+                payload = await asyncio.to_thread(self._fetch_github_analysis_result_sync, signature)
+                if payload:
+                    formatted_analysis = _format_debug_analysis_text(payload.get("analysis"))
+                    incident = self._get_incident_by_signature(signature)
+                    if incident:
+                        incident["github_analysis"] = formatted_analysis
+                        incident["github_analysis_synced_at"] = payload.get("completed_at") or payload.get("artifact_created_at") or _format_tw_time()
+                        incident["github_analysis_source"] = payload.get("source", "github-actions")
+
+                    self._upsert_known_debug_entry({
+                        "signature": signature,
+                        "severity": payload.get("severity", "未標註"),
+                        "ai_text": formatted_analysis,
+                        "github_analysis": formatted_analysis,
+                        "sample_log": str(payload.get("log_excerpt") or ""),
+                        "first_seen_at": payload.get("timestamp") or payload.get("completed_at") or _format_tw_time(),
+                        "last_seen_at": payload.get("completed_at") or _format_tw_time(),
+                        "last_resolved_at": payload.get("completed_at") or _format_tw_time(),
+                        "last_resolved_by": "GitHub AI Debug Monitor",
+                        "resolved_count": 1,
+                        "repeat_count": 1,
+                        "source": payload.get("source", "github-actions"),
+                    })
+
+                    self._pipeline_status["dispatch_status"] = "已回寫已知案例"
+                    self._pipeline_status["dispatch_detail"] = f"GitHub 分析已同步回本地案例庫 / {payload.get('source', 'github-actions')}"
+                    channel = self.bot.get_channel(_ALERT_CHANNEL_ID)
+                    if channel:
+                        await self._upsert_summary_message(channel)
+                    return
+
+                await asyncio.sleep(delay)
+
+            self._pipeline_status["dispatch_detail"] = "GitHub 分析尚未回寫，保留本地分析結果"
+        finally:
+            self._analysis_sync_tasks.pop(signature, None)
+
+    def _schedule_incident_analysis_sync(self, signature: str):
+        task = self._analysis_sync_tasks.get(signature)
+        if task and not task.done():
+            return
+        self._analysis_sync_tasks[signature] = asyncio.create_task(self._sync_incident_analysis_from_github(signature))
+
+    def _find_known_debug(self, incident: Optional[dict[str, str]]) -> Optional[dict[str, str]]:
+        if not incident:
+            return None
+
+        signature = incident.get("signature") or _build_incident_signature(
+            incident.get("log_text", ""),
+            incident.get("severity", "未標註"),
+        )
+        return next((entry for entry in reversed(self._known_debugs) if entry.get("signature") == signature), None)
+
+    def _remember_resolved_incidents(self, resolved_by: str):
+        if not self._active_incidents:
+            return
+
+        now_label = _format_tw_time()
+        known_by_signature = {
+            entry.get("signature"): entry
+            for entry in self._known_debugs
+            if entry.get("signature")
+        }
+
+        for incident in self._active_incidents:
+            signature = incident.get("signature") or _build_incident_signature(
+                incident.get("log_text", ""),
+                incident.get("severity", "未標註"),
+            )
+            existing = known_by_signature.get(signature)
+            if existing:
+                existing["last_seen_at"] = incident.get("last_seen_at", incident.get("created_at", now_label))
+                existing["last_resolved_at"] = now_label
+                existing["last_resolved_by"] = resolved_by
+                existing["resolved_count"] = int(existing.get("resolved_count", 0)) + 1
+                existing["repeat_count"] = max(int(existing.get("repeat_count", 1)), int(incident.get("repeat_count", 1)))
+                existing["ai_text"] = incident.get("ai_text", existing.get("ai_text", ""))
+                existing["sample_log"] = incident.get("log_text", existing.get("sample_log", ""))
+                existing["severity"] = incident.get("severity", existing.get("severity", "未標註"))
+                continue
+
+            known_by_signature[signature] = {
+                "signature": signature,
+                "severity": incident.get("severity", "未標註"),
+                "ai_text": incident.get("ai_text", ""),
+                "sample_log": incident.get("log_text", ""),
+                "first_seen_at": incident.get("created_at", now_label),
+                "last_seen_at": incident.get("last_seen_at", incident.get("created_at", now_label)),
+                "last_resolved_at": now_label,
+                "last_resolved_by": resolved_by,
+                "resolved_count": 1,
+                "repeat_count": int(incident.get("repeat_count", 1)),
+            }
+
+        self._known_debugs = list(known_by_signature.values())[-50:]
+        _save_known_debugs(self._known_debugs)
+
+    def _build_known_debug_summary(self, incident: Optional[dict[str, str]]) -> str:
+        known = self._find_known_debug(incident)
+        if not known:
+            return "尚無已知案例。現在的流程仍可分析與送 GitHub，但不會命中歷史修復。"
+
+        return (
+            f"命中既有案例 / 緊急程度 {known.get('severity', '未標註')}\n"
+            f"最後清除: {known.get('last_resolved_at', '未知')} / {known.get('last_resolved_by', '未知')}\n"
+            f"累積解決次數: {known.get('resolved_count', 1)}\n"
+            f"建議: {_truncate_text(known.get('github_analysis') or known.get('ai_text', ''), 220)}"
+        )
 
     async def _refresh_pipeline_status(self):
         snapshot = await asyncio.to_thread(self._fetch_pipeline_status_sync)
@@ -711,27 +972,55 @@ class LogMonitorEngine:
             ], max_tokens=300)
             ai_text = ai_text_raw or _build_local_fallback_summary(lines)
 
-        # 🔥 新增：觸發 GitHub Actions AI 分析
-        dispatch_ok = await self._trigger_github_actions_analysis(log_text, ai_text)
+        severity = _extract_severity(ai_text)
+        if severity == "未標註":
+            severity = _severity_label_from_hint(severity_hint)
+
+        now_label = _format_tw_time()
+        incident_signature = _build_incident_signature(log_text, severity)
+        existing_incident = next(
+            (incident for incident in reversed(self._active_incidents) if incident.get("signature") == incident_signature),
+            None,
+        )
+        if existing_incident:
+            existing_incident["last_seen_at"] = now_label
+            existing_incident["repeat_count"] = existing_incident.get("repeat_count", 1) + 1
+            existing_incident["log_text"] = log_text
+            existing_incident["ai_text"] = ai_text
+            existing_incident["severity"] = severity
+            existing_incident.setdefault("github_analysis", "")
+            incident = existing_incident
+        else:
+            incident = {
+                "created_at": now_label,
+                "last_seen_at": now_label,
+                "log_text": log_text,
+                "ai_text": ai_text,
+                "severity": severity,
+                "signature": incident_signature,
+                "repeat_count": 1,
+                "github_analysis": "",
+            }
+            self._active_incidents.append(incident)
+        self._active_incidents = self._active_incidents[-_MAX_ACTIVE_INCIDENTS:]
+
+        known_debug = self._find_known_debug(incident)
+        if known_debug and (known_debug.get("github_analysis") or known_debug.get("ai_text")):
+            incident["github_analysis"] = known_debug.get("github_analysis") or known_debug.get("ai_text", "")
+            self._pipeline_status["dispatch_status"] = "已命中已知案例"
+            self._pipeline_status["dispatch_detail"] = "沿用歷史分析，不自動重送 GitHub"
+        else:
+            dispatch_ok = await self._trigger_github_actions_analysis(log_text, ai_text, incident_signature)
+            if dispatch_ok:
+                self._schedule_incident_analysis_sync(incident_signature)
+
         await self._refresh_pipeline_status()
-        
+
         # 送出 Discord Embed
         channel = self.bot.get_channel(_ALERT_CHANNEL_ID)
         if not channel:
             logger.warning(f"[LogMonitor] 找不到通知頻道 ID={_ALERT_CHANNEL_ID}")
             return
-
-        severity = _extract_severity(ai_text)
-        if severity == "未標註":
-            severity = _severity_label_from_hint(severity_hint)
-
-        self._active_incidents.append({
-            "created_at": _format_tw_time(),
-            "log_text": log_text,
-            "ai_text": ai_text,
-            "severity": severity,
-        })
-        self._active_incidents = self._active_incidents[-_MAX_ACTIVE_INCIDENTS:]
 
         try:
             await self._upsert_summary_message(channel)
@@ -739,11 +1028,12 @@ class LogMonitorEngine:
         except Exception as e:
             logger.error(f"[LogMonitor] 送出通知失敗: {e}")
 
-    async def _trigger_github_actions_analysis(self, log_text: str, ai_text: str) -> bool:
+    async def _trigger_github_actions_analysis(self, log_text: str, ai_text: str, incident_signature: str) -> bool:
         """觸發 GitHub Actions 進行更深入的 AI 分析"""
         return await self._dispatch_github_actions_analysis(
             log_text,
             ai_text,
+            incident_signature,
             force=False,
             source="log_monitor_realtime",
         )
@@ -752,6 +1042,7 @@ class LogMonitorEngine:
         self,
         log_text: str,
         ai_text: str,
+        incident_signature: str,
         force: bool = False,
         source: str = "log_monitor_realtime",
     ) -> bool:
@@ -783,7 +1074,9 @@ class LogMonitorEngine:
                     "log_text": log_text[:2000],  # 限制長度
                     "ai_analysis": ai_text[:1000],  # 限制長度
                     "severity": severity if not force else "高",
-                    "source": source
+                    "source": source,
+                    "incident_signature": incident_signature,
+                    "incident_key": _artifact_key_from_signature(incident_signature),
                 }
             }
             
@@ -841,9 +1134,12 @@ class LogMonitorEngine:
         result = await self._dispatch_github_actions_analysis(
             latest["log_text"],
             latest["ai_text"],
+            latest.get("signature") or _build_incident_signature(latest.get("log_text", ""), latest.get("severity", "未標註")),
             force=True,
             source="log_monitor_manual_debug",
         )
+        if result:
+            self._schedule_incident_analysis_sync(latest.get("signature") or _build_incident_signature(latest.get("log_text", ""), latest.get("severity", "未標註")))
         await self._refresh_pipeline_status()
         if channel:
             await self._upsert_summary_message(channel)
@@ -855,14 +1151,19 @@ class LogMonitorEngine:
 
         parts = []
         for index, incident in enumerate(self._active_incidents[-3:], start=1):
+            repeat_note = ""
+            if incident.get("repeat_count", 1) > 1:
+                repeat_note = f"\n重複次數：{incident['repeat_count']}（最近一次 {incident.get('last_seen_at', incident['created_at'])}）"
             parts.append(
                 f"事件 {index}（{incident['created_at']} / 緊急程度 {incident['severity']}）\n"
+                f"{repeat_note}"
                 f"AI 分析摘要：{_truncate_text(incident['ai_text'], 350)}\n"
                 f"原始錯誤日誌：{_truncate_text(incident['log_text'], 280)}"
             )
         return "根據以下 Bot 未清除錯誤彙整，請診斷並嘗試修復問題。\n\n" + "\n\n".join(parts)
 
     def clear_summary(self, cleared_by: str) -> discord.Embed:
+        self._remember_resolved_incidents(cleared_by)
         self._active_incidents.clear()
         embed = discord.Embed(
             title="✅ Bot 偵錯流程面板已清空",
@@ -893,15 +1194,25 @@ class LogMonitorEngine:
         )
 
         if latest_incident:
+            repeat_summary = ""
+            repeat_count = latest_incident.get("repeat_count", 1)
+            if repeat_count > 1:
+                repeat_summary = (
+                    f"重複次數: {repeat_count}\n"
+                    f"最近出現: {latest_incident.get('last_seen_at', latest_incident['created_at'])}\n"
+                )
             bug_summary = (
                 f"時間: {latest_incident['created_at']}\n"
                 f"緊急程度: {latest_incident['severity']}\n"
+                f"{repeat_summary}"
                 f"簡述: {_truncate_text(latest_incident['log_text'], 220)}"
             )
             analysis_summary = _truncate_text(latest_incident['ai_text'], 360)
         else:
             bug_summary = "目前沒有待處理錯誤"
             analysis_summary = "等待下一筆重大錯誤事件"
+
+        known_debug_summary = self._build_known_debug_summary(latest_incident)
 
         embed.add_field(name="檢測到 BUG", value=bug_summary, inline=False)
         embed.add_field(
@@ -915,6 +1226,7 @@ class LogMonitorEngine:
             )[:1024],
             inline=False,
         )
+        embed.add_field(name="已知 Debug 案例", value=_truncate_text(known_debug_summary, 1024), inline=False)
         embed.add_field(
             name="同步 / Webhook",
             value=(
