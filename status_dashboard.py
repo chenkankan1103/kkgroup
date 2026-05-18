@@ -1,8 +1,7 @@
 """
 統一監控儀表板管理系統
-管理頻道 1470272652429099125 的 6 個 embed（3 機器人 × 2：控制面板+日誌）
-每 15 秒自動更新日誌
-存儲 message_id 到 .env 文件
+優先將三個 bot 的即時日誌發到論壇頻道 thread；若未配置論壇，再回退到一般文字頻道。
+存儲 message_id / thread_id 到 .env 文件。
 
 每個機器人獨立初始化自己的面板（防止重複創建）
 """
@@ -17,6 +16,7 @@ import asyncio
 import traceback
 import re
 import random
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from collections import deque
 from typing import Optional, Dict
@@ -53,14 +53,20 @@ def format_taiwan_time():
 # 配置常數
 MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 
-# 硬編碼的訊息 ID 作為回退值（只保留日誌）
-HARDCODED_MESSAGE_IDS = {
-    "bot": {"logs": 1470781481868591187},
-    "shopbot": {"logs": 1470782650716389648},
-    "uibot": {"logs": 1470782659843068032}
-}
+# 不再使用舊訊息 ID 作為硬編碼回退。
+HARDCODED_MESSAGE_IDS = {}
 
-DASHBOARD_CHANNEL_ID = int(os.getenv("DASHBOARD_CHANNEL_ID", "1470272652429099125"))
+DEFAULT_FORUM_CHANNEL_ID = "1504438347974705152"
+DASHBOARD_FORUM_CHANNEL_ID = int(
+    os.getenv("DASHBOARD_FORUM_CHANNEL_ID")
+    or os.getenv("LOG_FORUM_CHANNEL_ID")
+    or DEFAULT_FORUM_CHANNEL_ID
+)
+LEGACY_DASHBOARD_CHANNEL_ID = int(
+    os.getenv("DASHBOARD_CHANNEL_ID")
+    or os.getenv("LOG_CHANNEL_ID")
+    or "0"
+)
 LOGS_CAPACITY = 10  # 保存最近 10 條日誌（目前未使用）
 
 # 應用日誌功能已移除，保留常數作為註解。
@@ -246,6 +252,12 @@ message_ids = {
     "uibot": {"logs": None}
 }
 
+thread_ids = {
+    "bot": None,
+    "shopbot": None,
+    "uibot": None,
+}
+
 # 機器人實例存儲（每個機器人獨立）
 bot_instances = {}
 
@@ -253,6 +265,18 @@ BOT_CONFIG = {
     "bot": {"名稱": "🤖 Main Bot", "顏色": discord.Color.blue(), "emoji": "🤖"},
     "shopbot": {"名稱": "🛍️ Shop Bot", "顏色": discord.Color.purple(), "emoji": "🛍️"},
     "uibot": {"名稱": "🎨 UI Bot", "顏色": discord.Color.gold(), "emoji": "🎨"}
+}
+
+THREAD_ENV_KEYS = {
+    "bot": "DASHBOARD_BOT_THREAD_ID",
+    "shopbot": "DASHBOARD_SHOPBOT_THREAD_ID",
+    "uibot": "DASHBOARD_UIBOT_THREAD_ID",
+}
+
+THREAD_NAMES = {
+    "bot": "🤖 Main Bot 即時日誌",
+    "shopbot": "🛍️ Shop Bot 即時日誌",
+    "uibot": "🎨 UI Bot 即時日誌",
 }
 
 # 追蹤當前機器人類型（在初始化時設置）
@@ -376,6 +400,43 @@ def save_message_id(bot_type: str, message_type: str, message_id: str):
     message_ids[bot_type][message_type] = int(message_id)
     save_message_ids(bot_type)
 
+
+def get_thread_id(bot_type: str) -> Optional[int]:
+    return thread_ids.get(bot_type)
+
+
+def save_thread_id(bot_type: str, thread_id: int):
+    thread_ids[bot_type] = int(thread_id)
+    save_message_ids(bot_type)
+
+
+async def resolve_dashboard_target(bot, bot_type: str, create_if_missing: bool = False):
+    forum_channel = bot.get_channel(DASHBOARD_FORUM_CHANNEL_ID) if DASHBOARD_FORUM_CHANNEL_ID else None
+    if isinstance(forum_channel, discord.ForumChannel):
+        saved_thread_id = get_thread_id(bot_type)
+        thread = None
+        if saved_thread_id:
+            thread = bot.get_channel(saved_thread_id)
+            if thread is None:
+                for guild in bot.guilds:
+                    thread = guild.get_thread(saved_thread_id)
+                    if thread:
+                        break
+        if thread is None and create_if_missing:
+            created = await forum_channel.create_thread(
+                name=THREAD_NAMES[bot_type],
+                content=f"{BOT_CONFIG[bot_type]['名稱']} 日誌 thread（由 status_dashboard 自動維護）",
+            )
+            thread = created.thread
+            save_thread_id(bot_type, thread.id)
+        if thread:
+            return SimpleNamespace(channel=thread, container=forum_channel, is_forum=True)
+
+    legacy_channel = bot.get_channel(LEGACY_DASHBOARD_CHANNEL_ID) if LEGACY_DASHBOARD_CHANNEL_ID else None
+    if legacy_channel:
+        return SimpleNamespace(channel=legacy_channel, container=legacy_channel, is_forum=False)
+    return None
+
 # keep last rendered logs to prevent duplicate edits
 last_logs_text: Dict[str, str] = {}
 
@@ -429,10 +490,11 @@ async def update_dashboard_logs(bot, bot_type: str):
         # Update message
         message_id = get_message_id(bot_type, "logs")
         
-        channel = bot.get_channel(DASHBOARD_CHANNEL_ID)
-        if not channel:
-            print(f"[UPDATE LOGS ERROR] {bot_type} unable to find channel {DASHBOARD_CHANNEL_ID}")
+        target = await resolve_dashboard_target(bot, bot_type, create_if_missing=True)
+        if not target or not target.channel:
+            print(f"[UPDATE LOGS ERROR] {bot_type} unable to find dashboard target")
             return
+        channel = target.channel
             
         if message_id:
             try:
@@ -545,24 +607,24 @@ async def initialize_dashboard(bot_instance: discord.Client, bot_type_str: str):
     load_message_ids(bot_type_str)
     
     try:
-        print(f"[INIT] Attempting to get channel {DASHBOARD_CHANNEL_ID}...", flush=True)
+        print(f"[INIT] Resolving dashboard target for {bot_type_str}...", flush=True)
         with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now()}] Attempting get_channel({DASHBOARD_CHANNEL_ID})\n")
+            f.write(f"[{datetime.now()}] Resolving dashboard target for {bot_type_str}\n")
             f.flush()
-        
-        channel = bot_instance.get_channel(DASHBOARD_CHANNEL_ID)
+
+        target = await resolve_dashboard_target(bot_instance, bot_type_str, create_if_missing=True)
+        channel = target.channel if target else None
         if not channel:
             with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
-                f.write(f"[{datetime.now()}] ERROR: Channel not found! {DASHBOARD_CHANNEL_ID}\n")
+                f.write(f"[{datetime.now()}] ERROR: Dashboard target not found for {bot_type_str}\n")
                 f.flush()
-            print(f"X [INIT] Cannot find dashboard channel: {DASHBOARD_CHANNEL_ID}", flush=True)
-            print(f"[INIT] Available channels in bot_instance: {[c.id for c in bot_instance.get_all_channels()[:5]]}", flush=True)
+            print(f"X [INIT] Cannot find dashboard target for {bot_type_str}", flush=True)
             return False
-        
+
         with open("/tmp/dashboard_init.log", "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now()}] OK: Found channel {DASHBOARD_CHANNEL_ID}\n")
+            f.write(f"[{datetime.now()}] OK: Found dashboard target {getattr(channel, 'id', 'unknown')}\n")
             f.flush()
-        print(f"[INIT] OK Found channel {DASHBOARD_CHANNEL_ID}", flush=True)
+        print(f"[INIT] OK Found dashboard target {getattr(channel, 'id', 'unknown')}", flush=True)
         
         # Clean up old log embeds and initialize new ones
         found_logs = None
@@ -776,12 +838,16 @@ def save_message_ids(bot_type: str):
         if logs_id:
             env_key = f"DASHBOARD_{bot_type.upper()}_LOGS"
             set_key(env_path, env_key, str(logs_id))
+
+        thread_id = thread_ids.get(bot_type)
+        if thread_id:
+            set_key(env_path, THREAD_ENV_KEYS[bot_type], str(thread_id))
     except Exception as e:
         # 不讓任何寫入失敗中斷初始化流程
         print(f"[ENV WRITE ERROR] 無法保存 {bot_type} 訊息 ID 到 .env: {e}")
 
 def load_message_ids(bot_type: str):
-    """從 .env 加載訊息 ID，如果沒有則使用硬編碼的回退值（簡化版本，只加載日誌）"""
+    """從 .env 加載訊息與 thread ID（簡化版本，只加載日誌）"""
     
     # 只加載日誌 ID
     logs_id = os.getenv(f"DASHBOARD_{bot_type.upper()}_LOGS")
@@ -790,13 +856,10 @@ def load_message_ids(bot_type: str):
         message_ids[bot_type]["logs"] = int(logs_id)
         print(f"[LOAD IDS] {bot_type} 日誌 ID: {logs_id}")
     else:
-        # 使用硬編碼的回退值
-        fallback_id = HARDCODED_MESSAGE_IDS.get(bot_type, {}).get("logs")
-        if fallback_id:
-            message_ids[bot_type]["logs"] = fallback_id
-            print(f"[LOAD IDS] {bot_type} 日誌 ID 使用回退值: {fallback_id}")
-        else:
-            message_ids[bot_type]["logs"] = None
-            print(f"[LOAD IDS] {bot_type} 日誌 ID 未設置")
+        message_ids[bot_type]["logs"] = None
+        print(f"[LOAD IDS] {bot_type} 日誌 ID 未設置")
+
+    thread_id = os.getenv(THREAD_ENV_KEYS[bot_type])
+    thread_ids[bot_type] = int(thread_id) if thread_id else None
 
 # REMOVED: update_dashboard 已被移除 - 日誌更新由 update_dashboard_logs 處理
