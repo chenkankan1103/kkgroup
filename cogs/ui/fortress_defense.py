@@ -28,9 +28,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
 FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
-FORTRESS_ALLOWED_HOURS = {8, 11, 14, 17, 20, 23}
+FORTRESS_ALLOWED_HOURS = {8, 11, 14, 20, 22}
 FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS = 8
 FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS = 12
+FORTRESS_SETTLEMENT_HOUR = 0
+FORTRESS_SETTLEMENT_MINUTE = 0
 
 _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
     {
@@ -124,42 +126,42 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
 
 # 從 .env 讀取堡壘頻道 ID（與其他 channel ID 的模式相同）
 def _get_fortress_channel_id() -> int:
-    return int(os.getenv("FORTRESS_CHANNEL_ID", "0") or 0)
+    return int(os.getenv("FORTRESS_CHANNEL_ID", "1505861352215019570") or 0)
 
 
-def _save_battle_message_state(message_id: int):
+def _save_env_message_state(key: str, message_id: int):
     try:
         lines = []
         if os.path.exists(ENV_FILE):
             with open(ENV_FILE, "r", encoding="utf-8") as file:
                 lines = file.readlines()
 
-        lines = [line for line in lines if not line.strip().startswith("FORTRESS_BATTLE_MESSAGE_ID=")]
-        lines.append(f"FORTRESS_BATTLE_MESSAGE_ID={message_id}\n")
+        lines = [line for line in lines if not line.strip().startswith(f"{key}=")]
+        lines.append(f"{key}={message_id}\n")
 
         with open(ENV_FILE, "w", encoding="utf-8") as file:
             file.writelines(lines)
     except Exception as exc:
-        log.warning(f"[Fortress] 保存戰場訊息 ID 失敗: {exc}")
+        log.warning(f"[Fortress] 保存訊息 ID 失敗 key={key}: {exc}")
 
 
-def _load_battle_message_state() -> Optional[int]:
+def _load_env_message_state(key: str) -> Optional[int]:
     try:
         if not os.path.exists(ENV_FILE):
             return None
 
         with open(ENV_FILE, "r", encoding="utf-8") as file:
             for line in file:
-                if line.strip().startswith("FORTRESS_BATTLE_MESSAGE_ID="):
+                if line.strip().startswith(f"{key}="):
                     _, value = line.split("=", 1)
                     value = value.strip()
                     return int(value) if value else None
     except Exception as exc:
-        log.warning(f"[Fortress] 讀取戰場訊息 ID 失敗: {exc}")
+        log.warning(f"[Fortress] 讀取訊息 ID 失敗 key={key}: {exc}")
     return None
 
 
-def _clear_battle_message_state():
+def _clear_env_message_state(key: str):
     try:
         if not os.path.exists(ENV_FILE):
             return
@@ -167,12 +169,36 @@ def _clear_battle_message_state():
         with open(ENV_FILE, "r", encoding="utf-8") as file:
             lines = file.readlines()
 
-        lines = [line for line in lines if not line.strip().startswith("FORTRESS_BATTLE_MESSAGE_ID=")]
+        lines = [line for line in lines if not line.strip().startswith(f"{key}=")]
 
         with open(ENV_FILE, "w", encoding="utf-8") as file:
             file.writelines(lines)
     except Exception as exc:
-        log.warning(f"[Fortress] 清除戰場訊息 ID 失敗: {exc}")
+        log.warning(f"[Fortress] 清除訊息 ID 失敗 key={key}: {exc}")
+
+
+def _save_battle_message_state(message_id: int):
+    _save_env_message_state("FORTRESS_BATTLE_MESSAGE_ID", message_id)
+
+
+def _load_battle_message_state() -> Optional[int]:
+    return _load_env_message_state("FORTRESS_BATTLE_MESSAGE_ID")
+
+
+def _clear_battle_message_state():
+    _clear_env_message_state("FORTRESS_BATTLE_MESSAGE_ID")
+
+
+def _save_settlement_message_state(message_id: int):
+    _save_env_message_state("FORTRESS_SETTLEMENT_MESSAGE_ID", message_id)
+
+
+def _load_settlement_message_state() -> Optional[int]:
+    return _load_env_message_state("FORTRESS_SETTLEMENT_MESSAGE_ID")
+
+
+def _clear_settlement_message_state():
+    _clear_env_message_state("FORTRESS_SETTLEMENT_MESSAGE_ID")
 
 
 # ─── 興趣標籤 Modal ────────────────────────────────────────
@@ -361,7 +387,11 @@ class FortressEnemyView(PersistentViewBase):
         kkcoin_balance: int,
     ) -> discord.Embed:
         actions = state.defenders.get(user.id, []) if state else []
-        free_count = sum(1 for action in actions if action.action_type == "free")
+        current_wave_id = state.current_wave_id if state else ""
+        free_count = sum(
+            1 for action in actions
+            if action.action_type == "free" and action.wave_id == current_wave_id
+        )
         paid_count = sum(1 for action in actions if action.action_type == "paid")
         total_damage = sum(action.damage for action in actions)
         total_spent = sum(action.spent_kkcoin for action in actions)
@@ -376,9 +406,9 @@ class FortressEnemyView(PersistentViewBase):
 
         embed = discord.Embed(title=title, description=description, color=color)
         embed.add_field(
-            name="📈 本輪統計",
+            name="📈 本波統計",
             value=(
-                f"總出兵：**{len(actions)}** 次\n"
+                f"目前波次：**第 {state.current_wave_number if state else 1} 波**\n"
                 f"免費：**{free_count}/{fs.FREE_ACTIONS_PER_ROUND}** 次\n"
                 f"強化：**{paid_count}** 次"
             ),
@@ -622,6 +652,10 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
 
     alive         = [e for e in state.enemies if not e.defeated]
     defeated_count = len(state.enemies) - len(alive)
+    latest_wave_titles = []
+    if state.wave_history:
+        latest_wave_titles = state.wave_history[-1].get("titles", [])
+    latest_wave_text = "、".join(latest_wave_titles[:10]) if latest_wave_titles else "等待趨勢資料"
 
     # 堡壘狀態 → 動態顏色與警示
     fort_pct = state.fortress_hp / state.fortress_max_hp if state.fortress_max_hp else 1.0
@@ -638,8 +672,10 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
     td_map = _build_td_map(state)
 
     description = (
+        f"📡 **戰況播報**｜{state.battle_date} 單日堡壘戰\n"
         f"🏯 **KK 詐騙園區** {fort_status}\n"
         f"🗺️ 本輪地圖：**{layout['name']}**\n"
+        f"🌊 目前已進入 **第 {state.current_wave_number} 波**\n"
         f"`{state.fortress_hp_bar()}`\n\n"
         f"{td_map}\n\n"
         f"⬅️ 刑警大隊由左側路線前進，🗼 砲台自動射擊\n"
@@ -654,8 +690,8 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
     # 建立表格標題
     table_header = "**🚨 刑警大隊戰況表**\n"
     table_header += "```\n"
-    table_header += f"{'階級':<8} {'熱搜標題':<20} {'推進':<8} {'血量':<12} {'狀態':<8}\n"
-    table_header += "─" * 60 + "\n"
+    table_header += f"{'波次':<4} {'階級':<8} {'熱搜標題':<20} {'推進':<8} {'血量':<12} {'狀態':<8}\n"
+    table_header += "─" * 66 + "\n"
     
     enemy_lines = [table_header]
     for e in sorted(state.enemies, key=lambda x: x.rank):
@@ -676,17 +712,28 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
         # 限制標題長度避免表格破壞
         display_name = e.name[:18] + "..." if len(e.name) > 18 else e.name
         
-        line = f"{label:<8} {display_name:<20} {progress_display:<8} {hp_display:<12} {status:<8}"
+        line = f"W{e.wave_number:<3} {label:<8} {display_name:<20} {progress_display:<8} {hp_display:<12} {status:<8}"
         enemy_lines.append(line)
     
     enemy_lines.append("```")
     enemy_text = "\n".join(enemy_lines)
 
     embed = discord.Embed(
-        title="⚔️ KK 園區對抗刑警大隊！",
+        title="⚔️ KK 園區堡壘戰戰況播報",
         description=description,
         color=embed_color,
         timestamp=now,
+    )
+
+    embed.add_field(
+        name="📰 本波新出兵標題",
+        value=latest_wave_text,
+        inline=False,
+    )
+    embed.add_field(
+        name="🗂️ 今日已出現趨勢",
+        value=f"共 **{len(state.daily_trend_titles)}** 個標題",
+        inline=False,
     )
 
     embed.add_field(
@@ -726,14 +773,14 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
     )
 
     status_map = {"active": "🟢 進行中", "victory": "🎉 勝利", "defeat": "💀 失守"}
-    embed.set_footer(text=f"狀態：{status_map.get(state.status, state.status)} | 輪次 {state.round_id}")
+    embed.set_footer(text=f"狀態：{status_map.get(state.status, state.status)} | 單日戰役 {state.round_id} | 目前第 {state.current_wave_number} 波")
     return embed
 
 
 def build_status_embed(state: fs.FortressState, user_id: int) -> discord.Embed:
     """個人戰況 Embed（ephemeral）"""
     actions = state.defenders.get(user_id, [])
-    free_used = sum(1 for a in actions if a.action_type == "free")
+    free_used = sum(1 for a in actions if a.action_type == "free" and a.wave_id == state.current_wave_id)
     total_dmg = sum(a.damage for a in actions)
 
     interests_raw = get_user_field(user_id, "user_interests", default="[]")
@@ -743,8 +790,9 @@ def build_status_embed(state: fs.FortressState, user_id: int) -> discord.Embed:
         interests = []
 
     embed = discord.Embed(title="📊 你的戰況", color=0x3498DB)
-    embed.add_field(name="免費出兵", value=f"{free_used}/{fs.FREE_ACTIONS_PER_ROUND} 次", inline=True)
+    embed.add_field(name="本波免費出兵", value=f"{free_used}/{fs.FREE_ACTIONS_PER_ROUND} 次", inline=True)
     embed.add_field(name="累計傷害", value=f"{total_dmg:,}", inline=True)
+    embed.add_field(name="目前波次", value=f"第 {state.current_wave_number} 波", inline=True)
     embed.add_field(
         name="興趣標籤",
         value=" / ".join(interests) if interests else "尚未設定",
@@ -770,20 +818,20 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
     color = 0x2ECC71 if won else 0x95A5A6
 
     if won:
-        title = "🎉 守城成功！KK 園區安全了！"
+        title = f"🎉 {result.get('battle_date', result['round_id'])} 守城成功！"
         reward_text = ""
         if result.get("total_reward_kkcoin", 0) > 0:
             reward_text = (
-                f"\n💰 本輪獎勵：{result['total_reward_kkcoin']:,} KKCoin"
+                f"\n💰 本日獎勵：{result['total_reward_kkcoin']:,} KKCoin"
                 f"（x{result.get('reward_multiplier', 1.0):.1f}）"
             )
         desc = (
-            f"全服英雄合力消滅 {result['enemies_defeated']}/{result['enemies_total']} 個敵人！"
-            f"\n⏱️ 提前完成：剩餘 {result.get('remaining_minutes', 0)} 分鐘"
+            f"全服英雄合力消滅 {result['enemies_defeated']}/{result['enemies_total']} 名敵軍！"
+            f"\n⏱️ 結算時剩餘 {result.get('remaining_minutes', 0)} 分鐘"
             f"{reward_text}"
         )
     else:
-        title = "💀 堡壘失守..."
+        title = f"💀 {result.get('battle_date', result['round_id'])} 堡壘失守"
         desc = (
             f"堡壘剩餘 HP：{result['fortress_hp_remaining']:,}\n"
             + ("（封測期間暫無懲罰，放心繼續試玩！）" if result.get("beta_no_penalty") else "")
@@ -794,8 +842,8 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
     # 英雄榜
     damage_map: dict = result.get("damage_map", {})
     if damage_map:
-        sorted_heroes = sorted(damage_map.items(), key=lambda x: x[1], reverse=True)[:5]
-        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+        sorted_heroes = sorted(damage_map.items(), key=lambda x: x[1], reverse=True)[:10]
+        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         lines = []
         for i, (uid, dmg) in enumerate(sorted_heroes):
             user = bot.get_user(int(uid))
@@ -806,7 +854,15 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
             lines.append(f"{medals[i]} **{name}** — {dmg:,} 傷害 ({pct}%){reward_suffix}")
         embed.add_field(name="🏆 對抗英雄榜", value="\n".join(lines), inline=False)
 
-    embed.set_footer(text=f"輪次 {result['round_id']}")
+    wave_history = result.get("wave_history", [])
+    if wave_history:
+        wave_lines = []
+        for wave in wave_history:
+            titles = wave.get("titles", [])
+            wave_lines.append(f"第 {wave.get('wave_number', '?')} 波：{'、'.join(titles) if titles else '無資料'}")
+        embed.add_field(name="📰 當天出現的趨勢標題", value="\n".join(wave_lines[:10]), inline=False)
+
+    embed.set_footer(text=f"單日戰役 {result['round_id']}")
     return embed
 
 
@@ -818,6 +874,7 @@ class FortressDefenseCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._battle_message_id: Optional[int] = _load_battle_message_state()
+        self._settlement_message_id: Optional[int] = _load_settlement_message_state()
         self._battle_channel_id: int = _get_fortress_channel_id()
         self._settled_round_ids: set[str] = set()
         self._last_embed_refresh_at: Optional[datetime] = None
@@ -890,20 +947,64 @@ class FortressDefenseCog(commands.Cog):
     # ── 公開 API（供排程呼叫）─────────────────────────────
 
     async def start_battle(self, trends: list):
-        """開始新一輪戰鬥，發送戰鬥 Embed 到指定頻道"""
-        state = fs.start_new_battle(trends)
+        """相容舊呼叫：若有當日戰役就追加波次，否則開新的一天。"""
+        current_state = fs.get_current_battle()
+        now = datetime.now(TW_TZ)
+        is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d") or bool(current_state.settled_at)
+        await self.start_or_update_battle(trends, scheduled_at=now, new_day=is_new_day)
+
+    async def _delete_message_if_exists(self, channel: discord.abc.Messageable, message_id: Optional[int], state_clearer=None):
+        if not message_id:
+            return
+        try:
+            message = await channel.fetch_message(message_id)
+            await message.delete()
+        except discord.NotFound:
+            pass
+        except discord.Forbidden:
+            log.warning(f"[Fortress] 無權限刪除訊息 {message_id}")
+        except Exception as exc:
+            log.warning(f"[Fortress] 刪除訊息失敗 {message_id}: {exc}")
+        finally:
+            if state_clearer:
+                state_clearer()
+
+    async def start_or_update_battle(self, trends: list, scheduled_at: Optional[datetime] = None, new_day: bool = False):
+        """08:00 開新戰役，其餘時段將趨勢作為新波次追加到同一則戰況 Embed。"""
+        battle_time = scheduled_at or datetime.now(TW_TZ)
 
         channel = self.bot.get_channel(self._battle_channel_id)
         if not channel:
             log.warning(f"[Fortress] 找不到頻道 {self._battle_channel_id}")
             return
 
+        if new_day:
+            await self._delete_message_if_exists(channel, self._settlement_message_id, _clear_settlement_message_state)
+            self._settlement_message_id = None
+            await self._delete_message_if_exists(channel, self._battle_message_id, _clear_battle_message_state)
+            self._battle_message_id = None
+            state = fs.start_new_battle(trends, started_at=battle_time)
+        else:
+            state = fs.append_wave(trends, started_at=battle_time)
+
         embed = build_battle_embed(state, self.bot)
         view = FortressEnemyView(self)
+        if self._battle_message_id:
+            try:
+                msg = await channel.fetch_message(self._battle_message_id)
+                await msg.edit(embed=embed, view=view)
+                log.info(f"[Fortress] 戰鬥 Embed 已更新 msg={msg.id}, new_day={new_day}, wave={state.current_wave_number}")
+                return
+            except discord.NotFound:
+                self._battle_message_id = None
+                _clear_battle_message_state()
+            except Exception as exc:
+                log.warning(f"[Fortress] 編輯既有戰鬥 Embed 失敗，改為重發: {exc}")
+
         msg = await channel.send(embed=embed, view=view)
         self._battle_message_id = msg.id
         _save_battle_message_state(msg.id)
-        log.info(f"[Fortress] 戰鬥 Embed 發送成功 msg={msg.id}")
+        log.info(f"[Fortress] 戰鬥 Embed 發送成功 msg={msg.id}, new_day={new_day}, wave={state.current_wave_number}")
 
     async def _start_battle_from_trends(self) -> tuple[bool, str, int]:
         """抓取趨勢並啟動戰鬥，供 slash 與文字指令共用。"""
@@ -923,7 +1024,10 @@ class FortressDefenseCog(commands.Cog):
                 log.warning("[Fortress] 手動開戰失敗：趨勢資料為空")
                 return False, "無法取得趨勢資料，請稍後再試", 0
 
-            await self.start_battle(trends_data)
+            current_state = fs.get_current_battle()
+            now = datetime.now(TW_TZ)
+            is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d") or bool(current_state.settled_at)
+            await self.start_or_update_battle(trends_data, scheduled_at=now, new_day=is_new_day)
             log.info(f"[Fortress] 手動開戰成功，敵人數={len(trends_data)}")
             return True, "堡壘保衛戰已手動啟動！", len(trends_data)
         except asyncio.TimeoutError:
@@ -934,7 +1038,10 @@ class FortressDefenseCog(commands.Cog):
             if not trends_data:
                 return False, "取得趨勢資料逾時，且沒有可用快取", 0
 
-            await self.start_battle(trends_data)
+            current_state = fs.get_current_battle()
+            now = datetime.now(TW_TZ)
+            is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d") or bool(current_state.settled_at)
+            await self.start_or_update_battle(trends_data, scheduled_at=now, new_day=is_new_day)
             return True, "趨勢來源逾時，已用快取/備援資料啟動堡壘戰。", len(trends_data)
         except Exception as e:
             log.exception(f"[Fortress] 手動開戰失敗: {e}")
@@ -961,17 +1068,12 @@ class FortressDefenseCog(commands.Cog):
 
         channel = self.bot.get_channel(self._battle_channel_id)
         if channel:
+            await self._delete_message_if_exists(channel, self._battle_message_id, _clear_battle_message_state)
+            self._battle_message_id = None
             embed = build_settlement_embed(result, self.bot)
-            await channel.send(embed=embed)
-
-            if self._battle_message_id:
-                try:
-                    msg = await channel.fetch_message(self._battle_message_id)
-                    state_final = fs.get_current_battle()
-                    if state_final:
-                        await msg.edit(embed=build_battle_embed(state_final, self.bot), view=None)
-                except Exception:
-                    pass
+            settlement_msg = await channel.send(embed=embed)
+            self._settlement_message_id = settlement_msg.id
+            _save_settlement_message_state(settlement_msg.id)
 
         _clear_battle_message_state()
 
@@ -1034,15 +1136,15 @@ class FortressDefenseCog(commands.Cog):
 
     # ── 結算排程 ──────────────────────────────────────────
 
-    @tasks.loop(minutes=10)
+    @tasks.loop(minutes=1)
     async def settle_task(self):
-        """每 10 分鐘檢查是否到結算時間"""
+        """每分鐘檢查是否到結算時間"""
         try:
             state = fs.get_current_battle()
             if not state:
                 return
 
-            if state.status == "victory" and not state.settled_at:
+            if state.status in ("victory", "defeat") and not state.settled_at:
                 await self._finalize_and_announce_battle()
                 return
 
@@ -1072,7 +1174,7 @@ class FortressDefenseCog(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def update_trends_scheduled(self):
-        """每分鐘檢查台灣時鐘，於 08/11/14/17/20/23 點自動開啟新一輪堡壘保衛戰。"""
+        """每分鐘檢查台灣時鐘，於 08/11/14/20/22 追加單日堡壘戰波次。"""
         try:
             now = datetime.now(TW_TZ)
             if now.hour not in FORTRESS_ALLOWED_HOURS:
@@ -1080,16 +1182,16 @@ class FortressDefenseCog(commands.Cog):
             if now.minute > 5:
                 return
 
-            scheduled_round_id = now.strftime("%Y-%m-%d-%H")
-            if self._last_started_schedule_round_id == scheduled_round_id:
+            scheduled_wave_id = now.strftime("%Y-%m-%d-%H")
+            if self._last_started_schedule_round_id == scheduled_wave_id:
                 return
 
             current_state = fs.get_current_battle()
-            if current_state and current_state.round_id == scheduled_round_id:
-                self._last_started_schedule_round_id = scheduled_round_id
+            if current_state and current_state.current_wave_id == scheduled_wave_id:
+                self._last_started_schedule_round_id = scheduled_wave_id
                 return
 
-            if current_state and current_state.status == "victory" and not current_state.settled_at:
+            if current_state and current_state.status in ("victory", "defeat") and not current_state.settled_at:
                 await self._finalize_and_announce_battle()
 
             log.info(f"[Fortress] ⏰ 趨勢排程啟動 {now.strftime('%H:%M %Z')}")
@@ -1113,9 +1215,10 @@ class FortressDefenseCog(commands.Cog):
                 log.warning("[Fortress] ⚠️ 取得趨勢資料失敗，跳過本輪")
                 return
 
-            await self.start_battle(trends_data)
-            self._last_started_schedule_round_id = scheduled_round_id
-            log.info(f"[Fortress] ✅ 新一輪堡壘保衛戰已開啟（{len(trends_data)} 個趨勢）")
+            is_new_day = now.hour == 8
+            await self.start_or_update_battle(trends_data, scheduled_at=now, new_day=is_new_day)
+            self._last_started_schedule_round_id = scheduled_wave_id
+            log.info(f"[Fortress] ✅ 單日堡壘戰已更新（wave_id={scheduled_wave_id}, 趨勢數={len(trends_data)}）")
 
         except Exception as e:
             log.error(f"[Fortress] 趨勢排程出錯: {e}")
@@ -1220,10 +1323,10 @@ class FortressDefenseCog(commands.Cog):
 
     # ── 管理員手動開戰 ────────────────────────────────────
 
-    @app_commands.command(name="fortress_admin_start", description="[管理員] 立即抓取趨勢並開啟新一輪堡壘保衛戰")
+    @app_commands.command(name="fortress_admin_start", description="[管理員] 立即抓取趨勢並建立新戰役或追加新波次")
     @app_commands.default_permissions(administrator=True)
     async def fortress_admin_start(self, interaction: discord.Interaction):
-        """管理員手動觸發堡壘保衛戰（補發用）"""
+        """管理員手動觸發堡壘保衛戰（補發或手動追加波次）"""
         log.info(f"[Fortress] slash /fortress_admin_start invoked by {interaction.user.id}")
         await interaction.response.defer(ephemeral=True)
         success, msg, count = await self._start_battle_from_trends()
