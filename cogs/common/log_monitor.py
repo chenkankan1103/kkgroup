@@ -62,6 +62,28 @@ _ADMIN_USER_ID:    int = int(os.getenv("ADMIN_USER_ID",       "0"))
 _ADMIN_ROLE_ID:    int = int(os.getenv("ADMIN_ROLE_ID",       "0"))
 _ADMIN_ROLE:       str = os.getenv("ADMIN_ROLE_NAME", "管理員")
 _LOGMONITOR_THREAD_NAME = os.getenv("LOGMONITOR_THREAD_NAME", "🤖 Bot 偵錯流程總覽")
+_LOGMONITOR_ERRORS_THREAD_NAME = os.getenv("LOGMONITOR_ERRORS_THREAD_NAME", "🚨 Bot 錯誤紀錄")
+_LOGMONITOR_ANALYSIS_THREAD_NAME = os.getenv("LOGMONITOR_ANALYSIS_THREAD_NAME", "🧠 GitHub Debug 分析")
+_LOGMONITOR_HEAL_THREAD_NAME = os.getenv("LOGMONITOR_HEAL_THREAD_NAME", "🛠️ 自癒處理結果")
+
+_THREAD_ENV_KEYS = {
+    "panel": "LOGMONITOR_PANEL_THREAD_ID",
+    "errors": "LOGMONITOR_ERRORS_THREAD_ID",
+    "analysis": "LOGMONITOR_ANALYSIS_THREAD_ID",
+    "heal": "LOGMONITOR_HEAL_THREAD_ID",
+}
+_THREAD_NAMES = {
+    "panel": _LOGMONITOR_THREAD_NAME,
+    "errors": _LOGMONITOR_ERRORS_THREAD_NAME,
+    "analysis": _LOGMONITOR_ANALYSIS_THREAD_NAME,
+    "heal": _LOGMONITOR_HEAL_THREAD_NAME,
+}
+_THREAD_STARTERS = {
+    "panel": "🤖 LogMonitor 固定控制面板。這裡保留按鈕與流程入口。",
+    "errors": "🚨 這裡只記錄 LogMonitor 偵測到的原始錯誤與清空紀錄。",
+    "analysis": "🧠 這裡只記錄 GitHub Debug 送交與分析回寫結果。",
+    "heal": "🛠️ 這裡只記錄 Auto AI Fix / 自癒回寫結果。",
+}
 
 # 通知頻道優先順序：LOG_CHANNEL_ID > STAFF_ID_CHANNEL_ID > ADMIN_CHANNEL_ID
 _ALERT_CHANNEL_ID: int = _LOG_CHANNEL_ID or _STAFF_CHANNEL_ID or _ADMIN_CHANNEL_ID
@@ -166,35 +188,41 @@ def _load_message_state() -> Optional[int]:
         return None
 
 
-def _save_thread_state(thread_id: int):
+def _save_thread_state(slot: str, thread_id: int):
     try:
         env_file = os.path.join(parent_dir, ".env")
+        env_key = _THREAD_ENV_KEYS[slot]
 
         lines = []
         if os.path.exists(env_file):
             with open(env_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
 
-        lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_THREAD_ID=')]
-        lines.append(f"LOGMONITOR_THREAD_ID={thread_id}\n")
+        lines = [line for line in lines if not line.strip().startswith(f'{env_key}=')]
+        if slot == "panel":
+            lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_THREAD_ID=')]
+        lines.append(f"{env_key}={thread_id}\n")
 
         with open(env_file, 'w', encoding='utf-8') as f:
             f.writelines(lines)
 
-        logger.info(f"[LogMonitor] 已保存 thread ID 到 .env: {thread_id}")
+        logger.info(f"[LogMonitor] 已保存 {slot} thread ID 到 .env: {thread_id}")
     except Exception as e:
-        logger.error(f"[LogMonitor] 保存 thread ID 到 .env 失敗: {e}")
+        logger.error(f"[LogMonitor] 保存 {slot} thread ID 到 .env 失敗: {e}")
 
 
-def _load_thread_state() -> Optional[int]:
+def _load_thread_state(slot: str) -> Optional[int]:
     try:
-        thread_id = os.getenv("LOGMONITOR_THREAD_ID")
+        env_key = _THREAD_ENV_KEYS[slot]
+        thread_id = os.getenv(env_key)
+        if not thread_id and slot == "panel":
+            thread_id = os.getenv("LOGMONITOR_THREAD_ID")
         if thread_id:
-            logger.info(f"[LogMonitor] 已從 .env 載入 thread ID: {thread_id}")
+            logger.info(f"[LogMonitor] 已從 .env 載入 {slot} thread ID: {thread_id}")
             return int(thread_id)
         return None
     except Exception as e:
-        logger.error(f"[LogMonitor] 從 .env 載入 thread ID 失敗: {e}")
+        logger.error(f"[LogMonitor] 從 .env 載入 {slot} thread ID 失敗: {e}")
         return None
 
 
@@ -217,21 +245,24 @@ def _clear_message_state():
         logger.error(f"[LogMonitor] 從 .env 清除訊息 ID 失敗: {e}")
 
 
-def _clear_thread_state():
+def _clear_thread_state(slot: str):
     try:
         env_file = os.path.join(parent_dir, ".env")
+        env_key = _THREAD_ENV_KEYS[slot]
         if os.path.exists(env_file):
             with open(env_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
 
-            lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_THREAD_ID=')]
+            lines = [line for line in lines if not line.strip().startswith(f'{env_key}=')]
+            if slot == "panel":
+                lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_THREAD_ID=')]
 
             with open(env_file, 'w', encoding='utf-8') as f:
                 f.writelines(lines)
 
-            logger.info("[LogMonitor] 已從 .env 清除 thread ID")
+            logger.info(f"[LogMonitor] 已從 .env 清除 {slot} thread ID")
     except Exception as e:
-        logger.error(f"[LogMonitor] 從 .env 清除 thread ID 失敗: {e}")
+        logger.error(f"[LogMonitor] 從 .env 清除 {slot} thread ID 失敗: {e}")
 
 
 def _load_known_debugs() -> list[dict[str, str]]:
@@ -569,6 +600,7 @@ class LogMonitorEngine:
         self._active_incidents: list[dict[str, str]]              = []
         self._summary_message: Optional[discord.Message]          = None
         self._summary_thread: Optional[discord.Thread]            = None
+        self._thread_cache: dict[str, discord.Thread]             = {}
         self._message_lock = asyncio.Lock()
         self._analysis_sync_tasks: dict[str, asyncio.Task]        = {}
         self._known_debugs: list[dict[str, str]]                  = _load_known_debugs()
@@ -990,11 +1022,12 @@ class LogMonitorEngine:
             logger.warning(f"[LogMonitor] 無法取得通知頻道 {_ALERT_CHANNEL_ID}: {exc}")
             return None
 
-    async def _restore_summary_thread(self, forum_channel: discord.ForumChannel) -> Optional[discord.Thread]:
-        if self._summary_thread and getattr(self._summary_thread, "parent_id", None) == forum_channel.id:
-            return self._summary_thread
+    async def _restore_thread(self, forum_channel: discord.ForumChannel, slot: str) -> Optional[discord.Thread]:
+        cached_thread = self._thread_cache.get(slot)
+        if cached_thread and getattr(cached_thread, "parent_id", None) == forum_channel.id:
+            return cached_thread
 
-        thread_id = _load_thread_state()
+        thread_id = _load_thread_state(slot)
         if not thread_id:
             return None
 
@@ -1003,23 +1036,25 @@ class LogMonitorEngine:
             try:
                 thread = await self.bot.fetch_channel(thread_id)
             except discord.NotFound:
-                logger.info(f"[LogMonitor] 舊 thread {thread_id} 已不存在，將建立新 thread")
-                _clear_thread_state()
+                logger.info(f"[LogMonitor] {slot} 舊 thread {thread_id} 已不存在，將建立新 thread")
+                _clear_thread_state(slot)
                 return None
             except discord.Forbidden:
-                logger.warning(f"[LogMonitor] 沒有權限存取 thread {thread_id}")
-                _clear_thread_state()
+                logger.warning(f"[LogMonitor] 沒有權限存取 {slot} thread {thread_id}")
+                _clear_thread_state(slot)
                 return None
             except Exception as exc:
-                logger.warning(f"[LogMonitor] 恢復 thread {thread_id} 失敗: {exc}")
+                logger.warning(f"[LogMonitor] 恢復 {slot} thread {thread_id} 失敗: {exc}")
                 return None
 
         if not isinstance(thread, discord.Thread):
-            logger.warning(f"[LogMonitor] 恢復到的頻道 {thread_id} 不是 thread，忽略既有狀態")
-            _clear_thread_state()
+            logger.warning(f"[LogMonitor] 恢復到的 {slot} 頻道 {thread_id} 不是 thread，忽略既有狀態")
+            _clear_thread_state(slot)
             return None
 
-        self._summary_thread = thread
+        self._thread_cache[slot] = thread
+        if slot == "panel":
+            self._summary_thread = thread
         return thread
 
     async def _ensure_thread_writable(self, thread: discord.Thread):
@@ -1029,13 +1064,32 @@ class LogMonitorEngine:
             except Exception as exc:
                 logger.warning(f"[LogMonitor] 無法解除封存 thread {thread.id}: {exc}")
 
-    async def _resolve_history_channel(self, channel):
+    async def _create_history_thread(self, forum_channel: discord.ForumChannel, slot: str) -> discord.Thread:
+        thread, _ = await forum_channel.create_thread(
+            name=_THREAD_NAMES[slot],
+            content=_THREAD_STARTERS[slot],
+        )
+        self._thread_cache[slot] = thread
+        _save_thread_state(slot, thread.id)
+        logger.info(f"[LogMonitor] ✅ 已在論壇頻道建立 {slot} thread: {thread.id}")
+        return thread
+
+    async def _ensure_aux_threads(self, forum_channel: discord.ForumChannel):
+        for slot in ("errors", "analysis", "heal"):
+            thread = await self._restore_thread(forum_channel, slot)
+            if not thread:
+                await self._create_history_thread(forum_channel, slot)
+
+    async def _resolve_history_channel(self, channel, slot: str):
         target_channel = channel
         if isinstance(channel, discord.ForumChannel):
-            thread = await self._restore_summary_thread(channel)
+            thread = await self._restore_thread(channel, slot)
             if not thread:
-                await self._upsert_summary_message(channel)
-                thread = self._summary_thread
+                if slot == "panel":
+                    await self._upsert_summary_message(channel)
+                    thread = self._summary_thread
+                else:
+                    thread = await self._create_history_thread(channel, slot)
             if thread:
                 await self._ensure_thread_writable(thread)
                 target_channel = thread
@@ -1043,14 +1097,15 @@ class LogMonitorEngine:
 
     async def _create_summary_thread(self, forum_channel: discord.ForumChannel, embed: discord.Embed, view):
         thread, message = await forum_channel.create_thread(
-            name=_LOGMONITOR_THREAD_NAME,
-            content="🤖 LogMonitor 固定控制面板。後續偵錯事件、GitHub 分析、自癒結果都會另外追加在這個 thread，保留完整歷史。",
+            name=_THREAD_NAMES["panel"],
+            content=_THREAD_STARTERS["panel"],
             embed=embed,
             view=view,
         )
+        self._thread_cache["panel"] = thread
         self._summary_thread = thread
         self._summary_message = message
-        _save_thread_state(thread.id)
+        _save_thread_state("panel", thread.id)
         _save_message_state(message.id)
         logger.info(f"[LogMonitor] ✅ 已在論壇頻道建立流程 thread: {thread.id}")
         return thread, message
@@ -1077,7 +1132,7 @@ class LogMonitorEngine:
 
             target_channel = channel
             if isinstance(channel, discord.ForumChannel):
-                thread = await self._restore_summary_thread(channel)
+                thread = await self._restore_thread(channel, "panel")
                 if not thread:
                     self._need_restore = False
                     return
@@ -1090,6 +1145,7 @@ class LogMonitorEngine:
                 self._summary_message = message
                 if isinstance(target_channel, discord.Thread):
                     self._summary_thread = target_channel
+                    self._thread_cache["panel"] = target_channel
                 logger.info(f"[LogMonitor] ✅ 成功恢復舊訊息引用: {message_id}")
                 await self._refresh_pipeline_status()
             except discord.NotFound:
@@ -1509,7 +1565,15 @@ class LogMonitorEngine:
         return embed
 
     async def _post_incident_history_message(self, channel, incident: dict[str, str], stage: str):
-        target_channel = await self._resolve_history_channel(channel)
+        slot = {
+            "detected": "errors",
+            "repeat": "errors",
+            "cleared": "errors",
+            "manual_debug": "analysis",
+            "github_sync": "analysis",
+            "heal_result": "heal",
+        }.get(stage, "errors")
+        target_channel = await self._resolve_history_channel(channel, slot)
         if not target_channel:
             return
         embed = self._build_incident_history_embed(incident, stage)
@@ -1536,12 +1600,14 @@ class LogMonitorEngine:
             target_channel = channel
 
             if isinstance(channel, discord.ForumChannel):
-                thread = await self._restore_summary_thread(channel)
+                thread = await self._restore_thread(channel, "panel")
                 if thread:
                     await self._ensure_thread_writable(thread)
                     target_channel = thread
+                    await self._ensure_aux_threads(channel)
                 else:
                     thread, message = await self._create_summary_thread(channel, embed, view)
+                    await self._ensure_aux_threads(channel)
                     if view:
                         view._channel = thread
                     self._summary_thread = thread
@@ -1550,7 +1616,8 @@ class LogMonitorEngine:
 
             if isinstance(target_channel, discord.Thread):
                 self._summary_thread = target_channel
-                _save_thread_state(target_channel.id)
+                self._thread_cache["panel"] = target_channel
+                _save_thread_state("panel", target_channel.id)
                 if view:
                     view._channel = target_channel
 
