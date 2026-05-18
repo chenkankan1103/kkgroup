@@ -95,6 +95,8 @@ jobs:
           import requests
 
           payload = json.loads(os.getenv('EVENT_PAYLOAD') or '{}')
+          if not isinstance(payload, dict):
+            payload = {}
           debug_type = os.getenv('DEBUG_TYPE', 'auto')
           log_content = (os.getenv('LOG_CONTENT') or '').strip()
           event_name = os.getenv('EVENT_NAME', '')
