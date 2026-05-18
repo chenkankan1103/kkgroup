@@ -20,6 +20,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from shared.utils.bot_status import build_discord_activity
+from shared.utils.mutual_rescue import ensure_mutual_rescue_monitor
 from shared.db.feature_usage import track_discord_interaction
 from status_dashboard import initialize_dashboard, load_message_ids, update_dashboard_logs
 import syslog
@@ -497,6 +498,8 @@ async def on_ready():
         # 啟動狀態更新任務
         if not update_status.is_running():
             update_status.start()
+
+        ensure_mutual_rescue_monitor(client, BOT_TYPE, log_func=file_log)
         
     except Exception as e:
         # 錯誤也使用單一 print

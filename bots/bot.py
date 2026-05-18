@@ -19,6 +19,7 @@ from discord.ext.commands import ExtensionError
 from datetime import datetime
 from dotenv import load_dotenv
 from shared.utils.bot_status import build_discord_activity
+from shared.utils.mutual_rescue import ensure_mutual_rescue_monitor
 from shared.db.feature_usage import track_discord_interaction
 from watchdog.events import FileSystemEventHandler
 import logging
@@ -690,6 +691,8 @@ async def on_ready():
         if not cleanup_expired_roles_loop.is_running():
             cleanup_expired_roles_loop.start()
             print("[SCHEDULER] ✅ 角色過期清理任務已啟動 (每 1 小時檢查一次)")
+
+        ensure_mutual_rescue_monitor(client, BOT_TYPE, log_func=file_log)
         
     except (ImportError, OSError, RuntimeError) as e:
         # 錯誤也使用單一 print
