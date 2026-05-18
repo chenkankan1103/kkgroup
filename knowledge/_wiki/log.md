@@ -4,6 +4,14 @@
 
 ## 2026-05-15
 
+## 2026-05-18
+
+- 將 LogMonitor / Auto AI Fix 延伸為 mutual-rescue self-healing agent：`bot`、`shopbot`、`uibot` 都會啟動 watchdog，偵測同伴 `systemd` 服務異常後自動派送 `repository_dispatch` 修復請求。
+- 實測確認 `git push -> webhook -> VM git pull -> restart bots` 仍正常，VM 已自動同步到 commit `d4094c3d`。
+- 實機驗證 mutual rescue：手動停止 `uibot.service` 後，`bot` 與 `shopbot` 都成功偵測到 `inactive`，並觸發 `Auto AI Fix repository_dispatch` run 與 `ai-heal-result-*` artifact。
+- 目前最後一段遠端修復仍被 GCP IAM 權限阻擋：`github-actions-vm-repair@kkgroup.iam.gserviceaccount.com` 缺少對 `862486124810-compute@developer.gserviceaccount.com` 的 `roles/iam.serviceAccountUser`，因此 GitHub Actions 無法透過 `gcloud compute ssh` 實際重啟 VM 服務。
+- 已修正 bot 端 mutual rescue 在 systemd 環境下找不到 `systemctl` / `journalctl` 的問題，改用 `shutil.which()` 與 `/usr/bin/*` 回退路徑。
+
 - 建立 [AI 記憶與 VM 知識更新流程](concepts/ai-memory-and-vm-knowledge-pipeline.md)，把 VM 掃描、wiki 匯入、長期記憶與 AI prompt 串成單一管線。
 - 新增 `scripts/scan_vm_state.py`、`scripts/ingest_knowledge.py`、`scheduled_tasks/refresh_knowledge_base.py`，可在 VM 上每 24 小時更新一次知識庫。
 - 擴充 `shared/db/ai_memory.py`，讓知識條目保存來源路徑、metadata、related topics，供 AI 回答時引用。
