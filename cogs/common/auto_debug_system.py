@@ -48,6 +48,17 @@ def _infer_service_hint(error_logs: Dict[str, str]) -> str:
             return service
     return ""
 
+
+def _safe_stamp(value: str) -> str:
+    text = str(value or datetime.now().isoformat())
+    safe = []
+    for ch in text:
+        safe.append(ch if ch.isalnum() else "-")
+    compact = "".join(safe).strip("-")
+    while "--" in compact:
+        compact = compact.replace("--", "-")
+    return compact[:48] or "unknown-time"
+
 class AutoDebugSystem:
     def __init__(self):
         self.github_token = os.getenv("GITHUB_TOKEN") or os.getenv("DISCORD_GITHUB_TOKEN")
@@ -61,6 +72,76 @@ class AutoDebugSystem:
         self.last_error_time = {}
         self.error_threshold = 3  # 同類型錯誤觸發閾值
         self.http_timeout = aiohttp.ClientTimeout(total=15)
+        self.github_mode = os.getenv("AUTO_DEBUG_GITHUB_MODE", "escalate").strip().lower()
+        self.escalate_severity = os.getenv("AUTO_DEBUG_ESCALATE_SEVERITY", "high").strip().lower()
+
+    async def analyze_locally(self, error_data: Dict) -> Dict:
+        """先在本地/VM 直接做 AI 分析，避免把 GitHub Actions 當成主路徑。"""
+        errors = error_data.get("errors") or {}
+        severity = str(error_data.get("severity") or "unknown").lower()
+        joined_logs = "\n\n".join(f"[{service}]\n{message}" for service, message in errors.items())
+
+        fallback = {
+            "root_cause": "尚未取得 AI 分析結果",
+            "impact": "已檢測到服務異常，需要人工確認或進一步升級處理",
+            "fix_steps": ["檢查最近 journalctl/systemd 日誌", "必要時重啟異常服務"],
+            "prevention": ["補充錯誤監控與本地分析紀錄"],
+            "confidence": 0.2,
+            "analysis_source": "fallback",
+            "analysis_status": "unavailable",
+        }
+
+        try:
+            from utils.nvidia_ai import analyze_github_error
+
+            system_info = (
+                "local auto debug / source=auto_debug_system / "
+                f"severity={severity} / services={', '.join(errors.keys()) or 'unknown'}"
+            )
+            analysis = await analyze_github_error(joined_logs[:6000], system_info)
+            if isinstance(analysis, dict) and analysis:
+                analysis.setdefault("analysis_source", "local_nvidia")
+                analysis.setdefault("analysis_status", "completed")
+                return analysis
+        except Exception as exc:
+            logger.warning(f"本地 AI 分析失敗，將使用 fallback 摘要: {type(exc).__name__}: {exc}")
+            fallback["impact"] = str(exc)
+
+        return fallback
+
+    def should_escalate_to_github(self, error_data: Dict, local_analysis: Optional[Dict]) -> bool:
+        """GitHub Actions 只做升級處理，而不是主處理路徑。"""
+        if self.github_mode == "off":
+            return False
+        if self.github_mode == "always":
+            return bool(self.github_token)
+
+        severity = str(error_data.get("severity") or "unknown").lower()
+        analysis_status = str((local_analysis or {}).get("analysis_status") or "").lower()
+        if analysis_status != "completed":
+            return bool(self.github_token)
+        return severity == self.escalate_severity and bool(self.github_token)
+
+    def save_local_artifact(self, error_data: Dict, local_analysis: Dict, escalated: bool) -> str:
+        """將本地分析結果寫入 archive，方便 VM 上直接追查。"""
+        incident_signature = _build_incident_signature(error_data.get("errors") or {}, error_data.get("severity", "unknown"))
+        incident_key = _artifact_key_from_signature(incident_signature)
+        timestamp = _safe_stamp(error_data.get("timestamp"))
+        artifact_dir = os.path.join("archive", "auto_debug_reports")
+        os.makedirs(artifact_dir, exist_ok=True)
+        artifact_path = os.path.join(artifact_dir, f"{timestamp}-{incident_key}.json")
+        payload = {
+            "timestamp": error_data.get("timestamp"),
+            "severity": error_data.get("severity"),
+            "errors": error_data.get("errors"),
+            "incident_signature": incident_signature,
+            "incident_key": incident_key,
+            "github_escalated": escalated,
+            "local_analysis": local_analysis,
+        }
+        with open(artifact_path, "w", encoding="utf-8") as artifact_file:
+            json.dump(payload, artifact_file, ensure_ascii=False, indent=2)
+        return artifact_path
         
     async def check_system_errors(self) -> Optional[Dict]:
         """檢查系統錯誤"""
@@ -169,7 +250,7 @@ class AutoDebugSystem:
             logger.error(f"觸發 GitHub Actions 時發生異常: {e}")
             return False
     
-    async def send_notification(self, message: str, severity: str = "medium"):
+    async def send_notification(self, message: str, severity: str = "medium", status_text: str = "已完成本地分析"):
         """發送通知到 Discord"""
         if not self.webhook_url:
             return
@@ -183,7 +264,7 @@ class AutoDebugSystem:
                 "fields": [
                     {"name": "⏰ 檢測時間", "value": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "inline": True},
                     {"name": "🚨 嚴重程度", "value": severity.upper(), "inline": True},
-                    {"name": "🔄 處理狀態", "value": "已觸發 GitHub Actions", "inline": True}
+                    {"name": "🔄 處理狀態", "value": status_text, "inline": True}
                 ]
             }]
         }
@@ -209,15 +290,28 @@ class AutoDebugSystem:
                 
                 if error_data:
                     logger.warning(f"🔥 檢測到系統錯誤: {error_data}")
+                    local_analysis = await self.analyze_locally(error_data)
+                    should_escalate = self.should_escalate_to_github(error_data, local_analysis)
+                    artifact_path = self.save_local_artifact(error_data, local_analysis, should_escalate)
+                    status_text = "已完成本地分析"
+                    if should_escalate:
+                        status_text = "已完成本地分析，並升級至 GitHub Actions"
                     
                     # 發送通知
                     await self.send_notification(
-                        f"檢測到系統錯誤，已自動觸發 GitHub Actions 進行 AI 分析和修復\n\n錯誤詳情:\n{json.dumps(error_data['errors'], ensure_ascii=False, indent=2)}",
-                        error_data["severity"]
+                        (
+                            "檢測到系統錯誤，已先在本地完成 AI 分析。\n\n"
+                            f"錯誤詳情:\n{json.dumps(error_data['errors'], ensure_ascii=False, indent=2)}\n\n"
+                            f"本地分析:\n{json.dumps(local_analysis, ensure_ascii=False, indent=2)}\n\n"
+                            f"本地紀錄: {artifact_path}"
+                        ),
+                        error_data["severity"],
+                        status_text=status_text,
                     )
                     
-                    # 觸發 GitHub Actions
-                    await self.trigger_github_action(error_data)
+                    # 僅在需要升級時才觸發 GitHub Actions
+                    if should_escalate:
+                        await self.trigger_github_action(error_data)
                     
                     # 等待一段時間避免重複觸發
                     await asyncio.sleep(300)  # 5分鐘
@@ -231,20 +325,10 @@ class AutoDebugSystem:
 
 async def main():
     """主函數"""
-    # 檢查環境變數
-    required_vars = ["GITHUB_TOKEN 或 DISCORD_GITHUB_TOKEN"]
-    has_github_token = bool(os.getenv("GITHUB_TOKEN") or os.getenv("DISCORD_GITHUB_TOKEN"))
-    missing_vars = [] if has_github_token else required_vars
-    
-    if missing_vars:
-        logger.error(f"❌ 缺少必要環境變數: {', '.join(missing_vars)}")
-        logger.error("請設置以下環境變數:")
-        for var in missing_vars:
-            logger.error(f"  export {var}=your_token_here")
-        return
-    
     # 啟動監控系統
     debug_system = AutoDebugSystem()
+    if not debug_system.github_token:
+        logger.info("未設置 GitHub token，auto debug 將以本地分析模式運行，不升級至 GitHub Actions")
     await debug_system.monitor_loop()
 
 if __name__ == "__main__":
