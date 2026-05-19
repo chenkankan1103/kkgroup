@@ -16,6 +16,38 @@ from typing import Optional, Dict, List
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+def _normalize_incident_signature(text: str) -> str:
+    normalized = " ".join((text or "").strip().split())
+    return normalized[:160] or "unknown-incident"
+
+
+def _build_incident_signature(error_logs: Dict[str, str], severity: str) -> str:
+    first_line = ""
+    for key, value in (error_logs or {}).items():
+        text = f"{key}: {value}".strip()
+        if text:
+            first_line = text.splitlines()[0]
+            break
+    return f"{severity}|{_normalize_incident_signature(first_line)}"
+
+
+def _artifact_key_from_signature(signature: str) -> str:
+    safe = []
+    for ch in signature.lower():
+        safe.append(ch if ch.isalnum() else "-")
+    compact = "".join(safe).strip("-")
+    while "--" in compact:
+        compact = compact.replace("--", "-")
+    return compact[:80] or "unknown-incident"
+
+
+def _infer_service_hint(error_logs: Dict[str, str]) -> str:
+    for service in (error_logs or {}).keys():
+        if service in {"bot.service", "shopbot.service", "uibot.service"}:
+            return service
+    return ""
+
 class AutoDebugSystem:
     def __init__(self):
         self.github_token = os.getenv("GITHUB_TOKEN") or os.getenv("DISCORD_GITHUB_TOKEN")
@@ -28,10 +60,15 @@ class AutoDebugSystem:
         )
         self.last_error_time = {}
         self.error_threshold = 3  # 同類型錯誤觸發閾值
+        self.http_timeout = aiohttp.ClientTimeout(total=15)
         
     async def check_system_errors(self) -> Optional[Dict]:
         """檢查系統錯誤"""
         try:
+            if os.name != "posix":
+                logger.info("目前環境不是 Linux/systemd，跳過本地服務健康檢查")
+                return None
+
             # 檢查服務狀態
             services = ["bot.service", "shopbot.service", "uibot.service"]
             error_logs = {}
@@ -100,9 +137,14 @@ class AutoDebugSystem:
                     "severity": error_data["severity"],
                     "error_logs": error_data["errors"],
                     "error_data": error_data,
-                    "source": "auto_debug_system"
+                    "source": "auto_debug_system",
+                    "service_hint": _infer_service_hint(error_data["errors"]),
+                    "incident_signature": _build_incident_signature(error_data["errors"], error_data["severity"]),
                 }
             }
+            payload["client_payload"]["incident_key"] = _artifact_key_from_signature(
+                payload["client_payload"]["incident_signature"]
+            )
             
             headers = {
                 "Authorization": f"token {self.github_token}",
@@ -113,7 +155,7 @@ class AutoDebugSystem:
             # 觸發 repository_dispatch 事件
             url = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}/dispatches"
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=self.http_timeout) as session:
                 async with session.post(url, json=payload, headers=headers) as response:
                     if response.status == 204:
                         logger.info("✅ 成功觸發 GitHub Actions")
@@ -147,7 +189,7 @@ class AutoDebugSystem:
         }
         
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=self.http_timeout) as session:
                 async with session.post(self.webhook_url, json=webhook_data) as response:
                     if response.status == 204:
                         logger.info("✅ Discord 通知發送成功")
@@ -190,8 +232,9 @@ class AutoDebugSystem:
 async def main():
     """主函數"""
     # 檢查環境變數
-    required_vars = ["GITHUB_TOKEN"]
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    required_vars = ["GITHUB_TOKEN 或 DISCORD_GITHUB_TOKEN"]
+    has_github_token = bool(os.getenv("GITHUB_TOKEN") or os.getenv("DISCORD_GITHUB_TOKEN"))
+    missing_vars = [] if has_github_token else required_vars
     
     if missing_vars:
         logger.error(f"❌ 缺少必要環境變數: {', '.join(missing_vars)}")

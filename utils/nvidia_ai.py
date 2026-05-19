@@ -254,13 +254,15 @@ async def call_nvidia_ai(
     messages: List[Dict[str, str]], 
     temperature: float = 0.3,
     max_tokens: int = 2000,
-    model: str = None
+    model: str = None,
+    timeout: Optional[int] = None,
 ) -> Optional[str]:
     """
     簡便函數：調用 NVIDIA AI
     """
     client = get_nvidia_client()
-    return await client.call_api(messages, temperature, max_tokens, model)
+    kwargs = {"timeout": timeout} if timeout is not None else {}
+    return await client.call_api(messages, temperature, max_tokens, model, **kwargs)
 
 
 async def analyze_github_error(

@@ -14,6 +14,8 @@
 - 詳細使用統計
 """
 
+import asyncio
+import json
 import os
 import time
 import logging
@@ -39,6 +41,8 @@ GROQ_KEY      = os.getenv("GROQ_API_KEY")
 GROQ_MODEL    = os.getenv("GROQ_API_MODEL", "groq/llama-3.3-70b-versatile")
 SAMBA_KEY     = os.getenv("SAMBA_API_KEY")
 SAMBA_MODEL   = os.getenv("SAMBA_API_MODEL", "sambanova/Meta-Llama-3.1-8B-Instruct")
+LITELLM_TIMEOUT_SEC = int(os.getenv("AI_LITELLM_TIMEOUT", "12"))
+LITELLM_MAX_RETRIES = int(os.getenv("AI_LITELLM_MAX_RETRIES", "1"))
 
 # LiteLLM 模型配置
 MODEL_LIST = [
@@ -113,8 +117,8 @@ class LiteLLMClient:
         messages: List[Dict[str, str]],
         tools_spec: Optional[List[Dict]] = None,
         *,
-        timeout: int = 30,
-        max_retries: int = 3,
+        timeout: int = LITELLM_TIMEOUT_SEC,
+        max_retries: int = LITELLM_MAX_RETRIES,
     ) -> Optional[Dict]:
         """異步完成 AI 請求，支援工具調用"""
         
@@ -290,7 +294,10 @@ class LLMClient:
             role = content["role"]
             parts = content.get("parts", [])
             if parts and "text" in parts[0]:
-                messages.append({"role": role, "content": parts[0]["text"]})
+                messages.append({
+                    "role": "assistant" if role == "model" else "user",
+                    "content": parts[0]["text"],
+                })
             elif parts and "functionCall" in parts[0]:
                 # 處理工具調用
                 fc = parts[0]["functionCall"]
@@ -302,13 +309,31 @@ class LLMClient:
         response = await self._litellm_client.acomplete(messages, tools_spec)
         
         if response:
-            # 轉換回原始格式
-            return {
-                "candidates": [{
+            tool_calls = response.get("tool_calls") or []
+            if tool_calls:
+                first_call = tool_calls[0]
+                function_data = getattr(first_call, "function", None)
+                arguments = getattr(function_data, "arguments", "{}") if function_data else "{}"
+                try:
+                    parsed_args = json.loads(arguments) if isinstance(arguments, str) else (arguments or {})
+                except json.JSONDecodeError:
+                    parsed_args = {}
+
+                return {
                     "content": {
-                        "parts": [{"text": response["content"]}]
+                        "parts": [{
+                            "functionCall": {
+                                "name": getattr(function_data, "name", ""),
+                                "args": parsed_args,
+                            }
+                        }]
                     }
-                }]
+                }
+
+            return {
+                "content": {
+                    "parts": [{"text": response["content"]}]
+                }
             }
         
         return None
