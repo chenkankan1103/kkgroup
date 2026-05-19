@@ -34,7 +34,8 @@ jobs:
     
     - name: 安裝依賴
       run: |
-        pip install requests aiohttp python-dotenv pytz
+        python -m pip install --upgrade pip --disable-pip-version-check
+        python -m pip install --disable-pip-version-check --no-input --retries 5 --timeout 30 requests aiohttp python-dotenv pytz
     
     - name: 測試 NVIDIA API
       env:
@@ -61,7 +62,7 @@ jobs:
             client = NVIDIAAIClient()
             print(f"✅ 客戶端初始化成功")
             print(f"🤖 可用模型: {list(client.models.keys())}")
-          print(f"⏱️ NVIDIA timeout: {client.timeout}s")
+            print(f"⏱️ NVIDIA timeout: {client.timeout}s")
             
             async def test_api():
                 # 測試基本調用
@@ -70,15 +71,15 @@ jobs:
                 ]
                 
                 print("🧪 測試 deepseek-v4-pro 模型...")
-            response = await asyncio.wait_for(
-              client.call_api(
-                messages,
-                model="deepseek-ai/deepseek-v4-pro",
-                max_tokens=100,
-                timeout=client.timeout,
-              ),
-              timeout=client.timeout + 5,
-            )
+                response = await asyncio.wait_for(
+                    client.call_api(
+                        messages,
+                        model="deepseek-ai/deepseek-v4-pro",
+                        max_tokens=100,
+                        timeout=client.timeout,
+                    ),
+                    timeout=client.timeout + 5,
+                )
                 
                 if response:
                     print(f"✅ API 調用成功!")
@@ -93,10 +94,10 @@ jobs:
             
             if result:
                 print("🎉 NVIDIA API 測試完全成功!")
-              sys.exit(0)
+                sys.exit(0)
             else:
                 print("❌ NVIDIA API 測試失敗")
-              sys.exit(1)
+                sys.exit(1)
                 
         except ImportError as e:
             print(f"❌ 導入失敗: {e}")
@@ -106,7 +107,7 @@ jobs:
                 print(f"  - {item}")
             sys.exit(1)
             
-          except asyncio.TimeoutError:
+        except asyncio.TimeoutError:
             print("❌ 測試過程逾時，已主動中止")
             sys.exit(1)
         except Exception as e:
