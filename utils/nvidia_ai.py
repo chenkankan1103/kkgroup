@@ -22,7 +22,7 @@ class NVIDIAAIClient:
     def __init__(self):
         self.api_key = os.getenv("NVIDIA_API_KEY")
         self.base_url = "https://integrate.api.nvidia.com/v1"
-        self.timeout = int(os.getenv("NVIDIA_API_TIMEOUT", "120"))
+        self.timeout = int(os.getenv("NVIDIA_API_TIMEOUT", "45"))
         
         # 推薦的強大模型，適用於 debug 和代碼分析
         self.models = {
