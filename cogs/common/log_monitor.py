@@ -399,6 +399,25 @@ def _extract_relevant_lines(blob: str) -> list[str]:
     return relevant_lines
 
 
+def _extract_relevant_journal_lines(raw_line: str) -> list[str]:
+    raw_line = raw_line.strip()
+    if not raw_line:
+        return []
+
+    try:
+        payload = json.loads(raw_line)
+    except Exception:
+        return _extract_relevant_lines(raw_line)
+
+    message = str(payload.get("MESSAGE") or "").strip()
+    if not message:
+        return []
+
+    unit = str(payload.get("_SYSTEMD_UNIT") or "").strip()
+    enriched = f"{unit}: {message}" if unit else message
+    return _extract_relevant_lines(enriched)
+
+
 def _is_benign_yfinance_line(line: str) -> bool:
     return bool(re.search(r"\[yfinance\].*possibly delisted; no price data found", line, re.IGNORECASE))
 
@@ -1189,7 +1208,7 @@ class LogMonitorEngine:
         cmd = (
             ["/usr/bin/journalctl"]
             + [arg for svc in _SERVICES for arg in ("-u", svc)]
-            + ["-f", "-n", "0", "--output=cat", "--no-pager"]
+            + ["-f", "-n", "0", "--output=json", "--no-pager"]
         )
         # 設定 UTF-8 locale，避免 subprocess 讀到亂碼
         env = os.environ.copy()
@@ -1205,7 +1224,7 @@ class LogMonitorEngine:
 
         async for raw in self._proc.stdout:
             decoded = raw.decode("utf-8", errors="replace").rstrip()
-            for line in _extract_relevant_lines(decoded):
+            for line in _extract_relevant_journal_lines(decoded):
                 self._on_error_line(line)
 
         await self._proc.wait()
