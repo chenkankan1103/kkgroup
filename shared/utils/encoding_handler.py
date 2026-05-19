@@ -8,6 +8,7 @@ import sys
 import os
 import locale
 import logging
+import json
 from typing import Optional, Union
 from datetime import datetime
 import pytz
@@ -221,6 +222,21 @@ def print_safe(message: str, end: str = '\n'):
             sys.stdout.buffer.flush()
         except Exception as e:
             print(f"[ERROR] 無法輸出: {e}", file=sys.stderr, flush=True)
+
+
+def json_dumps_console_safe(data, indent: Optional[int] = 2) -> str:
+    """
+    依照目前 stdout 編碼決定 JSON 是否保留原始 Unicode。
+    在 gcloud/plink/PowerShell 等非 UTF-8 終端中，自動退回 ASCII escape，避免中文亂碼。
+    """
+    encoding = (getattr(sys.stdout, 'encoding', None) or '').lower()
+    keep_unicode = 'utf' in encoding
+    return json.dumps(data, ensure_ascii=not keep_unicode, indent=indent, default=str)
+
+
+def print_json_safe(data, indent: Optional[int] = 2, end: str = '\n'):
+    """安全輸出 JSON 到終端，避免非 UTF-8 終端出現亂碼。"""
+    print_safe(json_dumps_console_safe(data, indent=indent), end=end)
 
 
 def get_taiwan_time(fmt: str = '%Y-%m-%d %H:%M:%S') -> str:
