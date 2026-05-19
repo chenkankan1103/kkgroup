@@ -24,16 +24,17 @@ class NVIDIAAIClient:
         self.base_url = "https://integrate.api.nvidia.com/v1"
         self.timeout = int(os.getenv("NVIDIA_API_TIMEOUT", "45"))
         
-        # 推薦的強大模型，適用於 debug 和代碼分析
+        # 推薦的強大模型，適用於 debug 和代碼分析。
+        # 2026-05-19 VM 實測：nemotron-super 可穩定回應；deepseek-v4-pro / flash 會 timeout。
         self.models = {
-            "deepseek-v4-pro": "deepseek-ai/deepseek-v4-pro",  # 最強的編程模型
-            "nemotron-super": "nvidia/nemotron-3-super-120b-a12b",  # NVIDIA 最強模型
+            "nemotron-super": "nvidia/nemotron-3-super-120b-a12b",  # 目前最穩定的強力 debug 模型
             "mistral-medium": "mistralai/mistral-medium-3.5-128b",  # 平衡性能
-            "deepseek-flash": "deepseek-ai/deepseek-v4-flash"  # 快速版本
+            "deepseek-v4-pro": "deepseek-ai/deepseek-v4-pro",  # 強模型，但目前 VM 上易 timeout
+            "deepseek-flash": "deepseek-ai/deepseek-v4-flash"  # 快速版本，但目前 VM 上易 timeout
         }
         
-        # 預設使用 deepseek-v4-pro（最強的編程模型）
-        self.model = os.getenv("NVIDIA_MODEL", "deepseek-ai/deepseek-v4-pro")
+        # 預設使用已在 VM 驗證可用的強力模型，避免 auto debug 長時間卡在 timeout。
+        self.model = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b")
         
         if not self.api_key:
             print("❌ NVIDIA_API_KEY 未設置")
