@@ -12,6 +12,7 @@ import json
 import subprocess
 from datetime import datetime, timedelta
 import re
+from typing import Dict
 
 
 def _normalize_incident_signature(text):
@@ -28,6 +29,17 @@ def _artifact_key_from_signature(signature):
         compact = compact.replace("--", "-")
     return compact[:80] or "unknown-incident"
 
+
+def _safe_stamp(value):
+    text = str(value or datetime.now().isoformat())
+    safe = []
+    for ch in text:
+        safe.append(ch if ch.isalnum() else "-")
+    compact = "".join(safe).strip("-")
+    while "--" in compact:
+        compact = compact.replace("--", "-")
+    return compact[:48] or "unknown-time"
+
 class AutoErrorDetector:
     def __init__(self):
         self.github_token = os.getenv("GITHUB_TOKEN")
@@ -36,12 +48,75 @@ class AutoErrorDetector:
         self.webhook_url = os.getenv("DISCORD_WEBHOOK_URL") or os.getenv("DISCORD_WEBHOOK")
         self.last_error_time = {}
         self.http_timeout = aiohttp.ClientTimeout(total=15)
+        self.github_mode = os.getenv("AUTO_DEBUG_GITHUB_MODE", "escalate").strip().lower()
+        self.escalate_severity = os.getenv("AUTO_DEBUG_ESCALATE_SEVERITY", "high").strip().lower()
         self.error_patterns = {
             "name_self_error": r"name\s*['\"]\s*self\s*['\"]\s*is\s*not\s*defined",
             "syntax_error": r"SyntaxError",
             "import_error": r"ImportError",
             "attribute_error": r"AttributeError"
         }
+
+    async def analyze_locally(self, error_data: Dict) -> Dict:
+        """本地先做摘要分析，把 GitHub Actions 降級成第二層。"""
+        log_text = str(error_data.get("message") or "")
+        fallback = {
+            "root_cause": f"檢測到 {error_data.get('type', 'unknown')} 類型錯誤",
+            "impact": "需要檢查對應日誌與相關程式碼位置",
+            "fix_steps": ["查看錯誤行附近代碼", "確認最近變更與部署內容"],
+            "prevention": ["增加該錯誤類型的測試或防呆"],
+            "confidence": 0.25,
+            "analysis_source": "fallback",
+            "analysis_status": "unavailable",
+        }
+
+        try:
+            from utils.nvidia_ai import analyze_github_error
+
+            system_info = (
+                "local auto debug / source=auto_error_detector / "
+                f"type={error_data.get('type', 'unknown')} / file={error_data.get('file', 'unknown')}"
+            )
+            analysis = await analyze_github_error(log_text[:4000], system_info)
+            if isinstance(analysis, dict) and analysis:
+                analysis.setdefault("analysis_source", "local_nvidia")
+                analysis.setdefault("analysis_status", "completed")
+                return analysis
+        except Exception as exc:
+            fallback["impact"] = str(exc)
+
+        return fallback
+
+    def should_escalate_to_github(self, error_data: Dict, local_analysis: Dict) -> bool:
+        if self.github_mode == "off":
+            return False
+        if self.github_mode == "always":
+            return bool(self.github_token)
+        if str((local_analysis or {}).get("analysis_status") or "").lower() != "completed":
+            return bool(self.github_token)
+        severity = "high" if error_data.get("type") in {"syntax_error", "import_error"} else "medium"
+        return severity == self.escalate_severity and bool(self.github_token)
+
+    def save_local_artifact(self, error_data: Dict, local_analysis: Dict, escalated: bool) -> str:
+        incident_signature = self._build_incident_signature(error_data)
+        incident_key = _artifact_key_from_signature(incident_signature)
+        timestamp = _safe_stamp(error_data.get("timestamp"))
+        artifact_dir = os.path.join("archive", "auto_debug_reports")
+        os.makedirs(artifact_dir, exist_ok=True)
+        artifact_path = os.path.join(artifact_dir, f"{timestamp}-{incident_key}.json")
+        payload = {
+            "timestamp": error_data.get("timestamp"),
+            "type": error_data.get("type"),
+            "file": error_data.get("file"),
+            "message": error_data.get("message"),
+            "incident_signature": incident_signature,
+            "incident_key": incident_key,
+            "github_escalated": escalated,
+            "local_analysis": local_analysis,
+        }
+        with open(artifact_path, "w", encoding="utf-8") as artifact_file:
+            json.dump(payload, artifact_file, ensure_ascii=False, indent=2)
+        return artifact_path
         
     async def check_system_logs(self):
         """檢查系統日誌中的錯誤"""
@@ -236,6 +311,38 @@ class AutoErrorDetector:
         except Exception as e:
             print(f"❌ 發送 Discord 通知失敗: {e}")
     
+    async def send_local_analysis_notification(self, error_data: Dict, local_analysis: Dict, escalated: bool, artifact_path: str):
+        if not self.webhook_url:
+            return
+
+        try:
+            status_text = "已完成本地分析"
+            if escalated:
+                status_text = "已完成本地分析，並升級至 GitHub Actions"
+
+            webhook_data = {
+                "content": "🚨 **自動錯誤檢測**",
+                "embeds": [{
+                    "title": "檢測到系統錯誤",
+                    "description": (
+                        f"錯誤訊息: {error_data.get('message', '未知')}\n\n"
+                        f"本地分析: {json.dumps(local_analysis, ensure_ascii=False)}\n\n"
+                        f"本地紀錄: {artifact_path}"
+                    )[:4000],
+                    "color": 0xFF0000,
+                    "fields": [
+                        {"name": "🔍 錯誤類型", "value": error_data.get("type", "未知"), "inline": True},
+                        {"name": "📁 錯誤文件", "value": error_data.get("file", "未知"), "inline": True},
+                        {"name": "🤖 處理狀態", "value": status_text, "inline": True},
+                    ]
+                }]
+            }
+
+            async with aiohttp.ClientSession(timeout=self.http_timeout) as session:
+                await session.post(self.webhook_url, json=webhook_data)
+        except Exception as e:
+            print(f"❌ 發送本地分析通知失敗: {e}")
+
     async def monitor_loop(self):
         """監控循環"""
         print("🚀 自動錯誤檢測器啟動")
@@ -252,12 +359,12 @@ class AutoErrorDetector:
                     
                     for error in errors:
                         print(f"🔍 錯誤詳情: {error}")
-                        
-                        # 發送 Discord 通知
-                        await self.send_discord_notification(error)
-                        
-                        # 觸發 GitHub Actions 修復
-                        await self.trigger_github_action(error)
+                        local_analysis = await self.analyze_locally(error)
+                        should_escalate = self.should_escalate_to_github(error, local_analysis)
+                        artifact_path = self.save_local_artifact(error, local_analysis, should_escalate)
+                        await self.send_local_analysis_notification(error, local_analysis, should_escalate, artifact_path)
+                        if should_escalate:
+                            await self.trigger_github_action(error)
                         
                         # 等待一段時間避免重複觸發
                         await asyncio.sleep(30)
@@ -282,26 +389,21 @@ class AutoErrorDetector:
         print(f"🚨 單次檢查檢測到 {len(errors)} 個錯誤")
         for error in errors:
             print(f"🔍 錯誤詳情: {error}")
-            await self.send_discord_notification(error)
-            await self.trigger_github_action(error)
+            local_analysis = await self.analyze_locally(error)
+            should_escalate = self.should_escalate_to_github(error, local_analysis)
+            artifact_path = self.save_local_artifact(error, local_analysis, should_escalate)
+            await self.send_local_analysis_notification(error, local_analysis, should_escalate, artifact_path)
+            if should_escalate:
+                await self.trigger_github_action(error)
         return len(errors)
 
 async def main():
     """主函數"""
     print("🚀 啟動自動錯誤檢測器")
     
-    # 檢查環境變數
-    required_vars = ["GITHUB_TOKEN"]
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
-    
-    if missing_vars:
-        print(f"❌ 缺少必要環境變數: {', '.join(missing_vars)}")
-        print("請設置以下環境變數:")
-        for var in missing_vars:
-            print(f"  export {var}=your_token_here")
-        return
-    
     detector = AutoErrorDetector()
+    if not detector.github_token:
+        print("ℹ️ 未設置 GITHUB_TOKEN，將只執行本地分析與 Discord 通知，不升級至 GitHub Actions")
     run_once = os.getenv("AUTO_ERROR_DETECTOR_RUN_ONCE", "").strip().lower() in ("1", "true", "yes")
     if run_once:
         await detector.run_once()
