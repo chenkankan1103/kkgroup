@@ -42,46 +42,32 @@ jobs:
     
     - name: 安裝依賴
       run: |
-        pip install aiohttp python-dotenv pytz
+        pip install requests aiohttp python-dotenv pytz
     
     - name: 運行自動錯誤檢測器
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         TEST_MODE: ${{ github.event.inputs.test_mode }}
+        AUTO_ERROR_DETECTOR_RUN_ONCE: 'true'
       run: |
         echo "🚀 啟動自動錯誤檢測器"
         echo "📊 測試模式: $TEST_MODE"
         echo "⏰ 開始時間: $(date)"
-        
-        # 運行自動錯誤檢測器
-        python3 scripts/auto_error_detector.py &
-        
-        # 根據模式決定運行時間
-        if [ "$TEST_MODE" = "test" ]; then
-          echo "🧪 測試模式：運行 2 分鐘"
-          sleep 120
-        elif [ "$TEST_MODE" = "debug" ]; then
-          echo "🔍 Debug 模式：運行 5 分鐘"
-          sleep 300
-        else
-          echo "🔄 正常模式：運行 10 分鐘"
-          sleep 600
-        fi
-        
-        # 停止檢測器
-        pkill -f "python3 scripts/auto_error_detector.py" || true
+        python3 scripts/auto_error_detector.py
         
         echo "✅ 自動錯誤檢測器完成"
         echo "⏰ 結束時間: $(date)"
     
     - name: 檢查 GitHub Actions 修復狀態
       if: always()
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         echo "📊 檢查最近的 GitHub Actions 執行狀態"
         
         # 檢查是否有新的修復提交
-        if git log --oneline --since="10 minutes ago" | grep -q "fix.*name.*self.*error"; then
+        if git log --oneline --since="10 minutes ago" | grep -qi "ai 自動修復\|AI Auto Fix\|fix:"; then
           echo "✅ 檢測到自動修復提交"
           echo "🔗 修復已通過 GitHub Actions 自動處理"
         else
@@ -90,7 +76,7 @@ jobs:
         
         # 檢查修復工作流程狀態
         echo "📋 最近的修復工作流程："
-        gh run list --workflow="Fix Name Self Error" --limit=3 --json | \
+        gh run list --workflow="Auto AI Fix" --limit=3 --json status,conclusion,createdAt | \
           jq -r '.[] | "\(.status): \(.conclusion) - \(.created_at)"' || echo "無法獲取工作流程狀態"
     
     - name: 發送狀態報告

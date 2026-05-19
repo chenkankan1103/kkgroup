@@ -13,6 +13,21 @@ import subprocess
 from datetime import datetime, timedelta
 import re
 
+
+def _normalize_incident_signature(text):
+    normalized = " ".join(str(text or "").strip().split())
+    return normalized[:160] or "unknown-incident"
+
+
+def _artifact_key_from_signature(signature):
+    safe = []
+    for ch in str(signature or "").lower():
+        safe.append(ch if ch.isalnum() else "-")
+    compact = "".join(safe).strip("-")
+    while "--" in compact:
+        compact = compact.replace("--", "-")
+    return compact[:80] or "unknown-incident"
+
 class AutoErrorDetector:
     def __init__(self):
         self.github_token = os.getenv("GITHUB_TOKEN")
@@ -20,6 +35,7 @@ class AutoErrorDetector:
         self.repo_name = "kkgroup"
         self.webhook_url = os.getenv("DISCORD_WEBHOOK_URL") or os.getenv("DISCORD_WEBHOOK")
         self.last_error_time = {}
+        self.http_timeout = aiohttp.ClientTimeout(total=15)
         self.error_patterns = {
             "name_self_error": r"name\s*['\"]\s*self\s*['\"]\s*is\s*not\s*defined",
             "syntax_error": r"SyntaxError",
@@ -133,6 +149,10 @@ class AutoErrorDetector:
         # 更新最後觸發時間
         self.last_error_time[error_type] = current_time
         return True
+
+    def _build_incident_signature(self, error_data):
+        base = f"{error_data.get('type', 'unknown')}|{error_data.get('file', 'log')}|{error_data.get('message', '')}"
+        return _normalize_incident_signature(base)
     
     async def trigger_github_action(self, error_data):
         """觸發 GitHub Actions 進行自動修復"""
@@ -153,9 +173,14 @@ class AutoErrorDetector:
                         error_data.get("file", "log"): error_data.get("message", "")
                     },
                     "error_data": error_data,
-                    "source": "auto_error_detector"
+                    "source": "auto_error_detector",
+                    "service_hint": "bot.service" if "bot" in str(error_data.get("file", "")).lower() else "",
+                    "incident_signature": self._build_incident_signature(error_data),
                 }
             }
+            payload["client_payload"]["incident_key"] = _artifact_key_from_signature(
+                payload["client_payload"]["incident_signature"]
+            )
             
             headers = {
                 "Authorization": f"token {self.github_token}",
@@ -166,7 +191,7 @@ class AutoErrorDetector:
             # 觸發 repository_dispatch 事件
             url = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}/dispatches"
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=self.http_timeout) as session:
                 async with session.post(url, json=payload, headers=headers) as response:
                     if response.status == 204:
                         print("✅ 成功觸發 GitHub Actions 自動修復")
@@ -201,7 +226,7 @@ class AutoErrorDetector:
                 }]
             }
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=self.http_timeout) as session:
                 async with session.post(self.webhook_url, json=webhook_data) as response:
                     if response.status == 204:
                         print("✅ Discord 通知發送成功")
@@ -246,6 +271,21 @@ class AutoErrorDetector:
                 print(f"❌ 監控循環發生異常: {e}")
                 await asyncio.sleep(30)  # 異常時等待 30 秒後重試
 
+    async def run_once(self):
+        """單次檢查，適合 GitHub Actions 或一次性任務。"""
+        print("🔍 執行單次錯誤檢測")
+        errors = await self.check_system_logs()
+        if not errors:
+            print("✅ 單次檢查未檢測到錯誤")
+            return 0
+
+        print(f"🚨 單次檢查檢測到 {len(errors)} 個錯誤")
+        for error in errors:
+            print(f"🔍 錯誤詳情: {error}")
+            await self.send_discord_notification(error)
+            await self.trigger_github_action(error)
+        return len(errors)
+
 async def main():
     """主函數"""
     print("🚀 啟動自動錯誤檢測器")
@@ -261,9 +301,12 @@ async def main():
             print(f"  export {var}=your_token_here")
         return
     
-    # 啟動監控系統
     detector = AutoErrorDetector()
-    await detector.monitor_loop()
+    run_once = os.getenv("AUTO_ERROR_DETECTOR_RUN_ONCE", "").strip().lower() in ("1", "true", "yes")
+    if run_once:
+        await detector.run_once()
+    else:
+        await detector.monitor_loop()
 
 if __name__ == "__main__":
     asyncio.run(main())

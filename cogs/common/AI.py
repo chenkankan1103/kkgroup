@@ -75,6 +75,14 @@ GROQ_KEY      = os.getenv("GROQ_API_KEY")
 GROQ_URL      = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 GROQ_MODEL    = os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile")
 MAX_HISTORY   = 10  # 每用戶保留的最大對話輪數
+AI_INTERACTIVE_TIMEOUT_SEC = int(os.getenv("AI_INTERACTIVE_TIMEOUT", "45"))
+AI_GEMINI_TIMEOUT_SEC = int(os.getenv("AI_GEMINI_TIMEOUT", "12"))
+AI_GROQ_TIMEOUT_SEC = int(os.getenv("AI_GROQ_TIMEOUT", "10"))
+AI_TEXT_NVIDIA_TIMEOUT_SEC = int(os.getenv("AI_TEXT_NVIDIA_TIMEOUT", "12"))
+AI_TEXT_GEMINI_TIMEOUT_SEC = int(os.getenv("AI_TEXT_GEMINI_TIMEOUT", "8"))
+AI_TEXT_GROQ_TIMEOUT_SEC = int(os.getenv("AI_TEXT_GROQ_TIMEOUT", "8"))
+AI_LITELLM_TIMEOUT_SEC = int(os.getenv("AI_LITELLM_TIMEOUT", "12"))
+AI_LITELLM_MAX_RETRIES = int(os.getenv("AI_LITELLM_MAX_RETRIES", "1"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -130,7 +138,12 @@ class LLMClient:
         
         caller 透過 candidate["content"]["parts"] 解析文字或 functionCall。
         """
-        if self._use_litellm:
+        use_litellm = self._use_litellm and not tools_spec and all(
+            all("text" in part for part in content.get("parts", []))
+            for content in contents
+        )
+
+        if use_litellm:
             return await self._gemini_with_litellm(api_key, model, system, contents, tools_spec, label)
         else:
             return await self._gemini_traditional(api_key, model, system, contents, tools_spec, label)
@@ -152,7 +165,10 @@ class LLMClient:
             role = content["role"]
             parts = content.get("parts", [])
             if parts and "text" in parts[0]:
-                messages.append({"role": role, "content": parts[0]["text"]})
+                messages.append({
+                    "role": "assistant" if role == "model" else "user",
+                    "content": parts[0]["text"],
+                })
             elif parts and "functionCall" in parts[0]:
                 # 處理工具調用
                 fc = parts[0]["functionCall"]
@@ -161,16 +177,39 @@ class LLMClient:
                     "content": f"調用工具: {fc['name']}({fc.get('args', {})})"
                 })
         
-        response = await self._litellm_client.acomplete(messages, tools_spec)
+        response = await self._litellm_client.acomplete(
+            messages,
+            tools_spec,
+            timeout=AI_LITELLM_TIMEOUT_SEC,
+            max_retries=AI_LITELLM_MAX_RETRIES,
+        )
         
         if response:
-            # 轉換回原始格式
-            return {
-                "candidates": [{
+            tool_calls = response.get("tool_calls") or []
+            if tool_calls:
+                first_call = tool_calls[0]
+                function_data = getattr(first_call, "function", None)
+                arguments = getattr(function_data, "arguments", "{}") if function_data else "{}"
+                try:
+                    parsed_args = json.loads(arguments) if isinstance(arguments, str) else (arguments or {})
+                except json.JSONDecodeError:
+                    parsed_args = {}
+
+                return {
                     "content": {
-                        "parts": [{"text": response["content"]}]
+                        "parts": [{
+                            "functionCall": {
+                                "name": getattr(function_data, "name", ""),
+                                "args": parsed_args,
+                            }
+                        }]
                     }
-                }]
+                }
+
+            return {
+                "content": {
+                    "parts": [{"text": response["content"]}]
+                }
             }
         
         return None
@@ -205,7 +244,7 @@ class LLMClient:
             payload["tools"] = tools_spec
 
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_GEMINI_TIMEOUT_SEC)) as s:
                 async with s.post(
                     url, json=payload, headers={"Content-Type": "application/json"}
                 ) as r:
@@ -245,7 +284,11 @@ class LLMClient:
         max_tokens: int = 500,
     ) -> Optional[str]:
         """使用 LiteLLM 呼叫 Groq"""
-        response = await self._litellm_client.acomplete(messages)
+        response = await self._litellm_client.acomplete(
+            messages,
+            timeout=AI_LITELLM_TIMEOUT_SEC,
+            max_retries=AI_LITELLM_MAX_RETRIES,
+        )
         return response["content"] if response else None
 
     async def _groq_traditional(
@@ -271,7 +314,7 @@ class LLMClient:
             "Content-Type": "application/json",
         }
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_GROQ_TIMEOUT_SEC)) as s:
                 async with s.post(GROQ_URL, json=payload, headers=headers) as r:
                     if r.status == 429:
                         self._cool("Groq")
@@ -335,7 +378,7 @@ _SYSTEM_PROMPT = """\
 - 呼叫工具後等待結果，再回覆用戶
 """
 
-_MAX_TOOL_ROUNDS = 5  # 單次對話最多工具呼叫輪數
+_MAX_TOOL_ROUNDS = int(os.getenv("AI_MAX_TOOL_ROUNDS", "2"))
 
 _TOOL_KEYWORDS = [
     "餘額", "KK幣", "kkcoin", "排行", "狀態", "裝備", "配裝",
@@ -435,7 +478,13 @@ class KKBotAgent:
 
         if not needs_tools:
             text_messages = self._contents_to_messages(system_prompt, contents)
-            text_result, provider = await complete_text_with_fallback(text_messages, max_tokens=800)
+            text_result, provider = await complete_text_with_fallback(
+                text_messages,
+                max_tokens=800,
+                nvidia_timeout=AI_TEXT_NVIDIA_TIMEOUT_SEC,
+                gemini_timeout=AI_TEXT_GEMINI_TIMEOUT_SEC,
+                groq_timeout=AI_TEXT_GROQ_TIMEOUT_SEC,
+            )
             if text_result:
                 logger.info("✅ 文字回覆使用 %s", provider)
                 self._save(user_id, user_msg, text_result)
@@ -582,7 +631,7 @@ class AIResponse(commands.Cog):
             try:
                 reply = await asyncio.wait_for(
                     self._agent.run(message.author.id, user_input),
-                    timeout=45,
+                    timeout=AI_INTERACTIVE_TIMEOUT_SEC,
                 )
             except asyncio.TimeoutError:
                 reply = "處理超時，請再試一次。"

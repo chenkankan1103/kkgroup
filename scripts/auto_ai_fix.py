@@ -30,6 +30,19 @@ def _normalize_repo_path(file_path: str) -> str:
     return os.path.normpath(file_path).replace('\\', '/')
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _build_review_artifact_path(target_file_path: str, timestamp: str) -> str:
+    safe_target = (target_file_path or 'unknown-target').replace('/', '__').replace('\\', '__')
+    safe_target = re.sub(r'[^A-Za-z0-9_.-]+', '-', safe_target).strip('-') or 'unknown-target'
+    return os.path.join('archive', 'ai_fixes', f'{timestamp}_{safe_target}.md')
+
+
 def should_allow_commit(event_data):
     payload = event_data.get('client_payload', {})
     source = str(payload.get('source') or event_data.get('source') or '').strip().lower()
@@ -377,49 +390,58 @@ async def create_fix_file(fix_data, timestamp, severity):
         # 獲取修復代碼和文件路徑
         fix_code = fix_data.get('fix_code', '')
         file_path = _normalize_repo_path(fix_data.get('file_path', 'fixes/auto_fix.py'))
+        artifact_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        review_artifact_path = _build_review_artifact_path(file_path, artifact_timestamp)
+        direct_write_enabled = _bool_env('AUTO_AI_DIRECT_WRITE', default=False)
         
-        print(f"📝 創建修復文件: {file_path}")
+        print(f"📝 生成修復提案: {review_artifact_path}")
 
         if os.path.isabs(file_path) or file_path.startswith('../') or '/../' in file_path:
             print(f"❌ 拒絕不安全修復路徑: {file_path}")
             return False
-
-        if not os.path.exists(file_path):
-            print(f"❌ 目標文件不存在，拒絕建立新文件: {file_path}")
-            return False
         
-        # 確保目錄存在
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        
-        # 寫入修復代碼
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(f'''#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-自動生成的修復代碼
-生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-AI 分析結果: {fix_data.get('root_cause', 'N/A')}
-"""
+        os.makedirs(os.path.dirname(review_artifact_path), exist_ok=True)
+        with open(review_artifact_path, 'w', encoding='utf-8') as f:
+            f.write(
+                f"# AI Auto Fix Proposal\n\n"
+                f"- Generated At: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"- Severity: {severity}\n"
+                f"- Suggested Target: {file_path}\n"
+                f"- Direct Write Enabled: {direct_write_enabled}\n\n"
+                f"## Root Cause\n{fix_data.get('root_cause', 'N/A')}\n\n"
+                f"## Verification\n{fix_data.get('verification', '手動驗證修復效果')}\n\n"
+                f"## Prevention\n{fix_data.get('prevention', '定期檢查系統狀態')}\n\n"
+                f"## Suggested Code\n```python\n{fix_code}\n```\n"
+            )
 
-{fix_code}
+        staged_paths = [review_artifact_path]
 
-# 驗證方法
-# {fix_data.get('verification', '手動驗證修復效果')}
+        if direct_write_enabled:
+            if not os.path.exists(file_path):
+                print(f"❌ 目標文件不存在，拒絕直接寫入: {file_path}")
+                return False
 
-# 預防措施
-# {fix_data.get('prevention', '定期檢查系統狀態')}
-''')
+            target_dir = os.path.dirname(file_path)
+            if target_dir:
+                os.makedirs(target_dir, exist_ok=True)
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(fix_code)
+            staged_paths.append(file_path)
+            print(f"⚠️ 已啟用 AUTO_AI_DIRECT_WRITE，直接寫入目標文件: {file_path}")
+        else:
+            print("ℹ️ 預設僅產生修復提案，不直接覆寫原始碼；如需啟用請設置 AUTO_AI_DIRECT_WRITE=true")
         
         # 配置 Git
         subprocess.run(['git', 'config', 'user.name', 'AI Auto Fix Bot'], check=True)
         subprocess.run(['git', 'config', 'user.email', 'ai-fix@kkgroup.local'], check=True)
         
         # 添加文件到 Git
-        subprocess.run(['git', 'add', file_path], check=True)
+        subprocess.run(['git', 'add', *staged_paths], check=True)
 
         staged_changes = subprocess.run(['git', 'diff', '--cached', '--quiet'], check=False)
         if staged_changes.returncode == 0:
-            print(f"ℹ️ 修復文件 {file_path} 沒有實際差異，跳過 commit/push")
+            print(f"ℹ️ 修復提案 {review_artifact_path} 沒有實際差異，跳過 commit/push")
             return True
         
         # 提交修復
@@ -428,7 +450,8 @@ AI 分析結果: {fix_data.get('root_cause', 'N/A')}
 🤖 由 NVIDIA deepseek-v4-pro 自動生成修復代碼
 📊 錯誤時間: {timestamp}
 🚨 緊急程度: {severity}
-🔧 修復文件: {file_path}
+🔧 修復提案: {review_artifact_path}
+🎯 建議目標: {file_path}
 """
         
         subprocess.run(['git', 'commit', '-m', commit_message], check=True)
@@ -436,7 +459,9 @@ AI 分析結果: {fix_data.get('root_cause', 'N/A')}
         # 推送到遠端
         subprocess.run(['git', 'push', 'origin', 'main'], check=True)
         
-        print(f"✅ 修復代碼已提交並推送到: {file_path}")
+        fix_data['file_path'] = review_artifact_path
+        fix_data['target_file_path'] = file_path
+        print(f"✅ 修復提案已提交並推送到: {review_artifact_path}")
         return True
         
     except Exception as e:
