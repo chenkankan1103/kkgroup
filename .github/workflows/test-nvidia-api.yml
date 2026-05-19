@@ -9,11 +9,13 @@ on:
 jobs:
   test-nvidia:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     permissions:
       contents: read
     env:
       # 強制使用 Node.js 24 避免 deprecation 警告
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      NVIDIA_API_TIMEOUT: '35'
     
     steps:
     - name: 檢出代碼
@@ -59,6 +61,7 @@ jobs:
             client = NVIDIAAIClient()
             print(f"✅ 客戶端初始化成功")
             print(f"🤖 可用模型: {list(client.models.keys())}")
+          print(f"⏱️ NVIDIA timeout: {client.timeout}s")
             
             async def test_api():
                 # 測試基本調用
@@ -67,11 +70,15 @@ jobs:
                 ]
                 
                 print("🧪 測試 deepseek-v4-pro 模型...")
-                response = await client.call_api(
-                    messages, 
-                    model="deepseek-ai/deepseek-v4-pro", 
-                    max_tokens=100
-                )
+            response = await asyncio.wait_for(
+              client.call_api(
+                messages,
+                model="deepseek-ai/deepseek-v4-pro",
+                max_tokens=100,
+                timeout=client.timeout,
+              ),
+              timeout=client.timeout + 5,
+            )
                 
                 if response:
                     print(f"✅ API 調用成功!")
@@ -86,8 +93,10 @@ jobs:
             
             if result:
                 print("🎉 NVIDIA API 測試完全成功!")
+              sys.exit(0)
             else:
                 print("❌ NVIDIA API 測試失敗")
+              sys.exit(1)
                 
         except ImportError as e:
             print(f"❌ 導入失敗: {e}")
@@ -95,9 +104,14 @@ jobs:
             import os
             for item in os.listdir('.'):
                 print(f"  - {item}")
+            sys.exit(1)
             
+          except asyncio.TimeoutError:
+            print("❌ 測試過程逾時，已主動中止")
+            sys.exit(1)
         except Exception as e:
             print(f"❌ 測試過程發生錯誤: {e}")
             import traceback
             traceback.print_exc()
+            sys.exit(1)
         EOF
