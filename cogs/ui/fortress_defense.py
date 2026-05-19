@@ -28,6 +28,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
 FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
+FORTRESS_CHANNEL_ID_DEFAULT = 1505861352215019570
 FORTRESS_ALLOWED_HOURS = {8, 11, 14, 20, 22}
 FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS = 8
 FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS = 12
@@ -124,9 +125,9 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
     },
 ]
 
-# 從 .env 讀取堡壘頻道 ID（與其他 channel ID 的模式相同）
+# 堡壘戰固定發送到新頻道，避免 VM 上舊 .env 覆蓋部署結果
 def _get_fortress_channel_id() -> int:
-    return int(os.getenv("FORTRESS_CHANNEL_ID", "1505861352215019570") or 0)
+    return FORTRESS_CHANNEL_ID_DEFAULT
 
 
 def _save_env_message_state(key: str, message_id: int):
@@ -638,6 +639,74 @@ def _tower_summary_lines(state: fs.FortressState, bot: discord.Client) -> List[s
     return lines
 
 
+def _truncate_embed_line(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)] + "…"
+
+
+def _build_enemy_status_field(state: fs.FortressState) -> str:
+    rank_labels = {1: "👮 局長", 2: "🚔 隊長", 3: "🚔 隊長"}
+    header = "**🚨 刑警大隊戰況表**\n```\n"
+    header += f"{'波次':<4} {'階級':<8} {'熱搜標題':<16} {'推進':<6} {'血量':<11} {'狀態':<6}\n"
+    header += "─" * 58 + "\n"
+
+    lines = [header]
+    current_length = len(header)
+    remaining_count = 0
+
+    for enemy in sorted(state.enemies, key=lambda x: (x.defeated, x.wave_number, x.rank, x.name)):
+        label = rank_labels.get(enemy.rank, f"🚨 警員#{enemy.rank}")
+        if enemy.defeated:
+            status = "擊退"
+            hp_display = f"0/{enemy.max_hp}"
+            progress_display = "---"
+        else:
+            status = "作戰"
+            path_len = len(_get_map_layout(state)["path_coords"])
+            progress_pct = int((enemy.path_position / path_len) * 100) if path_len > 0 else 0
+            hp_display = f"{enemy.current_hp}/{enemy.max_hp}"
+            progress_display = f"{progress_pct}%"
+
+        display_name = _truncate_embed_line(enemy.name, 16)
+        hp_display = _truncate_embed_line(hp_display, 11)
+        line = f"W{enemy.wave_number:<3} {label:<8} {display_name:<16} {progress_display:<6} {hp_display:<11} {status:<6}\n"
+        if current_length + len(line) + 4 > 1024:
+            remaining_count += 1
+            continue
+        lines.append(line)
+        current_length += len(line)
+
+    if remaining_count:
+        summary_line = f"... 另有 {remaining_count} 名敵軍未展開\n"
+        if current_length + len(summary_line) + 4 <= 1024:
+            lines.append(summary_line)
+
+    lines.append("```")
+    return "".join(lines)
+
+
+def _chunk_lines_for_embed(lines: List[str], chunk_size: int = 8, hard_limit: int = 1024) -> List[str]:
+    chunks: List[str] = []
+    current: List[str] = []
+    current_length = 0
+
+    for line in lines:
+        normalized = _truncate_embed_line(line, min(hard_limit, 240))
+        added_length = len(normalized) + (1 if current else 0)
+        if current and (len(current) >= chunk_size or current_length + added_length > hard_limit):
+            chunks.append("\n".join(current))
+            current = [normalized]
+            current_length = len(normalized)
+            continue
+        current.append(normalized)
+        current_length += added_length
+
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
 # ─── Embed 建構函數 ────────────────────────────────────────
 
 def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.Embed:
@@ -684,39 +753,7 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
         f"💀 已攔截 **{defeated_count}/{len(state.enemies)}** 名刑警"
     )
 
-    # 刑警大隊詳細列表：使用表格格式讓資訊更對齊醒目
-    rank_labels = {1: "👮 局長", 2: "🚔 隊長", 3: "🚔 隊長"}
-    
-    # 建立表格標題
-    table_header = "**🚨 刑警大隊戰況表**\n"
-    table_header += "```\n"
-    table_header += f"{'波次':<4} {'階級':<8} {'熱搜標題':<20} {'推進':<8} {'血量':<12} {'狀態':<8}\n"
-    table_header += "─" * 66 + "\n"
-    
-    enemy_lines = [table_header]
-    for e in sorted(state.enemies, key=lambda x: x.rank):
-        label = rank_labels.get(e.rank, f"🚨 警員 #{e.rank}")
-        if e.defeated:
-            status = "✅ 擊退"
-            hp_display = f"---/{e.max_hp}"
-            progress_display = "---%"
-        else:
-            status = "⚔️ 作戰中"
-            position = e.path_position
-            layout = _get_map_layout(state)
-            path_len = len(layout["path_coords"])
-            progress_pct = int((position / path_len) * 100) if path_len > 0 else 0
-            hp_display = f"{e.current_hp:>4}/{e.max_hp}"
-            progress_display = f"{progress_pct:>3}%"
-        
-        # 限制標題長度避免表格破壞
-        display_name = e.name[:18] + "..." if len(e.name) > 18 else e.name
-        
-        line = f"W{e.wave_number:<3} {label:<8} {display_name:<20} {progress_display:<8} {hp_display:<12} {status:<8}"
-        enemy_lines.append(line)
-    
-    enemy_lines.append("```")
-    enemy_text = "\n".join(enemy_lines)
+    enemy_text = _build_enemy_status_field(state)
 
     embed = discord.Embed(
         title="⚔️ KK 園區堡壘戰戰況播報",
@@ -851,16 +888,24 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
             pct = result["contributions"].get(uid, result["contributions"].get(str(uid), 0))
             reward = result.get("reward_map", {}).get(str(uid), 0)
             reward_suffix = f" | +{reward:,} KKCoin" if reward else ""
-            lines.append(f"{medals[i]} **{name}** — {dmg:,} 傷害 ({pct}%){reward_suffix}")
-        embed.add_field(name="🏆 對抗英雄榜", value="\n".join(lines), inline=False)
+            safe_name = _truncate_embed_line(name, 32)
+            lines.append(f"{medals[i]} **{safe_name}** — {dmg:,} 傷害 ({pct}%){reward_suffix}")
+        hero_chunks = _chunk_lines_for_embed(lines, chunk_size=5)
+        for index, chunk in enumerate(hero_chunks, start=1):
+            field_name = "🏆 對抗英雄榜" if index == 1 else f"🏆 對抗英雄榜 {index}"
+            embed.add_field(name=field_name, value=chunk, inline=False)
 
     wave_history = result.get("wave_history", [])
     if wave_history:
         wave_lines = []
         for wave in wave_history:
             titles = wave.get("titles", [])
-            wave_lines.append(f"第 {wave.get('wave_number', '?')} 波：{'、'.join(titles) if titles else '無資料'}")
-        embed.add_field(name="📰 當天出現的趨勢標題", value="\n".join(wave_lines[:10]), inline=False)
+            title_text = "、".join(titles) if titles else "無資料"
+            wave_lines.append(f"第 {wave.get('wave_number', '?')} 波：{title_text}")
+        trend_chunks = _chunk_lines_for_embed(wave_lines, chunk_size=4)
+        for index, chunk in enumerate(trend_chunks, start=1):
+            field_name = "📰 當天出現的趨勢標題" if index == 1 else f"📰 當天趨勢標題 {index}"
+            embed.add_field(name=field_name, value=chunk, inline=False)
 
     embed.set_footer(text=f"單日戰役 {result['round_id']}")
     return embed
