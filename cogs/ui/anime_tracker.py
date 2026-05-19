@@ -456,11 +456,29 @@ class AnimeDatabase:
         except Exception as e:
             logger.error(f"❌ Error updating anime statistics: {e}")
     
-    def get_top_anime_by_views(self, limit: int = 10) -> List[Dict]:
+    def get_top_anime_by_views(
+        self,
+        limit: int = 10,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> List[Dict]:
         """獲取觀看次數最多的動畫排行（直接從 episode_statistics 聚合）"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                where_clauses = []
+                params = []
+
+                if start_time:
+                    where_clauses.append("recorded_at >= ?")
+                    params.append(start_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+                if end_time:
+                    where_clauses.append("recorded_at < ?")
+                    params.append(end_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+                where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
                 # 直接從 episode_statistics 聚合，而不是等待 anime_statistics 更新
                 cursor.execute(f"""
                     SELECT 
@@ -470,9 +488,10 @@ class AnimeDatabase:
                         AVG(views) as avg_views,
                         AVG(score) as avg_score
                     FROM {EPISODE_STATS_TABLE}
+                    {where_sql}
                     GROUP BY animeSn
                     ORDER BY total_views DESC LIMIT ?
-                """, (limit,))
+                """, (*params, limit))
                 
                 results = []
                 for row in cursor.fetchall():
@@ -515,7 +534,13 @@ class AnimeDatabase:
             logger.error(f"❌ Error getting top anime: {e}")
             return []
     
-    def get_multi_episode_anime_for_chart(self, limit: int = 10, min_episodes: int = 1) -> List[Dict]:
+    def get_multi_episode_anime_for_chart(
+        self,
+        limit: int = 10,
+        min_episodes: int = 1,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> List[Dict]:
         """獲取有多集數據的動畫（用於多線坐標圖），按總觀看次數排序
         改進：降低 min_episodes 預設值為 1，讓更多動畫能納入統計
         
@@ -533,6 +558,18 @@ class AnimeDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                where_clauses = []
+                params = []
+
+                if start_time:
+                    where_clauses.append("recorded_at >= ?")
+                    params.append(start_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+                if end_time:
+                    where_clauses.append("recorded_at < ?")
+                    params.append(end_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+                where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
                 
                 # 確保表存在
                 cursor.execute(f"""
@@ -553,10 +590,11 @@ class AnimeDatabase:
                         COUNT(*) as total_episodes,
                         SUM(views) as total_views
                     FROM {EPISODE_STATS_TABLE}
+                    {where_sql}
                     GROUP BY animeSn
                     HAVING COUNT(*) >= ?
                     ORDER BY total_views DESC LIMIT ?
-                """, (min_episodes, limit))
+                """, (*params, min_episodes, limit))
                 
                 results = []
                 for row in cursor.fetchall():
@@ -602,11 +640,22 @@ class AnimeDatabase:
                     short_name = anime_name[:2] if len(anime_name) >= 2 else anime_name
                     
                     # 獲取該動畫的所有集集數據（按集數排序）
+                    episode_where = ["animeSn = ?"]
+                    episode_params = [anime_sn]
+
+                    if start_time:
+                        episode_where.append("recorded_at >= ?")
+                        episode_params.append(start_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+                    if end_time:
+                        episode_where.append("recorded_at < ?")
+                        episode_params.append(end_time.strftime("%Y-%m-%d %H:%M:%S"))
+
                     cursor.execute(f"""
                         SELECT episode_num, views FROM {EPISODE_STATS_TABLE}
-                        WHERE animeSn = ?
+                        WHERE {' AND '.join(episode_where)}
                         ORDER BY episode_num ASC
-                    """, (anime_sn,))
+                    """, tuple(episode_params))
                     
                     episodes = []
                     for ep_row in cursor.fetchall():
@@ -2247,85 +2296,82 @@ class AnimeTracker(commands.Cog):
                     logger.error(f"❌ [send_weekly_stats] 找不到頻道 {ANIME_CHANNEL_ID}")
                     return
                 
+                week_start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
+                week_end_dt = week_start_dt + timedelta(days=7)
+                week_end = week_end_dt - timedelta(seconds=1)
+                week_start_str = week_start_dt.strftime("%m/%d")
+                week_end_str = week_end.strftime("%m/%d")
+
                 # 獲取週統計數據
                 weekly_stats = self.db.get_weekly_vote_stats()
-                
-                if not weekly_stats:
-                    logger.info("📊 [send_weekly_stats] 本週無投票數據")
-                    self.last_weekly_stats_sent = week_start_date
-                    return
-                
-                # 創建主統計 embed
-                week_end = now
-                week_start_str = week_start.strftime("%m/%d")
-                week_end_str = week_end.strftime("%m/%d")
-                
-                embed = discord.Embed(
-                    title="📊 本週動畫投票統計",
-                    description=f"**統計週期**: {week_start_str} - {week_end_str}",
-                    color=discord.Color.blue(),
-                    timestamp=now
-                )
-                
-                # 按投票總數排序
-                sorted_animes = sorted(
-                    weekly_stats.items(),
-                    key=lambda x: x[1]['total_votes'],
-                    reverse=True
-                )
-                
-                # 添加各動畫的統計
-                for rank, (anime_sn, stats) in enumerate(sorted_animes[:10], 1):  # 顯示前 10 部
-                    anime_name = stats['anime_name']
-                    total_votes = stats['total_votes']
-                    votes_breakdown = stats['votes']
-                    episode_count = len(stats['episodes'])
-                    
-                    # 構建投票明細
-                    vote_type_names = {
-                        'masterpiece': '🟢 神作',
-                        'great': '⚫ 佳作',
-                        'darkhorse': '⚫ 黑馬',
-                        'decent': '🔵 普作',
-                        'controversial': '⚫ 爭議作',
-                        'disaster': '🔴 雷作'
-                    }
-                    
-                    vote_details = []
-                    for vote_type in sorted(votes_breakdown.keys(), 
-                                           key=lambda x: votes_breakdown[x], reverse=True):
-                        count = votes_breakdown[vote_type]
-                        label = vote_type_names.get(vote_type, vote_type)
-                        vote_details.append(f"{label}: {count}")
-                    
-                    details_str = " | ".join(vote_details) if vote_details else "無投票"
-                    
-                    embed.add_field(
-                        name=f"#{rank} {anime_name}",
-                        value=f"**投票總數**: {total_votes} | **涉及集數**: {episode_count}\n{details_str}",
-                        inline=False
+
+                if weekly_stats:
+                    embed = discord.Embed(
+                        title="📊 本週動畫投票統計",
+                        description=f"**統計週期**: {week_start_str} - {week_end_str}",
+                        color=discord.Color.blue(),
+                        timestamp=now
                     )
-                
-                # 添加總體統計
-                total_all_votes = sum(stats['total_votes'] for stats in weekly_stats.values())
-                unique_animes = len(weekly_stats)
-                
-                embed.set_footer(text=f"總計: {total_all_votes} 投票 | {unique_animes} 部作品")
-                
-                # 發送投票統計
-                await channel.send(embed=embed)
-                logger.info(f"✅ [send_weekly_stats] 週投票統計已發送: {unique_animes} 部作品, {total_all_votes} 投票")
+
+                    # 按投票總數排序
+                    sorted_animes = sorted(
+                        weekly_stats.items(),
+                        key=lambda x: x[1]['total_votes'],
+                        reverse=True
+                    )
+
+                    # 添加各動畫的統計
+                    for rank, (anime_sn, stats) in enumerate(sorted_animes[:10], 1):  # 顯示前 10 部
+                        anime_name = stats['anime_name']
+                        total_votes = stats['total_votes']
+                        votes_breakdown = stats['votes']
+                        episode_count = len(stats['episodes'])
+
+                        # 構建投票明細
+                        vote_type_names = {
+                            'masterpiece': '🟢 神作',
+                            'great': '⚫ 佳作',
+                            'darkhorse': '⚫ 黑馬',
+                            'decent': '🔵 普作',
+                            'controversial': '⚫ 爭議作',
+                            'disaster': '🔴 雷作'
+                        }
+
+                        vote_details = []
+                        for vote_type in sorted(votes_breakdown.keys(), 
+                                               key=lambda x: votes_breakdown[x], reverse=True):
+                            count = votes_breakdown[vote_type]
+                            label = vote_type_names.get(vote_type, vote_type)
+                            vote_details.append(f"{label}: {count}")
+
+                        details_str = " | ".join(vote_details) if vote_details else "無投票"
+
+                        embed.add_field(
+                            name=f"#{rank} {anime_name}",
+                            value=f"**投票總數**: {total_votes} | **涉及集數**: {episode_count}\n{details_str}",
+                            inline=False
+                        )
+
+                    # 添加總體統計
+                    total_all_votes = sum(stats['total_votes'] for stats in weekly_stats.values())
+                    unique_animes = len(weekly_stats)
+
+                    embed.set_footer(text=f"總計: {total_all_votes} 投票 | {unique_animes} 部作品")
+
+                    # 發送投票統計
+                    await channel.send(embed=embed)
+                    logger.info(f"✅ [send_weekly_stats] 週投票統計已發送: {unique_animes} 部作品, {total_all_votes} 投票")
+                else:
+                    logger.info("📊 [send_weekly_stats] 本週無投票數據，僅發送觀看排行")
                 
                 # 發送觀看量趨勢折線圖（改進：按集數累計顯示）
                 try:
-                    ranking_embed = await self.generate_ranking_embed()
+                    ranking_embed = await self.generate_ranking_embed(
+                        start_time=week_start_dt,
+                        end_time=week_end_dt,
+                        period_label="本週"
+                    )
                     if ranking_embed:
-                        ranking_embed.title = "📈 本週動畫集數累計觀看數趨勢"
-                        ranking_embed.description = (
-                            f"**統計週期**: {week_start_str} - {week_end_str}\n"
-                            "📊 折線圖顯示各動畫每集觀看數的累計成長趨勢\n"
-                            "🔍 可看出動畫的人氣變化和口碑傳播效果"
-                        )
                         await channel.send(embed=ranking_embed)
                         logger.info("✅ [send_weekly_stats] 集數累計觀看趨勢圖已發送")
                     else:
@@ -2559,8 +2605,13 @@ class AnimeTracker(commands.Cog):
             logger.warning(f"⚠️ [get_short_chart_url] 請求失敗: {e}")
             return None
     
-    async def generate_ranking_embed(self) -> discord.Embed:
-        """生成本季動畫觀看排行榜 embed（供自動推送使用）"""
+    async def generate_ranking_embed(
+        self,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        period_label: str = "本季"
+    ) -> discord.Embed:
+        """生成動畫觀看排行榜 embed（供自動推送使用）"""
         try:
             
             # 確保 episode_statistics 表存在（修復初始化問題）
@@ -2583,10 +2634,14 @@ class AnimeTracker(commands.Cog):
                 logger.warning(f"⚠️ [generate_ranking_embed] 表初始化失敗: {e}")
             
             # 先嘗試從数據庫取歷史統計數據
-            top_anime = self.db.get_top_anime_by_views(limit=10)
+            top_anime = self.db.get_top_anime_by_views(
+                limit=10,
+                start_time=start_time,
+                end_time=end_time
+            )
             
             # 如果沒有歷史數據，則實時從 API 獲取最近的動畫
-            if not top_anime:
+            if not top_anime and not start_time and not end_time:
                 logger.info("📺 [generate_ranking_embed] 數據庫無歷史數據，改為實時從 API 獲取")
                 episodes = await self.fetch_all_recent_anime_from_api()
                 
@@ -2656,22 +2711,55 @@ class AnimeTracker(commands.Cog):
             
             # 嘗試獲取有多集的動畫數據（用於多線圖）
             # 改進：增加 limit 到 15，降低 min_episodes 到 1，讓更多動畫納入統計
-            multi_anime = self.db.get_multi_episode_anime_for_chart(limit=15, min_episodes=1)
+            multi_anime = self.db.get_multi_episode_anime_for_chart(
+                limit=10,
+                min_episodes=1,
+                start_time=start_time,
+                end_time=end_time
+            )
             logger.info(f"📺 [generate_ranking_embed] 查詢 multi_anime 結果: {len(multi_anime) if multi_anime else 0} 部動畫")
             if multi_anime:
                 for i, anime in enumerate(multi_anime[:5]):  # 顯示前 5 部的詳細資訊
                     logger.info(f"  📺 [{i+1}] {anime['name']}: {len(anime['episodes'])} 集, {anime['total_views']} 次觀看")
+
+            ranked_chart_anime = []
+            if multi_anime:
+                multi_anime_by_sn = {anime['anime_sn']: anime for anime in multi_anime}
+                ranked_chart_anime = [
+                    multi_anime_by_sn[anime['anime_sn']]
+                    for anime in top_anime
+                    if anime['anime_sn'] in multi_anime_by_sn
+                ]
             
             embed = discord.Embed(
-                title="🏆 本季動畫觀看排行榜",
+                title=f"🏆 {period_label}動畫觀看排行",
                 color=discord.Color.gold(),
                 timestamp=datetime.now(TW_TZ)
             )
+
+            period_text = None
+            if start_time and end_time:
+                period_text = f"{start_time.strftime('%m/%d')} - {(end_time - timedelta(seconds=1)).strftime('%m/%d')}"
+
+            rank_emojis = ["🥇", "🥈", "🥉"]
+            ranking_lines = []
+            for idx, anime in enumerate(top_anime, 1):
+                anime_name = anime.get('name', f"Anime #{anime.get('anime_sn', '?')}").strip()
+                display_name = anime_name if len(anime_name) <= 22 else f"{anime_name[:22]}..."
+                rank_prefix = rank_emojis[idx - 1] if idx <= len(rank_emojis) else f"#{idx}"
+                ranking_lines.append(
+                    f"{rank_prefix} **{display_name}** - {anime['total_views']:,} 次 | {anime['total_episodes']} 集"
+                )
+
+            ranking_summary = "\n".join(ranking_lines) if ranking_lines else "本期尚無足夠觀看數據"
             
             # 如果有多集數據，生成多線趨勢圖；否則使用單線聚合圖
-            if multi_anime and len(multi_anime) >= 1:
+            if ranked_chart_anime and len(ranked_chart_anime) >= 2:
                 # ===== 模式 A：多線趨勢圖（每部動畫一條線）=====
-                embed.description = f"集數觀看趨勢 ({len(multi_anime)} 部動畫)"
+                if period_text:
+                    embed.description = f"**統計週期**: {period_text}\n依總觀看數排名，折線圖只顯示實際上榜作品的集數累計趨勢"
+                else:
+                    embed.description = "依總觀看數排名，折線圖只顯示實際上榜作品的集數累計趨勢"
                 
                 # 構建多線圖表
                 datasets = []
@@ -2684,7 +2772,7 @@ class AnimeTracker(commands.Cog):
                 
                 # 找出所有集數編號（X 軸）- 改進標準化處理
                 all_episodes = set()
-                for anime in multi_anime:
+                for anime in ranked_chart_anime:
                     for ep in anime['episodes']:
                         ep_num = ep['num']
                         # 標準化集數格式：提取數字部分
@@ -2707,7 +2795,7 @@ class AnimeTracker(commands.Cog):
                 episode_labels = [f"第{ep}集" for ep in sorted(list(all_episodes))]
                 
                 # 為每部動畫建立一條線
-                for idx, anime in enumerate(multi_anime):
+                for idx, anime in enumerate(ranked_chart_anime):
                     name = anime['name'][:12]  # 增加到 12 個字以便識別
                     color = colors[idx % len(colors)]
                     
@@ -2799,7 +2887,7 @@ class AnimeTracker(commands.Cog):
                         
                         if len(chart_url) > 2048:
                             logger.warning(f"⚠️ [generate_ranking_embed] URL {len(chart_url)} 字元超過限制，改用文字顯示")
-                            multi_anime = None  # 改用模式 B
+                            ranked_chart_anime = []  # 改用模式 B
                             chart_url = None
                     
                     # 直接使用圖表 URL
@@ -2807,40 +2895,21 @@ class AnimeTracker(commands.Cog):
                         embed.set_image(url=chart_url)
                         logger.info(f"✅ [generate_ranking_embed] 多線趨勢圖已設置")
                     
-                    # 添加參賽動畫排名信息
-                    anime_ranking_info = []
-                    for idx, anime in enumerate(multi_anime, 1):
-                        rank_emoji = ["🥇", "🥈", "🥉"] + [f"{i}️⃣" for i in range(4, 11)]
-                        emoji = rank_emoji[idx - 1] if idx <= 10 else "📌"
-                        anime_ranking_info.append(
-                            f"{emoji} **{anime['short_name']}** - {anime['total_views']:,} 次閱覽"
-                        )
-                    
-                    # 分成兩個字段顯示（Top 5 和 6-10）
-                    if len(anime_ranking_info) > 5:
-                        embed.add_field(
-                            name="🏅 Top 5 熱度排名",
-                            value="\n".join(anime_ranking_info[:5]),
-                            inline=True
-                        )
-                        embed.add_field(
-                            name="🎖️ 6-10 熱度排名",
-                            value="\n".join(anime_ranking_info[5:]),
-                            inline=True
-                        )
-                    else:
-                        embed.add_field(
-                            name="📈 參賽動畫排名",
-                            value="\n".join(anime_ranking_info),
-                            inline=False
-                        )
+                    embed.add_field(
+                        name="📋 排行名單",
+                        value=ranking_summary,
+                        inline=False
+                    )
                 except Exception as e:
                     logger.warning(f"⚠️ [generate_ranking_embed] 生成多線圖失敗: {e}，改用文字顯示")
-                    multi_anime = None  # 改用模式 B
+                    ranked_chart_anime = []  # 改用模式 B
             
             # === 模式 B：文字排行列表（當無多集數據或圖表生成失敗）===
-            if not multi_anime or len(multi_anime) < 2:
-                embed.description = f"前 {len(top_anime)} 名熱度排行"
+            if not ranked_chart_anime or len(ranked_chart_anime) < 2:
+                if period_text:
+                    embed.description = f"**統計週期**: {period_text}\n前 {len(top_anime)} 名觀看排行"
+                else:
+                    embed.description = f"前 {len(top_anime)} 名觀看排行"
                 
                 # 生成單線聚合圖
                 anime_names = []
@@ -2887,18 +2956,15 @@ class AnimeTracker(commands.Cog):
                 except Exception as e:
                     logger.warning(f"⚠️ [generate_ranking_embed] 生成單線圖 URL 失敗: {e}")
                 
-                # 添加文字排行
-                ranking_text = []
-                for idx, anime in enumerate(top_anime, 1):
-                    anime_name = anime.get('name', f'Anime #{anime.get("anime_sn", "?")}').strip()
-                    line = f"#{idx} **{anime_name}** - {anime['total_views']:,} 次"
-                    ranking_text.append(line)
-                
-                embed.description += "\n\n" + "\n".join(ranking_text)
+                embed.add_field(
+                    name="📋 排行名單",
+                    value=ranking_summary,
+                    inline=False
+                )
             
-            embed.set_footer(text="📊 集數觀看趨勢分析" if multi_anime and len(multi_anime) >= 1 else "📈 本季熱度聚合排行")
+            embed.set_footer(text="📊 排行與集數觀看趨勢" if ranked_chart_anime and len(ranked_chart_anime) >= 2 else "📈 觀看排行")
             
-            logger.info(f"📺 [generate_ranking_embed] 排行榜已生成（模式: {'多線趨勢' if multi_anime and len(multi_anime) >= 1 else '聚合排行'}）")
+            logger.info(f"📺 [generate_ranking_embed] 排行榜已生成（模式: {'多線趨勢' if ranked_chart_anime and len(ranked_chart_anime) >= 2 else '聚合排行'}）")
             return embed
         except Exception as e:
             logger.error(f"❌ [generate_ranking_embed] 生成失敗: {e}", exc_info=True)
