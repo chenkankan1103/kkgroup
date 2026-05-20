@@ -4,6 +4,7 @@
 *.pyc
 __pycache__/
 *.log
+.venv/
 
 # IDE
 .vscode/
