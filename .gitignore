@@ -22,6 +22,7 @@ build/
 venv/
 env/
 ENV/
+.venv/
 
 # 工作區文件（文檔、測試、臨時工具）- 不提交 Git
 /docs_and_tests/
