@@ -2039,12 +2039,14 @@ class AnimeTracker(commands.Cog):
         description_text = f"**集數：{volume}**"
         # 不再在 description 中添加簡介，改為只在 field 中顯示短版簡介
         
-        # 人氣度和評分信息 - 增強展示
-        popularity_text = f"👥 {popular:,}" if popular > 0 else "👥 N/A"
-        score_text = f"⭐ {score:.1f}" if score > 0 else "⭐ N/A"
-        
+        # 人氣度和評分信息 - 改為以平均觀看人數為主
         # 嘗試獲取動畫統計信息（用於顯示平均數據）
         anime_stats = self.db.get_anime_statistics(int(anime_sn)) if anime_sn else None
+
+        avg_views_text = (
+            f"👥 {anime_stats['avg_views']:,.0f}" if anime_stats and anime_stats.get('avg_views') else "👥 N/A"
+        )
+        score_text = f"⭐ {score:.1f}" if score > 0 else "⭐ N/A"
         
         embed = discord.Embed(
             title=f"🎬 {anime_name}",
