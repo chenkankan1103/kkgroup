@@ -53,6 +53,29 @@ _GENERIC_LOG_PATTERNS = (
     r'429',
     r'rate limit',
 )
+_CODE_BUG_PATTERNS = (
+    r'syntaxerror',
+    r'indentationerror',
+    r'importerror',
+    r'modulenotfounderror',
+    r'nameerror',
+    r'attributeerror',
+    r'typeerror',
+    r'keyerror',
+    r'valueerror',
+)
+_LOCAL_HEAL_PATTERNS = (
+    r'main process exited',
+    r'failed with result',
+    r'result=exit-code',
+    r'connection refused',
+    r'connection reset',
+    r'timed out',
+    r'websocket closed',
+    r'shard .* disconnect',
+    r'429',
+    r'rate limit',
+)
 
 
 def _artifact_key_from_signature(signature: str) -> str:
@@ -116,6 +139,62 @@ def _snapshot_requires_repair(snapshot: dict[str, str]) -> tuple[bool, str]:
     return False, '服務狀態與近期日誌皆正常'
 
 
+def _decide_repair_action(snapshot: dict[str, str]) -> tuple[str, str]:
+    should_repair, reason = _snapshot_requires_repair(snapshot)
+    if not should_repair:
+        return 'healthy', reason
+
+    status = (snapshot.get('status') or 'unknown').strip().lower()
+    combined_text = f"{snapshot.get('summary', '')}\n{snapshot.get('logs', '')}".lower()
+
+    if status not in _HEALTHY_STATUSES:
+        if any(re.search(pattern, combined_text, re.IGNORECASE) for pattern in _CODE_BUG_PATTERNS):
+            return 'escalate', f'{reason} / 偵測到程式碼缺陷訊號'
+        return 'local-heal', f'{reason} / 先嘗試本地重啟'
+
+    if any(re.search(pattern, combined_text, re.IGNORECASE) for pattern in _CODE_BUG_PATTERNS):
+        return 'escalate', f'{reason} / active 但屬於程式碼缺陷，直接升級'
+
+    if any(re.search(pattern, combined_text, re.IGNORECASE) for pattern in _LOCAL_HEAL_PATTERNS):
+        return 'local-heal', f'{reason} / active 但疑似營運異常，先嘗試本地重啟'
+
+    if 'traceback' in combined_text:
+        return 'escalate', f'{reason} / active 但有 traceback，直接升級'
+
+    return 'local-heal', f'{reason} / 預設先嘗試一次本地重啟'
+
+
+def _attempt_local_service_heal(service: str) -> dict[str, str | bool]:
+    before_snapshot = _read_service_snapshot(service)
+    restart_proc = _run_command([_SYSTEMCTL_BIN, 'restart', service])
+    after_snapshot = _read_service_snapshot(service)
+    after_action, after_reason = _decide_repair_action(after_snapshot)
+
+    status_before = before_snapshot.get('status', 'unknown')
+    status_after = after_snapshot.get('status', 'unknown')
+    restart_error = (restart_proc.stderr or restart_proc.stdout or '').strip()
+    success = restart_proc.returncode == 0 and after_action == 'healthy'
+
+    summary = (
+        f'本地重啟 {service} 成功，狀態 {status_before} -> {status_after}'
+        if success else
+        f'本地重啟 {service} 失敗，狀態 {status_before} -> {status_after}'
+    )
+    if restart_error:
+        summary += f' / {restart_error[:160]}'
+    if not success:
+        summary += f' / {after_reason}'
+
+    return {
+        'attempted': True,
+        'success': success,
+        'summary': summary,
+        'status_before': status_before,
+        'status_after': status_after,
+        'snapshot': after_snapshot,
+    }
+
+
 def _dispatch_repair_request(
     reporter_bot_type: str,
     reporter_service: str,
@@ -169,7 +248,7 @@ class MutualRescueMonitor:
             if service != self.own_service
         ]
         self._task = None
-        self._last_dispatch_at: dict[str, float] = {}
+        self._last_action_at: dict[str, float] = {}
 
     def _log(self, message: str):
         try:
@@ -201,14 +280,32 @@ class MutualRescueMonitor:
         now = time.time()
         for service in self.peer_services:
             snapshot = await asyncio.to_thread(_read_service_snapshot, service)
-            should_dispatch, reason = _snapshot_requires_repair(snapshot)
+            action, reason = _decide_repair_action(snapshot)
             status = snapshot.get('status', 'unknown')
-            if not should_dispatch:
+            if action == 'healthy':
                 continue
 
-            last_dispatch_at = self._last_dispatch_at.get(service, 0.0)
-            if now - last_dispatch_at < _MUTUAL_RESCUE_COOLDOWN_SEC:
+            last_action_at = self._last_action_at.get(service, 0.0)
+            if now - last_action_at < _MUTUAL_RESCUE_COOLDOWN_SEC:
                 continue
+
+            if action == 'local-heal':
+                heal_result = await asyncio.to_thread(_attempt_local_service_heal, service)
+                self._last_action_at[service] = now
+                self._log(
+                    f"[MutualRescue] 偵測到 {service} 狀態={status} / 原因={reason} / {heal_result['summary']}"
+                )
+                if heal_result['success']:
+                    continue
+
+                snapshot = dict(heal_result['snapshot'])
+                snapshot['summary'] = (
+                    f"{snapshot.get('summary', '')}\n[local-heal] {heal_result['summary']}"
+                )[:2000]
+                snapshot['logs'] = (
+                    f"{snapshot.get('logs', '')}\n[local-heal] {heal_result['summary']}"
+                )[-1500:]
+                reason = f"{reason} / 本地重啟失敗，升級 GitHub"
 
             ok, detail = await asyncio.to_thread(
                 _dispatch_repair_request,
@@ -217,7 +314,7 @@ class MutualRescueMonitor:
                 service,
                 snapshot,
             )
-            self._last_dispatch_at[service] = now
+            self._last_action_at[service] = now
             self._log(
                 f'[MutualRescue] 偵測到 {service} 狀態={status} / 原因={reason} / {detail}'
             )

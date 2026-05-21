@@ -12,9 +12,13 @@ import subprocess
 import logging
 from typing import Optional, Dict, List
 
+from shared.utils.mutual_rescue import _attempt_local_service_heal, _decide_repair_action, _read_service_snapshot
+
 # 設置日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+_MONITORED_SERVICES = ("bot.service", "shopbot.service", "uibot.service")
 
 
 def _normalize_incident_signature(text: str) -> str:
@@ -142,66 +146,104 @@ class AutoDebugSystem:
         with open(artifact_path, "w", encoding="utf-8") as artifact_file:
             json.dump(payload, artifact_file, ensure_ascii=False, indent=2)
         return artifact_path
-        
-    async def check_system_errors(self) -> Optional[Dict]:
-        """檢查系統錯誤"""
+
+    def _build_detection_message(self, result: Dict, local_analysis: Optional[Dict] = None, artifact_path: str = "") -> str:
+        lines = []
+        healed = result.get("healed") or {}
+        errors = result.get("errors") or {}
+
+        if healed:
+            lines.append("已完成本地自癒:\n" + json.dumps(healed, ensure_ascii=False, indent=2))
+        if errors:
+            lines.append("待進一步處理的異常:\n" + json.dumps(errors, ensure_ascii=False, indent=2))
+        if local_analysis:
+            lines.append("本地分析:\n" + json.dumps(local_analysis, ensure_ascii=False, indent=2))
+        if artifact_path:
+            lines.append(f"本地紀錄: {artifact_path}")
+        return "\n\n".join(lines)[:4000]
+
+    async def _collect_detection_result(self) -> Optional[Dict]:
+        """收集 systemd/journal 異常，並優先嘗試本地自癒。"""
         try:
             if os.name != "posix":
                 logger.info("目前環境不是 Linux/systemd，跳過本地服務健康檢查")
                 return None
 
-            # 檢查服務狀態
-            services = ["bot.service", "shopbot.service", "uibot.service"]
-            error_logs = {}
-            has_errors = False
-            
-            for service in services:
-                try:
-                    # 檢查服務狀態
-                    status_result = subprocess.run(
-                        ['sudo', 'systemctl', 'is-active', service], 
-                        capture_output=True, text=True, timeout=10
-                    )
-                    status = status_result.stdout.strip()
-                    
-                    if status in ["inactive", "failed"]:
-                        has_errors = True
-                        error_logs[service] = f"服務狀態異常: {status}"
-                    
-                    # 檢查最近錯誤日誌
-                    log_result = subprocess.run(
-                        ['sudo', 'journalctl', '-u', service, '--since', '1 hour ago', '--no-pager', '-n', '10'],
-                        capture_output=True, text=True, timeout=10
-                    )
-                    logs = log_result.stdout
-                    
-                    # 檢查錯誤關鍵字
-                    error_keywords = ["error", "exception", "failed", "traceback", "critical"]
-                    error_count = sum(1 for keyword in error_keywords if keyword.lower() in logs.lower())
-                    
-                    if error_count >= 2:  # 1小時內有2個以上錯誤
-                        has_errors = True
-                        error_logs[service] = f"檢測到 {error_count} 個錯誤:\n{logs[-500:]}"
-                        
-                except subprocess.TimeoutExpired:
-                    error_logs[service] = "檢查超時"
-                    has_errors = True
-                except Exception as e:
-                    error_logs[service] = f"檢查失敗: {str(e)}"
-                    has_errors = True
-            
-            if has_errors:
-                return {
-                    "timestamp": datetime.now().isoformat(),
-                    "errors": error_logs,
-                    "severity": "high" if len(error_logs) >= 2 else "medium"
-                }
-            
-            return None
-            
+            errors = {}
+            healed = {}
+            severity_rank = "low"
+
+            for service in _MONITORED_SERVICES:
+                snapshot = await asyncio.to_thread(_read_service_snapshot, service)
+                action, reason = _decide_repair_action(snapshot)
+                if action == "healthy":
+                    continue
+
+                if action == "local-heal":
+                    heal_result = await asyncio.to_thread(_attempt_local_service_heal, service)
+                    if heal_result.get("success"):
+                        healed[service] = heal_result.get("summary", reason)
+                        severity_rank = "medium" if severity_rank == "low" else severity_rank
+                        continue
+
+                    failed_snapshot = heal_result.get("snapshot") or snapshot
+                    errors[service] = (
+                        f"{reason}\n"
+                        f"本地自癒失敗: {heal_result.get('summary', 'unknown')}\n"
+                        f"{failed_snapshot.get('summary', '')}"
+                    )[:2000]
+                    severity_rank = "high"
+                    continue
+
+                errors[service] = f"{reason}\n{snapshot.get('summary', '')}"[:2000]
+                severity_rank = "high"
+
+            if not errors and not healed:
+                return None
+
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "errors": errors,
+                "healed": healed,
+                "severity": severity_rank,
+            }
         except Exception as e:
             logger.error(f"檢查系統錯誤時發生異常: {e}")
             return None
+
+    async def _handle_detection_result(self, result: Dict) -> int:
+        errors = result.get("errors") or {}
+        healed = result.get("healed") or {}
+
+        if not errors:
+            await self.send_notification(
+                self._build_detection_message(result),
+                result.get("severity", "medium"),
+                status_text="已完成本地自癒",
+            )
+            return len(healed)
+
+        logger.warning(f"🔥 檢測到需升級處理的系統錯誤: {result}")
+        local_analysis = await self.analyze_locally(result)
+        should_escalate = self.should_escalate_to_github(result, local_analysis)
+        artifact_path = self.save_local_artifact(result, local_analysis, should_escalate)
+        status_text = "已完成本地分析"
+        if should_escalate:
+            status_text = "已完成本地分析，並升級至 GitHub Actions"
+
+        await self.send_notification(
+            self._build_detection_message(result, local_analysis=local_analysis, artifact_path=artifact_path),
+            result["severity"],
+            status_text=status_text,
+        )
+
+        if should_escalate:
+            await self.trigger_github_action(result)
+        return len(errors) + len(healed)
+        
+    async def check_system_errors(self) -> Optional[Dict]:
+        """檢查系統錯誤"""
+        return await self._collect_detection_result()
     
     async def trigger_github_action(self, error_data: Dict) -> bool:
         """觸發 GitHub Actions 進行 AI 分析"""
@@ -286,34 +328,10 @@ class AutoDebugSystem:
         while True:
             try:
                 # 檢查系統錯誤
-                error_data = await self.check_system_errors()
-                
-                if error_data:
-                    logger.warning(f"🔥 檢測到系統錯誤: {error_data}")
-                    local_analysis = await self.analyze_locally(error_data)
-                    should_escalate = self.should_escalate_to_github(error_data, local_analysis)
-                    artifact_path = self.save_local_artifact(error_data, local_analysis, should_escalate)
-                    status_text = "已完成本地分析"
-                    if should_escalate:
-                        status_text = "已完成本地分析，並升級至 GitHub Actions"
-                    
-                    # 發送通知
-                    await self.send_notification(
-                        (
-                            "檢測到系統錯誤，已先在本地完成 AI 分析。\n\n"
-                            f"錯誤詳情:\n{json.dumps(error_data['errors'], ensure_ascii=False, indent=2)}\n\n"
-                            f"本地分析:\n{json.dumps(local_analysis, ensure_ascii=False, indent=2)}\n\n"
-                            f"本地紀錄: {artifact_path}"
-                        ),
-                        error_data["severity"],
-                        status_text=status_text,
-                    )
-                    
-                    # 僅在需要升級時才觸發 GitHub Actions
-                    if should_escalate:
-                        await self.trigger_github_action(error_data)
-                    
-                    # 等待一段時間避免重複觸發
+                detection_result = await self.check_system_errors()
+
+                if detection_result:
+                    await self._handle_detection_result(detection_result)
                     await asyncio.sleep(300)  # 5分鐘
                 else:
                     logger.info("✅ 系統運行正常")
@@ -326,33 +344,11 @@ class AutoDebugSystem:
     async def run_once(self) -> int:
         """單次執行檢查，供 VM 上的 one-shot probe 使用。"""
         logger.info("🔍 執行單次 VM 自動 Debug 檢查")
-        error_data = await self.check_system_errors()
-        if not error_data:
+        detection_result = await self.check_system_errors()
+        if not detection_result:
             logger.info("✅ 單次檢查未發現系統錯誤")
             return 0
-
-        logger.warning(f"🔥 單次檢查發現系統錯誤: {error_data}")
-        local_analysis = await self.analyze_locally(error_data)
-        should_escalate = self.should_escalate_to_github(error_data, local_analysis)
-        artifact_path = self.save_local_artifact(error_data, local_analysis, should_escalate)
-        status_text = "已完成本地分析"
-        if should_escalate:
-            status_text = "已完成本地分析，並升級至 GitHub Actions"
-
-        await self.send_notification(
-            (
-                "檢測到系統錯誤，已先在本地完成 AI 分析。\n\n"
-                f"錯誤詳情:\n{json.dumps(error_data['errors'], ensure_ascii=False, indent=2)}\n\n"
-                f"本地分析:\n{json.dumps(local_analysis, ensure_ascii=False, indent=2)}\n\n"
-                f"本地紀錄: {artifact_path}"
-            ),
-            error_data["severity"],
-            status_text=status_text,
-        )
-
-        if should_escalate:
-            await self.trigger_github_action(error_data)
-        return len(error_data.get("errors") or {})
+        return await self._handle_detection_result(detection_result)
 
 async def main():
     """主函數"""

@@ -10,6 +10,7 @@ import asyncio
 import json
 import re
 import subprocess
+import shutil
 from datetime import datetime
 import pytz
 
@@ -18,6 +19,22 @@ _KNOWN_SERVICES = ('bot.service', 'shopbot.service', 'uibot.service')
 _GCP_INSTANCE = os.getenv('GCP_INSTANCE_NAME', 'instance-20250501-142333')
 _GCP_ZONE = os.getenv('GCP_ZONE', 'us-central1-c')
 _GCP_PROJECT = os.getenv('GCP_PROJECT_ID', 'kkgroup')
+_GCP_TUNNEL = os.getenv('GCP_TUNNEL_MODE', 'iap').strip().lower()
+
+
+def _resolve_gcloud_command():
+    candidates = ['gcloud', 'gcloud.cmd', 'gcloud.exe', 'gcloud.ps1', 'gcloud.bat']
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if not resolved:
+            continue
+        if resolved.lower().endswith('.ps1'):
+            powershell = shutil.which('powershell.exe') or shutil.which('pwsh.exe')
+            if powershell:
+                return [powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', resolved]
+            continue
+        return [resolved]
+    return None
 
 
 def _normalize_log_text(error_logs):
@@ -200,12 +217,18 @@ def _run_subprocess(command):
 
 
 def _run_remote_command(remote_command):
-    command = [
-        'gcloud', 'compute', 'ssh', _GCP_INSTANCE,
+    gcloud_command = _resolve_gcloud_command()
+    if not gcloud_command:
+        raise FileNotFoundError('gcloud CLI 不可用，無法執行遠端命令')
+
+    command = gcloud_command + [
+        'compute', 'ssh', _GCP_INSTANCE,
         f'--project={_GCP_PROJECT}',
         f'--zone={_GCP_ZONE}',
-        '--command', remote_command,
     ]
+    if _GCP_TUNNEL == 'iap':
+        command.append('--tunnel-through-iap')
+    command += ['--command', remote_command]
     return _run_subprocess(command)
 
 
@@ -234,13 +257,25 @@ def execute_operational_heal(event_data):
             'log_excerpt': 'dry run validation only',
         }
 
-    gcloud_check = _run_subprocess(['gcloud', '--version'])
-    if gcloud_check.returncode != 0:
+    gcloud_command = _resolve_gcloud_command()
+    if not gcloud_command:
         return {
             'attempted': True,
             'success': False,
             'service': service,
             'summary': 'gcloud CLI 不可用，無法執行遠端自癒',
+            'status_before': 'unknown',
+            'status_after': 'unknown',
+            'log_excerpt': '',
+        }
+
+    gcloud_check = _run_subprocess(gcloud_command + ['--version'])
+    if gcloud_check.returncode != 0:
+        return {
+            'attempted': True,
+            'success': False,
+            'service': service,
+            'summary': 'gcloud CLI 存在但無法正常執行，無法執行遠端自癒',
             'status_before': 'unknown',
             'status_after': 'unknown',
             'log_excerpt': gcloud_check.stderr.strip() or gcloud_check.stdout.strip(),

@@ -21,16 +21,34 @@ import subprocess
 import argparse
 import os
 import sys
+import shutil
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from datetime import datetime
 import shlex
+
+
+def resolve_gcloud_command() -> List[str]:
+    """解析可供 subprocess 使用的 gcloud 執行命令。"""
+    candidates = ["gcloud", "gcloud.cmd", "gcloud.exe", "gcloud.ps1", "gcloud.bat"]
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if not resolved:
+            continue
+        if resolved.lower().endswith(".ps1"):
+            powershell = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
+            if powershell:
+                return [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", resolved]
+            continue
+        return [resolved]
+    raise FileNotFoundError("找不到 gcloud CLI，請確認 Google Cloud SDK 已安裝並加入 PATH")
 
 class CommandsManager:
     def __init__(self, registry_path: str = "config/commands_registry.json"):
         """初始化指令管理器"""
         self.registry_path = Path(registry_path)
         self.registry = self._load_registry()
+        self.gcloud_command = None
         
         # GCP 連接參數
         self.gcp_instance = self.registry.get("gcp", {}).get("connection", {}).get("instance", "")
@@ -48,8 +66,11 @@ class CommandsManager:
 
     def _build_gcp_ssh_command(self, remote_command: str) -> List[str]:
         """構建 GCP SSH 命令"""
-        return [
-            "gcloud", "-q", "compute", "ssh",
+        if self.gcloud_command is None:
+            self.gcloud_command = resolve_gcloud_command()
+
+        return self.gcloud_command + [
+            "-q", "compute", "ssh",
             self.gcp_instance,
             "--zone", self.gcp_zone,
             f"--tunnel-through-{self.gcp_tunnel}",
