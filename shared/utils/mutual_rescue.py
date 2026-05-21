@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -20,8 +21,38 @@ _HEALTHY_STATUSES = {'active', 'activating', 'reloading'}
 _MUTUAL_RESCUE_INTERVAL_SEC = int(os.getenv('MUTUAL_RESCUE_INTERVAL_SEC', '60'))
 _MUTUAL_RESCUE_COOLDOWN_SEC = int(os.getenv('MUTUAL_RESCUE_COOLDOWN_SEC', '300'))
 _MUTUAL_RESCUE_LOG_LINES = int(os.getenv('MUTUAL_RESCUE_LOG_LINES', '20'))
+_MUTUAL_RESCUE_JOURNAL_SINCE = os.getenv('MUTUAL_RESCUE_JOURNAL_SINCE', '10 minutes ago')
 _SYSTEMCTL_BIN = shutil.which('systemctl') or '/usr/bin/systemctl'
 _JOURNALCTL_BIN = shutil.which('journalctl') or '/usr/bin/journalctl'
+_FATAL_LOG_PATTERNS = (
+    r'traceback',
+    r'syntaxerror',
+    r'indentationerror',
+    r'importerror',
+    r'modulenotfounderror',
+    r'nameerror',
+    r'attributeerror',
+    r'typeerror',
+    r'keyerror',
+    r'valueerror',
+    r'critical',
+    r'fatal',
+    r'unhandled exception',
+    r'main process exited',
+    r'failed with result',
+    r'result=exit-code',
+)
+_GENERIC_LOG_PATTERNS = (
+    r'\berror\b',
+    r'\bexception\b',
+    r'connection refused',
+    r'connection reset',
+    r'timed out',
+    r'websocket closed',
+    r'shard .* disconnect',
+    r'429',
+    r'rate limit',
+)
 
 
 def _artifact_key_from_signature(signature: str) -> str:
@@ -45,7 +76,8 @@ def _read_service_snapshot(service: str) -> dict[str, str]:
         '--property=ActiveState,SubState,Result,ExecMainCode,ExecMainStatus',
     ])
     log_proc = _run_command([
-        _JOURNALCTL_BIN, '-u', service, '-n', str(_MUTUAL_RESCUE_LOG_LINES), '--no-pager'
+        _JOURNALCTL_BIN, '-u', service, '--since', _MUTUAL_RESCUE_JOURNAL_SINCE,
+        '-n', str(_MUTUAL_RESCUE_LOG_LINES), '--no-pager'
     ])
 
     status = (status_proc.stdout or status_proc.stderr or 'unknown').strip().splitlines()
@@ -59,6 +91,29 @@ def _read_service_snapshot(service: str) -> dict[str, str]:
         'summary': summary[:2000],
         'logs': logs[-1500:],
     }
+
+
+def _snapshot_requires_repair(snapshot: dict[str, str]) -> tuple[bool, str]:
+    status = (snapshot.get('status') or 'unknown').strip().lower()
+    summary = snapshot.get('summary', '')
+    logs = snapshot.get('logs', '')
+    combined_text = f'{summary}\n{logs}'.lower()
+
+    if status not in _HEALTHY_STATUSES:
+        return True, f'狀態異常: {status}'
+
+    for pattern in _FATAL_LOG_PATTERNS:
+        if re.search(pattern, combined_text, re.IGNORECASE):
+            return True, f'偵測到高風險錯誤訊號: {pattern}'
+
+    generic_hits = sum(
+        1 for pattern in _GENERIC_LOG_PATTERNS
+        if re.search(pattern, combined_text, re.IGNORECASE)
+    )
+    if generic_hits >= 2:
+        return True, f'近期日誌累積 {generic_hits} 個異常訊號'
+
+    return False, '服務狀態與近期日誌皆正常'
 
 
 def _dispatch_repair_request(
@@ -146,8 +201,9 @@ class MutualRescueMonitor:
         now = time.time()
         for service in self.peer_services:
             snapshot = await asyncio.to_thread(_read_service_snapshot, service)
+            should_dispatch, reason = _snapshot_requires_repair(snapshot)
             status = snapshot.get('status', 'unknown')
-            if status in _HEALTHY_STATUSES:
+            if not should_dispatch:
                 continue
 
             last_dispatch_at = self._last_dispatch_at.get(service, 0.0)
@@ -163,7 +219,7 @@ class MutualRescueMonitor:
             )
             self._last_dispatch_at[service] = now
             self._log(
-                f'[MutualRescue] 偵測到 {service} 狀態={status} / {detail}'
+                f'[MutualRescue] 偵測到 {service} 狀態={status} / 原因={reason} / {detail}'
             )
 
 

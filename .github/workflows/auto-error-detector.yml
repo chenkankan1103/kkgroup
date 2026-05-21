@@ -21,8 +21,10 @@ jobs:
     permissions:
       contents: write
       issues: write
+      id-token: write
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
     
     steps:
     - name: 檢出代碼
@@ -31,32 +33,43 @@ jobs:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: 設定Python環境
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: 設定 Python 路徑
+    - name: 檢查 VM 探測前置條件
       run: |
-        echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV
-    
-    - name: 安裝依賴
-      run: |
-        pip install requests aiohttp python-dotenv pytz
-    
-    - name: 運行自動錯誤檢測器
+        if [ -z "$GCP_SA_KEY" ]; then
+          echo "❌ 未設置 GCP_SA_KEY，無法從 GitHub Actions 探測 VM systemd/journal" >&2
+          exit 1
+        fi
+
+    - name: 設置 GCP 認證
+      uses: google-github-actions/auth@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         TEST_MODE: ${{ github.event.inputs.test_mode }}
-        AUTO_ERROR_DETECTOR_RUN_ONCE: 'true'
+      with:
+        credentials_json: ${{ env.GCP_SA_KEY }}
+
+    - name: 安裝 gcloud CLI
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: kkgroup
+
+    - name: 在 VM 上運行自動 Debug 單次探測
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        TEST_MODE: ${{ github.event.inputs.test_mode || 'normal' }}
       run: |
-        echo "🚀 啟動自動錯誤檢測器"
+        echo "🚀 啟動 VM 單次自動 Debug 探測"
         echo "📊 測試模式: $TEST_MODE"
         echo "⏰ 開始時間: $(date)"
-        python3 scripts/auto_error_detector.py
+        gcloud compute ssh e193752468@instance-20250501-142333 \
+          --project=kkgroup \
+          --zone=us-central1-c \
+          --tunnel-through-iap \
+          --command "cd /home/e193752468/kkgroup && export PYTHONPATH=/home/e193752468/kkgroup:\$PYTHONPATH && export GITHUB_TOKEN='${GITHUB_TOKEN}' && export DISCORD_WEBHOOK='${DISCORD_WEBHOOK}' && export AUTO_DEBUG_RUN_ONCE=true && python3 -m cogs.common.auto_debug_system"
         
-        echo "✅ 自動錯誤檢測器完成"
+        echo "✅ VM 自動 Debug 探測完成"
         echo "⏰ 結束時間: $(date)"
     
     - name: 檢查 GitHub Actions 修復狀態
@@ -99,12 +112,12 @@ jobs:
               "content": "🤖 **自動錯誤檢測器狀態報告**",
               "embeds": [{
                   "title": "系統監控狀態",
-                  "description": "自動錯誤檢測器和 GitHub Actions 修復系統狀態",
+                    "description": "GitHub Actions 已透過 GCP SSH 實際探測 VM 上的 systemd/journal 狀態",
                   "color": 5814783,
                   "fields": [
-                      {"name": "🤖 檢測器狀態", "value": f"{os.getenv('TEST_MODE', 'normal')} 模式執行完成", "inline": True},
+                      {"name": "🤖 檢測器狀態", "value": f"{os.getenv('TEST_MODE', 'normal')} 模式 VM 探測完成", "inline": True},
                       {"name": "⏰ 執行時間", "value": datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'), "inline": True},
-                      {"name": "🔗 修復系統", "value": "GitHub Actions 自動修復", "inline": True},
+                      {"name": "🔗 探測來源", "value": "GCP VM systemd/journal", "inline": True},
                       {"name": "📊 監控頻率", "value": "每 10 分鐘檢查", "inline": True},
                   ],
               }],
