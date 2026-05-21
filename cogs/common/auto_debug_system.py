@@ -323,13 +323,48 @@ class AutoDebugSystem:
                 logger.error(f"監控循環發生異常: {e}")
                 await asyncio.sleep(30)  # 30秒後重試
 
+    async def run_once(self) -> int:
+        """單次執行檢查，供 VM 上的 one-shot probe 使用。"""
+        logger.info("🔍 執行單次 VM 自動 Debug 檢查")
+        error_data = await self.check_system_errors()
+        if not error_data:
+            logger.info("✅ 單次檢查未發現系統錯誤")
+            return 0
+
+        logger.warning(f"🔥 單次檢查發現系統錯誤: {error_data}")
+        local_analysis = await self.analyze_locally(error_data)
+        should_escalate = self.should_escalate_to_github(error_data, local_analysis)
+        artifact_path = self.save_local_artifact(error_data, local_analysis, should_escalate)
+        status_text = "已完成本地分析"
+        if should_escalate:
+            status_text = "已完成本地分析，並升級至 GitHub Actions"
+
+        await self.send_notification(
+            (
+                "檢測到系統錯誤，已先在本地完成 AI 分析。\n\n"
+                f"錯誤詳情:\n{json.dumps(error_data['errors'], ensure_ascii=False, indent=2)}\n\n"
+                f"本地分析:\n{json.dumps(local_analysis, ensure_ascii=False, indent=2)}\n\n"
+                f"本地紀錄: {artifact_path}"
+            ),
+            error_data["severity"],
+            status_text=status_text,
+        )
+
+        if should_escalate:
+            await self.trigger_github_action(error_data)
+        return len(error_data.get("errors") or {})
+
 async def main():
     """主函數"""
     # 啟動監控系統
     debug_system = AutoDebugSystem()
     if not debug_system.github_token:
         logger.info("未設置 GitHub token，auto debug 將以本地分析模式運行，不升級至 GitHub Actions")
-    await debug_system.monitor_loop()
+    run_once = os.getenv("AUTO_DEBUG_RUN_ONCE", "").strip().lower() in ("1", "true", "yes")
+    if run_once:
+        await debug_system.run_once()
+    else:
+        await debug_system.monitor_loop()
 
 if __name__ == "__main__":
     asyncio.run(main())
