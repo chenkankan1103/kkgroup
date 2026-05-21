@@ -4,6 +4,21 @@
 
 ## 2026-05-15
 
+## 2026-05-21
+
+- 透過 `gcloud compute ssh` 實機檢查 VM 上的 auto-debug 架構現況，確認所有 4 個 systemd 服務正常運行。
+- 發現 auto-debug 架構已從舊版（單一 log_monitor 事件驅動）演進為 **三層防禦**：
+  1. VM 本地（`auto_debug_system.py` + `mutual_rescue.py`）：優先本地 AI 分析 + 本地重啟
+  2. GitHub Actions Agent 營運自癒（`auto_ai_fix.py` `execute_operational_heal()`）：gcloud SSH 遠端重啟
+  3. GitHub Actions AI 自動改碼（`auto_ai_fix.py` `analyze_and_fix()`）：NVIDIA AI 分析 + 產生修復提案
+- 重點變化：
+  - 新增 `cogs/common/auto_debug_system.py` 作為 VM 端獨立 auto debug 循環（每 60 秒）
+  - GitHub Actions 現在是升級路徑（`AUTO_DEBUG_GITHUB_MODE=escalate`），不是主路徑
+  - `auto_ai_fix.py` 新增 `execute_operational_heal()` 營運自癒功能
+  - AI 改碼預設只產生 review artifact，不直接覆寫原始碼（`AUTO_AI_DIRECT_WRITE` 預設 false）
+- VM 檢查結果：Git 版本 `9643c4e2`，4 個服務全部 active，近 2 小時 journal 無錯誤
+- 已全面更新 [LogMonitor 與 Auto AI Fix 流程總覽](concepts/log_monitor_pipeline.md) 知識頁，反映最新三層架構
+
 ## 2026-05-18
 
 - 將 LogMonitor / Auto AI Fix 延伸為 mutual-rescue self-healing agent：`bot`、`shopbot`、`uibot` 都會啟動 watchdog，偵測同伴 `systemd` 服務異常後自動派送 `repository_dispatch` 修復請求。
