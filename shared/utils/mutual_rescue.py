@@ -24,6 +24,7 @@ _MUTUAL_RESCUE_LOG_LINES = int(os.getenv('MUTUAL_RESCUE_LOG_LINES', '20'))
 _MUTUAL_RESCUE_JOURNAL_SINCE = os.getenv('MUTUAL_RESCUE_JOURNAL_SINCE', '10 minutes ago')
 _SYSTEMCTL_BIN = shutil.which('systemctl') or '/usr/bin/systemctl'
 _JOURNALCTL_BIN = shutil.which('journalctl') or '/usr/bin/journalctl'
+_SUDO_BIN = shutil.which('sudo') or '/usr/bin/sudo'
 _FATAL_LOG_PATTERNS = (
     r'traceback',
     r'syntaxerror',
@@ -90,6 +91,14 @@ def _normalize_snapshot(text: str) -> str:
 
 def _run_command(command: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(command, capture_output=True, text=True, check=False)
+
+
+def _systemctl_restart_command(service: str) -> list[str]:
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        return [_SYSTEMCTL_BIN, 'restart', service]
+    if _SUDO_BIN:
+        return [_SUDO_BIN, '-n', _SYSTEMCTL_BIN, 'restart', service]
+    return [_SYSTEMCTL_BIN, 'restart', service]
 
 
 def _read_service_snapshot(service: str) -> dict[str, str]:
@@ -166,7 +175,7 @@ def _decide_repair_action(snapshot: dict[str, str]) -> tuple[str, str]:
 
 def _attempt_local_service_heal(service: str) -> dict[str, str | bool]:
     before_snapshot = _read_service_snapshot(service)
-    restart_proc = _run_command([_SYSTEMCTL_BIN, 'restart', service])
+    restart_proc = _run_command(_systemctl_restart_command(service))
     after_snapshot = _read_service_snapshot(service)
     after_action, after_reason = _decide_repair_action(after_snapshot)
 

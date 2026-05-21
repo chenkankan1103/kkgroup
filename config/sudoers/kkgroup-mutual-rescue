@@ -1,0 +1,12 @@
+# Allow KKGroup bot processes to perform non-interactive service recovery.
+# Install on the VM as /etc/sudoers.d/kkgroup-mutual-rescue with mode 0440.
+
+Cmnd_Alias KKGROUP_SERVICE_RESTART = \
+    /usr/bin/systemctl restart bot.service, \
+    /usr/bin/systemctl restart shopbot.service, \
+    /usr/bin/systemctl restart uibot.service, \
+    /bin/systemctl restart bot.service, \
+    /bin/systemctl restart shopbot.service, \
+    /bin/systemctl restart uibot.service
+
+e193752468 ALL=(root) NOPASSWD: KKGROUP_SERVICE_RESTART

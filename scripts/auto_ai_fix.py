@@ -580,6 +580,7 @@ async def main():
                 'root_cause': heal_result.get('summary', reason),
                 'file_path': heal_result.get('service', 'N/A'),
             }, False, discord_webhook, heal_result=heal_result)
+            raise SystemExit(1)
         return
     
     # AI 分析和生成修復代碼
@@ -596,8 +597,13 @@ async def main():
         
         # 發送通知
         await send_discord_notification(fix_data, success, discord_webhook, heal_result=heal_result)
+        if not success:
+            raise SystemExit(1)
     else:
         print("❌ 無法生成修復代碼")
+
+        if heal_result.get('attempted') and not heal_result.get('success'):
+            raise SystemExit(1)
 
 if __name__ == "__main__":
     asyncio.run(main())

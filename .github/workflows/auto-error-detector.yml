@@ -1,14 +1,14 @@
 name: Auto Error Detector
+
 on:
   schedule:
-    # 每 10 分鐘檢查一次
-    - cron: '*/10 * * * *'
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       test_mode:
-        description: '測試模式'
+        description: "Probe mode"
         required: false
-        default: 'normal'
+        default: "normal"
         type: choice
         options:
           - normal
@@ -25,82 +25,70 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-    
+
     steps:
-    - name: 檢出代碼
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: 檢查 VM 探測前置條件
-      run: |
-        if [ -z "$GCP_SA_KEY" ]; then
-          echo "❌ 未設置 GCP_SA_KEY，無法從 GitHub Actions 探測 VM systemd/journal" >&2
-          exit 1
-        fi
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: 設置 GCP 認證
-      uses: google-github-actions/auth@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        TEST_MODE: ${{ github.event.inputs.test_mode }}
-      with:
-        credentials_json: ${{ env.GCP_SA_KEY }}
+      - name: Validate GCP credentials
+        run: |
+          if [ -z "$GCP_SA_KEY" ]; then
+            echo "GCP_SA_KEY is not configured; cannot probe VM systemd/journal." >&2
+            exit 1
+          fi
 
-    - name: 安裝 gcloud CLI
-      uses: google-github-actions/setup-gcloud@v2
-      with:
-        project_id: kkgroup
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ env.GCP_SA_KEY }}
 
-    - name: 在 VM 上運行自動 Debug 單次探測
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        TEST_MODE: ${{ github.event.inputs.test_mode || 'normal' }}
-      run: |
-        echo "🚀 啟動 VM 單次自動 Debug 探測"
-        echo "📊 測試模式: $TEST_MODE"
-        echo "⏰ 開始時間: $(date)"
-        gcloud compute ssh e193752468@instance-20250501-142333 \
-          --project=kkgroup \
-          --zone=us-central1-c \
-          --tunnel-through-iap \
-          --command "cd /home/e193752468/kkgroup && export PYTHONPATH=/home/e193752468/kkgroup:\$PYTHONPATH && export GITHUB_TOKEN='${GITHUB_TOKEN}' && export DISCORD_WEBHOOK='${DISCORD_WEBHOOK}' && export AUTO_DEBUG_RUN_ONCE=true && python3 -m cogs.common.auto_debug_system"
-        
-        echo "✅ VM 自動 Debug 探測完成"
-        echo "⏰ 結束時間: $(date)"
-    
-    - name: 檢查 GitHub Actions 修復狀態
-      if: always()
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        echo "📊 檢查最近的 GitHub Actions 執行狀態"
-        
-        # 檢查是否有新的修復提交
-        if git log --oneline --since="10 minutes ago" | grep -qi "ai 自動修復\|AI Auto Fix\|fix:"; then
-          echo "✅ 檢測到自動修復提交"
-          echo "🔗 修復已通過 GitHub Actions 自動處理"
-        else
-          echo "ℹ️ 最近 10 分鐘內無自動修復提交"
-        fi
-        
-        # 檢查修復工作流程狀態
-        echo "📋 最近的修復工作流程："
-        gh run list --workflow="Auto AI Fix" --limit=3 --json status,conclusion,createdAt | \
-          jq -r '.[] | "\(.status): \(.conclusion) - \(.created_at)"' || echo "無法獲取工作流程狀態"
-    
-    - name: 發送狀態報告
-      if: always()
-      continue-on-error: true
-      env:
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        TEST_MODE: ${{ github.event.inputs.test_mode || 'normal' }}
-      run: |
-        if [ "$DISCORD_WEBHOOK" != "" ]; then
-          echo "📢 發送狀態報告到 Discord"
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: kkgroup
+
+      - name: Run VM auto-debug probe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TEST_MODE: ${{ github.event.inputs.test_mode || 'normal' }}
+        run: |
+          echo "Starting VM auto-debug probe"
+          echo "Mode: $TEST_MODE"
+          echo "Started at: $(date -u)"
+          gcloud compute ssh e193752468@instance-20250501-142333 \
+            --project=kkgroup \
+            --zone=us-central1-c \
+            --tunnel-through-iap \
+            --command "cd /home/e193752468/kkgroup && export PYTHONPATH=/home/e193752468/kkgroup:\$PYTHONPATH && export GITHUB_TOKEN='${GITHUB_TOKEN}' && export DISCORD_WEBHOOK='${DISCORD_WEBHOOK}' && export AUTO_DEBUG_RUN_ONCE=true && python3 -m cogs.common.auto_debug_system"
+          echo "VM auto-debug probe completed at: $(date -u)"
+
+      - name: Summarize recent auto-fix runs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Recent commits:"
+          git log --oneline --since="10 minutes ago" || true
+          echo "Recent Auto AI Fix runs:"
+          gh run list --workflow="Auto AI Fix" --limit=3 --json status,conclusion,createdAt,url \
+            | jq -r '.[] | "\(.status): \(.conclusion) - \(.createdAt) - \(.url)"' || true
+
+      - name: Send status report
+        if: always()
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TEST_MODE: ${{ github.event.inputs.test_mode || 'normal' }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "Discord webhook is not configured; skipping status report"
+            exit 0
+          fi
 
           python3 - <<'PY'
           import os
@@ -109,16 +97,15 @@ jobs:
           import requests
 
           payload = {
-              "content": "🤖 **自動錯誤檢測器狀態報告**",
+              "content": "Auto Error Detector status report",
               "embeds": [{
-                  "title": "系統監控狀態",
-                    "description": "GitHub Actions 已透過 GCP SSH 實際探測 VM 上的 systemd/journal 狀態",
-                  "color": 5814783,
+                  "title": "System monitor status",
+                  "description": "GitHub Actions attempted to probe VM systemd/journal through GCP SSH.",
+                  "color": 5814783 if os.getenv("JOB_STATUS") == "success" else 15158332,
                   "fields": [
-                      {"name": "🤖 檢測器狀態", "value": f"{os.getenv('TEST_MODE', 'normal')} 模式 VM 探測完成", "inline": True},
-                      {"name": "⏰ 執行時間", "value": datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'), "inline": True},
-                      {"name": "🔗 探測來源", "value": "GCP VM systemd/journal", "inline": True},
-                      {"name": "📊 監控頻率", "value": "每 10 分鐘檢查", "inline": True},
+                      {"name": "Mode", "value": os.getenv("TEST_MODE", "normal"), "inline": True},
+                      {"name": "Job status", "value": os.getenv("JOB_STATUS", "unknown"), "inline": True},
+                      {"name": "Executed at", "value": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"), "inline": True},
                   ],
               }],
           }
@@ -130,6 +117,3 @@ jobs:
           except Exception as exc:
               print(f"Discord status report skipped: {exc}")
           PY
-        else
-          echo "⚠️ 未設置 Discord Webhook，跳過狀態報告"
-        fi
