@@ -2043,6 +2043,7 @@ class AnimeTracker(commands.Cog):
         # 嘗試獲取動畫統計信息（用於顯示平均數據）
         anime_stats = self.db.get_anime_statistics(int(anime_sn)) if anime_sn else None
 
+        popularity_text = f"👥 {popular:,}" if popular else "👥 N/A"
         avg_views_text = (
             f"👥 {anime_stats['avg_views']:,.0f}" if anime_stats and anime_stats.get('avg_views') else "👥 N/A"
         )
