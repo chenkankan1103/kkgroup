@@ -1,4 +1,4 @@
-# -*- coding: utf-8 */
+﻿# -*- coding: utf-8 */
 """
 KK 園區對抗刑警大隊 - Discord Cog
 玩家透過按鈕參與塔防遊戲，對抗 Google Trends 前來執法的刑警大隊
@@ -995,7 +995,8 @@ class FortressDefenseCog(commands.Cog):
         """相容舊呼叫：若有當日戰役就追加波次，否則開新的一天。"""
         current_state = fs.get_current_battle()
         now = datetime.now(TW_TZ)
-        is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d") or bool(current_state.settled_at)
+        # 一天只會有一場：只有換日才算新的一天
+        is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d")
         await self.start_or_update_battle(trends, scheduled_at=now, new_day=is_new_day)
 
     async def _delete_message_if_exists(self, channel: discord.abc.Messageable, message_id: Optional[int], state_clearer=None):
@@ -1031,6 +1032,11 @@ class FortressDefenseCog(commands.Cog):
             state = fs.start_new_battle(trends, started_at=battle_time)
         else:
             state = fs.append_wave(trends, started_at=battle_time)
+            if state.battle_date == battle_time.strftime("%Y-%m-%d") and (state.settled_at or state.status != "active"):
+                log.info(
+                    f"[Fortress] 今日戰役已不可追加（status={state.status}, settled_at={bool(state.settled_at)}），跳過戰場訊息更新"
+                )
+                return
 
         embed = build_battle_embed(state, self.bot)
         view = FortressEnemyView(self)
@@ -1071,7 +1077,14 @@ class FortressDefenseCog(commands.Cog):
 
             current_state = fs.get_current_battle()
             now = datetime.now(TW_TZ)
-            is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d") or bool(current_state.settled_at)
+            if (
+                current_state
+                and current_state.battle_date == now.strftime("%Y-%m-%d")
+                and (current_state.settled_at or current_state.status in ("victory", "defeat"))
+            ):
+                return False, f"今日戰役已結束（{current_state.status}），不會重新開戰", 0
+            # 一天只會有一場：只有換日才算新的一天
+            is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d")
             await self.start_or_update_battle(trends_data, scheduled_at=now, new_day=is_new_day)
             log.info(f"[Fortress] 手動開戰成功，敵人數={len(trends_data)}")
             return True, "堡壘保衛戰已手動啟動！", len(trends_data)
@@ -1085,7 +1098,14 @@ class FortressDefenseCog(commands.Cog):
 
             current_state = fs.get_current_battle()
             now = datetime.now(TW_TZ)
-            is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d") or bool(current_state.settled_at)
+            if (
+                current_state
+                and current_state.battle_date == now.strftime("%Y-%m-%d")
+                and (current_state.settled_at or current_state.status in ("victory", "defeat"))
+            ):
+                return False, f"今日戰役已結束（{current_state.status}），不會重新開戰", 0
+            # 一天只會有一場：只有換日才算新的一天
+            is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d")
             await self.start_or_update_battle(trends_data, scheduled_at=now, new_day=is_new_day)
             return True, "趨勢來源逾時，已用快取/備援資料啟動堡壘戰。", len(trends_data)
         except Exception as e:

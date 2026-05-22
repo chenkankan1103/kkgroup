@@ -368,8 +368,15 @@ def start_new_battle(trends: List[Dict], started_at: Optional[datetime] = None) 
 def append_wave(trends: List[Dict], started_at: Optional[datetime] = None) -> FortressState:
     now = started_at or datetime.now(TW_TZ)
     state = _load_state()
-    if not state or state.battle_date != now.strftime("%Y-%m-%d") or state.settled_at:
+    # 一天只會有一場戰役：若今天已結算（含失守），不開新戰役也不追加波次
+    if not state or state.battle_date != now.strftime("%Y-%m-%d"):
         return start_new_battle(trends, started_at=now)
+    if state.status != "active":
+        logger.info(f"[Fortress] 今日 {state.battle_date} 戰役狀態為 {state.status}，跳過波次追加")
+        return state
+    if state.settled_at:
+        logger.info(f"[Fortress] 今日 {state.battle_date} 戰役已結算（{state.status}），跳過波次追加")
+        return state
 
     next_wave_number = state.current_wave_number + 1
     wave_id = now.strftime("%Y-%m-%d-%H")
