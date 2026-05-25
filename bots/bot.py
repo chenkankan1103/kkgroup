@@ -219,6 +219,7 @@ async def find_and_load_extensions(base_path, package_prefix="", bot_client=None
         'paperdoll_system', 'gambling', 'role_expiry_manager', 'locker_panel',
         'locker_events',  # 事件定義模組，不是 Cog
         'leaderboard_manager',  # 工具模組：由 kcoin Cog 導入使用，不是獨立 Cog
+        'ai_client_liteLLM',  # AI 客戶端工具模組，不是 Cog
         'uibody',  # UserPanel 由 uibody.setup() 統一管理
     }
     
