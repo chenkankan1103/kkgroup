@@ -117,11 +117,13 @@ class AutoErrorDetector:
     async def check_system_logs(self):
         """檢查系統日誌中的錯誤"""
         errors_found = []
+        journal_available = False
 
         try:
             for service_name in self.journal_services:
                 try:
                     print(f"🔍 檢查 systemd journal: {service_name}")
+                    journal_available = True
                     lines = self._read_journal_lines(service_name)
                     errors_found.extend(self._collect_errors_from_lines(lines, service_name))
                 except FileNotFoundError:
@@ -130,7 +132,7 @@ class AutoErrorDetector:
                 except Exception as e:
                     print(f"❌ 讀取 systemd journal 失敗 {service_name}: {e}")
 
-            if errors_found:
+            if journal_available:
                 return errors_found
 
             log_files = [
