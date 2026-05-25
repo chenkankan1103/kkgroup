@@ -175,7 +175,8 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
     excluded_modules = {
         'cannabis_farming', 'cannabis_merchant_view', 'cannabis_merchant_view_v2',
         'cannabis_config', 'database', 'config', 'views', 'views_base',
-        'paperdoll_system', 'gambling', 'role_expiry_manager', 'ai_client_liteLLM'
+        'paperdoll_system', 'gambling', 'role_expiry_manager', 'ai_client_liteLLM',
+        'auto_debug_system'
     }
     
     for item in sorted(os.listdir(base_path)):

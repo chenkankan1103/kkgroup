@@ -171,6 +171,7 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
         'locker_events', 'locker_tasks', 'locker_cache', 'locker_embed_generator',
         'image_utils', 'selection_views', 'crop_operations', 'personal_locker',
         'ai_client_liteLLM',
+        'auto_debug_system',
         'work_card'  # 這些都是 View 或 Modal 類，不是 Cog
     }
     
