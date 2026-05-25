@@ -77,6 +77,10 @@ class AutoErrorDetector:
             if not line:
                 continue
 
+            # 跳過 detector 自己的輸出，避免自我回音
+            if re.search(r'auto-debug|auto_error_detector', line, re.IGNORECASE):
+                continue
+
             for error_name, pattern in self.error_patterns.items():
                 if not re.search(pattern, line, re.IGNORECASE):
                     continue
