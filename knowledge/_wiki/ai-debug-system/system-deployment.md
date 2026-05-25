@@ -149,6 +149,8 @@ sudo systemctl enable auto-debug.service
 sudo systemctl status auto-debug.service
 ```
 
+補充：2026-05-26 起，`auto-debug.service` 的實際執行入口為 `scripts/auto_error_detector.py`，不是舊版文件提到的 `cogs.common.auto_debug_system`。部署時應一併同步最新的 [config/services/auto-debug.service](../../../config/services/auto-debug.service) 與 [scripts/auto_error_detector.py](../../../scripts/auto_error_detector.py)。
+
 #### 服務配置驗證
 
 ```bash

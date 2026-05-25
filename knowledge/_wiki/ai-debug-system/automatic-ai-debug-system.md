@@ -1,5 +1,7 @@
 # 自動 AI Debug 系統
 
+> 2026-05-26 校正：目前已驗證的 VM 常駐入口是 `config/services/auto-debug.service` 啟動 `scripts/auto_error_detector.py`。主幹流程已收斂為「分析問題 -> debug -> push」，不再把本地 AI 摘要分析或遠端營運自癒當成主流程。
+
 ## 概述
 
 自動 AI Debug 系統是一個完整的端到端自動化解決方案，能夠：
@@ -24,27 +26,21 @@
 
 ## 核心組件
 
-### 1. Auto Debug System (`cogs/common/auto_debug_system.py`)
+### 1. Auto Debug Detector (`scripts/auto_error_detector.py`)
 
 **功能**：
-- 服務狀態監控（bot.service, shopbot.service, uibot.service）
+- 直接掃描 `bot.service`、`shopbot.service`、`uibot.service` 的 systemd journal
 - 錯誤日誌分析
 - GitHub Actions 觸發
 - Discord 通知發送
 
 **監控邏輯**：
 ```python
-# 檢查服務狀態
 for service in ["bot.service", "shopbot.service", "uibot.service"]:
-    status = subprocess.run(['sudo', 'systemctl', 'is-active', service])
-    if status in ["inactive", "failed"]:
-        # 觸發錯誤處理
-        
-# 檢查錯誤日誌
-error_keywords = ["error", "exception", "failed", "traceback", "critical"]
-error_count = sum(1 for keyword in error_keywords if keyword in logs)
-if error_count >= 2:  # 1小時內2個以上錯誤
-    # 觸發 GitHub Actions
+    lines = read_journal_lines(service)
+    for line in lines:
+        if re.search(r"Traceback|HTTPException|ImportError|AttributeError", line, re.I):
+            # 直接 dispatch 到 GitHub Actions 做分析 / debug / push
 ```
 
 **觸發條件**：
@@ -63,7 +59,8 @@ if error_count >= 2:  # 1小時內2個以上錯誤
 2. 設定 Python 環境
 3. 安裝依賴
 4. 執行 AI 修復腳本
-5. 自動提交和推送
+5. 直接寫入目標檔案
+6. 自動提交和推送
 
 ### 3. AI Fix Script (`scripts/auto_ai_fix.py`)
 
@@ -101,7 +98,7 @@ response = await client.call_api(
 
 **修復代碼生成**：
 - JSON 格式回覆解析
-- 自動文件創建
+- 自動文件寫入
 - Git 提交和推送
 - Discord 通知
 
@@ -110,15 +107,15 @@ response = await client.call_api(
 **服務配置**：
 ```ini
 [Unit]
-Description=Auto Debug System
-After=network.target
+Description=KKGroup Auto Error Detector
+After=network-online.target systemd-resolved.service
 
 [Service]
 Type=simple
 User=e193752468
 WorkingDirectory=/home/e193752468/kkgroup
-ExecStart=/usr/bin/python3 -m cogs.common.auto_debug_system
-Restart=always
+ExecStart=/home/e193752468/kkgroup/venv/bin/python /home/e193752468/kkgroup/scripts/auto_error_detector.py
+Restart=on-failure
 RestartSec=30
 
 [Install]
