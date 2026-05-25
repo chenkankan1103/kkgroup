@@ -50,6 +50,22 @@ def format_taiwan_time():
     """格式化台灣時間為 MM-DD HH:MM (含日期)"""
     return get_taiwan_time().strftime("%m-%d %H:%M")
 
+
+def clamp_embed_description(text: str, limit: int = 4096) -> str:
+    """將 embed description 安全限制在 Discord 上限內。"""
+    value = str(text or "")
+    if len(value) <= limit:
+        return value
+
+    suffix = "\n```\n...[logs truncated]"
+    head_limit = max(0, limit - len(suffix))
+    truncated = value[:head_limit].rstrip()
+
+    if truncated.endswith("```"):
+        truncated = truncated[:-3].rstrip()
+
+    return f"{truncated}{suffix}"
+
 # 配置常數
 MAX_STARTUP_WAIT_SECONDS = 60  # 最多等待機器人就緒的時間（秒）
 
@@ -479,9 +495,7 @@ async def update_dashboard_logs(bot, bot_type: str):
             return
         last_logs_text[bot_type] = logs_text
 
-        # 先前為防止超過 Discord embed 限制而截斷，
-        # 現在 embed 允許達到完整 4000 字符，故不再主動截取。
-        # Discord 在輸入超過限制時會拒絕，因此保留此註解以備未來調整。
+        logs_text = clamp_embed_description(logs_text)
 
 
         # Create logs embed

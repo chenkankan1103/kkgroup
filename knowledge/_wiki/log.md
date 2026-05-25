@@ -19,6 +19,15 @@
 - VM 檢查結果：Git 版本 `9643c4e2`，4 個服務全部 active，近 2 小時 journal 無錯誤
 - 已全面更新 [LogMonitor 與 Auto AI Fix 流程總覽](concepts/log_monitor_pipeline.md) 知識頁，反映最新三層架構
 
+## 2026-05-26
+
+- 實機重新檢查 VM 後，確認先前知識庫對 auto-debug 現況有誤：VM 上**沒有** `auto-debug.service`，`auto_error_detector.py` 與 `auto_ai_fix.py` 雖然存在，但當時都未被 systemd 或 crontab 啟動。
+- 今日先修掉一個會持續刷錯的產品 bug：`shopbot` 更新 dashboard 日誌時，`status_dashboard.py` 的 embed description 超過 Discord 4096 字上限，導致 `400 Bad Request (50035)`；現已在送出前截斷。
+- 將 `scripts/auto_error_detector.py` 簡化為「**先讀 systemd journal，再回退檔案日誌**」的模式，直接檢查 `bot.service`、`shopbot.service`、`uibot.service`，避免與 VM 實際觀測來源脫節。
+- 新的常駐自我 debug 入口改回 `config/services/auto-debug.service`，但內容已更新為執行 `scripts/auto_error_detector.py`，並沿用 bot 服務相同的 venv / locale / timezone 環境。
+- 此次修正後，知識庫已改為記錄「**auto-debug 需以 systemd 服務部署，不能只靠腳本存在**」的現況，舊版 `auto_debug_system.py` 常駐說法不再視為已驗證狀態。
+- 進一步把自我 debug 主幹收斂成單一路徑：`auto_error_detector.py` 抓到錯誤後直接 dispatch GitHub workflow；`auto_ai_fix.py` 改為直接做 AI 分析、寫修復、commit、push，不再把營運自癒當成主流程。
+
 ## 2026-05-18
 
 - 將 LogMonitor / Auto AI Fix 延伸為 mutual-rescue self-healing agent：`bot`、`shopbot`、`uibot` 都會啟動 watchdog，偵測同伴 `systemd` 服務異常後自動派送 `repository_dispatch` 修復請求。
