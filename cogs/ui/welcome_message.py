@@ -295,12 +295,31 @@ class PersistentWelcomeView(discord.ui.View):
         await self.cog.handle_final_verification(interaction, member)
 
 class TestWelcomeView(discord.ui.View):
-    """Uses real welcome logic but does **not** mutate database state.
-    Shows actual random paperdoll generation without saving to DB.
-    Used for testing/debugging without affecting user data.
-    """
-    def __init__(self):
-        super().__init__(timeout=None)
+    """安全測試用歡迎視圖，只在記憶體中模擬，不寫入資料庫。"""
+    def __init__(self, cog, preview_user: discord.abc.User, preview_user_data: dict):
+        super().__init__(timeout=900)
+        self.cog = cog
+        self.preview_user = preview_user
+        self.preview_user_data = dict(preview_user_data)
+
+    def _get_inventory_items(self) -> list[str]:
+        inventory_raw = self.preview_user_data.get('inventory', '[]')
+        if isinstance(inventory_raw, list):
+            return list(inventory_raw)
+        if isinstance(inventory_raw, str):
+            try:
+                return json.loads(inventory_raw) if inventory_raw else []
+            except json.JSONDecodeError:
+                return []
+        return []
+
+    def _set_inventory_items(self, items: list[str]) -> None:
+        self.preview_user_data['inventory'] = json.dumps(items, ensure_ascii=False)
+
+    async def _refresh_preview(self, interaction: discord.Interaction, notice: str, *, clear_view: bool = False):
+        embed = await self.cog.create_welcome_embed(self.preview_user_data, self.preview_user)
+        await interaction.response.edit_message(embed=embed, view=None if clear_view else self)
+        await interaction.followup.send(notice, ephemeral=True)
 
     @discord.ui.select(
         placeholder="選擇你的性別...",
@@ -310,34 +329,53 @@ class TestWelcomeView(discord.ui.View):
         ]
     )
     async def gender_select(self, interaction: discord.Interaction, select: discord.ui.Select):
-        await interaction.response.defer(ephemeral=True)
-        
-        # 執行真實邏輯：生成隨機紙娃娃
         selected_gender = select.values[0]
         appearance = paperdoll_manager.get_random(preserve_gender=selected_gender)
-        
-        # 顯示結果但不寫入數據庫
+
+        for field in ('face', 'hair', 'skin', 'top', 'bottom', 'shoes', 'gender'):
+            self.preview_user_data[field] = appearance[field]
+
         gender_text = "男性" if selected_gender == "male" else "女性"
         appearance_text = (
-            f"已選擇性別：{gender_text}\n"
-            f"随机生成造型（模拟，未保存）：\n"
-            f"  臉：{appearance['face']}\n"
-            f"  髮：{appearance['hair']}\n"
-            f"  膚：{appearance['skin']}\n"
-            f"  上衣：{appearance['top']}\n"
-            f"  褲：{appearance['bottom']}\n"
-            f"  鞋：{appearance['shoes']}"
+            f"已套用 {gender_text} 測試造型（僅預覽，未保存）。\n"
+            f"臉：{appearance['face']}｜髮：{appearance['hair']}｜上衣：{appearance['top']}"
         )
-        
-        await interaction.followup.send(appearance_text, ephemeral=True)
+        await self._refresh_preview(interaction, appearance_text)
 
     @discord.ui.button(label="繳交手機身分證", style=discord.ButtonStyle.secondary, emoji="📱")
     async def submit_items(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("（模擬）已繳交手機和身分證 - 未保存到數據庫。", ephemeral=True)
+        inventory = self._get_inventory_items()
+        inventory = [item for item in inventory if item not in {"手機", "身分證"}]
+        self._set_inventory_items(inventory)
+        await self._refresh_preview(interaction, "（模擬）已繳交手機與身分證，僅更新這次預覽。")
+
+    @discord.ui.button(label="隨機造型", style=discord.ButtonStyle.primary, emoji="🎲")
+    async def random_appearance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current_gender = self.preview_user_data.get('gender')
+        appearance = paperdoll_manager.get_random(preserve_gender=current_gender)
+
+        for field in ('face', 'hair', 'skin', 'top', 'bottom', 'shoes', 'gender'):
+            self.preview_user_data[field] = appearance[field]
+
+        gender_text = "男性" if appearance['gender'] == 'male' else "女性"
+        await self._refresh_preview(
+            interaction,
+            f"（模擬）已重新生成 {gender_text} 造型，結果未寫入資料庫。"
+        )
 
     @discord.ui.button(label="確認進入園區", style=discord.ButtonStyle.danger, emoji="🚪")
     async def confirm_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("（模擬）按下進入園區按鈕，流程結束 - 數據庫未被修改。", ephemeral=True)
+        inventory = self._get_inventory_items()
+        inventory = [item for item in inventory if item not in {"手機", "身分證"}]
+        self._set_inventory_items(inventory)
+        self.preview_user_data['is_stunned'] = 1
+        self.preview_user_data['hp'] = 10
+        self.preview_user_data['stamina'] = 10
+        await self._refresh_preview(
+            interaction,
+            "（模擬）已走完入園流程預覽；身分組、暱稱與資料庫都沒有修改。",
+            clear_view=True
+        )
 
 
 class WelcomeFlow(commands.Cog):
@@ -542,44 +580,98 @@ class WelcomeFlow(commands.Cog):
             user_data = get_user(user_id)
             if not user_data:
                 return None
-
-            appearance_fields = ('face', 'hair', 'skin', 'top', 'bottom', 'shoes')
-            missing_fields = []
-            for field in appearance_fields:
-                value = user_data.get(field)
-                if value in (None, '', 0, '0'):
-                    missing_fields.append(field)
-
-            gender = user_data.get('gender')
-            inferred_gender = None
-            if gender not in ('male', 'female'):
-                missing_fields.append('gender')
-                inferred_gender = paperdoll_manager.infer_gender_from_appearance(user_data)
-                gender = inferred_gender
-
-            if missing_fields:
-                random_appearance = paperdoll_manager.get_random(preserve_gender=gender)
-                repaired_fields = {}
-
-                for field in appearance_fields:
-                    if field in missing_fields:
-                        repaired_fields[field] = int(random_appearance[field])
-
-                if 'gender' in missing_fields:
-                    repaired_fields['gender'] = inferred_gender or random_appearance['gender']
-
-                for field, value in repaired_fields.items():
-                    set_user_field(user_id, field, value)
-                    user_data[field] = value
-
-                print(
-                    f"⚠️ 用戶 {user_id} 紙娃娃欄位缺失 {missing_fields}，已補齊資料"
-                )
-
-            return user_data
+            return self._resolve_user_data(user_id, user_data, persist_repairs=True)
         except Exception as e:
             print(f"❌ 獲取用戶資料錯誤: {e}")
             return None
+
+    def _resolve_user_data(self, user_id: int, user_data: dict, persist_repairs: bool) -> dict:
+        resolved_user_data = dict(user_data)
+        appearance_fields = ('face', 'hair', 'skin', 'top', 'bottom', 'shoes')
+        missing_fields = []
+
+        for field in appearance_fields:
+            value = resolved_user_data.get(field)
+            if value in (None, '', 0, '0'):
+                missing_fields.append(field)
+
+        gender = resolved_user_data.get('gender')
+        inferred_gender = None
+        if gender not in ('male', 'female'):
+            missing_fields.append('gender')
+            inferred_gender = paperdoll_manager.infer_gender_from_appearance(resolved_user_data)
+            gender = inferred_gender
+
+        if missing_fields:
+            random_appearance = paperdoll_manager.get_random(preserve_gender=gender)
+            repaired_fields = {}
+
+            for field in appearance_fields:
+                if field in missing_fields:
+                    repaired_fields[field] = int(random_appearance[field])
+
+            if 'gender' in missing_fields:
+                repaired_fields['gender'] = inferred_gender or random_appearance['gender']
+
+            for field, value in repaired_fields.items():
+                resolved_user_data[field] = value
+                if persist_repairs:
+                    set_user_field(user_id, field, value)
+
+            if persist_repairs:
+                print(f"⚠️ 用戶 {user_id} 紙娃娃欄位缺失 {missing_fields}，已補齊資料")
+            else:
+                print(f"ℹ️ 用戶 {user_id} 紙娃娃欄位缺失 {missing_fields}，僅用於預覽補齊")
+
+        return resolved_user_data
+
+    def get_preview_user_data(self, user_id: int) -> dict:
+        user_data = get_user(user_id)
+        if user_data:
+            resolved_user_data = self._resolve_user_data(user_id, user_data, persist_repairs=False)
+        else:
+            random_appearance = paperdoll_manager.get_random()
+            resolved_user_data = {
+                'user_id': user_id,
+                'inventory': json.dumps(["手機", "身分證"], ensure_ascii=False),
+                'character_config': '{}',
+                'face': int(random_appearance['face']),
+                'hair': int(random_appearance['hair']),
+                'skin': int(random_appearance['skin']),
+                'top': int(random_appearance['top']),
+                'bottom': int(random_appearance['bottom']),
+                'shoes': int(random_appearance['shoes']),
+                'gender': random_appearance['gender'],
+                'level': 1,
+                'xp': 0,
+                'kkcoin': 0,
+                'title': '新手',
+                'hp': 100,
+                'stamina': 100,
+                'is_stunned': 0,
+            }
+
+        default_values = {
+            'user_id': user_id,
+            'inventory': json.dumps(["手機", "身分證"], ensure_ascii=False),
+            'character_config': '{}',
+            'level': 1,
+            'xp': 0,
+            'kkcoin': 0,
+            'title': '新手',
+            'hp': 100,
+            'stamina': 100,
+            'is_stunned': 0,
+        }
+
+        for field, default_value in default_values.items():
+            if resolved_user_data.get(field) is None:
+                resolved_user_data[field] = default_value
+
+        if not resolved_user_data.get('inventory'):
+            resolved_user_data['inventory'] = default_values['inventory']
+
+        return resolved_user_data
 
     def create_user_data(self, user_id: int) -> bool:
         """Create new user data with random appearance and default values. Returns True if successful. Includes retry logic."""
@@ -1414,77 +1506,15 @@ class WelcomeFlow(commands.Cog):
     # ---------- debug helpers (slash commands) ----------
     @app_commands.command(name="debug_welcome")
     @app_commands.describe(
-        member="目標成員（預設自己）",
-        simulate="是否立刻模擬按下確認按鈕並執行流程"
+        member="目標成員（預設自己）"
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def debug_welcome(self, interaction: discord.Interaction, member: Optional[discord.Member] = None, simulate: Optional[bool] = False):
-        """在頻道中顯示目標成員的歡迎 embed 並附加真實按鈕，用於測試。
-
-        如果選擇 `simulate=True`，機器人會在發送之後自動執行一次
-        `handle_final_verification`（相當於按下「確認進入園區」）。
-        """
+    async def debug_welcome(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
+        """單一唯讀歡迎流程預覽，不會修改資料庫或角色狀態。"""
         target = member or interaction.user
-        user_data = self.get_user_data(target.id)
-        if not user_data:
-            self.create_user_data(target.id)
-            user_data = self.get_user_data(target.id)
+        user_data = self.get_preview_user_data(target.id)
         embed = await self.create_welcome_embed(user_data, target)
-        # 必須帶上 persistent_view，才能在測試訊息中顯示按鈕
-        await interaction.response.send_message(embed=embed, view=self.persistent_view)
-
-        if simulate:
-            # 略微等候確保前一條訊息已處理
-            await asyncio.sleep(0.5)
-            # 使用原始互動做為模板，產生一個小型假互動
-            await self.handle_final_verification(interaction, target)
-
-    @app_commands.command(name="debug_confirm")
-    @app_commands.describe(member="目標成員（預設自己）")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def debug_confirm(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
-        """模擬按下「確認進入園區」按鈕的流程。"""
-        target = member or interaction.user
-        # 可以直接呼叫 handle_final_verification 使用真實 interaction
-        await interaction.response.defer(ephemeral=True)
-        await self.handle_final_verification(interaction, target)
-    @app_commands.command(name="debug_press_buttons")
-    @app_commands.describe(member="要測試的成員(預設自己)", gender="模擬選擇的性別(male/female)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def debug_press_buttons(self, interaction: discord.Interaction, member: Optional[discord.Member] = None, gender: Optional[str] = None):
-        """模擬按鈕流程（會改變資料），保留於此供需要時使用。"""
-        target = member or interaction.user
-        await interaction.response.defer(ephemeral=True)
-
-        # 1. 設定性別（若提供）
-        if gender in ("male", "female"):
-            appearance = {
-                'face': 20005 if gender == "male" else 21731,
-                'hair': 30120 if gender == "male" else 34410,
-                'skin': 12000,
-                'top': 1040014 if gender == "male" else 1041004,
-                'bottom': 1060096 if gender == "male" else 1061008,
-                'shoes': 1072005,
-                'gender': gender
-            }
-            await self.update_user_data(target.id, appearance)
-
-        # 2. 移除手機和身分證（模擬按下繳交按鈕）
-        await self.remove_items_from_inventory(target.id, ["手機", "身分證"])
-
-        # 3. 呼叫最終驗證
-        await self.handle_final_verification(interaction, target)
-
-    @app_commands.command(name="debug_simulate_buttons")
-    @app_commands.describe(member="要測試的成員(預設自己)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def debug_simulate_buttons(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
-        """發送一條查看原始按鈕視覺但完全不改變資料的模擬訊息。"""
-        target = member or interaction.user
-        user_data = self.get_user_data(target.id) or {}
-        embed = await self.create_welcome_embed(user_data, target)
-        # 測試用 view，只回復而不修改任何資料
-        view = TestWelcomeView()
+        view = TestWelcomeView(self, target, user_data)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
