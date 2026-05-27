@@ -77,6 +77,22 @@ _LOCAL_HEAL_PATTERNS = (
     r'429',
     r'rate limit',
 )
+_SELF_NOISE_PATTERNS = (
+    r'\[MutualRescue\]',
+    r'watchdog / reporter=',
+    r'已派送互救修復請求',
+    r'本地重啟 .* 成功',
+    r'本地重啟 .* 失敗',
+)
+_EXTERNAL_BENIGN_PATTERNS = (
+    r'google_quota_exhausted',
+    r'quota exceeded',
+    r'learn more about gemini api quotas',
+    r'generatecontentinputtokenspermodelperminute-freetier',
+    r'generaterequestsper.*freetier',
+    r'nvidia api .*403',
+    r'authorization failed',
+)
 
 
 def _artifact_key_from_signature(signature: str) -> str:
@@ -125,14 +141,31 @@ def _read_service_snapshot(service: str) -> dict[str, str]:
     }
 
 
-def _snapshot_requires_repair(snapshot: dict[str, str]) -> tuple[bool, str]:
-    status = (snapshot.get('status') or 'unknown').strip().lower()
+def _filtered_snapshot_text(snapshot: dict[str, str]) -> str:
     summary = snapshot.get('summary', '')
     logs = snapshot.get('logs', '')
-    combined_text = f'{summary}\n{logs}'.lower()
+    filtered_lines = []
+    for raw_line in f'{summary}\n{logs}'.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if any(re.search(pattern, line, re.IGNORECASE) for pattern in _SELF_NOISE_PATTERNS):
+            continue
+        if any(re.search(pattern, line, re.IGNORECASE) for pattern in _EXTERNAL_BENIGN_PATTERNS):
+            continue
+        filtered_lines.append(line)
+    return '\n'.join(filtered_lines).lower()
+
+
+def _snapshot_requires_repair(snapshot: dict[str, str]) -> tuple[bool, str]:
+    status = (snapshot.get('status') or 'unknown').strip().lower()
+    combined_text = _filtered_snapshot_text(snapshot)
 
     if status not in _HEALTHY_STATUSES:
         return True, f'狀態異常: {status}'
+
+    if not combined_text.strip():
+        return False, '服務狀態正常，且近期只有互救/配額類噪音'
 
     for pattern in _FATAL_LOG_PATTERNS:
         if re.search(pattern, combined_text, re.IGNORECASE):
@@ -154,7 +187,7 @@ def _decide_repair_action(snapshot: dict[str, str]) -> tuple[str, str]:
         return 'healthy', reason
 
     status = (snapshot.get('status') or 'unknown').strip().lower()
-    combined_text = f"{snapshot.get('summary', '')}\n{snapshot.get('logs', '')}".lower()
+    combined_text = _filtered_snapshot_text(snapshot)
 
     if status not in _HEALTHY_STATUSES:
         if any(re.search(pattern, combined_text, re.IGNORECASE) for pattern in _CODE_BUG_PATTERNS):
