@@ -121,6 +121,15 @@ _IGNORE_PATTERNS = re.compile(
     r'"error":\s*[{\[]|'                        # JSON error 欄位（任何開頭，無 ^ anchor）
     r"command sync warning|"
     r"已忽略|"
+    r"google_quota_exhausted|"
+    r"quota exceeded|"
+    r"Learn more about Gemini API quotas|"
+    r"GenerateContentInputTokensPerModelPerMinute-FreeTier|"
+    r"GenerateRequestsPer(?:Minute|Day)PerProjectPerModel-FreeTier|"
+    r"NVIDIA API .*403|"
+    r"Authorization failed|"
+    r"\[MutualRescue\].*status=active|"
+    r"\[MutualRescue\].*active -> active|"
     r"FILE_LOG.*Entry Point|"
     r"BOT_DEBUG.*Entry Point)",
     re.IGNORECASE,
@@ -376,6 +385,8 @@ def _format_debug_analysis_text(analysis_payload) -> str:
 def _estimate_severity_from_lines(lines: list[str]) -> str:
     """根據原始日誌行推估嚴重度：返回 'high'/'medium'/'low'"""
     joined = "\n".join(lines)
+    if re.search(r"google_quota_exhausted|quota exceeded|\b429\b|rate limit|authorization failed", joined, re.IGNORECASE):
+        return "low"
     if _HIGH_SEVERITY_PATTERNS.search(joined):
         return "high"
     if re.search(r"\b429\b|rate limit|quota|(?:HTTP|http)\s*[45]\d\d", joined, re.IGNORECASE):
@@ -433,9 +444,9 @@ def _build_local_fallback_summary(lines: list[str]) -> str:
     joined = "\n".join(lines)
     if re.search(r"\b429\b|rate limit|quota", joined, re.IGNORECASE):
         return (
-            "【根本原因】外部 AI 或 API 配額／速率限制觸發。\n"
-            "【建議修復】1. 檢查 API 配額 2. 增加退避與重試 3. 降低短時間內請求量\n"
-            "【緊急程度】中"
+            "【根本原因】外部 AI 或 API 配額／速率限制觸發，通常不是 Bot 程式缺陷。\n"
+            "【建議修復】1. 檢查 API 配額 2. 增加退避與重試 3. 降低短時間內請求量；若已有備援可降級為觀察訊息\n"
+            "【緊急程度】低"
         )
 
     if re.search(r"Traceback|Exception|CRITICAL|Fatal|Unhandled", joined, re.IGNORECASE):
