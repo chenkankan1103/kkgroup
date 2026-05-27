@@ -193,14 +193,29 @@ class StockEntryView(discord.ui.View):
     def __init__(self, cog):
         super().__init__(timeout=None)
         self.cog = cog
+
+    async def _defer_ephemeral(self, interaction: discord.Interaction) -> bool:
+        """Acknowledge the interaction unless Discord already expired it."""
+        if interaction.response.is_done():
+            return True
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+            return True
+        except discord.NotFound:
+            logger.info(
+                "[STOCK_MARKET] Ignoring expired interaction for user %s (%s)",
+                interaction.user.id,
+                interaction.data.get("custom_id") if interaction.data else "unknown",
+            )
+            return False
     
     @discord.ui.button(label="進入市場", style=discord.ButtonStyle.primary, emoji="📈", custom_id="stock_entry_button")
     async def enter_trading_room(self, interaction: discord.Interaction, button: discord.ui.Button):
         """進入市場 - 選擇商品類別"""
         try:
-            # 先 defer 交互，避免 token 過期
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
+            if not await self._defer_ephemeral(interaction):
+                return
             
             logger.info(f"👤 [ENTER_MARKET] 使用者 {interaction.user.id} 進入市場")
             
@@ -258,8 +273,8 @@ class StockEntryView(discord.ui.View):
     async def view_portfolio(self, interaction: discord.Interaction, button: discord.ui.Button):
         """顯示用戶的持倉信息"""
         try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
+            if not await self._defer_ephemeral(interaction):
+                return
             
             user_id = interaction.user.id
             logger.info(f"📋 [PORTFOLIO] 使用者 {user_id} 查看持倉")
