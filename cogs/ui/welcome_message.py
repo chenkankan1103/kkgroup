@@ -540,7 +540,43 @@ class WelcomeFlow(commands.Cog):
         """Get user data from sheet-driven database"""
         try:
             user_data = get_user(user_id)
-            return user_data if user_data else None
+            if not user_data:
+                return None
+
+            appearance_fields = ('face', 'hair', 'skin', 'top', 'bottom', 'shoes')
+            missing_fields = []
+            for field in appearance_fields:
+                value = user_data.get(field)
+                if value in (None, '', 0, '0'):
+                    missing_fields.append(field)
+
+            gender = user_data.get('gender')
+            inferred_gender = None
+            if gender not in ('male', 'female'):
+                missing_fields.append('gender')
+                inferred_gender = paperdoll_manager.infer_gender_from_appearance(user_data)
+                gender = inferred_gender
+
+            if missing_fields:
+                random_appearance = paperdoll_manager.get_random(preserve_gender=gender)
+                repaired_fields = {}
+
+                for field in appearance_fields:
+                    if field in missing_fields:
+                        repaired_fields[field] = int(random_appearance[field])
+
+                if 'gender' in missing_fields:
+                    repaired_fields['gender'] = inferred_gender or random_appearance['gender']
+
+                for field, value in repaired_fields.items():
+                    set_user_field(user_id, field, value)
+                    user_data[field] = value
+
+                print(
+                    f"⚠️ 用戶 {user_id} 紙娃娃欄位缺失 {missing_fields}，已補齊資料"
+                )
+
+            return user_data
         except Exception as e:
             print(f"❌ 獲取用戶資料錯誤: {e}")
             return None
