@@ -70,15 +70,29 @@ class AutoErrorDetector:
             "http_exception": r"discord\.errors\.HTTPException|HTTPException",
         }
 
+    def _is_benign_unknown_interaction(self, lines, index):
+        current_line = str(lines[index] or "")
+        if re.search(r"Unknown interaction|error code:\s*10062", current_line, re.IGNORECASE):
+            return True
+
+        if "Traceback (most recent call last):" not in current_line:
+            return False
+
+        window = "\n".join(str(line or "") for line in lines[index:index + 12])
+        return bool(re.search(r"Unknown interaction|error code:\s*10062", window, re.IGNORECASE))
+
     def _collect_errors_from_lines(self, lines, source_name):
         errors_found = []
 
-        for line in lines:
+        for index, line in enumerate(lines):
             if not line:
                 continue
 
             # 跳過 detector 自己的輸出，避免自我回音
             if re.search(r'auto-debug|auto_error_detector', line, re.IGNORECASE):
+                continue
+
+            if self._is_benign_unknown_interaction(lines, index):
                 continue
 
             for error_name, pattern in self.error_patterns.items():

@@ -44,6 +44,24 @@ from shared.utils.view_registry import PersistentViewBase
 
 logger = logging.getLogger(__name__)
 
+
+async def defer_ephemeral_or_ignore(interaction: discord.Interaction, context: str) -> bool:
+    """Acknowledge the interaction unless Discord has already expired it."""
+    if interaction.response.is_done():
+        return True
+
+    try:
+        await interaction.response.defer(ephemeral=True)
+        return True
+    except discord.NotFound:
+        logger.info(
+            "[STOCK_MARKET] Ignoring expired interaction in %s for user %s (%s)",
+            context,
+            interaction.user.id,
+            interaction.data.get("custom_id") if interaction.data else "unknown",
+        )
+        return False
+
 # 配置
 MARKET_CHANNEL_ID = 1481373417897988347
 REALIZED_PNL_FIELD = "stock_realized_pnl"  # 已實現損益欄位
@@ -176,7 +194,8 @@ class AssetClassSelectionView(discord.ui.View):
     
     async def _show_asset_list(self, interaction: discord.Interaction, asset_class: AssetClass):
         """顯示該類別內的商品清單"""
-        await interaction.response.defer(ephemeral=True)
+        if not await defer_ephemeral_or_ignore(interaction, "show_asset_list"):
+            return
         
         logger.info(f"📂 [ASSET_CLASS] 使用者選擇商品類別: {asset_class.value}")
         
@@ -194,27 +213,11 @@ class StockEntryView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
-    async def _defer_ephemeral(self, interaction: discord.Interaction) -> bool:
-        """Acknowledge the interaction unless Discord already expired it."""
-        if interaction.response.is_done():
-            return True
-
-        try:
-            await interaction.response.defer(ephemeral=True)
-            return True
-        except discord.NotFound:
-            logger.info(
-                "[STOCK_MARKET] Ignoring expired interaction for user %s (%s)",
-                interaction.user.id,
-                interaction.data.get("custom_id") if interaction.data else "unknown",
-            )
-            return False
-    
     @discord.ui.button(label="進入市場", style=discord.ButtonStyle.primary, emoji="📈", custom_id="stock_entry_button")
     async def enter_trading_room(self, interaction: discord.Interaction, button: discord.ui.Button):
         """進入市場 - 選擇商品類別"""
         try:
-            if not await self._defer_ephemeral(interaction):
+            if not await defer_ephemeral_or_ignore(interaction, "enter_trading_room"):
                 return
             
             logger.info(f"👤 [ENTER_MARKET] 使用者 {interaction.user.id} 進入市場")
@@ -273,7 +276,7 @@ class StockEntryView(discord.ui.View):
     async def view_portfolio(self, interaction: discord.Interaction, button: discord.ui.Button):
         """顯示用戶的持倉信息"""
         try:
-            if not await self._defer_ephemeral(interaction):
+            if not await defer_ephemeral_or_ignore(interaction, "view_portfolio"):
                 return
             
             user_id = interaction.user.id
@@ -412,7 +415,8 @@ class PortfolioManageView(discord.ui.View):
     def _create_trade_callback(self, idx: int, symbol: str, asset_class: str):
         """為每個持倉創建買賣回調函數"""
         async def callback(interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)
+            if not await defer_ephemeral_or_ignore(interaction, "portfolio_trade_callback"):
+                return
             
             # 顯示該股票的詳細信息和交易選項
             stock = self.user_stocks[idx]
@@ -724,8 +728,8 @@ class StockRoomView(discord.ui.View):
         view = StockSelectionView(self)
         
         # 統一使用 followup.send() 確保獲得 discord.Message 對象（可編輯）
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
+        if not await defer_ephemeral_or_ignore(interaction, "show_selection_view"):
+            return
         
         msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         self.current_message = msg
@@ -757,19 +761,19 @@ class StockRoomView(discord.ui.View):
                     await self.current_message.edit(embed=embed, view=view)
                 else:
                     # 如果不支持 edit()，發送新訊息
-                    if not interaction.response.is_done():
-                        await interaction.response.defer(ephemeral=True)
+                    if not await defer_ephemeral_or_ignore(interaction, "update_selection_view_send_new"):
+                        return
                     msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
                     self.current_message = msg
             except Exception as e:
                 logger.warning(f"⚠️ 編輯消息失敗: {e}，發送新消息")
-                if not interaction.response.is_done():
-                    await interaction.response.defer(ephemeral=True)
+                if not await defer_ephemeral_or_ignore(interaction, "update_selection_view_fallback"):
+                    return
                 msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
                 self.current_message = msg
         else:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
+            if not await defer_ephemeral_or_ignore(interaction, "update_selection_view_initial"):
+                return
             msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             self.current_message = msg
     
@@ -839,8 +843,8 @@ class StockRoomView(discord.ui.View):
             view = StockDetailView(self, symbol, price)
             
             # 統一使用 followup.send() 確保獲得 discord.Message 對象
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
+            if not await defer_ephemeral_or_ignore(interaction, "show_detail_view"):
+                return
             
             msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             self.current_message = msg
@@ -854,9 +858,8 @@ class StockRoomView(discord.ui.View):
                                   force_refresh: bool = False):
         """更新股票詳細視圖（編輯現有訊息）"""
         try:
-            # 先 defer，避免「interaction token 已過期」的錯誤
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
+            if not await defer_ephemeral_or_ignore(interaction, "update_detail_view"):
+                return
             
             # 對期貨添加警告
             is_future = "=F" in symbol
@@ -991,7 +994,8 @@ class StockRoomView(discord.ui.View):
         """更新操盤室 Embed（交易後刷新，使用 stored message）"""
         if not self.selected_symbol:
             if defer_first:
-                await interaction.response.defer(ephemeral=True)
+                if not await defer_ephemeral_or_ignore(interaction, "update_embed_empty_state"):
+                    return
             return
         await self._update_trading_room_embed(self.selected_symbol)
 
@@ -1199,7 +1203,8 @@ class MoneyLaunderingView(discord.ui.View):
     @discord.ui.button(label="💵 製造斷點", style=discord.ButtonStyle.primary, emoji="🔗", custom_id="money_laundry_create")
     async def create_breakpoint(self, interaction: discord.Interaction, button: discord.ui.Button):
         """開始製造金流斷點"""
-        await interaction.response.defer(ephemeral=True)
+        if not await defer_ephemeral_or_ignore(interaction, "create_breakpoint"):
+            return
         
         try:
             # 檢查用戶的KK幣是否足夠
@@ -1481,7 +1486,8 @@ class TradeModal(discord.ui.Modal, title="進行交易"):
     async def on_submit(self, interaction: discord.Interaction):
         """提交交易"""
         logger.info(f"[TRADE_MODAL] on_submit 開始 - user_id={interaction.user.id}, action={self.action}, symbol={self.symbol}")
-        await interaction.response.defer(ephemeral=True)
+        if not await defer_ephemeral_or_ignore(interaction, "trade_modal_submit"):
+            return
         
         try:
             qty = int(self.quantity.value)
