@@ -224,6 +224,41 @@ def get_random(preserve_gender: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+def infer_gender_from_appearance(user_data: Dict[str, Any]) -> Optional[str]:
+    """
+    根據現有紙娃娃部件推斷角色性別。
+
+    只計算在 male/female 候選集合中明確偏向單一性別的部件；
+    若分數相同或全部是中性部件，則回傳 None。
+    """
+    if not CHARACTER_VARIATIONS or all(len(v) == 0 for v in CHARACTER_VARIATIONS.values()):
+        _load_fashion_db()
+
+    score = {'male': 0, 'female': 0}
+    for field in ('face', 'hair', 'top', 'bottom', 'shoes'):
+        value = user_data.get(field)
+        if value in (None, '', 0, '0'):
+            continue
+
+        item_id = str(value)
+        male_pool = set(CHARACTER_VARIATIONS.get(f'{field}_male', []))
+        female_pool = set(CHARACTER_VARIATIONS.get(f'{field}_female', []))
+
+        in_male = item_id in male_pool
+        in_female = item_id in female_pool
+
+        if in_male and not in_female:
+            score['male'] += 1
+        elif in_female and not in_male:
+            score['female'] += 1
+
+    if score['male'] > score['female']:
+        return 'male'
+    if score['female'] > score['male']:
+        return 'female'
+    return None
+
+
 def build_api_url(
     user_data: Dict[str, Any],
     pose: str = 'stand1',
