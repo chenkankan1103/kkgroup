@@ -15,6 +15,28 @@ from typing import Optional, Callable, Any
 import asyncio
 
 
+def _is_expired_interaction_error(error: Exception) -> bool:
+    if isinstance(error, discord.NotFound):
+        if getattr(error, "code", None) == 10062:
+            return True
+        if "Unknown interaction" in str(error):
+            return True
+    return False
+
+
+async def _safe_defer(interaction: discord.Interaction) -> bool:
+    if interaction.response.is_done():
+        return True
+
+    try:
+        await interaction.response.defer()
+        return True
+    except Exception as error:
+        if _is_expired_interaction_error(error):
+            return False
+        raise
+
+
 class PersistentViewBase(discord.ui.View):
     """
     永久視圖基類 - 自動設置 timeout=None
@@ -107,7 +129,10 @@ class PersistentViewBase(discord.ui.View):
             button_id: 按鈕 ID
         """
         if button_id not in self.buttons_config:
-            await interaction.response.defer()
+            try:
+                await _safe_defer(interaction)
+            except Exception as error:
+                print(f"[PersistentViewBase] 無法回應未知按鈕 {button_id}: {error}")
             return
         
         callback = self.buttons_config[button_id]["callback"]
@@ -119,9 +144,13 @@ class PersistentViewBase(discord.ui.View):
             else:
                 callback(interaction)
         except Exception as e:
+            if _is_expired_interaction_error(e):
+                print(f"[PersistentViewBase] 忽略過期互動: {button_id}")
+                return
+
             try:
-                await interaction.response.defer()
-            except:
+                await _safe_defer(interaction)
+            except Exception:
                 pass
             print(f"[PersistentViewBase] 按鈕回調錯誤: {e}")
 
