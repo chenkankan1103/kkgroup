@@ -59,7 +59,7 @@ def should_attempt_code_fix(event_data):
 
     is_high = severity in ('high', 'h', '高')
     has_code_failure_signal = bool(re.search(
-        r'(Traceback|Exception|CRITICAL|Fatal|Unhandled|NameError|AttributeError|TypeError|ImportError|SyntaxError|failed with result|status=\d+/FAILURE)',
+        r'(Traceback|Exception|CRITICAL|Fatal|Unhandled|NameError|AttributeError|TypeError|ImportError|SyntaxError|object is not subscriptable|is not subscriptable|failed with result|status=\d+/FAILURE)',
         log_text,
         re.IGNORECASE,
     ))
