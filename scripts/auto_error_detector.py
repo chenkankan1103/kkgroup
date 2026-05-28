@@ -66,6 +66,7 @@ class AutoErrorDetector:
             "syntax_error": r"SyntaxError",
             "import_error": r"ImportError",
             "attribute_error": r"AttributeError",
+            "type_error": r"TypeError|object is not subscriptable|is not subscriptable",
             "traceback": r"Traceback \(most recent call last\):",
             "http_exception": r"discord\.errors\.HTTPException|HTTPException",
         }
