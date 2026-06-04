@@ -71,6 +71,25 @@ class AutoErrorDetector:
             "http_exception": r"discord\.errors\.HTTPException|HTTPException",
         }
 
+        # 噪音忽略模式（降低敏感度）
+        self._noise_patterns = [
+            r"Unknown interaction|error code:\s*10062",
+            r"google_quota_exhausted|quota exceeded",
+            r"learn more about gemini api quotas",
+            r"generatecontentinputtokenspermodelperminute-freetier",
+            r"generaterequestsper.*freetier",
+            r"nvidia api .*403",
+            r"authorization failed",
+            r"429|rate limit",
+            r"connection refused|connection reset|timed out",
+            r"websocket closed|shard .* disconnect",
+            r"watchdog",
+            r"\[MutualRescue\]",
+            r"互救修復請求",
+            r"本地重啟.*成功|本地重啟.*失敗",
+            r"auto-debug|auto_error_detector",
+        ]
+
     def _is_benign_unknown_interaction(self, lines, index):
         current_line = str(lines[index] or "")
         if re.search(r"Unknown interaction|error code:\s*10062", current_line, re.IGNORECASE):
@@ -91,6 +110,10 @@ class AutoErrorDetector:
 
             # 跳過 detector 自己的輸出，避免自我回音
             if re.search(r'auto-debug|auto_error_detector', line, re.IGNORECASE):
+                continue
+
+            # 噪音模式過濾（降低敏感度）
+            if any(re.search(p, line, re.IGNORECASE) for p in self._noise_patterns):
                 continue
 
             if self._is_benign_unknown_interaction(lines, index):
@@ -237,8 +260,8 @@ class AutoErrorDetector:
         if error_type in self.last_error_time:
             last_time = self.last_error_time[error_type]
             
-            # 如果同一類型錯誤在 10 分鐘內已經觸發過，則跳過
-            if current_time - last_time < timedelta(minutes=10):
+            # 如果同一類型錯誤在 30 分鐘內已經觸發過，則跳過（降低敏感度）
+            if current_time - last_time < timedelta(minutes=30):
                 return False
         
         # 更新最後觸發時間
@@ -257,7 +280,7 @@ class AutoErrorDetector:
             current_time = current_time.replace(tzinfo=datetime.now().astimezone().tzinfo)
 
         previous_time = self.last_incident_time.get(signature)
-        if previous_time and current_time - previous_time < timedelta(minutes=30):
+        if previous_time and current_time - previous_time < timedelta(minutes=60):
             return False
 
         self.last_incident_time[signature] = current_time
