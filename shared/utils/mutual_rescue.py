@@ -83,6 +83,10 @@ _SELF_NOISE_PATTERNS = (
     r'已派送互救修復請求',
     r'本地重啟 .* 成功',
     r'本地重啟 .* 失敗',
+    r'互救修復請求',
+    r'正在檢查同伴服務狀態',
+    r'auto_error_detector',
+    r'auto-debug',
 )
 _EXTERNAL_BENIGN_PATTERNS = (
     r'google_quota_exhausted',
@@ -92,6 +96,14 @@ _EXTERNAL_BENIGN_PATTERNS = (
     r'generaterequestsper.*freetier',
     r'nvidia api .*403',
     r'authorization failed',
+    r'Unknown interaction',
+    r'error code:\s*10062',
+    r'429|rate limit',
+    r'connection refused',
+    r'connection reset',
+    r'timed out',
+    r'websocket closed',
+    r'shard .* disconnect',
 )
 
 
