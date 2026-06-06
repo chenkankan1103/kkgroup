@@ -1723,10 +1723,8 @@ class StockMarket(commands.Cog):
             print(f"📡 [STOCK_MARKET] 初始化市場訊息...", flush=True)
             await self.initialize_market_message()
             
-            # 啟動定期更新
-            if not self.periodic_market_update.is_running():
-                print(f"⏰ [STOCK_MARKET] 啟動定期更新任務...", flush=True)
-                self.periodic_market_update.start()
+            # 💡 自動更新已移除，改用按需查詢模式
+            # （舊的 periodic_market_update 任務已刪除）
             
             print("✅ [STOCK_MARKET] StockMarket Cog 完全初始化！", flush=True)
             logger.info("✅ StockMarket Cog 已載入")
