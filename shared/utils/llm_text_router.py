@@ -120,6 +120,7 @@ async def complete_text_with_fallback(
     gemini_timeout: int = TEXT_GEMINI_TIMEOUT_SEC,
     groq_timeout: int = TEXT_GROQ_TIMEOUT_SEC,
 ) -> Tuple[Optional[str], str]:
+    # 主要使用 NVIDIA API（額度充足）
     result = await call_nvidia_ai(
         messages,
         temperature=temperature,
@@ -129,16 +130,19 @@ async def complete_text_with_fallback(
     if result:
         return result, "nvidia"
 
+    # 第一 fallback：Groq（免費額度充足）
+    result = await _call_groq(messages, max_tokens, groq_timeout)
+    if result:
+        return result, "groq"
+
+    # 第二 fallback：Gemini main（配額有限，節省使用）
     result = await _call_gemini(GEMINI_KEY, messages, gemini_timeout)
     if result:
         return result, "gemini-main"
 
+    # 第三 fallback：Gemini backup
     result = await _call_gemini(GEMINI_KEY_BK, messages, gemini_timeout)
     if result:
         return result, "gemini-backup"
-
-    result = await _call_groq(messages, max_tokens, groq_timeout)
-    if result:
-        return result, "groq"
 
     return None, "none"

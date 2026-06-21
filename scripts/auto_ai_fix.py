@@ -183,12 +183,44 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
             sev_norm = str(severity).strip().lower()
             is_high = sev_norm in ('high', 'h', '高')
             if is_high:
-                print("⚠️ NVIDIA 無回應，改用 Gemini 備援")
-                response = await GoogleAIClient().call_api(
-                    messages,
-                    temperature=0.2,
-                    max_tokens=2000,
-                )
+                # 先嘗試 Groq（免費額度充足）
+                groq_key = os.getenv('GROQ_API_KEY', '')
+                if groq_key:
+                    print("⚠️ NVIDIA 無回應，改用 Groq 備援")
+                    import aiohttp
+                    groq_payload = {
+                        'model': 'llama-3.3-70b-versatile',
+                        'messages': messages,
+                        'temperature': 0.4,
+                        'max_tokens': 2000,
+                    }
+                    groq_headers = {
+                        'Authorization': f'Bearer {groq_key}',
+                        'Content-Type': 'application/json',
+                    }
+                    try:
+                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as session:
+                            async with session.post(
+                                'https://api.groq.com/openai/v1/chat/completions',
+                                json=groq_payload,
+                                headers=groq_headers
+                            ) as groq_resp:
+                                if groq_resp.status == 200:
+                                    groq_data = await groq_resp.json()
+                                    choices = groq_data.get('choices', [])
+                                    if choices:
+                                        response = choices[0].get('message', {}).get('content', '') or ''
+                    except Exception as groq_err:
+                        print(f'Groq fallback failed: {groq_err}')
+
+                # 如果 Groq 也失敗，才使用 Gemini
+                if not response:
+                    print("⚠️ Groq 也無回應，改用 Gemini 備援")
+                    response = await GoogleAIClient().call_api(
+                        messages,
+                        temperature=0.2,
+                        max_tokens=2000,
+                    )
             else:
                 print(f"⚠️ NVIDIA 無回應且緊急程度為 {severity}，跳過 Gemini 備援以節省配額")
                 response = None
