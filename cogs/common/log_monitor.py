@@ -136,6 +136,11 @@ _IGNORE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_NOISE_DISPATCH_PATTERNS = re.compile(
+    r"(Thread is archived|error code: 50083|已派送互救修復請求|MutualRescue.*已派送|MutualRescue.*status=active|google\.rpc\.QuotaFailure|generate_content_free_tier_requests|quota exceeded|quota exhausted|rate limit|429)",
+    re.IGNORECASE,
+)
+
 # 高危錯誤判斷（只要命中此模式，視為需要升級到 Gemini 的情況）
 _HIGH_SEVERITY_PATTERNS = re.compile(
     r"(Traceback|CRITICAL|Fatal|Unhandled|oom|killed process|failed with result|status=\d+/FAILURE|panic|permission denied|cannot connect|connection (?:reset|refused|closed))",
@@ -403,6 +408,8 @@ def _extract_relevant_lines(blob: str) -> list[str]:
         if not line:
             continue
         if _IGNORE_PATTERNS.search(line):
+            continue
+        if _NOISE_DISPATCH_PATTERNS.search(line):
             continue
         if not _ERROR_PATTERNS.search(line):
             continue
@@ -1390,6 +1397,12 @@ class LogMonitorEngine:
                 "Fatal" in log_text
             )
             
+            if _NOISE_DISPATCH_PATTERNS.search(log_text) or _NOISE_DISPATCH_PATTERNS.search(ai_text):
+                logger.info("[LogMonitor] 偵測到已知噪聲，跳過 GitHub Actions 觸發")
+                self._pipeline_status["dispatch_status"] = "未送出"
+                self._pipeline_status["dispatch_detail"] = "已知噪聲事件，未觸發 GitHub Actions"
+                return False
+
             if not should_trigger and not force:
                 logger.info(f"[LogMonitor] 錯誤緊急程度為{severity}，跳過 GitHub Actions 觸發")
                 self._pipeline_status["dispatch_status"] = "未送出"
