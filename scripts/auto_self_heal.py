@@ -1,0 +1,1326 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+VM 自我修復守護程式 (VM Self-Healing Daemon)
+
+取代原本 GitHub Actions 主導的 debug 流程，改為 VM 內部自主：
+1. 監控 systemd journal 錯誤日誌
+2. 分級修復 (L1 自動 / L2 AI 輔助 / L3 通知人工)
+3. 自動備份 → 修復 → 驗證 → 回滾
+4. Git auto commit + push
+5. Discord 通知
+
+Usage:
+    python3 scripts/auto_self_heal.py          # 單次執行
+    python3 scripts/auto_self_heal.py --watch  # 持續監控模式
+"""
+
+import os
+import sys
+import re
+import json
+import asyncio
+import subprocess
+import shutil
+import tempfile
+import argparse
+import time
+import traceback
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Optional, Dict, List, Tuple
+
+# ─── 路徑設定 ────────────────────────────────────────────────
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+BACKUP_DIR = PROJECT_ROOT / "archive" / "self_heal_backups"
+FIXES_DIR = PROJECT_ROOT / "archive" / "self_heal_fixes"
+STATE_FILE = PROJECT_ROOT / "data" / "self_heal_state.json"
+
+# ─── 錯誤分級 ────────────────────────────────────────────────
+# L1: 可直接自動修復的錯誤類型
+L1_PATTERNS = {
+    "import_error": {
+        "pattern": r"ImportError: No module named ['\"](.+?)['\"]",
+        "description": "缺少模組匯入",
+    },
+    "syntax_error": {
+        "pattern": r"SyntaxError: (.+)",
+        "description": "語法錯誤",
+    },
+    "indentation_error": {
+        "pattern": r"IndentationError: (.+)",
+        "description": "縮排錯誤",
+    },
+    "name_error": {
+        "pattern": r"NameError: name ['\"](.+?)['\"] is not defined",
+        "description": "名稱未定義",
+    },
+    "attribute_error": {
+        "pattern": r"AttributeError: ['\"](.+?)['\"] object has no attribute ['\"](.+?)['\"]",
+        "description": "屬性不存在",
+    },
+    "file_not_found": {
+        "pattern": r"FileNotFoundError: \[Errno 2\] No such file or directory: ['\"](.+?)['\"]",
+        "description": "檔案不存在",
+    },
+    "module_not_found": {
+        "pattern": r"ModuleNotFoundError: No module named ['\"](.+?)['\"]",
+        "description": "模組未安裝",
+    },
+    "key_error": {
+        "pattern": r"KeyError: ['\"](.+?)['\"]",
+        "description": "鍵值錯誤",
+    },
+    "type_error": {
+        "pattern": r"TypeError: (.+)",
+        "description": "型別錯誤",
+    },
+    "value_error": {
+        "pattern": r"ValueError: (.+)",
+        "description": "數值錯誤",
+    },
+    "zero_division": {
+        "pattern": r"ZeroDivisionError: (.+)",
+        "description": "除以零",
+    },
+    "index_error": {
+        "pattern": r"IndexError: (.+)",
+        "description": "索引錯誤",
+    },
+    "runtime_error": {
+        "pattern": r"RuntimeError: (.+)",
+        "description": "執行期錯誤",
+    },
+    "os_error": {
+        "pattern": r"OSError: (.+)",
+        "description": "系統呼叫錯誤",
+    },
+    "permission_error": {
+        "pattern": r"PermissionError: \[Errno 13\] (.+)",
+        "description": "權限錯誤",
+    },
+    "connection_error": {
+        "pattern": r"ConnectionError: (.+)",
+        "description": "連線錯誤",
+    },
+    "timeout_error": {
+        "pattern": r"TimeoutError: (.+)",
+        "description": "逾時錯誤",
+    },
+    "json_decode_error": {
+        "pattern": r"json\.decoder\.JSONDecodeError: (.+)",
+        "description": "JSON 解析錯誤",
+    },
+    "unicode_decode_error": {
+        "pattern": r"UnicodeDecodeError: (.+)",
+        "description": "編碼解碼錯誤",
+    },
+    "discord_not_found": {
+        "pattern": r"discord\.(NotFound|HTTPException): (\d+)",
+        "description": "Discord API 404",
+    },
+    "discord_forbidden": {
+        "pattern": r"discord\.Forbidden: (\d+)",
+        "description": "Discord 權限不足",
+    },
+}
+
+# L2: 需要 AI 輔助分析的錯誤
+L2_PATTERNS = {
+    "logic_error": {
+        "pattern": r"(logic error|unexpected behavior|wrong result|incorrect calculation)",
+        "description": "邏輯錯誤",
+    },
+    "api_change": {
+        "pattern": r"(deprecated|removed|moved|renamed|no longer supported)",
+        "description": "API 變更",
+    },
+    "race_condition": {
+        "pattern": r"(race condition|deadlock|concurrent|thread-safe|async issue)",
+        "description": "競爭條件",
+    },
+    "memory_leak": {
+        "pattern": r"(memory leak|out of memory|OOM|memory error)",
+        "description": "記憶體洩漏",
+    },
+    "complex_error": {
+        "pattern": r"(complex|nested|recursive|circular|infinite)",
+        "description": "複雜錯誤",
+    },
+}
+
+# L3: 需要人工介入的錯誤
+L3_PATTERNS = {
+    "database_corruption": {
+        "pattern": r"(database corruption|database integrity|sqlite3\.(DatabaseError|IntegrityError)|OperationalError)",
+        "description": "資料庫損毀",
+    },
+    "security_issue": {
+        "pattern": r"(security|unauthorized|forbidden|access denied|permission denied|hack|intrusion)",
+        "description": "安全問題",
+    },
+    "config_corruption": {
+        "pattern": r"(config.*corrupt|config.*invalid|config.*parse|malformed config)",
+        "description": "配置檔損毀",
+    },
+    "hardware_failure": {
+        "pattern": r"(hardware|disk failure|I/O error|disk full|no space left)",
+        "description": "硬體故障",
+    },
+    "network_outage": {
+        "pattern": r"(network outage|DNS resolution|host unreachable|no route to host)",
+        "description": "網路中斷",
+    },
+    "unknown_error": {
+        "pattern": r"(unknown error|unhandled exception|fatal error|critical failure)",
+        "description": "未知錯誤",
+    },
+}
+
+# 噪音過濾模式（跳過這些日誌）
+NOISE_PATTERNS = [
+    r"auto_self_heal",
+    r"self.heal",
+    r"auto-debug",
+    r"auto_error_detector",
+    r"websocket.*close",
+    r"shard.*disconnect",
+    r"heartbeat.*ack",
+    r"rate limit",
+    r"429",
+    r"Unknown interaction",
+    r"error code:\s*10062",
+]
+
+# ─── 工具函式 ────────────────────────────────────────────────
+
+def _load_env():
+    """載入 .env 檔案"""
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip("\"'")
+                os.environ.setdefault(key, value)
+
+
+def _log(msg: str, level: str = "INFO"):
+    """統一日誌輸出"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] [{level}] {msg}", flush=True)
+
+
+def _load_state() -> dict:
+    """載入狀態檔案"""
+    if STATE_FILE.exists():
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"last_check": {}, "incidents": [], "fix_history": []}
+
+
+def _save_state(state: dict):
+    """儲存狀態檔案"""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def _normalize_timestamp(ts_str: str) -> Optional[datetime]:
+    """標準化時間戳字串為 datetime"""
+    formats = [
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%b %d %H:%M:%S",
+    ]
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(ts_str, fmt)
+            if fmt == "%b %d %H:%M:%S":
+                dt = dt.replace(year=datetime.now().year)
+            return dt
+        except ValueError:
+            continue
+    return None
+
+
+def _is_noise(line: str) -> bool:
+    """檢查是否為噪音日誌"""
+    return any(re.search(p, line, re.IGNORECASE) for p in NOISE_PATTERNS)
+
+
+def _extract_file_path_from_traceback(lines: List[str]) -> Optional[str]:
+    """從 traceback 中提取出錯的檔案路徑"""
+    for line in lines:
+        match = re.search(r'File\s+"([^"]+\.py)"', line)
+        if match:
+            path = match.group(1)
+            # 嘗試轉換為專案內的相對路徑
+            if PROJECT_ROOT.as_posix() in path:
+                rel_path = os.path.relpath(path, PROJECT_ROOT.as_posix())
+                return rel_path.replace("\\", "/")
+            return path
+    return None
+
+
+def _extract_error_line_from_traceback(lines: List[str]) -> Optional[int]:
+    """從 traceback 中提取出錯的行號"""
+    for line in lines:
+        match = re.search(r'line\s+(\d+)', line)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+# ─── 錯誤分類 ────────────────────────────────────────────────
+
+def classify_error(error_text: str) -> Tuple[str, str, str]:
+    """
+    分類錯誤等級。
+    
+    Returns:
+        (level, error_type, description)
+        level: "L1", "L2", "L3"
+    """
+    # 先檢查 L3（最高優先）
+    for err_type, info in L3_PATTERNS.items():
+        if re.search(info["pattern"], error_text, re.IGNORECASE):
+            return ("L3", err_type, info["description"])
+    
+    # 再檢查 L2
+    for err_type, info in L2_PATTERNS.items():
+        if re.search(info["pattern"], error_text, re.IGNORECASE):
+            return ("L2", err_type, info["description"])
+    
+    # 最後檢查 L1
+    for err_type, info in L1_PATTERNS.items():
+        if re.search(info["pattern"], error_text, re.IGNORECASE):
+            return ("L1", err_type, info["description"])
+    
+    # 預設為 L3（無法分類的錯誤需要人工確認）
+    return ("L3", "unclassified", "無法分類的錯誤")
+
+
+# ─── 日誌監控 ────────────────────────────────────────────────
+
+def read_journal(service: str, lines: int = 100) -> List[str]:
+    """讀取 systemd journal 日誌"""
+    try:
+        cmd = [
+            "/usr/bin/journalctl",
+            "-u", service,
+            "-n", str(lines),
+            "--no-pager",
+            "-o", "short-iso",
+        ]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30
+        )
+        if result.returncode == 0:
+            return result.stdout.splitlines()
+        else:
+            _log(f"journalctl 失敗 ({service}): {result.stderr.strip()}", "WARN")
+            return []
+    except FileNotFoundError:
+        _log("找不到 journalctl，可能不在 VM 上", "WARN")
+        return []
+    except subprocess.TimeoutExpired:
+        _log(f"讀取 journal {service} 逾時", "WARN")
+        return []
+    except Exception as e:
+        _log(f"讀取 journal 異常 ({service}): {e}", "WARN")
+        return []
+
+
+def collect_errors(services: List[str], since_minutes: int = 10) -> List[dict]:
+    """收集各服務的錯誤日誌"""
+    errors = []
+    state = _load_state()
+    last_check = state.get("last_check", {})
+    now = datetime.now().isoformat()
+
+    for service in services:
+        lines = read_journal(service, lines=200)
+        if not lines:
+            continue
+
+        for line in lines:
+            if _is_noise(line):
+                continue
+
+            # 檢查是否包含錯誤關鍵字
+            if not re.search(
+                r"(Traceback|Error|Exception|CRITICAL|FATAL|failed|traceback)",
+                line, re.IGNORECASE
+            ):
+                continue
+
+            # 提取時間戳
+            ts_match = re.match(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", line)
+            if not ts_match:
+                continue
+
+            ts_str = ts_match.group(1)
+            ts = _normalize_timestamp(ts_str)
+            if not ts:
+                continue
+
+            # 檢查是否在時間範圍內
+            if (datetime.now() - ts).total_seconds() > since_minutes * 60:
+                continue
+
+            # 檢查是否已經處理過
+            last_ts = last_check.get(service)
+            if last_ts:
+                last_dt = _normalize_timestamp(last_ts)
+                if last_dt and ts <= last_dt:
+                    continue
+
+            errors.append({
+                "service": service,
+                "timestamp": ts_str,
+                "message": line.strip(),
+                "raw": line,
+            })
+
+    # 更新最後檢查時間
+    for service in services:
+        state.setdefault("last_check", {})[service] = now
+    _save_state(state)
+
+    return errors
+
+
+# ─── 備份系統 ────────────────────────────────────────────────
+
+def backup_file(file_path: str) -> Optional[str]:
+    """備份檔案，回傳備份路徑"""
+    abs_path = Path(file_path)
+    if not abs_path.is_absolute():
+        abs_path = PROJECT_ROOT / file_path
+    
+    if not abs_path.exists():
+        _log(f"備份目標不存在: {abs_path}", "WARN")
+        return None
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    rel_path = os.path.relpath(abs_path, PROJECT_ROOT)
+    safe_name = rel_path.replace("\\", "_").replace("/", "_").replace(".", "_")
+    backup_path = BACKUP_DIR / f"{timestamp}_{safe_name}.bak"
+    
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(abs_path, backup_path)
+    _log(f"✅ 已備份 {rel_path} → {backup_path}", "INFO")
+    return str(backup_path)
+
+
+def restore_backup(backup_path: str, target_path: str) -> bool:
+    """從備份還原檔案"""
+    backup = Path(backup_path)
+    target = Path(target_path)
+    if not target.is_absolute():
+        target = PROJECT_ROOT / target_path
+    
+    if not backup.exists():
+        _log(f"備份檔案不存在: {backup}", "ERROR")
+        return False
+    
+    shutil.copy2(backup, target)
+    _log(f"✅ 已還原 {backup} → {target}", "INFO")
+    return True
+
+
+def list_backups(file_path: str, max_results: int = 5) -> List[str]:
+    """列出某檔案的最新備份"""
+    rel_path = os.path.relpath(Path(file_path), PROJECT_ROOT) if Path(file_path).is_absolute() else file_path
+    safe_name = rel_path.replace("\\", "_").replace("/", "_").replace(".", "_")
+    
+    backups = sorted(BACKUP_DIR.glob(f"*_{safe_name}.bak"), reverse=True)
+    return [str(b) for b in backups[:max_results]]
+
+
+# ─── L1 修復器 ────────────────────────────────────────────────
+
+class L1Fixer:
+    """L1 自動修復：處理常見的可預測錯誤"""
+    
+    @staticmethod
+    def fix_import_error(error_text: str, file_path: str) -> Optional[str]:
+        """修復 ImportError - 嘗試 pip install 缺少的模組"""
+        match = re.search(r"ImportError: No module named ['\"](.+?)['\"]", error_text)
+        if not match:
+            match = re.search(r"ModuleNotFoundError: No module named ['\"](.+?)['\"]", error_text)
+        if not match:
+            return None
+        
+        module_name = match.group(1)
+        _log(f"🔧 L1: 嘗試安裝缺少模組: {module_name}", "INFO")
+        
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", module_name],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0:
+                _log(f"✅ L1: 成功安裝 {module_name}", "INFO")
+                return f"pip install {module_name}"
+            else:
+                _log(f"❌ L1: 安裝 {module_name} 失敗: {result.stderr[:200]}", "WARN")
+                return None
+        except subprocess.TimeoutExpired:
+            _log(f"❌ L1: 安裝 {module_name} 逾時", "WARN")
+            return None
+        except Exception as e:
+            _log(f"❌ L1: 安裝異常: {e}", "ERROR")
+            return None
+    
+    @staticmethod
+    def fix_name_error(error_text: str, file_path: str) -> Optional[str]:
+        """修復 NameError - 記錄但通常需要人工確認"""
+        match = re.search(r"NameError: name ['\"](.+?)['\"] is not defined", error_text)
+        if not match:
+            return None
+        
+        var_name = match.group(1)
+        _log(f"🔧 L1: NameError - '{var_name}' 未定義，需檢查檔案 {file_path}", "INFO")
+        # NameError 通常需要理解上下文，回傳 None 讓它升級到 L2
+        return None
+    
+    @staticmethod
+    def fix_file_not_found(error_text: str, file_path: str) -> Optional[str]:
+        """修復 FileNotFoundError - 嘗試建立目錄"""
+        match = re.search(r"FileNotFoundError: \[Errno 2\] No such file or directory: ['\"](.+?)['\"]", error_text)
+        if not match:
+            return None
+        
+        missing_path = match.group(1)
+        _log(f"🔧 L1: 嘗試建立缺少的目錄: {missing_path}", "INFO")
+        
+        try:
+            os.makedirs(os.path.dirname(missing_path), exist_ok=True)
+            _log(f"✅ L1: 已建立目錄 {os.path.dirname(missing_path)}", "INFO")
+            return f"mkdir -p {os.path.dirname(missing_path)}"
+        except Exception as e:
+            _log(f"❌ L1: 建立目錄失敗: {e}", "WARN")
+            return None
+    
+    @staticmethod
+    def fix_permission_error(error_text: str, file_path: str) -> Optional[str]:
+        """修復 PermissionError - 嘗試修正權限"""
+        match = re.search(r"PermissionError: \[Errno 13\] (.+)", error_text)
+        if not match:
+            return None
+        
+        _log(f"🔧 L1: 嘗試修正檔案權限", "INFO")
+        try:
+            # 找出錯誤中提到的檔案路徑
+            path_match = re.search(r"['\"](.+?)['\"]", match.group(1))
+            if path_match:
+                target = path_match.group(1)
+                if os.path.exists(target):
+                    os.chmod(target, 0o644)
+                    _log(f"✅ L1: 已修正權限: {target}", "INFO")
+                    return f"chmod 644 {target}"
+        except Exception as e:
+            _log(f"❌ L1: 修正權限失敗: {e}", "WARN")
+        return None
+    
+    @staticmethod
+    def fix_discord_not_found(error_text: str, file_path: str) -> Optional[str]:
+        """修復 Discord NotFound - 通常是暫時性問題，記錄即可"""
+        _log(f"🔧 L1: Discord 404 錯誤，通常為暫時性問題", "INFO")
+        return "discord_not_found_ignored"
+    
+    @classmethod
+    def try_fix(cls, error_type: str, error_text: str, file_path: str) -> Optional[str]:
+        """嘗試執行 L1 修復"""
+        fixers = {
+            "import_error": cls.fix_import_error,
+            "module_not_found": cls.fix_import_error,
+            "name_error": cls.fix_name_error,
+            "file_not_found": cls.fix_file_not_found,
+            "permission_error": cls.fix_permission_error,
+            "discord_not_found": cls.fix_discord_not_found,
+            "discord_forbidden": cls.fix_discord_not_found,
+        }
+        
+        fixer = fixers.get(error_type)
+        if fixer:
+            return fixer(error_text, file_path)
+        return None
+
+
+# ─── L2 AI 修復器 ────────────────────────────────────────────
+
+class L2Fixer:
+    """L2 AI 輔助修復：使用 NVIDIA/Groq AI 分析並生成修復"""
+    
+    def __init__(self):
+        self.nvidia_key = os.getenv("NVIDIA_API_KEY", "")
+        self.groq_key = os.getenv("GROQ_API_KEY", "")
+        self.nvidia_model = os.getenv("NVIDIA_MODEL", "deepseek-ai/deepseek-v4-pro")
+    
+    async def analyze_and_fix(
+        self, error_text: str, file_path: str, service: str
+    ) -> Optional[dict]:
+        """使用 AI 分析錯誤並生成修復"""
+        _log(f"🤖 L2: 使用 AI 分析錯誤 ({service})", "INFO")
+        
+        # 讀取出錯檔案內容
+        abs_path = Path(file_path)
+        if not abs_path.is_absolute():
+            abs_path = PROJECT_ROOT / file_path
+        
+        file_content = ""
+        if abs_path.exists():
+            try:
+                with open(abs_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+            except Exception as e:
+                _log(f"⚠️ 無法讀取檔案 {file_path}: {e}", "WARN")
+        
+        # 構建 AI 提示
+        prompt = self._build_prompt(error_text, file_path, file_content, service)
+        
+        # 嘗試 NVIDIA
+        analysis = await self._call_nvidia(prompt)
+        
+        # 備援 Groq
+        if not analysis:
+            analysis = await self._call_groq(prompt)
+        
+        if not analysis:
+            _log("❌ L2: AI 分析失敗（NVIDIA + Groq 皆無回應）", "ERROR")
+            return None
+        
+        return analysis
+    
+    def _build_prompt(self, error_text: str, file_path: str, file_content: str, service: str) -> str:
+        """構建 AI 分析提示"""
+        prompt = f"""你是 KKGroup Discord Bot 系統的 AI 除錯專家。
+請分析以下錯誤並生成修復代碼。
+
+## 系統環境
+- GCP VM: e2-micro (1GB RAM + 4GB swap)
+- 服務: {service}
+- 技術棧: Python 3.11 + Discord.py + systemd
+
+## 錯誤資訊
+- 檔案: {file_path}
+- 錯誤訊息: {error_text}
+
+## 檔案內容（前 200 行）
+{file_content[:5000] if file_content else "(無法讀取檔案內容)"}
+
+## 請以 JSON 格式回覆（只輸出 JSON，不要有其他文字）：
+{{
+    "root_cause": "根本原因（繁體中文）",
+    "fix_type": "modify_file | install_package | restart_service | other",
+    "fix_target": "需要修改的檔案路徑",
+    "fix_code": "具體的修復代碼（如果是 modify_file）",
+    "fix_command": "需要執行的 shell 命令（如果不是 modify_file）",
+    "verification": "如何驗證修復成功",
+    "confidence": 0.0-1.0
+}}"""
+        return prompt
+    
+    async def _call_nvidia(self, prompt: str) -> Optional[dict]:
+        """呼叫 NVIDIA AI API"""
+        if not self.nvidia_key:
+            return None
+        
+        try:
+            import aiohttp
+            
+            messages = [
+                {"role": "system", "content": "你是 KKGroup Discord Bot 系統的 AI 除錯專家。請只輸出 JSON。"},
+                {"role": "user", "content": prompt},
+            ]
+            
+            payload = {
+                "model": self.nvidia_model,
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": 2000,
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {self.nvidia_key}",
+                "Content-Type": "application/json",
+            }
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                async with session.post(
+                    "https://integrate.api.nvidia.com/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        if content:
+                            return self._parse_ai_response(content)
+                    else:
+                        _log(f"NVIDIA API 錯誤: {resp.status}", "WARN")
+                        return None
+        except ImportError:
+            _log("缺少 aiohttp，無法呼叫 NVIDIA API", "WARN")
+            return None
+        except asyncio.TimeoutError:
+            _log("NVIDIA API 逾時", "WARN")
+            return None
+        except Exception as e:
+            _log(f"NVIDIA API 異常: {e}", "WARN")
+            return None
+    
+    async def _call_groq(self, prompt: str) -> Optional[dict]:
+        """呼叫 Groq API（免費備援）"""
+        if not self.groq_key:
+            return None
+        
+        try:
+            import aiohttp
+            
+            messages = [
+                {"role": "system", "content": "你是 KKGroup Discord Bot 系統的 AI 除錯專家。請只輸出 JSON。"},
+                {"role": "user", "content": prompt},
+            ]
+            
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": 2000,
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {self.groq_key}",
+                "Content-Type": "application/json",
+            }
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                async with session.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        if content:
+                            return self._parse_ai_response(content)
+                    else:
+                        _log(f"Groq API 錯誤: {resp.status}", "WARN")
+                        return None
+        except Exception as e:
+            _log(f"Groq API 異常: {e}", "WARN")
+            return None
+    
+    def _parse_ai_response(self, content: str) -> Optional[dict]:
+        """解析 AI 回應的 JSON"""
+        # 嘗試直接解析
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+        
+        # 嘗試從 markdown code block 中提取
+        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # 嘗試從大括號中提取
+        brace_match = re.search(r"\{[\s\S]*\}", content)
+        if brace_match:
+            try:
+                return json.loads(brace_match.group(0))
+            except json.JSONDecodeError:
+                pass
+        
+        _log("⚠️ 無法解析 AI 回應為 JSON", "WARN")
+        _log(f"原始回應: {content[:500]}", "DEBUG")
+        return None
+
+
+# ─── 修復執行器 ──────────────────────────────────────────────
+
+class FixExecutor:
+    """執行修復操作（備份 → 修復 → 驗證 → 回滾）"""
+    
+    def __init__(self):
+        self.fix_history = []
+    
+    def apply_fix(self, fix_data: dict, error_info: dict) -> bool:
+        """執行修復"""
+        fix_type = fix_data.get("fix_type", "")
+        fix_target = fix_data.get("fix_target", "")
+        fix_code = fix_data.get("fix_code", "")
+        fix_command = fix_data.get("fix_command", "")
+        
+        _log(f"🔧 執行修復: type={fix_type}, target={fix_target}", "INFO")
+        
+        # 備份
+        if fix_type == "modify_file" and fix_target:
+            backup_path = backup_file(fix_target)
+            if not backup_path:
+                _log("⚠️ 備份失敗，仍嘗試修復", "WARN")
+        
+        success = False
+        action_taken = ""
+        
+        try:
+            if fix_type == "modify_file" and fix_target and fix_code:
+                success = self._apply_code_fix(fix_target, fix_code)
+                action_taken = f"修改檔案 {fix_target}"
+            
+            elif fix_type == "install_package" and fix_command:
+                success = self._run_command(fix_command)
+                action_taken = f"執行命令: {fix_command}"
+            
+            elif fix_type == "restart_service":
+                service = error_info.get("service", "bot.service")
+                success = self._restart_service(service)
+                action_taken = f"重啟服務 {service}"
+            
+            elif fix_type == "other" and fix_command:
+                success = self._run_command(fix_command)
+                action_taken = f"執行命令: {fix_command}"
+            
+            else:
+                _log(f"❌ 未知的修復類型: {fix_type}", "ERROR")
+                success = False
+                action_taken = f"未知修復類型: {fix_type}"
+        
+        except Exception as e:
+            _log(f"❌ 修復執行異常: {e}", "ERROR")
+            success = False
+        
+        # 記錄修復歷史
+        record = {
+            "timestamp": datetime.now().isoformat(),
+            "error": error_info.get("message", ""),
+            "service": error_info.get("service", ""),
+            "fix_type": fix_type,
+            "action": action_taken,
+            "success": success,
+            "fix_data": fix_data,
+        }
+        self.fix_history.append(record)
+        
+        # 儲存到狀態
+        state = _load_state()
+        state.setdefault("fix_history", []).append(record)
+        _save_state(state)
+        
+        return success
+    
+    def _apply_code_fix(self, target_path: str, fix_code: str) -> bool:
+        """套用代碼修復"""
+        abs_path = Path(target_path)
+        if not abs_path.is_absolute():
+            abs_path = PROJECT_ROOT / target_path
+        
+        if not abs_path.exists():
+            _log(f"❌ 目標檔案不存在: {abs_path}", "ERROR")
+            return False
+        
+        try:
+            # 備份已在上層完成
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write(fix_code)
+            _log(f"✅ 已寫入修復代碼到 {abs_path}", "INFO")
+            return True
+        except Exception as e:
+            _log(f"❌ 寫入檔案失敗: {e}", "ERROR")
+            return False
+    
+    def _run_command(self, command: str) -> bool:
+        """執行 shell 命令"""
+        try:
+            result = subprocess.run(
+                command, shell=True, capture_output=True,
+                text=True, timeout=60
+            )
+            if result.returncode == 0:
+                _log(f"✅ 命令執行成功: {command}", "INFO")
+                if result.stdout:
+                    _log(f"輸出: {result.stdout[:500]}", "INFO")
+                return True
+            else:
+                _log(f"❌ 命令執行失敗 (code={result.returncode}): {result.stderr[:500]}", "ERROR")
+                return False
+        except subprocess.TimeoutExpired:
+            _log(f"❌ 命令逾時: {command}", "ERROR")
+            return False
+        except Exception as e:
+            _log(f"❌ 命令執行異常: {e}", "ERROR")
+            return False
+    
+    def _restart_service(self, service: str) -> bool:
+        """重啟 systemd 服務"""
+        _log(f"🔄 重啟服務: {service}", "INFO")
+        try:
+            result = subprocess.run(
+                ["sudo", "systemctl", "restart", service],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0:
+                _log(f"✅ 服務 {service} 重啟成功", "INFO")
+                return True
+            else:
+                _log(f"❌ 服務重啟失敗: {result.stderr[:300]}", "ERROR")
+                return False
+        except Exception as e:
+            _log(f"❌ 重啟異常: {e}", "ERROR")
+            return False
+    
+    def verify_fix(self, service: str, wait_seconds: int = 10) -> bool:
+        """驗證修復後服務是否正常"""
+        _log(f"🔍 驗證修復: 等待 {wait_seconds} 秒後檢查 {service}", "INFO")
+        time.sleep(wait_seconds)
+        
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-active", service],
+                capture_output=True, text=True, timeout=10
+            )
+            is_active = result.stdout.strip() == "active"
+            _log(f"{'✅' if is_active else '❌'} 服務狀態: {result.stdout.strip()}", "INFO")
+            return is_active
+        except Exception as e:
+            _log(f"❌ 驗證異常: {e}", "ERROR")
+            return False
+    
+    def rollback(self, error_info: dict) -> bool:
+        """回滾最近的修復"""
+        if not self.fix_history:
+            _log("⚠️ 沒有修復歷史可回滾", "WARN")
+            return False
+        
+        last_fix = self.fix_history[-1]
+        fix_target = last_fix.get("fix_data", {}).get("fix_target", "")
+        
+        if not fix_target:
+            _log("⚠️ 沒有修復目標可回滾", "WARN")
+            return False
+        
+        # 找最新的備份
+        backups = list_backups(fix_target, max_results=1)
+        if not backups:
+            _log(f"⚠️ 找不到 {fix_target} 的備份", "WARN")
+            return False
+        
+        _log(f"🔄 回滾: {backups[0]} → {fix_target}", "INFO")
+        success = restore_backup(backups[0], fix_target)
+        
+        if success:
+            # 重啟服務
+            service = error_info.get("service", "bot.service")
+            self._restart_service(service)
+        
+        return success
+
+
+# ─── Git 整合 ────────────────────────────────────────────────
+
+class GitManager:
+    """Git 自動 commit + push"""
+    
+    def __init__(self):
+        self.repo_path = PROJECT_ROOT
+    
+    def commit_and_push(self, message: str) -> bool:
+        """自動 commit 並 push 到遠端"""
+        try:
+            # 檢查是否有變更
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True, text=True, timeout=10,
+                cwd=self.repo_path,
+            )
+            if not result.stdout.strip():
+                _log("ℹ️ 沒有需要提交的變更", "INFO")
+                return True
+            
+            # 設定 git config
+            subprocess.run(
+                ["git", "config", "user.name", "KKGroup Self-Heal Bot"],
+                capture_output=True, timeout=10, cwd=self.repo_path,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "self-heal@kkgroup.local"],
+                capture_output=True, timeout=10, cwd=self.repo_path,
+            )
+            
+            # 加入所有變更
+            subprocess.run(
+                ["git", "add", "-A"],
+                capture_output=True, timeout=10, cwd=self.repo_path,
+            )
+            
+            # 提交
+            result = subprocess.run(
+                ["git", "commit", "-m", message],
+                capture_output=True, text=True, timeout=10,
+                cwd=self.repo_path,
+            )
+            if result.returncode != 0:
+                _log(f"❌ Git commit 失敗: {result.stderr[:300]}", "ERROR")
+                return False
+            
+            _log(f"✅ Git commit 成功: {result.stdout.strip()[:200]}", "INFO")
+            
+            # 推送
+            result = subprocess.run(
+                ["git", "push", "origin", "main"],
+                capture_output=True, text=True, timeout=30,
+                cwd=self.repo_path,
+            )
+            if result.returncode == 0:
+                _log(f"✅ Git push 成功", "INFO")
+                return True
+            else:
+                _log(f"❌ Git push 失敗: {result.stderr[:300]}", "ERROR")
+                return False
+        
+        except subprocess.TimeoutExpired:
+            _log("❌ Git 操作逾時", "ERROR")
+            return False
+        except Exception as e:
+            _log(f"❌ Git 操作異常: {e}", "ERROR")
+            return False
+
+
+# ─── Discord 通知 ────────────────────────────────────────────
+
+class DiscordNotifier:
+    """發送 Discord 通知"""
+    
+    def __init__(self):
+        self.webhook_url = (
+            os.getenv("DISCORD_WEBHOOK_URL") or
+            os.getenv("DISCORD_WEBHOOK") or
+            ""
+        )
+    
+    async def send_notification(self, title: str, description: str, color: int = 0x00FF00, fields: list = None) -> bool:
+        """發送 Discord Embed 通知"""
+        if not self.webhook_url:
+            return False
+        
+        try:
+            import aiohttp
+            
+            embed = {
+                "title": title,
+                "description": description[:2000],
+                "color": color,
+                "timestamp": datetime.now().isoformat(),
+            }
+            
+            if fields:
+                embed["fields"] = fields
+            
+            payload = {
+                "content": None,
+                "embeds": [embed],
+            }
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.post(self.webhook_url, json=payload) as resp:
+                    if resp.status in (200, 204):
+                        _log("✅ Discord 通知已發送", "INFO")
+                        return True
+                    else:
+                        _log(f"❌ Discord 通知失敗: {resp.status}", "WARN")
+                        return False
+        
+        except Exception as e:
+            _log(f"❌ Discord 通知異常: {e}", "WARN")
+            return False
+    
+    async def notify_l3_error(self, error_info: dict):
+        """通知 L3 錯誤需要人工介入"""
+        await self.send_notification(
+            title="🚨 L3 錯誤需要人工介入",
+            description=f"**服務**: {error_info.get('service', '未知')}\n"
+                       f"**錯誤**: {error_info.get('message', '')[:500]}",
+            color=0xFF0000,
+            fields=[
+                {"name": "時間", "value": error_info.get("timestamp", ""), "inline": True},
+                {"name": "建議操作", "value": "請 SSH 進 VM 檢查並手動修復", "inline": False},
+            ],
+        )
+    
+    async def notify_fix_result(self, error_info: dict, success: bool, level: str, details: str = ""):
+        """通知修復結果"""
+        if success:
+            await self.send_notification(
+                title=f"✅ {level} 修復成功",
+                description=f"**服務**: {error_info.get('service', '未知')}\n"
+                           f"**錯誤**: {error_info.get('message', '')[:300]}\n"
+                           f"**處理**: {details[:500]}",
+                color=0x00FF00,
+            )
+        else:
+            await self.send_notification(
+                title=f"❌ {level} 修復失敗",
+                description=f"**服務**: {error_info.get('service', '未知')}\n"
+                           f"**錯誤**: {error_info.get('message', '')[:300]}\n"
+                           f"**原因**: {details[:500]}",
+                color=0xFFA500,
+                fields=[
+                    {"name": "建議", "value": "請檢查日誌並手動處理", "inline": False},
+                ],
+            )
+
+
+# ─── 主流程 ──────────────────────────────────────────────────
+
+class SelfHealDaemon:
+    """VM 自我修復守護程式主類別"""
+    
+    def __init__(self):
+        _load_env()
+        self.services = ["bot.service", "shopbot.service", "uibot.service"]
+        self.l1_fixer = L1Fixer()
+        self.l2_fixer = L2Fixer()
+        self.fix_executor = FixExecutor()
+        self.git_manager = GitManager()
+        self.notifier = DiscordNotifier()
+        self.state = _load_state()
+        self.incident_cooldown = {}  # {(service, error_type): last_time}
+    
+    def _check_cooldown(self, service: str, error_type: str, minutes: int = 30) -> bool:
+        """檢查冷卻時間"""
+        key = (service, error_type)
+        last_time = self.incident_cooldown.get(key)
+        if last_time:
+            if (datetime.now() - last_time).total_seconds() < minutes * 60:
+                return False
+        self.incident_cooldown[key] = datetime.now()
+        return True
+    
+    async def run_once(self):
+        """執行一次自我修復檢查"""
+        _log("=" * 50, "INFO")
+        _log("🔍 開始自我修復檢查", "INFO")
+        
+        # 1. 收集錯誤
+        errors = collect_errors(self.services, since_minutes=10)
+        if not errors:
+            _log("✅ 沒有發現新的錯誤", "INFO")
+            return
+        
+        _log(f"📊 發現 {len(errors)} 個錯誤", "INFO")
+        
+        # 2. 分類並處理每個錯誤
+        for error in errors:
+            await self._handle_error(error)
+    
+    async def _handle_error(self, error: dict):
+        """處理單一錯誤"""
+        error_text = error.get("message", "")
+        service = error.get("service", "")
+        
+        # 分類
+        level, error_type, description = classify_error(error_text)
+        _log(f"📋 錯誤分類: {level}/{error_type} ({description})", "INFO")
+        _log(f"   服務: {service}", "INFO")
+        _log(f"   訊息: {error_text[:200]}", "INFO")
+        
+        # 冷卻檢查
+        if not self._check_cooldown(service, error_type):
+            _log(f"⏳ 冷卻中，跳過 ({error_type})", "INFO")
+            return
+        
+        # 提取檔案路徑
+        file_path = _extract_file_path_from_traceback([error_text])
+        if not file_path:
+            file_path = "unknown"
+        
+        if level == "L1":
+            await self._handle_l1(error, error_type, error_text, file_path)
+        elif level == "L2":
+            await self._handle_l2(error, error_text, file_path, service)
+        else:
+            await self._handle_l3(error)
+    
+    async def _handle_l1(self, error: dict, error_type: str, error_text: str, file_path: str):
+        """處理 L1 錯誤 - 自動修復"""
+        _log(f"🔧 L1 自動修復: {error_type}", "INFO")
+        
+        # 嘗試 L1 修復
+        fix_result = self.l1_fixer.try_fix(error_type, error_text, file_path)
+        
+        if fix_result:
+            _log(f"✅ L1 修復成功: {fix_result}", "INFO")
+            
+            # Git commit + push
+            commit_msg = f"fix: L1 自動修復 - {error_type} ({error.get('service', '')})"
+            self.git_manager.commit_and_push(commit_msg)
+            
+            # Discord 通知
+            await self.notifier.notify_fix_result(
+                error, success=True, level="L1", details=fix_result
+            )
+        else:
+            _log(f"⚠️ L1 無法修復 {error_type}，嘗試升級到 L2", "INFO")
+            await self._handle_l2(error, error_text, file_path, error.get("service", ""))
+    
+    async def _handle_l2(self, error: dict, error_text: str, file_path: str, service: str):
+        """處理 L2 錯誤 - AI 輔助修復"""
+        _log(f"🤖 L2 AI 輔助修復", "INFO")
+        
+        # AI 分析
+        analysis = await self.l2_fixer.analyze_and_fix(error_text, file_path, service)
+        
+        if not analysis:
+            _log("❌ L2 AI 分析失敗，升級到 L3", "WARN")
+            await self._handle_l3(error)
+            return
+        
+        confidence = analysis.get("confidence", 0)
+        _log(f"📊 AI 信心度: {confidence}", "INFO")
+        
+        if confidence < 0.5:
+            _log(f"⚠️ AI 信心度不足 ({confidence})，升級到 L3", "WARN")
+            await self._handle_l3(error)
+            return
+        
+        # 備份
+        fix_target = analysis.get("fix_target", "")
+        if fix_target:
+            backup_file(fix_target)
+        
+        # 執行修復
+        success = self.fix_executor.apply_fix(analysis, error)
+        
+        if success:
+            # 驗證
+            verified = self.fix_executor.verify_fix(service)
+            
+            if verified:
+                _log("✅ L2 修復成功且驗證通過", "INFO")
+                
+                # Git commit + push
+                root_cause = analysis.get("root_cause", "AI 自動修復")
+                commit_msg = f"fix: L2 AI 修復 - {root_cause[:100]}"
+                self.git_manager.commit_and_push(commit_msg)
+                
+                await self.notifier.notify_fix_result(
+                    error, success=True, level="L2",
+                    details=f"根本原因: {root_cause[:200]}"
+                )
+            else:
+                _log("❌ L2 修復後驗證失敗，執行回滾", "ERROR")
+                self.fix_executor.rollback(error)
+                await self.notifier.notify_fix_result(
+                    error, success=False, level="L2",
+                    details="修復後服務異常，已自動回滾"
+                )
+        else:
+            _log("❌ L2 修復執行失敗", "ERROR")
+            await self.notifier.notify_fix_result(
+                error, success=False, level="L2",
+                details="修復執行失敗"
+            )
+    
+    async def _handle_l3(self, error: dict):
+        """處理 L3 錯誤 - 通知人工"""
+        _log(f"🚨 L3 錯誤，通知人工介入", "WARN")
+        
+        # 儲存到狀態
+        state = _load_state()
+        state.setdefault("incidents", []).append({
+            "timestamp": datetime.now().isoformat(),
+            "service": error.get("service", ""),
+            "message": error.get("message", ""),
+            "level": "L3",
+        })
+        _save_state(state)
+        
+        # Discord 通知
+        await self.notifier.notify_l3_error(error)
+    
+    async def run_watch(self, interval: int = 300):
+        """持續監控模式"""
+        _log(f"👀 啟動持續監控模式 (間隔: {interval}秒)", "INFO")
+        _log(f"   監控服務: {', '.join(self.services)}", "INFO")
+        
+        while True:
+            try:
+                await self.run_once()
+            except KeyboardInterrupt:
+                _log("👋 收到中斷訊號，結束監控", "INFO")
+                break
+            except Exception as e:
+                _log(f"❌ 監控循環異常: {e}", "ERROR")
+                _log(traceback.format_exc(), "DEBUG")
+            
+            _log(f"⏳ 等待 {interval} 秒後再次檢查...", "INFO")
+            await asyncio.sleep(interval)
+
+
+# ─── 命令列介面 ──────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="VM 自我修復守護程式",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+範例:
+  python3 scripts/auto_self_heal.py              # 單次執行
+  python3 scripts/auto_self_heal.py --watch      # 持續監控
+  python3 scripts/auto_self_heal.py --watch --interval 600  # 每10分鐘檢查
+  python3 scripts/auto_self_heal.py --test       # 測試模式（不實際修復）
+        """,
+    )
+    parser.add_argument("--watch", action="store_true", help="持續監控模式")
+    parser.add_argument("--interval", type=int, default=300, help="監控間隔（秒），預設300")
+    parser.add_argument("--test", action="store_true", help="測試模式（不實際修復）")
+    parser.add_argument("--services", nargs="+", default=["bot.service", "shopbot.service", "uibot.service"],
+                       help="要監控的服務列表")
+    
+    args = parser.parse_args()
+    
+    if args.test:
+        _log("🧪 測試模式", "INFO")
+        _log(f"   服務: {', '.join(args.services)}", "INFO")
+        _log(f"   間隔: {args.interval}秒", "INFO")
+        _log(f"   監控: {'是' if args.watch else '否（單次）'}", "INFO")
+        
+        # 測試：收集錯誤
+        errors = collect_errors(args.services, since_minutes=60)
+        _log(f"   找到 {len(errors)} 個錯誤", "INFO")
+        for e in errors[:5]:
+            level, etype, desc = classify_error(e["message"])
+            _log(f"   [{level}/{etype}] {e['service']}: {e['message'][:100]}", "INFO")
+        
+        _log("🧪 測試完成", "INFO")
+        return
+    
+    daemon = SelfHealDaemon()
+    
+    if args.watch:
+        asyncio.run(daemon.run_watch(interval=args.interval))
+    else:
+        asyncio.run(daemon.run_once())
+
+
+if __name__ == "__main__":
+    main()

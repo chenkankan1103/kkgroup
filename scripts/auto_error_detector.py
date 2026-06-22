@@ -74,20 +74,10 @@ class AutoErrorDetector:
 
         # 噪音忽略模式（降低敏感度）
         self._noise_patterns = [
-            r"Unknown interaction|error code:\s*10062",
             r"google_quota_exhausted|quota exceeded",
-            r"learn more about gemini api quotas",
-            r"generatecontentinputtokenspermodelperminute-freetier",
-            r"generaterequestsper.*freetier",
-            r"nvidia api .*403",
             r"authorization failed",
-            r"429|rate limit",
             r"connection refused|connection reset|timed out",
             r"websocket closed|shard .* disconnect",
-            r"watchdog",
-            r"\[MutualRescue\]",
-            r"互救修復請求",
-            r"本地重啟.*成功|本地重啟.*失敗",
             r"auto-debug|auto_error_detector",
         ]
 

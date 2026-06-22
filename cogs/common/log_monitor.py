@@ -65,6 +65,7 @@ _LOGMONITOR_THREAD_NAME = os.getenv("LOGMONITOR_THREAD_NAME", "🤖 Bot 偵錯�
 _LOGMONITOR_ERRORS_THREAD_NAME = os.getenv("LOGMONITOR_ERRORS_THREAD_NAME", "🚨 Bot 錯誤紀錄")
 _LOGMONITOR_ANALYSIS_THREAD_NAME = os.getenv("LOGMONITOR_ANALYSIS_THREAD_NAME", "🧠 GitHub Debug 分析")
 _LOGMONITOR_HEAL_THREAD_NAME = os.getenv("LOGMONITOR_HEAL_THREAD_NAME", "🛠️ 自癒處理結果")
+_DISABLE_REPOSITORY_DISPATCH: bool = os.getenv("DISABLE_REPOSITORY_DISPATCH", "true").lower() in ("true", "1", "yes")
 
 _THREAD_ENV_KEYS = {
     "panel": "LOGMONITOR_PANEL_THREAD_ID",
@@ -1371,6 +1372,11 @@ class LogMonitorEngine:
         source: str = "log_monitor_realtime",
     ) -> bool:
         """發送 repository_dispatch 到 GitHub；force=True 時忽略原本的高危門檻。"""
+        if _DISABLE_REPOSITORY_DISPATCH:
+            logger.info("[LogMonitor] repository_dispatch 已停用 (DISABLE_REPOSITORY_DISPATCH)")
+            self._pipeline_status["dispatch_status"] = "未送出"
+            self._pipeline_status["dispatch_detail"] = "DISABLE_REPOSITORY_DISPATCH 已啟用"
+            return False
         try:
             # 檢查是否需要觸發（高緊急程度或特定錯誤類型）
             severity = _extract_severity(ai_text)

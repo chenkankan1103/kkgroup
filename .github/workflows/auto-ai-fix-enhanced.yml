@@ -1,0 +1,180 @@
+name: Auto AI Fix (Enhanced)
+on:
+  repository_dispatch:
+    types: [system_debug, error_analysis]  # 接收來自自動 Debug 系統與 LogMonitor 的請求
+
+jobs:
+  ai-fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 需要寫入權限來上傳修復代碼
+      pull-requests: write
+      issues: write
+      id-token: write
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: 設定Python環境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: 設定 Python 路徑
+      run: |
+        echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV
+    
+    - name: 安裝依賴
+      run: |
+        pip install requests aiohttp python-dotenv gitpython
+    
+    # ========================================
+    # 🛠️ VM 自我 Debug 預檢查步驟
+    # ========================================
+    - name: "🔍 預檢查 1: 驗證 API Key 存在性"
+      id: check_api_keys
+      run: |
+        echo "=== API Key 驗證 ==="
+        
+        # 檢查 NVIDIA API Key
+        if [ -z "$NVIDIA_API_KEY" ]; then
+          echo "❌ NVIDIA_API_KEY 未設定"
+          echo "debug_error=NVIDIA_API_KEY missing" >> $GITHUB_OUTPUT
+        else
+          echo "✅ NVIDIA_API_KEY 已設定 (長度: ${#NVIDIA_API_KEY})"
+          echo "debug_error=" >> $GITHUB_OUTPUT
+        fi
+        
+        # 檢查 Discord Webhook
+        if [ -z "$DISCORD_WEBHOOK" ]; then
+          echo "⚠️ DISCORD_WEBHOOK 未設定 (可選)"
+        else
+          echo "✅ DISCORD_WEBHOOK 已設定"
+        fi
+        
+        # 檢查 GitHub Token
+        if [ -z "$GITHUB_TOKEN" ]; then
+          echo "❌ GITHUB_TOKEN 未設定"
+        else
+          echo "✅ GITHUB_TOKEN 已設定"
+        fi
+    
+    - name: "🔍 預檢查 2: 測試 NVIDIA API 連線"
+      id: test_nvidia_api
+      run: |
+        echo "=== NVIDIA API 連線測試 ==="
+        
+        if [ -z "$NVIDIA_API_KEY" ]; then
+          echo "⏭️ 跳過 (API Key 未設定)"
+          echo "nvidia_status=skipped" >> $GITHUB_OUTPUT
+        else
+          response=$(curl -s -w "\n%{http_code}" \
+            -X POST "https://integrate.api.nvidia.com/v1/chat/completions" \
+            -H "Authorization: Bearer $NVIDIA_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"meta/llama-4-maverick:17b","messages":[{"role":"user","content":"test"}],"max_tokens":10}' \
+            --max-time 30 2>&1)
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          if [ "$http_code" = "200" ]; then
+            echo "✅ NVIDIA API 連線成功"
+            echo "nvidia_status=success" >> $GITHUB_OUTPUT
+          elif [ "$http_code" = "401" ]; then
+            echo "❌ NVIDIA API 認證失敗 (401)"
+            echo "nvidia_status=auth_failed" >> $GITHUB_OUTPUT
+          elif [ "$http_code" = "429" ]; then
+            echo "⚠️ NVIDIA API 速率限制 (429)"
+            echo "nvidia_status=rate_limited" >> $GITHUB_OUTPUT
+          else
+            echo "❌ NVIDIA API 連線失敗 (HTTP: $http_code)"
+            echo "nvidia_status=failed" >> $GITHUB_OUTPUT
+            echo "Response: $body"
+          fi
+        fi
+    
+    - name: "🔍 預檢查 3: 測試 Discord Webhook 連線"
+      id: test_discord_webhook
+      run: |
+        echo "=== Discord Webhook 連線測試 ==="
+        
+        if [ -z "$DISCORD_WEBHOOK" ]; then
+          echo "⏭️ 跳過 (Webhook URL 未設定)"
+          echo "discord_status=skipped" >> $GITHUB_OUTPUT
+        else
+          response=$(curl -s -w "\n%{http_code}" \
+            -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{"content":"🔧 GitHub Actions 連線測試"}' \
+            --max-time 15 2>&1)
+          
+          http_code=$(echo "$response" | tail -n1)
+          
+          if [ "$http_code" = "204" ]; then
+            echo "✅ Discord Webhook 連線成功"
+            echo "discord_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Discord Webhook 連線失敗 (HTTP: $http_code)"
+            echo "discord_status=failed" >> $GITHUB_OUTPUT
+          fi
+        fi
+    
+    - name: "🔍 預檢查 4: 環境狀態快照"
+      run: |
+        echo "=== 環境狀態快照 ==="
+        echo "📅 時間: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "🐍 Python 版本: $(python3 --version)"
+        echo "📦 已安裝套件:"
+        pip list --format=freeze | head -20
+        echo ""
+        echo "📁 工作目錄:"
+        ls -la $GITHUB_WORKSPACE/
+        echo ""
+        echo "🌐 網路連線測試:"
+        curl -s --max-time 5 https://api.github.com/zen || echo "GitHub API 連線異常"
+    
+    - name: "🔍 預檢查 5: Git 狀態檢查"
+      run: |
+        echo "=== Git 狀態 ==="
+        echo "📍 目前分支: $(git branch --show-current)"
+        echo "📝 未提交的變更:"
+        git status --short
+        echo ""
+        echo "🔄 遠端分支:"
+        git branch -r | head -10
+    
+    - name: "⚠️ 預檢查結果摘要"
+      run: |
+        echo "=== 預檢查摘要 ==="
+        
+        # 讀取前面的檢查結果
+        nvidia_status="${nvidia_status:-unknown}"
+        discord_status="${discord_status:-unknown}"
+        
+        echo "NVIDIA API: $nvidia_status"
+        echo "Discord Webhook: $discord_status"
+        
+        # 如果關鍵服務失敗，發出警告但繼續執行
+        if [ "$nvidia_status" = "failed" ] || [ "$nvidia_status" = "auth_failed" ]; then
+          echo ""
+          echo "⚠️ 警告: NVIDIA API 可能無法正常運作"
+          echo "   腳本會嘗試使用備用方案 (Google AI / Groq)"
+        fi
+    
+    # ========================================
+    # 🚀 執行 AI 修復 (原有步驟)
+    # ========================================
+    - name: 執行 AI 修復
+      env:
+        NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        GITHUB_EVENT_DATA: ${{ toJSON(github.event) }}
+        AUTO_AI_DIRECT_WRITE: 'true'
+      run: |
+        echo "=== 開始執行 AI 修復腳本 ==="
+        python3 scripts/auto_ai_fix.py
