@@ -527,6 +527,12 @@ async def update_dashboard_logs(bot, bot_type: str):
                 if bot_type not in QUIET_UPDATE_BOTS:
                     print(f"[UPDATE LOGS] {bot_type} fetch_message was cancelled, skipping this cycle")
                 return
+            except discord.HTTPException as e:
+                if e.code == 50083:  # Thread is archived
+                    if bot_type not in QUIET_UPDATE_BOTS:
+                        print(f"[UPDATE LOGS] {bot_type} thread archived, skipping update")
+                    return
+                raise
             except discord.NotFound:
                 if bot_type not in QUIET_UPDATE_BOTS:
                     print(f"[UPDATE LOGS] {bot_type} log message does not exist, recreating")
