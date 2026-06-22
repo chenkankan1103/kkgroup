@@ -75,6 +75,7 @@ jobs:
 
       - name: AI 錯誤分析
         id: analyze
+        continue-on-error: true
         env:
           DEBUG_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_type || (github.event_name == 'repository_dispatch' && 'force' || 'auto') }}
           LOG_CONTENT: ${{ github.event_name == 'workflow_dispatch' && inputs.log_content || github.event.client_payload.log_text || '' }}
@@ -91,66 +92,72 @@ jobs:
           import json
           import os
           import subprocess
+          import sys
+          import traceback
           from datetime import datetime
 
           import requests
 
-          payload = json.loads(os.getenv('EVENT_PAYLOAD') or '{}')
-          if not isinstance(payload, dict):
-            payload = {}
-          debug_type = os.getenv('DEBUG_TYPE', 'auto')
-          log_content = (os.getenv('LOG_CONTENT') or '').strip()
-          event_name = os.getenv('EVENT_NAME', '')
-          incident_signature = str(payload.get('incident_signature') or '').strip()
-          incident_key = str(payload.get('incident_key') or '').strip()
-
-          error_logs = ''
-          used_source = 'none'
-
-          if event_name == 'repository_dispatch':
-            dispatch_logs = payload.get('log_text') or payload.get('error_logs') or payload.get('error_data') or ''
-            if isinstance(dispatch_logs, (dict, list)):
-              error_logs = json.dumps(dispatch_logs, ensure_ascii=False, indent=2)
-            else:
-              error_logs = str(dispatch_logs or '').strip()
-            used_source = payload.get('source', 'repository_dispatch')
-          elif debug_type == 'force':
-            error_logs = log_content or '[FORCE] 未提供日誌，使用強制分析模式'
-            used_source = 'workflow_dispatch'
-          elif debug_type == 'test':
-            error_logs = '[TEST] Sample exception for AI debug monitor'
-            used_source = 'workflow_dispatch'
-          else:
-            gcloud_ok = subprocess.run(['gcloud', '--version'], capture_output=True, text=True).returncode == 0
-            if gcloud_ok:
-              try:
-                bot_status = subprocess.run([
-                  'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
-                  '--project=kkgroup', '--zone=us-central1-c',
-                  '--command', 'sudo systemctl is-active bot.service'
-                ], capture_output=True, text=True, timeout=30).stdout.strip()
-                bot_logs = subprocess.run([
-                  'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
-                  '--project=kkgroup', '--zone=us-central1-c',
-                  '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 30'
-                ], capture_output=True, text=True, timeout=60).stdout
-                if any(token in (bot_status + '\n' + bot_logs).lower() for token in ['error', 'exception', 'failed', 'traceback', 'inactive']):
-                  error_logs = 'bot.service: ' + bot_status + '\n\n' + bot_logs[-2000:]
-                  used_source = 'gcp'
-              except subprocess.TimeoutExpired:
-                print('GCP SSH timeout, skipping log collection')
-              except Exception as ssh_err:
-                print(f'GCP SSH failed: {ssh_err}')
-
-          if not error_logs:
-            print('系統運行正常，跳過分析')
-            raise SystemExit(0)
-
-          sev = 'unknown'
           try:
+            payload = json.loads(os.getenv('EVENT_PAYLOAD') or '{}')
+          except Exception as payload_err:
+            print(f'Warning: 無法解析 EVENT_PAYLOAD，改用空 payload: {payload_err}')
+            payload = {}
+
+          try:
+            if not isinstance(payload, dict):
+              payload = {}
+            debug_type = os.getenv('DEBUG_TYPE', 'auto')
+            log_content = (os.getenv('LOG_CONTENT') or '').strip()
+            event_name = os.getenv('EVENT_NAME', '')
+            incident_signature = str(payload.get('incident_signature') or '').strip()
+            incident_key = str(payload.get('incident_key') or '').strip()
+
+            error_logs = ''
+            used_source = 'none'
+
+            if event_name == 'repository_dispatch':
+              dispatch_logs = payload.get('log_text') or payload.get('error_logs') or payload.get('error_data') or ''
+              if isinstance(dispatch_logs, (dict, list)):
+                error_logs = json.dumps(dispatch_logs, ensure_ascii=False, indent=2)
+              else:
+                error_logs = str(dispatch_logs or '').strip()
+              used_source = payload.get('source', 'repository_dispatch')
+            elif debug_type == 'force':
+              error_logs = log_content or '[FORCE] 未提供日誌，使用強制分析模式'
+              used_source = 'workflow_dispatch'
+            elif debug_type == 'test':
+              error_logs = '[TEST] Sample exception for AI debug monitor'
+              used_source = 'workflow_dispatch'
+            else:
+              gcloud_ok = subprocess.run(['gcloud', '--version'], capture_output=True, text=True).returncode == 0
+              if gcloud_ok:
+                try:
+                  bot_status = subprocess.run([
+                    'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
+                    '--project=kkgroup', '--zone=us-central1-c',
+                    '--command', 'sudo systemctl is-active bot.service'
+                  ], capture_output=True, text=True, timeout=30).stdout.strip()
+                  bot_logs = subprocess.run([
+                    'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
+                    '--project=kkgroup', '--zone=us-central1-c',
+                    '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 30'
+                  ], capture_output=True, text=True, timeout=60).stdout
+                  if any(token in (bot_status + '\n' + bot_logs).lower() for token in ['error', 'exception', 'failed', 'traceback', 'inactive']):
+                    error_logs = 'bot.service: ' + bot_status + '\n\n' + bot_logs[-2000:]
+                    used_source = 'gcp'
+                except subprocess.TimeoutExpired:
+                  print('GCP SSH timeout, skipping log collection')
+                except Exception as ssh_err:
+                  print(f'GCP SSH failed: {ssh_err}')
+
+            if not error_logs:
+              print('系統運行正常，跳過分析')
+              sys.exit(0)
+
+            sev = 'unknown'
             from utils.nvidia_ai import NVIDIAAIClient
             from utils.google_ai import GoogleAIClient
-            import aiohttp
 
             prompt = (
               '你是 KKGroup Discord Bot 除錯專家。請根據以下錯誤日誌用繁體中文輸出精簡 JSON，'
@@ -167,7 +174,6 @@ jobs:
               max_tokens=1200,
             )) or ''
 
-            # 如果 NVIDIA 失敗，嘗試 Groq（免費額度充足）
             if not analysis:
               groq_key = os.getenv('GROQ_API_KEY', '')
               if groq_key:
@@ -182,21 +188,20 @@ jobs:
                   'Content-Type': 'application/json',
                 }
                 try:
-                  async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as session:
-                    async with session.post(
-                      'https://api.groq.com/openai/v1/chat/completions',
-                      json=groq_payload,
-                      headers=groq_headers
-                    ) as groq_resp:
-                      if groq_resp.status == 200:
-                        groq_data = await groq_resp.json()
-                        choices = groq_data.get('choices', [])
-                        if choices:
-                          analysis = choices[0].get('message', {}).get('content', '') or ''
+                  groq_resp = requests.post(
+                    'https://api.groq.com/openai/v1/chat/completions',
+                    json=groq_payload,
+                    headers=groq_headers,
+                    timeout=15,
+                  )
+                  if groq_resp.status_code == 200:
+                    groq_data = groq_resp.json()
+                    choices = groq_data.get('choices', [])
+                    if choices:
+                      analysis = choices[0].get('message', {}).get('content', '') or ''
                 except Exception as groq_err:
                   print(f'Groq fallback failed: {groq_err}')
 
-            # 根據日誌內容推估嚴重度（只在 high 時才呼叫 Gemini 備援）
             import re
             sev = 'low'
             if re.search(r"(Traceback|CRITICAL|Fatal|Unhandled|oom|killed process|failed with result|status=\d+/FAILURE|panic|permission denied|cannot connect|connection (?:reset|refused|closed))", error_logs, re.IGNORECASE):
@@ -213,77 +218,75 @@ jobs:
                 )) or ''
               else:
                 print(f"⚠️ NVIDIA+Groq 無回應且 severity={sev}，跳過 Gemini 備援以節省配額")
-          except Exception as exc:
-            analysis = json.dumps({
-              'root_cause': 'AI 分析失敗',
-              'impact': str(exc),
-              'fix_steps': ['檢查 NVIDIA_API_KEY', '檢查 workflow 執行日誌'],
-              'prevention': ['保留 repository_dispatch payload', '保留 gcloud 認證'],
-              'confidence': 0.2,
-            }, ensure_ascii=False)
 
-          print(analysis)
+            print(analysis)
 
-          try:
-            parsed_analysis = json.loads(analysis)
-          except Exception:
-            parsed_analysis = analysis
-
-          result_payload = {
-            'incident_signature': incident_signature,
-            'incident_key': incident_key,
-            'source': used_source,
-            'severity': sev,
-            'timestamp': datetime.utcnow().isoformat(),
-            'completed_at': datetime.utcnow().isoformat(),
-            'log_excerpt': error_logs[:2000],
-            'analysis': parsed_analysis,
-          }
-          try:
-            with open('ai-debug-result.json', 'w', encoding='utf-8') as result_file:
-              json.dump(result_payload, result_file, ensure_ascii=False, indent=2)
-          except Exception as e:
-            print(f"Warning: Could not write result file: {e}")
-
-          webhook = os.getenv('DISCORD_WEBHOOK')
-          analysis_text = analysis.strip() if isinstance(analysis, str) else json.dumps(parsed_analysis, ensure_ascii=False)
-          should_notify_discord = (
-            bool(webhook)
-            and not used_source.startswith('manual_test')
-            and analysis_text
-            and analysis_text != '無'
-          )
-          if should_notify_discord:
             try:
-              requests.post(
-                webhook,
-                json={
-                  'content': '🤖 AI Debug Monitor',
-                  'embeds': [{
-                    'title': '系統錯誤分析',
-                    'description': f'來源: {used_source}',
-                    'color': 15158332,
-                    'fields': [
-                      {
-                        'name': '分析結果',
-                        'value': (analysis_text[:1000] + ('...' if len(analysis_text) > 1000 else '')) or '無',
-                      },
-                      {
-                        'name': '時間',
-                        'value': datetime.utcnow().isoformat(),
-                        'inline': True,
-                      },
-                    ],
-                  }],
-                },
-                timeout=15,
-              )
+              parsed_analysis = json.loads(analysis)
+            except Exception:
+              parsed_analysis = analysis
+
+            result_payload = {
+              'incident_signature': incident_signature,
+              'incident_key': incident_key,
+              'source': used_source,
+              'severity': sev,
+              'timestamp': datetime.utcnow().isoformat(),
+              'completed_at': datetime.utcnow().isoformat(),
+              'log_excerpt': error_logs[:2000],
+              'analysis': parsed_analysis,
+            }
+            try:
+              with open('ai-debug-result.json', 'w', encoding='utf-8') as result_file:
+                json.dump(result_payload, result_file, ensure_ascii=False, indent=2)
             except Exception as e:
-              print(f"⚠️ Discord webhook 通知失敗: {e}")
+              print(f"Warning: Could not write result file: {e}")
+
+            webhook = os.getenv('DISCORD_WEBHOOK')
+            analysis_text = analysis.strip() if isinstance(analysis, str) else json.dumps(parsed_analysis, ensure_ascii=False)
+            should_notify_discord = (
+              bool(webhook)
+              and not used_source.startswith('manual_test')
+              and analysis_text
+              and analysis_text != '無'
+            )
+            if should_notify_discord:
+              try:
+                requests.post(
+                  webhook,
+                  json={
+                    'content': '🤖 AI Debug Monitor',
+                    'embeds': [{
+                      'title': '系統錯誤分析',
+                      'description': f'來源: {used_source}',
+                      'color': 15158332,
+                      'fields': [
+                        {
+                          'name': '分析結果',
+                          'value': (analysis_text[:1000] + ('...' if len(analysis_text) > 1000 else '')) or '無',
+                        },
+                        {
+                          'name': '時間',
+                          'value': datetime.utcnow().isoformat(),
+                          'inline': True,
+                        },
+                      ],
+                    }],
+                  },
+                  timeout=15,
+                )
+              except Exception as e:
+                print(f"⚠️ Discord webhook 通知失敗: {e}")
+          except Exception as unexpected:
+            print('❌ AI Debug Monitor 發生未處理錯誤:')
+            traceback.print_exc()
+          finally:
+            sys.exit(0)
           PY
 
       - name: 確認 AI 分析結果文件存在
         id: check-result
+        if: always()
         run: |
           if [ -f "ai-debug-result.json" ]; then
             echo "✅ AI 分析結果文件存在"
