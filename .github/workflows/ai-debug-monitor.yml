@@ -123,19 +123,24 @@ jobs:
           else:
             gcloud_ok = subprocess.run(['gcloud', '--version'], capture_output=True, text=True).returncode == 0
             if gcloud_ok:
-              bot_status = subprocess.run([
-                'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
-                '--project=kkgroup', '--zone=us-central1-c',
-                '--command', 'sudo systemctl is-active bot.service'
-              ], capture_output=True, text=True).stdout.strip()
-              bot_logs = subprocess.run([
-                'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
-                '--project=kkgroup', '--zone=us-central1-c',
-                '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 30'
-              ], capture_output=True, text=True).stdout
-              if any(token in (bot_status + '\n' + bot_logs).lower() for token in ['error', 'exception', 'failed', 'traceback', 'inactive']):
-                error_logs = 'bot.service: ' + bot_status + '\n\n' + bot_logs[-2000:]
-                used_source = 'gcp'
+              try:
+                bot_status = subprocess.run([
+                  'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
+                  '--project=kkgroup', '--zone=us-central1-c',
+                  '--command', 'sudo systemctl is-active bot.service'
+                ], capture_output=True, text=True, timeout=30).stdout.strip()
+                bot_logs = subprocess.run([
+                  'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
+                  '--project=kkgroup', '--zone=us-central1-c',
+                  '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 30'
+                ], capture_output=True, text=True, timeout=60).stdout
+                if any(token in (bot_status + '\n' + bot_logs).lower() for token in ['error', 'exception', 'failed', 'traceback', 'inactive']):
+                  error_logs = 'bot.service: ' + bot_status + '\n\n' + bot_logs[-2000:]
+                  used_source = 'gcp'
+              except subprocess.TimeoutExpired:
+                print('GCP SSH timeout, skipping log collection')
+              except Exception as ssh_err:
+                print(f'GCP SSH failed: {ssh_err}')
 
           if not error_logs:
             print('系統運行正常，跳過分析')
@@ -234,8 +239,11 @@ jobs:
             'log_excerpt': error_logs[:2000],
             'analysis': parsed_analysis,
           }
-          with open('ai-debug-result.json', 'w', encoding='utf-8') as result_file:
-            json.dump(result_payload, result_file, ensure_ascii=False, indent=2)
+          try:
+            with open('ai-debug-result.json', 'w', encoding='utf-8') as result_file:
+              json.dump(result_payload, result_file, ensure_ascii=False, indent=2)
+          except Exception as e:
+            print(f"Warning: Could not write result file: {e}")
 
           webhook = os.getenv('DISCORD_WEBHOOK')
           analysis_text = analysis.strip() if isinstance(analysis, str) else json.dumps(parsed_analysis, ensure_ascii=False)
@@ -246,35 +254,50 @@ jobs:
             and analysis_text != '無'
           )
           if should_notify_discord:
-            requests.post(
-              webhook,
-              json={
-                'content': '🤖 AI Debug Monitor',
-                'embeds': [{
-                  'title': '系統錯誤分析',
-                  'description': f'來源: {used_source}',
-                  'color': 15158332,
-                  'fields': [
-                    {
-                      'name': '分析結果',
-                      'value': (analysis_text[:1000] + ('...' if len(analysis_text) > 1000 else '')) or '無',
-                    },
-                    {
-                      'name': '時間',
-                      'value': datetime.utcnow().isoformat(),
-                      'inline': True,
-                    },
-                  ],
-                }],
-              },
-              timeout=15,
-            )
+            try:
+              requests.post(
+                webhook,
+                json={
+                  'content': '🤖 AI Debug Monitor',
+                  'embeds': [{
+                    'title': '系統錯誤分析',
+                    'description': f'來源: {used_source}',
+                    'color': 15158332,
+                    'fields': [
+                      {
+                        'name': '分析結果',
+                        'value': (analysis_text[:1000] + ('...' if len(analysis_text) > 1000 else '')) or '無',
+                      },
+                      {
+                        'name': '時間',
+                        'value': datetime.utcnow().isoformat(),
+                        'inline': True,
+                      },
+                    ],
+                  }],
+                },
+                timeout=15,
+              )
+            except Exception as e:
+              print(f"⚠️ Discord webhook 通知失敗: {e}")
           PY
 
+      - name: 確認 AI 分析結果文件存在
+        id: check-result
+        run: |
+          if [ -f "ai-debug-result.json" ]; then
+            echo "✅ AI 分析結果文件存在"
+            cat ai-debug-result.json
+            echo "result_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ AI 分析結果文件不存在（系統正常或分析失敗）"
+            echo "result_exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: 上傳 AI 分析結果 Artifact
-        if: ${{ hashFiles('ai-debug-result.json') != '' }}
+        if: steps.check-result.outputs.result_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ai-debug-result-${{ github.event.client_payload.incident_key || github.run_id }}
           path: ai-debug-result.json
-          if-no-files-found: error
+          if-no-files-found: warn
