@@ -544,13 +544,21 @@ class UserPanel(commands.Cog):
                     embed.set_footer(text="🔄 每週日 23:59 自動統計")
                     
                     # 將新統計發送到該 thread，這會自動把 thread 往上 bump
-                    await thread.send(embed=embed)
+                    try:
+                        await thread.send(embed=embed)
+                    except discord.HTTPException as e:
+                        if e.code == 50083:  # Thread is archived
+                            print(f"[WEEKLY SUMMARY] Thread {thread.id} is archived, skipping")
+                            continue
+                        raise
                     await asyncio.sleep(1)
                     # 有時候 forum 的排序不太即時，額外寄一條輕量填充訊息可保險
                     try:
                         await thread.send("🔄 週統計已更新")
-                    except Exception:
-                        pass
+                    except discord.HTTPException as e:
+                        if e.code == 50083:
+                            continue
+                        raise
                     
                     
                     set_user_field(user_id, 'last_kkcoin_snapshot', current_kkcoin)
