@@ -137,7 +137,7 @@ _IGNORE_PATTERNS = re.compile(
 )
 
 _NOISE_DISPATCH_PATTERNS = re.compile(
-    r"(Thread is archived|error code: 50083|已派送互救修復請求|MutualRescue.*已派送|MutualRescue.*status=active|google\.rpc\.QuotaFailure|generate_content_free_tier_requests|quota exceeded|quota exhausted|rate limit|429)",
+    r"(Thread is archived|error code: 50083|已派送互救修復請求|MutualRescue.*已派送|MutualRescue.*status=active|google\.rpc\.QuotaFailure|generate_content_free_tier_requests|quota exceeded|quota exhausted|rate limit|429|HTTPException\(response,\s*data\)|discord\.errors\.HTTPException|discord\.HTTPException)",
     re.IGNORECASE,
 )
 
