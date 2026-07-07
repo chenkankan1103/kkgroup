@@ -199,23 +199,17 @@ def _decide_repair_action(snapshot: dict[str, str]) -> tuple[str, str]:
         return 'healthy', reason
 
     status = (snapshot.get('status') or 'unknown').strip().lower()
-    combined_text = _filtered_snapshot_text(snapshot)
 
     if status not in _HEALTHY_STATUSES:
-        if any(re.search(pattern, combined_text, re.IGNORECASE) for pattern in _CODE_BUG_PATTERNS):
-            return 'escalate', f'{reason} / 偵測到程式碼缺陷訊號'
-        return 'local-heal', f'{reason} / 先嘗試本地重啟'
+        # 服務真的 inactive/failed（不在 healthy 集合）才重啟。
+        # 重啟失敗才 escalate（_check_peers_once 會接著 dispatch GitHub）。
+        return 'local-heal', f'{reason} / 服務異常({status})，先嘗試本地重啟'
 
-    if any(re.search(pattern, combined_text, re.IGNORECASE) for pattern in _CODE_BUG_PATTERNS):
-        return 'escalate', f'{reason} / active 但屬於程式碼缺陷，直接升級'
-
-    if any(re.search(pattern, combined_text, re.IGNORECASE) for pattern in _LOCAL_HEAL_PATTERNS):
-        return 'local-heal', f'{reason} / active 但疑似營運異常，先嘗試本地重啟'
-
-    if 'traceback' in combined_text:
-        return 'escalate', f'{reason} / active 但有 traceback，直接升級'
-
-    return 'local-heal', f'{reason} / 預設先嘗試一次本地重啟'
+    # 服務 active 但近期日誌有訊號（traceback / 程式碼缺陷 / 營運異常等）：
+    # 交由 auto-self-heal daemon（同時 watch bot/shopbot/uibot）做 L1/L2/L3 修復碼，
+    # mutual_rescue 不重啟、不 dispatch，避免反覆重啟 active 服務與 self-heal 搶修重疊
+    # （即原「active 但有 traceback，直接升級 → 已派送互救修復請求」7/4·7/5·7/6 死循環。
+    return 'healthy', f'{reason} / 服務運行中，交由 self-heal daemon 處理，mutual_rescue 不介入'
 
 
 def _attempt_local_service_heal(service: str) -> dict[str, str | bool]:
@@ -249,6 +243,27 @@ def _attempt_local_service_heal(service: str) -> dict[str, str | bool]:
     }
 
 
+_TARGET_FILE_RE = re.compile(r'File\s+"([^"]+\.py)"')
+
+
+def _extract_target_file(snapshot: dict[str, str]) -> Optional[str]:
+    """從快照日誌的 traceback 抽出出錯的專案檔案路徑（repo-relative）。
+
+    優先取最後一個（最深的 frame）屬於專案 <root>/kkgroup/ 的 .py，
+    退化成絕對路徑；供 L3 AI 修復使用「真實檔案路徑」而非讓 AI 猜測。
+    """
+    text = f"{snapshot.get('summary', '')}\n{snapshot.get('logs', '')}"
+    candidate = None
+    for match in _TARGET_FILE_RE.finditer(text):
+        path = match.group(1).replace('\\', '/')
+        idx = path.find('/kkgroup/')
+        if idx != -1:
+            candidate = path[idx + len('/kkgroup/'):]
+        elif candidate is None:
+            candidate = path
+    return candidate
+
+
 def _dispatch_repair_request(
     reporter_bot_type: str,
     reporter_service: str,
@@ -271,6 +286,8 @@ def _dispatch_repair_request(
             'reported_by_bot': reporter_bot_type,
             'reported_by_service': reporter_service,
             'requested_action': 'restart_service',
+            # traceback 抽出的真實檔案路徑；L3 AI 修復優先拿這個，不再讓 AI 猜 file_path
+            'target_file': _extract_target_file(snapshot) or '',
             'incident_signature': signature,
             'incident_key': _artifact_key_from_signature(signature),
         },

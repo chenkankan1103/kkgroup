@@ -829,42 +829,108 @@ class FixExecutor:
         return success
     
     def _apply_code_fix(self, target_path: str, fix_code: str) -> bool:
-        """套用代碼修復"""
+        """套用代碼修復（含完整檔案 AST 校驗：AI 給片段會被拒並還原）"""
+        import ast as _ast
         abs_path = Path(target_path)
         if not abs_path.is_absolute():
             abs_path = PROJECT_ROOT / target_path
-        
+
         if not abs_path.exists():
             _log(f"❌ 目標檔案不存在: {abs_path}", "ERROR")
             return False
-        
+
+        # 讀原檔：校驗基準 + 還原來源
         try:
-            # 備份已在上層完成
+            original = abs_path.read_text(encoding="utf-8")
+        except Exception as e:
+            _log(f"❌ 無法讀取原檔 {abs_path}: {e}", "ERROR")
+            return False
+
+        def _top_level_defs(src: str) -> int:
+            try:
+                return sum(1 for n in _ast.parse(src).body
+                           if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)))
+            except SyntaxError:
+                return -1
+
+        # 寫入後校驗：必須是合法 Python，且頂層定義數不得驟減（防 AI 回應為片段）
+        try:
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write(fix_code)
-            _log(f"✅ 已寫入修復代碼到 {abs_path}", "INFO")
-            return True
         except Exception as e:
             _log(f"❌ 寫入檔案失敗: {e}", "ERROR")
             return False
+
+        before, after = _top_level_defs(original), _top_level_defs(fix_code)
+        if after < 0:
+            _log("❌ 修復後無法 ast.parse（AI 回應可能為片段），還原原檔", "ERROR")
+            abs_path.write_text(original, encoding="utf-8")
+            return False
+        if before >= 0 and after < max(1, before // 2):
+            _log(f"❌ 頂層定義數 {before}->{after} 驟減（疑似片段），還原原檔", "ERROR")
+            abs_path.write_text(original, encoding="utf-8")
+            return False
+
+        _log(f"✅ 已寫入並通過 AST 校驗: {abs_path} (定義 {before}->{after})", "INFO")
+        return True
     
     def _run_command(self, command: str) -> bool:
-        """執行 shell 命令"""
+        """執行「受白名單限制」的命令；不在白名單者一律拒絕（降級人工/L3），絕不跑任意 shell。
+
+        白名單：
+          - pip install <已知套件>
+          - sudo systemctl restart {bot,shopbot,uibot,kkgroup-api}.service
+        """
+        import shlex
+        try:
+            tokens = shlex.split(command)
+        except ValueError as e:
+            _log(f"❌ 命令剖析失敗: {e}", "ERROR")
+            return False
+        if not tokens:
+            _log("❌ 空命令", "ERROR")
+            return False
+
+        ALLOWED_PKGS = {
+            "discord.py", "aiohttp", "requests", "python-dotenv",
+            "pytz", "google-cloud-compute", "gitpython",
+        }
+        ALLOWED_SERVICES = {
+            "bot.service", "shopbot.service", "uibot.service", "kkgroup-api.service",
+        }
+
+        # 白名單 1：pip / pip3 install <pkg>
+        if tokens[0] in ("pip", "pip3") and len(tokens) >= 3 and tokens[1] == "install":
+            pkg = tokens[2].split("[", 1)[0].split("==")[0].split(">=", 1)[0].lower()
+            if pkg not in ALLOWED_PKGS:
+                _log(f"❌ pip install 拒絕非白名單套件: {pkg}（降級人工處理）", "WARN")
+                return False
+            return self._exec_tokens(tokens)
+
+        # 白名單 2：sudo systemctl restart <service>
+        if (len(tokens) == 4 and tokens[0] == "sudo" and tokens[1] == "systemctl"
+                and tokens[2] == "restart" and tokens[3] in ALLOWED_SERVICES):
+            return self._exec_tokens(tokens)
+
+        _log(f"❌ 命令不在白名單，拒絕執行（降級人工處理）: {command}", "WARN")
+        return False
+
+    def _exec_tokens(self, tokens: list) -> bool:
+        """以 list 形式執行白名單命令（shell=False）"""
         try:
             result = subprocess.run(
-                command, shell=True, capture_output=True,
-                text=True, timeout=60
+                tokens, shell=False, capture_output=True,
+                text=True, timeout=60,
             )
             if result.returncode == 0:
-                _log(f"✅ 命令執行成功: {command}", "INFO")
+                _log(f"✅ 命令執行成功: {' '.join(tokens)}", "INFO")
                 if result.stdout:
                     _log(f"輸出: {result.stdout[:500]}", "INFO")
                 return True
-            else:
-                _log(f"❌ 命令執行失敗 (code={result.returncode}): {result.stderr[:500]}", "ERROR")
-                return False
+            _log(f"❌ 命令執行失敗 (code={result.returncode}): {result.stderr[:500]}", "ERROR")
+            return False
         except subprocess.TimeoutExpired:
-            _log(f"❌ 命令逾時: {command}", "ERROR")
+            _log(f"❌ 命令逾時: {' '.join(tokens)}", "ERROR")
             return False
         except Exception as e:
             _log(f"❌ 命令執行異常: {e}", "ERROR")
@@ -938,65 +1004,104 @@ class FixExecutor:
 # ─── Git 整合 ────────────────────────────────────────────────
 
 class GitManager:
-    """Git 自動 commit + push"""
-    
+    """Git 持久化（安全版）。
+
+    嚴守兩條紅線（對應已批准計畫）：
+      1. 嚴禁 `git add -A` —— 只 stage 「被修的那一個檔」，否則會把
+         data/*.json 等 runtime 狀態一起塞進 AI commit。
+      2. 嚴禁 push main —— 部署鏈對任何 main push 做 git reset --hard +
+         systemctl restart，AI 改碼會秒上活人；改走 auto-self-heal 分支 +
+         開 PR（人 review 才 merge）。
+
+    治癒本身（讓 bot 當下恢復）靠 FixExecutor 就地寫檔 + restart + verify
+    完成，與此持久化步驟獨立。此處只決定「修復要不要落進 git 歷史」。"""
+
+    HEAL_BRANCH = "auto-self-heal"
+
     def __init__(self):
         self.repo_path = PROJECT_ROOT
-    
-    def commit_and_push(self, message: str) -> bool:
-        """自動 commit 並 push 到遠端"""
+        # 獨立 PR worktree（避免在 live main 工作樹上切分支，干擾 bot 運行與 webhook 部署）。
+        # 未設定時：保留就地修復（治癒仍有效），略過 PR；不會退而 push main。
+        self.pr_worktree = os.getenv("SELF_HEAL_PR_WORKTREE", "").strip() or None
+
+    def commit_and_push(self, message: str, file_path: Optional[str] = None) -> bool:
+        """把單一修復檔提交到 auto-self-heal 分支並開 PR。"""
+        if not file_path:
+            _log("ℹ️ 未提供修復檔路徑，保留就地修復，不提交 git", "INFO")
+            return False
+        if not self.pr_worktree:
+            _log("ℹ️ 未設定 SELF_HEAL_PR_WORKTREE，保留就地修復，略過 PR 建立", "INFO")
+            return False
+
+        wt = Path(self.pr_worktree)
+        if not wt.is_dir():
+            _log(f"⚠️ PR worktree 不存在: {wt}（保留就地修復，略過 PR）", "WARN")
+            return False
+
+        # 把修好的檔複製到 PR worktree（live main 工作樹完全不動）
+        src = Path(file_path)
+        if not src.is_absolute():
+            src = PROJECT_ROOT / file_path
+        if not src.exists():
+            _log(f"❌ 來源檔不存在: {src}", "ERROR")
+            return False
         try:
-            # 檢查是否有變更
-            result = subprocess.run(
-                ["git", "status", "--porcelain"],
-                capture_output=True, text=True, timeout=10,
-                cwd=self.repo_path,
-            )
-            if not result.stdout.strip():
-                _log("ℹ️ 沒有需要提交的變更", "INFO")
+            rel = src.relative_to(PROJECT_ROOT)
+        except ValueError:
+            _log(f"❌ 修復檔不在專案內: {src}（拒絕提交）", "ERROR")
+            return False
+        dst = wt / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        except Exception as e:
+            _log(f"❌ 複製修復檔到 worktree 失敗: {e}", "ERROR")
+            return False
+        rel_posix = rel.as_posix()
+
+        try:
+            def _g(*args, timeout=30):
+                return subprocess.run(
+                    ["git", "-C", str(wt), *args],
+                    capture_output=True, text=True, timeout=timeout,
+                )
+
+            subprocess.run(["git", "config", "user.name", "KKGroup Self-Heal Bot"],
+                           capture_output=True, timeout=10)
+            subprocess.run(["git", "config", "user.email", "self-heal@kkgroup.local"],
+                           capture_output=True, timeout=10)
+
+            _g("checkout", "-B", self.HEAL_BRANCH, "origin/main")
+            _g("add", "--", rel_posix)  # 只 stage 這一個檔
+
+            if _g("diff", "--cached", "--quiet").returncode == 0:
+                _log("ℹ️ worktree 內無實際差異（修復與 origin/main 一致），略過 commit", "INFO")
                 return True
-            
-            # 設定 git config
-            subprocess.run(
-                ["git", "config", "user.name", "KKGroup Self-Heal Bot"],
-                capture_output=True, timeout=10, cwd=self.repo_path,
-            )
-            subprocess.run(
-                ["git", "config", "user.email", "self-heal@kkgroup.local"],
-                capture_output=True, timeout=10, cwd=self.repo_path,
-            )
-            
-            # 加入所有變更
-            subprocess.run(
-                ["git", "add", "-A"],
-                capture_output=True, timeout=10, cwd=self.repo_path,
-            )
-            
-            # 提交
-            result = subprocess.run(
-                ["git", "commit", "-m", message],
-                capture_output=True, text=True, timeout=10,
-                cwd=self.repo_path,
-            )
-            if result.returncode != 0:
-                _log(f"❌ Git commit 失敗: {result.stderr[:300]}", "ERROR")
+
+            c = _g("commit", "-m", message)
+            if c.returncode != 0:
+                _log(f"❌ commit 失敗: {c.stderr[:300]}", "ERROR")
                 return False
-            
-            _log(f"✅ Git commit 成功: {result.stdout.strip()[:200]}", "INFO")
-            
-            # 推送
-            result = subprocess.run(
-                ["git", "push", "origin", "main"],
+
+            p = _g("push", "-u", "origin", self.HEAL_BRANCH, "--force-with-lease")
+            if p.returncode != 0:
+                _log(f"❌ push {self.HEAL_BRANCH} 失敗: {p.stderr[:300]}", "ERROR")
+                return False
+            _log(f"✅ 已推送到分支 {self.HEAL_BRANCH}", "INFO")
+
+            # 開 PR；gh 不可用時只留分支（人可手動開）
+            pr = subprocess.run(
+                ["gh", "pr", "create", "--base", "main", "--head", self.HEAL_BRANCH,
+                 "--title", message.splitlines()[0][:120],
+                 "--body", "🤖 由 auto_self_heal 從報錯自動產生，已於 VM 就地驗證通過。請 review 後再 merge。"],
                 capture_output=True, text=True, timeout=30,
-                cwd=self.repo_path,
             )
-            if result.returncode == 0:
-                _log(f"✅ Git push 成功", "INFO")
-                return True
+            if pr.returncode == 0:
+                _log(f"✅ PR 已建立: {pr.stdout.strip()[:200]}", "INFO")
             else:
-                _log(f"❌ Git push 失敗: {result.stderr[:300]}", "ERROR")
-                return False
-        
+                _log(f"⚠️ gh pr create 未成功（分支已推，可手動開 PR）: {pr.stderr[:200]}", "WARN")
+            return True
+
         except subprocess.TimeoutExpired:
             _log("❌ Git 操作逾時", "ERROR")
             return False
@@ -1172,7 +1277,7 @@ class SelfHealDaemon:
             
             # Git commit + push
             commit_msg = f"fix: L1 自動修復 - {error_type} ({error.get('service', '')})"
-            self.git_manager.commit_and_push(commit_msg)
+            self.git_manager.commit_and_push(commit_msg, file_path=file_path or None)
             
             # Discord 通知
             await self.notifier.notify_fix_result(
@@ -1220,7 +1325,7 @@ class SelfHealDaemon:
                 # Git commit + push
                 root_cause = analysis.get("root_cause", "AI 自動修復")
                 commit_msg = f"fix: L2 AI 修復 - {root_cause[:100]}"
-                self.git_manager.commit_and_push(commit_msg)
+                self.git_manager.commit_and_push(commit_msg, file_path=analysis.get("fix_target") or file_path or None)
                 
                 await self.notifier.notify_fix_result(
                     error, success=True, level="L2",
