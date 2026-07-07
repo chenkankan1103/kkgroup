@@ -45,7 +45,7 @@ PROJECT_DIR = Path("/home/e193752468/kkgroup")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 DISCORD_SYS_CHANNEL_ID = os.getenv("DISCORD_SYS_CHANNEL_ID", "")
-SYSTEMD_SERVICES = ["bot.service", "shopbot.service", "uibot.service"]
+SYSTEMD_SERVICES = ["bot.service", "shopbot.service", "uibot.service", "auto-self-heal.service"]
 
 # ============================================================
 # 速率限制 & 審計

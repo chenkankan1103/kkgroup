@@ -136,6 +136,11 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
             error_logs = {'log': error_logs}
         timestamp = payload.get('timestamp') or event_data.get('timestamp') or datetime.now().isoformat()
         severity = payload.get('severity') or event_data.get('severity') or 'medium'
+
+        # 從 dispatch payload 取得 traceback 抽出的真實檔案路徑（mutual_rescue / self-heal daemon 已填入）
+        target_file = payload.get('target_file', '') or event_data.get('target_file', '')
+        if target_file:
+            print(f"📁 dispatch payload 內含 traceback 抽出之真實檔案路徑: {target_file}")
         
         # 構建分析提示
         analysis_prompt = f"""你是KKGroup Discord Bot系統的AI除錯和修復專家。
@@ -250,15 +255,20 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
         print(f"❌ AI 分析過程發生錯誤: {e}")
         return None
 
-async def create_fix_file(fix_data, timestamp, severity):
+async def create_fix_file(fix_data, timestamp, severity, override_target_file=None):
     """創建修復文件並提交"""
     if not fix_data:
         return False
-    
+
     try:
         # 獲取修復代碼和文件路徑
         fix_code = fix_data.get('fix_code', '')
-        file_path = _normalize_repo_path(fix_data.get('file_path', 'fixes/auto_fix.py'))
+        # 優先使用 dispatch payload 的 target_file（由 mutual_rescue/self-heal 的 traceback 抽出），
+        # 避免 AI 猜錯 file_path 導致只產 .md 提案、從未真正修原始碼。
+        if override_target_file:
+            file_path = _normalize_repo_path(override_target_file)
+        else:
+            file_path = _normalize_repo_path(fix_data.get('file_path', 'fixes/auto_fix.py'))
         artifact_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         review_artifact_path = _build_review_artifact_path(file_path, artifact_timestamp)
         direct_write_enabled = _bool_env('AUTO_AI_DIRECT_WRITE', default=False)
@@ -411,7 +421,9 @@ async def main():
         severity = payload.get('severity', 'medium')
         
         # 創建修復文件並提交
-        success = await create_fix_file(fix_data, timestamp, severity)
+        # 優先使用 dispatch payload 的 target_file（traceback 抽出之真實路徑）
+        target_file = payload.get('target_file', '') or event_data.get('target_file', '')
+        success = await create_fix_file(fix_data, timestamp, severity, override_target_file=target_file)
         
         # 發送通知
         await send_discord_notification(fix_data, success, discord_webhook)
