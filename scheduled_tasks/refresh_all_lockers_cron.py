@@ -49,39 +49,46 @@ TRIGGER_CONTENT = "定時任務觸發：批量刷新置物櫃"
 
 
 def trigger_locker_refresh() -> bool:
-    """以 Bot Token 透過 REST API 發送靜音觸發訊息到系統頻道，由線上 uibot 接手執行更新。"""
+    """以 Bot Token 透過 REST API 發送靜音觸發訊息到系統/論壇頻道，由線上 uibot 接手執行更新。"""
     import requests
 
-    channel_id = os.getenv('DISCORD_SYS_CHANNEL_ID')
     bot_token = os.getenv('UI_DISCORD_BOT_TOKEN')
-    if not channel_id or not bot_token:
-        logger.error("❌ 缺少 DISCORD_SYS_CHANNEL_ID 或 UI_DISCORD_BOT_TOKEN")
-        logger.info("💡 提示：需要在 .env 中設定這兩個變數")
+    if not bot_token:
+        logger.error("❌ 缺少 UI_DISCORD_BOT_TOKEN")
         return False
 
-    url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    headers = {
-        "Authorization": f"Bot {bot_token}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "content": TRIGGER_CONTENT,
-        "flags": SUPPRESS_NOTIFICATIONS,  # 靜音：不發推播通知
-    }
+    # 優先用系統頻道；若該 token 沒權限，退而用論壇頻道（LOG_FORUM_CHANNEL_ID）
+    # 兩者皆發送靜音訊息，不跳通知
+    for env_key in ('DISCORD_SYS_CHANNEL_ID', 'LOG_FORUM_CHANNEL_ID'):
+        channel_id = os.getenv(env_key)
+        if not channel_id:
+            continue
+        url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+        headers = {
+            "Authorization": f"Bot {bot_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "content": TRIGGER_CONTENT,
+            "flags": SUPPRESS_NOTIFICATIONS,
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"✅ 靜音觸發訊息已發送至 {env_key} (message_id={data.get('id')})，uibot 將接手執行置物櫃更新")
+                return True
+            elif response.status_code == 404:
+                logger.warning(f"⚠️ {env_key} ({channel_id}) 該 token 無存取權 (404)，嘗試下一個頻道...")
+                continue
+            else:
+                logger.error(f"❌ 發送觸發訊息失敗 ({env_key})：HTTP {response.status_code}")
+                logger.error(f"   Response：{response.text[:200]}")
+        except Exception as e:
+            logger.error(f"❌ 請求異常 ({env_key})：{e}")
 
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            logger.info(f"✅ 靜音觸發訊息已發送至系統頻道 (message_id={data.get('id')})，uibot 將接手執行置物櫃更新")
-            return True
-        else:
-            logger.error(f"❌ 發送觸發訊息失敗：HTTP {response.status_code}")
-            logger.error(f"   Response：{response.text[:200]}")
-            return False
-    except Exception as e:
-        logger.error(f"❌ 請求異常：{e}")
-        return False
+    logger.error("❌ 所有候選頻道均發送失敗")
+    return False
 
 
 if __name__ == '__main__':
