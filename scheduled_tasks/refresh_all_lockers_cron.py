@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-批量刷新所有用戶置物櫃的 Cron 腳本
+批量刷新所有用戶置物櫃的 Cron 腳本（輕量觸發版）
 排程設定：每週三固定時間執行
 配置：0 3 * * 3 cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_all_lockers_cron.py
 
-直接調用核心置物櫃更新邏輯（不經由 Discord 訊息觸發）
+流程：
+  cron 腳本用 Bot Token 透過 REST API 發送一條「靜音」觸發訊息到系統頻道
+  → 線上 uibot 的 on_message 收到 → 執行 refresh_all_lockers() → 30 分鐘後刪除觸發訊息
+
+優點：
+  - 不開第二條 Discord gateway 連線，不會踢到線上常駐 uibot
+  - 重活由已 warm 的 uibot 執行，沿用已驗證的更新邏輯
+  - 腳本本身只發一個 HTTPS POST，最省 VM 資源
 """
 
-import asyncio
 import os
 import sys
 import logging
-import discord
 from pathlib import Path
-from datetime import datetime
 
 # 添加路徑
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -37,77 +41,52 @@ logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
 load_dotenv()
 
+# Discord Message Flag: SUPPRESS_NOTIFICATIONS = 1 << 12 = 4096（靜音不推播通知）
+SUPPRESS_NOTIFICATIONS = 4096
 
-async def main():
-    """建立臨時 Discord 客戶端，載入所需 Cog 並直接執行置物櫃更新"""
+# 觸發訊息內容（必須與 uibot on_message 監聽的字串完全一致）
+TRIGGER_CONTENT = "定時任務觸發：批量刷新置物櫃"
+
+
+def trigger_locker_refresh() -> bool:
+    """以 Bot Token 透過 REST API 發送靜音觸發訊息到系統頻道，由線上 uibot 接手執行更新。"""
+    import requests
+
+    channel_id = os.getenv('DISCORD_SYS_CHANNEL_ID')
     bot_token = os.getenv('UI_DISCORD_BOT_TOKEN')
-    if not bot_token:
-        logger.error("❌ 缺少 UI_DISCORD_BOT_TOKEN 環境變數")
+    if not channel_id or not bot_token:
+        logger.error("❌ 缺少 DISCORD_SYS_CHANNEL_ID 或 UI_DISCORD_BOT_TOKEN")
+        logger.info("💡 提示：需要在 .env 中設定這兩個變數")
         return False
 
-    # 必要的意圖：我們需要獲取頻道和使用者資訊
-    intents = discord.Intents.default()
-    bot = discord.Client(intents=intents)
-
-    # 預先載入 Cog
-    try:
-        from cogs.ui.uibody import UserPanel
-        from cogs.ui.admin_locker_commands import AdminLockerCommands
-    except Exception as e:
-        logger.exception(f"❌ 載入 Cog 失敗: {e}")
-        return False
-
-    # 將 Cog 加入 Bot（會在 bot 就緒時自動呼叫 cog_load）
-    try:
-        if 'UserPanel' not in bot.cogs:
-            bot.add_cog(UserPanel(bot))
-            logger.info("📦 已加載 UserPanel Cog")
-        if 'AdminLockerCommands' not in bot.cogs:
-            bot.add_cog(AdminLockerCommands(bot))
-            logger.info("📦 已加載 AdminLockerCommands Cog")
-    except Exception as e:
-        logger.exception(f"❌ 加載 Cog 到 Bot 失敗: {e}")
-        return False
-
-    @bot.event
-    async def on_ready():
-        logger.info(f"✅ 已登入為 {bot.user} (ID: {bot.user.id})")
-        # 等待所有 Cog 的 cog_load 完成（它們內部會 await bot.wait_until_ready()）
-        await asyncio.sleep(1)  # 給予初始化時間
-
-        # 取得 AdminLockerCommands 實例
-        admin_cog = bot.get_cog('AdminLockerCommands')
-        if admin_cog is None:
-            logger.error("❌ 無法取得 AdminLockerCommands Cog 實例")
-            await bot.close()
-            return
-
-        # 直接執行置物櫃更新核心邏輯
-        try:
-            logger.info("🔄 開始執行批量置物櫃更新...")
-            success_count, fail_count, total = await admin_cog.refresh_all_lockers()
-            success_rate = (success_count / total * 100) if total > 0 else 0
-            logger.info(
-                f"✅ 批量更新完成：{success_count}/{total} 成功 "
-                f"({success_rate:.1f}% 成功率), {fail_count} 失敗"
-            )
-        except Exception as e:
-            logger.exception(f"❌ 執行置物櫃更新時發生錯誤: {e}")
-        finally:
-            await bot.close()
+    url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+    headers = {
+        "Authorization": f"Bot {bot_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "content": TRIGGER_CONTENT,
+        "flags": SUPPRESS_NOTIFICATIONS,  # 靜音：不發推播通知
+    }
 
     try:
-        await bot.start(bot_token)
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            logger.info(f"✅ 靜音觸發訊息已發送至系統頻道 (message_id={data.get('id')})，uibot 將接手執行置物櫃更新")
+            return True
+        else:
+            logger.error(f"❌ 發送觸發訊息失敗：HTTP {response.status_code}")
+            logger.error(f"   Response：{response.text[:200]}")
+            return False
     except Exception as e:
-        logger.exception(f"❌ 啟動 Discord 客戶端失敗: {e}")
+        logger.error(f"❌ 請求異常：{e}")
         return False
-    return True
 
 
 if __name__ == '__main__':
-    # 直接運行該腳本
-    logger.info("🚀 Cron 腳本開始執行")
-    success = asyncio.run(main())
+    logger.info("🚀 Cron 腳本開始執行（輕量觸發模式）")
+    success = trigger_locker_refresh()
     exit_code = 0 if success else 1
     logger.info(f"✅ Cron 任務完成 (exit code: {exit_code})")
     sys.exit(exit_code)
