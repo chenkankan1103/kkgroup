@@ -1453,7 +1453,23 @@ class AnimeTracker(commands.Cog):
             else:
                 logger.info(f"⏭️  [AnimeTracker.cog_load] check_scheduled_push 已在運行 (is_running=True)")
                 print("[COG_LOAD] ⚠️ check_scheduled_push 已在運行", flush=True)
-            
+
+            # 啟動週期統計同步任務
+            print("[COG_LOAD] 檢查 sync_episode_stats 任務狀態", flush=True)
+            if not self.sync_episode_stats.is_running():
+                print("[COG_LOAD] ✅ 啟動 sync_episode_stats 任務", flush=True)
+                logger.info("🚀 [AnimeTracker.cog_load] 啟動 sync_episode_stats 任務")
+                try:
+                    self.sync_episode_stats.start()
+                    logger.info(f"✅ [AnimeTracker.cog_load] sync_episode_stats 已啟動 (is_running={self.sync_episode_stats.is_running()})")
+                    print("[COG_LOAD] ✅ sync_episode_stats 已啟動", flush=True)
+                except Exception as start_err:
+                    logger.error(f"❌ [AnimeTracker.cog_load] 啟動 sync_episode_stats 失敗: {start_err}", exc_info=True)
+                    print(f"[COG_LOAD] ❌ 啟動 sync_episode_stats 失敗: {start_err}", flush=True)
+            else:
+                logger.info(f"⏭️  [AnimeTracker.cog_load] sync_episode_stats 已在運行 (is_running=True)")
+                print("[COG_LOAD] ⚠️ sync_episode_stats 已在運行", flush=True)
+
             print("[COG_LOAD_END] ✅ cog_load() 執行完成", flush=True)
             sys.stdout.flush()
             logger.info("✅ [AnimeTracker.cog_load] 任務啟動完成")
@@ -1489,6 +1505,10 @@ class AnimeTracker(commands.Cog):
             if self.check_scheduled_push.is_running():
                 self.check_scheduled_push.cancel()
                 logger.info("✅ [AnimeTracker.cog_unload] check_scheduled_push 已停止")
+
+            if self.sync_episode_stats.is_running():
+                self.sync_episode_stats.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] sync_episode_stats 已停止")
         except Exception as e:
             logger.error(f"❌ [AnimeTracker.cog_unload] 任務停止失敗: {e}", exc_info=True)
         logger.info("=" * 50)
@@ -1659,10 +1679,33 @@ class AnimeTracker(commands.Cog):
             logger.info("=" * 50)
     
     def cog_unload(self):
-        """Cog 卸載時停止任務"""
-        if hasattr(self, 'scheduler') and self.scheduler and self.scheduler.running:
-            self.scheduler.shutdown(wait=False)
-            logger.info("✅ [AnimeTracker.cog_unload] Scheduler 已關閉")
+        """Cog 卸載時停止所有任務（只有這個定義生效，前一個同名 method 被此覆蓋）"""
+        logger.info("=" * 50)
+        logger.info("🛑 [AnimeTracker.cog_unload] cog_unload() 被調用")
+        try:
+            if self.send_weekly_stats.is_running():
+                self.send_weekly_stats.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] send_weekly_stats 已停止")
+
+            if self.refresh_weekly_schedule.is_running():
+                self.refresh_weekly_schedule.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] refresh_weekly_schedule 已停止")
+
+            if self.check_scheduled_push.is_running():
+                self.check_scheduled_push.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] check_scheduled_push 已停止")
+
+            if self.sync_episode_stats.is_running():
+                self.sync_episode_stats.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] sync_episode_stats 已停止")
+
+            # 清理舊版 scheduler（若有）
+            if hasattr(self, 'scheduler') and self.scheduler and self.scheduler.running:
+                self.scheduler.shutdown(wait=False)
+                logger.info("✅ [AnimeTracker.cog_unload] Scheduler 已關閉")
+        except Exception as e:
+            logger.error(f"❌ [AnimeTracker.cog_unload] 任務停止失敗: {e}", exc_info=True)
+        logger.info("=" * 50)
     
     async def get_quickchart_short_url(self, chart_config: Dict) -> Optional[str]:
         """
@@ -1801,7 +1844,121 @@ class AnimeTracker(commands.Cog):
             logger.error(f"❌ Error fetching anime from API: {e}", exc_info=True)
             return None
 
-    def _episode_in_current_check_window(self, episode: Dict, now: datetime) -> bool:
+    def _extract_view_count_from_episode(self, episode: dict, default: int = 0) -> int:
+        """
+        直接從 index API (v3/index.php) 的 episode 物件中提取觀看/人氣數，
+        不需額外調用 video.php。
+
+        Bahamut API 的 `newAnime.popular` 陣列中的 episode 物件可能包含
+        多個潛在的觀看數字段：popular, viewCount, counter, views, view_counter 等。
+
+        Args:
+            episode: index API 返回的單個 episode 字典
+            default: 找不到時返回的預設值
+
+        Returns:
+            提取到的觀看數（int），否則返回 default
+        """
+        view_candidates = [
+            "popular", "viewCount", "counter", "views",
+            "view_counter", "page_views", "click", "playCount",
+        ]
+        for field in view_candidates:
+            raw = episode.get(field)
+            if raw is not None:
+                try:
+                    val = int(str(raw).replace(',', '').replace(',', ''))
+                    if val > 0:
+                        logger.info(f"📺 [_extract_view_count_from_episode] 從 field='{field}' 提取到觀看數: {val}")
+                        return val
+                    else:
+                        logger.debug(f"📺 [_extract_view_count_from_episode] field='{field}' 值為 0，繼續嘗試其他字段")
+                except (ValueError, TypeError):
+                    continue
+
+        # 若 episode 物件沒有直接的觀看數，但 structure 中有 highlightTag/meta 也可嘗試
+        highlight = episode.get("highlightTag") or {}
+        if isinstance(highlight, dict):
+            for field in ["counter", "views", "popular"]:
+                raw = highlight.get(field)
+                if raw is not None:
+                    try:
+                        val = int(str(raw).replace(',', ''))
+                        if val > 0:
+                            logger.info(f"📺 [_extract_view_count_from_episode] 從 highlightTag.{field} 提取到觀看數: {val}")
+                            return val
+                    except (ValueError, TypeError):
+                        continue
+
+        logger.debug(f"📺 [_extract_view_count_from_episode] 無法從 episode(videoSn={episode.get('videoSn')}) 提取觀看數")
+        return default
+
+    async def _sync_episode_stats_from_api(self):
+        """
+        定時從 Bahamut index API 獲取最新的動畫列表，
+        記錄 per-episode 統計數據到 episode_statistics 表，
+        確保週排行有足夠的歷史數據。
+
+        此方法獨立於新集通知流程，定期執行以累積數據。
+        """
+        try:
+            episodes = await self.fetch_all_recent_anime_from_api()
+            if not episodes:
+                logger.warning("⚠️ [_sync_episode_stats_from_api] 無法獲取動畫數據")
+                return
+
+            recorded = 0
+            for ep in episodes:
+                video_sn = ep.get("videoSn")
+                anime_sn = ep.get("animeSn")
+                if not video_sn or not anime_sn:
+                    continue
+
+                # 提取觀看數
+                views = self._extract_view_count_from_episode(ep)
+
+                # 如果 index API 沒有觀看數，從 video.php 補充
+                if views <= 0:
+                    try:
+                        details = await self.fetch_anime_details_from_api(video_sn)
+                        if details:
+                            views = details.get("popular", 0)
+                    except Exception as e:
+                        logger.warning(f"⚠️ [_sync_episode_stats_from_api] videoSn={video_sn} 詳情獲取失敗: {e}")
+                        continue
+
+                anime_name = ep.get("title", f"Anime #{anime_sn}")
+                episode_num = ep.get("volume", "")
+
+                # 記錄統計（INSERT OR REPLACE，以 videoSn 為主鍵）
+                self.db.record_episode_stats(
+                    video_sn=video_sn,
+                    anime_sn=anime_sn,
+                    episode_num=episode_num,
+                    views=views,
+                    score=0  # index API 不包含評分，預設 0
+                )
+
+                # 也快取 anime details（名稱等）
+                if anime_sn:
+                    existing = self.db.get_anime_details(int(anime_sn))
+                    if not existing:
+                        self.db.cache_anime_details(
+                            int(anime_sn),
+                            anime_name,
+                            "",
+                            [],
+                            views,
+                            0
+                        )
+
+                recorded += 1
+                await asyncio.sleep(0.05)  # 避免限流
+
+            logger.info(f"✅ [_sync_episode_stats_from_api] 完成，記錄了 {recorded}/{len(episodes)} 筆統計數據")
+
+        except Exception as e:
+            logger.error(f"❌ [_sync_episode_stats_from_api] 執行失敗: {e}", exc_info=True)
         """
         檢查集是否在預期時間窗口內（僅用於現在）
         
@@ -1876,17 +2033,17 @@ class AnimeTracker(commands.Cog):
     async def fetch_anime_details_from_api(self, video_sn: int) -> Optional[Dict]:
         """
         從 Bahamut 手機 API 獲取動畫詳細信息（簡介、標籤、人氣度等）
-        
+
         API endpoint: https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}
         返回 anime 部分包含：content(簡介), tags(標籤), popular(人氣度), score(評分)
-        
+
         Returns:
             詳細信息字典或 None
         """
         if not video_sn:
             logger.info(f"📺 [fetch_anime_details_from_api] video_sn 為空，跳過")
             return None
-        
+
         api_url = f"https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}"
         logger.info(f"📺 [fetch_anime_details_from_api] 開始調用 API: {api_url}")
         try:
@@ -1902,48 +2059,67 @@ class AnimeTracker(commands.Cog):
                     if resp.status != 200:
                         logger.warning(f"⚠️ API detail returned status {resp.status} for videoSn={video_sn}")
                         return None
-                    
+
                     data = await resp.json()
                     anime = data.get("data", {}).get("anime", {})
                     logger.info(f"📺 [fetch_anime_details_from_api] anime 字典鍵: {list(anime.keys()) if anime else '(empty)'}")
-                    
+
                     # 詳細日誌：打印完整的 anime 字典（前 2000 字符）
                     anime_str = str(anime)[:2000] if anime else "(empty)"
                     logger.info(f"📺 [fetch_anime_details_from_api] 完整 anime 數據: {anime_str}")
-                    
+
                     if not anime:
                         logger.warning(f"⚠️ No anime data in API response for videoSn={video_sn}")
                         return None
-                    
+
                     anime_sn = anime.get("anime_sn")
                     title = anime.get("title", "")
                     content = anime.get("content", "")
                     tags = anime.get("tags", [])
-                    popular = anime.get("popular", 0)
                     score = anime.get("score", 0)
-                    
-                    logger.info(f"✅ [fetch_anime_details_from_api] animeSn={anime_sn}, title={title[:30]}, tags={tags}, popular={popular}, score={score}")
-                    logger.info(f"✅ [fetch_anime_details_from_api] 提取的觀看數: popular={popular}, type={type(popular)}")
-                    
+
+                    # 嘗試多個可能的觀看數/人氣字段名（Bahamut API 可能使用不同名稱）
+                    # 常見的 Bahamut 觀看次數字段：popular, viewCount, counter, views, view_counter, page_views
+                    view_count = (
+                        anime.get("popular", 0)
+                        or anime.get("viewCount", 0)
+                        or anime.get("counter", 0)
+                        or anime.get("views", 0)
+                        or anime.get("view_counter", 0)
+                        or anime.get("page_views", 0)
+                        or 0
+                    )
+                    # 確保是整數
+                    if not isinstance(view_count, (int, float)):
+                        try:
+                            view_count = int(str(view_count).replace(',', ''))
+                        except (ValueError, TypeError):
+                            view_count = 0
+                    view_count = int(view_count)
+
+                    logger.info(f"✅ [fetch_anime_details_from_api] animeSn={anime_sn}, title={title[:30] if title else '(空)'}, tags={tags}, view_count={view_count}, score={score}")
+                    logger.info(f"✅ [fetch_anime_details_from_api] 提取的觀看數: view_count={view_count}, type={type(view_count)}, anime.popular={anime.get('popular', 'N/A')}, anime.get('viewCount', 'N/A'), 全部鍵={list(anime.keys())}")
+
                     # 快取到數據庫
                     if anime_sn:
-                        self.db.cache_anime_details(anime_sn, title, content, tags, popular, score)
+                        self.db.cache_anime_details(anime_sn, title, content, tags, view_count, score)
                         # 同時記錄統計數據（用於數據分析）
                         self.db.record_episode_stats(
                             video_sn=video_sn,
                             anime_sn=anime_sn,
                             episode_num=f"Ep. {anime.get('video_episode_number', '')}",
-                            views=popular,
+                            views=view_count,
                             score=score
                         )
-                    
+
                     return {
                         "anime_sn": anime_sn,
                         "title": title,
                         "content": content,
                         "tags": tags,
-                        "popular": popular,
-                        "score": score
+                        "popular": view_count,
+                        "score": score,
+                        "raw_keys": list(anime.keys()),  # 傳回原始鍵列表供調試
                     }
         except asyncio.TimeoutError:
             logger.warning(f"⚠️ API detail timeout ({API_TIMEOUT}s) for videoSn={video_sn}")
@@ -2418,7 +2594,43 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"✅ [send_weekly_stats] 任務已重新啟動")
         except Exception as restart_error:
             logger.error(f"❌ [send_weekly_stats] 重啟失敗: {restart_error}", exc_info=True)
-    
+
+    @tasks.loop(hours=6)
+    async def sync_episode_stats(self):
+        """
+        每 6 小時從 Bahamut index API 同步一次 episode 統計數據，
+        確保 episode_statistics 表有足夠的觀看數歷史資料，
+        讓週日排行功能能正確顯示觀看人數成長。
+
+        獨立於新集通知流程，避免"只有發通知才有統計"的問題。
+        """
+        try:
+            now = datetime.now(TW_TZ)
+            # 避開凌晨時段（2-5點 API 可能維護中）和整點高峰
+            skip_hours = {2, 3, 4, 5}
+            if now.hour in skip_hours:
+                logger.debug(f"⏭️ [sync_episode_stats] 跳過維護時段（{now.hour}:00）")
+                return
+
+            logger.info(f"🔄 [sync_episode_stats] 開始同步 episode 統計數據...")
+            await self._sync_episode_stats_from_api()
+            logger.info(f"✅ [sync_episode_stats] 同步完成")
+
+        except Exception as e:
+            logger.error(f"❌ [sync_episode_stats] 同步失敗: {e}", exc_info=True)
+
+    @sync_episode_stats.before_loop
+    async def before_sync_episode_stats(self):
+        """等待 bot 就緒"""
+        logger.info("📊 [before_sync_episode_stats] 等待 bot 就緒...")
+        await self.bot.wait_until_ready()
+        logger.info("✅ [before_sync_episode_stats] 統計同步任務準備就緒")
+
+    @sync_episode_stats.error
+    async def sync_episode_stats_error(self, error):
+        """處理任務異常"""
+        logger.error(f"❌ [sync_episode_stats] 任務異常: {error}", exc_info=True)
+
     @tasks.loop(hours=24)
     async def refresh_weekly_schedule(self):
         """禮拜天晚上 10 點自動拉取完整週表 - 優化 API 調用（288/天 → 1/週）"""
@@ -2642,40 +2854,46 @@ class AnimeTracker(commands.Cog):
                 start_time=start_time,
                 end_time=end_time
             )
-            
-            # 如果沒有歷史數據，則實時從 API 獲取最近的動畫
-            if not top_anime and not start_time and not end_time:
-                logger.info("📺 [generate_ranking_embed] 數據庫無歷史數據，改為實時從 API 獲取")
+
+            # 修復：如果 DB 沒有數據（不論是否有時間篩選），都試從 API 獲取
+            # 原先的條件 `if not top_anime and not start_time and not end_time` 會導致
+            # 當 send_weekly_stats 傳入 start_time/end_time 時，API 回退永遠不會被觸發
+            if not top_anime:
+                logger.info(f"📺 [generate_ranking_embed] 數據庫無歷史數據{'（含時間篩選）' if start_time or end_time else ''}，改為實時從 API 獲取")
                 episodes = await self.fetch_all_recent_anime_from_api()
-                
+
                 if not episodes:
                     logger.warning("📺 [generate_ranking_embed] 無法獲取動畫數據")
                     return None
-                
+
                 # 按觀看人數排序
                 anime_list = {}
                 for ep in episodes:
                     anime_sn = ep.get("animeSn")
                     if not anime_sn:
                         continue
-                    
+
                     anime_name = ep.get("title", f"Anime #{anime_sn}")
                     views = 0
-                    
-                    # 為了獲取詳細的观看人数和正確的動畫名稱，调用 API
-                    try:
-                        video_sn = ep.get("videoSn")
-                        if video_sn:
-                            details = await self.fetch_anime_details_from_api(video_sn)
-                            if details:
-                                views = details.get("popular", 0)
-                                # 使用 API 返回的正確動畫名稱
-                                if details.get("title"):
-                                    anime_name = details.get("title")
-                                    logger.info(f"📺 [generate_ranking_embed] 獲得動畫名稱: {anime_name} (animeSn={anime_sn})")
-                    except Exception as e:
-                        logger.warning(f"⚠️ 無法取得 videoSn={video_sn} 的詳細信息: {e}")
-                    
+
+                    # 優先從 index API 直接提取觀看數（省去額外 API 調用）
+                    views = self._extract_view_count_from_episode(ep)
+
+                    # 如果 index API 沒有觀看數，調用 video.php 獲取詳細數據
+                    if views <= 0:
+                        try:
+                            video_sn = ep.get("videoSn")
+                            if video_sn:
+                                details = await self.fetch_anime_details_from_api(video_sn)
+                                if details:
+                                    views = details.get("popular", 0)
+                                    # 使用 API 返回的正確動畫名稱
+                                    if details.get("title"):
+                                        anime_name = details.get("title")
+                                        logger.info(f"📺 [generate_ranking_embed] 獲得動畫名稱: {anime_name} (animeSn={anime_sn})")
+                        except Exception as e:
+                            logger.warning(f"⚠️ 無法取得 videoSn={video_sn} 的詳細信息: {e}")
+
                     # 聚合多集的数据
                     if anime_sn not in anime_list:
                         anime_list[anime_sn] = {
@@ -2684,12 +2902,16 @@ class AnimeTracker(commands.Cog):
                             "total_views": 0,
                             "total_episodes": 0,
                         }
-                    
+
                     if views > 0:
                         anime_list[anime_sn]["episodes"].append(views)
                         anime_list[anime_sn]["total_views"] += views
                         anime_list[anime_sn]["total_episodes"] += 1
-                
+                    else:
+                        # 即使 views=0 也統計集數（但用 0 計算總觀看數）
+                        anime_list[anime_sn]["episodes"].append(views)
+                        anime_list[anime_sn]["total_episodes"] += 1
+
                 # 轉換為排行格式並按總觀看數排序
                 top_anime = []
                 for anime_sn, data in anime_list.items():
@@ -2701,15 +2923,15 @@ class AnimeTracker(commands.Cog):
                             "total_views": data["total_views"],
                             "total_episodes": data["total_episodes"]
                         })
-                
+
                 # 按總觀看數排序
                 top_anime.sort(key=lambda x: x["total_views"], reverse=True)
                 top_anime = top_anime[:10]
-                
+
                 if not top_anime:
                     logger.info("📺 [generate_ranking_embed] 無有效的動畫數據")
                     return None
-                
+
                 logger.info(f"📺 [generate_ranking_embed] 實時獲取了 {len(top_anime)} 部動畫的數據")
             
             # 嘗試獲取有多集的動畫數據（用於多線圖）
