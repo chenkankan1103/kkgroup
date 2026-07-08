@@ -49,7 +49,7 @@ TRIGGER_CONTENT = "定時任務觸發：批量刷新置物櫃"
 
 
 def trigger_locker_refresh() -> bool:
-    """以 Bot Token 透過 REST API 發送靜音觸發訊息到系統/論壇頻道，由線上 uibot 接手執行更新。"""
+    """以 Bot Token 透過 REST API 發送靜音觸發訊息到管理員/系統頻道，由線上 uibot 接手執行更新。"""
     import requests
 
     bot_token = os.getenv('UI_DISCORD_BOT_TOKEN')
@@ -57,9 +57,17 @@ def trigger_locker_refresh() -> bool:
         logger.error("❌ 缺少 UI_DISCORD_BOT_TOKEN")
         return False
 
-    # 優先用系統頻道；若該 token 沒權限，退而用論壇頻道（LOG_FORUM_CHANNEL_ID）
-    # 兩者皆發送靜音訊息，不跳通知
-    for env_key in ('DISCORD_SYS_CHANNEL_ID', 'LOG_FORUM_CHANNEL_ID'):
+    # 優先順序：管理員頻道 → 系統頻道 → 歡迎頻道 → 公告頻道
+    # 皆為文字頻道，發送靜音訊息不跳通知
+    candidate_env_keys = [
+        'ADMIN_CHANNEL_ID',      # 🕴管理員 (文字頻道)
+        'DISCORD_SYS_CHANNEL_ID', # 原系統頻道 (可能無權限)
+        'WELCOME_CHANNEL_ID',     # 🚪園區大門
+        'ANNOUNCEMENT_CHANNEL_ID',# 📢園區公告
+        'STAFF_ID_CHANNEL_ID',    # 同 ADMIN_CHANNEL_ID
+    ]
+
+    for env_key in candidate_env_keys:
         channel_id = os.getenv(env_key)
         if not channel_id:
             continue
@@ -81,9 +89,14 @@ def trigger_locker_refresh() -> bool:
             elif response.status_code == 404:
                 logger.warning(f"⚠️ {env_key} ({channel_id}) 該 token 無存取權 (404)，嘗試下一個頻道...")
                 continue
+            elif response.status_code == 400:
+                err = response.json()
+                if err.get('code') == 50008:  # non-text channel
+                    logger.warning(f"⚠️ {env_key} ({channel_id}) 非文字頻道，嘗試下一個...")
+                    continue
+                logger.error(f"❌ 發送觸發訊息失敗 ({env_key})：HTTP 400 - {err.get('message')}")
             else:
-                logger.error(f"❌ 發送觸發訊息失敗 ({env_key})：HTTP {response.status_code}")
-                logger.error(f"   Response：{response.text[:200]}")
+                logger.error(f"❌ 發送觸發訊息失敗 ({env_key})：HTTP {response.status_code} - {response.text[:200]}")
         except Exception as e:
             logger.error(f"❌ 請求異常 ({env_key})：{e}")
 

@@ -226,15 +226,21 @@ class AdminLockerCommands(commands.Cog):
 
         觸發訊息由 cron 腳本用 Bot Token 透過 REST API 發送（靜音），
         因此 author 為 bot，必須在「忽略 bot 訊息」之前判斷，否則會被擋掉。
-        同時限定只在系統頻道或論壇頻道接受，避免他人在其他頻道偽造觸發。
+        同時限定只在已知的管理員/系統頻道接受，避免他人在其他頻道偽造觸發。
         """
         # 先檢查是否為 cron 觸發訊息（即便 author 是 bot 也要放行）
         if message.content.strip() == "定時任務觸發：批量刷新置物櫃":
-            sys_channel_id = int(os.getenv('DISCORD_SYS_CHANNEL_ID', '0'))
-            forum_channel_id = int(os.getenv('LOG_FORUM_CHANNEL_ID', '0'))
-            # 限定只在系統/管理員頻道或論壇頻道接受觸發
-            allowed = {c for c in (sys_channel_id, forum_channel_id) if c}
-            if allowed and message.channel.id not in allowed:
+            # 可接受觸發的頻道：管理員、系統、歡迎、公告、人員
+            allowed_ids = set()
+            for env_key in ('ADMIN_CHANNEL_ID', 'DISCORD_SYS_CHANNEL_ID', 'WELCOME_CHANNEL_ID',
+                           'ANNOUNCEMENT_CHANNEL_ID', 'STAFF_ID_CHANNEL_ID'):
+                val = os.getenv(env_key)
+                if val:
+                    try:
+                        allowed_ids.add(int(val))
+                    except ValueError:
+                        pass
+            if allowed_ids and message.channel.id not in allowed_ids:
                 return
             logger.info(f"📡 收到置物櫃自動刷新觸發訊息（頻道 {message.channel.id}），開始執行...")
             try:
@@ -244,7 +250,7 @@ class AdminLockerCommands(commands.Cog):
                 )
             except Exception as e:
                 logger.error(f"❌ 自動刷新時發生錯誤: {e}", exc_info=True)
-            # 論壇頻道/系統頻道皆為機器人指令區，觸發訊息可保留無需刪除
+            # 管理員/系統頻道為機器人指令區，觸發訊息可保留無需刪除
             return
 
         # 忽略其他機器人訊息
