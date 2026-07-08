@@ -1959,31 +1959,6 @@ class AnimeTracker(commands.Cog):
 
         except Exception as e:
             logger.error(f"❌ [_sync_episode_stats_from_api] 執行失敗: {e}", exc_info=True)
-        """
-        檢查集是否在預期時間窗口內（僅用於現在）
-        
-        Args:
-            episode: 集信息
-            now: 當前時間
-            
-        Returns:
-            True 如果該集應該被通知
-        """
-        up_date = episode.get("upTime", "").strip()
-        up_time = episode.get("upTimeHours", "").strip()
-        if not up_date or not up_time:
-            return False
-
-        try:
-            episode_dt = datetime.strptime(f"{datetime.now(TW_TZ).year}/{up_date} {up_time}", "%Y/%m/%d %H:%M")
-            # 將解析的時間設置為台灣時區
-            episode_dt = TW_TZ.localize(episode_dt)
-        except ValueError:
-            return False
-
-        # 檢查集在今天且時間匹配（允許一些容差）
-        # 由於現在用 schedule 驅動檢查，這裡只做基本驗證
-        return episode_dt.date() == now.date()
 
     async def fetch_anime_web_details(self, anime_sn: str) -> Dict[str, Optional[object]]:
         """
