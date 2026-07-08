@@ -226,15 +226,17 @@ class AdminLockerCommands(commands.Cog):
 
         觸發訊息由 cron 腳本用 Bot Token 透過 REST API 發送（靜音），
         因此 author 為 bot，必須在「忽略 bot 訊息」之前判斷，否則會被擋掉。
-        同時限定只在系統頻道接受，避免他人在其他頻道偽造觸發。
+        同時限定只在系統頻道或論壇頻道接受，避免他人在其他頻道偽造觸發。
         """
         # 先檢查是否為 cron 觸發訊息（即便 author 是 bot 也要放行）
         if message.content.strip() == "定時任務觸發：批量刷新置物櫃":
             sys_channel_id = int(os.getenv('DISCORD_SYS_CHANNEL_ID', '0'))
-            # 限定只在系統/管理員頻道接受觸發
-            if sys_channel_id and message.channel.id != sys_channel_id:
+            forum_channel_id = int(os.getenv('LOG_FORUM_CHANNEL_ID', '0'))
+            # 限定只在系統/管理員頻道或論壇頻道接受觸發
+            allowed = {c for c in (sys_channel_id, forum_channel_id) if c}
+            if allowed and message.channel.id not in allowed:
                 return
-            logger.info("📡 收到置物櫃自動刷新觸發訊息（來自系統頻道），開始執行...")
+            logger.info(f"📡 收到置物櫃自動刷新觸發訊息（頻道 {message.channel.id}），開始執行...")
             try:
                 success_count, fail_count, total = await self.refresh_all_lockers()
                 logger.info(
@@ -242,25 +244,12 @@ class AdminLockerCommands(commands.Cog):
                 )
             except Exception as e:
                 logger.error(f"❌ 自動刷新時發生錯誤: {e}", exc_info=True)
-            # 觸發訊息由 bot 發送，半小時後刪除以免管理員頻道累積雜訊
-            if message.author.bot:
-                asyncio.create_task(self._delete_trigger_after(message, 1800))
+            # 論壇頻道/系統頻道皆為機器人指令區，觸發訊息可保留無需刪除
             return
 
         # 忽略其他機器人訊息
         if message.author.bot:
             return
-
-    async def _delete_trigger_after(self, message, delay_seconds: int):
-        """延遲刪除 cron 觸發訊息（best-effort，刪除失敗僅記錄）。"""
-        try:
-            await asyncio.sleep(delay_seconds)
-            await message.delete()
-            logger.info(f"🗑️ 已刪除 cron 觸發訊息 (id={message.id})")
-        except discord.NotFound:
-            pass
-        except Exception as e:
-            logger.warning(f"⚠️ 刪除 cron 觸發訊息失敗: {e}")
 
 async def setup(bot):
     """載入此 Cog"""
