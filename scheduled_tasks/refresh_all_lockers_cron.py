@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
 批量刷新所有用戶置物櫃的 Cron 腳本
-排程設定：每周三、周六固定時間執行
-配置：0 14 * * 3,6 cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_all_lockers_cron.py
+排程設定：每週三固定時間執行
+配置：0 3 * * 3 cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_all_lockers_cron.py
 
-使用 Discord bot 通過 webhook 觸發置物櫃批量刷新
+直接調用核心置物櫃更新邏輯（不經由 Discord 訊息觸發）
 """
 
 import asyncio
 import os
 import sys
 import logging
+import discord
 from pathlib import Path
 from datetime import datetime
 
@@ -18,7 +19,6 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # 配置日誌
-import os
 LOG_DIR = os.path.expanduser("~/kkgroup/logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "locker_refresh.log")
@@ -33,89 +33,81 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from db_adapter import get_all_users
+# 載入環境變數
+from dotenv import load_dotenv
+load_dotenv()
 
-async def refresh_all_user_lockers_via_webhook():
-    """
-    通過 Discord webhook 觸發置物櫃批量刷新
-    
-    方案說明：
-    1. 通過 webhook 向 Discord 頻道發送請求
-    2. UIBot 接收到觸發信號
-    3. 執行置物櫃批量刷新
-    
-    優勢：無需直接訪問 bot 實例，完全獨立
-    """
-    try:
-        import requests
-        import json
-        
-        all_users = get_all_users()
-        total = len(all_users)
-        
-        logger.info("=" * 60)
-        logger.info("🔄 【定時任務】開始批量刷新置物櫃")
-        logger.info(f"📊 總用戶數：{total}")
-        logger.info(f"⏱️ 執行時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info("=" * 60)
-        
-        # 取得 webhook URL - 優先使用 ADMIN_WEBHOOK_URL，否則使用現有的 STARTUP_WEBHOOK
-        webhook_url = os.getenv('ADMIN_WEBHOOK_URL')
-        webhook_channel_id = os.getenv('STARTUP_WEBHOOK_CHANNEL_ID')
-        
-        if not webhook_url and webhook_channel_id:
-            # 創建臨時 webhook URL 使用現有頻道
-            webhook_token = os.getenv('STARTUP_WEBHOOK_TOKEN')
-            if webhook_token:
-                webhook_url = f"https://discord.com/api/webhooks/{webhook_channel_id}/{webhook_token}"
-                logger.info("✅ 使用現有 webhook 配置")
-            else:
-                logger.error("❌ 缺少 STARTUP_WEBHOOK_TOKEN")
-                return False
-        elif not webhook_url:
-            logger.error("❌ 未設定任何 webhook 配置")
-            logger.info("💡 提示：需要在 .env 中設定 ADMIN_WEBHOOK_URL 或 STARTUP_WEBHOOK_TOKEN")
-            return False
-        
-        # 構建 webhook 訊息
-        embed_data = {
-            "title": "🔄 定時置物櫃批量刷新已觸發",
-            "description": f"系統每周三、周六下午2點自動執行置物櫃批量刷新\n\n📊 待刷新用戶數：**{total}**",
-            "color": 0xFFA500,
-            "footer": {
-                "text": "系統排程任務 - 每周三、六執行"
-            },
-            "timestamp": datetime.utcnow().isoformat() + "Z"
-        }
-        
-        payload = {
-            "content": "定時任務觸發：批量刷新置物櫃",
-            "embeds": [embed_data]
-        }
-        
-        # 發送 webhook
-        response = requests.post(
-            webhook_url,
-            json=payload,
-            timeout=10
-        )
-        
-        if response.status_code == 204:
-            logger.info("✅ Webhook 已發送，置物櫃批量刷新已觸發")
-            logger.info("=" * 60)
-            return True
-        else:
-            logger.error(f"❌ Webhook 發送失敗：HTTP {response.status_code}")
-            logger.error(f"   Response：{response.text[:200]}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"❌ 刷新失敗：{e}", exc_info=True)
+
+async def main():
+    """建立臨時 Discord 客戶端，載入所需 Cog 並直接執行置物櫃更新"""
+    bot_token = os.getenv('UI_DISCORD_BOT_TOKEN')
+    if not bot_token:
+        logger.error("❌ 缺少 UI_DISCORD_BOT_TOKEN 環境變數")
         return False
+
+    # 必要的意圖：我們需要獲取頻道和使用者資訊
+    intents = discord.Intents.default()
+    bot = discord.Client(intents=intents)
+
+    # 預先載入 Cog
+    try:
+        from cogs.ui.uibody import UserPanel
+        from cogs.ui.admin_locker_commands import AdminLockerCommands
+    except Exception as e:
+        logger.exception(f"❌ 載入 Cog 失敗: {e}")
+        return False
+
+    # 將 Cog 加入 Bot（會在 bot 就緒時自動呼叫 cog_load）
+    try:
+        if 'UserPanel' not in bot.cogs:
+            bot.add_cog(UserPanel(bot))
+            logger.info("📦 已加載 UserPanel Cog")
+        if 'AdminLockerCommands' not in bot.cogs:
+            bot.add_cog(AdminLockerCommands(bot))
+            logger.info("📦 已加載 AdminLockerCommands Cog")
+    except Exception as e:
+        logger.exception(f"❌ 加載 Cog 到 Bot 失敗: {e}")
+        return False
+
+    @bot.event
+    async def on_ready():
+        logger.info(f"✅ 已登入為 {bot.user} (ID: {bot.user.id})")
+        # 等待所有 Cog 的 cog_load 完成（它們內部會 await bot.wait_until_ready()）
+        await asyncio.sleep(1)  # 給予初始化時間
+
+        # 取得 AdminLockerCommands 實例
+        admin_cog = bot.get_cog('AdminLockerCommands')
+        if admin_cog is None:
+            logger.error("❌ 無法取得 AdminLockerCommands Cog 實例")
+            await bot.close()
+            return
+
+        # 直接執行置物櫃更新核心邏輯
+        try:
+            logger.info("🔄 開始執行批量置物櫃更新...")
+            success_count, fail_count, total = await admin_cog.refresh_all_lockers()
+            success_rate = (success_count / total * 100) if total > 0 else 0
+            logger.info(
+                f"✅ 批量更新完成：{success_count}/{total} 成功 "
+                f"({success_rate:.1f}% 成功率), {fail_count} 失敗"
+            )
+        except Exception as e:
+            logger.exception(f"❌ 執行置物櫃更新時發生錯誤: {e}")
+        finally:
+            await bot.close()
+
+    try:
+        await bot.start(bot_token)
+    except Exception as e:
+        logger.exception(f"❌ 啟動 Discord 客戶端失敗: {e}")
+        return False
+    return True
+
 
 if __name__ == '__main__':
     # 直接運行該腳本
-    success = asyncio.run(refresh_all_user_lockers_via_webhook())
+    logger.info("🚀 Cron 腳本開始執行")
+    success = asyncio.run(main())
     exit_code = 0 if success else 1
     logger.info(f"✅ Cron 任務完成 (exit code: {exit_code})")
     sys.exit(exit_code)
