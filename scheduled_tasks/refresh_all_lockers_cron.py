@@ -18,12 +18,17 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # 配置日誌
+import os
+LOG_DIR = os.path.expanduser("~/kkgroup/logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, "locker_refresh.log")
+
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s: %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('/var/log/kkgroup_locker_refresh.log')
+        logging.FileHandler(LOG_FILE)
     ]
 )
 logger = logging.getLogger(__name__)
