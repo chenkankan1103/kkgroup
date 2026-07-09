@@ -34,7 +34,15 @@ def _build_locker_view(cog, bot, user_id: int, thread: Optional[discord.Thread])
         return None
 
     from ..views import LockerPanelView
-    return LockerPanelView(resolved_cog, user_id, thread)
+    view = LockerPanelView(resolved_cog, user_id, thread)
+    # 註冊 View 到 bot，確保根據 custom_id 的交互回調能正常運行
+    # （編輯訊息時替換 view 會導致舊 view 失效，新 view 必須被註冊）
+    try:
+        if hasattr(bot, 'add_view'):
+            bot.add_view(view)
+    except Exception:
+        pass
+    return view
 
 
 async def generate_canonical_locker_embed(
