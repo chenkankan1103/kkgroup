@@ -8,6 +8,7 @@ import asyncio
 import aiohttp
 from datetime import datetime, timedelta, timezone
 from .database import get_user, update_user
+from shared.utils.llm_text_router import complete_text_with_fallback
 
 # 台灣時區（UTC+8）
 TAIWAN_TZ = timezone(timedelta(hours=8))
@@ -603,18 +604,17 @@ async def process_checkin(user_id, user_obj, guild):
 async def generate_daily_checkin_story(level_title, salary_percent, streak, user_name):
     """使用 AI 生成每日打卡情境描述"""
     try:
-        if not GROQ_API_KEY or not GROQ_API_URL:
-            return get_fallback_checkin_story(salary_percent)
-        
-        # 根據薪資比例判斷今日狀況
-        if salary_percent >= 0.8:
-            situation = "非常順利，大豐收"
-        elif salary_percent >= 0.5:
-            situation = "普通，正常營運"
-        else:
-            situation = "不太順利，有些波折"
-        
-        prompt = f"""你是詐騙園區的故事敘述者。請描述今日打卡情境：
+        # 先嘗試使用 Groq (主要)
+        if GROQ_API_KEY and GROQ_API_URL:
+            # 根據薪資比例判斷今日狀況
+            if salary_percent >= 0.8:
+                situation = "非常順利，大豐收"
+            elif salary_percent >= 0.5:
+                situation = "普通，正常營運"
+            else:
+                situation = "不太順利，有些波折"
+
+            prompt = f"""你是詐騙園區的故事敘述者。請描述今日打卡情境：
 
 角色職位：{level_title}
 今日狀況：{situation}（薪資達成率 {int(salary_percent*100)}%）
@@ -629,36 +629,98 @@ async def generate_daily_checkin_story(level_title, salary_percent, streak, user
 
 直接輸出情境描述，不需要任何前綴。"""
 
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": GROQ_API_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "你是一個創作詐騙園區日常情境的作家。"
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.7,
-            "max_tokens": 150
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(GROQ_API_URL, headers=headers, json=data, timeout=8) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    story = result['choices'][0]['message']['content'].strip()
-                    return story.strip('"').strip("'").strip()
-                else:
-                    return get_fallback_checkin_story(salary_percent)
-                    
+            headers = {
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            }
+
+            data = {
+                "model": GROQ_API_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "你是一個創作詐騙園區日常情境的作家。"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0.7,
+                "max_tokens": 150
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(GROQ_API_URL, headers=headers, json=data, timeout=8) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        story = result['choices'][0]['message']['content'].strip()
+                        return story.strip('"').strip("'").strip()
+                    elif response.status == 429:
+                        print("⚠️ Groq API 速率限制，嘗試備用方案")
+                    else:
+                        print(f"⚠️ Groq API 錯誤 {response.status}")
+
+        # 備用方案：使用 LLMClient (包含速率限制和備用機制)
+        try:
+            # 從 work_system.py 的開頭導入 LLMClient
+            import sys
+            import os
+            parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if parent_dir not in sys.path:
+                sys.path.insert(0, parent_dir)
+
+            from cogs.common.AI import LLMClient
+            llm_client = LLMClient()
+
+            # 構建訊息
+            if salary_percent >= 0.8:
+                situation = "非常順利，大豐收"
+            elif salary_percent >= 0.5:
+                situation = "普通，正常營運"
+            else:
+                situation = "不太順利，有些波折"
+
+            prompt = f"""你是詐騙園區的故事敘述者。請描述今日打卡情境：
+
+角色職位：{level_title}
+今日狀況：{situation}（薪資達成率 {int(salary_percent*100)}%）
+連續出勤：{streak} 天
+
+請生成一段 1-2 句的簡短情境描述，說明今天為什麼會有這樣的收入。要求：
+1. 使用第二人稱「你」
+2. 符合詐騙園區的風格
+3. 反映今日業績的好壞
+4. 簡潔有力，不超過 50 字
+5. 不要提到具體金額
+
+直接輸出情境描述，不需要任何前綴。"""
+
+            messages = [
+                {"role": "system", "content": "你是一個創作詐騙園區日常情境的作家。"},
+                {"role": "user", "content": prompt}
+            ]
+
+            # 嘗試使用完整的 fallback 機制
+            result, provider = await complete_text_with_fallback(
+                messages,
+                max_tokens=150,
+                nvidia_timeout=12,
+                gemini_timeout=8,
+                groq_timeout=8
+            )
+
+            if result:
+                # 只取第一行作為故事，移除引號
+                story = result.strip().split('\n')[0].strip('"').strip("'")
+                return story if story else get_fallback_checkin_story(salary_percent)
+
+        except Exception as e:
+            print(f"⚠️ LLMClient 調用失敗: {e}")
+
+        # 最後備用方案
+        return get_fallback_checkin_story(salary_percent)
+
     except Exception as e:
         print(f"⚠️ AI 生成打卡故事失敗: {e}")
         return get_fallback_checkin_story(salary_percent)
@@ -846,18 +908,13 @@ ACTION_STORIES = {
 }
 
 async def generate_daily_checkin_story(level_title, salary_percent, streak, user_name):
-    """生成每日打卡故事"""
+    """使用完整 fallback 機制生成每日打卡故事"""
     try:
-        if not AI_API_KEY or not AI_API_URL:
-            # 如果沒有 AI API，使用簡單的故事
-            salary_desc = "大豐收" if salary_percent > 0.8 else "普通" if salary_percent > 0.5 else "不太順利"
-            return f"今天的工作表現{salary_desc}，連續出勤已達 {streak} 天。"
-        
         prompt = f"""你是一個詐騙園區的日報編輯。請為員工 {user_name} 生成一段簡短的打卡日誌。
 
 員工資訊：
 - 職稱：{level_title}
-- 今日薪資表現：{int(salary_percent * 100)}% 
+- 今日薪資表現：{int(salary_percent * 100)}%
 - 連續出勤：{streak} 天
 
 請生成一段 1-2 句的簡短描述，描述這位員工今天的工作表現和心情。要求：
@@ -869,59 +926,49 @@ async def generate_daily_checkin_story(level_title, salary_percent, streak, user
 
 直接輸出故事內容。"""
 
-        headers = {
-            "Authorization": f"Bearer {AI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": AI_API_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "你是一個詐騙園區的日報編輯，擅長用風趣的文字記錄員工的工作表現。"
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.7,
-            "max_tokens": 100
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(AI_API_URL, headers=headers, json=data, timeout=10) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    story = result['choices'][0]['message']['content'].strip()
-                    
-                    # 清理可能的引號
-                    story = story.strip('"').strip("'").strip()
-                    
-                    return story
-                else:
-                    print(f"⚠️ AI API 回應錯誤: {response.status}")
-                    return f"今天的工作表現{int(salary_percent * 100)}%，連續出勤已達 {streak} 天。"
-                    
-    except asyncio.TimeoutError:
-        print("⚠️ AI API 請求超時")
-        return f"今天的工作表現{int(salary_percent * 100)}%，連續出勤已達 {streak} 天。"
+        messages = [
+            {
+                "role": "system",
+                "content": "你是一個詐騙園區的日報編輯，擅長用風趣的文字記錄員工的工作表現。"
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+
+        result, provider = await complete_text_with_fallback(
+            messages,
+            max_tokens=100,
+            nvidia_timeout=8,
+            gemini_timeout=6,
+            groq_timeout=6
+        )
+
+        if result:
+            story = result.strip()
+            # 清理可能的引號
+            story = story.strip('"').strip("'").strip()
+            return story
+        else:
+            print("⚠️ 所有 AI 服務都無回應，使用備用故事")
+            salary_desc = "大豐收" if salary_percent > 0.8 else "普通" if salary_percent > 0.5 else "不太順利"
+            return f"今天的工作表現{salary_desc}，連續出勤已達 {streak} 天。"
+
     except Exception as e:
         print(f"⚠️ AI 生成打卡故事失敗: {e}")
         traceback.print_exc()
-        return f"今天的工作表現{int(salary_percent * 100)}%，連續出勤已達 {streak} 天。"
+        salary_desc = "大豐收" if salary_percent > 0.8 else "普通" if salary_percent > 0.5 else "不太順利"
+        return f"今天的工作表現{salary_desc}，連續出勤已達 {streak} 天。"
 
 async def generate_story_with_ai(action_name, level_title, success, reward, user_name):
-    """使用 Groq API 生成行動故事"""
+    """使用完整 fallback 機制生成行動故事"""
     try:
-        if not GROQ_API_KEY or not GROQ_API_URL:
-            # 如果沒有設定 Groq API，使用預設故事
-            return get_fallback_story(action_name, success, reward)
-        
+        # 使用完整的 fallback 機制（NVIDIA -> Groq -> Gemini 主要 -> Gemini 備援）
+
         # 根據成功或失敗設定提示詞
         result_type = "成功" if success else "失敗"
-        
+
         prompt = f"""你是一個詐騙園區的故事敘述者。請用第二人稱描述以下情境：
 
 角色職位：{level_title}
@@ -939,46 +986,38 @@ async def generate_story_with_ai(action_name, level_title, success, reward, user
 
 直接輸出故事內容，不需要任何前綴或標題。"""
 
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": GROQ_API_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "你是一個擅長創作詐騙園區故事的作家，擅長用簡潔生動的文字描述各種詐騙行動。"
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.8,
-            "max_tokens": 200
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(GROQ_API_URL, headers=headers, json=data, timeout=10) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    story = result['choices'][0]['message']['content'].strip()
-                    
-                    # 清理可能的引號或多餘格式
-                    story = story.strip('"').strip("'").strip()
-                    
-                    return story
-                else:
-                    print(f"⚠️ Groq API 回應錯誤: {response.status}")
-                    return get_fallback_story(action_name, success, reward)
-                    
-    except asyncio.TimeoutError:
-        print("⚠️ Groq API 請求超時")
-        return get_fallback_story(action_name, success, reward)
+        messages = [
+            {
+                "role": "system",
+                "content": "你是一個擅長創作詐騙園區故事的作家，擅長用簡潔生動的文字描述各種詐騙行動。"
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+
+        result, provider = await complete_text_with_fallback(
+            messages,
+            max_tokens=150,
+            nvidia_timeout=12,
+            gemini_timeout=8,
+            groq_timeout=8
+        )
+
+        if result:
+            story = result.strip()
+            # 清理可能的引號或多餘格式
+            story = story.strip('"').strip("'").strip()
+            # 取第一行作為故事
+            story = story.split('\n')[0].strip()
+            return story if story else get_fallback_story(action_name, success, reward)
+        else:
+            print("⚠️ 所有 AI 服務都無回應，使用備用故事")
+            return get_fallback_story(action_name, success, reward)
+
     except Exception as e:
-        print(f"⚠️ Groq 生成故事失敗: {e}")
+        print(f"⚠️ AI 生成行動故事失敗: {e}")
         traceback.print_exc()
         return get_fallback_story(action_name, success, reward)
 

@@ -33,8 +33,8 @@ class NVIDIAAIClient:
             "deepseek-flash": "deepseek-ai/deepseek-v4-flash"  # 快速版本
         }
         
-        # 預設使用 minimax-m2.7 模型
-        self.model = os.getenv("NVIDIA_MODEL", "minimaxai/minimax-3.7b")
+        # 預設使用 nemotron-super 模型
+        self.model = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b")
         
         if not self.api_key:
             print("❌ NVIDIA_API_KEY 未設置")
