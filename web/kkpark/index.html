@@ -505,9 +505,7 @@
                 <div class="glow-orb glow-orb-3"></div>
             </div>
 
-            <!-- Orbiting Elements -->
-            <div class="absolute inset-0 pointer-events-none" id="orbit-container"></div>
-
+            
             <div class="relative z-10 max-w-7xl mx-auto px-6 py-20">
                 <div class="text-center">
                     <!-- Badge -->
@@ -1584,7 +1582,7 @@
 
             // Initialize all modules
             new ParticleSystem();
-            createOrbitElements();
+            // createOrbitElements(); // Disabled to reduce orbit effect
             renderCompanies();
             initCategoryFilters();
             initScrollReveal();
