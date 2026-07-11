@@ -1101,15 +1101,15 @@
             constructor() {
                 this.canvas = document.getElementById('particle-canvas');
                 this.ctx = this.canvas.getContext('2d');
-                this.fgParticles = [];
-                this.bgParticles = [];
+                this.fgParticles = []; // foreground characters (interactive)
+                this.bgParticles = []; // background characters (ambient)
                 this.mouse = { x: 0, y: 0 };
                 this.mouseVelocity = { x: 0, y: 0 };
                 this.lastMouse = { x: 0, y: 0 };
                 this.animationId = null;
-                this.fgParticleCount = window.innerWidth < 768 ? 3000 : 6000;
-                this.bgParticleCount = Math.floor(this.fgParticleCount / 10); // 300/600
-                this.connectionDistance = 80;
+                this.fgParticleCount = window.innerWidth < 768 ? 100 : 200; // fewer but more detailed
+                this.bgParticleCount = Math.floor(this.fgParticleCount / 4); // 50/50
+                this.connectionDistance = 80; // kept for compatibility but not used
 
                 this.init();
                 this.bindEvents();
@@ -1130,67 +1130,84 @@
             createFgParticles() {
                 this.fgParticles = [];
                 for (let i = 0; i < this.fgParticleCount; i++) {
-                    this.fgParticles.push(this.createFgParticle());
+                    this.fgParticles.push(this.createFgCharacter());
                 }
             }
 
             createBgParticles() {
                 this.bgParticles = [];
                 for (let i = 0; i < this.bgParticleCount; i++) {
-                    this.bgParticles.push(this.createBgParticle());
+                    this.bgParticles.push(this.createBgCharacter());
                 }
             }
 
-            createFgParticle() {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = 0.1 + Math.random() * 0.3;
+            createFgCharacter() {
+                const size = 8 + Math.random() * 4; // 8-12px tall
                 return {
                     x: Math.random() * this.canvas.width,
                     y: Math.random() * this.canvas.height,
-                    vx: Math.cos(angle) * speed,
-                    vy: Math.sin(angle) * speed,
-                    radius: 0.5 + Math.random() * 1.5,
-                    baseRadius: 0.5 + Math.random() * 1.5,
+                    vx: (Math.random() - 0.5) * 0.8, // -0.4 to 0.4
+                    vy: (Math.random() - 0.5) * 0.8,
+                    size: size,
+                    headSize: size * 0.2,
+                    bodyHeight: size * 0.4,
+                    legLength: size * 0.3,
+                    armLength: size * 0.25,
                     color: this.getFgRandomColor(),
-                    opacity: 0.1 + Math.random() * 0.3,
+                    opacity: 0.7 + Math.random() * 0.3,
                     pulsePhase: Math.random() * Math.PI * 2,
-                    pulseSpeed: 0.01 + Math.random() * 0.02,
+                    pulseSpeed: 0.02 + Math.random() * 0.03,
+                    // animation states
+                    legPhase: Math.random() * Math.PI * 2,
+                    armPhase: Math.random() * Math.PI * 2,
+                    panic: false, // when mouse is near
+                    panicTimer: 0
                 };
             }
 
-            createBgParticle() {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = 0.02 + Math.random() * 0.05; // slower
+            createBgCharacter() {
+                const size = 12 + Math.random() * 6; // 12-18px tall
                 return {
                     x: Math.random() * this.canvas.width,
                     y: Math.random() * this.canvas.height,
-                    vx: Math.cos(angle) * speed,
-                    vy: Math.sin(angle) * speed,
-                    radius: 1.0 + Math.random() * 2.0, // larger
-                    baseRadius: 1.0 + Math.random() * 2.0,
+                    vx: (Math.random() - 0.5) * 0.3, // slower
+                    vy: (Math.random() - 0.5) * 0.3,
+                    size: size,
+                    headSize: size * 0.2,
+                    bodyHeight: size * 0.4,
+                    legLength: size * 0.3,
+                    armLength: size * 0.25,
                     color: this.getBgRandomColor(),
-                    opacity: 0.05 + Math.random() * 0.1, // more transparent
+                    opacity: 0.4 + Math.random() * 0.3,
                     pulsePhase: Math.random() * Math.PI * 2,
-                    pulseSpeed: 0.005 + Math.random() * 0.01, // slower pulse
+                    pulseSpeed: 0.01 + Math.random() * 0.02,
+                    legPhase: Math.random() * Math.PI * 2,
+                    armPhase: Math.random() * Math.PI * 2
                 };
             }
 
             getFgRandomColor() {
+                // KK Scam Park theme: somewhat sickly, corporate-gone-wrong colors
                 const colors = [
-                    { r: 0, g: 212, b: 255 },    // cyan
-                    { r: 168, g: 85, b: 247 },   // purple
-                    { r: 244, g: 114, b: 182 },  // pink
-                    { r: 34, g: 211, b: 238 },   // sky
+                    { r: 220, g: 50, b: 50 },   // red-ish (alert/danger)
+                    { r: 50, g: 180, b: 50 },   // green-ish (money/greed)
+                    { r: 50, g: 100, b: 220 },  // blue-ish (tech/scam)
+                    { r: 200, g: 100, b: 30 },  // orange-ish (warning)
+                    { r: 150, g: 50, b: 150 },  // purple-ish (mystery)
+                    { r: 200, g: 200, b: 50 }   // yellow-ish (fake gold)
                 ];
                 return colors[Math.floor(Math.random() * colors.length)];
             }
 
             getBgRandomColor() {
+                // More subdued versions for background
                 const colors = [
-                    { r: 0, g: 100, b: 150 },    // dark cyan
-                    { r: 80, g: 40, b: 120 },    // dark purple
-                    { r: 120, g: 60, b: 90 },    // dark pink
-                    { r: 20, g: 100, b: 120 },   // dark sky
+                    { r: 100, g: 20, b: 20 },
+                    { r: 20, g: 80, b: 20 },
+                    { r: 20, g: 40, b: 100 },
+                    { r: 80, g: 40, b: 10 },
+                    { r: 70, g: 20, b: 70 },
+                    { r: 80, g: 80, b: 20 }
                 ];
                 return colors[Math.floor(Math.random() * colors.length)];
             }
@@ -1210,10 +1227,10 @@
                     }
                 }, { passive: true });
 
-                // Reduce particles on mobile
+                // Reduce particles on mobile for performance
                 if (window.innerWidth < 768) {
-                    this.fgParticleCount = 60;
-                    this.bgParticleCount = Math.floor(this.fgParticleCount / 10);
+                    this.fgParticleCount = 50;
+                    this.bgParticleCount = Math.floor(this.fgParticleCount / 4);
                 }
             }
 
@@ -1226,22 +1243,81 @@
 
             updateParticles() {
                 this.updateMouseVelocity();
+                const mouseSpeed = Math.sqrt(this.mouseVelocity.x ** 2 + this.mouseVelocity.y ** 2);
 
-                // Update foreground particles (with mouse interaction)
+                // Update foreground characters (interactive)
                 this.fgParticles.forEach(p => {
-                    // Mouse attraction/repulsion
+                    // Mouse panic effect
                     const dx = this.mouse.x - p.x;
                     const dy = this.mouse.y - p.y;
                     const dist = Math.sqrt(dx * dx + dy * dy);
+                    const panicDistance = 120;
 
-                    if (dist < 200 && dist > 0) {
-                        const force = (200 - dist) / 200 * 0.5;
+                    if (dist < panicDistance && dist > 0) {
+                        // Mouse is close - panic!
+                        p.panic = true;
+                        const panicForce = (panicDistance - dist) / panicDistance * 1.5;
                         const angle = Math.atan2(dy, dx);
-                        p.vx += Math.cos(angle) * force * (this.mouseVelocity.x !== 0 || this.mouseVelocity.y !== 0 ? 2 : 0.5);
-                        p.vy += Math.sin(angle) * force * (this.mouseVelocity.x !== 0 || this.mouseVelocity.y !== 0 ? 2 : 0.5);
+                        // Run away from mouse
+                        p.vx -= Math.cos(angle) * panicForce * 0.5;
+                        p.vy -= Math.sin(angle) * panicForce * 0.5;
+                        // Flail arms/legs when panicking
+                        p.armPhase += 0.5;
+                        p.legPhase += 0.5;
+                    } else {
+                        p.panic = false;
+                        // Normal ambient movement
+                        p.legPhase += 0.15;
+                        p.armPhase += 0.1;
                     }
 
-                    // Velocity damping
+                    // Apply velocity damping
+                    p.vx *= 0.98;
+                    p.vy *= 0.98;
+
+                    // Update position
+                    p.x += p.vx;
+                    p.y += p.vy;
+
+                    // Boundary wrap with (p.x += 20 + p.x = this.canvas.width+  if((p.x -20) > (p.x > this.canvas.width + 20) {
+                    p.x = this.canvas.width + 20;
+                } else if (p.x < 0) {
+                    p.x = 0;
+                } else if (p.x > this.canvas.width) {
+                    p.x = this.canvas.width;
+                }
+
+                if (p.y < -20) {
+                    p.y = this.canvas.height + 20;
+                } else if (p.y > this.canvas.height + 20) {
+                    p.y = -20;
+                } else if (p.y < 0) {
+                    p.y = 0;
+                } else if (p.y > this.canvas.height) {
+                    p.y = this.canvas.height;
+                }
+
+                    // Pulse animation (subtle glow)
+                    p.pulsePhase += p.pulseSpeed;
+                    p.opacity = 0.6 + Math.sin(p.pulsePhase) * 0.2;
+                });
+
+                // Update background characters (ambient, less reactive)
+                this.bgParticles.forEach(p => {
+                    // Mild mouse avoidance (less intense)
+                    const dx = this.mouse.x - p.x;
+                    const dy = this.mouse.y - p.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const avoidanceDistance = 80;
+
+                    if (dist < avoidanceDistance && dist > 0 && mouseSpeed > 0.5) {
+                        const avoidForce = (avoidanceDistance - dist) / avoidanceDistance * 0.3;
+                        const angle = Math.atan2(dy, dx);
+                        p.vx -= Math.cos(angle) * avoidForce;
+                        p.vy -= Math.sin(angle) * avoidForce;
+                    }
+
+                    // Apply velocity damping
                     p.vx *= 0.99;
                     p.vy *= 0.99;
 
@@ -1250,33 +1326,14 @@
                     p.y += p.vy;
 
                     // Boundary wrap
-                    if (p.x < 0) p.x = this.canvas.width;
-                    if (p.x > this.canvas.width) p.x = 0;
-                    if (p.y < 0) p.y = this.canvas.height;
-                    if (p.y > this.canvas.height) p.y = 0;
+                    if (p.x < -20) p.x = this.canvas.width + 20;
+                    if (p.x > this.canvas.width + 20) p.x = -20;
+                    if (p.y < -20) p.y = this.canvas.height + 20;
+                    if (p.y > this.canvas.height + 20) p.y = -20;
 
                     // Pulse animation
                     p.pulsePhase += p.pulseSpeed;
-                    p.radius = p.baseRadius * (1 + Math.sin(p.pulsePhase) * 0.3);
-                    p.opacity = 0.15 + Math.sin(p.pulsePhase) * 0.15;
-                });
-
-                // Update background particles (no mouse interaction, just slow drift)
-                this.bgParticles.forEach(p => {
-                    // Update position
-                    p.x += p.vx;
-                    p.y += p.vy;
-
-                    // Boundary wrap
-                    if (p.x < 0) p.x = this.canvas.width;
-                    if (p.x > this.canvas.width) p.x = 0;
-                    if (p.y < 0) p.y = this.canvas.height;
-                    if (p.y > this.canvas.height) p.y = 0;
-
-                    // Pulse animation
-                    p.pulsePhase += p.pulseSpeed;
-                    p.radius = p.baseRadius * (1 + Math.sin(p.pulsePhase) * 0.3);
-                    p.opacity = 0.05 + Math.sin(p.pulsePhase) * 0.05; // subtle pulse
+                    p.opacity = 0.5 + Math.sin(p.pulsePhase) * 0.2; // subtle pulse
                 });
             }
 
@@ -1284,47 +1341,95 @@
                 // Clear full canvas each frame to eliminate motion blur trails
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-                // Draw background particles first
+                // Draw background characters first
                 this.bgParticles.forEach(p => {
-                    const gradient = this.ctx.createRadialGradient(
-                        p.x, p.y, 0,
-                        p.x, p.y, p.radius * 2
-                    );
-                    gradient.addColorStop(0, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity})`);
-                    gradient.addColorStop(1, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, 0)`);
-
-                    this.ctx.beginPath();
-                    this.ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
-                    this.ctx.fillStyle = gradient;
-                    this.ctx.fill();
-
-                    // Core dot
-                    this.ctx.beginPath();
-                    this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                    this.ctx.fillStyle = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity * 2})`;
-                    this.ctx.fill();
+                    this.drawCharacter(p, false);
                 });
 
-                // Draw foreground particles
+                // Draw foreground characters
                 this.fgParticles.forEach(p => {
-                    const gradient = this.ctx.createRadialGradient(
-                        p.x, p.y, 0,
-                        p.x, p.y, p.radius * 2
-                    );
-                    gradient.addColorStop(0, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity})`);
-                    gradient.addColorStop(1, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, 0)`);
-
-                    this.ctx.beginPath();
-                    this.ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
-                    this.ctx.fillStyle = gradient;
-                    this.ctx.fill();
-
-                    // Core dot
-                    this.ctx.beginPath();
-                    this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                    this.ctx.fillStyle = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity * 2})`;
-                    this.ctx.fill();
+                    this.drawCharacter(p, true);
                 });
+            }
+
+            drawCharacter(p, isForeground = false) {
+                // Calculate positions
+                const headY = p.y - p.bodyHeight/2 - p.headSize/2;
+                const bodyTop = p.y - p.bodyHeight/2;
+                const bodyBottom = p.y + p.bodyHeight/2;
+
+                // Body color with opacity
+                const bodyColor = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity})`;
+                const highlightColor = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${Math.min(p.opacity + 0.2, 1)})`;
+
+                // Head
+                this.ctx.beginPath();
+                this.ctx.arc(p.x, headY, p.headSize, 0, Math.PI * 2);
+                this.ctx.fillStyle = bodyColor;
+                this.ctx.fill();
+
+                // Body (simple rectangle)
+                this.ctx.fillStyle = bodyColor;
+                this.ctx.fillRect(p.x - p.headSize/2, bodyTop, p.headSize, p.bodyHeight);
+
+                // Arms
+                const armAngle = p.armPhase;
+                const leftArmX = p.x - p.headSize/2 + Math.cos(armAngle) * p.armLength;
+                const leftArmY = bodyTop + Math.sin(armAngle) * p.armLength;
+                const rightArmX = p.x + p.headSize/2 + Math.cos(armAngle + Math.PI) * p.armLength;
+                const rightArmY = bodyTop + Math.sin(armAngle + Math.PI) * p.armLength;
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(p.x - p.headSize/2, bodyTop + p.bodyHeight/3); // shoulder
+                this.ctx.lineTo(leftArmX, leftArmY);
+                this.ctx.strokeStyle = bodyColor;
+                this.ctx.lineWidth = p.headSize/3;
+                this.ctx.stroke();
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(p.x + p.headSize/2, bodyTop + p.bodyHeight/3); // shoulder
+                this.ctx.lineTo(rightArmX, rightArmY);
+                this.ctx.strokeStyle = bodyColor;
+                this.ctx.lineWidth = p.headSize/3;
+                this.ctx.stroke();
+
+                // Legs
+                const legOffset = Math.sin(p.legPhase) * 0.3; // slight bending
+                const leftLegX = p.x - p.headSize/4;
+                const leftLegY = bodyBottom + Math.sin(p.legPhase) * p.legLength * 0.5;
+                const rightLegX = p.x + p.headSize/4;
+                const rightLegY = bodyBottom + Math.sin(p.legPhase + Math.PI) * p.legLength * 0.5;
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(p.x - p.headSize/4, bodyBottom);
+                this.ctx.lineTo(leftLegX, leftLegY);
+                this.ctx.strokeStyle = bodyColor;
+                this.ctx.lineWidth = p.headSize/2;
+                this.ctx.stroke();
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(p.x + p.headSize/4, bodyBottom);
+                this.ctx.lineTo(rightLegX, rightLegY);
+                this.ctx.strokeStyle = bodyColor;
+                this.ctx.lineWidth = p.headSize/2;
+                this.ctx.stroke();
+
+                // If panicking, add some visual effect
+                if (p.panic) {
+                    // Add motion lines behind
+                    const panicAngle = Math.atan2(p.vy, p.vx) + Math.PI;
+                    const panicLength = 8;
+                    const panicX = p.x - Math.cos(panicAngle) * panicLength;
+                    const panicY = p.y - Math.sin(panicAngle) * panicLength;
+
+                    this.ctx.strokeStyle = `rgba(255, 255, 255, 0.3)`;
+                    this.ctx.lineWidth = 1;
+
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(p.x, p.y);
+                    this.ctx.lineTo(panicX, panicY);
+                    this.ctx.stroke();
+                }
             }
 
             animate() {
