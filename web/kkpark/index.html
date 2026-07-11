@@ -1274,9 +1274,8 @@
             }
 
             draw() {
-                // Clear with slight trail for motion blur effect
-                this.ctx.fillStyle = 'rgba(3, 7, 18, 0.15)';
-                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                // Clear full canvas each frame to eliminate motion blur trails
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
                 this.drawParticles();
             }
