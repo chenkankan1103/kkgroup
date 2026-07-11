@@ -28,7 +28,13 @@ import time
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from shared.utils.llm_text_router import GROQ_MODEL
+from typing import Optional, Dict, List, Tuple, Any
+
+# ─── 工具模組 ────────────────────────────────────────────────
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from utils.nvidia_ai import call_nvidia_ai
+from shared.utils.llm_text_router import GROQ_MODEL
 
 # ─── 路徑設定 ────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -367,7 +373,7 @@ def collect_errors(services: List[str], since_minutes: int = 10) -> List[dict]:
                 continue
 
             # 提取時間戳
-            ts_match = re.match(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", line)
+            ts_match = re.match(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})", line)
             if not ts_match:
                 continue
 
@@ -394,10 +400,11 @@ def collect_errors(services: List[str], since_minutes: int = 10) -> List[dict]:
                 "raw": line,
             })
 
-    # 更新最後檢查時間
-    for service in services:
-        state.setdefault("last_check", {})[service] = now
-    _save_state(state)
+    # 更新最後檢查時間（僅在有新錯誤時寫入，以減少不必要的 I/O）
+    if errors:
+        for service in services:
+            state.setdefault("last_check", {})[service] = now
+        _save_state(state)
 
     return errors
 
@@ -569,7 +576,7 @@ class L2Fixer:
     def __init__(self):
         self.nvidia_key = os.getenv("NVIDIA_API_KEY", "")
         self.groq_key = os.getenv("GROQ_API_KEY", "")
-        self.nvidia_model = os.getenv("NVIDIA_MODEL", "deepseek-ai/deepseek-v4-pro")
+        self.nvidia_model = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b")
     
     async def analyze_and_fix(
         self, error_text: str, file_path: str, service: str
@@ -639,47 +646,24 @@ class L2Fixer:
         """呼叫 NVIDIA AI API"""
         if not self.nvidia_key:
             return None
-        
+
         try:
-            import aiohttp
-            
             messages = [
                 {"role": "system", "content": "你是 KKGroup Discord Bot 系統的 AI 除錯專家。請只輸出 JSON。"},
                 {"role": "user", "content": prompt},
             ]
-            
-            payload = {
-                "model": self.nvidia_model,
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 2000,
-            }
-            
-            headers = {
-                "Authorization": f"Bearer {self.nvidia_key}",
-                "Content-Type": "application/json",
-            }
-            
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                async with session.post(
-                    "https://integrate.api.nvidia.com/v1/chat/completions",
-                    json=payload,
-                    headers=headers,
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        if content:
-                            return self._parse_ai_response(content)
-                    else:
-                        _log(f"NVIDIA API 錯誤: {resp.status}", "WARN")
-                        return None
-        except ImportError:
-            _log("缺少 aiohttp，無法呼叫 NVIDIA API", "WARN")
-            return None
-        except asyncio.TimeoutError:
-            _log("NVIDIA API 逾時", "WARN")
-            return None
+
+            content = await call_nvidia_ai(
+                messages,
+                temperature=0.3,
+                max_tokens=2000,
+                model=self.nvidia_model,
+            )
+
+            if content:
+                return self._parse_ai_response(content)
+            else:
+                return None
         except Exception as e:
             _log(f"NVIDIA API 異常: {e}", "WARN")
             return None
@@ -688,27 +672,27 @@ class L2Fixer:
         """呼叫 Groq API（免費備援）"""
         if not self.groq_key:
             return None
-        
+
         try:
             import aiohttp
-            
+
             messages = [
                 {"role": "system", "content": "你是 KKGroup Discord Bot 系統的 AI 除錯專家。請只輸出 JSON。"},
                 {"role": "user", "content": prompt},
             ]
-            
+
             payload = {
-                "model": "llama-3.3-70b-versatile",
+                "model": GROQ_MODEL,
                 "messages": messages,
                 "temperature": 0.3,
                 "max_tokens": 2000,
             }
-            
+
             headers = {
                 "Authorization": f"Bearer {self.groq_key}",
                 "Content-Type": "application/json",
             }
-            
+
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
                 async with session.post(
                     "https://api.groq.com/openai/v1/chat/completions",
@@ -853,22 +837,29 @@ class FixExecutor:
             except SyntaxError:
                 return -1
 
-        # 寫入後校驗：必須是合法 Python，且頂層定義數不得驟減（防 AI 回應為片段）
+        # 先驗證 fix_code 是否為合法 Python 代碼（在寫入之前）
+        try:
+            parsed_fix = _ast.parse(fix_code)
+            after = _top_level_defs(fix_code)
+            if after < 0:
+                _log("❌ 修復代碼無法 ast.parse（AI 回應可能為片段），拒絕寫入", "ERROR")
+                return False
+        except SyntaxError as e:
+            _log(f"❌ 修復代碼語法錯誤: {e}", "ERROR")
+            return False
+
+        # 再驗證不會導致頂層定義數顯著減少（防止 AI 只回傳片段）
+        before = _top_level_defs(original)
+        if before >= 0 and after < max(1, before // 2):
+            _log(f"❌ 頂層定義數 {before}->{after} 驟減（疑似片段），拒絕寫入", "ERROR")
+            return False
+
+        # 所有驗證通過，才寫入檔案
         try:
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write(fix_code)
         except Exception as e:
             _log(f"❌ 寫入檔案失敗: {e}", "ERROR")
-            return False
-
-        before, after = _top_level_defs(original), _top_level_defs(fix_code)
-        if after < 0:
-            _log("❌ 修復後無法 ast.parse（AI 回應可能為片段），還原原檔", "ERROR")
-            abs_path.write_text(original, encoding="utf-8")
-            return False
-        if before >= 0 and after < max(1, before // 2):
-            _log(f"❌ 頂層定義數 {before}->{after} 驟減（疑似片段），還原原檔", "ERROR")
-            abs_path.write_text(original, encoding="utf-8")
             return False
 
         _log(f"✅ 已寫入並通過 AST 校驗: {abs_path} (定義 {before}->{after})", "INFO")
@@ -1275,9 +1266,10 @@ class SelfHealDaemon:
         if fix_result:
             _log(f"✅ L1 修復成功: {fix_result}", "INFO")
             
-            # Git commit + push
-            commit_msg = f"fix: L1 自動修復 - {error_type} ({error.get('service', '')})"
-            self.git_manager.commit_and_push(commit_msg, file_path=file_path or None)
+            # Git commit + push (only if we have a valid file path)
+            if file_path and file_path != "unknown":
+                commit_msg = f"fix: L1 自動修復 - {error_type} ({error.get('service', '')})"
+                self.git_manager.commit_and_push(commit_msg, file_path=file_path)
             
             # Discord 通知
             await self.notifier.notify_fix_result(
@@ -1322,10 +1314,12 @@ class SelfHealDaemon:
             if verified:
                 _log("✅ L2 修復成功且驗證通過", "INFO")
                 
-                # Git commit + push
-                root_cause = analysis.get("root_cause", "AI 自動修復")
-                commit_msg = f"fix: L2 AI 修復 - {root_cause[:100]}"
-                self.git_manager.commit_and_push(commit_msg, file_path=analysis.get("fix_target") or file_path or None)
+                # Git commit + push (only if we have a valid file path)
+                fix_target = analysis.get("fix_target") or file_path
+                if fix_target and fix_target != "unknown":
+                    root_cause = analysis.get("root_cause", "AI 自動修復")
+                    commit_msg = f"fix: L2 AI 修復 - {root_cause[:100]}"
+                    self.git_manager.commit_and_push(commit_msg, file_path=fix_target)
                 
                 await self.notifier.notify_fix_result(
                     error, success=True, level="L2",
