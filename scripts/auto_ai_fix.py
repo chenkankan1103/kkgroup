@@ -179,7 +179,7 @@ async def analyze_and_fix(event_data, nvidia_api_key, discord_webhook):
         
         response = await client.call_api(
             messages,
-            model=os.getenv('AUTO_AI_FIX_NVIDIA_MODEL') or os.getenv('NVIDIA_MODEL', 'nvidia/nemotron-3-super-120b-a12b'),
+            model=os.getenv('AUTO_AI_FIX_NVIDIA_MODEL', 'nvidia/nemotron-3-super-120b-a12b'),
             max_tokens=2000
         )
 
