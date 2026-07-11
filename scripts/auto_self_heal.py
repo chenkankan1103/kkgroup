@@ -1515,7 +1515,7 @@ class SelfHealDaemon:
         self.state = _load_state()
         self.incident_cooldown = {}  # {(service, error_type): last_time}
         # ---- Agent mode switch -------------------------------------------------
-        self.agent_enabled = os.getenv("AUTO_SELF_HEAL_AGENT", "false").lower() in ("1", "true", "yes")
+        self.agent_enabled = os.getenv("AUTO_SELF_HEAL_AGENT", "true").lower() in ("1", "true", "yes")
         if self.agent_enabled:
             # LLM client – reuse the same NVIDIA wrapper used elsewhere
             self.llm_client = lambda messages, **kw: call_nvidia_ai(
