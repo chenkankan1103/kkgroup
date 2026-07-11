@@ -1043,7 +1043,7 @@ async def process_work_action(user_id, user_obj, action):
             actions_used = {}
         
         if action in actions_used:
-            return None, None, "你今天已經執行過這個行動了！"
+            return None, user, "你今天已經執行過這個行動了！"
         
         level = user.get('level', 1)
         if level not in LEVELS:
