@@ -402,7 +402,27 @@ class WorkActionButton(discord.ui.Button):
                     await interaction.followup.send(message, ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 處理失敗", ephemeral=True)
-                
+
+                # 更新視圖以反映當前狀態（即使操作失敗）
+                try:
+                    # 取得當前用戶狀態（如果process_work_action沒有提供的話）
+                    current_user = updated_user if updated_user is not None else get_user(user_id)
+                    if current_user:
+                        view = WorkActionView(current_user)
+                        actions_used = current_user.get('actions_used', {})
+                        view.update_button_states(actions_used)
+
+                        # 嘗試用當前狀態編輯原始訊息
+                        try:
+                            await interaction.message.edit(view=view)
+                        except (discord.NotFound, discord.Forbidden):
+                            pass  # 忽略如果我們無法編輯訊息
+                        except discord.HTTPException as e:
+                            logger.warning(f"更新訊息視圖失敗 (user: {user_name}): {e}")
+                except Exception as e:
+                    logger.warning(f"更新視圖時發生未預期錯誤 (user: {user_name}): {e}")
+
+                                
         except discord.errors.NotFound:
             logger.warning(f"⚠️ 交互已過期 (user: {user_name})")
             await interaction.followup.send(
