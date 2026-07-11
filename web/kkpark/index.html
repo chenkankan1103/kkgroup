@@ -1101,12 +1101,14 @@
             constructor() {
                 this.canvas = document.getElementById('particle-canvas');
                 this.ctx = this.canvas.getContext('2d');
-                this.particles = [];
+                this.fgParticles = [];
+                this.bgParticles = [];
                 this.mouse = { x: 0, y: 0 };
                 this.mouseVelocity = { x: 0, y: 0 };
                 this.lastMouse = { x: 0, y: 0 };
                 this.animationId = null;
-                this.particleCount = window.innerWidth < 768 ? 3000 : 6000;
+                this.fgParticleCount = window.innerWidth < 768 ? 3000 : 6000;
+                this.bgParticleCount = Math.floor(this.fgParticleCount / 10); // 300/600
                 this.connectionDistance = 80;
 
                 this.init();
@@ -1116,7 +1118,8 @@
 
             init() {
                 this.resize();
-                this.createParticles();
+                this.createFgParticles();
+                this.createBgParticles();
             }
 
             resize() {
@@ -1124,14 +1127,21 @@
                 this.canvas.height = window.innerHeight;
             }
 
-            createParticles() {
-                this.particles = [];
-                for (let i = 0; i < this.particleCount; i++) {
-                    this.particles.push(this.createParticle());
+            createFgParticles() {
+                this.fgParticles = [];
+                for (let i = 0; i < this.fgParticleCount; i++) {
+                    this.fgParticles.push(this.createFgParticle());
                 }
             }
 
-            createParticle() {
+            createBgParticles() {
+                this.bgParticles = [];
+                for (let i = 0; i < this.bgParticleCount; i++) {
+                    this.bgParticles.push(this.createBgParticle());
+                }
+            }
+
+            createFgParticle() {
                 const angle = Math.random() * Math.PI * 2;
                 const speed = 0.1 + Math.random() * 0.3;
                 return {
@@ -1141,19 +1151,46 @@
                     vy: Math.sin(angle) * speed,
                     radius: 0.5 + Math.random() * 1.5,
                     baseRadius: 0.5 + Math.random() * 1.5,
-                    color: this.getRandomColor(),
+                    color: this.getFgRandomColor(),
                     opacity: 0.1 + Math.random() * 0.3,
                     pulsePhase: Math.random() * Math.PI * 2,
                     pulseSpeed: 0.01 + Math.random() * 0.02,
                 };
             }
 
-            getRandomColor() {
+            createBgParticle() {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 0.02 + Math.random() * 0.05; // slower
+                return {
+                    x: Math.random() * this.canvas.width,
+                    y: Math.random() * this.canvas.height,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    radius: 1.0 + Math.random() * 2.0, // larger
+                    baseRadius: 1.0 + Math.random() * 2.0,
+                    color: this.getBgRandomColor(),
+                    opacity: 0.05 + Math.random() * 0.1, // more transparent
+                    pulsePhase: Math.random() * Math.PI * 2,
+                    pulseSpeed: 0.005 + Math.random() * 0.01, // slower pulse
+                };
+            }
+
+            getFgRandomColor() {
                 const colors = [
                     { r: 0, g: 212, b: 255 },    // cyan
                     { r: 168, g: 85, b: 247 },   // purple
                     { r: 244, g: 114, b: 182 },  // pink
                     { r: 34, g: 211, b: 238 },   // sky
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            getBgRandomColor() {
+                const colors = [
+                    { r: 0, g: 100, b: 150 },    // dark cyan
+                    { r: 80, g: 40, b: 120 },    // dark purple
+                    { r: 120, g: 60, b: 90 },    // dark pink
+                    { r: 20, g: 100, b: 120 },   // dark sky
                 ];
                 return colors[Math.floor(Math.random() * colors.length)];
             }
@@ -1175,7 +1212,8 @@
 
                 // Reduce particles on mobile
                 if (window.innerWidth < 768) {
-                    this.particleCount = 60;
+                    this.fgParticleCount = 60;
+                    this.bgParticleCount = Math.floor(this.fgParticleCount / 10);
                 }
             }
 
@@ -1189,7 +1227,8 @@
             updateParticles() {
                 this.updateMouseVelocity();
 
-                this.particles.forEach(p => {
+                // Update foreground particles (with mouse interaction)
+                this.fgParticles.forEach(p => {
                     // Mouse attraction/repulsion
                     const dx = this.mouse.x - p.x;
                     const dy = this.mouse.y - p.y;
@@ -1221,38 +1260,32 @@
                     p.radius = p.baseRadius * (1 + Math.sin(p.pulsePhase) * 0.3);
                     p.opacity = 0.15 + Math.sin(p.pulsePhase) * 0.15;
                 });
+
+                // Update background particles (no mouse interaction, just slow drift)
+                this.bgParticles.forEach(p => {
+                    // Update position
+                    p.x += p.vx;
+                    p.y += p.vy;
+
+                    // Boundary wrap
+                    if (p.x < 0) p.x = this.canvas.width;
+                    if (p.x > this.canvas.width) p.x = 0;
+                    if (p.y < 0) p.y = this.canvas.height;
+                    if (p.y > this.canvas.height) p.y = 0;
+
+                    // Pulse animation
+                    p.pulsePhase += p.pulseSpeed;
+                    p.radius = p.baseRadius * (1 + Math.sin(p.pulsePhase) * 0.3);
+                    p.opacity = 0.05 + Math.sin(p.pulsePhase) * 0.05; // subtle pulse
+                });
             }
 
-            drawConnections() {
-                for (let i = 0; i < this.particles.length; i++) {
-                    for (let j = i + 1; j < this.particles.length; j++) {
-                        const dx = this.particles[i].x - this.particles[j].x;
-                        const dy = this.particles[i].y - this.particles[j].y;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
+            draw() {
+                // Clear full canvas each frame to eliminate motion blur trails
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-                        if (dist < this.connectionDistance) {
-                            const opacity = (1 - dist / this.connectionDistance) * 0.15;
-                            const gradient = this.ctx.createLinearGradient(
-                                this.particles[i].x, this.particles[i].y,
-                                this.particles[j].x, this.particles[j].y
-                            );
-                            gradient.addColorStop(0, `rgba(0, 212, 255, ${opacity})`);
-                            gradient.addColorStop(0.5, `rgba(168, 85, 247, ${opacity * 0.5})`);
-                            gradient.addColorStop(1, `rgba(244, 114, 182, ${opacity})`);
-
-                            this.ctx.beginPath();
-                            this.ctx.moveTo(this.particles[i].x, this.particles[i].y);
-                            this.ctx.lineTo(this.particles[j].x, this.particles[j].y);
-                            this.ctx.strokeStyle = gradient;
-                            this.ctx.lineWidth = 0.5;
-                            this.ctx.stroke();
-                        }
-                    }
-                }
-            }
-
-            drawParticles() {
-                this.particles.forEach(p => {
+                // Draw background particles first
+                this.bgParticles.forEach(p => {
                     const gradient = this.ctx.createRadialGradient(
                         p.x, p.y, 0,
                         p.x, p.y, p.radius * 2
@@ -1271,13 +1304,27 @@
                     this.ctx.fillStyle = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity * 2})`;
                     this.ctx.fill();
                 });
-            }
 
-            draw() {
-                // Clear full canvas each frame to eliminate motion blur trails
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                // Draw foreground particles
+                this.fgParticles.forEach(p => {
+                    const gradient = this.ctx.createRadialGradient(
+                        p.x, p.y, 0,
+                        p.x, p.y, p.radius * 2
+                    );
+                    gradient.addColorStop(0, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity})`);
+                    gradient.addColorStop(1, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, 0)`);
 
-                this.drawParticles();
+                    this.ctx.beginPath();
+                    this.ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
+                    this.ctx.fillStyle = gradient;
+                    this.ctx.fill();
+
+                    // Core dot
+                    this.ctx.beginPath();
+                    this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                    this.ctx.fillStyle = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity * 2})`;
+                    this.ctx.fill();
+                });
             }
 
             animate() {
