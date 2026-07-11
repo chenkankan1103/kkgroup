@@ -3,14 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KK 園區 | 楓之谷風格 RPG 社群</title>
-    <meta name="description" content="KK 園區 - Discord 社群專屬楓之谷風格 RPG 體驗。紙娃娃系統、等級成長、裝備收集、公會戰，打造你的專屬冒險者！">
+    <title>KK 園區 | 亞洲領先的數位創新園區</title>
+    <meta name="description" content="KK 園區 - 亞洲領先的數位創新園區，匯聚區塊鏈、AI、金融科技與數位娛樂產業，打造國際級創新生態系">
     <meta name="theme-color" content="#0a0f1a">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="KK 園區 | 亞洲領先的數位創新園區">
+    <meta property="og:description" content="匯聚區塊鏈、AI、金融科技與數位娛樂產業，打造國際級創新生態系">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://kkgroup.com/og-image.jpg">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Geist:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -23,80 +29,69 @@
             theme: {
                 extend: {
                     colors: {
-                        'kk-bg': '#050814',
-                        'kk-bg-elevated': '#0c1020',
-                        'kk-surface': '#101828',
-                        'kk-surface-elevated': '#182238',
-                        'kk-border': '#1e2d4a',
-                        'kk-border-bright': '#2a3f66',
-                        'kk-primary': '#00ffaa',
-                        'kk-primary-dim': '#00ffaa22',
-                        'kk-secondary': '#ff6b35',
-                        'kk-secondary-dim': '#ff6b3522',
-                        'kk-accent': '#ff3366',
-                        'kk-accent-dim': '#ff336622',
-                        'kk-blue': '#00aaff',
-                        'kk-blue-dim': '#00aaff22',
-                        'kk-gold': '#ffd700',
-                        'kk-gold-dim': '#ffd70022',
-                        'kk-success': '#00ff88',
-                        'kk-warning': '#ffaa00',
-                        'kk-danger': '#ff3344',
-                        'kk-text': '#f0f4f8',
-                        'kk-text-muted': '#6b7c96',
-                        'kk-text-dim': '#3a4a6a',
+                        'kk-bg': '#030712',
+                        'kk-bg-elevated': '#0a0f1e',
+                        'kk-surface': '#0e1628',
+                        'kk-surface-elevated': '#141d30',
+                        'kk-border': '#1e2a4a',
+                        'kk-border-bright': '#2a3a5e',
+                        'kk-primary': '#00d4ff',
+                        'kk-primary-dim': '#00d4ff33',
+                        'kk-secondary': '#a855f7',
+                        'kk-secondary-dim': '#a855f733',
+                        'kk-accent': '#f472b6',
+                        'kk-accent-dim': '#f472b633',
+                        'kk-success': '#22c55e',
+                        'kk-warning': '#f472b6',
+                        'kk-text': '#f1f5f9',
+                        'kk-text-muted': '#64748b',
+                        'kk-text-dim': '#334155',
                     },
                     fontFamily: {
-                        'pixel': ['Press Start 2P', 'cursive'],
-                        'display': ['Geist', 'Noto Sans TC', 'sans-serif'],
+                        'display': ['Space Grotesk', 'Noto Sans TC', 'sans-serif'],
                         'body': ['Geist', 'Noto Sans TC', 'sans-serif'],
                         'mono': ['Geist Mono', 'monospace'],
                     },
                     animation: {
-                        'float': 'float 4s ease-in-out infinite',
-                        'float-slow': 'float 6s ease-in-out infinite',
-                        'float-fast': 'float 2.5s ease-in-out infinite',
-                        'gradient-shift': 'gradientShift 3s ease infinite',
-                        'pulse-glow': 'pulseGlow 1.5s ease-in-out infinite',
-                        'shimmer': 'shimmer 1.5s ease-in-out infinite',
-                        'slide-up': 'slideUp 0.5s ease-out forwards',
-                        'slide-down': 'slideDown 0.5s ease-out forwards',
-                        'fade-in': 'fadeIn 0.4s ease-out forwards',
-                        'scale-in': 'scaleIn 0.3s ease-out forwards',
-                        'bounce-in': 'bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards',
-                        'rotate-slow': 'rotateSlow 15s linear infinite',
-                        'orbit': 'orbit 12s linear infinite',
-                        'orbit-reverse': 'orbitReverse 18s linear infinite',
-                        'particle-burst': 'particleBurst 0.8s ease-out forwards',
-                        'level-up': 'levelUp 1s ease-out forwards',
-                        'exp-bar': 'expBar 1s ease-out forwards',
-                        'damage-pop': 'damagePop 0.8s ease-out forwards',
+                        'float': 'float 6s ease-in-out infinite',
+                        'float-slow': 'float 8s ease-in-out infinite',
+                        'float-fast': 'float 4s ease-in-out infinite',
+                        'gradient-shift': 'gradientShift 8s ease infinite',
+                        'pulse-glow': 'pulseGlow 3s ease-in-out infinite',
+                        'shimmer': 'shimmer 2s ease-in-out infinite',
+                        'slide-up': 'slideUp 0.6s ease-out forwards',
+                        'slide-down': 'slideDown 0.6s ease-out forwards',
+                        'fade-in': 'fadeIn 0.6s ease-out forwards',
+                        'scale-in': 'scaleIn 0.4s ease-out forwards',
+                        'rotate-slow': 'rotateSlow 20s linear infinite',
+                        'orbit': 'orbit 20s linear infinite',
+                        'orbit-reverse': 'orbitReverse 25s linear infinite',
                     },
                     keyframes: {
                         float: {
                             '0%, 100%': { transform: 'translateY(0) translateX(0)' },
-                            '25%': { transform: 'translateY(-15px) translateX(8px)' },
-                            '50%': { transform: 'translateY(8px) translateX(-12px)' },
-                            '75%': { transform: 'translateY(-10px) translateX(15px)' },
+                            '25%': { transform: 'translateY(-20px) translateX(10px)' },
+                            '50%': { transform: 'translateY(10px) translateX(-15px)' },
+                            '75%': { transform: 'translateY(-10px) translateX(20px)' },
                         },
                         gradientShift: {
                             '0%, 100%': { backgroundPosition: '0% 50%' },
                             '50%': { backgroundPosition: '100% 50%' },
                         },
                         pulseGlow: {
-                            '0%, 100%': { boxShadow: '0 0 20px rgba(0, 255, 170, 0.4), 0 0 40px rgba(255, 107, 53, 0.2)' },
-                            '50%': { boxShadow: '0 0 40px rgba(0, 255, 170, 0.6), 0 0 80px rgba(255, 107, 53, 0.4)' },
+                            '0%, 100%': { boxShadow: '0 0 30px rgba(0, 212, 255, 0.3), 0 0 60px rgba(168, 85, 247, 0.2)' },
+                            '50%': { boxShadow: '0 0 50px rgba(0, 212, 255, 0.5), 0 0 100px rgba(168, 85, 247, 0.4)' },
                         },
                         shimmer: {
                             '0%, 100%': { backgroundPosition: '0% 50%' },
                             '50%': { backgroundPosition: '100% 50%' },
                         },
                         slideUp: {
-                            'from': { opacity: '0', transform: 'translateY(25px)' },
+                            'from': { opacity: '0', transform: 'translateY(30px)' },
                             'to': { opacity: '1', transform: 'translateY(0)' },
                         },
                         slideDown: {
-                            'from': { opacity: '0', transform: 'translateY(-25px)' },
+                            'from': { opacity: '0', transform: 'translateY(-30px)' },
                             'to': { opacity: '1', transform: 'translateY(0)' },
                         },
                         fadeIn: {
@@ -104,43 +99,20 @@
                             'to': { opacity: '1' },
                         },
                         scaleIn: {
-                            'from': { opacity: '0', transform: 'scale(0.92)' },
+                            'from': { opacity: '0', transform: 'scale(0.95)' },
                             'to': { opacity: '1', transform: 'scale(1)' },
-                        },
-                        bounceIn: {
-                            '0%': { opacity: '0', transform: 'scale(0.3)' },
-                            '50%': { opacity: '1', transform: 'scale(1.05)' },
-                            '70%': { transform: 'scale(0.95)' },
-                            '100%': { opacity: '1', transform: 'scale(1)' },
                         },
                         rotateSlow: {
                             'from': { transform: 'rotate(0deg)' },
                             'to': { transform: 'rotate(360deg)' },
                         },
                         orbit: {
-                            'from': { transform: 'rotate(0deg) translateX(120px) rotate(0deg)' },
-                            'to': { transform: 'rotate(360deg) translateX(120px) rotate(-360deg)' },
+                            'from': { transform: 'rotate(0deg) translateX(150px) rotate(0deg)' },
+                            'to': { transform: 'rotate(360deg) translateX(150px) rotate(-360deg)' },
                         },
                         orbitReverse: {
-                            'from': { transform: 'rotate(360deg) translateX(160px) rotate(-360deg)' },
-                            'to': { transform: 'rotate(0deg) translateX(160px) rotate(0deg)' },
-                        },
-                        particleBurst: {
-                            '0%': { opacity: '1', transform: 'scale(1) translate(0, 0)' },
-                            '100%': { opacity: '0', transform: 'scale(0) translate(var(--tx), var(--ty))' },
-                        },
-                        levelUp: {
-                            '0%': { transform: 'scale(1)', boxShadow: '0 0 0 rgba(255, 215, 0, 0)' },
-                            '50%': { transform: 'scale(1.15)', boxShadow: '0 0 60px rgba(255, 215, 0, 0.8)' },
-                            '100%': { transform: 'scale(1)', boxShadow: '0 0 30px rgba(255, 215, 0, 0.4)' },
-                        },
-                        expBar: {
-                            'from': { width: 'var(--start-width)' },
-                            'to': { width: 'var(--end-width)' },
-                        },
-                        damagePop: {
-                            '0%': { opacity: '1', transform: 'translateY(0) scale(1)' },
-                            '100%': { opacity: '0', transform: 'translateY(-60px) scale(1.5)' },
+                            'from': { transform: 'rotate(360deg) translateX(200px) rotate(-360deg)' },
+                            'to': { transform: 'rotate(0deg) translateX(200px) rotate(0deg)' },
                         },
                     },
                     backgroundImage: {
@@ -154,300 +126,309 @@
     </script>
 
     <style>
-        ::-webkit-scrollbar { width: 10px; height: 10px; }
-        ::-webkit-scrollbar-track { background: #050814; border: 2px solid #1e2d4a; }
-        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #00ffaa, #ff6b35, #ff3366); border-radius: 6px; border: 2px solid #050814; }
-        ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #00ffcc, #ff8855, #ff5588); }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #030712; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #00d4ff, #a855f7); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #00d4ff, #f472b6); }
 
-        ::selection { background: rgba(0, 255, 170, 0.4); color: #050814; }
+        /* Selection */
+        ::selection { background: rgba(0, 212, 255, 0.3); color: white; }
 
+        /* Reduced motion */
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 animation-duration: 0.01ms !important;
                 animation-iteration-count: 1 !important;
                 transition-duration: 0.01ms !important;
             }
-            #particle-canvas { display: none !important; }
         }
 
+        /* Glassmorphism utilities */
         .glass {
-            background: rgba(16, 24, 40, 0.75);
+            background: rgba(14, 22, 40, 0.7);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border: 2px solid rgba(30, 45, 74, 0.6);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(30, 42, 74, 0.6);
         }
 
         .glass-strong {
-            background: rgba(12, 16, 32, 0.9);
+            background: rgba(10, 15, 30, 0.85);
             backdrop-filter: blur(30px);
             -webkit-backdrop-filter: blur(30px);
-            border: 2px solid rgba(42, 63, 102, 0.8);
-            box-shadow: 0 0 40px rgba(0, 255, 170, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(42, 58, 94, 0.8);
         }
 
-        .glass-panel {
-            background: linear-gradient(135deg, rgba(16, 24, 40, 0.9) 0%, rgba(12, 16, 32, 0.95) 100%);
+        .glass-hover:hover {
+            background: rgba(20, 29, 48, 0.9);
+            border-color: rgba(0, 212, 255, 0.4);
+            box-shadow: 0 20px 50px rgba(0, 212, 255, 0.1), 0 0 0 1px rgba(0, 212, 255, 0.1);
+        }
+
+        .glass-card {
+            background: linear-gradient(135deg, rgba(14, 22, 40, 0.8) 0%, rgba(10, 15, 30, 0.9) 100%);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border: 2px solid rgba(30, 45, 74, 0.5);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(30, 42, 74, 0.5);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .glass-panel:hover {
-            border-color: rgba(0, 255, 170, 0.4);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(0, 255, 170, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-            transform: translateY(-3px);
+        .glass-card:hover {
+            border-color: rgba(0, 212, 255, 0.3);
+            box-shadow:
+                0 20px 50px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(0, 212, 255, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            transform: translateY(-4px);
         }
 
+        /* Gradient text */
         .text-gradient-primary {
-            background: linear-gradient(135deg, #00ffaa 0%, #00aaff 50%, #ff6b35 100%);
+            background: linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #f472b6 100%);
             background-size: 200% 200%;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            animation: gradientShift 3s ease infinite;
+            animation: gradientShift 4s ease infinite;
         }
 
-        .text-gradient-green { background: linear-gradient(135deg, #00ffaa, #00ffcc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .text-gradient-orange { background: linear-gradient(135deg, #ff6b35, #ffaa00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .text-gradient-pink { background: linear-gradient(135deg, #ff3366, #ff6699); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .text-gradient-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .text-gradient-blue { background: linear-gradient(135deg, #00aaff, #5865f2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .text-gradient-cyan {
+            background: linear-gradient(135deg, #00d4ff 0%, #22d3ee 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
 
-        .glow-primary { box-shadow: 0 0 25px rgba(0, 255, 170, 0.4), 0 0 50px rgba(0, 170, 255, 0.2); }
-        .glow-secondary { box-shadow: 0 0 25px rgba(255, 107, 53, 0.4), 0 0 50px rgba(255, 51, 102, 0.2); }
-        .glow-gold { box-shadow: 0 0 25px rgba(255, 215, 0, 0.4), 0 0 50px rgba(255, 170, 0, 0.2); }
-        .glow-blue { box-shadow: 0 0 25px rgba(0, 170, 255, 0.4); }
+        .text-gradient-purple {
+            background: linear-gradient(135deg, #a855f7 0%, #c084fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
 
+        /* Glow effects */
+        .glow-primary {
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.3), 0 0 60px rgba(168, 85, 247, 0.15);
+        }
+
+        .glow-secondary {
+            box-shadow: 0 0 30px rgba(168, 85, 247, 0.3), 0 0 60px rgba(244, 114, 182, 0.15);
+        }
+
+        .glow-accent {
+            box-shadow: 0 0 30px rgba(244, 114, 182, 0.3), 0 0 60px rgba(0, 212, 255, 0.15);
+        }
+
+        /* Button styles */
         .btn-primary {
-            @apply relative px-8 py-4 text-body font-bold text-kk-bg rounded-lg overflow-hidden;
-            background: linear-gradient(135deg, #00ffaa 0%, #00aaff 50%, #ff6b35 100%);
+            @apply relative px-8 py-4 text-body font-semibold text-white rounded-xl overflow-hidden;
+            background: linear-gradient(135deg, #00d4ff 0%, #a855f7 100%);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .btn-primary::before {
+            content: '';
+            @apply absolute inset-0;
+            background: linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #f472b6 100%);
             background-size: 200% 200%;
-            animation: gradientShift 3s ease infinite;
-            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.3s ease;
         }
 
         .btn-primary:hover {
-            transform: translateY(-3px) scale(1.02);
-            box-shadow: 0 15px 40px rgba(0, 255, 170, 0.4), 0 0 0 3px rgba(0, 255, 170, 0.2);
-            animation: gradientShift 1.5s ease infinite;
+            transform: translateY(-2px);
+            box-shadow: 0 20px 40px rgba(0, 212, 255, 0.3), 0 0 0 1px rgba(0, 212, 255, 0.2);
         }
 
-        .btn-primary:active { transform: translateY(-1px) scale(0.98); }
+        .btn-primary:hover::before {
+            opacity: 1;
+            animation: gradientShift 2s ease infinite;
+        }
 
         .btn-primary span { @apply relative z-10; }
 
         .btn-secondary {
-            @apply relative px-8 py-4 text-body font-bold text-kk-text rounded-lg overflow-hidden;
-            background: rgba(16, 24, 40, 0.9);
-            border: 2px solid rgba(30, 45, 74, 0.8);
+            @apply relative px-8 py-4 text-body font-semibold text-kk-text rounded-xl overflow-hidden;
+            background: rgba(14, 22, 40, 0.8);
+            border: 1px solid rgba(30, 42, 74, 0.6);
             backdrop-filter: blur(20px);
-            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .btn-secondary:hover {
-            background: rgba(24, 34, 56, 1);
-            border-color: rgba(255, 107, 53, 0.6);
-            box-shadow: 0 10px 30px rgba(255, 107, 53, 0.2);
-            transform: translateY(-3px) scale(1.02);
+            background: rgba(20, 29, 48, 0.9);
+            border-color: rgba(0, 212, 255, 0.4);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.1);
+            transform: translateY(-2px);
         }
 
         .btn-ghost {
-            @apply px-6 py-3 text-body font-medium text-kk-text-muted rounded-lg transition-all duration-200;
+            @apply px-6 py-3 text-body font-medium text-kk-text-muted rounded-lg transition-all duration-300;
         }
 
         .btn-ghost:hover {
-            color: #ff6b35;
-            background: rgba(255, 107, 53, 0.15);
+            color: #00d4ff;
+            background: rgba(0, 212, 255, 0.1);
         }
 
+        /* Gradient border */
         .gradient-border {
             position: relative;
-            background: linear-gradient(135deg, #101828 0%, #0c1020 100%);
+            background: linear-gradient(135deg, #0e1628 0%, #0a0f1e 100%);
             border-radius: 16px;
         }
 
         .gradient-border::before {
             content: '';
             position: absolute;
-            inset: -2px;
-            background: linear-gradient(135deg, rgba(0, 255, 170, 0.4) 0%, rgba(255, 107, 53, 0.4) 50%, rgba(255, 51, 102, 0.4) 100%);
-            border-radius: 18px;
+            inset: -1px;
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(168, 85, 247, 0.3) 50%, rgba(244, 114, 182, 0.3) 100%);
+            border-radius: 17px;
             opacity: 0;
-            transition: opacity 0.3s ease;
+            transition: opacity 0.4s ease;
             z-index: -1;
         }
 
-        .gradient-border:hover::before { opacity: 1; }
+        .gradient-border:hover::before {
+            opacity: 1;
+        }
 
+        /* Particle canvas */
         #particle-canvas {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; z-index: 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
         }
 
+        /* Hero glow orbs */
         .glow-orb {
-            position: absolute; border-radius: 50%;
-            filter: blur(100px); opacity: 0.35;
-            animation: float 5s ease-in-out infinite;
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+            animation: float 8s ease-in-out infinite;
         }
 
-        .glow-orb-1 { width: 600px; height: 600px; background: radial-gradient(circle at 30% 30%, #00ffaa 0%, transparent 70%); top: -150px; right: -150px; animation-delay: 0s; }
-        .glow-orb-2 { width: 500px; height: 500px; background: radial-gradient(circle at 70% 70%, #ff6b35 0%, transparent 70%); bottom: -100px; left: -100px; animation-delay: -1.5s; }
-        .glow-orb-3 { width: 400px; height: 400px; background: radial-gradient(circle at 50% 50%, #ff3366 0%, transparent 70%); top: 40%; left: 50%; transform: translate(-50%, -50%); animation-delay: -3s; opacity: 0.2; }
+        .glow-orb-1 {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle at 30% 30%, #00d4ff 0%, transparent 70%);
+            top: -100px;
+            right: -100px;
+            animation-delay: 0s;
+        }
 
+        .glow-orb-2 {
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle at 70% 70%, #a855f7 0%, transparent 70%);
+            bottom: -50px;
+            left: -50px;
+            animation-delay: -3s;
+        }
+
+        .glow-orb-3 {
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle at 50% 50%, #f472b6 0%, transparent 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation-delay: -6s;
+            opacity: 0.2;
+        }
+
+        /* Grid pattern overlay */
         .grid-pattern {
             background-image:
-                linear-gradient(rgba(0, 255, 170, 0.025) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 255, 170, 0.025) 1px, transparent 1px);
-            background-size: 50px 50px;
+                linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
         }
 
+        /* Noise texture */
         .noise-overlay::before {
             content: '';
-            position: absolute; inset: 0;
+            position: absolute;
+            inset: 0;
             background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-            opacity: 0.04; pointer-events: none;
+            opacity: 0.03;
+            pointer-events: none;
         }
 
-        .reveal { opacity: 0; transform: translateY(25px); transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1); }
-        .reveal.visible { opacity: 1; transform: translateY(0); }
-        .reveal-delay-1 { transition-delay: 0.08s; }
-        .reveal-delay-2 { transition-delay: 0.16s; }
-        .reveal-delay-3 { transition-delay: 0.24s; }
-        .reveal-delay-4 { transition-delay: 0.32s; }
-        .reveal-delay-5 { transition-delay: 0.4s; }
-        .reveal-delay-6 { transition-delay: 0.48s; }
-
-        .focus-visible:focus-visible { outline: 3px solid #00ffaa; outline-offset: 3px; }
-
-        .magnetic { transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-
-        .damage-number {
-            position: absolute; font-family: 'Press Start 2P', cursive;
-            font-size: 14px; font-weight: bold; color: #ffd700;
-            text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
-            pointer-events: none; z-index: 100;
-            animation: damagePop 0.8s ease-out forwards;
+        /* Scroll animations */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .damage-number.crit { color: #ff3366; font-size: 18px; }
-        .damage-number.heal { color: #00ffaa; }
-        .damage-number.exp { color: #00aaff; font-size: 12px; }
-        .damage-number.gold { color: #ffd700; }
-
-        .pixel-border {
-            border: 4px solid transparent;
-            background: linear-gradient(#0c1020, #0c1020) padding-box,
-                        linear-gradient(135deg, #00ffaa, #ff6b35, #ff3366, #00aaff) border-box;
-            background-size: 300% 300%;
-            animation: gradientShift 4s ease infinite;
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
         }
 
+        .reveal-delay-1 { transition-delay: 0.1s; }
+        .reveal-delay-2 { transition-delay: 0.2s; }
+        .reveal-delay-3 { transition-delay: 0.3s; }
+        .reveal-delay-4 { transition-delay: 0.4s; }
+        .reveal-delay-5 { transition-delay: 0.5s; }
+
+        /* Focus visible */
+        .focus-visible:focus-visible {
+            outline: 2px solid #00d4ff;
+            outline-offset: 2px;
+        }
+
+        /* Cursor trail */
+        .cursor-trail {
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(0, 212, 255, 0.3) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 9999;
+            mix-blend-mode: screen;
+            transition: transform 0.1s ease-out, opacity 0.3s ease;
+        }
+
+        /* Magnetic button effect */
+        .magnetic {
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* Floating animation for cards */
+        @keyframes floatCard {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            25% { transform: translateY(-8px) rotate(0.5deg); }
+            50% { transform: translateY(4px) rotate(-0.5deg); }
+            75% { transform: translateY(-4px) rotate(0.3deg); }
+        }
+
+        .float-card {
+            animation: floatCard 6s ease-in-out infinite;
+        }
+
+        /* Nav blur on scroll */
         nav.scrolled {
-            background: rgba(5, 8, 20, 0.95);
-            border-bottom-color: rgba(30, 45, 74, 0.9);
-            box-shadow: 0 4px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 255, 170, 0.1);
+            background: rgba(3, 7, 18, 0.9);
+            border-bottom-color: rgba(30, 42, 74, 0.8);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
         }
 
-        .stat-counter { font-variant-numeric: tabular-nums; }
-
-        .paperdoll-container {
-            position: relative;
-            width: 280px; height: 380px;
-            background: radial-gradient(ellipse at 50% 100%, rgba(0,255,170,0.08) 0%, transparent 60%);
+        /* Stat counter animation */
+        .stat-counter {
+            font-variant-numeric: tabular-nums;
         }
-
-        .paperdoll-img {
-            max-width: 100%; max-height: 100%;
-            filter: drop-shadow(0 10px 30px rgba(0, 255, 170, 0.3));
-            transition: transform 0.3s ease;
-        }
-
-        .paperdoll-img:hover { transform: scale(1.02); }
-
-        .equip-slot {
-            @apply glass-panel p-3 rounded-lg flex flex-col items-center gap-2 min-w-[70px] transition-all duration-200;
-            border-color: rgba(30, 45, 74, 0.5);
-        }
-
-        .equip-slot:hover {
-            border-color: rgba(255, 107, 53, 0.5);
-            transform: translateY(-4px) scale(1.05);
-        }
-
-        .equip-slot.equipped { border-color: rgba(0, 255, 170, 0.5); background: rgba(0, 255, 170, 0.08); }
-
-        .tab-btn {
-            @apply px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200;
-            background: rgba(30, 45, 74, 0.5); color: #6b7c96;
-        }
-
-        .tab-btn.active {
-            background: linear-gradient(135deg, #00ffaa, #00aaff);
-            color: #050814; box-shadow: 0 0 20px rgba(0, 255, 170, 0.4);
-        }
-
-        .tab-btn:hover:not(.active) { background: rgba(42, 63, 102, 0.7); color: #f0f4f8; }
-
-        .skill-bar {
-            @apply h-2 rounded-full bg-kk-border overflow-hidden relative;
-        }
-
-        .skill-bar-fill {
-            @apply h-full rounded-full transition-all duration-700 ease-out;
-            background: linear-gradient(90deg, #00ffaa, #00aaff, #ff6b35);
-            background-size: 200% 100%;
-            animation: gradientShift 2s ease infinite;
-        }
-
-        .quest-item {
-            @apply glass-panel p-4 rounded-xl flex items-start gap-3;
-            border-left: 3px solid transparent;
-            transition: all 0.3s;
-        }
-
-        .quest-item:hover { border-left-color: #00ffaa; transform: translateX(4px); }
-
-        .quest-item.completed { opacity: 0.6; border-left-color: #6b7c96; }
-        .quest-item.active { border-left-color: #ff6b35; }
-
-        .leaderboard-row {
-            @apply glass-panel px-4 py-3 rounded-lg flex items-center justify-between;
-            transition: all 0.2s;
-        }
-
-        .leaderboard-row:hover { transform: translateX(4px); border-color: rgba(0, 255, 170, 0.3); }
-
-        .leaderboard-row.rank-1 { border-left: 3px solid #ffd700; background: rgba(255, 215, 0, 0.08); }
-        .leaderboard-row.rank-2 { border-left: 3px solid #c0c0c0; background: rgba(192, 192, 192, 0.08); }
-        .leaderboard-row.rank-3 { border-left: 3px solid #cd7f32; background: rgba(205, 127, 50, 0.08); }
-
-        .modal-overlay {
-            @apply fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm;
-            animation: fadeIn 0.2s ease-out;
-        }
-
-        .modal-content {
-            @apply glass-strong rounded-2xl w-[92%] max-w-4xl max-h-[90vh] flex flex-col;
-            animation: scaleIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-        }
-
-        .spinner {
-            @apply w-8 h-8 border-3 border-kk-border border-t-primary rounded-full animate-spin;
-        }
-
-        .tooltip {
-            @apply absolute z-50 glass-strong px-3 py-2 rounded-lg text-xs text-kk-text pointer-events-none opacity-0 invisible transition-all duration-200;
-            white-space: nowrap;
-        }
-
-        .has-tooltip:hover .tooltip { opacity: 1; visible: visible; transform: translateY(-4px); }
     </style>
 </head>
-<body class="font-body text-kk-text bg-kk-bg overflow-x-hidden relative">
-    <!-- Particle Canvas Background (Enhanced) -->
+<body class="font-body text-kk-text bg-kk-bg overflow-x-hidden">
+    <!-- Particle Canvas Background -->
     <canvas id="particle-canvas"></canvas>
 
     <!-- Navigation -->
@@ -455,32 +436,43 @@
         <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
             <!-- Logo -->
             <a href="#" class="flex items-center gap-3 group">
-                <div class="relative w-12 h-12 rounded-xl pixel-border group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 flex items-center justify-center">
-                    <span class="font-pixel text-2xl text-gradient-primary">KK</span>
+                <div class="relative w-10 h-10 rounded-xl overflow-hidden group-hover:scale-110 transition-transform duration-300">
+                    <svg viewBox="0 0 40 40" fill="none" class="w-full h-full">
+                        <defs>
+                            <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#00d4ff"/>
+                                <stop offset="50%" stop-color="#a855f7"/>
+                                <stop offset="100%" stop-color="#f472b6"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M20 4 L36 14 L36 26 L20 36 L4 26 L4 14 Z" stroke="url(#logoGrad)" stroke-width="2" fill="none" stroke-linejoin="round"/>
+                        <path d="M20 12 L20 28 M12 20 L28 20" stroke="url(#logoGrad)" stroke-width="1.5" stroke-linecap="round"/>
+                        <circle cx="20" cy="20" r="3" fill="url(#logoGrad)"/>
+                    </svg>
                 </div>
-                <span class="font-display font-bold text-xl text-gradient-primary hidden sm:block">KK 園區</span>
+                <span class="font-display font-bold text-xl text-kk-text hidden sm:block">KK 園區</span>
             </a>
 
             <!-- Desktop Navigation -->
-            <div class="hidden md:flex items-center gap-6">
-                <a href="#hero" class="text-kk-text-muted hover:text-kk-primary transition-colors font-medium text-sm">首頁</a>
-                <a href="#paperdoll" class="text-kk-text-muted hover:text-kk-secondary transition-colors font-medium text-sm">紙娃娃</a>
-                <a href="#guild" class="text-kk-text-muted hover:text-kk-blue transition-colors font-medium text-sm">公會</a>
-                <a href="#leaderboard" class="text-kk-text-muted hover:text-kk-gold transition-colors font-medium text-sm">排行榜</a>
-                <a href="#shop" class="text-kk-text-muted hover:text-kk-accent transition-colors font-medium text-sm">商城</a>
-                <a href="#discord" class="text-kk-text-muted hover:text-kk-primary transition-colors font-medium text-sm">Discord</a>
+            <div class="hidden md:flex items-center gap-8">
+                <a href="#features" class="text-kk-text-muted hover:text-kk-primary transition-colors font-medium text-sm">園區特色</a>
+                <a href="#ecosystem" class="text-kk-text-muted hover:text-kk-primary transition-colors font-medium text-sm">生態系統</a>
+                <a href="#companies" class="text-kk-text-muted hover:text-kk-primary transition-colors font-medium text-sm">入駐企業</a>
+                <a href="#about" class="text-kk-text-muted hover:text-kk-primary transition-colors font-medium text-sm">關於我們</a>
+                <a href="#contact" class="text-kk-text-muted hover:text-kk-primary transition-colors font-medium text-sm">聯繫我們</a>
             </div>
 
             <!-- Actions -->
             <div class="flex items-center gap-3">
-                <div class="hidden sm:flex items-center gap-2 glass px-4 py-2 rounded-lg border-kk-primary/30 bg-kk-primary-dim">
-                    <i data-lucide="users" class="w-4 h-4 text-kk-primary"></i>
-                    <span id="online-count" class="text-sm font-bold text-kk-primary">1,234</span>
-                    <span class="text-xs text-kk-text-muted">線上</span>
-                </div>
-                <a href="#discord" class="btn-primary text-sm magnetic">
-                    <span>加入冒險</span>
+                <a href="https://discord.gg" target="_blank" rel="noopener" class="glass px-4 py-2 rounded-lg text-sm font-medium text-kk-text-muted hover:text-kk-primary hover:border-kk-primary/30 transition-all hidden sm:flex">
+                    <i data-lucide="message-circle" class="w-4 h-4 inline mr-2"></i>
+                    Discord
                 </a>
+                <a href="#contact" class="btn-primary text-sm">
+                    <span>立即加入</span>
+                </a>
+
+                <!-- Mobile menu button -->
                 <button id="mobile-menu-btn" class="md:hidden glass p-2 rounded-lg" aria-label="選單">
                     <i data-lucide="menu" class="w-6 h-6"></i>
                 </button>
@@ -490,15 +482,14 @@
         <!-- Mobile Menu -->
         <div id="mobile-menu" class="md:hidden hidden glass border-t border-kk-border overflow-hidden">
             <div class="px-6 py-4 space-y-3">
-                <a href="#hero" class="block px-4 py-3 text-kk-text-muted hover:text-kk-primary transition-colors font-medium">首頁</a>
-                <a href="#paperdoll" class="block px-4 py-3 text-kk-text-muted hover:text-kk-secondary transition-colors font-medium">紙娃娃</a>
-                <a href="#guild" class="block px-4 py-3 text-kk-text-muted hover:text-kk-blue transition-colors font-medium">公會</a>
-                <a href="#leaderboard" class="block px-4 py-3 text-kk-text-muted hover:text-kk-gold transition-colors font-medium">排行榜</a>
-                <a href="#shop" class="block px-4 py-3 text-kk-text-muted hover:text-kk-accent transition-colors font-medium text-sm">商城</a>
-                <a href="#discord" class="block px-4 py-3 text-kk-text-muted hover:text-kk-primary transition-colors font-medium">Discord</a>
+                <a href="#features" class="block px-4 py-3 text-kk-text-muted hover:text-kk-primary transition-colors font-medium">園區特色</a>
+                <a href="#ecosystem" class="block px-4 py-3 text-kk-text-muted hover:text-kk-primary transition-colors font-medium">生態系統</a>
+                <a href="#companies" class="block px-4 py-3 text-kk-text-muted hover:text-kk-primary transition-colors font-medium">入駐企業</a>
+                <a href="#about" class="block px-4 py-3 text-kk-text-muted hover:text-kk-primary transition-colors font-medium">關於我們</a>
+                <a href="#contact" class="block px-4 py-3 text-kk-text-muted hover:text-kk-primary transition-colors font-medium">聯繫我們</a>
                 <div class="pt-4 border-t border-kk-border flex gap-3">
-                    <a href="#discord" class="flex-1 btn-secondary text-center text-sm">加入 Discord</a>
-                    <a href="#discord" class="flex-1 btn-primary text-center text-sm">開始冒險</a>
+                    <a href="https://discord.gg" target="_blank" class="flex-1 glass px-4 py-3 rounded-lg text-center text-sm font-medium text-kk-text-muted hover:text-kk-primary transition-colors">Discord 社群</a>
+                    <a href="#contact" class="flex-1 btn-primary text-center text-sm">立即加入</a>
                 </div>
             </div>
         </div>
@@ -520,453 +511,427 @@
             <div class="relative z-10 max-w-7xl mx-auto px-6 py-20">
                 <div class="text-center">
                     <!-- Badge -->
-                    <div class="flex justify-center mb-6 reveal">
-                        <div class="inline-flex items-center gap-3 glass-panel px-5 py-2.5 rounded-full border-2 border-kk-primary/30 animate-pulse-glow">
-                            <div class="flex items-center gap-1.5">
-                                <div class="w-2 h-2 rounded-full bg-kk-primary animate-pulse"></div>
-                                <span class="font-pixel text-[10px] text-kk-primary">LIVE</span>
-                            </div>
-                            <span class="text-sm font-medium text-kk-text">Discord 社群 RPG 伺服器運行中</span>
-                        </div>
+                    <div class="reveal inline-flex items-center gap-2 glass px-4 py-2 rounded-full mb-8">
+                        <div class="w-2 h-2 rounded-full bg-kk-primary animate-pulse"></div>
+                        <span class="text-sm font-medium text-kk-text-muted">亞洲領先的數位創新園區</span>
                     </div>
 
                     <!-- Main Headline -->
-                    <h1 class="reveal font-pixel text-3xl sm:text-4xl lg:text-5xl xl:text-6xl leading-[1.1] tracking-[2px] mb-6 text-gradient-primary">
+                    <h1 class="reveal font-display font-bold text-5xl sm:text-6xl lg:text-7xl xl:text-8xl leading-[1.05] tracking-tight mb-8">
                         <span class="block">KK 園區</span>
-                        <span class="block text-gradient-orange">MapleStory 風格 RPG</span>
+                        <span class="block text-gradient-primary">數位創新新高地</span>
                     </h1>
 
                     <!-- Subtitle -->
-                    <p class="reveal delay-1 text-lg sm:text-xl lg:text-2xl text-kk-text-muted max-w-3xl mx-auto mb-10 leading-relaxed font-light">
-                        楓之谷紙娃娃系統 × Discord 社群 × 等級成長 × 公會戰<br class="hidden sm:block">
-                        打造你的專屬冒險者，在 KK 園區開啟全新篇章
+                    <p class="reveal delay-1 text-lg sm:text-xl lg:text-2xl text-kk-text-muted max-w-3xl mx-auto mb-12 leading-relaxed font-light">
+                        匯聚區塊鏈、人工智慧、金融科技與數位娛樂產業<br class="hidden sm:block">
+                        打造國際級創新生態系，加速數位經濟轉型
                     </p>
 
                     <!-- CTA Buttons -->
                     <div class="reveal delay-2 flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-                        <a href="#discord" class="btn-primary w-full sm:w-auto magnetic">
-                            <span class="flex items-center gap-2"><i data-lucide="discord" class="w-5 h-5"></i> 加入 Discord 伺服器</span>
+                        <a href="#contact" class="btn-primary w-full sm:w-auto">
+                            <span>申請入駐</span>
                         </a>
-                        <a href="#paperdoll" class="btn-secondary w-full sm:w-auto magnetic">
-                            <span class="flex items-center gap-2"><i data-lucide="user" class="w-5 h-5"></i> 體驗紙娃娃系統</span>
+                        <a href="#ecosystem" class="btn-secondary w-full sm:w-auto">
+                            <span>探索生態系</span>
                         </a>
                     </div>
 
-                    <!-- Live Stats Bar -->
-                    <div class="reveal delay-3 grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6 max-w-5xl mx-auto">
-                        <div class="glass-panel p-5 text-center group">
-                            <div class="text-3xl sm:text-4xl font-pixel text-gradient-primary stat-counter" data-target="2847">0</div>
-                            <div class="text-xs text-kk-text-muted mt-1 font-medium uppercase tracking-wider">冒險者</div>
+                    <!-- Stats Bar -->
+                    <div class="reveal delay-3 grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 max-w-4xl mx-auto">
+                        <div class="glass-card p-6 text-center">
+                            <div class="text-4xl sm:text-5xl font-display font-bold text-gradient-primary stat-counter" data-target="150">0</div>
+                            <div class="text-sm text-kk-text-muted mt-2 font-medium">入駐企業</div>
                         </div>
-                        <div class="glass-panel p-5 text-center group">
-                            <div class="text-3xl sm:text-4xl font-pixel text-gradient-orange stat-counter" data-target="156">0</div>
-                            <div class="text-xs text-kk-text-muted mt-1 font-medium uppercase tracking-wider">公會數</div>
+                        <div class="glass-card p-6 text-center">
+                            <div class="text-4xl sm:text-5xl font-display font-bold text-gradient-primary stat-counter" data-target="5000">0</div>
+                            <div class="text-sm text-kk-text-muted mt-2 font-medium">專業人才</div>
                         </div>
-                        <div class="glass-panel p-5 text-center group">
-                            <div class="text-3xl sm:text-4xl font-pixel text-gradient-gold stat-counter" data-target="9842">0</div>
-                            <div class="text-xs text-kk-text-muted mt-1 font-medium uppercase tracking-wider">累計裝備</div>
+                        <div class="glass-card p-6 text-center">
+                            <div class="text-4xl sm:text-5xl font-display font-bold text-gradient-primary stat-counter" data-target="50">0</div>
+                            <div class="text-sm text-kk-text-muted mt-2 font-medium">專利技術</div>
                         </div>
-                        <div class="glass-panel p-5 text-center group">
-                            <div class="text-3xl sm:text-4xl font-pixel text-gradient-green stat-counter" data-target="250">0</div>
-                            <div class="text-xs text-kk-text-muted mt-1 font-medium uppercase tracking-wider">最高等級</div>
-                        </div>
-                        <div class="glass-panel p-5 text-center group">
-                            <div class="text-3xl sm:text-4xl font-pixel text-gradient-pink stat-counter" data-target="12800">0</div>
-                            <div class="text-xs text-kk-text-muted mt-1 font-medium uppercase tracking-wider">每日活躍</div>
+                        <div class="glass-card p-6 text-center">
+                            <div class="text-4xl sm:text-5xl font-display font-bold text-gradient-primary stat-counter" data-target="100">0</div>
+                            <div class="text-sm text-kk-text-muted mt-2 font-medium">億級年產值</div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Scroll Indicator -->
-                <div class="reveal delay-4 absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 text-kk-text-dim">
-                    <span class="font-pixel text-[8px] uppercase tracking-wider">Scroll to Explore</span>
-                    <div class="w-8 h-14 rounded-full border-2 border-kk-border flex justify-center pt-3">
-                        <div class="w-2 h-2 rounded-full bg-kk-primary animate-bounce" style="animation-duration: 1s;"></div>
+                <div class="reveal delay-4 absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 text-kk-text-dim">
+                    <span class="text-xs font-medium uppercase tracking-wider">往下探索</span>
+                    <div class="w-6 h-10 rounded-full border border-kk-border flex justify-center pt-2">
+                        <div class="w-1.5 h-1.5 rounded-full bg-kk-primary animate-bounce" style="animation-duration: 1.5s;"></div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- PaperDoll Showcase Section -->
-        <section id="paperdoll" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
+        <!-- Features Section -->
+        <section id="features" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
             <div class="absolute inset-0 pointer-events-none">
-                <div class="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-kk-primary-dim blur-[100px] opacity-50 animate-float-fast"></div>
+                <div class="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-kk-primary-dim blur-[100px] opacity-50 animate-float"></div>
                 <div class="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-kk-secondary-dim blur-[100px] opacity-50 animate-float-slow"></div>
-                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-gradient-to-r from-kk-primary-dim via-transparent to-kk-secondary-dim blur-[150px] opacity-30 animate-pulse-glow"></div>
             </div>
 
             <div class="relative max-w-7xl mx-auto px-6">
                 <!-- Section Header -->
-                <div class="text-center mb-12 reveal">
-                    <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-primary bg-kk-primary-dim mb-4">核心系統</span>
-                    <h2 class="font-pixel text-2xl sm:text-3xl lg:text-4xl text-gradient-primary mb-4">楓之谷 紙娃娃系統</h2>
-                    <p class="text-lg text-kk-text-muted max-w-2xl mx-auto leading-relaxed">即時渲染角色外觀，支援 10 萬+ 裝備組合，動態姿勢動畫，試穿即時預覽</p>
+                <div class="text-center mb-16 reveal">
+                    <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-primary bg-kk-primary-dim mb-4">核心優勢</span>
+                    <h2 class="font-display font-bold text-4xl sm:text-5xl lg:text-6xl text-kk-text mb-6">為何選擇 KK 園區</h2>
+                    <p class="text-lg text-kk-text-muted max-w-2xl mx-auto leading-relaxed">完善的基礎建設、政策優惠與國際化生態系，讓您的創新事業飛得更高</p>
                 </div>
 
-                <!-- PaperDoll Interactive Demo -->
-                <div class="reveal delay-1 grid lg:grid-cols-3 gap-8 items-start">
-                    <!-- Left: Character Display -->
-                    <div class="lg:col-span-2 space-y-6">
-                        <div class="glass-panel p-6 pixel-border relative">
-                            <div class="flex items-center justify-between mb-6">
-                                <h3 class="font-display font-bold text-xl text-gradient-primary">角色預覽</h3>
-                                <div class="flex items-center gap-2">
-                                    <select id="pose-select" class="glass px-3 py-1.5 rounded-lg text-sm text-kk-text bg-kk-surface border-kk-border focus:border-kk-primary focus:outline-none">
-                                        <option value="stand1">待機</option>
-                                        <option value="walk1">走路</option>
-                                        <option value="jump">跳躍</option>
-                                        <option value="prone">倒地</option>
-                                        <option value="attack1">攻擊</option>
-                                        <option value="alert">警戒</option>
-                                    </select>
-                                    <button id="randomize-btn" class="btn-ghost px-4 py-1.5 text-xs">
-                                        <i data-lucide="shuffle" class="w-4 h-4 inline mr-1"></i> 隨機
-                                    </button>
+                <!-- Feature Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Feature 1 -->
+                    <article class="reveal glass-card p-8 group float-card" style="animation-delay: calc(var(--i, 0) * 200ms);">
+                        <div class="relative mb-6">
+                            <div class="w-14 h-14 rounded-2xl bg-kk-primary-dim flex items-center justify-center group-hover:bg-kk-primary/20 group-hover:scale-110 transition-all duration-500">
+                                <i data-lucide="cpu" class="w-7 h-7 text-kk-primary"></i>
+                            </div>
+                            <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-kk-primary/20 blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        </div>
+                        <h3 class="font-display font-bold text-xl text-kk-text mb-3">AI 算力中心</h3>
+                        <p class="text-kk-text-muted leading-relaxed mb-6">擁有亞洲最大級 GPU 集群，提供彈性算力租賃與模型訓練服務，支援大型語言模型開發部署</p>
+                        <div class="flex items-center gap-2 text-sm text-kk-primary font-medium group-hover:gap-3 transition-all">
+                            <span>了解更多</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4 transition-transform group-hover:translate-x-1"></i>
+                        </div>
+                    </article>
+
+                    <!-- Feature 2 -->
+                    <article class="reveal glass-card p-8 group float-card" style="animation-delay: calc((var(--i, 0) + 1) * 200ms);">
+                        <div class="relative mb-6">
+                            <div class="w-14 h-14 rounded-2xl bg-kk-secondary-dim flex items-center justify-center group-hover:bg-kk-secondary/20 group-hover:scale-110 transition-all duration-500">
+                                <i data-lucide="link" class="w-7 h-7 text-kk-secondary"></i>
+                            </div>
+                            <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-kk-secondary/20 blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        </div>
+                        <h3 class="font-display font-bold text-xl text-kk-text mb-3">區塊鏈基礎設施</h3>
+                        <p class="text-kk-text-muted leading-relaxed mb-6">提供高效能節點託管、跨鏈橋接、DeFi 協議支援，建構 Web3 發展的堅實底層架構</p>
+                        <div class="flex items-center gap-2 text-sm text-kk-secondary font-medium group-hover:gap-3 transition-all">
+                            <span>了解更多</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4 transition-transform group-hover:translate-x-1"></i>
+                        </div>
+                    </article>
+
+                    <!-- Feature 3 -->
+                    <article class="reveal glass-card p-8 group float-card" style="animation-delay: calc((var(--i, 0) + 2) * 200ms);">
+                        <div class="relative mb-6">
+                            <div class="w-14 h-14 rounded-2xl bg-kk-accent-dim flex items-center justify-center group-hover:bg-kk-accent/20 group-hover:scale-110 transition-all duration-500">
+                                <i data-lucide="building-2" class="w-7 h-7 text-kk-accent"></i>
+                            </div>
+                            <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-kk-accent/20 blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        </div>
+                        <h3 class="font-display font-bold text-xl text-kk-text mb-3">金融科技沙盒</h3>
+                        <p class="text-kk-text-muted leading-relaxed mb-6">與金管局合作的創新沙盒環境，提供合規測試空間、牌照諮詢與跨境支付解決方案</p>
+                        <div class="flex items-center gap-2 text-sm text-kk-accent font-medium group-hover:gap-3 transition-all">
+                            <span>了解更多</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4 transition-transform group-hover:translate-x-1"></i>
+                        </div>
+                    </article>
+
+                    <!-- Feature 4 -->
+                    <article class="reveal glass-card p-8 group float-card" style="animation-delay: calc((var(--i, 0) + 3) * 200ms);">
+                        <div class="relative mb-6">
+                            <div class="w-14 h-14 rounded-2xl bg-kk-success/20 flex items-center justify-center group-hover:bg-kk-success/30 group-hover:scale-110 transition-all duration-500">
+                                <i data-lucide="gamepad-2" class="w-7 h-7 text-kk-success"></i>
+                            </div>
+                            <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-kk-success/20 blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        </div>
+                        <h3 class="font-display font-bold text-xl text-kk-text mb-3">數位娛樂創作園區</h3>
+                        <p class="text-kk-text-muted leading-relaxed mb-6">整合遊戲開發、虛擬製作、元宇宙建構工具鏈，打造內容創作者的數位樂園</p>
+                        <div class="flex items-center gap-2 text-sm text-kk-success font-medium group-hover:gap-3 transition-all">
+                            <span>了解更多</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4 transition-transform group-hover:translate-x-1"></i>
+                        </div>
+                    </article>
+
+                    <!-- Feature 5 -->
+                    <article class="reveal glass-card p-8 group float-card" style="animation-delay: calc((var(--i, 0) + 4) * 200ms);">
+                        <div class="relative mb-6">
+                            <div class="w-14 h-14 rounded-2xl bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 group-hover:scale-110 transition-all duration-500">
+                                <i data-lucide="shield-check" class="w-7 h-7 text-amber-500"></i>
+                            </div>
+                            <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-amber-500/20 blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        </div>
+                        <h3 class="font-display font-bold text-xl text-kk-text mb-3">資安合規認證</h3>
+                        <p class="text-kk-text-muted leading-relaxed mb-6">通過 ISO 27001、SOC 2 Type II、GDPR 等國際認證，提供企業級資安防護與合規顧問服務</p>
+                        <div class="flex items-center gap-2 text-sm text-amber-500 font-medium group-hover:gap-3 transition-all">
+                            <span>了解更多</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4 transition-transform group-hover:translate-x-1"></i>
+                        </div>
+                    </article>
+
+                    <!-- Feature 6 -->
+                    <article class="reveal glass-card p-8 group float-card" style="animation-delay: calc((var(--i, 0) + 5) * 200ms);">
+                        <div class="relative mb-6">
+                            <div class="w-14 h-14 rounded-2xl bg-cyan-500/20 flex items-center justify-center group-hover:bg-cyan-500/30 group-hover:scale-110 transition-all duration-500">
+                                <i data-lucide="globe" class="w-7 h-7 text-cyan-500"></i>
+                            </div>
+                            <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-cyan-500/20 blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        </div>
+                        <h3 class="font-display font-bold text-xl text-kk-text mb-3">國際化人才網絡</h3>
+                        <p class="text-kk-text-muted leading-relaxed mb-6">連結全球頂尖大學、研究機構與人才庫，提供簽證協助、薪資補貼與跨國合作媒合平台</p>
+                        <div class="flex items-center gap-2 text-sm text-cyan-500 font-medium group-hover:gap-3 transition-all">
+                            <span>了解更多</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4 transition-transform group-hover:translate-x-1"></i>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- Ecosystem Section -->
+        <section id="ecosystem" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
+            <div class="absolute inset-0 pointer-events-none">
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-gradient-to-r from-kk-primary-dim via-transparent to-kk-secondary-dim blur-[150px] opacity-30 animate-pulse-glow"></div>
+            </div>
+
+            <div class="relative max-w-7xl mx-auto px-6">
+                <div class="text-center mb-16 reveal">
+                    <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-secondary bg-kk-secondary-dim mb-4">生態系統</span>
+                    <h2 class="font-display font-bold text-4xl sm:text-5xl lg:text-6xl text-kk-text mb-6">完整的創新生態圈</h2>
+                    <p class="text-lg text-kk-text-muted max-w-2xl mx-auto leading-relaxed">從基礎設施到應用層，從種子輪到上市，KK 園區提供全生命週期的支援體系</p>
+                </div>
+
+                <!-- Ecosystem Layers -->
+                <div class="space-y-8">
+                    <!-- Layer 1: Infrastructure -->
+                    <div class="reveal glass-card p-8 md:p-12 group">
+                        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+                            <div class="flex items-center gap-4">
+                                <div class="w-16 h-16 rounded-2xl bg-kk-primary-dim flex items-center justify-center flex-shrink-0 group-hover:bg-kk-primary/20 group-hover:scale-110 transition-all duration-500">
+                                    <i data-lucide="server" class="w-8 h-8 text-kk-primary"></i>
+                                </div>
+                                <div>
+                                    <span class="text-xs font-semibold text-kk-primary uppercase tracking-wider">基礎設施層</span>
+                                    <h3 class="font-display font-bold text-2xl sm:text-3xl text-kk-text mt-1">企業級算力與網路底座</h3>
                                 </div>
                             </div>
-
-                            <!-- Character Canvas Area -->
-                            <div class="paperdoll-container mx-auto relative" id="paperdoll-display">
-                                <div class="absolute inset-0 flex items-center justify-center">
-                                    <div class="text-center text-kk-text-muted">
-                                        <i data-lucide="loader" class="w-12 h-12 mx-auto mb-3 animate-spin text-kk-primary"></i>
-                                        <p>載入角色中...</p>
+                            <div class="flex-1 md:pl-12 border-l border-kk-border pl-8 mt-8 md:mt-0">
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="database" class="w-5 h-5 text-kk-primary mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">高速儲存陣列</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="wifi" class="w-5 h-5 text-kk-primary mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">100Gbps 專線</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="shield" class="w-5 h-5 text-kk-primary mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">DDoS 防護</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="monitor" class="w-5 h-5 text-kk-primary mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">7×24 監控</p>
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Character Info -->
-                            <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                                <div class="glass p-4 rounded-xl"><div class="font-pixel text-2xl text-gradient-gold" id="char-level">1</div><div class="text-xs text-kk-text-muted">等級</div></div>
-                                <div class="glass p-4 rounded-xl"><div class="font-pixel text-2xl text-gradient-blue" id="char-job">初心者</div><div class="text-xs text-kk-text-muted">職業</div></div>
-                                <div class="glass p-4 rounded-xl"><div class="font-pixel text-2xl text-gradient-green" id="char-hp">50</div><div class="text-xs text-kk-text-muted">HP</div></div>
-                                <div class="glass p-4 rounded-xl"><div class="font-pixel text-2xl text-gradient-pink" id="char-mp">50</div><div class="text-xs text-kk-text-muted">MP</div></div>
-                            </div>
-
-                            <!-- EXP Bar -->
-                            <div class="mt-4">
-                                <div class="flex justify-between text-xs text-kk-text-muted mb-1">
-                                    <span>經驗值</span>
-                                    <span id="exp-display" class="font-mono">0 / 100</span>
-                                </div>
-                                <div class="skill-bar"><div class="skill-bar-fill" id="exp-fill" style="width: 0%;"></div></div>
-                            </div>
-                        </div>
-
-                        <!-- Equipment Slots -->
-                        <div class="glass-panel p-6">
-                            <h3 class="font-display font-bold text-xl text-gradient-orange mb-5 flex items-center gap-2"><i data-lucide="package" class="w-5 h-5"></i> 裝備欄</h3>
-                            <div class="grid grid-cols-2 md:grid-cols-5 gap-3" id="equip-slots">
-                            </div>
                         </div>
                     </div>
 
-                    <!-- Right: Equipment Categories / Customization -->
-                    <div class="space-y-6">
-                        <!-- Gender / Job Selector -->
-                        <div class="glass-panel p-5">
-                            <h4 class="font-display font-medium text-kk-text mb-4 flex items-center gap-2"><i data-lucide="user-cog" class="w-5 h-5 text-kk-secondary"></i> 角色設定</h4>
-                            <div class="space-y-4">
+                    <!-- Layer 2: Platform -->
+                    <div class="reveal glass-card p-8 md:p-12 group">
+                        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+                            <div class="flex items-center gap-4">
+                                <div class="w-16 h-16 rounded-2xl bg-kk-secondary-dim flex items-center justify-center flex-shrink-0 group-hover:bg-kk-secondary/20 group-hover:scale-110 transition-all duration-500">
+                                    <i data-lucide="layers" class="w-8 h-8 text-kk-secondary"></i>
+                                </div>
                                 <div>
-                                    <label class="text-xs text-kk-text-muted mb-2 block">性別</label>
-                                    <div class="flex gap-2">
-                                        <button data-gender="male" class="gender-btn flex-1 glass-panel py-3 px-4 rounded-lg text-center transition-all active" data-tooltip="男性角色">
-                                            <i data-lucide="user" class="w-5 h-5 mx-auto mb-1 text-kk-blue"></i>
-                                            <span class="text-sm font-medium">男性</span>
-                                        </button>
-                                        <button data-gender="female" class="gender-btn flex-1 glass-panel py-3 px-4 rounded-lg text-center transition-all" data-tooltip="女性角色">
-                                            <i data-lucide="user" class="w-5 h-5 mx-auto mb-1 text-kk-accent"></i>
-                                            <span class="text-sm font-medium">女性</span>
-                                        </button>
+                                    <span class="text-xs font-semibold text-kk-secondary uppercase tracking-wider">平台服務層</span>
+                                    <h3 class="font-display font-bold text-2xl sm:text-3xl text-kk-text mt-1">統一開發與部署平台</h3>
+                                </div>
+                            </div>
+                            <div class="flex-1 md:pl-12 border-l border-kk-border pl-8 mt-8 md:mt-0">
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="git-branch" class="w-5 h-5 text-kk-secondary mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">CI/CD 流水線</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="container" class="w-5 h-5 text-kk-secondary mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">容器編排</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="key" class="w-5 h-5 text-kk-secondary mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">密鑰管理</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="activity" class="w-5 h-5 text-kk-secondary mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">可觀測性</p>
                                     </div>
                                 </div>
-                                <div>
-                                    <label class="text-xs text-kk-text-muted mb-2 block">職業</label>
-                                    <select id="job-select" class="glass w-full px-3 py-2 rounded-lg text-sm text-kk-text bg-kk-surface border-kk-border focus:border-kk-primary focus:outline-none">
-                                        <option value="beginner">初心者</option>
-                                        <option value="warrior">戰士</option>
-                                        <option value="magician">法師</option>
-                                        <option value="bowman">弓箭手</option>
-                                        <option value="thief">盜賊</option>
-                                        <option value="pirate">海盜</option>
-                                    </select>
-                                </div>
                             </div>
-                        </div>
-
-                        <!-- Equipment Categories (Tabs) -->
-                        <div class="glass-panel p-5">
-                            <h4 class="font-display font-medium text-kk-text mb-4 flex items-center gap-2"><i data-lucide="shirt" class="w-5 h-5 text-kk-primary"></i> 裝備分類</h4>
-                            <div class="flex flex-wrap gap-2 mb-4" id="equip-tabs">
-                            </div>
-                            <div class="max-h-96 overflow-y-auto custom-scrollbar" id="equip-items">
-                                <div class="text-center py-8 text-kk-text-muted">
-                                    <i data-lucide="package" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
-                                    <p>選擇分類查看裝備</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Quick Actions -->
-                        <div class="glass-panel p-5 space-y-3">
-                            <h4 class="font-display font-medium text-kk-text mb-3 flex items-center gap-2"><i data-lucide="zap" class="w-5 h-5 text-kk-gold"></i> 快速操作</h4>
-                            <button id="save-look" class="btn-secondary w-full text-sm magnetic"><span class="flex items-center justify-center gap-2"><i data-lucide="save" class="w-4 h-4"></i> 儲存造型</span></button>
-                            <button id="share-look" class="btn-ghost w-full text-sm magnetic"><span class="flex items-center justify-center gap-2"><i data-lucide="share-2" class="w-4 h-4"></i> 分享到 Discord</span></button>
-                            <a href="#discord" class="btn-primary w-full text-sm magnetic text-center"><span class="flex items-center justify-center gap-2"><i data-lucide="discord" class="w-4 h-4"></i> 綁定帳號開始遊戲</span></a>
                         </div>
                     </div>
-                </div>
-            </div>
-        </section>
 
-        <!-- Features / Game Systems -->
-        <section id="features" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
-            <div class="relative max-w-7xl mx-auto px-6">
-                <div class="text-center mb-16 reveal">
-                    <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-secondary bg-kk-secondary-dim mb-4">遊戲系統</span>
-                    <h2 class="font-pixel text-2xl sm:text-3xl lg:text-4xl text-gradient-orange mb-4">完整 RPG 體驗</h2>
-                    <p class="text-lg text-kk-text-muted max-w-2xl mx-auto leading-relaxed">不只是外觀，是真正的遊戲系統</p>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <article class="reveal glass-panel p-6 group">
-                        <div class="relative mb-5">
-                            <div class="w-14 h-14 rounded-xl bg-kk-primary-dim flex items-center justify-center group-hover:bg-kk-primary/20 group-hover:scale-110 group-hover:rotate-3 transition_all duration-300">
-                                <i data-lucide="heart-pulse" class="w-7 h-7 text-kk-primary"></i>
-                            </div>
-                        </div>
-                        <h3 class="font-display font-bold text-lg text-kk-text mb-2">HP/MP 系統</h3>
-                        <p class="text-kk-text-muted text-sm leading-relaxed mb-4">職業專屬基礎數值，等級成長自動計算，藥水/技能即時回復</p>
-                        <div class="flex items-center gap-2 text-xs text-kk-primary font-medium group-hover:gap-3 transition_all">
-                            <span>系統完善</span><i data-lucide="check-circle" class="w-4 h-4"></i>
-                        </div>
-                    </article>
-
-                    <article class="reveal delay-1 glass-panel p-6 group">
-                        <div class="relative mb-5">
-                            <div class="w-14 h-14 rounded-xl bg-kk-secondary-dim flex items-center justify-center group-hover:bg-kk-secondary/20 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
-                                <i data-lucide="sword" class="w-7 h-7 text-kk-secondary"></i>
-                            </div>
-                        </div>
-                        <h3 class="font-display font-bold text-lg text-kk-text mb-2">戰鬥與技能</h3>
-                        <p class="text-kk-text-muted text-sm leading-relaxed mb-4">普攻/技能傷害計算、暴擊、屬性相剋、Buff/Debuff 完整系統</p>
-                        <div class="flex items-center gap-2 text-xs text-kk-secondary font-medium group-hover:gap-3 transition_all">
-                            <span>開發中</span><i data-lucide="loader" class="w-4 h-4 animate-spin"></i>
-                        </div>
-                    </article>
-
-                    <article class="reveal delay-2 glass-panel p-6 group">
-                        <div class="relative mb-5">
-                            <div class="w-14 h-14 rounded-xl bg-kk-accent-dim flex items-center justify-center group-hover:bg-kk-accent/20 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
-                                <i data-lucide="gem" class="w-7 h-7 text-kk-accent"></i>
-                            </div>
-                        </div>
-                        <h3 class="font-display font-bold text-lg text-kk-text mb-2">裝備強化/鑲嵌</h3>
-                        <p class="text-kk-text-muted text-sm leading-relaxed mb-4">星之力、潛能、附加屬性、捲軸強化，打造最強裝備</p>
-                        <div class="flex items-center gap-2 text-xs text-kk-accent font-medium group-hover:gap-3 transition_all">
-                            <span>規劃中</span><i data-lucide="clock" class="w-4 h-4"></i>
-                        </div>
-                    </article>
-
-                    <article class="reveal delay-3 glass-panel p-6 group">
-                        <div class="relative mb-5">
-                            <div class="w-14 h-14 rounded-xl bg-kk-blue-dim flex items-center justify-center group-hover:bg-kk-blue/20 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
-                                <i data-lucide="coins" class="w-7 h-7 text-kk-blue"></i>
-                            </div>
-                        </div>
-                        <h3 class="font-display font-bold text-lg text-kk-text mb-2">交易所經濟</h3>
-                        <p class="text-kk-text-muted text-sm leading-relaxed mb-4">玩家自由交易、拍賣行、KKcoin 經濟系統、稅收機制</p>
-                        <div class="flex items-center gap-2 text-xs text-kk-blue font-medium group-hover:gap-3 transition_all">
-                            <span>運行中</span><i data-lucide="check-circle" class="w-4 h-4"></i>
-                        </div>
-                    </article>
-                </div>
-            </div>
-        </section>
-
-        <!-- Guild System -->
-        <section id="guild" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
-            <div class="absolute inset-0 pointer-events-none">
-                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-gradient-to-r from-kk-primary-dim via-transparent to-kk-gold-dim blur-[200px] opacity-40 animate-pulse-glow"></div>
-            </div>
-
-            <div class="relative max-w-7xl mx-auto px-6">
-                <div class="text-center mb-16 reveal">
-                    <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-gold bg-kk-gold-dim mb-4">公會系統</span>
-                    <h2 class="font-pixel text-2xl sm:text-3xl lg:text-4xl text-gradient-gold mb-4">建立或加入公會</h2>
-                    <p class="text-lg text-kk-text-muted max-w-2xl mx-auto leading-relaxed">與夥伴並肩作戰，爭奪公會榮耀排名</p>
-                </div>
-
-                <div class="grid lg:grid-cols-2 gap-8 items-center">
-                    <div class="reveal space-y-6">
-                        <div class="glass-panel p-6 pixel-border">
-                            <div class="flex items-center gap-4 mb-4">
-                                <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-kk-gold to-kk-secondary flex items-center justify-center flex-shrink-0">
-                                    <i data-lucide="users" class="w-8 h-8 text-kk-bg"></i>
+                    <!-- Layer 3: Application -->
+                    <div class="reveal glass-card p-8 md:p-12 group">
+                        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+                            <div class="flex items-center gap-4">
+                                <div class="w-16 h-16 rounded-2xl bg-kk-accent-dim flex items-center justify-center flex-shrink-0 group-hover:bg-kk-accent/20 group-hover:scale-110 transition-all duration-500">
+                                    <i data-lucide="app-window" class="w-8 h-8 text-kk-accent"></i>
                                 </div>
                                 <div>
-                                    <h3 class="font-display font-bold text-2xl text-gradient-gold">楓葉聯盟</h3>
-                                    <p class="text-kk-text-muted text-sm">公會等級 12 / 經驗值 847,200 / 1,000,000</p>
+                                    <span class="text-xs font-semibold text-kk-accent uppercase tracking-wider">應用創新層</span>
+                                    <h3 class="font-display font-bold text-2xl sm:text-3xl text-kk-text mt-1">產業解決方案與市場加速</h3>
                                 </div>
                             </div>
-                            <div class="skill-bar mb-4"><div class="skill-bar-fill" style="width: 84.7%;"></div></div>
-                            <div class="grid grid-cols-3 gap-4 text-center">
-                                <div class="glass p-3 rounded-lg"><div class="font-pixel text-2xl text-gradient-gold">47</div><div class="text-xs text-kk-text-muted">成員</div></div>
-                                <div class="glass p-3 rounded-lg"><div class="font-pixel text-2xl text-gradient-primary">3</div><div class="text-xs text-kk-text-muted">副會長</div></div>
-                                <div class="glass p-3 rounded-lg"><div class="font-pixel text-2xl text-gradient-orange">1,247</div><div class="text-xs text-kk-text-muted">公會幣</div></div>
+                            <div class="flex-1 md:pl-12 border-l border-kk-border pl-8 mt-8 md:mt-0">
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="coins" class="w-5 h-5 text-kk-accent mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">DeFi 協議套件</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="brain" class="w-5 h-5 text-kk-accent mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">AI 模型市場</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="users" class="w-5 h-5 text-kk-accent mb-2)</p>
+                                    </div>
+                                    <div class="glass p-4 rounded-xl">
+                                        <i data-lucide="rocket" class="w-5 h-5 text-kk-accent mb-2"></i>
+                                        <p class="text-sm font-medium text-kk-text">孵化加速器</p>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-
-                        <div class="glass-panel p-6">
-                            <h4 class="font-display font-bold text-kk-text mb-4 flex items-center gap-2"><i data-lucide="trophy" class="w-5 h-5 text-kk-gold"></i> 公會功能</h4>
-                            <div class="grid grid-cols-2 gap-3">
-                                <div class="quest-item active"><i data-lucide="flag" class="w-5 h-5 text-kk-gold flex-shrink-0 mt-0.5"></i><div><div class="font-medium text-kk-text">公會任務</div><div class="text-xs text-kk-text-muted">每日/每週任務，獎勵公會經驗</div></div></div>
-                                <div class="quest-item"><i data-lucide="swords" class="w-5 h-5 text-kk-secondary flex-shrink-0 mt-0.5"></i><div><div class="font-medium text-kk-text">公會戰 (GvG)</div><div class="text-xs text-kk-text-muted">每週六 20:00 開戰，爭奪領地</div></div></div>
-                                <div class="quest-item"><i data-lucide="store" class="w-5 h-5 text-kk-blue flex-shrink-0 mt-0.5"></i><div><div class="font-medium text-kk-text">公會商店</div><div class="text-xs text-kk-text-muted">專屬裝備、稱號、坐騎兌換</div></div></div>
-                                <div class="quest-item"><i data-lucide="users" class="w-5 h-5 text-kk-primary flex-shrink-0 mt-0.5"></i><div><div class="font-medium text-kk-text">公會技能</div><div class="text-xs text-kk-text-muted">全體成員屬性加成、經驗加成</div></div></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="reveal delay-1">
-                        <div class="glass-panel p-6 mb-6">
-                            <h4 class="font-display font-bold text-kk-text mb-4 flex items-center gap-2"><i data-lucide="list" class="w-5 h-5 text-kk-primary"></i> 熱門公會</h4>
-                            <div class="space-y-3" id="guild-list">
-                            </div>
-                        </div>
-                        <div class="glass-panel p-6 pixel-border text-center">
-                            <h4 class="font-display font-bold text-gradient-gold mb-2">創建專屬公會</h4>
-                            <p class="text-kk-text-muted text-sm mb-4">需要 Lv.30 且 50,000 KKcoin</p>
-                            <button class="btn-secondary magnetic"><span class="flex items-center justify-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> 創建公會</span></button>
                         </div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Leaderboard -->
-        <section id="leaderboard" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
-            <div class="relative max-w-7xl mx-auto px-6">
-                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-12 reveal">
-                    <div>
-                        <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-gold bg-kk-gold-dim mb-4">排行榜</span>
-                        <h2 class="font-pixel text-2xl sm:text-3xl lg:text-4xl text-gradient-gold mb-2">冒險者排名</h2>
-                        <p class="text-kk-text-muted">每小時更新，展現真正的強者</p>
-                    </div>
-                    <div class="flex gap-2" id="leaderboard-tabs">
-                    </div>
-                </div>
-
-                <div class="glass-panel overflow-hidden">
-                    <div class="grid grid-cols-12 px-4 py-3 text-xs font-bold text-kk-text-muted uppercase tracking-wider border-b border-kk-border bg-kk-bg/50" style="grid-template-columns: 50px 40px 1fr 1fr 100px 100px 100px 100px 100px 80px 80px 100px;">
-                        <span>#</span><span>職</span><span>名稱</span><span>公會</span><span>等級</span><span>經驗值</span><span>KKcoin</span><span>HP</span><span>戰力</span><span>裝備分</span><span>最後上線</span>
-                    </div>
-                    <div class="max-h-[500px] overflow-y-auto custom-scrollbar" id="leaderboard-body">
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Shop Preview -->
-        <section id="shop" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
+        <!-- Companies Section -->
+        <section id="companies" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
             <div class="relative max-w-7xl mx-auto px-6">
                 <div class="text-center mb-16 reveal">
-                    <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-accent bg-kk-accent-dim mb-4">商城系統</span>
-                    <h2 class="font-pixel text-2xl sm:text-3xl lg:text-4xl text-gradient-pink mb-4">冒險者商城</h2>
-                    <p class="text-lg text-kk-text-muted max-w-2xl mx-auto leading-relaxed">裝備、消耗品、寵物、坐騎、語音包 - 應有盡有</p>
+                    <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-accent bg-kk-accent-dim mb-4">入駐企業</span>
+                    <h2 class="font-display font-bold text-4xl sm:text-5xl lg:text-6xl text-kk-text mb-6">共同塑造未來的夥伴</h2>
+                    <p class="text-lg text-kk-text-muted max-w-2xl mx-auto leading-relaxed">超過 150 家創新企業選擇 KK 園區作為他們的亞洲總部</p>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div class="reveal glass-panel p-6 group">
-                        <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-kk-primary-dim flex items-center justify-center group-hover:bg-kk-primary/20 group-hover:scale-110 transition-all duration-300">
-                            <i data-lucide="shirt" class="w-10 h-10 text-kk-primary"></i>
-                        </div>
-                        <h3 class="font-display font-bold text-lg text-center text-kk-text mb-2">時裝商城</h3>
-                        <p class="text-kk-text-muted text-sm text-center mb-4">10,000+ 造型任意搭配，染色系統、套裝效果</p>
-                        <div class="text-center"><span class="text-xs font-medium text-kk-primary">KKcoin / 點數</span></div>
+                <!-- Company Categories -->
+                <div class="reveal mb-12">
+                    <div class="flex flex-wrap justify-center gap-3" id="category-filters">
+                        <button data-category="all" class="category-btn active glass px-6 py-2 rounded-full text-sm font-medium text-kk-text">全部</button>
+                        <button data-category="ai" class="category-btn glass px-6 py-2 rounded-full text-sm font-medium text-kk-text-muted hover:text-kk-primary transition-colors">AI・機器學習</button>
+                        <button data-category="blockchain" class="category-btn glass px-6 py-2 rounded-full text-sm font-medium text-kk-text-muted hover:text-kk-secondary transition-colors">區塊鏈・Web3</button>
+                        <button data-category="fintech" class="category-btn glass px-6 py-2 rounded-full text-sm font-medium text-kk-text-muted hover:text-kk-accent transition-colors">金融科技</button>
+                        <button data-category="gaming" class="category-btn glass px-6 py-2 rounded-full text-sm font-medium text-kk-text-muted hover:text-kk-success transition-colors">數位娛樂</button>
                     </div>
-                    <div class="reveal delay-1 glass-panel p-6 group">
-                        <div class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-kk-secondary-dim flex items-center justify-center group-hover:bg-kk-secondary/20 group-hover:scale-110 transition-all duration-300">
-                            <i data-lucide="box" class="w-10 h-10 text-kk-secondary"></i>
-                        </div>
-                        <h3 class="font-display font-bold text-lg text-center text-kk-text mb-2">消耗品/功能</h3>
-                        <p class="text-kk-text-muted text-sm text-center mb-4">藥水、捲軸、傳送石、雙倍經驗、自動拾取</p>
-                        <div class="text-center"><span class="text-xs font-medium text-kk-secondary">KKcoin</span></div>
-                    </div>
-                    <div class="reveal delay-2 glass-panel p-6 group">
-                        <div class="w-20 h-20 mx-auto mb-4 rounded-2xb bg-kk-accent-dim flex items-center justify-center group-hover:bg-kk-accent/20 group-hover:scale-110 transition-all duration-300">
-                            <i data-lucide="heart" class="w-10 h-10 text-kk-accent"></i>
-                        </div>
-                        <h3 class="font-display font-bold text-lg text-center text-kk-text mb-2">寵物/坐騎</h3>
-                        <p class="text-kk-text-muted text-sm text-center mb-4">自動拾取寵物、移動速度坐騎、專屬技能</p>
-                        <div class="text-center"><span class="text-xs font-medium text-kk-accent">點數 / 活動</span></div>
-                    </div>
-                    <div class="reveal delay-3 glass-panel p-6 group">
-                        <div class="w-20 h-20 mx-auto mb-4 rounded-2xb bg-kk-gold-dim flex items-center justify-center group-hover:bg-kk-gold/20 group-hover:scale-110 transition-all duration-300">
-                            <i data-lucide="sparkles" class="w-10 h-10 text-kk-gold"></i>
-                        </div>
-                        <h3 class="font-display font-bold text-lg text-center text-kk-text mb-2">特效/語音</h3>
-                        <p class="text-kk-text-muted text-sm text-center mb-4">技能特效換膚、角色語音包、傷害數字特效</p>
-                        <div class="text-center"><span class="text-xs font-medium text-kk-gold">點數</span></div>
-                    </div>
+                </div>
+
+                <!-- Company Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" id="company-grid">
+                    <!-- Companies will be rendered by JS -->
+                </div>
+
+                <div class="text-center mt-12 reveal">
+                    <a href="#contact" class="btn-secondary inline-flex items-center gap-2">
+                        <span>查看所有入駐企業</span>
+                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                    </a>
                 </div>
             </div>
         </section>
 
-        <!-- Discord Integration -->
-        <section id="discord" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
+        <!-- About Section -->
+        <section id="about" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
             <div class="absolute inset-0 pointer-events-none">
-                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-gradient-to-r from-kk-blue-dim via-transparent to-kk-primary-dim blur-[200px] opacity-40 animate-pulse-glow"></div>
+                <div class="absolute top-0 right-1/4 w-96 h-96 rounded-full bg-kk-primary-dim blur-[100px] opacity-30 animate-float"></div>
+                <div class="absolute bottom-0 left-1/4 w-96 h-96 rounded-full bg-kk-secondary-dim blur-[100px] opacity-30 animate-float-slow"></div>
             </div>
 
-            <div class="relative max-w-4xl mx-auto px-6 text-center">
-                <div class="reveal glass-panel p-8 md:p-12 lg:p-16 pixel-border">
-                    <div class="mb-8">
-                        <div class="inline-flex items-center gap-3 glass px-4 py-2 rounded-full mb-6">
-                            <div class="flex items-center gap-1.5">
-                                <div class="w-2.5 h-2.5 rounded-full bg-[#5865f2] animate-pulse"></div>
-                                <span class="font-pixel text-[10px] text-[#5865f2]">DISCORD</span>
+            <div class="relative max-w-7xl mx-auto px-6">
+                <div class="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+                    <!-- Content -->
+                    <div class="reveal">
+                        <span class="inline-block px-4 py-1.5 rounded-full text-sm font-medium text-kk-primary bg-kk-primary-dim mb-6">關於我們</span>
+                        <h2 class="font-display font-bold text-4xl sm:text-5xl lg:text-6xl text-kk-text mb-6">打造亞洲最具競爭力的數位創新高地</h2>
+                        <div class="space-y-6 text-kk-text-muted leading-relaxed">
+                            <p class="text-lg">KK 園區成立於 2020 年，位於亞洲數位經濟核心地帶，佔地超過 50 公頃，總建築面積超過 100 萬平方公尺。園區依託國家級新區政策優勢，聚焦人工智慧、區塊鏈、金融科技、數位娛樂四大戰略性新興產業。</p>
+                            <p class="text-lg">我們不只是提供辦公空間，更構建了一個「政策＋平台＋資金＋人才」四位一體的創新生態系統。通體系，已吸引超過 150 家國內外領軍企業入駐，匯聚 5000+ 高端人才，年產值突破百億大關。</p>
+                        </div>
+
+                        <!-- Values -->
+                        <div class="mt-10 grid grid-cols-2 gap-4">
+                            <div class="glass-card p-6 group reveal">
+                                <div class="w-10 h-10 rounded-xl bg-kk-primary-dim flex items-center justify-center mb-4 group-hover:bg-kk-primary/20 transition-all">
+                                    <i data-lucide="target" class="w-5 h-5 text-kk-primary"></i>
+                                </div>
+                                <h4 class="font-display font-bold text-lg text-kk-text mb-2">願景導向</h4>
+                                <p class="text-sm text-kk-text-muted">以國家戰略需求為導向，佈局未來產業賽道</p>
                             </div>
-                            <span class="text-sm font-medium text-kk-text">官方社群伺服器</span>
+                            <div class="glass-card p-6 group reveal">
+                                <div class="w-10 h-10 rounded-xl bg-kk-secondary-dim flex items-center justify-center mb-4 group-hover:bg-kk-secondary/20 transition-all">
+                                    <i data-lucide="users" class="w-5 h-5 text-kk-secondary"></i>
+                                </div>
+                                <h4 class="font-display font-bold text-lg text-kk-text mb-2">人才優先</h4>
+                                <p class="text-sm text-kk-text-muted">打造國際化人才高地，提供全生命週期服務</p>
+                            </div>
+                            <div class="glass-card p-6 group reveal">
+                                <div class="w-10 h-10 rounded-xl bg-kk-accent-dim flex items-center justify-center mb-4 group-hover:bg-kk-accent/20 transition-all">
+                                    <i data-lucide="lightbulb" class="w-5 h-5 text-kk-accent"></i>
+                                </div>
+                                <h4 class="font-display font-bold text-lg text-kk-text mb-2">創新驅動</h4>
+                                <p class="text-sm text-kk-text-muted">建立開放協同創新網絡，加速科技成果轉化</p>
+                            </div>
+                            <div class="glass-card p-6 group reveal">
+                                <div class="w-10 h-10 rounded-xl bg-kk-success/20 flex items-center justify-center mb-4 group-hover:bg-kk-success/30 transition-all">
+                                    <i data-lucide="globe" class="w-5 h-5 text-kk-success"></i>
+                                </div>
+                                <h4 class="font-display font-bold text-lg text-kk-text mb-2">全球視野</h4>
+                                <p class="text-sm text-kk-text-muted">連接國際創新資源，構建雙循環發展新格局</p>
+                            </div>
                         </div>
                     </div>
 
-                    <h2 class="reveal delay-1 font-pixel text-2xl sm:text-3xl lg:text-4xl text-gradient-blue mb-4">加入 KK 園區 Discord</h2>
-                    <p class="reveal delay-2 text-lg text-kk-text-muted mb-10 max-w-2xl mx-auto leading-relaxed">7,000+ 冒險者等你加入。即時聊天、組隊尋人、活動公告、機器人查詢，一切在這裡。</p>
+                    <!-- Visual -->
+                    <div class="reveal relative">
+                        <div class="relative aspect-square max-w-md mx-auto">
+                            <!-- Rotating rings -->
+                            <div class="absolute inset-0 border border-kk-primary/20 rounded-full animate-rotate-slow"></div>
+                            <div class="absolute inset-4 border border-kk-secondary/20 rounded-full animate-rotate-slow" style="animation-direction: reverse; animation-duration: 30s;"></div>
+                            <div class="absolute inset-8 border border-kk-accent/20 rounded-full animate-rotate-slow" style="animation-duration: 40s;"></div>
 
-                    <div class="reveal delay-3 grid md:grid-cols-3 gap-6 mb-10">
-                        <div class="glass-panel p-5 text-center">
-                            <div class="w-12 h-12 mx-auto mb-3 rounded-xl bg-[#5865f2]/20 flex items-center justify-center"><i data-lucide="message-circle" class="w-6 h-6 text-[#5865f2]"></i></div>
-                            <h4 class="font-display font-bold text-kk-text mb-1">即時語音/文字</h4>
-                            <p class="text-kk-text-muted text-sm">多頻道分類：閒聊、尋隊、攻略、交易</p>
-                        </div>
-                        <div class="glass-panel p-5 text-center">
-                            <div class="w-12 h-12 mx-auto mb-3 rounded-xl bg-kk-secondary/20 flex items-center justify-center"><i data-lucide="bot" class="w-6 h-6 text-kk-secondary"></i></div>
-                            <h4 class="font-display font-bold text-kk-text mb-1">專屬機器人</h4>
-                            <p class="text-kk-text-muted text-sm">查裝備、查價格、簽到、抽獎、戰鬥模擬</p>
-                        </div>
-                        <div class="glass-panel p-5 text-center">
-                            <div class="w-12 h-12 mx-auto mb-3 rounded-xl bg-kk-gold/20 flex items-center justify-center"><i data-lucide="calendar" class="w-6 h-6 text-kk-gold"></i></div>
-                            <h4 class="font-display font-bold text-kk-text mb-1">每週活動</h4>
-                            <p class="text-kk-text-muted text-sm">Boss 團、公會戰、時裝秀、問答贏獎金</p>
-                        </div>
-                    </div>
+                            <!-- Orbiting dots -->
+                            <div class="absolute inset-0 animate-orbit">
+                                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-kk-primary glow-primary"></div>
+                            </div>
+                            <div class="absolute inset-0 animate-orbit-reverse">
+                                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-kk-secondary glow-secondary"></div>
+                            </div>
+                            <div class="absolute inset-4 animate-orbit" style="animation-duration: 15s;">
+                                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-kk-accent glow-accent"></div>
+                            </div>
 
-                    <div class="reveal delay-4 flex flex-col sm:flex-row items-center justify-center gap-4">
-                        <a href="https://discord.gg/5JtuJvhhHu" target="_blank" rel="noopener" class="btn-primary w-full sm:w-auto magnetic" style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%);">
-                            <span class="flex items-center justify-center gap-2"><i data-lucide="discord" class="w-5 h-5"></i> 立即加入伺服器</span>
-                        </a>
-                        <button id="copy-invite" class="btn-secondary w-full sm:w-auto magnetic"><span class="flex items-center justify-center gap-2"><i data-lucide="copy" class="w-4 h-4"></i> 複製邀請碼</span></button>
-                    </div>
-
-                    <div class="reveal delay-5 mt-12 glass p-6 rounded-xl text-left">
-                        <h4 class="font-display font-bold text-kk-text mb-4 flex items-center gap-2"><i data-lucide="terminal" class="w-5 h-5 text-kk-primary"></i> 機器人指令預覽</h4>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm font-mono bg-kk-bg/50 p-4 rounded-lg">
-                            <code>/纸娃娃 @用戶</code><code>/商店 搜尋 裝備名</code>
-                            <code>/等級 @用戶</code><code>/排行榜 等級</code>
-                            <code>/簽到</code><code>/抽獎</code>
-                            <code>/組隊 Boss名稱</code><code>/交易 查詢 物品</code>
-                            <code>/公會 資訊</code><code>/幫助</code>
+                            <!-- Center content -->
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <div class="glass-strong rounded-2xl p-8 text-center glow-primary">
+                                    <div class="text-5xl font-display font-bold text-gradient-primary mb-2">KK</div>
+                                    <div class="text-sm text-kk-text-muted">創新引擎</div>
+                                    <div class="mt-6 flex items-center justify-center gap-4 text-xs text-kk-text-dim">
+                                        <div class="flex items-center gap-1">
+                                            <div class="w-2 h-2 rounded-full bg-kk-primary animate-pulse"></div>
+                                            <span>運行中</span>
+                                        </div>
+                                        <div class="flex items-center gap-1">
+                                            <div class="w-2 h-2 rounded-full bg-kk-success animate-pulse" style="animation-delay: 0.3s;"></div>
+                                            <span>系統正常</span>
+                                        </div>
+                                        <div class="flex items-center gap-1">
+                                            <div class="w-2 h-2 rounded-full bg-kk-accent animate-pulse" style="animation-delay: 0.6s;"></div>
+                                            <span>連線優良</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -974,23 +939,48 @@
         </section>
 
         <!-- CTA Section -->
-        <section class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
+        <section id="contact" class="relative py-24 sm:py-32 lg:py-40 overflow-hidden noise-overlay">
+            <div class="absolute inset-0 pointer-events-none">
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-gradient-to-r from-kk-primary-dim via-transparent to-kk-secondary-dim blur-[200px] opacity-40 animate-pulse-glow"></div>
+            </div>
+
             <div class="relative max-w-4xl mx-auto px-6 text-center">
-                <div class="reveal glass-panel p-8 md:p-12 lg:p-16 pixel-border">
+                <div class="reveal glass-card p-8 md:p-12 lg:p-16 gradient-border">
                     <div class="inline-flex items-center gap-2 glass px-4 py-1.5 rounded-full mb-6">
                         <div class="w-2 h-2 rounded-full bg-kk-primary animate-pulse"></div>
-                        <span class="text-sm font-medium text-kk-text-muted">準備好開始冒險了嗎？</span>
+                        <span class="text-sm font-medium text-kk-text-muted">準備開始您的創新之旅？</span>
                     </div>
 
-                    <h2 class="reveal delay-1 font-pixel text-2xl sm:text-3xl lg:text-4xl text-gradient-primary mb-6"> KK 園區等你來戰</h2>
+                    <h2 class="reveal font-display font-bold text-4xl sm:text-5xl lg:text-6xl text-kk-text mb-6">加入 KK 園區，<br class="hidden sm:block">共創數位未來</h2>
 
-                    <p class="reveal delay-2 text-lg text-kk-text-muted mb-10 max-w-2xl mx-auto leading-relaxed">創建角色、收集裝備、加入公會、挑戰 Boss。你的楓之谷故事，從這裡開始。</p>
+                    <p class="reveal text-lg text-kk-text-muted mb-10 max-w-2xl mx-auto leading-relaxed">無論您是初創團隊還是跨國企業，KK 園區都能提供量身定製的入駐方案與全方位支援服務。我們的專業團隊將在 24 小時內與您聯繫。</p>
 
-                    <div class="reveal delay-3 flex flex-col sm:flex-row items-center justify-center gap-4">
-                        <a href="https://discord.gg/5JtuJvhhHu" target="_blank" rel="noopener" class="btn-primary w-full sm:w-auto magnetic" style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%);">
-                            <span class="flex items-center justify-center gap-2"><i data-lucide="discord" class="w-5 h-5"></i> 加入 Discord 開始</span>
+                    <div class="reveal flex flex-col sm:flex-row items-center justify-center gap-4">
+                        <a href="mailto:join@kkpark.com" class="btn-primary w-full sm:w-auto">
+                            <span>立即申請入駐</span>
                         </a>
-                        <a href="#paperdoll" class="btn-secondary w-full sm:w-auto magnetic"><span class="flex items-center justify-center gap-2"><i data-lucide="user-plus" class="w-4 h-4"></i> 先試玩紙娃娃</span></a>
+                        <a href="https://discord.gg" target="_blank" rel="noopener" class="btn-secondary w-full sm:w-auto">
+                            <span>加入 Discord 社群</span>
+                        </a>
+                    </div>
+
+                    <!-- Contact Info -->
+                    <div class="reveal mt-16 grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div class="glass p-6 rounded-2xl">
+                            <i data-lucide="mail" class="w-6 h-6 text-kk-primary mb-3"></i>
+                            <p class="text-sm text-kk-text-muted">商務合作</p>
+                            <a href="mailto:business@kkpark.com" class="text-kk-text hover:text-kk-primary transition-colors font-medium">business@kkpark.com</a>
+                        </div>
+                        <div class="glass p-6 rounded-2xl">
+                            <i data-lucide="map-pin" class="w-6 h-6 text-kk-secondary mb-3"></i>
+                            <p class="text-sm text-kk-text-muted">園區地址</p>
+                            <address class="text-kk-text not-italic font-medium">新北市新店區安康路二段 123 號</address>
+                        </div>
+                        <div class="glass p-6 rounded-2xl">
+                            <i data-lucide="clock" class="w-6 h-6 text-kk-accent mb-3"></i>
+                            <p class="text-sm text-kk-text-muted">服務時間</p>
+                            <p class="text-kk-text font-medium">週一至週五 09:00-18:00</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1003,155 +993,123 @@
             <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full bg-kk-primary-dim blur-[150px] opacity-20"></div>
         </div>
 
-        <div class="relative max-w-7xl mx-auto px-6 py-12 lg:py-16">
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
-                <div class="reveal">
-                    <a href="#" class="flex items-center gap-3 mb-5">
-                        <div class="w-12 h-12 rounded-xl pixel-border flex items-center justify-center">
-                            <span class="font-pixel text-2xl text-gradient-primary">KK</span>
+        <div class="relative max-w-7xl mx-auto px-6 py-16 lg:py-24">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
+                <!-- Brand -->
+                <div class="lg:col-span-1 reveal">
+                    <a href="#" class="flex items-center gap-3 mb-6">
+                        <div class="w-10 h-10 rounded-xl overflow-hidden">
+                            <svg viewBox="0 0 40 40" fill="none" class="w-full h-full">
+                                <defs>
+                                    <linearGradient id="footerLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" stop-color="#00d4ff"/>
+                                        <stop offset="50%" stop-color="#a855f7"/>
+                                        <stop offset="100%" stop-color="#f472b6"/>
+                                    </linearGradient>
+                                </defs>
+                                <path d="M20 4 L36 14 L36 26 L20 36 L4 26 L4 14 Z" stroke="url(#footerLogoGrad)" stroke-width="2" fill="none" stroke-linejoin="round"/>
+                                <path d="M20 12 L20 28 M12 20 L28 20" stroke="url(#footerLogoGrad)" stroke-width="1.5" stroke-linecap="round"/>
+                                <circle cx="20" cy="20" r="3" fill="url(#footerLogoGrad)"/>
+                            </svg>
                         </div>
-                        <span class="font-display font-bold text-xl text-gradient-primary">KK 園區</span>
+                        <span class="font-display font-bold text-xl text-kk-text">KK 園區</span>
                     </a>
-                    <p class="text-kk-text-muted text-sm leading-relaxed mb-5">Discord 社群專屬楓之谷風格 RPG 體驗。紙娃娃、等級成長、裝備收集、公會戰、交易經濟系統完整呈現。</p>
-                    <div class="flex gap-3">
-                        <a href="https://discord.gg/5JtuJvhhHu" target="_blank" rel="noopener" class="glass p-2.5 rounded-xl text-kk-text-muted hover:text-[#5865f2] hover:border-[#5865f2]/30 transition_all" aria-label="Discord"><i data-lucide="discord" class="w-5 h-5"></i></a>
-                        <a href="#" class="glass p-2.5 rounded-xl text-kk-text-muted hover:text-kk-primary hover:border-kk-primary/30 transition_all" aria-label="GitHub"><i data-lucide="github" class="w-5 h-5"></i></a>
-                        <a href="#" class="glass p-2.5 rounded-xl text-kk-text-muted hover:text-kk-secondary hover:border-kk-secondary/30 transition_all" aria-label="Twitter"><i data-lucide="twitter" class="w-5 h-5"></i></a>
-                        <a href="#" class="glass p-2.5 rounded-xl text-kk-text-muted hover:text-kk-blue hover:border-kk-blue/30 transition_all" aria-label="MapleStory.io"><i data-lucide="globe" class="w-5 h-5"></i></a>
+                    <p class="text-kk-text-muted text-sm leading-relaxed mb-6">亞洲領先的數位創新園區，匯聚 AI、區塊鏈、金融科技與數位娛樂產業，打造國際級創新生態系。</p>
+                    <div class="flex gap-4">
+                        <a href="https://twitter.com" target="_blank" rel="noopener" class="glass p-2 rounded-xl text-kk-text-muted hover:text-kk-primary hover:border-kk-primary/30 transition-all" aria-label="Twitter">
+                            <i data-lucide="twitter" class="w-5 h-5"></i>
+                        </a>
+                        <a href="https://discord.gg" target="_blank" rel="noopener" class="glass p-2 rounded-xl text-kk-text-muted hover:text-kk-primary hover:border-kk-primary/30 transition-all" aria-label="Discord">
+                            <i data-lucide="message-circle" class="w-5 h-5"></i>
+                        </a>
+                        <a href="https://github.com" target="_blank" rel="noopener" class="glass p-2 rounded-xl text-kk-text-muted hover:text-kk-primary hover:border-kk-primary/30 transition-all" aria-label="GitHub">
+                            <i data-lucide="github" class="w-5 h-5"></i>
+                        </a>
+                        <a href="https://linkedin.com" target="_blank" rel="noopener" class="glass p-2 rounded-xl text-kk-text-muted hover:text-kk-primary hover:border-kk-primary/30 transition-all" aria-label="LinkedIn">
+                            <i data-lucide="linkedin" class="w-5 h-5"></i>
+                        </a>
                     </div>
                 </div>
 
+                <!-- Links -->
                 <div class="reveal">
-                    <h4 class="font-semibold text-kk-text mb-4">遊戲系統</h4>
-                    <nav class="space-y-2">
-                        <a href="#paperdoll" class="block text-kk-text-muted hover:text-kk-primary transition_colors text-sm"><i data-lucide="user" class="w-4 h-4 inline mr-2"></i>紙娃娃系統</a>
-                        <a href="#features" class="block text-kk-text-muted hover:text-kk-secondary transition_colors text-sm"><i data-lucide="sword" class="w-4 h-4 inline mr-2"></i>戰鬥/技能</a>
-                        <a href="#features" class="block text-kk-text-muted hover:text-kk-accent transition_colors text-sm"><i data-lucide="gem" class="w-4 h-4 inline mr-2"></i>強化/鑲嵌</a>
-                        <a href="#shop" class="block text-kk-text-muted hover:text-kk-pink transition_colors text-sm"><i data-lucide="store" class="w-4 h-4 inline mr-2"></i>商城/交易</a>
-                        <a href="#guild" class="block text-kk-text-muted hover:text-kk-gold transition_colors text-sm"><i data-lucide="users" class="w-4 h-4 inline mr-2"></i>公會/GvG</a>
-                        <a href="#leaderboard" class="block text-kk-text-muted hover:text-kk-blue transition_colors text-sm"><i data-lucide="trophy" class="w-4 h-4 inline mr-2"></i>排行榜</a>
+                    <h4 class="font-semibold text-kk-text mb-4">產品與服務</h4>
+                    <nav class="space-y-3">
+                        <a href="#features" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">AI 算力中心</a>
+                        <a href="#features" class="block text-kk-text-muted hover:text-kk-secondary transition-colors text-sm">區塊鏈基礎設施</a>
+                        <a href="#features" class="block text-kk-text-muted hover:text-kk-accent transition-colors text-sm">金融科技沙盒</a>
+                        <a href="#features" class="block text-kk-text-muted hover:text-kk-success transition-colors text-sm">數位娛樂創作園區</a>
+                        <a href="#features" class="block text-kk-text-muted hover:text-amber-500 transition-colors text-sm">資安合規認證</a>
+                        <a href="#features" class="block text-kk-text-muted hover:text-cyan-500 transition-colors text-sm">國際化人才網絡</a>
                     </nav>
                 </div>
 
                 <div class="reveal">
-                    <h4 class="font-semibold text-kk-text mb-4">社群連結</h4>
-                    <nav class="space-y-2">
-                        <a href="https://discord.gg/5JtuJvhhHu" target="_blank" class="block text-kk-text-muted hover:text-[#5865f2] transition_colors text-sm"><i data-lucide="discord" class="w-4 h-4 inline mr-2"></i>Discord 伺服器</a>
-                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition_colors text-sm"><i data-lucide="megaphone" class="w-4 h-4 inline mr-2"></i>活動公告</a>
-                        <a href="#" class="block text-kk-text-muted hover:text-kk-secondary transition_colors text-sm"><i data-lucide="book-open" class="w-4 h-4 inline mr-2"></i>新手攻略</a>
-                        <a href="#" class="block text-kk-text-muted hover:text-kk-accent transition_colors text-sm"><i data-lucide="bug" class="w-4 h-4 inline mr-2"></i>回報問題</a>
-                        <a href="#" class="block text-kk-text-muted hover:text-kk-blue transition_colors text-sm"><i data-lucide="github" class="w-4 h-4 inline mr-2"></i>開源專案</a>
+                    <h4 class="font-semibold text-kk-text mb-4">公司資訊</h4>
+                    <nav class="space-y-3">
+                        <a href="#about" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">關於 KK 園區</a>
+                        <a href="#companies" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">入駐企業</a>
+                        <a href="#ecosystem" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">生態系統</a>
+                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">新聞中心</a>
+                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">招賢納士</a>
+                        <a href="#contact" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">聯繫我們</a>
                     </nav>
                 </div>
 
                 <div class="reveal">
-                    <h4 class="font-semibold text-kk-text mb-4">法律與資訊</h4>
-                    <nav class="space-y-2">
-                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition_colors text-sm">隱私權政策</a>
-                        <a href="#" as="block text-kk-text-muted hover:text-kk-primary transition_colors text-sm">服務條款</a>
-                        <a href="#" as="block text-kk-text-muted hover:text-kk-primary transition_colors text-sm">Cookie 政策</a>
-                        <a href="#" as="block text-kk-text-muted hover:text-kk-primary transition_colors text-sm">資料刪除請求</a>
-                        <a href="#" as="block text-kk-text-muted hover:text-kk-primary transition_colors text-sm">MapleStory.io API</a>
+                    <h4 class="font-semibold text-kk-text mb-4">法律與合規</h4>
+                    <nav class="space-y-3">
+                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">隱私權政策</a>
+                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">服務條款</a>
+                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">Cookie 政策</a>
+                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">資安認證</a>
+                        <a href="#" class="block text-kk-text-muted hover:text-kk-primary transition-colors text-sm">合規報告</a>
                     </nav>
                 </div>
+            </div>
 
-                <div class="reveal pt-8 border-t border-kk-border flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div class="flex items-center gap-3 text-sm text-kk-text-dim">
-                        <span class="font-pixel text-kk-primary">© 2025</span>
-                        <span>KK 園區. 保留所有權利.</span>
-                        <span class="text-kk-border">|</span>
-                        <span>非官方粉絲項目</span>
-                        <span class="text-kk-border">|</span>
-                        <span>角色資料來源: MapleStory.io</span>
-                    </div>
-                    <div class="flex items-center gap-6 text-sm text-kk-text-dim">
-                        <span>伺服器狀態: <span class="text-kk-success font-bold">● 線上</span></span>
-                        <span>延遲: <span class="font-mono text-kk-primary">12ms</span></span>
-                        <span>版本: <span class="font-mono text-kk-secondary">v2.1.0</span></span>
-                    </div>
+            <!-- Bottom Bar -->
+            <div class="reveal pt-8 border-t border-kk-border flex flex-col md:flex-row items-center justify-between gap-4">
+                <p class="text-sm text-kk-text-dim">© 2025 KK 園區. 保留所有權利.</p>
+                <div class="flex items-center gap-6 text-sm text-kk-text-dim">
+                    <span>新北市新店區安康路二段 123 號</span>
+                    <span>+886-2-1234-5678</span>
                 </div>
             </div>
         </div>
     </footer>
 
-    <!-- Damage Number Container -->
-    <div id="damage-container" class="fixed inset-0 pointer-events-none z-40"></div>
-
-    <!-- PaperDoll Data (from fashion DB) -->
+    <!-- Company Data -->
     <script>
-        // Extracted from twms_fashion_db.json structure
-        const PAPERDOLL_DATA = {
-            male: {
-                face: [{id:20000,name:"基礎臉型"},{id:20001,name:"認真臉"},{id:20002,name:"冷靜臉"},{id:20005,name:"自信臉"},{id:20006,name:"溫柔臉"},{id:20007,name:"堅毅臉"},{id:20008,name:"英勇臉"},{id:20009,name:"霸氣臉"},{id:20010,name:"帥氣臉"},{id:21700,name:"黑色艾連臉型(男)"},{id:21701,name:"藍色艾連臉型(男)"}],
-                hair: [{id:30000,name:"基礎短髮"},{id:30001,name:"清爽短髮"},{id:30002,name:"俏皮短髮"},{id:30033,name:"蓬鬆短髮"},{id:30034,name:"帥氣短髮"},{id:30120,name:"挑染短髮"},{id:30200,name:"黑色艾連髮型(男)"},{id:30210,name:"金色艾連髮型(男)"},{id:34400,name:"黑色挑戰髮型"}],
-                top: [{id:1040001,name:"基礎上衣"},{id:1040005,name:"白色T恤"},{id:1040014,name:"黑色上衣"},{id:1040027,name:"藍色襯衫"},{id:1041004,name:"正式西裝"},{id:1042000,name:"艾連上衣(男)"},{id:1042100,name:"挑戰者上衣(男)"},{id:1042200,name:"狂戰士上衣"}],
-                bottom: [{id:1060001,name:"基礎褲子"},{id:1060003,name:"牛仔褲"},{id:1060096,name:"標準褲子"},{id:1061008,name:"正式長褲"},{id:1062000,name:"艾連褲子(男)"},{id:1062100,name:"挑戰者褲子(男)"},{id:1062200,name:"狂戰士褲子"}],
-                shoes: [{id:1070001,name:"基礎鞋子"},{id:1072005,name:"黑色運動鞋"},{id:1072288,name:"棕色皮鞋"},{id:1073711,name:"紅色運動鞋"},{id:1072000,name:"艾連鞋子(男)"},{id:1072100,name:"挑戰者鞋子(男)"},{id:1072200,name:"狂戰士長靴"}],
-                hat: [{id:1000001,name:"基礎帽子"},{id:1002000,name:"艾連帽子(男)"},{id:1002100,name:"挑戰者頭盔(男)"}],
-                overall: [{id:1050001,name:"基礎套裝"},{id:1052000,name:"艾連套裝(男)"},{id:1052100,name:"挑戰者套裝(男)"}]
-            },
-            female: {
-                face: [{id:20000,name:"基礎臉型"},{id:20001,name:"認真臉"},{id:20002,name:"冷靜臉"},{id:21731,name:"可愛臉"},{id:21732,name:"甜美臉"},{id:21733,name:"俏皮臉"},{id:21734,name:"天真臉"},{id:21735,name:"溫柔臉"},{id:21736,name:"夢幻臉"},{id:21737,name:"女神臉"},{id:21740,name:"黑色艾連臉型(女)"},{id:21741,name:"粉色艾連臉型(女)"}],
-                hair: [{id:30000,name:"基礎長髮"},{id:30033,name:"蓬鬆長髮"},{id:30034,name:"優雅長髮"},{id:34410,name:"齊肩長髮"},{id:34411,name:"雙馬尾"},{id:34412,name:"公主切"},{id:30300,name:"黑色艾連髮型(女)"},{id:30310,name:"金色艾連髮型(女)"},{id:34500,name:"黑色挑戰髮型(女)"}],
-                top: [{id:1040001,name:"基礎上衣"},{id:1041004,name:"白色襯衫"},{id:1041008,name:"粉色上衣"},{id:1042005,name:"連身裙"},{id:1042001,name:"艾連上衣(女)"},{id:1042105,name:"挑戰者上衣(女)"},{id:1042205,name:"女武神上衣"}],
-                bottom: [{id:1060001,name:"基礎褲子"},{id:1061008,name:"短裙"},{id:1061010,name:"長裙"},{id:1062005,name:"艾連裙子(女)"},{id:1062105,name:"挑戰者裙子(女)"},{id:1062205,name:"女武神下裝"}],
-                shoes: [{id:1070001,name:"基礎鞋子"},{id:1072005,name:"黑色運動鞋"},{id:1072288,name:"棕色靴子"},{id:1072002,name:"紅色高跟鞋"},{id:1072005,name:"艾連鞋子(女)"},{id:1072105,name:"挑戰者鞋子(女)"},{id:1072205,name:"女武神長靴"}],
-                hat: [{id:1000001,name:"基礎帽子"},{id:1002005,name:"艾連髮飾(女)"},{id:1002105,name:"挑戰者頭飾(女)"}],
-                overall: [{id:1050001,name:"基礎套裝"},{id:1052005,name:"艾連套裝(女)"},{id:1052105,name:"挑戰者套裝(女)"}]
-            }
-        };
-
-        // Job base stats
-        const JOB_STATS = {
-            beginner: { hp: 50, mp: 50, str: 4, dex: 4, int: 4, luk: 4 },
-            warrior: { hp: 120, mp: 20, str: 12, dex: 4, int: 4, luk: 3 },
-            magician: { hp: 40, mp: 100, str: 3, dex: 3, int: 12, luk: 4 },
-            bowman: { hp: 60, mp: 40, str: 4, dex: 12, int: 4, luk: 4 },
-            thief: { hp: 55, mp: 50, str: 4, dex: 10, int: 4, luk: 10 },
-            pirate: { hp: 70, mp: 60, str: 8, dex: 8, int: 4, luk: 5 }
-        };
-
-        // Equipment slots for MapleStory
-        const EQUIP_SLOTS = [
-            { key: 'hat', label: '帽子', icon: '🎩', category: 'hat' },
-            { key: 'face', label: '臉部', icon: '😊', category: 'face' },
-            { key: 'overall', label: '套裝', icon: '👕', category: 'overall' },
-            { key: 'top': label: '上衣', icon: '👚', category: 'top' },
-            { key: 'bottom': label: '下裝', icon: '👖', category: 'bottom' },
-            { key: 'shoes': label: '鞋子', icon: '👟', category: 'shoes' },
-            { key: 'glove': label: '手套', icon: '🧤', category: 'glove' },
-            { key: 'cape': label: '披風', icon: '🧥', category: 'cape' },
-            { key: 'weapon': label: '武器', icon: '⚔️', category: 'weapon' },
-            { key: 'shield': label: '盾牌', icon: '🛡️', category: 'shield' },
-        ];
-
-        // Equipment tabs for customization
-        const EQUIP_TABS = [
-            { key: 'hat', label: '帽子', category: 'hat' },
-            { key: 'face', label: '臉部', category: 'face' },
-            { key: 'hair': label: '髮型', category: 'hair' },
-            { key: 'overall': label: '套裝', category: 'overall' },
-            { key: 'top': label: '上衣', category: 'top' },
-            { key: 'bottom': label: '下裝', category: 'bottom' },
-            { key: 'shoes': label: '鞋子', category: 'shoes' },
+        const companies = [
+            { name: "NeuralFlow AI", category: "ai", logo: "🧠", desc: "企業級大語言模型訓練與推理平台", tags: ["LLM", "MLOps", "A100"] },
+            { name: "ChainLink Labs", category: "blockchain", logo: "⛓️", desc: "去中心化預言機網路核心開發團隊", tags: ["Oracle", "DeFi", "Cross-chain"] },
+            { name: "QuantumPay", category: "fintech", logo: "💳", desc: "下世代跨境支付與數位資產托管方案", tags: ["支付", "穩定幣", "合規"] },
+            { name: "MetaVerse Studios", category: "gaming", logo: "🎮", desc: "虛擬世界建構引擎與內容創作平台", tags: ["元宇宙", "NFT", "創作者經濟"] },
+            { name: "DeepMatrix", category: "ai", logo: "🔬", desc: "AI 藥物發現與蛋白質結構預測平台", tags: ["醫療AI", "蛋白質折疊", "H100"] },
+            { name: "ZeroKnowledge Labs", category: "blockchain", logo: "🔐", desc: "ZK-Rollup 基礎設施與隱私計算協議", tags: ["ZK-SNARK", "L2", "隱私"] },
+            { name: "GreenFinance", category: "fintech", logo: "🌱", desc: "碳權交易與 ESG 數位資產管理平台", tags: ["碳交易", "ESG", "RWA"] },
+            { name: "PixelForge", category: "gaming", logo: "🎨", desc: "AI 輔助遊戲美術生產管線與資產市場", tags: ["生成式AI", "遊戲開發", "資產庫"] },
+            { name: "Synthetix Research", category: "ai", logo: "⚡", desc: "合成資料生成與模型蒸餾技術供應商", tags: ["合成數據", "模型壓縮", "邊緣AI"] },
+            { name: "Polygon Ventures", category: "blockchain", logo: "📈", desc: "以太坊擴容生態基金與孵化器", tags: ["投資", "孵化", "Polygon生態"] },
+            { name: "Nexus Banking", category: "fintech", logo: "🏦", desc: "新世代數位銀行核心系統與開放銀行API", tags: ["核心系統", "Open Banking", "KYC"] },
+            { name: "GameFi Alliance", category: "gaming", logo: "🏆", desc: "鏈遊發佈平台與遊戲代幣經濟設計", tags: ["GameFi", "代幣經濟", "發佈"] },
         ];
     </script>
 
     <script>
-        // ==================== Enhanced Particle System ====================
+        // ==================== Particle System ====================
         class ParticleSystem {
             constructor() {
                 this.canvas = document.getElementById('particle-canvas');
                 this.ctx = this.canvas.getContext('2d');
                 this.particles = [];
-                this.mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+                this.mouse = { x: 0, y: 0 };
                 this.mouseVelocity = { x: 0, y: 0 };
-                this.lastMouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+                this.lastMouse = { x: 0, y: 0 };
                 this.animationId = null;
-                this.particleCount = window.innerWidth < 768 ? 100 : 200;
-                this.connectionDistance = 180;
-                this.mouseInfluenceRadius = 250;
-                this.mouseInfluenceStrength = 0.8;
+                this.particleCount = window.innerWidth < 768 ? 60 : 120;
+                this.connectionDistance = 140;
 
                 this.init();
                 this.bindEvents();
@@ -1177,28 +1135,29 @@
 
             createParticle() {
                 const angle = Math.random() * Math.PI * 2;
-                const speed = 0.5 + Math.random() * 1.2;
-                const colors = [
-                    { r: 0, g: 255, b: 170 },      // Primary green
-                    { r: 255, g: 107, b: 53 },     // Secondary orange
-                    { r: 255, g: 51, b: 102 },     // Accent pink
-                    { r: 0, g: 170, b: 255 },      // Blue
-                    { r: 255, g: 215, b: 0 },      // Gold
-                ];
+                const speed = 0.2 + Math.random() * 0.5;
                 return {
                     x: Math.random() * this.canvas.width,
                     y: Math.random() * this.canvas.height,
                     vx: Math.cos(angle) * speed,
                     vy: Math.sin(angle) * speed,
-                    radius: 1.5 + Math.random() * 2.5,
-                    baseRadius: 1.5 + Math.random() * 2.5,
-                    color: colors[Math.floor(Math.random() * colors.length)],
-                    opacity: 0.2 + Math.random() * 0.5,
+                    radius: 1 + Math.random() * 2,
+                    baseRadius: 1 + Math.random() * 2,
+                    color: this.getRandomColor(),
+                    opacity: 0.1 + Math.random() * 0.4,
                     pulsePhase: Math.random() * Math.PI * 2,
-                    pulseSpeed: 0.02 + Math.random() * 0.03,
-                    trail: [],
-                    maxTrail: 8,
+                    pulseSpeed: 0.01 + Math.random() * 0.02,
                 };
+            }
+
+            getRandomColor() {
+                const colors = [
+                    { r: 0, g: 212, b: 255 },    // cyan
+                    { r: 168, g: 85, b: 247 },   // purple
+                    { r: 244, g: 114, b: 182 },  // pink
+                    { r: 34, g: 211, b: 238 },   // sky
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
             }
 
             bindEvents() {
@@ -1216,40 +1175,9 @@
                     }
                 }, { passive: true });
 
-                // Click burst effect
-                document.addEventListener('click', (e) => {
-                    for (let i = 0; i < 15; i++) {
-                        this.createBurstParticle(e.clientX, e.clientY);
-                    }
-                });
-            }
-
-            createBurstParticle(x, y) {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = 3 + Math.random() * 4;
-                const colors = [
-                    { r: 0, g: 255, b: 170 },
-                    { r: 255, g: 107, b: 53 },
-                    { r: 255, g: 51, b: 102 },
-                    { r: 255, g: 215, b: 0 },
-                ];
-                this.particles.push({
-                    x, y,
-                    vx: Math.cos(angle) * speed,
-                    vy: Math.sin(angle) * speed,
-                    radius: 2 + Math.random() * 3,
-                    baseRadius: 2 + Math.random() * 3,
-                    color: colors[Math.floor(Math.random() * colors.length)],
-                    opacity: 1,
-                    pulsePhase: 0,
-                    pulseSpeed: 0,
-                    isBurst: true,
-                    life: 1,
-                    decay: 0.02 + Math.random() * 0.02,
-                });
-                // Limit burst particles
-                if (this.particles.length > this.particleCount + 100) {
-                    this.particles = this.particles.slice(-this.particleCount - 50);
+                // Reduce particles on mobile
+                if (window.innerWidth < 768) {
+                    this.particleCount = 60;
                 }
             }
 
@@ -1263,72 +1191,37 @@
             updateParticles() {
                 this.updateMouseVelocity();
 
-                this.particles.forEach((p, idx) => {
-                    if (p.isBurst) {
-                        // Burst particle physics
-                        p.vx *= 0.92;
-                        p.vy *= 0.92;
-                        p.vy += 0.08; // gravity
-                        p.x += p.vx;
-                        p.y += p.vy;
-                        p.life -= p.decay;
-                        p.opacity = p.life;
-                        p.radius = p.baseRadius * p.life;
-                        if (p.life <= 0) {
-                            this.particles.splice(idx, 1);
-                        }
-                        return;
-                    }
-
-                    // Mouse attraction - STRONGER
+                this.particles.forEach(p => {
+                    // Mouse attraction/repulsion
                     const dx = this.mouse.x - p.x;
                     const dy = this.mouse.y - p.y;
                     const dist = Math.sqrt(dx * dx + dy * dy);
 
-                    if (dist < this.mouseInfluenceRadius && dist > 0) {
-                        const force = (this.mouseInfluenceRadius - dist) / this.mouseInfluenceRadius * this.mouseInfluenceStrength;
+                    if (dist < 200 && dist > 0) {
+                        const force = (200 - dist) / 200 * 0.5;
                         const angle = Math.atan2(dy, dx);
-                        // Mouse velocity adds extra push
-                        const velocityBoost = (Math.abs(this.mouseVelocity.x) + Math.abs(this.mouseVelocity.y)) * 0.01;
-                        p.vx += Math.cos(angle) * force * (1 + velocityBoost);
-                        p.vy += Math.sin(angle) * force * (1 + velocityBoost);
+                        p.vx += Math.cos(angle) * force * (this.mouseVelocity.x !== 0 || this.mouseVelocity.y !== 0 ? 2 : 0.5);
+                        p.vy += Math.sin(angle) * force * (this.mouseVelocity.x !== 0 || this.mouseVelocity.y !== 0 ? 2 : 0.5);
                     }
 
-                    // Velocity damping - LESS damping for more movement
-                    p.vx *= 0.97;
-                    p.vy *= 0.97;
-
-                    // Add slight randomness for organic feel
-                    p.vx += (Math.random() - 0.5) * 0.05;
-                    p.vy += (Math.random() - 0.5) * 0.05;
-
-                    // Speed cap
-                    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-                    if (speed > 4) {
-                        p.vx = (p.vx / speed) * 4;
-                        p.vy = (p.vy / speed) * 4;
-                    }
+                    // Velocity damping
+                    p.vx *= 0.98;
+                    p.vy *= 0.98;
 
                     // Update position
                     p.x += p.vx;
                     p.y += p.vy;
 
-                    // Boundary wrap with momentum preservation
-                    if (p.x < 0) { p.x = this.canvas.width; p.vx = Math.abs(p.vx); }
-                    if (p.x > this.canvas.width) { p.x = 0; p.vx = -Math.abs(p.vx); }
-                    if (p.y < 0) { p.y = this.canvas.height; p.vy = Math.abs(p.vy); }
-                    if (p.y > this.canvas.height) { p.y = 0; p.vy = -Math.abs(p.vy); }
+                    // Boundary wrap
+                    if (p.x < 0) p.x = this.canvas.width;
+                    if (p.x > this.canvas.width) p.x = 0;
+                    if (p.y < 0) p.y = this.canvas.height;
+                    if (p.y > this.canvas.height) p.y = 0;
 
                     // Pulse animation
                     p.pulsePhase += p.pulseSpeed;
-                    p.radius = p.baseRadius * (1 + Math.sin(p.pulsePhase) * 0.4);
-                    p.opacity = 0.25 + Math.sin(p.pulsePhase) * 0.2;
-
-                    // Trail for faster particles
-                    if (speed > 1.5) {
-                        p.trail.push({ x: p.x, y: p.y, opacity: p.opacity * 0.5, radius: p.radius * 0.7 });
-                        if (p.trail.length > p.maxTrail) p.trail.shift();
-                    }
+                    p.radius = p.baseRadius * (1 + Math.sin(p.pulsePhase) * 0.3);
+                    p.opacity = 0.15 + Math.sin(p.pulsePhase) * 0.15;
                 });
             }
 
@@ -1340,20 +1233,20 @@
                         const dist = Math.sqrt(dx * dx + dy * dy);
 
                         if (dist < this.connectionDistance) {
-                            const opacity = (1 - dist / this.connectionDistance) * 0.12;
+                            const opacity = (1 - dist / this.connectionDistance) * 0.15;
                             const gradient = this.ctx.createLinearGradient(
                                 this.particles[i].x, this.particles[i].y,
                                 this.particles[j].x, this.particles[j].y
                             );
-                            gradient.addColorStop(0, `rgba(0, 255, 170, ${opacity})`);
-                            gradient.addColorStop(0.5, `rgba(255, 107, 53, ${opacity * 0.6})`);
-                            gradient.addColorStop(1, `rgba(255, 51, 102, ${opacity})`);
+                            gradient.addColorStop(0, `rgba(0, 212, 255, ${opacity})`);
+                            gradient.addColorStop(0.5, `rgba(168, 85, 247, ${opacity * 0.5})`);
+                            gradient.addColorStop(1, `rgba(244, 114, 182, ${opacity})`);
 
                             this.ctx.beginPath();
                             this.ctx.moveTo(this.particles[i].x, this.particles[i].y);
                             this.ctx.lineTo(this.particles[j].x, this.particles[j].y);
                             this.ctx.strokeStyle = gradient;
-                            this.ctx.lineWidth = 0.8;
+                            this.ctx.lineWidth = 0.5;
                             this.ctx.stroke();
                         }
                     }
@@ -1362,696 +1255,366 @@
 
             drawParticles() {
                 this.particles.forEach(p => {
-                    // Draw trail first
-                    if (p.trail.length > 1) {
-                        for (let i = 0; i < p.trail.length - 1; i++) {
-                            const t = p.trail[i];
-                            const t2 = p.trail[i + 1];
-                            const alpha = (i / p.trail.length) * t.opacity;
-                            this.ctx.beginPath();
-                            this.ctx.moveTo(t.x, t.y);
-                            this.ctx.lineTo(t2.x, t2.y);
-                            this.ctx.strokeStyle = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${alpha})`;
-                            this.ctx.lineWidth = t.radius * 0.5;
-                            this.ctx.stroke();
-                        }
-                    }
+                    const gradient = this.ctx.createRadialGradient(
+                        p.x, p.y, 0,
+                        p.x, p.y, p.radius * 2
+                    );
+                    gradient.addColorStop(0, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity})`);
+                    gradient.addColorStop(1, `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, 0)`);
 
-                    // Main particle
                     this.ctx.beginPath();
-                    this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                    this.ctx.fillStyle = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity})`;
+                    this.ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
+                    this.ctx.fillStyle = gradient;
                     this.ctx.fill();
 
-                    // Glow for burst particles
-                    if (p.isBurst && p.life > 0.5) {
-                        this.ctx.beginPath();
-                        this.ctx.arc(p.x, p.y, p.radius * 3, 0, Math.PI * 2);
-                        this.ctx.fillStyle = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity * 0.3})`;
-                        this.ctx.fill();
-                    }
+                    // Core dot
+                    this.ctx.beginPath();
+                    this.ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                    this.ctx.fillStyle = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity * 2})`;
+                    this.ctx.fill();
                 });
             }
 
-            render() {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            draw() {
+                // Clear with slight trail for motion blur effect
+                this.ctx.fillStyle = 'rgba(3, 7, 18, 0.15)';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
                 this.drawConnections();
                 this.drawParticles();
             }
 
             animate() {
                 this.updateParticles();
-                this.render();
+                this.draw();
                 this.animationId = requestAnimationFrame(() => this.animate());
             }
         }
 
-        // ==================== PaperDoll System ====================
-        class PaperDollSystem {
-            constructor() {
-                this.gender = 'male';
-                this.job = 'beginner';
-                this.equipped = {};
-                this.pose = 'stand1';
-                this.level = 1;
-                this.exp = 0;
-                this.maxExp = 100;
-                this.init();
-            }
-
-            init() {
-                this.bindEvents();
-                this.renderEquipSlots();
-                this.renderEquipTabs();
-                this.updatePaperdoll();
-                this.updateStats();
-            }
-
-            bindEvents() {
-                // Gender buttons
-                document.querySelectorAll('.gender-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const gender = e.currentTarget.dataset.gender;
-                        this.setGender(gender);
-                    });
-                });
-
-                // Job select
-                const jobSelect = document.getElementById('job-select');
-                if (jobSelect) {
-                    jobSelect.addEventListener('change', (e) => {
-                        this.setJob(e.target.value);
-                    });
-                }
-
-                // Pose select
-                const poseSelect = document.getElementById('pose-select');
-                if (poseSelect) {
-                    poseSelect.addEventListener('change', (e) => {
-                        this.setPose(e.target.value);
-                    });
-                }
-
-                // Randomize
-                const randomBtn = document.getElementById('randomize-btn');
-                if (randomBtn) {
-                    randomBtn.addEventListener('click', () => this.randomize());
-                }
-
-                // Save/Share buttons
-                const saveBtn = document.getElementById('save-look');
-                if (saveBtn) saveBtn.addEventListener('click', () => this.saveLook());
-
-                const shareBtn = document.getElementById('share-look');
-                if (shareBtn) shareBtn.addEventListener('click', () => this.shareLook());
-
-                // Equip slots click
-                document.addEventListener('click', (e) => {
-                    const slot = e.target.closest('[data-slot]');
-                    if (slot) this.openEquipSelector(slot.dataset.slot);
-                });
-            }
-
-            setGender(gender) {
-                this.gender = gender;
-                this.equipped = {}; // Reset equipment on gender change
-                document.querySelectorAll('.gender-btn').forEach(btn => {
-                    btn.classList.toggle('active', btn.dataset.gender === gender);
-                });
-                this.renderEquipSlots();
-                this.renderEquipTabs();
-                this.updatePaperdoll();
-                this.updateStats();
-            }
-
-            setJob(job) {
-                this.job = job;
-                this.updateStats();
-            }
-
-            setPose(pose) {
-                this.pose = pose;
-                this.updatePaperdoll();
-            }
-
-            randomize() {
-                const data = PAPERDOLL_DATA[this.gender];
-                const slots = ['hat', 'face', 'hair', 'overall', 'top', 'bottom', 'shoes'];
-                this.equipped = {};
-
-                slots.forEach(slot => {
-                    if (data[slot] && data[slot].length > 0) {
-                        const item = data[slot][Math.floor(Math.random() * data[slot].length)];
-                        this.equipped[slot] = item.id;
-                    }
-                });
-
-                // Random job
-                const jobs = Object.keys(JOB_STATS);
-                this.job = jobs[Math.floor(Math.random() * jobs.length)];
-                document.getElementById('job-select').value = this.job;
-
-                // Random pose
-                const poses = ['stand1', 'walk1', 'jump', 'prone', 'attack1', 'alert'];
-                this.pose = poses[Math.floor(Math.random() * poses.length)];
-                document.getElementById('pose-select').value = this.pose;
-
-                this.renderEquipSlots();
-                this.updatePaperdoll();
-                this.updateStats();
-            }
-
-            openEquipSelector(slot) {
-                // Switch to appropriate tab
-                const tabBtn = document.querySelector(`[data-equip-tab="${slot}"]`);
-                if (tabBtn) tabBtn.click();
-            }
-
-            buildApiUrl() {
-                // MapleStory.io API format
-                const parts = [];
-                const data = PAPERDOLL_DATA[this.gender];
-
-                // Face
-                if (this.equipped.face) parts.push(`face/${this.equipped.face}`);
-                // Hair
-                if (this.equipped.hair) parts.push(`hair/${this.equipped.hair}`);
-                // Overall (overrides top/bottom)
-                if (this.equipped.overall) {
-                    parts.push(`overall/${this.equipped.overall}`);
-                } else {
-                    if (this.equipped.top) parts.push(`top/${this.equipped.top}`);
-                    if (this.equipped.bottom) parts.push(`bottom/${this.equipped.bottom}`);
-                }
-                // Shoes
-                if (this.equipped.shoes) parts.push(`shoes/${this.equipped.shoes}`);
-                // Hat
-                if (this.equipped.hat) parts.push(`hat/${this.equipped.hat}`);
-                // Weapon
-                if (this.equipped.weapon) parts.push(`weapon/${this.equipped.weapon}`);
-                // Cape
-                if (this.equipped.cape) parts.push(`cape/${this.equipped.cape}`);
-                // Glove
-                if (this.equipped.glove) parts.push(`glove/${this.equipped.glove}`);
-                // Shield
-                if (this.equipped.shield) parts.push(`shield/${this.equipped.shield}`);
-
-                // Gender prefix
-                const genderParam = this.gender === 'male' ? '' : '/female';
-                const poseParam = this.pose || 'stand1';
-
-                let url = `https://maplestory.io/api/character${genderParam}/${poseParam}`;
-                if (parts.length > 0) {
-                    url += '/' + parts.join('/');
-                }
-                return url;
-            }
-
-            updatePaperdoll() {
-                const container = document.getElementById('paperdoll-display');
-                if (!container) return;
-
-                const url = this.buildApiUrl();
-
-                container.innerHTML = `
-                    <img src="${url}"
-                         alt="角色預覽"
-                         class="paperdoll-img"
-                         onerror="this.src='https://maplestory.io/api/character${this.gender === "male" ? "" : "/female"}/${this.pose}/stand1';
-                                  this.onerror=null;">
-                `;
-            }
-
-            renderEquipSlots() {
-                const container = document.getElementById('equip-slots');
-                if (!container) return;
-
-                container.innerHTML = EQUIP_SLOTS.map(slot => {
-                    const equipped = this.equipped[slot.key];
-                    const data = PAPERDOLL_DATA[this.gender][slot.category] || [];
-                    const item = equipped ? data.find(i => i.id === equipped) : null;
-
-                    return `
-                        <div class="equip-slot ${item ? 'equipped' : ''}" data-slot="${slot.key}" data-tooltip="${item ? item.name : '點擊選擇裝備'}">
-                            <span class="text-2xl">${slot.icon}</span>
-                            <span class="text-xs font-medium text-kk-text">${slot.label}</span>
-                            ${item ? `<span class="text-[10px] text-kk-primary font-mono truncate max-w-full">${item.name}</span>` : `<span class="text-[10px] text-kk-text-dim">未裝備</span>`}
-                        </div>
-                    `;
-                }).join('');
-            }
-
-            renderEquipTabs() {
-                const tabContainer = document.getElementById('equip-tabs');
-                const itemsContainer = document.getElementById('equip-items');
-                if (!tabContainer || !itemsContainer) return;
-
-                // Render tabs
-                tabContainer.innerHTML = EQUIP_TABS.map((tab, idx) => `
-                    <button class="tab-btn ${idx === 0 ? 'active' : ''}" data-equip-tab="${tab.key}">${tab.label}</button>
-                `).join('');
-
-                // Bind tab clicks
-                tabContainer.querySelectorAll('.tab-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const tabKey = e.currentTarget.dataset.equipTab;
-                        this.switchEquipTab(tabKey);
-                    });
-                });
-
-                // Show first tab content
-                this.switchEquipTab(EQUIP_TABS[0].key);
-            }
-
-            switchEquipTab(tabKey) {
-                // Update active tab
-                document.querySelectorAll('[data-equip-tab]').forEach(btn => {
-                    btn.classList.toggle('active', btn.dataset.equipTab === tabKey);
-                });
-
-                // Render items for this tab
-                const itemsContainer = document.getElementById('equip-items');
-                const tab = EQUIP_TABS.find(t => t.key === tabKey);
-                if (!tab || !itemsContainer) return;
-
-                const items = PAPERDOLL_DATA[this.gender][tab.category] || [];
-                const currentEquipped = this.equipped[tabKey];
-
-                itemsContainer.innerHTML = items.map(item => `
-                    <button class="w-full glass-panel p-3 rounded-lg text-left transition-all hover:border-kk-primary/50 hover:bg-kk-primary/10 ${currentEquipped === item.id ? 'equipped border-kk-primary/50 bg-kk-primary/10' : 'border-transparent'}" data-equip-item="${item.id}" data-equip-slot="${tabKey}">
-                        <div class="font-medium text-kk-text">${item.name}</div>
-                        <div class="text-xs text-kk-text-muted">ID: ${item.id}</div>
-                    </button>
-                `).join('') || '<div class="text-center py-8 text-kk-text-muted">此分類暫無裝備</div>';
-
-                // Bind item clicks
-                itemsContainer.querySelectorAll('[data-equip-item]').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const itemId = parseInt(e.currentTarget.dataset.equipItem);
-                        const slot = e.currentTarget.dataset.equipSlot;
-                        this.equipItem(slot, itemId);
-                    });
-                });
-            }
-
-            equipItem(slot, itemId) {
-                this.equipped[slot] = itemId;
-                this.renderEquipSlots();
-                this.switchEquipTab(slot); // Refresh current tab
-                this.updatePaperdoll();
-                this.showNotification(`已裝備: ${this.getItemName(slot, itemId)}`);
-            }
-
-            getItemName(slot, itemId) {
-                const tab = EQUIP_TABS.find(t => t.key === slot);
-                if (!tab) return '未知裝備';
-                const items = PAPERDOLL_DATA[this.gender][tab.category] || [];
-                const item = items.find(i => i.id === itemId);
-                return item ? item.name : '未知裝備';
-            }
-
-            updateStats() {
-                const stats = JOB_STATS[this.job] || JOB_STATS.beginner;
-                const level = this.level;
-
-                document.getElementById('char-level').textContent = level;
-                document.getElementById('char-job').textContent = this.getJobName();
-                document.getElementById('char-hp').textContent = Math.floor(stats.hp + (level - 1) * 12);
-                document.getElementById('char-mp').textContent = Math.floor(stats.mp + (level - 1) * 10);
-
-                // EXP bar
-                const expPercent = Math.min(100, (this.exp / this.maxExp) * 100);
-                document.getElementById('exp-fill').style.width = expPercent + '%';
-                document.getElementById('exp-display').textContent = `${this.exp} / ${this.maxExp}`;
-            }
-
-            getJobName() {
-                const names = {
-                    beginner: '初心者',
-                    warrior: '戰士',
-                    magician: '法師',
-                    bowman: '弓箭手',
-                    thief: '盜賊',
-                    pirate: '海盜'
-                };
-                return names[this.job] || '初心者';
-            }
-
-            saveLook() {
-                const data = {
-                    gender: this.gender,
-                    job: this.job,
-                    pose: this.pose,
-                    equipped: this.equipped,
-                    url: this.buildApiUrl()
-                };
-                localStorage.setItem('kkpark_paperdoll', JSON.stringify(data));
-                this.showNotification('造型已儲存到本地');
-            }
-
-            shareLook() {
-                const url = this.buildApiUrl();
-                const text = `看看我的楓之谷角色！${url} #KK園區 #MapleStory`;
-
-                if (navigator.share) {
-                    navigator.share({ title: '我的 KK 園區角色', text, url });
-                } else {
-                    navigator.clipboard.writeText(text);
-                    this.showNotification('分享連結已複製到剪貼簿');
-                }
-            }
-
-            showNotification(message) {
-                const el = document.createElement('div');
-                el.style.cssText = `
-                    position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
-                    background: rgba(16, 24, 40, 0.95); border: 2px solid #00ffaa;
-                    padding: 12px 24px; border-radius: 8px; color: #00ffaa;
-                    font-family: 'Press Start 2P', cursive; font-size: 10px;
-                    z-index: 1000; animation: slideUp 0.3s ease-out;
-                    box-shadow: 0 10px 30px rgba(0, 255, 170, 0.3);
-                `;
-                el.textContent = message;
-                document.body.appendChild(el);
-                setTimeout(() => { el.style.animation = 'fadeIn 0.3s ease-out reverse'; setTimeout(() => el.remove(), 300); }, 2500);
-            }
-
-            showDamageNumber(text, type = 'normal') {
-                const container = document.getElementById('damage-container');
-                if (!container) return;
-
-                const el = document.createElement('div');
-                el.className = `damage-number ${type}`;
-                el.textContent = text;
-                el.style.left = (window.innerWidth / 2 + (Math.random() - 0.5) * 100) + 'px';
-                el.style.top = (window.innerHeight / 2 + (Math.random() - 0.5) * 50) + 'px';
-                container.appendChild(el);
-
-                setTimeout(() => el.remove(), 800);
-            }
-
-            showLevelUpEffect() {
-                const container = document.getElementById('paperdoll-display');
-                if (!container) return;
-                container.classList.add('animate-level-up');
-                setTimeout(() => container.classList.remove('animate-level-up'), 1000);
-
-                ['✨ 升級', '+100 經驗值', '⭐ 幸運'].forEach((text, i) => {
-                    setTimeout(() => this.showDamageNumber(text, 'gold'), i * 150);
-                });
-            }
-        }
-
-        // ==================== Guild List ====================
-        const GUILD_DATA = [
-            { name: '楓葉聯盟', level: 12, members: 47, gp: 1247, rank: 1, master: 'MapleMaster' },
-            { name: '星之守護', level: 11, members: 42, gp: 980, rank: 2, master: 'StarGuardian' },
-            { name: '黑色翅膀', level: 10, members: 38, gp: 856, rank: 3, master: 'DarkWing' },
-            { name: '光之冒險團', level: 9, members: 35, gp: 723, rank: 4, master: 'LightHero' },
-            { name: '彩虹橋', level: 9, members: 30, gp: 654, rank: 5, master: 'RainbowStep' },
-            { name: '蒼藍之翼', level: 8, members: 28, gp: 512, rank: 6, master: 'BlueWing' },
-            { name: '炎之軍團', level: 8, members: 25, gp: 489, rank: 7, master: 'FlameLord' },
-            { name: '月光森林', level: 7, members: 22, gp: 378, rank: 8, master: 'MoonWalker' },
-        ];
-
-        function renderGuildList() {
-            const container = document.getElementById('guild-list');
-            if (!container) return;
-
-            container.innerHTML = GUILD_DATA.map(guild => `
-                <div class="glass-panel p-4 flex items-center justify-between gap-4 transition-all hover:border-kk-gold/30 hover:translate-x-2" style="border-left: 3px solid ${guild.rank <= 3 ? (guild.rank === 1 ? '#ffd700' : guild.rank === 2 ? '#c0c0c0' : '#cd7f32') : 'transparent'};">
-                    <div class="flex items-center gap-3">
-                        <span class="font-pixel text-xl ${guild.rank <= 3 ? 'text-gradient-gold' : 'text-kk-text-dim'}">#${guild.rank}</span>
-                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-kk-gold to-kk-secondary flex items-center justify-center flex-shrink-0">
-                            <i data-lucide="users" class="w-5 h-5 text-kk-bg"></i>
-                        </div>
-                        <div>
-                            <div class="font-display font-bold text-kk-text">${guild.name}</div>
-                            <div class="text-xs text-kk-text-muted">會長: ${guild.master} • Lv.${guild.level}</div>
-                        </div>
-                    </div>
-                    <div class="text-right hidden sm:block">
-                        <div class="font-pixel text-lg text-gradient-gold">${guild.members}/50</div>
-                        <div class="text-xs text-kk-text-muted">${guild.gp.toLocaleString()} GP</div>
-                    </div>
-                </div>
-            `).join('');
-            lucide.createIcons();
-        }
-
-        // ==================== Leaderboard ====================
-        const LEADERBOARD_DATA = {
-            level: [
-                { rank: 1, job: 'hero', name: 'MapleMaster', guild: '楓葉聯盟', level: 250, exp: 15847200, kkcoin: 2500000, hp: 45000, power: 125000, equipScore: 18500, lastSeen: '剛剛' },
-                { rank: 2, job: 'archmage', name: 'StarGuardian', guild: '星之守護', level: 247, exp: 14230100, kkcoin: 2100000, hp: 38000, power: 118000, equipScore: 17200, lastSeen: '5分鐘前' },
-                { rank: 3, job: 'nightlord', name: 'ShadowStep', guild: '黑色翅膀', level: 245, exp: 13567800, kkcoin: 1950000, hp: 35000, power: 115000, equipScore: 16800, lastSeen: '10分鐘前' },
-                { rank: 4, job: 'bishop', name: 'LightHealer', guild: '光之冒險團', level: 242, exp: 12890000, kkcoin: 1800000, hp: 32000, power: 110000, equipScore: 16200, lastSeen: '1小時前' },
-                { rank: 5, job: 'bowmaster', name: 'RainbowArrow', guild: '彩虹橋', level: 240, exp: 12100000, kkcoin: 1650000, hp: 30000, power: 107000, equipScore: 15800, lastSeen: '30分鐘前' },
-                { rank: 6, job: 'shadower', name: 'DarkAssassin', guild: '黑色翅膀', level: 238, exp: 11500000, kkcoin: 1500000, hp: 29000, power: 104000, equipScore: 15400, lastSeen: '2小時前' },
-                { rank: 7, job: 'paladin', name: 'HolyKnight', guild: '楓葉聯盟', level: 235, exp: 10800000, kkcoin: 1400000, hp: 42000, power: 102000, equipScore: 15000, lastSeen: '剛剛' },
-                { rank: 8, job: 'icerage', name: 'FrostMage', guild: '蒼藍之翼', level: 233, exp: 10200000, kkcoin: 1350000, hp: 28000, power: 99000, equipScore: 14700, lastSeen: '45分鐘前' },
-                { rank: 9, job: 'firepoison', name: 'FlameWizard', guild: '炎之軍團', level: 230, exp: 9600000, kkcoin: 1250000, hp: 27000, power: 96000, equipScore: 14300, lastSeen: '1小時前' },
-                { rank: 10, job: 'windarcher', name: 'WindWalker', guild: '月光森林', level: 228, exp: 9100000, kkcoin: 1180000, hp: 26000, power: 93000, equipScore: 14000, lastSeen: '3小時前' },
-            ],
-            kkcoin: [
-                { rank: 1, job: 'bountyhunter', name: 'GoldDigger', guild: '楓葉聯盟', level: 200, exp: 5000000, kkcoin: 15000000, hp: 25000, power: 80000, equipScore: 12000, lastSeen: '剛剛' },
-                { rank: 2, job: 'mechanic', name: 'CoinMaster', guild: '星之守護', level: 195, exp: 4500000, kkcoin: 12000000, hp: 24000, power: 75000, equipScore: 11500, lastSeen: '10分鐘前' },
-                { rank: 3, job: 'cannoneer', name: 'RichPlayer', guild: '彩虹橋', level: 190, exp: 4000000, kkcoin: 10000000, hp: 23000, power: 70000, equipScore: 11000, lastSeen: '1小時前' },
-            ],
-            power: [
-                { rank: 1, job: 'hero', name: 'MapleMaster', guild: '楓葉聯盟', level: 250, exp: 15847200, kkcoin: 2500000, hp: 45000, power: 125000, equipScore: 18500, lastSeen: '剛剛' },
-                { rank: 2, job: 'paladin', name: 'HolyKnight', guild: '楓葉聯盟', level: 235, exp: 10800000, kkcoin: 1400000, hp: 42000, power: 102000, equipScore: 15000, lastSeen: '剛剛' },
-                { rank: 3, job: 'darkknight', name: 'DarkSoul', guild: '黑色翅膀', level: 240, exp: 12000000, kkcoin: 1600000, hp: 40000, power: 98000, equipScore: 14800, lastSeen: '30分鐘前' },
-            ],
-        };
-
-        const JOB_ICONS = {
-            hero: '⚔️', paladin: '🛡️', darkknight: '🌑',
-            archmage: '🔮', bishop: '✨', firepoison: '🔥', icerage: '❄️',
-            nightlord: '🗡️', shadower: '🌙', dualblade: '⚔️',
-            bowmaster: '🏹', windarcher: '🌪️', marksman: '🎯',
-            thunderbreaker: '⚡', buccaneer: '🏴‍☠️', cannoneer: '💣',
-            mechanic: '🤖', xenon: '🔬', demon: '😈',
-        };
-
-        function renderLeaderboardTabs() {
-            const container = document.getElementById('leaderboard-tabs');
-            if (!container) return;
-
-            const tabs = [
-                { key: 'level', label: '等級榜', icon: '📈' },
-                { key: 'kkcoin', label: '財富榜', icon: '💰' },
-                { key: 'power', label: '戰力榜', icon: '⚔️' },
-            ];
-
-            container.innerHTML = tabs.map((tab, idx) => `
-                <button class="tab-btn ${idx === 0 ? 'active' : ''}" data-lb-tab="${tab.key}">${tab.icon} ${tab.label}</button>
-            `).join('');
-
-            container.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    container.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    e.currentTarget.classList.add('active');
-                    renderLeaderboard(e.currentTarget.dataset.lbTab);
-                });
-            });
-        }
-
-        function renderLeaderboard(tab) {
-            const data = LEADERBOARD_DATA[tab] || LEADERBOARD_DATA.level;
-            const container = document.getElementById('leaderboard-body');
-            if (!container) return;
-
-            container.innerHTML = data.map(p => `
-                <div class="leaderboard-row ${p.rank <= 3 ? 'rank-' + p.rank : ''} px-4 py-3"
-                     style="display: grid; grid-template-columns: 50px 40px 1fr 1fr 100px 100px 100px 100px 100px 80px 80px 100px; align-items: center;">
-                    <span class="font-pixel text-lg ${p.rank <= 3 ? 'text-gradient-gold' : 'text-kk-text'}">#${p.rank}</span>
-                    <span class="text-xl">${JOB_ICONS[p.job] || '❓'}</span>
-                    <span class="font-bold text-kk-text">${p.name}</span>
-                    <span class="text-kk-text-muted">${p.guild}</span>
-                    <span class="font-pixel text-kk-gold font-bold">Lv.${p.level}</span>
-                    <span class="font-mono text-kk-text-muted">${p.exp.toLocaleString()}</span>
-                    <span class="font-mono text-gradient-gold">${p.kkcoin.toLocaleString()}</span>
-                    <span class="font-mono text-kk-green">${p.hp.toLocaleString()}</span>
-                    <span class="font-mono text-kk-secondary">${p.power.toLocaleString()}</span>
-                    <span class="font-mono text-kk-primary">${p.equipScore.toLocaleString()}</span>
-                    <span class="text-kk-text-dim text-sm">${p.lastSeen}</span>
-                </div>
-            `).join('');
-        }
-
-        // ==================== Initialize Everything ====================
-        let particleSystem;
-        let paperDollSystem;
-
-        document.addEventListener('DOMContentLoaded', () => {
-            lucide.createIcons();
-
-            // Initialize systems
-            particleSystem = new ParticleSystem();
-            paperDollSystem = new PaperDollSystem();
-            window.paperDollSystem = paperDollSystem; // For debugging
-
-            renderGuildList();
-            renderLeaderboardTabs();
-            renderLeaderboard('level');
-
-            createOrbitElements();
-
-            // Scroll animations
-            initScrollAnimations();
-
-            // Nav scroll effect
-            initNavScroll();
-
-            // Counter animations
-            initCounters();
-
-            // Mobile menu
-            initMobileMenu();
-
-            // Copy invite
-            initCopyInvite();
-
-            // Online counter animation
-            animateOnlineCount();
-        });
-
+        // ==================== Orbit Elements ====================
         function createOrbitElements() {
             const container = document.getElementById('orbit-container');
             if (!container) return;
 
             const orbits = [
-                { radius: 140, count: 8, color: '0, 255, 170', size: 4, duration: 10, reverse: false },
-                { radius: 200, count: 6, color: '255, 107, 53', size: 3, duration: 14, reverse: true },
-                { radius: 260, count: 5, color: '255, 51, 102', size: 2.5, duration: 18, reverse: false },
-                { radius: 320, count: 4, color: '255, 215, 0', size: 2, duration: 22, reverse: true },
+                { radius: 120, count: 6, color: '0, 212, 255', size: 4, duration: 15, reverse: false },
+                { radius: 180, count: 5, color: '168, 85, 247', size: 3, duration: 20, reverse: true },
+                { radius: 240, count: 4, color: '244, 114, 182', size: 2.5, duration: 25, reverse: false },
             ];
 
-            orbits.forEach((orbit) => {
-                const orbitPath = document.createElement('div');
-                orbitPath.style.cssText = `
-                    position: absolute;
-                    width: ${orbit.radius * 2}px;
-                    height: ${orbit.radius * 2}px;
-                    border: 1px solid rgba(${orbit.color}, 0.08);
-                    border-radius: 50%;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    pointer-events: none;
-                `;
-
+            orbits.forEach((orbit, oi) => {
                 for (let i = 0; i < orbit.count; i++) {
                     const dot = document.createElement('div');
+                    dot.className = 'orbit-dot';
                     dot.style.cssText = `
                         position: absolute;
-                        top: 50%;
-                        left: 0;
-                        transform: translate(-50%, -50%);
                         width: ${orbit.size}px;
                         height: ${orbit.size}px;
                         border-radius: 50%;
                         background: rgb(${orbit.color});
-                        box-shadow: 0 0 ${orbit.size * 4}px rgb(${orbit.color}), 0 0 ${orbit.size * 8}px rgb(${orbit.color});
+                        box-shadow: 0 0 ${orbit.size * 3}px rgb(${orbit.color});
                         animation: orbit ${orbit.duration}s linear infinite ${orbit.reverse ? 'reverse' : ''};
                         animation-delay: ${-i * (orbit.duration / orbit.count)}s;
+                        transform-origin: center center;
                     `;
-                    orbitPath.appendChild(dot);
-                }
 
-                container.appendChild(orbitPath);
+                    // Create orbit path
+                    const orbitPath = document.createElement('div');
+                    orbitPath.style.cssText = `
+                        position: absolute;
+                        width: ${orbit.radius * 2}px;
+                        height: ${orbit.radius * 2}px;
+                        border: 1px solid rgba(${orbit.color}, 0.1);
+                        border-radius: 50%;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        pointer-events: none;
+                    `;
+
+                    orbitPath.appendChild(dot);
+                    container.appendChild(orbitPath);
+                }
             });
         }
 
-        function initScrollAnimations() {
+        // ==================== Company Grid ====================
+        function renderCompanies(category = 'all') {
+            const grid = document.getElementById('company-grid');
+            if (!grid) return;
+
+            const filtered = category === 'all'
+                ? companies
+                : companies.filter(c => c.category === category);
+
+            grid.innerHTML = filtered.map((company, index) => `
+                <article class="reveal glass-card p-6 group" style="transition-delay: ${index * 50}ms;">
+                    <div class="flex items-start gap-4">
+                        <div class="w-14 h-14 rounded-2xl glass-strong flex items-center justify-center text-2xl flex-shrink-0 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
+                            ${company.logo}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-display font-bold text-lg text-kk-text mb-1 truncate">${company.name}</h4>
+                            <p class="text-sm text-kk-text-muted mb-3 line-clamp-2">${company.desc}</p>
+                            <div class="flex flex-wrap gap-1.5">
+                                ${company.tags.map(tag => `
+                                    <span class="px-2 py-0.5 text-[10px] font-medium rounded-full glass border border-kk-border">${tag}</span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            `).join('');
+
+            // Trigger reveal animations
+            requestAnimationFrame(() => {
+                grid.querySelectorAll('.reveal').forEach(el => {
+                    el.classList.add('visible');
+                });
+            });
+        }
+
+        // ==================== Category Filters ====================
+        function initCategoryFilters() {
+            const buttons = document.querySelectorAll('.category-btn');
+            buttons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    buttons.forEach(b => {
+                        b.classList.remove('active');
+                        b.classList.add('text-kk-text-muted');
+                        b.classList.remove('text-kk-text');
+                    });
+                    btn.classList.add('active');
+                    btn.classList.remove('text-kk-text-muted');
+                    btn.classList.add('text-kk-text');
+                    renderCompanies(btn.dataset.category);
+                });
+            });
+        }
+
+        // ==================== Scroll Reveal ====================
+        function initScrollReveal() {
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
                         entry.target.classList.add('visible');
                     }
                 });
-            }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+            }, {
+                threshold: 0.1,
+                rootMargin: '0px 0px -50px 0px'
+            });
 
-            document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+            document.querySelectorAll('.reveal').forEach(el => {
+                observer.observe(el);
+            });
         }
 
-        function initNavScroll() {
-            const nav = document.getElementById('main-nav');
-            let lastScroll = 0;
-            window.addEventListener('scroll', () => {
-                const scrolled = window.scrollY > 20;
-                nav.classList.toggle('scrolled', scrolled);
-            }, { passive: true });
-        }
-
+        // ==================== Counter Animation ====================
         function initCounters() {
+            const counters = document.querySelectorAll('.stat-counter');
             const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
-                        const el = entry.target;
-                        const target = parseInt(el.dataset.target) || 0;
-                        animateCounter(el, target);
-                        observer.unobserve(el);
+                        const counter = entry.target;
+                        const target = parseInt(counter.dataset.target);
+                        const duration = 2000;
+                        const step = target / (duration / 16);
+                        let current = 0;
+
+                        const update = () => {
+                            current += step;
+                            if (current < target) {
+                                counter.textContent = Math.floor(current).toLocaleString();
+                                requestAnimationFrame(update);
+                            } else {
+                                counter.textContent = target.toLocaleString();
+                            }
+                        };
+                        update();
+                        observer.unobserve(counter);
                     }
                 });
             }, { threshold: 0.5 });
 
-            document.querySelectorAll('.stat-counter').forEach(el => observer.observe(el));
+            counters.forEach(c => observer.observe(c));
         }
 
-        function animateCounter(el, target) {
-            const duration = 2000;
-            const start = performance.now();
-            const easeOutExpo = (t) => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+        // ==================== Nav Scroll Effect ====================
+        function initNavScroll() {
+            const nav = document.getElementById('main-nav');
+            let lastScroll = 0;
 
-            function update(now) {
-                const progress = Math.min(1, (now - start) / duration);
-                const value = Math.floor(easeOutExpo(progress) * target);
-                el.textContent = value.toLocaleString();
-                if (progress < 1) requestAnimationFrame(update);
-            }
-            requestAnimationFrame(update);
+            window.addEventListener('scroll', () => {
+                const currentScroll = window.scrollY;
+
+                if (currentScroll > 50) {
+                    nav.classList.add('scrolled');
+                } else {
+                    nav.classList.remove('scrolled');
+                }
+
+                lastScroll = currentScroll;
+            }, { passive: true });
         }
 
+        // ==================== Mobile Menu ====================
         function initMobileMenu() {
             const btn = document.getElementById('mobile-menu-btn');
             const menu = document.getElementById('mobile-menu');
+
             if (!btn || !menu) return;
 
             btn.addEventListener('click', () => {
-                menu.classList.toggle('hidden');
-            });
-
-            menu.querySelectorAll('a').forEach(a => {
-                a.addEventListener('click', () => menu.classList.add('hidden'));
-            });
-        }
-
-        function initCopyInvite() {
-            const btn = document.getElementById('copy-invite');
-            if (!btn) return;
-
-            btn.addEventitonListener('click', () => {
-                navigator.clipboard.writeText('discord.gg/5JtuJvhhHu');
-                const original = btn.innerHTML;
-                btn.innerHTML = '<span class="flex items-center justify-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> 已複製！</span>';
+                const isOpen = menu.classList.toggle('hidden');
+                btn.setAttribute('aria-expanded', !isOpen);
+                btn.innerHTML = isOpen
+                    ? '<i data-lucide="menu" class="w-6 h-6"></i>'
+                    : '<i data-lucide="x" class="w-6 h-6"></i>';
                 lucide.createIcons();
-                setTimeout(() => { btn.innerHTML = original; lucide.createIcons(); }, 2000);
+            });
+
+            // Close on link click
+            menu.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', () => {
+                    menu.classList.add('hidden');
+                    btn.innerHTML = '<i data-lucide="menu" class="w-6 h-6"></i>';
+                    lucide.createIcons();
+                });
             });
         }
 
-        function animateOnlineCount() {
-            const el = document.getElementById('online-count');
-            if (!el) return;
+        // ==================== Magnetic Buttons ====================
+        function initMagneticButtons() {
+            document.querySelectorAll('.magnetic, .btn-primary, .btn-secondary').forEach(btn => {
+                btn.addEventListener('mousemove', (e) => {
+                    const rect = btn.getBoundingClientRect();
+                    const x = e.clientX - rect.left - rect.width / 2;
+                    const y = e.clientY - rect.top - rect.height / 2;
 
-            let count = 1234;
-            setInterval(() => {
-                count += Math.floor(Math.random() * 5) - 2;
-                count = Math.max(1100, Math.min(1500, count));
-                el.textContent = count.toLocaleString();
-            }, 3000);
+                    btn.style.transform = `translate(${x * 0.3}px, ${y * 0.3}px)`;
+                });
+
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.transform = 'translate(0, 0)';
+                });
+            });
         }
+
+        // ==================== Cursor Trail ====================
+        function initCursorTrail() {
+            if (window.innerWidth < 768) return;
+
+            const trail = document.createElement('div');
+            trail.className = 'cursor-trail';
+            document.body.appendChild(trail);
+
+            let mouseX = 0, mouseY = 0;
+            let trailX = 0, trailY = 0;
+
+            document.addEventListener('mousemove', (e) => {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                trail.style.opacity = '1';
+            });
+
+            document.addEventListener('mouseleave', () => {
+                trail.style.opacity = '0';
+            });
+
+            function animateTrail() {
+                trailX += (mouseX - trailX) * 0.15;
+                trailY += (mouseY - trailY) * 0.15;
+                trail.style.transform = `translate(${trailX - 10}px, ${trailY - 10}px)`;
+                requestAnimationFrame(animateTrail);
+            }
+            animateTrail();
+        }
+
+        // ==================== Parallax Hero ====================
+        function initParallax() {
+            const orbs = document.querySelectorAll('.glow-orb');
+            const hero = document.getElementById('hero');
+
+            if (!hero) return;
+
+            hero.addEventListener('mousemove', (e) => {
+                const rect = hero.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / rect.width - 0.5;
+                const y = (e.clientY - rect.top) / rect.height - 0.5;
+
+                orbs.forEach((orb, i) => {
+                    const factor = (i + 1) * 15;
+                    orb.style.transform = `translate(${x * factor}px, ${y * factor}px)`;
+                });
+            });
+
+            hero.addEventListener('mouseleave', () => {
+                orbs.forEach(orb => {
+                    orb.style.transform = 'translate(0, 0)';
+                });
+            });
+        }
+
+        // ==================== Smooth Scroll ====================
+        function initSmoothScroll() {
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function(e) {
+                    const targetId = this.getAttribute('href');
+                    if (targetId === '#') return;
+
+                    const target = document.querySelector(targetId);
+                    if (target) {
+                        e.preventDefault();
+                        const navHeight = document.getElementById('main-nav')?.offsetHeight || 0;
+                        const targetPosition = target.getBoundingClientRect().top + window.scrollY - navHeight;
+
+                        window.scrollTo({
+                            top: targetPosition,
+                            behavior: 'smooth'
+                        });
+                    }
+                });
+            });
+        }
+
+        // ==================== Initialize Everything ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize Lucide icons
+            lucide.createIcons();
+
+            // Initialize all modules
+            new ParticleSystem();
+            createOrbitElements();
+            renderCompanies();
+            initCategoryFilters();
+            initScrollReveal();
+            initCounters();
+            initNavScroll();
+            initMobileMenu();
+            initMagneticButtons();
+            initCursorTrail();
+            initParallax();
+            initSmoothScroll();
+
+            // Add initial reveal class to elements already in viewport
+            setTimeout(() => {
+                document.querySelectorAll('.reveal').forEach(el => {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.top < window.innerHeight && rect.bottom > 0) {
+                        el.classList.add('visible');
+                    }
+                });
+            }, 100);
+        });
+
+        // Handle page visibility for performance
+        document.addEventListener('visibilitychange', () => {
+            const canvas = document.getElementById('particle-canvas');
+            if (canvas) {
+                canvas.style.display = document.hidden ? 'none' : 'block';
+            }
+        });
     </script>
 </body>
 </html>
