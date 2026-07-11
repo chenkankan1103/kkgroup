@@ -1108,7 +1108,7 @@
                 this.mouseVelocity = { x: 0, y: 0 };
                 this.lastMouse = { x: 0, y: 0 };
                 this.animationId = null;
-                this.particleCount = window.innerWidth < 768 ? 300 : 600;
+                this.particleCount = window.innerWidth < 768 ? 3000 : 6000;
                 this.connectionDistance = 80;
 
                 this.init();
@@ -1592,7 +1592,7 @@
             initNavScroll();
             initMobileMenu();
             initMagneticButtons();
-            initCursorTrail();
+            // initCursorTrail(); // Disabled to reduce performance overhead
             initParallax();
             initSmoothScroll();
 
