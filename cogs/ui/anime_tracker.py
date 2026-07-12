@@ -2695,7 +2695,7 @@ class AnimeTracker(commands.Cog):
         """處理任務異常"""
         logger.error(f"❌ [refresh_weekly_schedule] 任務異常: {error}", exc_info=True)
     
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=30)
     async def check_scheduled_push(self):
         """每分鐘檢查是否有預定推送時刻 - 供週表系統使用"""
         now = datetime.now(TW_TZ)
@@ -2714,8 +2714,8 @@ class AnimeTracker(commands.Cog):
                 return
             
             # 尋找符合現在時刻的項目（尚未推送的）
-            # 同時支援補推機制：15 分鐘內的未推送項目（防止 bot 重啟錯過時刻）
-            catchup_minutes = 15
+            # 同時支援補推機制：30 分鐘內的未推送項目（防止 bot 重啟錯過時刻）
+            catchup_minutes = 30
             matching = []
             for item in today_schedule:
                 if item['pushed']:
