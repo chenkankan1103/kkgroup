@@ -43,6 +43,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
 import pytz  # 用於台灣時區轉換
+import time
 from urllib.parse import quote  # 用於生成 QuickChart URL
 from shared.utils.view_registry import PersistentViewBase
 
@@ -1370,6 +1371,8 @@ class AnimeTracker(commands.Cog):
     async def cog_load(self):
         """Cog 加載時啟動任務"""
         import sys
+        import time
+        start_time = time.perf_counter()
         print("[COG_LOAD_START] 🎬 cog_load() 開始執行", flush=True)
         sys.stdout.flush()
         
@@ -1487,6 +1490,9 @@ class AnimeTracker(commands.Cog):
             print(f"[COG_LOAD_ERROR] Traceback:\n{traceback.format_exc()}", flush=True)
             logger.error(error_msg, exc_info=True)
             raise
+        elapsed = time.perf_counter() - start_time
+        logger.info(f"⏱️ [AnimeTracker.cog_load] 總耗時: {elapsed:.2f} 秒")
+        print(f"[COG_LOAD_TIMING] 總耗時: {elapsed:.2f} 秒", flush=True)
         logger.info("=" * 50)
     
     def cog_unload(self):
@@ -1516,16 +1522,16 @@ class AnimeTracker(commands.Cog):
         logger.info("=" * 50)
     
     async def _catchup_missed_pushes(self):
-        """Bot 重啟時補推今天未發送的動畫（限 4 小時內）"""
+        """Bot 重啟時標記今日已過時刻為已推送（不進行實際推送），避免重複嘗試"""
         try:
             await self.bot.wait_until_ready()
             now = datetime.now(TW_TZ)
             today_schedule = self.db.get_today_schedule()
             if not today_schedule:
                 return
-            
-            # 找出今天已過時刻但未推送的項目（2 分鐘前 ~ 4 小時前）
-            missed = []
+
+            # 找出今天已過時刻但尚未標記為已推送的項目
+            to_mark = []
             for item in today_schedule:
                 if item['pushed']:
                     continue
@@ -1533,38 +1539,23 @@ class AnimeTracker(commands.Cog):
                     sched_dt = datetime.strptime(item['scheduled_time'], "%H:%M").replace(
                         year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                     )
-                    diff_min = (now - sched_dt).total_seconds() / 60
-                    if 2 <= diff_min <= 240:  # 2 分鐘 ~ 4 小時前
-                        missed.append(item)
+                    if (now - sched_dt).total_seconds() >= 0:  # 已過或當前時刻
+                        to_mark.append(item)
                 except Exception:
                     pass
-            
-            if not missed:
+
+            if not to_mark:
                 return
-            
-            missed_times = sorted(set(item['scheduled_time'] for item in missed))
-            logger.info(f"🔄 [_catchup_missed_pushes] 發現 {len(missed)} 筆未推送（{missed_times}），嘗試補推...")
-            
-            channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-            if not channel:
-                logger.warning("⚠️ [_catchup_missed_pushes] 找不到推送頻道")
-                return
-            
-            # 查詢 API 推送（一次即可，_check_and_send_anime 已做去重）
-            earliest_time = missed_times[0]
-            success = await self._check_and_send_anime(f"catchup/{earliest_time}", channel)
-            
-            # 無論成功與否，將所有過去時刻標記為已推送（避免無限重試）
+
             week_start = now - timedelta(days=now.weekday())
             week_start_str = week_start.strftime("%Y-%m-%d")
             day_of_week = (now.weekday() + 1) % 7 or 7
-            for t in missed_times:
-                self.db.mark_time_pushed(week_start_str, day_of_week, t)
-            
-            if success:
-                logger.info(f"✅ [_catchup_missed_pushes] 補推成功，已標記 {missed_times}")
-            else:
-                logger.info(f"⏭️ [_catchup_missed_pushes] API 無新集或已推送過，已標記 {missed_times}")
+            marked_times = []
+            for item in to_mark:
+                self.db.mark_time_pushed(week_start_str, day_of_week, item['scheduled_time'])
+                marked_times.append(item['scheduled_time'])
+
+            logger.info(f"✅ [_catchup_missed_pushes] 已標記 {len(marked_times)} 個過時時刻為已推送：{sorted(set(marked_times))}")
         except Exception as e:
             logger.error(f"❌ [_catchup_missed_pushes] 失敗: {e}", exc_info=True)
     
@@ -1610,71 +1601,18 @@ class AnimeTracker(commands.Cog):
             logger.error(f"❌ [_init_weekly_schedule_if_empty] 失敗: {e}", exc_info=True)
     
     async def _restore_old_message_views(self):
-        """恢復舊消息的 view（用於 bot 重啟時）"""
+        """用於 bot 重啟時恢復 view（僅註冊視圖類別，不逐條 fetch 消息）"""
         logger.info("=" * 50)
         logger.info("🔄 [_restore_old_message_views] 開始恢復舊消息 view...")
-        
+
         try:
             # 等待 bot 就緒
             await self.bot.wait_until_ready()
-            
-            # 獲取所有已保存的消息信息
-            message_infos = self.db.get_all_message_infos()
-            if not message_infos:
-                logger.info("ℹ️ [_restore_old_message_views] 沒有舊消息需要恢復")
-                return
-            
-            logger.info(f"📋 [_restore_old_message_views] 發現 {len(message_infos)} 個需要恢復的舊消息")
-            
-            restored_count = 0
-            for msg_info in message_infos:
-                try:
-                    message_id = msg_info["message_id"]
-                    video_sn = msg_info["video_sn"]
-                    anime_sn = msg_info["anime_sn"]
-                    anime_name = msg_info["anime_name"]
-                    channel_id = msg_info["channel_id"]
-                    
-                    # 獲取頻道
-                    channel = self.bot.get_channel(channel_id)
-                    if not channel:
-                        logger.warning(f"⚠️ [_restore_old_message_views] 找不到頻道 ID={channel_id}")
-                        continue
-                    
-                    # 嘗試獲取舊消息
-                    try:
-                        message = await channel.fetch_message(message_id)
-                    except discord.NotFound:
-                        logger.warning(f"⚠️ [_restore_old_message_views] 消息不存在 ID={message_id}")
-                        continue
-                    except discord.Forbidden:
-                        logger.warning(f"⚠️ [_restore_old_message_views] 無權限訪問消息 ID={message_id}")
-                        continue
-                    
-                    # 為這條舊消息創建新的 view
-                    episode_data = {
-                        "videoSn": video_sn,
-                        "animeSn": anime_sn,
-                        "title": anime_name
-                    }
-                    view = await self.generate_anime_view(episode_data)
-                    
-                    if view is None:
-                        logger.warning(f"⚠️ [_restore_old_message_views] 視圖生成失敗 (message_id={message_id})")
-                        continue
-                    
-                    # 註冊視圖到 bot
-                    self.bot.add_view(view)
-                    logger.info(f"🔗 [_restore_old_message_views] 恢復消息 ID={message_id}, video_sn={video_sn}, anime_name={anime_name}")
-                    
-                    restored_count += 1
-                    await asyncio.sleep(0.1)  # 避免 API 限流
-                    
-                except Exception as e:
-                    logger.error(f"❌ [_restore_old_message_views] 恢復單條消息失敗: {e}")
-                    continue
-            
-            logger.info(f"✅ [_restore_old_message_views] 成功恢復 {restored_count}/{len(message_infos)} 個舊消息 view")
+
+            # 只註冊視圖類別，依賴 persistent view 機制
+            # 實際的 view 註冊會在 generate_anime_view 中透過 bot.add_view 處理
+            logger.info("🔄 [_restore_old_message_views] Skipping per‑message view restore; relying on persistent view mechanism.")
+            logger.info("✅ [_restore_old_message_views] 視圖註冊完成（依賴 persistent view）")
         except Exception as e:
             logger.error(f"❌ [_restore_old_message_views] 恢復過程失敗: {e}", exc_info=True)
         finally:
