@@ -2699,62 +2699,16 @@ class AnimeTracker(commands.Cog):
         """處理任務異常"""
         logger.error(f"❌ [refresh_weekly_schedule] 任務異常: {error}", exc_info=True)
     
-    @tasks.loop(minutes=30)
+    @tasks.loop(hours=1)
     async def check_scheduled_push(self):
-        """每30分鐘檢查是否有預定推送時刻 - 供週表系統使用"""
+        """每小時檢查是否有預定推送時刻 - 供週表系統使用"""
         now = datetime.now(TW_TZ)
         current_time = now.strftime("%H:%M")
-        
+
         try:
             # 獲取今天的時程表
             today_schedule = self.db.get_today_schedule()
-            if not today_schedule:
-                # 週表為空時，嘗試從 API 取得完整週表並儲存，以供後續使用
-                if (self._last_schedule_fallback is None or
-                    (now - self._last_schedule_fallback) > timedelta(minutes=10)):
-                    self._last_schedule_fallback = now
-                    logger.info(f"⚠️ [check_scheduled_push] 週表為空，嘗試從 API 取得完整週表 ({current_time})")
-                    schedule_data = await self._get_anime_schedule()
-                    if schedule_data:
-                        # 計算本週週一日期（最接近的星期一）
-                        week_start = now - timedelta(days=now.weekday())
-                        week_start_str = week_start.strftime("%Y-%m-%d")
-                        # 建立完整週表資料
-                        weekly_schedule = []
-                        for day_offset in range(7):
-                            target_date = week_start + timedelta(days=day_offset)
-                            day_of_week = (day_offset + 1) % 7 or 7  # 1=Mon, 7=Sun
-                            key = str(day_of_week)
-                            if key in schedule_data:
-                                for anime in schedule_data[key]:
-                                    sched_time = anime.get('scheduleTime')
-                                    if sched_time:
-                                        weekly_schedule.append({
-                                            'day_of_week': day_of_week,
-                                            'scheduled_time': sched_time,
-                                            'anime_data': anime
-                                        })
-                        # 存入資料庫
-                        if weekly_schedule:
-                            self.db.save_weekly_schedule(week_start_str, weekly_schedule)
-                            logger.info(f"✅ [check_scheduled_push] 已從 API 儲存週表：{week_start_str}，共 {len(weekly_schedule)} 筆")
-                            # 重新讀取今天的時程表
-                            today_schedule = self.db.get_today_schedule()
-                        else:
-                            logger.warning("⚠️ [check_scheduled_push] API 回傳的週表為空")
-                    else:
-                        logger.warning("⚠️ [check_scheduled_push] 無法從 API 取得週表")
-                # 若仍然沒有時程表，則嘗試直接針對當前時間進行一次 API 檢查（以避免完全遺漏）
-                if not today_schedule:
-                    if self._last_fallback_check is None or (now - self._last_fallback_check) > timedelta(minutes=10):
-                        self._last_fallback_check = now
-                        logger.info(f"⚠️ [check_scheduled_push] 無法取得時程表，進行臨時 API 檢查 ({current_time})")
-                        channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-                        if channel:
-                            await self._check_and_send_anime(current_time, channel)
-                    # 無時程表且臨時檢查已執行，直接返回
-                    return
-            
+
             # 尋找符合現在時刻的項目（尚未推送的）
             # 支援補推機制：所有過去的未推送項目（防止 bot 重啟錯過時刻）
             matching = []
@@ -2772,7 +2726,7 @@ class AnimeTracker(commands.Cog):
                         matching.append(item)
                 except Exception:
                     pass
-            
+
             if matching:
                 # 按時間排序，依序推送所有未推送的時刻（防止一次推送過多訊息）
                 matching_sorted = sorted(matching, key=lambda x: x['scheduled_time'])
@@ -2781,15 +2735,15 @@ class AnimeTracker(commands.Cog):
                     await self.send_anime_push(item['scheduled_time'], ANIME_CHANNEL_ID)
                     # 避免短時間內連續發送太多訊息，稍作間隔
                     await asyncio.sleep(2)
-        
+
         except Exception as e:
             logger.error(f"❌ [check_scheduled_push] 失敗: {e}", exc_info=True)
-    
+
     @check_scheduled_push.before_loop
     async def before_check_scheduled_push(self):
         """等待 bot 就緒"""
         await self.bot.wait_until_ready()
-    
+
     @check_scheduled_push.error
     async def check_scheduled_push_error(self, error):
         """處理任務異常"""
