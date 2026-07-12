@@ -1351,6 +1351,8 @@ class AnimeTracker(commands.Cog):
         self.last_weekly_stats_sent = None  # 上次發送週統計的日期
         # 單次推送最多處理的新集數量，避免阻塞事件循環
         self.MAX_NEW_EPISODES_PER_PUSH = 20
+        # 用於週表為空時的API回退節流（避免頻繁呼叫API）
+        self._last_fallback_check = None
 
         # 注：任務將在 cog_load 中由 @tasks.loop 自動啟動
         logger.info("📺 [AnimeTracker.__init__] 任務將在 cog_load 中由 @tasks.loop 啟動")
@@ -2705,12 +2707,14 @@ class AnimeTracker(commands.Cog):
             # 獲取今天的時程表
             today_schedule = self.db.get_today_schedule()
             if not today_schedule:
-                # 週表為空時的回退機制：每整點嘗試直接查詢 API
-                if now.minute == 0:
-                    logger.info(f"⚠️ [check_scheduled_push] 週表為空，整點回退模式查詢 API ({current_time})")
+                # 週表為空時的回退機制：每30分鐘檢查時，若距離上次回退超過10分鐘則嘗試直接查詢 API
+                if self._last_fallback_check is None or (now - self._last_fallback_check) > timedelta(minutes=10):
+                    self._last_fallback_check = now
+                    logger.info(f"⚠️ [check_scheduled_push] 週表為空，嘗試回退模式查詢 API ({current_time})")
                     channel = self.bot.get_channel(ANIME_CHANNEL_ID)
                     if channel:
                         await self._check_and_send_anime(current_time, channel)
+                # 無時程表時，直接返回（已嘗試過回退）
                 return
             
             # 尋找符合現在時刻的項目（尚未推送的）
