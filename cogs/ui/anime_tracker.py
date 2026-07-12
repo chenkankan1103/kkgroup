@@ -1480,17 +1480,13 @@ class AnimeTracker(commands.Cog):
             sys.stdout.flush()
             logger.info("✅ [AnimeTracker.cog_load] 任務啟動完成")
         
-        except Exception as cog_load_error:
+        except Exception as e:
             import traceback
-            error_msg = f"❌ [cog_load] 執行失敗: {cog_load_error}"
+            error_msg = f"❌ [cog_load] 執行失敗: {e}"
             print(f"[COG_LOAD_ERROR] {error_msg}", flush=True)
             print(f"[COG_LOAD_ERROR] Traceback:\n{traceback.format_exc()}", flush=True)
             logger.error(error_msg, exc_info=True)
             raise
-            logger.info("✅ [AnimeTracker.cog_load] cog_load() 執行完成")
-        except Exception as e:
-            print(f"[COG_LOAD_ERROR] ❌ 任務啟動失敗: {e}", flush=True)
-            logger.error(f"❌ [AnimeTracker.cog_load] 任務啟動失敗: {e}", exc_info=True)
         logger.info("=" * 50)
     
     def cog_unload(self):
