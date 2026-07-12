@@ -11,6 +11,7 @@ import requests
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 import logging
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 logger = logging.getLogger(__name__)
 
