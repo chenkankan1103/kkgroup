@@ -1349,7 +1349,9 @@ class AnimeTracker(commands.Cog):
         
         # 週統計發送追蹤（防止重複發送）
         self.last_weekly_stats_sent = None  # 上次發送週統計的日期
-        
+        # 單次推送最多處理的新集數量，避免阻塞事件循環
+        self.MAX_NEW_EPISODES_PER_PUSH = 20
+
         # 注：任務將在 cog_load 中由 @tasks.loop 自動啟動
         logger.info("📺 [AnimeTracker.__init__] 任務將在 cog_load 中由 @tasks.loop 啟動")
         
@@ -1828,14 +1830,32 @@ class AnimeTracker(commands.Cog):
                     # newAnime 是字典，我們需要 'date' 鍵中的列表
                     all_episodes = new_anime.get("date", []) if isinstance(new_anime, dict) else []
                     
-                    # 篩選只取今天的動畫
-                    today = datetime.now(TW_TZ).strftime("%m/%d")
-                    today_episodes = [
-                        ep for ep in all_episodes 
-                        if isinstance(ep, dict) and ep.get("upTime", "").startswith(today)
-                    ]
-                    
-                    logger.info(f"🔍 API fetch: 獲得 {len(all_episodes)} 集，其中今天的 {len(today_episodes)} 集 (upTime: {today})")
+                    # 篩選只取今天的動畫 - 支援多種 upTime 格式
+                    today_dt = datetime.now(TW_TZ)
+                    today_episodes = []
+                    for ep in all_episodes:
+                        if not isinstance(ep, dict):
+                            continue
+                        up = ep.get("upTime")
+                        if not isinstance(up, str) or not up:
+                            continue
+                        matched = False
+                        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%m/%d"):
+                            try:
+                                if fmt == "%m/%d":
+                                    # 需補上年份
+                                    parsed = datetime.strptime(f"{up}/{today_dt.year}", f"{fmt}/{today_dt.year}")
+                                else:
+                                    parsed = datetime.strptime(up, fmt)
+                                if parsed.date() == today_dt.date():
+                                    matched = True
+                                    break
+                            except ValueError:
+                                continue
+                        if matched:
+                            today_episodes.append(ep)
+
+                    logger.info(f"🔍 API fetch: 獲得 {len(all_episodes)} 集，其中今天的 {len(today_episodes)} 集")
                     return today_episodes
         except asyncio.TimeoutError:
             logger.warning(f"⚠️ API timeout ({API_TIMEOUT}s)")
