@@ -1107,9 +1107,11 @@
                 this.mouseVelocity = { x: 0, y: 0 };
                 this.lastMouse = { x: 0, y: 0 };
                 this.animationId = null;
-                this.fgParticleCount = window.innerWidth < 768 ? 100 : 200; // fewer but more detailed
-                this.bgParticleCount = Math.floor(this.fgParticleCount / 4); // 50/50
+                this.fgParticleCount = window.innerWidth < 768 ? 30 : 60; // fewer but larger
+                this.bgParticleCount = Math.floor(this.fgParticleCount / 4); // 15/15
                 this.connectionDistance = 80; // kept for compatibility but not used
+                this.buildings = []; // building objects for background
+                this.floorTileSize = 40; // size of checkerboard tiles
 
                 this.init();
                 this.bindEvents();
@@ -1120,6 +1122,7 @@
                 this.resize();
                 this.createFgParticles();
                 this.createBgParticles();
+                this.createBuildings();
             }
 
             resize() {
@@ -1142,12 +1145,13 @@
             }
 
             createFgCharacter() {
-                const size = 8 + Math.random() * 4; // 8-12px tall
+                // Increased size ~4x: base 32 + random 16 => 32-48
+                const size = 32 + Math.random() * 16;
                 return {
                     x: Math.random() * this.canvas.width,
                     y: Math.random() * this.canvas.height,
-                    vx: (Math.random() - 0.5) * 0.8, // -0.4 to 0.4
-                    vy: (Math.random() - 0.5) * 0.8,
+                    vx: (Math.random() - 0.5) * 0.4, // slower due to size
+                    vy: (Math.random() - 0.5) * 0.4,
                     size: size,
                     headSize: size * 0.2,
                     bodyHeight: size * 0.4,
@@ -1156,22 +1160,21 @@
                     color: this.getFgRandomColor(),
                     opacity: 0.7 + Math.random() * 0.3,
                     pulsePhase: Math.random() * Math.PI * 2,
-                    pulseSpeed: 0.02 + Math.random() * 0.03,
+                    pulseSpeed: 0.01 + Math.random() * 0.02,
                     // animation states
                     legPhase: Math.random() * Math.PI * 2,
-                    armPhase: Math.random() * Math.PI * 2,
-                    panic: false, // when mouse is near
-                    panicTimer: 0
+                    armPhase: Math.random() * Math.PI * 2
                 };
             }
 
             createBgCharacter() {
-                const size = 12 + Math.random() * 6; // 12-18px tall
+                // Increased size ~4x: base 48 + random 24 => 48-72
+                const size = 48 + Math.random() * 24;
                 return {
                     x: Math.random() * this.canvas.width,
                     y: Math.random() * this.canvas.height,
-                    vx: (Math.random() - 0.5) * 0.3, // slower
-                    vy: (Math.random() - 0.5) * 0.3,
+                    vx: (Math.random() - 0.5) * 0.2, // even slower
+                    vy: (Math.random() - 0.5) * 0.2,
                     size: size,
                     headSize: size * 0.2,
                     bodyHeight: size * 0.4,
@@ -1180,7 +1183,7 @@
                     color: this.getBgRandomColor(),
                     opacity: 0.4 + Math.random() * 0.3,
                     pulsePhase: Math.random() * Math.PI * 2,
-                    pulseSpeed: 0.01 + Math.random() * 0.02,
+                    pulseSpeed: 0.005 + Math.random() * 0.01,
                     legPhase: Math.random() * Math.PI * 2,
                     armPhase: Math.random() * Math.PI * 2
                 };
@@ -1212,6 +1215,41 @@
                 return colors[Math.floor(Math.random() * colors.length)];
             }
 
+            createBuildings() {
+                this.buildings = [];
+                const buildingCount = 8; // total buildings
+                for (let i = 0; i < buildingCount; i++) {
+                    // decide side: 0=left, 1=right, 2=top, 3=bottom
+                    const side = Math.floor(Math.random() * 4);
+                    let width, height, x, y;
+                    const minWidth = 60;
+                    const maxWidth = 120;
+                    const minHeight = 40;
+                    const maxHeight = 100;
+                    width = minWidth + Math.random() * (maxWidth - minWidth);
+                    height = minHeight + Math.random() * (maxHeight - minHeight);
+                    if (side === 0) { // left
+                        x = -width; // start slightly off-screen left
+                        y = Math.random() * (this.canvas.height - height);
+                    } else if (side === 1) { // right
+                        x = this.canvas.width; // start off-screen right
+                        y = Math.random() * (this.canvas.height - height);
+                    } else if (side === 2) { // top
+                        x = Math.random() * (this.canvas.width - width);
+                        y = -height; // off-screen top
+                    } else { // bottom
+                        x = Math.random() * (this.canvas.width - width);
+                        y = this.canvas.height; // off-screen bottom
+                    }
+                    this.buildings.push({
+                        x, y, width, height,
+                        // windows: we'll draw a grid of lights
+                        windowColor: `rgba(255,255,255,${0.6 + Math.random() * 0.4})`,
+                        wallColor: this.getBgRandomColor() // use background color for walls
+                    });
+                }
+            }
+
             bindEvents() {
                 window.addEventListener('resize', () => this.resize());
 
@@ -1229,7 +1267,7 @@
 
                 // Reduce particles on mobile for performance
                 if (window.innerWidth < 768) {
-                    this.fgParticleCount = 50;
+                    this.fgParticleCount = 15;
                     this.bgParticleCount = Math.floor(this.fgParticleCount / 4);
                 }
             }
@@ -1247,29 +1285,9 @@
 
                 // Update foreground characters (interactive)
                 this.fgParticles.forEach(p => {
-                    // Mouse panic effect
-                    const dx = this.mouse.x - p.x;
-                    const dy = this.mouse.y - p.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    const panicDistance = 120;
-
-                    if (dist < panicDistance && dist > 0) {
-                        // Mouse is close - panic!
-                        p.panic = true;
-                        const panicForce = (panicDistance - dist) / panicDistance * 1.5;
-                        const angle = Math.atan2(dy, dx);
-                        // Run away from mouse
-                        p.vx -= Math.cos(angle) * panicForce * 0.5;
-                        p.vy -= Math.sin(angle) * panicForce * 0.5;
-                        // Flail arms/legs when panicking
-                        p.armPhase += 0.5;
-                        p.legPhase += 0.5;
-                    } else {
-                        p.panic = false;
-                        // Normal ambient movement
-                        p.legPhase += 0.15;
-                        p.armPhase += 0.1;
-                    }
+                    // Walking animation
+                    p.legPhase += 0.15;
+                    p.armPhase += 0.1;
 
                     // Apply velocity damping
                     p.vx *= 0.98;
@@ -1285,7 +1303,6 @@
                     if (p.y < 0) p.y = this.canvas.height;
                     if (p.y > this.canvas.height) p.y = 0;
 
-                
                     // Pulse animation (subtle glow)
                     p.pulsePhase += p.pulseSpeed;
                     p.opacity = 0.6 + Math.sin(p.pulsePhase) * 0.2;
@@ -1293,18 +1310,9 @@
 
                 // Update background characters (ambient, less reactive)
                 this.bgParticles.forEach(p => {
-                    // Mild mouse avoidance (less intense)
-                    const dx = this.mouse.x - p.x;
-                    const dy = this.mouse.y - p.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    const avoidanceDistance = 80;
-
-                    if (dist < avoidanceDistance && dist > 0 && mouseSpeed > 0.5) {
-                        const avoidForce = (avoidanceDistance - dist) / avoidanceDistance * 0.3;
-                        const angle = Math.atan2(dy, dx);
-                        p.vx -= Math.cos(angle) * avoidForce;
-                        p.vy -= Math.sin(angle) * avoidForce;
-                    }
+                    // Walking animation (slower)
+                    p.legPhase += 0.1;
+                    p.armPhase += 0.1;
 
                     // Apply velocity damping
                     p.vx *= 0.99;
@@ -1330,6 +1338,12 @@
                 // Clear full canvas each frame to eliminate motion blur trails
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
+                // Draw floor (checkerboard)
+                this.drawFloor();
+
+                // Draw buildings
+                this.drawBuildings();
+
                 // Draw background characters first
                 this.bgParticles.forEach(p => {
                     this.drawCharacter(p, false);
@@ -1341,84 +1355,129 @@
                 });
             }
 
+            drawFloor() {
+                const ctx = this.ctx;
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+                const tileSize = this.floorTileSize;
+                const color1 = '#030712'; // kk-bg
+                const color2 = '#0a0f1e'; // kk-bg-elevated
+
+                for (let x = 0; x < width; x += tileSize) {
+                    for (let y = 0; y < height; y += tileSize) {
+                        // Determine color based on parity
+                        const isEven = ((x / tileSize) + (y / tileSize)) % 2 === 0;
+                        ctx.fillStyle = isEven ? color1 : color2;
+                        ctx.fillRect(x, y, tileSize, tileSize);
+                    }
+                }
+            }
+
+            drawBuildings() {
+                const ctx = this.ctx;
+                for (const b of this.buildings) {
+                    // Draw walls
+                    ctx.fillStyle = b.wallColor;
+                    ctx.fillRect(b.x, b.y, b.width, b.height);
+
+                    // Draw windows: a grid of lit squares
+                    const windowSize = 8;
+                    const gap = 4;
+                    const cols = Math.max(1, Math.floor(b.width / (windowSize + gap)));
+                    const rows = Math.max(1, Math.floor(b.height / (windowSize + gap)));
+                    const offsetX = b.x + (b.width - (cols * windowSize + (cols - 1) * gap)) / 2;
+                    const offsetY = b.y + (b.height - (rows * windowSize + (rows - 1) * gap)) / 2;
+
+                    for (let row = 0; row < rows; row++) {
+                        for (let col = 0; col < cols; col++) {
+                            // Randomly light some windows
+                            if (Math.random() > 0.3) { // 30% dark
+                                const wx = offsetX + col * (windowSize + gap);
+                                const wy = offsetY + row * (windowSize + gap);
+                                ctx.fillStyle = b.windowColor;
+                                ctx.fillRect(wx, wy, windowSize, windowSize);
+                            }
+                        }
+                    }
+                }
+            }
+
             drawCharacter(p, isForeground = false) {
                 // Calculate positions
-                const headY = p.y - p.bodyHeight/2 - p.headSize/2;
-                const bodyTop = p.y - p.bodyHeight/2;
-                const bodyBottom = p.y + p.bodyHeight/2;
+                const x = p.x;
+                const y = p.y;
+                const headSize = p.headSize;
+                const bodyWidth = headSize * 0.6;
+                const bodyHeight = p.bodyHeight;
+                const legWidth = headSize * 0.2;
+                const legLength = p.legLength;
+                const armWidth = headSize * 0.2;
+                const armLength = p.armLength;
 
-                // Body color with opacity
-                const bodyColor = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${p.opacity})`;
-                const highlightColor = `rgba(${p.color.r}, ${p.color.g}, ${p.color.b}, ${Math.min(p.opacity + 0.2, 1)})`;
+                // Derived positions
+                const headX = x - headSize / 2;
+                const headY = y - bodyHeight / 2 - headSize / 2;
+                const bodyTop = y - bodyHeight / 2;
+                const bodyBottom = y + bodyHeight / 2;
+
+                // Colors
+                const base = `rgba(${p.color.r},${p.color.g},${p.color.b},${p.opacity})`;
+                const highlight = `rgba(${p.color.r},${p.color.g},${p.color.b},${Math.min(p.opacity + 0.2, 1)})`;
+                const shadow = `rgba(${Math.max(p.color.r - 30, 0)},${Math.max(p.color.g - 30, 0)},${Math.max(p.color.b - 30, 0)},${p.opacity})`;
 
                 // Head
-                this.ctx.beginPath();
-                this.ctx.arc(p.x, headY, p.headSize, 0, Math.PI * 2);
-                this.ctx.fillStyle = bodyColor;
-                this.ctx.fill();
+                this.ctx.fillStyle = base;
+                this.ctx.fillRect(headX, headY, headSize, headSize);
 
-                // Body (simple rectangle)
-                this.ctx.fillStyle = bodyColor;
-                this.ctx.fillRect(p.x - p.headSize/2, bodyTop, p.headSize, p.bodyHeight);
+                // Helmet (darker)
+                const helmetSize = headSize * 1.1;
+                const helmetX = x - helmetSize / 2;
+                const helmetY = headY - (helmetSize - headSize) / 2; // sits on top of head
+                this.ctx.fillStyle = shadow;
+                this.ctx.fillRect(helmetX, helmetY, helmetSize, helmetSize);
 
-                // Arms
-                const armAngle = p.armPhase;
-                const leftArmX = p.x - p.headSize/2 + Math.cos(armAngle) * p.armLength;
-                const leftArmY = bodyTop + Math.sin(armAngle) * p.armLength;
-                const rightArmX = p.x + p.headSize/2 + Math.cos(armAngle + Math.PI) * p.armLength;
-                const rightArmY = bodyTop + Math.sin(armAngle + Math.PI) * p.armLength;
+                // Body
+                this.ctx.fillStyle = base;
+                this.ctx.fillRect(x - bodyWidth / 2, bodyTop, bodyWidth, bodyHeight);
 
-                this.ctx.beginPath();
-                this.ctx.moveTo(p.x - p.headSize/2, bodyTop + p.bodyHeight/3); // shoulder
-                this.ctx.lineTo(leftArmX, leftArmY);
-                this.ctx.strokeStyle = bodyColor;
-                this.ctx.lineWidth = p.headSize/3;
-                this.ctx.stroke();
+                // Left arm (attached to left side of body)
+                this.ctx.fillStyle = base;
+                this.ctx.fillRect(
+                    x - bodyWidth / 2,
+                    bodyTop + (bodyHeight - armLength) / 2,
+                    armWidth,
+                    armLength
+                );
 
-                this.ctx.beginPath();
-                this.ctx.moveTo(p.x + p.headSize/2, bodyTop + p.bodyHeight/3); // shoulder
-                this.ctx.lineTo(rightArmX, rightArmY);
-                this.ctx.strokeStyle = bodyColor;
-                this.ctx.lineWidth = p.headSize/3;
-                this.ctx.stroke();
+                // Right arm (attached to right side of body)
+                this.ctx.fillStyle = base;
+                this.ctx.fillRect(
+                    x + bodyWidth / 2 - armWidth,
+                    bodyTop + (bodyHeight - armLength) / 2,
+                    armWidth,
+                    armLength
+                );
 
-                // Legs
-                const legOffset = Math.sin(p.legPhase) * 0.3; // slight bending
-                const leftLegX = p.x - p.headSize/4;
-                const leftLegY = bodyBottom + Math.sin(p.legPhase) * p.legLength * 0.5;
-                const rightLegX = p.x + p.headSize/4;
-                const rightLegY = bodyBottom + Math.sin(p.legPhase + Math.PI) * p.legLength * 0.5;
+                // Left leg
+                this.ctx.fillStyle = base;
+                this.ctx.fillRect(x - bodyWidth / 2, bodyBottom, legWidth, legLength);
 
-                this.ctx.beginPath();
-                this.ctx.moveTo(p.x - p.headSize/4, bodyBottom);
-                this.ctx.lineTo(leftLegX, leftLegY);
-                this.ctx.strokeStyle = bodyColor;
-                this.ctx.lineWidth = p.headSize/2;
-                this.ctx.stroke();
+                // Right leg
+                this.ctx.fillStyle = base;
+                this.ctx.fillRect(
+                    x + bodyWidth / 2 - legWidth,
+                    bodyBottom,
+                    legWidth,
+                    legLength
+                );
 
-                this.ctx.beginPath();
-                this.ctx.moveTo(p.x + p.headSize/4, bodyBottom);
-                this.ctx.lineTo(rightLegX, rightLegY);
-                this.ctx.strokeStyle = bodyColor;
-                this.ctx.lineWidth = p.headSize/2;
-                this.ctx.stroke();
-
-                // If panicking, add some visual effect
-                if (p.panic) {
-                    // Add motion lines behind
-                    const panicAngle = Math.atan2(p.vy, p.vx) + Math.PI;
-                    const panicLength = 8;
-                    const panicX = p.x - Math.cos(panicAngle) * panicLength;
-                    const panicY = p.y - Math.sin(panicAngle) * panicLength;
-
-                    this.ctx.strokeStyle = `rgba(255, 255, 255, 0.3)`;
-                    this.ctx.lineWidth = 1;
-
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(p.x, p.y);
-                    this.ctx.lineTo(panicX, panicY);
-                    this.ctx.stroke();
-                }
+                // Gun (attached to right hand, pointing right)
+                const gunBaseX = x + bodyWidth / 2; // right side of body
+                const gunBaseY = bodyTop + (bodyHeight - armLength) / 2 + armLength; // end of right arm
+                const gunWidth = 2;
+                const gunLength = armLength * 0.8;
+                this.ctx.fillStyle = shadow;
+                this.ctx.fillRect(gunBaseX, gunBaseY - gunWidth / 2, gunLength, gunWidth);
             }
 
             animate() {
