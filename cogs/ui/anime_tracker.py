@@ -2732,10 +2732,13 @@ class AnimeTracker(commands.Cog):
                     pass
             
             if matching:
-                # 只取最早那個時刻的推送（避免補推時一次推很多）
-                earliest_time = min(item['scheduled_time'] for item in matching)
-                logger.info(f"📺 [check_scheduled_push] 推送時刻: {earliest_time}（現在 {current_time}，共 {len(matching)} 部）")
-                await self.send_anime_push(earliest_time, ANIME_CHANNEL_ID)
+                # 按時間排序，依序推送所有未推送的時刻（防止一次推送過多訊息）
+                matching_sorted = sorted(matching, key=lambda x: x['scheduled_time'])
+                logger.info(f"📺 [check_scheduled_push] 發現 {len(matching_sorted)} 個未推送時刻，將依序推送（現在 {current_time}）")
+                for item in matching_sorted:
+                    await self.send_anime_push(item['scheduled_time'], ANIME_CHANNEL_ID)
+                    # 避免短時間內連續發送太多訊息，稍作間隔
+                    await asyncio.sleep(2)
         
         except Exception as e:
             logger.error(f"❌ [check_scheduled_push] 失敗: {e}", exc_info=True)
