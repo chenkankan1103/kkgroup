@@ -2709,26 +2709,43 @@ class AnimeTracker(commands.Cog):
             # 獲取今天的時程表
             today_schedule = self.db.get_today_schedule()
             if not today_schedule:
-                # 週表為空時的備用機制：嘗試從 API 取得今日時程表，並加以節流
+                # 週表為空時，嘗試從 API 取得完整週表並儲存，以供後續使用
                 if (self._last_schedule_fallback is None or
                     (now - self._last_schedule_fallback) > timedelta(minutes=10)):
                     self._last_schedule_fallback = now
-                    logger.info(f"⚠️ [check_scheduled_push] 週表為空，嘗試從 API 取得今日時程表 ({current_time})")
+                    logger.info(f"⚠️ [check_scheduled_push] 週表為空，嘗試從 API 取得完整週表 ({current_time})")
                     schedule_data = await self._get_anime_schedule()
                     if schedule_data:
-                        weekday_today = (now.weekday() + 1) % 7 or 7
-                        today_schedule = []
-                        for anime_info in schedule_data.get(str(weekday_today), []):
-                            sched_time = anime_info.get('scheduleTime')
-                            if sched_time:
-                                today_schedule.append({
-                                    'scheduled_time': sched_time,
-                                    'anime_data': anime_info,
-                                    'pushed': 0  # 未推送
-                                })
-                # 若仍然沒有取得時程表，則嘗試直接針對當前時間進行一次 API 檢查（以避免完全遺漏）
+                        # 計算本週週一日期（最接近的星期一）
+                        week_start = now - timedelta(days=now.weekday())
+                        week_start_str = week_start.strftime("%Y-%m-%d")
+                        # 建立完整週表資料
+                        weekly_schedule = []
+                        for day_offset in range(7):
+                            target_date = week_start + timedelta(days=day_offset)
+                            day_of_week = (day_offset + 1) % 7 or 7  # 1=Mon, 7=Sun
+                            key = str(day_of_week)
+                            if key in schedule_data:
+                                for anime in schedule_data[key]:
+                                    sched_time = anime.get('scheduleTime')
+                                    if sched_time:
+                                        weekly_schedule.append({
+                                            'day_of_week': day_of_week,
+                                            'scheduled_time': sched_time,
+                                            'anime_data': anime
+                                        })
+                        # 存入資料庫
+                        if weekly_schedule:
+                            self.db.save_weekly_schedule(week_start_str, weekly_schedule)
+                            logger.info(f"✅ [check_scheduled_push] 已從 API 儲存週表：{week_start_str}，共 {len(weekly_schedule)} 筆")
+                            # 重新讀取今天的時程表
+                            today_schedule = self.db.get_today_schedule()
+                        else:
+                            logger.warning("⚠️ [check_scheduled_push] API 回傳的週表為空")
+                    else:
+                        logger.warning("⚠️ [check_scheduled_push] 無法從 API 取得週表")
+                # 若仍然沒有時程表，則嘗試直接針對當前時間進行一次 API 檢查（以避免完全遺漏）
                 if not today_schedule:
-                    # 嘗試直接針對當前時間進行檢查
                     if self._last_fallback_check is None or (now - self._last_fallback_check) > timedelta(minutes=10):
                         self._last_fallback_check = now
                         logger.info(f"⚠️ [check_scheduled_push] 無法取得時程表，進行臨時 API 檢查 ({current_time})")
