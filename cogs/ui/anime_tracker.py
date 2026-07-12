@@ -2697,7 +2697,7 @@ class AnimeTracker(commands.Cog):
     
     @tasks.loop(minutes=30)
     async def check_scheduled_push(self):
-        """每分鐘檢查是否有預定推送時刻 - 供週表系統使用"""
+        """每30分鐘檢查是否有預定推送時刻 - 供週表系統使用"""
         now = datetime.now(TW_TZ)
         current_time = now.strftime("%H:%M")
         
