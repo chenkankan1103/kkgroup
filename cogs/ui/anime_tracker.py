@@ -2714,8 +2714,7 @@ class AnimeTracker(commands.Cog):
                 return
             
             # 尋找符合現在時刻的項目（尚未推送的）
-            # 同時支援補推機制：30 分鐘內的未推送項目（防止 bot 重啟錯過時刻）
-            catchup_minutes = 30
+            # 支援補推機制：所有過去的未推送項目（防止 bot 重啟錯過時刻）
             matching = []
             for item in today_schedule:
                 if item['pushed']:
@@ -2726,8 +2725,8 @@ class AnimeTracker(commands.Cog):
                         year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                     )
                     diff = (now - sched_dt).total_seconds()
-                    # 精確時刻 OR 在 catchup 窗口內（剛過去 0~15 分鐘）
-                    if 0 <= diff < catchup_minutes * 60:
+                    # 只處理已過去或當前時刻的節目（ diff >= 0 ）
+                    if diff >= 0:
                         matching.append(item)
                 except Exception:
                     pass
