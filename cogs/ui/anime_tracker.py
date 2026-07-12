@@ -1353,6 +1353,8 @@ class AnimeTracker(commands.Cog):
         self.MAX_NEW_EPISODES_PER_PUSH = 20
         # 用於週表為空時的API回退節流（避免頻繁呼叫API）
         self._last_fallback_check = None
+        # 用於週表為空時的排程取得節流
+        self._last_schedule_fallback = None
 
         # 注：任務將在 cog_load 中由 @tasks.loop 自動啟動
         logger.info("📺 [AnimeTracker.__init__] 任務將在 cog_load 中由 @tasks.loop 啟動")
@@ -2707,15 +2709,34 @@ class AnimeTracker(commands.Cog):
             # 獲取今天的時程表
             today_schedule = self.db.get_today_schedule()
             if not today_schedule:
-                # 週表為空時的回退機制：每30分鐘檢查時，若距離上次回退超過10分鐘則嘗試直接查詢 API
-                if self._last_fallback_check is None or (now - self._last_fallback_check) > timedelta(minutes=10):
-                    self._last_fallback_check = now
-                    logger.info(f"⚠️ [check_scheduled_push] 週表為空，嘗試回退模式查詢 API ({current_time})")
-                    channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-                    if channel:
-                        await self._check_and_send_anime(current_time, channel)
-                # 無時程表時，直接返回（已嘗試過回退）
-                return
+                # 週表為空時的備用機制：嘗試從 API 取得今日時程表，並加以節流
+                if (self._last_schedule_fallback is None or
+                    (now - self._last_schedule_fallback) > timedelta(minutes=10)):
+                    self._last_schedule_fallback = now
+                    logger.info(f"⚠️ [check_scheduled_push] 週表為空，嘗試從 API 取得今日時程表 ({current_time})")
+                    schedule_data = await self._get_anime_schedule()
+                    if schedule_data:
+                        weekday_today = (now.weekday() + 1) % 7 or 7
+                        today_schedule = []
+                        for anime_info in schedule_data.get(str(weekday_today), []):
+                            sched_time = anime_info.get('scheduleTime')
+                            if sched_time:
+                                today_schedule.append({
+                                    'scheduled_time': sched_time,
+                                    'anime_data': anime_info,
+                                    'pushed': 0  # 未推送
+                                })
+                # 若仍然沒有取得時程表，則嘗試直接針對當前時間進行一次 API 檢查（以避免完全遺漏）
+                if not today_schedule:
+                    # 嘗試直接針對當前時間進行檢查
+                    if self._last_fallback_check is None or (now - self._last_fallback_check) > timedelta(minutes=10):
+                        self._last_fallback_check = now
+                        logger.info(f"⚠️ [check_scheduled_push] 無法取得時程表，進行臨時 API 檢查 ({current_time})")
+                        channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+                        if channel:
+                            await self._check_and_send_anime(current_time, channel)
+                    # 無時程表且臨時檢查已執行，直接返回
+                    return
             
             # 尋找符合現在時刻的項目（尚未推送的）
             # 支援補推機制：所有過去的未推送項目（防止 bot 重啟錯過時刻）
