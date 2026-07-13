@@ -144,3 +144,10 @@ gcp_secrets/
 # 工具脚本（不追踪）
 tools/
 tools/**
+
+# Ignore Claude configuration and runtime dirs
+.claude/
+.claude-flow/
+
+# Ignore Claude Swarm directory
+.swarm/
