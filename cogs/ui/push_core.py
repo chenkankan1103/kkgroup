@@ -530,6 +530,73 @@ class AnimeDatabase:
             return []
 
 
+def get_anime_details_by_videosn(self, video_sn: int) -> Optional[dict]:
+        """根據 video_sn 取得動畫詳細資訊"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                # 先從 episode_stats 找到對應的 anime_sn
+                cursor.execute(f"""
+                    SELECT anime_sn FROM {EPISODE_STATS_TABLE}
+                    WHERE video_sn = ?
+                """, (video_sn,))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                anime_sn = row[0]
+                # 再取得動畫詳細資訊
+                cursor.execute(f"""
+                    SELECT name, content, cover_url, tags, view_count, score
+                    FROM {ANIME_DETAILS_TABLE}
+                    WHERE anime_sn = ?
+                """, (anime_sn,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'name': row[0],
+                        'content': row[1],
+                        'cover_url': row[2],
+                        'tags': json.loads(row[3]) if row[3] else [],
+                        'view_count': row[4],
+                        'score': row[5]
+                    }
+                return None
+        except Exception as e:
+            print(f"Error getting anime details by videosn: {e}")
+            return None
+
+    def is_reward_already_given(self, message_id: int, reward_type: str) -> bool:
+        """檢查是否已經發放過指定類型的獎勵"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT 1 FROM {ANIME_REWARDS_TABLE}
+                    WHERE message_id = ? AND reward_type = ?
+                    LIMIT 1
+                """, (message_id, reward_type))
+                return cursor.fetchone() is not None
+        except Exception as e:
+            print(f"Error checking reward status: {e}")
+            return False
+
+    def record_reward(self, message_id: int, reward_type: str, amount: int, user_id: str) -> bool:
+        """記錄獎勵發放"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT INTO {ANIME_REWARDS_TABLE}
+                    (message_id, reward_type, amount, user_id)
+                    VALUES (?, ?, ?, ?)
+                """, (message_id, reward_type, amount, user_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error recording reward: {e}")
+            return False
+
+
 class AnimePushCore:
     """Bahamut 動畫追蹤 - Push/Core 核心功能"""
 
