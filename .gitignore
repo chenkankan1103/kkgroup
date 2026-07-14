@@ -151,3 +151,4 @@ tools/**
 
 # Ignore Claude Swarm directory
 .swarm/
+CLAUDE.md
