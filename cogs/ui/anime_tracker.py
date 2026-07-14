@@ -43,7 +43,7 @@ ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（
 ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
 
 # 導入自定義模組
-from .push_core import AnimePushCore
+from .push_core import AnimePushCore, AnimeDatabase
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import AnimeRankingStats
 
@@ -440,10 +440,12 @@ class AnimeTracker(commands.Cog):
                             self.bot.add_view(view)
 
                 except Exception as e:
+                    logger = logging.getLogger(__name__)
                     logger.error(f"❌ [_restore_old_message_views] 復原視圖失敗 for message {msg_info.get('messageId')}: {e}")
                     continue
 
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [_restore_old_message_views] 失敗: {e}")
 
     async def _catchup_missed_pushes(self):
@@ -480,8 +482,10 @@ class AnimeTracker(commands.Cog):
                 self.mark_time_pushed(week_start_str, day_of_week, item['scheduled_time'])
                 marked_times.append(item['scheduled_time'])
 
+            logger = logging.getLogger(__name__)
             logger.info(f"✅ [_catchup_missed_pushes] 已標記 {len(marked_times)} 個過時時刻為已推送：{sorted(set(marked_times))}")
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [_catchup_missed_pushes] 失敗: {e}", exc_info=True)
 
     async def _init_weekly_schedule_if_empty(self):
@@ -490,9 +494,11 @@ class AnimeTracker(commands.Cog):
             await self.bot.wait_until_ready()
             today_schedule = self.get_today_schedule()
             if today_schedule:
+                logger = logging.getLogger(__name__)
                 logger.info(f"✅ [_init_weekly_schedule_if_empty] 週表已有 {len(today_schedule)} 筆，跳過")
                 return
 
+            logger = logging.getLogger(__name__)
             logger.info("🔄 [_init_weekly_schedule_if_empty] 週表為空，立即從 API 拉取...")
             schedule = await self._get_anime_schedule()
             if not schedule:
@@ -523,6 +529,7 @@ class AnimeTracker(commands.Cog):
             else:
                 logger.warning("⚠️ [_init_weekly_schedule_if_empty] API 返回空時程表")
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [_init_weekly_schedule_if_empty] 失敗: {e}", exc_info=True)
 
     # ==================== API 相關方法 ====================
@@ -542,6 +549,7 @@ class AnimeTracker(commands.Cog):
 
                     return data['newAnime']
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ Error fetching new anime from API: {e}")
             return None
 
@@ -560,6 +568,7 @@ class AnimeTracker(commands.Cog):
 
                     return data['newAnime']
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ Error fetching all recent anime from API: {e}")
             return None
 
@@ -575,6 +584,7 @@ class AnimeTracker(commands.Cog):
                     data = await resp.json()
                     return data
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ Error fetching anime details from API: {e}")
             return None
 
@@ -627,6 +637,7 @@ class AnimeTracker(commands.Cog):
             if matching:
                 # 按時間排序，依序推送所有未推送的時刻（防止一次推送過多訊息）
                 matching_sorted = sorted(matching, key=lambda x: x['scheduled_time'])
+                logger = logging.getLogger(__name__)
                 logger.info(f"📺 [check_scheduled_push] 發現 {len(matching_sorted)} 個未推送時刻，將依序推送（現在 {current_time}）")
                 for item in matching_sorted:
                     await self.send_anime_push(item['scheduled_time'], ANIME_CHANNEL_ID)
@@ -634,6 +645,7 @@ class AnimeTracker(commands.Cog):
                     await asyncio.sleep(2)
 
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [check_scheduled_push] 失敗: {e}", exc_info=True)
 
     @tasks.loop(hours=24)
@@ -648,9 +660,11 @@ class AnimeTracker(commands.Cog):
 
             if not (is_sunday and is_refresh_time):
                 # 非禮拜天或非晚上 10 點，跳過
+                logger = logging.getLogger(__name__)
                 logger.debug(f"⏭️  [refresh_weekly_schedule] 跳過（非禮拜天晚上 10 點）")
                 return
 
+            logger = logging.getLogger(__name__)
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
 
             # 拉取完整一週的時程表
@@ -684,6 +698,7 @@ class AnimeTracker(commands.Cog):
                 logger.warning("⚠️ [refresh_weekly_schedule] API 返回空時程表")
 
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [refresh_weekly_schedule] 失敗: {e}", exc_info=True)
 
     @tasks.loop(hours=6)
@@ -691,8 +706,10 @@ class AnimeTracker(commands.Cog):
         """每 6 小時同步一次劇集統計數據"""
         try:
             await self._sync_episode_stats_from_api()
+            logger = logging.getLogger(__name__)
             logger.info(f"✅ [sync_episode_stats] 同步完成")
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [sync_episode_stats] 同步失敗: {e}", exc_info=True)
 
     @tasks.loop(hours=24)
@@ -712,6 +729,7 @@ class AnimeTracker(commands.Cog):
                 return
 
             self.last_daily_check_date = today
+            logger = logging.getLogger(__name__)
             logger.info(f"🚀 [daily_anime_check] 開始每日動畫檢查 (時間: {now.strftime('%Y-%m-%d %H:%M:%S')})")
 
             # 獲取頻道
@@ -729,6 +747,7 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"ℹ️ [daily_anime_check] 每日檢查完成，今日無新番")
 
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [daily_anime_check] 每日檢查失敗: {e}", exc_info=True)
 
     @tasks.loop(hours=1)
@@ -747,6 +766,7 @@ class AnimeTracker(commands.Cog):
     @check_scheduled_push.error
     async def check_scheduled_push_error(self, error):
         """處理任務異常"""
+        logger = logging.getLogger(__name__)
         logger.error(f"❌ [check_scheduled_push] 任務異常: {error}", exc_info=True)
 
     @refresh_weekly_schedule.before_loop
@@ -757,6 +777,7 @@ class AnimeTracker(commands.Cog):
     @refresh_weekly_schedule.error
     async def refresh_weekly_schedule_error(self, error):
         """處理任務異常"""
+        logger = logging.getLogger(__name__)
         logger.error(f"❌ [refresh_weekly_schedule] 任務異常: {error}", exc_info=True)
 
     @sync_episode_stats.before_loop
@@ -767,6 +788,7 @@ class AnimeTracker(commands.Cog):
     @sync_episode_stats.error
     async def sync_episode_stats_error(self, error):
         """處理任務異常"""
+        logger = logging.getLogger(__name__)
         logger.error(f"❌ [sync_episode_stats] 任務異常: {error}", exc_info=True)
 
     @daily_anime_check.before_loop
@@ -777,6 +799,7 @@ class AnimeTracker(commands.Cog):
     @daily_anime_check.error
     async def daily_anime_check_error(self, error):
         """處理每日檢查任務異常"""
+        logger = logging.getLogger(__name__)
         logger.error(f"❌ [daily_anime_check] 任務異常: {error}", exc_info=True)
         logger.warning(f"⚠️ [daily_anime_check] 嘗試重啟任務...")
 
@@ -788,11 +811,13 @@ class AnimeTracker(commands.Cog):
                 self.daily_anime_check.restart()
                 logger.info(f"✅ [daily_anime_check] 任務已重新啟動")
         except Exception as restart_error:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [daily_anime_check] 重啟失敗: {restart_error}", exc_info=True)
 
     @send_weekly_stats.before_loop
     async def before_send_weekly_stats(self):
         """在第一次循環前等待 bot 就緒"""
+        logger = logging.getLogger(__name__)
         logger.info("📊 [before_send_weekly_stats] 等待 bot 就緒...")
         await self.bot.wait_until_ready()
         logger.info("✅ [before_send_weekly_stats] Bot 已就緒，週統計任務準備就緒")
@@ -808,6 +833,7 @@ class AnimeTracker(commands.Cog):
     @send_weekly_stats.error
     async def send_weekly_stats_error(self, error):
         """處理 send_weekly_stats 任務的異常"""
+        logger = logging.getLogger(__name__)
         logger.error(f"❌ [send_weekly_stats] 任務異常: {error}", exc_info=True)
         logger.warning(f"⚠️ [send_weekly_stats] 嘗試重啟任務...")
 
@@ -819,6 +845,7 @@ class AnimeTracker(commands.Cog):
                 self.send_weekly_stats.restart()
                 logger.info(f"✅ [send_weekly_stats] 任務已重新啟動")
         except Exception as restart_error:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [send_weekly_stats] 重啟失敗: {restart_error}", exc_info=True)
 
     # ==================== 輔助方法 ====================
@@ -829,6 +856,7 @@ class AnimeTracker(commands.Cog):
             # 獲取最近的動畫數據
             episodes = await self.fetch_all_recent_anime_from_api()
             if not episodes:
+                logger = logging.getLogger(__name__)
                 logger.warning("⚠️ [_sync_episode_stats_from_api] 無法獲取動畫數據")
                 return
 
@@ -845,8 +873,10 @@ class AnimeTracker(commands.Cog):
                     self.record_episode_stats(video_sn, anime_sn, episode_num, views, score)
                     processed_count += 1
 
+            logger = logging.getLogger(__name__)
             logger.info(f"📊 [_sync_episode_stats_from_api] 同步了 {processed_count} 筆劇集統計數據")
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"❌ [_sync_episode_stats_from_api] 同步失敗: {e}", exc_info=True)
 
     # ==================== 輔助類：AnimeVoteView (保持在主類中，因為它需要引用主類) ====================
@@ -1152,26 +1182,3 @@ class AnimeTracker(commands.Cog):
                 logger.error(f"❌ [_update_message_stats] 消息不存在或已被刪除: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
-
-
-async def setup(bot: commands.Bot):
-    """Discord.py 2.0+ 加載方式 - cog_load() 會自動被調用"""
-    import sys
-    print("[SETUP_START] 🎬 AnimeTracker setup() 開始", flush=True)
-    sys.stdout.flush()
-
-    try:
-        cog = AnimeTracker(bot)
-        await bot.add_cog(cog)
-        logger = logging.getLogger(__name__)
-        logger.info("✅ AnimeTracker Cog 已加載（任務將在 cog_load() 中啟動）")
-        print("[SETUP_END] 🎬 AnimeTracker setup() 完成 - cog_load() 將自動被調用", flush=True)
-        sys.stdout.flush()
-    except Exception as setup_err:
-        import traceback
-        error_msg = f"❌ [setup] AnimeTracker setup() 失敗: {setup_err}"
-        print(f"[SETUP_ERROR] {error_msg}", flush=True)
-        print(f"[SETUP_ERROR] Traceback:\n{traceback.format_exc()}", flush=True)
-        logger = logging.getLogger(__name__)
-        logger.error(error_msg, exc_info=True)
-        raise

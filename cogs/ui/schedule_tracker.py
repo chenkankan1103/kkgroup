@@ -3,7 +3,7 @@
 Bahamut 動畫追蹤 Cog - 週表排程系統
 
 負責週表機制：
-- 每週一禮拜天晚上 10 點自動從 Bahamut API 下載完整一週時程表
+- 每週一禮拜晚上 10 點自動從 Bahamut API 下載完整一週時程表
 - 將時程表儲存到本地資料庫 (anime_weekly_schedule 表)
 - 每小時檢查是否到達預定時刻，若到則進行實時 API 查詢確認新番
 - 實時查詢成功後發送通知並標記該時刻已推送
@@ -21,6 +21,7 @@ from typing import Optional, Dict, List
 import asyncio
 import aiohttp
 import json
+import sqlite3
 from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT
 
 logger = logging.getLogger(__name__)
