@@ -530,7 +530,7 @@ class AnimeDatabase:
             return []
 
 
-def get_anime_details_by_videosn(self, video_sn: int) -> Optional[dict]:
+    def get_anime_details_by_videosn(self, video_sn: int) -> Optional[dict]:
         """根據 video_sn 取得動畫詳細資訊"""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -718,7 +718,7 @@ class AnimePushCore:
 
             embed.add_field(
                 name="觀看連結",
-                value="[點擊觀看](https://ani.gamer.com.tw/animeVideo.php?sn={})".format(video_sn),
+                value=f"[點擊觀看](https://ani.gamer.com.tw/animeVideo.php?sn={video_sn})",
                 inline=False
             )
 
@@ -768,173 +768,5 @@ class AnimePushCore:
                 return False
 
             sent_count = 0
-            for ep in new_episodes:
-                try:
-                    embed = await self.generate_anime_embed(ep)
-                    # 視圖將在 AnimeTracker 中生成
-                    view = None  # 暫時設為 None，實際實作在 AnimeTracker
 
-                    if view is None:
-                        continue
-
-                    # 註冊永久視圖到 bot
-                    self.bot.add_view(view)
-
-                    message = await channel.send(embed=embed, view=view, silent=True)
-
-                    # 保存消息 ID
-                    try:
-                        self.db.save_message_info(
-                            message_id=message.id,
-                            video_sn=ep.get("videoSn"),
-                            anime_sn=ep.get("animeSn"),
-                            anime_name=ep.get("title", "Unknown"),
-                            channel_id=channel.id
-                        )
-                    except Exception:
-                        pass  # 不中斷流程
-
-                    # 記錄已通知
-                    try:
-                        self.db.add_notified(
-                            video_sn=ep.get("videoSn"),
-                            anime_sn=ep.get("animeSn"),
-                            anime_name=ep.get("title", "Unknown"),
-                            volume=ep.get("volume", ""),
-                            cover_url=ep.get("cover", "")
-                        )
-                    except Exception:
-                        pass  # 不中斷流程
-
-                    sent_count += 1
-                    await asyncio.sleep(0.2)  # 避免 Discord 限流
-
-                except Exception:
-                    await asyncio.sleep(1)
-                    continue
-
-            return sent_count > 0
-
-        except Exception:
-            return False
-
-    # ==================== 消息持久化和視圖恢復 ====================
-
-    async def _restore_old_message_views(self):
-        """Bot 重啟時恢復舊消息的視圖"""
-        try:
-            # 獲取所有保存的消息資訊
-            messages = self.db.get_unviewed_messages()  # 這個方法需要在 AnimeDatabase 中實現
-
-            for msg_info in messages:
-                try:
-                    # 重新生成視圖並註冊到 bot
-                    # 這部分需要和 AnimeTracker 協作
-                    pass
-                except Exception:
-                    continue
-
-        except Exception:
-            pass
-
-    # ==================== Bootstrap 和恢復方法 ====================
-
-    async def _catchup_missed_pushes(self):
-        """Bot 重啟時標記今日已過時刻為已推送（不進行實際推送），避免重複嘗試"""
-        try:
-            await self.bot.wait_until_ready()
-            now = datetime.now(TW_TZ)
-            today_schedule = self.db.get_today_schedule()
-            if not today_schedule:
-                return
-
-            # 找出今天已過時刻但尚未標記為已推送的項目
-            to_mark = []
-            for item in today_schedule:
-                if item['pushed']:
-                    continue
-                try:
-                    sched_dt = datetime.strptime(item['scheduled_time'], "%H:%M").replace(
-                        year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
-                    )
-                    if (now - sched_dt).total_seconds() >= 0:  # 已過或當前時刻
-                        to_mark.append(item)
-                except Exception:
-                    pass
-
-            if not to_mark:
-                return
-
-            week_start = now - timedelta(days=now.weekday())
-            week_start_str = week_start.strftime("%Y-%m-%d")
-            day_of_week = (now.weekday() + 1) % 7 or 7
-            marked_times = []
-            for item in to_mark:
-                self.db.mark_time_pushed(week_start_str, day_of_week, item['scheduled_time'])
-                marked_times.append(item['scheduled_time'])
-
-        except Exception:
-            pass
-
-    async def _init_weekly_schedule_if_empty(self):
-        """如果本週的週表為空，立即從 API 拉取（解決首次部署/非禮拜天重啟問題）"""
-        try:
-            await self.bot.wait_until_ready()
-            today_schedule = self.db.get_today_schedule()
-            if today_schedule:
-                return
-
-            logger.info("週表為空，立即從 API 拉取...")
-            schedule = await self._get_anime_schedule()
-            if not schedule:
-                return
-
-            now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())
-            week_start_str = week_start.strftime("%Y-%m-%d")
-
-            schedule_data = []
-            for day_offset in range(7):
-                day_of_week = (day_offset + 1) % 7 or 7  # 1=Mon, 7=Sun
-                day_key = str(day_of_week)
-                if day_key in schedule:
-                    for anime in schedule[day_key]:
-                        scheduled_time = anime.get('scheduleTime', '')
-                        if scheduled_time:
-                            schedule_data.append({
-                                'day_of_week': day_of_week,
-                                'scheduled_time': scheduled_time,
-                                'anime_data': anime
-                            })
-
-            if schedule_data:
-                self.db.save_weekly_schedule(week_start_str, schedule_data)
-            else:
-                logger.warning("API 返回空時程表")
-
-        except Exception:
-            pass
-
-    # ==================== API 時程表相關方法 ====================
-
-    async def _get_anime_schedule(self) -> Optional[Dict]:
-        """從 API 獲取日程表 (newAnimeSchedule)"""
-        try:
-            timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(API_ENDPOINT) as resp:
-                    if resp.status != 200:
-                        return None
-                    data = await resp.json()
-
-                    if 'newAnimeSchedule' not in data:
-                        return None
-
-                    return data['newAnimeSchedule']
-        except Exception:
-            return None
-
-    def _get_weekday_name(self, weekday_num: int) -> str:
-        """將週day數字轉換為中文名稱"""
-        weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-        return weekdays[weekday_num - 1] if 1 <= weekday_num <= 7 else "未知"
+null
