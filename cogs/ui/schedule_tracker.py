@@ -100,19 +100,33 @@ class AnimeScheduleTracker:
 
         return sorted(check_times)
 
-    async def refresh_weekly_schedule(self) -> bool:
-        """禮拜日晚上 10 點自動拉取完整週表 - 優化 API 調用（288/天 → 1/週）"""
+    async def refresh_weekly_schedule(self) -> dict:
+        """
+        每天晚上 22:00 拉取完整週表並全量覆蓋 - 兼具「填滿行事曆」與「檢查漏推」功能
+
+        流程：
+        1. 呼叫 newAnimeSchedule API 取得 7 天時程表
+        2. 以「本週一」為 week_start_date 全量覆蓋 anime_weekly_schedule 表
+        3. 回傳今日時程供上層檢查 <=22:00 的漏推項目
+
+        Returns:
+            dict: {
+                'success': bool,
+                'week_start_date': str,
+                'today_schedule': list,  # 今日所有時程（含 pushed 狀態）
+                'total_count': int
+            }
+        """
         now = datetime.now(TW_TZ)
+        current_time_str = now.strftime("%H:%M")
 
         try:
-            # 檢查是否是禮拜天晚上 22:00
-            is_sunday = now.weekday() == 6  # 6 = Sunday
+            # 每天 22:00 執行（移除 is_sunday 判斷）
             is_refresh_time = now.hour == 22  # 台灣時間 22:00-22:59
 
-            if not (is_sunday and is_refresh_time):
-                # 非禮拜天或非晚上 10 點，跳過
-                logger.debug(f"⏭️ [refresh_weekly_schedule] 跳過（非禮拜天晚上 10 點）")
-                return False
+            if not is_refresh_time:
+                logger.debug(f"⏭️ [refresh_weekly_schedule] 跳過（非晚上 10 點）")
+                return {'success': False, 'skipped': True}
 
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
 
@@ -120,19 +134,15 @@ class AnimeScheduleTracker:
             schedule = await self._get_anime_schedule()
             if not schedule:
                 logger.warning("⚠️ [refresh_weekly_schedule] 無法拉取時程表")
-                return False
+                return {'success': False, 'error': 'API 回傳空時程表'}
 
-            # 構建下週的完整時程（在禮拜天晚上為下週一開始的那週）
-            # Bug fix: 禮拜天時 now.weekday()=6，若用 now - 6 days = 上週一
-            # 但我們應存為「下週一」，因為 get_today_schedule() 在週一查詢時
-            # 會用「本週一」作為 week_start，所以需要提前存好下週的資料
-            week_start = now - timedelta(days=now.weekday()) + timedelta(weeks=1)
+            # 計算「本週一」作為 week_start_date（get_today_schedule 也是用本週一查詢）
+            week_start = now - timedelta(days=now.weekday())
             week_start_str = week_start.strftime("%Y-%m-%d")
-            logger.info(f"📅 [refresh_weekly_schedule] 將保存為下週起始: {week_start_str}")
+            logger.info(f"📅 [refresh_weekly_schedule] 保存週起始日期: {week_start_str}")
 
             schedule_data = []
             for day_offset in range(7):
-                target_date = week_start + timedelta(days=day_offset)
                 day_of_week = (day_offset + 1) % 7 or 7  # 1=Mon, 7=Sun
                 day_key = str(day_of_week)
 
@@ -146,18 +156,25 @@ class AnimeScheduleTracker:
                                 'anime_data': anime
                             })
 
-            # 保存到數據庫
+            # 全量覆蓋：先刪除該 week_start_date 的舊資料，再插入新資料
+            # save_weekly_schedule 內部已做 DELETE + INSERT
             if schedule_data:
                 self.db.save_weekly_schedule(week_start_str, schedule_data)
-                logger.info(f"✅ [refresh_weekly_schedule] 本週時程表已保存 ({len(schedule_data)} 個時刻)")
-                return True
-            else:
-                logger.warning("⚠️ [refresh_weekly_schedule] 時程表為空")
-                return False
+                logger.info(f"✅ [refresh_weekly_schedule] 週表全量覆蓋完成 ({len(schedule_data)} 個時刻)")
+
+            # 取得今日時程（含 pushed 狀態）供上層檢查漏推
+            today_schedule = self.get_today_schedule()
+
+            return {
+                'success': True,
+                'week_start_date': week_start_str,
+                'today_schedule': today_schedule,
+                'total_count': len(schedule_data)
+            }
 
         except Exception as e:
             logger.error(f"❌ [refresh_weekly_schedule] 失敗: {e}", exc_info=True)
-            return False
+            return {'success': False, 'error': str(e)}
 
     def get_today_schedule(self) -> list:
         """獲取今天的時程表（從週表中）"""

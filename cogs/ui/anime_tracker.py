@@ -81,7 +81,6 @@ class AnimeTracker(commands.Cog):
         self.task_started = False
         self.bootstrap_completed = False
         self.last_weekly_stats_sent = None
-        self.last_daily_check_date = None
 
     # ==================== CULC 生命週期方法 ====================
 
@@ -115,32 +114,6 @@ class AnimeTracker(commands.Cog):
             await self._catchup_missed_pushes()
             print("[COG_LOAD] ✅ 補推檢查完成", flush=True)
 
-            # 啟動週統計任務
-            print("[COG_LOAD] 檢查 send_weekly_stats 任務狀態", flush=True)
-            if not self.send_weekly_stats.is_running():
-                print("[COG_LOAD] ✅ 啟動 send_weekly_stats 任務", flush=True)
-                logger.info("🚀 [AnimeTracker.cog_load] 啟動 send_weekly_stats 任務")
-                try:
-                    self.send_weekly_stats.start()
-                    logger.info(f"✅ [AnimeTracker.cog_load] send_weekly_stats 已啟動 (is_running={self.send_weekly_stats.is_running()})")
-                    print("[COG_LOAD] ✅ send_weekly_stats 已啟動", flush=True)
-                except Exception as start_err:
-                    logger.error(f"❌ [AnimeTracker.cog_load] 啟動 send_weekly_stats 失敗: {start_err}", exc_info=True)
-                    print(f"[COG_LOAD] ❌ 啟動 send_weekly_stats 失敗: {start_err}", flush=True)
-                    # 重試一次
-                    try:
-                        await asyncio.sleep(1)
-                        logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 send_weekly_stats...")
-                        self.send_weekly_stats.start()
-                        logger.info("✅ [AnimeTracker.cog_load] 重試成功，send_weekly_stats 已啟動")
-                        print("[COG_LOAD] ✅ 重試成功，send_weekly_stats 已啟動", flush=True)
-                    except Exception as retry_err:
-                        logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
-                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
-            else:
-                logger.info(f"⏭️  [AnimeTracker.cog_load] send_weekly_stats 已在運行 (is_running=True)")
-                print("[COG_LOAD] ⚠️ send_weekly_stats 已在運行", flush=True)
-
             # 啟動週表刷新任務
             print("[COG_LOAD] 檢查 refresh_weekly_schedule 任務狀態", flush=True)
             if not self.refresh_weekly_schedule.is_running():
@@ -167,31 +140,12 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"⏭️  [AnimeTracker.cog_load] refresh_weekly_schedule 已在運行 (is_running=True)")
                 print("[COG_LOAD] ⚠️ refresh_weekly_schedule 已在運行", flush=True)
 
-            # 啟動推送檢查任務（週表模式）
-            print("[COG_LOAD] 檢查 check_scheduled_push 任務狀態", flush=True)
-            if not self.check_scheduled_push.is_running():
-                print("[COG_LOAD] ✅ 啟動 check_scheduled_push 任務", flush=True)
-                logger.info("🚀 [AnimeTracker.cog_load] 啟動 check_scheduled_push 任務")
-                try:
-                    self.check_scheduled_push.start()
-                    logger.info(f"✅ [AnimeTracker.cog_load] check_scheduled_push 已啟動 (is_running={self.check_scheduled_push.is_running()})")
-                    print("[COG_LOAD] ✅ check_scheduled_push 已啟動", flush=True)
-                except Exception as start_err:
-                    logger.error(f"❌ [AnimeTracker.cog_load] 啨動 check_scheduled_push 失敗: {start_err}", exc_info=True)
-                    print(f"[COG_LOAD] ❌ 啟動 check_scheduled_push 失敗: {start_err}", flush=True)
-                    # 重試一次
-                    try:
-                        await asyncio.sleep(1)
-                        logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 check_scheduled_push...")
-                        self.check_scheduled_push.start()
-                        logger.info("✅ [AnimeTracker.cog_load] 重試成功，check_scheduled_push 已啟動")
-                        print("[COG_LOAD] ✅ 重試成功，check_scheduled_push 已啟動", flush=True)
-                    except Exception as retry_err:
-                        logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
-                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
-            else:
-                logger.info(f"⏭️  [AnimeTracker.cog_load] check_scheduled_push 已在運行 (is_running=True)")
-                print("[COG_LOAD] ⚠️ check_scheduled_push 已在運行", flush=True)
+            # 啟動精准派發器（背景任務，非 tasks.loop）
+            print("[COG_LOAD] 啟動精準排程派發器", flush=True)
+            logger.info("🚀 [AnimeTracker.cog_load] 啟動精準排程派發器")
+            self._dispatcher_task = asyncio.create_task(self._schedule_dispatcher())
+            logger.info("✅ [AnimeTracker.cog_load] 精準排程派發器已啟動")
+            print("[COG_LOAD] ✅ 精準排程派發器已啟動", flush=True)
 
             # 啟動週期統計同步任務
             print("[COG_LOAD] 檢查 sync_episode_stats 任務狀態", flush=True)
@@ -243,17 +197,14 @@ class AnimeTracker(commands.Cog):
         try:
             # ✅ check_new_anime 已移除
 
-            if self.send_weekly_stats.is_running():
-                self.send_weekly_stats.cancel()
-                logger.info("✅ [AnimeTracker.cog_unload] send_weekly_stats 已停止")
-
             if self.refresh_weekly_schedule.is_running():
                 self.refresh_weekly_schedule.cancel()
                 logger.info("✅ [AnimeTracker.cog_unload] refresh_weekly_schedule 已停止")
 
-            if self.check_scheduled_push.is_running():
-                self.check_scheduled_push.cancel()
-                logger.info("✅ [AnimeTracker.cog_unload] check_scheduled_push 已停止")
+            # 停止精準排程派發器（背景任務，非 tasks.loop）
+            if hasattr(self, '_dispatcher_task') and not self._dispatcher_task.done():
+                self._dispatcher_task.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] 精準排程派發器已停止")
 
             if self.sync_episode_stats.is_running():
                 self.sync_episode_stats.cancel()
@@ -600,174 +551,117 @@ class AnimeTracker(commands.Cog):
 
     # ==================== 排程任務 ====================
 
-    @tasks.loop(minutes=1)  # 每分鐘執行一次，但只在 9:00-22:00 台灣時間執行 actual 工作
-    async def check_scheduled_push(self):
-        """每分鐘檢查是否在推送時間內（9:00-22:00 台灣時間）"""
-        now = datetime.now(TW_TZ)
-        current_time = now.strftime("%H:%M")
+    # 排程分發器：在「下一個待推送時刻」精確喚醒，呼叫 API → 推送 → 睡到下一個時刻
+    # 取代原每分鐘輪詢，大幅減少 API 呼叫
+    async def _schedule_dispatcher(self):
+        """背景任務：精確在每個 scheduled_time 喚醒並推送"""
+        logger = logging.getLogger(__name__)
+        logger.info("🚀 [_schedule_dispatcher] 排程分發器啟動")
 
-        try:
-            # 檢查是否在允許的時間範圍內（9:00-22:00）
-            is_within_time = now.hour >= 9 and now.hour < 22  # 9:00-21:59
+        await self.bot.wait_until_ready()
 
-            if not is_within_time:
-                # 不在推送時間內，跳過
-                return
+        while not self.bot.is_closed():
+            try:
+                now = datetime.now(TW_TZ)
+                today_schedule = self.get_today_schedule()
 
-            # 獲取今天的時程表
-            today_schedule = self.get_today_schedule()
+                # 找出今天「尚未推送」且「時間 >= 現在」的最早一筆
+                next_item = None
+                for item in today_schedule:
+                    if item['pushed']:
+                        continue
+                    scheduled = item['scheduled_time']
+                    try:
+                        sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
+                            year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                        )
+                        if sched_dt >= now:
+                            next_item = item
+                            break
+                    except Exception:
+                        pass
 
-            # 尋找符合現在時刻的項目（尚未推送的）
-            matching = []
-            for item in today_schedule:
-                if item['pushed']:
-                    continue
-                scheduled = item['scheduled_time']
-                try:
+                if next_item:
+                    scheduled = next_item['scheduled_time']
+                    # 計算要睡多久（秒）
                     sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
                         year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                     )
-                    diff = (now - sched_dt).total_seconds()
-                    # 只處理已過去或當前時刻的節目（ diff >= 0 ）
-                    if diff >= 0:
-                        matching.append(item)
-                except Exception:
-                    pass
+                    sleep_seconds = (sched_dt - now).total_seconds()
 
-            if matching:
-                # 按時間排序，依序推送所有未推送的時刻（防止一次推送過多訊息）
-                matching_sorted = sorted(matching, key=lambda x: x['scheduled_time'])
-                logger = logging.getLogger(__name__)
-                logger.info(f"📺 [check_scheduled_push] 發現 {len(matching_sorted)} 個未推送時刻，將依序推送（現在 {current_time}）")
-                for item in matching_sorted:
-                    await self.send_anime_push(item['scheduled_time'], ANIME_CHANNEL_ID)
-                    # 避免短時間內連續發送太多訊息，稍作間隔
-                    await asyncio.sleep(2)
+                    # 睡到預定時間（最多睡 24 小時防呆）
+                    if sleep_seconds > 0:
+                        logger.info(f"😴 [_schedule_dispatcher] 下一檔 {scheduled}，睡 {sleep_seconds:.0f} 秒")
+                        await asyncio.sleep(min(sleep_seconds, 86400))
 
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ [check_scheduled_push] 失敗: {e}", exc_info=True)
+                    # 時間到 → 即時呼叫 API 推送
+                    now = datetime.now(TW_TZ)
+                    logger.info(f"⏰ [_schedule_dispatcher] 時間到 {scheduled}，呼叫 API 推送")
+                    await self.send_anime_push(scheduled, ANIME_CHANNEL_ID)
+                    # 成功會在 send_anime_push 內標記 pushed=1，下次迴圈會自動跳過
+                else:
+                    # 今天沒有待推送項目 → 睡到明天 00:00 重新載入時程
+                    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                    sleep_seconds = (tomorrow - now).total_seconds()
+                    logger.info(f"😴 [_schedule_dispatcher] 今日無待推項目，睡到明天 00:00 ({sleep_seconds:.0f} 秒)")
+                    await asyncio.sleep(sleep_seconds)
+
+            except asyncio.CancelledError:
+                logger.info("🛑 [_schedule_dispatcher] 任務被取消")
+                break
+            except Exception as e:
+                logger.error(f"❌ [_schedule_dispatcher] 異常: {e}", exc_info=True)
+                await asyncio.sleep(60)  # 錯誤時休息 1 分鐘避免狂迴圈
 
     @tasks.loop(hours=24)
     async def refresh_weekly_schedule(self):
-        """禮拜天晚上 10 點自動拉取完整週表 - 優化 API 調用（288/天 → 1/週）"""
+        """每天晚上 22:00 拉取完整週表全量覆蓋，並檢查今日 <=22:00 的漏推項目進行補推"""
+        result = await self.schedule_tracker.refresh_weekly_schedule()
+
+        if not result.get('success'):
+            if result.get('skipped'):
+                return  # 非 22:00 靜默跳過
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ [refresh_weekly_schedule] 週表刷新失敗: {result.get('error')}")
+            return
+
+        # 週表刷新成功，檢查今日已過去/當前時刻(<=22:00)且未推送的項目進行補推
+        today_schedule = result.get('today_schedule', [])
         now = datetime.now(TW_TZ)
+        current_time_str = now.strftime("%H:%M")
 
-        try:
-            # 檢查是否是禮拜天晚上 22:00
-            is_sunday = now.weekday() == 6  # 6 = Sunday
-            is_refresh_time = now.hour == 22  # 台灣時間 22:00-22:59
+        logger = logging.getLogger(__name__)
+        logger.info(f"✅ [refresh_weekly_schedule] 週表刷新完成，檢查補推項目（現在 {current_time_str}）")
 
-            if not (is_sunday and is_refresh_time):
-                # 非禮拜天或非晚上 10 點，跳過
-                logger = logging.getLogger(__name__)
-                logger.debug(f"⏭️  [refresh_weekly_schedule] 跳過（非禮拜天晚上 10 點）")
-                return
+        # 篩選：pushed=0 且 scheduled_time <= 22:00（今天的推送時段已結束）
+        missed = []
+        for item in today_schedule:
+            if item['pushed']:
+                continue
+            scheduled = item['scheduled_time']
+            try:
+                # 僅處理 <= 當前時間（22:00 執行時，當前即為 22:xx，所以 <=22:00 即為今日已過去時段）
+                if scheduled <= current_time_str:
+                    missed.append(item)
+            except Exception:
+                pass
 
-            logger = logging.getLogger(__name__)
-            logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
-
-            # 拉取完整一週的時程表
-            schedule = await self._get_anime_schedule()
-            if not schedule:
-                logger.warning("⚠️ [refresh_weekly_schedule] 無法拉取時程表")
-                return
-
-            now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())  # 週一
-            week_start_str = week_start.strftime("%Y-%m-%d")
-
-            schedule_data = []
-            for day_offset in range(7):
-                day_of_week = (day_offset + 1) % 7 or 7  # 1=Mon, 7=Sun
-                day_key = str(day_of_week)
-                if day_key in schedule:
-                    for anime in schedule[day_key]:
-                        scheduled_time = anime.get('scheduleTime', '')
-                        if scheduled_time:
-                            schedule_data.append({
-                                'day_of_week': day_of_week,
-                                'scheduled_time': scheduled_time,
-                                'anime_data': anime
-                            })
-
-            if schedule_data:
-                self.save_weekly_schedule(week_start_str, schedule_data)
-                logger.info(f"✅ [refresh_weekly_schedule] 週表更新完成: {len(schedule_data)} 筆")
-            else:
-                logger.warning("⚠️ [refresh_weekly_schedule] API 返回空時程表")
-
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ [refresh_weekly_schedule] 失敗: {e}", exc_info=True)
+        if missed:
+            missed_sorted = sorted(missed, key=lambda x: x['scheduled_time'])
+            logger.info(f"📺 [refresh_weekly_schedule] 發現 {len(missed_sorted)} 個漏推時刻，開始補推")
+            for item in missed_sorted:
+                await self.send_anime_push(item['scheduled_time'], ANIME_CHANNEL_ID)
+                await asyncio.sleep(2)
+        else:
+            logger.info(f"ℹ️ [refresh_weekly_schedule] 今日無漏推項目")
 
     @tasks.loop(hours=6)
     async def sync_episode_stats(self):
-        """每 6 小時同步一次劇集統計數據"""
-        try:
-            await self._sync_episode_stats_from_api()
-            logger = logging.getLogger(__name__)
-            logger.info(f"✅ [sync_episode_stats] 同步完成")
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ [sync_episode_stats] 同步失敗: {e}", exc_info=True)
-
-    @tasks.loop(hours=24)
-    async def daily_anime_check(self):
-        """每日直接從 API 檢查新番（取代週表模式）"""
-        try:
-            # 防止重複執行（同一天內只執行一次）
-            today = datetime.now(TW_TZ).date()
-            if self.last_daily_check_date == today:
-                return
-
-            # 檢查是否在檢查時間內（每天 9:00-9:59 執行）
-            now = datetime.now(TW_TZ)
-            is_check_time = now.hour == 9  # 現在是 9:00-9:59
-
-            if not is_check_time:
-                return
-
-            self.last_daily_check_date = today
-            logger = logging.getLogger(__name__)
-            logger.info(f"🚀 [daily_anime_check] 開始每日動畫檢查 (時間: {now.strftime('%Y-%m-%d %H:%M:%S')})")
-
-            # 獲取頻道
-            channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-            if not channel:
-                logger.error(f"❌ [daily_anime_check] 找不到頻道 ID: {ANIME_CHANNEL_ID}")
-                return
-
-            # 檢查並發送新番
-            found_new = await self._check_and_send_anime("DAILY_CHECK", channel)
-
-            if found_new:
-                logger.info(f"✅ [daily_anime_check] 每日檢查完成，發現並發送了新番通知")
-            else:
-                logger.info(f"ℹ️ [daily_anime_check] 每日檢查完成，今日無新番")
-
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ [daily_anime_check] 每日檢查失敗: {e}", exc_info=True)
-
-    @tasks.loop(hours=1)
-    async def send_weekly_stats(self):
         """自動發送週統計 - 每週天 台灣時間 23:00 發送 - 已停用：被每日檢查取代"""
         # 此功能已被 daily_anime_check 取代
         pass
 
     # ==================== 任務啟動和錯誤處理 ====================
-
-    @check_scheduled_push.before_loop
-    async def before_check_scheduled_push(self):
-        """等待 bot 就緒"""
-        await self.bot.wait_until_ready()
-
-    @check_scheduled_push.error
-    async def check_scheduled_push_error(self, error):
-        """處理任務異常"""
-        logger = logging.getLogger(__name__)
-        logger.error(f"❌ [check_scheduled_push] 任務異常: {error}", exc_info=True)
 
     @refresh_weekly_schedule.before_loop
     async def before_refresh_weekly_schedule(self):
@@ -790,63 +684,6 @@ class AnimeTracker(commands.Cog):
         """處理任務異常"""
         logger = logging.getLogger(__name__)
         logger.error(f"❌ [sync_episode_stats] 任務異常: {error}", exc_info=True)
-
-    @daily_anime_check.before_loop
-    async def before_daily_anime_check(self):
-        """等待 bot 就緒"""
-        await self.bot.wait_until_ready()
-
-    @daily_anime_check.error
-    async def daily_anime_check_error(self, error):
-        """處理每日檢查任務異常"""
-        logger = logging.getLogger(__name__)
-        logger.error(f"❌ [daily_anime_check] 任務異常: {error}", exc_info=True)
-        logger.warning(f"⚠️ [daily_anime_check] 嘗試重啟任務...")
-
-        # 短暫延遲後重新啟動任務
-        try:
-            await asyncio.sleep(5)
-            if not self.daily_anime_check.is_running():
-                logger.info(f"🔄 [daily_anime_check] 重新啟動任務...")
-                self.daily_anime_check.restart()
-                logger.info(f"✅ [daily_anime_check] 任務已重新啟動")
-        except Exception as restart_error:
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ [daily_anime_check] 重啟失敗: {restart_error}", exc_info=True)
-
-    @send_weekly_stats.before_loop
-    async def before_send_weekly_stats(self):
-        """在第一次循環前等待 bot 就緒"""
-        logger = logging.getLogger(__name__)
-        logger.info("📊 [before_send_weekly_stats] 等待 bot 就緒...")
-        await self.bot.wait_until_ready()
-        logger.info("✅ [before_send_weekly_stats] Bot 已就緒，週統計任務準備就緒")
-
-        # 啟動任務
-        if not self.send_weekly_stats.is_running():
-            try:
-                self.send_weekly_stats.start()
-                logger.info("🚀 [before_send_weekly_stats] 週統計任務已啟動")
-            except Exception as e:
-                logger.error(f"❌ [before_send_weekly_stats] 啟動任務失敗: {e}", exc_info=True)
-
-    @send_weekly_stats.error
-    async def send_weekly_stats_error(self, error):
-        """處理 send_weekly_stats 任務的異常"""
-        logger = logging.getLogger(__name__)
-        logger.error(f"❌ [send_weekly_stats] 任務異常: {error}", exc_info=True)
-        logger.warning(f"⚠️ [send_weekly_stats] 嘗試重啟任務...")
-
-        # 短暫延遲後重新啟動任務
-        try:
-            await asyncio.sleep(5)
-            if not self.send_weekly_stats.is_running():
-                logger.info(f"🔄 [send_weekly_stats] 重新啟動任務...")
-                self.send_weekly_stats.restart()
-                logger.info(f"✅ [send_weekly_stats] 任務已重新啟動")
-        except Exception as restart_error:
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ [send_weekly_stats] 重啟失敗: {restart_error}", exc_info=True)
 
     # ==================== 輔助方法 ====================
 
