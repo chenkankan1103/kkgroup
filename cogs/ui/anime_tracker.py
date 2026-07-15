@@ -1019,3 +1019,8 @@ class AnimeTracker(commands.Cog):
                 logger.error(f"❌ [_update_message_stats] 消息不存在或已被刪除: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
+
+
+async def setup(bot: commands.Bot):
+    """Setup 函數供 Discord.py 加載 Cog"""
+    await bot.add_cog(AnimeTracker(bot))

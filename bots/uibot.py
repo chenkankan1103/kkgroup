@@ -172,7 +172,9 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
         'image_utils', 'selection_views', 'crop_operations', 'personal_locker',
         'ai_client_liteLLM',
         'auto_debug_system',
-        'work_card'  # 這些都是 View 或 Modal 類，不是 Cog
+        'work_card',
+        # anime_tracker 子模組：它們是內部模組，不應獨立載入為 Cog
+        'push_core', 'schedule_tracker', 'ranking_stats',
     }
     
     for item in sorted(os.listdir(base_path)):

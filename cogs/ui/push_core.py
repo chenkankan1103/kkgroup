@@ -177,7 +177,7 @@ class AnimeDatabase:
             """)
 
             # 創建索引以提高查詢性能
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIEDTABLE}_video_sn ON {NOTIFIED_TABLE}(video_sn)")
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_video_sn ON {NOTIFIED_TABLE}(video_sn)")
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_DETAILS_TABLE}_anime_sn ON {ANIME_DETAILS_TABLE}(anime_sn)")
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_video_sn ON {EPISODE_STATS_TABLE}(video_sn)")
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_video_sn ON {ANIME_MESSAGES_TABLE}(video_sn)")
@@ -185,7 +185,45 @@ class AnimeDatabase:
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_week_start ON {ANIME_WEEKLY_SCHEDULE_TABLE}(week_start_date)")
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_day_time ON {ANIME_WEEKLY_SCHEDULE_TABLE}(day_of_week, scheduled_time)")
 
+            # Schema migration: add missing columns to existing tables
+            self._migrate_schema(cursor)
+
             conn.commit()
+
+    def _migrate_schema(self, cursor):
+        """Add missing columns to existing tables (schema migration)"""
+        migrations = [
+            # (table_name, column_name, column_definition)
+            (NOTIFIED_TABLE, "video_sn", "INTEGER PRIMARY KEY"),
+            (NOTIFIED_TABLE, "anime_sn", "INTEGER"),
+            (NOTIFIED_TABLE, "anime_name", "TEXT"),
+            (NOTIFIED_TABLE, "volume", "TEXT"),
+            (NOTIFIED_TABLE, "cover_url", "TEXT"),
+            (NOTIFIED_TABLE, "notified_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_MESSAGES_TABLE, "message_id", "INTEGER PRIMARY KEY"),
+            (ANIME_MESSAGES_TABLE, "video_sn", "INTEGER"),
+            (ANIME_MESSAGES_TABLE, "anime_sn", "INTEGER"),
+            (ANIME_MESSAGES_TABLE, "anime_name", "TEXT"),
+            (ANIME_MESSAGES_TABLE, "channel_id", "INTEGER"),
+            (ANIME_MESSAGES_TABLE, "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (EPISODE_STATS_TABLE, "video_sn", "INTEGER PRIMARY KEY"),
+            (EPISODE_STATS_TABLE, "anime_sn", "INTEGER"),
+            (EPISODE_STATS_TABLE, "episode_num", "TEXT"),
+            (EPISODE_STATS_TABLE, "views", "INTEGER"),
+            (EPISODE_STATS_TABLE, "score", "REAL DEFAULT 0"),
+            (EPISODE_STATS_TABLE, "recorded_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ]
+
+        for table_name, column_name, column_def in migrations:
+            try:
+                # Check if column exists
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                columns = [row[1] for row in cursor.fetchall()]
+                if column_name not in columns:
+                    print(f"[Migration] Adding column {column_name} to {table_name}")
+                    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+            except Exception as e:
+                print(f"[Migration] Warning: Could not add {column_name} to {table_name}: {e}")
 
     # ==================== 通知相關方法 ====================
 
