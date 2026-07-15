@@ -453,7 +453,7 @@ class AnimeTracker(commands.Cog):
 
     async def _periodic_catchup_check(self):
         """
-        定期補推檢查：每 5 分鐘執行一次，檢查最近 10 分鐘內「已過時但未推送」的項目並真正發送
+        定期補推檢查：每 5 分鐘執行一次，檢查今日所有「已過時但未推送」的項目並真正發送
         解決 dispatcher 錯過時刻、bot 重啟後漏推等問題
         """
         logger = logging.getLogger(__name__)
@@ -470,8 +470,7 @@ class AnimeTracker(commands.Cog):
                     await asyncio.sleep(300)  # 5 分鐘
                     continue
 
-                # 找出：pushed=0 且 scheduled_time <= 當前時間 且 (當前時間 - scheduled_time) <= 10 分鐘
-                # 也就是最近 10 分鐘內漏推的項目
+                # 找出：pushed=0 且 scheduled_time <= 當前時間（今日所有已過時未推送項目）
                 catchup_items = []
                 for item in today_schedule:
                     if item['pushed']:
@@ -481,14 +480,14 @@ class AnimeTracker(commands.Cog):
                             year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                         )
                         diff_seconds = (now - sched_dt).total_seconds()
-                        # 已過時且在 10 分鐘內
-                        if 0 <= diff_seconds <= 600:
+                        # 已過時（不限時長，今日所有漏推都補上）
+                        if diff_seconds >= 0:
                             catchup_items.append((item, sched_dt, diff_seconds))
                     except Exception:
                         pass
 
                 if catchup_items:
-                    logger.info(f"🔄 [_periodic_catchup_check] 發現 {len(catchup_items)} 個最近 10 分鐘漏推項目，開始補推")
+                    logger.info(f"🔄 [_periodic_catchup_check] 發現 {len(catchup_items)} 個今日漏推項目，開始補推")
                     # 按時間排序，先推較早的
                     catchup_items.sort(key=lambda x: x[1])
 
