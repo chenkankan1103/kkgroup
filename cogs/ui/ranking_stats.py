@@ -876,7 +876,7 @@ class RankingStats:
                         inline=False
                     )
                 except Exception as e:
-                    logger.warning(f"⚠️ [generate_ranking_embed] 生成多線圖失敗: {e]，改用文字顯示")
+                    logger.warning(f"⚠️ [generate_ranking_embed] 生成多線圖失敗: {e}，改用文字顯示")
                     ranked_chart_anime = []  # 改用模式 B
 
             # === 模式 B：文字排行列表（當無多集數據或圖表生成失敗）===

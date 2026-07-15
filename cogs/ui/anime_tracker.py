@@ -45,7 +45,7 @@ ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自�
 # 導入自定義模組
 from .push_core import AnimePushCore, AnimeDatabase
 from .schedule_tracker import AnimeScheduleTracker
-from .ranking_stats import AnimeRankingStats
+from .ranking_stats import RankingStats
 
 
 class AnimeTracker(commands.Cog):
@@ -71,7 +71,7 @@ class AnimeTracker(commands.Cog):
         # 初始化三個模組
         self.push_core = AnimePushCore(ANIME_DB_PATH)
         self.schedule_tracker = AnimeScheduleTracker(ANIME_DB_PATH)
-        self.ranking_stats = AnimeRankingStats(ANIME_DB_PATH)
+        self.ranking_stats = RankingStats(ANIME_DB_PATH)
 
         # 設置相互依賴
         self.push_core.set_bot_and_db(bot, self.db)
@@ -1094,14 +1094,14 @@ class AnimeTracker(commands.Cog):
                         except Exception as e:
                             logger.error(f"❌ [comment_submit] 保存評論失敗: {e}", exc_info=True)
 
-                    # 將追蹤和更新函數保存到模態框實例
-                    modal = CommentModal()
-                    modal.tracker = self.tracker
-                    modal.video_sn = self.video_sn
-                    modal.anime_sn = self.anime_sn
-                    modal.update_stats = self._update_message_stats
+                        # 將追蹤和更新函數保存到模態框實例
+                        modal = CommentModal()
+                        modal.tracker = self.tracker
+                        modal.video_sn = self.video_sn
+                        modal.anime_sn = self.anime_sn
+                        modal.update_stats = self._update_message_stats
 
-                    await interaction.response.send_modal(modal)
+                        await interaction.response.send_modal(modal)
 
             except Exception as e:
                 logger.error(f"❌ [_comment_callback] 評論失敗: {e}", exc_info=True)
