@@ -269,7 +269,7 @@ class RankingStats:
                         )
 
                 recorded += 1
-                await asyncio.sleep(0.05)  # 避免限流
+                await asyncio.sleep(2.0)  # 避免限流：限制 ~30 req/min
 
             logger.info(f"✅ [_sync_episode_stats_from_api] 完成，記錄了 {recorded}/{len(episodes)} 筆統計數據")
 
