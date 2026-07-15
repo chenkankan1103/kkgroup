@@ -1142,11 +1142,11 @@ async def setup(bot: commands.Bot):
         # 此處提供基本框架
 
         from .push_core import AnimeDatabase
-        from .schedule_tracker import ScheduleTracker
+        from .schedule_tracker import AnimeScheduleTracker
         from .ranking_stats import RankingStats
 
         db = AnimeDatabase(ANIME_DB_PATH)
-        schedule_tracker = ScheduleTracker(db)
+        schedule_tracker = AnimeScheduleTracker(db)
         ranking_stats = RankingStats(db)
 
         # 實際的 AnimeTracker 實例創建和方法組合應該在其他地方完成

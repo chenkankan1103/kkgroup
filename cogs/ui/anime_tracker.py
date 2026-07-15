@@ -147,6 +147,13 @@ class AnimeTracker(commands.Cog):
             logger.info("✅ [AnimeTracker.cog_load] 精準排程派發器已啟動")
             print("[COG_LOAD] ✅ 精準排程派發器已啟動", flush=True)
 
+            # 啟動定期補推任務（每 5 分鐘檢查最近 10 分鐘內漏推項目並真正發送）
+            print("[COG_LOAD] 啟動定期補推檢查任務", flush=True)
+            logger.info("🚀 [AnimeTracker.cog_load] 啟動定期補推檢查任務")
+            self._catchup_check_task = asyncio.create_task(self._periodic_catchup_check())
+            logger.info("✅ [AnimeTracker.cog_load] 定期補推檢查任務已啟動")
+            print("[COG_LOAD] ✅ 定期補推檢查任務已啟動", flush=True)
+
             # 啟動週期統計同步任務
             print("[COG_LOAD] 檢查 sync_episode_stats 任務狀態", flush=True)
             if not self.sync_episode_stats.is_running():
@@ -205,6 +212,11 @@ class AnimeTracker(commands.Cog):
             if hasattr(self, '_dispatcher_task') and not self._dispatcher_task.done():
                 self._dispatcher_task.cancel()
                 logger.info("✅ [AnimeTracker.cog_unload] 精準排程派發器已停止")
+
+            # 停止定期補推檢查任務
+            if hasattr(self, '_catchup_check_task') and not self._catchup_check_task.done():
+                self._catchup_check_task.cancel()
+                logger.info("✅ [AnimeTracker.cog_unload] 定期補推檢查任務已停止")
 
             if self.sync_episode_stats.is_running():
                 self.sync_episode_stats.cancel()
@@ -438,6 +450,68 @@ class AnimeTracker(commands.Cog):
         except Exception as e:
             logger = logging.getLogger(__name__)
             logger.error(f"❌ [_catchup_missed_pushes] 失敗: {e}", exc_info=True)
+
+    async def _periodic_catchup_check(self):
+        """
+        定期補推檢查：每 5 分鐘執行一次，檢查今日所有「已過時但未推送」的項目並真正發送
+        解決 dispatcher 錯過時刻、bot 重啟後漏推等問題
+        """
+        logger = logging.getLogger(__name__)
+        logger.info("🔄 [_periodic_catchup_check] 定期補推檢查任務啟動（每 5 分鐘）")
+
+        await self.bot.wait_until_ready()
+
+        while not self.bot.is_closed():
+            try:
+                now = datetime.now(TW_TZ)
+                today_schedule = self.get_today_schedule()
+
+                if not today_schedule:
+                    await asyncio.sleep(300)  # 5 分鐘
+                    continue
+
+                # 找出：pushed=0 且 scheduled_time <= 當前時間（今日所有已過時未推送項目）
+                catchup_items = []
+                for item in today_schedule:
+                    if item['pushed']:
+                        continue
+                    try:
+                        sched_dt = datetime.strptime(item['scheduled_time'], "%H:%M").replace(
+                            year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                        )
+                        diff_seconds = (now - sched_dt).total_seconds()
+                        # 已過時（不限時長，今日所有漏推都補上）
+                        if diff_seconds >= 0:
+                            catchup_items.append((item, sched_dt, diff_seconds))
+                    except Exception:
+                        pass
+
+                if catchup_items:
+                    logger.info(f"🔄 [_periodic_catchup_check] 發現 {len(catchup_items)} 個今日漏推項目，開始補推")
+                    # 按時間排序，先推較早的
+                    catchup_items.sort(key=lambda x: x[1])
+
+                    for item, sched_dt, diff_seconds in catchup_items:
+                        scheduled_time = item['scheduled_time']
+                        logger.info(f"📺 [_periodic_catchup_check] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
+                        try:
+                            success = await self.send_anime_push(scheduled_time, ANIME_CHANNEL_ID)
+                            if success:
+                                logger.info(f"✅ [_periodic_catchup_check] 補推成功: {scheduled_time}")
+                            else:
+                                logger.warning(f"⚠️ [_periodic_catchup_check] 補推無新番或失敗: {scheduled_time}")
+                        except Exception as e:
+                            logger.error(f"❌ [_periodic_catchup_check] 補推異常 {scheduled_time}: {e}")
+
+                # 每 5 分鐘檢查一次
+                await asyncio.sleep(300)
+
+            except asyncio.CancelledError:
+                logger.info("🛑 [_periodic_catchup_check] 任務被取消")
+                break
+            except Exception as e:
+                logger.error(f"❌ [_periodic_catchup_check] 異常: {e}", exc_info=True)
+                await asyncio.sleep(60)  # 錯誤時等 1 分鐘避免狂迴圈
 
     async def _init_weekly_schedule_if_empty(self):
         """如果本週的週表為空，立即從 API 拉取（解決首次部署/非禮拜天重啟問題）"""
@@ -1019,3 +1093,8 @@ class AnimeTracker(commands.Cog):
                 logger.error(f"❌ [_update_message_stats] 消息不存在或已被刪除: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
+
+
+async def setup(bot: commands.Bot):
+    """Setup 函數供 Discord.py 加載 Cog"""
+    await bot.add_cog(AnimeTracker(bot))
