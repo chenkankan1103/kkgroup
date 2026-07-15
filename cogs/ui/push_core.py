@@ -673,6 +673,13 @@ class AnimePushCore:
                 break
         return views
 
+    def _get_weekday_name(self, weekday: int) -> str:
+        """獲取星期名稱（1=星期一, 7=星期日）"""
+        weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        if 1 <= weekday <= 7:
+            return weekday_names[weekday - 1]
+        return "未知"
+
     # ==================== 訊息發送相關方法 ====================
 
     async def generate_anime_embed(self, episode: Dict) -> Optional[discord.Embed]:
@@ -749,6 +756,12 @@ class AnimePushCore:
 
             # 獲取最新動畫數據
             episodes = await self.fetch_new_anime_from_api()
+
+            # 檢查頻道是否存在（無論是否有新番都檢查）
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                return False
+
             if not episodes:
                 return False
 
@@ -762,11 +775,57 @@ class AnimePushCore:
             if not new_episodes:
                 return False
 
-            # 發送新集通知
-            channel = self.bot.get_channel(channel_id)
-            if not channel:
-                return False
-
             sent_count = 0
 
-null
+            for episode in new_episodes:
+                try:
+                    video_sn = episode.get("videoSn")
+                    anime_sn = episode.get("animeSn")
+                    title = episode.get("title", "未知標題")
+
+                    # 生成 embed
+                    embed = await self.generate_anime_embed(episode)
+                    if not embed:
+                        continue
+
+                    # 生成 view
+                    view = await self.generate_anime_view(episode)
+
+                    # 發送訊息
+                    message = await channel.send(embed=embed, view=view)
+
+                    # 保存消息資訊
+                    self.db.save_message_info(
+                        message.id, video_sn, anime_sn, title, channel_id
+                    )
+
+                    # 記錄為已通知
+                    self.db.add_notified(video_sn, anime_sn, title)
+
+                    # 向 bot 註冊永久視圖
+                    if view:
+                        self.bot.add_view(view, message_id=message.id)
+
+                    sent_count += 1
+
+                except Exception as e:
+                    print(f"Error sending episode {episode.get('videoSn')}: {e}")
+                    continue
+
+            # 標記週表中該時刻已推送（如果使用了週表）
+            try:
+                now = datetime.now(TW_TZ)
+                week_start = now - timedelta(days=now.weekday())
+                day_of_week = (now.weekday() + 1) % 7 or 7
+                self.db.mark_time_pushed(
+                    week_start.strftime("%Y-%m-%d"),
+                    day_of_week,
+                    scheduled_time
+                )
+            except Exception:
+                pass
+
+            return sent_count > 0
+        except Exception as e:
+            print(f"Error in send_anime_push: {e}")
+            return False
