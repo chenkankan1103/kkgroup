@@ -176,7 +176,10 @@ class AnimeDatabase:
                 )
             """)
 
-            # 創建索引以提高查詢性能
+            # Schema migration: add missing columns to existing tables (must run before creating indexes)
+            self._migrate_schema(cursor)
+
+            # 創建索引以提高查詢性能 (in _migrate_schema 之後，確保欄位已存在)
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_video_sn ON {NOTIFIED_TABLE}(video_sn)")
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_DETAILS_TABLE}_anime_sn ON {ANIME_DETAILS_TABLE}(anime_sn)")
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_video_sn ON {EPISODE_STATS_TABLE}(video_sn)")
@@ -184,9 +187,6 @@ class AnimeDatabase:
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_anime_sn ON {ANIME_MESSAGES_TABLE}(anime_sn)")
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_week_start ON {ANIME_WEEKLY_SCHEDULE_TABLE}(week_start_date)")
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_day_time ON {ANIME_WEEKLY_SCHEDULE_TABLE}(day_of_week, scheduled_time)")
-
-            # Schema migration: add missing columns to existing tables
-            self._migrate_schema(cursor)
 
             conn.commit()
 
