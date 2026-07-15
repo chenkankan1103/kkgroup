@@ -77,7 +77,7 @@ class AutoDebugSystem:
         self.error_threshold = 3  # 同類型錯誤觸發閾值
         self.http_timeout = aiohttp.ClientTimeout(total=15)
         self.github_mode = os.getenv("AUTO_DEBUG_GITHUB_MODE", "escalate").strip().lower()
-        self.escalate_severity = os.getenv("AUTO_DEBUG_ESCALATE_SEVERITY", "high").strip().lower()
+        self.escalate_severity = os.getenv("AUTO_DEBUG_ESCALATE_SEVERITY", "critical").strip().lower()
 
     async def analyze_locally(self, error_data: Dict) -> Dict:
         """先在本地/VM 直接做 AI 分析，避免把 GitHub Actions 當成主路徑。"""
