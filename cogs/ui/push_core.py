@@ -58,12 +58,12 @@ class AnimeDatabase:
             # 已通知的動畫表
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {NOTIFIED_TABLE} (
-                    video_sn INTEGER PRIMARY KEY,
-                    anime_sn INTEGER,
-                    anime_name TEXT,
+                    videoSn INTEGER PRIMARY KEY,
+                    animeSn INTEGER,
+                    animeName TEXT,
                     volume TEXT,
-                    cover_url TEXT,
-                    notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    coverUrl TEXT,
+                    notifiedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -71,59 +71,59 @@ class AnimeDatabase:
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {BOOTSTRAP_FLAG_TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    bootstrap_completed INTEGER DEFAULT 0,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    bootstrapCompleted INTEGER DEFAULT 0,
+                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
             # 動畫詳細資訊快取表
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {ANIME_DETAILS_TABLE} (
-                    anime_sn INTEGER PRIMARY KEY,
+                    animeSn INTEGER PRIMARY KEY,
                     name TEXT,
                     content TEXT,
-                    cover_url TEXT,
+                    coverUrl TEXT,
                     tags TEXT,  -- JSON 字串
-                    view_count INTEGER DEFAULT 0,
+                    viewCount INTEGER DEFAULT 0,
                     score REAL DEFAULT 0,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
             # 動畫統計表
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {ANIME_STATS_TABLE} (
-                    anime_sn INTEGER PRIMARY KEY,
+                    animeSn INTEGER PRIMARY KEY,
                     name TEXT,
-                    total_episodes INTEGER DEFAULT 0,
-                    total_views INTEGER DEFAULT 0,
-                    avg_views REAL DEFAULT 0,
-                    latest_score REAL DEFAULT 0,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    totalEpisodes INTEGER DEFAULT 0,
+                    totalViews INTEGER DEFAULT 0,
+                    avgViews REAL DEFAULT 0,
+                    latestScore REAL DEFAULT 0,
+                    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
             # 集數統計表
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {EPISODE_STATS_TABLE} (
-                    video_sn INTEGER PRIMARY KEY,
-                    anime_sn INTEGER,
-                    episode_num TEXT,
+                    videoSn INTEGER PRIMARY KEY,
+                    animeSn INTEGER,
+                    episodeNum TEXT,
                     views INTEGER,
                     score REAL DEFAULT 0,
-                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    recordedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
             # 消息 ID 追蹤表（用於 bot 重啟時恢復 view）
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {ANIME_MESSAGES_TABLE} (
-                    message_id INTEGER PRIMARY KEY,
-                    video_sn INTEGER,
-                    anime_sn INTEGER,
-                    anime_name TEXT,
-                    channel_id INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    messageId INTEGER PRIMARY KEY,
+                    videoSn INTEGER,
+                    animeSn INTEGER,
+                    animeName TEXT,
+                    channelId INTEGER,
+                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -131,12 +131,12 @@ class AnimeDatabase:
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {ANIME_VOTES_TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    video_sn INTEGER,
-                    anime_sn INTEGER,
-                    anime_name TEXT,
-                    vote_type TEXT,  -- 'masterpiece', 'great', 'good', 'average', 'bad'
-                    user_id TEXT,    -- 匿名用戶識別符（實際不存儲真實 ID）
-                    voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    videoSn INTEGER,
+                    animeSn INTEGER,
+                    animeName TEXT,
+                    voteType TEXT,  -- 'masterpiece', 'great', 'good', 'average', 'bad'
+                    userId TEXT,    -- 匿名用戶識別符（實際不存儲真實 ID）
+                    votedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -144,11 +144,11 @@ class AnimeDatabase:
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {ANIME_REWARDS_TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    message_id INTEGER,  -- 對應 anime_messages 表
-                    reward_type TEXT,    -- 'vote' 或 'comment'
+                    messageId INTEGER,  -- 對應 anime_messages 表
+                    rewardType TEXT,    -- 'vote' 或 'comment'
                     amount INTEGER,      -- KK幣金額
-                    user_id TEXT,        -- 匿名用戶識別符
-                    rewarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    userId TEXT,        -- 匿名用戶識別符
+                    rewardedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -156,10 +156,10 @@ class AnimeDatabase:
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {ANIME_CHECK_HISTORY_TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    week_start_date TEXT,  -- YYYY-MM-DD 格式
-                    day_of_week INTEGER,   -- 1=Monday, 7=Sunday
-                    scheduled_time TEXT,   -- HH:MM 格式
-                    checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    weekStartDate TEXT,  -- YYYY-MM-DD 格式
+                    dayOfWeek INTEGER,   -- 1=Monday, 7=Sunday
+                    scheduledTime TEXT,   -- HH:MM 格式
+                    checkedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -167,12 +167,12 @@ class AnimeDatabase:
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {ANIME_WEEKLY_SCHEDULE_TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    week_start_date TEXT,  -- YYYY-MM-DD 格式 (週一日期)
-                    day_of_week INTEGER,   -- 1=Monday, 7=Sunday
-                    scheduled_time TEXT,   -- HH:MM 格式
-                    anime_data TEXT,       -- JSON 字串，存儲完整的動畫資料
+                    weekStartDate TEXT,  -- YYYY-MM-DD 格式 (週一日期)
+                    dayOfWeek INTEGER,   -- 1=Monday, 7=Sunday
+                    scheduledTime TEXT,   -- HH:MM 格式
+                    animeData TEXT,       -- JSON 字串，存儲完整的動畫資料
                     pushed INTEGER DEFAULT 0,  -- 0=未推送, 1=已推送
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -180,13 +180,13 @@ class AnimeDatabase:
             self._migrate_schema(cursor)
 
             # 創建索引以提高查詢性能 (in _migrate_schema 之後，確保欄位已存在)
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_video_sn ON {NOTIFIED_TABLE}(video_sn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_DETAILS_TABLE}_anime_sn ON {ANIME_DETAILS_TABLE}(anime_sn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_video_sn ON {EPISODE_STATS_TABLE}(video_sn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_video_sn ON {ANIME_MESSAGES_TABLE}(video_sn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_anime_sn ON {ANIME_MESSAGES_TABLE}(anime_sn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_week_start ON {ANIME_WEEKLY_SCHEDULE_TABLE}(week_start_date)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_day_time ON {ANIME_WEEKLY_SCHEDULE_TABLE}(day_of_week, scheduled_time)")
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_videoSn ON {NOTIFIED_TABLE}(videoSn)")
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_DETAILS_TABLE}_animeSn ON {ANIME_DETAILS_TABLE}(animeSn)")
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_videoSn ON {EPISODE_STATS_TABLE}(videoSn)")
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_videoSn ON {ANIME_MESSAGES_TABLE}(videoSn)")
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_animeSn ON {ANIME_MESSAGES_TABLE}(animeSn)")
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_weekStart ON {ANIME_WEEKLY_SCHEDULE_TABLE}(weekStartDate)")
+            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_dayTime ON {ANIME_WEEKLY_SCHEDULE_TABLE}(dayOfWeek, scheduledTime)")
 
             conn.commit()
 
@@ -194,24 +194,52 @@ class AnimeDatabase:
         """Add missing columns to existing tables (schema migration)"""
         migrations = [
             # (table_name, column_name, column_definition)
-            (NOTIFIED_TABLE, "video_sn", "INTEGER PRIMARY KEY"),
-            (NOTIFIED_TABLE, "anime_sn", "INTEGER"),
-            (NOTIFIED_TABLE, "anime_name", "TEXT"),
+            (NOTIFIED_TABLE, "videoSn", "INTEGER PRIMARY KEY"),
+            (NOTIFIED_TABLE, "animeSn", "INTEGER"),
+            (NOTIFIED_TABLE, "animeName", "TEXT"),
             (NOTIFIED_TABLE, "volume", "TEXT"),
-            (NOTIFIED_TABLE, "cover_url", "TEXT"),
-            (NOTIFIED_TABLE, "notified_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
-            (ANIME_MESSAGES_TABLE, "message_id", "INTEGER PRIMARY KEY"),
-            (ANIME_MESSAGES_TABLE, "video_sn", "INTEGER"),
-            (ANIME_MESSAGES_TABLE, "anime_sn", "INTEGER"),
-            (ANIME_MESSAGES_TABLE, "anime_name", "TEXT"),
-            (ANIME_MESSAGES_TABLE, "channel_id", "INTEGER"),
-            (ANIME_MESSAGES_TABLE, "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
-            (EPISODE_STATS_TABLE, "video_sn", "INTEGER PRIMARY KEY"),
-            (EPISODE_STATS_TABLE, "anime_sn", "INTEGER"),
-            (EPISODE_STATS_TABLE, "episode_num", "TEXT"),
+            (NOTIFIED_TABLE, "coverUrl", "TEXT"),
+            (NOTIFIED_TABLE, "notifiedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_MESSAGES_TABLE, "messageId", "INTEGER PRIMARY KEY"),
+            (ANIME_MESSAGES_TABLE, "videoSn", "INTEGER"),
+            (ANIME_MESSAGES_TABLE, "animeSn", "INTEGER"),
+            (ANIME_MESSAGES_TABLE, "animeName", "TEXT"),
+            (ANIME_MESSAGES_TABLE, "channelId", "INTEGER"),
+            (ANIME_MESSAGES_TABLE, "createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (EPISODE_STATS_TABLE, "videoSn", "INTEGER PRIMARY KEY"),
+            (EPISODE_STATS_TABLE, "animeSn", "INTEGER"),
+            (EPISODE_STATS_TABLE, "episodeNum", "TEXT"),
             (EPISODE_STATS_TABLE, "views", "INTEGER"),
             (EPISODE_STATS_TABLE, "score", "REAL DEFAULT 0"),
-            (EPISODE_STATS_TABLE, "recorded_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (EPISODE_STATS_TABLE, "recordedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_VOTES_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            (ANIME_VOTES_TABLE, "videoSn", "INTEGER"),
+            (ANIME_VOTES_TABLE, "animeSn", "INTEGER"),
+            (ANIME_VOTES_TABLE, "animeName", "TEXT"),
+            (ANIME_VOTES_TABLE, "voteType", "TEXT"),
+            (ANIME_VOTES_TABLE, "userId", "TEXT"),
+            (ANIME_VOTES_TABLE, "votedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_REWARDS_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            (ANIME_REWARDS_TABLE, "messageId", "INTEGER"),
+            (ANIME_REWARDS_TABLE, "rewardType", "TEXT"),
+            (ANIME_REWARDS_TABLE, "amount", "INTEGER"),
+            (ANIME_REWARDS_TABLE, "userId", "TEXT"),
+            (ANIME_REWARDS_TABLE, "rewardedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_CHECK_HISTORY_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            (ANIME_CHECK_HISTORY_TABLE, "weekStartDate", "TEXT"),
+            (ANIME_CHECK_HISTORY_TABLE, "dayOfWeek", "INTEGER"),
+            (ANIME_CHECK_HISTORY_TABLE, "scheduledTime", "TEXT"),
+            (ANIME_CHECK_HISTORY_TABLE, "checkedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_WEEKLY_SCHEDULE_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            (ANIME_WEEKLY_SCHEDULE_TABLE, "weekStartDate", "TEXT"),
+            (ANIME_WEEKLY_SCHEDULE_TABLE, "dayOfWeek", "INTEGER"),
+            (ANIME_WEEKLY_SCHEDULE_TABLE, "scheduledTime", "TEXT"),
+            (ANIME_WEEKLY_SCHEDULE_TABLE, "animeData", "TEXT"),
+            (ANIME_WEEKLY_SCHEDULE_TABLE, "pushed", "INTEGER DEFAULT 0"),
+            (ANIME_WEEKLY_SCHEDULE_TABLE, "createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (BOOTSTRAP_FLAG_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+            (BOOTSTRAP_FLAG_TABLE, "bootstrapCompleted", "INTEGER DEFAULT 0"),
+            (BOOTSTRAP_FLAG_TABLE, "updatedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ]
 
         for table_name, column_name, column_def in migrations:
@@ -234,7 +262,7 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT 1 FROM {NOTIFIED_TABLE}
-                    WHERE video_sn = ?
+                    WHERE videoSn = ?
                 """, (video_sn,))
                 return cursor.fetchone() is not None
         except Exception as e:
@@ -249,7 +277,7 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {ANIME_MESSAGES_TABLE}
-                    (message_id, video_sn, anime_sn, anime_name, channel_id)
+                    (messageId, videoSn, animeSn, animeName, channelId)
                     VALUES (?, ?, ?, ?, ?)
                 """, (message_id, video_sn, anime_sn, anime_name, channel_id))
                 conn.commit()
@@ -266,7 +294,7 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {NOTIFIED_TABLE}
-                    (video_sn, anime_sn, anime_name, volume, cover_url)
+                    (videoSn, animeSn, animeName, volume, coverUrl)
                     VALUES (?, ?, ?, ?, ?)
                 """, (video_sn, anime_sn, anime_name, volume, cover_url))
                 conn.commit()
@@ -281,7 +309,7 @@ class AnimeDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
-                    SELECT message_id, video_sn, anime_sn, anime_name, channel_id
+                    SELECT messageId, videoSn, animeSn, animeName, channelId
                     FROM {ANIME_MESSAGES_TABLE}
                 """)
                 rows = cursor.fetchall()
@@ -306,14 +334,14 @@ class AnimeDatabase:
                 # 先清除舊的週資料（同一週開始日期）
                 cursor.execute(f"""
                     DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
-                    WHERE week_start_date = ?
+                    WHERE weekStartDate = ?
                 """, (week_start_date,))
 
                 # 插入新的週資料
                 for item in schedule_data:
                     cursor.execute(f"""
                         INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
-                        (week_start_date, day_of_week, scheduled_time, anime_data)
+                        (weekStartDate, dayOfWeek, scheduledTime, animeData)
                         VALUES (?, ?, ?, ?)
                     """, (
                         week_start_date,
@@ -337,9 +365,9 @@ class AnimeDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
-                    SELECT scheduled_time, anime_data, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
-                    WHERE week_start_date = ? AND day_of_week = ?
-                    ORDER BY scheduled_time ASC
+                    SELECT scheduledTime, animeData, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    WHERE weekStartDate = ? AND dayOfWeek = ?
+                    ORDER BY scheduledTime ASC
                 """, (week_start.strftime("%Y-%m-%d"), day_of_week))
 
                 results = []
@@ -362,7 +390,7 @@ class AnimeDatabase:
                 cursor.execute(f"""
                     UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
                     SET pushed = 1
-                    WHERE week_start_date = ? AND day_of_week = ? AND scheduled_time = ?
+                    WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
                 """, (week_start_date, day_of_week, scheduled_time))
                 conn.commit()
                 return cursor.rowcount > 0
@@ -380,7 +408,7 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {ANIME_DETAILS_TABLE}
-                    (anime_sn, name, content, cover_url, tags, view_count, score)
+                    (animeSn, name, content, coverUrl, tags, viewCount, score)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (anime_sn, name, content, cover_url, json.dumps(tags), view_count, score))
                 conn.commit()
@@ -395,9 +423,9 @@ class AnimeDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
-                    SELECT name, content, cover_url, tags, view_count, score
+                    SELECT name, content, coverUrl, tags, viewCount, score
                     FROM {ANIME_DETAILS_TABLE}
-                    WHERE anime_sn = ?
+                    WHERE animeSn = ?
                 """, (anime_sn,))
                 row = cursor.fetchone()
                 if row:
@@ -424,7 +452,7 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {EPISODE_STATS_TABLE}
-                    (video_sn, anime_sn, episode_num, views, score)
+                    (videoSn, animeSn, episodeNum, views, score)
                     VALUES (?, ?, ?, ?, ?)
                 """, (video_sn, anime_sn, episode_num, views, score))
                 conn.commit()
@@ -442,12 +470,12 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT
-                        COUNT(es.video_sn) as total_episodes,
+                        COUNT(es.videoSn) as total_episodes,
                         SUM(es.views) as total_views,
                         AVG(es.views) as avg_views,
                         AVG(es.score) as avg_score
                     FROM {EPISODE_STATS_TABLE} es
-                    WHERE es.anime_sn = ?
+                    WHERE es.animeSn = ?
                 """, (anime_sn,))
                 row = cursor.fetchone()
                 if row and row[0] > 0:  # 有至少一集
@@ -474,20 +502,20 @@ class AnimeDatabase:
                 time_condition = ""
                 params = []
                 if start_time and end_time:
-                    time_condition = " AND es.recorded_at BETWEEN ? AND ?"
+                    time_condition = " AND es.recordedAt BETWEEN ? AND ?"
                     params = [start_time.strftime("%Y-%m-%d %H:%M:%S"),
                              end_time.strftime("%Y-%m-%d %H:%M:%S")]
 
                 query = f"""
                     SELECT
-                        d.anime_sn,
+                        d.animeSn,
                         d.name,
                         SUM(es.views) as total_views,
-                        COUNT(es.video_sn) as episode_count
+                        COUNT(es.videoSn) as episode_count
                     FROM {EPISODE_STATS_TABLE} es
-                    JOIN {ANIME_DETAILS_TABLE} d ON es.anime_sn = d.anime_sn
+                    JOIN {ANIME_DETAILS_TABLE} d ON es.animeSn = d.animeSn
                     WHERE 1=1 {time_condition}
-                    GROUP BY es.anime_sn
+                    GROUP BY es.animeSn
                     ORDER BY total_views DESC
                     LIMIT ?
                 """
@@ -519,27 +547,27 @@ class AnimeDatabase:
                 time_condition = ""
                 params = []
                 if start_time and end_time:
-                    time_condition = " AND es.recorded_at BETWEEN ? AND ?"
+                    time_condition = " AND es.recordedAt BETWEEN ? AND ?"
                     params = [start_time.strftime("%Y-%m-%d %H:%M:%S"),
                              end_time.strftime("%Y-%m-%d %H:%M:%S")]
 
                 query = f"""
                     SELECT
-                        d.anime_sn,
+                        d.animeSn,
                         d.name,
-                        es.video_sn,
-                        es.episode_num,
+                        es.videoSn,
+                        es.episodeNum,
                         es.views
                     FROM {EPISODE_STATS_TABLE} es
-                    JOIN {ANIME_DETAILS_TABLE} d ON es.anime_sn = d.anime_sn
+                    JOIN {ANIME_DETAILS_TABLE} d ON es.animeSn = d.animeSn
                     WHERE 1=1 {time_condition}
-                    AND d.anime_sn IN (
-                        SELECT anime_sn
+                    AND d.animeSn IN (
+                        SELECT animeSn
                         FROM {EPISODE_STATS_TABLE}
-                        GROUP BY anime_sn
+                        GROUP BY animeSn
                         HAVING COUNT(*) >= ?
                     )
-                    ORDER BY d.anime_sn, es.video_sn
+                    ORDER BY d.animeSn, es.videoSn
                 """
                 params.append(min_episodes)
                 params.append(limit * 10)  # 限制返回的行數，避免過多
@@ -575,8 +603,8 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 # 先從 episode_stats 找到對應的 anime_sn
                 cursor.execute(f"""
-                    SELECT anime_sn FROM {EPISODE_STATS_TABLE}
-                    WHERE video_sn = ?
+                    SELECT animeSn FROM {EPISODE_STATS_TABLE}
+                    WHERE videoSn = ?
                 """, (video_sn,))
                 row = cursor.fetchone()
                 if not row:
@@ -584,9 +612,9 @@ class AnimeDatabase:
                 anime_sn = row[0]
                 # 再取得動畫詳細資訊
                 cursor.execute(f"""
-                    SELECT name, content, cover_url, tags, view_count, score
+                    SELECT name, content, coverUrl, tags, viewCount, score
                     FROM {ANIME_DETAILS_TABLE}
-                    WHERE anime_sn = ?
+                    WHERE animeSn = ?
                 """, (anime_sn,))
                 row = cursor.fetchone()
                 if row:
@@ -610,7 +638,7 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT 1 FROM {ANIME_REWARDS_TABLE}
-                    WHERE message_id = ? AND reward_type = ?
+                    WHERE messageId = ? AND rewardType = ?
                     LIMIT 1
                 """, (message_id, reward_type))
                 return cursor.fetchone() is not None
@@ -625,7 +653,7 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT INTO {ANIME_REWARDS_TABLE}
-                    (message_id, reward_type, amount, user_id)
+                    (messageId, rewardType, amount, userId)
                     VALUES (?, ?, ?, ?)
                 """, (message_id, reward_type, amount, user_id))
                 conn.commit()
