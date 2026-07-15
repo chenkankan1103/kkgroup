@@ -134,6 +134,25 @@ L1_PATTERNS = {
         "pattern": r"discord\.Forbidden: (\d+)",
         "description": "Discord 權限不足",
     },
+    # Benign patterns - ignore with backoff (no actual fix needed)
+    "gemini_quota": {
+        "pattern": r"(google api 錯誤\s*429|quota exceeded.*gemini|generativelanguage\.googleapis\.com.*429|generatecontent.*free.?tier.*limit)",
+        "description": "Gemini API 配額耗盡",
+        "action": "ignore_with_backoff",
+        "backoff_seconds": 300,
+    },
+    "discord_gateway_reconnect": {
+        "pattern": r"(\[discord\]\s*gateway\s*disconnected|\[discord\]\s*session\s*resumed|on_disconnect\s+called|on_resumed\s+called)",
+        "description": "Discord gateway 自動重連",
+        "action": "ignore_with_backoff",
+        "backoff_seconds": 60,
+    },
+    "tunnel_url_failure": {
+        "pattern": r"(無法獲取隧道 url|tunnel url.*失敗)",
+        "description": "隧道 URL 獲取失敗",
+        "action": "ignore_with_backoff",
+        "backoff_seconds": 120,
+    },
 }
 
 # L2: 需要 AI 輔助分析的錯誤
@@ -201,6 +220,18 @@ NOISE_PATTERNS = [
     r"429",
     r"Unknown interaction",
     r"error code:\s*10062",
+    # Benign patterns that should be ignored (Gemini quota, Discord gateway reconnect, tunnel issues)
+    r"google api 錯誤\s*429",
+    r"google api error\s*429",
+    r"quota exceeded.*gemini",
+    r"generativelanguage\.googleapis\.com.*429",
+    r"generatecontent.*free.?tier.*limit",
+    r"\[discord\]\s*gateway\s+disconnected",
+    r"\[discord\]\s*session\s+resumed",
+    r"on_disconnect\s+called",
+    r"on_resumed\s+called",
+    r"無法獲取隧道 url",
+    r"tunnel url.*失敗",
 ]
 
 # ─── 工具函式 ────────────────────────────────────────────────
@@ -554,6 +585,12 @@ class L1Fixer:
         _log(f"🔧 L1: Discord 404 錯誤，通常為暫時性問題", "INFO")
         return "discord_not_found_ignored"
 
+    @staticmethod
+    def ignore_with_backoff(error_text: str, file_path: str, backoff_seconds: int = 60) -> Optional[str]:
+        """Benign pattern matched - log and ignore with backoff"""
+        _log(f"🔧 L1: 偵測到良性錯誤模式，忽略並退避 {backoff_seconds} 秒", "INFO")
+        return f"ignore_with_backoff:{backoff_seconds}"
+
     @classmethod
     def try_fix(cls, error_type: str, error_text: str, file_path: str) -> Optional[str]:
         """嘗試執行 L1 修復"""
@@ -565,6 +602,9 @@ class L1Fixer:
             "permission_error": cls.fix_permission_error,
             "discord_not_found": cls.fix_discord_not_found,
             "discord_forbidden": cls.fix_discord_not_found,
+            "gemini_quota": lambda t, p: cls.ignore_with_backoff(t, p, 300),
+            "discord_gateway_reconnect": lambda t, p: cls.ignore_with_backoff(t, p, 60),
+            "tunnel_url_failure": lambda t, p: cls.ignore_with_backoff(t, p, 120),
         }
 
         fixer = fixers.get(error_type)
