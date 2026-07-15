@@ -104,6 +104,20 @@ _EXTERNAL_BENIGN_PATTERNS = (
     r'timed out',
     r'websocket closed',
     r'shard .* disconnect',
+    # Gemini quota（中文/英文混雜 log 格式）
+    r'google api 錯誤\s*429',
+    r'google api error\s*429',
+    r'quota exceeded.*gemini',
+    r'generativelanguage\.googleapis\.com.*429',
+    r'generatecontent.*free.?tier.*limit',
+    # Discord gateway（自定義 log 格式）
+    r'\[discord\]\s*gateway\s+disconnected',
+    r'\[discord\]\s*session\s+resumed',
+    r'on_disconnect\s+called',
+    r'on_resumed\s+called',
+    # Tunnel 相關
+    r'無法獲取隧道 url',
+    r'tunnel url.*失敗',
 )
 
 
