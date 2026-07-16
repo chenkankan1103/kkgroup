@@ -739,8 +739,20 @@ class AnimeTracker(commands.Cog):
 
     @refresh_weekly_schedule.before_loop
     async def before_refresh_weekly_schedule(self):
-        """等待 bot 就緒"""
+        """等待 bot 就緒，並對齊到每天晚上 22:00 執行"""
         await self.bot.wait_until_ready()
+
+        # 計算距離下一次 22:00 的秒數
+        now = datetime.now(TW_TZ)
+        next_run = now.replace(hour=22, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+
+        sleep_seconds = (next_run - now).total_seconds()
+        logger = logging.getLogger(__name__)
+        logger.info(f"⏳ [refresh_weekly_schedule] 首次執行將在 {next_run.strftime('%Y-%m-%d %H:%M:%S')} ({sleep_seconds:.0f} 秒後)")
+
+        await asyncio.sleep(sleep_seconds)
 
     @refresh_weekly_schedule.error
     async def refresh_weekly_schedule_error(self, error):
