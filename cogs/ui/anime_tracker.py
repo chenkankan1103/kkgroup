@@ -26,7 +26,6 @@ from shared.utils.view_registry import PersistentViewBase
 TW_TZ = ZoneInfo('Asia/Taipei')
 
 # 配置
-ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
 ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"  # 統一使用主數據庫，所有表在同一個 user_data.db 中
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # 秒
@@ -44,7 +43,7 @@ ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（
 ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
 
 # 導入自定義模組
-from .push_core import AnimePushCore, AnimeDatabase
+from .push_core import AnimePushCore, AnimeDatabase, ANIME_CHANNEL_ID
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
