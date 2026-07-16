@@ -22,7 +22,7 @@ import asyncio
 import aiohttp
 import json
 import sqlite3
-from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT
+from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE
 
 logger = logging.getLogger(__name__)
 
@@ -186,9 +186,9 @@ class AnimeScheduleTracker:
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
-                    SELECT scheduled_time, anime_data, pushed FROM {self.db.ANIME_WEEKLY_SCHEDULE_TABLE}
-                    WHERE week_start_date = ? AND day_of_week = ?
-                    ORDER BY scheduled_time ASC
+                    SELECT "scheduledTime", "animeData", "pushed" FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    WHERE "weekStartDate" = ? AND "dayOfWeek" = ?
+                    ORDER BY "scheduledTime" ASC
                 """, (week_start.strftime("%Y-%m-%d"), day_of_week))
 
                 results = []
@@ -209,9 +209,9 @@ class AnimeScheduleTracker:
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
-                    UPDATE {self.db.ANIME_WEEKLY_SCHEDULE_TABLE}
-                    SET pushed = 1
-                    WHERE week_start_date = ? AND day_of_week = ? AND scheduled_time = ?
+                    UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    SET "pushed" = 1
+                    WHERE "weekStartDate" = ? AND "dayOfWeek" = ? AND "scheduledTime" = ?
                 """, (week_start_date, day_of_week, scheduled_time))
                 conn.commit()
                 return cursor.rowcount > 0
