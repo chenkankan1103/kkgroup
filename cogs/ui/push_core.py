@@ -25,7 +25,7 @@ from shared.utils.view_registry import PersistentViewBase
 TW_TZ = ZoneInfo('Asia/Taipei')
 
 # 配置
-# ANIME_CHANNEL_ID 由 AnimeTracker 傳入，此處僅作參考
+ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
 ANIME_DB_PATH = None  # 將在初始化時設置
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # 秒
