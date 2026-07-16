@@ -150,9 +150,24 @@ class AnimeTracker(commands.Cog):
             # 啟動定期補推任務（每 5 分鐘檢查最近 10 分鐘內漏推項目並真正發送）
             print("[COG_LOAD] 啟動定期補推檢查任務", flush=True)
             logger.info("🚀 [AnimeTracker.cog_load] 啟動定期補推檢查任務")
-            self._catchup_check_task = asyncio.create_task(self._periodic_catchup_check())
-            logger.info("✅ [AnimeTracker.cog_load] 定期補推檢查任務已啟動")
-            print("[COG_LOAD] ✅ 定期補推檢查任務已啟動", flush=True)
+            try:
+                self._catchup_check_task = asyncio.create_task(self._periodic_catchup_check())
+                # 給任務一點時間啟動，檢查是否有異常
+                await asyncio.sleep(0.1)
+                if self._catchup_check_task.done():
+                    exc = self._catchup_check_task.exception()
+                    if exc:
+                        logger.error(f"❌ [AnimeTracker.cog_load] _periodic_catchup_check 任務立即失敗: {exc}", exc_info=True)
+                        print(f"[COG_LOAD_ERROR] _periodic_catchup_check 任務立即失敗: {exc}", flush=True)
+                    else:
+                        logger.warning(f"⚠️ [AnimeTracker.cog_load] _periodic_catchup_check 任務意外結束")
+                else:
+                    logger.info("✅ [AnimeTracker.cog_load] 定期補推檢查任務已啟動並運行中")
+                    print("[COG_LOAD] ✅ 定期補推檢查任務已啟動並運行中", flush=True)
+            except Exception as e:
+                logger.error(f"❌ [AnimeTracker.cog_load] 創建 _periodic_catchup_check 任務失敗: {e}", exc_info=True)
+                print(f"[COG_LOAD_ERROR] 創建 _periodic_catchup_check 任務失敗: {e}", flush=True)
+                raise
 
             # 啟動週期統計同步任務
             print("[COG_LOAD] 檢查 sync_episode_stats 任務狀態", flush=True)
