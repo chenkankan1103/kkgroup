@@ -670,14 +670,15 @@ class AnimePushCore:
         global ANIME_DB_PATH
         ANIME_DB_PATH = db_path
 
-        # 這些將在 AnimeTracker 中設置
+        # 初始化資料庫實例，避免靜默失敗
+        self.db = AnimeDatabase(db_path)
         self.bot = None
-        self.db = None  # 將是 AnimeDatabase 實例
 
     def set_bot_and_db(self, bot, db):
-        """設置 bot 和資料庫實例"""
+        """設置 bot 和資料庫實例（可選覆蓋）"""
         self.bot = bot
-        self.db = db
+        if db is not None:
+            self.db = db
 
     # ==================== API 相關方法 ====================
 
@@ -879,17 +880,14 @@ class AnimePushCore:
                     continue
 
             # 標記週表中該時刻已推送（如果使用了週表）
-            try:
-                now = datetime.now(TW_TZ)
-                week_start = now - timedelta(days=now.weekday())
-                day_of_week = (now.weekday() + 1) % 7 or 7
-                self.db.mark_time_pushed(
-                    week_start.strftime("%Y-%m-%d"),
-                    day_of_week,
-                    scheduled_time
-                )
-            except Exception:
-                pass
+            now = datetime.now(TW_TZ)
+            week_start = now - timedelta(days=now.weekday())
+            day_of_week = (now.weekday() + 1) % 7 or 7
+            self.db.mark_time_pushed(
+                week_start.strftime("%Y-%m-%d"),
+                day_of_week,
+                scheduled_time
+            )
 
             return sent_count > 0
         except Exception as e:
