@@ -20,8 +20,6 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import asyncio
 import aiohttp
-import json
-import sqlite3
 from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE
 
 logger = logging.getLogger(__name__)
@@ -177,47 +175,12 @@ class AnimeScheduleTracker:
             return {'success': False, 'error': str(e)}
 
     def get_today_schedule(self) -> list:
-        """獲取今天的時程表（從週表中）"""
-        try:
-            now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())  # 取得本週一的日期
-            day_of_week = (now.weekday() + 1) % 7 or 7  # 1=Mon, 7=Sun
-
-            with sqlite3.connect(self.db.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(f"""
-                    SELECT "scheduledTime", "animeData", "pushed" FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
-                    WHERE "weekStartDate" = ? AND "dayOfWeek" = ?
-                    ORDER BY "scheduledTime" ASC
-                """, (week_start.strftime("%Y-%m-%d"), day_of_week))
-
-                results = []
-                for row in cursor.fetchall():
-                    results.append({
-                        'scheduled_time': row[0],
-                        'anime_data': json.loads(row[1]),
-                        'pushed': bool(row[2])
-                    })
-                return results
-        except Exception as e:
-            logger.error(f"❌ Error getting today schedule: {e}")
-            return []
+        """獲取今天的時程表（從週表中） - 委託給 AnimeDatabase"""
+        return self.db.get_today_schedule()
 
     def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
-        """標記某個時刻已推送過"""
-        try:
-            with sqlite3.connect(self.db.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(f"""
-                    UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
-                    SET "pushed" = 1
-                    WHERE "weekStartDate" = ? AND "dayOfWeek" = ? AND "scheduledTime" = ?
-                """, (week_start_date, day_of_week, scheduled_time))
-                conn.commit()
-                return cursor.rowcount > 0
-        except Exception as e:
-            logger.error(f"❌ Error marking time pushed: {e}")
-            return False
+        """標記某個時刻已推送過 - 委託給 AnimeDatabase"""
+        return self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
 
     async def check_scheduled_push(self) -> None:
         """每小時檢查是否有預定推送時刻 - 供週表系統使用"""
