@@ -472,9 +472,18 @@ class AnimeTracker(commands.Cog):
         解決 dispatcher 錯過時刻、bot 重啟後漏推等問題
         """
         logger = logging.getLogger(__name__)
+        print("[DEBUG_CATCHUP] _periodic_catchup_check function entered", flush=True)
         logger.info("🔄 [_periodic_catchup_check] 定期補推檢查任務啟動（每 5 分鐘）")
 
-        await self.bot.wait_until_ready()
+        # 等待 bot ready，但設 timeout 防止卡死
+        try:
+            await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
+            print("[DEBUG_CATCHUP] bot.wait_until_ready() completed", flush=True)
+            logger.info("✅ [_periodic_catchup_check] bot ready，開始執行補推檢查")
+        except asyncio.TimeoutError:
+            logger.error("❌ [_periodic_catchup_check] wait_until_ready() timeout 60s，終止任務")
+            print("[DEBUG_CATCHUP] wait_until_ready() TIMEOUT!", flush=True)
+            return
 
         while not self.bot.is_closed():
             try:
@@ -482,6 +491,7 @@ class AnimeTracker(commands.Cog):
                 today_schedule = self.get_today_schedule()
 
                 if not today_schedule:
+                    logger.warning("⚠️ [_periodic_catchup_check] today_schedule 為空，跳過本次檢查")
                     await asyncio.sleep(300)  # 5 分鐘
                     continue
 
@@ -517,6 +527,8 @@ class AnimeTracker(commands.Cog):
                                 logger.warning(f"⚠️ [_periodic_catchup_check] 補推無新番或失敗: {scheduled_time}")
                         except Exception as e:
                             logger.error(f"❌ [_periodic_catchup_check] 補推異常 {scheduled_time}: {e}")
+                else:
+                    pass  # No catchup items found
 
                 # 每 5 分鐘檢查一次
                 await asyncio.sleep(300)
