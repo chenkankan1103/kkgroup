@@ -16,16 +16,16 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Any
-import pytz
+from zoneinfo import ZoneInfo  # Python 3.9+, 正確的時區處理
 import time
 from urllib.parse import quote
 from shared.utils.view_registry import PersistentViewBase
 
 # 台灣時區
-TW_TZ = pytz.timezone('Asia/Taipei')
+TW_TZ = ZoneInfo('Asia/Taipei')
 
 # 配置
-ANIME_CHANNEL_ID = 1252201921  # 動畫通知頻道
+ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
 ANIME_DB_PATH = None  # 將在初始化時設置
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # 秒

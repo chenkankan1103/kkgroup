@@ -17,16 +17,15 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
-import pytz  # 用於台灣時區轉換
+from zoneinfo import ZoneInfo  # Python 3.9+, 正確的時區處理
 import time
 from urllib.parse import quote  # 用於生成 QuickChart URL
 from shared.utils.view_registry import PersistentViewBase
 
 # 台灣時區
-TW_TZ = pytz.timezone('Asia/Taipei')
+TW_TZ = ZoneInfo('Asia/Taipei')
 
 # 配置
-ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
 ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"  # 統一使用主數據庫，所有表在同一個 user_data.db 中
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # 秒
@@ -44,7 +43,7 @@ ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（
 ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
 
 # 導入自定義模組
-from .push_core import AnimePushCore, AnimeDatabase
+from .push_core import AnimePushCore, AnimeDatabase, ANIME_CHANNEL_ID
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
@@ -151,9 +150,24 @@ class AnimeTracker(commands.Cog):
             # 啟動定期補推任務（每 5 分鐘檢查最近 10 分鐘內漏推項目並真正發送）
             print("[COG_LOAD] 啟動定期補推檢查任務", flush=True)
             logger.info("🚀 [AnimeTracker.cog_load] 啟動定期補推檢查任務")
-            self._catchup_check_task = asyncio.create_task(self._periodic_catchup_check())
-            logger.info("✅ [AnimeTracker.cog_load] 定期補推檢查任務已啟動")
-            print("[COG_LOAD] ✅ 定期補推檢查任務已啟動", flush=True)
+            try:
+                self._catchup_check_task = asyncio.create_task(self._periodic_catchup_check())
+                # 給任務一點時間啟動，檢查是否有異常
+                await asyncio.sleep(0.1)
+                if self._catchup_check_task.done():
+                    exc = self._catchup_check_task.exception()
+                    if exc:
+                        logger.error(f"❌ [AnimeTracker.cog_load] _periodic_catchup_check 任務立即失敗: {exc}", exc_info=True)
+                        print(f"[COG_LOAD_ERROR] _periodic_catchup_check 任務立即失敗: {exc}", flush=True)
+                    else:
+                        logger.warning(f"⚠️ [AnimeTracker.cog_load] _periodic_catchup_check 任務意外結束")
+                else:
+                    logger.info("✅ [AnimeTracker.cog_load] 定期補推檢查任務已啟動並運行中")
+                    print("[COG_LOAD] ✅ 定期補推檢查任務已啟動並運行中", flush=True)
+            except Exception as e:
+                logger.error(f"❌ [AnimeTracker.cog_load] 創建 _periodic_catchup_check 任務失敗: {e}", exc_info=True)
+                print(f"[COG_LOAD_ERROR] 創建 _periodic_catchup_check 任務失敗: {e}", flush=True)
+                raise
 
             # 啟動週期統計同步任務
             print("[COG_LOAD] 檢查 sync_episode_stats 任務狀態", flush=True)
@@ -458,9 +472,18 @@ class AnimeTracker(commands.Cog):
         解決 dispatcher 錯過時刻、bot 重啟後漏推等問題
         """
         logger = logging.getLogger(__name__)
+        print("[DEBUG_CATCHUP] _periodic_catchup_check function entered", flush=True)
         logger.info("🔄 [_periodic_catchup_check] 定期補推檢查任務啟動（每 5 分鐘）")
 
-        await self.bot.wait_until_ready()
+        # 等待 bot ready，但設 timeout 防止卡死
+        try:
+            await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
+            print("[DEBUG_CATCHUP] bot.wait_until_ready() completed", flush=True)
+            logger.info("✅ [_periodic_catchup_check] bot ready，開始執行補推檢查")
+        except asyncio.TimeoutError:
+            logger.error("❌ [_periodic_catchup_check] wait_until_ready() timeout 60s，終止任務")
+            print("[DEBUG_CATCHUP] wait_until_ready() TIMEOUT!", flush=True)
+            return
 
         while not self.bot.is_closed():
             try:
@@ -468,6 +491,7 @@ class AnimeTracker(commands.Cog):
                 today_schedule = self.get_today_schedule()
 
                 if not today_schedule:
+                    logger.warning("⚠️ [_periodic_catchup_check] today_schedule 為空，跳過本次檢查")
                     await asyncio.sleep(300)  # 5 分鐘
                     continue
 
@@ -503,6 +527,8 @@ class AnimeTracker(commands.Cog):
                                 logger.warning(f"⚠️ [_periodic_catchup_check] 補推無新番或失敗: {scheduled_time}")
                         except Exception as e:
                             logger.error(f"❌ [_periodic_catchup_check] 補推異常 {scheduled_time}: {e}")
+                else:
+                    pass  # No catchup items found
 
                 # 每 5 分鐘檢查一次
                 await asyncio.sleep(300)
