@@ -78,6 +78,9 @@ class AnimeTracker(commands.Cog):
         self.schedule_tracker.set_dependencies(bot, self.db, self.push_core)
         self.ranking_stats.set_dependencies(bot, self.db)
 
+        # 設定 View 生成工廠（解決循環導入問題）
+        self.push_core.set_view_factory(self.generate_anime_view)
+
         self.task_started = False
         self.bootstrap_completed = False
         self.last_weekly_stats_sent = None
@@ -253,12 +256,32 @@ class AnimeTracker(commands.Cog):
         return await self.push_core.generate_anime_embed(episode)
 
     async def generate_anime_view(self, episode: dict) -> Optional[discord.ui.View]:
-        """生成動畫視圖 - 委託給 PushCore"""
-        return await self.push_core.generate_anime_view(episode)
+        """生成動畫視圖 - 創建投票和評論按鈕 + 動畫頁/觀看連結"""
+        try:
+            # 只有在有必要的資料時才生成視圖
+            video_sn = episode.get("videoSn")
+            anime_sn = episode.get("animeSn")
+            if not video_sn or not anime_sn:
+                return None
 
-    async def send_anime_push(self, scheduled_time: str, channel_id: int) -> bool:
+            # 創建投票視圖
+            vote_view = self.AnimeVoteView(episode, self)
+
+            # 添加原有的連結按鈕
+            anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
+            vote_view.add_item(discord.ui.Button(label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link))
+
+            video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
+            vote_view.add_item(discord.ui.Button(label="▶️ 觀看", url=video_url, style=discord.ButtonStyle.link))
+
+            return vote_view
+        except Exception as e:
+            logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
+            return None
+
+    async def send_anime_push(self, scheduled_time: str, channel_id: int, day_of_week: int = None, week_start_date: str = None) -> bool:
         """發送動畫推送 - 委託給 PushCore"""
-        return await self.push_core.send_anime_push(scheduled_time, channel_id)
+        return await self.push_core.send_anime_push(scheduled_time, channel_id, day_of_week, week_start_date)
 
     # Schedule Tracker 相關方法
     async def _get_anime_schedule(self) -> Optional[Dict]:
@@ -427,16 +450,26 @@ class AnimeTracker(commands.Cog):
             logger.error(f"❌ [_restore_old_message_views] 失敗: {e}")
 
     async def _catchup_missed_pushes(self):
-        """Bot 重啟時標記今日已過時刻為已推送（不進行實際推送），避免重複嘗試"""
+        """Bot 重啟時補推今日已過時刻但尚未推送的動畫（真正發送，不再只標記）
+
+        修復：原實作只在重啟時把過時刻標記為 pushed=1 卻不實際發送，導致
+        重啟期間錯過的動畫永久遺失。現在改為實際呼叫 send_anime_push 補發。
+        send_anime_push 內部已會在 API 成功後標記 pushed=1，故此處不重複標記。
+        """
+        logger = logging.getLogger(__name__)
         try:
             await self.bot.wait_until_ready()
             now = datetime.now(TW_TZ)
+            week_start = now - timedelta(days=now.weekday())
+            week_start_str = week_start.strftime("%Y-%m-%d")
+            day_of_week = (now.weekday() + 1) % 7 or 7
             today_schedule = self.get_today_schedule()
             if not today_schedule:
+                logger.info("ℹ️ [_catchup_missed_pushes] 今日週表為空，無需補推")
                 return
 
             # 找出今天已過時刻但尚未標記為已推送的項目
-            to_mark = []
+            missed = []
             for item in today_schedule:
                 if item['pushed']:
                     continue
@@ -445,25 +478,37 @@ class AnimeTracker(commands.Cog):
                         year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                     )
                     if (now - sched_dt).total_seconds() >= 0:  # 已過或當前時刻
-                        to_mark.append(item)
-                except Exception:
-                    pass
+                        missed.append((item, sched_dt))
+                except ValueError as e:
+                    logger.warning(f"⚸ [_catchup_missed_pushes] 無法解析排程時間 '{item['scheduled_time']}': {e}")
+                except Exception as e:
+                    logger.error(f"❌ [_catchup_missed_pushes] 處理排程時間時發生未預期錯誤 '{item['scheduled_time']}': {e}", exc_info=True)
 
-            if not to_mark:
+            if not missed:
+                logger.info("ℹ️ [_catchup_missed_pushes] 無過時漏推項目")
                 return
 
-            week_start = now - timedelta(days=now.weekday())
-            week_start_str = week_start.strftime("%Y-%m-%d")
-            day_of_week = (now.weekday() + 1) % 7 or 7
-            marked_times = []
-            for item in to_mark:
-                self.mark_time_pushed(week_start_str, day_of_week, item['scheduled_time'])
-                marked_times.append(item['scheduled_time'])
-
-            logger = logging.getLogger(__name__)
-            logger.info(f"✅ [_catchup_missed_pushes] 已標記 {len(marked_times)} 個過時時刻為已推送：{sorted(set(marked_times))}")
+            # 按時間排序，依序補推
+            missed.sort(key=lambda x: x[1])
+            logger.info(f"🔄 [_catchup_missed_pushes] 發現 {len(missed)} 個重啟前漏推項目，開始補推")
+            for item, sched_dt in missed:
+                scheduled_time = item['scheduled_time']
+                diff_seconds = (now - sched_dt).total_seconds()
+                logger.info(f"📺 [_catchup_missed_pushes] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
+                try:
+                    success = await self.send_anime_push(
+                        scheduled_time, ANIME_CHANNEL_ID,
+                        week_start_date=week_start_str,
+                        day_of_week=day_of_week
+                    )
+                    if success:
+                        logger.info(f"✅ [_catchup_missed_pushes] 補推成功: {scheduled_time}")
+                    else:
+                        logger.warning(f"⚠️ [_catchup_missed_pushes] 補推無新番或失敗: {scheduled_time}")
+                except Exception as e:
+                    logger.error(f"❌ [_catchup_missed_pushes] 補推異常 {scheduled_time}: {e}", exc_info=True)
+                await asyncio.sleep(2)  # 避免短時間內連續發送太多訊息
         except Exception as e:
-            logger = logging.getLogger(__name__)
             logger.error(f"❌ [_catchup_missed_pushes] 失敗: {e}", exc_info=True)
 
     async def _periodic_catchup_check(self):
@@ -488,6 +533,9 @@ class AnimeTracker(commands.Cog):
         while not self.bot.is_closed():
             try:
                 now = datetime.now(TW_TZ)
+                week_start = now - timedelta(days=now.weekday())
+                week_start_str = week_start.strftime("%Y-%m-%d")
+                day_of_week = (now.weekday() + 1) % 7 or 7
                 today_schedule = self.get_today_schedule()
 
                 if not today_schedule:
@@ -522,7 +570,12 @@ class AnimeTracker(commands.Cog):
                         scheduled_time = item['scheduled_time']
                         logger.info(f"📺 [_periodic_catchup_check] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
                         try:
-                            success = await self.send_anime_push(scheduled_time, ANIME_CHANNEL_ID)
+                            success = await self.send_anime_push(
+                                scheduled_time,
+                                ANIME_CHANNEL_ID,
+                                day_of_week=day_of_week,
+                                week_start_date=week_start_str
+                            )
                             if success:
                                 logger.info(f"✅ [_periodic_catchup_check] 補推成功: {scheduled_time}")
                             else:
@@ -757,8 +810,8 @@ class AnimeTracker(commands.Cog):
                 # 僅處理 <= 當前時間（22:00 執行時，當前即為 22:xx，所以 <=22:00 即為今日已過去時段）
                 if scheduled <= current_time_str:
                     missed.append(item)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"❌ [refresh_weekly_schedule] 處理時刻時發生錯誤 '{scheduled}': {e}", exc_info=True)
 
         if missed:
             missed_sorted = sorted(missed, key=lambda x: x['scheduled_time'])
