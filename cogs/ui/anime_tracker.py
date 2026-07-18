@@ -421,7 +421,8 @@ class AnimeTracker(commands.Cog):
                     # 注意：這裡需要重新從 API 獲取 episode 數據來生成正確的視圖
                     # 為簡化起見，我們先註冊一個基本的視圖，實際內容會在用戶互動時更新
                     # 時重新生成
-                    video_sn = msg_info['videoSn']
+                    # get_unviewed_messages 返回 snake_case keys (video_sn, anime_sn, etc.)
+                    video_sn = msg_info.get('video_sn') or msg_info.get('videoSn')
 
                     # 從資料庫獲取動畫資訊
                     anime_info = self.db.get_anime_details_by_videosn(video_sn)
@@ -633,6 +634,12 @@ class AnimeTracker(commands.Cog):
             if schedule_data:
                 self.save_weekly_schedule(week_start_str, schedule_data)
                 logger.info(f"✅ [_init_weekly_schedule_if_empty] 週表初始化完成: {len(schedule_data)} 筆")
+
+                # 清理孤兒記錄
+                if hasattr(self.db, 'clean_orphaned_records'):
+                    orphan_stats = self.db.clean_orphaned_records(week_start_str)
+                    if orphan_stats.get('messages', 0) > 0 or orphan_stats.get('notified', 0) > 0:
+                        logger.info(f"🧹 [_init_weekly_schedule_if_empty] 清理孤兒記錄: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}")
             else:
                 logger.warning("⚠️ [_init_weekly_schedule_if_empty] API 返回空時程表")
         except Exception as e:

@@ -251,10 +251,10 @@ class AnimeDatabase:
                 cursor.execute(f"PRAGMA table_info({table_name})")
                 columns = [row[1] for row in cursor.fetchall()]
                 if column_name not in columns:
-                    print(f"[Migration] Adding column {column_name} to {table_name}")
+                    logger.info(f"[Migration] Adding column {column_name} to {table_name}")
                     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
             except Exception as e:
-                print(f"[Migration] Warning: Could not add {column_name} to {table_name}: {e}")
+                logger.warning(f"[Migration] Could not add {column_name} to {table_name}: {e}")
 
     # ==================== 通知相關方法 ====================
 
@@ -295,9 +295,10 @@ class AnimeDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                # 使用新欄位名 (anime_name, cover_url) 配合 migration schema
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {NOTIFIED_TABLE}
-                    (videoSn, animeSn, animeName, volume, coverUrl)
+                    (videoSn, animeSn, anime_name, volume, cover_url)
                     VALUES (?, ?, ?, ?, ?)
                 """, (video_sn, anime_sn, anime_name, volume, cover_url))
                 conn.commit()
@@ -334,8 +335,26 @@ class AnimeDatabase:
 
         關鍵修復：不再使用 DELETE+INSERT，改用逐筆檢查並更新/插入，
         以保留 pushed=1 的記錄（避免每天 22:00 重置導致重複推送）。
+
+        新增：API 可能回傳重複 timeslot（同一天同一時間多筆），先去重再寫入。
         """
         try:
+            # --- Pre-dedup: API 可能為同一天同一時間返回多筆，先按 (dayOfWeek, scheduledTime) 去重 ---
+            # 策略：保留第一筆 (索引最小)，舊資料的 animeData 會被後續 UPSERT 邏輯覆蓋或保留
+            seen = {}
+            deduped = []
+            for idx, item in enumerate(schedule_data):
+                key = (item['day_of_week'], item['scheduled_time'])
+                if key not in seen:
+                    seen[key] = idx
+                    deduped.append(item)
+                else:
+                    logger.warning(f"⚠️ [save_weekly_schedule] 週 {week_start_date} 發現重複時段: day={item['day_of_week']} {item['scheduled_time']}，忽略第 {idx+1} 筆 (保留第 {seen[key]+1} 筆)")
+            if len(deduped) != len(schedule_data):
+                logger.info(f"📋 [save_weekly_schedule] 週 {week_start_date} 去重: {len(schedule_data)} -> {len(deduped)} 筆")
+            schedule_data = deduped
+            # --- End pre-dedup ---
+
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
@@ -425,6 +444,62 @@ class AnimeDatabase:
             logger.error(f"❌ [mark_time_pushed] Error marking week_start={week_start_date} day={day_of_week} time={scheduled_time}: {e}", exc_info=True)
             return False
 
+    def clean_orphaned_records(self, week_start_date: str = None) -> dict:
+        """清理孤兒記錄：anime_messages、anime_notified 中對應已刪除週表時段的記錄
+
+        當 22:00 刷新週表時，API 可能不再回傳某些舊時段，導致週表被 DELETE/重建後，
+        但相關的 messages、notified 記錄仍留存。此方法清理這些孤兒記錄。
+
+        Args:
+            week_start_date: 指定週起始日期 (YYYY-MM-DD)，None 表示清理所有週
+        Returns:
+            dict: 刪除統計 {'messages': N, 'notified': N}
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                stats = {'messages': 0, 'notified': 0}
+
+                # 1. 找出所有存在於週表中的 videoSn
+                if week_start_date:
+                    cursor.execute(f"""
+                        SELECT DISTINCT json_extract(animeData, '$.videoSn') as videoSn
+                        FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        WHERE weekStartDate = ?
+                    """, (week_start_date,))
+                else:
+                    cursor.execute(f"""
+                        SELECT DISTINCT json_extract(animeData, '$.videoSn') as videoSn
+                        FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    """)
+                valid_video_sns = {str(row[0]) for row in cursor.fetchall() if row[0] is not None}
+
+                if not valid_video_sns:
+                    logger.info(f"ℹ️ [clean_orphaned_records] 週表為空，無有效 videoSn")
+                    return stats
+
+                # 2. 清理 anime_messages 中不在週表中的 videoSn
+                placeholders = ','.join('?' * len(valid_video_sns))
+                cursor.execute(f"""
+                    DELETE FROM {ANIME_MESSAGES_TABLE}
+                    WHERE videoSn NOT IN ({placeholders})
+                """, tuple(valid_video_sns))
+                stats['messages'] = cursor.rowcount
+
+                # 3. 清理 anime_notified 中不在週表中的 videoSn
+                cursor.execute(f"""
+                    DELETE FROM {NOTIFIED_TABLE}
+                    WHERE videoSn NOT IN ({placeholders})
+                """, tuple(valid_video_sns))
+                stats['notified'] = cursor.rowcount
+
+                conn.commit()
+                logger.info(f"🧹 [clean_orphaned_records] 清理完成: messages={stats['messages']}, notified={stats['notified']} (基於週表有效 videoSn: {len(valid_video_sns)} 個)")
+                return stats
+        except Exception as e:
+            logger.error(f"❌ [clean_orphaned_records] Error: {e}", exc_info=True)
+            return {'messages': 0, 'notified': 0, 'error': str(e)}
+
     # ==================== 動畫詳細資訊快取方法 ====================
 
     def cache_anime_details(self, anime_sn: int, name: str, content: str,
@@ -441,7 +516,7 @@ class AnimeDatabase:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"Error caching anime details: {e}")
+            logger.error(f"❌ [cache_anime_details] Error: {e}", exc_info=True)
             return False
 
     def get_anime_details(self, anime_sn: int) -> Optional[dict]:
@@ -457,7 +532,9 @@ class AnimeDatabase:
                 row = cursor.fetchone()
                 if row:
                     return {
-                        'name': row[0],
+                        'animeSn': anime_sn,
+                        'title': row[0],  # alias for name
+                        'name': row[0],   # keep original for backward compat
                         'content': row[1],
                         'cover_url': row[2],
                         'tags': json.loads(row[3]) if row[3] else [],
@@ -466,7 +543,7 @@ class AnimeDatabase:
                     }
                 return None
         except Exception as e:
-            print(f"Error getting anime details: {e}")
+            logger.error(f"❌ [get_anime_details] Error getting anime details for anime_sn {anime_sn}: {e}", exc_info=True)
             return None
 
     # ==================== 集數統計方法 ====================
@@ -485,7 +562,7 @@ class AnimeDatabase:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"Error recording episode stats: {e}")
+            logger.error(f"❌ [record_episode_stats] Error: {e}", exc_info=True)
             return False
 
     # ==================== 動畫統計方法 ====================
@@ -514,7 +591,7 @@ class AnimeDatabase:
                     }
                 return None
         except Exception as e:
-            print(f"Error getting anime statistics: {e}")
+            logger.error(f"❌ [get_anime_statistics] Error: {e}", exc_info=True)
             return None
 
     def get_top_anime_by_views(self, limit: int = 10,
@@ -559,7 +636,7 @@ class AnimeDatabase:
                     })
                 return results
         except Exception as e:
-            print(f"Error getting top anime by views: {e}")
+            logger.error(f"❌ [get_top_anime_by_views] Error: {e}", exc_info=True)
             return []
 
     def get_multi_episode_anime_for_chart(self, limit: int = 10, min_episodes: int = 2,
@@ -619,7 +696,7 @@ class AnimeDatabase:
                 results = list(anime_dict.values())[:limit]
                 return results
         except Exception as e:
-            print(f"Error getting multi episode anime for chart: {e}")
+            logger.error(f"❌ [get_multi_episode_anime_for_chart] Error: {e}", exc_info=True)
             return []
 
 
@@ -630,13 +707,13 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 # 先從 episode_stats 找到對應的 anime_sn
                 cursor.execute(f"""
-                    SELECT animeSn FROM {EPISODE_STATS_TABLE}
+                    SELECT animeSn, episodeNum FROM {EPISODE_STATS_TABLE}
                     WHERE videoSn = ?
                 """, (video_sn,))
                 row = cursor.fetchone()
                 if not row:
                     return None
-                anime_sn = row[0]
+                anime_sn, episode_num = row
                 # 再取得動畫詳細資訊
                 cursor.execute(f"""
                     SELECT name, content, coverUrl, tags, viewCount, score
@@ -646,16 +723,20 @@ class AnimeDatabase:
                 row = cursor.fetchone()
                 if row:
                     return {
+                        'videoSn': video_sn,
+                        'animeSn': anime_sn,
+                        'title': row[0],  # alias for name
                         'name': row[0],
                         'content': row[1],
                         'cover_url': row[2],
                         'tags': json.loads(row[3]) if row[3] else [],
                         'view_count': row[4],
-                        'score': row[5]
+                        'score': row[5],
+                        'volume': episode_num or ''  # episode number from episode_stats
                     }
                 return None
         except Exception as e:
-            print(f"Error getting anime details by videosn: {e}")
+            logger.error(f"❌ [get_anime_details_by_videosn] Error for video_sn {video_sn}: {e}", exc_info=True)
             return None
 
     def is_reward_already_given(self, message_id: int, reward_type: str) -> bool:
@@ -670,7 +751,7 @@ class AnimeDatabase:
                 """, (message_id, reward_type))
                 return cursor.fetchone() is not None
         except Exception as e:
-            print(f"Error checking reward status: {e}")
+            logger.error(f"❌ [is_reward_already_given] Error checking reward status: {e}", exc_info=True)
             return False
 
     def record_reward(self, message_id: int, reward_type: str, amount: int, user_id: str) -> bool:

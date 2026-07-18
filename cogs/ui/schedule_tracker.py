@@ -157,10 +157,16 @@ class AnimeScheduleTracker:
                             })
 
             # 全量覆蓋：先刪除該 week_start_date 的舊資料，再插入新資料
-            # save_weekly_schedule 內部已做 DELETE + INSERT
+            # save_weekly_schedule 內部已做 UPSERT (保留 pushed=1) + pre-dedup
             if schedule_data:
                 self.db.save_weekly_schedule(week_start_str, schedule_data)
                 logger.info(f"✅ [refresh_weekly_schedule] 週表全量覆蓋完成 ({len(schedule_data)} 個時刻)")
+
+            # 清理孤兒記錄：週表刷新後，清理不在週表中的 anime_messages、anime_notified
+            if hasattr(self.db, 'clean_orphaned_records'):
+                orphan_stats = self.db.clean_orphaned_records(week_start_str)
+                if orphan_stats.get('messages', 0) > 0 or orphan_stats.get('notified', 0) > 0:
+                    logger.info(f"🧹 [refresh_weekly_schedule] 清理孤兒記錄: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}")
 
             # 取得今日時程（含 pushed 狀態）供上層檢查漏推
             today_schedule = self.get_today_schedule()
