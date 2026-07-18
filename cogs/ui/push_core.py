@@ -696,12 +696,13 @@ class AnimePushCore:
                         return None
                     data = await resp.json()
 
-                    # API 回應結構: { "data": { "newAnime": [...], ... } }
-                    if 'data' not in data or 'newAnime' not in data['data']:
-                        logger.warning("⚠️ [fetch_new_anime_from_api] API response missing 'data.newAnime' key")
+                    # API 回應結構: { "data": { "newAnime": { "date": [...], "popular": [...] }, ... } }
+                    new_anime = data.get('data', {}).get('newAnime')
+                    if not new_anime or 'date' not in new_anime:
+                        logger.warning("⚠️ [fetch_new_anime_from_api] API response missing 'data.newAnime.date' key")
                         return None
 
-                    return data['data']['newAnime']
+                    return new_anime['date']
         except Exception as e:
             logger.error(f"❌ [fetch_new_anime_from_api] Failed to fetch new anime: {e}", exc_info=True)
             return None
@@ -717,11 +718,12 @@ class AnimePushCore:
                         return None
                     data = await resp.json()
 
-                    if 'data' not in data or 'newAnime' not in data['data']:
-                        logger.warning("⚠️ [fetch_all_recent_anime_from_api] API response missing 'data.newAnime' key")
+                    new_anime = data.get('data', {}).get('newAnime')
+                    if not new_anime or 'date' not in new_anime:
+                        logger.warning("⚠️ [fetch_all_recent_anime_from_api] API response missing 'data.newAnime.date' key")
                         return None
 
-                    return data['data']['newAnime']
+                    return new_anime['date']
         except Exception as e:
             logger.error(f"❌ [fetch_all_recent_anime_from_api] Failed to fetch recent anime: {e}", exc_info=True)
             return None
