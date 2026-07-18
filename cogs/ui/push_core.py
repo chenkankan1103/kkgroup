@@ -790,7 +790,7 @@ class AnimePushCore:
     # ==================== 訊息發送相關方法 ====================
 
     async def generate_anime_embed(self, episode: Dict) -> Optional[discord.Embed]:
-        """為動畫集數生成 Discord Embed"""
+        """為動畫集數生成 Discord Embed (舊版風格：大圖在下方、含簡介、標籤、獎勵說明)"""
         try:
             video_sn = episode.get("videoSn")
             anime_sn = episode.get("animeSn")
@@ -800,52 +800,99 @@ class AnimePushCore:
 
             # 組合標題
             if volume:
-                    title_with_volume = f"{title} 第{volume}集"
+                title_with_volume = f"{title} 第{volume}集"
             else:
-                    title_with_volume = title
+                title_with_volume = title
 
-            # 建立 embed
+            # 嘗試從資料庫獲取詳細資訊（簡介、標籤、評分等）
+            anime_details = None
+            if anime_sn:
+                try:
+                    anime_details = self.db.get_anime_details(int(anime_sn))
+                except:
+                    anime_details = None
+
+            content = anime_details.get("content", "") if anime_details else ""
+            api_tags = anime_details.get("tags", []) if anime_details else []
+            popular = anime_details.get("popular", 0) if anime_details else 0
+            score = anime_details.get("score", 0) if anime_details else 0
+
+            # 構建標籤
+            tag_parts = []
+            if api_tags:
+                tag_parts.extend([f"#{tag}" for tag in api_tags[:6]])
+
+            highlight_tag = episode.get("highlightTag", {})
+            if highlight_tag.get("bilingual"):
+                tag_parts.append("🗣️ 雙語")
+            edition = highlight_tag.get("edition", "").strip()
+            if edition:
+                tag_parts.append(f"📺 {edition}")
+
+            tags_str = " | ".join(tag_parts) if tag_parts else "無特殊標籤"
+
+            # 簡介（截斷）
+            if content:
+                description_text = self._truncate_text(content, 300)
+            else:
+                description_text = "暫無簡介"
+
+            # 人氣/評分
+            popularity_text = f"{popular:,}" if popular else "N/A"
+            score_text = f"{score:.1f}" if score > 0 else "N/A"
+
+            # 建立 embed - 舊版風格
             embed = discord.Embed(
-                title=f"🆕 新番更新：{title_with_volume}",
+                title=f"🎬 {title_with_volume}",
+                description=description_text,
                 url=f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}",
-                color=0x00bfff,
+                color=discord.Color.from_rgb(178, 108, 196),  # 紫色主題
                 timestamp=datetime.now(TW_TZ)
             )
 
-            # 設置封面圖片
+            # 大圖在下方 (set_image 而非 set_thumbnail)
             if cover:
-                embed.set_thumbnail(url=cover)
+                embed.set_image(url=cover)
 
-            # 添加動畫資訊
+            # 標籤
             embed.add_field(
-                name="動畫名稱",
-                value=title,
-                inline=True
-            )
-
-            if volume:
-                embed.add_field(
-                    name="集數",
-                    value=f"第{volume}集",
-                    inline=True
-                )
-
-            embed.add_field(
-                name="觀看連結",
-                value=f"[點擊觀看](https://ani.gamer.com.tw/animeVideo.php?sn={video_sn})",
+                name="📌 標籤",
+                value=tags_str,
                 inline=False
             )
 
-            # 設置 footer
-            embed.set_footer(
-                text=f"動畫 ID: {anime_sn} | 集 ID: {video_sn}",
-                icon_url="https://i.imgur.com/5JF6KXp.png"
+            # 人氣數據
+            embed.add_field(
+                name="📊 人氣數據",
+                value=f"👥 {popularity_text} | ⭐ {score_text}",
+                inline=False
             )
 
+            # 投票說明
+            embed.add_field(
+                name="🎯 匿名投票",
+                value="選擇你認為本作的評價，或留下評論\n投票完全匿名，無法追蹤個人身份",
+                inline=False
+            )
+
+            # 獎勵說明
+            embed.add_field(
+                name="🎁 獲得獎勵",
+                value="💬 **投票**: +2000 KK幣\n📝 **評論**: +3000 KK幣\n每條消息僅限一次獎勵",
+                inline=False
+            )
+
+            embed.set_footer(text="動畫瘋新番通知 | 使用下方按鈕進行匿名投票")
             return embed
         except Exception as e:
             logger.error(f"❌ [generate_anime_embed] Failed to generate embed for video_sn {episode.get('videoSn')}: {e}", exc_info=True)
             return None
+
+    def _truncate_text(self, text: str, max_length: int) -> str:
+        """截斷文字到指定長度"""
+        if len(text) <= max_length:
+            return text
+        return text[:max_length - 3] + "..."
 
     async def generate_anime_view(self, episode: Dict) -> Optional[discord.ui.View]:
         """為動畫集數生成 Discord View (包含投票按鈕和評論按鈕)"""
