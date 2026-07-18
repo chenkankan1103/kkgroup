@@ -678,17 +678,36 @@ class AnimePushCore:
         self.db = AnimeDatabase(db_path)
         self.bot = None
 
+        # API 速率限制：每次呼叫間隔至少 2 秒（<= 30 req/min），防止被巴哈姆特 BAN
+        self._last_api_call = 0.0
+        self._api_rate_limit_lock = asyncio.Lock()
+        self._min_api_interval = 2.0  # seconds
+
     def set_bot_and_db(self, bot, db):
         """設置 bot 和資料庫實例（可選覆蓋）"""
         self.bot = bot
         if db is not None:
             self.db = db
 
+    async def _rate_limit_api(self):
+        """確保 API 呼叫間隔 >= 2 秒"""
+        async with self._api_rate_limit_lock:
+            now = asyncio.get_event_loop().time()
+            elapsed = now - self._last_api_call
+            if elapsed < self._min_api_interval:
+                wait_time = self._min_api_interval - elapsed
+                logger.debug(f"⏳ [_rate_limit_api] 等待 {wait_time:.2f} 秒以符合 API 速率限制")
+                await asyncio.sleep(wait_time)
+            self._last_api_call = asyncio.get_event_loop().time()
+
     # ==================== API 相關方法 ====================
 
     async def fetch_new_anime_from_api(self) -> List[Dict]:
         """從 API 獲取最近更新的動畫集數"""
         try:
+            # 速率限制
+            await self._rate_limit_api()
+
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(API_ENDPOINT) as resp:
@@ -711,6 +730,9 @@ class AnimePushCore:
     async def fetch_all_recent_anime_from_api(self) -> List[Dict]:
         """獲取所有最近更新的動畫（用於排行榜）"""
         try:
+            # 速率限制
+            await self._rate_limit_api()
+
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(API_ENDPOINT) as resp:
@@ -732,6 +754,9 @@ class AnimePushCore:
     async def fetch_anime_details_from_api(self, video_sn: int) -> Optional[Dict]:
         """從 API 獲取單集動畫詳細信息"""
         try:
+            # 速率限制
+            await self._rate_limit_api()
+
             url = f"https://api.gamer.com.tw/mobile_app/anime/v2/video.php?vsn={video_sn}"
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout) as session:
