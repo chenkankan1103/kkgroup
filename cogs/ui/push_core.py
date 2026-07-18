@@ -378,7 +378,8 @@ class AnimeDatabase:
                     results.append({
                         'scheduled_time': row[0],
                         'anime_data': json.loads(row[1]),
-                        'pushed': bool(row[2])
+                        'pushed': bool(row[2]),
+                        'day_of_week': day_of_week  # 加上 day_of_week 供後續使用
                     })
                 return results
         except Exception as e:
@@ -832,13 +833,19 @@ class AnimePushCore:
             logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
             return None
 
-    async def send_anime_push(self, scheduled_time: str, channel_id: int) -> bool:
-        """根�據時程表發送動畫推送
+    async def send_anime_push(self, scheduled_time: str, channel_id: int, day_of_week: int = None, week_start_date: str = None) -> bool:
+        """根據時程表發送動畫推送
 
         關鍵修復：當 API 成功取得資料後，無論是否有新番可推送，都會標記該時刻為
         「已推送」。否則「無新番」時週表 pushed 欄位永遠為 0，會導致
         _periodic_catchup_check 每 5 分鐘無限重試同一時刻（呼叫 API、找不到新番、
         又未標記）。只有 API 失敗或頻道不存在時才不標記，以便稍後重試。
+
+        Args:
+            scheduled_time: 預定時間，格式 "HH:MM"
+            channel_id: Discord 頻道 ID
+            day_of_week: 可選，1=週一~7=週日。若提供則直接使用，否則根據當前時間計算（用於補推場景）
+            week_start_date: 可選，週起始日期 "YYYY-MM-DD"。若提供則直接使用，否則根據當前時間計算
         """
         try:
             await self.bot.wait_until_ready()
@@ -890,7 +897,13 @@ class AnimePushCore:
                     )
 
                     # 記錄為已通知
-                    self.db.add_notified(video_sn, anime_sn, title)
+                    self.db.add_notified(
+                        video_sn,
+                        anime_sn,
+                        episode.get("title", "未知標題"),
+                        episode.get("volume", ""),
+                        episode.get("cover", "")
+                    )
 
                     # 向 bot 註冊永久視圖
                     if view:
@@ -905,17 +918,19 @@ class AnimePushCore:
             # ✅ 關鍵修復：API 成功即標記該時刻為已推送（不論是否有新番），
             # 防止「無新番」時 pushed 永遠為 0 導致補推無限重試
             now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())
-            day_of_week = (now.weekday() + 1) % 7 or 7
+            if day_of_week is None:
+                day_of_week = (now.weekday() + 1) % 7 or 7
+            if week_start_date is None:
+                week_start_date = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
             marked = self.db.mark_time_pushed(
-                week_start.strftime("%Y-%m-%d"),
+                week_start_date,
                 day_of_week,
                 scheduled_time
             )
             if marked:
-                logger.info(f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送（實際發送 {sent_count} 則新番）")
+                logger.info(f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送 (day_of_week={day_of_week}, week_start={week_start_date})（實際發送 {sent_count} 則新番）")
             else:
-                logger.warning(f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗（週表可能無對應列：week_start={week_start.strftime('%Y-%m-%d')}, day={day_of_week}）")
+                logger.warning(f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗（週表可能無對應列：week_start={week_start_date}, day={day_of_week}）")
 
             return sent_count > 0
         except Exception as e:

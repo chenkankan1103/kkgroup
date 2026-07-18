@@ -253,12 +253,22 @@ class AnimeTracker(commands.Cog):
         return await self.push_core.generate_anime_embed(episode)
 
     async def generate_anime_view(self, episode: dict) -> Optional[discord.ui.View]:
-        """生成動畫視圖 - 委託給 PushCore"""
-        return await self.push_core.generate_anime_view(episode)
+        """生成動畫視圖 - 創建投票和評論按鈕"""
+        try:
+            # 只有在有必要的資料時才生成視圖
+            video_sn = episode.get("videoSn")
+            anime_sn = episode.get("animeSn")
+            if not video_sn or not anime_sn:
+                return None
 
-    async def send_anime_push(self, scheduled_time: str, channel_id: int) -> bool:
+            return self.AnimeVoteView(episode, self)
+        except Exception as e:
+            logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
+            return None
+
+    async def send_anime_push(self, scheduled_time: str, channel_id: int, day_of_week: int = None, week_start_date: str = None) -> bool:
         """發送動畫推送 - 委託給 PushCore"""
-        return await self.push_core.send_anime_push(scheduled_time, channel_id)
+        return await self.push_core.send_anime_push(scheduled_time, channel_id, day_of_week, week_start_date)
 
     # Schedule Tracker 相關方法
     async def _get_anime_schedule(self) -> Optional[Dict]:
@@ -437,6 +447,9 @@ class AnimeTracker(commands.Cog):
         try:
             await self.bot.wait_until_ready()
             now = datetime.now(TW_TZ)
+            week_start = now - timedelta(days=now.weekday())
+            week_start_str = week_start.strftime("%Y-%m-%d")
+            day_of_week = (now.weekday() + 1) % 7 or 7
             today_schedule = self.get_today_schedule()
             if not today_schedule:
                 logger.info("ℹ️ [_catchup_missed_pushes] 今日週表為空，無需補推")
@@ -470,7 +483,11 @@ class AnimeTracker(commands.Cog):
                 diff_seconds = (now - sched_dt).total_seconds()
                 logger.info(f"📺 [_catchup_missed_pushes] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
                 try:
-                    success = await self.send_anime_push(scheduled_time, ANIME_CHANNEL_ID)
+                    success = await self.send_anime_push(
+                        scheduled_time, ANIME_CHANNEL_ID,
+                        week_start_date=week_start_str,
+                        day_of_week=day_of_week
+                    )
                     if success:
                         logger.info(f"✅ [_catchup_missed_pushes] 補推成功: {scheduled_time}")
                     else:
@@ -503,6 +520,9 @@ class AnimeTracker(commands.Cog):
         while not self.bot.is_closed():
             try:
                 now = datetime.now(TW_TZ)
+                week_start = now - timedelta(days=now.weekday())
+                week_start_str = week_start.strftime("%Y-%m-%d")
+                day_of_week = (now.weekday() + 1) % 7 or 7
                 today_schedule = self.get_today_schedule()
 
                 if not today_schedule:
@@ -537,7 +557,12 @@ class AnimeTracker(commands.Cog):
                         scheduled_time = item['scheduled_time']
                         logger.info(f"📺 [_periodic_catchup_check] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
                         try:
-                            success = await self.send_anime_push(scheduled_time, ANIME_CHANNEL_ID)
+                            success = await self.send_anime_push(
+                                scheduled_time,
+                                ANIME_CHANNEL_ID,
+                                day_of_week=day_of_week,
+                                week_start_date=week_start_str
+                            )
                             if success:
                                 logger.info(f"✅ [_periodic_catchup_check] 補推成功: {scheduled_time}")
                             else:
