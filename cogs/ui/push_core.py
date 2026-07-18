@@ -696,11 +696,12 @@ class AnimePushCore:
                         return None
                     data = await resp.json()
 
-                    if 'newAnime' not in data:
-                        logger.warning("⚠️ [fetch_new_anime_from_api] API response missing 'newAnime' key")
+                    # API 回應結構: { "data": { "newAnime": [...], ... } }
+                    if 'data' not in data or 'newAnime' not in data['data']:
+                        logger.warning("⚠️ [fetch_new_anime_from_api] API response missing 'data.newAnime' key")
                         return None
 
-                    return data['newAnime']
+                    return data['data']['newAnime']
         except Exception as e:
             logger.error(f"❌ [fetch_new_anime_from_api] Failed to fetch new anime: {e}", exc_info=True)
             return None
@@ -716,11 +717,11 @@ class AnimePushCore:
                         return None
                     data = await resp.json()
 
-                    if 'newAnime' not in data:
-                        logger.warning("⚠️ [fetch_all_recent_anime_from_api] API response missing 'newAnime' key")
+                    if 'data' not in data or 'newAnime' not in data['data']:
+                        logger.warning("⚠️ [fetch_all_recent_anime_from_api] API response missing 'data.newAnime' key")
                         return None
 
-                    return data['newAnime']
+                    return data['data']['newAnime']
         except Exception as e:
             logger.error(f"❌ [fetch_all_recent_anime_from_api] Failed to fetch recent anime: {e}", exc_info=True)
             return None
