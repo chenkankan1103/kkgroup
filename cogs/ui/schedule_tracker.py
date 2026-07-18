@@ -93,8 +93,10 @@ class AnimeScheduleTracker:
                         # 這防止凌晨時早晨時刻被篩除（例如: 凌公元 03:59 時 01:00 不應被篩除）
                         if scheduled_dt.date() >= (now - timedelta(days=1)).date():
                             check_times.append(scheduled_dt)
-                    except:
-                        pass
+                    except ValueError as e:
+                        logger.warning(f"⚠️ [_get_expected_check_times] 無法解析時間格式 '{schedule_time}': {e}")
+                    except Exception as e:
+                        logger.error(f"❌ [_get_expected_check_times] 處理時間時發生未預期錯誤 '{schedule_time}': {e}", exc_info=True)
 
         return sorted(check_times)
 
