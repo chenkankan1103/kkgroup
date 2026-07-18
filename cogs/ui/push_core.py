@@ -13,11 +13,14 @@ import json
 import re
 import html
 import os
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 from zoneinfo import ZoneInfo  # Python 3.9+, 正確的時區處理
 import time
+
+logger = logging.getLogger(__name__)
 from urllib.parse import quote
 from shared.utils.view_registry import PersistentViewBase
 
@@ -266,7 +269,7 @@ class AnimeDatabase:
                 """, (video_sn,))
                 return cursor.fetchone() is not None
         except Exception as e:
-            print(f"Error checking if notified: {e}")
+            logger.error(f"❌ [is_notified] Error checking video_sn {video_sn}: {e}", exc_info=True)
             return False
 
     def save_message_info(self, message_id: int, video_sn: int, anime_sn: int,
@@ -283,7 +286,7 @@ class AnimeDatabase:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"Error saving message info: {e}")
+            logger.error(f"❌ [save_message_info] Error saving message_id {message_id}: {e}", exc_info=True)
             return False
 
     def add_notified(self, video_sn: int, anime_sn: int, anime_name: str,
@@ -300,7 +303,7 @@ class AnimeDatabase:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"Error adding notified: {e}")
+            logger.error(f"❌ [add_notified] Error adding video_sn {video_sn}: {e}", exc_info=True)
             return False
 
     def get_unviewed_messages(self) -> list:
@@ -321,7 +324,7 @@ class AnimeDatabase:
                     'channel_id': row[4]
                 } for row in rows]
         except Exception as e:
-            print(f"Error getting unviewed messages: {e}")
+            logger.error(f"❌ [get_unviewed_messages] Error: {e}", exc_info=True)
             return []
 
     # ==================== 週表相關方法 ====================
@@ -352,7 +355,7 @@ class AnimeDatabase:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"Error saving weekly schedule: {e}")
+            logger.error(f"❌ [save_weekly_schedule] Error saving week {week_start_date}: {e}", exc_info=True)
             return False
 
     def get_today_schedule(self) -> list:
@@ -379,7 +382,7 @@ class AnimeDatabase:
                     })
                 return results
         except Exception as e:
-            print(f"Error getting today schedule: {e}")
+            logger.error(f"❌ [get_today_schedule] Error: {e}", exc_info=True)
             return []
 
     def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
@@ -395,7 +398,7 @@ class AnimeDatabase:
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
-            print(f"Error marking time pushed: {e}")
+            logger.error(f"❌ [mark_time_pushed] Error marking week_start={week_start_date} day={day_of_week} time={scheduled_time}: {e}", exc_info=True)
             return False
 
     # ==================== 動畫詳細資訊快取方法 ====================
@@ -659,7 +662,7 @@ class AnimeDatabase:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"Error recording reward: {e}")
+            logger.error(f"❌ [record_reward] Error recording reward: {e}", exc_info=True)
             return False
 
 
@@ -689,14 +692,17 @@ class AnimePushCore:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(API_ENDPOINT) as resp:
                     if resp.status != 200:
+                        logger.warning(f"❌ [fetch_new_anime_from_api] API returned status {resp.status}")
                         return None
                     data = await resp.json()
 
                     if 'newAnime' not in data:
+                        logger.warning("⚠️ [fetch_new_anime_from_api] API response missing 'newAnime' key")
                         return None
 
                     return data['newAnime']
         except Exception as e:
+            logger.error(f"❌ [fetch_new_anime_from_api] Failed to fetch new anime: {e}", exc_info=True)
             return None
 
     async def fetch_all_recent_anime_from_api(self) -> List[Dict]:
@@ -706,14 +712,17 @@ class AnimePushCore:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(API_ENDPOINT) as resp:
                     if resp.status != 200:
+                        logger.warning(f"❌ [fetch_all_recent_anime_from_api] API returned status {resp.status}")
                         return None
                     data = await resp.json()
 
                     if 'newAnime' not in data:
+                        logger.warning("⚠️ [fetch_all_recent_anime_from_api] API response missing 'newAnime' key")
                         return None
 
                     return data['newAnime']
         except Exception as e:
+            logger.error(f"❌ [fetch_all_recent_anime_from_api] Failed to fetch recent anime: {e}", exc_info=True)
             return None
 
     async def fetch_anime_details_from_api(self, video_sn: int) -> Optional[Dict]:
@@ -724,10 +733,12 @@ class AnimePushCore:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
+                        logger.warning(f"❌ [fetch_anime_details_from_api] API returned status {resp.status} for video_sn {video_sn}")
                         return None
                     data = await resp.json()
                     return data
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ [fetch_anime_details_from_api] Failed to fetch anime details for video_sn {video_sn}: {e}", exc_info=True)
             return None
 
     def _extract_view_count_from_episode(self, episode: Dict) -> int:
@@ -760,9 +771,9 @@ class AnimePushCore:
 
             # 組合標題
             if volume:
-                title_with_volume = f"{title} 第{volume}集"
+                    title_with_volume = f"{title} 第{volume}集"
             else:
-                title_with_volume = title
+                    title_with_volume = title
 
             # 建立 embed
             embed = discord.Embed(
@@ -804,6 +815,7 @@ class AnimePushCore:
 
             return embed
         except Exception as e:
+            logger.error(f"❌ [generate_anime_embed] Failed to generate embed for video_sn {episode.get('videoSn')}: {e}", exc_info=True)
             return None
 
     async def generate_anime_view(self, episode: Dict) -> Optional[discord.ui.View]:
@@ -813,26 +825,35 @@ class AnimePushCore:
             # 但在這個模組中，我們需要引用 AnimeTracker 來創建視圖
             # 為了避免循環導入，我們返回 None，實際的視圖生成將在 AnimeTracker 中完成
             return None
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
             return None
 
     async def send_anime_push(self, scheduled_time: str, channel_id: int) -> bool:
-        """根據時程表發送動畫推送"""
+        """根�據時程表發送動畫推送
+
+        關鍵修復：當 API 成功取得資料後，無論是否有新番可推送，都會標記該時刻為
+        「已推送」。否則「無新番」時週表 pushed 欄位永遠為 0，會導致
+        _periodic_catchup_check 每 5 分鐘無限重試同一時刻（呼叫 API、找不到新番、
+        又未標記）。只有 API 失敗或頻道不存在時才不標記，以便稍後重試。
+        """
         try:
             await self.bot.wait_until_ready()
 
-            # 獲取最新動畫數據
-            episodes = await self.fetch_new_anime_from_api()
-
-            # 檢查頻道是否存在（無論是否有新番都檢查）
+            # 先檢查頻道是否存在（避免無頻道時仍呼叫 API 浪費配額）
             channel = self.bot.get_channel(channel_id)
             if not channel:
+                logger.warning(f"⚠️ [send_anime_push] 頻道 {channel_id} 不存在，跳過 {scheduled_time}（不標記，稍後重試）")
                 return False
 
+            # 獲取最新動畫數據
+            episodes = await self.fetch_new_anime_from_api()
             if not episodes:
+                # API 失敗 → 不標記，讓 _periodic_catchup_check 稍後重試
+                logger.warning(f"⚠️ [send_anime_push] API 無回應或無資料，跳過 {scheduled_time}（不標記，稍後重試）")
                 return False
 
-            # 檢查新集
+            # API 成功：找出尚未通知的新集
             new_episodes = []
             for ep in episodes:
                 video_sn = ep.get("videoSn")
@@ -840,10 +861,9 @@ class AnimePushCore:
                     new_episodes.append(ep)
 
             if not new_episodes:
-                return False
+                logger.info(f"📭 [send_anime_push] {scheduled_time} 無新番需推送（所有集數已通知），仍會標記時刻已完成")
 
             sent_count = 0
-
             for episode in new_episodes:
                 try:
                     video_sn = episode.get("videoSn")
@@ -876,20 +896,25 @@ class AnimePushCore:
                     sent_count += 1
 
                 except Exception as e:
-                    print(f"Error sending episode {episode.get('videoSn')}: {e}")
+                    logger.error(f"❌ [send_anime_push] Error sending episode {episode.get('videoSn')}: {e}", exc_info=True)
                     continue
 
-            # 標記週表中該時刻已推送（如果使用了週表）
+            # ✅ 關鍵修復：API 成功即標記該時刻為已推送（不論是否有新番），
+            # 防止「無新番」時 pushed 永遠為 0 導致補推無限重試
             now = datetime.now(TW_TZ)
             week_start = now - timedelta(days=now.weekday())
             day_of_week = (now.weekday() + 1) % 7 or 7
-            self.db.mark_time_pushed(
+            marked = self.db.mark_time_pushed(
                 week_start.strftime("%Y-%m-%d"),
                 day_of_week,
                 scheduled_time
             )
+            if marked:
+                logger.info(f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送（實際發送 {sent_count} 則新番）")
+            else:
+                logger.warning(f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗（週表可能無對應列：week_start={week_start.strftime('%Y-%m-%d')}, day={day_of_week}）")
 
             return sent_count > 0
         except Exception as e:
-            print(f"Error in send_anime_push: {e}")
+            logger.error(f"❌ [send_anime_push] Unexpected error: {e}", exc_info=True)
             return False
