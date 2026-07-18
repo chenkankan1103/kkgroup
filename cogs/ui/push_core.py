@@ -846,6 +846,33 @@ class AnimePushCore:
                 except:
                     anime_details = None
 
+            # 如果資料庫快取為空，嘗試即時從 API 獲取（受速率限制保護）
+            if not anime_details or not anime_details.get("content"):
+                try:
+                    api_details = await self.fetch_anime_details_from_api(int(video_sn))
+                    if api_details:
+                        # API 回應結構: { "data": { "animeSn": ..., "content": ..., "tags": ..., "viewCount": ..., "score": ... } }
+                        data = api_details.get("data", {})
+                        if data:
+                            anime_details = {
+                                "content": data.get("content", ""),
+                                "tags": data.get("tags", []),
+                                "popular": data.get("viewCount", 0),
+                                "score": data.get("score", 0)
+                            }
+                            # 同時更新快取
+                            self.db.cache_anime_details(
+                                int(anime_sn),
+                                episode.get("title", ""),
+                                data.get("content", ""),
+                                data.get("coverUrl", ""),
+                                data.get("tags", []),
+                                data.get("viewCount", 0),
+                                float(data.get("score", 0))
+                            )
+                except Exception as e:
+                    logger.warning(f"⚠️ [generate_anime_embed] 無法從 API 獲取詳情 video_sn={video_sn}: {e}")
+
             content = anime_details.get("content", "") if anime_details else ""
             api_tags = anime_details.get("tags", []) if anime_details else []
             popular = anime_details.get("popular", 0) if anime_details else 0
@@ -1008,8 +1035,8 @@ class AnimePushCore:
                     # 生成 view
                     view = await self.generate_anime_view(episode)
 
-                    # 發送訊息
-                    message = await channel.send(embed=embed, view=view)
+                    # 發送訊息（silent=True 使推送為靜音通知，不發出聲音/彈窗）
+                    message = await channel.send(embed=embed, view=view, silent=True)
 
                     # 保存消息資訊
                     self.db.save_message_info(
