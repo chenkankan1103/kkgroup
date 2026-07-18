@@ -295,9 +295,10 @@ class AnimeDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                # 使用新欄位名 (anime_name, cover_url) 配合 migration schema
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {NOTIFIED_TABLE}
-                    (videoSn, animeSn, animeName, volume, coverUrl)
+                    (videoSn, animeSn, anime_name, volume, cover_url)
                     VALUES (?, ?, ?, ?, ?)
                 """, (video_sn, anime_sn, anime_name, volume, cover_url))
                 conn.commit()
