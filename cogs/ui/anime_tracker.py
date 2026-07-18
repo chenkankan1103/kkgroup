@@ -508,8 +508,10 @@ class AnimeTracker(commands.Cog):
                         # 已過時（不限時長，今日所有漏推都補上）
                         if diff_seconds >= 0:
                             catchup_items.append((item, sched_dt, diff_seconds))
-                    except Exception:
-                        pass
+                    except ValueError as e:
+                        logger.warning(f"⚸ [{self.__class__.__name__}] 無法解析排程時間 '{item['scheduled_time']}': {e}")
+                    except Exception as e:
+                        logger.error(f"❌ [{self.__class__.__name__}] 處理排程時間時發生未預期錯誤 '{item['scheduled_time']}': {e}", exc_info=True)
 
                 if catchup_items:
                     logger.info(f"🔄 [_periodic_catchup_check] 發現 {len(catchup_items)} 個今日漏推項目，開始補推")
@@ -679,15 +681,26 @@ class AnimeTracker(commands.Cog):
                         if sched_dt >= now:
                             next_item = item
                             break
-                    except Exception:
-                        pass
+                    except ValueError as e:
+                        logger.warning(f"⚸ [{self.__class__.__name__}] 無法解析排程時間 '{scheduled}': {e}")
+                    except Exception as e:
+                        logger.error(f"❌ [{self.__class__.__name__}] 處理排程時間時發生未預期錯誤 '{scheduled}': {e}", exc_info=True)
 
                 if next_item:
                     scheduled = next_item['scheduled_time']
                     # 計算要睡多久（秒）
-                    sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
-                        year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
-                    )
+                    try:
+                        sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
+                            year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                        )
+                    except ValueError as e:
+                        logger.warning(f"⚸ [{self.__class__.__name__}] 無法解析排程時間 '{scheduled}' 計算睡眠時間: {e}")
+                        # 如果無法解析時間，跳過此項目並繼續尋找下一個
+                        continue
+                    except Exception as e:
+                        logger.error(f"❌ [{self.__class__.__name__}] 處理排程時間時發生未預期錯誤 '{scheduled}' 計算睡眠時間: {e}", exc_info=True)
+                        # 如果發生未預期錯誤，跳過此項目
+                        continue
                     sleep_seconds = (sched_dt - now).total_seconds()
 
                     # 睡到預定時間（最多睡 24 小時防呆）
