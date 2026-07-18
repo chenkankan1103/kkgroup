@@ -78,6 +78,9 @@ class AnimeTracker(commands.Cog):
         self.schedule_tracker.set_dependencies(bot, self.db, self.push_core)
         self.ranking_stats.set_dependencies(bot, self.db)
 
+        # 設定 View 生成工廠（解決循環導入問題）
+        self.push_core.set_view_factory(self.generate_anime_view)
+
         self.task_started = False
         self.bootstrap_completed = False
         self.last_weekly_stats_sent = None

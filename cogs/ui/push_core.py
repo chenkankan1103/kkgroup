@@ -330,28 +330,51 @@ class AnimeDatabase:
     # ==================== 週表相關方法 ====================
 
     def save_weekly_schedule(self, week_start_date: str, schedule_data: list) -> bool:
-        """保存週表數據"""
+        """保存週表數據 - 使用 UPSERT 保留已推送狀態 (pushed=1)
+
+        關鍵修復：不再使用 DELETE+INSERT，改用逐筆檢查並更新/插入，
+        以保留 pushed=1 的記錄（避免每天 22:00 重置導致重複推送）。
+        """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                # 先清除舊的週資料（同一週開始日期）
-                cursor.execute(f"""
-                    DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
-                    WHERE weekStartDate = ?
-                """, (week_start_date,))
 
-                # 插入新的週資料
                 for item in schedule_data:
+                    day_of_week = item['day_of_week']
+                    scheduled_time = item['scheduled_time']
+                    anime_data_json = json.dumps(item['anime_data'])
+
+                    # 檢查是否已存在該時刻
                     cursor.execute(f"""
-                        INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
-                        (weekStartDate, dayOfWeek, scheduledTime, animeData)
-                        VALUES (?, ?, ?, ?)
-                    """, (
-                        week_start_date,
-                        item['day_of_week'],
-                        item['scheduled_time'],
-                        json.dumps(item['anime_data'])
-                    ))
+                        SELECT id, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
+                    """, (week_start_date, day_of_week, scheduled_time))
+                    row = cursor.fetchone()
+
+                    if row:
+                        existing_id, existing_pushed = row
+                        if existing_pushed == 1:
+                            # 已推送：只更新 animeData，保留 pushed=1
+                            cursor.execute(f"""
+                                UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
+                                SET animeData = ?
+                                WHERE id = ?
+                            """, (anime_data_json, existing_id))
+                        else:
+                            # 未推送：更新 animeData，保留 pushed=0
+                            cursor.execute(f"""
+                                UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
+                                SET animeData = ?
+                                WHERE id = ?
+                            """, (anime_data_json, existing_id))
+                    else:
+                        # 新時刻：插入新記錄 (pushed=0)
+                        cursor.execute(f"""
+                            INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
+                            (weekStartDate, dayOfWeek, scheduledTime, animeData, pushed)
+                            VALUES (?, ?, ?, ?, 0)
+                        """, (week_start_date, day_of_week, scheduled_time, anime_data_json))
+
                 conn.commit()
                 return True
         except Exception as e:
@@ -678,6 +701,9 @@ class AnimePushCore:
         self.db = AnimeDatabase(db_path)
         self.bot = None
 
+        # View 生成工廠（由上層 AnimeTracker 設定）
+        self._view_factory = None
+
         # API 速率限制：每次呼叫間隔至少 2 秒（<= 30 req/min），防止被巴哈姆特 BAN
         self._last_api_call = 0.0
         self._api_rate_limit_lock = asyncio.Lock()
@@ -688,6 +714,14 @@ class AnimePushCore:
         self.bot = bot
         if db is not None:
             self.db = db
+
+    def set_view_factory(self, factory):
+        """設定 View 生成工廠函數
+
+        Args:
+            factory: async function(episode: dict) -> discord.ui.View
+        """
+        self._view_factory = factory
 
     async def _rate_limit_api(self):
         """確保 API 呼叫間隔 >= 2 秒"""
@@ -895,11 +929,11 @@ class AnimePushCore:
         return text[:max_length - 3] + "..."
 
     async def generate_anime_view(self, episode: Dict) -> Optional[discord.ui.View]:
-        """為動畫集數生成 Discord View (包含投票按鈕和評論按鈕)"""
+        """為動畫集數生成 Discord View (使用外部工廠函數)"""
         try:
-            # 這裡會返回 AnimeVoteView 實例
-            # 但在這個模組中，我們需要引用 AnimeTracker 來創建視圖
-            # 為了避免循環導入，我們返回 None，實際的視圖生成將在 AnimeTracker 中完成
+            if self._view_factory:
+                return await self._view_factory(episode)
+            logger.warning("⚠️ [generate_anime_view] No view factory set, returning None")
             return None
         except Exception as e:
             logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
@@ -951,6 +985,20 @@ class AnimePushCore:
                     video_sn = episode.get("videoSn")
                     anime_sn = episode.get("animeSn")
                     title = episode.get("title", "未知標題")
+
+                    # 防禦性轉換：確保 video_sn 和 anime_sn 是整數
+                    try:
+                        video_sn = int(video_sn) if video_sn is not None else 0
+                    except (ValueError, TypeError):
+                        video_sn = 0
+                    try:
+                        anime_sn = int(anime_sn) if anime_sn is not None else 0
+                    except (ValueError, TypeError):
+                        anime_sn = 0
+
+                    if not video_sn:
+                        logger.warning(f"⚠️ [send_anime_push] Skip episode with invalid video_sn: {episode}")
+                        continue
 
                     # 生成 embed
                     embed = await self.generate_anime_embed(episode)
