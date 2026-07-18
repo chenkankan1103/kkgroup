@@ -253,7 +253,7 @@ class AnimeTracker(commands.Cog):
         return await self.push_core.generate_anime_embed(episode)
 
     async def generate_anime_view(self, episode: dict) -> Optional[discord.ui.View]:
-        """生成動畫視圖 - 創建投票和評論按鈕"""
+        """生成動畫視圖 - 創建投票和評論按鈕 + 動畫頁/觀看連結"""
         try:
             # 只有在有必要的資料時才生成視圖
             video_sn = episode.get("videoSn")
@@ -261,7 +261,17 @@ class AnimeTracker(commands.Cog):
             if not video_sn or not anime_sn:
                 return None
 
-            return self.AnimeVoteView(episode, self)
+            # 創建投票視圖
+            vote_view = self.AnimeVoteView(episode, self)
+
+            # 添加原有的連結按鈕
+            anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
+            vote_view.add_item(discord.ui.Button(label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link))
+
+            video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
+            vote_view.add_item(discord.ui.Button(label="▶️ 觀看", url=video_url, style=discord.ButtonStyle.link))
+
+            return vote_view
         except Exception as e:
             logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
             return None
