@@ -269,7 +269,7 @@ class RankingStats:
                         )
 
                 recorded += 1
-                await asyncio.sleep(0.05)  # 避免限流
+                await asyncio.sleep(2.0)  # 避免限流：限制 ~30 req/min
 
             logger.info(f"✅ [_sync_episode_stats_from_api] 完成，記錄了 {recorded}/{len(episodes)} 筆統計數據")
 
@@ -1142,11 +1142,11 @@ async def setup(bot: commands.Bot):
         # 此處提供基本框架
 
         from .push_core import AnimeDatabase
-        from .schedule_tracker import ScheduleTracker
+        from .schedule_tracker import AnimeScheduleTracker
         from .ranking_stats import RankingStats
 
         db = AnimeDatabase(ANIME_DB_PATH)
-        schedule_tracker = ScheduleTracker(db)
+        schedule_tracker = AnimeScheduleTracker(db)
         ranking_stats = RankingStats(db)
 
         # 實際的 AnimeTracker 實例創建和方法組合應該在其他地方完成

@@ -1,0 +1,131 @@
+name: Auto Deploy UIBot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cogs/ui/**'
+      - 'bots/uibot.py'
+      - 'shared/**'
+      - 'scripts/auto_self_heal.py'
+      - 'config/services/uibot.service'
+  workflow_dispatch:
+    inputs:
+      force_restart:
+        description: "Force restart even if no changes"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      GCP_PROJECT: kkgroup
+      GCP_ZONE: us-central1-c
+      GCP_INSTANCE: instance-20250501-142333
+      GCP_USER: e193752468
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Authenticate to GCP
+        if: env.GCP_SA_KEY != ''
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ env.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        if: env.GCP_SA_KEY != ''
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT }}
+
+      - name: Deploy and restart uibot
+        if: env.GCP_SA_KEY != ''
+        run: |
+          set -euo pipefail
+
+          echo "=== SSH 連線到 GCP VM 執行部署 ==="
+          echo "Instance: ${{ env.GCP_INSTANCE }}"
+          echo "Project: ${{ env.GCP_PROJECT }}"
+          echo "Zone: ${{ env.GCP_ZONE }}"
+
+          # 組裝遠端命令
+          REMOTE_CMD="
+            set -e
+            cd /home/${{ env.GCP_USER }}/kkgroup
+
+            echo '=== 拉取最新代碼 ==='
+            git fetch origin main
+
+            # 檢查是否有變更
+            LOCAL_COMMIT=\$(git rev-parse HEAD)
+            REMOTE_COMMIT=\$(git rev-parse origin/main)
+
+            if [ \"\$LOCAL_COMMIT\" = \"\$REMOTE_COMMIT\" ] && [ \"${{ github.event.inputs.force_restart }}\" != \"true\" ]; then
+              echo '✅ 本地與遠端同步，無需更新'
+              exit 0
+            fi
+
+            echo '=== 有新提交，更新代碼 ==='
+            git reset --hard origin/main
+            git clean -fd
+
+            echo '=== 重啟 uibot 服務 ==='
+            sudo systemctl daemon-reload
+            sudo systemctl restart uibot.service
+
+            echo '=== 等待服務啟動 ==='
+            sleep 5
+
+            echo '=== 檢查服務狀態 ==='
+            sudo systemctl status uibot.service --no-pager -l
+
+            echo '=== 檢查最近日誌 ==='
+            sudo journalctl -u uibot.service --since \"30 seconds ago\" --no-pager -n 30
+
+            echo '✅ uibot 部署完成'
+          "
+
+          gcloud compute ssh ${{ env.GCP_USER }}@${{ env.GCP_INSTANCE }} \
+            --project=${{ env.GCP_PROJECT }} \
+            --zone=${{ env.GCP_ZONE }} \
+            --tunnel-through-iap \
+            --command="${REMOTE_CMD}"
+
+      - name: Notify Discord on failure
+        if: failure() && env.DISCORD_WEBHOOK_URL != ''
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          title: "❌ UIBot 自動部署失敗"
+          description: "GitHub Actions 無法在 VM 上重啟 uibot.service"
+          color: "FF0000"
+
+      - name: Notify Discord on success
+        if: success() && env.DISCORD_WEBHOOK_URL != ''
+        run: |
+          curl -X POST "${{ secrets.DISCORD_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "content": "✅ **UIBot 自動部署成功**",
+              "embeds": [{
+                "title": "🚀 uibot.service 已重啟",
+                "description": "最新代碼已部署到 GCP VM",
+                "color": 65280,
+                "fields": [
+                  {"name": "觸發提交", "value": "${{ github.sha }}", "inline": true},
+                  {"name": "分支", "value": "${{ github.ref_name }}", "inline": true},
+                  {"name": "時間", "value": "'$(date -u +"%Y-%m-%d %H:%M:%S UTC")'", "inline": true}
+                ]
+              }]
+            }'
