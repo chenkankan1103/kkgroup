@@ -33,6 +33,24 @@ ANIME_DB_PATH = None  # 將在初始化時設置
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # 秒
 
+# API 速率限制：最小間隔 10 秒（避免被巴哈姆特 BAN）
+_API_MIN_INTERVAL = 10.0
+_api_last_call = 0.0
+_api_lock = asyncio.Lock()
+
+
+async def _rate_limited_api_call():
+    """確保 API 呼叫間隔至少 _API_MIN_INTERVAL 秒"""
+    global _api_last_call
+    async with _api_lock:
+        now = time.monotonic()
+        elapsed = now - _api_last_call
+        if elapsed < _API_MIN_INTERVAL:
+            wait_time = _API_MIN_INTERVAL - elapsed
+            logger.debug(f"⏳ [API rate limit] 等待 {wait_time:.1f} 秒")
+            await asyncio.sleep(wait_time)
+        _api_last_call = time.monotonic()
+
 # 表名與欄位
 NOTIFIED_TABLE = "anime_notified"
 BOOTSTRAP_FLAG_TABLE = "anime_bootstrap"
@@ -1064,6 +1082,29 @@ class AnimePushCore:
         try:
             await self.bot.wait_until_ready()
 
+            # 計算 week_start_date 和 day_of_week（若未提供），用於檢查 DB 與標記
+            now = datetime.now(TW_TZ)
+            if day_of_week is None:
+                day_of_week = (now.weekday() + 1) % 7 or 7
+            if week_start_date is None:
+                week_start_date = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+
+            # 🔑 幂等性檢查：若該時刻已在 DB 標記為 pushed=1，直接返回避免重複發送
+            # 這解決了 dispatcher、catchup、refresh_weekly_schedule 並發調用導致的重複推送
+            try:
+                with sqlite3.connect(self.db.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(f"""
+                        SELECT pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
+                    """, (week_start_date, day_of_week, scheduled_time))
+                    row = cursor.fetchone()
+                    if row and row[0] == 1:
+                        logger.info(f"⏭️ [send_anime_push] {scheduled_time} 已標記為 pushed=1，跳過（幂等性檢查）")
+                        return True  # 已處理過，視為成功
+            except Exception as e:
+                logger.warning(f"⚠️ [send_anime_push] 幂等性檢查失敗，繼續執行: {e}")
+
             # 先檢查頻道是否存在（避免無頻道時仍呼叫 API 浪費配額）
             channel = self.bot.get_channel(channel_id)
             if not channel:
@@ -1145,11 +1186,6 @@ class AnimePushCore:
 
             # ✅ 關鍵修復：API 成功即標記該時刻為已推送（不論是否有新番），
             # 防止「無新番」時 pushed 永遠為 0 導致補推無限重試
-            now = datetime.now(TW_TZ)
-            if day_of_week is None:
-                day_of_week = (now.weekday() + 1) % 7 or 7
-            if week_start_date is None:
-                week_start_date = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
             marked = self.db.mark_time_pushed(
                 week_start_date,
                 day_of_week,
