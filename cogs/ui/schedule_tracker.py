@@ -20,9 +20,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import asyncio
 import aiohttp
-import json
-import sqlite3
-from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT
+from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +93,10 @@ class AnimeScheduleTracker:
                         # 這防止凌晨時早晨時刻被篩除（例如: 凌公元 03:59 時 01:00 不應被篩除）
                         if scheduled_dt.date() >= (now - timedelta(days=1)).date():
                             check_times.append(scheduled_dt)
-                    except:
-                        pass
+                    except ValueError as e:
+                        logger.warning(f"⚠️ [_get_expected_check_times] 無法解析時間格式 '{schedule_time}': {e}")
+                    except Exception as e:
+                        logger.error(f"❌ [_get_expected_check_times] 處理時間時發生未預期錯誤 '{schedule_time}': {e}", exc_info=True)
 
         return sorted(check_times)
 
@@ -157,10 +157,16 @@ class AnimeScheduleTracker:
                             })
 
             # 全量覆蓋：先刪除該 week_start_date 的舊資料，再插入新資料
-            # save_weekly_schedule 內部已做 DELETE + INSERT
+            # save_weekly_schedule 內部已做 UPSERT (保留 pushed=1) + pre-dedup
             if schedule_data:
                 self.db.save_weekly_schedule(week_start_str, schedule_data)
                 logger.info(f"✅ [refresh_weekly_schedule] 週表全量覆蓋完成 ({len(schedule_data)} 個時刻)")
+
+            # 清理孤兒記錄：週表刷新後，清理不在週表中的 anime_messages、anime_notified
+            if hasattr(self.db, 'clean_orphaned_records'):
+                orphan_stats = self.db.clean_orphaned_records(week_start_str)
+                if orphan_stats.get('messages', 0) > 0 or orphan_stats.get('notified', 0) > 0:
+                    logger.info(f"🧹 [refresh_weekly_schedule] 清理孤兒記錄: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}")
 
             # 取得今日時程（含 pushed 狀態）供上層檢查漏推
             today_schedule = self.get_today_schedule()
@@ -177,47 +183,12 @@ class AnimeScheduleTracker:
             return {'success': False, 'error': str(e)}
 
     def get_today_schedule(self) -> list:
-        """獲取今天的時程表（從週表中）"""
-        try:
-            now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())  # 取得本週一的日期
-            day_of_week = (now.weekday() + 1) % 7 or 7  # 1=Mon, 7=Sun
-
-            with sqlite3.connect(self.db.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(f"""
-                    SELECT scheduled_time, anime_data, pushed FROM {self.db.ANIME_WEEKLY_SCHEDULE_TABLE}
-                    WHERE week_start_date = ? AND day_of_week = ?
-                    ORDER BY scheduled_time ASC
-                """, (week_start.strftime("%Y-%m-%d"), day_of_week))
-
-                results = []
-                for row in cursor.fetchall():
-                    results.append({
-                        'scheduled_time': row[0],
-                        'anime_data': json.loads(row[1]),
-                        'pushed': bool(row[2])
-                    })
-                return results
-        except Exception as e:
-            logger.error(f"❌ Error getting today schedule: {e}")
-            return []
+        """獲取今天的時程表（從週表中） - 委託給 AnimeDatabase"""
+        return self.db.get_today_schedule()
 
     def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
-        """標記某個時刻已推送過"""
-        try:
-            with sqlite3.connect(self.db.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(f"""
-                    UPDATE {self.db.ANIME_WEEKLY_SCHEDULE_TABLE}
-                    SET pushed = 1
-                    WHERE week_start_date = ? AND day_of_week = ? AND scheduled_time = ?
-                """, (week_start_date, day_of_week, scheduled_time))
-                conn.commit()
-                return cursor.rowcount > 0
-        except Exception as e:
-            logger.error(f"❌ Error marking time pushed: {e}")
-            return False
+        """標記某個時刻已推送過 - 委託給 AnimeDatabase"""
+        return self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
 
     async def check_scheduled_push(self) -> None:
         """每小時檢查是否有預定推送時刻 - 供週表系統使用"""
