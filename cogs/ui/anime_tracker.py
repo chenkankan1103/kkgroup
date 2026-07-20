@@ -552,9 +552,15 @@ class AnimeTracker(commands.Cog):
                 today_schedule = self.get_today_schedule()
 
                 if not today_schedule:
-                    logger.warning("⚠️ [_periodic_catchup_check] today_schedule 為空，跳過本次檢查")
-                    await asyncio.sleep(300)  # 5 分鐘
-                    continue
+                    logger.warning("⚠️ [_periodic_catchup_check] today_schedule 為空，嘗試從 API 拉取週表...")
+                    # 嘗試初始化週表（類似 cog_load 時的邏輯）
+                    await self._init_weekly_schedule_if_empty()
+                    # 重新獲取
+                    today_schedule = self.get_today_schedule()
+                    if not today_schedule:
+                        logger.warning("⚠️ [_periodic_catchup_check] 週表初始化後仍為空，跳過本次檢查")
+                        await asyncio.sleep(300)  # 5 分鐘
+                        continue
 
                 # Debug: log today's schedule status
                 pending_count = sum(1 for item in today_schedule if not item['pushed'])
@@ -759,6 +765,18 @@ class AnimeTracker(commands.Cog):
                 for item in today_schedule:
                     status = "✅已推" if item['pushed'] else "⏳待推"
                     logger.debug(f"   {item['scheduled_time']} {status} - {json.loads(item['anime_data']).get('title', 'N/A')[:30]}")
+
+                # 如果 today_schedule 為空，嘗試從 API 拉取週表
+                if not today_schedule:
+                    logger.warning("⚠️ [_schedule_dispatcher] today_schedule 為空，嘗試從 API 拉取週表...")
+                    await self._init_weekly_schedule_if_empty()
+                    today_schedule = self.get_today_schedule()
+                    if not today_schedule:
+                        logger.warning("⚠️ [_schedule_dispatcher] 週表初始化後仍為空，睡到明天 00:00 重試")
+                        tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                        sleep_seconds = (tomorrow - now).total_seconds()
+                        await asyncio.sleep(sleep_seconds)
+                        continue
 
                 # 找出今天「尚未推送」且「時間 >= 現在」的最早一筆
                 next_item = None
