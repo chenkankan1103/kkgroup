@@ -567,7 +567,10 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"🔍 [_periodic_catchup_check] 今日時程 {len(today_schedule)} 筆，待補推 {pending_count} 筆")
                 for item in today_schedule:
                     status = "✅已推" if item['pushed'] else "⏳待補"
-                    logger.debug(f"   {item['scheduled_time']} {status} - {json.loads(item['anime_data']).get('title', 'N/A')[:30]}")
+                    anime_data = item['anime_data']
+                    title = (anime_data.get('title', 'N/A') if isinstance(anime_data, dict)
+                            else json.loads(anime_data).get('title', 'N/A'))
+                    logger.debug(f"   {item['scheduled_time']} {status} - {title[:30]}")
 
                 # 找出：pushed=0 且 scheduled_time <= 當前時間（今日所有已過時未推送項目）
                 catchup_items = []
@@ -764,7 +767,10 @@ class AnimeTracker(commands.Cog):
                 logger.debug(f"🔍 [_schedule_dispatcher] 今日時程 {len(today_schedule)} 筆，待推送 {pending_count} 筆")
                 for item in today_schedule:
                     status = "✅已推" if item['pushed'] else "⏳待推"
-                    logger.debug(f"   {item['scheduled_time']} {status} - {json.loads(item['anime_data']).get('title', 'N/A')[:30]}")
+                    anime_data = item['anime_data']
+                    title = (anime_data.get('title', 'N/A') if isinstance(anime_data, dict)
+                            else json.loads(anime_data).get('title', 'N/A'))
+                    logger.debug(f"   {item['scheduled_time']} {status} - {title[:30]}")
 
                 # 如果 today_schedule 為空，嘗試從 API 拉取週表
                 if not today_schedule:
