@@ -293,9 +293,9 @@ class AnimeTracker(commands.Cog):
         return self.schedule_tracker._get_weekday_name(weekday_num)
 
     # Ranking Stats 相關方法
-    async def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None):
+    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None):
         """記錄投票 - 委託給 RankingStats"""
-        await self.ranking_stats.record_vote(video_sn, anime_sn, message_id, vote_type, comment, user_hash)
+        self.ranking_stats.record_vote(video_sn, anime_sn, message_id, vote_type, comment, user_hash)
 
     def get_vote_stats(self, message_id: int) -> Dict:
         """獲取投票統計 - 委託給 RankingStats"""
@@ -976,7 +976,7 @@ class AnimeTracker(commands.Cog):
                 user_hash = str(hash(interaction.user.id))[:10]
 
                 # 記錄投票
-                await self.tracker.record_vote(
+                self.tracker.record_vote(
                     video_sn=self.video_sn,
                     anime_sn=self.anime_sn,
                     message_id=interaction.message.id,
@@ -1063,7 +1063,7 @@ class AnimeTracker(commands.Cog):
                             user_hash = str(hash(modal_interaction.user.id))[:10]
 
                             # 記錄評論（vote_type 為空表示只是評論）
-                            self.tracker.db.record_vote(
+                            self.tracker.record_vote(
                                 video_sn=self.video_sn,
                                 anime_sn=self.anime_sn,
                                 message_id=modal_interaction.message.id,

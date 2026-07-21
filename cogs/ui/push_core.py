@@ -221,6 +221,8 @@ class AnimeDatabase:
             (ANIME_VOTES_TABLE, "animeName", "TEXT"),
             (ANIME_VOTES_TABLE, "voteType", "TEXT"),
             (ANIME_VOTES_TABLE, "userId", "TEXT"),
+            (ANIME_VOTES_TABLE, "messageId", "INTEGER"),
+            (ANIME_VOTES_TABLE, "comment", "TEXT"),
             (ANIME_VOTES_TABLE, "votedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             (ANIME_REWARDS_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
             (ANIME_REWARDS_TABLE, "messageId", "INTEGER"),
@@ -769,6 +771,89 @@ class AnimeDatabase:
         except Exception as e:
             logger.error(f"❌ [record_reward] Error recording reward: {e}", exc_info=True)
             return False
+
+    def record_vote(self, video_sn: int, anime_sn: int, message_id: int,
+                    vote_type: str, comment: str = None, user_hash: str = None) -> bool:
+        """記錄匿名投票/評論
+
+        Args:
+            video_sn: 集數序號
+            anime_sn: 動畫序號
+            message_id: Discord 訊息 ID（用於關聯統計）
+            vote_type: 投票類型 ('masterpiece', 'great', 'good', 'average', 'bad') 或 'comment'
+            comment: 評論內容（可選）
+            user_hash: 匿名用戶識別符
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT INTO {ANIME_VOTES_TABLE}
+                    (videoSn, animeSn, voteType, userId, messageId, comment)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (video_sn, anime_sn, vote_type, user_hash, message_id, comment))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"❌ [record_vote] Error recording vote: {e}", exc_info=True)
+            return False
+
+    def get_vote_stats(self, message_id: int) -> Dict[str, int]:
+        """獲取指定訊息的投票統計（各類型票數）"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT voteType, COUNT(*) as count
+                    FROM {ANIME_VOTES_TABLE}
+                    WHERE messageId = ? AND voteType != 'comment'
+                    GROUP BY voteType
+                """, (message_id,))
+                return {row[0]: row[1] for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"❌ [get_vote_stats] Error: {e}", exc_info=True)
+            return {}
+
+    def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
+        """獲取指定訊息的評論列表"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT comment FROM {ANIME_VOTES_TABLE}
+                    WHERE messageId = ? AND voteType = 'comment' AND comment IS NOT NULL
+                    ORDER BY votedAt DESC LIMIT ?
+                """, (message_id, limit))
+                return [row[0] for row in cursor.fetchall() if row[0]]
+        except Exception as e:
+            logger.error(f"❌ [get_vote_comments] Error: {e}", exc_info=True)
+            return []
+
+    def get_weekly_vote_stats(self) -> Dict[int, Dict]:
+        """獲取本週投票統計（按 animeSn 分組）"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                # 取本週一 00:00 起的投票
+                now = datetime.now(TW_TZ)
+                week_start = (now - timedelta(days=now.weekday())).replace(
+                    hour=0, minute=0, second=0, microsecond=0)
+                cursor.execute(f"""
+                    SELECT animeSn, voteType, COUNT(*) as count
+                    FROM {ANIME_VOTES_TABLE}
+                    WHERE votedAt >= ? AND voteType != 'comment'
+                    GROUP BY animeSn, voteType
+                """, (week_start.strftime("%Y-%m-%d %H:%M:%S"),))
+                stats: Dict[int, Dict] = {}
+                for anime_sn, vote_type, count in cursor.fetchall():
+                    if anime_sn not in stats:
+                        stats[anime_sn] = {'total_votes': 0, 'votes': {}}
+                    stats[anime_sn]['votes'][vote_type] = count
+                    stats[anime_sn]['total_votes'] += count
+                return stats
+        except Exception as e:
+            logger.error(f"❌ [get_weekly_vote_stats] Error: {e}", exc_info=True)
+            return {}
 
 
 class AnimePushCore:
