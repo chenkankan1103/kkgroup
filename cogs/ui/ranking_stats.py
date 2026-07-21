@@ -59,6 +59,24 @@ class RankingStats:
         """記錄獎勵發放 - 委託給 AnimeDatabase"""
         return self.db.record_reward(user_id, message_id, reward_type, amount)
 
+    # ==================== 投票系統方法（委託給 AnimeDatabase） ====================
+
+    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None) -> bool:
+        """記錄投票 - 委託給 AnimeDatabase"""
+        return self.db.record_vote(video_sn, anime_sn, message_id, vote_type, comment, user_hash)
+
+    def get_vote_stats(self, message_id: int) -> Dict:
+        """獲取投票統計 - 委託給 AnimeDatabase"""
+        return self.db.get_vote_stats(message_id)
+
+    def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
+        """獲取評論 - 委託給 AnimeDatabase"""
+        return self.db.get_vote_comments(message_id, limit)
+
+    def get_weekly_vote_stats(self) -> Dict[int, Dict]:
+        """獲取週投票統計 - 委託給 AnimeDatabase"""
+        return self.db.get_weekly_vote_stats()
+
     async def get_quickchart_short_url(self, chart_config: Dict) -> Optional[str]:
         """
         使用 QuickChart /chart/create API 生成短網址
