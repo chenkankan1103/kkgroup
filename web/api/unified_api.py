@@ -24,6 +24,7 @@ load_dotenv(env_path)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_FOLDER = os.path.join(BASE_DIR, 'game', 'web', 'static')  # 遊戲靜態文件
 WEB_PORTAL_FOLDER = os.path.join(BASE_DIR, 'game', 'web')  # 遊戲網頁文件
+PORTAL_FOLDER = os.path.join(BASE_DIR, '..', 'portal')  # portal 頁面（admin 等）
 
 # 建立 Flask 應用，配置靜態文件和模板路徑
 app = Flask(
@@ -104,6 +105,17 @@ def serve_game():
         with open(game_path, 'r', encoding='utf-8') as f:
             return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
     return jsonify({"error": "遊戲首頁不存在"}), 404
+
+
+@app.route('/admin', methods=['GET'])
+@app.route('/admin.html', methods=['GET'])
+def serve_admin():
+    """提供管理後台頁面"""
+    admin_path = os.path.join(PORTAL_FOLDER, 'admin.html')
+    if os.path.exists(admin_path):
+        with open(admin_path, 'r', encoding='utf-8') as f:
+            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+    return jsonify({"error": "管理頁面不存在"}), 404
 
 
 @app.route('/static/<path:filename>', methods=['GET'])
