@@ -527,7 +527,7 @@ class AnimeDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
-                    SELECT title, content, "" as coverUrl, tags, popular, score
+                    SELECT name, content, coverUrl, tags, viewCount, score
                     FROM {ANIME_DETAILS_TABLE}
                     WHERE animeSn = ?
                 """, (anime_sn,))
@@ -568,33 +568,6 @@ class AnimeDatabase:
             return False
 
     # ==================== 動畫統計方法 ====================
-
-    def get_anime_statistics(self, anime_sn: int) -> Optional[dict]:
-        """獲取動畫統計資訊"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(f"""
-                    SELECT
-                        COUNT(es.videoSn) as total_episodes,
-                        SUM(es.views) as total_views,
-                        AVG(es.views) as avg_views,
-                        AVG(es.score) as avg_score
-                    FROM {EPISODE_STATS_TABLE} es
-                    WHERE es.animeSn = ?
-                """, (anime_sn,))
-                row = cursor.fetchone()
-                if row and row[0] > 0:  # 有至少一集
-                    return {
-                        'total_episodes': row[0],
-                        'total_views': row[1] if row[1] is not None else 0,
-                        'avg_views': row[2] if row[2] is not None else 0,
-                        'avg_score': row[3] if row[3] is not None else 0
-                    }
-                return None
-        except Exception as e:
-            logger.error(f"❌ [get_anime_statistics] Error: {e}", exc_info=True)
-            return None
 
     def get_top_anime_by_views(self, limit: int = 10,
                               start_time: Optional[datetime] = None,
@@ -718,7 +691,7 @@ class AnimeDatabase:
                 anime_sn, episode_num = row
                 # 再取得動畫詳細資訊
                 cursor.execute(f"""
-                    SELECT title, content, "" as coverUrl, tags, popular, score
+                    SELECT name, content, coverUrl, tags, viewCount, score
                     FROM {ANIME_DETAILS_TABLE}
                     WHERE animeSn = ?
                 """, (anime_sn,))
@@ -739,6 +712,29 @@ class AnimeDatabase:
                 return None
         except Exception as e:
             logger.error(f"❌ [get_anime_details_by_videosn] Error for video_sn {video_sn}: {e}", exc_info=True)
+            return None
+
+    def get_anime_statistics(self, anime_sn: int) -> Optional[dict]:
+        """獲取動畫統計數據（總觀看數、平均觀看數等）"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT totalViews, avgViews, totalEpisodes, latestScore
+                    FROM {ANIME_STATS_TABLE}
+                    WHERE animeSn = ?
+                """, (anime_sn,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'total_views': row[0] if row[0] is not None else 0,
+                        'avg_views': row[1] if row[1] is not None else 0.0,
+                        'total_episodes': row[2] if row[2] is not None else 0,
+                        'latest_score': row[3] if row[3] is not None else 0.0
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"❌ [get_anime_statistics] Error for anime_sn {anime_sn}: {e}", exc_info=True)
             return None
 
     def is_reward_already_given(self, message_id: int, reward_type: str) -> bool:
@@ -998,8 +994,10 @@ class AnimePushCore:
             volume = episode.get("volume", "")
             cover = episode.get("cover", "")
 
-            # 組合標題
-            if volume:
+            # 組合標題：API 回傳的 title 可能已包含「第X集」，避免重複
+            # 例如 title="進擊的巨人 第1集", volume="1" -> 不要變成 "進擊的巨人 第1集 第1集"
+            import re
+            if volume and not re.search(r'第\s*\d+\s*集', title):
                 title_with_volume = f"{title} 第{volume}集"
             else:
                 title_with_volume = title
@@ -1044,6 +1042,17 @@ class AnimePushCore:
             popular = anime_details.get("popular", 0) if anime_details else 0
             score = anime_details.get("score", 0) if anime_details else 0
 
+            # 獲取動畫統計數據（總觀看數、平均觀看數）
+            anime_stats = None
+            if anime_sn:
+                try:
+                    anime_stats = self.db.get_anime_statistics(int(anime_sn))
+                except:
+                    anime_stats = None
+
+            total_views = anime_stats.get("total_views", 0) if anime_stats else 0
+            avg_views = anime_stats.get("avg_views", 0) if anime_stats else 0
+
             # 構建標籤
             tag_parts = []
             if api_tags:
@@ -1064,8 +1073,13 @@ class AnimePushCore:
             else:
                 description_text = "暫無簡介"
 
-            # 人氣/評分
-            popularity_text = f"{popular:,}" if popular else "N/A"
+            # 人氣/評分 - 顯示總觀看數和平均觀看數
+            if total_views > 0:
+                popularity_text = f"總觀看: {total_views:,} | 平均: {avg_views:,.0f}"
+            elif popular > 0:
+                popularity_text = f"觀看數: {popular:,}"
+            else:
+                popularity_text = "N/A"
             score_text = f"{score:.1f}" if score > 0 else "N/A"
 
             # 建立 embed - 舊版風格
