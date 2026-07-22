@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KKGroup 管理後台</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --border: #2a2d3a;
+            --text: #e1e4ed;
+            --text-muted: #6b7280;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --radius: 8px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 1.5rem; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+        h1 span { color: var(--primary); }
+
+        /* 搜尋區 */
+        .search-bar {
+            display: flex; gap: 8px; margin-bottom: 24px;
+        }
+        .search-bar input {
+            flex: 1; padding: 10px 16px; border-radius: var(--radius);
+            border: 1px solid var(--border); background: var(--surface); color: var(--text);
+            font-size: 1rem;
+        }
+        .search-bar input:focus { outline: none; border-color: var(--primary); }
+        .btn {
+            padding: 10px 20px; border-radius: var(--radius); border: none;
+            font-size: 0.9rem; cursor: pointer; font-weight: 500;
+            transition: all 0.15s;
+        }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-success:hover { opacity: 0.9; }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-outline {
+            background: transparent; border: 1px solid var(--border); color: var(--text);
+        }
+        .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* 卡片 */
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+        }
+        .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: var(--text); }
+
+        /* 欄位列表 */
+        .field-row {
+            display: flex; align-items: center; padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .field-row:last-child { border-bottom: none; }
+        .field-label {
+            width: 160px; flex-shrink: 0; color: var(--text-secondary);
+            font-size: 0.85rem; font-weight: 500;
+        }
+        .field-value { flex: 1; }
+        .field-value input, .field-value select {
+            width: 100%; padding: 6px 10px; border-radius: 4px;
+            border: 1px solid var(--border); background: var(--bg); color: var(--text);
+            font-size: 0.9rem;
+        }
+        .field-value input:focus { outline: none; border-color: var(--primary); }
+        .field-value .readonly {
+            padding: 6px 0; color: var(--text-secondary); font-size: 0.9rem;
+        }
+
+        /* 提示訊息 */
+        .toast {
+            position: fixed; top: 20px; right: 20px; padding: 12px 20px;
+            border-radius: var(--radius); font-size: 0.9rem; z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+        .toast-success { background: #065f46; color: #d1fae5; }
+        .toast-error { background: #7f1d1d; color: #fecaca; }
+        .toast-info { background: #1e3a5f; color: #dbeafe; }
+        @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* 載入動畫 */
+        .spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2px solid var(--border); border-top-color: var(--primary);
+            border-radius: 50%; animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .hidden { display: none !important; }
+        .actions { display: flex; gap: 8px; margin-top: 16px; }
+        .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <span>⚙️</span> KKGroup 使用者管理後台
+        </header>
+
+        <!-- 搜尋區 -->
+        <div class="search-bar">
+            <input type="text" id="userIdInput" placeholder="輸入使用者 Discord ID（數字）" autofocus>
+            <button class="btn btn-primary" onclick="searchUser()">🔍 查詢</button>
+        </div>
+
+        <!-- 管理員密鑰 -->
+        <div class="card" style="margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:0.85rem;color:var(--text-secondary);white-space:nowrap;">🔑 管理員密鑰:</span>
+                <input type="password" id="adminKey" placeholder="輸入 ADMIN_API_KEY" style="flex:1;padding:6px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.85rem;">
+                <button class="btn btn-outline" onclick="saveAdminKey()" style="font-size:0.8rem;padding:6px 12px;">儲存</button>
+            </div>
+        </div>
+
+        <!-- 載入中 -->
+        <div id="loadingArea" class="card hidden">
+            <div class="empty-state"><div class="spinner"></div><p style="margin-top:12px">載入中...</p></div>
+        </div>
+
+        <!-- 錯誤訊息 -->
+        <div id="errorArea" class="card hidden"></div>
+
+        <!-- 使用者資料卡片 -->
+        <div id="userCard" class="card hidden">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <h2 id="userTitle">👤 使用者資料</h2>
+                <span id="saveStatus" style="font-size:0.8rem;color:var(--text-secondary);"></span>
+            </div>
+            <div id="userFields"></div>
+            <div class="actions">
+                <button class="btn btn-success" onclick="saveUser()">💾 儲存修改</button>
+                <button class="btn btn-outline" onclick="resetForm()">↩️ 還原</button>
+            </div>
+        </div>
+
+        <!-- 快速操作 -->
+        <div class="card" style="margin-top:24px;">
+            <h2>📋 快速操作</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                <button class="btn btn-outline" onclick="quickAction('kkcoin', 5000)">💰 +5000 KK幣</button>
+                <button class="btn btn-outline" onclick="quickAction('kkcoin', 10000)">💰 +10000 KK幣</button>
+                <button class="btn btn-outline" onclick="quickAction('level', 1)">⬆️ +1 等級</button>
+                <button class="btn btn-outline" onclick="quickAction('xp', 500)">⭐ +500 XP</button>
+                <button class="btn btn-outline" onclick="quickAction('stamina', 10)">⚡ +10 耐力</button>
+                <button class="btn btn-outline" onclick="quickAction('hp', 50)">❤️ +50 HP</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script>
+        let currentUser = null;
+        let originalUser = null;
+        let adminKey = localStorage.getItem('admin_key') || '';
+
+        // 初始化時載入已儲存的密鑰
+        if (adminKey) {
+            document.getElementById('adminKey').value = adminKey;
+        }
+
+        function saveAdminKey() {
+            adminKey = document.getElementById('adminKey').value.trim();
+            if (adminKey) {
+                localStorage.setItem('admin_key', adminKey);
+                showToast('✅ 密鑰已儲存', 'success');
+            } else {
+                localStorage.removeItem('admin_key');
+                showToast('密鑰已清除', 'info');
+            }
+        }
+
+        function showToast(msg, type = 'info') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = `toast toast-${type}`;
+            setTimeout(() => t.classList.add('hidden'), 3000);
+        }
+
+        function showLoading() { document.getElementById('loading').classList.remove('hidden'); }
+        function hideLoading() { document.getElementById('loading').classList.add('hidden'); }
+
+        async function searchUser() {
+            const userId = document.getElementById('userIdInput').value.trim();
+            if (!userId) { showToast('請輸入使用者 ID', 'error'); return; }
+
+            showLoading();
+            document.getElementById('errorArea').classList.add('hidden');
+            document.getElementById('userCard').classList.add('hidden');
+
+            try {
+                const resp = await fetch(`/api/user/${userId}`);
+                const data = await resp.json();
+
+                if (data.status === 'ok') {
+                    currentUser = data.user;
+                    originalUser = JSON.parse(JSON.stringify(data.user));
+                    renderUser(data.user);
+                    document.getElementById('userCard').classList.remove('hidden');
+                } else {
+                    document.getElementById('errorArea').classList.remove('hidden');
+                    document.getElementById('errorArea').innerHTML =
+                        `<div class="empty-state"><div class="icon">🔍</div><p>${data.message || '找不到使用者'}</p></div>`;
+                }
+            } catch (e) {
+                showToast('查詢失敗: ' + e.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function renderUser(user) {
+            document.getElementById('userTitle').textContent = `👤 使用者: ${user.user_id}`;
+            document.getElementById('saveStatus').textContent = '';
+
+            // 定義欄位顯示順序和類型
+            const fieldConfig = {
+                'user_id': { label: 'User ID', type: 'readonly' },
+                'kkcoin': { label: '💰 KK幣', type: 'number' },
+                'level': { label: '📊 等級', type: 'number' },
+                'xp': { label: '💎 經驗值', type: 'number' },
+                'hp': { label: '❤️ HP', type: 'number' },
+                'stamina': { label: '⚡ 耐力', type: 'number' },
+                'title': { label: '🏷️ 頭銜', type: 'text' },
+                'gender': { label: '⚧ 性別', type: 'text' },
+                'streak': { label: '🔥 連續天數', type: 'number' },
+                'actions_used': { label: '🎯 已用行動', type: 'number' },
+                'is_stunned': { label: '😵 暈眩', type: 'number' },
+                'is_locked': { label: '🔒 鎖定', type: 'number' },
+                'face': { label: '😶 臉部', type: 'number' },
+                'hair': { label: '💇 髮型', type: 'number' },
+                'skin': { label: '🎨 膚色', type: 'number' },
+                'top': { label: '👕 上衣', type: 'number' },
+                'bottom': { label: '👖 下裝', type: 'number' },
+                'shoes': { label: '👟 鞋子', type: 'number' },
+                'last_work_date': { label: '📅 最後工作', type: 'text' },
+                'last_action_date': { label: '📅 最後行動', type: 'text' },
+                'last_recovery': { label: '📅 最後恢復', type: 'text' },
+            };
+
+            let html = '';
+            const shown = new Set();
+
+            // 先顯示已知欄位
+            for (const [key, config] of Object.entries(fieldConfig)) {
+                if (key in user) {
+                    html += renderField(key, config, user[key]);
+                    shown.add(key);
+                }
+            }
+
+            // 再顯示其他未知欄位
+            for (const [key, value] of Object.entries(user)) {
+                if (!shown.has(key) && !key.startsWith('_') && key !== 'sync_flag') {
+                    html += renderField(key, { label: key, type: guessType(value) }, value);
+                }
+            }
+
+            document.getElementById('userFields').innerHTML = html;
+        }
+
+        function guessType(value) {
+            if (typeof value === 'number') return 'number';
+            if (typeof value === 'boolean') return 'number';
+            return 'text';
+        }
+
+        function renderField(key, config, value) {
+            const label = config.label || key;
+            if (config.type === 'readonly') {
+                return `<div class="field-row">
+                    <div class="field-label">${label}</div>
+                    <div class="field-value"><div class="readonly">${value ?? ''}</div></div>
+                </div>`;
+            }
+            return `<div class="field-row">
+                <div class="field-label">${label}</div>
+                <div class="field-value">
+                    <input type="${config.type}" data-field="${key}" value="${value ?? ''}"
+                        onchange="markChanged()">
+                </div>
+            </div>`;
+        }
+
+        function updateChanged() {
+            document.getElementById('saveStatus').textContent = '✏️ 已修改';
+            document.getElementById('saveStatus').style.color = 'var(--warning)';
+        }
+
+        function getFormData() {
+            const data = {};
+            document.querySelectorAll('#userFields input').forEach(input => {
+                const key = input.dataset.field;
+                let val = input.value;
+                if (input.type === 'number') {
+                    val = val === '' ? 0 : Number(val);
+                }
+                data[key] = val;
+            });
+            return data;
+        }
+
+        async function saveUser() {
+            if (!currentUser) return;
+            if (!adminKey) {
+                showToast('請先輸入管理員密鑰', 'error');
+                return;
+            }
+            const data = getFormData();
+
+            try {
+                const resp = await fetch(`/api/user/${currentUser.user_id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Admin-Key': adminKey
+                    },
+                    body: JSON.stringify(data)
+                });
+                const result = await resp.json();
+
+                if (resp.ok) {
+                    showToast('✅ 儲存成功！', 'success');
+                    document.getElementById('saveStatus').textContent = '✅ 已儲存';
+                    document.getElementById('saveStatus').style.color = 'var(--success)';
+                    // 重新讀取確認
+                    await searchUser();
+                } else {
+                    showToast('儲存失敗: ' + (result.message || '未知錯誤'), 'error');
+                }
+            } catch (e) {
+                showToast('儲存失敗: ' + e.message, 'error');
+            }
+        }
+
+        function resetForm() {
+            if (originalUser) {
+                renderUser(originalUser);
+                document.getElementById('saveStatus').textContent = '';
+            }
+        }
+
+        function quickAction(field, amount) {
+            if (!currentUser) {
+                showToast('請先查詢使用者', 'error');
+                return;
+            }
+            const input = document.querySelector(`input[data-field="${field}"]`);
+            if (input) {
+                const current = Number(input.value) || 0;
+                input.value = current + amount;
+                updateChanged();
+                showToast(`${field} ${amount >= 0 ? '+' : ''}${amount}`, 'info');
+            }
+        }
+
+        // Enter 鍵搜尋
+        document.getElementById('userIdInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') searchUser();
+        });
+    </script>
+</body>
+</html>

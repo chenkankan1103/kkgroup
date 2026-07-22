@@ -325,18 +325,42 @@ def api_get_user(user_id):
 
 @sheets_bp.route('/user/<int:user_id>', methods=['PUT'])
 def api_update_user(user_id):
-    """更新特定用戶的資料"""
+    """更新特定用戶的資料（需管理員密鑰）"""
     try:
+        # 管理員密鑰檢查
+        admin_key = request.headers.get('X-Admin-Key', '')
+        valid_key = os.getenv('ADMIN_API_KEY', '')
+        if not valid_key:
+            logger.warning("⚠️ ADMIN_API_KEY 未設定，拒絕所有修改請求")
+            return jsonify({
+                "status": "error",
+                "message": "伺服器未設定管理員密鑰"
+            }), 403
+        if admin_key != valid_key:
+            logger.warning(f"❌ 管理員密鑰驗證失敗: user_id={user_id}")
+            return jsonify({
+                "status": "error",
+                "message": "管理員密鑰無效"
+            }), 403
+
         data = request.get_json()
-        
+
         if not data:
             return jsonify({
                 "status": "error",
                 "message": "請求體為空"
             }), 400
-        
+
+        # 記錄修改前後值
+        old_user = get_db().get_user(user_id)
+        if old_user:
+            for key, new_val in data.items():
+                old_val = old_user.get(key)
+                if old_val != new_val:
+                    logger.info(f"📝 [ADMIN] user_id={user_id}: {key} {old_val} → {new_val}")
+
         success = get_db().set_user(user_id, data)
-        
+
         if success:
             return jsonify({
                 "status": "ok",
@@ -347,7 +371,7 @@ def api_update_user(user_id):
                 "status": "error",
                 "message": f"更新用戶 {user_id} 失敗"
             }), 500
-    
+
     except Exception as e:
         return jsonify({
             "status": "error",
