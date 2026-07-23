@@ -1200,10 +1200,34 @@ class AnimePushCore:
                         logger.debug(f"⏭️ [send_anime_push] videoSn={video_sn} 已通知過，跳過")
                     # animeSn 不匹配的 → 靜默跳過（不屬於這個時段）
 
+                # 決定是否標記 pushed=1：
+                # - 若有送出集數 → 標記
+                # - 若無匹配集數但排程時間已過 > 30 分鐘 → 標記（避免無限重試）
+                # - 若無匹配集數且剛到點（< 30 分鐘） → 不標記，留待重試
                 if not new_episodes:
+                    now = datetime.now(TW_TZ)
+                    try:
+                        sched_dt = datetime.strptime(scheduled_time, "%H:%M").replace(
+                            year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                        )
+                        minutes_since_scheduled = (now - sched_dt).total_seconds() / 60
+                    except Exception:
+                        minutes_since_scheduled = 999
+
+                    should_mark_pushed = sent_count > 0 or minutes_since_scheduled > 30
+
+                    if not should_mark_pushed:
+                        logger.info(f"⏳ [send_anime_push] {scheduled_time} 剛到點（{minutes_since_scheduled:.0f} 分鐘前）"
+                                    f"API 尚無匹配集數（預期 {len(expected_anime_sns)} 個 animeSn，"
+                                    f"API 回傳 {len(episodes)} 集），暫不標記 pushed，稍後重試")
+                        return False
+
                     logger.info(f"📭 [send_anime_push] {scheduled_time} 無匹配新番需推送"
                                 f"（預期 {len(expected_anime_sns)} 個 animeSn，"
-                                f"API 回傳 {len(episodes)} 集），仍標記時刻已完成")
+                                f"API 回傳 {len(episodes)} 集，距排程 {minutes_since_scheduled:.0f} 分鐘），標記時刻已完成")
+                else:
+                    # 有匹配的新番要推送，送出後一定要標記
+                    should_mark_pushed = True
 
                 sent_count = 0
                 for episode in new_episodes:
@@ -1258,17 +1282,20 @@ class AnimePushCore:
                                      f"{episode.get('videoSn')}: {e}", exc_info=True)
                         continue
 
-                # ✅ API 成功即標記 pushed=1（不論是否有匹配新番）
-                marked = self.db.mark_time_pushed(
-                    week_start_date, day_of_week, scheduled_time
-                )
-                if marked:
-                    logger.info(f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送"
-                                f"（實際發送 {sent_count} 則，"
-                                f"預期 animeSn={expected_anime_sns}）")
+                # ✅ 只有在「已送出」或「排程時間已過超過 30 分鐘」才標記 pushed=1
+                if should_mark_pushed:
+                    marked = self.db.mark_time_pushed(
+                        week_start_date, day_of_week, scheduled_time
+                    )
+                    if marked:
+                        logger.info(f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送"
+                                    f"（實際發送 {sent_count} 則，"
+                                    f"預期 animeSn={expected_anime_sns}）")
+                    else:
+                        logger.warning(f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗"
+                                       f"（週表可能無對應列）")
                 else:
-                    logger.warning(f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗"
-                                   f"（週表可能無對應列）")
+                    logger.info(f"⏭️ [send_anime_push] {scheduled_time} 暫不標記 pushed，留待稍後重試")
 
                 return sent_count > 0
 
