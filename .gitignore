@@ -33,6 +33,9 @@ ENV/
 *.swp
 *.swo
 
+# GitHub Copilot / VS Code prompts (local only)
+# .github/  <- 取消忽略，允許追蹤 copilot-instructions.md 等專案配置
+
 # Godot 游戏开发（等完整输出后再推送）
 game/
 

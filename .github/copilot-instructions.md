@@ -1,347 +1,201 @@
-# KKGroup 開發指南 (簡化版)
+# GitHub Copilot Instructions for kkgroup
 
-WHEN: KKGroup 開發、Discord bot、部署、webhook、資料庫、隧道、字型、紙娃娃
+This file contains instructions and skills that GitHub Copilot should follow when working in this repository.
 
-## AI 快速閱讀順序
+## Project Overview
 
-若只是先理解專案，不要先掃整個 repo。
+This is the kkgroup project - a Discord bot system with multiple services (bot, shopbot, uibot) deployed on GCP VM.
 
-優先讀:
-- `knowledge/_wiki/concepts/ai-fast-read.md`
-- `knowledge/_wiki/entities/bot-services.md`
-- `knowledge/_wiki/entities/command-registry.md`
-- `knowledge/_wiki/concepts/webhook-and-tunnel.md`
+## Core Principles
 
-只有在摘要不足以回答問題時，才往原始程式碼或完整規則下鑽。
+- **Predictability over output** - The agent should take the same process every run, not produce the same output
+- **Progressive disclosure** - Keep always-loaded context small; push detail behind context pointers
+- **Single source of truth** - One authoritative place for each meaning
+- **Leading words** - Use compact concepts from pretraining (tight, red, seam, fog of war, tracer bullets) to anchor behavior
 
----
+## Engineering Skills (from Matt Pocock's skill set)
 
-## 快速查詢
+These skills are available for use. Invoke them by name when appropriate.
+
+### Setup & Configuration
+
+**`setup-matt-pocock-skills`** — Configure this repo for the engineering skills: set up issue tracker, triage labels, and domain doc layout. Run once before first use of other engineering skills.
+
+### Planning & Architecture
+
+**`ask-matt`** — Router skill. Ask which skill or flow fits your situation. A map over all user-invoked skills.
+
+**`grill-with-docs`** — Relentless interview to sharpen a plan/design, which also creates docs (ADRs and glossary) as you go. Use when you have a codebase.
+
+**`grill-me`** — Same relentless interview as grill-with-docs, but for when you have NO codebase. Stateless.
+
+**`wayfinder`** — Plan a huge chunk of work (more than one agent session can hold) as a shared map of decision tickets on your issue tracker. Resolve them one at a time until the way is clear.
+
+**`to-spec`** — Turn the current conversation into a spec and publish it to the issue tracker. No interview, just synthesis.
+
+**`to-tickets`** — Break a plan, spec, or conversation into tracer-bullet tickets, each declaring its blocking edges.
+
+### Implementation
+
+**`implement`** — Build the work described by a spec or tickets. Use TDD at pre-agreed seams. Run typechecking regularly. End with code-review.
+
+**`tdd`** — Test-driven development reference: what a good test is, where tests go (seams), anti-patterns, rules of the red→green loop.
+
+**`prototype`** — Build a throwaway prototype to answer a design question: "does this logic feel right?" (logic branch) or "what should this look like?" (UI branch).
+
+**`code-review`** — Two-axis review of diff since a fixed point: Standards (repo conventions + Fowler smell baseline) and Spec (matches originating issue/PRD). Runs in parallel sub-agents.
+
+**`resolving-merge-conflicts`** — Resolve in-progress git merge/rebase conflicts. Preserve both intents, run automated checks, finish the merge.
+
+### Codebase Health
+
+**`improve-codebase-architecture`** — Scan for deepening opportunities (shallow → deep modules), present as visual HTML report, then grill through your pick.
+
+**`codebase-design`** — Shared vocabulary for deep modules: module, interface, depth, seam, adapter, leverage, locality. Use this language when designing/restructuring.
+
+**`diagnosing-bugs`** — Discipline for hard bugs: build a tight feedback loop → reproduce & minimise → hypothesise (3-5 ranked) → instrument → fix + regression test → cleanup + post-mortem. Hands off architectural recommendations to improve-codebase-architecture.
+
+### Domain & Triage
+
+**`domain-modeling`** — Actively build/sharpen the project's domain model: challenge terms, invent edge-case scenarios, write glossary (CONTEXT.md) and ADRs inline as decisions crystallise.
+
+**`triage`** — Move issues/PRs through a state machine: categorise → verify → grill if needed → write agent-ready briefs. For issues you didn't create.
+
+### Vocabulary (Model-Invoked References)
+
+These run beneath other skills — reach for them directly when the **words** are the problem:
+
+- **`domain-modeling`** — Sharpen domain terminology, resolve overloaded words, record ADRs
+- **`codebase-design`** — Deep-module vocabulary for designing module shape
+
+## Productivity Skills
+
+**`handoff`** — Compact current conversation into a handoff document for another agent. Save to OS temp dir. Include "suggested skills" section.
+
+**`teach`** — Teach the user a new skill/concept over multiple sessions using the current directory as stateful workspace. Creates lessons, reference docs, learning records.
+
+**`writing-great-skills`** — Reference for writing/editing skills well: invocation modes, information hierarchy, when to split, pruning, leading words, failure modes.
+
+**`grilling`** — The primitive interview skill used by grill-with-docs and grill-me. One question at a time, wait for answer, provide recommended answer, don't act until confirmed.
+
+## Discord.py 2.0 Rules
+
+- Use `discord.ext.commands.Bot` with `intents=discord.Intents.all()`
+- Slash commands via `@bot.tree.command()` or `@app_commands.command()`
+- Persistent views: inherit from `PersistentViewBase` in `shared/utils/view_registry.py`
+- Button callbacks use `interaction.response.defer()` then `interaction.followup.send()`
+- Ephemeral responses for user-specific feedback
+
+## Async Best Practices
+
+- Use `asyncio.gather()` for parallel operations
+- Avoid `asyncio.sleep()` in hot paths
+- Use `async with` for resource management
+- Handle `asyncio.CancelledError` in long-running tasks
+
+## Database (SQLite / user_data.db)
+
+- Use parameterized queries: `cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))`
+- Connection pooling via `sqlite3.connect()` with `check_same_thread=False`
+- Transactions: `conn.execute("BEGIN")` / `conn.commit()` / `conn.rollback()`
+
+## GCP VM Deployment
+
+- SSH via IAP: `gcloud compute ssh <user>@<instance> --zone <zone> --tunnel-through-iap`
+- Services: `bot.service`, `shopbot.service`, `uibot.service`
+- Logs: `sudo journalctl -u <service> -n 100 --no-pager`
+- Restart: `sudo systemctl restart <service>`
+
+## Git & Deployment Workflow
+
+1. Commit & push to GitHub
+2. On VM: `git pull`
+3. `sudo systemctl restart <service>`
+4. Verify logs: `sudo journalctl -u <service> -f`
+
+## File Structure Conventions
 
 ```
-部署: git push → webhook 自動更新 ✅
-重啟: sudo systemctl restart bot.service shopbot.service uibot.service
-日誌: sudo journalctl -u bot.service -n 50
-資料庫: 本地驗證 → gcloud compute scp → 重啟
-字型: ../../fonts/ (三層 ../)
-紙娃娃: 檢查→修復→驗證→部署→/admin_refresh_all_lockers
-SSH: gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-c --tunnel-through-iap
+cogs/
+  common/     # Shared cog utilities
+  shop/       # Shop-related cogs
+  ui/         # UI-related cogs (persistent views)
+config/
+  commands_registry.json    # Command registry
+  discord_commands_registry.json  # Discord slash commands
+scripts/
+  commands_manager.py       # Main CLI for bot management
+shared/
+  utils/
+    view_registry.py        # PersistentViewBase
 ```
 
----
+## Testing
 
-## 項目結構
+- Unit tests in `tests/` (if exists)
+- Integration tests via manual verification on staging
+- Use `test_modules.py` for module validation
 
-```
-kkgroup/
-├── bots/ : bot.py, shopbot.py, uibot.py
-├── cogs/ : common/, shop/, ui/
-├── shared/ : db, utils, constants
-├── game/ : api/, web/, system/, assets/
-├── config/ : 配置、systemd
-├── scheduled_tasks/ : cron
-└── fonts/ : NotoSansCJKtc-Regular.otf
-```
+## Environment Variables
 
-規則:
-- .env 不上傳 Git
-- 敏感信息用環境變量
+- `.env` is local only (not committed)
+- Required: `DISCORD_TOKEN`, `DATABASE_URL`, `GCP_PROJECT_ID`
+- Set on VM via systemd service EnvironmentFile
 
----
+## Coding Style
 
-## 部署
+- Type hints on all public functions
+- Docstrings for classes and public methods (explain WHY not WHAT)
+- Max line length: 100 chars
+- Use `black` for formatting, `ruff` for linting
 
-### GitHub Webhook 自動化流程
-1. **Push 事件觸發** (webhook.py)
-   - GitHub push → cloudflared → kkgroup-api
-   - webhook.py 驗證簽名 → git pull → 重啟 bots
-   - 發送 Discord 通知
+## Skill Invocation Patterns
 
-2. **Flask API**
-   - kkgroup-api.service (port 5000)
-   - 依賴: network-online.target, systemd-resolved.service
-   - 編碼: PYTHONIOENCODING=utf-8, LANG=C.UTF-8
+When user says... | Invoke skill
+--- | ---
+"Which skill should I use?" | `ask-matt`
+"Help me plan this feature" | `grill-with-docs` (has codebase) or `grill-me` (no codebase)
+"This is too big for one session" | `wayfinder`
+"Turn this into a spec" | `to-spec`
+"Break this into tickets" | `to-tickets"
+"Implement this spec" | `implement`
+"Review my changes" | `code-review`
+"Debug this bug" | `diagnosing-bugs`
+"Improve the architecture" | `improve-codebase-architecture`
+"Set up this repo for skills" | `setup-matt-pocock-skills`
+"Teach me X" | `teach`
+"Write a handoff" | `handoff`
 
-### Webhook 連接狀態
+## Context Hygiene
 
-**狀態**: ✅ **完全正常運作**
+- Keep steps 1-3 (grill → spec → tickets) in ONE unbroken context window
+- Don't compact until after `/to-tickets`
+- If approaching smart zone limit (~120k tokens), `/handoff` and continue fresh
+- Each `/implement` starts fresh from its ticket
 
-**流程驗證**:
-- GitHub push → Cloudflare 隧道 ✅
-- 隧道 → Nginx 代理 ✅
-- Nginx → Flask 接收 ✅
-- Flask 驗證簽名 ✅
-- Git pull 執行 ✅
-- Bot 自動重啟 ✅
+## Persistent Views (Discord UI)
 
-**GitHub UI 警告**:
-- 顯示 "We couldn't deliver this payload"
-- 原因: 隧道無法完整返回 HTTP 200 給 GitHub
-- 影響: 只是 UI 記錄問題，**不影響實際功能**
-
-**診斷**:
-若要驗證 webhook 運作，檢查:
-1. Flask 日誌: `sudo journalctl -u kkgroup-api.service | grep webhook`
-2. Bot 重啟: `sudo systemctl status bot.service | grep Active`
-3. GitHub 交付: GitHub > Webhooks > Deliveries (會顯示交付記錄)
-
----
-
-## Discord 按鈕
-
-用統一視圖系統 (shared.utils.embed_views, shared.utils.view_registry)
-不要分散定義，改一個地方改所有
-
----
-
-## Discord 指令
-
-所有指令通過 CommandRegistry 集中管理 (cogs/discord_commands.py)
-
-添加新指令:
-1. 在 Cog 定義 @app_commands.command
-2. 在 CommandRegistry 註冊
-3. Cog 要有 setup() 函數
-
-分類: UI/紙娃娃, Admin/系統, Shop/購物, Game/遊戲, Common/查詢
-
----
-
-## 字型路徑
-
-中文字型: kkgroup/fonts/NotoSansCJKtc-Regular.otf
-
-正確: ../../fonts/NotoSansCJKtc-Regular.otf (三層 ../)
-錯誤: ../fonts/ (只有一層 ../)
-
-驗證:
-__file__ → cogs/common/xxx.py
-../ → cogs/
-../ → kkgroup/ (根)
-fonts/ → kkgroup/fonts/ ✓
-
----
-
-## 資料庫 & VIP
-
-規則:
-- VM 為主，本地驗證後複製
-- 改之前必備份
-- 用 /grant_temporary_role 給 VIP（不要手動給）
-- cleanup_expired_roles_loop() 每 5 分鐘自動清理過期
-
----
-
-## VM 服務
-
-3 個 Bot: bot, shopbot, uibot
-
-SSH: gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-c --tunnel-through-iap
-
-重啟: sudo systemctl restart bot.service shopbot.service uibot.service
-
-日誌: sudo journalctl -u bot.service -n 50 --no-pager
-
-Cron:
-- 每 5 分: update_restart.py, sync_to_sheet.py
-- 每週一 3AM: weekly_backup.py
-
-### VM 自動重啟與穩定性
-- 三個 bot 服務必須啟用才能在 VM 重開機後自動啟動:
-  - `sudo systemctl enable bot.service shopbot.service uibot.service`
-- 服務應該設定重啟策略，建議:
-  - `Restart=on-failure`
-  - `RestartSec=10`
-  - `StartLimitBurst=10`
-  - `StartLimitIntervalSec=600`
-- e2-micro RAM 很有限，請務必加 swap 作為緩衝:
-  - `sudo fallocate -l 1G /swapfile`
-  - `sudo chmod 600 /swapfile`
-  - `sudo mkswap /swapfile`
-  - `sudo swapon /swapfile`
-  - `echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab`
-- 常用檢查命令:
-  - `free -m`
-  - `df -h /`
-  - `systemctl status bot.service shopbot.service uibot.service`
-  - `systemctl is-enabled bot.service shopbot.service uibot.service`
-
----
-
-## 安全
-
-敏感信息全在 .env:
-- Bot Token, API Key, 密碼
-- .env 在 .gitignore 中
-- 代碼中用 os.getenv("KEY")
-
-洩漏立即撤銷並重設
-
----
-
-## 遊戲系統
-
-Web RPG 完成，統一在 game/
-
-game/ 結構:
-├── api/ : REST 端點
-├── web/ : HTML 和靜態資源
-├── system/ : 遊戲模組
-└── assets/ : 資源
-
-Flask 路由: HTML 路由定義在 404 handler 之前
-
----
-
-## 10 個關鍵教訣 (簡要版)
-
-1. Service 文件不上傳 Git，只在 VM 管理
-2. 亂碼是系統問題，不是代碼問題 (檢查編碼和環境變量)
-3. 必須在 VM 驗證，本地測試不夠
-4. 環境變量要統一 (PYTHONIOENCODING=utf-8, TZ=Asia/Taipei)
-5. Embed 按優先級設計，Breaking/Features 全顯示
-6. 按日期分組優於按類型分組
-7. Webhook 完全正常運作，git push 後自動重啟 bot
-8. 盲目改代碼不如查 git 歷史找工作版本
-9. MapleStory skin_id 必須在 items 列表中
-10. 紙娃娃多樣性: 診斷→修復→驗證→部署→刷新 五步完整
-11. **新用戶隨機造型**: 用 `paperdoll_manager.get_random()` 生成，遵循性別一致性，不要硬編碼
-
----
-
-## 紙娃娃系統
-
-### 新用戶加入時的隨機造型邏輯
-在 `welcome_message.py` 的 `create_user_data()` 方法中：
+All Discord UI views MUST inherit from `PersistentViewBase`:
 ```python
-# ✅ 正確做法：調用 get_random() 生成隨機造型
-random_appearance = paperdoll_manager.get_random()
-user_data = {
-    'face': int(random_appearance['face']),
-    'hair': int(random_appearance['hair']),
-    'skin': int(random_appearance['skin']),
-    'top': int(random_appearance['top']),
-    'bottom': int(random_appearance['bottom']),
-    'shoes': int(random_appearance['shoes']),
-    'gender': random_appearance['gender'],
-    # ...其他欄位
-}
+from shared.utils.view_registry import PersistentViewBase
+
+class MyView(PersistentViewBase):
+    def __init__(self):
+        super().__init__(timeout=None)  # timeout=None is automatic
 ```
 
-### 用戶選擇性別時的隨機造型
-在 `PersistentWelcomeView.gender_select()` 中：
-```python
-# ✅ 保持性別不變，生成符合該性別的隨機造型
-selected_gender = select.values[0]  # 'male' 或 'female'
-appearance = paperdoll_manager.get_random(preserve_gender=selected_gender)
-await self.cog.update_user_data(user_id, appearance)
-```
+## Command Registration
 
-### 核心規則
-- ✅ 必須使用 `paperdoll_manager.get_random()` 生成隨機造型
-- ✅ 來源必須是 `twms_fashion_db.json` 中的有效物品 ID
-- ✅ 性別一致性：男性選自 `face_male/hair_male` 等，女性選自 `face_female/hair_female` 等
-- ✅ **不要在 welcome_message.py 硬編碼造型值**（例如 `'face': 20005`）
-- ✅ 所有 API URL 透過 `paperdoll_manager.build_api_url()` 建構，自動添加代理層
+New slash commands must be registered in:
+1. `config/discord_commands_registry.json` - for Discord API
+2. `config/commands_registry.json` - for internal command manager
 
-### 紙娃娃修復流程（完整 5 步）
-1. **診斷** - 檢查 fashion DB 和部件 ID 有效性
-2. **修復** - 更新 twms_fashion_db.json 或代碼邏輯
-3. **驗證** - 本地測試確保生成的造型有效
-4. **部署** - Git push 觸發 webhook 重啟 Bot
-5. **刷新** - 執行 `/admin_refresh_all_lockers` 更新所有用戶紙娃娃
+## Error Handling
+
+- Log errors with context: `logger.error("Failed to X", extra={"user_id": uid, "error": str(e)})`
+- User-facing errors: ephemeral followup with actionable message
+- Never expose stack traces to users
 
 ---
 
-## 踩坑避免
-
-代碼層:
-- 不要硬編碼敏感信息
-- 不要分散按鈕定義
-- 不要盲目改代碼（查歷史版本）
-- 不要忽視字型路徑計算
-
-部署層:
-- 不要手動改隧道 URL
-- 不要頻繁重啟 Flask
-- 不要只在本地測試
-- 不要上傳 service 文件
-
-資料庫層:
-- 不要直接改 VM 資料庫
-- 不要忘記備份
-- 不要只改部分部位
-- 不要用單一值替換所有預設
-
----
-
-## 常見問題
-
-Q: 代碼多久生效?
-A: webhook 自動觸發，push 後幾秒內
-
-Q: 可以直接改資料庫嗎?
-A: 不建議，本地驗證→複製→重啟
-
-Q: 為什麼用統一按鈕系統?
-A: 改一個地方改所有
-
-Q: 紙娃娃修復後看不到效果?
-A: 1) /admin_refresh_all_lockers
-   2) 資料庫有沒複製到 VM
-   3) 服務有沒重啟
-
-Q: 動畫推播重複推送或沒推到?
-A: 2026-04-29 已修復 - 使用數據庫追蹤已檢查時刻
-   - 創建 anime_check_history 表記錄每日檢查
-   - 防止 Bot 重啟導致重複推送
-   - 修復時間計算邏輯，使用完整 datetime 而非字符串
-   - 正確處理日期邊界和午夜情況（不再晚一小時）
-   - Commits: eae0f664, c4cf5618, bda137f7
-
-Q: 推播好像還是會落下幾個？
-A: 2026-05-02 已修復 - 5 個關鍵缺陷
-   - **缺陷 1**：Bootstrap 無限卡住（表初始化缺陷）
-     - 修復：INSERT OR IGNORE 確保表中至少有初始行
-   - **缺陷 2**：Schedule 為空時無回退（API 失敗無 logging）
-     - 修復：添加詳細日誌，區分 API 失敗 vs 無日程數據
-   - **缺陷 3**：時刻生成用 DEBUG 級別看不到（診斷困難）
-     - 修復：改用 INFO 級別，在 journalctl 中可見
-   - **缺陷 4**：時間窗口邊界邏輯（過去的時刻被跳過）
-     - 修復：詳細打印時間差，區分是否在窗口內、或過去/未來
-   - **缺陷 5**：異常吞沒（資料庫錯誤無法追蹤）
-     - 修復：分離異常處理，允許重試而不是無限重複
-   - 診斷：`sudo journalctl -u bot.service --since '5 minutes ago' | grep -i anime`
-   - Commits: 0b7e5421
-
-Q: VS Code 任務卡住或失敗?
-A: 2026-04-29 已修復 GCP SSH 任務 - 使用 bash -c 包裝
-   - 任務: 📋 GCP 系列、🔍 日誌、🔧 診斷
-   - PowerShell 無法執行 grep/tail，改用 bash -c
-   - .vscode/tasks.json 已更新
-
-Q: 新用戶加入還是用舊版造型？
-A: 2026-05-01 已修復 - 新用戶隨機造型邏輯
-   - 修改 `create_user_data()` 調用 `paperdoll_manager.get_random()`
-   - 新用戶加入時自動獲得隨機男/女造型各占 50%
-   - 用戶選擇性別後再生成符合該性別的隨機造型
-   - Commit: 47b30914
-   - 重點: 不要硬編碼造型值，遵循紙娃娃系統邏輯
-
-Q: 語音頻道無人後五分鐘不會自動刪除？
-A: 2026-05-01 已修復 - 語音頻道自動刪除倒數計時
-   - 問題: 修改提交後 VM 沒有同步最新代碼，需要手動 git reset
-   - 解決步驟:
-     1. SSH 連 VM: `gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-c --tunnel-through-iap`
-     2. 進目錄: `cd /home/e193752468/kkgroup`
-     3. 強制同步: `git reset --hard origin/main`
-     4. 重啟: `sudo systemctl restart bot.service`
-   - 驗證: 無人語音頻道會在 5 分鐘後自動刪除，日誌中出現:
-     - `🕐 房間 {id} 無人，5 分鐘後將自動刪除`
-     - `🗑️ 執行刪除...` / `✅ 成功刪除無人頻道 {id}`
-   - Commit: 7614c5ec (添加詳細日誌、return 語句、異常處理)
-   - Cog 載入確認: `[ScamHub] cog initialized` 且 `✅ loaded cogs.common.fraud_voice`
-
----
-
-最後更新: 2026-05-03
+*These instructions are derived from Matt Pocock's engineering skills (mattpocock/skills) adapted for VS Code + GitHub Copilot.*
