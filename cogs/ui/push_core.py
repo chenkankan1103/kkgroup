@@ -63,9 +63,9 @@ class AnimeDatabase:
                 CREATE TABLE IF NOT EXISTS {NOTIFIED_TABLE} (
                     videoSn INTEGER PRIMARY KEY,
                     animeSn INTEGER,
-                    animeName TEXT,
+                    anime_name TEXT,
                     volume TEXT,
-                    coverUrl TEXT,
+                    cover_url TEXT,
                     notifiedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -124,7 +124,7 @@ class AnimeDatabase:
                     messageId INTEGER PRIMARY KEY,
                     videoSn INTEGER,
                     animeSn INTEGER,
-                    animeName TEXT,
+                    anime_name TEXT,
                     channelId INTEGER,
                     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -136,7 +136,7 @@ class AnimeDatabase:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     videoSn INTEGER,
                     animeSn INTEGER,
-                    animeName TEXT,
+                    anime_name TEXT,
                     voteType TEXT,  -- 'masterpiece', 'great', 'good', 'average', 'bad'
                     userId TEXT,    -- 匿名用戶識別符（實際不存儲真實 ID）
                     votedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -199,14 +199,14 @@ class AnimeDatabase:
             # (table_name, column_name, column_definition)
             (NOTIFIED_TABLE, "videoSn", "INTEGER PRIMARY KEY"),
             (NOTIFIED_TABLE, "animeSn", "INTEGER"),
-            (NOTIFIED_TABLE, "animeName", "TEXT"),
+            (NOTIFIED_TABLE, "anime_name", "TEXT"),
             (NOTIFIED_TABLE, "volume", "TEXT"),
-            (NOTIFIED_TABLE, "coverUrl", "TEXT"),
+            (NOTIFIED_TABLE, "cover_url", "TEXT"),
             (NOTIFIED_TABLE, "notifiedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             (ANIME_MESSAGES_TABLE, "messageId", "INTEGER PRIMARY KEY"),
             (ANIME_MESSAGES_TABLE, "videoSn", "INTEGER"),
             (ANIME_MESSAGES_TABLE, "animeSn", "INTEGER"),
-            (ANIME_MESSAGES_TABLE, "animeName", "TEXT"),
+            (ANIME_MESSAGES_TABLE, "anime_name", "TEXT"),
             (ANIME_MESSAGES_TABLE, "channelId", "INTEGER"),
             (ANIME_MESSAGES_TABLE, "createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             (EPISODE_STATS_TABLE, "videoSn", "INTEGER PRIMARY KEY"),
@@ -218,7 +218,7 @@ class AnimeDatabase:
             (ANIME_VOTES_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
             (ANIME_VOTES_TABLE, "videoSn", "INTEGER"),
             (ANIME_VOTES_TABLE, "animeSn", "INTEGER"),
-            (ANIME_VOTES_TABLE, "animeName", "TEXT"),
+            (ANIME_VOTES_TABLE, "anime_name", "TEXT"),
             (ANIME_VOTES_TABLE, "voteType", "TEXT"),
             (ANIME_VOTES_TABLE, "userId", "TEXT"),
             (ANIME_VOTES_TABLE, "messageId", "INTEGER"),
@@ -282,7 +282,7 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {ANIME_MESSAGES_TABLE}
-                    (messageId, videoSn, animeSn, animeName, channelId)
+                    (messageId, videoSn, animeSn, anime_name, channelId)
                     VALUES (?, ?, ?, ?, ?)
                 """, (message_id, video_sn, anime_sn, anime_name, channel_id))
                 conn.commit()
@@ -315,7 +315,7 @@ class AnimeDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
-                    SELECT messageId, videoSn, animeSn, animeName, channelId
+                    SELECT messageId, videoSn, animeSn, anime_name, channelId
                     FROM {ANIME_MESSAGES_TABLE}
                 """)
                 rows = cursor.fetchall()
@@ -359,6 +359,30 @@ class AnimeDatabase:
 
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+
+                # 全量覆蓋：先刪除該 week_start_date 不在新 schedule_data 中的舊記錄
+                # 這確保週表真正「全量覆蓋」，避免舊時段殘留導致孤兒記錄
+                new_times = {(item['day_of_week'], item['scheduled_time']) for item in schedule_data}
+                if new_times:
+                    # SQLite 不支援 tuple IN，改用逐條檢查或動態構建 WHERE 條件
+                    # 這裡用動態構建 WHERE 條件
+                    conditions = []
+                    params = [week_start_date]
+                    for dow, st in new_times:
+                        conditions.append("(dayOfWeek = ? AND scheduledTime = ?)")
+                        params.extend([dow, st])
+                    where_clause = " OR ".join(conditions)
+                    cursor.execute(f"""
+                        DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        WHERE weekStartDate = ? 
+                        AND NOT ({where_clause})
+                    """, params)
+                else:
+                    # 如果新 schedule_data 為空，刪除該週所有記錄
+                    cursor.execute(f"""
+                        DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        WHERE weekStartDate = ?
+                    """, (week_start_date,))
 
                 for item in schedule_data:
                     day_of_week = item['day_of_week']
@@ -444,6 +468,52 @@ class AnimeDatabase:
                 return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"❌ [mark_time_pushed] Error marking week_start={week_start_date} day={day_of_week} time={scheduled_time}: {e}", exc_info=True)
+            return False
+
+    def is_time_checked_today(self, scheduled_time: str, check_date=None) -> bool:
+        """檢查今日是否已檢查過某個時段（防止重複檢查，解決 Bot 重啟問題）"""
+        try:
+            if check_date is None:
+                check_date = datetime.now(TW_TZ).date()
+            elif isinstance(check_date, datetime):
+                check_date = check_date.date()
+            
+            week_start = check_date - timedelta(days=check_date.weekday())
+            day_of_week = (check_date.weekday() + 1) % 7 or 7
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT 1 FROM {ANIME_CHECK_HISTORY_TABLE}
+                    WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
+                """, (week_start.strftime("%Y-%m-%d"), day_of_week, scheduled_time))
+                return cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"❌ [is_time_checked_today] Error: {e}", exc_info=True)
+            return False
+
+    def mark_time_checked(self, scheduled_time: str, check_date=None) -> bool:
+        """標記時段已檢查（防止重複檢查，解決 Bot 重啟問題）"""
+        try:
+            if check_date is None:
+                check_date = datetime.now(TW_TZ).date()
+            elif isinstance(check_date, datetime):
+                check_date = check_date.date()
+            
+            week_start = check_date - timedelta(days=check_date.weekday())
+            day_of_week = (check_date.weekday() + 1) % 7 or 7
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT OR IGNORE INTO {ANIME_CHECK_HISTORY_TABLE}
+                    (weekStartDate, dayOfWeek, scheduledTime)
+                    VALUES (?, ?, ?)
+                """, (week_start.strftime("%Y-%m-%d"), day_of_week, scheduled_time))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ [mark_time_checked] Error: {e}", exc_info=True)
             return False
 
     def get_schedule_anime_sns(self, week_start_date: str, day_of_week: int,
@@ -821,9 +891,9 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT INTO {ANIME_VOTES_TABLE}
-                    (videoSn, animeSn, voteType, userId, messageId, comment)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (video_sn, anime_sn, vote_type, user_hash, message_id, comment))
+                    (videoSn, animeSn, anime_name, voteType, userId, messageId, comment)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (video_sn, anime_sn, "", vote_type, user_hash, message_id, comment))
                 conn.commit()
                 return True
         except Exception as e:
@@ -1199,6 +1269,9 @@ class AnimePushCore:
                     elif anime_sn_int in expected_anime_sns and self.db.is_notified(video_sn):
                         logger.debug(f"⏭️ [send_anime_push] videoSn={video_sn} 已通知過，跳過")
                     # animeSn 不匹配的 → 靜默跳過（不屬於這個時段）
+
+                # 初始化 sent_count（在邏輯判斷前）
+                sent_count = 0
 
                 # 決定是否標記 pushed=1：
                 # - 若有送出集數 → 標記
