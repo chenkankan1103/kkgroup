@@ -26,6 +26,7 @@ ENV/
 
 # 工作區文件（文檔、測試、臨時工具）- 不提交 Git
 /docs_and_tests/
+/scripts/tests/
 
 # IDE 和编辑器
 .vscode/
@@ -34,7 +35,7 @@ ENV/
 *.swo
 
 # GitHub Copilot / VS Code prompts (local only)
-# .github/  <- 取消忽略，允許追蹤 copilot-instructions.md 等專案配置
+.github/
 
 # Godot 游戏开发（等完整输出后再推送）
 game/
@@ -64,6 +65,14 @@ test_*.py
 temp_*.py
 add_test_*.py
 WEEKLY_PANEL_DEMO.py
+
+# 本地開發/除錯腳本（不追蹤）
+check_*.py
+fix_*.py
+migrate_*.py
+verify_*.py
+push_core_b64.txt
+.copilot-instructions備份.md
 
 # 文档和测试资源（本地开发用，不追踪）
 docs_and_tests/
