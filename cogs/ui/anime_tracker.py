@@ -439,7 +439,13 @@ class AnimeTracker(commands.Cog):
                         # 生成視圖
                         view = await self.generate_anime_view(episode)
                         if view:
-                            self.bot.add_view(view)
+                            # 關鍵：必須傳入 message_id 才能讓永久視圖在重啟後正常工作
+                            message_id = msg_info.get('messageId') or msg_info.get('message_id')
+                            if message_id:
+                                self.bot.add_view(view, message_id=int(message_id))
+                                logger.info(f"✅ [_restore_old_message_views] 已註冊永久視圖 message_id={message_id}")
+                            else:
+                                logger.warning(f"⚠️ [_restore_old_message_views] 缺少 message_id，無法註冊永久視圖")
 
                 except Exception as e:
                     logger = logging.getLogger(__name__)
@@ -905,8 +911,11 @@ class AnimeTracker(commands.Cog):
 
     # ==================== 輔助類：AnimeVoteView (保持在主類中，因為它需要引用主類) ====================
 
-    class AnimeVoteView(discord.ui.View):
-        """動畫投票視圖 - 6 個投票按鈕 + 評論按鈕 (永久視圖)"""
+    class AnimeVoteView(PersistentViewBase):
+        """動畫投票視圖 - 6 個投票按鈕 + 評論按鈕 (永久視圖)
+
+        繼承 PersistentViewBase 確保 timeout=None 且符合專案永久視圖規範。
+        """
 
         # 投票類型配置
         VOTE_TYPES = {

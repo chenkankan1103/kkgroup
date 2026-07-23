@@ -1026,126 +1026,64 @@ class AnimePushCore:
     # ==================== 訊息發送相關方法 ====================
 
     async def generate_anime_embed(self, episode: Dict) -> Optional[discord.Embed]:
-        """為動畫集數生成 Discord Embed (舊版風格：大圖在下方、含簡介、標籤、獎勵說明)"""
+        """為動畫集數生成 Discord Embed
+
+        修復 (2026-07-23):
+        - 標題直接用 API 回傳值（API title 已含集數，不再重複加「第X集」）
+        - 移除標籤欄位（API 無標籤資料）
+        - 觀看數從 episode 直接提取（不再依賴第二個 API 呼叫）
+        - 簡介從 episode 提取，無資料時不顯示（不再打 video.php 浪費配額）
+        """
         try:
             video_sn = episode.get("videoSn")
             anime_sn = episode.get("animeSn")
             title = episode.get("title", "未知標題")
-            volume = episode.get("volume", "")
             cover = episode.get("cover", "")
 
-            # 組合標題：API 回傳的 title 可能已包含「第X集」，避免重複
-            # 例如 title="進擊的巨人 第1集", volume="1" -> 不要變成 "進擊的巨人 第1集 第1集"
-            import re
-            if volume and not re.search(r'第\s*\d+\s*集', title):
-                title_with_volume = f"{title} 第{volume}集"
-            else:
-                title_with_volume = title
+            # 🔑 標題直接用 API 回傳值，不再附加「第X集」
+            # Bahamut API 的 title 已包含集數資訊（如「咒術迴戰 第45集」）
+            title_display = title
 
-            # 嘗試從資料庫獲取詳細資訊（簡介、標籤、評分等）
-            anime_details = None
-            if anime_sn:
-                try:
-                    anime_details = self.db.get_anime_details(int(anime_sn))
-                except:
-                    anime_details = None
+            # 🔑 觀看數：從 episode 直接提取（newAnime.date API 回應中的欄位）
+            view_count = 0
+            for field in ['popular', 'viewCount', 'views', 'playCount']:
+                val = episode.get(field)
+                if val is not None and isinstance(val, (int, float)) and val > 0:
+                    view_count = int(val)
+                    break
 
-            # 如果資料庫快取為空，嘗試即時從 API 獲取（受速率限制保護）
-            if not anime_details or not anime_details.get("content"):
-                try:
-                    api_details = await self.fetch_anime_details_from_api(int(video_sn))
-                    if api_details:
-                        # API 回應結構: { "data": { "animeSn": ..., "content": ..., "tags": ..., "viewCount": ..., "score": ... } }
-                        data = api_details.get("data", {})
-                        if data:
-                            anime_details = {
-                                "content": data.get("content", ""),
-                                "tags": data.get("tags", []),
-                                "popular": data.get("viewCount", 0),
-                                "score": data.get("score", 0)
-                            }
-                            # 同時更新快取
-                            self.db.cache_anime_details(
-                                int(anime_sn),
-                                episode.get("title", ""),
-                                data.get("content", ""),
-                                data.get("coverUrl", ""),
-                                data.get("tags", []),
-                                data.get("viewCount", 0),
-                                float(data.get("score", 0))
-                            )
-                except Exception as e:
-                    logger.warning(f"⚠️ [generate_anime_embed] 無法從 API 獲取詳情 video_sn={video_sn}: {e}")
+            # 🔑 簡介：從 episode 直接提取（若有），不再打第二個 API
+            description_text = ""
+            raw_content = episode.get('content', '') or episode.get('description', '') or ''
+            if raw_content:
+                description_text = self._truncate_text(str(raw_content), 300)
 
-            content = anime_details.get("content", "") if anime_details else ""
-            api_tags = anime_details.get("tags", []) if anime_details else []
-            popular = anime_details.get("popular", 0) if anime_details else 0
-            score = anime_details.get("score", 0) if anime_details else 0
+            # 評分
+            score = episode.get('score', 0)
+            try:
+                score = float(score) if score else 0.0
+            except (ValueError, TypeError):
+                score = 0.0
 
-            # 獲取動畫統計數據（總觀看數、平均觀看數）
-            anime_stats = None
-            if anime_sn:
-                try:
-                    anime_stats = self.db.get_anime_statistics(int(anime_sn))
-                except:
-                    anime_stats = None
-
-            total_views = anime_stats.get("total_views", 0) if anime_stats else 0
-            avg_views = anime_stats.get("avg_views", 0) if anime_stats else 0
-
-            # 構建標籤
-            tag_parts = []
-            if api_tags:
-                tag_parts.extend([f"#{tag}" for tag in api_tags[:6]])
-
-            highlight_tag = episode.get("highlightTag", {})
-            if highlight_tag.get("bilingual"):
-                tag_parts.append("🗣️ 雙語")
-            edition = highlight_tag.get("edition", "").strip()
-            if edition:
-                tag_parts.append(f"📺 {edition}")
-
-            tags_str = " | ".join(tag_parts) if tag_parts else "無特殊標籤"
-
-            # 簡介（截斷）
-            if content:
-                description_text = self._truncate_text(content, 300)
-            else:
-                description_text = "暫無簡介"
-
-            # 人氣/評分 - 顯示總觀看數和平均觀看數
-            if total_views > 0:
-                popularity_text = f"總觀看: {total_views:,} | 平均: {avg_views:,.0f}"
-            elif popular > 0:
-                popularity_text = f"觀看數: {popular:,}"
-            else:
-                popularity_text = "N/A"
-            score_text = f"{score:.1f}" if score > 0 else "N/A"
-
-            # 建立 embed - 舊版風格
+            # 建立 embed
             embed = discord.Embed(
-                title=f"🎬 {title_with_volume}",
-                description=description_text,
+                title=f"🎬 {title_display}",
+                description=description_text if description_text else None,
                 url=f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}",
                 color=discord.Color.from_rgb(178, 108, 196),  # 紫色主題
                 timestamp=datetime.now(TW_TZ)
             )
 
-            # 大圖在下方 (set_image 而非 set_thumbnail)
+            # 大圖在下方
             if cover:
                 embed.set_image(url=cover)
 
-            # 標籤
-            embed.add_field(
-                name="📌 標籤",
-                value=tags_str,
-                inline=False
-            )
-
-            # 人氣數據
+            # 人氣數據（觀看數 + 評分）
+            popularity_text = f"{view_count:,}" if view_count > 0 else "N/A"
+            score_text = f"{score:.1f}" if score > 0 else "N/A"
             embed.add_field(
                 name="📊 人氣數據",
-                value=f"👥 {popularity_text} | ⭐ {score_text}",
+                value=f"👥 觀看: {popularity_text} | ⭐ 評分: {score_text}",
                 inline=False
             )
 
@@ -1166,7 +1104,8 @@ class AnimePushCore:
             embed.set_footer(text="動畫瘋新番通知 | 使用下方按鈕進行匿名投票")
             return embed
         except Exception as e:
-            logger.error(f"❌ [generate_anime_embed] Failed to generate embed for video_sn {episode.get('videoSn')}: {e}", exc_info=True)
+            logger.error(f"❌ [generate_anime_embed] Failed to generate embed for "
+                         f"video_sn {episode.get('videoSn')}: {e}", exc_info=True)
             return None
 
     def _truncate_text(self, text: str, max_length: int) -> str:
