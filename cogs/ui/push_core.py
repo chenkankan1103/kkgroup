@@ -446,6 +446,42 @@ class AnimeDatabase:
             logger.error(f"❌ [mark_time_pushed] Error marking week_start={week_start_date} day={day_of_week} time={scheduled_time}: {e}", exc_info=True)
             return False
 
+    def get_schedule_anime_sns(self, week_start_date: str, day_of_week: int,
+                               scheduled_time: str) -> set:
+        """從週表取得指定時段預期的 animeSn 集合
+
+        用於 send_anime_push 過濾 API 回傳的新番，確保只推送屬於該時段的動畫，
+        防止補推時把其他時段的動畫也推出去（核心 bug 修復）。
+
+        Args:
+            week_start_date: 週起始日期 "YYYY-MM-DD"
+            day_of_week: 1=週一~7=週日
+            scheduled_time: "HH:MM" 格式
+        Returns:
+            set[int]: 該時段預期的 animeSn 集合（可能為空）
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT animeData FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
+                """, (week_start_date, day_of_week, scheduled_time))
+                rows = cursor.fetchall()
+                anime_sns = set()
+                for row in rows:
+                    try:
+                        anime_data = json.loads(row[0])
+                        anime_sn = anime_data.get('animeSn')
+                        if anime_sn:
+                            anime_sns.add(int(anime_sn))
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        pass
+                return anime_sns
+        except Exception as e:
+            logger.error(f"❌ [get_schedule_anime_sns] Error: {e}", exc_info=True)
+            return set()
+
     def clean_orphaned_records(self, week_start_date: str = None) -> dict:
         """清理孤兒記錄：anime_messages、anime_notified 中對應已刪除週表時段的記錄
 
@@ -871,6 +907,10 @@ class AnimePushCore:
         self._api_rate_limit_lock = asyncio.Lock()
         self._min_api_interval = 2.0  # seconds
 
+        # 推送並發鎖：防止 dispatcher 和 catch-up 同時呼叫 send_anime_push
+        # 造成同一時段重複推送或 race condition
+        self._push_lock = asyncio.Lock()
+
     def set_bot_and_db(self, bot, db):
         """設置 bot 和資料庫實例（可選覆蓋）"""
         self.bot = bot
@@ -1146,120 +1186,155 @@ class AnimePushCore:
             logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
             return None
 
-    async def send_anime_push(self, scheduled_time: str, channel_id: int, day_of_week: int = None, week_start_date: str = None) -> bool:
-        """根據時程表發送動畫推送
+    async def send_anime_push(self, scheduled_time: str, channel_id: int,
+                             day_of_week: int = None,
+                             week_start_date: str = None) -> bool:
+        """根據時程表發送動畫推送（含時段匹配 + 並發鎖）
 
-        關鍵修復：當 API 成功取得資料後，無論是否有新番可推送，都會標記該時刻為
-        「已推送」。否則「無新番」時週表 pushed 欄位永遠為 0，會導致
-        _periodic_catchup_check 每 5 分鐘無限重試同一時刻（呼叫 API、找不到新番、
-        又未標記）。只有 API 失敗或頻道不存在時才不標記，以便稍後重試。
+        核心修復 (2026-07-23)：
+        1. 從週表取得該時段預期的 animeSn，只推送匹配的動畫
+           → 防止補推時把其他時段的動畫也推出去
+        2. 使用 _push_lock 防止 dispatcher 和 catch-up 同時推送
+        3. API 成功即標記 pushed=1（不論是否有匹配新番），防止無限重試
 
         Args:
             scheduled_time: 預定時間，格式 "HH:MM"
             channel_id: Discord 頻道 ID
-            day_of_week: 可選，1=週一~7=週日。若提供則直接使用，否則根據當前時間計算（用於補推場景）
-            week_start_date: 可選，週起始日期 "YYYY-MM-DD"。若提供則直接使用，否則根據當前時間計算
+            day_of_week: 可選，1=週一~7=週日
+            week_start_date: 可選，週起始日期 "YYYY-MM-DD"
         """
-        try:
-            await self.bot.wait_until_ready()
+        # 使用並發鎖，防止 dispatcher 和 catch-up 同時推送同一時段
+        async with self._push_lock:
+            try:
+                await self.bot.wait_until_ready()
 
-            # 先檢查頻道是否存在（避免無頻道時仍呼叫 API 浪費配額）
-            channel = self.bot.get_channel(channel_id)
-            if not channel:
-                logger.warning(f"⚠️ [send_anime_push] 頻道 {channel_id} 不存在，跳過 {scheduled_time}（不標記，稍後重試）")
-                return False
+                # 先計算 day_of_week 和 week_start_date（提前需要，用於查詢週表）
+                now = datetime.now(TW_TZ)
+                if day_of_week is None:
+                    day_of_week = (now.weekday() + 1) % 7 or 7
+                if week_start_date is None:
+                    week_start_date = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
 
-            # 獲取最新動畫數據
-            episodes = await self.fetch_new_anime_from_api()
-            if not episodes:
-                # API 失敗 → 不標記，讓 _periodic_catchup_check 稍後重試
-                logger.warning(f"⚠️ [send_anime_push] API 無回應或無資料，跳過 {scheduled_time}（不標記，稍後重試）")
-                return False
+                # 先檢查頻道是否存在
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    logger.warning(f"⚠️ [send_anime_push] 頻道 {channel_id} 不存在，"
+                                   f"跳過 {scheduled_time}（不標記，稍後重試）")
+                    return False
 
-            # API 成功：找出尚未通知的新集
-            new_episodes = []
-            for ep in episodes:
-                video_sn = ep.get("videoSn")
-                if video_sn and not self.db.is_notified(video_sn):
-                    new_episodes.append(ep)
+                # 🔑 從週表取得該時段預期的 animeSn 集合
+                expected_anime_sns = self.db.get_schedule_anime_sns(
+                    week_start_date, day_of_week, scheduled_time
+                )
+                if not expected_anime_sns:
+                    # 週表無此時間 → 可能是舊資料或 API 變更，標記 pushed 避免無限重試
+                    logger.info(f"📭 [send_anime_push] {scheduled_time} 週表無對應 animeSn，"
+                                f"標記 pushed 跳過（week_start={week_start_date}, day={day_of_week}）")
+                    self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
+                    return False
 
-            if not new_episodes:
-                logger.info(f"📭 [send_anime_push] {scheduled_time} 無新番需推送（所有集數已通知），仍會標記時刻已完成")
+                logger.debug(f"🔍 [send_anime_push] {scheduled_time} 預期 animeSn: {expected_anime_sns}")
 
-            sent_count = 0
-            for episode in new_episodes:
-                try:
-                    video_sn = episode.get("videoSn")
-                    anime_sn = episode.get("animeSn")
-                    title = episode.get("title", "未知標題")
+                # 獲取最新動畫數據
+                episodes = await self.fetch_new_anime_from_api()
+                if not episodes:
+                    # API 失敗 → 不標記，讓補推稍後重試
+                    logger.warning(f"⚠️ [send_anime_push] API 無回應，"
+                                   f"跳過 {scheduled_time}（不標記，稍後重試）")
+                    return False
 
-                    # 防禦性轉換：確保 video_sn 和 anime_sn 是整數
-                    try:
-                        video_sn = int(video_sn) if video_sn is not None else 0
-                    except (ValueError, TypeError):
-                        video_sn = 0
-                    try:
-                        anime_sn = int(anime_sn) if anime_sn is not None else 0
-                    except (ValueError, TypeError):
-                        anime_sn = 0
-
+                # 🔑 關鍵過濾：只保留 animeSn 匹配該時段的 + 尚未通知的
+                new_episodes = []
+                for ep in episodes:
+                    video_sn = ep.get("videoSn")
+                    anime_sn = ep.get("animeSn")
                     if not video_sn:
-                        logger.warning(f"⚠️ [send_anime_push] Skip episode with invalid video_sn: {episode}")
+                        continue
+                    try:
+                        anime_sn_int = int(anime_sn) if anime_sn is not None else 0
+                    except (ValueError, TypeError):
+                        anime_sn_int = 0
+                    # 必須 animeSn 匹配該時段，且尚未通知過
+                    if anime_sn_int in expected_anime_sns and not self.db.is_notified(video_sn):
+                        new_episodes.append(ep)
+                    elif anime_sn_int in expected_anime_sns and self.db.is_notified(video_sn):
+                        logger.debug(f"⏭️ [send_anime_push] videoSn={video_sn} 已通知過，跳過")
+                    # animeSn 不匹配的 → 靜默跳過（不屬於這個時段）
+
+                if not new_episodes:
+                    logger.info(f"📭 [send_anime_push] {scheduled_time} 無匹配新番需推送"
+                                f"（預期 {len(expected_anime_sns)} 個 animeSn，"
+                                f"API 回傳 {len(episodes)} 集），仍標記時刻已完成")
+
+                sent_count = 0
+                for episode in new_episodes:
+                    try:
+                        video_sn = episode.get("videoSn")
+                        anime_sn = episode.get("animeSn")
+                        title = episode.get("title", "未知標題")
+
+                        # 防禦性轉換
+                        try:
+                            video_sn = int(video_sn) if video_sn is not None else 0
+                        except (ValueError, TypeError):
+                            video_sn = 0
+                        try:
+                            anime_sn = int(anime_sn) if anime_sn is not None else 0
+                        except (ValueError, TypeError):
+                            anime_sn = 0
+
+                        if not video_sn:
+                            logger.warning(f"⚠️ [send_anime_push] Skip episode with "
+                                           f"invalid video_sn: {episode}")
+                            continue
+
+                        embed = await self.generate_anime_embed(episode)
+                        if not embed:
+                            continue
+
+                        view = await self.generate_anime_view(episode)
+
+                        # 發送訊息（silent=True 靜音推送）
+                        message = await channel.send(embed=embed, view=view, silent=True)
+
+                        self.db.save_message_info(
+                            message.id, video_sn, anime_sn, title, channel_id
+                        )
+                        self.db.add_notified(
+                            video_sn, anime_sn,
+                            episode.get("title", "未知標題"),
+                            episode.get("volume", ""),
+                            episode.get("cover", "")
+                        )
+
+                        if view:
+                            self.bot.add_view(view, message_id=message.id)
+
+                        sent_count += 1
+                        logger.info(f"✅ [send_anime_push] 已推送: {title} "
+                                    f"(videoSn={video_sn}, animeSn={anime_sn})")
+
+                    except Exception as e:
+                        logger.error(f"❌ [send_anime_push] Error sending episode "
+                                     f"{episode.get('videoSn')}: {e}", exc_info=True)
                         continue
 
-                    # 生成 embed
-                    embed = await self.generate_anime_embed(episode)
-                    if not embed:
-                        continue
+                # ✅ API 成功即標記 pushed=1（不論是否有匹配新番）
+                marked = self.db.mark_time_pushed(
+                    week_start_date, day_of_week, scheduled_time
+                )
+                if marked:
+                    logger.info(f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送"
+                                f"（實際發送 {sent_count} 則，"
+                                f"預期 animeSn={expected_anime_sns}）")
+                else:
+                    logger.warning(f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗"
+                                   f"（週表可能無對應列）")
 
-                    # 生成 view
-                    view = await self.generate_anime_view(episode)
+                return sent_count > 0
 
-                    # 發送訊息（silent=True 使推送為靜音通知，不發出聲音/彈窗）
-                    message = await channel.send(embed=embed, view=view, silent=True)
-
-                    # 保存消息資訊
-                    self.db.save_message_info(
-                        message.id, video_sn, anime_sn, title, channel_id
-                    )
-
-                    # 記錄為已通知
-                    self.db.add_notified(
-                        video_sn,
-                        anime_sn,
-                        episode.get("title", "未知標題"),
-                        episode.get("volume", ""),
-                        episode.get("cover", "")
-                    )
-
-                    # 向 bot 註冊永久視圖
-                    if view:
-                        self.bot.add_view(view, message_id=message.id)
-
-                    sent_count += 1
-
-                except Exception as e:
-                    logger.error(f"❌ [send_anime_push] Error sending episode {episode.get('videoSn')}: {e}", exc_info=True)
-                    continue
-
-            # ✅ 關鍵修復：API 成功即標記該時刻為已推送（不論是否有新番），
-            # 防止「無新番」時 pushed 永遠為 0 導致補推無限重試
-            now = datetime.now(TW_TZ)
-            if day_of_week is None:
-                day_of_week = (now.weekday() + 1) % 7 or 7
-            if week_start_date is None:
-                week_start_date = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
-            marked = self.db.mark_time_pushed(
-                week_start_date,
-                day_of_week,
-                scheduled_time
-            )
-            if marked:
-                logger.info(f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送 (day_of_week={day_of_week}, week_start={week_start_date})（實際發送 {sent_count} 則新番）")
-            else:
-                logger.warning(f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗（週表可能無對應列：week_start={week_start_date}, day={day_of_week}）")
-
-            return sent_count > 0
-        except Exception as e:
-            logger.error(f"❌ [send_anime_push] Unexpected error: {e}", exc_info=True)
-            return False
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"❌ [send_anime_push] Unexpected error: {e}", exc_info=True)
+                return False

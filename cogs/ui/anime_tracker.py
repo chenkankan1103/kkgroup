@@ -514,8 +514,9 @@ class AnimeTracker(commands.Cog):
 
     async def _periodic_catchup_check(self):
         """
-        定期補推檢查：每 5 分鐘執行一次，檢查今日所有「已過時但未推送」的項目並真正發送
+        定期補推檢查：每 15 分鐘執行一次，檢查今日所有「已過時但未推送」的項目並真正發送
         解決 dispatcher 錯過時刻、bot 重啟後漏推等問題
+        （頻率從 5 分鐘降為 15 分鐘以減少 API 呼叫，避免被巴哈 ban IP）
         """
         logger = logging.getLogger(__name__)
         print("[DEBUG_CATCHUP] _periodic_catchup_check function entered", flush=True)
@@ -541,7 +542,7 @@ class AnimeTracker(commands.Cog):
 
                 if not today_schedule:
                     logger.warning("⚠️ [_periodic_catchup_check] today_schedule 為空，跳過本次檢查")
-                    await asyncio.sleep(300)  # 5 分鐘
+                    await asyncio.sleep(900)  # 15 分鐘
                     continue
 
                 # 找出：pushed=0 且 scheduled_time <= 當前時間（今日所有已過時未推送項目）
@@ -586,8 +587,8 @@ class AnimeTracker(commands.Cog):
                 else:
                     pass  # No catchup items found
 
-                # 每 5 分鐘檢查一次
-                await asyncio.sleep(300)
+                # 每 15 分鐘檢查一次
+                await asyncio.sleep(900)
 
             except asyncio.CancelledError:
                 logger.info("🛑 [_periodic_catchup_check] 任務被取消")
@@ -1208,39 +1209,6 @@ class AnimeTracker(commands.Cog):
 
 
 # ==================== 任務重啟包裝函數 ====================
-
-    async def _run_schedule_dispatcher_with_restart(self):
-        """帶有自動重啟機制的排程分發器包裝器"""
-        logger = logging.getLogger(__name__)
-        while not self.bot.is_closed():
-            try:
-                logger.info("🚀 [_run_schedule_dispatcher_with_restart] 啟動排程分發器")
-                await self._schedule_dispatcher()
-            except asyncio.CancelledError:
-                logger.info("🛑 [_run_schedule_dispatcher_with_restart] 任務被取消")
-                break
-            except Exception as e:
-                logger.error(f"❌ [_run_schedule_dispatcher_with_restart] 排程分發器異常退出: {e}", exc_info=True)
-                logger.info("🔄 [_run_schedule_dispatcher_with_restart] 10 秒後重啟...")
-                await asyncio.sleep(10)
-
-    async def _run_periodic_catchup_with_restart(self):
-        """帶有自動重啟機制的定期補推檢查包裝器"""
-        logger = logging.getLogger(__name__)
-        while not self.bot.is_closed():
-            try:
-                logger.info("🚀 [_run_periodic_catchup_with_restart] 啟動定期補推檢查")
-                await self._periodic_catchup_check()
-            except asyncio.CancelledError:
-                logger.info("🛑 [_run_periodic_catchup_with_restart] 任務被取消")
-                break
-            except Exception as e:
-                logger.error(f"❌ [_run_periodic_catchup_with_restart] 定期補推檢查異常退出: {e}", exc_info=True)
-                logger.info("🔄 [_run_periodic_catchup_with_restart] 10 秒後重啟...")
-                await asyncio.sleep(10)
-
-
-    # ==================== 任務包裝函數（帶自動重啟機制） ====================
 
     async def _run_periodic_catchup_check_with_restart(self):
         """包裝 _periodic_catchup_check，異常時自動重啟"""
