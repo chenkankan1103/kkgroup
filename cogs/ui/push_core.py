@@ -53,9 +53,17 @@ class AnimeDatabase:
         self.db_path = db_path
         self._init_database()
 
+    def _get_connection(self):
+        """獲取配置好 WAL 模式的資料庫連接"""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        return conn
+
     def _init_database(self):
         """初始化資料庫表格"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
 
             # 已通知的動畫表
@@ -263,7 +271,7 @@ class AnimeDatabase:
     def is_notified(self, video_sn: int) -> bool:
         """檢查動畫集數是否已經通知過"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT 1 FROM {NOTIFIED_TABLE}
@@ -278,7 +286,7 @@ class AnimeDatabase:
                          anime_name: str, channel_id: int) -> bool:
         """保存消息資訊"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {ANIME_MESSAGES_TABLE}
@@ -295,7 +303,7 @@ class AnimeDatabase:
                     volume: str = "", cover_url: str = "") -> bool:
         """記錄已通知的動畫"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # 使用新欄位名 (anime_name, cover_url) 配合 migration schema
                 cursor.execute(f"""
@@ -312,7 +320,7 @@ class AnimeDatabase:
     def get_unviewed_messages(self) -> list:
         """獲取未設置視圖的消息（用於 bot 重啟時恢復）"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT messageId, videoSn, animeSn, anime_name, channelId
@@ -357,7 +365,7 @@ class AnimeDatabase:
             schedule_data = deduped
             # --- End pre-dedup ---
 
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 全量覆蓋：先刪除該 week_start_date 不在新 schedule_data 中的舊記錄
@@ -433,7 +441,7 @@ class AnimeDatabase:
             week_start = now - timedelta(days=now.weekday())  # 取得本週一的日期
             day_of_week = (now.weekday() + 1) % 7 or 7  # 1=Mon, 7=Sun
 
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT scheduledTime, animeData, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
@@ -457,7 +465,7 @@ class AnimeDatabase:
     def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
         """標記某個時刻已推送過"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
@@ -481,7 +489,7 @@ class AnimeDatabase:
             week_start = check_date - timedelta(days=check_date.weekday())
             day_of_week = (check_date.weekday() + 1) % 7 or 7
             
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT 1 FROM {ANIME_CHECK_HISTORY_TABLE}
@@ -503,7 +511,7 @@ class AnimeDatabase:
             week_start = check_date - timedelta(days=check_date.weekday())
             day_of_week = (check_date.weekday() + 1) % 7 or 7
             
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR IGNORE INTO {ANIME_CHECK_HISTORY_TABLE}
@@ -531,7 +539,7 @@ class AnimeDatabase:
             set[int]: 該時段預期的 animeSn 集合（可能為空）
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT animeData FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
@@ -564,7 +572,7 @@ class AnimeDatabase:
             dict: 刪除統計 {'messages': N, 'notified': N}
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 stats = {'messages': 0, 'notified': 0}
 
@@ -614,7 +622,7 @@ class AnimeDatabase:
                            cover_url: str, tags: list, view_count: int, score: float) -> bool:
         """快取動畫詳細資訊"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {ANIME_DETAILS_TABLE}
@@ -630,7 +638,7 @@ class AnimeDatabase:
     def get_anime_details(self, anime_sn: int) -> Optional[dict]:
         """獲取動畫詳細資訊"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT name, content, coverUrl, tags, viewCount, score
@@ -660,7 +668,7 @@ class AnimeDatabase:
                             views: int, score: float = 0) -> bool:
         """記錄 集數統計數據"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {EPISODE_STATS_TABLE}
@@ -680,7 +688,7 @@ class AnimeDatabase:
                               end_time: Optional[datetime] = None) -> list:
         """依觀看數取得熱門動畫"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 構建時間條件
@@ -725,7 +733,7 @@ class AnimeDatabase:
                                          end_time: Optional[datetime] = None) -> list:
         """取得適合製作圖表的多集動畫"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 構建時間條件
@@ -784,7 +792,7 @@ class AnimeDatabase:
     def get_anime_details_by_videosn(self, video_sn: int) -> Optional[dict]:
         """根據 video_sn 取得動畫詳細資訊"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # 先從 episode_stats 找到對應的 anime_sn
                 cursor.execute(f"""
@@ -823,7 +831,7 @@ class AnimeDatabase:
     def get_anime_statistics(self, anime_sn: int) -> Optional[dict]:
         """獲取動畫統計數據（總觀看數、平均觀看數等）"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT totalViews, avgViews, totalEpisodes, latestScore
@@ -846,7 +854,7 @@ class AnimeDatabase:
     def is_reward_already_given(self, message_id: int, reward_type: str) -> bool:
         """檢查是否已經發放過指定類型的獎勵"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT 1 FROM {ANIME_REWARDS_TABLE}
@@ -861,7 +869,7 @@ class AnimeDatabase:
     def record_reward(self, message_id: int, reward_type: str, amount: int, user_id: str) -> bool:
         """記錄獎勵發放"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT INTO {ANIME_REWARDS_TABLE}
@@ -887,7 +895,7 @@ class AnimeDatabase:
             user_hash: 匿名用戶識別符
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT INTO {ANIME_VOTES_TABLE}
@@ -903,7 +911,7 @@ class AnimeDatabase:
     def get_vote_stats(self, message_id: int) -> Dict[str, int]:
         """獲取指定訊息的投票統計（各類型票數）"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT voteType, COUNT(*) as count
@@ -919,7 +927,7 @@ class AnimeDatabase:
     def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
         """獲取指定訊息的評論列表"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT comment FROM {ANIME_VOTES_TABLE}
@@ -934,7 +942,7 @@ class AnimeDatabase:
     def get_weekly_vote_stats(self) -> Dict[int, Dict]:
         """獲取本週投票統計（按 animeSn 分組）"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # 取本週一 00:00 起的投票
                 now = datetime.now(TW_TZ)
