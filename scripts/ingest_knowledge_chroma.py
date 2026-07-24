@@ -414,55 +414,57 @@ def query_knowledge(query: str, n_results: int = 5, filter_dict: Optional[Dict] 
     return formatted
 
 
-# ==================== 主程式 ====================
+# ==================== CLI ====================
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="匯入 knowledge wiki、VM 掃描報告、程式碼到 Chroma 向量資料庫")
+    parser = argparse.ArgumentParser(description="匯入 knowledge wiki、程式碼到 Chroma 向量資料庫")
     parser.add_argument(
         "paths",
         nargs="*",
-        help="要匯入的檔案或資料夾，預設為 knowledge/_wiki、最新 VM 掃描報告、程式碼目錄",
+        help="要匯入的檔案或資料夾，預設為 knowledge/_wiki、VM 掃描報告、主要程式碼目錄",
     )
     parser.add_argument("--dry-run", action="store_true", help="只顯示要匯入的文件")
     parser.add_argument("--no-code", action="store_true", help="不匯入程式碼")
-    parser.add_argument("--code-only", action="store_true", help="只匯入程式碼")
+    parser.add_argument("--query", type=str, help="測試查詢（不匯入，只查詢）")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     
+    # 測試查詢模式
+    if args.query:
+        results = query_knowledge(args.query, n_results=5)
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        return 0
+    
     # 決定要匯入的路徑
-    roots = [Path(path).resolve() for path in args.paths] if args.paths else [DEFAULT_KNOWLEDGE_ROOT]
-    if DEFAULT_SCAN_REPORT.exists() and DEFAULT_SCAN_REPORT not in roots:
-        roots.append(DEFAULT_SCAN_REPORT)
+    if args.paths:
+        roots = [Path(path).resolve() for path in args.paths]
+    else:
+        roots = [DEFAULT_KNOWLEDGE_ROOT]
+        if DEFAULT_SCAN_REPORT.exists():
+            roots.append(DEFAULT_SCAN_REPORT)
     
-    total_stats = {"processed": 0, "chunks": 0}
+    # 匯入 Markdown
+    md_files = discover_markdown_files(roots)
+    if md_files:
+        print(f"📄 發現 {len(md_files)} 個 Markdown 檔案")
+        stats = ingest_markdown_files(md_files, dry_run=args.dry_run)
+        print(f"   處理: {stats['processed']} 檔, 切分: {stats['chunks']} chunks")
     
-    if not args.code_only:
-        # 匯入 Markdown
-        md_files = discover_markdown_files(roots)
-        if md_files:
-            print(f"📄 發現 {len(md_files)} 個 Markdown 檔案")
-            stats = ingest_markdown_files(md_files, dry_run=args.dry_run)
-            total_stats["processed"] += stats["processed"]
-            total_stats["chunks"] += stats["chunks"]
-        else:
-            print("⚠️ 沒有找到可匯入的 Markdown 文件")
-    
+    # 匯入 Python 程式碼
     if not args.no_code:
-        # 匯入 Python 程式碼
         code_roots = DEFAULT_CODE_ROOTS
         py_files = discover_python_files(code_roots)
         if py_files:
             print(f"🐍 發現 {len(py_files)} 個 Python 檔案")
             stats = ingest_python_files(py_files, dry_run=args.dry_run)
-            total_stats["processed"] += stats["processed"]
-            total_stats["chunks"] += stats["chunks"]
-        else:
-            print("⚠️ 沒有找到可匯入的 Python 檔案")
+            print(f"   處理: {stats['processed']} 檔, 切分: {stats['chunks']} chunks")
     
-    print(json.dumps(total_stats, ensure_ascii=False))
+    if args.dry_run:
+        print("\n🔍 Dry-run 完成，未實際寫入")
+    
     return 0
 
 

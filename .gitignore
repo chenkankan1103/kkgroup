@@ -41,7 +41,6 @@ ENV/
 game/
 
 *~
-.DS_Store
 
 # 日志文件
 *.log
@@ -88,6 +87,13 @@ docs_and_tests/**
 knowledge/_wiki/Inbox/
 status/knowledge_refresh_status.json
 shared/db/data/knowledge_vector_index.pkl
+
+# 向量資料庫（本地產生，VM 會自動重建）
+chroma_db/
+
+# AI 記憶資料庫（本地產生）
+shared/db/data/ai_memory.db
+shared/db/data/feature_usage.db
 
 # 系统文件
 .DS_Store

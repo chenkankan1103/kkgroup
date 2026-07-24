@@ -1,0 +1,510 @@
+# ?¨ç½²?Œç¶­?‹æ???
+## ç³»çµ±æ¦‚è¿°
+
+KKGroup ?¡ç”¨ GCP VM ä½œç‚ºä¸»è??¨ç½²?°å?ï¼Œä½¿??systemd ç®¡ç??å?ï¼Œé€é? Git ??Cron å¯¦ç¾?ªå??–éƒ¨ç½²å?ç¶­é???
+## GCP VM ?¶æ?
+
+### 1. ?å??¨ç½²
+**ä¸»è??å?**:
+- **bot.service**: ä¸?Discord Bot
+- **shopbot.service**: ?†å? Bot
+- **kkgroup-api.service**: Web API ?å?
+
+**?å??ç½®ä½ç½®**:
+```
+config/services/
+?œâ??€ bot.service
+?œâ??€ kkgroup-api.service
+?”â??€ kkgroup-api.service.fixed
+```
+
+### 2. ç³»çµ±è³‡æ?
+**VM è¦æ ¼**:
+- ä½œæ¥­ç³»çµ±: Ubuntu 20.04 LTS
+- è¨˜æ†¶é«? ?¹æ??€æ±‚é?ç½?- ?²å?: SSD æ°¸ä?ç£ç?
+- ç¶²è·¯: ?…å«?œæ? IP
+
+## ?å?ç®¡ç?
+
+### 1. systemd ?å??ç½®
+**ä¸?Bot ?å?** (`config/services/bot.service`):
+```ini
+[Unit]
+Description=KKGroup Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kkgroup
+Environment=PYTHONPATH=/home/ubuntu/kkgroup
+ExecStart=/home/ubuntu/.venv/bin/python bots/bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**API ?å?** (`config/services/kkgroup-api.service`):
+```ini
+[Unit]
+Description=KKGroup API Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kkgroup
+Environment=FLASK_ENV=production
+ExecStart=/home/ubuntu/.venv/bin/python -m flask run --host=0.0.0.0 --port=5000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 2. ?å??ä??‡ä»¤
+```bash
+# ?Ÿå??å?
+sudo systemctl start bot.service
+sudo systemctl start shopbot.service
+sudo systemctl start kkgroup-api.service
+
+# ?œæ­¢?å?
+sudo systemctl stop bot.service
+
+# ?å??å?
+sudo systemctl restart bot.service
+
+# ?¥ç??å??€??sudo systemctl status bot.service --no-pager
+
+# ?Ÿç”¨?‹æ??ªå?
+sudo systemctl enable bot.service
+
+# ?¥ç??å??¥è?
+sudo journalctl -u bot.service -n 100 --no-pager
+
+# ?³æ???§?¥è?
+sudo journalctl -u bot.service -f
+```
+
+## ?ªå??–éƒ¨ç½?
+### 1. Git ?ªå??Œæ­¥
+**?´æ–°?³æœ¬** (`scheduled_tasks/update_restart.py`):
+```python
+#!/usr/bin/env python3
+import subprocess
+import os
+import time
+
+def update_and_restart():
+    # ?‡æ??°å?æ¡ˆç›®??    os.chdir('/home/ubuntu/kkgroup')
+    
+    # Git ?‰å??€?°ç?å¼ç¢¼
+    subprocess.run(['git', 'pull', 'origin', 'main'], check=True)
+    
+    # ?å??€?‰æ???    services = ['bot.service', 'shopbot.service', 'kkgroup-api.service']
+    for service in services:
+        subprocess.run(['sudo', 'systemctl', 'restart', service], check=True)
+        time.sleep(5)  # ç­‰å??å??Ÿå?
+    
+    print("?¨ç½²å®Œæ?")
+
+if __name__ == "__main__":
+    update_and_restart()
+```
+
+### 2. ?ªå??¨ç½²æ©Ÿåˆ¶
+**GitHub Webhook ?¨ç½²**:
+```bash
+# ä¸»è??¨ç½²?¹å?ï¼šGitHub Webhook ?³æ?è§¸ç™¼
+# ?¶ä»£ç¢?push ??main ?†æ”¯?‚è‡ª?•éƒ¨ç½?# æµç?ï¼šGit Push ??GitHub Webhook ??VM Webhook ?¥æ”¶????Git Pull ???å??å?
+
+# ?™ç”¨ Cron ä»»å?ï¼ˆå??¨æ–¼??§?Œç¶­è­·ï?
+*/5 * * * * /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/sync_to_sheet.py
+
+# ç½®ç‰©æ«ƒæ‰¹?æ›´?°ï?æ¯å‘¨ä¸‰ã€å…­ä¸‹å?2é»ï?
+0 14 * * 3,6 /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/refresh_all_lockers_cron.py
+
+# æ¯é€±ä??Œæ™¨3é»å?ä»?0 3 * * 1 /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/weekly_backup.py
+```
+
+**Webhook ?¨ç½²è©³æ?**:
+- **è§¸ç™¼æ¢ä»¶**: Push ??main/master ?†æ”¯
+- **?·è?ä½ç½®**: `/web/blueprints/webhook.py`
+- **?ä?æµç?**: Git Pull ???å??€?‰æ???- **?å??—è¡¨**: `bot.service`, `shopbot.service`, `uibot.service`
+- **?šçŸ¥æ©Ÿåˆ¶**: ?¨ç½²çµæ??¼é€åˆ° Discord ?»é?
+
+### 3. ?¨ç½²?³æœ¬
+**?ªå??¨ç½²?³æœ¬** (`config/scripts/deploy_gcp.sh`):
+```bash
+#!/bin/bash
+# GCP ?ªå??¨ç½²?³æœ¬
+
+set -e
+
+echo "?‹å??¨ç½² KKGroup ??GCP..."
+
+# 1. ?´æ–°ç³»çµ±å¥—ä»¶
+sudo apt update && sudo apt upgrade -y
+
+# 2. å®‰è? Python ä¾è³´
+/home/ubuntu/.venv/bin/pip install -r requirements.txt
+
+# 3. è¨­å?æª”æ?æ¬Šé?
+sudo chown -R ubuntu:ubuntu /home/ubuntu/kkgroup
+chmod +x /home/ubuntu/kkgroup/scheduled_tasks/*.py
+
+# 4. ?æ–°è¼‰å…¥ systemd ?ç½®
+sudo systemctl daemon-reload
+
+# 5. ?Ÿå??€?‰æ???sudo systemctl start bot.service
+sudo systemctl start shopbot.service
+sudo systemctl start kkgroup-api.service
+
+# 6. æª¢æŸ¥?å??€??sudo systemctl status bot.service --no-pager
+sudo systemctl status shopbot.service --no-pager
+sudo systemctl status kkgroup-api.service --no-pager
+
+echo "?¨ç½²å®Œæ?ï¼?
+```
+
+## ç¶²è·¯?Œéš§??
+### 1. Cloudflare Tunnel ?ç½®
+**?§é?ç®¡ç?**:
+```python
+# ?´æ–°?§é? URL ?³æœ¬
+import requests
+import json
+import os
+
+def update_tunnel_url():
+    # ?²å??¶å??§é? URL
+    tunnel_url = "https://xxxx.trycloudflare.com"
+    
+    # ?´æ–°?¬åœ°?ç½®
+    with open('locker_refresh_urls.json', 'w') as f:
+        json.dump({"tunnel_url": tunnel_url}, f)
+    
+    # ?šçŸ¥ Discord
+    webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
+    if webhook_url:
+        requests.post(webhook_url, json={
+            "content": f"?? ?§é? URL å·²æ›´?? {tunnel_url}"
+        })
+
+if __name__ == "__main__":
+    update_tunnel_url()
+```
+
+### 2. Nginx ?å?ä»??
+**Nginx ?ç½®** (`config/nginx/nginx_default.conf`):
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+    
+    # API ?å?ä»??
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # ?œæ?æª”æ??å?
+    location /static/ {
+        alias /home/ubuntu/kkgroup/web/portal/static/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # ä¸»è??é¢
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+## ??§?Œæ—¥èª?
+### 1. ç³»çµ±??§
+**?€?‹å?è¡¨æ¿** (`status_dashboard.py`):
+```python
+import psutil
+import discord
+from datetime import datetime
+
+class SystemMonitor:
+    def get_system_stats(self):
+        return {
+            'cpu_percent': psutil.cpu_percent(),
+            'memory_percent': psutil.virtual_memory().percent,
+            'disk_usage': psutil.disk_usage('/').percent,
+            'uptime': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+    
+    def get_service_status(self):
+        services = ['bot.service', 'shopbot.service', 'kkgroup-api.service']
+        status = {}
+        for service in services:
+            # æª¢æŸ¥?å??€??            result = subprocess.run(['systemctl', 'is-active', service], 
+                                  capture_output=True, text=True)
+            status[service] = result.stdout.strip()
+        return status
+```
+
+### 2. ?¥è?ç®¡ç?
+**?¥è?è¼ªè??ç½®** (`/etc/logrotate.d/kkgroup`):
+```
+/home/ubuntu/kkgroup/logs/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 644 ubuntu ubuntu
+    postrotate
+        systemctl reload rsyslog
+    endscript
+}
+```
+
+### 3. ?¯èª¤?šçŸ¥
+**Webhook ?šçŸ¥ç³»çµ±**:
+```python
+import requests
+import traceback
+
+def send_error_notification(error_msg: str, context: str = ""):
+    webhook_url = os.getenv('ERROR_WEBHOOK_URL')
+    if not webhook_url:
+        return
+    
+    embed = {
+        "title": "?š¨ KKGroup ?¯èª¤?šçŸ¥",
+        "description": f"**?¯èª¤:** {error_msg}\n**ä¸Šä???** {context}",
+        "color": 0xFF0000,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    requests.post(webhook_url, json={"embeds": [embed]})
+
+# ä½¿ç”¨ç¯„ä?
+try:
+    # ?¯èƒ½?ºéŒ¯?„ç?å¼ç¢¼
+    pass
+except Exception as e:
+    send_error_notification(str(e), "?å??Ÿå?")
+```
+
+## ?™ä»½?Œæ¢å¾?
+### 1. ?ªå??™ä»½
+**æ¯é€±å?ä»½è…³??* (`scheduled_tasks/weekly_backup.py`):
+```python
+#!/usr/bin/env python3
+import subprocess
+import os
+import datetime
+import tarfile
+
+def create_backup():
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = f"/home/ubuntu/backups/{timestamp}"
+    
+    # å»ºç??™ä»½?®é?
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    # ?™ä»½å°ˆæ?æª”æ?
+    subprocess.run([
+        'tar', '-czf', f'{backup_dir}/kkgroup.tar.gz',
+        '-C', '/home/ubuntu', 'kkgroup'
+    ], check=True)
+    
+    # ?™ä»½è³‡æ?åº?    subprocess.run([
+        'cp', '/home/ubuntu/kkgroup/data/database.db',
+        f'{backup_dir}/database.db'
+    ], check=True)
+    
+    # æ¸…ç??Šå?ä»?(ä¿ç?30å¤?
+    subprocess.run([
+        'find', '/home/ubuntu/backups', '-type', 'd',
+        '-mtime', '+30', '-exec', 'rm', '-rf', '{}', ';'
+    ], check=True)
+    
+    print(f"?™ä»½å®Œæ?: {backup_dir}")
+
+if __name__ == "__main__":
+    create_backup()
+```
+
+### 2. ?¢å¾©ç¨‹å?
+**?¢å¾©?³æœ¬** (`config/scripts/restore_backup.sh`):
+```bash
+#!/bin/bash
+# ?™ä»½?¢å¾©?³æœ¬
+
+BACKUP_DIR=$1
+if [ -z "$BACKUP_DIR" ]; then
+    echo "?¨æ?: $0 <?™ä»½?®é?>"
+    exit 1
+fi
+
+echo "?‹å??¢å¾©?™ä»½: $BACKUP_DIR"
+
+# 1. ?œæ­¢?€?‰æ???sudo systemctl stop bot.service
+sudo systemctl stop shopbot.service
+sudo systemctl stop kkgroup-api.service
+
+# 2. ?™ä»½?¶å??€??sudo cp -r /home/ubuntu/kkgroup /home/ubuntu/kkgroup.backup.$(date +%Y%m%d_%H%M%S)
+
+# 3. ?¢å¾©å°ˆæ?æª”æ?
+sudo tar -xzf $BACKUP_DIR/kkgroup.tar.gz -C /home/ubuntu/
+
+# 4. ?¢å¾©è³‡æ?åº?sudo cp $BACKUP_DIR/database.db /home/ubuntu/kkgroup/data/
+
+# 5. ?æ–°è¨­å?æ¬Šé?
+sudo chown -R ubuntu:ubuntu /home/ubuntu/kkgroup
+
+# 6. ?å??å?
+sudo systemctl start bot.service
+sudo systemctl start shopbot.service
+sudo systemctl start kkgroup-api.service
+
+echo "?¢å¾©å®Œæ?ï¼?
+```
+
+## å®‰å…¨?ç½®
+
+### 1. ?²ç«?†è¨­å®?```bash
+# UFW ?²ç«?†é?ç½?sudo ufw enable
+sudo ufw allow ssh
+sudo ufw allow 80
+sudo ufw allow 443
+sudo ufw allow 5000  # API ?å?ç«¯å£
+```
+
+### 2. SSH å®‰å…¨
+**SSH ?ç½®** (`/etc/ssh/sshd_config`):
+```
+Port 22
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+MaxAuthTries 3
+```
+
+### 3. ?°å?è®Šæ•¸ä¿è­·
+**.env æª”æ?ä¿è­·**:
+```bash
+# è¨­å?æª”æ?æ¬Šé?
+chmod 600 /home/ubuntu/kkgroup/.env
+chown ubuntu:ubuntu /home/ubuntu/kkgroup/.env
+
+# ç¢ºä?ä¸æ?è¢«æ?äº¤åˆ° Git
+echo ".env" >> /home/ubuntu/kkgroup/.gitignore
+```
+
+## ?ˆèƒ½?ªå?
+
+### 1. ç³»çµ±è³‡æ???§
+```python
+import psutil
+import time
+
+def monitor_resources():
+    while True:
+        cpu = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory().percent
+        disk = psutil.disk_usage('/').percent
+        
+        if cpu > 80:
+            send_alert(f"CPU ä½¿ç”¨?‡é?é«? {cpu}%")
+        if memory > 80:
+            send_alert(f"è¨˜æ†¶é«”ä½¿?¨ç??é?: {memory}%")
+        if disk > 80:
+            send_alert(f"ç£ç?ä½¿ç”¨?‡é?é«? {disk}%")
+        
+        time.sleep(60)  # æ¯å??˜æª¢?¥ä?æ¬?```
+
+### 2. ?å??ªå??å?
+**?¥åº·æª¢æŸ¥?³æœ¬**:
+```python
+import subprocess
+import requests
+import time
+
+def health_check():
+    services = {
+        'bot.service': 'http://localhost:8080/health',
+        'kkgroup-api.service': 'http://localhost:5000/api/health'
+    }
+    
+    for service, health_url in services.items():
+        try:
+            response = requests.get(health_url, timeout=10)
+            if response.status_code != 200:
+                restart_service(service)
+        except requests.RequestException:
+            restart_service(service)
+
+def restart_service(service):
+    print(f"?å??å?: {service}")
+    subprocess.run(['sudo', 'systemctl', 'restart', service], check=True)
+```
+
+## ?…é??’é™¤
+
+### 1. å¸¸è??é?
+**?å??¡æ??Ÿå?**:
+```bash
+# æª¢æŸ¥?å??€??sudo systemctl status bot.service
+
+# ?¥ç?è©³ç´°?¯èª¤
+sudo journalctl -u bot.service -n 50 --no-pager
+
+# æª¢æŸ¥?ç½®æª”æ?
+python -m py_compile bots/bot.py
+```
+
+**ç¶²è·¯????é?**:
+```bash
+# æª¢æŸ¥ç«¯å£??½
+sudo netstat -tlnp | grep :5000
+
+# æª¢æŸ¥?²ç«??sudo ufw status
+
+# æ¸¬è©¦???
+curl -I http://localhost:5000
+```
+
+### 2. ç·Šæ€¥æ¢å¾©ç?åº?```bash
+# 1. å¿«é€Ÿé??Ÿæ??‰æ???sudo systemctl restart bot.service shopbot.service kkgroup-api.service
+
+# 2. æª¢æŸ¥ç³»çµ±è³‡æ?
+free -h
+df -h
+top
+
+# 3. ?¥ç??€è¿‘ç??¥è?
+sudo journalctl -n 100 --no-pager
+
+# 4. å¦‚æ?å¿…è?ï¼Œå?æ»¾åˆ°ä¸Šä??‹ç???git log --oneline -5
+git reset --hard HEAD~1
+```
+
+## ?¸é??‡æ?
+
+- [å°ˆæ??¶æ?ç¸½è¦½](project-architecture.md)
+- [VM ?ä??‡å?](../entities/vm-operations.md)
+- [Webhook ?Œéš§?“è¨­å®š](webhook-and-tunnel.md)
+- [Discord Bot ç³»çµ±è©³è§£](discord-bot-system.md)
+- [LogMonitor ??Auto AI Fix æµç?ç¸½è¦½](log_monitor_pipeline.md)
+- [GitHub Actions AI ?¤éŒ¯ç³»çµ±](../github-actions-ai-debugging.md)
