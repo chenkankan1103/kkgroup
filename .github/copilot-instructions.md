@@ -199,3 +199,303 @@ New slash commands must be registered in:
 ---
 
 *These instructions are derived from Matt Pocock's engineering skills (mattpocock/skills) adapted for VS Code + GitHub Copilot.*
+
+---
+
+## KKGroup 專案實務知識庫
+
+> **快速導覽**：以下為 KKGroup 專案特有的部署、開發、維運規則。若需深入了解架構，請參考 `knowledge/_wiki/` 下的詳細文檔。
+
+### 📚 核心知識庫參考（優先閱讀順序）
+
+| 檔案路徑（AI 讀取用） | Obsidian 連結（人類用） | 用途 |
+|----------------------|------------------------|------|
+| `knowledge/_wiki/concepts/ai-fast-read.md` | `[[concepts/ai-fast-read]]` | 專案一句話摘要、分區、核心執行單位、資料層模型、高頻維運入口、最重要工作流、必記規則 |
+| `knowledge/_wiki/entities/bot-services.md` | `[[entities/bot-services]]` | 三個 Bot 服務、systemd 操作、常用指令 |
+| `knowledge/_wiki/entities/command-registry.md` | `[[entities/command-registry]]` | `scripts/commands_manager.py` 統一操作入口、registry 結構、診斷命令 |
+| `knowledge/_wiki/concepts/webhook-and-tunnel.md` | `[[concepts/webhook-and-tunnel]]` | GitHub push → Cloudflare tunnel → Nginx → Flask → git pull → restart 流程、已知事實、檢查點 |
+| `knowledge/_wiki/concepts/coding-rules-and-paths.md` | `[[concepts/coding-rules-and-paths]]` | 高頻編碼規則、路徑規則（字型三層 `../`）、Discord 指令規則 |
+| `knowledge/_wiki/concepts/discord-bot-system.md` | `[[concepts/discord-bot-system]]` | 三 Bot 架構、Cogs 分類、按鈕視圖系統、Slash Commands、權限角色、訊息處理、事件處理 |
+| `knowledge/_wiki/concepts/project-architecture.md` | `[[concepts/project-architecture]]` | 完整專案架構圖、資料流向、技術棧、安全、擴展性、效能優化、監控 |
+| `knowledge/_wiki/concepts/deployment-and-operations.md` | `[[concepts/deployment-and-operations]]` | GCP VM 架構、systemd 服務配置、自動化部署、GitHub Webhook、網路隧道 |
+| `knowledge/_wiki/concepts/kk-park-economy-system.md` | `[[concepts/kk-park-economy-system]]` | KK 幣經濟系統跨層關聯圖、核心代碼入口、查問題閱讀順序、功能對應檔案速查 |
+| `knowledge/_wiki/concepts/ai-memory-and-vm-knowledge-pipeline.md` | `[[concepts/ai-memory-and-vm-knowledge-pipeline]]` | AI 記憶與 VM 知識更新流程、四步驟資料流、排程、Discord Webhook 通知 |
+| `knowledge/_wiki/concepts/paperdoll-workflow.md` | `[[concepts/paperdoll-workflow]]` | `[[concepts/paperdoll-workflow]]` | 紙娃娃核心原則、修復流程 5 步驟、常見風險 |
+
+> ⚠️ **注意**：專案根目錄**不存在** `CODING_RULES/` 資料夾。編碼規範請參考 `knowledge/_wiki/concepts/coding-rules-and-paths.md` 及上述相關概念文檔。
+
+---
+
+### 🚀 快速查詢指令
+
+```bash
+# 部署
+git push → webhook 自動更新 ✅
+
+# 重啟服務
+sudo systemctl restart bot.service shopbot.service uibot.service
+
+# 查看日誌
+sudo journalctl -u bot.service -n 50 --no-pager
+
+# 資料庫操作
+本地驗證 → gcloud compute scp 複製到 VM → 重啟服務
+
+# 字型路徑（從 cogs/common/ 出發）
+../../fonts/NotoSansCJKtc-Regular.otf  # 正確：三層 ../
+../fonts/                              # 錯誤：只有一層 ../
+
+# 紙娃娃完整流程
+檢查 → 修復 → 驗證 → 部署 → /admin_refresh_all_lockers
+
+# GCP VM SSH (IAP)
+gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-c --tunnel-through-iap
+
+# 統一維運入口
+python scripts/commands_manager.py <service> <action>
+```
+
+---
+
+### 🏗️ 專案結構速覽
+
+```
+kkgroup/
+├── bots/           # bot.py, shopbot.py, uibot.py
+├── cogs/
+│   ├── common/     # 共用功能、KK幣、AI、工作功能
+│   ├── shop/       # 商店、商家、大麻種植、醫院商家
+│   └── ui/         # UI 互動、置物櫃、動漫追蹤、活動
+├── shared/
+│   ├── db/         # db_adapter.py, sheet_driven_db.py, ai_memory.py
+│   └── utils/      # embed_views.py, view_registry.py, fortress_system.py
+├── web/
+│   ├── api/        # Flask API、blueprints
+│   ├── portal/     # 前端 HTML、RPG 遊戲
+│   └── activities/ # 活動系統
+├── config/
+│   ├── commands_registry.json
+│   ├── discord_commands_registry.json
+│   ├── services/   # systemd service 檔（僅 VM 管理，不上傳 Git）
+│   └── scripts/
+├── scheduled_tasks/ # cron 任務
+├── scripts/        # commands_manager.py、掃描腳本等
+├── fonts/          # NotoSansCJKtc-Regular.otf
+├── game/           # Web RPG 系統
+└── knowledge/      # 知識庫
+```
+
+---
+
+### 🔧 核心開發規範
+
+#### Discord.py 2.0
+- 使用 `discord.ext.commands.Bot` 搭配 `intents=discord.Intents.all()`
+- Slash Commands：`@bot.tree.command()` 或 `@app_commands.command()`
+- **永久視圖必須繼承 `PersistentViewBase`**（`shared/utils/view_registry.py`）
+- 按鈕回調：`interaction.response.defer()` → `interaction.followup.send()`
+- 用戶專用回饋使用 `ephemeral=True`
+
+#### 非同步最佳實踐
+- 平行操作用 `asyncio.gather()`
+- 熱路徑避免 `asyncio.sleep()`
+- 資源管理用 `async with`
+- 長期任務處理 `asyncio.CancelledError`
+
+#### 資料庫
+- 參數化查詢：`cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))`
+- 連線池：`sqlite3.connect(check_same_thread=False)`
+- 交易：`BEGIN` / `commit()` / `rollback()`
+
+#### 環境變數
+- `.env` 僅本地使用，**不提交 Git**
+- 必要變數：`DISCORD_TOKEN`、`DATABASE_URL`、`GCP_PROJECT_ID`
+- VM 上透過 systemd `EnvironmentFile` 設定
+
+#### 程式碼風格
+- 公開函數必須有型別提示
+- 類別與公開方法需有 docstring（**解釋 WHY，不只是 WHAT**）
+- 行寬上限 100 字元
+- 格式化用 `black`，檢查用 `ruff`
+
+---
+
+### 📦 部署與維運流程
+
+#### GitHub Webhook 自動化（主流程）
+1. **Push 事件觸發** (`web/blueprints/webhook.py`)
+   - GitHub push → Cloudflare tunnel → kkgroup-api (Flask)
+   - 驗證簽名 → `git pull` → 重啟三個 Bot 服務
+   - 發送 Discord 通知
+
+2. **Flask API 服務** (`kkgroup-api.service`, port 5000)
+   - 依賴：`network-online.target`, `systemd-resolved.service`
+   - 編碼環境變數：`PYTHONIOENCODING=utf-8`, `LANG=C.UTF-8`
+
+3. **Webhook 狀態**：✅ **完全正常運作**
+   - GitHub UI 可能顯示 "We couldn't deliver this payload"
+   - 原因：隧道無法完整回傳 HTTP 200 給 GitHub
+   - **不影響實際功能**，只影響 UI 記錄
+
+4. **驗證 Webhook 運作**：
+   - Flask 日誌：`sudo journalctl -u kkgroup-api.service | grep webhook`
+   - Bot 重啟：`sudo systemctl status bot.service | grep Active`
+   - GitHub 交付記錄：GitHub > Webhooks > Deliveries
+
+#### VM 服務管理
+- 三服務：`bot.service`、`shopbot.service`、`uibot.service`
+- **必須啟用開機自啟**：`sudo systemctl enable bot.service shopbot.service uibot.service`
+- 建議重啟策略：
+  ```ini
+  Restart=on-failure
+  RestartSec=10
+  StartLimitBurst=10
+  StartLimitIntervalSec=600
+  ```
+- e2-micro 記憶體有限，**務必加 swap**：
+  ```bash
+  sudo fallocate -l 1G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+  ```
+
+#### Cron 排程任務
+- 每 5 分鐘：`update_restart.py`、`sync_to_sheet.py`
+- 每週三、六 14:00：`refresh_all_lockers_cron.py`
+- 每週一 03:00：`weekly_backup.py`
+- 知識庫刷新：每天 18:00（台灣時間）執行 `refresh_knowledge_base.py`
+
+---
+
+### 🎮 紙娃娃系統核心規則
+
+#### 新用戶隨機造型
+```python
+# ✅ 正確：使用 paperdoll_manager.get_random()
+random_appearance = paperdoll_manager.get_random()
+user_data = {
+    'face': int(random_appearance['face']),
+    'hair': int(random_appearance['hair']),
+    'skin': int(random_appearance['skin']),
+    'top': int(random_appearance['top']),
+    'bottom': int(random_appearance['bottom']),
+    'shoes': int(random_appearance['shoes']),
+    'gender': random_appearance['gender'],
+    # ...其他欄位
+}
+```
+
+#### 用戶選擇性別時
+```python
+# ✅ 保持性別，生成符合該性別的隨機造型
+selected_gender = select.values[0]  # 'male' 或 'female'
+appearance = paperdoll_manager.get_random(preserve_gender=selected_gender)
+await self.cog.update_user_data(user_id, appearance)
+```
+
+#### 核心原則
+- ✅ 必須使用 `paperdoll_manager.get_random()` 生成隨機造型
+- ✅ 來源必須是 `twms_fashion_db.json` 中的有效物品 ID
+- ✅ 性別一致性：男性選自 `face_male/hair_male` 等，女性選自 `face_female/hair_female` 等
+- ❌ **不要在 welcome_message.py 硬編碼造型值**（如 `'face': 20005`）
+- ✅ 所有 API URL 透過 `paperdoll_manager.build_api_url()` 建構
+
+#### 修復流程（完整 5 步）
+1. **診斷** - 檢查 fashion DB 和部件 ID 有效性
+2. **修復** - 更新 `twms_fashion_db.json` 或代碼邏輯
+3. **驗證** - 本地測試確保生成的造型有效
+4. **部署** - Git push 觸發 webhook 重啟 Bot
+5. **刷新** - 執行 `/admin_refresh_all_lockers` 更新所有用戶紙娃娃
+
+---
+
+### 💰 KK 園區經濟系統（跨層共享機制）
+
+核心貨幣 `kkcoin` 行為分散在：
+- `cogs/common/kcoin.py` - 查詢、排行榜、中央儲備金
+- `cogs/shop/shop.py` - 購物、拉霸、裝備購買
+- `cogs/shop/cannabis_cog.py` - 種植循環
+- `cogs/shop/merchant/` - 多商家交易流程
+- `cogs/ui/anime_tracker.py` - UI 互動獎勵
+- `shared/utils/fortress_system.py` - 活動成本與獎勵
+- `shared/db/db_adapter.py` - `get_user_kkcoin()`、`update_user_kkcoin()` 向後相容入口
+- `shared/db/sheet_driven_db.py` - kkcoin 為玩家主資料欄位之一
+
+**查問題閱讀順序**：
+1. 使用者說數字不對 → `kcoin.py` → `db_adapter.py` → 觸發功能檔
+2. 功能沒扣款/發獎 → 對應 Cog/View → 是否呼叫 `update_user_kkcoin()` / `set_user_field()` → 有無重複防護
+3. 找不到指令 → `config/discord_commands_registry.json` → 對應 `file` 欄位 → 進 Cog
+
+---
+
+### 🔐 安全與資料庫原則
+
+- 敏感資訊全在 `.env`：Bot Token、API Key、密碼
+- `.env` 在 `.gitignore` 中
+- 代碼中用 `os.getenv("KEY")`
+- **洩漏立即撤銷並重設**
+- **VM 為主，本地驗證後複製**
+- **改資料庫前必備份**
+- VIP 角色用 `/grant_temporary_role` 給予（不要手動給）
+- `cleanup_expired_roles_loop()` 每 5 分鐘自動清理過期角色
+
+---
+
+### ⚠️ 常見踩坑避雷
+
+| 層級 | ❌ 不要做 | ✅ 正確做法 |
+|------|-----------|-------------|
+| 代碼 | 硬編碼敏感資訊 | 用環境變數 |
+| 代碼 | 分散定義按鈕 | 用統一視圖系統 |
+| 代碼 | 盲目改代碼 | 先查 git 歷史找工作版本 |
+| 代碼 | 忽視字型路徑層級 | 從 `cogs/common/` 用 `../../fonts/` |
+| 部署 | 手動改隧道 URL | 讓 webhook 自動處理 |
+| 部署 | 頻繁重啟 Flask | 只在必要時重啟 |
+| 部署 | 只在本地測試 | **必須在 VM 驗證** |
+| 部署 | 上傳 service 檔到 Git | service 檔僅在 VM 管理 |
+| 資料庫 | 直接改 VM 資料庫 | 本地驗證 → 複製 → 重啟 |
+| 資料庫 | 忘記備份 | 改前必備份 |
+| 資料庫 | 只改部分部位 | 完整更新 |
+| 資料庫 | 用單一值替換所有預設 | 用 `paperdoll_manager.get_random()` |
+
+---
+
+### ❓ 常見問題快速回答
+
+| 問題 | 回答 |
+|------|------|
+| 代碼多久生效？ | webhook 自動觸發，push 後幾秒內 |
+| 可以直接改資料庫嗎？ | 不建議，本地驗證 → 複製 → 重啟 |
+| 為什麼用統一按鈕系統？ | 改一個地方改所有 |
+| 紙娃娃修復後看不到效果？ | 1) `/admin_refresh_all_lockers` 2) 資料庫有無複製到 VM 3) 服務有無重啟 |
+| 動畫推播重複/沒推到？ | 2026-04-29 已修復 - 用資料庫追蹤已檢查時刻，防重啟重複推送，修正時間計算邏輯 |
+
+---
+
+### 🔗 相關技能調用模式
+
+| 使用者說... | 調用技能 |
+|-------------|----------|
+| "該用哪個技能？" | `ask-matt` |
+| "幫我規劃這個功能" | `grill-with-docs` (有代碼庫) 或 `grill-me` (無代碼庫) |
+| "這太大了，一個 session 做不完" | `wayfinder` |
+| "轉成 spec" | `to-spec` |
+| "拆成 tickets" | `to-tickets` |
+| "實作這個 spec" | `implement` |
+| "審查我的變更" | `code-review` |
+| "除錯這個 bug" | `diagnosing-bugs` |
+| "改善架構" | `improve-codebase-architecture` |
+| "設定 repo 給 skills 用" | `setup-matt-pocock-skills` |
+| "教我 X" | `teach` |
+| "寫一份 handoff" | `handoff` |
+
+---
+
+### 🧹 Context Hygiene（上下文衛生）
+
+- 步驟 1-3（grill → spec → tickets）在**同一個未中斷的 context window** 完成
+- 不要在 `/to-tickets` 前 compact
+- 接近 token 限制 (~120k) 時，用 `/handoff` 產出文件後重新開始
+- 每個 `/implement` 從其 ticket 重新開始

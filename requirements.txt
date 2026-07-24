@@ -28,3 +28,7 @@ litellm>=1.83.0
 beautifulsoup4
 html5lib
 serpapi
+
+# Vector Database & Embeddings (for Chroma RAG)
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
