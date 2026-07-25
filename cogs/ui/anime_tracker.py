@@ -47,6 +47,9 @@ from .push_core import AnimePushCore, AnimeDatabase, ANIME_CHANNEL_ID
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
+# Logger
+logger = logging.getLogger(__name__)
+
 
 class AnimeTracker(commands.Cog):
     """Bahamut 動畫追蹤主 Cog"""
@@ -928,8 +931,8 @@ class AnimeTracker(commands.Cog):
         }
 
         def __init__(self, episode: Dict, anime_tracker: "AnimeTracker"):
-            # 永久視圖設置：timeout=None 表示永不超時，persistent=True 表示重啟後依然有效
-            super().__init__(timeout=None)
+            # 永久視圖設置：timeout=None 由 PersistentViewBase 自動處理
+            super().__init__()
             self.episode = episode
             self.tracker = anime_tracker
             self.video_sn = episode.get("videoSn")

@@ -99,6 +99,35 @@ These run beneath other skills — reach for them directly when the **words** ar
 - Connection pooling via `sqlite3.connect()` with `check_same_thread=False`
 - Transactions: `conn.execute("BEGIN")` / `conn.commit()` / `conn.rollback()`
 
+### ⚠️ 避免資料庫鎖定問題 (Database Lock Prevention)
+
+**重要**：SQLite 在多進程並發存取時容易發生 `database is locked` 錯誤。請遵循以下最佳實踐：
+
+1. **啟用 WAL 模式**：在資料庫連線建立時啟用 WAL (Write-Ahead Logging) 模式
+   ```python
+   conn.execute("PRAGMA journal_mode=WAL")
+   conn.execute("PRAGMA busy_timeout=30000")  # 30 秒等待超時
+   conn.execute("PRAGMA synchronous=NORMAL")
+   ```
+
+2. **使用連線池/共用連線**：避免頻繁開關連線，使用連線池或共用連線物件
+
+3. **設定 busy_timeout**：設定足夠的等待時間，避免短暫鎖定導致立即失敗
+   ```python
+   conn.execute("PRAGMA busy_timeout=30000")  # 30 秒
+   ```
+
+4. **避免長時間持有連線**：在 `with` 區塊中盡快完成操作並釋放連線
+
+5. **批次操作合併**：將多個寫入操作合併為單一交易，減少鎖定時間
+
+6. **使用 WAL 模式的優勢**：
+   - 讀取不阻塞寫入，寫入不阻塞讀取
+   - 支援多進程並發讀取
+   - 減少鎖定衝突機率
+
+**已知問題**：專案中有 5 個進程同時存取同一 SQLite 資料庫 (bot, shopbot, uibot, unified_api, auto_self_heal)，已於 2026-07-24 修復並啟用 WAL 模式解決。
+
 ## GCP VM Deployment
 
 - SSH via IAP: `gcloud compute ssh <user>@<instance> --zone <zone> --tunnel-through-iap`
