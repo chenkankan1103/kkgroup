@@ -290,9 +290,9 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {ANIME_MESSAGES_TABLE}
-                    (messageId, videoSn, animeSn, anime_name, channelId)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (message_id, video_sn, anime_sn, anime_name, channel_id))
+                    (messageId, videoSn, animeSn, animeName, anime_name, channelId)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (message_id, video_sn, anime_sn, anime_name, anime_name, channel_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -1226,6 +1226,7 @@ class AnimePushCore:
         """
         # 使用並發鎖，防止 dispatcher 和 catch-up 同時推送同一時段
         async with self._push_lock:
+            logger.info(f"🚀 [send_anime_push] 開始處理 {scheduled_time} (lock acquired)")
             try:
                 await self.bot.wait_until_ready()
 
@@ -1258,14 +1259,19 @@ class AnimePushCore:
                 logger.debug(f"🔍 [send_anime_push] {scheduled_time} 預期 videoSn: {expected_video_sns}")
 
                 # 獲取最新動畫數據
+                logger.info(f"📡 [send_anime_push] {scheduled_time} 呼叫 API 獲取新番...")
                 episodes = await self.fetch_new_anime_from_api()
+                logger.info(f"📡 [send_anime_push] {scheduled_time} API 回傳 {len(episodes) if episodes else 0} 筆")
                 if not episodes:
                     # API 失敗 → 不標記，讓補推稍後重試
                     logger.warning(f"⚠️ [send_anime_push] API 無回應，"
                                    f"跳過 {scheduled_time}（不標記，稍後重試）")
                     return False
 
-                # 🔑 關鍵過濾：只保留 videoSn 匹配該時段的 + 尚未通知的
+                # 🔑 關鍵過濾：只保留 videoSn 匹配該時段的
+                # 注意：不檢查 is_notified()，因為 newAnimeSchedule API 每週
+                # 回傳相同的 videoSn（排程模板），若檢查會阻止本週正常推送。
+                # pushed 旗標已足夠防止重複推送同一時段。
                 new_episodes = []
                 for ep in episodes:
                     video_sn = ep.get("videoSn")
@@ -1275,11 +1281,8 @@ class AnimePushCore:
                         video_sn_int = int(video_sn)
                     except (ValueError, TypeError):
                         continue
-                    # 必須 videoSn 匹配該時段，且尚未通知過
-                    if video_sn_int in expected_video_sns and not self.db.is_notified(video_sn_int):
+                    if video_sn_int in expected_video_sns:
                         new_episodes.append(ep)
-                    elif video_sn_int in expected_video_sns and self.db.is_notified(video_sn_int):
-                        logger.debug(f"⏭️ [send_anime_push] videoSn={video_sn} 已通知過，跳過")
                     # videoSn 不匹配的 → 靜默跳過（不屬於這個時段）
 
                 # 初始化 sent_count（在邏輯判斷前）
