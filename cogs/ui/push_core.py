@@ -563,6 +563,42 @@ class AnimeDatabase:
             logger.error(f"❌ [get_schedule_video_sns] Error: {e}", exc_info=True)
             return set()
 
+    def get_schedule_titles(self, week_start_date: str, day_of_week: int,
+                            scheduled_time: str) -> set:
+        """從週表取得指定時段預期的動畫標題集合（用於 title 匹配 fallback）
+
+        newAnimeSchedule API 的 videoSn 可能跨週不更新（模板值），
+        導致 videoSn 匹配失敗時，改用 title（動畫名稱）進行匹配。
+
+        Args:
+            week_start_date: 週起始日期 "YYYY-MM-DD"
+            day_of_week: 1=週一~7=週日
+            scheduled_time: "HH:MM" 格式
+        Returns:
+            set[str]: 該時段預期的動畫標題集合（可能為空）
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT animeData FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
+                """, (week_start_date, day_of_week, scheduled_time))
+                rows = cursor.fetchall()
+                titles = set()
+                for row in rows:
+                    try:
+                        anime_data = json.loads(row[0])
+                        title = anime_data.get('title', '').strip()
+                        if title:
+                            titles.add(title)
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        pass
+                return titles
+        except Exception as e:
+            logger.error(f"❌ [get_schedule_titles] Error: {e}", exc_info=True)
+            return set()
+
     def clean_orphaned_records(self, week_start_date: str = None) -> dict:
         """清理孤兒記錄：anime_messages、anime_notified 中對應已刪除週表時段的記錄
 
@@ -1109,35 +1145,60 @@ class AnimePushCore:
     async def generate_anime_embed(self, episode: Dict) -> Optional[discord.Embed]:
         """為動畫集數生成 Discord Embed
 
-        修復 (2026-07-23):
-        - 標題直接用 API 回傳值（API title 已含集數，不再重複加「第X集」）
-        - 移除標籤欄位（API 無標籤資料）
-        - 觀看數從 episode 直接提取（不再依賴第二個 API 呼叫）
-        - 簡介從 episode 提取，無資料時不顯示（不再打 video.php 浪費配額）
+        修復 (2026-07-27):
+        - 標題加入 volume（集數），因為 API title 只有動畫名稱不含集數
+        - 簡介從 video.php API 獲取（newAnime.date API 無 content/description 欄位）
+        - 觀看數從 episode.popular 提取（API 的觀看數欄位名為 popular）
         """
         try:
             video_sn = episode.get("videoSn")
             anime_sn = episode.get("animeSn")
             title = episode.get("title", "未知標題")
+            volume = episode.get("volume", "")
             cover = episode.get("cover", "")
 
-            # 🔑 標題直接用 API 回傳值，不再附加「第X集」
-            # Bahamut API 的 title 已包含集數資訊（如「咒術迴戰 第45集」）
-            title_display = title
+            # 🔑 修復①：標題 + 集數
+            # Bahamut API 的 title 只有動畫名稱（如「咒術迴戰」），
+            # volume 才是集數（如「第45集」），需手動組合
+            if volume and str(volume).strip():
+                title_display = f"{title} {volume}"
+            else:
+                title_display = title
 
-            # 🔑 觀看數：從 episode 直接提取（newAnime.date API 回應中的欄位）
+            # 🔑 觀看數：從 episode 直接提取（newAnime.date API 的 popular 欄位）
             view_count = 0
             for field in ['popular', 'viewCount', 'views', 'playCount']:
                 val = episode.get(field)
-                if val is not None and isinstance(val, (int, float)) and val > 0:
-                    view_count = int(val)
-                    break
+                if val is not None:
+                    try:
+                        v = int(val)
+                        if v > 0:
+                            view_count = v
+                            break
+                    except (ValueError, TypeError):
+                        pass
 
-            # 🔑 簡介：從 episode 直接提取（若有），不再打第二個 API
+            # 🔑 修復：簡介從 video.php API 獲取（newAnime.date API 無 content/description）
             description_text = ""
-            raw_content = episode.get('content', '') or episode.get('description', '') or ''
-            if raw_content:
-                description_text = self._truncate_text(str(raw_content), 300)
+            if video_sn:
+                try:
+                    details = await self.fetch_anime_details_from_api(video_sn)
+                    if details:
+                        # video.php 回應結構: { data: { content: "...", ... } }
+                        raw_content = (
+                            details.get('data', {}).get('content', '') or
+                            details.get('content', '') or
+                            details.get('description', '')
+                        )
+                        if raw_content:
+                            # 去除 HTML 標籤
+                            import re
+                            clean = re.sub(r'<[^>]+>', '', str(raw_content))
+                            clean = clean.replace('&nbsp;', ' ').replace('&amp;', '&')
+                            clean = clean.replace('&lt;', '<').replace('&gt;', '>')
+                            description_text = self._truncate_text(clean.strip(), 300)
+                except Exception as e:
+                    logger.debug(f"⚠️ [generate_anime_embed] 無法獲取簡介 for videoSn={video_sn}: {e}")
 
             # 評分
             score = episode.get('score', 0)
@@ -1268,10 +1329,9 @@ class AnimePushCore:
                                    f"跳過 {scheduled_time}（不標記，稍後重試）")
                     return False
 
-                # 🔑 關鍵過濾：只保留 videoSn 匹配該時段的
-                # 注意：不檢查 is_notified()，因為 newAnimeSchedule API 每週
-                # 回傳相同的 videoSn（排程模板），若檢查會阻止本週正常推送。
-                # pushed 旗標已足夠防止重複推送同一時段。
+                # 🔑 關鍵過濾：優先 videoSn 匹配，失敗時 fallback 到 title 匹配
+                # newAnimeSchedule API 的 videoSn 是模板值，可能跨週不更新，
+                # 導致 videoSn 匹配失敗時誤推上週集數。改用 title 匹配作為 fallback。
                 new_episodes = []
                 for ep in episodes:
                     video_sn = ep.get("videoSn")
@@ -1283,7 +1343,23 @@ class AnimePushCore:
                         continue
                     if video_sn_int in expected_video_sns:
                         new_episodes.append(ep)
+                        continue
                     # videoSn 不匹配的 → 靜默跳過（不屬於這個時段）
+
+                # 🔧 Fallback: 若 videoSn 匹配為空，改用 title 匹配
+                # 解決 newAnimeSchedule 的 videoSn 跨週不更新導致推送上週集數的問題
+                if not new_episodes:
+                    expected_titles = self.db.get_schedule_titles(
+                        week_start_date, day_of_week, scheduled_time
+                    )
+                    if expected_titles:
+                        logger.info(f"🔄 [send_anime_push] {scheduled_time} videoSn 匹配失敗，"
+                                    f"改用 title 匹配（預期 titles: {expected_titles}）")
+                        for ep in episodes:
+                            ep_title = (ep.get('title') or '').strip()
+                            if ep_title in expected_titles:
+                                new_episodes.append(ep)
+                                logger.info(f"  ✅ title 匹配: {ep_title} (videoSn={ep.get('videoSn')})")
 
                 # 初始化 sent_count（在邏輯判斷前）
                 sent_count = 0
