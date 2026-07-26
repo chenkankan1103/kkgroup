@@ -1329,6 +1329,28 @@ class AnimePushCore:
             logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
             return None
 
+    async def _check_and_send_anime(self, scheduled_time_str: str, channel: discord.TextChannel) -> bool:
+        """檢查並發送動畫推送 - 內部委託給 send_anime_push
+
+        此方法提供統一介面供 anime_tracker、ranking_stats、schedule_tracker 調用。
+        實際邏輯由 send_anime_push 處理（含並發鎖、videoSn 匹配、title fallback 等）。
+
+        Args:
+            scheduled_time_str: 預定時間，格式 "HH:MM"
+            channel: Discord 文字頻道物件
+
+        Returns:
+            bool: 是否成功發送通知
+        """
+        if not channel:
+            logger.warning(f"⚠️ [_check_and_send_anime] 頻道為 None，跳過 {scheduled_time_str}")
+            return False
+
+        return await self.send_anime_push(
+            scheduled_time=scheduled_time_str,
+            channel_id=channel.id
+        )
+
     async def send_anime_push(self, scheduled_time: str, channel_id: int,
                              day_of_week: int = None,
                              week_start_date: str = None) -> bool:
