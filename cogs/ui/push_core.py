@@ -1105,22 +1105,88 @@ class AnimePushCore:
             return None
 
     async def fetch_anime_details_from_api(self, video_sn: int) -> Optional[Dict]:
-        """從 API 獲取單集動畫詳細信息"""
+        """從 API 獲取單集動畫詳細信息（已廢棄：video.php 需要驗證）"""
         try:
-            # 速率限制
             await self._rate_limit_api()
-
             url = f"https://api.gamer.com.tw/mobile_app/anime/v2/video.php?vsn={video_sn}"
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        logger.warning(f"❌ [fetch_anime_details_from_api] API returned status {resp.status} for video_sn {video_sn}")
                         return None
                     data = await resp.json()
                     return data
         except Exception as e:
-            logger.error(f"❌ [fetch_anime_details_from_api] Failed to fetch anime details for video_sn {video_sn}: {e}", exc_info=True)
+            logger.debug(f"⚠️ [fetch_anime_details_from_api] video_sn={video_sn}: {e}")
+            return None
+
+    async def fetch_anime_page_html(self, video_sn: int) -> Optional[Dict[str, Any]]:
+        """從巴哈動畫瘋網頁爬取簡介、評分、觀看人數
+
+        video.php API 需要驗證無法使用，改為直接爬 animeVideo.php 網頁 HTML。
+        網頁是伺服器端渲染，不需要 JS 執行，aiohttp + regex 即可。
+
+        Returns:
+            dict with keys: description, score, score_count, view_count
+            或 None（爬取失敗時）
+        """
+        try:
+            url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                )
+            }
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"⚠️ [fetch_anime_page_html] HTTP {resp.status} for videoSn={video_sn}")
+                        return None
+                    html = await resp.text()
+
+            result: Dict[str, Any] = {}
+
+            # ① 簡介：<meta name="description" content="...">
+            desc_match = re.search(r'<meta\s+name="description"\s+content="([^"]+)"', html)
+            if desc_match:
+                desc = desc_match.group(1)
+                # 去除 HTML entities
+                desc = desc.replace('&nbsp;', ' ').replace('&amp;', '&')
+                desc = desc.replace('&lt;', '<').replace('&gt;', '>')
+                desc = desc.replace('&quot;', '"')
+                result['description'] = desc.strip()
+
+            # ② 評分：如 "4.8" + "508人評價"
+            score_match = re.search(r'(\d+\.?\d*)\s*人評價', html)
+            if score_match:
+                try:
+                    result['score'] = float(score_match.group(1))
+                except ValueError:
+                    pass
+                result['score_count'] = score_match.group(0)
+
+            # ③ 觀看人數：remove_red_eye 後面跟數字
+            view_match = re.search(r'remove_red_eye\s*(\d[\d,]*)', html)
+            if view_match:
+                try:
+                    result['viewers'] = int(view_match.group(1).replace(',', ''))
+                except ValueError:
+                    pass
+
+            if result:
+                logger.debug(f"✅ [fetch_anime_page_html] videoSn={video_sn}: "
+                             f"desc={len(result.get('description',''))}chars, "
+                             f"score={result.get('score')}, viewers={result.get('viewers')}")
+            return result if result else None
+
+        except asyncio.TimeoutError:
+            logger.warning(f"⏰ [fetch_anime_page_html] timeout for videoSn={video_sn}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ [fetch_anime_page_html] videoSn={video_sn}: {e}", exc_info=True)
             return None
 
     def _extract_view_count_from_episode(self, episode: Dict) -> int:
@@ -1147,7 +1213,7 @@ class AnimePushCore:
 
         修復 (2026-07-27):
         - 標題加入 volume（集數），因為 API title 只有動畫名稱不含集數
-        - 簡介從 video.php API 獲取（newAnime.date API 無 content/description 欄位）
+        - 簡介 + 評分從 animeVideo.php 網頁 HTML 爬取（video.php API 需要驗證）
         - 觀看數從 episode.popular 提取（API 的觀看數欄位名為 popular）
         """
         try:
@@ -1158,8 +1224,6 @@ class AnimePushCore:
             cover = episode.get("cover", "")
 
             # 🔑 修復①：標題 + 集數
-            # Bahamut API 的 title 只有動畫名稱（如「咒術迴戰」），
-            # volume 才是集數（如「第45集」），需手動組合
             if volume and str(volume).strip():
                 title_display = f"{title} {volume}"
             else:
@@ -1178,34 +1242,27 @@ class AnimePushCore:
                     except (ValueError, TypeError):
                         pass
 
-            # 🔑 修復：簡介從 video.php API 獲取（newAnime.date API 無 content/description）
+            # 🔑 修復②：簡介 + 評分從 animeVideo.php 網頁 HTML 爬取
             description_text = ""
+            score = 0.0
+            score_count_text = ""
             if video_sn:
                 try:
-                    details = await self.fetch_anime_details_from_api(video_sn)
-                    if details:
-                        # video.php 回應結構: { data: { content: "...", ... } }
-                        raw_content = (
-                            details.get('data', {}).get('content', '') or
-                            details.get('content', '') or
-                            details.get('description', '')
-                        )
-                        if raw_content:
-                            # 去除 HTML 標籤
-                            import re
-                            clean = re.sub(r'<[^>]+>', '', str(raw_content))
-                            clean = clean.replace('&nbsp;', ' ').replace('&amp;', '&')
-                            clean = clean.replace('&lt;', '<').replace('&gt;', '>')
-                            description_text = self._truncate_text(clean.strip(), 300)
+                    page_data = await self.fetch_anime_page_html(video_sn)
+                    if page_data:
+                        # 簡介
+                        desc = page_data.get('description', '')
+                        if desc:
+                            description_text = self._truncate_text(desc, 300)
+                        # 評分
+                        if page_data.get('score'):
+                            score = float(page_data['score'])
+                        score_count_text = page_data.get('score_count', '')
+                        # 網頁觀看數（若 API 沒抓到，用網頁的）
+                        if view_count == 0 and page_data.get('viewers'):
+                            view_count = int(page_data['viewers'])
                 except Exception as e:
-                    logger.debug(f"⚠️ [generate_anime_embed] 無法獲取簡介 for videoSn={video_sn}: {e}")
-
-            # 評分
-            score = episode.get('score', 0)
-            try:
-                score = float(score) if score else 0.0
-            except (ValueError, TypeError):
-                score = 0.0
+                    logger.debug(f"⚠️ [generate_anime_embed] 爬取網頁失敗 videoSn={video_sn}: {e}")
 
             # 建立 embed
             embed = discord.Embed(
@@ -1222,7 +1279,12 @@ class AnimePushCore:
 
             # 人氣數據（觀看數 + 評分）
             popularity_text = f"{view_count:,}" if view_count > 0 else "N/A"
-            score_text = f"{score:.1f}" if score > 0 else "N/A"
+            if score > 0:
+                score_text = f"{score:.1f}"
+                if score_count_text:
+                    score_text += f" ({score_count_text})"
+            else:
+                score_text = "N/A"
             embed.add_field(
                 name="📊 人氣數據",
                 value=f"👥 觀看: {popularity_text} | ⭐ 評分: {score_text}",
