@@ -601,20 +601,21 @@ class AnimeDatabase:
             return set()
 
     def clean_orphaned_records(self, week_start_date: str = None) -> dict:
-        """清理孤兒記錄：anime_messages、anime_notified 中對應已刪除週表時段的記錄
+        """清理孤兒記錄：不在當前週表中的 anime_messages、anime_notified、
+        anime_votes、anime_rewards
 
         當 22:00 刷新週表時，API 可能不再回傳某些舊時段，導致週表被 DELETE/重建後，
-        但相關的 messages、notified 記錄仍留存。此方法清理這些孤兒記錄。
+        但相關的 messages、notified、votes、rewards 記錄仍留存。此方法清理這些孤兒記錄。
 
         Args:
             week_start_date: 指定週起始日期 (YYYY-MM-DD)，None 表示清理所有週
         Returns:
-            dict: 刪除統計 {'messages': N, 'notified': N}
+            dict: 刪除統計
         """
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                stats = {'messages': 0, 'notified': 0}
+                stats = {'messages': 0, 'notified': 0, 'votes': 0, 'rewards': 0}
 
                 # 1. 找出所有存在於週表中的 videoSn
                 if week_start_date:
@@ -634,54 +635,87 @@ class AnimeDatabase:
                     logger.info(f"ℹ️ [clean_orphaned_records] 週表為空，無有效 videoSn")
                     return stats
 
-                # 2. 清理 anime_messages 中不在週表中的 videoSn
                 placeholders = ','.join('?' * len(valid_video_sns))
+
+                # 2. 清理 anime_messages
                 cursor.execute(f"""
                     DELETE FROM {ANIME_MESSAGES_TABLE}
                     WHERE videoSn NOT IN ({placeholders})
                 """, tuple(valid_video_sns))
                 stats['messages'] = cursor.rowcount
 
-                # 3. 清理 anime_notified 中不在週表中的 videoSn
+                # 3. 清理 anime_notified
                 cursor.execute(f"""
                     DELETE FROM {NOTIFIED_TABLE}
                     WHERE videoSn NOT IN ({placeholders})
                 """, tuple(valid_video_sns))
                 stats['notified'] = cursor.rowcount
 
+                # 4. 清理 anime_votes（2026-07-28 新增）
+                cursor.execute(f"""
+                    DELETE FROM {ANIME_VOTES_TABLE}
+                    WHERE videoSn NOT IN ({placeholders})
+                """, tuple(valid_video_sns))
+                stats['votes'] = cursor.rowcount
+
+                # 5. 清理 anime_rewards（2026-07-28 新增）
+                cursor.execute(f"""
+                    DELETE FROM {ANIME_REWARDS_TABLE}
+                    WHERE videoSn NOT IN ({placeholders})
+                """, tuple(valid_video_sns))
+                stats['rewards'] = cursor.rowcount
+
                 conn.commit()
-                logger.info(f"🧹 [clean_orphaned_records] 清理完成: messages={stats['messages']}, notified={stats['notified']} (基於週表有效 videoSn: {len(valid_video_sns)} 個)")
+                logger.info(f"🧹 [clean_orphaned_records] 清理完成: "
+                            f"messages={stats['messages']}, notified={stats['notified']}, "
+                            f"votes={stats['votes']}, rewards={stats['rewards']} "
+                            f"(基於週表有效 videoSn: {len(valid_video_sns)} 個)")
                 return stats
         except Exception as e:
             logger.error(f"❌ [clean_orphaned_records] Error: {e}", exc_info=True)
-            return {'messages': 0, 'notified': 0, 'error': str(e)}
+            return {'messages': 0, 'notified': 0, 'votes': 0, 'rewards': 0, 'error': str(e)}
 
     def cleanup_old_weeks(self, keep_weeks: int = 2) -> int:
-        """清理超過 keep_weeks 週的舊週表記錄，防止舊記錄無限累積
+        """清理舊週表記錄，只保留「本週 + 必要時上週」的資料
 
         修復 (2026-07-28)：舊版 refresh_weekly_schedule 只刪除當前 week_start_date
-        的記錄，導致 5/4 ~ 7/20 的舊週記錄累積不清理。此方法在每次刷新週表時
-        清理超過保留週數的記錄。
+        的記錄，導致 5/4 ~ 7/20 的舊週記錄累積不清理。
 
-        Args:
-            keep_weeks: 保留最近幾週的記錄（預設 2 週）
+        策略：
+        - 平日（週二~週日）：只保留本週記錄（昨天在本週內）
+        - 週一：保留本週 + 上週（昨天是上週日）
+        - 其餘舊週全部刪除
+
         Returns:
             int: 刪除的記錄數
         """
         try:
+            now = datetime.now(TW_TZ)
+            # 計算本週一的日期
+            if now.weekday() == 6:  # 週日
+                current_week_start = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+            else:
+                current_week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+
+            # 週一需要保留上週（昨天是上週日）
+            if now.weekday() == 0:  # 週一
+                prev_week_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+                keep_weeks = {current_week_start, prev_week_start}
+            else:
+                keep_weeks = {current_week_start}
+
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                # 取得所有不同的 weekStartDate，按日期降序排列
                 cursor.execute(f"""
                     SELECT DISTINCT weekStartDate FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                     ORDER BY weekStartDate DESC
                 """)
                 all_weeks = [row[0] for row in cursor.fetchall()]
 
-                if len(all_weeks) <= keep_weeks:
+                old_weeks = [w for w in all_weeks if w not in keep_weeks]
+                if not old_weeks:
                     return 0
 
-                old_weeks = all_weeks[keep_weeks:]
                 placeholders = ','.join('?' * len(old_weeks))
                 cursor.execute(f"""
                     DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
@@ -689,8 +723,9 @@ class AnimeDatabase:
                 """, old_weeks)
                 deleted = cursor.rowcount
                 conn.commit()
-                logger.info(f"🧹 [cleanup_old_weeks] 清理 {len(old_weeks)} 個舊週 "
-                            f"({', '.join(old_weeks)})，刪除 {deleted} 筆記錄")
+                logger.info(f"🧹 [cleanup_old_weeks] 保留 {keep_weeks}，"
+                            f"清理 {len(old_weeks)} 個舊週 ({', '.join(old_weeks)})，"
+                            f"刪除 {deleted} 筆記錄")
                 return deleted
         except Exception as e:
             logger.error(f"❌ [cleanup_old_weeks] Error: {e}", exc_info=True)
