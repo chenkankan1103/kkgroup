@@ -174,6 +174,12 @@ class AnimeScheduleTracker:
                 if orphan_stats.get('messages', 0) > 0 or orphan_stats.get('notified', 0) > 0:
                     logger.info(f"🧹 [refresh_weekly_schedule] 清理孤兒記錄: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}")
 
+            # 清理超過 2 週的舊週表記錄（2026-07-28 新增）
+            if hasattr(self.db, 'cleanup_old_weeks'):
+                deleted = self.db.cleanup_old_weeks(keep_weeks=2)
+                if deleted > 0:
+                    logger.info(f"🧹 [refresh_weekly_schedule] 清理舊週記錄: {deleted} 筆")
+
             # 取得今日時程（含 pushed 狀態）供上層檢查漏推
             today_schedule = self.get_today_schedule()
 
