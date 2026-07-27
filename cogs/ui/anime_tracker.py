@@ -1049,6 +1049,17 @@ class AnimeTracker(commands.Cog):
                 except Exception as update_error:
                     logger.error(f"❌ [_vote_callback] 更新消息統計失敗: {update_error}", exc_info=True)
 
+                # 🔑 修復：發送 follow-up 確認訊息給用戶
+                try:
+                    reward_text = "💰 +2000 KK幣獎勵已發放！" if reward_given else "⏭️ 您已領取過此推送的投票獎勵"
+                    await interaction.followup.send(
+                        f"✅ 投票成功！{vote_label}\n{reward_text}",
+                        ephemeral=True
+                    )
+                    logger.info(f"✅ [_vote_callback] 已發送 follow-up 確認給 {interaction.user.name}")
+                except Exception as followup_error:
+                    logger.error(f"❌ [_vote_callback] 發送 follow-up 失敗: {followup_error}")
+
             except Exception as e:
                 logger.error(f"❌ [_vote_callback] 投票失敗: {e}", exc_info=True)
                 try:
