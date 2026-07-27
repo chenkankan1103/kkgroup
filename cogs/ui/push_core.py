@@ -602,10 +602,13 @@ class AnimeDatabase:
 
     def clean_orphaned_records(self, week_start_date: str = None) -> dict:
         """清理孤兒記錄：不在當前週表中的 anime_messages、anime_notified、
-        anime_votes、anime_rewards
+        anime_votes，以及 anime_rewards 中參照已刪除 messageId 的記錄
 
         當 22:00 刷新週表時，API 可能不再回傳某些舊時段，導致週表被 DELETE/重建後，
-        但相關的 messages、notified、votes、rewards 記錄仍留存。此方法清理這些孤兒記錄。
+        但相關的 messages、notified、votes 記錄仍留存。此方法清理這些孤兒記錄。
+
+        注意：anime_rewards 沒有 videoSn 欄位（只有 messageId），
+        透過 JOIN anime_messages 找出參照已刪除訊息的孤兒 rewards 記錄。
 
         Args:
             week_start_date: 指定週起始日期 (YYYY-MM-DD)，None 表示清理所有週
@@ -637,32 +640,36 @@ class AnimeDatabase:
 
                 placeholders = ','.join('?' * len(valid_video_sns))
 
-                # 2. 清理 anime_messages
+                # 2. 清理 anime_messages（不在週表中的 videoSn）
                 cursor.execute(f"""
                     DELETE FROM {ANIME_MESSAGES_TABLE}
                     WHERE videoSn NOT IN ({placeholders})
                 """, tuple(valid_video_sns))
                 stats['messages'] = cursor.rowcount
 
-                # 3. 清理 anime_notified
+                # 3. 清理 anime_notified（不在週表中的 videoSn）
                 cursor.execute(f"""
                     DELETE FROM {NOTIFIED_TABLE}
                     WHERE videoSn NOT IN ({placeholders})
                 """, tuple(valid_video_sns))
                 stats['notified'] = cursor.rowcount
 
-                # 4. 清理 anime_votes（2026-07-28 新增）
+                # 4. 清理 anime_votes（不在週表中的 videoSn）
                 cursor.execute(f"""
                     DELETE FROM {ANIME_VOTES_TABLE}
                     WHERE videoSn NOT IN ({placeholders})
                 """, tuple(valid_video_sns))
                 stats['votes'] = cursor.rowcount
 
-                # 5. 清理 anime_rewards（2026-07-28 新增）
+                # 5. 清理 anime_rewards：刪除 messageId 已不在 anime_messages 中的記錄
+                #    anime_rewards 沒有 videoSn 欄位，需透過 messageId JOIN
+                #    這是安全的：只清理「對應消息已被刪除」的獎勵記錄
                 cursor.execute(f"""
                     DELETE FROM {ANIME_REWARDS_TABLE}
-                    WHERE videoSn NOT IN ({placeholders})
-                """, tuple(valid_video_sns))
+                    WHERE messageId NOT IN (
+                        SELECT DISTINCT messageId FROM {ANIME_MESSAGES_TABLE}
+                    )
+                """)
                 stats['rewards'] = cursor.rowcount
 
                 conn.commit()
