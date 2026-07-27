@@ -55,9 +55,9 @@ class RankingStats:
         """檢查獎勵是否已發放 - 委託給 AnimeDatabase"""
         return self.db.is_reward_already_given(user_id, message_id, reward_type)
 
-    def record_reward(self, user_id: int, message_id: int, reward_type: str, amount: int) -> bool:
+    def record_reward(self, user_id: int, message_id: int, reward_type: str, reward_amount: int) -> bool:
         """記錄獎勵發放 - 委託給 AnimeDatabase"""
-        return self.db.record_reward(user_id, message_id, reward_type, amount)
+        return self.db.record_reward(user_id, message_id, reward_type, reward_amount)
 
     # ==================== 投票系統方法（委託給 AnimeDatabase） ====================
 

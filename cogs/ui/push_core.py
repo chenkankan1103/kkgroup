@@ -890,22 +890,22 @@ class AnimeDatabase:
             logger.error(f"❌ [get_anime_statistics] Error for anime_sn {anime_sn}: {e}", exc_info=True)
             return None
 
-    def is_reward_already_given(self, message_id: int, reward_type: str) -> bool:
-        """檢查是否已經發放過指定類型的獎勵"""
+    def is_reward_already_given(self, user_id: int, message_id: int, reward_type: str) -> bool:
+        """檢查指定用戶是否已經發放過指定類型的獎勵"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     SELECT 1 FROM {ANIME_REWARDS_TABLE}
-                    WHERE messageId = ? AND rewardType = ?
+                    WHERE userId = ? AND messageId = ? AND rewardType = ?
                     LIMIT 1
-                """, (message_id, reward_type))
+                """, (str(user_id), message_id, reward_type))
                 return cursor.fetchone() is not None
         except Exception as e:
             logger.error(f"❌ [is_reward_already_given] Error checking reward status: {e}", exc_info=True)
             return False
 
-    def record_reward(self, message_id: int, reward_type: str, amount: int, user_id: str) -> bool:
+    def record_reward(self, message_id: int, reward_type: str, reward_amount: int, user_id: str) -> bool:
         """記錄獎勵發放"""
         try:
             with self._get_connection() as conn:
@@ -914,7 +914,7 @@ class AnimeDatabase:
                     INSERT INTO {ANIME_REWARDS_TABLE}
                     (messageId, rewardType, amount, userId)
                     VALUES (?, ?, ?, ?)
-                """, (message_id, reward_type, amount, user_id))
+                """, (message_id, reward_type, reward_amount, user_id))
                 conn.commit()
                 return True
         except Exception as e:
