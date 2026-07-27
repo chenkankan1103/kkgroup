@@ -1047,7 +1047,7 @@ class AnimeTracker(commands.Cog):
 
                 # 更新原始消息的 embed（添加統計信息）
                 try:
-                    await self.tracker._update_message_stats(interaction.message)
+                    await self._update_message_stats(interaction.message)
                     logger.info(f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄並更新消息統計")
                 except Exception as update_error:
                     logger.error(f"❌ [_vote_callback] 更新消息統計失敗: {update_error}", exc_info=True)
@@ -1144,7 +1144,7 @@ class AnimeTracker(commands.Cog):
 
                             # 更新原始消息統計
                             try:
-                                await self.tracker._update_message_stats(modal_interaction.message)
+                                await self._update_message_stats(modal_interaction.message)
                                 logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存並更新消息統計")
                             except Exception as update_error:
                                 logger.error(f"❌ [comment_submit] 更新消息統計失敗: {update_error}", exc_info=True)
