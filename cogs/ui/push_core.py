@@ -438,7 +438,12 @@ class AnimeDatabase:
         """獲取今天的時程表（從週表中）"""
         try:
             now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())  # 取得本週一的日期
+            # 修復：週表的 week_start_date 計算邏輯需與 refresh_weekly_schedule 一致
+            # 如果今天是週日，週表代表下週一~下週日；否則代表本週一~本週日
+            if now.weekday() == 6:  # 週日
+                week_start = now + timedelta(days=1)  # 下週一
+            else:
+                week_start = now - timedelta(days=now.weekday())  # 本週一
             day_of_week = (now.weekday() + 1) % 7 or 7  # 1=Mon, 7=Sun
 
             with self._get_connection() as conn:
@@ -1441,7 +1446,13 @@ class AnimePushCore:
                 if day_of_week is None:
                     day_of_week = (now.weekday() + 1) % 7 or 7
                 if week_start_date is None:
-                    week_start_date = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+                    # 修復：週表的 week_start_date 計算邏輯需與 refresh_weekly_schedule 一致
+                    # 如果今天是週日，週表代表下週一~下週日；否則代表本週一~本週日
+                    if now.weekday() == 6:  # 週日
+                        week_start = now + timedelta(days=1)  # 下週一
+                    else:
+                        week_start = now - timedelta(days=now.weekday())  # 本週一
+                    week_start_date = week_start.strftime("%Y-%m-%d")
 
                 # 先檢查頻道是否存在
                 channel = self.bot.get_channel(channel_id)
@@ -1472,6 +1483,24 @@ class AnimePushCore:
                     # API 失敗 → 不標記，讓補推稍後重試
                     logger.warning(f"⚠️ [send_anime_push] API 無回應，"
                                    f"跳過 {scheduled_time}（不標記，稍後重試）")
+                    return False
+
+                # 🔑 關鍵修復：先按 upTime 過濾只保留今天的集數
+                # newAnime.date API 可能回傳多天的資料，避免匹配到舊集數
+                today_str = datetime.now(TW_TZ).strftime("%m/%d")  # 格式: "07/27"
+                today_episodes = []
+                for ep in episodes:
+                    ep_up_time = ep.get('upTime', '').strip()
+                    if ep_up_time == today_str:
+                        today_episodes.append(ep)
+                    else:
+                        logger.debug(f"🔍 [send_anime_push] 過濾非今日集數: {ep.get('title')} (upTime={ep_up_time}, today={today_str})")
+                
+                logger.info(f"📅 [send_anime_push] 今日集數過濾: {len(episodes)} -> {len(today_episodes)} 筆")
+                episodes = today_episodes
+                
+                if not episodes:
+                    logger.warning(f"⚠️ [send_anime_push] 今日無新番集數，跳過 {scheduled_time}")
                     return False
 
                 # 🔑 關鍵過濾：優先 videoSn 匹配，失敗時 fallback 到 title 匹配

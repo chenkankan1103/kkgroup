@@ -136,10 +136,16 @@ class AnimeScheduleTracker:
                 logger.warning("⚠️ [refresh_weekly_schedule] 無法拉取時程表")
                 return {'success': False, 'error': 'API 回傳空時程表'}
 
-            # 計算「本週一」作為 week_start_date（get_today_schedule 也是用本週一查詢）
-            week_start = now - timedelta(days=now.weekday())
+            # 🔑 修復：正確計算 week_start_date
+            # newAnimeSchedule API 回傳的總是「下一個完整週」的時程表（週一~週日）
+            # - 週一~週六呼叫：回傳本週的時程表 → week_start = 本週一
+            # - 週日呼叫：回傳下週的時程表 → week_start = 下週一
+            if now.weekday() == 6:  # 週日
+                week_start = now + timedelta(days=1)  # 下週一
+            else:
+                week_start = now - timedelta(days=now.weekday())  # 本週一
             week_start_str = week_start.strftime("%Y-%m-%d")
-            logger.info(f"📅 [refresh_weekly_schedule] 保存週起始日期: {week_start_str}")
+            logger.info(f"📅 [refresh_weekly_schedule] 保存週起始日期: {week_start_str} (today={now.strftime('%Y-%m-%d %a')})")
 
             schedule_data = []
             for day_offset in range(7):
