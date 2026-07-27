@@ -1105,19 +1105,39 @@ class AnimePushCore:
             return None
 
     async def fetch_anime_details_from_api(self, video_sn: int) -> Optional[Dict]:
-        """從 API 獲取單集動畫詳細信息（已廢棄：video.php 需要驗證）"""
+        """從 Bahamut v3 API 獲取動畫詳細資訊（簡介、評分、標籤等）
+
+        API endpoint: https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}
+        返回 anime 部分包含：content(簡介), tags(標籤), score(評分), popular(人氣度)
+
+        Returns:
+            dict with keys: content, score, tags, title, cover, popular 等，或 None
+        """
         try:
             await self._rate_limit_api()
-            url = f"https://api.gamer.com.tw/mobile_app/anime/v2/video.php?vsn={video_sn}"
+            url = f"https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}"
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)"
+                )
+            }
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as resp:
+                async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
+                        logger.debug(f"⚠️ [fetch_anime_details_from_api] HTTP {resp.status} for videoSn={video_sn}")
                         return None
                     data = await resp.json()
-                    return data
+                    anime = data.get("data", {}).get("anime", {})
+                    if not anime:
+                        logger.debug(f"⚠️ [fetch_anime_details_from_api] No anime data for videoSn={video_sn}")
+                        return None
+                    return anime
+        except asyncio.TimeoutError:
+            logger.debug(f"⏰ [fetch_anime_details_from_api] timeout for videoSn={video_sn}")
+            return None
         except Exception as e:
-            logger.debug(f"⚠️ [fetch_anime_details_from_api] video_sn={video_sn}: {e}")
+            logger.debug(f"⚠️ [fetch_anime_details_from_api] videoSn={video_sn}: {e}")
             return None
 
     async def fetch_anime_page_html(self, video_sn: int) -> Optional[Dict[str, Any]]:
@@ -1159,17 +1179,34 @@ class AnimePushCore:
                 desc = desc.replace('&quot;', '"')
                 result['description'] = desc.strip()
 
-            # ② 評分：如 "4.8" + "508人評價"
-            score_match = re.search(r'(\d+\.?\d*)\s*人評價', html)
+            # ② 評分：<div class="score-overall-number">4.7</div>
+            #     + <div class="score-overall-people">1,257人評價</div>
+            score_match = re.search(
+                r'<div\s+class="score-overall-number">\s*(\d+\.?\d*)\s*</div>', html
+            )
             if score_match:
                 try:
                     result['score'] = float(score_match.group(1))
                 except ValueError:
                     pass
-                result['score_count'] = score_match.group(0)
+            people_match = re.search(
+                r'<div\s+class="score-overall-people">\s*([\d,]+)\s*人評價\s*</div>', html
+            )
+            if people_match:
+                result['score_count'] = people_match.group(1) + "人評價"
 
-            # ③ 觀看人數：remove_red_eye 後面跟數字
-            view_match = re.search(r'remove_red_eye\s*(\d[\d,]*)', html)
+            # ③ 觀看人數：嘗試多種模式
+            # 模式1: 巴哈新版樣式
+            view_match = re.search(r'class="[^"]*view[^"]*"[^>]*>\s*([\d,]+)\s*<', html)
+            if not view_match:
+                # 模式2: remove_red_eye icon 後面跟數字
+                view_match = re.search(r'remove_red_eye[^>]*>\s*</i>\s*([\d,]+)', html)
+            if not view_match:
+                # 模式3: 人氣數字
+                view_match = re.search(r'人氣[：:]\s*([\d,]+)', html)
+            if not view_match:
+                # 模式4: 觀看數字
+                view_match = re.search(r'觀看[：:]\s*([\d,]+)', html)
             if view_match:
                 try:
                     result['viewers'] = int(view_match.group(1).replace(',', ''))
@@ -1213,7 +1250,8 @@ class AnimePushCore:
 
         修復 (2026-07-27):
         - 標題加入 volume（集數），因為 API title 只有動畫名稱不含集數
-        - 簡介 + 評分從 animeVideo.php 網頁 HTML 爬取（video.php API 需要驗證）
+        - 簡介 + 評分優先從 v3/video.php API 獲取（content + score 欄位）
+        - 若 API 失敗則 fallback 到 animeVideo.php HTML 爬取
         - 觀看數從 episode.popular 提取（API 的觀看數欄位名為 popular）
         """
         try:
@@ -1242,27 +1280,50 @@ class AnimePushCore:
                     except (ValueError, TypeError):
                         pass
 
-            # 🔑 修復②：簡介 + 評分從 animeVideo.php 網頁 HTML 爬取
+            # 🔑 修復②：簡介 + 評分優先從 v3/video.php API 獲取
+            # v3 API 直接回傳 content（簡介）和 score（評分），比 HTML 爬取更可靠
             description_text = ""
             score = 0.0
             score_count_text = ""
             if video_sn:
                 try:
-                    page_data = await self.fetch_anime_page_html(video_sn)
-                    if page_data:
+                    # 優先使用 v3 API（回傳 content + score）
+                    api_details = await self.fetch_anime_details_from_api(video_sn)
+                    if api_details:
                         # 簡介
-                        desc = page_data.get('description', '')
-                        if desc:
-                            description_text = self._truncate_text(desc, 300)
+                        content = api_details.get('content', '')
+                        if content:
+                            description_text = self._truncate_text(content, 300)
                         # 評分
-                        if page_data.get('score'):
-                            score = float(page_data['score'])
-                        score_count_text = page_data.get('score_count', '')
-                        # 網頁觀看數（若 API 沒抓到，用網頁的）
-                        if view_count == 0 and page_data.get('viewers'):
-                            view_count = int(page_data['viewers'])
+                        api_score = api_details.get('score')
+                        if api_score is not None:
+                            try:
+                                score = float(api_score)
+                            except (ValueError, TypeError):
+                                pass
+                        # 評分人數（v3 API 不直接提供，從 HTML fallback 取得）
+                        logger.debug(
+                            f"✅ [generate_anime_embed] v3 API 成功 videoSn={video_sn}: "
+                            f"desc={len(description_text)}chars, score={score}"
+                        )
+                    else:
+                        # Fallback: HTML 爬取
+                        logger.debug(
+                            f"⚠️ [generate_anime_embed] v3 API 失敗，"
+                            f"fallback HTML 爬取 videoSn={video_sn}"
+                        )
+                        page_data = await self.fetch_anime_page_html(video_sn)
+                        if page_data:
+                            desc = page_data.get('description', '')
+                            if desc:
+                                description_text = self._truncate_text(desc, 300)
+                            if page_data.get('score'):
+                                score = float(page_data['score'])
+                            score_count_text = page_data.get('score_count', '')
+                            if view_count == 0 and page_data.get('viewers'):
+                                view_count = int(page_data['viewers'])
                 except Exception as e:
-                    logger.debug(f"⚠️ [generate_anime_embed] 爬取網頁失敗 videoSn={video_sn}: {e}")
+                    logger.debug(f"⚠️ [generate_anime_embed] 取得詳細資訊失敗 videoSn={video_sn}: {e}")
 
             # 建立 embed
             embed = discord.Embed(
