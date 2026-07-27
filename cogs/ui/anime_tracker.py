@@ -780,9 +780,12 @@ class AnimeTracker(commands.Cog):
                         continue
                     sleep_seconds = (sched_dt - now).total_seconds()
 
+                    # 🔑 方案 A：提前 30 秒喚醒（預熱：fetch API、生成 embed），到點直接 send
+                    sleep_seconds = max(0, sleep_seconds - 30)
+
                     # 睡到預定時間（最多睡 24 小時防呆）
                     if sleep_seconds > 0:
-                        logger.info(f"😴 [_schedule_dispatcher] 下一檔 {scheduled}，睡 {sleep_seconds:.0f} 秒")
+                        logger.info(f"😴 [_schedule_dispatcher] 下一檔 {scheduled}，睡 {sleep_seconds:.0f} 秒（含 30s 預熱）")
                         await asyncio.sleep(min(sleep_seconds, 86400))
 
                     # 時間到 → 即時呼叫 API 推送
