@@ -341,16 +341,17 @@ class AnimeDatabase:
     # ==================== 週表相關方法 ====================
 
     def save_weekly_schedule(self, week_start_date: str, schedule_data: list) -> bool:
-        """保存週表數據 - 使用 UPSERT 保留已推送狀態 (pushed=1)
+        """保存週表數據 - 先刪後插，保留已推送狀態 (pushed=1)
 
-        關鍵修復：不再使用 DELETE+INSERT，改用逐筆檢查並更新/插入，
-        以保留 pushed=1 的記錄（避免每天 22:00 重置導致重複推送）。
+        修復 (2026-07-28)：舊版 UPSERT 在 DB 已存在重複記錄時只更新 fetchone()
+        回傳的第一筆，導致重複記錄累積。改為「先刪除該 key 的所有記錄，再插入一筆」，
+        從根本消除重複可能。同時保留 pushed=1 狀態：若舊記錄中有 pushed=1 的，
+        新記錄也設為 pushed=1。
 
         新增：API 可能回傳重複 timeslot（同一天同一時間多筆），先去重再寫入。
         """
         try:
             # --- Pre-dedup: API 可能為同一天同一時間返回多筆，先按 (dayOfWeek, scheduledTime) 去重 ---
-            # 策略：保留第一筆 (索引最小)，舊資料的 animeData 會被後續 UPSERT 邏輯覆蓋或保留
             seen = {}
             deduped = []
             for idx, item in enumerate(schedule_data):
@@ -359,9 +360,12 @@ class AnimeDatabase:
                     seen[key] = idx
                     deduped.append(item)
                 else:
-                    logger.warning(f"⚠️ [save_weekly_schedule] 週 {week_start_date} 發現重複時段: day={item['day_of_week']} {item['scheduled_time']}，忽略第 {idx+1} 筆 (保留第 {seen[key]+1} 筆)")
+                    logger.warning(f"⚠️ [save_weekly_schedule] 週 {week_start_date} 發現重複時段: "
+                                   f"day={item['day_of_week']} {item['scheduled_time']}，"
+                                   f"忽略第 {idx+1} 筆 (保留第 {seen[key]+1} 筆)")
             if len(deduped) != len(schedule_data):
-                logger.info(f"📋 [save_weekly_schedule] 週 {week_start_date} 去重: {len(schedule_data)} -> {len(deduped)} 筆")
+                logger.info(f"📋 [save_weekly_schedule] 週 {week_start_date} 去重: "
+                            f"{len(schedule_data)} -> {len(deduped)} 筆")
             schedule_data = deduped
             # --- End pre-dedup ---
 
@@ -369,11 +373,8 @@ class AnimeDatabase:
                 cursor = conn.cursor()
 
                 # 全量覆蓋：先刪除該 week_start_date 不在新 schedule_data 中的舊記錄
-                # 這確保週表真正「全量覆蓋」，避免舊時段殘留導致孤兒記錄
                 new_times = {(item['day_of_week'], item['scheduled_time']) for item in schedule_data}
                 if new_times:
-                    # SQLite 不支援 tuple IN，改用逐條檢查或動態構建 WHERE 條件
-                    # 這裡用動態構建 WHERE 條件
                     conditions = []
                     params = [week_start_date]
                     for dow, st in new_times:
@@ -386,7 +387,6 @@ class AnimeDatabase:
                         AND NOT ({where_clause})
                     """, params)
                 else:
-                    # 如果新 schedule_data 為空，刪除該週所有記錄
                     cursor.execute(f"""
                         DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                         WHERE weekStartDate = ?
@@ -397,41 +397,37 @@ class AnimeDatabase:
                     scheduled_time = item['scheduled_time']
                     anime_data_json = json.dumps(item['anime_data'])
 
-                    # 檢查是否已存在該時刻
+                    # 🔑 修復 (2026-07-28)：先查詢該 key 的所有記錄，取 pushed 最大值
+                    # 然後刪除該 key 的所有記錄，最後插入一筆乾淨記錄
+                    # 這樣無論 DB 中有多少重複記錄，都能徹底清理
                     cursor.execute(f"""
-                        SELECT id, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        SELECT MAX(pushed) FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                         WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
                     """, (week_start_date, day_of_week, scheduled_time))
                     row = cursor.fetchone()
+                    was_pushed = (row[0] == 1) if row and row[0] is not None else False
 
-                    if row:
-                        existing_id, existing_pushed = row
-                        if existing_pushed == 1:
-                            # 已推送：只更新 animeData，保留 pushed=1
-                            cursor.execute(f"""
-                                UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
-                                SET animeData = ?
-                                WHERE id = ?
-                            """, (anime_data_json, existing_id))
-                        else:
-                            # 未推送：更新 animeData，保留 pushed=0
-                            cursor.execute(f"""
-                                UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
-                                SET animeData = ?
-                                WHERE id = ?
-                            """, (anime_data_json, existing_id))
-                    else:
-                        # 新時刻：插入新記錄 (pushed=0)
-                        cursor.execute(f"""
-                            INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
-                            (weekStartDate, dayOfWeek, scheduledTime, animeData, pushed)
-                            VALUES (?, ?, ?, ?, 0)
-                        """, (week_start_date, day_of_week, scheduled_time, anime_data_json))
+                    # 先刪除該 key 的所有記錄（清理可能的重複）
+                    cursor.execute(f"""
+                        DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
+                    """, (week_start_date, day_of_week, scheduled_time))
+
+                    # 插入唯一一筆記錄，保留 pushed 狀態
+                    cursor.execute(f"""
+                        INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        (weekStartDate, dayOfWeek, scheduledTime, animeData, pushed)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (week_start_date, day_of_week, scheduled_time,
+                          anime_data_json, 1 if was_pushed else 0))
 
                 conn.commit()
+                logger.info(f"✅ [save_weekly_schedule] 週 {week_start_date} 保存完成 "
+                            f"({len(schedule_data)} 個時段)")
                 return True
         except Exception as e:
-            logger.error(f"❌ [save_weekly_schedule] Error saving week {week_start_date}: {e}", exc_info=True)
+            logger.error(f"❌ [save_weekly_schedule] Error saving week {week_start_date}: {e}",
+                         exc_info=True)
             return False
 
     def get_today_schedule(self) -> list:
@@ -659,6 +655,46 @@ class AnimeDatabase:
         except Exception as e:
             logger.error(f"❌ [clean_orphaned_records] Error: {e}", exc_info=True)
             return {'messages': 0, 'notified': 0, 'error': str(e)}
+
+    def cleanup_old_weeks(self, keep_weeks: int = 2) -> int:
+        """清理超過 keep_weeks 週的舊週表記錄，防止舊記錄無限累積
+
+        修復 (2026-07-28)：舊版 refresh_weekly_schedule 只刪除當前 week_start_date
+        的記錄，導致 5/4 ~ 7/20 的舊週記錄累積不清理。此方法在每次刷新週表時
+        清理超過保留週數的記錄。
+
+        Args:
+            keep_weeks: 保留最近幾週的記錄（預設 2 週）
+        Returns:
+            int: 刪除的記錄數
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                # 取得所有不同的 weekStartDate，按日期降序排列
+                cursor.execute(f"""
+                    SELECT DISTINCT weekStartDate FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    ORDER BY weekStartDate DESC
+                """)
+                all_weeks = [row[0] for row in cursor.fetchall()]
+
+                if len(all_weeks) <= keep_weeks:
+                    return 0
+
+                old_weeks = all_weeks[keep_weeks:]
+                placeholders = ','.join('?' * len(old_weeks))
+                cursor.execute(f"""
+                    DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                    WHERE weekStartDate IN ({placeholders})
+                """, old_weeks)
+                deleted = cursor.rowcount
+                conn.commit()
+                logger.info(f"🧹 [cleanup_old_weeks] 清理 {len(old_weeks)} 個舊週 "
+                            f"({', '.join(old_weeks)})，刪除 {deleted} 筆記錄")
+                return deleted
+        except Exception as e:
+            logger.error(f"❌ [cleanup_old_weeks] Error: {e}", exc_info=True)
+            return 0
 
     # ==================== 動畫詳細資訊快取方法 ====================
 
