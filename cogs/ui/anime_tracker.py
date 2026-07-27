@@ -624,7 +624,14 @@ class AnimeTracker(commands.Cog):
                 return
 
             now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())
+            # 🔑 修復：正確計算 week_start_date（同 refresh_weekly_schedule 邏輯）
+            # newAnimeSchedule API 回傳的總是「下一個完整週」的時程表（週一~週日）
+            # - 週一~週六呼叫：回傳本週的時程表 → week_start = 本週一
+            # - 週日呼叫：回傳下週的時程表 → week_start = 下週一
+            if now.weekday() == 6:  # 週日
+                week_start = now + timedelta(days=1)  # 下週一
+            else:
+                week_start = now - timedelta(days=now.weekday())  # 本週一
             week_start_str = week_start.strftime("%Y-%m-%d")
 
             schedule_data = []
