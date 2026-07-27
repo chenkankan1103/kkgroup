@@ -135,6 +135,46 @@ These run beneath other skills — reach for them directly when the **words** ar
 - Logs: `sudo journalctl -u <service> -n 100 --no-pager`
 - Restart: `sudo systemctl restart <service>`
 
+### ⚡ PowerShell 引號與 gcloud SSH 避坑（高頻踩坑！）
+
+**核心問題**：PowerShell 對單引號 `'`、雙引號 `"`、管線 `|` 的處理與 bash 完全不同，gcloud SSH 命令極易因引號嵌套失敗。
+
+**策略優先級**：
+1. 先嘗試 PowerShell 簡化版：用 `echo "" | gcloud -q` 避免 SSH 互動提示
+2. 如 2-3 次嘗試仍失敗 → 改用「上傳腳本 → 執行 → 清理」模式
+
+**模式 A：簡單命令（PowerShell 直接執行）**
+```powershell
+# ✅ echo "" | 避免 SSH host key 互動提示
+# ✅ gcloud -q 跳過所有確認
+# ✅ --command 內用雙引號包覆，內部用單引號
+echo "" | gcloud -q compute ssh user@instance --zone=zone --tunnel-through-iap --command "sudo journalctl -u bot.service -n 50 --no-pager | grep -iE 'error|fail'"
+```
+
+**模式 B：複雜命令（上傳腳本到 VM 執行，用完清理）**
+```powershell
+# 當命令含多層引號、awk/sed 等複雜語法時：
+echo "" | gcloud -q compute scp local_script.py user@instance:/tmp/ --zone=zone --tunnel-through-iap
+echo "" | gcloud -q compute ssh user@instance --zone=zone --tunnel-through-iap --command "cd /path && python3 /tmp/local_script.py && rm /tmp/local_script.py"
+```
+
+**PowerShell 引號規則速查**：
+| 場景 | ✅ 正確寫法 | 說明 |
+|------|------------|------|
+| 命令含空格 | `--command="cmd arg1 arg2"` | 雙引號包覆整個命令 |
+| 命令含 `$` | `--command 'echo $HOME'` | 單引號防止 PowerShell 展開變數 |
+| 命令含 `\|` 管道 | `--command "cmd1 \| cmd2"` | 雙引號內管道正常傳遞 |
+| 命令含雙引號 | `--command 'echo "hello"'` | 外層單引號，內層雙引號 |
+| 多層嵌套 | **改用模式 B（腳本）** | 不要嘗試 3 層以上引號嵌套 |
+
+**關鍵原則**：
+- ✅ `echo "" | gcloud -q` 是避免 SSH 互動提示的標準前綴
+- ✅ 命令簡單時用 PowerShell 直接執行
+- ✅ 引號複雜時果斷改用「上傳腳本 → 執行 → 清理」
+- ❌ 不要在 PowerShell 中嘗試超過 2 層引號嵌套
+- ❌ 不要花超過 3 次嘗試在引號問題上
+- ✅ **腳本用完後務必清理**：`&& rm /tmp/script.py`
+
 ## Git & Deployment Workflow
 
 1. Commit & push to GitHub
