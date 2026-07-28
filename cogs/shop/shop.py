@@ -33,6 +33,7 @@ class ButtonInteraction(commands.Cog):
         self.db_path = './user_data.db'  # 本地測試路徑；GCP時替換為遠程路徑，如 'gs://bucket/database.db'
         try:
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             self.categories = self.get_categories()
             print(f"ButtonInteraction initialized with {len(self.categories)} categories")
             # 寫入日誌檔案

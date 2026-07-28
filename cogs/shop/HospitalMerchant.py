@@ -130,6 +130,7 @@ class HospitalMerchant(commands.Cog):
         """初始化資料庫"""
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             
             # 檢查並添加交易記錄表
@@ -259,6 +260,7 @@ class HospitalMerchant(commands.Cog):
             
             # 檢查資料庫中是否有存儲的訊息 ID
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -353,6 +355,7 @@ class HospitalMerchant(commands.Cog):
             # 記錄交易
             current_time = int(datetime.now().timestamp())
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO merchant_transactions 
