@@ -48,6 +48,9 @@ game/
 update.log
 update_cron.log
 sync_cron.log
+
+# Graphify 知識圖譜輸出（本地生成，不提交）
+graphify-out/
 game_sync.log
 sync.log
 
