@@ -325,22 +325,42 @@ def api_get_user(user_id):
 
 @sheets_bp.route('/user/<int:user_id>', methods=['PUT'])
 def api_update_user(user_id):
-    """更新特定用戶的資料（需管理員密鑰）"""
+    """更新特定用戶的資料（需管理員密鑰或 Discord 登入）"""
     try:
-        # 管理員密鑰檢查
-        admin_key = request.headers.get('X-Admin-Key', '')
-        valid_key = os.getenv('ADMIN_API_KEY', '')
-        if not valid_key:
-            logger.warning("⚠️ ADMIN_API_KEY 未設定，拒絕所有修改請求")
+        # === 管理員驗證：支援兩種方式 ===
+        # 方式 1: X-Admin-Key（傳統 API Key）
+        # 方式 2: Authorization: Bearer <discord_token>（Discord OAuth 登入）
+        is_admin = False
+        auth_method = None
+
+        # 檢查 Discord token
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            auth_token = auth_header.replace('Bearer ', '')
+            from blueprints.discord_auth import user_sessions
+            if auth_token in user_sessions:
+                discord_user = user_sessions[auth_token]
+                discord_id = discord_user.get('user_id', '')
+                # ✅ 管理員白名單：只有這些 Discord ID 有管理權限
+                ADMIN_DISCORD_IDS = ['432018481890983936']
+                if discord_id in ADMIN_DISCORD_IDS:
+                    is_admin = True
+                    auth_method = f'Discord ({discord_user.get("username")})'
+                    logger.info(f"✅ Discord 管理員驗證通過: {discord_user.get('username')} (ID: {discord_id})")
+
+        # 如果 Discord 驗證失敗，嘗試 API Key
+        if not is_admin:
+            admin_key = request.headers.get('X-Admin-Key', '')
+            valid_key = os.getenv('ADMIN_API_KEY', '')
+            if valid_key and admin_key == valid_key:
+                is_admin = True
+                auth_method = 'API Key'
+
+        if not is_admin:
+            logger.warning(f"❌ 管理員驗證失敗: user_id={user_id}")
             return jsonify({
                 "status": "error",
-                "message": "伺服器未設定管理員密鑰"
-            }), 403
-        if admin_key != valid_key:
-            logger.warning(f"❌ 管理員密鑰驗證失敗: user_id={user_id}")
-            return jsonify({
-                "status": "error",
-                "message": "管理員密鑰無效"
+                "message": "管理員驗證失敗，請先登入 Discord 或輸入正確的 API Key"
             }), 403
 
         data = request.get_json()
