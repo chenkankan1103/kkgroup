@@ -58,27 +58,47 @@ class ScamHub(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        await self._init_db()
-        await self._load_active_rooms()
+        """Bot 啟動完成後初始化資料庫並恢復活躍房間。
+        
+        注意：_init_db 和 _load_active_rooms 各自有 try/except 保護，
+        確保其中一個失敗不會影響另一個的執行。
+        """
+        try:
+            await self._init_db()
+        except Exception as e:
+            print(f"[ScamHub] ❌ _init_db 失敗: {e}")
+            import traceback
+            traceback.print_exc()
+
+        try:
+            await self._load_active_rooms()
+        except Exception as e:
+            print(f"[ScamHub] ❌ _load_active_rooms 失敗: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _init_db(self):
         """建立 scam_rooms 表（如果不存在）"""
-        async with await _get_db_connection() as db:
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS scam_rooms (
-                    room_id INTEGER PRIMARY KEY,
-                    guild_id INTEGER NOT NULL,
-                    owner_id INTEGER NOT NULL,
-                    room_name TEXT NOT NULL,
-                    message_id INTEGER,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    next_event_time DATETIME,
-                    is_active INTEGER DEFAULT 1
-                )
-            """)
-            await db.commit()
-        print("[ScamHub] scam_rooms 表已初始化")
+        try:
+            async with await _get_db_connection() as db:
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS scam_rooms (
+                        room_id INTEGER PRIMARY KEY,
+                        guild_id INTEGER NOT NULL,
+                        owner_id INTEGER NOT NULL,
+                        room_name TEXT NOT NULL,
+                        message_id INTEGER,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        next_event_time DATETIME,
+                        is_active INTEGER DEFAULT 1
+                    )
+                """)
+                await db.commit()
+            print("[ScamHub] scam_rooms 表已初始化")
+        except Exception as e:
+            print(f"[ScamHub] ❌ 初始化 scam_rooms 表失敗: {e}")
+            raise
 
     async def _load_active_rooms(self):
         """從數據庫加載所有進行中的房間，Bot 啟動時調用"""
