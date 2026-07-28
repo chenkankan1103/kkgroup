@@ -32,6 +32,7 @@ class RoleExpirationManager:
         """初始化角色過期記錄表"""
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -80,6 +81,7 @@ class RoleExpirationManager:
         """
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             
             # 先查詢現有的過期時間
@@ -134,6 +136,7 @@ class RoleExpirationManager:
         """
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             
             current_time = datetime.now().isoformat()
@@ -170,6 +173,7 @@ class RoleExpirationManager:
         """
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             
             cursor.execute("""

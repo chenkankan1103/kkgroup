@@ -190,6 +190,7 @@ class EnhancedRoleExpirationManager(commands.Cog):
         """保存角色購買記錄"""
         try:
             conn = sqlite3.connect(DB_PATH)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             
             expires_at = datetime.now() + timedelta(seconds=duration_seconds)
@@ -225,6 +226,7 @@ class EnhancedRoleExpirationManager(commands.Cog):
         """獲取用戶的臨時身分"""
         try:
             conn = sqlite3.connect(DB_PATH)
+            conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             cursor = conn.cursor()
             
             cursor.execute("""
