@@ -52,6 +52,12 @@ class SheetDrivenDB:
         """初始化數據庫連接與表"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row  # 允許按列名訪問
+        
+        # ✅ 啟用 WAL 模式 + busy_timeout，避免與 Bot 進程的鎖定衝突
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")  # 5 秒等待超時
+        conn.execute("PRAGMA synchronous=NORMAL")
+        
         cursor = conn.cursor()
         
         # 檢查 users 表是否存在
@@ -86,6 +92,8 @@ class SheetDrivenDB:
         """獲取數據庫連接"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        # ✅ 每個連線都設定 busy_timeout，避免 database is locked
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
     
     def _refresh_columns_cache(self):
