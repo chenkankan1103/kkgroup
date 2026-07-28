@@ -1066,7 +1066,15 @@ class AnimeTracker(commands.Cog):
             except Exception as e:
                 logger.error(f"❌ [_vote_callback] 投票失敗: {e}", exc_info=True)
                 try:
-                    await interaction.response.send_message(f"❌ 投票失敗: {str(e)[:50]}", ephemeral=True)
+                    # 如果已經 defer 過了，用 followup；否則用 response
+                    if interaction.response.is_done():
+                        await interaction.followup.send(
+                            f"❌ 投票失敗: {str(e)[:50]}", ephemeral=True
+                        )
+                    else:
+                        await interaction.response.send_message(
+                            f"❌ 投票失敗: {str(e)[:50]}", ephemeral=True
+                        )
                 except:
                     pass
 
@@ -1076,6 +1084,9 @@ class AnimeTracker(commands.Cog):
                 logger = logging.getLogger(__name__)
                 # 記錄互動時間
                 self.last_interaction_time = datetime.now(TW_TZ)
+
+                # 捕獲外部 self (AnimeVoteView) 供內部類別使用
+                outer_self = self
 
                 # 創建簡單的文本輸入模態框
                 class CommentModal(discord.ui.Modal, title="留下匿名評論"):
@@ -1097,9 +1108,9 @@ class AnimeTracker(commands.Cog):
                             user_hash = str(hash(modal_interaction.user.id))[:10]
 
                             # 記錄評論（vote_type 為空表示只是評論）
-                            self.tracker.record_vote(
-                                video_sn=self.video_sn,
-                                anime_sn=self.anime_sn,
+                            outer_self.tracker.record_vote(
+                                video_sn=outer_self.video_sn,
+                                anime_sn=outer_self.anime_sn,
                                 message_id=modal_interaction.message.id,
                                 vote_type="comment",
                                 comment=comment,
@@ -1114,7 +1125,7 @@ class AnimeTracker(commands.Cog):
                                 from db_adapter import set_user_field, get_user_field
 
                                 # 檢查是否已發放過獎勵
-                                if not self.tracker.db.is_reward_already_given(modal_interaction.user.id, modal_interaction.message.id, "comment"):
+                                if not outer_self.tracker.db.is_reward_already_given(modal_interaction.user.id, modal_interaction.message.id, "comment"):
                                     # 獲取當前 KK幣
                                     current_kkcoin = get_user_field(modal_interaction.user.id, "kkcoin") or 0
                                     new_kkcoin = int(current_kkcoin) + 3000
@@ -1123,7 +1134,7 @@ class AnimeTracker(commands.Cog):
                                     set_user_field(modal_interaction.user.id, "kkcoin", new_kkcoin)
 
                                     # 記錄獎勵發放
-                                    self.tracker.db.record_reward(
+                                    outer_self.tracker.db.record_reward(
                                         user_id=modal_interaction.user.id,
                                         message_id=modal_interaction.message.id,
                                         reward_type="comment",
@@ -1144,24 +1155,30 @@ class AnimeTracker(commands.Cog):
 
                             # 更新原始消息統計
                             try:
-                                await self._update_message_stats(modal_interaction.message)
+                                await outer_self._update_message_stats(modal_interaction.message)
                                 logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存並更新消息統計")
                             except Exception as update_error:
                                 logger.error(f"❌ [comment_submit] 更新消息統計失敗: {update_error}", exc_info=True)
                         except Exception as e:
                             logger.error(f"❌ [comment_submit] 保存評論失敗: {e}", exc_info=True)
+                            try:
+                                await modal_interaction.response.send_message(
+                                    f"❌ 評論失敗: {str(e)[:50]}", ephemeral=True
+                                )
+                            except:
+                                pass
 
-                        # 將追蹤和更新函數保存到模態框實例
-                        modal = CommentModal()
-                        modal.tracker = self.tracker
-                        modal.video_sn = self.video_sn
-                        modal.anime_sn = self.anime_sn
-                        modal.update_stats = self._update_message_stats
-
-                        await interaction.response.send_modal(modal)
+                # 發送 Modal（在 _comment_callback 中，不在 on_submit 中）
+                await interaction.response.send_modal(CommentModal())
 
             except Exception as e:
                 logger.error(f"❌ [_comment_callback] 評論失敗: {e}", exc_info=True)
+                try:
+                    await interaction.response.send_message(
+                        f"❌ 無法開啟評論: {str(e)[:50]}", ephemeral=True
+                    )
+                except:
+                    pass
 
         async def _update_message_stats(self, message: discord.Message):
             """更新消息中的投票統計"""
