@@ -170,3 +170,7 @@ tools/**
 # Ignore Claude Swarm directory
 .swarm/
 CLAUDE.md
+
+# Graphify 知識圖譜（本地建置，團隊可選擇提交 graphify-out/）
+graphify-out/cost.json
+graphify-out/cache/
