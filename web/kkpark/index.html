@@ -468,7 +468,7 @@
                     <i data-lucide="message-circle" class="w-4 h-4 inline mr-2"></i>
                     Discord
                 </a>
-                <a href="/admin" class="glass px-4 py-2 rounded-lg text-sm font-medium text-kk-text-muted hover:text-kk-warning hover:border-kk-warning/30 transition-all hidden sm:flex" title="管理後台">
+                <a href="#" id="admin-link-desktop" class="glass px-4 py-2 rounded-lg text-sm font-medium text-kk-text-muted hover:text-kk-warning hover:border-kk-warning/30 transition-all hidden sm:flex" title="管理後台">
                     <i data-lucide="settings" class="w-4 h-4 inline mr-2"></i>
                     管理
                 </a>
@@ -493,7 +493,7 @@
                 <a href="#contact" class="block px-4 py-3 text-kk-text-muted hover:text-kk-primary transition-colors font-medium">聯繫我們</a>
                 <div class="pt-4 border-t border-kk-border flex gap-3">
                     <a href="https://discord.gg" target="_blank" class="flex-1 glass px-4 py-3 rounded-lg text-center text-sm font-medium text-kk-text-muted hover:text-kk-primary transition-colors">Discord 社群</a>
-                    <a href="/admin" class="flex-1 glass px-4 py-3 rounded-lg text-center text-sm font-medium text-kk-text-muted hover:text-kk-warning transition-colors">⚙️ 管理後台</a>
+                    <a href="#" id="admin-link-mobile" class="flex-1 glass px-4 py-3 rounded-lg text-center text-sm font-medium text-kk-text-muted hover:text-kk-warning transition-colors">⚙️ 管理後台</a>
                     <a href="#contact" class="flex-1 btn-primary text-center text-sm">立即加入</a>
                 </div>
             </div>
@@ -1797,6 +1797,7 @@
             // initCursorTrail(); // Disabled to reduce performance overhead
             initParallax();
             initSmoothScroll();
+            initAdminLinks();
 
             // Add initial reveal class to elements already in viewport
             setTimeout(() => {
@@ -1808,6 +1809,20 @@
                 });
             }, 100);
         });
+
+        // ==================== 動態設定管理後台連結 ====================
+        function initAdminLinks() {
+            fetch('./config.json?cache_bust=' + Date.now())
+                .then(response => response.json())
+                .then(data => {
+                    const adminUrl = (data.API_BASE || data.url || '') + '/admin';
+                    const desktopLink = document.getElementById('admin-link-desktop');
+                    const mobileLink = document.getElementById('admin-link-mobile');
+                    if (desktopLink) desktopLink.href = adminUrl;
+                    if (mobileLink) mobileLink.href = adminUrl;
+                })
+                .catch(err => console.error('無法載入管理後台 URL', err));
+        }
 
         // Handle page visibility for performance
         document.addEventListener('visibilitychange', () => {
