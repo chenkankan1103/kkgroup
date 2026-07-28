@@ -143,8 +143,11 @@ def oauth_callback():
         redirect_url = None
         
         # 優先重定向到遊戲
-        if request.referrer and '/rpg-game' in request.referrer or '/game' in request.referrer:
+        if request.referrer and ('/rpg-game' in request.referrer or '/game' in request.referrer):
             redirect_url = f"/rpg-game?auth_token={session_token}&user_id={user_data.get('id')}"
+        # 檢查是否是管理後台的登入
+        elif request.referrer and '/admin' in request.referrer:
+            redirect_url = f"/admin?auth_token={session_token}"
         else:
             # 否則使用 FRONTEND_URL
             frontend_url = FRONTEND_URL.rstrip('/')

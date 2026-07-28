@@ -119,11 +119,19 @@
             <button class="btn btn-primary" onclick="searchUser()">🔍 查詢</button>
         </div>
 
-        <!-- 管理員密鑰 -->
+        <!-- 管理員驗證區 -->
         <div class="card" style="margin-bottom:16px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:0.85rem;color:var(--text-secondary);white-space:nowrap;">🔑 管理員密鑰:</span>
-                <input type="password" id="adminKey" placeholder="輸入 ADMIN_API_KEY" style="flex:1;padding:6px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.85rem;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <!-- Discord 登入 -->
+                <button id="discordLoginBtn" class="btn btn-primary" onclick="loginWithDiscord()" style="background:#5865F2;">
+                    🔐 Discord 登入
+                </button>
+                <span id="loginStatus" style="font-size:0.85rem;color:var(--text-muted);">未登入</span>
+                <button id="discordLogoutBtn" class="btn btn-outline hidden" onclick="logoutDiscord()" style="font-size:0.8rem;padding:6px 12px;">登出</button>
+                <span style="flex:1;"></span>
+                <!-- API Key 備用 -->
+                <span style="font-size:0.8rem;color:var(--text-muted);">或使用 API Key:</span>
+                <input type="password" id="adminKey" placeholder="ADMIN_API_KEY" style="width:180px;padding:6px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.85rem;">
                 <button class="btn btn-outline" onclick="saveAdminKey()" style="font-size:0.8rem;padding:6px 12px;">儲存</button>
             </div>
         </div>
@@ -170,10 +178,96 @@
         let currentUser = null;
         let originalUser = null;
         let adminKey = localStorage.getItem('admin_key') || '';
+        let discordToken = localStorage.getItem('discord_token') || '';
+        let discordUser = null;
 
-        // 初始化時載入已儲存的密鑰
+        // 初始化
         if (adminKey) {
             document.getElementById('adminKey').value = adminKey;
+        }
+        checkDiscordToken();
+
+        // ==================== Discord 登入 ====================
+        async function loginWithDiscord() {
+            try {
+                const resp = await fetch('/api/auth/login');
+                const data = await resp.json();
+                if (data.oauth_url) {
+                    // 儲存當前頁面 URL 以便回調後返回
+                    localStorage.setItem('admin_return_url', window.location.href);
+                    window.location.href = data.oauth_url;
+                } else {
+                    showToast('無法取得 Discord 登入連結', 'error');
+                }
+            } catch (e) {
+                showToast('Discord 登入失敗: ' + e.message, 'error');
+            }
+        }
+
+        function logoutDiscord() {
+            localStorage.removeItem('discord_token');
+            localStorage.removeItem('discord_user');
+            discordToken = '';
+            discordUser = null;
+            updateLoginUI();
+            showToast('已登出 Discord', 'info');
+        }
+
+        async function checkDiscordToken() {
+            // 檢查 URL 參數中的 auth_token（從 OAuth 回調返回）
+            const params = new URLSearchParams(window.location.search);
+            const urlToken = params.get('auth_token');
+            if (urlToken) {
+                discordToken = urlToken;
+                localStorage.setItem('discord_token', discordToken);
+                // 清除 URL 參數
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+
+            if (discordToken) {
+                try {
+                    const resp = await fetch('/api/auth/verify', {
+                        headers: { 'Authorization': 'Bearer ' + discordToken }
+                    });
+                    const data = await resp.json();
+                    if (data.authenticated) {
+                        discordUser = data.user;
+                        localStorage.setItem('discord_user', JSON.stringify(data.user));
+                        updateLoginUI();
+                    } else {
+                        // Token 過期
+                        localStorage.removeItem('discord_token');
+                        localStorage.removeItem('discord_user');
+                        discordToken = '';
+                        discordUser = null;
+                        updateLoginUI();
+                    }
+                } catch (e) {
+                    console.error('Token 驗證失敗:', e);
+                }
+            }
+            updateLoginUI();
+        }
+
+        function updateLoginUI() {
+            const loginBtn = document.getElementById('discordLoginBtn');
+            const logoutBtn = document.getElementById('discordLogoutBtn');
+            const statusEl = document.getElementById('loginStatus');
+
+            if (discordUser) {
+                loginBtn.classList.add('hidden');
+                logoutBtn.classList.remove('hidden');
+                const avatarUrl = discordUser.avatar_url 
+                    ? `<img src="${discordUser.avatar_url}" style="width:20px;height:20px;border-radius:50%;vertical-align:middle;margin-right:4px;">` 
+                    : '';
+                statusEl.innerHTML = `${avatarUrl}✅ 已登入: <strong>${discordUser.username}</strong>`;
+                statusEl.style.color = 'var(--success)';
+            } else {
+                loginBtn.classList.remove('hidden');
+                logoutBtn.classList.add('hidden');
+                statusEl.textContent = '未登入';
+                statusEl.style.color = 'var(--text-muted)';
+            }
         }
 
         function saveAdminKey() {
@@ -319,19 +413,26 @@
 
         async function saveUser() {
             if (!currentUser) return;
-            if (!adminKey) {
-                showToast('請先輸入管理員密鑰', 'error');
+            if (!discordToken && !adminKey) {
+                showToast('請先登入 Discord 或輸入 API Key', 'error');
                 return;
             }
             const data = getFormData();
 
             try {
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                // 優先使用 Discord token
+                if (discordToken) {
+                    headers['Authorization'] = 'Bearer ' + discordToken;
+                } else if (adminKey) {
+                    headers['X-Admin-Key'] = adminKey;
+                }
+
                 const resp = await fetch(`/api/user/${currentUser.user_id}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Admin-Key': adminKey
-                    },
+                    headers: headers,
                     body: JSON.stringify(data)
                 });
                 const result = await resp.json();
