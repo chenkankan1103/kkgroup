@@ -86,6 +86,56 @@ These run beneath other skills — reach for them directly when the **words** ar
 - Button callbacks use `interaction.response.defer()` then `interaction.followup.send()`
 - Ephemeral responses for user-specific feedback
 
+### ⚡ Discord 互動 3 秒超時避坑（高頻踩坑！）
+
+**核心問題**：Discord 要求按鈕/選單 callback 必須在 **3 秒內** 做出首次回應（defer 或 send），否則會顯示 "The application did not respond"。
+
+**`defer()` 的作用**：告訴 Discord「收到請求，正在處理」，將超時延長到 **15 分鐘**。但 `defer()` 本身必須在 3 秒內被呼叫。
+
+**正確模式**：
+
+```python
+async def _button_callback(self, interaction: discord.Interaction):
+    # ✅ 第一步：立刻 defer()，什麼都別做
+    await interaction.response.defer()
+
+    # ✅ 第二步：慢慢處理（資料庫寫入、API 呼叫、KK幣獎勵等）
+    self.tracker.record_vote(...)
+    set_user_field(...)
+
+    # ✅ 第三步：用 followup 回應用戶
+    await interaction.followup.send("✅ 成功！", ephemeral=True)
+```
+
+**錯誤模式（會導致 3 秒超時）**：
+
+```python
+async def _button_callback(self, interaction: discord.Interaction):
+    # ❌ 先做耗時操作（DB 寫入、API 呼叫...）
+    self.tracker.record_vote(...)  # SQLite 可能鎖定等待
+    set_user_field(...)
+
+    # ❌ defer() 太晚，可能已超過 3 秒
+    await interaction.response.defer()
+```
+
+**Modal 注意事項**：
+- `send_modal()` 不需要 defer，但 Modal 本身也有 3 秒限制
+- Modal 的 `on_submit` 中也需要在 3 秒內回應（defer 或 send_message）
+- Modal 類別定義內的 `self` 是 Modal 實例，不是外部 View — 需用 `outer_self` 捕獲
+
+**錯誤處理注意**：
+- 如果已 defer 過，錯誤處理要用 `followup.send()` 而非 `response.send_message()`
+- 檢查方式：`if interaction.response.is_done():` → 用 followup，否則用 response
+
+**檢查清單**（寫 callback 時必查）：
+| # | 檢查項 | ✅ |
+|---|--------|-----|
+| 1 | `defer()` 是 callback 的第一個 await？ | |
+| 2 | 所有後續回應都用 `followup.send()`？ | |
+| 3 | 錯誤處理有檢查 `is_done()` 再決定用哪個？ | |
+| 4 | Modal 的 `on_submit` 也有在 3 秒內回應？ | |
+
 ## Async Best Practices
 
 - Use `asyncio.gather()` for parallel operations
