@@ -772,25 +772,39 @@ class AnimeTracker(commands.Cog):
                         )
                     except ValueError as e:
                         logger.warning(f"⚸ [{self.__class__.__name__}] 無法解析排程時間 '{scheduled}' 計算睡眠時間: {e}")
-                        # 如果無法解析時間，跳過此項目並繼續尋找下一個
                         continue
                     except Exception as e:
                         logger.error(f"❌ [{self.__class__.__name__}] 處理排程時間時發生未預期錯誤 '{scheduled}' 計算睡眠時間: {e}", exc_info=True)
-                        # 如果發生未預期錯誤，跳過此項目
                         continue
                     sleep_seconds = (sched_dt - now).total_seconds()
 
-                    # 🔑 方案 A：提前 30 秒喚醒（預熱：fetch API、生成 embed），到點直接 send
-                    sleep_seconds = max(0, sleep_seconds - 30)
+                    # 🔑 方案：提前 30 秒喚醒預熱 API，等到準點再發送
+                    # 避免提前推送（API 可能還沒更新），也避免延遲
+                    preheat_seconds = max(0, sleep_seconds - 30)
 
-                    # 睡到預定時間（最多睡 24 小時防呆）
-                    if sleep_seconds > 0:
-                        logger.info(f"😴 [_schedule_dispatcher] 下一檔 {scheduled}，睡 {sleep_seconds:.0f} 秒（含 30s 預熱）")
-                        await asyncio.sleep(min(sleep_seconds, 86400))
+                    # 睡到預熱時間（最多睡 24 小時防呆）
+                    if preheat_seconds > 0:
+                        logger.info(f"😴 [_schedule_dispatcher] 下一檔 {scheduled}，睡 {preheat_seconds:.0f} 秒（提前 30s 預熱）")
+                        await asyncio.sleep(min(preheat_seconds, 86400))
 
-                    # 時間到 → 即時呼叫 API 推送
+                    # 預熱：提前 fetch API，讓巴哈有時間回應
+                    logger.info(f"🔥 [_schedule_dispatcher] 預熱 {scheduled}，提前 fetch API...")
+                    preheat_episodes = await self.fetch_new_anime_from_api()
+                    if preheat_episodes:
+                        logger.info(f"🔥 [_schedule_dispatcher] 預熱完成，API 回傳 {len(preheat_episodes)} 筆")
+                    else:
+                        logger.warning(f"⚠️ [_schedule_dispatcher] 預熱 API 無回應，稍後推送時會重試")
+
+                    # 等到準點（剩餘的 30 秒）
                     now = datetime.now(TW_TZ)
-                    logger.info(f"⏰ [_schedule_dispatcher] 時間到 {scheduled}，呼叫 API 推送")
+                    remaining = (sched_dt - now).total_seconds()
+                    if remaining > 0:
+                        logger.info(f"⏳ [_schedule_dispatcher] 等待 {remaining:.0f} 秒到準點 {scheduled}")
+                        await asyncio.sleep(remaining)
+
+                    # 準點推送
+                    now = datetime.now(TW_TZ)
+                    logger.info(f"⏰ [_schedule_dispatcher] 準點 {scheduled}，呼叫 API 推送（當前 {now.strftime('%H:%M:%S')}）")
                     await self.send_anime_push(scheduled, ANIME_CHANNEL_ID)
                     # 成功會在 send_anime_push 內標記 pushed=1，下次迴圈會自動跳過
                 else:
