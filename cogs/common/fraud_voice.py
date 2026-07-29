@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 from discord.ext import commands
 from discord import app_commands, ui
 import asyncio
@@ -56,10 +56,15 @@ class ScamHub(commands.Cog):
             if 'deletion_task' in room_data and room_data['deletion_task']:
                 room_data['deletion_task'].cancel()
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """Bot 啟動完成後初始化資料庫並恢復活躍房間。
+    async def cog_load(self):
+        """Cog 載入時初始化資料庫並恢復活躍房間。
         
+        使用 cog_load 而非 Cog.listener('on_ready') 的原因：
+        此 Cog 在 bot 的 on_ready 事件處理中被 setup_modules() 動態載入，
+        當 add_cog() 執行時 is_ready() 可能尚未返回 True，
+        導致 Cog.listener('on_ready') 永遠不會被觸發。
+        cog_load 是 discord.py 2.x 的保證載入回調，無論何時載入都能確保執行。
+
         注意：_init_db 和 _load_active_rooms 各自有 try/except 保護，
         確保其中一個失敗不會影響另一個的執行。
         """
