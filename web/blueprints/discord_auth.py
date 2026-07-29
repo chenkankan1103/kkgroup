@@ -18,12 +18,28 @@ discord_auth_bp = Blueprint('discord_auth', __name__, url_prefix='/api/auth')
 # Discord API 配置
 DISCORD_CLIENT_ID = os.getenv('DISCORD_CLIENT_ID', '')
 DISCORD_CLIENT_SECRET = os.getenv('DISCORD_CLIENT_SECRET', '')
-DISCORD_REDIRECT_URI = os.getenv('DISCORD_REDIRECT_URI', 'http://localhost:5000/api/auth/callback')
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8000')
 DISCORD_API_BASE = 'https://discord.com/api/v10'
 
 # 簡單的會話存儲（生產應使用 Redis 或數據庫）
 user_sessions = {}
+
+
+def _get_redirect_uri():
+    """動態獲取 redirect URI：優先讀取 config.json 中的 tunnel URL"""
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'config.json')
+        config_path = os.path.abspath(config_path)
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            base_url = config.get('API_BASE') or config.get('url', '')
+            if base_url:
+                return f"{base_url.rstrip('/')}/api/auth/callback"
+    except Exception as e:
+        logger.warning(f"無法讀取 config.json，使用 .env 中的 DISCORD_REDIRECT_URI: {e}")
+    # fallback 到 .env
+    return os.getenv('DISCORD_REDIRECT_URI', 'http://localhost:5000/api/auth/callback')
 
 
 def require_auth(f):
@@ -49,10 +65,11 @@ def login():
             "oauth_url": None
         }), 500
     
+    redirect_uri = _get_redirect_uri()
     oauth_url = (
         f"https://discord.com/api/oauth2/authorize?"
         f"client_id={DISCORD_CLIENT_ID}"
-        f"&redirect_uri={DISCORD_REDIRECT_URI}"
+        f"&redirect_uri={redirect_uri}"
         f"&response_type=code"
         f"&scope=identify%20email%20guilds"
     )
@@ -81,7 +98,7 @@ def oauth_callback():
             'client_secret': DISCORD_CLIENT_SECRET,
             'grant_type': 'authorization_code',
             'code': code,
-            'redirect_uri': DISCORD_REDIRECT_URI,
+            'redirect_uri': _get_redirect_uri(),
             'scope': 'identify email guilds'
         }
         
