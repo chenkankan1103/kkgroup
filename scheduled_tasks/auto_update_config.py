@@ -26,68 +26,96 @@ def log(msg):
     sys.stdout.flush()
 
 def get_latest_tunnel_url():
-    """從 cloudflared 日誌提取最新隧道 URL"""
+    """從 cloudflared journal 或日誌提取最新隧道 URL"""
+    # 優先從 journalctl 取得
+    try:
+        result = subprocess.run(
+            ["sudo", "journalctl", "-u", "cloudflared.service", "--no-pager", "--since", "24 hours ago"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        # cloudflared 在 stdout 輸出 URL: https://xxxx.trycloudflare.com
+        matches = re.findall(r'https://[a-zA-Z0-9_-]+\.trycloudflare\.com', result.stdout)
+        if matches:
+            return matches[-1]  # 最後一個 URL（最新的）
+    except Exception as e:
+        log(f"⚠️ journalctl 提取失敗: {e}")
+
+    # Fallback: 從日誌檔案
     try:
         result = subprocess.run(
             ["grep", "-oP", "https://[a-zA-Z0-9_-]+\\.trycloudflare\\.com", "/tmp/cloudflared.log"],
-            capture_output=True,
-            text=True,
-            timeout=5
+            capture_output=True, text=True, timeout=5
         )
         urls = result.stdout.strip().split('\n')
         if urls and urls[-1]:
             return urls[-1]
     except Exception as e:
-        log(f"⚠️ 提取 URL 失敗: {e}")
+        log(f"⚠️ 日誌提取失敗: {e}")
     return None
 
 def update_config_json(new_url):
-    """更新 config.json"""
-    config_path = Path(__file__).parent / "config" / "config.json"
-    
+    """更新 config/config.json 和 web/portal/config.json"""
+    ROOT = Path(__file__).parent.parent  # kkgroup 根目錄
+
+    # === 1. 更新 config/config.json（主配置，完整內容） ===
+    config_path = ROOT / "config" / "config.json"
+
     try:
-        # 讀取現有配置
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
     except:
         config = {}
-    
-    # 更新 URL
+
+    # 保留原有 imageURL（不要被覆寫）
+    original_image = config.get('imageURL', '')
+
     config['url'] = new_url
-    config['imageURL'] = "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png"  # Use GitHub Pages
-    config['lastUpdated'] = datetime.utcnow().isoformat() + "Z"
-    config['status'] = "✅ 隧道已完全修復並正常運作"
-    
-    # 更新後端配置信息
-    if 'backendConfig' not in config:
-        config['backendConfig'] = {}
-    
-    config['backendConfig']['tunnelType'] = "Cloudflare 快速隧道（自動監控）"
-    config['backendConfig']['lastAutoUpdate'] = datetime.utcnow().isoformat() + "Z"
-    
-    # 寫回文件
+    config['API_BASE'] = new_url
+    config['lastUpdated'] = datetime.utcnow().isoformat()
+
+    # 保留原有的 imageURL（由 monitor_leaderboard_url.py 管理）
+    if original_image:
+        config['imageURL'] = original_image
+
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
-    
-    log(f"✅ config.json 已更新: {new_url}")
+
+    log(f"✅ config/config.json 已更新: {new_url}")
+
+    # === 2. 同步更新 web/portal/config.json（入口網站用） ===
+    portal_config_dir = ROOT / "web" / "portal"
+    portal_config_dir.mkdir(parents=True, exist_ok=True)
+    portal_config_path = portal_config_dir / "config.json"
+
+    portal_config = {
+        "url": new_url,
+        "API_BASE": new_url
+    }
+
+    with open(portal_config_path, 'w', encoding='utf-8') as f:
+        json.dump(portal_config, f, ensure_ascii=False, indent=2)
+
+    log(f"✅ web/portal/config.json 已同步: {new_url}")
     return True
 
 def git_commit_changes(new_url):
     """提交 Git 變更"""
+    ROOT = Path(__file__).parent.parent
     try:
-        subprocess.run(["git", "add", "config/config.json"], cwd=Path(__file__).parent, timeout=5)
+        subprocess.run(["git", "add", "config/config.json", "web/portal/config.json"], cwd=ROOT, timeout=5)
         result = subprocess.run(
-            ["git", "commit", "-m", f"Auto-update: Tunnel URL changed to {new_url}"],
-            cwd=Path(__file__).parent,
+            ["git", "commit", "-m", f"fix: 更新 config.json tunnel URL 為當前有效位址"],
+            cwd=ROOT,
             capture_output=True,
             timeout=5
         )
         if result.returncode == 0:
             log("✅ Git 已提交變更")
-            # 嘗試推送
-            subprocess.run(["git", "push", "origin", "main"], cwd=Path(__file__).parent, timeout=10)
+            subprocess.run(["git", "push", "origin", "main"], cwd=ROOT, timeout=10)
         else:
-            log("ℹ️ 無新變更需要提交")
+            log("ℹ️ 無新變更需要提交（或 URL 未變更）")
     except Exception as e:
         log(f"⚠️ Git 操作失敗: {e}")
 
