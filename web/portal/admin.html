@@ -175,22 +175,47 @@
     <div id="toast" class="toast hidden"></div>
 
     <script>
+        // ==================== API Base URL 設定 ====================
+        // 從同目錄 config.json 讀取後端 API 位置
+        // GitHub Pages 上 API_BASE = tunnel URL；tunnel 直接存取時 API_BASE = ''（同源）
+        var API_BASE = '';
+
+        async function loadConfig() {
+            try {
+                const resp = await fetch('./config.json?cache_bust=' + Date.now());
+                const config = await resp.json();
+                if (config.API_BASE) {
+                    API_BASE = config.API_BASE;
+                } else if (config.url) {
+                    API_BASE = config.url;
+                }
+                console.log('✅ API_BASE:', API_BASE || '(同源)');
+            } catch (e) {
+                console.warn('⚠️ 無法載入 config.json，使用同源 API:', e.message);
+            }
+        }
+
+        function api(path) { return API_BASE + path; }
+
         let currentUser = null;
         let originalUser = null;
         let adminKey = localStorage.getItem('admin_key') || '';
         let discordToken = localStorage.getItem('discord_token') || '';
         let discordUser = null;
 
-        // 初始化
-        if (adminKey) {
-            document.getElementById('adminKey').value = adminKey;
-        }
-        checkDiscordToken();
+        // 初始化：先載入 config，再驗證 token
+        (async function init() {
+            await loadConfig();
+            if (adminKey) {
+                document.getElementById('adminKey').value = adminKey;
+            }
+            checkDiscordToken();
+        })();
 
         // ==================== Discord 登入 ====================
         async function loginWithDiscord() {
             try {
-                const resp = await fetch('/api/auth/login');
+                const resp = await fetch(api('/api/auth/login'));
                 const data = await resp.json();
                 if (data.oauth_url) {
                     // 儲存當前頁面 URL 以便回調後返回
@@ -226,7 +251,7 @@
 
             if (discordToken) {
                 try {
-                    const resp = await fetch('/api/auth/verify', {
+                    const resp = await fetch(api('/api/auth/verify'), {
                         headers: { 'Authorization': 'Bearer ' + discordToken }
                     });
                     const data = await resp.json();
@@ -300,7 +325,7 @@
             document.getElementById('userCard').classList.add('hidden');
 
             try {
-                const resp = await fetch(`/api/user/${userId}`);
+                const resp = await fetch(api(`/api/user/${userId}`));
                 const data = await resp.json();
 
                 if (data.status === 'ok') {
@@ -430,7 +455,7 @@
                     headers['X-Admin-Key'] = adminKey;
                 }
 
-                const resp = await fetch(`/api/user/${currentUser.user_id}`, {
+                const resp = await fetch(api(`/api/user/${currentUser.user_id}`), {
                     method: 'PUT',
                     headers: headers,
                     body: JSON.stringify(data)
