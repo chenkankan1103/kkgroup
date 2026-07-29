@@ -1573,13 +1573,17 @@ class AnimePushCore:
                         today_episodes.append(ep)
                     else:
                         logger.debug(f"🔍 [send_anime_push] 過濾非今日集數: {ep.get('title')} (upTime={ep_up_time}, today={today_str})")
-                
+
+                if not today_episodes:
+                    # API 回應中有資料，但全部都是非今日的集數 → API 還沒更新當日資料
+                    # 這種情況不標記 pushed，讓 dispatcher/catchup 稍後重試
+                    logger.warning(f"⚠️ [send_anime_push] 今日無新番集數 "
+                                   f"(API 回傳 {len(episodes)} 筆 but upTime!=today)，"
+                                   f"跳過 {scheduled_time}（API 尚未更新今日資料，不標記）")
+                    return False
+
                 logger.info(f"📅 [send_anime_push] 今日集數過濾: {len(episodes)} -> {len(today_episodes)} 筆")
                 episodes = today_episodes
-                
-                if not episodes:
-                    logger.warning(f"⚠️ [send_anime_push] 今日無新番集數，跳過 {scheduled_time}")
-                    return False
 
                 # 🔑 關鍵過濾：優先 videoSn 匹配，失敗時 fallback 到 title 匹配
                 # newAnimeSchedule API 的 videoSn 是模板值，可能跨週不更新，
@@ -1617,9 +1621,16 @@ class AnimePushCore:
                 sent_count = 0
 
                 # 決定是否標記 pushed=1：
-                # - 若有送出集數 → 標記
-                # - 若無匹配集數但排程時間已過 > 30 分鐘 → 標記（避免無限重試）
-                # - 若無匹配集數且剛到點（< 30 分鐘） → 不標記，留待重試
+                # 🔑 修復 (2026-07-30)：將放棄標記的時間從 30 分鐘延長到 3 小時 (180 分鐘)
+                # 原因：凌晨 bot 重啟後，_catchup_missed_pushes 嘗試補推午夜時段，
+                # 但 API 可能在 00:00~01:00 還沒更新當天上架的動畫，導致無匹配集數。
+                # 30 分鐘太短 → 3 小時足夠覆蓋 API 更新延遲，同時避免真正的空時段無限重試。
+                # 策略：
+                # - 若無匹配集數但排程時間已過 > 180 分鐘 → 標記（放棄，避免無限重試）
+                # - 若無匹配集數且 < 180 分鐘 → 不標記，留待重試
+                # - 若有送出集數 → 一定要標記
+                EXHAUST_RETRY_MINUTES = 180  # 3 hours
+
                 if not new_episodes:
                     now = datetime.now(TW_TZ)
                     try:
@@ -1630,17 +1641,20 @@ class AnimePushCore:
                     except Exception:
                         minutes_since_scheduled = 999
 
-                    should_mark_pushed = sent_count > 0 or minutes_since_scheduled > 30
+                    should_mark_pushed = minutes_since_scheduled > EXHAUST_RETRY_MINUTES
 
                     if not should_mark_pushed:
-                        logger.info(f"⏳ [send_anime_push] {scheduled_time} 剛到點（{minutes_since_scheduled:.0f} 分鐘前）"
-                                    f"API 尚無匹配集數（預期 {len(expected_video_sns)} 個 videoSn，"
-                                    f"API 回傳 {len(episodes)} 集），暫不標記 pushed，稍後重試")
+                        logger.info(f"⏳ [send_anime_push] {scheduled_time} 排程後 {minutes_since_scheduled:.0f} 分鐘，"
+                                    f"尚無匹配集數 "
+                                    f"（預期 {len(expected_video_sns)} 個 videoSn，"
+                                    f"API 回傳 {len(episodes)} 集，今日 {len(episodes)} 筆），"
+                                    f"暫不標記 pushed（將在 {EXHAUST_RETRY_MINUTES - minutes_since_scheduled:.0f} 分鐘後放棄重試）")
                         return False
 
                     logger.info(f"📭 [send_anime_push] {scheduled_time} 無匹配新番需推送"
                                 f"（預期 {len(expected_video_sns)} 個 videoSn，"
-                                f"API 回傳 {len(episodes)} 集，距排程 {minutes_since_scheduled:.0f} 分鐘），標記時刻已完成")
+                                f"API 回傳 {len(episodes)} 集，距排程 {minutes_since_scheduled:.0f} 分鐘 > "
+                                f"{EXHAUST_RETRY_MINUTES} 分鐘截止），標記時刻已完成")
                 else:
                     # 有匹配的新番要推送，送出後一定要標記
                     should_mark_pushed = True
