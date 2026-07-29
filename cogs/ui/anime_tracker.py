@@ -988,6 +988,10 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"🎯 [_vote_callback] 用戶 {interaction.user.name}({interaction.user.id}) 點擊投票按鈕")
                 logger.info(f"   custom_id={interaction.custom_id}, message_id={interaction.message.id}")
 
+                # 🔑 關鍵：立即 defer() 回應 Discord，避免 3 秒超時
+                await interaction.response.defer()
+                logger.info(f"✅ [_vote_callback] defer() 已執行")
+
                 # 記錄互動時間
                 self.last_interaction_time = datetime.now(TW_TZ)
 
@@ -1008,11 +1012,6 @@ class AnimeTracker(commands.Cog):
                 )
 
                 logger.info(f"✅ [_vote_callback] 投票已記錄: {interaction.user.name} 投票了 {vote_label}")
-
-                # 立即回應用戶
-                logger.info(f"⏳ [_vote_callback] 準備 defer() 響應...")
-                await interaction.response.defer()
-                logger.info(f"✅ [_vote_callback] defer() 已執行")
 
                 # === KK幣獎勵邏輯 (投票 +2000) ===
                 reward_given = False
@@ -1045,14 +1044,7 @@ class AnimeTracker(commands.Cog):
                 except Exception as e:
                     logger.error(f"❌ [_vote_callback] 獎勵 KK幣失敗: {e}", exc_info=True)
 
-                # 更新原始消息的 embed（添加統計信息）
-                try:
-                    await self._update_message_stats(interaction.message)
-                    logger.info(f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄並更新消息統計")
-                except Exception as update_error:
-                    logger.error(f"❌ [_vote_callback] 更新消息統計失敗: {update_error}", exc_info=True)
-
-                # 🔑 修復：發送 follow-up 確認訊息給用戶
+                # 🔑 先發送 follow-up 確認給用戶（優先回應，避免延遲）
                 try:
                     reward_text = "💰 +2000 KK幣獎勵已發放！" if reward_given else "⏭️ 您已領取過此推送的投票獎勵"
                     await interaction.followup.send(
@@ -1062,6 +1054,13 @@ class AnimeTracker(commands.Cog):
                     logger.info(f"✅ [_vote_callback] 已發送 follow-up 確認給 {interaction.user.name}")
                 except Exception as followup_error:
                     logger.error(f"❌ [_vote_callback] 發送 follow-up 失敗: {followup_error}")
+
+                # 更新原始消息的 embed（非關鍵路徑，失敗不影響用戶體驗）
+                try:
+                    await self._update_message_stats(interaction.message)
+                    logger.info(f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄並更新消息統計")
+                except Exception as update_error:
+                    logger.error(f"❌ [_vote_callback] 更新消息統計失敗: {update_error}", exc_info=True)
 
             except Exception as e:
                 logger.error(f"❌ [_vote_callback] 投票失敗: {e}", exc_info=True)
