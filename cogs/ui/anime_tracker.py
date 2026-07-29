@@ -675,10 +675,12 @@ class AnimeTracker(commands.Cog):
                         return None
                     data = await resp.json()
 
-                    if 'newAnime' not in data:
+                    # API 回應結構: { "data": { "newAnime": { "date": [...], ... } } }
+                    new_anime = data.get('data', {}).get('newAnime')
+                    if not new_anime or 'date' not in new_anime:
                         return None
 
-                    return data['newAnime']
+                    return new_anime['date']
         except Exception as e:
             logger = logging.getLogger(__name__)
             logger.error(f"❌ Error fetching new anime from API: {e}")
