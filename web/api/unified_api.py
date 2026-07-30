@@ -80,6 +80,118 @@ logger.info(f"  - Webhook (GitHub 自動部署)")
 logger.info(f"  - Game API (紙娃娃 RPG)")
 
 # ============================================================
+# 資料庫導入（用於使用者 CRUD）
+# ============================================================
+import sys as _sys
+_sys.path.insert(0, os.path.join(BASE_DIR, '..', '..'))
+
+try:
+    from shared.db.db_adapter import get_user, get_all_users, set_user, get_db_stats, count_users
+    from shared.db.sheet_driven_db import get_db_instance
+    _db = get_db_instance('user_data.db')
+    logger.info("✅ db_adapter 已載入（使用者 CRUD）")
+except Exception as _e:
+    logger.error(f"❌ 無法載入 db_adapter: {_e}")
+    get_user = get_all_users = set_user = get_db_stats = count_users = None
+    _db = None
+
+# ============================================================
+# 使用者 CRUD API
+# ============================================================
+
+@app.route('/api/user/<user_id>', methods=['GET', 'PUT', 'DELETE'])
+def api_user(user_id):
+    """單一使用者查詢、更新或刪除"""
+    if get_user is None:
+        return jsonify({"status": "error", "message": "資料庫未連線"}), 500
+
+    if request.method == 'GET':
+        user = get_user(user_id)
+        if user:
+            return jsonify({"status": "ok", "user": user})
+        return jsonify({"status": "error", "message": f"找不到使用者 ID: {user_id}"}), 404
+
+    elif request.method == 'PUT':
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            if set_user(user_id, data):
+                return jsonify({"status": "ok", "message": "更新成功"})
+            return jsonify({"status": "error", "message": "更新失敗"}), 400
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    elif request.method == 'DELETE':
+        from shared.db.db_adapter import delete_user
+        if delete_user(user_id):
+            return jsonify({"status": "ok", "message": "已刪除"})
+        return jsonify({"status": "error", "message": "刪除失敗"}), 400
+
+
+@app.route('/api/users', methods=['GET'])
+def api_users_list():
+    """列出所有使用者（可選 ?limit=N 和 ?offset=N）"""
+    if get_all_users is None:
+        return jsonify({"status": "error", "message": "資料庫未連線"}), 500
+
+    try:
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int, default=0)
+        all_users = get_all_users()
+        if limit:
+            all_users = all_users[offset:offset + limit]
+        return jsonify({
+            "status": "ok",
+            "count": len(all_users),
+            "users": all_users
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/search', methods=['GET'])
+def api_search_users():
+    """搜尋使用者（支援 user_id / username 模糊匹配）"""
+    if get_all_users is None:
+        return jsonify({"status": "error", "message": "資料庫未連線"}), 500
+    try:
+        q = request.args.get('q', '').lower().strip()
+        field = request.args.get('field', '').lower()
+        all_users = get_all_users()
+        if not q:
+            return jsonify({"status": "ok", "count": len(all_users), "users": all_users})
+        results = []
+        for u in all_users:
+            uid = str(u.get('user_id', '')).lower()
+            username = str(u.get('username', '')).lower()
+            if field == 'user_id':
+                if uid == q:
+                    results.append(u)
+            elif field == 'username':
+                if q in username:
+                    results.append(u)
+            else:
+                # 模糊搜尋：user_id 或 username 任一匹配
+                if q in uid or q in username:
+                    results.append(u)
+        return jsonify({"status": "ok", "count": len(results), "users": results})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/db/stats', methods=['GET'])
+def api_db_stats():
+    """資料庫統計資訊"""
+    if get_db_stats is None:
+        return jsonify({"status": "error", "message": "資料庫未連線"}), 500
+    try:
+        stats = get_db_stats()
+        stats['total_users'] = count_users() if count_users else -1
+        return jsonify({"status": "ok", "stats": stats})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ============================================================
 # 網頁遊戲服務 (必須在 Blueprint 之後、404 handler 之前)
 # ============================================================
 
