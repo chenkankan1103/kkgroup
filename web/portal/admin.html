@@ -453,73 +453,174 @@
             document.getElementById('userTitle').textContent = `👤 使用者: ${user.user_id}`;
             document.getElementById('saveStatus').textContent = '';
 
-            // 定義欄位顯示順序和類型
-            const fieldConfig = {
-                'user_id': { label: 'User ID', type: 'readonly' },
-                'kkcoin': { label: '💰 KK幣', type: 'number' },
-                'level': { label: '📊 等級', type: 'number' },
-                'xp': { label: '💎 經驗值', type: 'number' },
-                'hp': { label: '❤️ HP', type: 'number' },
-                'stamina': { label: '⚡ 耐力', type: 'number' },
-                'title': { label: '🏷️ 頭銜', type: 'text' },
-                'gender': { label: '⚧ 性別', type: 'text' },
-                'streak': { label: '🔥 連續天數', type: 'number' },
-                'actions_used': { label: '🎯 已用行動', type: 'number' },
-                'is_stunned': { label: '😵 暈眩', type: 'number' },
-                'is_locked': { label: '🔒 鎖定', type: 'number' },
-                'face': { label: '😶 臉部', type: 'number' },
-                'hair': { label: '💇 髮型', type: 'number' },
-                'skin': { label: '🎨 膚色', type: 'number' },
-                'top': { label: '👕 上衣', type: 'number' },
-                'bottom': { label: '👖 下裝', type: 'number' },
-                'shoes': { label: '👟 鞋子', type: 'number' },
-                'last_work_date': { label: '📅 最後工作', type: 'text' },
-                'last_action_date': { label: '📅 最後行動', type: 'text' },
-                'last_recovery': { label: '📅 最後恢復', type: 'text' },
+            // 定義所有已知欄位的分組、類型與標籤
+            const fieldGroups = {
+                '基本資訊': {
+                    icon: '👤',
+                    fields: {
+                        'user_id': { label: 'User ID', type: 'readonly' },
+                        'user_name': { label: '使用者名稱', type: 'text' },
+                        'nickname': { label: '暱稱', type: 'text' },
+                        'gender': { label: '⚧ 性別', type: 'text' },
+                        'title': { label: '🏷️ 頭銜', type: 'text' },
+                        'hobby': { label: '🎯 愛好', type: 'text' },
+                        'pre_job': { label: '💼 職業', type: 'text' },
+                    }
+                },
+                '💰 經濟': {
+                    icon: '💰',
+                    fields: {
+                        'kkcoin': { label: 'KK幣', type: 'number' },
+                        'digital_usd': { label: '數位美金', type: 'number' },
+                        'central_reserve': { label: '中央儲備', type: 'number' },
+                        'stock_realized_pnl': { label: '股票已實現損益', type: 'number' },
+                    }
+                },
+                '📊 等級與經驗': {
+                    icon: '📊',
+                    fields: {
+                        'level': { label: '等級', type: 'number' },
+                        'xp': { label: '經驗值', type: 'number' },
+                    }
+                },
+                '❤️ 狀態': {
+                    icon: '❤️',
+                    fields: {
+                        'hp': { label: 'HP', type: 'number' },
+                        'stamina': { label: '耐力', type: 'number' },
+                        'streak': { label: '連續天數', type: 'number' },
+                        'actions_used': { label: '已用行動', type: 'number' },
+                        'is_stunned': { label: '暈眩', type: 'number' },
+                        'is_locked': { label: '鎖定', type: 'number' },
+                        'work_card_enabled': { label: '工作卡啟用', type: 'number' },
+                        'trend_alert_enabled': { label: '趨勢警報', type: 'number' },
+                    }
+                },
+                '🎨 紙娃娃外觀': {
+                    icon: '🎨',
+                    fields: {
+                        'face': { label: '臉部 ID', type: 'number' },
+                        'hair': { label: '髮型 ID', type: 'number' },
+                        'skin': { label: '膚色 ID', type: 'number' },
+                        'top': { label: '上衣 ID', type: 'number' },
+                        'bottom': { label: '下裝 ID', type: 'number' },
+                        'shoes': { label: '鞋子 ID', type: 'number' },
+                        'glove': { label: '手套 ID', type: 'number' },
+                        'earrings': { label: '耳環 ID', type: 'number' },
+                        'face_accessory': { label: '臉飾 ID', type: 'number' },
+                        'eye_decoration': { label: '眼飾 ID', type: 'number' },
+                        'overall': { label: '全身裝 ID', type: 'number' },
+                    }
+                },
+                '🔫 據點戰': {
+                    icon: '🏰',
+                    fields: {
+                        'fortress_wins': { label: '據點戰勝場', type: 'number' },
+                        'fortress_total_damage': { label: '總傷害', type: 'number' },
+                    }
+                },
+                '📅 時間戳': {
+                    icon: '📅',
+                    fields: {
+                        'last_work_date': { label: '最後工作日期', type: 'text' },
+                        'last_action_date': { label: '最後行動日期', type: 'text' },
+                        'last_recovery': { label: '最後恢復時間戳', type: 'text' },
+                        'last_activity': { label: '最後活動', type: 'text' },
+                        'last_cannabis_confiscation': { label: '最後大麻沒收', type: 'number' },
+                        'last_embed_update': { label: '最後嵌入更新', type: 'number' },
+                        'last_image_fetch': { label: '最後圖片抓取', type: 'number' },
+                        'last_kkcoin_snapshot': { label: '最後 KK 幣快照', type: 'number' },
+                        'last_level_snapshot': { label: '最後等級快照', type: 'number' },
+                        'last_xp_snapshot': { label: '最後 XP 快照', type: 'number' },
+                        'injury_recovery_time': { label: '傷勢恢復時間', type: 'text' },
+                    }
+                },
             };
 
-            let html = '';
             const shown = new Set();
+            let html = '';
 
-            // 先顯示已知欄位
-            for (const [key, config] of Object.entries(fieldConfig)) {
-                if (key in user) {
-                    html += renderField(key, config, user[key]);
-                    shown.add(key);
+            // 分組渲染
+            for (const [groupName, groupConf] of Object.entries(fieldGroups)) {
+                const icon = groupConf.icon || '📋';
+                let groupHtml = '';
+                let groupCount = 0;
+                for (const [key, config] of Object.entries(groupConf.fields)) {
+                    if (key in user) {
+                        groupHtml += renderField(key, config, user[key]);
+                        shown.add(key);
+                        groupCount++;
+                    }
+                }
+                if (groupCount > 0) {
+                    html += `<div style="margin-bottom:16px;">
+                        <div style="font-weight:700;font-size:0.9rem;color:var(--primary);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">${icon} ${groupName} (${groupCount})</div>
+                        ${groupHtml}
+                    </div>`;
                 }
             }
 
-            // 再顯示其他未知欄位
+            // 其他未知欄位
+            let unknownHtml = '';
+            let unknownCount = 0;
             for (const [key, value] of Object.entries(user)) {
                 if (!shown.has(key) && !key.startsWith('_') && key !== 'sync_flag') {
-                    html += renderField(key, { label: key, type: guessType(value) }, value);
+                    const config = { label: key, type: guessType(value) };
+                    unknownHtml += renderField(key, config, value);
+                    shown.add(key);
+                    unknownCount++;
                 }
+            }
+            if (unknownCount > 0) {
+                html += `<div style="margin-bottom:16px;">
+                    <div style="font-weight:700;font-size:0.9rem;color:var(--text-muted);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">📌 其他欄位 (${unknownCount})</div>
+                    ${unknownHtml}
+                </div>`;
             }
 
             document.getElementById('userFields').innerHTML = html;
         }
 
         function guessType(value) {
+            if (value === null || value === undefined) return 'text';
             if (typeof value === 'number') return 'number';
             if (typeof value === 'boolean') return 'number';
+            if (typeof value === 'object') return 'json';
             return 'text';
         }
 
         function renderField(key, config, value) {
             const label = config.label || key;
-            if (config.type === 'readonly') {
+            const type = config.type || guessType(value);
+
+            if (type === 'readonly') {
                 return `<div class="field-row">
                     <div class="field-label">${label}</div>
-                    <div class="field-value"><div class="readonly">${value ?? ''}</div></div>
+                    <div class="field-value"><div class="readonly" style="font-family:monospace;color:var(--text-muted);">${escapeHtml(String(value ?? ''))}</div></div>
                 </div>`;
             }
+            if (type === 'json') {
+                const jsonStr = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+                return `<div class="field-row" style="align-items:flex-start;">
+                    <div class="field-label">${label}</div>
+                    <div class="field-value">
+                        <textarea data-field="${key}" data-type="json" onchange="markChanged()"
+                            style="width:100%;min-height:60px;padding:6px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.8rem;font-family:monospace;resize:vertical;">${escapeHtml(String(jsonStr))}</textarea>
+                    </div>
+                </div>`;
+            }
+            const displayVal = (value === null || value === undefined) ? '' : String(value);
             return `<div class="field-row">
                 <div class="field-label">${label}</div>
                 <div class="field-value">
-                    <input type="${config.type}" data-field="${key}" value="${value ?? ''}"
+                    <input type="${type}" data-field="${key}" value="${escapeHtml(displayVal)}"
                         onchange="markChanged()">
                 </div>
             </div>`;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
         function updateChanged() {
@@ -529,10 +630,17 @@
 
         function getFormData() {
             const data = {};
-            document.querySelectorAll('#userFields input').forEach(input => {
+            document.querySelectorAll('#userFields input, #userFields textarea').forEach(input => {
                 const key = input.dataset.field;
                 let val = input.value;
-                if (input.type === 'number') {
+                if (input.dataset.type === 'json') {
+                    try {
+                        val = JSON.parse(val);
+                    } catch (e) {
+                        showToast(`JSON 格式錯誤: ${key}`, 'error');
+                        val = currentUser[key]; // keep original
+                    }
+                } else if (input.type === 'number') {
                     val = val === '' ? 0 : Number(val);
                 }
                 data[key] = val;
