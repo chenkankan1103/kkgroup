@@ -619,20 +619,40 @@ await self.cog.update_user_data(user_id, appearance)
 - 接近 token 限制 (~120k) 時，用 `/handoff` 產出文件後重新開始
 - 每個 `/implement` 從其 ticket 重新開始
 
-## graphify
+## graphify — 專案知識圖譜（優先使用！）
 
-For any question about this repo's architecture, structure, components, or how to add/modify/find
-code, your first action should be `graphify query "<question>"` when `graphify-out/graph.json`
-exists. Use `graphify path "<A>" "<B>"` for relationship questions and `graphify explain "<concept>"`
-for focused-concept questions. These return a scoped subgraph, usually much smaller than the full
-report or raw grep output.
+> `graphify-out/` 是預先建立的專案知識圖譜，包含 **4,100 個節點、8,301 條邊、258 個社群**。
+> 遇到架構問題時，**優先搜尋 graph.json**，不要盲目 grep 整個專案。
 
-Triggers: "how do I…", "where is…", "what does … do", "add/modify a <component>",
-"explain the architecture", or anything that depends on how files or classes relate.
+### 使用方式（GitHub Copilot 可執行）
 
-If `graphify-out/wiki/index.md` exists, use it for broad navigation. Read `graphify-out/GRAPH_REPORT.md`
-only for broad architecture review or when query/path/explain do not surface enough context. Only read
-source files when (a) modifying/debugging specific code, (b) the graph lacks the needed detail, or
-(c) the graph is missing or stale.
+| 問題類型 | 做法 | 工具 |
+|----------|------|------|
+| 「某功能在哪個檔案？」 | 在 `graphify-out/graph.json` 中搜尋節點 `label` | `grep_search` |
+| 「A 和 B 的關聯？」 | 在 `graph.json` 中找兩個節點，追蹤它們的邊（edges） | `grep_search` + `read_file` |
+| 「這個概念涉及哪些檔案？」 | 搜尋 `graph.json` 中同一個 `community_name` 的所有節點 | `grep_search` |
+| 「專案整體架構？」 | 讀 `graphify-out/GRAPH_REPORT.md` 的 Community Hubs 列表 | `read_file` |
 
-Type `/graphify` in Copilot Chat to build or update the graph.
+### 觸發條件
+
+當使用者問以下問題時，**優先查 graphify 而非 grep 原始碼**：
+- "這個功能在哪裡？" / "where is…"
+- "A 和 B 有什麼關係？" / "how does X relate to Y"
+- "有哪些檔案用到這個？" / "what depends on…"
+- "解釋一下架構" / "explain the architecture"
+- 任何需要理解檔案/類別之間關聯的問題
+
+### 圖譜結構說明
+
+`graph.json` 中每個節點包含：
+- `id` — 唯一識別碼（如 `cogs_ui_anime_tracker`）
+- `label` — 人類可讀名稱（如 `AnimeTracker`、`anime_tracker.py`）
+- `source_file` — 原始碼路徑
+- `community` / `community_name` — 所屬社群（如 `KKCoin`、`PersistentViewBase`）
+- `file_type` — `"code"` 表示程式碼節點
+
+邊（edges）記錄節點之間的引用、繼承、呼叫等關係。
+
+### 維護
+
+當專案結構有重大變更時，提醒使用者執行 `/graphify` 重建圖譜。
