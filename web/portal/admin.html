@@ -241,10 +241,9 @@
         // 初始化：先載入 config，再驗證 token
         (async function init() {
             await loadConfig();
-            if (adminKey) {
-                document.getElementById('adminKey').value = adminKey;
-            }
-            checkDiscordToken();
+            if (adminKey) { document.getElementById('adminKey').value = adminKey; }
+            const loggedIn = await checkDiscordToken();
+            if (loggedIn) { searchAllUsers(); }
         })();
 
         // ==================== Discord 登入 ====================
@@ -280,7 +279,6 @@
             if (urlToken) {
                 discordToken = urlToken;
                 localStorage.setItem('discord_token', discordToken);
-                // 清除 URL 參數
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
 
@@ -294,8 +292,8 @@
                         discordUser = data.user;
                         localStorage.setItem('discord_user', JSON.stringify(data.user));
                         updateLoginUI();
+                        return true;
                     } else {
-                        // Token 過期
                         localStorage.removeItem('discord_token');
                         localStorage.removeItem('discord_user');
                         discordToken = '';
@@ -307,6 +305,7 @@
                 }
             }
             updateLoginUI();
+            return false;
         }
 
         function updateLoginUI() {
