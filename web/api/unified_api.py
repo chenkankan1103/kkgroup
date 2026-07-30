@@ -118,6 +118,15 @@ def serve_admin():
     return jsonify({"error": "管理頁面不存在"}), 404
 
 
+@app.route('/config.json', methods=['GET'])
+def serve_portal_config():
+    """提供 portal 的 config.json（供 admin 頁面讀取 API_BASE）"""
+    config_path = os.path.join(PORTAL_FOLDER, 'config.json')
+    if os.path.exists(config_path):
+        return send_from_directory(PORTAL_FOLDER, 'config.json')
+    return jsonify({"error": "設定檔不存在"}), 404
+
+
 @app.route('/static/<path:filename>', methods=['GET'])
 def serve_static(filename):
     """提供靜態文件"""
