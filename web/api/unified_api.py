@@ -95,20 +95,78 @@ except Exception as _e:
     get_user = get_all_users = set_user = get_db_stats = count_users = None
     _db = None
 
+
+# ============================================================
+# 權限驗證裝飾器
+# ============================================================
+from blueprints.discord_auth import user_sessions as _discord_sessions
+
+ADMIN_ROLE_ID = os.getenv('ADMIN_ROLE_ID', '')
+ADMIN_API_KEY = os.getenv('ADMIN_API_KEY', '')
+
+
+def _get_auth_user():
+    """從 request header 提取 Discord token 並回傳 session user，失敗回傳 None"""
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not token:
+        return None
+    return _discord_sessions.get(token)
+
+
+def _check_api_key():
+    """檢查 X-Admin-Key 備用 API Key"""
+    key = request.headers.get('X-Admin-Key', '')
+    return ADMIN_API_KEY and key == ADMIN_API_KEY
+
+
+# ============================================================
+# 輔助函數：將 user_id 轉為字串避免 JS 精度丟失
+# JavaScript Number.MAX_SAFE_INTEGER = 9007199254740991（約16位）
+# Discord ID 高達 18 位數，必須轉為字串傳輸
+# ============================================================
+
+def _user_id_to_str(data):
+    """遞迴將字典中的 user_id 欄位轉為字串，避免 JS 大數字精度丟失"""
+    if isinstance(data, dict):
+        result = {}
+        for k, v in data.items():
+            if k == 'user_id':
+                logger.info(f"_user_id_to_str: converting user_id {v!r} ({type(v).__name__}) to str")
+                result[k] = str(v)
+            elif k == 'user_id' and isinstance(v, (int, float)):
+                result[k] = str(v)
+            elif isinstance(v, dict):
+                result[k] = _user_id_to_str(v)
+            elif isinstance(v, list):
+                result[k] = [_user_id_to_str(item) if isinstance(item, dict) else item for item in v]
+            else:
+                result[k] = v
+        return result
+    return data
+
+
 # ============================================================
 # 使用者 CRUD API
 # ============================================================
 
 @app.route('/api/user/<user_id>', methods=['GET', 'PUT', 'DELETE'])
 def api_user(user_id):
-    """單一使用者查詢、更新或刪除"""
+    """單一使用者查詢、更新或刪除（GET=成員, PUT/DELETE=管理員）"""
     if get_user is None:
         return jsonify({"status": "error", "message": "資料庫未連線"}), 500
+
+    # 權限驗證
+    if request.method == 'GET':
+        user_ok, auth_response = _check_member_or_key()
+    else:
+        user_ok, auth_response = _check_admin_or_key()
+    if not user_ok:
+        return auth_response
 
     if request.method == 'GET':
         user = get_user(user_id)
         if user:
-            return jsonify({"status": "ok", "user": user})
+            return jsonify({"status": "ok", "user": _user_id_to_str(user)})
         return jsonify({"status": "error", "message": f"找不到使用者 ID: {user_id}"}), 404
 
     elif request.method == 'PUT':
@@ -127,11 +185,41 @@ def api_user(user_id):
         return jsonify({"status": "error", "message": "刪除失敗"}), 400
 
 
+def _check_member_or_key():
+    """驗證群組成員或 API Key，回傳 (通過, 錯誤響應)"""
+    if _check_api_key():
+        return True, None
+    user = _get_auth_user()
+    if not user:
+        return False, jsonify({"status": "error", "message": "未認證，請先 Discord 登入"}), 401
+    if not user.get('is_member'):
+        return False, jsonify({"status": "error", "message": "你不是群組成員，無法查看"}), 403
+    return True, None
+
+
+def _check_admin_or_key():
+    """驗證管理員或 API Key，返回 (通過, 錯誤響應)"""
+    if _check_api_key():
+        return True, None
+    user = _get_auth_user()
+    if not user:
+        return False, jsonify({"status": "error", "message": "未認證，請先 Discord 登入"}), 401
+    if not user.get('is_member'):
+        return False, jsonify({"status": "error", "message": "你不是群組成員"}), 403
+    if ADMIN_ROLE_ID and ADMIN_ROLE_ID not in user.get('roles', []):
+        return False, jsonify({"status": "error", "message": "只有管理員才能修改資料"}), 403
+    return True, None
+
+
 @app.route('/api/users', methods=['GET'])
 def api_users_list():
-    """列出所有使用者（可選 ?limit=N 和 ?offset=N）"""
+    """列出所有使用者（可選 ?limit=N 和 ?offset=N）— 需群組成員"""
     if get_all_users is None:
         return jsonify({"status": "error", "message": "資料庫未連線"}), 500
+
+    ok, err = _check_member_or_key()
+    if not ok:
+        return err
 
     try:
         limit = request.args.get('limit', type=int)
@@ -142,7 +230,7 @@ def api_users_list():
         return jsonify({
             "status": "ok",
             "count": len(all_users),
-            "users": all_users
+            "users": [_user_id_to_str(u) for u in all_users]
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -150,15 +238,20 @@ def api_users_list():
 
 @app.route('/api/search', methods=['GET'])
 def api_search_users():
-    """搜尋使用者（支援 user_id / username 模糊匹配）"""
+    """搜尋使用者（支援 user_id / username 模糊匹配）— 需群組成員"""
     if get_all_users is None:
         return jsonify({"status": "error", "message": "資料庫未連線"}), 500
+
+    ok, err = _check_member_or_key()
+    if not ok:
+        return err
+
     try:
         q = request.args.get('q', '').lower().strip()
         field = request.args.get('field', '').lower()
         all_users = get_all_users()
         if not q:
-            return jsonify({"status": "ok", "count": len(all_users), "users": all_users})
+            return jsonify({"status": "ok", "count": len(all_users), "users": [_user_id_to_str(u) for u in all_users]})
         results = []
         for u in all_users:
             uid = str(u.get('user_id', '')).lower()
@@ -173,7 +266,7 @@ def api_search_users():
                 # 模糊搜尋：user_id 或 username 任一匹配
                 if q in uid or q in username:
                     results.append(u)
-        return jsonify({"status": "ok", "count": len(results), "users": results})
+        return jsonify({"status": "ok", "count": len(results), "users": [_user_id_to_str(u) for u in results]})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

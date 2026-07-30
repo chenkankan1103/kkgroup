@@ -149,22 +149,31 @@
         <div id="userListCard" class="card hidden">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
                 <h2>👥 使用者列表 (<span id="userListCount">0</span>)</h2>
-                <div style="display:flex;gap:4px;">
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <span style="font-size:0.75rem;color:var(--text-muted);">💡 點擊行或按 ✏️ 編輯</span>
                     <button class="btn btn-outline" onclick="searchAllUsers()" style="font-size:0.8rem;padding:4px 10px;">🔄 重新整理</button>
                 </div>
             </div>
             <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
                     <thead>
                         <tr style="background:var(--bg);text-align:left;">
-                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">User ID</th>
-                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">💰 KK幣</th>
-                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">📊 等級</th>
-                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">💎 XP</th>
-                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">❤️ HP</th>
-                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">⚡ 耐力</th>
-                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">🔥 連續</th>
-                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">👤 暱稱</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">User ID</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">💰 KK幣</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">💵 美金</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">📊 等級</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">💎 XP</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">❤️ HP</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">⚡ 耐力</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">⚧ 性別</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">🏷️ 頭銜</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">🔥 連續</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">😵 暈眩</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">🔒 鎖定</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">🎯 已行動</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">🏰 勝場</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);">👤 暱稱</th>
+                            <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;">✏️</th>
                         </tr>
                     </thead>
                     <tbody id="userListBody"></tbody>
@@ -342,8 +351,7 @@
             document.getElementById('loadingArea').classList.remove('hidden');
 
             try {
-                const resp = await fetch(api('/api/users'));
-                const data = await resp.json();
+                const data = await safeFetch(api('/api/users'));
                 if (data.status === 'ok') {
                     allUsersCache = data.users
                         .filter(u => u.user_id && u.user_id !== '0')
@@ -364,26 +372,45 @@
             const pageUsers = allUsersCache.slice(start, start + PAGE_SIZE);
             const tbody = document.getElementById('userListBody');
             tbody.innerHTML = pageUsers.map(u => {
-                const uid = u.user_id || '';
+                const uid = (u.user_id !== null && u.user_id !== undefined) ? String(u.user_id) : '';
                 const kkcoin = parseInt(u.kkcoin) || 0;
+                const digital_usd = parseFloat(u.digital_usd) || 0;
                 const level = parseInt(u.level) || 0;
                 const xp = parseInt(u.xp) || 0;
                 const hp = parseInt(u.hp) || 0;
                 const stamina = parseInt(u.stamina) || 0;
+                const gender = u.gender || '-';
+                const title = u.title || '-';
                 const streak = parseInt(u.streak) || 0;
+                const stunned = u.is_stunned ? '😵' : '✅';
+                const locked = u.is_locked ? '🔒' : '⬜';
+                const actions = parseInt(u.actions_used) || 0;
+                const fwins = parseInt(u.fortress_wins) || 0;
                 const nickname = u.nickname || u.user_name || '';
                 return `<tr style="cursor:pointer;border-bottom:1px solid var(--border);"
                         onclick="document.getElementById('userIdInput').value='${uid}';searchUser();"
                         onmouseover="this.style.background='var(--surface)'"
                         onmouseout="this.style.background=''">
-                    <td style="padding:8px 12px;font-family:monospace;">${uid}</td>
-                    <td style="padding:8px 12px;color:var(--warning);">${kkcoin.toLocaleString()}</td>
-                    <td style="padding:8px 12px;">Lv.${level}</td>
-                    <td style="padding:8px 12px;">${xp.toLocaleString()}</td>
-                    <td style="padding:8px 12px;color:var(--danger);">${hp}</td>
-                    <td style="padding:8px 12px;">${stamina}</td>
-                    <td style="padding:8px 12px;">${streak}🔥</td>
-                    <td style="padding:8px 12px;color:var(--text-muted);">${nickname}</td>
+                    <td style="padding:6px 8px;font-family:monospace;">${uid}</td>
+                    <td style="padding:6px 8px;color:var(--warning);">${kkcoin.toLocaleString()}</td>
+                    <td style="padding:6px 8px;color:var(--info);">$${digital_usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                    <td style="padding:6px 8px;">Lv.${level}</td>
+                    <td style="padding:6px 8px;">${xp.toLocaleString()}</td>
+                    <td style="padding:6px 8px;color:var(--danger);">${hp}</td>
+                    <td style="padding:6px 8px;">${stamina}</td>
+                    <td style="padding:6px 8px;">${gender}</td>
+                    <td style="padding:6px 8px;">${title}</td>
+                    <td style="padding:6px 8px;">${streak}🔥</td>
+                    <td style="padding:6px 8px;text-align:center;">${stunned}</td>
+                    <td style="padding:6px 8px;text-align:center;">${locked}</td>
+                    <td style="padding:6px 8px;">${actions}</td>
+                    <td style="padding:6px 8px;">${fwins}</td>
+                    <td style="padding:6px 8px;color:var(--text-muted);">${nickname}</td>
+                    <td style="padding:6px 8px;text-align:center;">
+                        <button class="btn btn-outline" style="font-size:0.75rem;padding:2px 8px;"
+                            onclick="event.stopPropagation();document.getElementById('userIdInput').value='${uid}';searchUser();"
+                            title="編輯此使用者">✏️</button>
+                    </td>
                 </tr>`;
             }).join('');
 
@@ -416,8 +443,16 @@
             setTimeout(() => t.classList.add('hidden'), 3000);
         }
 
-        function showLoading() { document.getElementById('loading').classList.remove('hidden'); }
-        function hideLoading() { document.getElementById('loading').classList.add('hidden'); }
+        function showLoading() { document.getElementById('loadingArea').classList.remove('hidden'); }
+        function hideLoading() { document.getElementById('loadingArea').classList.add('hidden'); }
+
+        // 🔧 修復 JavaScript 大數字精度問題：fetch 後把 16+ 位數的 user_id 轉成字串
+        async function safeFetch(url, options) {
+            const resp = await fetch(url, options);
+            const text = await resp.text();
+            const fixed = text.replace(/"user_id":\s*(\d{16,})/g, '"user_id":"$1"');
+            return JSON.parse(fixed);
+        }
 
         async function searchUser() {
             const userId = document.getElementById('userIdInput').value.trim();
@@ -428,18 +463,21 @@
             document.getElementById('userCard').classList.add('hidden');
 
             try {
-                const resp = await fetch(api(`/api/user/${userId}`));
-                const data = await resp.json();
+                const data = await safeFetch(api(`/api/user/${userId}`));
 
                 if (data.status === 'ok') {
                     currentUser = data.user;
                     originalUser = JSON.parse(JSON.stringify(data.user));
                     renderUser(data.user);
                     document.getElementById('userCard').classList.remove('hidden');
+                    // 自動捲動到編輯卡片
+                    setTimeout(() => {
+                        document.getElementById('userCard').scrollIntoView({behavior:'smooth',block:'start'});
+                    }, 100);
                 } else {
                     document.getElementById('errorArea').classList.remove('hidden');
                     document.getElementById('errorArea').innerHTML =
-                        `<div class="empty-state"><div class="icon">🔍</div><p>${data.message || '找不到使用者'}</p></div>`;
+                        `<div class="empty-state"><div class="icon">🔍</div><p>${data.message || '找不到使用者'}</p><p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">ID: ${userId}</p></div>`;
                 }
             } catch (e) {
                 showToast('查詢失敗: ' + e.message, 'error');
@@ -603,7 +641,7 @@
                 return `<div class="field-row" style="align-items:flex-start;">
                     <div class="field-label">${label}</div>
                     <div class="field-value">
-                        <textarea data-field="${key}" data-type="json" onchange="markChanged()"
+                        <textarea data-field="${key}" data-type="json" onchange="updateChanged()"
                             style="width:100%;min-height:60px;padding:6px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.8rem;font-family:monospace;resize:vertical;">${escapeHtml(String(jsonStr))}</textarea>
                     </div>
                 </div>`;
@@ -613,7 +651,7 @@
                 <div class="field-label">${label}</div>
                 <div class="field-value">
                     <input type="${type}" data-field="${key}" value="${escapeHtml(displayVal)}"
-                        onchange="markChanged()">
+                        onchange="updateChanged()">
                 </div>
             </div>`;
         }
@@ -666,14 +704,13 @@
                     headers['X-Admin-Key'] = adminKey;
                 }
 
-                const resp = await fetch(api(`/api/user/${currentUser.user_id}`), {
+                const result = await safeFetch(api(`/api/user/${currentUser.user_id}`), {
                     method: 'PUT',
                     headers: headers,
                     body: JSON.stringify(data)
                 });
-                const result = await resp.json();
 
-                if (resp.ok) {
+                if (result.status === 'ok') {
                     showToast('✅ 儲存成功！', 'success');
                     document.getElementById('saveStatus').textContent = '✅ 已儲存';
                     document.getElementById('saveStatus').style.color = 'var(--success)';
