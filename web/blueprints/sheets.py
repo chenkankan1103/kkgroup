@@ -23,6 +23,51 @@ sheets_bp = Blueprint('sheets', __name__, url_prefix='/api')
 
 # 設置日誌
 logging.basicConfig(level=logging.DEBUG)
+
+# 權限驗證配置
+from dotenv import load_dotenv
+load_dotenv()
+ADMIN_ROLE_ID = os.getenv('ADMIN_ROLE_ID', '')
+ADMIN_API_KEY = os.getenv('ADMIN_API_KEY', '')
+# 管理員 Discord ID 白名單（額外保障）
+ADMIN_DISCORD_IDS = ['432018481890983936']
+
+
+def _sheet_check_member_or_key():
+    """驗證群組成員或 API Key（與 unified_api 一致）"""
+    from blueprints.discord_auth import user_sessions
+    # 先檢查 API Key
+    key = request.headers.get('X-Admin-Key', '')
+    if ADMIN_API_KEY and key == ADMIN_API_KEY:
+        return True
+    # 檢查 Discord token
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if token and token in user_sessions:
+        user = user_sessions[token]
+        if user.get('is_member'):
+            return True
+    return False
+
+
+def _check_admin_or_key():
+    """驗證管理員：API Key 或 Discord 管理員"""
+    from blueprints.discord_auth import user_sessions
+    # 先檢查 API Key
+    key = request.headers.get('X-Admin-Key', '')
+    if ADMIN_API_KEY and key == ADMIN_API_KEY:
+        return True
+    # 檢查 Discord token + 管理員角色或白名單
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if token and token in user_sessions:
+        user = user_sessions[token]
+        discord_id = user.get('user_id', '')
+        # 白名單
+        if discord_id in ADMIN_DISCORD_IDS:
+            return True
+        # 管理員角色
+        if ADMIN_ROLE_ID and ADMIN_ROLE_ID in user.get('roles', []):
+            return True
+    return False
 logger = logging.getLogger(__name__)
 
 # 全局變數 - 延遲初始化（Lazy Initialization）
@@ -301,21 +346,31 @@ def api_clean_virtual():
 
 @sheets_bp.route('/user/<int:user_id>', methods=['GET'])
 def api_get_user(user_id):
-    """取得特定用戶的完整資料"""
+    """取得特定用戶的完整資料 — 需群組成員或 API Key"""
+    if not _sheet_check_member_or_key():
+        return jsonify({
+            "status": "error",
+            "message": "未認證，請先 Discord 登入"
+        }), 401
+
     try:
         user = get_db().get_user(user_id)
-        
+
         if user is None:
             return jsonify({
                 "status": "error",
                 "message": f"用戶不存在: {user_id}"
             }), 404
-        
+
+        # 將 user_id 轉為字串避免 JS 大數字精度丟失
+        if isinstance(user.get('user_id'), (int, float)):
+            user['user_id'] = str(user['user_id'])
+
         return jsonify({
             "status": "ok",
             "user": user
         }), 200
-    
+
     except Exception as e:
         return jsonify({
             "status": "error",
@@ -325,43 +380,15 @@ def api_get_user(user_id):
 
 @sheets_bp.route('/user/<int:user_id>', methods=['PUT'])
 def api_update_user(user_id):
-    """更新特定用戶的資料（需管理員密鑰或 Discord 登入）"""
+    """更新特定用戶的資料（需管理員角色或 API Key）"""
+    if not _check_admin_or_key():
+        logger.warning(f"❌ 管理員驗證失敗: user_id={user_id}")
+        return jsonify({
+            "status": "error",
+            "message": "管理員驗證失敗 — 需要伺服器管理員角色或 API Key"
+        }), 403
+
     try:
-        # === 管理員驗證：支援兩種方式 ===
-        # 方式 1: X-Admin-Key（傳統 API Key）
-        # 方式 2: Authorization: Bearer <discord_token>（Discord OAuth 登入）
-        is_admin = False
-        auth_method = None
-
-        # 檢查 Discord token
-        auth_header = request.headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            auth_token = auth_header.replace('Bearer ', '')
-            from blueprints.discord_auth import user_sessions
-            if auth_token in user_sessions:
-                discord_user = user_sessions[auth_token]
-                discord_id = discord_user.get('user_id', '')
-                # ✅ 管理員白名單：只有這些 Discord ID 有管理權限
-                ADMIN_DISCORD_IDS = ['432018481890983936']
-                if discord_id in ADMIN_DISCORD_IDS:
-                    is_admin = True
-                    auth_method = f'Discord ({discord_user.get("username")})'
-                    logger.info(f"✅ Discord 管理員驗證通過: {discord_user.get('username')} (ID: {discord_id})")
-
-        # 如果 Discord 驗證失敗，嘗試 API Key
-        if not is_admin:
-            admin_key = request.headers.get('X-Admin-Key', '')
-            valid_key = os.getenv('ADMIN_API_KEY', '')
-            if valid_key and admin_key == valid_key:
-                is_admin = True
-                auth_method = 'API Key'
-
-        if not is_admin:
-            logger.warning(f"❌ 管理員驗證失敗: user_id={user_id}")
-            return jsonify({
-                "status": "error",
-                "message": "管理員驗證失敗，請先登入 Discord 或輸入正確的 API Key"
-            }), 403
 
         data = request.get_json()
 
