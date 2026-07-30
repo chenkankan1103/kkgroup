@@ -117,6 +117,7 @@
         <div class="search-bar">
             <input type="text" id="userIdInput" placeholder="輸入使用者 Discord ID（數字）" autofocus>
             <button class="btn btn-primary" onclick="searchUser()">🔍 查詢</button>
+            <button class="btn btn-success" onclick="searchAllUsers()">📋 全部使用者</button>
         </div>
 
         <!-- 管理員驗證區 -->
@@ -143,6 +144,40 @@
 
         <!-- 錯誤訊息 -->
         <div id="errorArea" class="card hidden"></div>
+
+        <!-- 使用者列表 -->
+        <div id="userListCard" class="card hidden">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h2>👥 使用者列表 (<span id="userListCount">0</span>)</h2>
+                <div style="display:flex;gap:4px;">
+                    <button class="btn btn-outline" onclick="searchAllUsers()" style="font-size:0.8rem;padding:4px 10px;">🔄 重新整理</button>
+                </div>
+            </div>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                    <thead>
+                        <tr style="background:var(--bg);text-align:left;">
+                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">User ID</th>
+                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">💰 KK幣</th>
+                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">📊 等級</th>
+                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">💎 XP</th>
+                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">❤️ HP</th>
+                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">⚡ 耐力</th>
+                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">🔥 連續</th>
+                            <th style="padding:8px 12px;border-bottom:1px solid var(--border);">👤 暱稱</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userListBody"></tbody>
+                </table>
+            </div>
+            <div style="display:flex;justify-content:center;gap:8px;margin-top:12px;">
+                <button class="btn btn-outline" id="prevPageBtn" onclick="changePage(-1)" disabled>⬅️ 上一頁</button>
+                <span style="font-size:0.85rem;color:var(--text-muted);padding:8px;">
+                    第 <span id="currentPageDisplay">1</span> 頁
+                </span>
+                <button class="btn btn-outline" id="nextPageBtn" onclick="changePage(1)">下一頁 ➡️</button>
+            </div>
+        </div>
 
         <!-- 使用者資料卡片 -->
         <div id="userCard" class="card hidden">
@@ -293,6 +328,75 @@
                 statusEl.textContent = '未登入';
                 statusEl.style.color = 'var(--text-muted)';
             }
+        }
+
+        // ==================== 使用者列表 ====================
+        let allUsersCache = [];
+        let userListPage = 0;
+        const PAGE_SIZE = 50;
+
+        async function searchAllUsers() {
+            const listCard = document.getElementById('userListCard');
+            listCard.classList.remove('hidden');
+            document.getElementById('userCard').classList.add('hidden');
+            document.getElementById('errorArea').classList.add('hidden');
+            document.getElementById('loadingArea').classList.remove('hidden');
+
+            try {
+                const resp = await fetch(api('/api/users'));
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    allUsersCache = data.users
+                        .filter(u => u.user_id && u.user_id !== '0')
+                        .sort((a, b) => (parseFloat(b.kkcoin) || 0) - (parseFloat(a.kkcoin) || 0));
+                    userListPage = 0;
+                    document.getElementById('userListCount').textContent = allUsersCache.length;
+                    renderUserList();
+                }
+            } catch (e) {
+                showToast('載入失敗: ' + e.message, 'error');
+            } finally {
+                document.getElementById('loadingArea').classList.add('hidden');
+            }
+        }
+
+        function renderUserList() {
+            const start = userListPage * PAGE_SIZE;
+            const pageUsers = allUsersCache.slice(start, start + PAGE_SIZE);
+            const tbody = document.getElementById('userListBody');
+            tbody.innerHTML = pageUsers.map(u => {
+                const uid = u.user_id || '';
+                const kkcoin = parseInt(u.kkcoin) || 0;
+                const level = parseInt(u.level) || 0;
+                const xp = parseInt(u.xp) || 0;
+                const hp = parseInt(u.hp) || 0;
+                const stamina = parseInt(u.stamina) || 0;
+                const streak = parseInt(u.streak) || 0;
+                const nickname = u.nickname || u.user_name || '';
+                return `<tr style="cursor:pointer;border-bottom:1px solid var(--border);"
+                        onclick="document.getElementById('userIdInput').value='${uid}';searchUser();"
+                        onmouseover="this.style.background='var(--surface)'"
+                        onmouseout="this.style.background=''">
+                    <td style="padding:8px 12px;font-family:monospace;">${uid}</td>
+                    <td style="padding:8px 12px;color:var(--warning);">${kkcoin.toLocaleString()}</td>
+                    <td style="padding:8px 12px;">Lv.${level}</td>
+                    <td style="padding:8px 12px;">${xp.toLocaleString()}</td>
+                    <td style="padding:8px 12px;color:var(--danger);">${hp}</td>
+                    <td style="padding:8px 12px;">${stamina}</td>
+                    <td style="padding:8px 12px;">${streak}🔥</td>
+                    <td style="padding:8px 12px;color:var(--text-muted);">${nickname}</td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('currentPageDisplay').textContent = userListPage + 1;
+            document.getElementById('prevPageBtn').disabled = userListPage === 0;
+            document.getElementById('nextPageBtn').disabled = (start + PAGE_SIZE) >= allUsersCache.length;
+        }
+
+        function changePage(delta) {
+            const maxPage = Math.ceil(allUsersCache.length / PAGE_SIZE) - 1;
+            userListPage = Math.max(0, Math.min(maxPage, userListPage + delta));
+            renderUserList();
         }
 
         function saveAdminKey() {
