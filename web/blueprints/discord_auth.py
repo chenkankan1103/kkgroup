@@ -166,9 +166,8 @@ def oauth_callback():
         elif request.referrer and '/admin' in request.referrer:
             redirect_url = f"/admin?auth_token={session_token}"
         else:
-            # 否則使用 FRONTEND_URL
-            frontend_url = FRONTEND_URL.rstrip('/')
-            redirect_url = f"{frontend_url}/?auth_token={session_token}&user={user_data.get('username')}"
+            # 預設重定向到管理後台（同一個域）
+            redirect_url = f"/admin?auth_token={session_token}&user={user_data.get('username')}"
         
         return redirect(redirect_url)
         
