@@ -570,21 +570,19 @@ class AnimeTracker(commands.Cog):
                 now = datetime.now(TW_TZ)
                 today_schedule = self.get_today_schedule()
 
-                # 找出今天「尚未推送」且「時間 >= 現在」的最早一筆
+                # 找出今天尚未推送的最早一筆（不限時間）
+                # 修復：移除 sched_dt >= now 限制，防止 API 暫未更新時跳過時刻
                 next_item = None
                 for item in today_schedule:
                     if item['pushed']:
                         continue
                     scheduled = item['scheduled_time']
                     try:
-                        sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
-                            year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
-                        )
-                        if sched_dt >= now:
-                            next_item = item
-                            break
+                        datetime.strptime(scheduled, "%H:%M")  # 驗證格式
+                        next_item = item
+                        break
                     except ValueError as e:
-                        logger.warning(f"⚸ [{self.__class__.__name__}] 無法解析排程時間 '{scheduled}': {e}")
+                        logger.warning(f"⚙ [{self.__class__.__name__}] 無法解析排程時間 '{scheduled}': {e}")
                     except Exception as e:
                         logger.error(f"❌ [{self.__class__.__name__}] 處理排程時間時發生未預期錯誤 '{scheduled}': {e}", exc_info=True)
 
@@ -629,9 +627,25 @@ class AnimeTracker(commands.Cog):
 
                     # 準點推送
                     now = datetime.now(TW_TZ)
-                    logger.info(f"⏰ [_schedule_dispatcher] 準點 {scheduled}，呼叫 API 推送（當前 {now.strftime('%H:%M:%S')}）")
-                    await self.send_anime_push(scheduled, ANIME_CHANNEL_ID)
-                    # 成功會在 send_anime_push 內標記 pushed=1，下次迴圈會自動跳過
+                    logger.info(f"⏰ [_schedule_dispatcher] 準點 {scheduled}，推送（當前 {now.strftime('%H:%M:%S')}）")
+
+                    # 傳入預熱結果，避免 send_anime_push 重複呼叫 API
+                    success = await self.send_anime_push(
+                        scheduled, ANIME_CHANNEL_ID,
+                        prefetched_episodes=preheat_episodes
+                    )
+                    if success:
+                        logger.info(f"✅ [_schedule_dispatcher] {scheduled} 推送成功")
+                    else:
+                        # API 尚未更新或時段無匹配 → 短暫等待後重試當前時刻
+                        logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 推送未完成，30s 後重試...")
+                        await asyncio.sleep(30)
+                        # 重試時不使用預熱資料，讓 send_anime_push 重新 fetch API
+                        success = await self.send_anime_push(scheduled, ANIME_CHANNEL_ID)
+                        if success:
+                            logger.info(f"✅ [_schedule_dispatcher] {scheduled} 重試成功")
+                        else:
+                            logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 重試仍失敗，留給 catchup 處理")
                 else:
                     # 今天沒有待推送項目 → 睡到明天 00:00 重新載入時程
                     tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)

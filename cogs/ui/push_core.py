@@ -1554,14 +1554,15 @@ class AnimePushCore:
 
     async def send_anime_push(self, scheduled_time: str, channel_id: int,
                              day_of_week: int = None,
-                             week_start_date: str = None) -> bool:
-        """根據時程表發送動畫推送（含時段匹配 + 並發鎖）
+                             week_start_date: str = None,
+                             prefetched_episodes: list = None) -> bool:
+        """根據時程表發送動畫推送（含時段防火 + 集發鎖）
 
         核心修復 (2026-07-25)：
-        1. 從週表取得該時段預期的 videoSn（而非 animeSn，因為 newAnimeSchedule API
-           只提供 videoSn），只推送 videoSn 匹配的動畫
+        1. 從週表取得該段預期的 videoSn（而非 animeSn，因為 newAnimeSchedule API
+           只提供 videoSn），只推送 videoSn 本意的動畫
            → 防止補推時把其他時段的動畫也推出去
-        2. 使用 _push_lock 防止 dispatcher 和 catch-up 同時推送
+        2. 使用 _push_lock 防止 dispatcher 和 patcher-up 同時推送
         3. API 成功即標記 pushed=1（不論是否有匹配新番），防止無限重試
 
         Args:
@@ -1569,6 +1570,7 @@ class AnimePushCore:
             channel_id: Discord 頻道 ID
             day_of_week: 可選，1=週一~7=週日
             week_start_date: 可選，週起始日期 "YYYY-MM-DD"
+            prefetched_episodes: 可選，預先 fetch 的 API 結果，避免重複 API 呼叫
         """
         # 使用並發鎖，防止 dispatcher 和 catch-up 同時推送同一時段
         async with self._push_lock:
@@ -1604,10 +1606,14 @@ class AnimePushCore:
 
                 logger.debug(f"🔍 [send_anime_push] {scheduled_time} 預期 videoSn: {expected_video_sns}")
 
-                # 獲取最新動畫數據
-                logger.info(f"📡 [send_anime_push] {scheduled_time} 呼叫 API 獲取新番...")
-                episodes = await self.fetch_new_anime_from_api()
-                logger.info(f"📡 [send_anime_push] {scheduled_time} API 回傳 {len(episodes) if episodes else 0} 筆")
+                # 獲取最新動畫數據（優先使用預熱結果，避免重複 API 呼叫）
+                if prefetched_episodes:
+                    logger.info(f"📡 [send_anime_push] {scheduled_time} 使用預熱資料 ({len(prefetched_episodes)} 筆)")
+                    episodes = prefetched_episodes
+                else:
+                    logger.info(f"📡 [send_anime_push] {scheduled_time} 呼叫 API 獲取新番...")
+                    episodes = await self.fetch_new_anime_from_api()
+                    logger.info(f"📡 [send_anime_push] {scheduled_time} API 回傳 {len(episodes) if episodes else 0} 筆")
                 if not episodes:
                     # API 失敗 → 不標記，讓補推稍後重試
                     logger.warning(f"⚠️ [send_anime_push] API 無回應，"
