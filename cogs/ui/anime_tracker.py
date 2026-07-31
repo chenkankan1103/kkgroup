@@ -646,6 +646,8 @@ class AnimeTracker(commands.Cog):
                             logger.info(f"✅ [_schedule_dispatcher] {scheduled} 重試成功")
                         else:
                             logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 重試仍失敗，留給 catchup 處理")
+                        # 睡 5 分鐘避免無限重試，讓 catchup 在下一輪處理
+                        await asyncio.sleep(300)
                 else:
                     # 今天沒有待推送項目 → 睡到明天 00:00 重新載入時程
                     tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
