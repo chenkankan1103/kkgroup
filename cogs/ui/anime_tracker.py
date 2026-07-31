@@ -465,7 +465,7 @@ class AnimeTracker(commands.Cog):
                 return
 
             now = datetime.now(TW_TZ)
-            week_start_str = self.get_week_start_date(now)
+            week_start_str = self.get_week_start_date(now, api_week=True)
 
             schedule_data = []
             for day_offset in range(7):
