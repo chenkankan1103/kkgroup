@@ -858,7 +858,7 @@ class AnimeTracker(commands.Cog):
                 user_hash = str(hash(interaction.user.id))[:10]
 
                 # 記錄投票
-                self.tracker.record_vote(
+                vote_recorded = self.tracker.record_vote(
                     video_sn=self.video_sn,
                     anime_sn=self.anime_sn,
                     message_id=interaction.message.id,
@@ -866,7 +866,10 @@ class AnimeTracker(commands.Cog):
                     user_hash=user_hash
                 )
 
-                logger.info(f"✅ [_vote_callback] 投票已記錄: {interaction.user.name} 投票了 {vote_label}")
+                if not vote_recorded:
+                    logger.error(f"❌ [_vote_callback] 投票記錄失敗 (resource 回傳 False): user={interaction.user.name}, vote_key={vote_key}")
+                else:
+                    logger.info(f"✅ [_vote_callback] 投票已記錄: {interaction.user.name} 投票了 {vote_label}")
 
                 # === KK幣獎勵邏輯 (投票 +2000) ===
                 reward_given = False
@@ -962,7 +965,7 @@ class AnimeTracker(commands.Cog):
                             user_hash = str(hash(modal_interaction.user.id))[:10]
 
                             # 記錄評論（vote_type 為空表示只是評論）
-                            outer_self.tracker.record_vote(
+                            vote_recorded = outer_self.tracker.record_vote(
                                 video_sn=outer_self.video_sn,
                                 anime_sn=outer_self.anime_sn,
                                 message_id=modal_interaction.message.id,
@@ -971,7 +974,10 @@ class AnimeTracker(commands.Cog):
                                 user_hash=user_hash
                             )
 
-                            logger.info(f"💬 [comment] {modal_interaction.user} 留言: {comment[:30]}...")
+                            if not vote_recorded:
+                                logger.error(f"❌ [comment_submit] 評論記錄失敗 (resource 回傳 False): user={modal_interaction.user}")
+                            else:
+                                logger.info(f"💬 [comment] {modal_interaction.user} 留言: {comment[:30]}...")
 
                             # === KK幣獎勵邏輯 (評論 +3000) ===
                             reward_message = "✅ 評論已保存！感謝你的意見"
@@ -1100,7 +1106,7 @@ class AnimeTracker(commands.Cog):
                     new_embed.set_thumbnail(url=original_embed.thumbnail.url)
 
                 # 編輯消息
-                logger.info(f"🔄 [_update_message_stats] 準備編輯消息 ID={message.id}")
+                logger.info(f"🔄 [_update_message_stats] 準備編輯消息 ID={message.id}, 頻道={message.channel.id}, 權限={message.channel.permissions_for(message.guild.me) if message.guild else 'DM'}")
                 await message.edit(embed=new_embed)
                 logger.info(f"✅ [_update_message_stats] 消息已成功編輯 ID={message.id}")
 
