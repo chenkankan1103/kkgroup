@@ -125,7 +125,7 @@ KK 園區的經濟系統不是單一 Cog，而是跨 Bot、跨資料層、跨互
   - [cogs/shop/cannabis_cog.py](../../../cogs/shop/cannabis_cog.py)
   - [cogs/shop/merchant/cannabis_config.py](../../../cogs/shop/merchant/cannabis_config.py)
   - [cogs/shop/merchant/cannabis_farming.py](../../../cogs/shop/merchant/cannabis_farming.py)
-  - [cogs/shop/merchant/cannabis_merchant_view.py](../../../cogs/shop/merchant/cannabis_merchant_view.py)
+  - [cogs/shop/merchant/cannabis_merchant_view_v2.py](../../../cogs/shop/merchant/cannabis_merchant_view_v2.py)
 
 ### 4. UI 互動獎勵
 

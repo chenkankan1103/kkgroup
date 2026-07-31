@@ -17,7 +17,7 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 
 #### Common Cogs (`cogs/common/`) — 16+ 核心功能模組
 - **AI.py** / **ai_client_liteLLM.py**: AI 整合、LiteLLM 客戶端
-- **kcoin.py** / **kkcoin_visualizer.py** / **kkcoin_visualizer_v2.py**: KK 幣查詢、排行榜、視覺化
+- **kcoin.py** / **kkcoin_visualizer.py**: KK 幣查詢、排行榜、視覺化
 - **work_function/**: 工作相關功能集合
 - **admin_restartbot.py**: 管理員重啟 Bot 指令
 - **announcement.py**: 公告系統
@@ -44,7 +44,7 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **role_expiration_manager.py**: 角色過期管理
 - **stock_market.py**: 股票市場模擬
 - **merchant/**: 商家核心功能（多商家 view 與交易流程）
-  - `cannabis_config.py`, `cannabis_farming.py`, `cannabis_merchant_view.py` 等
+  - `cannabis_config.py`, `cannabis_farming.py`, `cannabis_merchant_view_v2.py` 等
 
 #### UI Cogs (`cogs/ui/`) — 16+ UI 互動模組
 - **welcome_message.py**: 歡迎訊息、新用戶隨機造型（紙娃娃）
@@ -141,7 +141,7 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **refresh_all_lockers_cron.py**: 每週三、六 14:00 執行
 - **weekly_backup.py**: 每週一 03:00 執行
 - **refresh_knowledge_base.py**: 每天 18:00（台灣時間）執行
-- **auto_update_config.py** / **auto_update_webhook.py** / **auto_update_webhook_v2.py**: 自動更新相關
+- **auto_update_config.py** / **auto_update_webhook_v2.py**: 自動更新相關
 - **locker_maintenance.py**: 置物櫃維護
 - **webhook_logger.py**: Webhook 日誌記錄
 
