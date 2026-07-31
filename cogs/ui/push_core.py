@@ -1069,7 +1069,7 @@ class AnimeDatabase:
             video_sn: 集數序號
             anime_sn: 動畫序號
             message_id: Discord 訊息 ID（用於關聯統計）
-            vote_type: 投票類型 ('masterpiece', 'great', 'good', 'average', 'bad') 或 'comment'
+            vote_type: 投票類型 ('masterpiece', 'great', 'darkhorse', 'decent', 'controversial', 'disaster') 或 'comment'
             comment: 評論內容（可選）
             user_hash: 匿名用戶識別符
         """
@@ -1082,9 +1082,10 @@ class AnimeDatabase:
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (video_sn, anime_sn, "", vote_type, user_hash, message_id, comment))
                 conn.commit()
+                logger.info(f"✅ [record_vote] 記錄成功: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}")
                 return True
         except Exception as e:
-            logger.error(f"❌ [record_vote] Error recording vote: {e}", exc_info=True)
+            logger.error(f"❌ [record_vote] 記錄失敗: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, error={e}", exc_info=True)
             return False
 
     def get_vote_stats(self, message_id: int) -> Dict[str, int]:
@@ -1098,9 +1099,11 @@ class AnimeDatabase:
                     WHERE messageId = ? AND voteType != 'comment'
                     GROUP BY voteType
                 """, (message_id,))
-                return {row[0]: row[1] for row in cursor.fetchall()}
+                result = {row[0]: row[1] for row in cursor.fetchall()}
+                logger.info(f"📊 [get_vote_stats] message_id={message_id}, stats={result}")
+                return result
         except Exception as e:
-            logger.error(f"❌ [get_vote_stats] Error: {e}", exc_info=True)
+            logger.error(f"❌ [get_vote_stats] Error: message_id={message_id}, error={e}", exc_info=True)
             return {}
 
     def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
@@ -1113,9 +1116,11 @@ class AnimeDatabase:
                     WHERE messageId = ? AND voteType = 'comment' AND comment IS NOT NULL
                     ORDER BY votedAt DESC LIMIT ?
                 """, (message_id, limit))
-                return [row[0] for row in cursor.fetchall() if row[0]]
+                result = [row[0] for row in cursor.fetchall() if row[0]]
+                logger.info(f"💬 [get_vote_comments] message_id={message_id}, comments_count={len(result)}")
+                return result
         except Exception as e:
-            logger.error(f"❌ [get_vote_comments] Error: {e}", exc_info=True)
+            logger.error(f"❌ [get_vote_comments] Error: message_id={message_id}, error={e}", exc_info=True)
             return []
 
     def get_weekly_vote_stats(self) -> Dict[int, Dict]:
