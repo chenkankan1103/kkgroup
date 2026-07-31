@@ -656,3 +656,23 @@ await self.cog.update_user_data(user_id, appearance)
 ### 維護
 
 當專案結構有重大變更時，提醒使用者執行 `/graphify` 重建圖譜。
+
+## gstack Skill Routing (auto-trigger)
+
+gstack 是一個虛擬工程團隊（CEO review → Engineering review → QA → Ship pipeline）。當對話內容匹配時會**自動觸發**，不需要打 `/` 指令。
+
+| 使用者說... | 自動調用的 Skill |
+|------------|-----------------|
+| 腦力激盪、產品點子、專案想法 | `office-hours` |
+| 策略、範圍、優先級、行銷 | `plan-ceo-review` |
+| 架構、技術棧選擇 | `plan-eng-review` |
+| 設計系統、設計審查 | `design-consultation` 或 `plan-design-review` |
+| 完整審查流程（Plan → Review → Ship）| `autoplan` |
+| Bug、錯誤、壞掉了 | `investigate` |
+| QA、測試、檢查行為 | `qa` 或 `qa-only` |
+| Code review、diff 檢查 | `review` |
+| 視覺調整、CSS、樣式 | `design-review` |
+| 部署、發 PR、上線 | `ship` 或 `land-and-deploy` |
+| 儲存當前進度 | `context-save` |
+| 恢復先前上下文 | `context-restore` |
+| 撰寫 backlog-ready spec/issue | `spec` |
