@@ -28,7 +28,7 @@ WAIT_TIME=60
     
     cd "$REPO_DIR"
     /home/e193752468/kkgroup/venv/bin/python3 \
-        scheduled_tasks/auto_update_webhook.py
+        scheduled_tasks/auto_update_webhook_v2.py
     
     echo "[$(date)] ✅ 隧道 URL 更新完成"
     echo "============================================================"

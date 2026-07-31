@@ -95,12 +95,31 @@ def log_discord(message, is_error=False):
         logger.debug(f"Discord 通知失敗（非致命）: {e}")
 
 
-def get_current_tunnel_url():
-    """從 cloudflared 日誌提取當前隧道 URL - 改進版本"""
-    logger.info("🔍 提取隧道 URL...")
-    
+def _get_url_from_cloudflared_config():
+    """備用方案：從 cloudflared JSON 設定檔提取 URL"""
     try:
-        # 方案 1: 使用 subprocess + grep（更穩定）
+        result = subprocess.run(
+            "cat /root/.cloudflared/*.json 2>/dev/null || cat ~/.cloudflared/*.json 2>/dev/null || echo ''",
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.stdout:
+            match = re.search(r'"url":"(https://[a-z0-9\-]+\.trycloudflare\.com)"', result.stdout)
+            if match:
+                return match.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def get_current_tunnel_url():
+    """從 cloudflared 日誌提取當前隧道 URL - 改進版本（含備用方案）"""
+    logger.info("🔍 提取隧道 URL...")
+
+    try:
+        # L118: 使用 subprocess + grep（最穩定）
         result = subprocess.run(
             ["grep", "-oP", r"https://[a-zA-Z0-9_-]+\.trycloudflare\.com"],
             input=subprocess.run(
@@ -113,18 +132,32 @@ def get_current_tunnel_url():
             text=True,
             timeout=5
         )
-        
+
         urls = [url.strip() for url in result.stdout.strip().split('\n') if url.strip()]
         if urls:
             current_url = urls[-1]  # 取最後一個（最新的）
-            logger.info(f"✅ 提取到隧道 URL: {current_url}")
+            logger.info(f"✅ 提取到隧道 URL (journalctl): {current_url}")
             return current_url
-        else:
-            logger.warning("⚠️ journalctl 中未找到隧道 URL")
-            return None
-            
+
+        # 備用方案：從 cloudflared JSON 設定檔提取
+        logger.warning("⚠️ journalctl 中未找到 URL，嘗試從設定檔提取...")
+        fallback_url = _get_url_from_cloudflared_config()
+        if fallback_url:
+            logger.info(f"✅ 從設定檔提取到 URL: {fallback_url}")
+            return fallback_url
+
+        logger.warning("⚠️ 所有方法都無法提取 Tunnel URL")
+        return None
+
     except Exception as e:
-        logger.error(f"❌ 提取隧道 URL 失敗: {e}")
+        logger.error(f"❌ journalctl 提取失敗: {e}，嘗試設定檔備用方案...")
+        try:
+            fallback_url = _get_url_from_cloudflared_config()
+            if fallback_url:
+                logger.info(f"✅ 從設定檔提取到 URL: {fallback_url}")
+                return fallback_url
+        except Exception:
+            pass
         return None
 
 

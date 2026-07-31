@@ -165,7 +165,7 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
     # 列出不應該被加載為 Cog 的模組
     # 這些是工具類、配置或事件定義，不需要 setup() 函數
     excluded_modules = {
-        'cannabis_farming', 'cannabis_merchant_view', 'cannabis_merchant_view_v2',
+        'cannabis_farming', 'cannabis_merchant_view_v2',
         'cannabis_config', 'database', 'config', 'views', 'views_base',
         'paperdoll_system', 'gambling', 'role_expiry_manager', 'locker_panel',
         'locker_events', 'locker_tasks', 'locker_cache', 'locker_embed_generator',
