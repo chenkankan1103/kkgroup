@@ -28,16 +28,20 @@ from shared.utils.view_registry import PersistentViewBase
 TW_TZ = ZoneInfo('Asia/Taipei')
 
 
-def get_week_start_date(now: datetime = None) -> str:
+def get_week_start_date(now: datetime = None, api_week: bool = False) -> str:
     """
     計算週起始日期 (YYYY-MM-DD) - 週一為起始日
 
-    邏輯與 newAnimeSchedule API 一致：
-    - 週一~週六呼叫：回傳本週的時程表 → week_start = 本週一
-    - 週日呼叫：回傳下週的時程表 → week_start = 下週一
+    兩種模式：
+    - 行事曆週 (api_week=False, 預設): 給定日期所屬的週 (週一~週日)
+      - 週一~週日：回傳本週一
+    - API 週 (api_week=True): 遵循 newAnimeSchedule API 語義
+      - 週一~週六：回傳本週一 (API 回傳本週時程)
+      - 週日：回傳下週一 (API 回傳下週時程)
 
     Args:
         now: 當前時間，預設為當前台灣時間
+        api_week: True=API 週語義 (用於儲存週表), False=行事曆週 (用於查詢今日時程)
 
     Returns:
         str: 週起始日期格式 "YYYY-MM-DD"
@@ -47,10 +51,11 @@ def get_week_start_date(now: datetime = None) -> str:
     elif now.tzinfo is None:
         now = now.replace(tzinfo=TW_TZ)
 
-    if now.weekday() == 6:  # 週日
-        week_start = now + timedelta(days=1)  # 下週一
+    if api_week and now.weekday() == 6:  # 週日且用 API 週：回傳下週一
+        week_start = now + timedelta(days=1)
     else:
-        week_start = now - timedelta(days=now.weekday())  # 本週一
+        # 行事曆週：週一~週日皆回傳本週一
+        week_start = now - timedelta(days=now.weekday())
     return week_start.strftime("%Y-%m-%d")
 
 
@@ -1171,7 +1176,28 @@ class AnimePushCore:
 
         # 推送並發鎖：防止 dispatcher 和 catch-up 同時呼叫 send_anime_push
         # 造成同一時段重複推送或 race condition
-        self._push_lock = asyncio.Lock()
+        # 使用字典持有每時段獨立鎖，避免不同任務對同一時段循序獲鎖
+        self._push_locks: dict[str, asyncio.Lock] = {}
+        self._push_locks_lock = asyncio.Lock()
+
+    def _get_push_lock(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> asyncio.Lock:
+        """獲取特定時段的獨立鎖 (雙重檢查鎖模式)"""
+        key = f"{week_start_date}|{day_of_week}|{scheduled_time}"
+        # 快速路徑：鎖已存在
+        lock = self._push_locks.get(key)
+        if lock:
+            return lock
+        # 慢速路徑：需創建新鎖
+        with self._push_locks_lock:
+            lock = self._push_locks.get(key)
+            if not lock:
+                lock = asyncio.Lock()
+                self._push_locks[key] = lock
+            return lock
+
+    def get_week_start_date(self, now: datetime = None, api_week: bool = False) -> str:
+        """計算週起始日期 (YYYY-MM-DD) - 委託給模組級函數"""
+        return get_week_start_date(now, api_week)
 
     def set_bot_and_db(self, bot, db):
         """設置 bot 和資料庫實例（可選覆蓋）"""
@@ -1561,14 +1587,15 @@ class AnimePushCore:
                              day_of_week: int = None,
                              week_start_date: str = None,
                              prefetched_episodes: list = None) -> bool:
-        """根據時程表發送動畫推送（含時段防火 + 集發鎖）
+        """根據時程表發送動畫推送（含時段防火 + 逐時段獨立鎖）
 
         核心修復 (2026-07-25)：
         1. 從週表取得該段預期的 videoSn（而非 animeSn，因為 newAnimeSchedule API
            只提供 videoSn），只推送 videoSn 本意的動畫
            → 防止補推時把其他時段的動畫也推出去
-        2. 使用 _push_lock 防止 dispatcher 和 patcher-up 同時推送
-        3. API 成功即標記 pushed=1（不論是否有匹配新番），防止無限重試
+        2. 使用逐時段獨立鎖 _get_push_lock 防止 dispatcher 和 catch-up 同時/循序推送同一時段
+        3. 鎖內二次檢查：獲鎖後重讀週表確認 pushed==0，防止競態
+        4. API 成功即標記 pushed=1（不論是否有匹配新番），防止無限重試
 
         Args:
             scheduled_time: 預定時間，格式 "HH:MM"
@@ -1577,24 +1604,40 @@ class AnimePushCore:
             week_start_date: 可選，週起始日期 "YYYY-MM-DD"
             prefetched_episodes: 可選，預先 fetch 的 API 結果，避免重複 API 呼叫
         """
-        # 使用並發鎖，防止 dispatcher 和 catch-up 同時推送同一時段
-        async with self._push_lock:
+        # 先計算 day_of_week 和 week_start_date（取得鎖前需要 key）
+        now = datetime.now(TW_TZ)
+        if day_of_week is None:
+            day_of_week = (now.weekday() + 1) % 7 or 7
+        if week_start_date is None:
+            week_start_date = get_week_start_date(now)
+
+        # 使用逐時段獨立鎖，防止不同任務對同一時段循序獲鎖
+        push_lock = self._get_push_lock(week_start_date, day_of_week, scheduled_time)
+        async with push_lock:
             logger.info(f"🚀 [send_anime_push] 開始處理 {scheduled_time} (lock acquired)")
+
+            # 🔑 鎖內二次檢查：重讀週表確認該時段仍為未推送 (pushed=0)
+            # 防止：任務 A 獲鎖推送並標記 pushed=1，任務 B 排隊獲鎖後發現已推送
+            today_schedule = self.db.get_today_schedule()
+            already_pushed = False
+            for item in today_schedule:
+                if item['scheduled_time'] == scheduled_time and item.get('pushed'):
+                    already_pushed = True
+                    break
+            if already_pushed:
+                logger.info(f"⏭️ [send_anime_push] {scheduled_time} 已被其他任務推送 (pushed=1)，跳過")
+                return False
+
             try:
                 await self.bot.wait_until_ready()
-
-                # 先計算 day_of_week 和 week_start_date（提前需要，用於查詢週表）
-                now = datetime.now(TW_TZ)
-                if day_of_week is None:
-                    day_of_week = (now.weekday() + 1) % 7 or 7
-                if week_start_date is None:
-                    week_start_date = get_week_start_date(now)
 
                 # 先檢查頻道是否存在
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
+                    # 頻道不存在是永久性失敗，標記 pushed=1 避免無限重試
                     logger.warning(f"⚠️ [send_anime_push] 頻道 {channel_id} 不存在，"
-                                   f"跳過 {scheduled_time}（不標記，稍後重試）")
+                                   f"標記 {scheduled_time} 為已完成（永久性失敗）")
+                    self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
                     return False
 
                 # 🔑 從週表取得該時段預期的 videoSn 集合

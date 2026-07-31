@@ -122,8 +122,8 @@ class AnimeScheduleTracker:
                 return {'success': False, 'error': 'API 回傳空時程表'}
 
             # 🔑 修復：正確計算 week_start_date
-            # 使用 push_core 的統一計算邏輯
-            week_start_str = self.push_core.get_week_start_date(now)
+            # 使用 push_core 的統一計算邏輯 (api_week=True: 用於儲存從 API 拉取的週表)
+            week_start_str = self.push_core.get_week_start_date(now, api_week=True)
             logger.info(f"📅 [refresh_weekly_schedule] 保存週起始日期: {week_start_str} (today={now.strftime('%Y-%m-%d %a')})")
 
             schedule_data = []
