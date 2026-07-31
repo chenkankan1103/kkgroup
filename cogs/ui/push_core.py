@@ -500,12 +500,7 @@ class AnimeDatabase:
         """獲取今天的時程表（從週表中）"""
         try:
             now = datetime.now(TW_TZ)
-            # 修復：週表的 week_start_date 計算邏輯需與 refresh_weekly_schedule 一致
-            # 如果今天是週日，週表代表下週一~下週日；否則代表本週一~本週日
-            if now.weekday() == 6:  # 週日
-                week_start = now + timedelta(days=1)  # 下週一
-            else:
-                week_start = now - timedelta(days=now.weekday())  # 本週一
+            week_start_str = get_week_start_date(now)
             day_of_week = (now.weekday() + 1) % 7 or 7  # 1=Mon, 7=Sun
 
             with self._get_connection() as conn:
@@ -514,7 +509,7 @@ class AnimeDatabase:
                     SELECT scheduledTime, animeData, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                     WHERE weekStartDate = ? AND dayOfWeek = ?
                     ORDER BY scheduledTime ASC
-                """, (week_start.strftime("%Y-%m-%d"), day_of_week))
+                """, (week_start_str, day_of_week))
 
                 results = []
                 for row in cursor.fetchall():
@@ -764,11 +759,7 @@ class AnimeDatabase:
         """
         try:
             now = datetime.now(TW_TZ)
-            # 計算本週一的日期
-            if now.weekday() == 6:  # 週日
-                current_week_start = (now + timedelta(days=1)).strftime("%Y-%m-%d")
-            else:
-                current_week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+            current_week_start = get_week_start_date(now)
 
             # 週一需要保留上週（昨天是上週日）
             if now.weekday() == 0:  # 週一
@@ -1590,13 +1581,7 @@ class AnimePushCore:
                 if day_of_week is None:
                     day_of_week = (now.weekday() + 1) % 7 or 7
                 if week_start_date is None:
-                    # 修復：週表的 week_start_date 計算邏輯需與 refresh_weekly_schedule 一致
-                    # 如果今天是週日，週表代表下週一~下週日；否則代表本週一~本週日
-                    if now.weekday() == 6:  # 週日
-                        week_start = now + timedelta(days=1)  # 下週一
-                    else:
-                        week_start = now - timedelta(days=now.weekday())  # 本週一
-                    week_start_date = week_start.strftime("%Y-%m-%d")
+                    week_start_date = get_week_start_date(now)
 
                 # 先檢查頻道是否存在
                 channel = self.bot.get_channel(channel_id)
