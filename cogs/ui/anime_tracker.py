@@ -88,6 +88,17 @@ class AnimeTracker(commands.Cog):
         self.bootstrap_completed = False
         self.last_weekly_stats_sent = None
 
+    def __getattr__(self, name):
+        """Delegate attribute access to sub-modules (push_core, db, schedule_tracker, ranking_stats)."""
+        # Use __dict__ to avoid recursive __getattr__ calls
+        for attr in ('push_core', 'db', 'schedule_tracker', 'ranking_stats'):
+            obj = self.__dict__.get(attr)
+            if obj is not None and hasattr(obj, name):
+                return getattr(obj, name)
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
+
     # ==================== CULC 生命週期方法 ====================
 
     async def cog_load(self):
@@ -149,7 +160,8 @@ class AnimeTracker(commands.Cog):
             # 啟動精准派發器（背景任務，非 tasks.loop）
             print("[COG_LOAD] 啟動精準排程派發器", flush=True)
             logger.info("🚀 [AnimeTracker.cog_load] 啟動精準排程派發器")
-            self._dispatcher_task = asyncio.create_task(self._run_schedule_dispatcher_with_restart())
+            self._dispatcher_task = asyncio.create_task(
+                self._wrap_task_with_restart("_schedule_dispatcher", self._schedule_dispatcher))
             logger.info("✅ [AnimeTracker.cog_load] 精準排程派發器已啟動")
             print("[COG_LOAD] ✅ 精準排程派發器已啟動", flush=True)
 
@@ -157,7 +169,8 @@ class AnimeTracker(commands.Cog):
             print("[COG_LOAD] 啟動定期補推檢查任務", flush=True)
             logger.info("🚀 [AnimeTracker.cog_load] 啟動定期補推檢查任務")
             try:
-                self._catchup_check_task = asyncio.create_task(self._run_periodic_catchup_check_with_restart())
+                self._catchup_check_task = asyncio.create_task(
+                    self._wrap_task_with_restart("_periodic_catchup_check", self._periodic_catchup_check))
                 # 給任務一點時間啟動，檢查是否有異常
                 await asyncio.sleep(0.1)
                 if self._catchup_check_task.done():
@@ -247,168 +260,25 @@ class AnimeTracker(commands.Cog):
             logger.error(f"❌ [AnimeTracker.cog_unload] 任務停止失敗: {e}", exc_info=True)
         logger.info("=" * 50)
 
-    # ==================== 核心功能方法（委託給相應模組） ====================
-
-    # Push/Core 相關方法
-    async def _check_and_send_anime(self, scheduled_time_str: str, channel: discord.TextChannel) -> bool:
-        """檢查並發送動畫推送 - 委託給 PushCore"""
-        return await self.push_core._check_and_send_anime(scheduled_time_str, channel)
-
-    async def generate_anime_embed(self, episode: dict) -> Optional[discord.Embed]:
-        """生成動畫 embed - 委託給 PushCore"""
-        return await self.push_core.generate_anime_embed(episode)
+    # ==================== 核心功能方法 ====================
 
     async def generate_anime_view(self, episode: dict) -> Optional[discord.ui.View]:
         """生成動畫視圖 - 創建投票和評論按鈕 + 動畫頁/觀看連結"""
         try:
-            # 只有在有必要的資料時才生成視圖
             video_sn = episode.get("videoSn")
             anime_sn = episode.get("animeSn")
             if not video_sn or not anime_sn:
                 return None
 
-            # 創建投票視圖
             vote_view = self.AnimeVoteView(episode, self)
-
-            # 添加原有的連結按鈕
             anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
             vote_view.add_item(discord.ui.Button(label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link))
-
             video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
             vote_view.add_item(discord.ui.Button(label="▶️ 觀看", url=video_url, style=discord.ButtonStyle.link))
-
             return vote_view
         except Exception as e:
             logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
             return None
-
-    async def send_anime_push(self, scheduled_time: str, channel_id: int, day_of_week: int = None, week_start_date: str = None) -> bool:
-        """發送動畫推送 - 委託給 PushCore"""
-        return await self.push_core.send_anime_push(scheduled_time, channel_id, day_of_week, week_start_date)
-
-    # Schedule Tracker 相關方法
-    async def _get_anime_schedule(self) -> Optional[Dict]:
-        """從 API 獲取日程表 - 委託給 ScheduleTracker"""
-        return await self.schedule_tracker._get_anime_schedule()
-
-    def _get_weekday_name(self, weekday_num: int) -> str:
-        """獲取星期名稱 - 委託給 ScheduleTracker"""
-        return self.schedule_tracker._get_weekday_name(weekday_num)
-
-    # Ranking Stats 相關方法
-    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None):
-        """記錄投票 - 委託給 RankingStats"""
-        self.ranking_stats.record_vote(video_sn, anime_sn, message_id, vote_type, comment, user_hash)
-
-    def get_vote_stats(self, message_id: int) -> Dict:
-        """獲取投票統計 - 委託給 RankingStats"""
-        return self.ranking_stats.get_vote_stats(message_id)
-
-    def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
-        """獲取評論 - 委託給 RankingStats"""
-        return self.ranking_stats.get_vote_comments(message_id, limit)
-
-    def get_weekly_vote_stats(self) -> Dict[int, Dict]:
-        """獲取週投票統計 - 委託給 RankingStats"""
-        return self.ranking_stats.get_weekly_vote_stats()
-
-    def record_reward(self, user_id: int, message_id: int, reward_type: str, reward_amount: int) -> bool:
-        """記錄獎勵 - 委託給 RankingStats"""
-        return self.ranking_stats.record_reward(user_id, message_id, reward_type, reward_amount)
-
-    def is_reward_already_given(self, user_id: int, message_id: int, reward_type: str) -> bool:
-        """檢查獎勵是否已發放 - 委託給 RankingStats"""
-        return self.ranking_stats.is_reward_already_given(user_id, message_id, reward_type)
-
-    async def generate_ranking_embed(
-        self,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        period_label: str = "本季"
-    ) -> Optional[discord.Embed]:
-        """生成排名 embed - 委託給 RankingStats"""
-        return await self.ranking_stats.generate_ranking_embed(start_time, end_time, period_label)
-
-    # ==================== 資料庫操作方法（直接Delegation to AnimeDatabase） ====================
-
-    def is_notified(self, video_sn: int) -> bool:
-        """檢查是否已通知過"""
-        return self.db.is_notified(video_sn)
-
-    def add_notified(self, video_sn: int, anime_sn: int, anime_name: str, volume: str, cover_url: str):
-        """添加已通知記錄"""
-        self.db.add_notified(video_sn, anime_sn, anime_name, volume, cover_url)
-
-    def get_anime_details(self, anime_sn: int) -> Optional[Dict]:
-        """獲取動畫詳細信息"""
-        return self.db.get_anime_details(anime_sn)
-
-    def cache_anime_details(self, anime_sn: int, title: str, content: str, tags: List[str], popular: int, score: float):
-        """快取動畫詳細信息"""
-        self.db.cache_anime_details(anime_sn, title, content, tags, popular, score)
-
-    def record_episode_stats(self, video_sn: int, anime_sn: int, episode_num: str, views: int, score: float):
-        """記錄每集統計"""
-        self.db.record_episode_stats(video_sn, anime_sn, episode_num, views, score)
-
-    def get_top_anime_by_views(
-        self,
-        limit: int = 10,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> List[Dict]:
-        """獲取觀看次數最多的動畫排行"""
-        return self.db.get_top_anime_by_views(limit, start_time, end_time)
-
-    def get_multi_episode_anime_for_chart(
-        self,
-        limit: int = 10,
-        min_episodes: int = 1,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> List[Dict]:
-        """獲取多集動畫用於圖表"""
-        return self.db.get_multi_episode_anime_for_chart(limit, min_episodes, start_time, end_time)
-
-    def get_weekly_schedule(self, week_start_date: str) -> List[Dict]:
-        """獲取週表"""
-        return self.db.get_weekly_schedule(week_start_date)
-
-    def save_weekly_schedule(self, week_start_date: str, schedule_data: List[Dict]) -> bool:
-        """保存週表"""
-        return self.db.save_weekly_schedule(week_start_date, schedule_data)
-
-    def get_today_schedule(self) -> List[Dict]:
-        """獲取今日時程表"""
-        return self.db.get_today_schedule()
-
-    def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
-        """標記時段已推送"""
-        return self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
-
-    def is_time_checked_today(self, scheduled_time: str, check_date=None) -> bool:
-        """檢查今日是否已檢查過時段"""
-        return self.db.is_time_checked_today(scheduled_time, check_date)
-
-    def mark_time_checked(self, check_date=None) -> bool:
-        """標記時段已檢查"""
-        return self.db.mark_time_checked(scheduled_time, check_date)
-
-    def save_message_info(self, message_id: int, video_sn: int, anime_sn: int, anime_name: str, channel_id: int) -> bool:
-        """保存消息資訊"""
-        return self.db.save_message_info(message_id, video_sn, anime_sn, anime_name, channel_id)
-
-    def get_unviewed_messages(self) -> List[Dict]:
-        """獲取未設定視圖的消息"""
-        return self.db.get_unviewed_messages()
-
-    def is_bootstrap_completed(self) -> bool:
-        """檢查是否完成引導"""
-        return self.db.is_bootstrap_completed()
-
-    def mark_bootstrap_completed(self):
-        """標記引導完成"""
-        self.db.mark_bootstrap_completed()
 
     # ==================== 視圖恢復和啟動方法 ====================
 
@@ -470,8 +340,7 @@ class AnimeTracker(commands.Cog):
         try:
             await self.bot.wait_until_ready()
             now = datetime.now(TW_TZ)
-            week_start = now - timedelta(days=now.weekday())
-            week_start_str = week_start.strftime("%Y-%m-%d")
+            week_start_str = self.get_week_start_date(now)
             day_of_week = (now.weekday() + 1) % 7 or 7
             today_schedule = self.get_today_schedule()
             if not today_schedule:
@@ -479,33 +348,17 @@ class AnimeTracker(commands.Cog):
                 return
 
             # 找出今天已過時刻但尚未標記為已推送的項目
-            missed = []
-            for item in today_schedule:
-                if item['pushed']:
-                    continue
+            missed = self.find_unpushed_items(today_schedule, now, future_only=False)
+            logger.info(f"🔄 [_catchup_missed_pushes] 發現 {len(missed)} 個重啟前漏推項目，開始補推")
+            for item in missed:
+                scheduled_time = item['scheduled_time']
                 try:
-                    sched_dt = datetime.strptime(item['scheduled_time'], "%H:%M").replace(
+                    sched_dt = datetime.strptime(scheduled_time, "%H:%M").replace(
                         year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                     )
-                    if (now - sched_dt).total_seconds() >= 0:  # 已過或當前時刻
-                        missed.append((item, sched_dt))
-                except ValueError as e:
-                    logger.warning(f"⚸ [_catchup_missed_pushes] 無法解析排程時間 '{item['scheduled_time']}': {e}")
-                except Exception as e:
-                    logger.error(f"❌ [_catchup_missed_pushes] 處理排程時間時發生未預期錯誤 '{item['scheduled_time']}': {e}", exc_info=True)
+                    diff_seconds = (now - sched_dt).total_seconds()
+                    logger.info(f"📺 [_catchup_missed_pushes] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
 
-            if not missed:
-                logger.info("ℹ️ [_catchup_missed_pushes] 無過時漏推項目")
-                return
-
-            # 按時間排序，依序補推
-            missed.sort(key=lambda x: x[1])
-            logger.info(f"🔄 [_catchup_missed_pushes] 發現 {len(missed)} 個重啟前漏推項目，開始補推")
-            for item, sched_dt in missed:
-                scheduled_time = item['scheduled_time']
-                diff_seconds = (now - sched_dt).total_seconds()
-                logger.info(f"📺 [_catchup_missed_pushes] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
-                try:
                     success = await self.send_anime_push(
                         scheduled_time, ANIME_CHANNEL_ID,
                         week_start_date=week_start_str,
@@ -544,8 +397,7 @@ class AnimeTracker(commands.Cog):
         while not self.bot.is_closed():
             try:
                 now = datetime.now(TW_TZ)
-                week_start = now - timedelta(days=now.weekday())
-                week_start_str = week_start.strftime("%Y-%m-%d")
+                week_start_str = self.get_week_start_date(now)
                 day_of_week = (now.weekday() + 1) % 7 or 7
                 today_schedule = self.get_today_schedule()
 
@@ -555,32 +407,21 @@ class AnimeTracker(commands.Cog):
                     continue
 
                 # 找出：pushed=0 且 scheduled_time <= 當前時間（今日所有已過時未推送項目）
-                catchup_items = []
-                for item in today_schedule:
-                    if item['pushed']:
-                        continue
-                    try:
-                        sched_dt = datetime.strptime(item['scheduled_time'], "%H:%M").replace(
-                            year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
-                        )
-                        diff_seconds = (now - sched_dt).total_seconds()
-                        # 已過時（不限時長，今日所有漏推都補上）
-                        if diff_seconds >= 0:
-                            catchup_items.append((item, sched_dt, diff_seconds))
-                    except ValueError as e:
-                        logger.warning(f"⚸ [{self.__class__.__name__}] 無法解析排程時間 '{item['scheduled_time']}': {e}")
-                    except Exception as e:
-                        logger.error(f"❌ [{self.__class__.__name__}] 處理排程時間時發生未預期錯誤 '{item['scheduled_time']}': {e}", exc_info=True)
+                catchup_items = self.find_unpushed_items(today_schedule, now, future_only=False)
 
                 if catchup_items:
                     logger.info(f"🔄 [_periodic_catchup_check] 發現 {len(catchup_items)} 個今日漏推項目，開始補推")
-                    # 按時間排序，先推較早的
-                    catchup_items.sort(key=lambda x: x[1])
+                    # 已經由 find_unpushed_items 排序
 
-                    for item, sched_dt, diff_seconds in catchup_items:
+                    for item in catchup_items:
                         scheduled_time = item['scheduled_time']
-                        logger.info(f"📺 [_periodic_catchup_check] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
                         try:
+                            sched_dt = datetime.strptime(scheduled_time, "%H:%M").replace(
+                                year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                            )
+                            diff_seconds = (now - sched_dt).total_seconds()
+                            logger.info(f"📺 [_periodic_catchup_check] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
+
                             success = await self.send_anime_push(
                                 scheduled_time,
                                 ANIME_CHANNEL_ID,
@@ -624,15 +465,7 @@ class AnimeTracker(commands.Cog):
                 return
 
             now = datetime.now(TW_TZ)
-            # 🔑 修復：正確計算 week_start_date（同 refresh_weekly_schedule 邏輯）
-            # newAnimeSchedule API 回傳的總是「下一個完整週」的時程表（週一~週日）
-            # - 週一~週六呼叫：回傳本週的時程表 → week_start = 本週一
-            # - 週日呼叫：回傳下週的時程表 → week_start = 下週一
-            if now.weekday() == 6:  # 週日
-                week_start = now + timedelta(days=1)  # 下週一
-            else:
-                week_start = now - timedelta(days=now.weekday())  # 本週一
-            week_start_str = week_start.strftime("%Y-%m-%d")
+            week_start_str = self.get_week_start_date(now)
 
             schedule_data = []
             for day_offset in range(7):
@@ -720,16 +553,6 @@ class AnimeTracker(commands.Cog):
             logger = logging.getLogger(__name__)
             logger.error(f"❌ Error fetching anime details from API: {e}")
             return None
-
-    def _extract_view_count_from_episode(self, episode: Dict) -> int:
-        """從 episode 資料中提取觀看數"""
-        views = 0
-        # 嘗試多個可能的欄位名
-        for field in ['views', 'viewCount', 'playCount', 'popular']:
-            if field in episode and isinstance(episode[field], (int, float)):
-                views = int(episode[field])
-                break
-        return views
 
     # ==================== 排程任務 ====================
 
@@ -1275,35 +1098,20 @@ class AnimeTracker(commands.Cog):
 
 # ==================== 任務重啟包裝函數 ====================
 
-    async def _run_periodic_catchup_check_with_restart(self):
-        """包裝 _periodic_catchup_check，異常時自動重啟"""
+    async def _wrap_task_with_restart(self, name: str, coro_func):
+        """通用任務包裝器：異常時自動記錄並在 5 秒後重啟"""
         logger = logging.getLogger(__name__)
         while not self.bot.is_closed():
             try:
-                await self._periodic_catchup_check()
+                await coro_func()
             except asyncio.CancelledError:
-                logger.info("🛑 [_run_periodic_catchup_check_with_restart] 任務被取消")
+                logger.info(f"🛑 [{name}] 任務被取消")
                 break
             except Exception as e:
-                logger.error(f"❌ [_run_periodic_catchup_check_with_restart] 任務異常終止，5 秒後重啟: {e}", exc_info=True)
+                logger.error(f"❌ [{name}] 任務異常終止，5 秒後重啟: {e}", exc_info=True)
                 await asyncio.sleep(5)
                 if not self.bot.is_closed():
-                    logger.info("🔄 [_run_periodic_catchup_check_with_restart] 重啟任務...")
-
-    async def _run_schedule_dispatcher_with_restart(self):
-        """包裝 _schedule_dispatcher，異常時自動重啟"""
-        logger = logging.getLogger(__name__)
-        while not self.bot.is_closed():
-            try:
-                await self._schedule_dispatcher()
-            except asyncio.CancelledError:
-                logger.info("🛑 [_run_schedule_dispatcher_with_restart] 任務被取消")
-                break
-            except Exception as e:
-                logger.error(f"❌ [_run_schedule_dispatcher_with_restart] 任務異常終止，5 秒後重啟: {e}", exc_info=True)
-                await asyncio.sleep(5)
-                if not self.bot.is_closed():
-                    logger.info("🔄 [_run_schedule_dispatcher_with_restart] 重啟任務...")
+                    logger.info(f"🔄 [{name}] 重啟任務...")
 
 
 async def setup(bot: commands.Bot):

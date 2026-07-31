@@ -27,6 +27,72 @@ from shared.utils.view_registry import PersistentViewBase
 # 台灣時區
 TW_TZ = ZoneInfo('Asia/Taipei')
 
+
+def get_week_start_date(now: datetime = None) -> str:
+    """
+    計算週起始日期 (YYYY-MM-DD) - 週一為起始日
+
+    邏輯與 newAnimeSchedule API 一致：
+    - 週一~週六呼叫：回傳本週的時程表 → week_start = 本週一
+    - 週日呼叫：回傳下週的時程表 → week_start = 下週一
+
+    Args:
+        now: 當前時間，預設為當前台灣時間
+
+    Returns:
+        str: 週起始日期格式 "YYYY-MM-DD"
+    """
+    if now is None:
+        now = datetime.now(TW_TZ)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=TW_TZ)
+
+    if now.weekday() == 6:  # 週日
+        week_start = now + timedelta(days=1)  # 下週一
+    else:
+        week_start = now - timedelta(days=now.weekday())  # 本週一
+    return week_start.strftime("%Y-%m-%d")
+
+
+def find_unpushed_items(today_schedule: list, now: datetime = None, future_only: bool = False) -> list:
+    """
+    從今日時程表中找出未推送的項目
+
+    Args:
+        today_schedule: 今日時程表列表 (含 pushed, scheduled_time 欄位)
+        now: 當前時間，預設為當前台灣時間
+        future_only: True=只回傳時間尚未到達的項目 (下一筆待推)，False=回傳所有已過/當前時間的未推送項目
+
+    Returns:
+        list: 符合條件的未推送項目列表，按時間排序
+    """
+    if now is None:
+        now = datetime.now(TW_TZ)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=TW_TZ)
+
+    matching = []
+    for item in today_schedule:
+        if item.get('pushed'):
+            continue
+        scheduled = item.get('scheduled_time', '')
+        try:
+            sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
+                year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+            )
+            diff = (now - sched_dt).total_seconds()
+            if future_only:
+                if diff < 0:  # 時間尚未到達
+                    matching.append(item)
+            else:
+                if diff >= 0:  # 已過或當前時刻
+                    matching.append(item)
+        except Exception:
+            pass
+
+    return sorted(matching, key=lambda x: x.get('scheduled_time', ''))
+
+
 # 配置
 ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
 ANIME_DB_PATH = None  # 將在初始化時設置

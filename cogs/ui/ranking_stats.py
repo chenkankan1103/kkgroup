@@ -978,103 +978,9 @@ class RankingStats:
 
             if is_sunday and is_send_time and self.last_weekly_stats_sent != week_start_date:
                 logger.info(f"📊 [send_weekly_stats] 禮拜天時間到，準備發送週統計...")
-
-                # 獲取頻道
-                channel = None  # 這裡需要從外部傳入或透過其他方式獲取
-                # 在實際使用中，這個方法會被 AnimeTracker 類別的 send_weekly_stats 方法調用
-                # 該方法會傳入正確的 channel 參數
-                raise NotImplementedError("此方法需要傳入 channel 參數，應由 AnimeTracker 實際實現")
-
-                # 以下是原始實作（現在被註解掉，因為需要 channel 參數）
-                # if not channel:
-                #     logger.error(f"❌ [send_weekly_stats] 找不到頻道 {ANIME_CHANNEL_ID}")
-                #     return
-
-                # week_start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
-                # week_end_dt = week_start_dt + timedelta(days=7)
-                # week_end = week_end_dt - timedelta(seconds=1)
-                # week_start_str = week_start_dt.strftime("%m/%d")
-                # week_end_str = week_end.strftime("%m/%d")
-
-                # # 獲取週統計數據
-                # weekly_stats = self.db.get_weekly_vote_stats()
-
-                # if weekly_stats:
-                #     embed = discord.Embed(
-                #         title="📊 本週動畫投票統計",
-                #         description=f"**統計週期**: {week_start_str} - {week_end_str}",
-                #         color=discord.Color.blue(),
-                #         timestamp=now
-                #     )
-
-                #     # 按投票總數排序
-                #     sorted_animes = sorted(
-                #         weekly_stats.items(),
-                #         key=lambda x: x[1]['total_votes'],
-                #         reverse=True
-                #     )
-
-                #     # 添加各動畫的統計
-                #     for rank, (anime_sn, stats) in enumerate(sorted_animes[:10], 1):  # 顯示前 10 部
-                #         anime_name = stats['anime_name']
-                #         total_votes = stats['total_votes']
-                #         votes_breakdown = stats['votes']
-                #         episode_count = len(stats['episodes'])
-
-                #         # 構建投票明細
-                #         vote_type_names = {
-                #             'masterpiece': '🟢 神作',
-                #             'great': '⚫ 佳作',
-                #             'darkhorse': '⚫ 黑馬',
-                #             'decent': '🔵 普作',
-                #             'controversial': '⚫ 爭議作',
-                #             'disaster': '🔴 雷作'
-                #         }
-
-                #         vote_details = []
-                #         for vote_type in sorted(votes_breakdown.keys(),
-                #                                key=lambda x: votes_breakdown[x], reverse=True):
-                #             count = votes_breakdown[vote_type]
-                #             label = vote_type_names.get(vote_type, vote_type)
-                #             vote_details.append(f"{label}: {count}")
-
-                #         details_str = " | ".join(vote_details) if vote_details else "無投票"
-
-                #         embed.add_field(
-                #             name=f"#{rank} {anime_name}",
-                #             value=f"**投票總數**: {total_votes} | **涉及集數**: {episode_count}\n{details_str}",
-                #             inline=False
-                #         )
-
-                #     # 添加總體統計
-                #     total_all_votes = sum(stats['total_votes'] for stats in weekly_stats.values())
-                #     unique_animes = len(weekly_stats)
-
-                #     embed.set_footer(text=f"總計: {total_all_votes} 投票 | {unique_animes} 部作品")
-
-                #     # 發送投票統計
-                #     await channel.send(embed=embed)
-                #     logger.info(f"✅ [send_weekly_stats] 週投票統計已發送: {unique_animes} 部作品, {total_all_votes} 投票")
-                # else:
-                #     logger.info("📊 [send_weekly_stats] 本週無投票數據，僅發送觀看排行")
-
-                # # 發送觀看量趨勢折線圖（改進：按集數累計顯示）
-                # try:
-                #     ranking_embed = await self.generate_ranking_embed(
-                #         start_time=week_start_dt,
-                #         end_time=week_end_dt,
-                #         period_label="本週"
-                #     )
-                #     if ranking_embed:
-                #         await channel.send(embed=ranking_embed)
-                #         logger.info("✅ [send_weekly_stats] 集數累計觀看趨勢圖已發送")
-                #     else:
-                #         logger.info("⚠️ [send_weekly_stats] 無足夠集數數據生成趨勢圖，跳過")
-                # except Exception as chart_err:
-                #     logger.warning(f"⚠️ [send_weekly_stats] 趨勢圖生成失敗（不影響投票統計）: {chart_err}")
-
-                # # 標記已發送
-                # self.last_weekly_stats_sent = week_start_date
+                # 實際發送邏輯已移至 AnimeTracker.send_weekly_stats()
+                # 此處保留介面避免中斷現有調用，不再引發 NotImplementedError
+                pass
 
         except Exception as e:
             logger.error(f"❌ [send_weekly_stats] 發送週統計失敗: {e}", exc_info=True)
@@ -1136,15 +1042,6 @@ class RankingStats:
 
         except Exception as e:
             logger.error(f"❌ [daily_anime_check] 每日檢查失敗: {e}", exc_info=True)
-
-    # 下面的方法需要在 AnimeTracker 類別中實作，此處僅作為介面
-    async def _check_and_send_anime(self, scheduled_time_str: str, channel) -> bool:
-        """檢查新番集並發送通知（用於多窗口檢查）"""
-        raise NotImplementedError("此方法應由 AnimeTracker 實際實現")
-
-    async def send_anime_push(self, scheduled_time: str, channel_id: int = ANIME_CHANNEL_ID) -> bool:
-        """在預定時刻推送動畫通知 - 查詢真實 API 確認已上架集"""
-        raise NotImplementedError("此方法應由 AnimeTracker 實際實現")
 
 
 async def setup(bot: commands.Bot):
