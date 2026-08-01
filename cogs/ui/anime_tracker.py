@@ -43,7 +43,7 @@ ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（
 ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
 
 # 導入自定義模組
-from .push_core import AnimePushCore, AnimeDatabase, ANIME_CHANNEL_ID
+from .push_core import AnimePushCore, AnimeDatabase, ANIME_CHANNEL_ID, find_unpushed_items
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
@@ -360,7 +360,7 @@ class AnimeTracker(commands.Cog):
                 return
 
             # 找出今天已過時刻但尚未標記為已推送的項目
-            missed = self.find_unpushed_items(today_schedule, now, future_only=False)
+            missed = find_unpushed_items(today_schedule, now, future_only=False)
             logger.info(f"🔄 [_catchup_missed_pushes] 發現 {len(missed)} 個重啟前漏推項目，開始補推")
             for item in missed:
                 scheduled_time = item['scheduled_time']
@@ -435,7 +435,7 @@ class AnimeTracker(commands.Cog):
                     logger.debug(f"   {item['scheduled_time']} {status} - {title[:30]}")
 
                 # 找出：pushed=0 且 scheduled_time <= 當前時間（今日所有已過時未推送項目）
-                catchup_items = self.find_unpushed_items(today_schedule, now, future_only=False)
+                catchup_items = find_unpushed_items(today_schedule, now, future_only=False)
 
                 if catchup_items:
                     logger.info(f"🔄 [_periodic_catchup_check] 發現 {len(catchup_items)} 個今日漏推項目，開始補推")
