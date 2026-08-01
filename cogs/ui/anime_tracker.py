@@ -162,8 +162,20 @@ class AnimeTracker(commands.Cog):
             logger.info("🚀 [AnimeTracker.cog_load] 啟動精準排程派發器")
             self._dispatcher_task = asyncio.create_task(
                 self._wrap_task_with_restart("_schedule_dispatcher", self._schedule_dispatcher))
-            logger.info("✅ [AnimeTracker.cog_load] 精準排程派發器已啟動")
-            print("[COG_LOAD] ✅ 精準排程派發器已啟動", flush=True)
+            # 給任務一點時間啟動，檢查是否有異常
+            await asyncio.sleep(0.1)
+            if self._dispatcher_task.done():
+                exc = self._dispatcher_task.exception()
+                if exc:
+                    logger.error(f"❌ [AnimeTracker.cog_load] _schedule_dispatcher 任務立即失敗: {exc}", exc_info=True)
+                    print(f"[COG_LOAD_ERROR] _schedule_dispatcher 任務立即失敗: {exc}", flush=True)
+                    raise exc
+                else:
+                    logger.warning(f"⚠️ [AnimeTracker.cog_load] _schedule_dispatcher 任務意外結束（無異常）")
+                    print("[COG_LOAD_WARN] _schedule_dispatcher 任務意外結束", flush=True)
+            else:
+                logger.info("✅ [AnimeTracker.cog_load] 精準排程派發器已啟動並運行中")
+                print("[COG_LOAD] ✅ 精準排程派發器已啟動並運行中", flush=True)
 
             # 啟動定期補推任務（每 5 分鐘檢查最近 10 分鐘內漏推項目並真正發送）
             print("[COG_LOAD] 啟動定期補推檢查任務", flush=True)
@@ -402,9 +414,25 @@ class AnimeTracker(commands.Cog):
                 today_schedule = self.get_today_schedule()
 
                 if not today_schedule:
-                    logger.warning("⚠️ [_periodic_catchup_check] today_schedule 為空，跳過本次檢查")
-                    await asyncio.sleep(900)  # 15 分鐘
-                    continue
+                    logger.warning("⚠️ [_periodic_catchup_check] today_schedule 為空，嘗試從 API 拉取週表...")
+                    # 嘗試初始化週表（類似 cog_load 時的邏輯）
+                    await self._init_weekly_schedule_if_empty()
+                    # 重新獲取
+                    today_schedule = self.get_today_schedule()
+                    if not today_schedule:
+                        logger.warning("⚠️ [_periodic_catchup_check] 週表初始化後仍為空，跳過本次檢查")
+                        await asyncio.sleep(300)  # 5 分鐘
+                        continue
+
+                # Debug: log today's schedule status
+                pending_count = sum(1 for item in today_schedule if not item['pushed'])
+                logger.info(f"🔍 [_periodic_catchup_check] 今日時程 {len(today_schedule)} 筆，待補推 {pending_count} 筆")
+                for item in today_schedule:
+                    status = "✅已推" if item['pushed'] else "⏳待補"
+                    anime_data = item['anime_data']
+                    title = (anime_data.get('title', 'N/A') if isinstance(anime_data, dict)
+                            else json.loads(anime_data).get('title', 'N/A'))
+                    logger.debug(f"   {item['scheduled_time']} {status} - {title[:30]}")
 
                 # 找出：pushed=0 且 scheduled_time <= 當前時間（今日所有已過時未推送項目）
                 catchup_items = self.find_unpushed_items(today_schedule, now, future_only=False)
@@ -435,7 +463,7 @@ class AnimeTracker(commands.Cog):
                         except Exception as e:
                             logger.error(f"❌ [_periodic_catchup_check] 補推異常 {scheduled_time}: {e}")
                 else:
-                    pass  # No catchup items found
+                    logger.debug("😴 [_periodic_catchup_check] 本次檢查無需補推項目")
 
                 # 每 15 分鐘檢查一次
                 await asyncio.sleep(900)
@@ -563,15 +591,42 @@ class AnimeTracker(commands.Cog):
         logger = logging.getLogger(__name__)
         logger.info("🚀 [_schedule_dispatcher] 排程分發器啟動")
 
-        await self.bot.wait_until_ready()
+        # 等待 bot ready，但設 timeout 防止卡死（參考 _periodic_catchup_check）
+        try:
+            await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
+            logger.info("✅ [_schedule_dispatcher] bot ready，開始執行排程分發")
+        except asyncio.TimeoutError:
+            logger.error("❌ [_schedule_dispatcher] wait_until_ready() timeout 60s，終止任務")
+            return
 
         while not self.bot.is_closed():
             try:
                 now = datetime.now(TW_TZ)
                 today_schedule = self.get_today_schedule()
 
-                # 找出今天尚未推送的最早一筆（不限時間）
-                # 修復：移除 sched_dt >= now 限制，防止 API 暫未更新時跳過時刻
+                # Debug: log today's schedule status
+                pending_count = sum(1 for item in today_schedule if not item['pushed'])
+                logger.debug(f"🔍 [_schedule_dispatcher] 今日時程 {len(today_schedule)} 筆，待推送 {pending_count} 筆")
+                for item in today_schedule:
+                    status = "✅已推" if item['pushed'] else "⏳待推"
+                    anime_data = item['anime_data']
+                    title = (anime_data.get('title', 'N/A') if isinstance(anime_data, dict)
+                            else json.loads(anime_data).get('title', 'N/A'))
+                    logger.debug(f"   {item['scheduled_time']} {status} - {title[:30]}")
+
+                # 如果 today_schedule 為空，嘗試從 API 拉取週表
+                if not today_schedule:
+                    logger.warning("⚠️ [_schedule_dispatcher] today_schedule 為空，嘗試從 API 拉取週表...")
+                    await self._init_weekly_schedule_if_empty()
+                    today_schedule = self.get_today_schedule()
+                    if not today_schedule:
+                        logger.warning("⚠️ [_schedule_dispatcher] 週表初始化後仍為空，睡到明天 00:00 重試")
+                        tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                        sleep_seconds = (tomorrow - now).total_seconds()
+                        await asyncio.sleep(sleep_seconds)
+                        continue
+
+                # 找出今天「尚未推送」且「時間 >= 現在」的最早一筆
                 next_item = None
                 for item in today_schedule:
                     if item['pushed']:

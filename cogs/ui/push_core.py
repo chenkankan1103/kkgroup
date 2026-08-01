@@ -1596,6 +1596,8 @@ class AnimePushCore:
         2. 使用逐時段獨立鎖 _get_push_lock 防止 dispatcher 和 catch-up 同時/循序推送同一時段
         3. 鎖內二次檢查：獲鎖後重讀週表確認 pushed==0，防止競態
         4. API 成功即標記 pushed=1（不論是否有匹配新番），防止無限重試
+        5. Idempotency: check DB first (before lock) — if pushed=1, skip immediately
+           → 避免不必要的鎖獲取與 API 呼叫
 
         Args:
             scheduled_time: 預定時間，格式 "HH:MM"
@@ -1604,12 +1606,20 @@ class AnimePushCore:
             week_start_date: 可選，週起始日期 "YYYY-MM-DD"
             prefetched_episodes: 可選，預先 fetch 的 API 結果，避免重複 API 呼叫
         """
-        # 先計算 day_of_week 和 week_start_date（取得鎖前需要 key）
+        # 先計算 day_of_week 和 week_start_date
         now = datetime.now(TW_TZ)
         if day_of_week is None:
             day_of_week = (now.weekday() + 1) % 7 or 7
         if week_start_date is None:
             week_start_date = get_week_start_date(now)
+
+        # 🔑 Idempotency: check DB first (before lock) — if pushed=1, skip immediately
+        # 避免不必要的鎖獲取與 API 呼叫
+        today_schedule = self.db.get_today_schedule()
+        for item in today_schedule:
+            if item['scheduled_time'] == scheduled_time and item.get('pushed'):
+                logger.info(f"⏭️ [send_anime_push] {scheduled_time} 已在資料庫標記推送過，跳過")
+                return False
 
         # 使用逐時段獨立鎖，防止不同任務對同一時段循序獲鎖
         push_lock = self._get_push_lock(week_start_date, day_of_week, scheduled_time)
