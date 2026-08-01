@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import asyncio
 import aiohttp
-from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE, get_week_start_date
+from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE, get_week_start_date, find_unpushed_items
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,7 @@ class AnimeScheduleTracker:
             today_schedule = self.get_today_schedule()
 
             # 尋找符合現在時刻的項目（尚未推送的） - 使用統一 helper
-            matching = self.push_core.find_unpushed_items(today_schedule, now, future_only=False)
+            matching = find_unpushed_items(today_schedule, now, future_only=False)
 
             if matching:
                 # 已由 find_unpushed_items 排序
