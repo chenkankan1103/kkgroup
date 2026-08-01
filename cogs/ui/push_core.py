@@ -1180,7 +1180,7 @@ class AnimePushCore:
         self._push_locks: dict[str, asyncio.Lock] = {}
         self._push_locks_lock = asyncio.Lock()
 
-    def _get_push_lock(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> asyncio.Lock:
+    async def _get_push_lock(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> asyncio.Lock:
         """獲取特定時段的獨立鎖 (雙重檢查鎖模式)"""
         key = f"{week_start_date}|{day_of_week}|{scheduled_time}"
         # 快速路徑：鎖已存在
@@ -1188,7 +1188,7 @@ class AnimePushCore:
         if lock:
             return lock
         # 慢速路徑：需創建新鎖
-        with self._push_locks_lock:
+        async with self._push_locks_lock:
             lock = self._push_locks.get(key)
             if not lock:
                 lock = asyncio.Lock()
@@ -1622,7 +1622,7 @@ class AnimePushCore:
                 return False
 
         # 使用逐時段獨立鎖，防止不同任務對同一時段循序獲鎖
-        push_lock = self._get_push_lock(week_start_date, day_of_week, scheduled_time)
+        push_lock = await self._get_push_lock(week_start_date, day_of_week, scheduled_time)
         async with push_lock:
             logger.info(f"🚀 [send_anime_push] 開始處理 {scheduled_time} (lock acquired)")
 
