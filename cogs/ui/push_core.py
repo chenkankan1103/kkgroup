@@ -27,77 +27,6 @@ from shared.utils.view_registry import PersistentViewBase
 # 台灣時區
 TW_TZ = ZoneInfo('Asia/Taipei')
 
-
-def get_week_start_date(now: datetime = None, api_week: bool = False) -> str:
-    """
-    計算週起始日期 (YYYY-MM-DD) - 週一為起始日
-
-    兩種模式：
-    - 行事曆週 (api_week=False, 預設): 給定日期所屬的週 (週一~週日)
-      - 週一~週日：回傳本週一
-    - API 週 (api_week=True): 遵循 newAnimeSchedule API 語義
-      - 週一~週六：回傳本週一 (API 回傳本週時程)
-      - 週日：回傳下週一 (API 回傳下週時程)
-
-    Args:
-        now: 當前時間，預設為當前台灣時間
-        api_week: True=API 週語義 (用於儲存週表), False=行事曆週 (用於查詢今日時程)
-
-    Returns:
-        str: 週起始日期格式 "YYYY-MM-DD"
-    """
-    if now is None:
-        now = datetime.now(TW_TZ)
-    elif now.tzinfo is None:
-        now = now.replace(tzinfo=TW_TZ)
-
-    if api_week and now.weekday() == 6:  # 週日且用 API 週：回傳下週一
-        week_start = now + timedelta(days=1)
-    else:
-        # 行事曆週：週一~週日皆回傳本週一
-        week_start = now - timedelta(days=now.weekday())
-    return week_start.strftime("%Y-%m-%d")
-
-
-def find_unpushed_items(today_schedule: list, now: datetime = None, future_only: bool = False) -> list:
-    """
-    從今日時程表中找出未推送的項目
-
-    Args:
-        today_schedule: 今日時程表列表 (含 pushed, scheduled_time 欄位)
-        now: 當前時間，預設為當前台灣時間
-        future_only: True=只回傳時間尚未到達的項目 (下一筆待推)，False=回傳所有已過/當前時間的未推送項目
-
-    Returns:
-        list: 符合條件的未推送項目列表，按時間排序
-    """
-    if now is None:
-        now = datetime.now(TW_TZ)
-    elif now.tzinfo is None:
-        now = now.replace(tzinfo=TW_TZ)
-
-    matching = []
-    for item in today_schedule:
-        if item.get('pushed'):
-            continue
-        scheduled = item.get('scheduled_time', '')
-        try:
-            sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
-            )
-            diff = (now - sched_dt).total_seconds()
-            if future_only:
-                if diff < 0:  # 時間尚未到達
-                    matching.append(item)
-            else:
-                if diff >= 0:  # 已過或當前時刻
-                    matching.append(item)
-        except Exception:
-            pass
-
-    return sorted(matching, key=lambda x: x.get('scheduled_time', ''))
-
-
 # 配置
 ANIME_CHANNEL_ID = 1252204317453324333  # 動畫通知頻道
 ANIME_DB_PATH = None  # 將在初始化時設置
@@ -505,7 +434,12 @@ class AnimeDatabase:
         """獲取今天的時程表（從週表中）"""
         try:
             now = datetime.now(TW_TZ)
-            week_start_str = get_week_start_date(now)
+            # 修復：週表的 week_start_date 計算邏輯需與 refresh_weekly_schedule 一致
+            # 如果今天是週日，週表代表下週一~下週日；否則代表本週一~本週日
+            if now.weekday() == 6:  # 週日
+                week_start = now + timedelta(days=1)  # 下週一
+            else:
+                week_start = now - timedelta(days=now.weekday())  # 本週一
             day_of_week = (now.weekday() + 1) % 7 or 7  # 1=Mon, 7=Sun
 
             with self._get_connection() as conn:
@@ -514,7 +448,7 @@ class AnimeDatabase:
                     SELECT scheduledTime, animeData, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                     WHERE weekStartDate = ? AND dayOfWeek = ?
                     ORDER BY scheduledTime ASC
-                """, (week_start_str, day_of_week))
+                """, (week_start.strftime("%Y-%m-%d"), day_of_week))
 
                 results = []
                 for row in cursor.fetchall():
@@ -764,7 +698,11 @@ class AnimeDatabase:
         """
         try:
             now = datetime.now(TW_TZ)
-            current_week_start = get_week_start_date(now)
+            # 計算本週一的日期
+            if now.weekday() == 6:  # 週日
+                current_week_start = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+            else:
+                current_week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
 
             # 週一需要保留上週（昨天是上週日）
             if now.weekday() == 0:  # 週一
@@ -1074,7 +1012,7 @@ class AnimeDatabase:
             video_sn: 集數序號
             anime_sn: 動畫序號
             message_id: Discord 訊息 ID（用於關聯統計）
-            vote_type: 投票類型 ('masterpiece', 'great', 'darkhorse', 'decent', 'controversial', 'disaster') 或 'comment'
+            vote_type: 投票類型 ('masterpiece', 'great', 'good', 'average', 'bad') 或 'comment'
             comment: 評論內容（可選）
             user_hash: 匿名用戶識別符
         """
@@ -1087,10 +1025,9 @@ class AnimeDatabase:
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (video_sn, anime_sn, "", vote_type, user_hash, message_id, comment))
                 conn.commit()
-                logger.info(f"✅ [record_vote] 記錄成功: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}")
                 return True
         except Exception as e:
-            logger.error(f"❌ [record_vote] 記錄失敗: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, error={e}", exc_info=True)
+            logger.error(f"❌ [record_vote] Error recording vote: {e}", exc_info=True)
             return False
 
     def get_vote_stats(self, message_id: int) -> Dict[str, int]:
@@ -1104,11 +1041,9 @@ class AnimeDatabase:
                     WHERE messageId = ? AND voteType != 'comment'
                     GROUP BY voteType
                 """, (message_id,))
-                result = {row[0]: row[1] for row in cursor.fetchall()}
-                logger.info(f"📊 [get_vote_stats] message_id={message_id}, stats={result}")
-                return result
+                return {row[0]: row[1] for row in cursor.fetchall()}
         except Exception as e:
-            logger.error(f"❌ [get_vote_stats] Error: message_id={message_id}, error={e}", exc_info=True)
+            logger.error(f"❌ [get_vote_stats] Error: {e}", exc_info=True)
             return {}
 
     def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
@@ -1121,11 +1056,9 @@ class AnimeDatabase:
                     WHERE messageId = ? AND voteType = 'comment' AND comment IS NOT NULL
                     ORDER BY votedAt DESC LIMIT ?
                 """, (message_id, limit))
-                result = [row[0] for row in cursor.fetchall() if row[0]]
-                logger.info(f"💬 [get_vote_comments] message_id={message_id}, comments_count={len(result)}")
-                return result
+                return [row[0] for row in cursor.fetchall() if row[0]]
         except Exception as e:
-            logger.error(f"❌ [get_vote_comments] Error: message_id={message_id}, error={e}", exc_info=True)
+            logger.error(f"❌ [get_vote_comments] Error: {e}", exc_info=True)
             return []
 
     def get_weekly_vote_stats(self) -> Dict[int, Dict]:
@@ -1176,28 +1109,7 @@ class AnimePushCore:
 
         # 推送並發鎖：防止 dispatcher 和 catch-up 同時呼叫 send_anime_push
         # 造成同一時段重複推送或 race condition
-        # 使用字典持有每時段獨立鎖，避免不同任務對同一時段循序獲鎖
-        self._push_locks: dict[str, asyncio.Lock] = {}
-        self._push_locks_lock = asyncio.Lock()
-
-    async def _get_push_lock(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> asyncio.Lock:
-        """獲取特定時段的獨立鎖 (雙重檢查鎖模式)"""
-        key = f"{week_start_date}|{day_of_week}|{scheduled_time}"
-        # 快速路徑：鎖已存在
-        lock = self._push_locks.get(key)
-        if lock:
-            return lock
-        # 慢速路徑：需創建新鎖
-        async with self._push_locks_lock:
-            lock = self._push_locks.get(key)
-            if not lock:
-                lock = asyncio.Lock()
-                self._push_locks[key] = lock
-            return lock
-
-    def get_week_start_date(self, now: datetime = None, api_week: bool = False) -> str:
-        """計算週起始日期 (YYYY-MM-DD) - 委託給模組級函數"""
-        return get_week_start_date(now, api_week)
+        self._push_lock = asyncio.Lock()
 
     def set_bot_and_db(self, bot, db):
         """設置 bot 和資料庫實例（可選覆蓋）"""
@@ -1585,69 +1497,46 @@ class AnimePushCore:
 
     async def send_anime_push(self, scheduled_time: str, channel_id: int,
                              day_of_week: int = None,
-                             week_start_date: str = None,
-                             prefetched_episodes: list = None) -> bool:
-        """根據時程表發送動畫推送（含時段防火 + 逐時段獨立鎖）
+                             week_start_date: str = None) -> bool:
+        """根據時程表發送動畫推送（含時段匹配 + 並發鎖）
 
         核心修復 (2026-07-25)：
-        1. 從週表取得該段預期的 videoSn（而非 animeSn，因為 newAnimeSchedule API
-           只提供 videoSn），只推送 videoSn 本意的動畫
+        1. 從週表取得該時段預期的 videoSn（而非 animeSn，因為 newAnimeSchedule API
+           只提供 videoSn），只推送 videoSn 匹配的動畫
            → 防止補推時把其他時段的動畫也推出去
-        2. 使用逐時段獨立鎖 _get_push_lock 防止 dispatcher 和 catch-up 同時/循序推送同一時段
-        3. 鎖內二次檢查：獲鎖後重讀週表確認 pushed==0，防止競態
-        4. API 成功即標記 pushed=1（不論是否有匹配新番），防止無限重試
-        5. Idempotency: check DB first (before lock) — if pushed=1, skip immediately
-           → 避免不必要的鎖獲取與 API 呼叫
+        2. 使用 _push_lock 防止 dispatcher 和 catch-up 同時推送
+        3. API 成功即標記 pushed=1（不論是否有匹配新番），防止無限重試
 
         Args:
             scheduled_time: 預定時間，格式 "HH:MM"
             channel_id: Discord 頻道 ID
             day_of_week: 可選，1=週一~7=週日
             week_start_date: 可選，週起始日期 "YYYY-MM-DD"
-            prefetched_episodes: 可選，預先 fetch 的 API 結果，避免重複 API 呼叫
         """
-        # 先計算 day_of_week 和 week_start_date
-        now = datetime.now(TW_TZ)
-        if day_of_week is None:
-            day_of_week = (now.weekday() + 1) % 7 or 7
-        if week_start_date is None:
-            week_start_date = get_week_start_date(now)
-
-        # 🔑 Idempotency: check DB first (before lock) — if pushed=1, skip immediately
-        # 避免不必要的鎖獲取與 API 呼叫
-        today_schedule = self.db.get_today_schedule()
-        for item in today_schedule:
-            if item['scheduled_time'] == scheduled_time and item.get('pushed'):
-                logger.info(f"⏭️ [send_anime_push] {scheduled_time} 已在資料庫標記推送過，跳過")
-                return False
-
-        # 使用逐時段獨立鎖，防止不同任務對同一時段循序獲鎖
-        push_lock = await self._get_push_lock(week_start_date, day_of_week, scheduled_time)
-        async with push_lock:
+        # 使用並發鎖，防止 dispatcher 和 catch-up 同時推送同一時段
+        async with self._push_lock:
             logger.info(f"🚀 [send_anime_push] 開始處理 {scheduled_time} (lock acquired)")
-
-            # 🔑 鎖內二次檢查：重讀週表確認該時段仍為未推送 (pushed=0)
-            # 防止：任務 A 獲鎖推送並標記 pushed=1，任務 B 排隊獲鎖後發現已推送
-            today_schedule = self.db.get_today_schedule()
-            already_pushed = False
-            for item in today_schedule:
-                if item['scheduled_time'] == scheduled_time and item.get('pushed'):
-                    already_pushed = True
-                    break
-            if already_pushed:
-                logger.info(f"⏭️ [send_anime_push] {scheduled_time} 已被其他任務推送 (pushed=1)，跳過")
-                return False
-
             try:
                 await self.bot.wait_until_ready()
+
+                # 先計算 day_of_week 和 week_start_date（提前需要，用於查詢週表）
+                now = datetime.now(TW_TZ)
+                if day_of_week is None:
+                    day_of_week = (now.weekday() + 1) % 7 or 7
+                if week_start_date is None:
+                    # 修復：週表的 week_start_date 計算邏輯需與 refresh_weekly_schedule 一致
+                    # 如果今天是週日，週表代表下週一~下週日；否則代表本週一~本週日
+                    if now.weekday() == 6:  # 週日
+                        week_start = now + timedelta(days=1)  # 下週一
+                    else:
+                        week_start = now - timedelta(days=now.weekday())  # 本週一
+                    week_start_date = week_start.strftime("%Y-%m-%d")
 
                 # 先檢查頻道是否存在
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
-                    # 頻道不存在是永久性失敗，標記 pushed=1 避免無限重試
                     logger.warning(f"⚠️ [send_anime_push] 頻道 {channel_id} 不存在，"
-                                   f"標記 {scheduled_time} 為已完成（永久性失敗）")
-                    self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
+                                   f"跳過 {scheduled_time}（不標記，稍後重試）")
                     return False
 
                 # 🔑 從週表取得該時段預期的 videoSn 集合
@@ -1664,14 +1553,10 @@ class AnimePushCore:
 
                 logger.debug(f"🔍 [send_anime_push] {scheduled_time} 預期 videoSn: {expected_video_sns}")
 
-                # 獲取最新動畫數據（優先使用預熱結果，避免重複 API 呼叫）
-                if prefetched_episodes:
-                    logger.info(f"📡 [send_anime_push] {scheduled_time} 使用預熱資料 ({len(prefetched_episodes)} 筆)")
-                    episodes = prefetched_episodes
-                else:
-                    logger.info(f"📡 [send_anime_push] {scheduled_time} 呼叫 API 獲取新番...")
-                    episodes = await self.fetch_new_anime_from_api()
-                    logger.info(f"📡 [send_anime_push] {scheduled_time} API 回傳 {len(episodes) if episodes else 0} 筆")
+                # 獲取最新動畫數據
+                logger.info(f"📡 [send_anime_push] {scheduled_time} 呼叫 API 獲取新番...")
+                episodes = await self.fetch_new_anime_from_api()
+                logger.info(f"📡 [send_anime_push] {scheduled_time} API 回傳 {len(episodes) if episodes else 0} 筆")
                 if not episodes:
                     # API 失敗 → 不標記，讓補推稍後重試
                     logger.warning(f"⚠️ [send_anime_push] API 無回應，"

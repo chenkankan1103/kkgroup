@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import asyncio
 import aiohttp
-from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE, get_week_start_date, find_unpushed_items
+from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,21 @@ class AnimeScheduleTracker:
         self.bot = bot
         self.db = db
         self.push_core = push_core
+
+    def _extract_view_count_from_episode(self, episode: dict) -> int:
+        """從 episode 資料中提取觀看數"""
+        views = 0
+        # 嘗試多個可能的欄位名
+        for field in ['views', 'viewCount', 'playCount', 'popular']:
+            if field in episode and isinstance(episode[field], (int, float)):
+                views = int(episode[field])
+                break
+        return views
+
+    def _get_weekday_name(self, weekday_num: int) -> str:
+        """將 weekday數字轉換為中文名稱"""
+        weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        return weekdays[weekday_num - 1] if 1 <= weekday_num <= 7 else "未知"
 
     async def _get_anime_schedule(self) -> dict:
         """從 API 獲取日程表 (newAnimeSchedule)"""
@@ -122,8 +137,14 @@ class AnimeScheduleTracker:
                 return {'success': False, 'error': 'API 回傳空時程表'}
 
             # 🔑 修復：正確計算 week_start_date
-            # 使用 push_core 的統一計算邏輯 (api_week=True: 用於儲存從 API 拉取的週表)
-            week_start_str = self.push_core.get_week_start_date(now, api_week=True)
+            # newAnimeSchedule API 回傳的總是「下一個完整週」的時程表（週一~週日）
+            # - 週一~週六呼叫：回傳本週的時程表 → week_start = 本週一
+            # - 週日呼叫：回傳下週的時程表 → week_start = 下週一
+            if now.weekday() == 6:  # 週日
+                week_start = now + timedelta(days=1)  # 下週一
+            else:
+                week_start = now - timedelta(days=now.weekday())  # 本週一
+            week_start_str = week_start.strftime("%Y-%m-%d")
             logger.info(f"📅 [refresh_weekly_schedule] 保存週起始日期: {week_start_str} (today={now.strftime('%Y-%m-%d %a')})")
 
             schedule_data = []
@@ -190,13 +211,29 @@ class AnimeScheduleTracker:
             # 獲取今天的時程表
             today_schedule = self.get_today_schedule()
 
-            # 尋找符合現在時刻的項目（尚未推送的） - 使用統一 helper
-            matching = find_unpushed_items(today_schedule, now, future_only=False)
+            # 尋找符合現在時刻的項目（尚未推送的）
+            # 支援補推機制：所有過去的未推送項目（防止 bot 重啟錯過時刻）
+            matching = []
+            for item in today_schedule:
+                if item['pushed']:
+                    continue
+                scheduled = item['scheduled_time']
+                try:
+                    sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
+                        year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                    )
+                    diff = (now - sched_dt).total_seconds()
+                    # 只處理已過去或當前時刻的節目（diff >= 0）
+                    if diff >= 0:
+                        matching.append(item)
+                except Exception:
+                    pass
 
             if matching:
-                # 已由 find_unpushed_items 排序
-                logger.info(f"📺 [check_scheduled_push] 發現 {len(matching)} 個未推送時刻，將依序推送（現在 {current_time}）")
-                for item in matching:
+                # 按時間排序，依序推送所有未推送的時刻（防止一次推送過多訊息）
+                matching_sorted = sorted(matching, key=lambda x: x['scheduled_time'])
+                logger.info(f"📺 [check_scheduled_push] 發現 {len(matching_sorted)} 個未推送時刻，將依序推送（現在 {current_time}）")
+                for item in matching_sorted:
                     # 這裡會調用 AnimeTracker 的 send_anime_push 方法
                     # 但由於這是個別類別，我們需要將實際的推送邏輯交給 AnimeTracker
                     # 這裡只記錄日誌，實際推送在 AnimeTracker 中完成
@@ -206,3 +243,27 @@ class AnimeScheduleTracker:
 
         except Exception as e:
             logger.error(f"❌ [check_scheduled_push] 失敗: {e}", exc_info=True)
+
+    async def send_anime_push(self, scheduled_time: str, channel_id: int = ANIME_CHANNEL_ID) -> bool:
+        """在預定時刻推送動畫通知 - 查詢真實 API 確認已上架集
+
+        此方法應該由 AnimeScheduler 或 AnimeTracker 實際調用，
+        此處提供介面說明。
+
+        Args:
+            scheduled_time: 預定時刻，格式 "HH:MM"
+            channel_id: Discord 頻道 ID
+
+        Returns:
+            bool: 是否成功發送通知
+        """
+        # 這個方法的實際實作應該在 AnimeTracker 類別中
+        # 此處僅作為介面說明，實際邏輯參考原 anime_tracker.py 的 send_anime_push 方法
+        raise NotImplementedError("此方法應由 AnimeTracker 實際實現")
+
+    async def _check_and_send_anime(self, scheduled_time_str: str, channel) -> bool:
+        """檢查新番集並發送通知（用於多窗口檢查）
+
+        此方法的實際實作應該在 AnimeTracker 類別中。
+        """
+        raise NotImplementedError("此方法應由 AnimeTracker 實際實現")
