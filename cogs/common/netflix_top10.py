@@ -191,7 +191,7 @@ class NetflixTop10Cog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
 
-async def setup_netflix_top10(bot: commands.Bot):
+async def setup(bot: commands.Bot):
     """註冊 Cog 到 Bot"""
     await bot.add_cog(NetflixTop10Cog(bot))
     logger.info("✅ NetflixTop10Cog 已載入")
