@@ -996,11 +996,12 @@ class AnimeTracker(commands.Cog):
                 # 獲取用戶的匿名雜湊（用來防止同一用戶多次投票）
                 user_hash = str(hash(interaction.user.id))[:10]
 
-                # 記錄投票
+                # 記錄投票 - 使用 message_id 而非 message.id（持久化視圖重啟後 message 可能為 None）
+                message_id = interaction.message_id or (interaction.message.id if interaction.message else None)
                 vote_recorded = self.tracker.record_vote(
                     video_sn=self.video_sn,
                     anime_sn=self.anime_sn,
-                    message_id=interaction.message.id,
+                    message_id=message_id,
                     vote_type=vote_key,
                     user_hash=user_hash
                 )
@@ -1015,8 +1016,9 @@ class AnimeTracker(commands.Cog):
                 try:
                     from db_adapter import set_user_field, get_user_field
 
-                    # 檢查是否已發放過獎勵
-                    if not self.tracker.db.is_reward_already_given(interaction.user.id, interaction.message.id, "vote"):
+                    # 檢查是否已發放過獎勵 - 使用 message_id
+                    reward_message_id = interaction.message_id or (interaction.message.id if interaction.message else None)
+                    if reward_message_id and not self.tracker.db.is_reward_already_given(interaction.user.id, reward_message_id, "vote"):
                         # 獲取當前 KK幣
                         current_kkcoin = get_user_field(interaction.user.id, "kkcoin") or 0
                         new_kkcoin = int(current_kkcoin) + 2000
@@ -1027,7 +1029,7 @@ class AnimeTracker(commands.Cog):
                         # 記錄獎勵發放
                         self.tracker.db.record_reward(
                             user_id=interaction.user.id,
-                            message_id=interaction.message.id,
+                            message_id=reward_message_id,
                             reward_type="vote",
                             reward_amount=2000
                         )
@@ -1054,7 +1056,9 @@ class AnimeTracker(commands.Cog):
 
                 # 更新原始消息的 embed（非關鍵路徑，失敗不影響用戶體驗）
                 try:
-                    await self._update_message_stats(interaction.message)
+                    message_id = interaction.message_id or (interaction.message.id if interaction.message else None)
+                    if message_id:
+                        await self._update_message_stats(message_id=message_id, channel=interaction.channel)
                     logger.info(f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄並更新消息統計")
                 except Exception as update_error:
                     logger.error(f"❌ [_vote_callback] 更新消息統計失敗: {update_error}", exc_info=True)
@@ -1103,11 +1107,12 @@ class AnimeTracker(commands.Cog):
                             # 獲取用戶匿名雜湊
                             user_hash = str(hash(modal_interaction.user.id))[:10]
 
-                            # 記錄評論（vote_type 為空表示只是評論）
+                            # 記錄評論（vote_type 為空表示只是評論） - 使用 message_id
+                            message_id = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
                             vote_recorded = outer_self.tracker.record_vote(
                                 video_sn=outer_self.video_sn,
                                 anime_sn=outer_self.anime_sn,
-                                message_id=modal_interaction.message.id,
+                                message_id=message_id,
                                 vote_type="comment",
                                 comment=comment,
                                 user_hash=user_hash
@@ -1129,13 +1134,14 @@ class AnimeTracker(commands.Cog):
                                     current_kkcoin = get_user_field(modal_interaction.user.id, "kkcoin") or 0
                                     new_kkcoin = int(current_kkcoin) + 3000
 
-                                    # 更新 KK幣
+                                    # 更新 KK幣 - 使用 message_id
+                                    message_id_for_reward = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
                                     set_user_field(modal_interaction.user.id, "kkcoin", new_kkcoin)
 
                                     # 記錄獎勵發放
                                     outer_self.tracker.db.record_reward(
                                         user_id=modal_interaction.user.id,
-                                        message_id=modal_interaction.message.id,
+                                        message_id=message_id_for_reward,
                                         reward_type="comment",
                                         reward_amount=3000
                                     )
@@ -1154,7 +1160,9 @@ class AnimeTracker(commands.Cog):
 
                             # 更新原始消息統計
                             try:
-                                await outer_self._update_message_stats(modal_interaction.message)
+                                message_id_for_update = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
+                                if message_id_for_update:
+                                    await outer_self._update_message_stats(message_id=message_id_for_update, channel=modal_interaction.channel)
                                 logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存並更新消息統計")
                             except Exception as update_error:
                                 logger.error(f"❌ [comment_submit] 更新消息統計失敗: {update_error}", exc_info=True)
@@ -1179,10 +1187,31 @@ class AnimeTracker(commands.Cog):
                 except:
                     pass
 
-        async def _update_message_stats(self, message: discord.Message):
-            """更新消息中的投票統計"""
+        async def _update_message_stats(self, message_id: int, channel: discord.abc.Messageable = None):
+            """更新消息中的投票統計 - 支持通過 message_id 獲取消息（持久化視圖重啟後需要）"""
             try:
                 logger = logging.getLogger(__name__)
+
+                # 獲取消息對象
+                message = None
+                if channel:
+                    try:
+                        message = await channel.fetch_message(message_id)
+                        logger.info(f"📝 [_update_message_stats] 從頻道獲取消息 ID={message_id}")
+                    except discord.NotFound:
+                        logger.warning(f"⚠️ [_update_message_stats] 消息不存在 ID={message_id}")
+                        return
+                    except discord.Forbidden:
+                        logger.error(f"❌ [_update_message_stats] 無權限獲取消息 ID={message_id}")
+                        return
+                    except Exception as e:
+                        logger.error(f"❌ [_update_message_stats] 獲取消息失敗: {e}", exc_info=True)
+                        return
+
+                if not message:
+                    logger.warning(f"⚠️ [_update_message_stats] 無法獲取消息 ID={message_id}")
+                    return
+
                 logger.info(f"📝 [_update_message_stats] 開始更新消息 ID={message.id}, 頻道 ID={message.channel.id}")
 
                 if not message.embeds:
@@ -1192,9 +1221,9 @@ class AnimeTracker(commands.Cog):
                 original_embed = message.embeds[0]
                 logger.info(f"✅ [_update_message_stats] 找到 embed, 標題={original_embed.title}")
 
-                # 獲取投票統計和評論
-                stats = self.tracker.get_vote_stats(message.id)
-                comments = self.tracker.get_vote_comments(message.id, limit=3)
+                # 獲取投票統計和評論 - 使用 message_id 查詢 DB
+                stats = self.tracker.get_vote_stats(message_id)
+                comments = self.tracker.get_vote_comments(message_id, limit=3)
                 logger.info(f"📊 [_update_message_stats] 投票統計: {stats}, 評論數: {len(comments)}")
 
                 # 建立統計內容
