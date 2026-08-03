@@ -1051,15 +1051,15 @@ class AnimeDatabase:
             return False
 
     def record_reward(self, message_id: int, reward_type: str, reward_amount: int, user_id: str) -> bool:
-        """記錄獎勵發放"""
+        """記錄獎勵發放 - 同時寫入 snake_case 與 camelCase 欄位，避免 NOT NULL constraint 失敗"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT INTO {ANIME_REWARDS_TABLE}
-                    (messageId, rewardType, amount, userId)
-                    VALUES (?, ?, ?, ?)
-                """, (message_id, reward_type, reward_amount, user_id))
+                    (message_id, messageId, reward_type, rewardType, reward_amount, amount, user_id, userId, awarded_at, rewardedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """, (message_id, message_id, reward_type, reward_type, reward_amount, reward_amount, user_id, user_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -1068,7 +1068,7 @@ class AnimeDatabase:
 
     def record_vote(self, video_sn: int, anime_sn: int, message_id: int,
                     vote_type: str, comment: str = None, user_hash: str = None) -> bool:
-        """記錄匿名投票/評論
+        """記錄匿名投票/評論 - 同時寫入 snake_case 與 camelCase 欄位，避免 NOT NULL constraint 失敗
 
         Args:
             video_sn: 集數序號
@@ -1083,9 +1083,9 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT INTO {ANIME_VOTES_TABLE}
-                    (videoSn, animeSn, anime_name, voteType, userId, messageId, comment)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (video_sn, anime_sn, "", vote_type, user_hash, message_id, comment))
+                    (videoSn, animeSn, video_sn, anime_sn, anime_name, vote_type, voteType, user_hash, userId, message_id, messageId, comment, voted_at, votedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """, (video_sn, anime_sn, video_sn, anime_sn, "", vote_type, vote_type, user_hash, user_hash, message_id, message_id, comment))
                 conn.commit()
                 logger.info(f"✅ [record_vote] 記錄成功: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}")
                 return True
