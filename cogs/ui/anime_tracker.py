@@ -157,6 +157,27 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"⏭️  [AnimeTracker.cog_load] refresh_weekly_schedule 已在運行 (is_running=True)")
                 print("[COG_LOAD] ⚠️ refresh_weekly_schedule 已在運行", flush=True)
 
+            # 🔍 驗證週表刷新任務真正啟動（before_loop 可能失敗但不拋出異常）
+            await asyncio.sleep(0.5)
+            if self.refresh_weekly_schedule.is_running():
+                logger.info("✅ [AnimeTracker.cog_load] 確認 refresh_weekly_schedule 正在運行")
+                print("[COG_LOAD] ✅ 確認 refresh_weekly_schedule 正在運行", flush=True)
+            else:
+                logger.error("❌ [AnimeTracker.cog_load] refresh_weekly_schedule 啟動後狀態異常 (is_running=False)，嘗試重啟...")
+                print("[COG_LOAD_ERROR] ❌ refresh_weekly_schedule 啟動後狀態異常，嘗試重啟...", flush=True)
+                try:
+                    self.refresh_weekly_schedule.start()
+                    await asyncio.sleep(0.5)
+                    if self.refresh_weekly_schedule.is_running():
+                        logger.info("✅ [AnimeTracker.cog_load] 重啟成功")
+                        print("[COG_LOAD] ✅ 重啟成功", flush=True)
+                    else:
+                        logger.critical("💥 [AnimeTracker.cog_load] 重啟仍失敗，任務無法啟動！")
+                        print("[COG_LOAD_CRITICAL] 💥 重啟仍失敗，任務無法啟動！", flush=True)
+                except Exception as e:
+                    logger.critical(f"💥 [AnimeTracker.cog_load] 重啟異常: {e}", exc_info=True)
+                    print(f"[COG_LOAD_CRITICAL] 💥 重啟異常: {e}", flush=True)
+
             # 啟動精准派發器（背景任務，非 tasks.loop）
             print("[COG_LOAD] 啟動精準排程派發器", flush=True)
             logger.info("🚀 [AnimeTracker.cog_load] 啟動精準排程派發器")
@@ -356,8 +377,15 @@ class AnimeTracker(commands.Cog):
             day_of_week = (now.weekday() + 1) % 7 or 7
             today_schedule = self.get_today_schedule()
             if not today_schedule:
-                logger.info("ℹ️ [_catchup_missed_pushes] 今日週表為空，無需補推")
-                return
+                logger.warning("⚠️ [_catchup_missed_pushes] 今日週表為空，嘗試從 API 初始化週表...")
+                # 嘗試初始化週表（解決首次部署/非週日重啟/DB 清空問題）
+                await self._init_weekly_schedule_if_empty()
+                # 重新獲取
+                today_schedule = self.get_today_schedule()
+                if not today_schedule:
+                    logger.warning("⚠️ [_catchup_missed_pushes] 週表初始化後仍為空，無法補推")
+                    return
+                logger.info(f"✅ [_catchup_missed_pushes] 週表初始化成功，取得 {len(today_schedule)} 筆今日時程")
 
             # 找出今天已過時刻但尚未標記為已推送的項目
             missed = find_unpushed_items(today_schedule, now, future_only=False)
@@ -463,7 +491,7 @@ class AnimeTracker(commands.Cog):
                         except Exception as e:
                             logger.error(f"❌ [_periodic_catchup_check] 補推異常 {scheduled_time}: {e}")
                 else:
-                    logger.debug("😴 [_periodic_catchup_check] 本次檢查無需補推項目")
+                    logger.info("😴 [_periodic_catchup_check] 本次檢查無需補推項目")
 
                 # 每 15 分鐘檢查一次
                 await asyncio.sleep(900)
@@ -599,6 +627,11 @@ class AnimeTracker(commands.Cog):
             logger.error("❌ [_schedule_dispatcher] wait_until_ready() timeout 60s，終止任務")
             return
 
+        # 啟動時檢查 week_start_date 是否為本週（防止跨週重啟帶舊資料）
+        now = datetime.now(TW_TZ)
+        expected_week_start = self.get_week_start_date(now, api_week=True)
+        logger.info(f"📅 [_schedule_dispatcher] 啟動驗證：期望週起始日期={expected_week_start}，今日={now.strftime('%Y-%m-%d %a')}")
+
         while not self.bot.is_closed():
             try:
                 now = datetime.now(TW_TZ)
@@ -606,13 +639,13 @@ class AnimeTracker(commands.Cog):
 
                 # Debug: log today's schedule status
                 pending_count = sum(1 for item in today_schedule if not item['pushed'])
-                logger.debug(f"🔍 [_schedule_dispatcher] 今日時程 {len(today_schedule)} 筆，待推送 {pending_count} 筆")
+                logger.info(f"🔍 [_schedule_dispatcher] 今日時程 {len(today_schedule)} 筆，待推送 {pending_count} 筆")
                 for item in today_schedule:
                     status = "✅已推" if item['pushed'] else "⏳待推"
                     anime_data = item['anime_data']
                     title = (anime_data.get('title', 'N/A') if isinstance(anime_data, dict)
                             else json.loads(anime_data).get('title', 'N/A'))
-                    logger.debug(f"   {item['scheduled_time']} {status} - {title[:30]}")
+                    logger.info(f"   {item['scheduled_time']} {status} - {title[:30]}")
 
                 # 如果 today_schedule 為空，嘗試從 API 拉取週表
                 if not today_schedule:
@@ -770,19 +803,47 @@ class AnimeTracker(commands.Cog):
     @refresh_weekly_schedule.before_loop
     async def before_refresh_weekly_schedule(self):
         """等待 bot 就緒，並對齊到每天晚上 22:00 執行"""
-        await self.bot.wait_until_ready()
-
-        # 計算距離下一次 22:00 的秒數
-        now = datetime.now(TW_TZ)
-        next_run = now.replace(hour=22, minute=0, second=0, microsecond=0)
-        if next_run <= now:
-            next_run += timedelta(days=1)
-
-        sleep_seconds = (next_run - now).total_seconds()
         logger = logging.getLogger(__name__)
-        logger.info(f"⏳ [refresh_weekly_schedule] 首次執行將在 {next_run.strftime('%Y-%m-%d %H:%M:%S')} ({sleep_seconds:.0f} 秒後)")
+        max_retries = 3
+        retry_delay = 10  # 秒
 
-        await asyncio.sleep(sleep_seconds)
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"🔄 [before_refresh_weekly_schedule] 嘗試啟動 (第 {attempt}/{max_retries} 次)")
+
+                # 等待 bot ready，設 timeout 防止永遠卡住
+                try:
+                    await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
+                    logger.info("✅ [before_refresh_weekly_schedule] bot ready")
+                except asyncio.TimeoutError:
+                    logger.error("❌ [before_refresh_weekly_schedule] wait_until_ready() timeout 60s")
+                    raise
+
+                # 計算距離下一次 22:00 的秒數
+                now = datetime.now(TW_TZ)
+                next_run = now.replace(hour=22, minute=0, second=0, microsecond=0)
+                if next_run <= now:
+                    next_run += timedelta(days=1)
+
+                sleep_seconds = (next_run - now).total_seconds()
+                logger.info(f"⏳ [refresh_weekly_schedule] 首次執行將在 {next_run.strftime('%Y-%m-%d %H:%M:%S')} ({sleep_seconds:.0f} 秒後)")
+
+                # 睡眠直到目標時間，可被取消
+                await asyncio.sleep(sleep_seconds)
+                logger.info("✅ [before_refresh_weekly_schedule] 對齊完成，任務即將開始")
+                return  # 成功啟動，離開重試迴圈
+
+            except asyncio.CancelledError:
+                logger.info("🛑 [before_refresh_weekly_schedule] 任務被取消")
+                raise
+            except Exception as e:
+                logger.error(f"❌ [before_refresh_weekly_schedule] 第 {attempt} 次嘗試失敗: {e}", exc_info=True)
+                if attempt < max_retries:
+                    logger.info(f"⏳ [before_refresh_weekly_schedule] {retry_delay} 秒後重試...")
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.critical(f"💥 [before_refresh_weekly_schedule] 重試 {max_retries} 次均失敗，任務將不會啟動！")
+                    raise
 
     @refresh_weekly_schedule.error
     async def refresh_weekly_schedule_error(self, error):
@@ -793,7 +854,30 @@ class AnimeTracker(commands.Cog):
     @sync_episode_stats.before_loop
     async def before_sync_episode_stats(self):
         """等待 bot 就緒"""
-        await self.bot.wait_until_ready()
+        logger = logging.getLogger(__name__)
+        max_retries = 3
+        retry_delay = 10
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"🔄 [before_sync_episode_stats] 嘗試啟動 (第 {attempt}/{max_retries} 次)")
+                await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
+                logger.info("✅ [before_sync_episode_stats] bot ready")
+                return
+            except asyncio.CancelledError:
+                logger.info("🛑 [before_sync_episode_stats] 任務被取消")
+                raise
+            except asyncio.TimeoutError:
+                logger.error(f"❌ [before_sync_episode_stats] 第 {attempt} 次 wait_until_ready() timeout")
+            except Exception as e:
+                logger.error(f"❌ [before_sync_episode_stats] 第 {attempt} 次嘗試失敗: {e}", exc_info=True)
+
+            if attempt < max_retries:
+                logger.info(f"⏳ [before_sync_episode_stats] {retry_delay} 秒後重試...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.critical(f"💥 [before_sync_episode_stats] 重試 {max_retries} 次均失敗，任務將不會啟動！")
+                raise
 
     @sync_episode_stats.error
     async def sync_episode_stats_error(self, error):
@@ -1171,6 +1255,42 @@ class AnimeTracker(commands.Cog):
                 logger.error(f"❌ [_update_message_stats] 消息不存在或已被刪除: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
+
+
+    @app_commands.command(name="anime_refresh", description="🔄 手動刷新動畫週表（緊急補推用）")
+    @app_commands.default_permissions(administrator=True)
+    async def anime_refresh(self, interaction: discord.Interaction):
+        """手動觸發週表刷新，解決自動刷新失敗或緊急補推需求"""
+        await interaction.response.defer(ephemeral=True)
+        logger = logging.getLogger(__name__)
+        logger.info(f"🔄 [/anime_refresh] 管理員 {interaction.user} 觸發手動週表刷新")
+
+        try:
+            result = await self.refresh_weekly_schedule()
+
+            if result.get('success'):
+                embed = discord.Embed(
+                    title="✅ 週表刷新成功",
+                    description=f"週起始日期: {result['week_start_date']}\n今日時程: {len(result['today_schedule'])} 筆\n總計: {result['total_count']} 筆",
+                    color=discord.Color.green()
+                )
+                # 檢查是否有待推送項目
+                pending = sum(1 for item in result['today_schedule'] if not item.get('pushed'))
+                if pending > 0:
+                    embed.add_field(name="⏳ 待補推項目", value=f"{pending} 個時刻未推送", inline=False)
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                logger.info(f"✅ [/anime_refresh] 手動刷新完成: {result['total_count']} 筆")
+            else:
+                error = result.get('error', '未知錯誤')
+                skipped = result.get('skipped', False)
+                if skipped:
+                    await interaction.followup.send("⏭️ 跳過刷新：非執行時間（每天 22:00-22:59）", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"❌ 刷新失敗: {error}", ephemeral=True)
+                logger.warning(f"⚠️ [/anime_refresh] 手動刷新失敗: {error}")
+        except Exception as e:
+            logger.error(f"❌ [/anime_refresh] 異常: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ 執行異常: {e}", ephemeral=True)
 
 
 # ==================== 任務重啟包裝函數 ====================

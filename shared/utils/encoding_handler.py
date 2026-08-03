@@ -195,7 +195,7 @@ def setup_utf8_logging(name: Optional[str] = None,
     console_handler.setFormatter(formatter)
     
     logger.addHandler(console_handler)
-    logger.propagate = False  # 防止日誌重複
+    logger.propagate = True  # 允許子 logger 傳播到此 handler（修復 anime_tracker 等模組日誌不顯示的問題）
     
     return logger
 
