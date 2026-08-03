@@ -74,6 +74,9 @@
           "admin": ["anime_test", "anime_start"],
           "note": "需要定期維護，考慮移到獨立服務"
         },
+        "Netflix 排行榜": {
+          "active": ["netflix_top10"]
+        },
         "工作系統": {
           "active": ["work_info", "work_stats"],
           "admin": ["work_health", "work_rebuild", "work_deploy"]
@@ -325,6 +328,16 @@
         "line": 2178,
         "status": "✅ 活躍",
         "category": "動畫追蹤"
+      },
+      "netflix_top10": {
+        "name": "netflix_top10",
+        "description": "查看台灣 Netflix 每日 TOP 10 排行榜",
+        "type": "user",
+        "file": "common/netflix_top10.py",
+        "line": 1,
+        "usage": "/netflix_top10 [電影|影集]",
+        "status": "✅ 活躍",
+        "category": "娛樂"
       },
       "anime_weekly": {
         "name": "anime_weekly",
