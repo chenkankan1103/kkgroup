@@ -47,16 +47,20 @@ class NetflixTop10Cog(commands.Cog):
 
     async def _fetch_top_shows(
         self, country: str = "tw", service: str = "netflix", show_type: str = "movie"
-    ) -> list[dict]:
-        """呼叫 Streaming Availability API 取得 TOP 10 排行榜"""
+    ) -> tuple[list[dict], str]:
+        """呼叫 Streaming Availability API 取得 TOP 10 排行榜
+
+        Returns:
+            tuple: (shows_list, actual_country_used)
+        """
         import time
 
         # 檢查快取
-        cache_key = show_type
+        cache_key = f"{country}_{show_type}"
         now = time.time()
-        if _cache[cache_key] and (now - _cache["timestamp"]) < CACHE_TTL:
-            logger.debug(f"使用快取: {show_type} (剩餘 {CACHE_TTL - (now - _cache['timestamp']):.0f}s)")
-            return _cache[cache_key]
+        if _cache[cache_key] and (now - _cache.get(f"{cache_key}_timestamp", 0)) < CACHE_TTL:
+            logger.debug(f"使用快取: {country}/{show_type} (剩餘 {CACHE_TTL - (now - _cache.get(f'{cache_key}_timestamp', 0)):.0f}s)")
+            return _cache[cache_key], _cache.get(f"{cache_key}_country", country)
 
         api_key = self._get_api_key()
         params = {"country": country, "service": service, "show_type": show_type}
@@ -74,17 +78,24 @@ class NetflixTop10Cog(commands.Cog):
             ) as resp:
                 if resp.status == 429:
                     logger.warning("API 速率限制 (429)，使用快取資料")
-                    return _cache.get(cache_key) or []
+                    cached_data, cached_country = _cache.get(cache_key, ([], country))
+                    return cached_data, cached_country
                 if resp.status != 200:
                     text = await resp.text()
                     logger.error(f"API 錯誤 HTTP {resp.status}: {text[:300]}")
-                    return []
+                    # 如果是 country 不支援，嘗試 fallback 到香港 (僅限首次請求為 TW 時)
+                    if "country" in text.lower() and "not supported" in text.lower() and country.lower() == "tw":
+                        logger.info(f"Country {country} 不支援，嘗試 fallback 到 HK")
+                        return await self._fetch_top_shows("hk", service, show_type)
+                    return [], country
                 data = await resp.json()
 
         # 更新快取
-        _cache[cache_key] = data if isinstance(data, list) else data.get("shows", [])
-        _cache["timestamp"] = now
-        return _cache[cache_key]
+        shows = data if isinstance(data, list) else data.get("shows", [])
+        _cache[cache_key] = shows
+        _cache[f"{cache_key}_timestamp"] = now
+        _cache[f"{cache_key}_country"] = country
+        return shows, country
 
     def _build_embed(
         self, shows: list[dict], show_type: str, page: int = 0
@@ -151,7 +162,7 @@ class NetflixTop10Cog(commands.Cog):
 
     @app_commands.command(
         name="netflix_top10",
-        description="查看台灣 Netflix 每日 TOP 10 排行榜",
+        description="查看台灣 Netflix 每日 TOP 10 排行榜（因 API 限制實際顯示香港資料）",
     )
     @app_commands.describe(
         show_type="選擇電影或影集排行榜（預設：電影）",
@@ -174,7 +185,7 @@ class NetflixTop10Cog(commands.Cog):
         label = "電影" if st == "movie" else "影集"
 
         try:
-            shows = await self._fetch_top_shows("tw", "netflix", st)
+            shows, country_used = await self._fetch_top_shows("tw", "netflix", st)
         except ValueError as e:
             await interaction.followup.send(
                 f"❌ {e}", ephemeral=True
@@ -188,6 +199,29 @@ class NetflixTop10Cog(commands.Cog):
             return
 
         embed = self._build_embed(shows, st)
+
+        # 如果使用了 fallback 地區，在 footer 中說明
+        if country_used.lower() != "tw":
+            country_names = {
+                "hk": "香港 (HK)",
+                "jp": "日本 (JP)",
+                "kr": "韓國 (KR)",
+                "sg": "新加坡 (SG)",
+                "my": "馬來西亞 (MY)",
+                "ph": "菲律賓 (PH)",
+                "th": "泰國 (TH)",
+                "vn": "越南 (VN)"
+            }
+            country_name = country_names.get(country_used.lower(), country_used.upper())
+            embed.set_footer(
+                text=f"資料來源: Streaming Availability API by Movie of the Night\n"
+                     f"※ 因台灣無資料，顯示 {country_name} 排名"
+            )
+        else:
+            embed.set_footer(
+                text="資料來源: Streaming Availability API by Movie of the Night"
+            )
+
         await interaction.followup.send(embed=embed)
 
 
