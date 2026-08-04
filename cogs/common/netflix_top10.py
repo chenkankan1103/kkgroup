@@ -7,12 +7,15 @@ API 文件: https://docs.movieofthenight.com/resource/shows#get-top-shows
 """
 import logging
 import os
-from typing import Optional
+from typing import Optional, List, Tuple
+import asyncio
+from io import BytesIO
 
 import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +184,6 @@ class NetflixTop10Cog(commands.Cog):
                 if resp.status != 200:
                     text = await resp.text()
                     logger.error(f"API 錯誤 HTTP {resp.status}: {text[:300]}")
-                    # 如果是 API 錯誤 HTTP {resp.status}: {text[:300]}")
                     # 如果是 country 不支援，嘗試 fallback 到香港 (僅限首次請求為 TW 時)
                     if "country" in text.lower() and "not supported" in text.lower() and country.lower() == "tw":
                         logger.info(f"Country {country} 不支援，嘗試 fallback 到 HK")
@@ -244,79 +246,113 @@ class NetflixTop10Cog(commands.Cog):
         _cache[f"{cache_key}_country"] = country
         return shows, country
 
-    def _build_embed(
-        self, shows: list[dict], show_type: str, country_used: str = "tw", page: int = 0
-    ) -> discord.Embed:
-        """建立 Discord Embed 顯示排行榜"""
-        label = "🎬 電影" if show_type == "movie" else "📺 影集"
-        color = discord.Color.red() if show_type == "movie" else discord.Color.blue()
+    async def _fetch_image_bytes(self, session: aiohttp.ClientSession, url: str) -> Optional[bytes]:
+        """下載圖片二進位資料，失敗返回 None"""
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+                else:
+                    logger.warning(f"下載圖片失敗 HTTP {resp.status}: {url}")
+                    return None
+        except Exception as e:
+            logger.warning(f"下載圖片異常: {e} - {url}")
+            return None
 
-        embed = discord.Embed(
-            title=f"{label} TOP 10 — 台灣 Netflix",
-            description="今日台灣 Netflix 最受歡迎排行",
-            color=color,
-        )
-
+    async def _create_collage_file(self, shows: list[dict]) -> discord.File:
+        """非同步製作貼圖並回傳 discord.File"""
+        shows = shows[:10]
         if not shows:
-            embed.description = "⚠️ 暫時無法取得排行榜資料，請稍後再試。"
-            return embed
+            img = Image.new('RGB', (400, 100), color=(30, 30, 30))
+            draw = ImageDraw.Draw(img)
+            font = ImageFont.load_default()
+            draw.text((10, 40), "無法取得海報", fill=(255, 255, 255), font=font)
+            buf = BytesIO()
+            img.save(buf, format='PNG')
+            return discord.File(fp=buf, filename='collage.png')
 
-        # 設定主要橫幅圖片（用第 1 名的最佳橫向海報）
-        if shows:
-            main_image_url = self._get_best_image_url(shows[0])
-            if main_image_url:
-                embed.set_image(url=main_image_url)  # 大橫幅圖片
+        # 下載所有海報
+        async with aiohttp.ClientSession() as session:
+            download_tasks = []
+            poster_urls = []
+            for show in shows:
+                url = self._get_poster_url(show, width=300)
+                poster_urls.append(url)
+                if url:
+                    download_tasks.append(self._fetch_image_bytes(session, url))
+                else:
+                    download_tasks.append(None)
+            # 並行下載（過濾掉 None）
+            results = await asyncio.gather(*[t for t in download_tasks if t is not None], return_exceptions=False)
 
-        # 顯示前 10 筆
-        for i, show in enumerate(shows[:10], 1):
-            title = show.get("title", "???")
-            year = show.get("releaseYear") or show.get("firstAirYear") or "?"
+        # 組合結果，保持順序
+        images = []
+        idx = 0
+        for url in poster_urls:
+            if url:
+                data = results[idx]
+                idx += 1
+                if data is None:
+                    continue
+                try:
+                    img = Image.open(BytesIO(data)).convert("RGB")
+                except Exception:
+                    continue
+            else:
+                # 沒有 URL，跳過
+                continue
 
-            # 翻譯類型名稱為中文
-            genres_raw = [g.get("name", "") for g in show.get("genres", [])]
-            genres = self._translate_genres_to_chinese(genres_raw)
-            genres_str = ", ".join(genres) if genres else "未知類型"
+            # 調整寬度為 300，保持比例
+            base_width = 300
+            w_percent = base_width / float(img.size[0])
+            hsize = int((float(img.size[1]) * w_percent))
+            img = img.resize((base_width, hsize), Image.LANCZOS)
 
-            rating = show.get("rating", "?")
-            overview = (show.get("overview") or "無簡介")[:100]
+            # 在圖片下方繪製標題（透過新增一張底圖）
+            title = show.get("title", "未知標題")
+            # 限制標題長度
+            if len(title) > 20:
+                title = title[:17] + "..."
+            # 創建底圖
+            img_width, img_height = img.size
+            extra_height = 30  # 文字區域高度
+            new_img = Image.new('RGB', (img_width, img_height + extra_height), color=(0, 0, 0))
+            new_img.paste(img, (0, 0))
+            draw = ImageDraw.Draw(new_img)
+            font = ImageFont.load_default()
+            # 計算文字位置使其水平居中
+            text_w, text_h = draw.textsize(title, font=font)
+            text_x = (img_width - text_w) / 2
+            text_y = img_height + (extra_height - text_h) / 2
+            draw.text((text_x, text_y), title, fill=(255, 255, 255), font=font)
+            images.append(new_img)
 
-            # 取得 Netflix 連結
-            streaming = show.get("streamingOptions", {}).get("tw", {})
-            netflix_link = ""
-            if "netflix" in streaming:
-                for opt in streaming["netflix"]:
-                    netflix_link = opt.get("link", "")
-                    if netflix_link:
-                        break
+        if not images:
+            # 若全部下載失敗
+            img = Image.new('RGB', (400, 100), color=(30, 30, 30))
+            draw = ImageDraw.Draw(img)
+            font = ImageFont.load_default()
+            draw.text((10, 40), "無法取得海報", fill=(255, 255, 255), font=font)
+            buf = BytesIO()
+            img.save(buf, format='PNG')
+            return discord.File(fp=buf, filename='collage.png')
 
-            # 排名 emoji
-            rank_emoji = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"#{i}")
+        # 垂直堆疊所有圖片，間距 10 px
+        spacing = 10
+        total_width = max(img.width for img in images)
+        total_height = sum(img.height for img in images) + spacing * (len(images) - 1)
+        combined = Image.new('RGB', (total_width, total_height), color=(0, 0, 0))
+        y_offset = 0
+        for img in images:
+            # 置中粘貼（若寬度不足則靠左）
+            x_offset = (total_width - img.width) // 2
+            combined.paste(img, (x_offset, y_offset))
+            y_offset += img.height + spacing
 
-            value = f"📅 {year} 年 | ⭐ {rating}/100 | {genres_str}\n{overview}"
-            if netflix_link:
-                value += f"\n[🔗 在 Netflix 觀看]({netflix_link})"
-
-            embed.add_field(
-                name=f"{rank_emoji} {title}",
-                value=value,
-                inline=False,
-            )
-
-            # 為所有項目顯示海報縮圖（在欄位開頭添加圖片）
-            poster_url = self._get_poster_url(show, width=120)  # 小縮圖，適應所有項目
-            if poster_url:
-                # 在當前欄位值開頭添加圖片
-                current_value = embed.fields[i-1].value  # i-1 因為索引從 0 開始
-                embed.set_field_at(
-                    i-1,
-                    name=embed.fields[i-1].name,
-                    value=f"![海報]({poster_url})\n{current_value}",
-                    inline=False,
-                )
-
-        # 設定頁腳（由呼叫者負責設定最終內容以處理 fallback 國家）
-        embed.set_footer(text="資料來源: Streaming Availability API by Movie of the Night")
-        return embed
+        # 輸出到 bytes
+        buf = BytesIO()
+        combined.save(buf, format='PNG')
+        return discord.File(fp=buf, filename='collage.png')
 
     @app_commands.command(
         name="netflix_top10",
@@ -356,9 +392,31 @@ class NetflixTop10Cog(commands.Cog):
             )
             return
 
-        embed = self._build_embed(shows, st)
+        if not shows:
+            await interaction.followup.send(
+                "⚠️ 暫時無法取得排行榜資料，請稍後再試。", ephemeral=True
+            )
+            return
 
-        # 如果使用了 fallback 地區，在 footer 中說明
+        # 建立海報貼圖
+        file = await self._create_collage_file(shows)
+
+        # 建立嵌入訊息，僅顯示標題與說明，圖片放在 attachment
+        embed = discord.Embed(
+            title=f"{'🎬 電影' if st == 'movie' else '📺 影集'} TOP 10 — 台灣 Netflix",
+            description="今日台灣 Netflix 最受歡迎排行（海報見下圖）",
+            colour=discord.Color.red() if st == "movie" else discord.Color.blue(),
+        )
+        # 添加簡易文字列表（可選）
+        lines = []
+        for i, show in enumerate(shows[:10], 1):
+            title = show.get("title", "???")
+            year = str(show.get("releaseYear") or show.get("firstAirYear") or "?")
+            lines.append(f"{i}. {title} ({year})")
+        if lines:
+            embed.add_field(name="排名列表", value="\n".join(lines), inline=False)
+
+        # 設定頁腳（說明資料來源與 fallback）
         if country_used.lower() != "tw":
             country_names = {
                 "hk": "香港 (HK)",
@@ -380,7 +438,10 @@ class NetflixTop10Cog(commands.Cog):
                 text="資料來源: Streaming Availability API by Movie of the Night"
             )
 
-        await interaction.followup.send(embed=embed)
+        # 將圖片附加到嵌入訊息
+        embed.set_image(url="attachment://collage.png")
+
+        await interaction.followup.send(embed=embed, file=file)
 
 
 async def setup(bot: commands.Bot):
