@@ -18,13 +18,6 @@ import time
 from pathlib import Path
 from datetime import datetime
 import subprocess
-import requests
-from dotenv import load_dotenv
-
-# 載入 .env 以取得 GITHUB_* 等變數
-dotenv_path = Path(__file__).resolve().parents[2] / '.env'
-if dotenv_path.exists():
-    load_dotenv(dotenv_path)
 
 # 嘗試導入 requests，如果失敗則使用 urllib
 try:
@@ -35,9 +28,12 @@ except ImportError:
     import urllib.error
     HAS_REQUESTS = False
 
-# 加載 .env 文件
-env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+from dotenv import load_dotenv
+
+# 載入 .env 以取得 GITHUB_* 等變數
+dotenv_path = Path(__file__).resolve().parents[2] / '.env'
+if dotenv_path.exists():
+    load_dotenv(dotenv_path)
 
 # 配置
 CONFIG_FILE = Path(__file__).parent.parent / 'config' / 'config.json'
@@ -52,8 +48,16 @@ MAX_RETRIES = 3
 RETRY_DELAY = 2  # 秒
 
 
+def log(msg, is_error=False):
+    """記錄日誌並立即刷新"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    prefix = "❌" if is_error else "✅"
+    print(f"[{timestamp}] {prefix} {msg}")
+    sys.stdout.flush()
+
+
 def log_discord(message, is_error=False):
-    """發送消息到 Discord（可選）"""
+    """發送訊息到 Discord（可選）"""
     if not DISCORD_WEBHOOK:
         return
 
@@ -72,14 +76,13 @@ def log_discord(message, is_error=False):
             requests.post(DISCORD_WEBHOOK, json=payload, timeout=5)
         else:
             import urllib.request
-            urllib.request.urlopen(
-                urllib.request.Request(
-                    DISCORD_WEBHOOK,
-                    data=json.dumps(payload).encode('utf-8'),
-                    headers={'Content-Type': 'application/json'}
-                ),
-                timeout=5
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                DISCORD_WEBHOOK,
+                data=data,
+                headers={'Content-Type': 'application/json'}
             )
+            urllib.request.urlopen(req, timeout=5)
     except Exception as e:
         print(f"Debug: Discord 通知失敗（非致命）: {e}")
 
@@ -293,17 +296,27 @@ def update_github_webhook(tunnel_url, retry_count=0):
                 return False
         else:
             import urllib.request
+            import urllib.error
+            data = json.dumps(update_data).encode('utf-8')
             req = urllib.request.Request(
                 f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks/{webhook_id}",
-                data=json.dumps(update_data).encode('utf-8'),
+                data=data,
                 headers={**headers, 'Content-Type': 'application/json'},
                 method='PATCH'
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                if resp.status == 200:
-                    print(f"✅ Webhook 已更新成功")
-                    log_discord(f"✅ Webhook 已更新成功\n新 URL: {webhook_url}")
-                    return True
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if resp.status == 200:
+                        print(f"✅ Webhook 已更新成功")
+                        log_discord(f"✅ Webhook 已更新成功\n新 URL: {webhook_url}")
+                        return True
+            except urllib.error.HTTPError as e:
+                print(f"❌ Webhook 更新失敗 (HTTP {e.code}): {e.read().decode('utf-8')}")
+                if retry_count < MAX_RETRIES:
+                    print(f"⏱️ 等待 {RETRY_DELAY} 秒後重試 ({retry_count + 1}/{MAX_RETRIES})...")
+                    time.sleep(RETRY_DELAY)
+                    return update_github_webhook(tunnel_url, retry_count + 1)
+                return False
     except Exception as e:
         print(f"❌ 更新 webhook 失敗: {e}")
         if retry_count < MAX_RETRIES:
