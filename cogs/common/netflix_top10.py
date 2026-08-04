@@ -302,29 +302,20 @@ class NetflixTop10Cog(commands.Cog):
                 inline=False,
             )
 
-            # 為前 3 名顯示小型海報縮圖（在欄位開頭添加圖片）
-            if i <= 3:
-                poster_url = self._get_poster_url(show, width=150)  # 小縮圖
-                if poster_url:
-                    # 在當前欄位值開頭添加圖片
-                    current_value = embed.fields[i-1].value  # i-1 因為索引從 0 開始
-                    embed.set_field_at(
-                        i-1,
-                        name=embed.fields[i-1].name,
-                        value=f"![海報]({poster_url})\n{current_value}",
-                        inline=False,
-                    )
-
-        # 添加橫向海報列表（最多 5 張）
-        poster_urls = []
-        for show in shows[:5]:
-            poster_url = self._get_poster_url(show, width=200)
+            # 為所有項目顯示海報縮圖（在欄位開頭添加圖片）
+            poster_url = self._get_poster_url(show, width=120)  # 小縮圖，適應所有項目
             if poster_url:
-                poster_urls.append(poster_url)
-        if poster_urls:
-            poster_md = " ".join([f"![海報]({url})" for url in poster_urls])
-            embed.add_field(name="🎬 海報預覽", value=poster_md, inline=False)
+                # 在當前欄位值開頭添加圖片
+                current_value = embed.fields[i-1].value  # i-1 因為索引從 0 開始
+                embed.set_field_at(
+                    i-1,
+                    name=embed.fields[i-1].name,
+                    value=f"![海報]({poster_url})\n{current_value}",
+                    inline=False,
+                )
 
+        # 設定頁腳（由呼叫者負責設定最終內容以處理 fallback 國家）
+        embed.set_footer(text="資料來源: Streaming Availability API by Movie of the Night")
         return embed
 
     @app_commands.command(
