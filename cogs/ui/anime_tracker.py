@@ -996,8 +996,8 @@ class AnimeTracker(commands.Cog):
                 # 獲取用戶的匿名雜湊（用來防止同一用戶多次投票）
                 user_hash = str(hash(interaction.user.id))[:10]
 
-                # 記錄投票 - 使用 message_id 而非 message.id（持久化視圖重啟後 message 可能為 None）
-                message_id = interaction.message_id or (interaction.message.id if interaction.message else None)
+                # 記錄投票 - 使用 message.id 持久化視圖重啟後需要從 storage 獲取
+                message_id = interaction.message.id if interaction.message else None
                 vote_recorded = self.tracker.record_vote(
                     video_sn=self.video_sn,
                     anime_sn=self.anime_sn,
