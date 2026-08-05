@@ -321,7 +321,12 @@ class NetflixTop10Cog(commands.Cog):
             draw = ImageDraw.Draw(new_img)
             font = ImageFont.load_default()
             # 計算文字位置使其水平居中
-            text_w, text_h = draw.textsize(title, font=font)
+            try:
+                text_w, text_h = font.getsize(title)
+            except AttributeError:
+                left, top, right, bottom = font.getbbox(title)
+                text_w = right - left
+                text_h = bottom - top
             text_x = (img_width - text_w) / 2
             text_y = img_height + (extra_height - text_h) / 2
             draw.text((text_x, text_y), title, fill=(255, 255, 255), font=font)
