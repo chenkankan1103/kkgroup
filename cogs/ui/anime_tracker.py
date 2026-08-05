@@ -1,6 +1,6 @@
 """
-Bahamut 動畫追蹤 Cog - 自動通知新上架集數
-已重構為三個模組：Push/Core、Schedule Tracker、Ranking Stats
+Bahamut ?�畫追蹤 Cog - ?��??�知?��??��???
+已�?構為三個模組�?Push/Core?�Schedule Tracker?�Ranking Stats
 """
 
 import discord
@@ -17,32 +17,32 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
-from zoneinfo import ZoneInfo  # Python 3.9+, 正確的時區處理
+from zoneinfo import ZoneInfo  # Python 3.9+, �?��?��??�?��?
 import time
-from urllib.parse import quote  # 用於生成 QuickChart URL
+from urllib.parse import quote  # ?�於?��? QuickChart URL
 from shared.utils.view_registry import PersistentViewBase
 
-# 台灣時區
+# ?�灣?��?
 TW_TZ = ZoneInfo('Asia/Taipei')
 
-# 配置
-ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"  # 統一使用主數據庫，所有表在同一個 user_data.db 中
+# ?�置
+ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"  # 統�?使用主數?�庫，�??�表?��?一??user_data.db �?
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
-API_TIMEOUT = 15  # 秒
+API_TIMEOUT = 15  # �?
 
-# 表名與欄位
+# 表�??��?�?
 NOTIFIED_TABLE = "anime_notified"
 BOOTSTRAP_FLAG_TABLE = "anime_bootstrap"
-ANIME_DETAILS_TABLE = "anime_details"  # 永恆快取動畫詳細信息
-ANIME_STATS_TABLE = "anime_statistics"  # 動畫統計數據（觀看人數、評分趨勢等）
-EPISODE_STATS_TABLE = "episode_statistics"  # 每集統計數據
-ANIME_MESSAGES_TABLE = "anime_messages"  # 消息 ID 追蹤（用於 bot 重啟時恢復 view）
-ANIME_VOTES_TABLE = "anime_votes"  # 匿名投票結果
-ANIME_REWARDS_TABLE = "anime_rewards"  # KK幣獎勵追踪（防止重複發放）
-ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（防止重複檢查，解決 Bot 重啟問題）
-ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
+ANIME_DETAILS_TABLE = "anime_details"  # 永�?快�??�畫詳細信息
+ANIME_STATS_TABLE = "anime_statistics"  # ?�畫統�??��?（�??�人?�、�??�趨?��?�?
+EPISODE_STATS_TABLE = "episode_statistics"  # 每�?統�??��?
+ANIME_MESSAGES_TABLE = "anime_messages"  # 消息 ID 追蹤（用??bot ?��??�恢�?view�?
+ANIME_VOTES_TABLE = "anime_votes"  # ?��??�票結�?
+ANIME_REWARDS_TABLE = "anime_rewards"  # KK�???�追踪�??�止?��??�放�?
+ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日?�刻檢查歷史（防止�?複檢?��?�?�� Bot ?��??��?�?
+ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # ?�表：�??��??��??��??��??��?程表（�?�?API 調用�?
 
-# 導入自定義模組
+# 導入?��?義模�?
 from .push_core import AnimePushCore, AnimeDatabase, ANIME_CHANNEL_ID, find_unpushed_items
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
@@ -52,36 +52,36 @@ logger = logging.getLogger(__name__)
 
 
 class AnimeTracker(commands.Cog):
-    """Bahamut 動畫追蹤主 Cog"""
+    """Bahamut ?�畫追蹤�?Cog"""
 
     def __init__(self, bot: commands.Bot):
-        print("[ANIME_INIT_START] 🎬 AnimeTracker.__init__ 開始執行")
+        print("[ANIME_INIT_START] ?�� AnimeTracker.__init__ ?��??��?")
         import sys
         sys.stdout.flush()
 
         import logging
         logger = logging.getLogger(__name__)
         logger.info("=" * 50)
-        logger.info("📺 [AnimeTracker.__init__] 開始初始化")
+        logger.info("?�� [AnimeTracker.__init__] ?��??��???)
         self.bot = bot
         try:
             self.db = AnimeDatabase(ANIME_DB_PATH)
-            logger.info(f"✅ [AnimeTracker.__init__] 數據庫已初始化: {ANIME_DB_PATH}")
+            logger.info(f"??[AnimeTracker.__init__] ?��?庫已?��??? {ANIME_DB_PATH}")
         except Exception as e:
-            logger.error(f"❌ [AnimeTracker.__init__] 數據庫初始化失敗: {e}", exc_info=True)
+            logger.error(f"??[AnimeTracker.__init__] ?��?庫�?始�?失�?: {e}", exc_info=True)
             raise
 
-        # 初始化三個模組
+        # ?��??��??�模�?
         self.push_core = AnimePushCore(ANIME_DB_PATH)
         self.schedule_tracker = AnimeScheduleTracker(ANIME_DB_PATH)
         self.ranking_stats = RankingStats(ANIME_DB_PATH)
 
-        # 設置相互依賴
+        # 設置?��?依賴
         self.push_core.set_bot_and_db(bot, self.db)
         self.schedule_tracker.set_dependencies(bot, self.db, self.push_core)
         self.ranking_stats.set_dependencies(bot, self.db)
 
-        # 設定 View 生成工廠（解決循環導入問題）
+        # 設�? View ?��?工�?（解決循?��??��?題�?
         self.push_core.set_view_factory(self.generate_anime_view)
 
         self.task_started = False
@@ -99,204 +99,204 @@ class AnimeTracker(commands.Cog):
             f"'{type(self).__name__}' object has no attribute '{name}'"
         )
 
-    # ==================== CULC 生命週期方法 ====================
+    # ==================== CULC ?�命?��??��? ====================
 
     async def cog_load(self):
-        """Cog 加載時啟動任務"""
+        """Cog ?��??��??�任??""
         import sys
         import time
         start_time = time.perf_counter()
-        print("[COG_LOAD_START] 🎬 cog_load() 開始執行", flush=True)
+        print("[COG_LOAD_START] ?�� cog_load() ?��??��?", flush=True)
         sys.stdout.flush()
 
         import logging
         logger = logging.getLogger(__name__)
 
         logger.info("=" * 50)
-        logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
+        logger.info("?�� [AnimeTracker.cog_load] cog_load() 被調??)
 
         try:
-            # 恢復舊消息的視圖 - 在 bot 重啟時重新註冊所有永久視圖
-            print("[COG_LOAD] 嘗試恢復舊消息 view...", flush=True)
+            # ?�復?��??��?視�? - ??bot ?��??��??�註?��??�永久�???
+            print("[COG_LOAD] ?�試?�復?��???view...", flush=True)
             await self._restore_old_message_views()
-            print("[COG_LOAD] ✅ 舊消息 view 恢復完成", flush=True)
+            print("[COG_LOAD] ???��???view ?�復完�?", flush=True)
 
-            # 如果週表為空，立即拉取（解決首次部署/非禮拜天重啟問題）
-            print("[COG_LOAD] 檢查週表是否需要初始化...", flush=True)
+            # 如�??�表?�空，�??��??��?�?��首次?�署/?�禮?�天?��??��?�?
+            print("[COG_LOAD] 檢查?�表?�否?�要�?始�?...", flush=True)
             await self._init_weekly_schedule_if_empty()
-            print("[COG_LOAD] ✅ 週表初始化檢查完成", flush=True)
+            print("[COG_LOAD] ???�表?��??�檢?��???, flush=True)
 
-            # 補推：若 bot 重啟前有未推送的動畫，啟動時補發
-            print("[COG_LOAD] 檢查是否有錯過的動畫推送...", flush=True)
+            # 補推：若 bot ?��??��??�推?��??�畫，�??��?補發
+            print("[COG_LOAD] 檢查?�否?�錯?��??�畫?��?..", flush=True)
             await self._catchup_missed_pushes()
-            print("[COG_LOAD] ✅ 補推檢查完成", flush=True)
+            print("[COG_LOAD] ??補推檢查完�?", flush=True)
 
-            # 啟動週表刷新任務
-            print("[COG_LOAD] 檢查 refresh_weekly_schedule 任務狀態", flush=True)
+            # ?��??�表?�新任�?
+            print("[COG_LOAD] 檢查 refresh_weekly_schedule 任�??�??, flush=True)
             if not self.refresh_weekly_schedule.is_running():
-                print("[COG_LOAD] ✅ 啟動 refresh_weekly_schedule 任務", flush=True)
-                logger.info("🚀 [AnimeTracker.cog_load] 啟動 refresh_weekly_schedule 任務")
+                print("[COG_LOAD] ???��? refresh_weekly_schedule 任�?", flush=True)
+                logger.info("?? [AnimeTracker.cog_load] ?��? refresh_weekly_schedule 任�?")
                 try:
                     self.refresh_weekly_schedule.start()
-                    logger.info(f"✅ [AnimeTracker.cog_load] refresh_weekly_schedule 已啟動 (is_running={self.refresh_weekly_schedule.is_running()})")
-                    print("[COG_LOAD] ✅ refresh_weekly_schedule 已啟動", flush=True)
+                    logger.info(f"??[AnimeTracker.cog_load] refresh_weekly_schedule 已�???(is_running={self.refresh_weekly_schedule.is_running()})")
+                    print("[COG_LOAD] ??refresh_weekly_schedule 已�???, flush=True)
                 except Exception as start_err:
-                    logger.error(f"❌ [AnimeTracker.cog_load] 啟動 refresh_weekly_schedule 失敗: {start_err}", exc_info=True)
-                    print(f"[COG_LOAD] ❌ 啟動 refresh_weekly_schedule 失敗: {start_err}", flush=True)
-                    # 重試一次
+                    logger.error(f"??[AnimeTracker.cog_load] ?��? refresh_weekly_schedule 失�?: {start_err}", exc_info=True)
+                    print(f"[COG_LOAD] ???��? refresh_weekly_schedule 失�?: {start_err}", flush=True)
+                    # ?�試一�?
                     try:
                         await asyncio.sleep(1)
-                        logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 refresh_weekly_schedule...")
+                        logger.info("?? [AnimeTracker.cog_load] ?�試?��? refresh_weekly_schedule...")
                         self.refresh_weekly_schedule.start()
-                        logger.info("✅ [AnimeTracker.cog_load] 重試成功，refresh_weekly_schedule 已啟動")
-                        print("[COG_LOAD] ✅ 重試成功，refresh_weekly_schedule 已啟動", flush=True)
+                        logger.info("??[AnimeTracker.cog_load] ?�試?��?，refresh_weekly_schedule 已�???)
+                        print("[COG_LOAD] ???�試?��?，refresh_weekly_schedule 已�???, flush=True)
                     except Exception as retry_err:
-                        logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
-                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
+                        logger.error(f"??[AnimeTracker.cog_load] ?�試失�?: {retry_err}", exc_info=True)
+                        print(f"[COG_LOAD] ???�試失�?: {retry_err}", flush=True)
             else:
-                logger.info(f"⏭️  [AnimeTracker.cog_load] refresh_weekly_schedule 已在運行 (is_running=True)")
-                print("[COG_LOAD] ⚠️ refresh_weekly_schedule 已在運行", flush=True)
+                logger.info(f"?��?  [AnimeTracker.cog_load] refresh_weekly_schedule 已在?��? (is_running=True)")
+                print("[COG_LOAD] ?��? refresh_weekly_schedule 已在?��?", flush=True)
 
-            # 🔍 驗證週表刷新任務真正啟動（before_loop 可能失敗但不拋出異常）
+            # ?? 驗�??�表?�新任�??�正?��?（before_loop ?�能失�?但�??�出?�常�?
             await asyncio.sleep(0.5)
             if self.refresh_weekly_schedule.is_running():
-                logger.info("✅ [AnimeTracker.cog_load] 確認 refresh_weekly_schedule 正在運行")
-                print("[COG_LOAD] ✅ 確認 refresh_weekly_schedule 正在運行", flush=True)
+                logger.info("??[AnimeTracker.cog_load] 確�? refresh_weekly_schedule �?��?��?")
+                print("[COG_LOAD] ??確�? refresh_weekly_schedule �?��?��?", flush=True)
             else:
-                logger.error("❌ [AnimeTracker.cog_load] refresh_weekly_schedule 啟動後狀態異常 (is_running=False)，嘗試重啟...")
-                print("[COG_LOAD_ERROR] ❌ refresh_weekly_schedule 啟動後狀態異常，嘗試重啟...", flush=True)
+                logger.error("??[AnimeTracker.cog_load] refresh_weekly_schedule ?��?後�??�異�?(is_running=False)，�?試�???..")
+                print("[COG_LOAD_ERROR] ??refresh_weekly_schedule ?��?後�??�異常�??�試?��?...", flush=True)
                 try:
                     self.refresh_weekly_schedule.start()
                     await asyncio.sleep(0.5)
                     if self.refresh_weekly_schedule.is_running():
-                        logger.info("✅ [AnimeTracker.cog_load] 重啟成功")
-                        print("[COG_LOAD] ✅ 重啟成功", flush=True)
+                        logger.info("??[AnimeTracker.cog_load] ?��??��?")
+                        print("[COG_LOAD] ???��??��?", flush=True)
                     else:
-                        logger.critical("💥 [AnimeTracker.cog_load] 重啟仍失敗，任務無法啟動！")
-                        print("[COG_LOAD_CRITICAL] 💥 重啟仍失敗，任務無法啟動！", flush=True)
+                        logger.critical("?�� [AnimeTracker.cog_load] ?��?仍失?��?任�??��??��?�?)
+                        print("[COG_LOAD_CRITICAL] ?�� ?��?仍失?��?任�??��??��?�?, flush=True)
                 except Exception as e:
-                    logger.critical(f"💥 [AnimeTracker.cog_load] 重啟異常: {e}", exc_info=True)
-                    print(f"[COG_LOAD_CRITICAL] 💥 重啟異常: {e}", flush=True)
+                    logger.critical(f"?�� [AnimeTracker.cog_load] ?��??�常: {e}", exc_info=True)
+                    print(f"[COG_LOAD_CRITICAL] ?�� ?��??�常: {e}", flush=True)
 
-            # 啟動精准派發器（背景任務，非 tasks.loop）
-            print("[COG_LOAD] 啟動精準排程派發器", flush=True)
-            logger.info("🚀 [AnimeTracker.cog_load] 啟動精準排程派發器")
+            # ?��?精�?派發?��??�景任�?，�? tasks.loop�?
+            print("[COG_LOAD] ?��?精�??��?派發??, flush=True)
+            logger.info("?? [AnimeTracker.cog_load] ?��?精�??��?派發??)
             self._dispatcher_task = asyncio.create_task(
                 self._wrap_task_with_restart("_schedule_dispatcher", self._schedule_dispatcher))
-            # 給任務一點時間啟動，檢查是否有異常
+            # 給任?��?點�??��??��?檢查?�否?�異�?
             await asyncio.sleep(0.1)
             if self._dispatcher_task.done():
                 exc = self._dispatcher_task.exception()
                 if exc:
-                    logger.error(f"❌ [AnimeTracker.cog_load] _schedule_dispatcher 任務立即失敗: {exc}", exc_info=True)
-                    print(f"[COG_LOAD_ERROR] _schedule_dispatcher 任務立即失敗: {exc}", flush=True)
+                    logger.error(f"??[AnimeTracker.cog_load] _schedule_dispatcher 任�?立即失�?: {exc}", exc_info=True)
+                    print(f"[COG_LOAD_ERROR] _schedule_dispatcher 任�?立即失�?: {exc}", flush=True)
                     raise exc
                 else:
-                    logger.warning(f"⚠️ [AnimeTracker.cog_load] _schedule_dispatcher 任務意外結束（無異常）")
-                    print("[COG_LOAD_WARN] _schedule_dispatcher 任務意外結束", flush=True)
+                    logger.warning(f"?��? [AnimeTracker.cog_load] _schedule_dispatcher 任�??��?結�?（無?�常�?)
+                    print("[COG_LOAD_WARN] _schedule_dispatcher 任�??��?結�?", flush=True)
             else:
-                logger.info("✅ [AnimeTracker.cog_load] 精準排程派發器已啟動並運行中")
-                print("[COG_LOAD] ✅ 精準排程派發器已啟動並運行中", flush=True)
+                logger.info("??[AnimeTracker.cog_load] 精�??��?派發?�已?��?並�?行中")
+                print("[COG_LOAD] ??精�??��?派發?�已?��?並�?行中", flush=True)
 
-            # 啟動定期補推任務（每 5 分鐘檢查最近 10 分鐘內漏推項目並真正發送）
-            print("[COG_LOAD] 啟動定期補推檢查任務", flush=True)
-            logger.info("🚀 [AnimeTracker.cog_load] 啟動定期補推檢查任務")
+            # ?��?定�?補推任�?（�? 5 ?��?檢查?��?10 ?��??��??��??�並?�正?�送�?
+            print("[COG_LOAD] ?��?定�?補推檢查任�?", flush=True)
+            logger.info("?? [AnimeTracker.cog_load] ?��?定�?補推檢查任�?")
             try:
                 self._catchup_check_task = asyncio.create_task(
                     self._wrap_task_with_restart("_periodic_catchup_check", self._periodic_catchup_check))
-                # 給任務一點時間啟動，檢查是否有異常
+                # 給任?��?點�??��??��?檢查?�否?�異�?
                 await asyncio.sleep(0.1)
                 if self._catchup_check_task.done():
                     exc = self._catchup_check_task.exception()
                     if exc:
-                        logger.error(f"❌ [AnimeTracker.cog_load] _periodic_catchup_check 任務立即失敗: {exc}", exc_info=True)
-                        print(f"[COG_LOAD_ERROR] _periodic_catchup_check 任務立即失敗: {exc}", flush=True)
+                        logger.error(f"??[AnimeTracker.cog_load] _periodic_catchup_check 任�?立即失�?: {exc}", exc_info=True)
+                        print(f"[COG_LOAD_ERROR] _periodic_catchup_check 任�?立即失�?: {exc}", flush=True)
                     else:
-                        logger.warning(f"⚠️ [AnimeTracker.cog_load] _periodic_catchup_check 任務意外結束")
+                        logger.warning(f"?��? [AnimeTracker.cog_load] _periodic_catchup_check 任�??��?結�?")
                 else:
-                    logger.info("✅ [AnimeTracker.cog_load] 定期補推檢查任務已啟動並運行中")
-                    print("[COG_LOAD] ✅ 定期補推檢查任務已啟動並運行中", flush=True)
+                    logger.info("??[AnimeTracker.cog_load] 定�?補推檢查任�?已�??�並?��?�?)
+                    print("[COG_LOAD] ??定�?補推檢查任�?已�??�並?��?�?, flush=True)
             except Exception as e:
-                logger.error(f"❌ [AnimeTracker.cog_load] 創建 _periodic_catchup_check 任務失敗: {e}", exc_info=True)
-                print(f"[COG_LOAD_ERROR] 創建 _periodic_catchup_check 任務失敗: {e}", flush=True)
+                logger.error(f"??[AnimeTracker.cog_load] ?�建 _periodic_catchup_check 任�?失�?: {e}", exc_info=True)
+                print(f"[COG_LOAD_ERROR] ?�建 _periodic_catchup_check 任�?失�?: {e}", flush=True)
                 raise
 
-            # 啟動週期統計同步任務
-            print("[COG_LOAD] 檢查 sync_episode_stats 任務狀態", flush=True)
+            # ?��??��?統�??�步任�?
+            print("[COG_LOAD] 檢查 sync_episode_stats 任�??�??, flush=True)
             if not self.sync_episode_stats.is_running():
-                print("[COG_LOAD] ✅ 啟動 sync_episode_stats 任務", flush=True)
-                logger.info("🚀 [AnimeTracker.cog_load] 啟動 sync_episode_stats 任務")
+                print("[COG_LOAD] ???��? sync_episode_stats 任�?", flush=True)
+                logger.info("?? [AnimeTracker.cog_load] ?��? sync_episode_stats 任�?")
                 try:
                     self.sync_episode_stats.start()
-                    logger.info(f"✅ [AnimeTracker.cog_load] sync_episode_stats 已啟動 (is_running={self.sync_episode_stats.is_running()})")
-                    print("[COG_LOAD] ✅ sync_episode_stats 已啟動", flush=True)
+                    logger.info(f"??[AnimeTracker.cog_load] sync_episode_stats 已�???(is_running={self.sync_episode_stats.is_running()})")
+                    print("[COG_LOAD] ??sync_episode_stats 已�???, flush=True)
                 except Exception as start_err:
-                    logger.error(f"❌ [AnimeTracker.cog_load] 啨動 sync_episode_stats 失敗: {start_err}", exc_info=True)
-                    print(f"[COG_LOAD] ❌ 啨動 sync_episode_stats 失敗: {start_err}", flush=True)
-                    # 重試一次
+                    logger.error(f"??[AnimeTracker.cog_load] ?��? sync_episode_stats 失�?: {start_err}", exc_info=True)
+                    print(f"[COG_LOAD] ???��? sync_episode_stats 失�?: {start_err}", flush=True)
+                    # ?�試一�?
                     try:
                         await asyncio.sleep(1)
-                        logger.info("🔄 [AnimeTracker.cog_load] 重試啟動 sync_episode_stats...")
+                        logger.info("?? [AnimeTracker.cog_load] ?�試?��? sync_episode_stats...")
                         self.sync_episode_stats.start()
-                        logger.info("✅ [AnimeTracker.cog_load] 重試成功，sync_episode_stats 已啟動")
-                        print("[COG_LOAD] ✅ 重試成功，sync_episode_stats 已啟動", flush=True)
+                        logger.info("??[AnimeTracker.cog_load] ?�試?��?，sync_episode_stats 已�???)
+                        print("[COG_LOAD] ???�試?��?，sync_episode_stats 已�???, flush=True)
                     except Exception as retry_err:
-                        logger.error(f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}", exc_info=True)
-                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
+                        logger.error(f"??[AnimeTracker.cog_load] ?�試失�?: {retry_err}", exc_info=True)
+                        print(f"[COG_LOAD] ???�試失�?: {retry_err}", flush=True)
             else:
-                logger.info(f"⏭️  [AnimeTracker.cog_load] sync_episode_stats 已在運行 (is_running=True)")
-                print("[COG_LOAD] ⚠️ sync_episode_stats 已在運行", flush=True)
+                logger.info(f"?��?  [AnimeTracker.cog_load] sync_episode_stats 已在?��? (is_running=True)")
+                print("[COG_LOAD] ?��? sync_episode_stats 已在?��?", flush=True)
 
-            print("[COG_LOAD_END] ✅ cog_load() 執行完成", flush=True)
+            print("[COG_LOAD_END] ??cog_load() ?��?完�?", flush=True)
             sys.stdout.flush()
-            logger.info("✅ [AnimeTracker.cog_load] 任務啟動完成")
+            logger.info("??[AnimeTracker.cog_load] 任�??��?完�?")
 
         except Exception as e:
             import traceback
-            error_msg = f"❌ [cog_load] 執行失敗: {e}"
+            error_msg = f"??[cog_load] ?��?失�?: {e}"
             print(f"[COG_LOAD_ERROR] {error_msg}", flush=True)
             print(f"[COG_LOAD_ERROR] Traceback:\n{traceback.format_exc()}", flush=True)
             logger.error(error_msg, exc_info=True)
             raise
         elapsed = time.perf_counter() - start_time
-        logger.info(f"⏱️ [AnimeTracker.cog_load] 總耗時: {elapsed:.2f} 秒")
-        print(f"[COG_LOAD_TIMING] 總耗時: {elapsed:.2f} 秒", flush=True)
+        logger.info(f"?��? [AnimeTracker.cog_load] 總耗�?: {elapsed:.2f} �?)
+        print(f"[COG_LOAD_TIMING] 總耗�?: {elapsed:.2f} �?, flush=True)
         logger.info("=" * 50)
 
     def cog_unload(self):
-        """Cog 卸載時停止任務"""
+        """Cog ?��??��?止任??""
         logger = logging.getLogger(__name__)
         logger.info("=" * 50)
-        logger.info("🛑 [AnimeTracker.cog_unload] cog_unload() 被調用")
+        logger.info("?? [AnimeTracker.cog_unload] cog_unload() 被調??)
         try:
-            # ✅ check_new_anime 已移除
+            # ??check_new_anime 已移??
 
             if self.refresh_weekly_schedule.is_running():
                 self.refresh_weekly_schedule.cancel()
-                logger.info("✅ [AnimeTracker.cog_unload] refresh_weekly_schedule 已停止")
+                logger.info("??[AnimeTracker.cog_unload] refresh_weekly_schedule 已�?�?)
 
-            # 停止精準排程派發器（背景任務，非 tasks.loop）
+            # ?�止精�??��?派發?��??�景任�?，�? tasks.loop�?
             if hasattr(self, '_dispatcher_task') and not self._dispatcher_task.done():
                 self._dispatcher_task.cancel()
-                logger.info("✅ [AnimeTracker.cog_unload] 精準排程派發器已停止")
+                logger.info("??[AnimeTracker.cog_unload] 精�??��?派發?�已?�止")
 
-            # 停止定期補推檢查任務
+            # ?�止定�?補推檢查任�?
             if hasattr(self, '_catchup_check_task') and not self._catchup_check_task.done():
                 self._catchup_check_task.cancel()
-                logger.info("✅ [AnimeTracker.cog_unload] 定期補推檢查任務已停止")
+                logger.info("??[AnimeTracker.cog_unload] 定�?補推檢查任�?已�?�?)
 
             if self.sync_episode_stats.is_running():
                 self.sync_episode_stats.cancel()
-                logger.info("✅ [AnimeTracker.cog_unload] sync_episode_stats 已停止")
+                logger.info("??[AnimeTracker.cog_unload] sync_episode_stats 已�?�?)
 
         except Exception as e:
-            logger.error(f"❌ [AnimeTracker.cog_unload] 任務停止失敗: {e}", exc_info=True)
+            logger.error(f"??[AnimeTracker.cog_unload] 任�??�止失�?: {e}", exc_info=True)
         logger.info("=" * 50)
 
-    # ==================== 核心功能方法 ====================
+    # ==================== ?��??�能?��? ====================
 
     async def generate_anime_view(self, episode: dict) -> Optional[discord.ui.View]:
-        """生成動畫視圖 - 創建投票和評論按鈕 + 動畫頁/觀看連結"""
+        """?��??�畫視�? - ?�建?�票?��?論�???+ ?�畫??觀?��??"""
         try:
             video_sn = episode.get("videoSn")
             anime_sn = episode.get("animeSn")
@@ -305,35 +305,35 @@ class AnimeTracker(commands.Cog):
 
             vote_view = self.AnimeVoteView(episode, self)
             anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
-            vote_view.add_item(discord.ui.Button(label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link))
+            vote_view.add_item(discord.ui.Button(label="?? ?�畫??, url=anime_url, style=discord.ButtonStyle.link))
             video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
-            vote_view.add_item(discord.ui.Button(label="▶️ 觀看", url=video_url, style=discord.ButtonStyle.link))
+            vote_view.add_item(discord.ui.Button(label="?��? 觀??, url=video_url, style=discord.ButtonStyle.link))
             return vote_view
         except Exception as e:
-            logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
+            logger.error(f"??[generate_anime_view] Failed to generate view: {e}", exc_info=True)
             return None
 
-    # ==================== 視圖恢復和啟動方法 ====================
+    # ==================== 視�??�復?��??�方�?====================
 
     async def _restore_old_message_views(self):
-        """Bot 重啟時恢復舊消息的視圖"""
+        """Bot ?��??�恢復�?消息?��???""
         try:
-            # 獲取所有保存的消息資訊
+            # ?��??�?��?存�?消息資�?
             messages = self.get_unviewed_messages()
 
             for msg_info in messages:
                 try:
-                    # 重新生成視圖並註冊到 bot
-                    # 注意：這裡需要重新從 API 獲取 episode 數據來生成正確的視圖
-                    # 為簡化起見，我們先註冊一個基本的視圖，實際內容會在用戶互動時更新
-                    # 時重新生成
-                    # get_unviewed_messages 返回 snake_case keys (video_sn, anime_sn, etc.)
+                    # ?�新?��?視�?並註?�到 bot
+                    # 注�?：這裡?�要�??��? API ?��? episode ?��?來�??�正確�?視�?
+                    # ?�簡?�起見�??�們�?註�?一?�基?��?視�?，實?�內容�??�用?��??��??�新
+                    # ?��??��???
+                    # get_unviewed_messages 返�? snake_case keys (video_sn, anime_sn, etc.)
                     video_sn = msg_info.get('video_sn') or msg_info.get('videoSn')
 
-                    # 從資料庫獲取動畫資訊
+                    # 從�??�庫?��??�畫資�?
                     anime_info = self.db.get_anime_details_by_videosn(video_sn)
                     if anime_info:
-                        # 創建一個假的 episode 字典用於生成視圖
+                        # ?�建一?��???episode 字典?�於?��?視�?
                         episode = {
                             'videoSn': video_sn,
                             'animeSn': anime_info.get('animeSn'),
@@ -342,32 +342,32 @@ class AnimeTracker(commands.Cog):
                             'cover': anime_info.get('cover_url', '')
                         }
 
-                        # 生成視圖
+                        # ?��?視�?
                         view = await self.generate_anime_view(episode)
                         if view:
-                            # 關鍵：必須傳入 message_id 才能讓永久視圖在重啟後正常工作
+                            # ?�鍵：�??�傳??message_id ?�能讓永久�??�在?��?後正常工�?
                             message_id = msg_info.get('messageId') or msg_info.get('message_id')
                             if message_id:
                                 self.bot.add_view(view, message_id=int(message_id))
-                                logger.info(f"✅ [_restore_old_message_views] 已註冊永久視圖 message_id={message_id}")
+                                logger.info(f"??[_restore_old_message_views] 已註?�永久�???message_id={message_id}")
                             else:
-                                logger.warning(f"⚠️ [_restore_old_message_views] 缺少 message_id，無法註冊永久視圖")
+                                logger.warning(f"?��? [_restore_old_message_views] 缺�? message_id，無法註?�永久�???)
 
                 except Exception as e:
                     logger = logging.getLogger(__name__)
-                    logger.error(f"❌ [_restore_old_message_views] 復原視圖失敗 for message {msg_info.get('messageId')}: {e}")
+                    logger.error(f"??[_restore_old_message_views] 復�?視�?失�? for message {msg_info.get('messageId')}: {e}")
                     continue
 
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ [_restore_old_message_views] 失敗: {e}")
+            logger.error(f"??[_restore_old_message_views] 失�?: {e}")
 
     async def _catchup_missed_pushes(self):
-        """Bot 重啟時補推今日已過時刻但尚未推送的動畫（真正發送，不再只標記）
+        """Bot ?��??��??��??�已?��??��?尚未?�送�??�畫（�?�?��?��?不�??��?記�?
 
-        修復：原實作只在重啟時把過時刻標記為 pushed=1 卻不實際發送，導致
-        重啟期間錯過的動畫永久遺失。現在改為實際呼叫 send_anime_push 補發。
-        send_anime_push 內部已會在 API 成功後標記 pushed=1，故此處不重複標記。
+        修復：�?實�??�在?��??��??��??��?記為 pushed=1 ?��?實�??�送�?導致
+        ?��??��??��??��??�永久遺失。現?�改?�實?�呼??send_anime_push 補發??
+        send_anime_push ?�部已�???API ?��?後�?�?pushed=1，�?此�?不�?複�?記�?
         """
         logger = logging.getLogger(__name__)
         try:
@@ -377,19 +377,19 @@ class AnimeTracker(commands.Cog):
             day_of_week = (now.weekday() + 1) % 7 or 7
             today_schedule = self.get_today_schedule()
             if not today_schedule:
-                logger.warning("⚠️ [_catchup_missed_pushes] 今日週表為空，嘗試從 API 初始化週表...")
-                # 嘗試初始化週表（解決首次部署/非週日重啟/DB 清空問題）
+                logger.warning("?��? [_catchup_missed_pushes] 今日?�表?�空，�?試�? API ?��??�週表...")
+                # ?�試?��??�週表（解決�?次部�??�週日?��?/DB 清空?��?�?
                 await self._init_weekly_schedule_if_empty()
-                # 重新獲取
+                # ?�新?��?
                 today_schedule = self.get_today_schedule()
                 if not today_schedule:
-                    logger.warning("⚠️ [_catchup_missed_pushes] 週表初始化後仍為空，無法補推")
+                    logger.warning("?��? [_catchup_missed_pushes] ?�表?��??��?仍為空�??��?補推")
                     return
-                logger.info(f"✅ [_catchup_missed_pushes] 週表初始化成功，取得 {len(today_schedule)} 筆今日時程")
+                logger.info(f"??[_catchup_missed_pushes] ?�表?��??��??��??��? {len(today_schedule)} 筆�??��?�?)
 
-            # 找出今天已過時刻但尚未標記為已推送的項目
+            # ?�出今天已�??�刻但�??��?記為已推?��??�目
             missed = find_unpushed_items(today_schedule, now, future_only=False)
-            logger.info(f"🔄 [_catchup_missed_pushes] 發現 {len(missed)} 個重啟前漏推項目，開始補推")
+            logger.info(f"?? [_catchup_missed_pushes] ?�現 {len(missed)} ?��??��?漏推?�目，�?始�???)
             for item in missed:
                 scheduled_time = item['scheduled_time']
                 try:
@@ -397,7 +397,7 @@ class AnimeTracker(commands.Cog):
                         year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                     )
                     diff_seconds = (now - sched_dt).total_seconds()
-                    logger.info(f"📺 [_catchup_missed_pushes] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
+                    logger.info(f"?�� [_catchup_missed_pushes] 補推?�刻: {scheduled_time} (距�? {diff_seconds:.0f} 秒�?)")
 
                     success = await self.send_anime_push(
                         scheduled_time, ANIME_CHANNEL_ID,
@@ -405,32 +405,32 @@ class AnimeTracker(commands.Cog):
                         day_of_week=day_of_week
                     )
                     if success:
-                        logger.info(f"✅ [_catchup_missed_pushes] 補推成功: {scheduled_time}")
+                        logger.info(f"??[_catchup_missed_pushes] 補推?��?: {scheduled_time}")
                     else:
-                        logger.warning(f"⚠️ [_catchup_missed_pushes] 補推無新番或失敗: {scheduled_time}")
+                        logger.warning(f"?��? [_catchup_missed_pushes] 補推?�新?��?失�?: {scheduled_time}")
                 except Exception as e:
-                    logger.error(f"❌ [_catchup_missed_pushes] 補推異常 {scheduled_time}: {e}", exc_info=True)
-                await asyncio.sleep(2)  # 避免短時間內連續發送太多訊息
+                    logger.error(f"??[_catchup_missed_pushes] 補推?�常 {scheduled_time}: {e}", exc_info=True)
+                await asyncio.sleep(2)  # ?��??��??�內????�送太多�???
         except Exception as e:
-            logger.error(f"❌ [_catchup_missed_pushes] 失敗: {e}", exc_info=True)
+            logger.error(f"??[_catchup_missed_pushes] 失�?: {e}", exc_info=True)
 
     async def _periodic_catchup_check(self):
         """
-        定期補推檢查：每 15 分鐘執行一次，檢查今日所有「已過時但未推送」的項目並真正發送
-        解決 dispatcher 錯過時刻、bot 重啟後漏推等問題
-        （頻率從 5 分鐘降為 15 分鐘以減少 API 呼叫，避免被巴哈 ban IP）
+        定�?補推檢查：�? 15 ?��??��?一次�?檢查今日?�?�「已?��?但未?�送」�??�目並�?�?��??
+        �?�� dispatcher ?��??�刻?�bot ?��?後�??��??��?
+        （頻?��? 5 ?��??�為 15 ?��?以�?�?API ?�叫，避?�被巴�? ban IP�?
         """
         logger = logging.getLogger(__name__)
         print("[DEBUG_CATCHUP] _periodic_catchup_check function entered", flush=True)
-        logger.info("🔄 [_periodic_catchup_check] 定期補推檢查任務啟動（每 5 分鐘）")
+        logger.info("?? [_periodic_catchup_check] 定�?補推檢查任�??��?（�? 5 ?��?�?)
 
-        # 等待 bot ready，但設 timeout 防止卡死
+        # 等�? bot ready，�?�?timeout ?�止?�死
         try:
             await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
             print("[DEBUG_CATCHUP] bot.wait_until_ready() completed", flush=True)
-            logger.info("✅ [_periodic_catchup_check] bot ready，開始執行補推檢查")
+            logger.info("??[_periodic_catchup_check] bot ready，�?始執行�??�檢??)
         except asyncio.TimeoutError:
-            logger.error("❌ [_periodic_catchup_check] wait_until_ready() timeout 60s，終止任務")
+            logger.error("??[_periodic_catchup_check] wait_until_ready() timeout 60s，�?止任??)
             print("[DEBUG_CATCHUP] wait_until_ready() TIMEOUT!", flush=True)
             return
 
@@ -442,32 +442,32 @@ class AnimeTracker(commands.Cog):
                 today_schedule = self.get_today_schedule()
 
                 if not today_schedule:
-                    logger.warning("⚠️ [_periodic_catchup_check] today_schedule 為空，嘗試從 API 拉取週表...")
-                    # 嘗試初始化週表（類似 cog_load 時的邏輯）
+                    logger.warning("?��? [_periodic_catchup_check] today_schedule ?�空，�?試�? API ?��??�表...")
+                    # ?�試?��??�週表（�?�?cog_load ?��??�輯�?
                     await self._init_weekly_schedule_if_empty()
-                    # 重新獲取
+                    # ?�新?��?
                     today_schedule = self.get_today_schedule()
                     if not today_schedule:
-                        logger.warning("⚠️ [_periodic_catchup_check] 週表初始化後仍為空，跳過本次檢查")
-                        await asyncio.sleep(300)  # 5 分鐘
+                        logger.warning("?��? [_periodic_catchup_check] ?�表?��??��?仍為空�?跳�??�次檢查")
+                        await asyncio.sleep(300)  # 5 ?��?
                         continue
 
                 # Debug: log today's schedule status
                 pending_count = sum(1 for item in today_schedule if not item['pushed'])
-                logger.info(f"🔍 [_periodic_catchup_check] 今日時程 {len(today_schedule)} 筆，待補推 {pending_count} 筆")
+                logger.info(f"?? [_periodic_catchup_check] 今日?��? {len(today_schedule)} 筆�?待�???{pending_count} �?)
                 for item in today_schedule:
-                    status = "✅已推" if item['pushed'] else "⏳待補"
+                    status = "?�已?? if item['pushed'] else "?��?�?
                     anime_data = item['anime_data']
                     title = (anime_data.get('title', 'N/A') if isinstance(anime_data, dict)
                             else json.loads(anime_data).get('title', 'N/A'))
                     logger.debug(f"   {item['scheduled_time']} {status} - {title[:30]}")
 
-                # 找出：pushed=0 且 scheduled_time <= 當前時間（今日所有已過時未推送項目）
+                # ?�出：pushed=0 �?scheduled_time <= ?��??��?（�??��??�已?��??�推?��??��?
                 catchup_items = find_unpushed_items(today_schedule, now, future_only=False)
 
                 if catchup_items:
-                    logger.info(f"🔄 [_periodic_catchup_check] 發現 {len(catchup_items)} 個今日漏推項目，開始補推")
-                    # 已經由 find_unpushed_items 排序
+                    logger.info(f"?? [_periodic_catchup_check] ?�現 {len(catchup_items)} ?��??��??��??��??��?補推")
+                    # 已�???find_unpushed_items ?��?
 
                     for item in catchup_items:
                         scheduled_time = item['scheduled_time']
@@ -476,7 +476,7 @@ class AnimeTracker(commands.Cog):
                                 year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                             )
                             diff_seconds = (now - sched_dt).total_seconds()
-                            logger.info(f"📺 [_periodic_catchup_check] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
+                            logger.info(f"?�� [_periodic_catchup_check] 補推?�刻: {scheduled_time} (距�? {diff_seconds:.0f} 秒�?)")
 
                             success = await self.send_anime_push(
                                 scheduled_time,
@@ -485,39 +485,39 @@ class AnimeTracker(commands.Cog):
                                 week_start_date=week_start_str
                             )
                             if success:
-                                logger.info(f"✅ [_periodic_catchup_check] 補推成功: {scheduled_time}")
+                                logger.info(f"??[_periodic_catchup_check] 補推?��?: {scheduled_time}")
                             else:
-                                logger.warning(f"⚠️ [_periodic_catchup_check] 補推無新番或失敗: {scheduled_time}")
+                                logger.warning(f"?��? [_periodic_catchup_check] 補推?�新?��?失�?: {scheduled_time}")
                         except Exception as e:
-                            logger.error(f"❌ [_periodic_catchup_check] 補推異常 {scheduled_time}: {e}")
+                            logger.error(f"??[_periodic_catchup_check] 補推?�常 {scheduled_time}: {e}")
                 else:
-                    logger.info("😴 [_periodic_catchup_check] 本次檢查無需補推項目")
+                    logger.info("?�� [_periodic_catchup_check] ?�次檢查?��?補推?�目")
 
-                # 每 15 分鐘檢查一次
+                # �?15 ?��?檢查一�?
                 await asyncio.sleep(900)
 
             except asyncio.CancelledError:
-                logger.info("🛑 [_periodic_catchup_check] 任務被取消")
+                logger.info("?? [_periodic_catchup_check] 任�?被�?�?)
                 break
             except Exception as e:
-                logger.error(f"❌ [_periodic_catchup_check] 異常: {e}", exc_info=True)
-                await asyncio.sleep(60)  # 錯誤時等 1 分鐘避免狂迴圈
+                logger.error(f"??[_periodic_catchup_check] ?�常: {e}", exc_info=True)
+                await asyncio.sleep(60)  # ?�誤?��? 1 ?��??��??�迴??
 
     async def _init_weekly_schedule_if_empty(self):
-        """如果本週的週表為空，立即從 API 拉取（解決首次部署/非禮拜天重啟問題）"""
+        """如�??�週�??�表?�空，�??��? API ?��?（解決�?次部�??�禮?�天?��??��?�?""
         try:
             await self.bot.wait_until_ready()
             today_schedule = self.get_today_schedule()
             if today_schedule:
                 logger = logging.getLogger(__name__)
-                logger.info(f"✅ [_init_weekly_schedule_if_empty] 週表已有 {len(today_schedule)} 筆，跳過")
+                logger.info(f"??[_init_weekly_schedule_if_empty] ?�表已�? {len(today_schedule)} 筆�?跳�?")
                 return
 
             logger = logging.getLogger(__name__)
-            logger.info("🔄 [_init_weekly_schedule_if_empty] 週表為空，立即從 API 拉取...")
+            logger.info("?? [_init_weekly_schedule_if_empty] ?�表?�空，�??��? API ?��?...")
             schedule = await self._get_anime_schedule()
             if not schedule:
-                logger.warning("⚠️ [_init_weekly_schedule_if_empty] 無法拉取時程表 API")
+                logger.warning("?��? [_init_weekly_schedule_if_empty] ?��??��??��?�?API")
                 return
 
             now = datetime.now(TW_TZ)
@@ -539,23 +539,23 @@ class AnimeTracker(commands.Cog):
 
             if schedule_data:
                 self.save_weekly_schedule(week_start_str, schedule_data)
-                logger.info(f"✅ [_init_weekly_schedule_if_empty] 週表初始化完成: {len(schedule_data)} 筆")
+                logger.info(f"??[_init_weekly_schedule_if_empty] ?�表?��??��??? {len(schedule_data)} �?)
 
-                # 清理孤兒記錄
+                # 清�?孤�?記�?
                 if hasattr(self.db, 'clean_orphaned_records'):
                     orphan_stats = self.db.clean_orphaned_records(week_start_str)
                     if orphan_stats.get('messages', 0) > 0 or orphan_stats.get('notified', 0) > 0:
-                        logger.info(f"🧹 [_init_weekly_schedule_if_empty] 清理孤兒記錄: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}")
+                        logger.info(f"?�� [_init_weekly_schedule_if_empty] 清�?孤�?記�?: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}")
             else:
-                logger.warning("⚠️ [_init_weekly_schedule_if_empty] API 返回空時程表")
+                logger.warning("?��? [_init_weekly_schedule_if_empty] API 返�?空�?程表")
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ [_init_weekly_schedule_if_empty] 失敗: {e}", exc_info=True)
+            logger.error(f"??[_init_weekly_schedule_if_empty] 失�?: {e}", exc_info=True)
 
-    # ==================== API 相關方法 ====================
+    # ==================== API ?��??��? ====================
 
     async def fetch_new_anime_from_api(self) -> List[Dict]:
-        """從 API 獲取最近更新的動畫"""
+        """�?API ?��??�近更?��??�畫"""
         try:
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -564,7 +564,7 @@ class AnimeTracker(commands.Cog):
                         return None
                     data = await resp.json()
 
-                    # API 回應結構: { "data": { "newAnime": { "date": [...], ... } } }
+                    # API ?��?結�?: { "data": { "newAnime": { "date": [...], ... } } }
                     new_anime = data.get('data', {}).get('newAnime')
                     if not new_anime or 'date' not in new_anime:
                         return None
@@ -572,11 +572,11 @@ class AnimeTracker(commands.Cog):
                     return new_anime['date']
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ Error fetching new anime from API: {e}")
+            logger.error(f"??Error fetching new anime from API: {e}")
             return None
 
     async def fetch_all_recent_anime_from_api(self) -> List[Dict]:
-        """獲取所有最近更新的動畫（用於排行榜）"""
+        """?��??�?��?近更?��??�畫（用?��?行�?�?""
         try:
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -591,11 +591,11 @@ class AnimeTracker(commands.Cog):
                     return data['newAnime']
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ Error fetching all recent anime from API: {e}")
+            logger.error(f"??Error fetching all recent anime from API: {e}")
             return None
 
     async def fetch_anime_details_from_api(self, video_sn: int) -> Optional[Dict]:
-        """從 API 獲取單集動畫詳細信息"""
+        """�?API ?��??��??�畫詳細信息"""
         try:
             url = f"https://api.gamer.com.tw/mobile_app/anime/v2/video.php?vsn={video_sn}"
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
@@ -607,30 +607,30 @@ class AnimeTracker(commands.Cog):
                     return data
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ Error fetching anime details from API: {e}")
+            logger.error(f"??Error fetching anime details from API: {e}")
             return None
 
-    # ==================== 排程任務 ====================
+    # ==================== ?��?任�? ====================
 
-    # 排程分發器：在「下一個待推送時刻」精確喚醒，呼叫 API → 推送 → 睡到下一個時刻
-    # 取代原每分鐘輪詢，大幅減少 API 呼叫
+    # ?��??�發?��??�「�?一?��??�送�??�」精確�??��??�叫 API ???��????�到下�??��???
+    # ?�代?��??��?輪詢，大幅�?�?API ?�叫
     async def _schedule_dispatcher(self):
-        """背景任務：精確在每個 scheduled_time 喚醒並推送"""
+        """?�景任�?：精確在每�?scheduled_time ?��?並推??""
         logger = logging.getLogger(__name__)
-        logger.info("🚀 [_schedule_dispatcher] 排程分發器啟動")
+        logger.info("?? [_schedule_dispatcher] ?��??�發?��???)
 
-        # 等待 bot ready，但設 timeout 防止卡死（參考 _periodic_catchup_check）
+        # 等�? bot ready，�?�?timeout ?�止?�死（�???_periodic_catchup_check�?
         try:
             await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
-            logger.info("✅ [_schedule_dispatcher] bot ready，開始執行排程分發")
+            logger.info("??[_schedule_dispatcher] bot ready，�?始執行�?程�???)
         except asyncio.TimeoutError:
-            logger.error("❌ [_schedule_dispatcher] wait_until_ready() timeout 60s，終止任務")
+            logger.error("??[_schedule_dispatcher] wait_until_ready() timeout 60s，�?止任??)
             return
 
-        # 啟動時檢查 week_start_date 是否為本週（防止跨週重啟帶舊資料）
+        # ?��??�檢??week_start_date ?�否?�本?��??�止跨週�??�帶?��??��?
         now = datetime.now(TW_TZ)
         expected_week_start = self.get_week_start_date(now, api_week=True)
-        logger.info(f"📅 [_schedule_dispatcher] 啟動驗證：期望週起始日期={expected_week_start}，今日={now.strftime('%Y-%m-%d %a')}")
+        logger.info(f"?? [_schedule_dispatcher] ?��?驗�?：�??�週起始日??{expected_week_start}，�???{now.strftime('%Y-%m-%d %a')}")
 
         while not self.bot.is_closed():
             try:
@@ -639,265 +639,265 @@ class AnimeTracker(commands.Cog):
 
                 # Debug: log today's schedule status
                 pending_count = sum(1 for item in today_schedule if not item['pushed'])
-                logger.info(f"🔍 [_schedule_dispatcher] 今日時程 {len(today_schedule)} 筆，待推送 {pending_count} 筆")
+                logger.info(f"?? [_schedule_dispatcher] 今日?��? {len(today_schedule)} 筆�?待推??{pending_count} �?)
                 for item in today_schedule:
-                    status = "✅已推" if item['pushed'] else "⏳待推"
+                    status = "?�已?? if item['pushed'] else "?��???
                     anime_data = item['anime_data']
                     title = (anime_data.get('title', 'N/A') if isinstance(anime_data, dict)
                             else json.loads(anime_data).get('title', 'N/A'))
                     logger.info(f"   {item['scheduled_time']} {status} - {title[:30]}")
 
-                # 如果 today_schedule 為空，嘗試從 API 拉取週表
+                # 如�? today_schedule ?�空，�?試�? API ?��??�表
                 if not today_schedule:
-                    logger.warning("⚠️ [_schedule_dispatcher] today_schedule 為空，嘗試從 API 拉取週表...")
+                    logger.warning("?��? [_schedule_dispatcher] today_schedule ?�空，�?試�? API ?��??�表...")
                     await self._init_weekly_schedule_if_empty()
                     today_schedule = self.get_today_schedule()
                     if not today_schedule:
-                        logger.warning("⚠️ [_schedule_dispatcher] 週表初始化後仍為空，睡到明天 00:00 重試")
+                        logger.warning("?��? [_schedule_dispatcher] ?�表?��??��?仍為空�??�到?�天 00:00 ?�試")
                         tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
                         sleep_seconds = (tomorrow - now).total_seconds()
                         await asyncio.sleep(sleep_seconds)
                         continue
 
-                # 找出今天「尚未推送」且「時間 >= 現在」的最早一筆
+                # ?�出今天?��??�推?�」�??��???>= ?�在?��??�?��?�?
                 next_item = None
                 for item in today_schedule:
                     if item['pushed']:
                         continue
                     scheduled = item['scheduled_time']
                     try:
-                        datetime.strptime(scheduled, "%H:%M")  # 驗證格式
+                        datetime.strptime(scheduled, "%H:%M")  # 驗�??��?
                         next_item = item
                         break
                     except ValueError as e:
-                        logger.warning(f"⚙ [{self.__class__.__name__}] 無法解析排程時間 '{scheduled}': {e}")
+                        logger.warning(f"??[{self.__class__.__name__}] ?��?�???��??��? '{scheduled}': {e}")
                     except Exception as e:
-                        logger.error(f"❌ [{self.__class__.__name__}] 處理排程時間時發生未預期錯誤 '{scheduled}': {e}", exc_info=True)
+                        logger.error(f"??[{self.__class__.__name__}] ?��??��??��??�發?�未?��??�誤 '{scheduled}': {e}", exc_info=True)
 
                 if next_item:
                     scheduled = next_item['scheduled_time']
-                    # 計算要睡多久（秒）
+                    # 計�?要睡多�?（�?�?
                     try:
                         sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
                             year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
                         )
                     except ValueError as e:
-                        logger.warning(f"⚸ [{self.__class__.__name__}] 無法解析排程時間 '{scheduled}' 計算睡眠時間: {e}")
+                        logger.warning(f"??[{self.__class__.__name__}] ?��?�???��??��? '{scheduled}' 計�??��??��?: {e}")
                         continue
                     except Exception as e:
-                        logger.error(f"❌ [{self.__class__.__name__}] 處理排程時間時發生未預期錯誤 '{scheduled}' 計算睡眠時間: {e}", exc_info=True)
+                        logger.error(f"??[{self.__class__.__name__}] ?��??��??��??�發?�未?��??�誤 '{scheduled}' 計�??��??��?: {e}", exc_info=True)
                         continue
                     sleep_seconds = (sched_dt - now).total_seconds()
 
-                    # 🔑 方案：提前 30 秒喚醒預熱 API，等到準點再發送
-                    # 避免提前推送（API 可能還沒更新），也避免延遲
+                    # ?? ?��?：�???30 秒�??��???API，�??��?點�??��?
+                    # ?��??��??�送�?API ?�能?��??�新）�?也避?�延??
                     preheat_seconds = max(0, sleep_seconds - 30)
 
-                    # 睡到預熱時間（最多睡 24 小時防呆）
+                    # ?�到?�熱?��?（�?多睡 24 小�??��?�?
                     if preheat_seconds > 0:
-                        logger.info(f"😴 [_schedule_dispatcher] 下一檔 {scheduled}，睡 {preheat_seconds:.0f} 秒（提前 30s 預熱）")
+                        logger.info(f"?�� [_schedule_dispatcher] 下�?�?{scheduled}，睡 {preheat_seconds:.0f} 秒�??��? 30s ?�熱�?)
                         await asyncio.sleep(min(preheat_seconds, 86400))
 
-                    # 預熱：提前 fetch API，讓巴哈有時間回應
-                    logger.info(f"🔥 [_schedule_dispatcher] 預熱 {scheduled}，提前 fetch API...")
+                    # ?�熱：�???fetch API，�?巴�??��??��???
+                    logger.info(f"?�� [_schedule_dispatcher] ?�熱 {scheduled}，�???fetch API...")
                     preheat_episodes = await self.fetch_new_anime_from_api()
                     if preheat_episodes:
-                        logger.info(f"🔥 [_schedule_dispatcher] 預熱完成，API 回傳 {len(preheat_episodes)} 筆")
+                        logger.info(f"?�� [_schedule_dispatcher] ?�熱完�?，API ?�傳 {len(preheat_episodes)} �?)
                     else:
-                        logger.warning(f"⚠️ [_schedule_dispatcher] 預熱 API 無回應，稍後推送時會重試")
+                        logger.warning(f"?��? [_schedule_dispatcher] ?�熱 API ?��??��?稍�??�送�??��?�?)
 
-                    # 等到準點（剩餘的 30 秒）
+                    # 等到準�?（剩餘�? 30 秒�?
                     now = datetime.now(TW_TZ)
                     remaining = (sched_dt - now).total_seconds()
                     if remaining > 0:
-                        logger.info(f"⏳ [_schedule_dispatcher] 等待 {remaining:.0f} 秒到準點 {scheduled}")
+                        logger.info(f"??[_schedule_dispatcher] 等�? {remaining:.0f} 秒到準�? {scheduled}")
                         await asyncio.sleep(remaining)
 
-                    # 準點推送
+                    # 準�??��?
                     now = datetime.now(TW_TZ)
-                    logger.info(f"⏰ [_schedule_dispatcher] 準點 {scheduled}，推送（當前 {now.strftime('%H:%M:%S')}）")
+                    logger.info(f"??[_schedule_dispatcher] 準�? {scheduled}，推?��??��? {now.strftime('%H:%M:%S')}�?)
 
-                    # 傳入預熱結果，避免 send_anime_push 重複呼叫 API
+                    # ?�入?�熱結�?，避??send_anime_push ?��??�叫 API
                     success = await self.send_anime_push(
                         scheduled, ANIME_CHANNEL_ID,
                         prefetched_episodes=preheat_episodes
                     )
                     if success:
-                        logger.info(f"✅ [_schedule_dispatcher] {scheduled} 推送成功")
+                        logger.info(f"??[_schedule_dispatcher] {scheduled} ?�送�???)
                     else:
-                        # API 尚未更新或時段無匹配 → 短暫等待後重試當前時刻
-                        logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 推送未完成，30s 後重試...")
+                        # API 尚未?�新?��?段無?��? ???�暫等�?後�?試當?��???
+                        logger.warning(f"?��? [_schedule_dispatcher] {scheduled} ?�送未完�?�?0s 後�?�?..")
                         await asyncio.sleep(30)
-                        # 重試時不使用預熱資料，讓 send_anime_push 重新 fetch API
+                        # ?�試?��?使用?�熱資�?，�? send_anime_push ?�新 fetch API
                         success = await self.send_anime_push(scheduled, ANIME_CHANNEL_ID)
                         if success:
-                            logger.info(f"✅ [_schedule_dispatcher] {scheduled} 重試成功")
+                            logger.info(f"??[_schedule_dispatcher] {scheduled} ?�試?��?")
                         else:
-                            logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 重試仍失敗，留給 catchup 處理")
-                        # 睡 5 分鐘避免無限重試，讓 catchup 在下一輪處理
+                            logger.warning(f"?��? [_schedule_dispatcher] {scheduled} ?�試仍失?��??�給 catchup ?��?")
+                        # ??5 ?��??��??��??�試，�? catchup ?��?一輪�???
                         await asyncio.sleep(300)
                 else:
-                    # 今天沒有待推送項目 → 睡到明天 00:00 重新載入時程
+                    # 今天沒�?待推?��??????�到?�天 00:00 ?�新載入?��?
                     tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
                     sleep_seconds = (tomorrow - now).total_seconds()
-                    logger.info(f"😴 [_schedule_dispatcher] 今日無待推項目，睡到明天 00:00 ({sleep_seconds:.0f} 秒)")
+                    logger.info(f"?�� [_schedule_dispatcher] 今日?��??��??��??�到?�天 00:00 ({sleep_seconds:.0f} �?")
                     await asyncio.sleep(sleep_seconds)
 
             except asyncio.CancelledError:
-                logger.info("🛑 [_schedule_dispatcher] 任務被取消")
+                logger.info("?? [_schedule_dispatcher] 任�?被�?�?)
                 break
             except Exception as e:
-                logger.error(f"❌ [_schedule_dispatcher] 異常: {e}", exc_info=True)
-                await asyncio.sleep(60)  # 錯誤時休息 1 分鐘避免狂迴圈
+                logger.error(f"??[_schedule_dispatcher] ?�常: {e}", exc_info=True)
+                await asyncio.sleep(60)  # ?�誤?��???1 ?��??��??�迴??
 
     @tasks.loop(hours=24)
     async def refresh_weekly_schedule(self):
-        """每天晚上 22:00 拉取完整週表全量覆蓋，並檢查今日 <=22:00 的漏推項目進行補推"""
+        """每天?��? 22:00 ?��?完整?�表?��?覆�?，並檢查今日 <=22:00 ?��??��??�進�?補推"""
         result = await self.schedule_tracker.refresh_weekly_schedule()
 
         if not result.get('success'):
             if result.get('skipped'):
-                return  # 非 22:00 靜默跳過
+                return  # ??22:00 ?��?跳�?
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ [refresh_weekly_schedule] 週表刷新失敗: {result.get('error')}")
+            logger.error(f"??[refresh_weekly_schedule] ?�表?�新失�?: {result.get('error')}")
             return
 
-        # 週表刷新成功，檢查今日已過去/當前時刻(<=22:00)且未推送的項目進行補推
+        # ?�表?�新?��?，檢?��??�已?�去/?��??�刻(<=22:00)且未?�送�??�目?��?補推
         today_schedule = result.get('today_schedule', [])
         now = datetime.now(TW_TZ)
         current_time_str = now.strftime("%H:%M")
 
         logger = logging.getLogger(__name__)
-        logger.info(f"✅ [refresh_weekly_schedule] 週表刷新完成，檢查補推項目（現在 {current_time_str}）")
+        logger.info(f"??[refresh_weekly_schedule] ?�表?�新完�?，檢?��??��??��??�在 {current_time_str}�?)
 
-        # 篩選：pushed=0 且 scheduled_time <= 22:00（今天的推送時段已結束）
+        # 篩選：pushed=0 �?scheduled_time <= 22:00（�?天�??�送�?段已結�?�?
         missed = []
         for item in today_schedule:
             if item['pushed']:
                 continue
             scheduled = item['scheduled_time']
             try:
-                # 僅處理 <= 當前時間（22:00 執行時，當前即為 22:xx，所以 <=22:00 即為今日已過去時段）
+                # ?��???<= ?��??��?�?2:00 ?��??��??��??�為 22:xx，�?�?<=22:00 ?�為今日已�??��?段�?
                 if scheduled <= current_time_str:
                     missed.append(item)
             except Exception as e:
-                logger.error(f"❌ [refresh_weekly_schedule] 處理時刻時發生錯誤 '{scheduled}': {e}", exc_info=True)
+                logger.error(f"??[refresh_weekly_schedule] ?��??�刻?�發?�錯�?'{scheduled}': {e}", exc_info=True)
 
         if missed:
             missed_sorted = sorted(missed, key=lambda x: x['scheduled_time'])
-            logger.info(f"📺 [refresh_weekly_schedule] 發現 {len(missed_sorted)} 個漏推時刻，開始補推")
+            logger.info(f"?�� [refresh_weekly_schedule] ?�現 {len(missed_sorted)} ?��??��??��??��?補推")
             for item in missed_sorted:
                 await self.send_anime_push(item['scheduled_time'], ANIME_CHANNEL_ID)
                 await asyncio.sleep(2)
         else:
-            logger.info(f"ℹ️ [refresh_weekly_schedule] 今日無漏推項目")
+            logger.info(f"?��? [refresh_weekly_schedule] 今日?��??��???)
 
     @tasks.loop(hours=6)
     async def sync_episode_stats(self):
-        """自動發送週統計 - 每週天 台灣時間 23:00 發送 - 已停用：被每日檢查取代"""
-        # 此功能已被 daily_anime_check 取代
+        """?��??�送週統�?- 每週天 ?�灣?��? 23:00 ?��?- 已�??��?被�??�檢?��?�?""
+        # 此�??�已�?daily_anime_check ?�代
         pass
 
-    # ==================== 任務啟動和錯誤處理 ====================
+    # ==================== 任�??��??�錯誤�???====================
 
     @refresh_weekly_schedule.before_loop
     async def before_refresh_weekly_schedule(self):
-        """等待 bot 就緒，並對齊到每天晚上 22:00 執行"""
+        """等�? bot 就�?，並對�??��?天�?�?22:00 ?��?"""
         logger = logging.getLogger(__name__)
         max_retries = 3
-        retry_delay = 10  # 秒
+        retry_delay = 10  # �?
 
         for attempt in range(1, max_retries + 1):
             try:
-                logger.info(f"🔄 [before_refresh_weekly_schedule] 嘗試啟動 (第 {attempt}/{max_retries} 次)")
+                logger.info(f"?? [before_refresh_weekly_schedule] ?�試?��? (�?{attempt}/{max_retries} �?")
 
-                # 等待 bot ready，設 timeout 防止永遠卡住
+                # 等�? bot ready，設 timeout ?�止永�??��?
                 try:
                     await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
-                    logger.info("✅ [before_refresh_weekly_schedule] bot ready")
+                    logger.info("??[before_refresh_weekly_schedule] bot ready")
                 except asyncio.TimeoutError:
-                    logger.error("❌ [before_refresh_weekly_schedule] wait_until_ready() timeout 60s")
+                    logger.error("??[before_refresh_weekly_schedule] wait_until_ready() timeout 60s")
                     raise
 
-                # 計算距離下一次 22:00 的秒數
+                # 計�?距離下�?�?22:00 ?��???
                 now = datetime.now(TW_TZ)
                 next_run = now.replace(hour=22, minute=0, second=0, microsecond=0)
                 if next_run <= now:
                     next_run += timedelta(days=1)
 
                 sleep_seconds = (next_run - now).total_seconds()
-                logger.info(f"⏳ [refresh_weekly_schedule] 首次執行將在 {next_run.strftime('%Y-%m-%d %H:%M:%S')} ({sleep_seconds:.0f} 秒後)")
+                logger.info(f"??[refresh_weekly_schedule] 首次?��?將在 {next_run.strftime('%Y-%m-%d %H:%M:%S')} ({sleep_seconds:.0f} 秒�?)")
 
-                # 睡眠直到目標時間，可被取消
+                # ?��??�到?��??��?，可被�?�?
                 await asyncio.sleep(sleep_seconds)
-                logger.info("✅ [before_refresh_weekly_schedule] 對齊完成，任務即將開始")
-                return  # 成功啟動，離開重試迴圈
+                logger.info("??[before_refresh_weekly_schedule] 對�?完�?，任?�即將�?�?)
+                return  # ?��??��?，離?��?試迴??
 
             except asyncio.CancelledError:
-                logger.info("🛑 [before_refresh_weekly_schedule] 任務被取消")
+                logger.info("?? [before_refresh_weekly_schedule] 任�?被�?�?)
                 raise
             except Exception as e:
-                logger.error(f"❌ [before_refresh_weekly_schedule] 第 {attempt} 次嘗試失敗: {e}", exc_info=True)
+                logger.error(f"??[before_refresh_weekly_schedule] �?{attempt} 次�?試失?? {e}", exc_info=True)
                 if attempt < max_retries:
-                    logger.info(f"⏳ [before_refresh_weekly_schedule] {retry_delay} 秒後重試...")
+                    logger.info(f"??[before_refresh_weekly_schedule] {retry_delay} 秒�??�試...")
                     await asyncio.sleep(retry_delay)
                 else:
-                    logger.critical(f"💥 [before_refresh_weekly_schedule] 重試 {max_retries} 次均失敗，任務將不會啟動！")
+                    logger.critical(f"?�� [before_refresh_weekly_schedule] ?�試 {max_retries} 次�?失�?，任?��?不�??��?�?)
                     raise
 
     @refresh_weekly_schedule.error
     async def refresh_weekly_schedule_error(self, error):
-        """處理任務異常"""
+        """?��?任�??�常"""
         logger = logging.getLogger(__name__)
-        logger.error(f"❌ [refresh_weekly_schedule] 任務異常: {error}", exc_info=True)
+        logger.error(f"??[refresh_weekly_schedule] 任�??�常: {error}", exc_info=True)
 
     @sync_episode_stats.before_loop
     async def before_sync_episode_stats(self):
-        """等待 bot 就緒"""
+        """等�? bot 就�?"""
         logger = logging.getLogger(__name__)
         max_retries = 3
         retry_delay = 10
 
         for attempt in range(1, max_retries + 1):
             try:
-                logger.info(f"🔄 [before_sync_episode_stats] 嘗試啟動 (第 {attempt}/{max_retries} 次)")
+                logger.info(f"?? [before_sync_episode_stats] ?�試?��? (�?{attempt}/{max_retries} �?")
                 await asyncio.wait_for(self.bot.wait_until_ready(), timeout=60.0)
-                logger.info("✅ [before_sync_episode_stats] bot ready")
+                logger.info("??[before_sync_episode_stats] bot ready")
                 return
             except asyncio.CancelledError:
-                logger.info("🛑 [before_sync_episode_stats] 任務被取消")
+                logger.info("?? [before_sync_episode_stats] 任�?被�?�?)
                 raise
             except asyncio.TimeoutError:
-                logger.error(f"❌ [before_sync_episode_stats] 第 {attempt} 次 wait_until_ready() timeout")
+                logger.error(f"??[before_sync_episode_stats] �?{attempt} �?wait_until_ready() timeout")
             except Exception as e:
-                logger.error(f"❌ [before_sync_episode_stats] 第 {attempt} 次嘗試失敗: {e}", exc_info=True)
+                logger.error(f"??[before_sync_episode_stats] �?{attempt} 次�?試失?? {e}", exc_info=True)
 
             if attempt < max_retries:
-                logger.info(f"⏳ [before_sync_episode_stats] {retry_delay} 秒後重試...")
+                logger.info(f"??[before_sync_episode_stats] {retry_delay} 秒�??�試...")
                 await asyncio.sleep(retry_delay)
             else:
-                logger.critical(f"💥 [before_sync_episode_stats] 重試 {max_retries} 次均失敗，任務將不會啟動！")
+                logger.critical(f"?�� [before_sync_episode_stats] ?�試 {max_retries} 次�?失�?，任?��?不�??��?�?)
                 raise
 
     @sync_episode_stats.error
     async def sync_episode_stats_error(self, error):
-        """處理任務異常"""
+        """?��?任�??�常"""
         logger = logging.getLogger(__name__)
-        logger.error(f"❌ [sync_episode_stats] 任務異常: {error}", exc_info=True)
+        logger.error(f"??[sync_episode_stats] 任�??�常: {error}", exc_info=True)
 
-    # ==================== 輔助方法 ====================
+    # ==================== 輔助?��? ====================
 
     async def _sync_episode_stats_from_api(self):
-        """從 API 同步劇集統計數據"""
+        """�?API ?�步?��?統�??��?"""
         try:
-            # 獲取最近的動畫數據
+            # ?��??�近�??�畫?��?
             episodes = await self.fetch_all_recent_anime_from_api()
             if not episodes:
                 logger = logging.getLogger(__name__)
-                logger.warning("⚠️ [_sync_episode_stats_from_api] 無法獲取動畫數據")
+                logger.warning("?��? [_sync_episode_stats_from_api] ?��??��??�畫?��?")
                 return
 
-            # 處理每集數據
+            # ?��?每�??��?
             processed_count = 0
             for episode in episodes:
                 video_sn = episode.get('videoSn')
@@ -911,47 +911,47 @@ class AnimeTracker(commands.Cog):
                     processed_count += 1
 
             logger = logging.getLogger(__name__)
-            logger.info(f"📊 [_sync_episode_stats_from_api] 同步了 {processed_count} 筆劇集統計數據")
+            logger.info(f"?? [_sync_episode_stats_from_api] ?�步�?{processed_count} 筆�??�統計數??)
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ [_sync_episode_stats_from_api] 同步失敗: {e}", exc_info=True)
+            logger.error(f"??[_sync_episode_stats_from_api] ?�步失�?: {e}", exc_info=True)
 
-    # ==================== 輔助類：AnimeVoteView (保持在主類中，因為它需要引用主類) ====================
+    # ==================== 輔助類�?AnimeVoteView (保�??�主類中，�??��??�要�??�主�? ====================
 
     class AnimeVoteView(PersistentViewBase):
-        """動畫投票視圖 - 6 個投票按鈕 + 評論按鈕 (永久視圖)
+        """?�畫?�票視�? - 6 ?��?票�???+ 評�??��? (永�?視�?)
 
-        繼承 PersistentViewBase 確保 timeout=None 且符合專案永久視圖規範。
+        繼承 PersistentViewBase 確�? timeout=None 且符?��?案永久�??��?範�?
         """
 
-        # 投票類型配置
+        # ?�票類�??�置
         VOTE_TYPES = {
-            "masterpiece": ("神作", "🟩"),     # 綠
-            "great": ("佳作", "🟦"),          # 藍
-            "darkhorse": ("黑馬", "🟪"),      # 紫
-            "decent": ("普作/小品", "🟨"),    # 黃
-            "controversial": ("爭議作", "🟧"), # 橙
-            "disaster": ("雷作/糞作", "🟥"),   # 紅
+            "masterpiece": ("神�?", "?��"),     # �?
+            "great": ("佳�?", "?��"),          # ??
+            "darkhorse": ("黑馬", "?��"),      # �?
+            "decent": ("?��?/小�?", "?��"),    # �?
+            "controversial": ("?�議�?, "?��"), # �?
+            "disaster": ("?��?/糞�?", "?��"),   # �?
         }
 
         def __init__(self, episode: Dict, anime_tracker: "AnimeTracker"):
-            # 永久視圖設置：timeout=None 由 PersistentViewBase 自動處理
+            # 永�?視�?設置：timeout=None ??PersistentViewBase ?��??��?
             super().__init__()
             self.episode = episode
             self.tracker = anime_tracker
             self.video_sn = episode.get("videoSn")
             self.anime_sn = episode.get("animeSn")
-            self.message_id = None
-            self.last_interaction_time = None  # 用於追蹤最後互動時間
+            self.message.id if self.message else None = None
+            self.last_interaction_time = None  # ?�於追蹤?�後�??��???
 
             logger = logging.getLogger(__name__)
-            logger.info(f"📌 [AnimeVoteView.__init__] 開始創建視圖，video_sn={self.video_sn}")
+            logger.info(f"?? [AnimeVoteView.__init__] ?��??�建視�?，video_sn={self.video_sn}")
 
-            # 添加投票按鈕
+            # 添�??�票?��?
             button_count = 0
             for vote_key, (vote_label, color_emoji) in self.VOTE_TYPES.items():
-                # 所有投票按鈕都用灰色
-                button_style = discord.ButtonStyle.secondary  # 灰色
+                # ?�?��?票�??�都?�灰??
+                button_style = discord.ButtonStyle.secondary  # ?�色
 
                 button = discord.ui.Button(
                     label=f"{color_emoji} {vote_label}",
@@ -962,41 +962,41 @@ class AnimeTracker(commands.Cog):
                 self.add_item(button)
                 button_count += 1
 
-            logger.info(f"✅ [AnimeVoteView.__init__] 添加了 {button_count} 個投票按鈕")
+            logger.info(f"??[AnimeVoteView.__init__] 添�?�?{button_count} ?��?票�???)
 
-            # 添加評論按鈕
+            # 添�?評�??��?
             comment_button = discord.ui.Button(
-                label="💬 留言",
+                label="?�� ?��?",
                 custom_id=f"anime_comment_{self.video_sn}",
-                style=discord.ButtonStyle.secondary  # 灰色
+                style=discord.ButtonStyle.secondary  # ?�色
             )
             comment_button.callback = self._comment_callback
             self.add_item(comment_button)
 
-            logger.info(f"✅ [AnimeVoteView.__init__] 添加了評論按鈕，目前共有 {len(self.children)} 個項目")
+            logger.info(f"??[AnimeVoteView.__init__] 添�?了�?論�??��??��??��? {len(self.children)} ?��???)
 
         async def _vote_callback(self, interaction: discord.Interaction):
-            """處理投票按鈕點擊 - 投票 +2000 KK幣（每個用戶每條消息只適用一次）"""
+            """?��??�票?��?點�? - ?�票 +2000 KK�??每個用?��?條�??�只?�用一次�?"""
             try:
                 logger = logging.getLogger(__name__)
-                logger.info(f"🎯 [_vote_callback] 用戶 {interaction.user.name}({interaction.user.id}) 點擊投票按鈕")
+                logger.info(f"?�� [_vote_callback] ?�戶 {interaction.user.name}({interaction.user.id}) 點�??�票?��?")
                 logger.info(f"   custom_id={interaction.custom_id}, message_id={interaction.message.id}")
 
-                # 🔑 關鍵：立即 defer() 回應 Discord，避免 3 秒超時
+                # ?? ?�鍵：�???defer() ?��? Discord，避??3 秒�???
                 await interaction.response.defer()
-                logger.info(f"✅ [_vote_callback] defer() 已執行")
+                logger.info(f"??[_vote_callback] defer() 已執�?)
 
-                # 記錄互動時間
+                # 記�?互�??��?
                 self.last_interaction_time = datetime.now(TW_TZ)
 
-                # 解析投票類型
+                # �???�票類�?
                 vote_key = interaction.custom_id.replace(f"anime_vote_", "").rsplit("_", 1)[0]
-                vote_label, _ = self.VOTE_TYPES.get(vote_key, ("未知", None))
+                vote_label, _ = self.VOTE_TYPES.get(vote_key, ("?�知", None))
 
-                # 獲取用戶的匿名雜湊（用來防止同一用戶多次投票）
+                # ?��??�戶?�匿?��?湊�??��??�止?��??�戶多次?�票�?
                 user_hash = str(hash(interaction.user.id))[:10]
 
-                # 記錄投票 - 使用 message.id 持久化視圖重啟後需要從 storage 獲取
+                # 記�??�票 - 使用 message.id ?��??��??��??��??�要�? storage ?��?
                 message_id = interaction.message.id if interaction.message else None
                 vote_recorded = self.tracker.record_vote(
                     video_sn=self.video_sn,
@@ -1007,26 +1007,26 @@ class AnimeTracker(commands.Cog):
                 )
 
                 if not vote_recorded:
-                    logger.error(f"❌ [_vote_callback] 投票記錄失敗 (resource 回傳 False): user={interaction.user.name}, vote_key={vote_key}")
+                    logger.error(f"??[_vote_callback] ?�票記�?失�? (resource ?�傳 False): user={interaction.user.name}, vote_key={vote_key}")
                 else:
-                    logger.info(f"✅ [_vote_callback] 投票已記錄: {interaction.user.name} 投票了 {vote_label}")
+                    logger.info(f"??[_vote_callback] ?�票已�??? {interaction.user.name} ?�票�?{vote_label}")
 
-                # === KK幣獎勵邏輯 (投票 +2000) ===
+                # === KK�???��?�?(?�票 +2000) ===
                 reward_given = False
                 try:
                     from db_adapter import set_user_field, get_user_field
 
-                    # 檢查是否已發放過獎勵 - 使用 message_id
-                    reward_message_id = interaction.message_id or (interaction.message.id if interaction.message else None)
+                    # 檢查?�否已發?��??�勵 - 使用 message_id
+                    reward_message_id = interaction.message.id if interaction.message else None
                     if reward_message_id and not self.tracker.db.is_reward_already_given(interaction.user.id, reward_message_id, "vote"):
-                        # 獲取當前 KK幣
+                        # ?��??��? KK�?
                         current_kkcoin = get_user_field(interaction.user.id, "kkcoin") or 0
                         new_kkcoin = int(current_kkcoin) + 2000
 
-                        # 更新 KK幣
+                        # ?�新 KK�?
                         set_user_field(interaction.user.id, "kkcoin", new_kkcoin)
 
-                        # 記錄獎勵發放
+                        # 記�??�勵?�放
                         self.tracker.db.record_reward(
                             user_id=interaction.user.id,
                             message_id=reward_message_id,
@@ -1034,65 +1034,65 @@ class AnimeTracker(commands.Cog):
                             reward_amount=2000
                         )
 
-                        logger.info(f"💰 [_vote_callback] {interaction.user.name} 投票獲得 2000 KK幣，現在共有 {new_kkcoin} KK幣")
+                        logger.info(f"?�� [_vote_callback] {interaction.user.name} ?�票?��? 2000 KK�???�在?��? {new_kkcoin} KK�?)
                         reward_given = True
                     else:
-                        logger.info(f"⏭️ [_vote_callback] {interaction.user.name} 已獲得過該消息的投票獎勵")
+                        logger.info(f"?��? [_vote_callback] {interaction.user.name} 已獲得�?該�??��??�票?�勵")
                 except ImportError:
-                    logger.warning("⚠️ [_vote_callback] db_adapter 未找到，無法獎勵 KK幣")
+                    logger.warning("?��? [_vote_callback] db_adapter ?�找?��??��??�勵 KK�?)
                 except Exception as e:
-                    logger.error(f"❌ [_vote_callback] 獎勵 KK幣失敗: {e}", exc_info=True)
+                    logger.error(f"??[_vote_callback] ?�勵 KK�?��?? {e}", exc_info=True)
 
-                # 🔑 先發送 follow-up 確認給用戶（優先回應，避免延遲）
+                # ?? ?�發??follow-up 確�?給用?��??��??��?，避?�延?��?
                 try:
-                    reward_text = "💰 +2000 KK幣獎勵已發放！" if reward_given else "⏭️ 您已領取過此推送的投票獎勵"
+                    reward_text = "?�� +2000 KK�???�已?�放�? if reward_given else "?��? ?�已?��??�此?�送�??�票?�勵"
                     await interaction.followup.send(
-                        f"✅ 投票成功！{vote_label}\n{reward_text}",
+                        f"???�票?��?！{vote_label}\n{reward_text}",
                         ephemeral=True
                     )
-                    logger.info(f"✅ [_vote_callback] 已發送 follow-up 確認給 {interaction.user.name}")
+                    logger.info(f"??[_vote_callback] 已發??follow-up 確�?�?{interaction.user.name}")
                 except Exception as followup_error:
-                    logger.error(f"❌ [_vote_callback] 發送 follow-up 失敗: {followup_error}")
+                    logger.error(f"??[_vote_callback] ?��?follow-up 失�?: {followup_error}")
 
-                # 更新原始消息的 embed（非關鍵路徑，失敗不影響用戶體驗）
+                # ?�新?��?消息??embed（�??�鍵路�?，失?��?影響?�戶體�?�?
                 try:
-                    message_id = interaction.message_id or (interaction.message.id if interaction.message else None)
+                    message_id = interaction.message.id if interaction.message else None
                     if message_id:
                         await self._update_message_stats(message_id=message_id, channel=interaction.channel)
-                    logger.info(f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄並更新消息統計")
+                    logger.info(f"??[_vote_callback] {interaction.user.name} ?��?票已記�?並更?��??�統�?)
                 except Exception as update_error:
-                    logger.error(f"❌ [_vote_callback] 更新消息統計失敗: {update_error}", exc_info=True)
+                    logger.error(f"??[_vote_callback] ?�新消息統�?失�?: {update_error}", exc_info=True)
 
             except Exception as e:
-                logger.error(f"❌ [_vote_callback] 投票失敗: {e}", exc_info=True)
+                logger.error(f"??[_vote_callback] ?�票失�?: {e}", exc_info=True)
                 try:
-                    # 如果已經 defer 過了，用 followup；否則用 response
+                    # 如�?已�? defer ?��?，用 followup；否?�用 response
                     if interaction.response.is_done():
                         await interaction.followup.send(
-                            f"❌ 投票失敗: {str(e)[:50]}", ephemeral=True
+                            f"???�票失�?: {str(e)[:50]}", ephemeral=True
                         )
                     else:
                         await interaction.response.send_message(
-                            f"❌ 投票失敗: {str(e)[:50]}", ephemeral=True
+                            f"???�票失�?: {str(e)[:50]}", ephemeral=True
                         )
                 except:
                     pass
 
         async def _comment_callback(self, interaction: discord.Interaction):
-            """處理評論按鈕點擊 - 彈出評論輸入框"""
+            """?��?評�??��?點�? - 彈出評�?輸入�?""
             try:
                 logger = logging.getLogger(__name__)
-                # 記錄互動時間
+                # 記�?互�??��?
                 self.last_interaction_time = datetime.now(TW_TZ)
 
-                # 捕獲外部 self (AnimeVoteView) 供內部類別使用
+                # ?�獲外部 self (AnimeVoteView) 供內?��??�使??
                 outer_self = self
 
-                # 創建簡單的文本輸入模態框
-                class CommentModal(discord.ui.Modal, title="留下匿名評論"):
+                # ?�建簡單?��??�輸?�模?��?
+                class CommentModal(discord.ui.Modal, title="?��??��?評�?"):
                     comment_input = discord.ui.TextInput(
-                        label="評論內容",
-                        placeholder="寫下你對這部動畫的看法...",
+                        label="評�??�容",
+                        placeholder="寫�?你�??�部?�畫?��?�?..",
                         max_length=200,
                         required=False
                     )
@@ -1101,14 +1101,14 @@ class AnimeTracker(commands.Cog):
                         try:
                             comment = str(self.comment_input).strip()
                             if not comment:
-                                await modal_interaction.response.send_message("評論不能為空", ephemeral=True)
+                                await modal_interaction.response.send_message("評�?不能?�空", ephemeral=True)
                                 return
 
-                            # 獲取用戶匿名雜湊
+                            # ?��??�戶?��??��?
                             user_hash = str(hash(modal_interaction.user.id))[:10]
 
-                            # 記錄評論（vote_type 為空表示只是評論） - 使用 message_id
-                            message_id = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
+                            # 記�?評�?（vote_type ?�空表示?�是評�?�?- 使用 message_id
+                            message_id = modal_interaction.message.id if modal_interaction.message else None
                             vote_recorded = outer_self.tracker.record_vote(
                                 video_sn=outer_self.video_sn,
                                 anime_sn=outer_self.anime_sn,
@@ -1119,26 +1119,26 @@ class AnimeTracker(commands.Cog):
                             )
 
                             if not vote_recorded:
-                                logger.error(f"❌ [comment_submit] 評論記錄失敗 (resource 回傳 False): user={modal_interaction.user}")
+                                logger.error(f"??[comment_submit] 評�?記�?失�? (resource ?�傳 False): user={modal_interaction.user}")
                             else:
-                                logger.info(f"💬 [comment] {modal_interaction.user} 留言: {comment[:30]}...")
+                                logger.info(f"?�� [comment] {modal_interaction.user} ?��?: {comment[:30]}...")
 
-                            # === KK幣獎勵邏輯 (評論 +3000) ===
-                            reward_message = "✅ 評論已保存！感謝你的意見"
+                            # === KK�???��?�?(評�? +3000) ===
+                            reward_message = "??評�?已�?存�??��?你�??��?"
                             try:
                                 from db_adapter import set_user_field, get_user_field
 
-                                # 檢查是否已發放過獎勵
+                                # 檢查?�否已發?��??�勵
                                 if not outer_self.tracker.db.is_reward_already_given(modal_interaction.user.id, modal_interaction.message.id, "comment"):
-                                    # 獲取當前 KK幣
+                                    # ?��??��? KK�?
                                     current_kkcoin = get_user_field(modal_interaction.user.id, "kkcoin") or 0
                                     new_kkcoin = int(current_kkcoin) + 3000
 
-                                    # 更新 KK幣 - 使用 message_id
-                                    message_id_for_reward = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
+                                    # ?�新 KK�?- 使用 message_id
+                                    message_id_for_reward = modal_interaction.message.id if modal_interaction.message else None
                                     set_user_field(modal_interaction.user.id, "kkcoin", new_kkcoin)
 
-                                    # 記錄獎勵發放
+                                    # 記�??�勵?�放
                                     outer_self.tracker.db.record_reward(
                                         user_id=modal_interaction.user.id,
                                         message_id=message_id_for_reward,
@@ -1146,103 +1146,103 @@ class AnimeTracker(commands.Cog):
                                         reward_amount=3000
                                     )
 
-                                    logger.info(f"💰 [comment_submit] {modal_interaction.user} 評論獲得 3000 KK幣，現在共有 {new_kkcoin} KK幣")
-                                    reward_message = "✅ 評論已保存！\n💰 +3000 KK幣獎勵已發放"
+                                    logger.info(f"?�� [comment_submit] {modal_interaction.user} 評�??��? 3000 KK�???�在?��? {new_kkcoin} KK�?)
+                                    reward_message = "??評�?已�?存�?\n?�� +3000 KK�???�已?�放"
                                 else:
-                                    logger.info(f"⏭️ [comment_submit] {modal_interaction.user} 已獲得過該消息的評論獎勵")
-                                    reward_message = "✅ 評論已保存！"
+                                    logger.info(f"?��? [comment_submit] {modal_interaction.user} 已獲得�?該�??��?評�??�勵")
+                                    reward_message = "??評�?已�?存�?"
                             except ImportError:
-                                logger.warning("⚠️ [comment_submit] db_adapter 未找到，無法獎勵 KK幣")
+                                logger.warning("?��? [comment_submit] db_adapter ?�找?��??��??�勵 KK�?)
                             except Exception as e:
-                                logger.error(f"❌ [comment_submit] 獎勵 KK幣失敗: {e}", exc_info=True)
+                                logger.error(f"??[comment_submit] ?�勵 KK�?��?? {e}", exc_info=True)
 
                             await modal_interaction.response.send_message(reward_message, ephemeral=True)
 
-                            # 更新原始消息統計
+                            # ?�新?��?消息統�?
                             try:
-                                message_id_for_update = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
+                                message_id_for_update = modal_interaction.message.id if modal_interaction.message else None
                                 if message_id_for_update:
                                     await outer_self._update_message_stats(message_id=message_id_for_update, channel=modal_interaction.channel)
-                                logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存並更新消息統計")
+                                logger.info(f"??[comment_submit] {modal_interaction.user} ?��?論已保�?並更?��??�統�?)
                             except Exception as update_error:
-                                logger.error(f"❌ [comment_submit] 更新消息統計失敗: {update_error}", exc_info=True)
+                                logger.error(f"??[comment_submit] ?�新消息統�?失�?: {update_error}", exc_info=True)
                         except Exception as e:
-                            logger.error(f"❌ [comment_submit] 保存評論失敗: {e}", exc_info=True)
+                            logger.error(f"??[comment_submit] 保�?評�?失�?: {e}", exc_info=True)
                             try:
                                 await modal_interaction.response.send_message(
-                                    f"❌ 評論失敗: {str(e)[:50]}", ephemeral=True
+                                    f"??評�?失�?: {str(e)[:50]}", ephemeral=True
                                 )
                             except:
                                 pass
 
-                # 發送 Modal（在 _comment_callback 中，不在 on_submit 中）
+                # ?��?Modal（在 _comment_callback 中�?不在 on_submit 中�?
                 await interaction.response.send_modal(CommentModal())
 
             except Exception as e:
-                logger.error(f"❌ [_comment_callback] 評論失敗: {e}", exc_info=True)
+                logger.error(f"??[_comment_callback] 評�?失�?: {e}", exc_info=True)
                 try:
                     await interaction.response.send_message(
-                        f"❌ 無法開啟評論: {str(e)[:50]}", ephemeral=True
+                        f"???��??��?評�?: {str(e)[:50]}", ephemeral=True
                     )
                 except:
                     pass
 
         async def _update_message_stats(self, message_id: int, channel: discord.abc.Messageable = None):
-            """更新消息中的投票統計 - 支持通過 message_id 獲取消息（持久化視圖重啟後需要）"""
+            """?�新消息中�??�票統�? - ?��??��? message_id ?��?消息（�?久�?視�??��?後�?要�?"""
             try:
                 logger = logging.getLogger(__name__)
 
-                # 獲取消息對象
+                # ?��?消息對象
                 message = None
                 if channel:
                     try:
                         message = await channel.fetch_message(message_id)
-                        logger.info(f"📝 [_update_message_stats] 從頻道獲取消息 ID={message_id}")
+                        logger.info(f"?? [_update_message_stats] 從頻?�獲?��???ID={message_id}")
                     except discord.NotFound:
-                        logger.warning(f"⚠️ [_update_message_stats] 消息不存在 ID={message_id}")
+                        logger.warning(f"?��? [_update_message_stats] 消息不�???ID={message_id}")
                         return
                     except discord.Forbidden:
-                        logger.error(f"❌ [_update_message_stats] 無權限獲取消息 ID={message_id}")
+                        logger.error(f"??[_update_message_stats] ?��??�獲?��???ID={message_id}")
                         return
                     except Exception as e:
-                        logger.error(f"❌ [_update_message_stats] 獲取消息失敗: {e}", exc_info=True)
+                        logger.error(f"??[_update_message_stats] ?��?消息失�?: {e}", exc_info=True)
                         return
 
                 if not message:
-                    logger.warning(f"⚠️ [_update_message_stats] 無法獲取消息 ID={message_id}")
+                    logger.warning(f"?��? [_update_message_stats] ?��??��?消息 ID={message_id}")
                     return
 
-                logger.info(f"📝 [_update_message_stats] 開始更新消息 ID={message.id}, 頻道 ID={message.channel.id}")
+                logger.info(f"?? [_update_message_stats] ?��??�新消息 ID={message.id}, ?��? ID={message.channel.id}")
 
                 if not message.embeds:
-                    logger.warning(f"⚠️ [_update_message_stats] 消息沒有 embed, message_id={message.id}")
+                    logger.warning(f"?��? [_update_message_stats] 消息沒�? embed, message_id={message.id}")
                     return
 
                 original_embed = message.embeds[0]
-                logger.info(f"✅ [_update_message_stats] 找到 embed, 標題={original_embed.title}")
+                logger.info(f"??[_update_message_stats] ?�到 embed, 標�?={original_embed.title}")
 
-                # 獲取投票統計和評論 - 使用 message_id 查詢 DB
+                # ?��??�票統�??��?�?- 使用 message_id ?�詢 DB
                 stats = self.tracker.get_vote_stats(message_id)
                 comments = self.tracker.get_vote_comments(message_id, limit=3)
-                logger.info(f"📊 [_update_message_stats] 投票統計: {stats}, 評論數: {len(comments)}")
+                logger.info(f"?? [_update_message_stats] ?�票統�?: {stats}, 評�??? {len(comments)}")
 
-                # 建立統計內容
+                # 建�?統�??�容
                 stats_content = ""
                 if stats and any(stats.values()):
                     stat_lines = []
                     for vote_key, (vote_label, color_block) in self.VOTE_TYPES.items():
                         count = stats.get(vote_key, 0)
                         if count > 0:
-                            stat_lines.append(f"{color_block} {vote_label}: {count} 票")
+                            stat_lines.append(f"{color_block} {vote_label}: {count} �?)
                     stats_content = "\n".join(stat_lines) if stat_lines else ""
 
-                # 建立評論內容
+                # 建�?評�??�容
                 comments_content = ""
                 if comments:
-                    comments_content = "\n".join([f"• {c}" for c in comments])
+                    comments_content = "\n".join([f"??{c}" for c in comments])
 
-                # 使用 embeds 參數直接編輯，不修改 embed 物件本身
-                # 先重新構建完整的 embed，避免 EmbedProxy 序列化問題
+                # 使用 embeds ?�數?�接編輯，�?修改 embed ?�件?�身
+                # ?��??��?建�??��? embed，避??EmbedProxy 序�??��?�?
                 new_embed = discord.Embed(
                     title=original_embed.title,
                     description=original_embed.description,
@@ -1250,20 +1250,20 @@ class AnimeTracker(commands.Cog):
                     timestamp=original_embed.timestamp
                 )
 
-                # 複製原有的字段，除了統計和評論
+                # 複製?��??��?段�??��?統�??��?�?
                 for field in original_embed.fields:
-                    if field.name not in ["📊 投票統計", "💬 匿名評論"]:
+                    if field.name not in ["?? ?�票統�?", "?�� ?��?評�?"]:
                         new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
 
-                # 添加更新後的統計
+                # 添�??�新後�?統�?
                 if stats_content:
-                    new_embed.add_field(name="📊 投票統計", value=stats_content, inline=False)
+                    new_embed.add_field(name="?? ?�票統�?", value=stats_content, inline=False)
 
-                # 添加更新後的評論
+                # 添�??�新後�?評�?
                 if comments_content:
-                    new_embed.add_field(name="💬 匿名評論", value=comments_content, inline=False)
+                    new_embed.add_field(name="?�� ?��?評�?", value=comments_content, inline=False)
 
-                # 複製 footer、author 等其他屬性
+                # 複製 footer?�author 等其他屬??
                 if original_embed.footer:
                     new_embed.set_footer(text=original_embed.footer.text, icon_url=original_embed.footer.icon_url)
                 if original_embed.author:
@@ -1274,72 +1274,76 @@ class AnimeTracker(commands.Cog):
                     new_embed.set_thumbnail(url=original_embed.thumbnail.url)
 
                 # 編輯消息
-                logger.info(f"🔄 [_update_message_stats] 準備編輯消息 ID={message.id}, 頻道={message.channel.id}, 權限={message.channel.permissions_for(message.guild.me) if message.guild else 'DM'}")
+                logger.info(f"?? [_update_message_stats] 準�?編輯消息 ID={message.id}, ?��?={message.channel.id}, 權�?={message.channel.permissions_for(message.guild.me) if message.guild else 'DM'}")
                 await message.edit(embed=new_embed)
-                logger.info(f"✅ [_update_message_stats] 消息已成功編輯 ID={message.id}")
+                logger.info(f"??[_update_message_stats] 消息已�??�編�?ID={message.id}")
 
             except discord.Forbidden as e:
-                logger.error(f"❌ [_update_message_stats] 權限不足（可能缺少 MANAGE_MESSAGES）: {e}", exc_info=True)
+                logger.error(f"??[_update_message_stats] 權�?不足（可?�缺�?MANAGE_MESSAGES�? {e}", exc_info=True)
             except discord.NotFound as e:
-                logger.error(f"❌ [_update_message_stats] 消息不存在或已被刪除: {e}", exc_info=True)
+                logger.error(f"??[_update_message_stats] 消息不�??��?已被?�除: {e}", exc_info=True)
             except Exception as e:
-                logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
+                logger.error(f"??[_update_message_stats] ?�新統�?失�?: {e}", exc_info=True)
 
 
-    @app_commands.command(name="anime_refresh", description="🔄 手動刷新動畫週表（緊急補推用）")
+    @app_commands.command(name="anime_refresh", description="?? ?��??�新?�畫?�表（�??��??�用�?)
     @app_commands.default_permissions(administrator=True)
     async def anime_refresh(self, interaction: discord.Interaction):
-        """手動觸發週表刷新，解決自動刷新失敗或緊急補推需求"""
+        """?��?觸發?�表?�新，解決自?�刷?�失?��?緊急�??��?�?""
         await interaction.response.defer(ephemeral=True)
         logger = logging.getLogger(__name__)
-        logger.info(f"🔄 [/anime_refresh] 管理員 {interaction.user} 觸發手動週表刷新")
+        logger.info(f"?? [/anime_refresh] 管�???{interaction.user} 觸發?��??�表?�新")
 
         try:
             result = await self.refresh_weekly_schedule()
 
             if result.get('success'):
                 embed = discord.Embed(
-                    title="✅ 週表刷新成功",
-                    description=f"週起始日期: {result['week_start_date']}\n今日時程: {len(result['today_schedule'])} 筆\n總計: {result['total_count']} 筆",
+                    title="???�表?�新?��?",
+                    description=f"?�起始日?? {result['week_start_date']}\n今日?��?: {len(result['today_schedule'])} 筆\n總�?: {result['total_count']} �?,
                     color=discord.Color.green()
                 )
-                # 檢查是否有待推送項目
+                # 檢查?�否?��??�送�???
                 pending = sum(1 for item in result['today_schedule'] if not item.get('pushed'))
                 if pending > 0:
-                    embed.add_field(name="⏳ 待補推項目", value=f"{pending} 個時刻未推送", inline=False)
+                    embed.add_field(name="??待�??��???, value=f"{pending} ?��??�未?��?, inline=False)
                 await interaction.followup.send(embed=embed, ephemeral=True)
-                logger.info(f"✅ [/anime_refresh] 手動刷新完成: {result['total_count']} 筆")
+                logger.info(f"??[/anime_refresh] ?��??�新完�?: {result['total_count']} �?)
             else:
-                error = result.get('error', '未知錯誤')
+                error = result.get('error', '?�知?�誤')
                 skipped = result.get('skipped', False)
                 if skipped:
-                    await interaction.followup.send("⏭️ 跳過刷新：非執行時間（每天 22:00-22:59）", ephemeral=True)
+                    await interaction.followup.send("?��? 跳�??�新：�??��??��?（�?�?22:00-22:59�?, ephemeral=True)
                 else:
-                    await interaction.followup.send(f"❌ 刷新失敗: {error}", ephemeral=True)
-                logger.warning(f"⚠️ [/anime_refresh] 手動刷新失敗: {error}")
+                    await interaction.followup.send(f"???�新失�?: {error}", ephemeral=True)
+                logger.warning(f"?��? [/anime_refresh] ?��??�新失�?: {error}")
         except Exception as e:
-            logger.error(f"❌ [/anime_refresh] 異常: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ 執行異常: {e}", ephemeral=True)
+            logger.error(f"??[/anime_refresh] ?�常: {e}", exc_info=True)
+            await interaction.followup.send(f"???��??�常: {e}", ephemeral=True)
 
 
-# ==================== 任務重啟包裝函數 ====================
+# ==================== 任�??��??��??�數 ====================
 
     async def _wrap_task_with_restart(self, name: str, coro_func):
-        """通用任務包裝器：異常時自動記錄並在 5 秒後重啟"""
+        """?�用任�??��??��??�常?�自?��??�並??5 秒�??��?"""
         logger = logging.getLogger(__name__)
         while not self.bot.is_closed():
             try:
                 await coro_func()
             except asyncio.CancelledError:
-                logger.info(f"🛑 [{name}] 任務被取消")
+                logger.info(f"?? [{name}] 任�?被�?�?)
                 break
             except Exception as e:
-                logger.error(f"❌ [{name}] 任務異常終止，5 秒後重啟: {e}", exc_info=True)
+                logger.error(f"??[{name}] 任�??�常終止�? 秒�??��?: {e}", exc_info=True)
                 await asyncio.sleep(5)
                 if not self.bot.is_closed():
-                    logger.info(f"🔄 [{name}] 重啟任務...")
+                    logger.info(f"?? [{name}] ?��?任�?...")
 
 
 async def setup(bot: commands.Bot):
-    """Setup 函數供 Discord.py 加載 Cog"""
+    """Setup ?�數�?Discord.py ?��? Cog"""
     await bot.add_cog(AnimeTracker(bot))
+
+
+
+
