@@ -6,6 +6,7 @@
 - Markdown 文件（wiki、掃描報告）
 - Python 程式碼（函式/類別級切分）
 - 一般文字檔
+- Server/Client 模式（CHROMA_SERVER_HOST/PORT 環境變數）
 """
 
 from __future__ import annotations
@@ -37,6 +38,11 @@ DEFAULT_CODE_ROOTS = [
 # Chroma 持久化目錄
 CHROMA_PERSIST_DIR = PROJECT_ROOT / "chroma_db"
 CHROMA_COLLECTION_NAME = "kkgroup_knowledge"
+
+# Server 模式配置
+CHROMA_SERVER_HOST = os.getenv("CHROMA_SERVER_HOST", "localhost")
+CHROMA_SERVER_PORT = int(os.getenv("CHROMA_SERVER_PORT", "8000"))
+USE_CHROMA_SERVER = os.getenv("USE_CHROMA_SERVER", "false").lower() == "true"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -302,28 +308,44 @@ def build_python_chunks(path: Path) -> List[KnowledgeChunk]:
 
 # ==================== Chroma 客戶端 ====================
 
-def get_chroma_client() -> chromadb.PersistentClient:
-    CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
-    return chromadb.PersistentClient(
-        path=str(CHROMA_PERSIST_DIR),
-        settings=Settings(anonymized_telemetry=False)
-    )
+def get_chroma_client() -> chromadb.Client:
+    """取得 Chroma client（支援 Server/Persistent 兩種模式）。"""
+    if USE_CHROMA_SERVER:
+        print(f"🔗 連接 Chroma Server: {CHROMA_SERVER_HOST}:{CHROMA_SERVER_PORT}")
+        return chromadb.HttpClient(
+            host=CHROMA_SERVER_HOST,
+            port=CHROMA_SERVER_PORT,
+            settings=Settings(anonymized_telemetry=False)
+        )
+    else:
+        CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+        return chromadb.PersistentClient(
+            path=str(CHROMA_PERSIST_DIR),
+            settings=Settings(anonymized_telemetry=False)
+        )
 
 
 def get_embedding_function():
-    """使用 sentence-transformers 的嵌入函數"""
-    # 使用多語言模型，支援中文
+    """使用 sentence-transformers 的嵌入函數（Local 模式才需要）。"""
     return embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name="paraphrase-multilingual-MiniLM-L12-v2"
     )
 
 
-def get_or_create_collection(client: chromadb.PersistentClient):
-    return client.get_or_create_collection(
-        name=CHROMA_COLLECTION_NAME,
-        embedding_function=get_embedding_function(),
-        metadata={"hnsw:space": "cosine"}
-    )
+def get_or_create_collection(client: chromadb.Client):
+    if USE_CHROMA_SERVER:
+        # Server 模式：不需要嵌入函數，server 端已配置
+        return client.get_or_create_collection(
+            name=CHROMA_COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"}
+        )
+    else:
+        # Local 模式：需要嵌入函數
+        return client.get_or_create_collection(
+            name=CHROMA_COLLECTION_NAME,
+            embedding_function=get_embedding_function(),
+            metadata={"hnsw:space": "cosine"}
+        )
 
 
 # ==================== 匯入邏輯 ====================
@@ -397,14 +419,14 @@ def query_knowledge(query: str, n_results: int = 5, filter_dict: Optional[Dict] 
     """查詢知識庫，回傳格式化結果"""
     client = get_chroma_client()
     collection = get_or_create_collection(client)
-    
+
     results = collection.query(
         query_texts=[query],
         n_results=n_results,
         where=filter_dict,
         include=["documents", "metadatas", "distances"]
     )
-    
+
     formatted = []
     if results["documents"]:
         for i, doc in enumerate(results["documents"][0]):

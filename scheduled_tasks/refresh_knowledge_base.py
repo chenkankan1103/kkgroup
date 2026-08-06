@@ -22,6 +22,11 @@ try:
 except ImportError:  # pragma: no cover
     ZoneInfo = None
 
+# Chroma Server 模式環境變數（需在 import chroma_knowledge_index 之前設定）
+os.environ.setdefault("USE_CHROMA_SERVER", "true")
+os.environ.setdefault("CHROMA_SERVER_HOST", "127.0.0.1")
+os.environ.setdefault("CHROMA_SERVER_PORT", "8000")
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))

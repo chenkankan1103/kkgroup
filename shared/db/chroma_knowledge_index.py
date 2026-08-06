@@ -1,8 +1,9 @@
-"""Chroma 知識庫語意檢索（取代 KnowledgeVectorIndex TF-IDF 方案）。"""
+"""Chroma 知識庫語意檢索（取代 KnowledgeVectorIndex TF-IDF 方案）。支援 Server/Client 模式。"""
 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -25,13 +26,34 @@ CHROMA_COLLECTION_NAME = "kkgroup_knowledge"
 # 與 ingest_knowledge.py 一致的嵌入模型
 EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
+# Server 模式配置（透過環境變數切換）
+CHROMA_SERVER_HOST = os.getenv("CHROMA_SERVER_HOST", "localhost")
+CHROMA_SERVER_PORT = int(os.getenv("CHROMA_SERVER_PORT", "8000"))
+USE_CHROMA_SERVER = os.getenv("USE_CHROMA_SERVER", "false").lower() == "true"
+
 
 class ChromaKnowledgeIndex:
-    """使用 Chroma dense vector 進行語意檢索，支援 hybrid/keyword/semantic 模式。"""
+    """使用 Chroma dense vector 進行語意檢索，支援 hybrid/keyword/semantic 模式。
 
-    def __init__(self, persist_dir: Optional[Path] = None, collection_name: Optional[str] = None):
+    兩種模式：
+    - Server 模式 (USE_CHROMA_SERVER=true): 透過 HTTP 連接共享的 chromadb server
+    - Local 模式 (預設): 直接用 PersistentClient 存取本地檔案
+    """
+
+    def __init__(
+        self,
+        persist_dir: Optional[Path] = None,
+        collection_name: Optional[str] = None,
+        use_server: Optional[bool] = None,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+    ):
         self.persist_dir = persist_dir or CHROMA_PERSIST_DIR
         self.collection_name = collection_name or CHROMA_COLLECTION_NAME
+        # 明確傳入 > 環境變數 > 預設 false
+        self.use_server = use_server if use_server is not None else USE_CHROMA_SERVER
+        self.host = host or CHROMA_SERVER_HOST
+        self.port = port or CHROMA_SERVER_PORT
         self._client = None
         self._collection = None
 
@@ -39,24 +61,43 @@ class ChromaKnowledgeIndex:
         if self._client is None:
             if not _CHROMADB_AVAILABLE:
                 raise RuntimeError("chromadb 未安裝")
-            self.persist_dir.mkdir(parents=True, exist_ok=True)
-            self._client = chromadb.PersistentClient(
-                path=str(self.persist_dir),
-                settings=Settings(anonymized_telemetry=False)
-            )
+
+            if self.use_server:
+                # Server 模式：連接共享的 chromadb HTTP server
+                logger.info(f"連接 Chroma Server: {self.host}:{self.port}")
+                self._client = chromadb.HttpClient(
+                    host=self.host,
+                    port=self.port,
+                    settings=Settings(anonymized_telemetry=False)
+                )
+            else:
+                # Local 模式：直接存取本地持久化目錄
+                self.persist_dir.mkdir(parents=True, exist_ok=True)
+                self._client = chromadb.PersistentClient(
+                    path=str(self.persist_dir),
+                    settings=Settings(anonymized_telemetry=False)
+                )
         return self._client
 
     def _get_collection(self):
         if self._collection is None:
             client = self._get_client()
-            ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=EMBEDDING_MODEL
-            )
-            self._collection = client.get_or_create_collection(
-                name=self.collection_name,
-                embedding_function=ef,
-                metadata={"hnsw:space": "cosine"}
-            )
+            if self.use_server:
+                # Server 模式：不需要嵌入函數，server 端已配置
+                self._collection = client.get_or_create_collection(
+                    name=self.collection_name,
+                    metadata={"hnsw:space": "cosine"}
+                )
+            else:
+                # Local 模式：需要嵌入函數
+                ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+                    model_name=EMBEDDING_MODEL
+                )
+                self._collection = client.get_or_create_collection(
+                    name=self.collection_name,
+                    embedding_function=ef,
+                    metadata={"hnsw:space": "cosine"}
+                )
         return self._collection
 
     def semantic_search(
