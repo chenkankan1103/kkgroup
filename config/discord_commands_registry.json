@@ -97,7 +97,7 @@
           "commands": ["unmute", "clear_violations", "emergency_cleanup", "ad_violations", "ad_settings"]
         },
         "AI系統": {
-          "commands": ["ai_personality_set", "ai_personality_list", "ai_knowledge_add", "ai_knowledge_search", "ai_memory_cleanup", "ai_memory_status"]
+          "commands": ["ai_personality_set", "ai_personality_list", "ai_knowledge_add", "ai_knowledge_search", "ai_memory_cleanup", "ai_memory_status", "cc", "cc_status", "cc_clear"]
         },
         "特殊操作": {
           "commands": ["setup_scam_hub", "assign_nickname_id", "remove_nickname_id", "restore_global_nicknames", "feedback", "shellagent"]

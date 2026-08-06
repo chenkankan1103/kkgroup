@@ -34,8 +34,8 @@ SyslogFacility=daemon
 SyslogLevel=info
 
 # Memory limits for e2-micro (1GB RAM) - prevent OOM kills
-MemoryMax=300M
-MemorySwapMax=500M
+MemoryMax=600M
+MemorySwapMax=1000M
 OOMScoreAdjust=100
 
 TimeoutStopSec=30
