@@ -27,7 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from shared.utils.llm_text_router import complete_text_with_fallback
-from shared.db.knowledge_vector_index import KnowledgeVectorIndex
+from shared.db.chroma_knowledge_index import ChromaKnowledgeIndex
 
 LOCK_FILE = PROJECT_ROOT / ".knowledge_refresh.lock"
 STATE_FILE = PROJECT_ROOT / ".knowledge_refresh_state.json"
@@ -267,7 +267,7 @@ def main() -> int:
     try:
         for command in steps:
             outputs.append(run_step(command))
-        indexed = KnowledgeVectorIndex().rebuild_from_database()
+        indexed = ChromaKnowledgeIndex().rebuild_from_database()
         outputs.append(json.dumps({"semantic_indexed": indexed}, ensure_ascii=False))
     except Exception as exc:
         write_status("failure", outputs, len(steps), str(exc))
