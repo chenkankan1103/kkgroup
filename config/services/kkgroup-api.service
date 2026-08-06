@@ -22,5 +22,10 @@ RestartSec=30
 StandardOutput=append:/tmp/kkgroup-api.log
 StandardError=append:/tmp/kkgroup-api.log
 
+# Memory limits for e2-micro (1GB RAM) - prevent OOM kills
+MemoryMax=200M
+MemorySwapMax=300M
+OOMScoreAdjust=50
+
 [Install]
 WantedBy=multi-user.target
