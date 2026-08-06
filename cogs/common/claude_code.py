@@ -45,6 +45,8 @@ ALLOWED_CHANNEL_ID = 1509078418312921128
 
 # Anthropic API
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+if not ANTHROPIC_API_KEY:
+    logger.warning("⚠️ ANTHROPIC_API_KEY 未設定，Claude Code 功能將無法使用")
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "8192"))
@@ -390,6 +392,9 @@ class ClaudeCodeAgent:
 
     async def run(self, user_input: str) -> str:
         """主入口：執行 agentic loop"""
+        if not ANTHROPIC_API_KEY:
+            return "❌ ANTHROPIC_API_KEY 未設定，無法使用 Claude Code 功能。請在 .env 中設定。"
+
         # 載入該用戶的對話歷史
         self._load_history()
 
@@ -479,12 +484,24 @@ class ClaudeCodeAgent:
         return result
 
     def _load_history(self):
-        """從資料庫載入該用戶的最近對話"""
-        # 這裡簡化：從 DialogueMemory 獲取
-        # 實際上 DialogueMemory.get_recent_dialogue 返回格式化字串
-        # 我們需要解析它（簡化處理：不載入歷史，每次都是新對話）
-        # TODO: 實作完整的歷史載入
-        pass
+        """從資料庫載入該用戶的最近對話並轉換為 API messages 格式"""
+        try:
+            # 獲取最近對話（限制 token 預算）
+            history_text = DialogueMemory.get_recent_dialogue(max_tokens=2000)
+            if not history_text:
+                return
+
+            # 解析對話歷史（格式："用戶: query\nAI: response" 以 "\n\n---\n\n" 分隔）
+            sections = history_text.split("\n\n---\n\n")
+            for section in sections[-10:]:  # 只取最近 10 輪
+                lines = section.strip().split("\n")
+                if len(lines) >= 2 and lines[0].startswith("用戶:") and lines[1].startswith("AI:"):
+                    user_query = lines[0][3:].strip()  # 移除 "用戶: "
+                    ai_response = "\n".join(lines[1:])[3:].strip()  # 移除 "AI: "
+                    self.history.append({"role": "user", "content": user_query})
+                    self.history.append({"role": "assistant", "content": ai_response})
+        except Exception as e:
+            logger.warning(f"載入歷史失敗: {e}")
 
     def _save_history(self, user_input: str, reply: str):
         """儲存對話到記憶系統"""
@@ -533,15 +550,22 @@ class ClaudeCodeCog(commands.Cog):
             )
             return
 
+        if not ANTHROPIC_API_KEY:
+            await interaction.response.send_message(
+                "❌ ANTHROPIC_API_KEY 未在 .env 中設定，無法使用此功能。", ephemeral=True
+            )
+            return
+
         await interaction.response.defer()
 
         try:
             # 獲取或建立 agent
-            if continue_conv and self.user_id in self.active_agents:
-                agent = self.active_agents[self.user_id]
+            user_id = interaction.user.id
+            if continue_conv and user_id in self.active_agents:
+                agent = self.active_agents[user_id]
             else:
-                agent = ClaudeCodeAgent(interaction.user.id, interaction.channel_id)
-                self.active_agents[interaction.user.id] = agent
+                agent = ClaudeCodeAgent(user_id, interaction.channel_id)
+                self.active_agents[user_id] = agent
 
             # 執行
             reply = await agent.run(prompt)
