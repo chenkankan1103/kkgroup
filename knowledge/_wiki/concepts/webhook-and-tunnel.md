@@ -82,7 +82,7 @@ python scripts/commands_manager.py diag tunnel_config
 python scripts/commands_manager.py diag tunnel_nginx
 
 # GCP VM (IAP SSH)
-gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-c --tunnel-through-iap --command "sudo journalctl -u kkgroup-api.service | grep webhook"
+gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-a --tunnel-through-iap --command "sudo journalctl -u kkgroup-api.service | grep webhook"
 ```
 
 ## Webhook 處理邏輯 (web/blueprints/webhook.py)

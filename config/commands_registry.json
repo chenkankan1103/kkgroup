@@ -9,7 +9,7 @@
   "gcp": {
     "connection": {
       "instance": "e193752468@instance-20250501-142333",
-      "zone": "us-central1-c",
+      "zone": "us-central1-a",
       "tunnel": "iap",
       "description": "GCP VM SSH 連接參數"
     }

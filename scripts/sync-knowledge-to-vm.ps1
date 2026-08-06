@@ -1,6 +1,6 @@
 param(
     [string]$Instance = "e193752468@instance-20250501-142333",
-    [string]$Zone = "us-central1-c",
+    [string]$Zone = "us-central1-a",
     [string]$LocalPath = "C:\Users\88697\Desktop\kkgroup\knowledge",
     [string]$RemotePath = "/home/e193752468/kkgroup/"
 )

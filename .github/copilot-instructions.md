@@ -78,6 +78,20 @@ These run beneath other skills — reach for them directly when the **words** ar
 
 **`grilling`** — The primitive interview skill used by grill-with-docs and grill-me. One question at a time, wait for answer, provide recommended answer, don't act until confirmed.
 
+**`ponytail`** — Enforces a seven-rung decision ladder (YAGNI → reuse codebase → stdlib → native platform → installed deps → one-liner → minimal viable) to prevent over-engineering. Benchmarked: 54% less code, 20% cheaper, 27% faster, 100% safe.
+
+```bash
+/ponytail full          # Enable standard enforcement
+/ponytail-review        # Review changes for over-engineering
+/ponytail-audit         # Full codebase audit
+/ponytail-debt         # Show accumulated tech debt
+/ponytail-gain         # Show code/tokens saved
+/ponytail-help         # Show help
+```
+
+- **GitHub**: https://github.com/dietrichgebert/ponytail
+- **Integrations**: 20+ agents (Claude Code, Codex, Copilot CLI, Cursor, Windsurf, etc.)
+
 ## Discord.py 2.0 Rules
 
 - Use `discord.ext.commands.Bot` with `intents=discord.Intents.all()`
@@ -609,6 +623,8 @@ await self.cog.update_user_data(user_id, appearance)
 | "設定 repo 給 skills 用" | `setup-matt-pocock-skills` |
 | "教我 X" | `teach` |
 | "寫一份 handoff" | `handoff` |
+| "強制極簡代碼" | `ponytail` |
+| "檢查過度設計" | `ponytail-review` |
 
 ---
 
