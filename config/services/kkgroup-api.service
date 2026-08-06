@@ -1,7 +1,8 @@
 ﻿[Unit]
 Description=KKCoin Unified API Server
 Documentation=https://github.com/chenkankan1103/kkgroup
-After=network-online.target systemd-resolved.service
+After=network-online.target systemd-resolved.service chromadb.service
+Wants=chromadb.service
 
 [Service]
 Type=simple
@@ -16,6 +17,10 @@ Environment="FLASK_DEBUG=False"
 Environment="API_HOST=127.0.0.1"
 Environment="API_PORT=5000"
 Environment="PATH=/home/e193752468/kkgroup/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Chroma Server 模式
+Environment="USE_CHROMA_SERVER=true"
+Environment="CHROMA_SERVER_HOST=127.0.0.1"
+Environment="CHROMA_SERVER_PORT=8000"
 ExecStart=/home/e193752468/kkgroup/venv/bin/python3 /home/e193752468/kkgroup/web/api/unified_api.py
 Restart=on-failure
 RestartSec=30
