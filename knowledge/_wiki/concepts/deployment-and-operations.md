@@ -315,17 +315,17 @@ sudo tail -50 /var/log/nginx/error.log
 ### 3. 手動備份/恢復流程
 ```bash
 # 本地驗證 → 複製到 VM → 重啟服務
-gcloud compute scp user_data.db e193752468@instance-20250501-142333:/home/e193752468/kkgroup/ --zone=us-central1-c --tunnel-through-iap
+gcloud compute scp user_data.db e193752468@instance-20250501-142333:/home/e193752468/kkgroup/ --zone=us-central1-a --tunnel-through-iap
 ssh 到 VM → sudo systemctl restart bot.service shopbot.service uibot.service
 ```
 
 ## GCP SSH 連線（IAP）
 ```bash
 # 標準連線
-gcloud compute ssh e193752468@instance-20250501-142333 --zone=us-central1-c --tunnel-through-iap
+gcloud compute ssh e193752468@instance-20250501-142333 --zone=us-central1-a --tunnel-through-iap
 
 # 執行單一指令
-gcloud compute ssh e193752468@instance-20250501-142333 --zone=us-central1-c --tunnel-through-iap --command="sudo journalctl -u bot.service -n 50 --no-pager"
+gcloud compute ssh e193752468@instance-20250501-142333 --zone=us-central1-a --tunnel-through-iap --command="sudo journalctl -u bot.service -n 50 --no-pager"
 ```
 
 ## 常見問題排查

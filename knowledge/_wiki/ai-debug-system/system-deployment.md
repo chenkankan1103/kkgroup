@@ -117,7 +117,7 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your-webhook
 
 # GCP 配置（可選）
 GCP_PROJECT=kkgroup
-GCP_ZONE=us-central1-c
+GCP_ZONE=us-central1-a
 GCP_INSTANCE=instance-20250501-142333
 
 # 系統配置

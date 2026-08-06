@@ -86,7 +86,7 @@ sudo journalctl -u bot.service -n 200 --no-pager | grep -iE 'error|traceback|fai
 ```
 - SSH 到 VM：
 ```bash
-gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-c --tunnel-through-iap
+gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-a --tunnel-through-iap
 ```
 - 手動觸發 GitHub dispatch（測試用）：
 ```powershell

@@ -2,7 +2,7 @@
 
 ## 連線
 
-- `gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-c --tunnel-through-iap`
+- `gcloud compute ssh e193752468@instance-20250501-142333 --zone us-central1-a --tunnel-through-iap`
 
 ## 驗證重點
 

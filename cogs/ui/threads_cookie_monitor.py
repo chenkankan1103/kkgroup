@@ -229,7 +229,7 @@ class ThreadsCookieMonitor(commands.Cog):
         
         embed.add_field(
             name="步驟 5",
-            value="使用以下命令上傳到 GCP VM:\n```bash\ngcloud compute scp threads_cookies.json e193752468@instance-20250501-142333:~/kkgroup/ --zone=us-central1-c --tunnel-through-iap\n```",
+            value="使用以下命令上傳到 GCP VM:\n```bash\ngcloud compute scp threads_cookies.json e193752468@instance-20250501-142333:~/kkgroup/ --zone=us-central1-a --tunnel-through-iap\n```",
             inline=False
         )
         

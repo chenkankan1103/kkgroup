@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-kkgroup}"
-ZONE="${ZONE:-us-central1-c}"
+ZONE="${ZONE:-us-central1-a}"
 INSTANCE="${INSTANCE:-instance-20250501-142333}"
 SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-github-actions-vm-repair@kkgroup.iam.gserviceaccount.com}"
 MEMBER="serviceAccount:${SERVICE_ACCOUNT}"
