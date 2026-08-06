@@ -29,6 +29,11 @@ SyslogIdentifier=shopbot
 SyslogFacility=daemon
 SyslogLevel=info
 
+# Memory limits for e2-micro (1GB RAM) - prevent OOM kills
+MemoryMax=200M
+MemorySwapMax=300M
+OOMScoreAdjust=100
+
 TimeoutStopSec=30
 KillMode=mixed
 

@@ -271,11 +271,13 @@ def build_markdown_chunks(path: Path, knowledge_root: Path) -> List[KnowledgeChu
     related_topics = extract_related_topics(body)
     relative_path = path.relative_to(PROJECT_ROOT).as_posix()
     
+    import json as json_module
+
     base_metadata = {
         "sha1": hashlib.sha1(raw_text.encode("utf-8")).hexdigest(),
         "relative_path": relative_path,
         "line_count": len(body.splitlines()),
-        "front_matter": front_matter,
+        "front_matter": json_module.dumps(front_matter, ensure_ascii=False) if front_matter else "{}",
         "category": category,
         "related_topics": related_topics,
         "source_type": "markdown",
