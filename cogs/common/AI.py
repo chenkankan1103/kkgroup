@@ -49,7 +49,7 @@ try:
         KnowledgeBase,
         initialize_memory_system,
     )
-    from shared.db.knowledge_vector_index import KnowledgeVectorIndex
+    from shared.db.chroma_knowledge_index import ChromaKnowledgeIndex
     _MEMORY_AVAILABLE = True
 except ImportError:
     _MEMORY_AVAILABLE = False
@@ -63,7 +63,7 @@ except ImportError:
         def search_knowledge(keyword, max_tokens=1000): return ""
         @staticmethod
         def get_recent_items(limit=20, category=None): return []
-    class KnowledgeVectorIndex:  # type: ignore
+    class ChromaKnowledgeIndex:  # type: ignore
         def hybrid_search(self, query, limit=5, category=None): return []
     def initialize_memory_system(): pass
 
@@ -409,7 +409,7 @@ class KKBotAgent:
             return _SYSTEM_PROMPT
 
         memory_context = build_memory_context()
-        vector_index = KnowledgeVectorIndex()
+        vector_index = ChromaKnowledgeIndex()
         semantic_items = vector_index.hybrid_search(user_msg, limit=4)
         related_knowledge = KnowledgeBase.search_knowledge(user_msg, max_tokens=500)
         recent_vm_items = KnowledgeBase.get_recent_items(limit=3, category="vm_scan")

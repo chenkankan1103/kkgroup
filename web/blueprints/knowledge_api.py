@@ -10,7 +10,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from shared.db.ai_memory import KnowledgeBase
-from shared.db.knowledge_vector_index import KnowledgeVectorIndex
+from shared.db.chroma_knowledge_index import ChromaKnowledgeIndex
 
 knowledge_api_bp = Blueprint("knowledge_api", __name__, url_prefix="/api/knowledge")
 
@@ -28,13 +28,11 @@ def search_knowledge():
     category = (request.args.get("category") or "").strip() or None
     limit = min(max(int(request.args.get("limit", 5)), 1), 20)
 
-    vector_index = KnowledgeVectorIndex()
+    vector_index = ChromaKnowledgeIndex()
     if mode == "semantic":
         items = vector_index.semantic_search(query, limit=limit, category=category)
     elif mode == "keyword":
-        items = KnowledgeBase.search_knowledge_items(query, limit=limit)
-        if category:
-            items = [item for item in items if item.get("category") == category]
+        items = vector_index.keyword_search(query, limit=limit, category=category)
     else:
         items = vector_index.hybrid_search(query, limit=limit, category=category)
 
