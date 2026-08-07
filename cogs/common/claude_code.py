@@ -709,10 +709,8 @@ class ClaudeCodeCog(commands.Cog):
         self.bot = bot
         # key: (user_id, thread_id 或 channel_id) -> agent
         self.active_agents: Dict[tuple, ClaudeCodeAgent] = {}
+        self._thread_contexts: Dict[int, str] = {}  # thread_id -> context_key for memory
         logger.info("✅ ClaudeCodeCog 初始化完成")
-
-### 常數
-    self._thread_contexts: Dict[int, str] = {}  # thread_id -> context_key for memory
 
     def _get_context_key(self, channel: Union[discord.TextChannel, discord.Thread]) -> str:
         """獲取對話上下文鍵：thread 用 thread_id，主頻道用 channel_id"""
