@@ -654,6 +654,15 @@ class ClaudeCodeAgent:
             tool_uses = [c for c in content if c.get("type") == "tool_use"]
             texts = [c.get("text", "") for c in content if c.get("type") == "text"]
 
+            # 顯示 AI 的思考/規劃（若有文字且無工具，或工具前的說明）
+            if texts:
+                thinking = "\n".join(texts).strip()
+                if thinking:
+                    # 截斷過長文字
+                    if len(thinking) > 200:
+                        thinking = thinking[:197] + "..."
+                    await self._add_progress(f"💭 第 {self.turn_count} 輪：{thinking}")
+
             # 如果有工具呼叫，執行工具
             if tool_uses:
                 # 將 assistant 訊息加入歷史
@@ -662,7 +671,10 @@ class ClaudeCodeAgent:
                 # 執行每個工具
                 for tool_use in tool_uses:
                     tool_name = tool_use["name"]
-                    await self._add_progress(f"🔧 第 {self.turn_count} 輪：執行 {tool_name}...")
+                    args = tool_use["input"]
+                    # 顯示工具細節
+                    detail = self._format_tool_detail(tool_name, args)
+                    await self._add_progress(f"🔧 第 {self.turn_count} 輪：執行 {tool_name} {detail}")
                     result = await self._execute_tool(tool_use)
                     # 將工具結果加入歷史
                     self.history.append({
@@ -724,6 +736,57 @@ class ClaudeCodeAgent:
             result = f"❌ 執行錯誤: {e}"
 
         return result
+
+    def _format_tool_detail(self, tool_name: str, args: Dict) -> str:
+        """格式化工具參數用於進度顯示"""
+        if tool_name == "read":
+            path = args.get("path", "")
+            offset = args.get("offset")
+            limit = args.get("limit")
+            detail = f"📄 {path}"
+            if offset is not None or limit is not None:
+                parts = []
+                if offset is not None:
+                    parts.append(f"第 {offset + 1} 行")
+                if limit is not None:
+                    parts.append(f"{limit} 行")
+                detail += f" ({', '.join(parts)})"
+            return detail
+
+        elif tool_name == "write":
+            path = args.get("path", "")
+            content_len = len(args.get("content", ""))
+            return f"📝 {path} ({content_len} 字元)"
+
+        elif tool_name == "edit":
+            path = args.get("path", "")
+            old_len = len(args.get("old_string", ""))
+            new_len = len(args.get("new_string", ""))
+            return f"✏️ {path} ({old_len}→{new_len} 字元)"
+
+        elif tool_name == "list":
+            path = args.get("path", ".")
+            return f"📁 {path}"
+
+        elif tool_name == "glob":
+            pattern = args.get("pattern", "")
+            path = args.get("path", ".")
+            return f"🔍 {path}/{pattern}"
+
+        elif tool_name == "bash":
+            cmd = args.get("command", "")
+            # 截斷過長命令
+            if len(cmd) > 80:
+                cmd = cmd[:77] + "..."
+            return f"💻 {cmd}"
+
+        elif tool_name == "task":
+            desc = args.get("description", "")
+            if len(desc) > 60:
+                desc = desc[:57] + "..."
+            return f"🤖 子任務: {desc}"
+
+        return ""
 
     def _load_history(self):
         """從資料庫載入該用戶的最近對話並轉換為 API messages 格式"""
