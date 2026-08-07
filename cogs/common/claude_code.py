@@ -912,13 +912,17 @@ class ClaudeCodeCog(commands.Cog):
         if message.author.bot:
             return
 
+        # 調試：記錄所有收到的訊息
+        logger.debug(f"[ClaudeCode] 收到訊息: channel={message.channel.id}, type={type(message.channel).__name__}, author={message.author.id}, content={message.content[:50] if message.content else '(empty)'}")
+
         # 忽略有指令前綴的訊息（讓指令處理器處理）
-        if message.content.startswith(('!', '/', '?')):
+        if message.content and message.content.startswith(('!', '/', '?')):
+            logger.debug(f"[ClaudeCode] 忽略指令前綴")
             return
 
         # 權限檢查
         if not self._check_permission_message(message):
-            logger.debug(f"[ClaudeCode] 權限檢查失敗: user={message.author.id}, channel={message.channel.id}, parent={getattr(message.channel, 'parent_id', None)}")
+            logger.debug(f"[ClaudeCode] 權限檢查失敗: user={message.author.id}, channel={message.channel.id}, parent={getattr(message.channel, 'parent_id', None)}, allowed_id={ALLOWED_CHANNEL_ID}")
             return
 
         # 只在 thread 中自動觸發（主頻道仍需用 /cc 指令）
