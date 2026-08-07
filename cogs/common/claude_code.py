@@ -43,12 +43,17 @@ logger = logging.getLogger(__name__)
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 ALLOWED_CHANNEL_ID = 1509078418312921128
 
-# Anthropic API
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-if not ANTHROPIC_API_KEY:
-    logger.warning("⚠️ ANTHROPIC_API_KEY 未設定，Claude Code 功能將無法使用")
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+# NVIDIA NIM API (OpenAI compatible)
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+if not NVIDIA_API_KEY:
+    logger.warning("⚠️ NVIDIA_API_KEY 未設定，Claude Code 功能將無法使用")
+NVIDIA_API_URL = os.getenv("NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
+
+# 兩個 Nemotron 模型（用戶指定）
+MODEL_ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"    # 較難的任務
+MODEL_SUPER = "nvidia/nemotron-3-super-120b-a12b"    # 一般回復
+DEFAULT_MODEL = MODEL_SUPER
+
 MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "8192"))
 MAX_TURNS = int(os.getenv("CLAUDE_MAX_TURNS", "20"))
 
@@ -65,8 +70,12 @@ BLOCKED_FILES = {".env", ".ssh", "id_rsa", "id_ed25519", "authorized_keys", "con
 BLOCKED_PREFIXES = [".git/", ".github/", "__pycache__/", "venv/", ".venv/", "node_modules/"]
 
 # ─── 系統提示詞 ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """你是 KK園區的 Claude Code 代理，一個專業的程式開發助手。
+SYSTEM_PROMPT = """你是 KK園區的 Claude Code 代理，一個專業的程式開發助手（使用 NVIDIA Nemotron 模型）。
 工作目錄：{work_dir}
+
+可用模型（自動選擇）：
+- Nemotron-3-Ultra (550B): 複雜推理、代碼生成、架構設計、重構
+- Nemotron-3-Super (120B): 一般對話、簡單任務、快速回覆
 
 核心能力：
 - 讀寫編輯檔案、執行命令、搜尋代碼
@@ -318,9 +327,14 @@ class ToolExecutor:
         return f"[子任務] {description}\n提示: {prompt}\n\n(子任務功能簡化版：請在主對話中繼續操作)"
 
 
-# ─── Anthropic API 客戶端 ───────────────────────────────────────────────────
-class AnthropicClient:
-    """Anthropic Messages API 客戶端"""
+# ─── NVIDIA NIM API 客戶端 (OpenAI 兼容格式) ──────────────────────────────────
+class NvidiaNimClient:
+    """NVIDIA NIM API 客戶端 - OpenAI 兼容格式
+
+    支持工具調用 (function calling)，模型自動選擇：
+    - nemotron-3-ultra-550b: 複雜任務、代碼生成、推理
+    - nemotron-3-super-120b: 一般對話、簡單任務
+    """
 
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -329,14 +343,118 @@ class AnthropicClient:
     async def _get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=120),
+                timeout=aiohttp.ClientTimeout(total=180),  # NVIDIA 較慢，增加超時
                 headers={
-                    "x-api-key": self.api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
                 }
             )
         return self.session
+
+    def _convert_tools_to_openai(self, tools: List[Dict]) -> List[Dict]:
+        """將 Anthropic tool 格式轉換為 OpenAI function calling 格式"""
+        openai_tools = []
+        for tool in tools:
+            # NVIDIA NIM 使用 functions 格式
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["input_schema"],
+                }
+            })
+        return openai_tools
+
+    def _convert_messages_to_openai(self, messages: List[Dict], system: str) -> List[Dict]:
+        """將 Anthropic messages 格式轉換為 OpenAI 格式"""
+        openai_messages = []
+
+        # 系統提示詞
+        if system:
+            openai_messages.append({"role": "system", "content": system})
+
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+
+            if role == "user":
+                if isinstance(content, str):
+                    openai_messages.append({"role": "user", "content": content})
+                elif isinstance(content, list):
+                    # 處理 tool_result 格式
+                    for block in content:
+                        if block.get("type") == "tool_result":
+                            openai_messages.append({
+                                "role": "tool",
+                                "tool_call_id": block.get("tool_use_id", "unknown"),
+                                "content": str(block.get("content", ""))
+                            })
+
+            elif role == "assistant":
+                if isinstance(content, str):
+                    openai_messages.append({"role": "assistant", "content": content})
+                elif isinstance(content, list):
+                    # 構建 assistant 訊息，可能包含 tool_calls
+                    tool_calls = []
+                    text_parts = []
+                    for block in content:
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif block.get("type") == "tool_use":
+                            tool_calls.append({
+                                "id": block.get("id"),
+                                "type": "function",
+                                "function": {
+                                    "name": block.get("name"),
+                                    "arguments": json.dumps(block.get("input", {}))
+                                }
+                            })
+
+                    msg_dict = {"role": "assistant"}
+                    if text_parts:
+                        msg_dict["content"] = "\n".join(text_parts)
+                    if tool_calls:
+                        msg_dict["tool_calls"] = tool_calls
+                    openai_messages.append(msg_dict)
+
+        return openai_messages
+
+    def _select_model(self, messages: List[Dict], tools: List[Dict]) -> str:
+        """根據任務複雜度選擇模型
+
+        較難的任務特徵：
+        - 需要多輪工具調用
+        - 代碼生成/編輯
+        - 複雜推理
+        - 長上下文
+        """
+        # 簡單啟發式：如果有工具且歷史較長，用 ultra
+        has_tools = len(tools) > 0
+        history_len = len(messages)
+
+        # 檢查最近用戶輸入關鍵詞
+        last_user_msg = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    last_user_msg = content.lower()
+                elif isinstance(content, list):
+                    for block in content:
+                        if block.get("type") == "text":
+                            last_user_msg = block.get("text", "").lower()
+                break
+
+        complex_keywords = ["重構", "架構", "優化", "debug", "除錯", "重寫", "實現", "設計",
+                           "refactor", "architecture", "optimize", "implement", "design",
+                           "複雜", "complex", "完整", "complete", "系統"]
+
+        is_complex = any(kw in last_user_msg for kw in complex_keywords)
+
+        if has_tools and (history_len > 10 or is_complex):
+            return MODEL_ULTRA
+        return MODEL_SUPER
 
     async def create_message(
         self,
@@ -345,23 +463,75 @@ class AnthropicClient:
         tools: List[Dict],
         max_tokens: int = MAX_TOKENS,
     ) -> Dict:
+        """創建聊天完成請求，返回 Anthropic 兼容格式"""
         session = await self._get_session()
+
+        # 選擇模型
+        model = self._select_model(messages, tools)
+        logger.info(f"🤖 選擇模型: {model} (輪數: {len(messages)//2}, 工具: {len(tools)})")
+
+        # 轉換格式
+        openai_messages = self._convert_messages_to_openai(messages, system)
+        openai_tools = self._convert_tools_to_openai(tools)
+
         payload = {
-            "model": MODEL,
+            "model": model,
+            "messages": openai_messages,
             "max_tokens": max_tokens,
-            "system": system,
-            "messages": messages,
-            "tools": tools,
-            "tool_choice": {"type": "auto"},
+            "temperature": 0.1,  # 代碼任務用低溫度
+            "tools": openai_tools if openai_tools else None,
+            "tool_choice": "auto" if openai_tools else None,
+            "stream": False,
         }
 
-        async with session.post(ANTHROPIC_API_URL, json=payload) as resp:
+        # 移除 None 值
+        payload = {k: v for k, v in payload.items() if v is not None}
+
+        async with session.post(NVIDIA_API_URL, json=payload) as resp:
             if resp.status == 429:
-                raise Exception("Rate limited")
+                raise Exception("Rate limited - NVIDIA NIM 限流")
             if resp.status != 200:
                 text = await resp.text()
-                raise Exception(f"API Error {resp.status}: {text[:500]}")
-            return await resp.json()
+                raise Exception(f"NVIDIA API Error {resp.status}: {text[:500]}")
+
+            result = await resp.json()
+
+            # 轉換回 Anthropic 兼容格式
+            return self._convert_response_to_anthropic(result)
+
+    def _convert_response_to_anthropic(self, openai_response: Dict) -> Dict:
+        """將 OpenAI 回應格式轉換為 Anthropic 兼容格式"""
+        choice = openai_response.get("choices", [{}])[0]
+        message = choice.get("message", {})
+
+        content = []
+
+        # 文字內容
+        if message.get("content"):
+            content.append({
+                "type": "text",
+                "text": message["content"]
+            })
+
+        # 工具調用
+        for tool_call in message.get("tool_calls", []):
+            func = tool_call.get("function", {})
+            content.append({
+                "type": "tool_use",
+                "id": tool_call.get("id", "call_" + str(hash(str(func)))),
+                "name": func.get("name"),
+                "input": json.loads(func.get("arguments", "{}"))
+            })
+
+        # 如果沒有任何內容
+        if not content:
+            content.append({"type": "text", "text": ""})
+
+        return {
+            "content": content,
+            "stop_reason": "tool_use" if message.get("tool_calls") else "end_turn",
+            "usage": openai_response.get("usage", {})
+        }
 
     async def close(self):
         if self.session and not self.session.closed:
@@ -370,12 +540,12 @@ class AnthropicClient:
 
 # ─── Agent 核心邏輯 ─────────────────────────────────────────────────────────
 class ClaudeCodeAgent:
-    """Claude Code Agent - Agentic Loop 實作"""
+    """Claude Code Agent - Agentic Loop 實作 (NVIDIA NIM 版本)"""
 
     def __init__(self, user_id: int, channel_id: int):
         self.user_id = user_id
         self.channel_id = channel_id
-        self.client = AnthropicClient(ANTHROPIC_API_KEY)
+        self.client = NvidiaNimClient(NVIDIA_API_KEY)
         self.tools = ToolExecutor(WORK_DIR)
         self.history: List[Dict] = []
         self.turn_count = 0
@@ -392,8 +562,8 @@ class ClaudeCodeAgent:
 
     async def run(self, user_input: str) -> str:
         """主入口：執行 agentic loop"""
-        if not ANTHROPIC_API_KEY:
-            return "❌ ANTHROPIC_API_KEY 未設定，無法使用 Claude Code 功能。請在 .env 中設定。"
+        if not NVIDIA_API_KEY:
+            return "❌ NVIDIA_API_KEY 未設定，無法使用 Claude Code 功能。請在 .env 中設定。"
 
         # 載入該用戶的對話歷史
         self._load_history()
@@ -550,9 +720,9 @@ class ClaudeCodeCog(commands.Cog):
             )
             return
 
-        if not ANTHROPIC_API_KEY:
+        if not NVIDIA_API_KEY:
             await interaction.response.send_message(
-                "❌ ANTHROPIC_API_KEY 未在 .env 中設定，無法使用此功能。", ephemeral=True
+                "❌ NVIDIA_API_KEY 未在 .env 中設定，無法使用此功能。", ephemeral=True
             )
             return
 
@@ -589,11 +759,11 @@ class ClaudeCodeCog(commands.Cog):
 
         active = len(self.active_agents)
         embed = discord.Embed(
-            title="🤖 Claude Code 狀態",
+            title="🤖 Claude Code 狀態 (NVIDIA NIM)",
             color=discord.Color.blue(),
         )
         embed.add_field(name="活躍 Agent", value=str(active), inline=True)
-        embed.add_field(name="模型", value=MODEL, inline=True)
+        embed.add_field(name="模型 (自動選擇)", value=f"Ultra: {MODEL_ULTRA}\nSuper: {MODEL_SUPER}", inline=False)
         embed.add_field(name="工作目錄", value=str(WORK_DIR), inline=False)
         embed.add_field(name="最大輪數", value=str(MAX_TURNS), inline=True)
         embed.add_field(name="最大輸出", value=f"{MAX_TOKENS} tokens", inline=True)
