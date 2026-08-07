@@ -727,6 +727,7 @@ class ClaudeCodeCog(commands.Cog):
         # key: (user_id, thread_id 或 channel_id) -> agent
         self.active_agents: Dict[tuple, ClaudeCodeAgent] = {}
         self._thread_contexts: Dict[int, str] = {}  # thread_id -> context_key for memory
+        self._processed_messages: set[int] = set()  # 避免重複處理同一訊息
         logger.info("✅ ClaudeCodeCog 初始化完成")
 
     def _get_context_key(self, channel: Union[discord.TextChannel, discord.Thread]) -> str:
@@ -931,9 +932,9 @@ class ClaudeCodeCog(commands.Cog):
             return
 
         # 避免重複處理（同一訊息可能觸發多次）
-        if hasattr(message, '_claude_code_processed'):
+        if message.id in self._processed_messages:
             return
-        message._claude_code_processed = True
+        self._processed_messages.add(message.id)
 
         logger.info(f"[ClaudeCode] Thread 觸發: thread={message.channel.id}, parent={message.channel.parent_id}, user={message.author.id}, content={message.content[:50]}")
 
