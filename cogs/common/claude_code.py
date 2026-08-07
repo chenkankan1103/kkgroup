@@ -82,6 +82,14 @@ SYSTEM_PROMPT = """你是 KK園區的 Claude Code 代理，一個專業的程式
 - 遵循專案編碼規範（參考 knowledge/_wiki/concepts/coding-rules-and-paths.md）
 - 使用專案現有模組而非重造輪子（ponytail 原則：YAGNI → reuse → stdlib → native → deps）
 
+【代碼搜尋】—— 用 bash + ripgrep (rg)，極快、零配置：
+  rg "pattern" --type py -n                    # 搜尋 Python，顯示行號
+  rg "class.*Agent" --type py                  # 找所有 Agent 類別
+  rg "def.*search" --type py -A 3 -B 1         # 找函數含上下文 3 行
+  rg "TODO|FIXME" --type py                    # 找待辦註解
+  rg "import.*memory" --type py -l             # 只列檔名
+  rg "async def" --type py | head -20          # 限制輸出行數
+
 工具使用規則：
 1. 每次只呼叫一個工具（read/write/edit/list/glob/bash/task）
 2. 工具結果會自動注入對話，你根據結果決定下一步
