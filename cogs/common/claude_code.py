@@ -486,35 +486,46 @@ class NvidiaNimClient:
 
         payload = {k: v for k, v in payload.items() if v is not None}
 
-        # 重試邏輯：限流時指數退避
+        # 重試邏輯：限流/暫時性錯誤/網路異常時指數退避
         max_retries = 3
         base_delay = 2.0  # 秒
+        retryable_statuses = {429, 500, 502, 503, 504}
         for attempt in range(max_retries):
-            async with session.post(NVIDIA_API_URL, json=payload) as resp:
-                if resp.status == 429:
-                    # 讀取 Retry-After header（若有）
-                    retry_after = resp.headers.get("Retry-After")
-                    if retry_after:
-                        try:
-                            delay = float(retry_after)
-                        except ValueError:
+            try:
+                async with session.post(NVIDIA_API_URL, json=payload) as resp:
+                    if resp.status in retryable_statuses:
+                        # 讀取 Retry-After header（若有）
+                        retry_after = resp.headers.get("Retry-After")
+                        if retry_after:
+                            try:
+                                delay = float(retry_after)
+                            except ValueError:
+                                delay = base_delay * (2 ** attempt)
+                        else:
                             delay = base_delay * (2 ** attempt)
-                    else:
-                        delay = base_delay * (2 ** attempt)
 
-                    if attempt < max_retries - 1:
-                        logger.warning(f"⚠️ NVIDIA NIM 限流 (429)，第 {attempt + 1}/{max_retries} 次重試，等待 {delay:.1f}s...")
-                        await asyncio.sleep(delay)
-                        continue
-                    else:
-                        raise Exception(f"Rate limited - NVIDIA NIM 限流，重試 {max_retries} 次後仍失敗")
+                        if attempt < max_retries - 1:
+                            logger.warning(f"⚠️ NVIDIA NIM 錯誤 ({resp.status})，第 {attempt + 1}/{max_retries} 次重試，等待 {delay:.1f}s...")
+                            await asyncio.sleep(delay)
+                            continue
+                        else:
+                            raise Exception(f"NVIDIA NIM 暫時性錯誤 ({resp.status})，重試 {max_retries} 次後仍失敗")
 
-                if resp.status != 200:
-                    text = await resp.text()
-                    raise Exception(f"NVIDIA API Error {resp.status}: {text[:500]}")
+                    if resp.status != 200:
+                        text = await resp.text()
+                        raise Exception(f"NVIDIA API Error {resp.status}: {text[:500]}")
 
-                result = await resp.json()
-                return self._convert_response_to_anthropic(result)
+                    result = await resp.json()
+                    return self._convert_response_to_anthropic(result)
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"⚠️ NVIDIA NIM 網路錯誤: {type(e).__name__}: {e}，第 {attempt + 1}/{max_retries} 次重試，等待 {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    raise Exception(f"NVIDIA NIM 網路錯誤，重試 {max_retries} 次後仍失敗: {e}")
 
     def _convert_response_to_anthropic(self, openai_response: Dict) -> Dict:
         """將 OpenAI 回應格式轉換為 Anthropic 兼容格式"""
