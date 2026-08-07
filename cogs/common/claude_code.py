@@ -580,6 +580,36 @@ class ClaudeCodeAgent:
         self.progress_callback = progress_callback  # 進度回調函數
         self._last_progress_update = 0  # 上次更新時間戳
         self._progress_interval = 10  # 更新間隔（秒）
+        self._progress_buffer: list[str] = []  # 進度緩衝區
+        self._buffer_lock = asyncio.Lock()
+
+    async def _flush_progress_buffer(self):
+        """將緩衝區內容合併發送"""
+        async with self._buffer_lock:
+            if not self._progress_buffer:
+                return
+            content = "\n".join(self._progress_buffer)
+            self._progress_buffer.clear()
+        try:
+            if self.progress_callback:
+                await self.progress_callback(content)
+        except Exception as e:
+            logger.warning(f"進度回調失敗: {e}")
+
+    async def _add_progress(self, message: str):
+        """加入進度訊息到緩衝區，每 10 秒自動發送"""
+        async with self._buffer_lock:
+            self._progress_buffer.append(message)
+
+        import time
+        now = time.time()
+        if now - self._last_progress_update >= self._progress_interval:
+            self._last_progress_update = now
+            await self._flush_progress_buffer()
+
+    async def _finalize_progress(self):
+        """強制發送剩餘緩衝區內容"""
+        await self._flush_progress_buffer()
 
     def _build_system_prompt(self) -> str:
         # 獲取長期記憶上下文
@@ -591,17 +621,8 @@ class ClaudeCodeAgent:
             context += "\n\n=== 知識庫 ===\n" + memory["knowledge_context"]
         return context
 
-    async def _maybe_update_progress(self, message: str):
-        """節流進度更新：每 10 秒最多呼叫一次 callback"""
-        import time
-        now = time.time()
-        if now - self._last_progress_update >= self._progress_interval:
-            self._last_progress_update = now
-            if self.progress_callback:
-                await self.progress_callback(message)
-
     async def run(self, user_input: str) -> str:
-        """主入口：執行 agentic loop"""
+        """主入口：執行 agentic loop（無輪數上限，直到完成任務）"""
         if not NVIDIA_API_KEY:
             return "❌ NVIDIA_API_KEY 未設定，無法使用 Claude Code 功能。請在 .env 中設定。"
 
@@ -613,11 +634,13 @@ class ClaudeCodeAgent:
 
         system_prompt = self._build_system_prompt()
 
-        for turn in range(MAX_TURNS):
-            self.turn_count = turn + 1
+        # 安全上限：避免無限循環（100 輪足夠大）
+        MAX_SAFE_TURNS = 100
+        while self.turn_count < MAX_SAFE_TURNS:
+            self.turn_count += 1
 
-            # 進度更新：開始新輪次
-            await self._maybe_update_progress(f"🔄 第 {self.turn_count}/{MAX_TURNS} 輪：思考中...")
+            # 進度更新：記錄到緩衝區
+            await self._add_progress(f"🔄 第 {self.turn_count} 輪：思考中...")
 
             # 呼叫 API
             response = await self.client.create_message(
@@ -636,10 +659,10 @@ class ClaudeCodeAgent:
                 # 將 assistant 訊息加入歷史
                 self.history.append({"role": "assistant", "content": content})
 
-                # 執行每個工具（通常一次只有一個）
+                # 執行每個工具
                 for tool_use in tool_uses:
                     tool_name = tool_use["name"]
-                    await self._maybe_update_progress(f"🔧 第 {self.turn_count} 輪：執行 {tool_name}...")
+                    await self._add_progress(f"🔧 第 {self.turn_count} 輪：執行 {tool_name}...")
                     result = await self._execute_tool(tool_use)
                     # 將工具結果加入歷史
                     self.history.append({
@@ -657,13 +680,17 @@ class ClaudeCodeAgent:
             # 純文字回覆：任務完成
             reply = "\n".join(texts).strip()
             if reply:
+                # 強制發送剩餘進度
+                await self._finalize_progress()
                 self._save_history(user_input, reply)
                 return reply
 
             # 沒有工具也沒有文字（不應發生）
             self.history.append({"role": "assistant", "content": content})
 
-        return f"⚠️ 已達最大輪數（{MAX_TURNS}），任務未完成。請繼續指示。"
+        # 超過安全上限
+        await self._finalize_progress()
+        return f"⚠️ 已達安全輪數上限（{MAX_SAFE_TURNS}），任務未完成。請繼續指示。"
 
     async def _execute_tool(self, tool_use: Dict) -> str:
         name = tool_use["name"]
