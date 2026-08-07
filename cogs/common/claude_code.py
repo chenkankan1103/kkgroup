@@ -463,7 +463,7 @@ class NvidiaNimClient:
         tools: List[Dict],
         max_tokens: int = MAX_TOKENS,
     ) -> Dict:
-        """創建聊天完成請求，返回 Anthropic 兼容格式"""
+        """創建聊天完成請求，返回 Anthropic 兼容格式（含限流重試）"""
         session = await self._get_session()
 
         # 選擇模型
@@ -478,26 +478,43 @@ class NvidiaNimClient:
             "model": model,
             "messages": openai_messages,
             "max_tokens": max_tokens,
-            "temperature": 0.1,  # 代碼任務用低溫度
+            "temperature": 0.1,
             "tools": openai_tools if openai_tools else None,
             "tool_choice": "auto" if openai_tools else None,
             "stream": False,
         }
 
-        # 移除 None 值
         payload = {k: v for k, v in payload.items() if v is not None}
 
-        async with session.post(NVIDIA_API_URL, json=payload) as resp:
-            if resp.status == 429:
-                raise Exception("Rate limited - NVIDIA NIM 限流")
-            if resp.status != 200:
-                text = await resp.text()
-                raise Exception(f"NVIDIA API Error {resp.status}: {text[:500]}")
+        # 重試邏輯：限流時指數退避
+        max_retries = 3
+        base_delay = 2.0  # 秒
+        for attempt in range(max_retries):
+            async with session.post(NVIDIA_API_URL, json=payload) as resp:
+                if resp.status == 429:
+                    # 讀取 Retry-After header（若有）
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            delay = float(retry_after)
+                        except ValueError:
+                            delay = base_delay * (2 ** attempt)
+                    else:
+                        delay = base_delay * (2 ** attempt)
 
-            result = await resp.json()
+                    if attempt < max_retries - 1:
+                        logger.warning(f"⚠️ NVIDIA NIM 限流 (429)，第 {attempt + 1}/{max_retries} 次重試，等待 {delay:.1f}s...")
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        raise Exception(f"Rate limited - NVIDIA NIM 限流，重試 {max_retries} 次後仍失敗")
 
-            # 轉換回 Anthropic 兼容格式
-            return self._convert_response_to_anthropic(result)
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise Exception(f"NVIDIA API Error {resp.status}: {text[:500]}")
+
+                result = await resp.json()
+                return self._convert_response_to_anthropic(result)
 
     def _convert_response_to_anthropic(self, openai_response: Dict) -> Dict:
         """將 OpenAI 回應格式轉換為 Anthropic 兼容格式"""
@@ -778,16 +795,15 @@ class ClaudeCodeCog(commands.Cog):
                 agent = ClaudeCodeAgent(interaction.user.id, interaction.channel_id)
                 self.active_agents[agent_key] = agent
 
-            # 先發一條訊息，後續每 10 秒編輯更新進度
-            progress_msg = await interaction.followup.send("🔄 開始執行...", wait=True)
+            # 進度訊息列表：每 10 秒發送一條新訊息，保留完整歷程
+            progress_messages: list[discord.Message] = []
 
             async def update_progress(text: str):
-                """每 10 秒編輯同一條訊息顯示進度"""
+                """每 10 秒發送新訊息顯示進程（不編輯，保留完整歷程）"""
                 try:
                     display_text = text[:1900]
-                    await progress_msg.edit(content=display_text)
-                except discord.NotFound:
-                    pass
+                    msg = await interaction.followup.send(display_text, wait=True)
+                    progress_messages.append(msg)
                 except discord.HTTPException:
                     pass
 
@@ -796,13 +812,10 @@ class ClaudeCodeCog(commands.Cog):
             # 執行
             reply = await agent.run(prompt)
 
-            # 最後編輯為最終結果
+            # 發送最終結果
             chunks = self._chunk_text(reply, 1900)
-            for i, chunk in enumerate(chunks):
-                if i == 0:
-                    await progress_msg.edit(content=chunk)
-                else:
-                    await interaction.followup.send(chunk)
+            for chunk in chunks:
+                await interaction.followup.send(chunk)
 
         except Exception as e:
             logger.exception("Claude Code 執行錯誤")
@@ -902,13 +915,15 @@ class ClaudeCodeCog(commands.Cog):
                 agent = ClaudeCodeAgent(message.author.id, message.channel.id)
                 self.active_agents[agent_key] = agent
 
-            # 發送進度訊息
-            progress_msg = await message.reply("🔄 開始執行...", mention_author=False)
+            # 進度訊息列表：每 10 秒發送新訊息，保留完整歷程
+            progress_messages: list[discord.Message] = []
 
             async def update_progress(text: str):
+                """每 10 秒發送新訊息顯示進程（不編輯，保留完整歷程）"""
                 try:
                     display_text = text[:1900]
-                    await progress_msg.edit(content=display_text)
+                    msg = await message.reply(display_text, mention_author=False)
+                    progress_messages.append(msg)
                 except (discord.NotFound, discord.HTTPException):
                     pass
 
@@ -917,13 +932,10 @@ class ClaudeCodeCog(commands.Cog):
             # 執行
             reply = await agent.run(message.content)
 
-            # 編輯為最終結果
+            # 發送最終結果
             chunks = self._chunk_text(reply, 1900)
-            for i, chunk in enumerate(chunks):
-                if i == 0:
-                    await progress_msg.edit(content=chunk)
-                else:
-                    await message.channel.send(chunk)
+            for chunk in chunks:
+                await message.channel.send(chunk)
 
         except Exception as e:
             logger.exception("Thread auto-trigger 執行錯誤")
