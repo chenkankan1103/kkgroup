@@ -591,6 +591,7 @@ class ClaudeCodeAgent:
         self._progress_buffer: list[str] = []  # 進度緩衝區
         self._buffer_lock = asyncio.Lock()
         self._cancelled = asyncio.Event()  # 取消信號
+        self._progress_content: list[str] = []  # 累積的完整進度內容（用於編輯同一條 message 顯示所有步驟）
 
     async def _flush_progress_buffer(self):
         """將緩衝區內容合併發送"""
@@ -606,10 +607,14 @@ class ClaudeCodeAgent:
             logger.warning(f"進度回調失敗: {e}")
 
     async def _add_progress(self, message: str):
-        """發送進度更新（若有 callback 直接呼叫，否則緩衝）"""
+        """發送進度更新（累積到完整內容，並觸發 callback）"""
+        # 累積完整進度內容
+        self._progress_content.append(message)
+
         if self.progress_callback:
             try:
-                await self.progress_callback(message)
+                # 傳遞完整累積內容給 callback（由 callback 決定如何顯示）
+                await self.progress_callback("\n".join(self._progress_content))
             except Exception as e:
                 logger.warning(f"進度回調失敗: {e}")
         else:
