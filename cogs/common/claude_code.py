@@ -922,23 +922,30 @@ class ClaudeCodeCog(commands.Cog):
             return
 
         # 權限檢查
-        if not self._check_permission_message(message):
-            logger.debug(f"[ClaudeCode] 權限檢查失敗: user={message.author.id}, channel={message.channel.id}, parent={getattr(message.channel, 'parent_id', None)}, allowed_id={ALLOWED_CHANNEL_ID}")
+        perm_result = self._check_permission_message(message)
+        logger.debug(f"[ClaudeCode] 權限檢查: user={message.author.id} (admin={ADMIN_USER_ID}), channel={message.channel.id}, type={type(message.channel).__name__}, is_thread={isinstance(message.channel, discord.Thread)}, parent={getattr(message.channel, 'parent_id', None)}, allowed_id={ALLOWED_CHANNEL_ID}, perm={perm_result}")
+        if not perm_result:
             return
 
         # 只在 thread 中自動觸發（主頻道仍需用 /cc 指令）
-        if not isinstance(message.channel, discord.Thread):
-            logger.debug(f"[ClaudeCode] 非 thread，略過: channel={message.channel.id}, type={type(message.channel)}")
+        is_thread = isinstance(message.channel, discord.Thread)
+        logger.debug(f"[ClaudeCode] Thread 檢查: is_thread={is_thread}, channel_id={message.channel.id}, channel_type={type(message.channel).__name__}")
+        if not is_thread:
+            logger.debug(f"[ClaudeCode] 非 thread，略過")
             return
 
         # 避免重複處理（同一訊息可能觸發多次）
-        if message.id in self._processed_messages:
+        already_processed = message.id in self._processed_messages
+        logger.debug(f"[ClaudeCode] 重複檢查: msg_id={message.id}, processed={already_processed}, set_size={len(self._processed_messages)}")
+        if already_processed:
             return
         self._processed_messages.add(message.id)
 
         logger.info(f"[ClaudeCode] Thread 觸發: thread={message.channel.id}, parent={message.channel.parent_id}, user={message.author.id}, content={message.content[:50]}")
 
-        if not NVIDIA_API_KEY:
+        has_api_key = bool(NVIDIA_API_KEY)
+        logger.debug(f"[ClaudeCode] API Key 檢查: has_key={has_api_key}")
+        if not has_api_key:
             logger.warning("[ClaudeCode] NVIDIA_API_KEY 未設定")
             return  # 靜默失效
 
