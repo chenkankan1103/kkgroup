@@ -542,13 +542,16 @@ class NvidiaNimClient:
 class ClaudeCodeAgent:
     """Claude Code Agent - Agentic Loop 實作 (NVIDIA NIM 版本)"""
 
-    def __init__(self, user_id: int, channel_id: int):
+    def __init__(self, user_id: int, channel_id: int, progress_callback=None):
         self.user_id = user_id
         self.channel_id = channel_id
         self.client = NvidiaNimClient(NVIDIA_API_KEY)
         self.tools = ToolExecutor(WORK_DIR)
         self.history: List[Dict] = []
         self.turn_count = 0
+        self.progress_callback = progress_callback  # 進度回調函數
+        self._last_progress_update = 0  # 上次更新時間戳
+        self._progress_interval = 10  # 更新間隔（秒）
 
     def _build_system_prompt(self) -> str:
         # 獲取長期記憶上下文
@@ -559,6 +562,15 @@ class ClaudeCodeAgent:
         if memory["knowledge_context"]:
             context += "\n\n=== 知識庫 ===\n" + memory["knowledge_context"]
         return context
+
+    async def _maybe_update_progress(self, message: str):
+        """節流進度更新：每 10 秒最多呼叫一次 callback"""
+        import time
+        now = time.time()
+        if now - self._last_progress_update >= self._progress_interval:
+            self._last_progress_update = now
+            if self.progress_callback:
+                await self.progress_callback(message)
 
     async def run(self, user_input: str) -> str:
         """主入口：執行 agentic loop"""
@@ -575,6 +587,9 @@ class ClaudeCodeAgent:
 
         for turn in range(MAX_TURNS):
             self.turn_count = turn + 1
+
+            # 進度更新：開始新輪次
+            await self._maybe_update_progress(f"🔄 第 {self.turn_count}/{MAX_TURNS} 輪：思考中...")
 
             # 呼叫 API
             response = await self.client.create_message(
@@ -595,6 +610,8 @@ class ClaudeCodeAgent:
 
                 # 執行每個工具（通常一次只有一個）
                 for tool_use in tool_uses:
+                    tool_name = tool_use["name"]
+                    await self._maybe_update_progress(f"🔧 第 {self.turn_count} 輪：執行 {tool_name}...")
                     result = await self._execute_tool(tool_use)
                     # 將工具結果加入歷史
                     self.history.append({
@@ -737,12 +754,33 @@ class ClaudeCodeCog(commands.Cog):
                 agent = ClaudeCodeAgent(user_id, interaction.channel_id)
                 self.active_agents[user_id] = agent
 
+            # 先發一條訊息，後續每 10 秒編輯更新進度
+            progress_msg = await interaction.followup.send("🔄 開始執行...", wait=True)
+
+            async def update_progress(text: str):
+                """每 10 秒編輯同一條訊息顯示進度"""
+                try:
+                    # Discord 限制 2000 字元，截斷過長內容
+                    display_text = text[:1900]
+                    await progress_msg.edit(content=display_text)
+                except discord.NotFound:
+                    pass  # 訊息已被刪除
+                except discord.HTTPException:
+                    pass  # rate limit 或其他錯誤，靜默忽略
+
+            # 綁定進度回調
+            agent.progress_callback = update_progress
+
             # 執行
             reply = await agent.run(prompt)
 
-            # 分段發送（Discord 限制 2000 字元）
-            for chunk in self._chunk_text(reply, 1900):
-                await interaction.followup.send(chunk)
+            # 最後編輯為最終結果
+            chunks = self._chunk_text(reply, 1900)
+            for i, chunk in enumerate(chunks):
+                if i == 0:
+                    await progress_msg.edit(content=chunk)
+                else:
+                    await interaction.followup.send(chunk)
 
         except Exception as e:
             logger.exception("Claude Code 執行錯誤")
