@@ -3,7 +3,7 @@ KK園區 Claude Code CLI 移植版
 ====================================================================
 完整移植 Claude Code CLI 核心功能到 Discord Bot，僅限：
 - Discord 管理員（.env 中 ADMIN_USER_ID 設定）
-- 指定頻道：1509078418312921128
+- 指定頻道：1504438347974705152
 
 架構：
 - 使用 Anthropic Messages API (tool_use) 實現 agentic loop
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 # ─── 環境變數與權限設定 ─────────────────────────────────────────────────────
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
-ALLOWED_CHANNEL_ID = 1509078418312921128
+ALLOWED_CHANNEL_ID = 1504438347974705152
 
 # NVIDIA NIM API (OpenAI compatible)
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
