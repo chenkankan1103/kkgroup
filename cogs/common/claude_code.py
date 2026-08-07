@@ -19,7 +19,7 @@ import logging
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal, Union
 from datetime import datetime
 
 import discord
@@ -707,18 +707,41 @@ class ClaudeCodeCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.active_agents: Dict[int, ClaudeCodeAgent] = {}
+        # key: (user_id, thread_id 或 channel_id) -> agent
+        self.active_agents: Dict[tuple, ClaudeCodeAgent] = {}
         logger.info("✅ ClaudeCodeCog 初始化完成")
 
-    def _check_permission(self, interaction: discord.Interaction) -> bool:
-        """檢查權限：管理員且在指定頻道"""
-        # 頻道檢查
+### 常數
+    self._thread_contexts: Dict[int, str] = {}  # thread_id -> context_key for memory
+
+    def _get_context_key(self, channel: Union[discord.TextChannel, discord.Thread]) -> str:
+        """獲取對話上下文鍵：thread 用 thread_id，主頻道用 channel_id"""
+        if isinstance(channel, discord.Thread):
+            return f"thread_{channel.id}"
+        return f"channel_{channel.id}"
+
+    def _check_permission_message(self, message: discord.Message) -> bool:
+        """檢查訊息權限：管理員且在指定頻道（或其 thread）"""
+        # 頻道檢查：主頻道或其 thread
+        if message.channel.id != ALLOWED_CHANNEL_ID:
+            if isinstance(message.channel, discord.Thread):
+                if message.channel.parent_id != ALLOWED_CHANNEL_ID:
+                    return False
+            else:
+                return False
+        # 管理員檢查
+        if message.author.id == ADMIN_USER_ID:
+            return True
+        # 角色檢查
+        admin_role = os.getenv("ADMIN_ROLE_NAME", "管理員")
+        return any(r.name == admin_role for r in getattr(message.author, "roles", []))
+
+    def _check_permission_interaction(self, interaction: discord.Interaction) -> bool:
+        """檢查互動權限：管理員且在指定頻道"""
         if interaction.channel_id != ALLOWED_CHANNEL_ID:
             return False
-        # 管理員檢查
         if interaction.user.id == ADMIN_USER_ID:
             return True
-        # 也可檢查角色（可選）
         admin_role = os.getenv("ADMIN_ROLE_NAME", "管理員")
         return any(r.name == admin_role for r in getattr(interaction.user, "roles", []))
 
@@ -731,7 +754,7 @@ class ClaudeCodeCog(commands.Cog):
         continue_conv="是否繼續上一輪對話（預設新對話）",
     )
     async def cc(self, interaction: discord.Interaction, prompt: str, continue_conv: bool = False):
-        if not self._check_permission(interaction):
+        if not self._check_permission_interaction(interaction):
             await interaction.response.send_message(
                 "❌ 此指令僅限 Discord 管理員在指定頻道使用。", ephemeral=True
             )
@@ -746,13 +769,16 @@ class ClaudeCodeCog(commands.Cog):
         await interaction.response.defer()
 
         try:
+            # 以 thread 或 channel 為 context key
+            context_key = self._get_context_key(interaction.channel)
+            agent_key = (interaction.user.id, context_key)
+
             # 獲取或建立 agent
-            user_id = interaction.user.id
-            if continue_conv and user_id in self.active_agents:
-                agent = self.active_agents[user_id]
+            if continue_conv and agent_key in self.active_agents:
+                agent = self.active_agents[agent_key]
             else:
-                agent = ClaudeCodeAgent(user_id, interaction.channel_id)
-                self.active_agents[user_id] = agent
+                agent = ClaudeCodeAgent(interaction.user.id, interaction.channel_id)
+                self.active_agents[agent_key] = agent
 
             # 先發一條訊息，後續每 10 秒編輯更新進度
             progress_msg = await interaction.followup.send("🔄 開始執行...", wait=True)
@@ -760,15 +786,13 @@ class ClaudeCodeCog(commands.Cog):
             async def update_progress(text: str):
                 """每 10 秒編輯同一條訊息顯示進度"""
                 try:
-                    # Discord 限制 2000 字元，截斷過長內容
                     display_text = text[:1900]
                     await progress_msg.edit(content=display_text)
                 except discord.NotFound:
-                    pass  # 訊息已被刪除
+                    pass
                 except discord.HTTPException:
-                    pass  # rate limit 或其他錯誤，靜默忽略
+                    pass
 
-            # 綁定進度回調
             agent.progress_callback = update_progress
 
             # 執行
@@ -791,16 +815,22 @@ class ClaudeCodeCog(commands.Cog):
         description="查看 Claude Code Agent 狀態",
     )
     async def cc_status(self, interaction: discord.Interaction):
-        if not self._check_permission(interaction):
+        if not self._check_permission_interaction(interaction):
             await interaction.response.send_message("❌ 權限不足。", ephemeral=True)
             return
 
         active = len(self.active_agents)
+        context_key = self._get_context_key(interaction.channel)
+        user_agent_key = (interaction.user.id, context_key)
+        has_active = user_agent_key in self.active_agents
+
         embed = discord.Embed(
             title="🤖 Claude Code 狀態 (NVIDIA NIM)",
             color=discord.Color.blue(),
         )
-        embed.add_field(name="活躍 Agent", value=str(active), inline=True)
+        embed.add_field(name="活躍 Agent 總數", value=str(active), inline=True)
+        embed.add_field(name="當前對話", value=f"✅ 活躍" if has_active else "💤 無", inline=True)
+        embed.add_field(name="上下文", value=context_key, inline=False)
         embed.add_field(name="模型 (自動選擇)", value=f"Ultra: {MODEL_ULTRA}\nSuper: {MODEL_SUPER}", inline=False)
         embed.add_field(name="工作目錄", value=str(WORK_DIR), inline=False)
         embed.add_field(name="最大輪數", value=str(MAX_TURNS), inline=True)
@@ -812,13 +842,16 @@ class ClaudeCodeCog(commands.Cog):
         description="清除當前對話歷史",
     )
     async def cc_clear(self, interaction: discord.Interaction):
-        if not self._check_permission(interaction):
+        if not self._check_permission_interaction(interaction):
             await interaction.response.send_message("❌ 權限不足。", ephemeral=True)
             return
 
-        if interaction.user.id in self.active_agents:
-            await self.active_agents[interaction.user.id].close()
-            del self.active_agents[interaction.user.id]
+        context_key = self._get_context_key(interaction.channel)
+        agent_key = (interaction.user.id, context_key)
+
+        if agent_key in self.active_agents:
+            await self.active_agents[agent_key].close()
+            del self.active_agents[agent_key]
             await interaction.response.send_message("✅ 已清除對話歷史", ephemeral=True)
         else:
             await interaction.response.send_message("無活躍對話", ephemeral=True)
@@ -832,6 +865,74 @@ class ClaudeCodeCog(commands.Cog):
         for i in range(0, len(text), max_len):
             chunks.append(text[i:i + max_len])
         return chunks
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """自動監聽 thread 訊息：管理員在允許頻道的 thread 說話即觸發"""
+        # 忽略 bot 自己的訊息
+        if message.author.bot:
+            return
+
+        # 忽略有指令前綴的訊息（讓指令處理器處理）
+        if message.content.startswith(('!', '/', '?')):
+            return
+
+        # 權限檢查
+        if not self._check_permission_message(message):
+            return
+
+        # 只在 thread 中自動觸發（主頻道仍需用 /cc 指令）
+        if not isinstance(message.channel, discord.Thread):
+            return
+
+        # 避免重複處理（同一訊息可能觸發多次）
+        if hasattr(message, '_claude_code_processed'):
+            return
+        message._claude_code_processed = True
+
+        if not NVIDIA_API_KEY:
+            return  # 靜默失效
+
+        try:
+            context_key = self._get_context_key(message.channel)
+            agent_key = (message.author.id, context_key)
+
+            # 獲取或建立 agent
+            if agent_key in self.active_agents:
+                agent = self.active_agents[agent_key]
+            else:
+                agent = ClaudeCodeAgent(message.author.id, message.channel.id)
+                self.active_agents[agent_key] = agent
+
+            # 發送進度訊息
+            progress_msg = await message.reply("🔄 開始執行...", mention_author=False)
+
+            async def update_progress(text: str):
+                try:
+                    display_text = text[:1900]
+                    await progress_msg.edit(content=display_text)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+
+            agent.progress_callback = update_progress
+
+            # 執行
+            reply = await agent.run(message.content)
+
+            # 編輯為最終結果
+            chunks = self._chunk_text(reply, 1900)
+            for i, chunk in enumerate(chunks):
+                if i == 0:
+                    await progress_msg.edit(content=chunk)
+                else:
+                    await message.channel.send(chunk)
+
+        except Exception as e:
+            logger.exception("Thread auto-trigger 執行錯誤")
+            try:
+                await message.reply(f"❌ 執行錯誤: {e}", mention_author=False)
+            except:
+                pass
 
     async def cog_unload(self):
         """卸載時關閉所有 agent"""
