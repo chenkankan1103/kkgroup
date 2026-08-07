@@ -918,10 +918,12 @@ class ClaudeCodeCog(commands.Cog):
 
         # 權限檢查
         if not self._check_permission_message(message):
+            logger.debug(f"[ClaudeCode] 權限檢查失敗: user={message.author.id}, channel={message.channel.id}, parent={getattr(message.channel, 'parent_id', None)}")
             return
 
         # 只在 thread 中自動觸發（主頻道仍需用 /cc 指令）
         if not isinstance(message.channel, discord.Thread):
+            logger.debug(f"[ClaudeCode] 非 thread，略過: channel={message.channel.id}, type={type(message.channel)}")
             return
 
         # 避免重複處理（同一訊息可能觸發多次）
@@ -929,7 +931,10 @@ class ClaudeCodeCog(commands.Cog):
             return
         message._claude_code_processed = True
 
+        logger.info(f"[ClaudeCode] Thread 觸發: thread={message.channel.id}, parent={message.channel.parent_id}, user={message.author.id}, content={message.content[:50]}")
+
         if not NVIDIA_API_KEY:
+            logger.warning("[ClaudeCode] NVIDIA_API_KEY 未設定")
             return  # 靜默失效
 
         try:
