@@ -726,7 +726,8 @@ class ClaudeCodeAgent:
 
         # 超過安全上限
         await self._finalize_progress()
-        return f"⚠️ 已達安全輪數上限（{MAX_SAFE_TURNS}），任務未完成。請繼續指示。"
+        # 返回特殊標記，讓上層處理繼續按鈕
+        return {"type": "limit_reached", "message": f"⚠️ 已達安全輪數上限（{MAX_SAFE_TURNS}），任務未完成。點擊下方按鈕繼續。", "history": self.history, "system_prompt": system_prompt}
 
     async def _execute_tool(self, tool_use: Dict) -> str:
         name = tool_use["name"]
@@ -878,6 +879,75 @@ class StopView(discord.ui.View):
             item.disabled = True
 
 
+# ─── 繼續按鈕 View ──────────────────────────────────────────────────────────────
+class ContinueView(discord.ui.View):
+    """輪數上限時的繼續按鈕"""
+
+    def __init__(self, agent: "ClaudeCodeAgent", original_prompt: str, timeout: float = 300):
+        super().__init__(timeout=timeout)
+        self.agent = agent
+        self.original_prompt = original_prompt
+        self.continued = False
+
+    @discord.ui.button(label="▶️ 繼續執行", style=discord.ButtonStyle.success, custom_id="claude_continue")
+    async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 只有觸發者能繼續
+        if interaction.user.id != self.agent.user_id:
+            await interaction.response.send_message("❌ 只有發起者能繼續任務", ephemeral=True)
+            return
+
+        self.continued = True
+        button.disabled = True
+        button.label = "⏳ 繼續中..."
+        await interaction.response.edit_message(view=self)
+
+        # 重置 agent 的輪數計數器，繼續執行
+        self.agent.turn_count = 0
+        MAX_SAFE_TURNS = 100
+
+        # 發送新進度訊息
+        progress_msg = await interaction.followup.send("🔄 繼續執行...", view=StopView(self.agent))
+
+        async def update_progress(text: str):
+            try:
+                await progress_msg.edit(content=text[:1900], view=StopView(self.agent))
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+        # 繼續執行（傳入空輸入，讓 agent 從歷史繼續）
+        reply = await self.agent.run("", progress_callback=update_progress)
+
+        # 處理結果
+        if isinstance(reply, dict) and reply.get("type") == "limit_reached":
+            # 再次達到上限，遞迴顯示繼續按鈕
+            continue_view = ContinueView(self.agent, self.original_prompt)
+            await progress_msg.edit(content=reply["message"], view=continue_view)
+        else:
+            # 正常完成
+            await progress_msg.edit(view=StopView(self.agent))  # 禁用按鈕
+            chunks = self._chunk_text(reply, 1900)
+            for chunk in chunks:
+                await interaction.followup.send(chunk)
+
+    def _chunk_text(self, text: str, max_len: int) -> List[str]:
+        """將長文字分割"""
+        if len(text) <= max_len:
+            return [text]
+        chunks = []
+        for i in range(0, len(text), max_len):
+            chunks.append(text[i:i + max_len])
+        return chunks
+
+    async def on_timeout(self):
+        """超時時禁用按鈕"""
+        for item in self.children:
+            item.disabled = True
+        try:
+            await self.message.edit(view=self)
+        except:
+            pass
+
+
 # ─── Discord Cog ────────────────────────────────────────────────────────────
 class ClaudeCodeCog(commands.Cog):
     """Claude Code CLI Discord 整合"""
@@ -972,13 +1042,19 @@ class ClaudeCodeCog(commands.Cog):
             # 執行
             reply = await agent.run(prompt, progress_callback=update_progress)
 
-            # 發送最終結果
-            stop_view.stop()  # 禁用按鈕
-            await initial_msg.edit(view=stop_view)
+            # 檢查是否達到輪數上限
+            if isinstance(reply, dict) and reply.get("type") == "limit_reached":
+                # 顯示繼續按鈕
+                continue_view = ContinueView(agent, prompt)
+                await initial_msg.edit(content=reply["message"], view=continue_view)
+            else:
+                # 正常完成
+                stop_view.stop()  # 禁用按鈕
+                await initial_msg.edit(view=stop_view)
 
-            chunks = self._chunk_text(reply, 1900)
-            for chunk in chunks:
-                await interaction.followup.send(chunk)
+                chunks = self._chunk_text(reply, 1900)
+                for chunk in chunks:
+                    await interaction.followup.send(chunk)
 
         except Exception as e:
             logger.exception("Claude Code 執行錯誤")
@@ -1110,17 +1186,23 @@ class ClaudeCodeCog(commands.Cog):
             # 執行
             reply = await agent.run(message.content, progress_callback=update_progress)
 
-            # 禁用按鈕
-            stop_view.stop()
-            try:
-                await initial_msg.edit(view=stop_view)
-            except (discord.NotFound, discord.HTTPException):
-                pass
+            # 檢查是否達到輪數上限
+            if isinstance(reply, dict) and reply.get("type") == "limit_reached":
+                # 顯示繼續按鈕
+                continue_view = ContinueView(agent, message.content)
+                await initial_msg.edit(content=reply["message"], view=continue_view)
+            else:
+                # 正常完成
+                stop_view.stop()
+                try:
+                    await initial_msg.edit(view=stop_view)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
 
-            # 發送最終結果
-            chunks = self._chunk_text(reply, 1900)
-            for chunk in chunks:
-                await message.channel.send(chunk)
+                # 發送最終結果
+                chunks = self._chunk_text(reply, 1900)
+                for chunk in chunks:
+                    await message.channel.send(chunk)
 
         except Exception as e:
             logger.exception("Thread auto-trigger 執行錯誤")
