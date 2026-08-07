@@ -582,6 +582,7 @@ class ClaudeCodeAgent:
         self._progress_interval = 10  # 更新間隔（秒）
         self._progress_buffer: list[str] = []  # 進度緩衝區
         self._buffer_lock = asyncio.Lock()
+        self._cancelled = asyncio.Event()  # 取消信號
 
     async def _flush_progress_buffer(self):
         """將緩衝區內容合併發送"""
@@ -597,19 +598,33 @@ class ClaudeCodeAgent:
             logger.warning(f"進度回調失敗: {e}")
 
     async def _add_progress(self, message: str):
-        """加入進度訊息到緩衝區，每 10 秒自動發送"""
-        async with self._buffer_lock:
-            self._progress_buffer.append(message)
+        """發送進度更新（若有 callback 直接呼叫，否則緩衝）"""
+        if self.progress_callback:
+            try:
+                await self.progress_callback(message)
+            except Exception as e:
+                logger.warning(f"進度回調失敗: {e}")
+        else:
+            # 兼容舊模式：緩衝區
+            async with self._buffer_lock:
+                self._progress_buffer.append(message)
 
-        import time
-        now = time.time()
-        if now - self._last_progress_update >= self._progress_interval:
-            self._last_progress_update = now
-            await self._flush_progress_buffer()
+            import time
+            now = time.time()
+            if now - self._last_progress_update >= self._progress_interval:
+                self._last_progress_update = now
+                await self._flush_progress_buffer()
 
     async def _finalize_progress(self):
-        """強制發送剩餘緩衝區內容"""
+        """強制發送剩餘緩衝區內容（舊模式）"""
         await self._flush_progress_buffer()
+
+    def cancel(self):
+        """取消執行中的任務"""
+        self._cancelled.set()
+
+    def is_cancelled(self) -> bool:
+        return self._cancelled.is_set()
 
     def _build_system_prompt(self) -> str:
         # 獲取長期記憶上下文
@@ -621,10 +636,14 @@ class ClaudeCodeAgent:
             context += "\n\n=== 知識庫 ===\n" + memory["knowledge_context"]
         return context
 
-    async def run(self, user_input: str) -> str:
+    async def run(self, user_input: str, progress_callback=None) -> str:
         """主入口：執行 agentic loop（無輪數上限，直到完成任務）"""
         if not NVIDIA_API_KEY:
             return "❌ NVIDIA_API_KEY 未設定，無法使用 Claude Code 功能。請在 .env 中設定。"
+
+        # 允許外部傳入 progress_callback（用於編輯同一條 message 的模式）
+        if progress_callback:
+            self.progress_callback = progress_callback
 
         # 載入該用戶的對話歷史
         self._load_history()
@@ -637,6 +656,11 @@ class ClaudeCodeAgent:
         # 安全上限：避免無限循環（100 輪足夠大）
         MAX_SAFE_TURNS = 100
         while self.turn_count < MAX_SAFE_TURNS:
+            # 檢查是否被取消
+            if self._cancelled.is_set():
+                await self._finalize_progress()
+                return "🛑 任務已由使用者取消"
+
             self.turn_count += 1
 
             # 進度更新：記錄到緩衝區
@@ -819,6 +843,41 @@ class ClaudeCodeAgent:
         await self.client.close()
 
 
+# ─── 停止按鈕 View ──────────────────────────────────────────────────────────────
+class StopView(discord.ui.View):
+    """帶有停止按鈕的進度訊息 View"""
+
+    def __init__(self, agent: "ClaudeCodeAgent", timeout: float = 300):
+        super().__init__(timeout=timeout)
+        self.agent = agent
+
+    @discord.ui.button(label="🛑 停止", style=discord.ButtonStyle.danger, custom_id="claude_stop")
+    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 只有觸發者能停止
+        if interaction.user.id != self.agent.user_id:
+            await interaction.response.send_message("❌ 只有發起者能停止任務", ephemeral=True)
+            return
+
+        self.agent.cancel()
+        button.disabled = True
+        button.label = "⏹️ 正在停止..."
+        await interaction.response.edit_message(view=self)
+
+        # 等待任務實際停止（最多 5 秒）
+        for _ in range(10):
+            await asyncio.sleep(0.5)
+            if self.agent.is_cancelled():
+                break
+
+        button.label = "✅ 已停止"
+        await interaction.edit_original_response(view=self)
+
+    async def on_timeout(self):
+        """超時時禁用按鈕"""
+        for item in self.children:
+            item.disabled = True
+
+
 # ─── Discord Cog ────────────────────────────────────────────────────────────
 class ClaudeCodeCog(commands.Cog):
     """Claude Code CLI Discord 整合"""
@@ -897,52 +956,26 @@ class ClaudeCodeCog(commands.Cog):
                 agent = ClaudeCodeAgent(interaction.user.id, interaction.channel_id)
                 self.active_agents[agent_key] = agent
 
-            # 進度緩衝區：累積 10 秒內的所有更新，再一次發送
-            progress_buffer: list[str] = []
-            buffer_lock = asyncio.Lock()
-            flush_task: asyncio.Task | None = None
+            # 建立停止按鈕 View
+            stop_view = StopView(agent)
 
-            async def flush_buffer():
-                """將緩衝區內容合併發送"""
-                async with buffer_lock:
-                    if not progress_buffer:
-                        return
-                    content = "\n".join(progress_buffer)
-                    progress_buffer.clear()
-                try:
-                    await interaction.followup.send(content[:1900])
-                except discord.HTTPException:
-                    pass
-
-            async def periodic_flush():
-                """每 10 秒自動 flush"""
-                while True:
-                    await asyncio.sleep(10)
-                    await flush_buffer()
+            # 發送初始進度訊息（帶停止按鈕）
+            initial_msg = await interaction.followup.send("🔄 開始執行...", view=stop_view)
 
             async def update_progress(text: str):
-                """累積進度訊息，每 10 秒批次發送"""
-                async with buffer_lock:
-                    progress_buffer.append(text[:1900])
+                """更新進度訊息（編輯同一條 message）"""
+                try:
+                    await initial_msg.edit(content=text[:1900], view=stop_view)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
 
-            # 啟動定期 flush 任務
-            flush_task = asyncio.create_task(periodic_flush())
-            agent.progress_callback = update_progress
-
-            try:
-                # 執行
-                reply = await agent.run(prompt)
-            finally:
-                # 確保最後的緩衝區內容也發送出去
-                if flush_task:
-                    flush_task.cancel()
-                    try:
-                        await flush_task
-                    except asyncio.CancelledError:
-                        pass
-                await flush_buffer()
+            # 執行
+            reply = await agent.run(prompt, progress_callback=update_progress)
 
             # 發送最終結果
+            stop_view.stop()  # 禁用按鈕
+            await initial_msg.edit(view=stop_view)
+
             chunks = self._chunk_text(reply, 1900)
             for chunk in chunks:
                 await interaction.followup.send(chunk)
@@ -1061,50 +1094,28 @@ class ClaudeCodeCog(commands.Cog):
                 agent = ClaudeCodeAgent(message.author.id, message.channel.id)
                 self.active_agents[agent_key] = agent
 
-            # 進度緩衝區：累積 10 秒內的所有更新，再一次發送
-            progress_buffer: list[str] = []
-            buffer_lock = asyncio.Lock()
-            flush_task: asyncio.Task | None = None
+            # 建立停止按鈕 View
+            stop_view = StopView(agent)
 
-            async def flush_buffer():
-                """將緩衝區內容合併發送"""
-                async with buffer_lock:
-                    if not progress_buffer:
-                        return
-                    content = "\n".join(progress_buffer)
-                    progress_buffer.clear()
+            # 發送初始進度訊息（帶停止按鈕）
+            initial_msg = await message.channel.send("🔄 開始執行...", view=stop_view)
+
+            async def update_progress(text: str):
+                """更新進度訊息（編輯同一條 message）"""
                 try:
-                    await message.channel.send(content[:1900])
+                    await initial_msg.edit(content=text[:1900], view=stop_view)
                 except (discord.NotFound, discord.HTTPException):
                     pass
 
-            async def periodic_flush():
-                """每 10 秒自動 flush"""
-                while True:
-                    await asyncio.sleep(10)
-                    await flush_buffer()
+            # 執行
+            reply = await agent.run(message.content, progress_callback=update_progress)
 
-            async def update_progress(text: str):
-                """累積進度訊息，每 10 秒批次發送"""
-                async with buffer_lock:
-                    progress_buffer.append(text[:1900])
-
-            # 啟動定期 flush 任務
-            flush_task = asyncio.create_task(periodic_flush())
-            agent.progress_callback = update_progress
-
+            # 禁用按鈕
+            stop_view.stop()
             try:
-                # 執行
-                reply = await agent.run(message.content)
-            finally:
-                # 確保最後的緩衝區內容也發送出去
-                if flush_task:
-                    flush_task.cancel()
-                    try:
-                        await flush_task
-                    except asyncio.CancelledError:
-                        pass
-                await flush_buffer()
+                await initial_msg.edit(view=stop_view)
+            except (discord.NotFound, discord.HTTPException):
+                pass
 
             # 發送最終結果
             chunks = self._chunk_text(reply, 1900)
