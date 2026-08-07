@@ -795,22 +795,50 @@ class ClaudeCodeCog(commands.Cog):
                 agent = ClaudeCodeAgent(interaction.user.id, interaction.channel_id)
                 self.active_agents[agent_key] = agent
 
-            # 進度訊息列表：每 10 秒發送一條新訊息，保留完整歷程
-            progress_messages: list[discord.Message] = []
+            # 進度緩衝區：累積 10 秒內的所有更新，再一次發送
+            progress_buffer: list[str] = []
+            buffer_lock = asyncio.Lock()
+            flush_task: asyncio.Task | None = None
 
-            async def update_progress(text: str):
-                """每 10 秒發送新訊息顯示進程（不編輯，保留完整歷程）"""
+            async def flush_buffer():
+                """將緩衝區內容合併發送"""
+                async with buffer_lock:
+                    if not progress_buffer:
+                        return
+                    content = "\n".join(progress_buffer)
+                    progress_buffer.clear()
                 try:
-                    display_text = text[:1900]
-                    msg = await interaction.followup.send(display_text, wait=True)
-                    progress_messages.append(msg)
+                    await interaction.followup.send(content[:1900])
                 except discord.HTTPException:
                     pass
 
+            async def periodic_flush():
+                """每 10 秒自動 flush"""
+                while True:
+                    await asyncio.sleep(10)
+                    await flush_buffer()
+
+            async def update_progress(text: str):
+                """累積進度訊息，每 10 秒批次發送"""
+                async with buffer_lock:
+                    progress_buffer.append(text[:1900])
+
+            # 啟動定期 flush 任務
+            flush_task = asyncio.create_task(periodic_flush())
             agent.progress_callback = update_progress
 
-            # 執行
-            reply = await agent.run(prompt)
+            try:
+                # 執行
+                reply = await agent.run(prompt)
+            finally:
+                # 確保最後的緩衝區內容也發送出去
+                if flush_task:
+                    flush_task.cancel()
+                    try:
+                        await flush_task
+                    except asyncio.CancelledError:
+                        pass
+                await flush_buffer()
 
             # 發送最終結果
             chunks = self._chunk_text(reply, 1900)
@@ -915,22 +943,50 @@ class ClaudeCodeCog(commands.Cog):
                 agent = ClaudeCodeAgent(message.author.id, message.channel.id)
                 self.active_agents[agent_key] = agent
 
-            # 進度訊息列表：每 10 秒發送新訊息，保留完整歷程
-            progress_messages: list[discord.Message] = []
+            # 進度緩衝區：累積 10 秒內的所有更新，再一次發送
+            progress_buffer: list[str] = []
+            buffer_lock = asyncio.Lock()
+            flush_task: asyncio.Task | None = None
 
-            async def update_progress(text: str):
-                """每 10 秒發送新訊息顯示進程（不編輯，保留完整歷程）"""
+            async def flush_buffer():
+                """將緩衝區內容合併發送"""
+                async with buffer_lock:
+                    if not progress_buffer:
+                        return
+                    content = "\n".join(progress_buffer)
+                    progress_buffer.clear()
                 try:
-                    display_text = text[:1900]
-                    msg = await message.reply(display_text, mention_author=False)
-                    progress_messages.append(msg)
+                    await message.channel.send(content[:1900])
                 except (discord.NotFound, discord.HTTPException):
                     pass
 
+            async def periodic_flush():
+                """每 10 秒自動 flush"""
+                while True:
+                    await asyncio.sleep(10)
+                    await flush_buffer()
+
+            async def update_progress(text: str):
+                """累積進度訊息，每 10 秒批次發送"""
+                async with buffer_lock:
+                    progress_buffer.append(text[:1900])
+
+            # 啟動定期 flush 任務
+            flush_task = asyncio.create_task(periodic_flush())
             agent.progress_callback = update_progress
 
-            # 執行
-            reply = await agent.run(message.content)
+            try:
+                # 執行
+                reply = await agent.run(message.content)
+            finally:
+                # 確保最後的緩衝區內容也發送出去
+                if flush_task:
+                    flush_task.cancel()
+                    try:
+                        await flush_task
+                    except asyncio.CancelledError:
+                        pass
+                await flush_buffer()
 
             # 發送最終結果
             chunks = self._chunk_text(reply, 1900)
