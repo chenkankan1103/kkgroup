@@ -348,6 +348,8 @@ class AnimeTracker(commands.Cog):
                             # 關鍵：必須傳入 message_id 才能讓永久視圖在重啟後正常工作
                             message_id = msg_info.get('messageId') or msg_info.get('message_id')
                             if message_id:
+                                # 🔑 修復：將 message_id 存入 view 實例，供 modal 使用
+                                view.message_id = int(message_id)
                                 self.bot.add_view(view, message_id=int(message_id))
                                 logger.info(f"✅ [_restore_old_message_views] 已註冊永久視圖 message_id={message_id}")
                             else:
@@ -1107,8 +1109,8 @@ class AnimeTracker(commands.Cog):
                             # 獲取用戶匿名雜湊
                             user_hash = str(hash(modal_interaction.user.id))[:10]
 
-                            # 記錄評論（vote_type 為空表示只是評論） - 使用 message_id
-                            message_id = modal_interaction.message.id if modal_interaction.message else None
+                            # 🔑 修復：使用 outer_self.message_id（view 儲存的 message_id），因為 modal_interaction.message 為 None
+                            message_id = outer_self.message_id
                             vote_recorded = outer_self.tracker.record_vote(
                                 video_sn=outer_self.video_sn,
                                 anime_sn=outer_self.anime_sn,
@@ -1128,20 +1130,19 @@ class AnimeTracker(commands.Cog):
                             try:
                                 from db_adapter import set_user_field, get_user_field
 
-                                # 檢查是否已發放過獎勵
-                                if not outer_self.tracker.db.is_reward_already_given(modal_interaction.user.id, modal_interaction.message.id, "comment"):
+                                # 檢查是否已發放過獎勵 - 使用 view 的 message_id
+                                if message_id and not outer_self.tracker.db.is_reward_already_given(modal_interaction.user.id, message_id, "comment"):
                                     # 獲取當前 KK幣
                                     current_kkcoin = get_user_field(modal_interaction.user.id, "kkcoin") or 0
                                     new_kkcoin = int(current_kkcoin) + 3000
 
-                                    # 更新 KK幣 - 使用 message_id
-                                    message_id_for_reward = modal_interaction.message.id if modal_interaction.message else None
+                                    # 更新 KK幣
                                     set_user_field(modal_interaction.user.id, "kkcoin", new_kkcoin)
 
                                     # 記錄獎勵發放
                                     outer_self.tracker.db.record_reward(
                                         user_id=modal_interaction.user.id,
-                                        message_id=message_id_for_reward,
+                                        message_id=message_id,
                                         reward_type="comment",
                                         reward_amount=3000
                                     )
@@ -1158,11 +1159,10 @@ class AnimeTracker(commands.Cog):
 
                             await modal_interaction.response.send_message(reward_message, ephemeral=True)
 
-                            # 更新原始消息統計
+                            # 更新原始消息統計 - 使用 view 的 message_id
                             try:
-                                message_id_for_update = modal_interaction.message.id if modal_interaction.message else None
-                                if message_id_for_update:
-                                    await outer_self._update_message_stats(message_id=message_id_for_update, channel=modal_interaction.channel)
+                                if message_id:
+                                    await outer_self._update_message_stats(message_id=message_id, channel=modal_interaction.channel)
                                 logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存並更新消息統計")
                             except Exception as update_error:
                                 logger.error(f"❌ [comment_submit] 更新消息統計失敗: {update_error}", exc_info=True)

@@ -1819,6 +1819,10 @@ class AnimePushCore:
                         # 發送訊息（silent=True 靜音推送）
                         message = await channel.send(embed=embed, view=view, silent=True)
 
+                        # 🔑 修復：將 message_id 存入 view 實例，供 modal 使用（modal 沒有 message 屬性）
+                        if view and hasattr(view, 'message_id'):
+                            view.message_id = message.id
+
                         self.db.save_message_info(
                             message.id, video_sn, anime_sn, title, channel_id
                         )
