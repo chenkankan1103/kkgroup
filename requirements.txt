@@ -29,6 +29,8 @@ beautifulsoup4
 html5lib
 serpapi
 
+playwright>=1.40.0
+
 # Vector Database & Embeddings (for Chroma RAG)
 chromadb>=0.4.0
 sentence-transformers>=2.2.0

@@ -25,6 +25,7 @@ import json
 import datetime
 import functools
 import time
+import asyncio
 from typing import Any, Dict, List, Optional, Callable
 
 # ==================== 權限設定 ====================
@@ -1561,11 +1562,18 @@ def dispatch_tool(tool_name: str, args: Dict, caller_id: Optional[int] = None) -
 
     func = _TOOL_REGISTRY[tool_name]["func"]
     try:
-        return str(func(**args, caller_id=caller_id))
+        result = func(**args, caller_id=caller_id)
+        # 處理 async 函數
+        if asyncio.iscoroutine(result):
+            return str(asyncio.run(result))
+        return str(result)
     except TypeError:
         # Fallback：舊版函數不接受 caller_id 關鍵字參數
         try:
-            return str(func(**args))
+            result = func(**args)
+            if asyncio.iscoroutine(result):
+                return str(asyncio.run(result))
+            return str(result)
         except Exception as e:
             return f"工具 '{tool_name}' 執行失敗：{e}"
     except Exception as e:
@@ -1929,6 +1937,184 @@ def batch_replace_code(replacements: List[Dict], commit_message: str, *, caller_
         
     except Exception as e:
         return f"❌ 批量修改失敗：{type(e).__name__}: {e}"
+
+
+# ==================== 網路爬蟲工具 ====================
+
+@register_tool(
+    name="fetch_webpage",
+    description=(
+        "抓取網頁內容，支援靜態頁面與動態 JS 渲染頁面。"
+        "回傳標題、純文字內容、連結與中繼資料。"
+        "適用於查詢官網公告、新聞、文檔、產品頁面等公開資訊。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "url": {
+                "type": "STRING",
+                "description": "目標網址（必須包含 http:// 或 https://）"
+            },
+            "selector": {
+                "type": "STRING",
+                "description": "CSS 選擇器（可選，指定只提取特定區域內容）"
+            },
+            "format": {
+                "type": "STRING",
+                "enum": ["text", "markdown"],
+                "description": "輸出格式，預設 text",
+                "default": "text"
+            },
+            "dynamic": {
+                "type": "BOOLEAN",
+                "description": "是否使用 Playwright 動態渲染（JS 執行後抓取），預設 false",
+                "default": False
+            },
+            "wait_for": {
+                "type": "STRING",
+                "enum": ["load", "domcontentloaded", "networkidle"],
+                "description": "Playwright 等待條件，預設 networkidle",
+                "default": "networkidle"
+            },
+            "timeout": {
+                "type": "INTEGER",
+                "description": "超時秒數，預設 15 秒（動態模式建議 30 秒）",
+                "default": 15
+            },
+            "screenshot": {
+                "type": "BOOLEAN",
+                "description": "是否截圖（僅動態模式），預設 false",
+                "default": False
+            }
+        },
+        "required": ["url"]
+    }
+)
+async def fetch_webpage(
+    url: str,
+    selector: str = "",
+    format: str = "text",
+    dynamic: bool = False,
+    wait_for: str = "networkidle",
+    timeout: int = 15,
+    screenshot: bool = False,
+    *,
+    caller_id: Optional[int] = None
+) -> str:
+    """
+    統一網頁爬取介面。
+
+    Args:
+        url: 目標網址
+        selector: CSS 選擇器（可選）
+        format: 輸出格式 - text, markdown
+        dynamic: 是否使用 Playwright 動態渲染
+        wait_for: 等待條件 - load, domcontentloaded, networkidle
+        timeout: 超時秒數
+        screenshot: 是否截圖（僅動態模式）
+        caller_id: 呼叫者 ID（系統注入）
+
+    Returns:
+        str: 格式化的爬取結果摘要
+    """
+    try:
+        from cogs.common.scraper import fetch_webpage as scraper_fetch
+
+        result = await scraper_fetch(
+            url=url,
+            selector=selector,
+            format=format,
+            dynamic=dynamic,
+            wait_for=wait_for,
+            timeout=timeout,
+            screenshot=screenshot,
+        )
+
+        if not result.success:
+            return f"❌ 爬取失敗：{result.error}"
+
+        # 格式化輸出（限制長度避免 Discord 訊息超標）
+        content_preview = result.content[:2000] + ("..." if len(result.content) > 2000 else "")
+        links_preview = str(result.links[:5]) + ("..." if len(result.links) > 5 else "")
+
+        output = [
+            f"✅ 爬取成功：{result.url}",
+            f"📝 標題：{result.title[:100]}" if result.title else "📝 標題：無",
+            f"📄 內容長度：{len(result.content)} 字元",
+            f"🔗 找到連結：{len(result.links)} 個",
+            f"\n--- 內容預覽 ---\n{content_preview}",
+        ]
+        if result.links:
+            output.append(f"\n--- 連結樣本 ---\n{links_preview}")
+        if screenshot and result.metadata.get("screenshot"):
+            output.append("\n📸 截圖：可用（存於 metadata）")
+        if result.metadata.get("rendered_with"):
+            output.append(f"⚙️ 渲染引擎：{result.metadata['rendered_with']}")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"❌ 爬取異常：{type(e).__name__}: {e}"
+
+
+@register_tool(
+    name="search_web",
+    description=(
+        "搜尋網頁（使用 DuckDuckGo HTML 搜尋，免 API Key）。"
+        "回傳標題、網址與摘要片段的列表。"
+        "適用於查詢最新資訊、技術文檔、錯誤解決方案等。"
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "query": {
+                "type": "STRING",
+                "description": "搜尋關鍵字"
+            },
+            "max_results": {
+                "type": "INTEGER",
+                "description": "最大結果數，預設 5，上限 10",
+                "default": 5
+            }
+        },
+        "required": ["query"]
+    }
+)
+async def search_web(
+    query: str,
+    max_results: int = 5,
+    *,
+    caller_id: Optional[int] = None
+) -> str:
+    """
+    網頁搜尋工具。
+
+    Args:
+        query: 搜尋關鍵字
+        max_results: 最大結果數（上限 10）
+        caller_id: 呼叫者 ID（系統注入）
+
+    Returns:
+        str: 格式化的搜尋結果
+    """
+    try:
+        from cogs.common.scraper import search_web as scraper_search
+
+        max_results = min(max(int(max_results), 1), 10)
+        results = await scraper_search(query, max_results=max_results)
+
+        if not results:
+            return f"🔍 搜尋無結果：{query}"
+
+        output = [f"🔍 搜尋結果：{query}（共 {len(results)} 筆）\n"]
+        for i, item in enumerate(results, 1):
+            output.append(
+                f"{i}. {item['title'][:80]}\n   🔗 {item['url']}\n   📝 {item['snippet'][:120]}"
+            )
+        return "\n\n".join(output)
+
+    except Exception as e:
+        return f"❌ 搜尋異常：{type(e).__name__}: {e}"
 
 
 @register_tool(
