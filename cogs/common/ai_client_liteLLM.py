@@ -56,7 +56,7 @@ MODEL_LIST = [
         }
     },
     {
-        "model_name": "gemini-backup", 
+        "model_name": "gemini-backup",
         "litellm_params": {
             "model": GEMINI_MODEL,
             "api_key": GEMINI_KEY_BK,
@@ -92,11 +92,11 @@ if _LITELLM_AVAILABLE:
 
 class LiteLLMClient:
     """統一的 AI 客戶端，使用 LiteLLM 管理多個提供商"""
-    
+
     def __init__(self):
         self._cooldowns: Dict[str, float] = {}
         self._model_list = [m for m in MODEL_LIST if m["litellm_params"].get("api_key")]
-        
+
     def _is_cooling(self, model_name: str) -> bool:
         """檢查模型是否在冷卻期"""
         exp = self._cooldowns.get(model_name, 0)
@@ -106,12 +106,12 @@ class LiteLLMClient:
             return True
         self._cooldowns.pop(model_name, None)
         return False
-    
+
     def _cool(self, model_name: str, secs: int = 60):
         """設置模型冷卻"""
         self._cooldowns[model_name] = time.time() + secs
         logger.warning(f"⏸️ {model_name} 進入冷卻 {secs}s")
-    
+
     async def acomplete(
         self,
         messages: List[Dict[str, str]],
@@ -121,29 +121,35 @@ class LiteLLMClient:
         max_retries: int = LITELLM_MAX_RETRIES,
     ) -> Optional[Dict]:
         """異步完成 AI 請求，支援工具調用"""
-        
+
         if not _LITELLM_AVAILABLE:
             return await self._fallback_completion(messages, tools_spec)
-        
+
+        # 熔斷器：所有模型都在冷卻時直接返回 None，避免阻塞事件循環
+        active_models = [m for m in self._model_list if not self._is_cooling(m["model_name"])]
+        if not active_models:
+            logger.warning("⚡ 熔斷器觸發：所有模型皆在冷卻中，直接返回 None")
+            return None
+
         for model_config in self._model_list:
             model_name = model_config["model_name"]
-            
+
             if self._is_cooling(model_name):
                 continue
-            
+
             # 準備參數
             params = model_config["litellm_params"].copy()
             params["messages"] = messages
             params["timeout"] = timeout
-            
+
             if tools_spec:
                 params["tools"] = tools_spec
-            
+
             # 重試機制
             for attempt in range(max_retries):
                 try:
                     response = await acompletion(**params)
-                    
+
                     if response and response.choices:
                         content = response.choices[0].message
                         return {
@@ -152,10 +158,16 @@ class LiteLLMClient:
                             "model": model_name,
                             "usage": response.usage._asdict() if response.usage else {}
                         }
-                    
+
                 except Exception as e:
                     error_msg = str(e).lower()
-                    
+
+                    # 配額耗盡 - 立即冷卻，不重試
+                    if "quota exceeded" in error_msg or "limit: 0" in error_msg or ("quota" in error_msg and "exceeded" in error_msg):
+                        logger.error(f"💀 {model_name} 配額耗盡，立即進入冷卻 300s")
+                        self._cool(model_name, 300)  # 5分鐘冷卻
+                        break  # 不重試，直接換下一個模型
+
                     # 速率限制 - 指數退避
                     if "429" in error_msg or "rate limit" in error_msg:
                         delay = 2 ** attempt + 1
@@ -167,12 +179,12 @@ class LiteLLMClient:
                             self._cool(model_name, 60)
                             logger.error(f"❌ {model_name} 速率限制，進入冷卻")
                             break
-                    
+
                     # API Key 錯誤
                     elif "api key" in error_msg or "unauthorized" in error_msg:
                         logger.error(f"❌ {model_name} API Key 無效")
                         break
-                    
+
                     # 其他錯誤
                     else:
                         logger.warning(f"⚠️ {model_name} 錯誤: {e}")
@@ -181,21 +193,28 @@ class LiteLLMClient:
                             continue
                         else:
                             break
-        
+
         return None
-    
+
     async def _fallback_completion(self, messages: List[Dict[str, str]], tools_spec: Optional[List[Dict]] = None) -> Optional[Dict]:
         """降級到傳統 API 呼叫 - 直接實現避免循環導入"""
         try:
-            # 嘗試 Gemini 原生 API
-            if GEMINI_KEY:
+            # 檢查 Gemini 模型是否在冷卻中，若是則跳過 Gemini fallback
+            gemini_cooldown = False
+            for model_name in ["gemini-main", "gemini-backup"]:
+                if self._is_cooling(model_name):
+                    gemini_cooldown = True
+                    break
+
+            # 嘗試 Gemini 原生 API (僅當未冷卻時)
+            if GEMINI_KEY and not gemini_cooldown:
                 import aiohttp
-                
+
                 headers = {
                     "Content-Type": "application/json",
                     "x-goog-api-key": GEMINI_KEY
                 }
-                
+
                 # 轉換訊息格式
                 contents = []
                 system_prompt = ""
@@ -206,7 +225,7 @@ class LiteLLMClient:
                         contents.append({"role": "user", "parts": [{"text": msg["content"]}]})
                     elif msg["role"] == "assistant":
                         contents.append({"role": "model", "parts": [{"text": msg["content"]}]})
-                
+
                 data = {
                     "contents": contents,
                     "systemInstruction": {"parts": [{"text": system_prompt or "你是一個 AI 助手"}]},
@@ -215,9 +234,9 @@ class LiteLLMClient:
                         "maxOutputTokens": 1000
                     }
                 }
-                
+
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-                
+
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status == 200:
@@ -230,25 +249,30 @@ class LiteLLMClient:
                                     "model": "gemini-fallback",
                                     "usage": {}
                                 }
-            
+                        elif resp.status == 429:
+                            # Fallback 也遇到配額限制，標記冷卻
+                            logger.warning("⚠️ Gemini fallback 配額耗盡")
+                            self._cool("gemini-main", 300)
+                            self._cool("gemini-backup", 300)
+
             # 嘗試 Groq 原生 API
             if GROQ_KEY:
                 import aiohttp
-                
+
                 headers = {
                     "Authorization": f"Bearer {GROQ_KEY}",
                     "Content-Type": "application/json"
                 }
-                
+
                 data = {
                     "model": "llama-3.3-70b-versatile",
                     "messages": messages,
                     "max_tokens": 500,
                     "temperature": 0.7
                 }
-                
+
                 url = "https://api.groq.com/openai/v1/chat/completions"
-                
+
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status == 200:
@@ -258,13 +282,16 @@ class LiteLLMClient:
                                 return {
                                     "content": content,
                                     "tool_calls": None,
-                                    "model": "groq-fallback", 
+                                    "model": "groq-fallback",
                                     "usage": {}
                                 }
-        
+                        elif resp.status == 429:
+                            logger.warning("⚠️ Groq fallback 速率限制")
+                            self._cool("groq-fallback", 60)
+
         except Exception as e:
             logger.error(f"❌ 降級 API 呼叫失敗: {e}")
-        
+
         return None
 
 
@@ -272,10 +299,10 @@ class LiteLLMClient:
 
 class LLMClient:
     """向後兼容的 LLM 客戶端包裝器"""
-    
+
     def __init__(self):
         self._litellm_client = LiteLLMClient()
-    
+
     async def gemini(
         self,
         api_key: str,
@@ -289,7 +316,7 @@ class LLMClient:
         """Gemini API 呼叫（包裝器）"""
         # 轉換格式
         messages = [{"role": "system", "content": system}]
-        
+
         for content in contents:
             role = content["role"]
             parts = content.get("parts", [])
@@ -302,12 +329,12 @@ class LLMClient:
                 # 處理工具調用
                 fc = parts[0]["functionCall"]
                 messages.append({
-                    "role": "assistant", 
+                    "role": "assistant",
                     "content": f"調用工具: {fc['name']}({fc.get('args', {})})"
                 })
-        
+
         response = await self._litellm_client.acomplete(messages, tools_spec)
-        
+
         if response:
             tool_calls = response.get("tool_calls") or []
             if tool_calls:
@@ -335,9 +362,9 @@ class LLMClient:
                     "parts": [{"text": response["content"]}]
                 }
             }
-        
+
         return None
-    
+
     async def groq(
         self,
         messages: List[Dict],
@@ -355,7 +382,7 @@ def get_usage_stats() -> Dict[str, Any]:
     """獲取使用統計"""
     if not _LITELLM_AVAILABLE:
         return {"status": "LiteLLM 未安裝"}
-    
+
     try:
         return {
             "status": "正常",
@@ -371,13 +398,13 @@ def get_usage_stats() -> Dict[str, Any]:
 async def test_ai_client():
     """測試 AI 客戶端"""
     client = LiteLLMClient()
-    
+
     test_messages = [
         {"role": "user", "content": "你好，請用繁體中文回答：2+2等於多少？"}
     ]
-    
+
     response = await client.acomplete(test_messages)
-    
+
     if response:
         print(f"✅ 測試成功")
         print(f"📝 回應: {response['content'][:100]}...")
@@ -386,7 +413,7 @@ async def test_ai_client():
             print(f"📊 使用量: {response['usage']}")
     else:
         print("❌ 測試失敗")
-    
+
     return response
 
 

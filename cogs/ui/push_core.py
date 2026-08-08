@@ -215,10 +215,18 @@ class AnimeDatabase:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     videoSn INTEGER,
                     animeSn INTEGER,
+                    video_sn INTEGER,
+                    anime_sn INTEGER,
                     anime_name TEXT,
                     voteType TEXT,  -- 'masterpiece', 'great', 'good', 'average', 'bad'
+                    vote_type TEXT,
                     userId TEXT,    -- 匿名用戶識別符（實際不存儲真實 ID）
-                    votedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    user_hash TEXT,
+                    messageId INTEGER,
+                    message_id INTEGER,
+                    comment TEXT,
+                    votedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -297,12 +305,18 @@ class AnimeDatabase:
             (ANIME_VOTES_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
             (ANIME_VOTES_TABLE, "videoSn", "INTEGER"),
             (ANIME_VOTES_TABLE, "animeSn", "INTEGER"),
+            (ANIME_VOTES_TABLE, "video_sn", "INTEGER"),
+            (ANIME_VOTES_TABLE, "anime_sn", "INTEGER"),
             (ANIME_VOTES_TABLE, "anime_name", "TEXT"),
             (ANIME_VOTES_TABLE, "voteType", "TEXT"),
+            (ANIME_VOTES_TABLE, "vote_type", "TEXT"),
             (ANIME_VOTES_TABLE, "userId", "TEXT"),
+            (ANIME_VOTES_TABLE, "user_hash", "TEXT"),
             (ANIME_VOTES_TABLE, "messageId", "INTEGER"),
+            (ANIME_VOTES_TABLE, "message_id", "INTEGER"),
             (ANIME_VOTES_TABLE, "comment", "TEXT"),
             (ANIME_VOTES_TABLE, "votedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_VOTES_TABLE, "voted_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             (ANIME_REWARDS_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
             (ANIME_REWARDS_TABLE, "messageId", "INTEGER"),
             (ANIME_REWARDS_TABLE, "rewardType", "TEXT"),

@@ -591,6 +591,9 @@ class ClaudeCodeAgent:
         self._progress_buffer: list[str] = []  # 進度緩衝區
         self._buffer_lock = asyncio.Lock()
         self._cancelled = asyncio.Event()  # 取消信號
+        self._paused = False  # 暫停狀態
+        self._pause_event = asyncio.Event()  # 暫停/恢復事件
+        self._pause_event.set()  # 預設為非暫停狀態
         self._progress_content: list[str] = []  # 累積的完整進度內容（用於編輯同一條 message 顯示所有步驟）
 
     async def _flush_progress_buffer(self):
@@ -613,7 +616,7 @@ class ClaudeCodeAgent:
 
         if self.progress_callback:
             try:
-                # 傳遞完整累積內容給 callback（由 callback 決定如何顯示）
+                # 傳遞完整累積內容給 callback（由 callback 決定如何顯示/分割）
                 await self.progress_callback("\n".join(self._progress_content))
             except Exception as e:
                 logger.warning(f"進度回調失敗: {e}")
@@ -633,11 +636,31 @@ class ClaudeCodeAgent:
         await self._flush_progress_buffer()
 
     def cancel(self):
-        """取消執行中的任務"""
+        """取消執行中的任務（完全終止）"""
         self._cancelled.set()
 
     def is_cancelled(self) -> bool:
         return self._cancelled.is_set()
+
+    def pause(self):
+        """暫停任務（可恢復）"""
+        self._paused = True
+        self._pause_event.clear()
+
+    def resume(self):
+        """恢復任務"""
+        self._paused = False
+        self._pause_event.set()
+
+    def is_paused(self) -> bool:
+        return getattr(self, '_paused', False)
+
+    async def _wait_if_paused(self):
+        """如果任務被暫停，等待恢復"""
+        while getattr(self, '_paused', False):
+            await self._pause_event.wait()
+            # 等待恢復信號
+            await asyncio.sleep(0.5)
 
     def _build_system_prompt(self) -> str:
         # 獲取長期記憶上下文
@@ -673,6 +696,9 @@ class ClaudeCodeAgent:
             if self._cancelled.is_set():
                 await self._finalize_progress()
                 return "🛑 任務已由使用者取消"
+
+            # 檢查是否被暫停（等待恢復）
+            await self._wait_if_paused()
 
             self.turn_count += 1
 
@@ -857,39 +883,123 @@ class ClaudeCodeAgent:
         await self.client.close()
 
 
-# ─── 停止按鈕 View ──────────────────────────────────────────────────────────────
+# ─── 停止/暫停按鈕 View ──────────────────────────────────────────────────────────────
 class StopView(discord.ui.View):
-    """帶有停止按鈕的進度訊息 View"""
+    """帶有停止/暫停按鈕的進度訊息 View"""
 
     def __init__(self, agent: "ClaudeCodeAgent", timeout: float = 300):
         super().__init__(timeout=timeout)
         self.agent = agent
 
-    @discord.ui.button(label="🛑 停止", style=discord.ButtonStyle.danger, custom_id="claude_stop")
+    @discord.ui.button(label="⏸️ 暫停", style=discord.ButtonStyle.danger, custom_id="claude_stop")
     async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 只有觸發者能停止
+        # 只有觸發者能暫停
         if interaction.user.id != self.agent.user_id:
-            await interaction.response.send_message("❌ 只有發起者能停止任務", ephemeral=True)
+            await interaction.response.send_message("❌ 只有發起者能暫停任務", ephemeral=True)
             return
 
-        self.agent.cancel()
+        # 暫停 agent（設置暫停標記，不取消任務）
+        self.agent.pause()
         button.disabled = True
-        button.label = "⏹️ 正在停止..."
+        button.label = "⏸️ 已暫停"
+        self.clear_items()
+        # 添加恢復按鈕
+        resume_button = discord.ui.Button(label="▶️ 恢復", style=discord.ButtonStyle.success, custom_id="claude_resume")
+        resume_button.callback = self._create_resume_callback(interaction)
+        self.add_item(resume_button)
+
         await interaction.response.edit_message(view=self)
 
-        # 等待任務實際停止（最多 5 秒）
-        for _ in range(10):
-            await asyncio.sleep(0.5)
-            if self.agent.is_cancelled():
-                break
+    def _create_resume_callback(self, original_interaction: discord.Interaction):
+        async def resume_callback(interaction: discord.Interaction):
+            if interaction.user.id != self.agent.user_id:
+                await interaction.response.send_message("❌ 只有發起者能恢復任務", ephemeral=True)
+                return
 
-        button.label = "✅ 已停止"
-        await interaction.edit_original_response(view=self)
+            # 恢復 agent
+            self.agent.resume()
+            # 重新添加暫停按鈕
+            self.clear_items()
+            new_stop_button = discord.ui.Button(label="⏸️ 暫停", style=discord.ButtonStyle.danger, custom_id="claude_stop")
+            new_stop_button.callback = self.stop_button
+            self.add_item(new_stop_button)
+
+            await interaction.response.edit_message(view=self)
+        return resume_callback
 
     async def on_timeout(self):
         """超時時禁用按鈕"""
         for item in self.children:
             item.disabled = True
+
+
+# ─── 恢復按鈕 View（獨立使用，用於任務被暫發時）──────────────────────────────────────
+class ResumeView(discord.ui.View):
+    """任務暫停後的恢復按鈕"""
+
+    def __init__(self, agent: "ClaudeCodeAgent", timeout: float = 300):
+        super().__init__(timeout=timeout)
+        self.agent = agent
+
+    @discord.ui.button(label="▶️ 恢復執行", style=discord.ButtonStyle.success, custom_id="claude_resume_main")
+    async def resume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 只有觸發者能恢復
+        if interaction.user.id != self.agent.user_id:
+            await interaction.response.send_message("❌ 只有發起者能恢復任務", ephemeral=True)
+            return
+
+        self.agent.resume()
+        button.disabled = True
+        button.label = "▶️ 恢復中..."
+        await interaction.response.edit_message(view=self)
+
+        # 發送新進度訊息並繼續執行
+        stop_view = StopView(self.agent)
+        progress_msg = await interaction.followup.send("🔄 恢復執行...", view=stop_view)
+
+        async def update_progress(text: str):
+            """更新進度訊息（編輯同一條 message，超長時分割發送）"""
+            try:
+                chunks = self._chunk_text(text, 1900)
+                if len(chunks) == 1:
+                    await progress_msg.edit(content=chunks[0], view=stop_view)
+                else:
+                    await progress_msg.edit(content=chunks[0], view=stop_view)
+                    for chunk in chunks[1:]:
+                        await interaction.followup.send(chunk)
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+        # 繼續執行
+        reply = await self.agent.run("", progress_callback=update_progress)
+
+        # 處理結果
+        if isinstance(reply, dict) and reply.get("type") == "limit_reached":
+            continue_view = ContinueView(self.agent, "")
+            await progress_msg.edit(content=reply["message"], view=continue_view)
+        else:
+            stop_view.stop()
+            await progress_msg.edit(view=stop_view)
+            chunks = self._chunk_text(reply, 1900)
+            for chunk in chunks:
+                await interaction.followup.send(chunk)
+
+    def _chunk_text(self, text: str, max_len: int) -> List[str]:
+        """將長文字分割"""
+        if len(text) <= max_len:
+            return [text]
+        chunks = []
+        for i in range(0, len(text), max_len):
+            chunks.append(text[i:i + max_len])
+        return chunks
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        try:
+            await self.message.edit(view=self)
+        except:
+            pass
 
 
 # ─── 繼續按鈕 View ──────────────────────────────────────────────────────────────
@@ -922,8 +1032,16 @@ class ContinueView(discord.ui.View):
         progress_msg = await interaction.followup.send("🔄 繼續執行...", view=StopView(self.agent))
 
         async def update_progress(text: str):
+            """更新進度訊息（編輯同一條 message，超長時分割發送）"""
             try:
-                await progress_msg.edit(content=text[:1900], view=StopView(self.agent))
+                chunks = self._chunk_text(text, 1900)
+                if len(chunks) == 1:
+                    await progress_msg.edit(content=chunks[0], view=StopView(self.agent))
+                else:
+                    # 第一塊編輯原訊息，其餘發送新訊息
+                    await progress_msg.edit(content=chunks[0], view=StopView(self.agent))
+                    for chunk in chunks[1:]:
+                        await interaction.followup.send(chunk)
             except (discord.NotFound, discord.HTTPException):
                 pass
 
@@ -1046,9 +1164,16 @@ class ClaudeCodeCog(commands.Cog):
             initial_msg = await interaction.followup.send("🔄 開始執行...", view=stop_view)
 
             async def update_progress(text: str):
-                """更新進度訊息（編輯同一條 message）"""
+                """更新進度訊息（編輯同一條 message，超長時分割發送）"""
                 try:
-                    await initial_msg.edit(content=text[:1900], view=stop_view)
+                    chunks = self._chunk_text(text, 1900)
+                    if len(chunks) == 1:
+                        await initial_msg.edit(content=chunks[0], view=stop_view)
+                    else:
+                        # 第一塊編輯原訊息，其餘發送新訊息
+                        await initial_msg.edit(content=chunks[0], view=stop_view)
+                        for chunk in chunks[1:]:
+                            await interaction.followup.send(chunk)
                 except (discord.NotFound, discord.HTTPException):
                     pass
 
@@ -1190,9 +1315,16 @@ class ClaudeCodeCog(commands.Cog):
             initial_msg = await message.channel.send("🔄 開始執行...", view=stop_view)
 
             async def update_progress(text: str):
-                """更新進度訊息（編輯同一條 message）"""
+                """更新進度訊息（編輯同一條 message，超長時分割發送）"""
                 try:
-                    await initial_msg.edit(content=text[:1900], view=stop_view)
+                    chunks = self._chunk_text(text, 1900)
+                    if len(chunks) == 1:
+                        await initial_msg.edit(content=chunks[0], view=stop_view)
+                    else:
+                        # 第一塊編輯原訊息，其餘發送新訊息
+                        await initial_msg.edit(content=chunks[0], view=stop_view)
+                        for chunk in chunks[1:]:
+                            await message.channel.send(chunk)
                 except (discord.NotFound, discord.HTTPException):
                     pass
 
