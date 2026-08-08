@@ -3,9 +3,10 @@
 
 使用 LiteLLM 統一多個 AI 提供商：
 - Gemini 2.0 Flash (主要)
-- Gemini 2.0 Flash (備用)
-- Groq llama-3.3-70b (降級)
-- 未來可輕鬆擴展其他模型
+- Groq llama-3.3-70b (主要降級 - 免費額度獨立)
+- NVIDIA Nemotron/DeepSeek (次要降級 - 免費額度獨立)
+- SambaNova (可選)
+- Gemini 2.0 Flash (備用Key - 共用額度，最後才用)
 
 優勢：
 - 統一 API 介面
@@ -41,10 +42,12 @@ GROQ_KEY      = os.getenv("GROQ_API_KEY")
 GROQ_MODEL    = os.getenv("GROQ_API_MODEL", "groq/llama-3.3-70b-versatile")
 SAMBA_KEY     = os.getenv("SAMBA_API_KEY")
 SAMBA_MODEL   = os.getenv("SAMBA_API_MODEL", "sambanova/Meta-Llama-3.1-8B-Instruct")
+NVIDIA_KEY    = os.getenv("NVIDIA_API_KEY")
+NVIDIA_MODEL  = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 LITELLM_TIMEOUT_SEC = int(os.getenv("AI_LITELLM_TIMEOUT", "12"))
 LITELLM_MAX_RETRIES = int(os.getenv("AI_LITELLM_MAX_RETRIES", "1"))
 
-# LiteLLM 模型配置
+# LiteLLM 模型配置 - 按優先級排序（獨立額度的優先）
 MODEL_LIST = [
     {
         "model_name": "gemini-main",
@@ -55,15 +58,27 @@ MODEL_LIST = [
             "max_tokens": 800,
         }
     },
+    # Groq 有獨立免費額度，優先作為首選降級
     {
-        "model_name": "gemini-backup",
+        "model_name": "groq-primary",
         "litellm_params": {
-            "model": GEMINI_MODEL,
-            "api_key": GEMINI_KEY_BK,
+            "model": GROQ_MODEL,
+            "api_key": GROQ_KEY,
             "temperature": 0.7,
-            "max_tokens": 800,
+            "max_tokens": 500,
         }
     },
+    # NVIDIA 有獨立免費額度，Nemotron/DeepSeek 模型強
+    {
+        "model_name": "nvidia-fallback",
+        "litellm_params": {
+            "model": NVIDIA_MODEL,
+            "api_key": NVIDIA_KEY,
+            "temperature": 0.5,
+            "max_tokens": 1000,
+        }
+    },
+    # SambaNova 可選
     {
         "model_name": "sambanova-coding",
         "litellm_params": {
@@ -73,13 +88,14 @@ MODEL_LIST = [
             "max_tokens": 1000,
         }
     },
+    # Gemini 備用 Key 共用同一免費額度，最後才用
     {
-        "model_name": "groq-fallback",
+        "model_name": "gemini-backup",
         "litellm_params": {
-            "model": GROQ_MODEL,
-            "api_key": GROQ_KEY,
+            "model": GEMINI_MODEL,
+            "api_key": GEMINI_KEY_BK,
             "temperature": 0.7,
-            "max_tokens": 500,
+            "max_tokens": 800,
         }
     }
 ]
@@ -95,7 +111,9 @@ class LiteLLMClient:
 
     def __init__(self):
         self._cooldowns: Dict[str, float] = {}
+        # 過濾掉沒有 API Key 的模型
         self._model_list = [m for m in MODEL_LIST if m["litellm_params"].get("api_key")]
+        logger.info(f"🧠 AI Client 初始化完成，可用模型: {[m['model_name'] for m in self._model_list]}")
 
     def _is_cooling(self, model_name: str) -> bool:
         """檢查模型是否在冷卻期"""
@@ -111,6 +129,12 @@ class LiteLLMClient:
         """設置模型冷卻"""
         self._cooldowns[model_name] = time.time() + secs
         logger.warning(f"⏸️ {model_name} 進入冷卻 {secs}s")
+
+        # Gemini 主/備共用同一免費額度，同步冷卻
+        if model_name in ("gemini-main", "gemini-backup"):
+            other = "gemini-backup" if model_name == "gemini-main" else "gemini-main"
+            self._cooldowns[other] = time.time() + secs
+            logger.warning(f"⏸️ {other} 同步進入冷卻 {secs}s（共用額度）")
 
     async def acomplete(
         self,
@@ -288,6 +312,42 @@ class LiteLLMClient:
                         elif resp.status == 429:
                             logger.warning("⚠️ Groq fallback 速率限制")
                             self._cool("groq-fallback", 60)
+
+            # 嘗試 NVIDIA 原生 API (Nemotron/DeepSeek 有獨立免費額度)
+            if NVIDIA_KEY:
+                import aiohttp
+
+                headers = {
+                    "Authorization": f"Bearer {NVIDIA_KEY}",
+                    "Content-Type": "application/json"
+                }
+
+                # NVIDIA 使用 OpenAI 兼容格式
+                data = {
+                    "model": "nvidia/nemotron-3-super-120b-a12b",
+                    "messages": messages,
+                    "max_tokens": 1000,
+                    "temperature": 0.5,
+                    "stream": False
+                }
+
+                url = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            if "choices" in result and result["choices"]:
+                                content = result["choices"][0]["message"]["content"]
+                                return {
+                                    "content": content,
+                                    "tool_calls": None,
+                                    "model": "nvidia-fallback",
+                                    "usage": {}
+                                }
+                        elif resp.status == 429:
+                            logger.warning("⚠️ NVIDIA fallback 速率限制")
+                            self._cool("nvidia-fallback", 60)
 
         except Exception as e:
             logger.error(f"❌ 降級 API 呼叫失敗: {e}")
