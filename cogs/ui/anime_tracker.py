@@ -1017,7 +1017,7 @@ class AnimeTracker(commands.Cog):
                     from db_adapter import set_user_field, get_user_field
 
                     # 檢查是否已發放過獎勵 - 使用 message_id
-                    reward_message_id = interaction.message_id or (interaction.message.id if interaction.message else None)
+                    reward_message_id = interaction.message.id if interaction.message else None
                     if reward_message_id and not self.tracker.db.is_reward_already_given(interaction.user.id, reward_message_id, "vote"):
                         # 獲取當前 KK幣
                         current_kkcoin = get_user_field(interaction.user.id, "kkcoin") or 0
@@ -1056,7 +1056,7 @@ class AnimeTracker(commands.Cog):
 
                 # 更新原始消息的 embed（非關鍵路徑，失敗不影響用戶體驗）
                 try:
-                    message_id = interaction.message_id or (interaction.message.id if interaction.message else None)
+                    message_id = interaction.message.id if interaction.message else None
                     if message_id:
                         await self._update_message_stats(message_id=message_id, channel=interaction.channel)
                     logger.info(f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄並更新消息統計")
@@ -1108,7 +1108,7 @@ class AnimeTracker(commands.Cog):
                             user_hash = str(hash(modal_interaction.user.id))[:10]
 
                             # 記錄評論（vote_type 為空表示只是評論） - 使用 message_id
-                            message_id = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
+                            message_id = modal_interaction.message.id if modal_interaction.message else None
                             vote_recorded = outer_self.tracker.record_vote(
                                 video_sn=outer_self.video_sn,
                                 anime_sn=outer_self.anime_sn,
@@ -1135,7 +1135,7 @@ class AnimeTracker(commands.Cog):
                                     new_kkcoin = int(current_kkcoin) + 3000
 
                                     # 更新 KK幣 - 使用 message_id
-                                    message_id_for_reward = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
+                                    message_id_for_reward = modal_interaction.message.id if modal_interaction.message else None
                                     set_user_field(modal_interaction.user.id, "kkcoin", new_kkcoin)
 
                                     # 記錄獎勵發放
@@ -1160,7 +1160,7 @@ class AnimeTracker(commands.Cog):
 
                             # 更新原始消息統計
                             try:
-                                message_id_for_update = modal_interaction.message_id or (modal_interaction.message.id if modal_interaction.message else None)
+                                message_id_for_update = modal_interaction.message.id if modal_interaction.message else None
                                 if message_id_for_update:
                                     await outer_self._update_message_stats(message_id=message_id_for_update, channel=modal_interaction.channel)
                                 logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存並更新消息統計")
