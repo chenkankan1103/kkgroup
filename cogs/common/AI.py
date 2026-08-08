@@ -382,7 +382,9 @@ _MAX_TOOL_ROUNDS = int(os.getenv("AI_MAX_TOOL_ROUNDS", "2"))
 
 _TOOL_KEYWORDS = [
     "餘額", "KK幣", "kkcoin", "排行", "狀態", "裝備", "配裝",
-    "查詢", "查一下", "git", "推送", "日誌", "錯誤", "error",
+    "查詢", "查一下", "查", "找", "搜尋", "爬取", "抓取",
+    "搜索", "search", "crawl", "fetch", "查找",
+    "git", "推送", "日誌", "錯誤", "error",
     "代碼", "程式", "bot", "Bot", "服務", "service",
 ]
 
