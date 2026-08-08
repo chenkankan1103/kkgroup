@@ -395,15 +395,19 @@ class WorkActionButton(discord.ui.Button):
                 if message:
                     await interaction.followup.send(message, ephemeral=True)
             else:
-                error_msg = f"❌ 工作行動失敗: process_work_action 返回 None (user: {user_name})"
-                logger.error(error_msg)
-                logger.error(f"   訊息: {message}")
+                # process_work_action 返回 None 通常是預期行為（如：已執行過該行動）
+                # 不記錄為錯誤，只記錄 info 級別
+                if message and "已經執行過" in message:
+                    logger.info(f"ℹ️ 用戶嘗試重複執行行動: {message} (user: {user_name})")
+                else:
+                    logger.warning(f"⚠️ 工作行動返回 None: {message or '無訊息'} (user: {user_name})")
+
                 if message:
                     await interaction.followup.send(message, ephemeral=True)
                 else:
                     await interaction.followup.send("❌ 處理失敗", ephemeral=True)
 
-                # 更新視圖以反映當前狀態（即使操作失敗）
+                # 更新視圖以反映當前狀態（禁用已執行的按鈕）
                 try:
                     # 取得當前用戶狀態（如果process_work_action沒有提供的話）
                     current_user = updated_user if updated_user is not None else get_user(user_id)
@@ -412,7 +416,7 @@ class WorkActionButton(discord.ui.Button):
                         actions_used = current_user.get('actions_used', {})
                         view.update_button_states(actions_used)
 
-                        # 嘗試用當前狀態編輯原始訊息
+                        # 嘗試用當前狀態編輯原始訊息（禁用已用按鈕）
                         try:
                             await interaction.message.edit(view=view)
                         except (discord.NotFound, discord.Forbidden):
