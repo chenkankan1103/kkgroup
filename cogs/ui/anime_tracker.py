@@ -1060,8 +1060,18 @@ class AnimeTracker(commands.Cog):
                 try:
                     message_id = interaction.message.id if interaction.message else None
                     if message_id:
-                        await self._update_message_stats(message_id=message_id, channel=interaction.channel)
-                    logger.info(f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄並更新消息統計")
+                        update_success = await self._update_message_stats(message_id=message_id, channel=interaction.channel)
+                        if not update_success:
+                            logger.warning(f"⚠️ [_vote_callback] 消息統計更新失敗，但投票已記錄: message_id={message_id}")
+                            # 通知用戶統計更新失敗
+                            try:
+                                await interaction.followup.send(
+                                    "⚠️ 投票已記錄，但無法更新原訊息的統計顯示（可能是權限或訊息已刪除）",
+                                    ephemeral=True
+                                )
+                            except:
+                                pass
+                    logger.info(f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄")
                 except Exception as update_error:
                     logger.error(f"❌ [_vote_callback] 更新消息統計失敗: {update_error}", exc_info=True)
 
@@ -1162,8 +1172,17 @@ class AnimeTracker(commands.Cog):
                             # 更新原始消息統計 - 使用 view 的 message_id
                             try:
                                 if message_id:
-                                    await outer_self._update_message_stats(message_id=message_id, channel=modal_interaction.channel)
-                                logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存並更新消息統計")
+                                    update_success = await outer_self._update_message_stats(message_id=message_id, channel=modal_interaction.channel)
+                                    if not update_success:
+                                        logger.warning(f"⚠️ [comment_submit] 消息統計更新失敗: message_id={message_id}")
+                                        try:
+                                            await modal_interaction.followup.send(
+                                                "⚠️ 評論已保存，但無法更新原訊息的統計顯示",
+                                                ephemeral=True
+                                            )
+                                        except:
+                                            pass
+                                logger.info(f"✅ [comment_submit] {modal_interaction.user} 的評論已保存")
                             except Exception as update_error:
                                 logger.error(f"❌ [comment_submit] 更新消息統計失敗: {update_error}", exc_info=True)
                         except Exception as e:
@@ -1187,8 +1206,12 @@ class AnimeTracker(commands.Cog):
                 except:
                     pass
 
-        async def _update_message_stats(self, message_id: int, channel: discord.abc.Messageable = None):
-            """更新消息中的投票統計 - 支持通過 message_id 獲取消息（持久化視圖重啟後需要）"""
+        async def _update_message_stats(self, message_id: int, channel: discord.abc.Messageable = None) -> bool:
+            """更新消息中的投票統計 - 支持通過 message_id 獲取消息（持久化視圖重啟後需要）
+
+            Returns:
+                bool: True if update succeeded, False otherwise
+            """
             try:
                 logger = logging.getLogger(__name__)
 
@@ -1200,23 +1223,23 @@ class AnimeTracker(commands.Cog):
                         logger.info(f"📝 [_update_message_stats] 從頻道獲取消息 ID={message_id}")
                     except discord.NotFound:
                         logger.warning(f"⚠️ [_update_message_stats] 消息不存在 ID={message_id}")
-                        return
+                        return False
                     except discord.Forbidden:
                         logger.error(f"❌ [_update_message_stats] 無權限獲取消息 ID={message_id}")
-                        return
+                        return False
                     except Exception as e:
                         logger.error(f"❌ [_update_message_stats] 獲取消息失敗: {e}", exc_info=True)
-                        return
+                        return False
 
                 if not message:
                     logger.warning(f"⚠️ [_update_message_stats] 無法獲取消息 ID={message_id}")
-                    return
+                    return False
 
                 logger.info(f"📝 [_update_message_stats] 開始更新消息 ID={message.id}, 頻道 ID={message.channel.id}")
 
                 if not message.embeds:
                     logger.warning(f"⚠️ [_update_message_stats] 消息沒有 embed, message_id={message.id}")
-                    return
+                    return False
 
                 original_embed = message.embeds[0]
                 logger.info(f"✅ [_update_message_stats] 找到 embed, 標題={original_embed.title}")
@@ -1243,11 +1266,18 @@ class AnimeTracker(commands.Cog):
 
                 # 使用 embeds 參數直接編輯，不修改 embed 物件本身
                 # 先重新構建完整的 embed，避免 EmbedProxy 序列化問題
+                # 🔑 修復：確保 color 和 timestamp 處理正確
+                embed_color = original_embed.color
+                if embed_color is None:
+                    embed_color = discord.Color.from_rgb(178, 108, 196)  # 預設紫色
+
+                embed_timestamp = original_embed.timestamp
+
                 new_embed = discord.Embed(
                     title=original_embed.title,
                     description=original_embed.description,
-                    color=original_embed.color,
-                    timestamp=original_embed.timestamp
+                    color=embed_color,
+                    timestamp=embed_timestamp
                 )
 
                 # 複製原有的字段，除了統計和評論
@@ -1277,14 +1307,148 @@ class AnimeTracker(commands.Cog):
                 logger.info(f"🔄 [_update_message_stats] 準備編輯消息 ID={message.id}, 頻道={message.channel.id}, 權限={message.channel.permissions_for(message.guild.me) if message.guild else 'DM'}")
                 await message.edit(embed=new_embed)
                 logger.info(f"✅ [_update_message_stats] 消息已成功編輯 ID={message.id}")
+                return True
 
             except discord.Forbidden as e:
-                logger.error(f"❌ [_update_message_stats] 權限不足（可能缺少 MANAGE_MESSAGES）: {e}", exc_info=True)
+                logger.error(f"❌ [_update_message_stats] 權限不足無法編輯消息: {e}", exc_info=True)
+                return False
             except discord.NotFound as e:
                 logger.error(f"❌ [_update_message_stats] 消息不存在或已被刪除: {e}", exc_info=True)
+                return False
+            except discord.HTTPException as e:
+                logger.error(f"❌ [_update_message_stats] Discord HTTP 錯誤 (可能 embed 過大或格式錯誤): {e}", exc_info=True)
+                return False
             except Exception as e:
                 logger.error(f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True)
+                return False
 
+
+    # ==================== 診斷用指令 ====================
+
+    @app_commands.command(name="anime_vote_debug", description="🔍 診斷動畫投票統計更新問題（管理員）")
+    @app_commands.describe(message_id="要檢查的訊息 ID")
+    @app_commands.default_permissions(administrator=True)
+    async def anime_vote_debug(self, interaction: discord.Interaction, message_id: str):
+        """診斷指定訊息的投票統計更新狀態"""
+        await interaction.response.defer(ephemeral=True)
+        logger = logging.getLogger(__name__)
+
+        try:
+            msg_id = int(message_id)
+        except ValueError:
+            await interaction.followup.send("❌ 無效的訊息 ID", ephemeral=True)
+            return
+
+        # 1. 檢查資料庫中的投票統計
+        stats = self.tracker.get_vote_stats(msg_id)
+        comments = self.tracker.get_vote_comments(msg_id, limit=5)
+
+        # 2. 嘗試獲取 Discord 訊息
+        message = None
+        fetch_error = None
+        try:
+            if interaction.channel:
+                message = await interaction.channel.fetch_message(msg_id)
+        except discord.NotFound:
+            fetch_error = "訊息不存在 (已刪除或 ID 錯誤)"
+        except discord.Forbidden:
+            fetch_error = "無權限讀取該頻道訊息"
+        except Exception as e:
+            fetch_error = f"獲取失敗: {e}"
+
+        # 3. 檢查是否在資料庫的 anime_messages 表中
+        db_msg_info = None
+        try:
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT messageId, videoSn, animeSn, anime_name, channelId, createdAt
+                    FROM {ANIME_MESSAGES_TABLE}
+                    WHERE messageId = ?
+                """, (msg_id,))
+                row = cursor.fetchone()
+                if row:
+                    db_msg_info = {
+                        'messageId': row[0],
+                        'videoSn': row[1],
+                        'animeSn': row[2],
+                        'anime_name': row[3],
+                        'channelId': row[4],
+                        'createdAt': row[5]
+                    }
+        except Exception as e:
+            logger.error(f"❌ [anime_vote_debug] 查詢 anime_messages 失敗: {e}")
+
+        # 建構回報
+        embed = discord.Embed(
+            title="🔍 動畫投票統計診斷",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(TW_TZ)
+        )
+        embed.add_field(name="📨 訊息 ID", value=str(msg_id), inline=False)
+
+        # 資料庫統計
+        if stats:
+            stats_text = "\n".join([f"{k}: {v} 票" for k, v in stats.items()])
+        else:
+            stats_text = "無投票記錄"
+        embed.add_field(name="📊 資料庫投票統計", value=stats_text, inline=False)
+
+        if comments:
+            comments_text = "\n".join([f"• {c[:50]}..." if len(c) > 50 else f"• {c}" for c in comments])
+        else:
+            comments_text = "無評論"
+        embed.add_field(name="💬 資料庫評論", value=comments_text, inline=False)
+
+        # Discord 訊息狀態
+        if message:
+            embed.add_field(name="📨 Discord 訊息", value=f"✅ 找到 (頻道: {message.channel.name})", inline=False)
+            if message.embeds:
+                embed.add_field(name="📎 Embed 狀態", value=f"✅ 有 {len(message.embeds)} 個 embed", inline=False)
+                # 檢查 embed 是否已有統計欄位
+                orig_embed = message.embeds[0]
+                has_stats_field = any(f.name == "📊 投票統計" for f in orig_embed.fields)
+                has_comments_field = any(f.name == "💬 匿名評論" for f in orig_embed.fields)
+                embed.add_field(name="📋 Embed 統計欄位", value=f"投票統計: {'✅' if has_stats_field else '❌'}\n評論: {'✅' if has_comments_field else '❌'}", inline=False)
+            else:
+                embed.add_field(name="📎 Embed 狀態", value="❌ 訊息無 embed", inline=False)
+        else:
+            embed.add_field(name="📨 Discord 訊息", value=f"❌ {fetch_error or '未知錯誤'}", inline=False)
+
+        # 資料庫記錄
+        if db_msg_info:
+            embed.add_field(name="🗄️ anime_messages 記錄", value=f"videoSn: {db_msg_info['videoSn']}\nanimeSn: {db_msg_info['animeSn']}\n頻道: {db_msg_info['channelId']}\n時間: {db_msg_info['createdAt']}", inline=False)
+        else:
+            embed.add_field(name="🗄️ anime_messages 記錄", value="❌ 找不到記錄", inline=False)
+
+        # 權限檢查
+        if message and message.guild:
+            perms = message.channel.permissions_for(message.guild.me)
+            embed.add_field(name="🔐 Bot 權限", value=f"管理訊息: {'✅' if perms.manage_messages else '❌'}\n嵌入連結: {'✅' if perms.embed_links else '❌'}\n讀取訊息: {'✅' if perms.read_messages else '❌'}", inline=False)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        logger.info(f"🔍 [/anime_vote_debug] 管理員 {interaction.user} 診斷訊息 {msg_id}")
+
+    @app_commands.command(name="anime_vote_force_update", description="🔧 強制更新指定訊息的投票統計（管理員）")
+    @app_commands.describe(message_id="要更新的訊息 ID")
+    @app_commands.default_permissions(administrator=True)
+    async def anime_vote_force_update(self, interaction: discord.Interaction, message_id: str):
+        """強制觸發指定訊息的統計更新"""
+        await interaction.response.defer(ephemeral=True)
+        logger = logging.getLogger(__name__)
+
+        try:
+            msg_id = int(message_id)
+        except ValueError:
+            await interaction.followup.send("❌ 無效的訊息 ID", ephemeral=True)
+            return
+
+        success = await self._update_message_stats(msg_id, interaction.channel)
+        if success:
+            await interaction.followup.send(f"✅ 強制更新成功：訊息 {msg_id} 的投票統計已刷新", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ 強制更新失敗：請檢查日誌或使用 `/anime_vote_debug` 診斷", ephemeral=True)
+        logger.info(f"🔧 [/anime_vote_force_update] 管理員 {interaction.user} 強制更新訊息 {msg_id}, 結果: {success}")
 
     @app_commands.command(name="anime_refresh", description="🔄 手動刷新動畫週表（緊急補推用）")
     @app_commands.default_permissions(administrator=True)
