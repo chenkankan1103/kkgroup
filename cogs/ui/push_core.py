@@ -380,9 +380,9 @@ class AnimeDatabase:
                 cursor = conn.cursor()
                 cursor.execute(f"""
                     INSERT OR REPLACE INTO {ANIME_MESSAGES_TABLE}
-                    (messageId, videoSn, animeSn, animeName, anime_name, channelId)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (message_id, video_sn, anime_sn, anime_name, anime_name, channel_id))
+                    (messageId, videoSn, animeSn, anime_name, channelId)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (message_id, video_sn, anime_sn, anime_name, channel_id))
                 conn.commit()
                 return True
         except Exception as e:
@@ -1750,6 +1750,25 @@ class AnimePushCore:
                             if ep_title in expected_titles:
                                 new_episodes.append(ep)
                                 logger.info(f"  ✅ title 匹配: {ep_title} (videoSn={ep.get('videoSn')})")
+
+                # 🔑 Fallback 2: 若週表匹配完全失敗，直接查 API 是否有「今天上架」且「未推播過」的集數
+                # 解決：Bahamut 週中調整排程、臨時新增集數、週表與實際播出不同步
+                if not new_episodes:
+                    logger.info(f"🔍 [send_anime_push] {scheduled_time} 週表匹配失敗，啟用 API 直接檢查模式...")
+                    for ep in episodes:
+                        video_sn = ep.get('videoSn')
+                        if not video_sn:
+                            continue
+                        try:
+                            video_sn_int = int(video_sn)
+                        except (ValueError, TypeError):
+                            continue
+                        # 去重：檢查 notified 表（已推播過就跳過）
+                        if not self.db.is_notified(video_sn_int):
+                            new_episodes.append(ep)
+                            logger.info(f"🔄 [send_anime_push] 發現週表外新番: {ep.get('title')} (videoSn={video_sn_int})")
+                        else:
+                            logger.debug(f"🔍 [send_anime_push] {ep.get('title')} (videoSn={video_sn_int}) 已推播過，跳過")
 
                 # 初始化 sent_count（在邏輯判斷前）
                 sent_count = 0
