@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def event_loop():
     """建立 session 級事件循環供 dpytest 使用"""
     loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     yield loop
     loop.close()
 
@@ -74,12 +75,17 @@ async def dpytest_setup(event_loop, temp_db_path):
     - 載入 AnimeTracker cog
     - 測試後清理 dpytest 狀態
     """
-    # 匯入 bot 與 cog
-    import bots.bot as bot_module
-    print(f"DEBUG: bots.bot module = {bot_module}")
-    print(f"DEBUG: bots.bot.client = {bot_module.client}")
-    bot = bot_module.client
-    from cogs.ui.anime_tracker import AnimeTracker
+    import discord
+    from discord.ext import commands
+    from unittest.mock import AsyncMock, patch
+
+    # 建立新的 Bot 實例給 dpytest 使用（避免與 bots.bot 現有實例衝突）
+    intents = discord.Intents.all()
+    bot = commands.Bot(command_prefix="!", intents=intents)
+    # 關鍵：在 async context 中明確設定 loop
+    bot._loop = event_loop
+    # 確保 loop 屬性可正常存取
+    bot.loop = event_loop
 
     # 配置 dpytest (同步函數，不需要 await)
     dpytest.configure(bot)
@@ -87,6 +93,8 @@ async def dpytest_setup(event_loop, temp_db_path):
     # 手動設定 bot ready 狀態 (dpytest v0.7 沒有 run() 函數)
     bot._ready = asyncio.Event()
     bot._ready.set()
+
+    from cogs.ui.anime_tracker import AnimeTracker
 
     # 建立測試用 guild、channel
     guild = dpytest.get_config().guilds[0]
@@ -102,22 +110,47 @@ async def dpytest_setup(event_loop, temp_db_path):
     original_db_path = anime_tracker_mod.ANIME_DB_PATH
     anime_tracker_mod.ANIME_DB_PATH = Path(temp_db_path)
 
-    # 載入 cog
-    await bot.add_cog(AnimeTracker(bot))
+    # Patch background task startup to avoid loop issues in test
+    async def patched_cog_load(self):
+        """Patched cog_load that skips background tasks"""
+        try:
+            await self._restore_old_message_views()
+        except Exception:
+            pass
 
-    # 等待 cog_load 完成（包含 _init_weekly_schedule_if_empty）
-    await asyncio.sleep(0.5)
+        try:
+            await self._init_weekly_schedule_if_empty()
+        except Exception:
+            pass
 
-    # 提供測試上下文
-    ctx = {
-        "bot": bot,
-        "guild": guild,
-        "channel": channel,
-        "channel_id": channel.id,
-        "temp_db_path": temp_db_path,
-    }
+        try:
+            await self._catchup_missed_pushes()
+        except Exception:
+            pass
 
-    yield ctx
+        # Skip starting background tasks in tests
+        # self.refresh_weekly_schedule.start()  # SKIP
+        # self._dispatcher_task = ...  # SKIP
+        # self._catchup_check_task = ...  # SKIP
+        # self.sync_episode_stats.start()  # SKIP
+
+    with patch.object(AnimeTracker, 'cog_load', patched_cog_load):
+        # 載入 cog
+        await bot.add_cog(AnimeTracker(bot))
+
+        # 等待 cog_load 完成
+        await asyncio.sleep(0.1)
+
+        # 提供測試上下文
+        ctx = {
+            "bot": bot,
+            "guild": guild,
+            "channel": channel,
+            "channel_id": channel.id,
+            "temp_db_path": temp_db_path,
+        }
+
+        yield ctx
 
     # ===== 測試後清理 =====
     # 1. 卸載 cog

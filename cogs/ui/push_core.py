@@ -235,10 +235,15 @@ class AnimeDatabase:
                 CREATE TABLE IF NOT EXISTS {ANIME_REWARDS_TABLE} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     messageId INTEGER,  -- 對應 anime_messages 表
+                    message_id INTEGER,  -- snake_case 相容
                     rewardType TEXT,    -- 'vote' 或 'comment'
-                    amount INTEGER,      -- KK幣金額
+                    reward_type TEXT,   -- snake_case 相容
+                    reward_amount INTEGER,  -- KK幣金額
+                    amount INTEGER,      -- snake_case 相容
                     userId TEXT,        -- 匿名用戶識別符
-                    rewardedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    user_id TEXT,       -- snake_case 相容
+                    awardedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
