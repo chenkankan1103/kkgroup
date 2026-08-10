@@ -39,8 +39,18 @@ def get_table_columns(cursor, table_name):
     return [row[1] for row in cursor.fetchall()]
 
 
+def table_exists(cursor, table_name):
+    """Check if a table exists"""
+    cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+    return cursor.fetchone() is not None
+
+
 def add_column_if_missing(cursor, table_name, column_name, column_def):
     """Add column if it doesn't exist. SQLite ALTER TABLE doesn't support non-constant defaults."""
+    if not table_exists(cursor, table_name):
+        logger.info(f"[Migration] Table {table_name} does not exist, skipping")
+        return False
+
     columns = get_table_columns(cursor, table_name)
     if column_name not in columns:
         # Remove DEFAULT clause for ALTER TABLE - SQLite doesn't support non-constant defaults
