@@ -1086,7 +1086,8 @@ class AnimeDatabase:
             return False
 
     def record_vote(self, video_sn: int, anime_sn: int, message_id: int,
-                    vote_type: str, comment: str = None, user_hash: str = None) -> bool:
+                    vote_type: str, comment: str = None, user_hash: str = None,
+                    anime_name: str = "") -> bool:
         """記錄匿名投票/評論 - 同時寫入 snake_case 與 camelCase 欄位，避免 NOT NULL constraint 失敗
 
         Args:
@@ -1096,7 +1097,14 @@ class AnimeDatabase:
             vote_type: 投票類型 ('masterpiece', 'great', 'darkhorse', 'decent', 'controversial', 'disaster') 或 'comment'
             comment: 評論內容（可選）
             user_hash: 匿名用戶識別符
+            anime_name: 動畫名稱（可選，若未提供會自動查詢資料庫）
         """
+        # 若未提供 anime_name，嘗試從資料庫查詢
+        if not anime_name:
+            anime_details = self.get_anime_details(anime_sn)
+            if anime_details:
+                anime_name = anime_details.get('title', '') or anime_details.get('name', '')
+
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -1104,12 +1112,12 @@ class AnimeDatabase:
                     INSERT INTO {ANIME_VOTES_TABLE}
                     (videoSn, animeSn, video_sn, anime_sn, anime_name, vote_type, voteType, user_hash, userId, message_id, messageId, comment, voted_at, votedAt)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-                """, (video_sn, anime_sn, video_sn, anime_sn, "", vote_type, vote_type, user_hash, user_hash, message_id, message_id, comment))
+                """, (video_sn, anime_sn, video_sn, anime_sn, anime_name, vote_type, vote_type, user_hash, user_hash, message_id, message_id, comment))
                 conn.commit()
-                logger.info(f"✅ [record_vote] 記錄成功: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}")
+                logger.info(f"✅ [record_vote] 記錄成功: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, anime_name={anime_name}")
                 return True
         except Exception as e:
-            logger.error(f"❌ [record_vote] 記錄失敗: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, error={e}", exc_info=True)
+            logger.error(f"❌ [record_vote] 記錄失敗: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, anime_name={anime_name}, error={e}", exc_info=True)
             return False
 
     def get_vote_stats(self, message_id: int) -> Dict[str, int]:

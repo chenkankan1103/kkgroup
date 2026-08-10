@@ -998,6 +998,9 @@ class AnimeTracker(commands.Cog):
                 # 獲取用戶的匿名雜湊（用來防止同一用戶多次投票）
                 user_hash = str(hash(interaction.user.id))[:10]
 
+                # 取得動畫名稱
+                anime_name = self.episode.get("title", "") if self.episode else ""
+
                 # 記錄投票 - 使用 message.id 持久化視圖重啟後需要從 storage 獲取
                 message_id = interaction.message.id if interaction.message else None
                 vote_recorded = self.tracker.record_vote(
@@ -1005,7 +1008,8 @@ class AnimeTracker(commands.Cog):
                     anime_sn=self.anime_sn,
                     message_id=message_id,
                     vote_type=vote_key,
-                    user_hash=user_hash
+                    user_hash=user_hash,
+                    anime_name=anime_name
                 )
 
                 if not vote_recorded:
@@ -1121,13 +1125,16 @@ class AnimeTracker(commands.Cog):
 
                             # 🔑 修復：使用 outer_self.message_id（view 儲存的 message_id），因為 modal_interaction.message 為 None
                             message_id = outer_self.message_id
+                            # 取得動畫名稱
+                            anime_name = outer_self.episode.get("title", "") if outer_self.episode else ""
                             vote_recorded = outer_self.tracker.record_vote(
                                 video_sn=outer_self.video_sn,
                                 anime_sn=outer_self.anime_sn,
                                 message_id=message_id,
                                 vote_type="comment",
                                 comment=comment,
-                                user_hash=user_hash
+                                user_hash=user_hash,
+                                anime_name=anime_name
                             )
 
                             if not vote_recorded:
