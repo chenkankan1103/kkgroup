@@ -1,0 +1,52 @@
+# .pre-commit-config.yaml
+# 本地 pre-commit hooks - commit 前強制檢查
+# 安裝: pip install pre-commit && pre-commit install
+
+repos:
+  # 通用檢查
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  # Ruff - 極速 Python lint (替代 flake8, isort, pyupgrade 等)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.7
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        # 排除 legacy 代碼目錄與測試工具檔案 - pre-commit normalizes to forward slashes
+        exclude: ^(scripts/|scheduled_tasks/|web/|shared/db/|shared/utils/|tests/|utils/|cogs/shop/|cogs/ui/|cogs/common/|bots/|agent_tools\.py$|db_adapter\.py$|status_dashboard\.py$)
+      - id: ruff-format
+        exclude: ^(scripts/|scheduled_tasks/|web/|shared/db/|shared/utils/|tests/|utils/|cogs/shop/|cogs/ui/|cogs/common/|bots/|agent_tools\.py$|db_adapter\.py$|status_dashboard\.py$)
+
+  # 禁止 commit secrets
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.0
+    hooks:
+      - id: gitleaks
+
+  # 檢查 Python 語法
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        args: ["--config-file", "pyproject.toml"]
+        additional_dependencies: [types-requests, types-PyYAML]
+        exclude: ^(scripts/|scheduled_tasks/|web/|shared/db/|shared/utils/|tests/|utils/|cogs/shop/|cogs/ui/|cogs/common/|bots/|agent_tools\.py$|db_adapter\.py$|status_dashboard\.py$|config/)
+
+  # 針對本專案：pytest 快速檢查 (只跑單元測試，排除較慢的整合測試)
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: pytest unit tests
+        entry: pytest tests/ -q --tb=line -x -m "not integration"
+        language: system
+        pass_filenames: false
+        always_run: true
+        # 可選：只在修改 cogs/ 或 shared/ 時跑
+        # files: ^(cogs|shared)/

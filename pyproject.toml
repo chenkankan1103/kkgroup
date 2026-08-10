@@ -1,0 +1,61 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    "scripts/",
+    "scheduled_tasks/",
+    "web/",
+    "shared/db/",
+    "shared/utils/",
+    "tests/",
+    "utils/",
+    "cogs/shop/",
+    "cogs/ui/",
+    "cogs/common/",
+    "bots/",
+    "agent_tools.py",
+    "db_adapter.py",
+    "status_dashboard.py",
+    "config/",
+]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_configs = false
+disallow_untyped_defs = false
+# Exclude legacy code directories
+exclude = [
+    "scripts/",
+    "scheduled_tasks/",
+    "web/",
+    "shared/db/",
+    "shared/utils/",
+    "tests/",
+    "utils/",
+    "cogs/shop/",
+    "cogs/ui/",
+    "cogs/common/",
+    "bots/",
+    "agent_tools.py",
+    "db_adapter.py",
+    "status_dashboard.py",
+    "config/",
+]
+
+[[tool.mypy.overrides]]
+module = "cogs.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "shared.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_missing_imports = true

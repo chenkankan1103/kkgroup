@@ -5,10 +5,9 @@ pytest 配置與 dpytest 設定
 
 import asyncio
 import os
-import shutil
-import tempfile
+import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 # ==================== 環境變數 Mock (必須在匯入 bots.bot 之前) ====================
 # bots.bot 模組在匯入時會檢查 DISCORD_BOT_TOKEN，測試時需提供假值
@@ -24,12 +23,69 @@ import discord.ext.test as dpytest
 import pytest
 import pytest_asyncio
 
+
+# ==================== Pytest 標記 ====================
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "integration: 需外部資源 (DB、API、Discord) 的整合測試"
+    )
+    config.addinivalue_line("markers", "unit: 純單元測試，無外部依賴，執行快速")
+
+
+# ==================== 共用測試工具函數 ====================
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+TW_TZ = ZoneInfo("Asia/Taipei")
+
+
+def find_unpushed_items(
+    today_schedule: list, now: datetime = None, future_only: bool = False
+) -> list:
+    """
+    從今日時程表中找出未推送的項目 (測試版，同 push_core.py)
+
+    Args:
+        today_schedule: 今日時程表列表 (含 pushed, scheduled_time 欄位)
+        now: 當前時間，預設為當前台灣時間
+        future_only: True=只回傳時間尚未到達的項目, False=回傳所有已過/當前時間的未推送項目
+
+    Returns:
+        list: 符合條件的未推送項目列表，按時間排序
+    """
+    if now is None:
+        now = datetime.now(TW_TZ)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=TW_TZ)
+
+    matching = []
+    for item in today_schedule:
+        if item.get("pushed"):
+            continue
+        scheduled = item.get("scheduled_time", "")
+        try:
+            sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
+                year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+            )
+            diff = (now - sched_dt).total_seconds()
+            if future_only:
+                if diff < 0:  # 時間尚未到達
+                    matching.append(item)
+            else:
+                if diff >= 0:  # 已過或當前時刻
+                    matching.append(item)
+        except Exception:
+            pass
+
+    return sorted(matching, key=lambda x: x.get("scheduled_time", ""))
+
+
 # 確保專案根目錄在路徑中
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 # ==================== 全域事件循環 ====================
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -41,6 +97,7 @@ def event_loop():
 
 
 # ==================== 測試資料庫隔離 ====================
+
 
 @pytest.fixture(scope="function")
 def temp_db_path(tmp_path):
@@ -60,12 +117,14 @@ def isolated_db(temp_db_path):
     直接操作 SQLite，不經過 bot
     """
     from cogs.ui.push_core import AnimeDatabase
+
     db = AnimeDatabase(temp_db_path)
     yield db
     # 測試結束，連接會自動關閉
 
 
 # ==================== dpytest Discord 環境 ====================
+
 
 @pytest_asyncio.fixture(scope="function")
 async def dpytest_setup(event_loop, temp_db_path, frozen_time):
@@ -80,7 +139,7 @@ async def dpytest_setup(event_loop, temp_db_path, frozen_time):
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
-    TW_TZ = ZoneInfo('Asia/Taipei')
+    TW_TZ = ZoneInfo("Asia/Taipei")
 
     # 預設凍結時間：週一 2026-08-10 12:00:00
     default_time = datetime(2026, 8, 10, 12, 0, 0, tzinfo=TW_TZ)
@@ -138,12 +197,11 @@ async def anime_dpytest_setup(event_loop, temp_db_path, frozen_time, patch_baham
     """
     import discord
     from discord.ext import commands
-    from unittest.mock import patch
     from datetime import datetime
     from zoneinfo import ZoneInfo
     from pathlib import Path
 
-    TW_TZ = ZoneInfo('Asia/Taipei')
+    TW_TZ = ZoneInfo("Asia/Taipei")
 
     # 預設凍結時間：週一 2026-08-10 12:00:00 (避開 00:00 觸發 catchup)
     default_time = datetime(2026, 8, 10, 12, 0, 0, tzinfo=TW_TZ)
@@ -170,11 +228,13 @@ async def anime_dpytest_setup(event_loop, temp_db_path, frozen_time, patch_baham
 
     # 將頻道 ID 設為 ANIME_CHANNEL_ID 以便測試
     import cogs.ui.push_core as push_core_mod
+
     original_channel_id = push_core_mod.ANIME_CHANNEL_ID
     push_core_mod.ANIME_CHANNEL_ID = channel.id
 
     # 修改 bot 的資料庫路徑指向臨時資料庫
     import cogs.ui.anime_tracker as anime_tracker_mod
+
     original_db_path = anime_tracker_mod.ANIME_DB_PATH
     anime_tracker_mod.ANIME_DB_PATH = Path(temp_db_path)
 
@@ -193,7 +253,7 @@ async def anime_dpytest_setup(event_loop, temp_db_path, frozen_time, patch_baham
 
         # Skip starting background tasks in tests
 
-    with patch.object(AnimeTracker, 'cog_load', patched_cog_load):
+    with patch.object(AnimeTracker, "cog_load", patched_cog_load):
         # 載入 cog
         await bot.add_cog(AnimeTracker(bot))
 
@@ -232,6 +292,7 @@ async def anime_dpytest_setup(event_loop, temp_db_path, frozen_time, patch_baham
     # 5. 解凍時間
     frozen_time.unfreeze()
 
+
 class MockBahamutAPI:
     """模擬 Bahamut 動畫瘋 API 回應"""
 
@@ -246,22 +307,58 @@ class MockBahamutAPI:
         # 週一=1 ... 週日=7
         return {
             "1": [  # 週一
-                {"title": "Spy×Family", "scheduleTime": "00:00", "videoSn": 1001, "animeSn": 5001, "cover": "https://example.com/spy.jpg"},
-                {"title": "Jujutsu Kaisen", "scheduleTime": "01:00", "videoSn": 1002, "animeSn": 5002, "cover": "https://example.com/jjk.jpg"},
+                {
+                    "title": "Spy×Family",
+                    "scheduleTime": "00:00",
+                    "videoSn": 1001,
+                    "animeSn": 5001,
+                    "cover": "https://example.com/spy.jpg",
+                },
+                {
+                    "title": "Jujutsu Kaisen",
+                    "scheduleTime": "01:00",
+                    "videoSn": 1002,
+                    "animeSn": 5002,
+                    "cover": "https://example.com/jjk.jpg",
+                },
             ],
             "2": [  # 週二
-                {"title": "Frieren", "scheduleTime": "22:00", "videoSn": 1003, "animeSn": 5003, "cover": "https://example.com/frieren.jpg"},
+                {
+                    "title": "Frieren",
+                    "scheduleTime": "22:00",
+                    "videoSn": 1003,
+                    "animeSn": 5003,
+                    "cover": "https://example.com/frieren.jpg",
+                },
             ],
             "3": [],  # 週三
             "4": [  # 週四
-                {"title": "One Piece", "scheduleTime": "21:00", "videoSn": 1004, "animeSn": 5004, "cover": "https://example.com/op.jpg"},
+                {
+                    "title": "One Piece",
+                    "scheduleTime": "21:00",
+                    "videoSn": 1004,
+                    "animeSn": 5004,
+                    "cover": "https://example.com/op.jpg",
+                },
             ],
             "5": [],  # 週五
             "6": [  # 週六
-                {"title": "Attack on Titan", "scheduleTime": "23:30", "videoSn": 1005, "animeSn": 5005, "cover": "https://example.com/aot.jpg"},
+                {
+                    "title": "Attack on Titan",
+                    "scheduleTime": "23:30",
+                    "videoSn": 1005,
+                    "animeSn": 5005,
+                    "cover": "https://example.com/aot.jpg",
+                },
             ],
             "7": [  # 週日
-                {"title": "Sunday Early Anime", "scheduleTime": "00:00", "videoSn": 1007, "animeSn": 5007, "cover": "https://example.com/sun_early.jpg"},
+                {
+                    "title": "Sunday Early Anime",
+                    "scheduleTime": "00:00",
+                    "videoSn": 1007,
+                    "animeSn": 5007,
+                    "cover": "https://example.com/sun_early.jpg",
+                },
             ],
         }
 
@@ -269,7 +366,8 @@ class MockBahamutAPI:
         """動態構建新番資料，使用當前系統時間（會被 frozen_time 影響）"""
         from datetime import datetime
         from zoneinfo import ZoneInfo
-        today_str = datetime.now(ZoneInfo('Asia/Taipei')).strftime("%m/%d")
+
+        today_str = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%m/%d")
 
         return [
             {
@@ -310,18 +408,28 @@ class MockBahamutAPI:
         """模擬 newAnime.date API - 每次呼叫動態生成 upTime 以符合凍結時間"""
         self.call_count["new_anime"] += 1
         # 如果測試有手動設定 new_anime_data，優先使用；否則動態生成
-        data = self.new_anime_data if self.new_anime_data is not None else self._build_new_anime_data()
+        data = (
+            self.new_anime_data
+            if self.new_anime_data is not None
+            else self._build_new_anime_data()
+        )
         return {"data": {"newAnime": {"date": data, "popular": []}}}
 
     def get_video_details(self, video_sn):
         """模擬 video.php API"""
         self.call_count["details"] += 1
-        return self.video_details.get(video_sn, {
-            "data": {"anime": {
-                "content": f"這是 videoSn={video_sn} 的動画簡介",
-                "score": 4.5,
-                "tags": ["奇幻", "冒陷"]
-            }}})
+        return self.video_details.get(
+            video_sn,
+            {
+                "data": {
+                    "anime": {
+                        "content": f"這是 videoSn={video_sn} 的動画簡介",
+                        "score": 4.5,
+                        "tags": ["奇幻", "冒陷"],
+                    }
+                }
+            },
+        )
 
 
 @pytest.fixture
@@ -336,11 +444,11 @@ def patch_bahamut_api(mock_bahamut_api):
     打補釘所有 Bahamut API 呼叫
     適用於：AnimePushCore、AnimeScheduleTracker、AnimeTracker
     """
-    import aiohttp
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import patch
 
     class MockResponse:
         """正確實現 async context manager 的 Mock Response"""
+
         def __init__(self, data, status=200):
             self._data = data
             self.status = status
@@ -356,6 +464,7 @@ def patch_bahamut_api(mock_bahamut_api):
 
     class MockSession:
         """模擬 ClientSession，其 get 返回 async context manager"""
+
         def __init__(self, mock_api):
             self.mock_api = mock_api
             self.call_count = 0
@@ -372,18 +481,25 @@ def patch_bahamut_api(mock_bahamut_api):
             if "video.php" in url:
                 # 動畫詳細資訊 endpoint: /video.php?sn={video_sn}
                 import re
-                match = re.search(r'sn=(\d+)', url)
+
+                match = re.search(r"sn=(\d+)", url)
                 video_sn = int(match.group(1)) if match else 1001
                 return MockResponse(self.mock_api.get_video_details(video_sn))
             else:
                 # 主 endpoint (/index.php): 返回 schedule + newAnime
-                return MockResponse({
-                    "data": {
-                        "newAnimeSchedule": self.mock_api.get_schedule()["data"]["newAnimeSchedule"],
-                        "newAnime": self.mock_api.get_new_anime()["data"]["newAnime"],
-                        "popular": []
+                return MockResponse(
+                    {
+                        "data": {
+                            "newAnimeSchedule": self.mock_api.get_schedule()["data"][
+                                "newAnimeSchedule"
+                            ],
+                            "newAnime": self.mock_api.get_new_anime()["data"][
+                                "newAnime"
+                            ],
+                            "popular": [],
+                        }
                     }
-                })
+                )
 
     # Patch aiohttp.ClientSession to return a MockSession instance directly
     class MockClientSession:
@@ -402,6 +518,7 @@ def patch_bahamut_api(mock_bahamut_api):
 
 # ==================== 時間控制 ====================
 
+
 @pytest.fixture
 def frozen_time():
     """
@@ -410,7 +527,6 @@ def frozen_time():
     """
     from datetime import datetime as real_datetime
     from zoneinfo import ZoneInfo
-    from unittest.mock import patch
 
     class TimeFreezer:
         def __init__(self):
@@ -422,7 +538,7 @@ def frozen_time():
             # 先清理舊的 patch（支援重複呼叫 freeze）
             self.unfreeze()
 
-            frozen_dt = dt if dt.tzinfo else dt.replace(tzinfo=ZoneInfo('Asia/Taipei'))
+            frozen_dt = dt if dt.tzinfo else dt.replace(tzinfo=ZoneInfo("Asia/Taipei"))
 
             # 建立一個模擬 datetime 類別，其 now classmethod 回傳固定時間
             class FrozenDatetime(real_datetime):
@@ -433,15 +549,20 @@ def frozen_time():
             # 將傳入的真實 datetime 轉換為 FrozenDatetime 實例
             # 這樣 now() 返回的就是 FrozenDatetime 實例，能通過 isinstance 檢查
             self.frozen_dt = FrozenDatetime(
-                frozen_dt.year, frozen_dt.month, frozen_dt.day,
-                frozen_dt.hour, frozen_dt.minute, frozen_dt.second,
-                frozen_dt.microsecond, frozen_dt.tzinfo
+                frozen_dt.year,
+                frozen_dt.month,
+                frozen_dt.day,
+                frozen_dt.hour,
+                frozen_dt.minute,
+                frozen_dt.second,
+                frozen_dt.microsecond,
+                frozen_dt.tzinfo,
             )
             self._FrozenDatetime = FrozenDatetime
 
             # Patch datetime.datetime 在 builtins 全域生效
             # 這對於使用 `from datetime import datetime` 的代碼有效
-            p1 = patch('datetime.datetime', FrozenDatetime)
+            p1 = patch("datetime.datetime", FrozenDatetime)
             p1.start()
             self.patches.append(p1)
 
@@ -451,7 +572,7 @@ def frozen_time():
             import cogs.ui.schedule_tracker as st
 
             for mod in [pc, at, st]:
-                p = patch.object(mod, 'datetime', FrozenDatetime)
+                p = patch.object(mod, "datetime", FrozenDatetime)
                 p.start()
                 self.patches.append(p)
 
@@ -474,18 +595,18 @@ def frozen_time():
 
 # ==================== 測試資料建構器 ====================
 
-from cogs.ui.push_core import find_unpushed_items
 
 @pytest.fixture
 def sample_schedule_item():
     """單一週表項目建構器"""
+
     def _build(
         day_of_week: int = 1,
         scheduled_time: str = "00:00",
         video_sn: int = 1001,
         anime_sn: int = 5001,
         title: str = "Test Anime",
-        pushed: bool = False
+        pushed: bool = False,
     ):
         return {
             "day_of_week": day_of_week,
@@ -500,6 +621,7 @@ def sample_schedule_item():
             },
             "pushed": pushed,
         }
+
     return _build
 
 
@@ -518,7 +640,7 @@ def sample_anime_episode():
         cover: str = "https://example.com/test.jpg",
     ):
         if up_time is None:
-            up_time = datetime.now(ZoneInfo('Asia/Taipei')).strftime("%m/%d")
+            up_time = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%m/%d")
 
         return {
             "videoSn": video_sn,
@@ -529,35 +651,46 @@ def sample_anime_episode():
             "upTime": up_time,
             "popular": 10000,
         }
+
     return _build
 
 
 # ==================== 斷言輔助 ====================
 
+
 @pytest.fixture
 def assert_push_sent():
     """驗證是否成功推送訊息到頻道"""
+
     def _assert(channel_id: int, expected_count: int = 1):
         messages = dpytest.get_messages(channel_id)
-        assert len(messages) == expected_count, f"預期 {expected_count} 則訊息，實際 {len(messages)}"
+        assert (
+            len(messages) == expected_count
+        ), f"預期 {expected_count} 則訊息，實際 {len(messages)}"
         return messages
+
     return _assert
 
 
 @pytest.fixture
 def assert_db_state(isolated_db):
     """驗證資料庫狀態"""
-    def _assert_weekly_schedule(week_start: str, day: int, time: str, pushed: bool = None):
+
+    def _assert_weekly_schedule(
+        week_start: str, day: int, time: str, pushed: bool = None
+    ):
         conn = isolated_db._get_connection()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT pushed FROM anime_weekly_schedule WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
-            (week_start, day, time)
+            (week_start, day, time),
         )
         row = cursor.fetchone()
         if pushed is not None:
             assert row is not None, "週表記錄不存在"
-            assert bool(row[0]) == pushed, f"pushed 狀態不符：預期 {pushed}，實際 {bool(row[0])}"
+            assert (
+                bool(row[0]) == pushed
+            ), f"pushed 狀態不符：預期 {pushed}，實際 {bool(row[0])}"
         return row
 
     def _assert_notified(video_sn: int, exists: bool = True):
@@ -570,14 +703,19 @@ def assert_db_state(isolated_db):
         else:
             assert row is None, f"videoSn={video_sn} 不應在 anime_notified 中"
 
-    return type("DBAssert", (), {
-        "weekly_schedule": _assert_weekly_schedule,
-        "notified": _assert_notified,
-    })()
+    return type(
+        "DBAssert",
+        (),
+        {
+            "weekly_schedule": _assert_weekly_schedule,
+            "notified": _assert_notified,
+        },
+    )()
 
 
 # ==================== uibot 專用測試環境 (可選) ====================
 # 如果需要測試 uibot 專用的 AutoShardedBot 行為，可使用此 fixture
+
 
 @pytest_asyncio.fixture(autouse=False, scope="function")
 async def uibot_dpytest_setup(event_loop, temp_db_path):
@@ -588,6 +726,7 @@ async def uibot_dpytest_setup(event_loop, temp_db_path):
     """
     # 匯入 uibot
     import bots.uibot as uibot_module
+
     bot = uibot_module.client  # AutoShardedBot 實例
     from cogs.ui.anime_tracker import AnimeTracker
 
@@ -600,11 +739,13 @@ async def uibot_dpytest_setup(event_loop, temp_db_path):
 
     # 將頻道 ID 設為 ANIME_CHANNEL_ID 以便測試
     import cogs.ui.push_core as push_core_mod
+
     original_channel_id = push_core_mod.ANIME_CHANNEL_ID
     push_core_mod.ANIME_CHANNEL_ID = channel.id
 
     # 修改資料庫路徑
     import cogs.ui.anime_tracker as anime_tracker_mod
+
     original_db_path = anime_tracker_mod.ANIME_DB_PATH
     anime_tracker_mod.ANIME_DB_PATH = Path(temp_db_path)
 

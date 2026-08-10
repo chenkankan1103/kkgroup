@@ -246,6 +246,42 @@ echo "" | gcloud -q compute ssh user@instance --zone=zone --tunnel-through-iap -
 3. `sudo systemctl restart <service>`
 4. Verify logs: `sudo journalctl -u <service> -f`
 
+## Local Pre-push / Pre-commit Checks (L1 + L2)
+
+**Push 前必跑（本地驗證，避免 CI 失敗浪費時間）：**
+
+```bash
+# 完整檢查 (約 30-60 秒)
+pytest tests/ -q --tb=line -x -m "not integration" && ruff check . && black --check .
+```
+
+**分項檢查：**
+
+| 指令 | 用途 | 預估時間 |
+|------|------|----------|
+| `pytest tests/ -q -m "not integration"` | 只跑單元測試 (快) | ~10-20s |
+| `pytest tests/ -q` | 跑所有測試 (含整合) | ~60s |
+| `ruff check . --fix` | Lint + 自動修復 | ~5s |
+| `black --check .` | 格式檢查 | ~5s |
+| `pre-commit run --all-files` | 所有 pre-commit hooks | ~30s |
+
+**Pre-commit Hook 安裝 (一次性)：**
+```bash
+pip install pre-commit
+pre-commit install
+# 之後每次 commit 自動跑檢查
+```
+
+**手動觸發所有 hooks：**
+```bash
+pre-commit run --all-files
+```
+
+**跳過 hooks (緊急時)：**
+```bash
+git commit --no-verify
+```
+
 ## File Structure Conventions
 
 ```
