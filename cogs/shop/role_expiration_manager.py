@@ -12,6 +12,7 @@
 
 import sqlite3
 import discord
+from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 from db_adapter import get_db
@@ -260,3 +261,36 @@ def get_manager() -> RoleExpirationManager:
     if _manager is None:
         _manager = RoleExpirationManager()
     return _manager
+
+
+async def setup(bot: commands.Bot):
+    """載入此 Cog"""
+    await bot.add_cog(RoleExpirationManagerCog(bot))
+    print("[RoleExpiration] Cog loaded")
+
+
+class RoleExpirationManagerCog(commands.Cog):
+    """Discord Cog 包裝器，用於與 bot 整合"""
+
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.manager = get_manager()
+        # 啟動定期清理任務
+        self.cleanup_task.start()
+
+    @tasks.loop(hours=1)
+    async def cleanup_task(self):
+        """每小時清理過期角色"""
+        try:
+            removed = await self.manager.cleanup_expired_roles(self.bot)
+            if removed > 0:
+                print(f"[RoleExpiration] 定期清理：移除了 {removed} 個過期角色")
+        except Exception as e:
+            print(f"[RoleExpiration] 定期清理失敗: {e}")
+
+    @cleanup_task.before_loop
+    async def before_cleanup(self):
+        await self.bot.wait_until_ready()
+
+    def cog_unload(self):
+        self.cleanup_task.cancel()
