@@ -35,7 +35,8 @@ ENV/
 *.swo
 
 # GitHub Copilot / VS Code prompts (local only)
-.github/
+.github/*
+!.github/workflows/
 
 # Godot 游戏开发（等完整输出后再推送）
 game/
