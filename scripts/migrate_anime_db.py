@@ -40,11 +40,18 @@ def get_table_columns(cursor, table_name):
 
 
 def add_column_if_missing(cursor, table_name, column_name, column_def):
-    """Add column if it doesn't exist"""
+    """Add column if it doesn't exist. SQLite ALTER TABLE doesn't support non-constant defaults."""
     columns = get_table_columns(cursor, table_name)
     if column_name not in columns:
-        logger.info(f"[Migration] Adding column {column_name} to {table_name} ({column_def})")
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+        # Remove DEFAULT clause for ALTER TABLE - SQLite doesn't support non-constant defaults
+        # Default will be handled by application INSERT statements
+        if " DEFAULT " in column_def:
+            base_def = column_def.split(" DEFAULT ")[0]
+            logger.info(f"[Migration] Adding column {column_name} to {table_name} ({base_def}) - default handled by application")
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {base_def}")
+        else:
+            logger.info(f"[Migration] Adding column {column_name} to {table_name} ({column_def})")
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
         return True
     else:
         logger.info(f"[Migration] Column {column_name} already exists in {table_name}")
