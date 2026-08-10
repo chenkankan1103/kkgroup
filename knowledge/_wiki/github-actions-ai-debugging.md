@@ -124,7 +124,7 @@ AI_PROVIDERS = {
         "endpoint": "https://generativelanguage.googleapis.com"
     },
     "claude": {
-        "api_key": "CLAUDE_API_KEY", 
+        "api_key": "CLAUDE_API_KEY",
         "model": "claude-3-sonnet",
         "endpoint": "https://api.anthropic.com"
     },

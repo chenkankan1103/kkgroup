@@ -3,16 +3,15 @@
 紙娃娃商人系統 - 讓玩家購買楓之谷紙娃娃部位
 """
 
-import discord
 from discord.ext import commands
-from discord import app_commands
 import json
-from typing import Optional, Dict
+from typing import Dict
 from db_adapter import get_user, set_user_field, get_user_field
+
 
 class PaperdollMerchantSystem:
     """紙娃娃商人系統 - 管理部位商品和購買"""
-    
+
     # 商品目錄 - 可以從 Sheet 中動態加載
     PAPERDOLL_SHOP = {
         "face": {
@@ -24,13 +23,28 @@ class PaperdollMerchantSystem:
         "hair": {
             30000: {"emoji": "👨", "name": "清爽短髮", "price": 150, "gender": "male"},
             30120: {"emoji": "👨", "name": "蓬鬆短髮", "price": 150, "gender": "male"},
-            34410: {"emoji": "👩", "name": "齊肩長髮", "price": 200, "gender": "female"},
-            35200: {"emoji": "👩", "name": "蓬鬆長髮", "price": 200, "gender": "female"},
+            34410: {
+                "emoji": "👩",
+                "name": "齊肩長髮",
+                "price": 200,
+                "gender": "female",
+            },
+            35200: {
+                "emoji": "👩",
+                "name": "蓬鬆長髮",
+                "price": 200,
+                "gender": "female",
+            },
         },
         "top": {
             1040010: {"emoji": "👕", "name": "白色T恤", "price": 80, "gender": None},
             1040014: {"emoji": "👔", "name": "黑色上衣", "price": 100, "gender": None},
-            1041004: {"emoji": "💼", "name": "正式西裝", "price": 300, "gender": "female"},
+            1041004: {
+                "emoji": "💼",
+                "name": "正式西裝",
+                "price": 300,
+                "gender": "female",
+            },
             1040002: {"emoji": "👕", "name": "紅色T恤", "price": 80, "gender": None},
         },
         "bottom": {
@@ -44,34 +58,30 @@ class PaperdollMerchantSystem:
             1072009: {"emoji": "👟", "name": "白色運動鞋", "price": 80, "gender": None},
         },
     }
-    
+
     @staticmethod
     def get_user_inventory(user_id: int) -> Dict:
         """獲取用戶的紙娃娃庫存"""
         try:
-            inventory_data = get_user_field(user_id, 'paperdoll_inventory', default='{}')
+            inventory_data = get_user_field(
+                user_id, "paperdoll_inventory", default="{}"
+            )
             if isinstance(inventory_data, str):
                 return json.loads(inventory_data)
             return inventory_data
         except:
-            return {
-                "face": [],
-                "hair": [],
-                "top": [],
-                "bottom": [],
-                "shoes": []
-            }
-    
+            return {"face": [], "hair": [], "top": [], "bottom": [], "shoes": []}
+
     @staticmethod
     def save_user_inventory(user_id: int, inventory: Dict) -> bool:
         """保存用戶的紙娃娃庫存"""
         try:
-            set_user_field(user_id, 'paperdoll_inventory', json.dumps(inventory))
+            set_user_field(user_id, "paperdoll_inventory", json.dumps(inventory))
             return True
         except Exception as e:
             print(f"❌ 保存庫存失敗: {e}")
             return False
-    
+
     @staticmethod
     def get_equipped_paperdoll(user_id: int) -> Dict:
         """獲取用戶目前穿著的紙娃娃配置"""
@@ -79,23 +89,25 @@ class PaperdollMerchantSystem:
             user = get_user(user_id)
             if not user:
                 return {}
-            
+
             return {
-                "face": user.get('face', 20005),
-                "hair": user.get('hair', 30120),
-                "skin": user.get('skin', 12000),
-                "top": user.get('top', 1040014),
-                "bottom": user.get('bottom', 1060096),
-                "shoes": user.get('shoes', 1072005)
+                "face": user.get("face", 20005),
+                "hair": user.get("hair", 30120),
+                "skin": user.get("skin", 12000),
+                "top": user.get("top", 1040014),
+                "bottom": user.get("bottom", 1060096),
+                "shoes": user.get("shoes", 1072005),
             }
         except:
             return {}
-    
+
     @staticmethod
-    async def purchase_paperdoll_item(user_id: int, category: str, item_id: int, price: int) -> tuple[bool, str]:
+    async def purchase_paperdoll_item(
+        user_id: int, category: str, item_id: int, price: int
+    ) -> tuple[bool, str]:
         """
         購買紙娃娃部位
-        
+
         返回: (成功, 訊息)
         """
         try:
@@ -103,98 +115,103 @@ class PaperdollMerchantSystem:
             user = get_user(user_id)
             if not user:
                 return False, "❌ 找不到你的資料！"
-            
-            current_kkcoin = user.get('kkcoin', 0)
+
+            current_kkcoin = user.get("kkcoin", 0)
             if current_kkcoin < price:
-                return False, f"❌ 金錢不足！需要 {price} KKCoin，目前只有 {current_kkcoin}"
-            
+                return (
+                    False,
+                    f"❌ 金錢不足！需要 {price} KKCoin，目前只有 {current_kkcoin}",
+                )
+
             # 檢查是否已擁有
             inventory = PaperdollMerchantSystem.get_user_inventory(user_id)
             if item_id in inventory.get(category, []):
-                return False, f"❌ 你已經擁有這件道具了！"
-            
+                return False, "❌ 你已經擁有這件道具了！"
+
             # 扣款
             new_kkcoin = current_kkcoin - price
-            set_user_field(user_id, 'kkcoin', new_kkcoin)
-            
+            set_user_field(user_id, "kkcoin", new_kkcoin)
+
             # 添加到庫存
             if category not in inventory:
                 inventory[category] = []
-            
+
             if item_id not in inventory[category]:
                 inventory[category].append(item_id)
-            
+
             PaperdollMerchantSystem.save_user_inventory(user_id, inventory)
-            
+
             return True, f"✅ 購買成功！\n💰 剩餘金錢: {new_kkcoin} KKCoin"
-            
+
         except Exception as e:
             return False, f"❌ 購買失敗: {str(e)}"
-    
+
     @staticmethod
-    async def equip_paperdoll_item(user_id: int, category: str, item_id: int) -> tuple[bool, str]:
+    async def equip_paperdoll_item(
+        user_id: int, category: str, item_id: int
+    ) -> tuple[bool, str]:
         """
         穿著紙娃娃部位
-        
+
         返回: (成功, 訊息)
         """
         try:
             inventory = PaperdollMerchantSystem.get_user_inventory(user_id)
-            
+
             # 檢查是否擁有此部位
             if item_id not in inventory.get(category, []):
                 return False, f"❌ 你不擁有 {category} 分類中 ID {item_id} 的部位！"
-            
+
             # 更新數據庫
             set_user_field(user_id, category, item_id)
-            
-            return True, f"✅ 已穿著！"
-            
+
+            return True, "✅ 已穿著！"
+
         except Exception as e:
             return False, f"❌ 穿著失敗: {str(e)}"
-    
+
     @staticmethod
-    def save_paperdoll_set(user_id: int, set_name: str, items: Dict) -> tuple[bool, str]:
+    def save_paperdoll_set(
+        user_id: int, set_name: str, items: Dict
+    ) -> tuple[bool, str]:
         """
         保存紙娃娃搭配方案
-        
+
         items: 包含 face, hair, skin, top, bottom, shoes 的字典
         """
         try:
             # 獲取已保存的方案
-            custom_sets_data = get_user_field(user_id, 'paperdoll_custom_sets', default='{}')
+            custom_sets_data = get_user_field(
+                user_id, "paperdoll_custom_sets", default="{}"
+            )
             if isinstance(custom_sets_data, str):
                 custom_sets = json.loads(custom_sets_data)
             else:
                 custom_sets = custom_sets_data
-            
+
             # 限制最多 5 個方案
             if len(custom_sets) >= 5 and set_name not in custom_sets:
                 return False, "❌ 搭配方案已滿（最多 5 個），請刪除舊的方案"
-            
+
             # 保存方案
             custom_sets[set_name] = {
                 "items": items,
-                "timestamp": int(__import__('time').time())
+                "timestamp": int(__import__("time").time()),
             }
-            
-            set_user_field(user_id, 'paperdoll_custom_sets', json.dumps(custom_sets))
+
+            set_user_field(user_id, "paperdoll_custom_sets", json.dumps(custom_sets))
             return True, f"✅ 已保存搭配方案：{set_name}"
-            
+
         except Exception as e:
             return False, f"❌ 保存失敗: {str(e)}"
 
 
 class PaperdollMerchantCog(commands.Cog):
     """紙娃娃商人指令"""
-    
+
     def __init__(self, bot):
         self.bot = bot
         self.merchant = PaperdollMerchantSystem()
-    
-
-    
-
 
 
 async def setup(bot):

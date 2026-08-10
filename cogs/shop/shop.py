@@ -2,57 +2,76 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import asyncio
-import aiosqlite
 import aiohttp
 import json
 import io
-import os
 import random
 import traceback
 import sqlite3
-from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, Optional
 from datetime import datetime, timedelta
 
 from .merchant.views import (
-    PersistentView, ExploreView, RoleShopView, EquipmentShopView, 
-    SlotMachineView, PaperDollPreviewView, EquipmentPreviewView, 
-    TryOnResultView, ItemDetailView
+    PersistentView,
+    ExploreView,
+    RoleShopView,
+    EquipmentShopView,
+    SlotMachineView,
+    PaperDollPreviewView,
+    EquipmentPreviewView,
+    ItemDetailView,
 )
 from .merchant.database import (
-    get_user_kkcoin, update_user_kkcoin, update_user_equipment, get_user_equipment
+    get_user_kkcoin,
+    update_user_kkcoin,
+    update_user_equipment,
+    get_user_equipment,
 )
-from .merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID, VIP_ROLE_ID, RAINBOW_ROLE_ID
+from .merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID
 from cogs.ui.utils import paperdoll_manager
 from .role_expiration_manager import get_manager as get_expiration_manager
+
 
 class ButtonInteraction(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         # GCP資料庫路徑（本地測試用本地檔案，上傳後替換為GCP路徑）
-        self.db_path = './user_data.db'  # 本地測試路徑；GCP時替換為遠程路徑，如 'gs://bucket/database.db'
+        self.db_path = "./user_data.db"  # 本地測試路徑；GCP時替換為遠程路徑，如 'gs://bucket/database.db'
         try:
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.conn.execute("PRAGMA busy_timeout=30000")  # ✅ 避免多進程鎖定
             self.categories = self.get_categories()
-            print(f"ButtonInteraction initialized with {len(self.categories)} categories")
+            print(
+                f"ButtonInteraction initialized with {len(self.categories)} categories"
+            )
             # 寫入日誌檔案
-            with open('button_interaction_init.log', 'w') as f:
-                f.write(f"ButtonInteraction initialized with {len(self.categories)} categories\n")
+            with open("button_interaction_init.log", "w") as f:
+                f.write(
+                    f"ButtonInteraction initialized with {len(self.categories)} categories\n"
+                )
                 f.write(f"Categories: {self.categories[:5]}\n")
         except Exception as e:
             print(f"Error initializing ButtonInteraction: {e}")
             self.conn = None
             self.categories = []  # 設置為空列表，這樣按鈕會顯示錯誤消息
-            with open('button_interaction_init.log', 'w') as f:
+            with open("button_interaction_init.log", "w") as f:
                 f.write(f"Error initializing ButtonInteraction: {e}\n")
         # 將預設購買價格從 100000 下調為 5000（管理員要求）
         self.price = 5000
 
     # 允許顯示的資料庫類別（大寫首字母，對應 items.category 欄）
     ALLOWED_DB_CATEGORIES = {
-        'Face', 'Hair', 'Hat', 'Face Accessory', 'Eye Decoration',
-        'Earrings', 'Top', 'Overall', 'Bottom', 'Shoes', 'Glove'
+        "Face",
+        "Hair",
+        "Hat",
+        "Face Accessory",
+        "Eye Decoration",
+        "Earrings",
+        "Top",
+        "Overall",
+        "Bottom",
+        "Shoes",
+        "Glove",
     }
 
     def get_categories(self) -> list:
@@ -70,10 +89,18 @@ class ButtonInteraction(commands.Cog):
 
     def get_items_by_category(self, category: str) -> list:
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, name, category, region, version, image_url FROM items WHERE category = ?", (category,))
-        return [dict(zip(['id', 'name', 'category', 'region', 'version', 'image_url'], row)) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT id, name, category, region, version, image_url FROM items WHERE category = ?",
+            (category,),
+        )
+        return [
+            dict(zip(["id", "name", "category", "region", "version", "image_url"], row))
+            for row in cursor.fetchall()
+        ]
 
-    async def generate_character_image_url(self, user_data: dict, preview_item: Optional[Dict] = None) -> Optional[str]:
+    async def generate_character_image_url(
+        self, user_data: dict, preview_item: Optional[Dict] = None
+    ) -> Optional[str]:
         """委派給 paperdoll_manager，支援附屬裝備與試穿預覽。"""
         return paperdoll_manager.build_api_url(
             user_data,
@@ -93,32 +120,45 @@ class ButtonInteraction(commands.Cog):
             self.bot.add_view(ExploreView(self))
             self.bot.add_view(RoleShopView(self))
             self.bot.add_view(EquipmentShopView(self))
-        except Exception as e:
+        except Exception:
             pass
 
     @app_commands.command(name="shopping", description="開始神秘的黑市探索")
     async def start_interaction(self, interaction: discord.Interaction):
         try:
             if not interaction.user.guild_permissions.manage_guild:
-                await interaction.response.send_message("只有管理員可以開啟黑市商人。", ephemeral=True)
+                await interaction.response.send_message(
+                    "只有管理員可以開啟黑市商人。", ephemeral=True
+                )
                 return
-            
+
             embed = discord.Embed(
-                title="你走進了這個神秘的角落", 
-                description="是否要一探究竟？進入後，將會面對更多隱藏的選擇和可能。"
+                title="你走進了這個神秘的角落",
+                description="是否要一探究竟？進入後，將會面對更多隱藏的選擇和可能。",
             )
-            
+
             view = PersistentView(self)
             await interaction.response.send_message(embed=embed, view=view)
-            
-        except Exception as e:
+
+        except Exception:
             traceback.print_exc()
             if interaction.response.is_done():
-                await interaction.followup.send("❌ 發生錯誤，請稍後再試。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 發生錯誤，請稍後再試。", ephemeral=True
+                )
             else:
-                await interaction.response.send_message("❌ 發生錯誤，請稍後再試。", ephemeral=True)
-    async def handle_bet(self, interaction: discord.Interaction, user_id: int, bet_amount: int,
-                         history=None, original_message=None):
+                await interaction.response.send_message(
+                    "❌ 發生錯誤，請稍後再試。", ephemeral=True
+                )
+
+    async def handle_bet(
+        self,
+        interaction: discord.Interaction,
+        user_id: int,
+        bet_amount: int,
+        history=None,
+        original_message=None,
+    ):
         """處理拉霸機下注 - 統一更新同一個 Embed（作為 ButtonInteraction 的方法）"""
         try:
             # 初始化歷史記錄
@@ -131,22 +171,24 @@ class ButtonInteraction(commands.Cog):
 
             # 如果沒有 original_message，嘗試從 interaction 取得
             if original_message is None:
-                if hasattr(interaction, 'message') and interaction.message:
+                if hasattr(interaction, "message") and interaction.message:
                     original_message = interaction.message
 
             # 檢查用戶 KKcoin
             try:
                 kkcoin = await get_user_kkcoin(user_id)
-            except Exception as e:
+            except Exception:
                 traceback.print_exc()
-                await interaction.followup.send("❌ 無法獲取你的 KKcoin 餘額，請稍後再試。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 無法獲取你的 KKcoin 餘額，請稍後再試。", ephemeral=True
+                )
                 return original_message
 
             if kkcoin < bet_amount:
                 embed = discord.Embed(
                     title="🎰 拉霸機遊戲",
                     description=f"❌ **餘額不足！**\n\n💰 當前擁有：{kkcoin} KKcoin\n💸 需要：{bet_amount} KKcoin",
-                    color=discord.Color.red()
+                    color=discord.Color.red(),
                 )
 
                 if len(history) > 0:
@@ -158,38 +200,49 @@ class ButtonInteraction(commands.Cog):
                     embed.add_field(
                         name=f"📜 歷史記錄（最近 {len(history)} 場）",
                         value="\n".join(history_text),
-                        inline=False
+                        inline=False,
                     )
 
-                view = SlotMachineView(self, history=history.copy(), original_message=original_message)
+                view = SlotMachineView(
+                    self, history=history.copy(), original_message=original_message
+                )
 
                 if original_message:
                     await original_message.edit(embed=embed, view=view)
                     return original_message
                 else:
-                    new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                    new_msg = await interaction.followup.send(
+                        embed=embed, view=view, ephemeral=True
+                    )
                     return new_msg
 
             # 處理賭博邏輯
             try:
                 from .merchant.gambling import process_slot_machine_bet
+
                 result, net_change, msg = await process_slot_machine_bet(bet_amount)
             except Exception as e:
                 traceback.print_exc()
-                await interaction.followup.send(f"❌ 拉霸機運算失敗：{str(e)[:100]}", ephemeral=True)
+                await interaction.followup.send(
+                    f"❌ 拉霸機運算失敗：{str(e)[:100]}", ephemeral=True
+                )
                 return original_message
 
             # 更新用戶 KKcoin
             try:
                 await update_user_kkcoin(user_id, net_change)
                 new_kkcoin = await get_user_kkcoin(user_id)
-            except Exception as e:
+            except Exception:
                 traceback.print_exc()
-                await interaction.followup.send("❌ 無法更新你的 KKcoin，請聯絡管理員。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 無法更新你的 KKcoin，請聯絡管理員。", ephemeral=True
+                )
                 return original_message
 
             # 記錄本次結果到歷史
-            result_display = " ".join(result) if isinstance(result, list) else str(result)
+            result_display = (
+                " ".join(result) if isinstance(result, list) else str(result)
+            )
 
             if net_change > 0:
                 result_emoji = "✅"
@@ -201,23 +254,25 @@ class ButtonInteraction(commands.Cog):
                 result_emoji = "⚪"
                 change_text = "±0"
 
-            history.append({
-                'result': result_display,
-                'bet': bet_amount,
-                'change': net_change,
-                'change_text': change_text,
-                'emoji': result_emoji,
-                'msg': msg
-            })
+            history.append(
+                {
+                    "result": result_display,
+                    "bet": bet_amount,
+                    "change": net_change,
+                    "change_text": change_text,
+                    "emoji": result_emoji,
+                    "msg": msg,
+                }
+            )
 
             if len(history) > 5:
                 history = history[-5:]
 
-            total_bet = sum(h['bet'] for h in history)
-            total_change = sum(h['change'] for h in history)
-            win_count = sum(1 for h in history if h['change'] > 0)
-            lose_count = sum(1 for h in history if h['change'] < 0)
-            draw_count = sum(1 for h in history if h['change'] == 0)
+            total_bet = sum(h["bet"] for h in history)
+            total_change = sum(h["change"] for h in history)
+            win_count = sum(1 for h in history if h["change"] > 0)
+            lose_count = sum(1 for h in history if h["change"] < 0)
+            draw_count = sum(1 for h in history if h["change"] == 0)
 
             if net_change > 0:
                 color = discord.Color.green()
@@ -229,7 +284,7 @@ class ButtonInteraction(commands.Cog):
             embed = discord.Embed(
                 title="🎰 拉霸機遊戲",
                 description=f"**最新結果：[ {result_display} ]**\n{msg}",
-                color=color
+                color=color,
             )
 
             if len(history) > 0:
@@ -241,7 +296,7 @@ class ButtonInteraction(commands.Cog):
                 embed.add_field(
                     name=f"📜 歷史記錄（最近 {len(history)} 場）",
                     value="\n".join(history_text),
-                    inline=False
+                    inline=False,
                 )
 
             embed.add_field(
@@ -252,37 +307,53 @@ class ButtonInteraction(commands.Cog):
                     f"💸 總下注：{total_bet} KKcoin\n"
                     f"💰 淨損益：{'+' if total_change >= 0 else ''}{total_change} KKcoin"
                 ),
-                inline=False
+                inline=False,
             )
 
             embed.add_field(
-                name="💼 當前狀態",
-                value=f"💰 餘額：{new_kkcoin} KKcoin",
-                inline=False
+                name="💼 當前狀態", value=f"💰 餘額：{new_kkcoin} KKcoin", inline=False
             )
 
-            embed.set_footer(text="選擇下注金額繼續遊戲，或點擊「結束遊戲」查看最終結果")
+            embed.set_footer(
+                text="選擇下注金額繼續遊戲，或點擊「結束遊戲」查看最終結果"
+            )
 
             try:
                 if original_message:
                     try:
-                        view = SlotMachineView(self, history=history.copy(), original_message=original_message)
+                        view = SlotMachineView(
+                            self,
+                            history=history.copy(),
+                            original_message=original_message,
+                        )
                         await original_message.edit(embed=embed, view=view)
                         return original_message
                     except discord.NotFound:
-                        view = SlotMachineView(self, history=history.copy(), original_message=None)
-                        new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                        view = SlotMachineView(
+                            self, history=history.copy(), original_message=None
+                        )
+                        new_msg = await interaction.followup.send(
+                            embed=embed, view=view, ephemeral=True
+                        )
                         view.original_message = new_msg
                         return new_msg
                     except discord.HTTPException:
                         traceback.print_exc()
-                        view = SlotMachineView(self, history=history.copy(), original_message=None)
-                        new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                        view = SlotMachineView(
+                            self, history=history.copy(), original_message=None
+                        )
+                        new_msg = await interaction.followup.send(
+                            embed=embed, view=view, ephemeral=True
+                        )
                         view.original_message = new_msg
                         return new_msg
                 else:
-                    view = SlotMachineView(self, history=history.copy(), original_message=None)
-                    new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                    view = SlotMachineView(
+                        self, history=history.copy(), original_message=None
+                    )
+                    new_msg = await interaction.followup.send(
+                        embed=embed, view=view, ephemeral=True
+                    )
                     view.original_message = new_msg
                     return new_msg
             except Exception:
@@ -292,10 +363,14 @@ class ButtonInteraction(commands.Cog):
                         await original_message.edit(embed=embed)
                         return original_message
                     except:
-                        new_msg = await interaction.followup.send(embed=embed, ephemeral=True)
+                        new_msg = await interaction.followup.send(
+                            embed=embed, ephemeral=True
+                        )
                         return new_msg
                 else:
-                    new_msg = await interaction.followup.send(embed=embed, ephemeral=True)
+                    new_msg = await interaction.followup.send(
+                        embed=embed, ephemeral=True
+                    )
                     return new_msg
 
         except Exception as e:
@@ -316,17 +391,18 @@ class ButtonInteraction(commands.Cog):
             # 匯入 db_adapter 的功能
             import sys
             import os
-            sys.path.insert(0, os.path.dirname(__file__) + '/..')
+
+            sys.path.insert(0, os.path.dirname(__file__) + "/..")
             from db_adapter import get_user
-            
+
             user = get_user(user_id)
-            
+
             if not user:
                 return None
-            
+
             # 返回用戶資料（已自動適應任何欄位）
             return user
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
             return None
 
@@ -334,43 +410,74 @@ class ButtonInteraction(commands.Cog):
         try:
             items = [
                 {"itemId": 2000, "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('skin', 12000), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('face', 20005), "animationName": "default", "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('hair', 30120), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('top', 1040014), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('bottom', 1060096), "region": "TWMS", "version": "256"},
-                {"itemId": user_data.get('shoes', 1072005), "region": "TWMS", "version": "256"}
+                {
+                    "itemId": user_data.get("skin", 12000),
+                    "region": "TWMS",
+                    "version": "256",
+                },
+                {
+                    "itemId": user_data.get("face", 20005),
+                    "animationName": "default",
+                    "region": "TWMS",
+                    "version": "256",
+                },
+                {
+                    "itemId": user_data.get("hair", 30120),
+                    "region": "TWMS",
+                    "version": "256",
+                },
+                {
+                    "itemId": user_data.get("top", 1040014),
+                    "region": "TWMS",
+                    "version": "256",
+                },
+                {
+                    "itemId": user_data.get("bottom", 1060096),
+                    "region": "TWMS",
+                    "version": "256",
+                },
+                {
+                    "itemId": user_data.get("shoes", 1072005),
+                    "region": "TWMS",
+                    "version": "256",
+                },
             ]
 
-            if user_data.get('is_stunned', 0) == 1:
+            if user_data.get("is_stunned", 0) == 1:
                 items.append({"itemId": 1005411, "region": "TWMS", "version": "256"})
 
-            item_path = ",".join([json.dumps(item, separators=(',', ':')) for item in items])
-            
-            pose = "prone" if user_data.get('is_stunned', 0) == 1 else "stand1"
+            item_path = ",".join(
+                [json.dumps(item, separators=(",", ":")) for item in items]
+            )
+
+            pose = "prone" if user_data.get("is_stunned", 0) == 1 else "stand1"
             url = f"https://maplestory.io/api/character/{item_path}/{pose}/0?showears=false&resize=2&flipX=true"
 
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as session:
                 async with session.get(url) as response:
                     if response.status == 200:
                         image_data = await response.read()
                         if len(image_data) > 100:
-                            return discord.File(io.BytesIO(image_data), filename='character.png')
+                            return discord.File(
+                                io.BytesIO(image_data), filename="character.png"
+                            )
 
         except asyncio.TimeoutError:
             pass
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
         return None
 
     def get_category_name(self, category):
         names = {
             # 基本部件
-            "hair": "💇 髮型", 
-            "face": "😊 臉型", 
-            "skin": "🎨 膚色", 
-            "top": "👔 上衣", 
-            "bottom": "👖 下裝", 
+            "hair": "💇 髮型",
+            "face": "😊 臉型",
+            "skin": "🎨 膚色",
+            "top": "👔 上衣",
+            "bottom": "👖 下裝",
             "shoes": "👟 鞋子",
             # 新增部件
             "belt": "⏱️ 腰帶",
@@ -391,175 +498,195 @@ class ButtonInteraction(commands.Cog):
             "ring": "💍 戒指",
             "shield": "🛡️ 盾牌",
             "shoulder_accessory": "🎒 肩膀配件",
-            "skill_effect": "✨ 技能效果"
+            "skill_effect": "✨ 技能效果",
         }
         return names.get(category, category)
 
-    async def get_merchant_response(self, user, action: str, interaction: discord.Interaction):
+    async def get_merchant_response(
+        self, user, action: str, interaction: discord.Interaction
+    ):
         try:
             if interaction.response.is_done():
                 return
-                
+
             await interaction.response.defer(ephemeral=True)
             kkcoin = await get_user_kkcoin(user.id)
-            
+
             if action == "購買身份":
                 embed = discord.Embed(
-                    title="黑市商人的身份商品", 
-                    description=f"你目前擁有: {kkcoin} KKcoin\n請選擇以下身份商品", 
-                    color=discord.Color.gold()
+                    title="黑市商人的身份商品",
+                    description=f"你目前擁有: {kkcoin} KKcoin\n請選擇以下身份商品",
+                    color=discord.Color.gold(),
                 )
                 view = RoleShopView(self)
                 await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-                
-        except Exception as e:
+
+        except Exception:
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 處理請求時發生錯誤。", ephemeral=True)
+                    await interaction.response.send_message(
+                        "❌ 處理請求時發生錯誤。", ephemeral=True
+                    )
                 else:
-                    await interaction.followup.send("❌ 處理請求時發生錯誤。", ephemeral=True)
+                    await interaction.followup.send(
+                        "❌ 處理請求時發生錯誤。", ephemeral=True
+                    )
             except:
                 pass
 
-    async def handle_role_purchase(self, interaction, role_name, price, role_id, duration=None):
+    async def handle_role_purchase(
+        self, interaction, role_name, price, role_id, duration=None
+    ):
         try:
             if interaction.response.is_done():
                 return
-                
+
             await interaction.response.defer(ephemeral=True)
             member = interaction.user
             kkcoin = await get_user_kkcoin(member.id)
 
             if kkcoin < price:
-                await interaction.followup.send(f"你沒有足夠的 KKcoin 購買 {role_name}！", ephemeral=True)
+                await interaction.followup.send(
+                    f"你沒有足夠的 KKcoin 購買 {role_name}！", ephemeral=True
+                )
                 return
 
             role = interaction.guild.get_role(role_id)
             if not role:
-                await interaction.followup.send("找不到對應角色，請聯絡管理員。", ephemeral=True)
+                await interaction.followup.send(
+                    "找不到對應角色，請聯絡管理員。", ephemeral=True
+                )
                 return
 
             await update_user_kkcoin(member.id, -price)
             await member.add_roles(role)
-            
+
             # ✅ 使用新的持久化系統記錄角色過期時間（支持時間疊加）
             expires_at = None
             was_stacked = False
-            
+
             if duration:
                 import sqlite3
+
                 manager = get_expiration_manager()
-                
+
                 # 先查詢現有的過期時間（用於顯示）
                 try:
                     db_path = manager.db_path
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
-                    
-                    cursor.execute("""
+
+                    cursor.execute(
+                        """
                         SELECT expires_at FROM role_expirations
                         WHERE user_id = ? AND guild_id = ? AND role_id = ? AND is_active = 1
-                    """, (member.id, interaction.guild.id, role_id))
-                    
+                    """,
+                        (member.id, interaction.guild.id, role_id),
+                    )
+
                     result = cursor.fetchone()
                     current_time = datetime.now()
-                    
+
                     # 計算新的過期時間（與 save_role_purchase 邏輯一致）
                     if result:
                         existing_expires_at = datetime.fromisoformat(result[0])
                         if existing_expires_at > current_time:
-                            expires_at = existing_expires_at + timedelta(seconds=duration)
+                            expires_at = existing_expires_at + timedelta(
+                                seconds=duration
+                            )
                             was_stacked = True
                         else:
                             expires_at = current_time + timedelta(seconds=duration)
                     else:
                         expires_at = current_time + timedelta(seconds=duration)
-                    
+
                     conn.close()
                 except:
                     # 如果查詢失敗，使用預設邏輯
                     expires_at = datetime.now() + timedelta(seconds=duration)
-                
+
                 # 保存購買記錄
                 save_success = manager.save_role_purchase(
                     user_id=member.id,
                     guild_id=interaction.guild.id,
                     role_id=role_id,
                     role_name=role_name,
-                    duration_seconds=duration
+                    duration_seconds=duration,
                 )
-                
+
                 # 記錄購買日誌
                 expire_days = duration // 86400
                 stack_info = " (⏱️ 時間已疊加)" if was_stacked else ""
-                
+
                 log_msg = (
                     f"[PURCHASE] {member.id} 購買 {role_name}{stack_info} | "
                     f"時長: {expire_days}天 | 到期: {expires_at.strftime('%Y-%m-%d %H:%M')} | "
                     f"DB_Save: {'✅' if save_success else '❌'}"
                 )
-                
+
                 try:
                     with open("/tmp/role_purchase.log", "a", encoding="utf-8") as f:
                         f.write(f"[{datetime.now().isoformat()}] {log_msg}\n")
                         f.flush()
                 except:
                     pass
-                
+
                 print(f"[SHOP] {log_msg}")
 
             kkcoin_new = await get_user_kkcoin(member.id)
             embed = discord.Embed(
-                title="購買成功", 
-                description=f"你成功購買了 {role_name}，花費了 {price} KKcoin！\n剩餘：{kkcoin_new} KKcoin"
+                title="購買成功",
+                description=f"你成功購買了 {role_name}，花費了 {price} KKcoin！\n剩餘：{kkcoin_new} KKcoin",
             )
-            
+
             if expires_at:
                 expire_days_total = (expires_at - datetime.now()).days
-                expire_hours_remaining = ((expires_at - datetime.now()).total_seconds() % 86400) // 3600
-                
+                expire_hours_remaining = (
+                    (expires_at - datetime.now()).total_seconds() % 86400
+                ) // 3600
+
                 time_info = f"<t:{int(expires_at.timestamp())}:R> (約 {expire_days_total} 天 {expire_hours_remaining} 小時)"
                 if was_stacked:
                     time_info += "\n⏱️ **時間已疊加到現有期限**"
-                
-                embed.add_field(
-                    name="⏱️ 有效期至",
-                    value=time_info,
-                    inline=False
-                )
-            
+
+                embed.add_field(name="⏱️ 有效期至", value=time_info, inline=False)
+
             # 進階組員和變色龍披風的權限說明
             if role_name == "進階組員":
                 embed.add_field(
                     name="🔧 進階組員權限",
                     value="✅ 可以刪除別人的訊息\n✅ 重複購買時間可疊加（此身分為期限制，到期自動移除）",
-                    inline=False
+                    inline=False,
                 )
             elif role_name == "七彩披風":
                 embed.add_field(
                     name="🌈 七彩披風效果",
                     value="✅ 在 Discord 中獲得特殊顏色\n✅ 重複購買時間可疊加（此身分為期限制，到期自動移除）",
-                    inline=False
+                    inline=False,
                 )
-            
+
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
+
+        except Exception:
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 購買處理失敗。", ephemeral=True)
+                    await interaction.response.send_message(
+                        "❌ 購買處理失敗。", ephemeral=True
+                    )
                 else:
                     await interaction.followup.send("❌ 購買處理失敗。", ephemeral=True)
             except:
                 pass
 
-    async def handle_equipment_purchase(self, interaction, item_name: str, item_data: dict, category: str):
+    async def handle_equipment_purchase(
+        self, interaction, item_name: str, item_data: dict, category: str
+    ):
         try:
             if interaction.response.is_done():
                 return
-                
+
             await interaction.response.defer(ephemeral=True)
             member = interaction.user
             kkcoin = await get_user_kkcoin(member.id)
@@ -567,7 +694,10 @@ class ButtonInteraction(commands.Cog):
             item_id = item_data["id"]
 
             if kkcoin < price:
-                await interaction.followup.send(f"你沒有足夠的 KKcoin 購買 {item_name}！需要 {price} KKcoin", ephemeral=True)
+                await interaction.followup.send(
+                    f"你沒有足夠的 KKcoin 購買 {item_name}！需要 {price} KKcoin",
+                    ephemeral=True,
+                )
                 return
 
             await update_user_kkcoin(member.id, -price)
@@ -577,69 +707,85 @@ class ButtonInteraction(commands.Cog):
             embed = discord.Embed(
                 title="✅ 購買成功",
                 description=f"你成功購買了 **{item_name}**！\n💰 花費：{price} KKcoin\n💰 剩餘：{kkcoin_new} KKcoin\n🎭 裝備已自動穿戴！",
-                color=discord.Color.green()
+                color=discord.Color.green(),
             )
-            
+
             if "effects" in item_data:
                 effect_messages = []
                 for effect in item_data["effects"]:
                     effect_msg = await self.apply_equipment_effect(member.id, effect)
                     if effect_msg:
                         effect_messages.append(effect_msg)
-                
+
                 if effect_messages:
-                    embed.add_field(name="✨ 特殊效果", value="\n".join(effect_messages), inline=False)
+                    embed.add_field(
+                        name="✨ 特殊效果",
+                        value="\n".join(effect_messages),
+                        inline=False,
+                    )
 
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
+
+        except Exception:
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 購買處理失敗。", ephemeral=True)
+                    await interaction.response.send_message(
+                        "❌ 購買處理失敗。", ephemeral=True
+                    )
                 else:
                     await interaction.followup.send("❌ 購買處理失敗。", ephemeral=True)
             except:
                 pass
 
-    async def handle_equipment_preview(self, interaction, item_name: str, item_data: dict, category: str):
+    async def handle_equipment_preview(
+        self, interaction, item_name: str, item_data: dict, category: str
+    ):
         try:
             if interaction.response.is_done():
                 return
-                
+
             await interaction.response.defer(ephemeral=True)
-            
+
             user_data = await self.get_user_data(interaction.user.id)
             if not user_data:
-                await interaction.followup.send("❌ 找不到你的角色數據！", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 找不到你的角色數據！", ephemeral=True
+                )
                 return
-            
+
             loading_embed = discord.Embed(
                 title="👗 正在生成試穿效果...",
                 description=f"請稍等，正在為 {interaction.user.mention} 生成 **{item_name}** 的試穿效果！\n\n⏳ 這將需要幾秒鐘時間...",
-                color=discord.Color.orange()
+                color=discord.Color.orange(),
             )
             loading_embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            
+
             await interaction.followup.send(embed=loading_embed, ephemeral=True)
-            
+
             preview_data = user_data.copy()
             preview_data[category] = item_data.get("id", item_data.get("item_id", 0))
-            
+
             await asyncio.sleep(2)
-            
+
             character_image = await self.fetch_character_image(preview_data)
-            
+
             embed = discord.Embed(
                 title=f"👗 商品預覽：{item_name}",
                 description=f"看看 {interaction.user.mention} 試穿 **{item_name}** 的效果！\n\n{item_data.get('description', '精美的裝備，值得擁有！')}",
-                color=discord.Color.purple()
+                color=discord.Color.purple(),
             )
-            
-            embed.add_field(name="💰 價格", value=f"{item_data['price']} KKcoin", inline=True)
-            embed.add_field(name="🏷️ 類別", value=self.get_category_name(category), inline=True)
-            embed.add_field(name="🆔 商品編號", value=item_data.get("id", "未知"), inline=True)
-            
+
+            embed.add_field(
+                name="💰 價格", value=f"{item_data['price']} KKcoin", inline=True
+            )
+            embed.add_field(
+                name="🏷️ 類別", value=self.get_category_name(category), inline=True
+            )
+            embed.add_field(
+                name="🆔 商品編號", value=item_data.get("id", "未知"), inline=True
+            )
+
             if "effects" in item_data:
                 effects_text = []
                 for effect in item_data["effects"]:
@@ -647,62 +793,76 @@ class ButtonInteraction(commands.Cog):
                         effects_text.append(f"💰 購買獲得額外 {effect['value']} KKcoin")
                     elif effect["type"] == "daily_bonus":
                         effects_text.append(f"📅 每日額外獲得 {effect['value']} KKcoin")
-                
+
                 if effects_text:
-                    embed.add_field(name="✨ 特殊效果", value="\n".join(effects_text), inline=False)
-            
+                    embed.add_field(
+                        name="✨ 特殊效果", value="\n".join(effects_text), inline=False
+                    )
+
             user_kkcoin = await get_user_kkcoin(interaction.user.id)
-            if user_kkcoin >= item_data['price']:
-                embed.add_field(name="💸 購買狀態", value="✅ 你有足夠的 KKcoin 購買此商品", inline=False)
+            if user_kkcoin >= item_data["price"]:
+                embed.add_field(
+                    name="💸 購買狀態",
+                    value="✅ 你有足夠的 KKcoin 購買此商品",
+                    inline=False,
+                )
             else:
-                needed = item_data['price'] - user_kkcoin
-                embed.add_field(name="💸 購買狀態", value=f"❌ 還需要 {needed} KKcoin 才能購買", inline=False)
-            
+                needed = item_data["price"] - user_kkcoin
+                embed.add_field(
+                    name="💸 購買狀態",
+                    value=f"❌ 還需要 {needed} KKcoin 才能購買",
+                    inline=False,
+                )
+
             files = []
             if character_image:
                 files.append(character_image)
                 embed.set_image(url="attachment://character.png")
                 embed.add_field(
-                    name="✨ 試穿效果", 
-                    value="上圖顯示了試穿此裝備後的效果！", 
-                    inline=False
+                    name="✨ 試穿效果",
+                    value="上圖顯示了試穿此裝備後的效果！",
+                    inline=False,
                 )
             else:
                 embed.set_image(url=interaction.user.display_avatar.url)
                 embed.add_field(
-                    name="💡 提示", 
-                    value="暫時無法生成試穿圖片，但你仍可以購買此商品！", 
-                    inline=False
+                    name="💡 提示",
+                    value="暫時無法生成試穿圖片，但你仍可以購買此商品！",
+                    inline=False,
                 )
-            
-            can_afford = user_kkcoin >= item_data['price']
-            view = EquipmentPreviewView(self, item_name, item_data, category, can_afford)
-            
-            await interaction.edit_original_response(
-                embed=embed,
-                view=view,
-                attachments=files if files else []
+
+            can_afford = user_kkcoin >= item_data["price"]
+            view = EquipmentPreviewView(
+                self, item_name, item_data, category, can_afford
             )
-                            
-        except Exception as e:
+
+            await interaction.edit_original_response(
+                embed=embed, view=view, attachments=files if files else []
+            )
+
+        except Exception:
             traceback.print_exc()
-            
+
             error_embed = discord.Embed(
                 title="❌ 預覽功能暫時無法使用",
                 description="抱歉，預覽功能目前遇到技術問題。\n你仍然可以直接購買此商品。",
-                color=discord.Color.red()
+                color=discord.Color.red(),
             )
-            
+
             try:
                 kkcoin = await get_user_kkcoin(interaction.user.id)
-                can_afford = kkcoin >= item_data['price']
-                
+                can_afford = kkcoin >= item_data["price"]
+
                 view = ItemDetailView(self, item_name, item_data, category, can_afford)
-                
+
                 if not interaction.response.is_done():
-                    await interaction.response.send_message(embed=error_embed, view=view, ephemeral=True)
+                    await interaction.response.send_message(
+                        embed=error_embed, view=view, ephemeral=True
+                    )
                 else:
-                    await interaction.edit_original_response(embed=error_embed, view=view)
+                    await interaction.edit_original_response(
+                        embed=error_embed, view=view
+                    )
             except:
                 pass
 
@@ -710,16 +870,16 @@ class ButtonInteraction(commands.Cog):
         try:
             effect_type = effect.get("type")
             value = effect.get("value", 0)
-            
+
             if effect_type == "kkcoin_bonus":
                 await update_user_kkcoin(user_id, value)
                 return f"💰 獲得額外 {value} KKcoin！"
             elif effect_type == "daily_bonus":
                 return f"📅 每日將額外獲得 {value} KKcoin！"
-            
-        except Exception as e:
+
+        except Exception:
             pass
-        
+
         return None
 
     async def remove_role_after_delay(self, member, role, duration):
@@ -727,87 +887,95 @@ class ButtonInteraction(commands.Cog):
             await asyncio.sleep(duration)
             if role in member.roles:
                 await member.remove_roles(role)
-        except Exception as e:
+        except Exception:
             pass
 
     async def handle_rob_action(self, interaction):
         try:
             if interaction.response.is_done():
                 return
-                
+
             await interaction.response.defer(ephemeral=True)
             member = interaction.user
             mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
             member_role = interaction.guild.get_role(MEMBER_ROLE_ID)
 
             if not mute_role:
-                await interaction.followup.send("❌ 找不到禁閉角色，請聯絡管理員設定。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 找不到禁閉角色，請聯絡管理員設定。", ephemeral=True
+                )
                 return
-                
+
             if not member_role:
-                await interaction.followup.send("❌ 找不到會員角色，請聯絡管理員設定。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 找不到會員角色，請聯絡管理員設定。", ephemeral=True
+                )
                 return
 
             if mute_role in member.roles:
                 embed = discord.Embed(
-                    title="🚫 搶劫失敗", 
+                    title="🚫 搶劫失敗",
                     description="你已經被禁閉，無法再次搶劫。",
-                    color=discord.Color.red()
+                    color=discord.Color.red(),
                 )
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
             success_rate = 30
             is_success = random.randint(1, 100) <= success_rate
-            
+
             if is_success:
                 stolen_amount = random.randint(100, 200)
                 await update_user_kkcoin(member.id, stolen_amount)
                 new_kkcoin = await get_user_kkcoin(member.id)
-                
+
                 embed = discord.Embed(
                     title="💰 搶劫成功！",
                     description=f"你成功從黑市商人那裡搶到了 **{stolen_amount} KKcoin**！\n\n"
-                               f"黑市商人驚慌失措地看著你逃跑...\n"
-                               f"💰 目前擁有：{new_kkcoin} KKcoin",
-                    color=discord.Color.green()
+                    f"黑市商人驚慌失措地看著你逃跑...\n"
+                    f"💰 目前擁有：{new_kkcoin} KKcoin",
+                    color=discord.Color.green(),
                 )
             else:
                 try:
                     if member_role in member.roles:
                         await member.remove_roles(member_role, reason="搶劫失敗被禁閉")
                     await member.add_roles(mute_role, reason="搶劫失敗被禁閉")
-                    
+
                     embed = discord.Embed(
                         title="🚫 搶劫失敗！",
                         description="你被黑市商人反制，被丟進禁閉室！\n\n"
-                                   "黑市商人冷笑道：「想搶劫我？太嫩了！」\n"
-                                   "⏰ 將在5分鐘後釋放你。",
-                        color=discord.Color.red()
+                        "黑市商人冷笑道：「想搶劫我？太嫩了！」\n"
+                        "⏰ 將在5分鐘後釋放你。",
+                        color=discord.Color.red(),
                     )
-                    
-                    self.bot.loop.create_task(self.release_from_mute(member, mute_role, member_role))
-                    
+
+                    self.bot.loop.create_task(
+                        self.release_from_mute(member, mute_role, member_role)
+                    )
+
                 except discord.Forbidden:
                     embed = discord.Embed(
                         title="❌ 權限不足",
                         description="機器人沒有足夠權限來管理角色，請聯絡管理員檢查權限設定。",
-                        color=discord.Color.red()
+                        color=discord.Color.red(),
                     )
-                except Exception as e:
+                except Exception:
                     embed = discord.Embed(
                         title="❌ 系統錯誤",
                         description="處理搶劫時發生錯誤，請稍後再試。",
-                        color=discord.Color.red()
+                        color=discord.Color.red(),
                     )
 
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
+
+        except Exception:
             traceback.print_exc()
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 搶劫處理失敗。", ephemeral=True)
+                    await interaction.response.send_message(
+                        "❌ 搶劫處理失敗。", ephemeral=True
+                    )
                 else:
                     await interaction.followup.send("❌ 搶劫處理失敗。", ephemeral=True)
             except:
@@ -816,28 +984,28 @@ class ButtonInteraction(commands.Cog):
     async def release_from_mute(self, member, mute_role, member_role):
         try:
             await asyncio.sleep(300)
-            
+
             guild = member.guild
             member = guild.get_member(member.id)
-            
+
             if not member:
                 return
-                
+
             mute_role = guild.get_role(MUTE_ROLE_ID)
             member_role = guild.get_role(MEMBER_ROLE_ID)
-            
+
             if not mute_role or not member_role:
                 return
-            
+
             if mute_role in member.roles:
                 await member.remove_roles(mute_role, reason="禁閉期滿自動釋放")
-                
+
                 if member_role not in member.roles:
                     await member.add_roles(member_role, reason="禁閉期滿恢復會員身份")
-                    
+
         except discord.Forbidden:
             pass
-        except Exception as e:
+        except Exception:
             pass
 
 
@@ -849,11 +1017,11 @@ class DressingRoomView(discord.ui.View):
         self.user_id = user_id
         # 如果呼叫者提供 original_message（第一次發送時會有），就保留以便後續 edit
         self.original_message = original_message
-        
+
         # 類別中英對照表
         self.category_names = {
             "Face": "臉型",
-            "Hair": "髮型", 
+            "Hair": "髮型",
             "Hat": "帽子",
             "Face Accessory": "臉部飾品",
             "Eye Decoration": "眼睛飾品",
@@ -876,9 +1044,9 @@ class DressingRoomView(discord.ui.View):
             "Medal": "勳章",
             "Shoulder": "肩膀裝飾",
             "Pocket Item": "口袋物品",
-            "Bits": "晶片"
+            "Bits": "晶片",
         }
-        
+
         # 創建下拉選單
         self.create_select_menu()
 
@@ -886,33 +1054,41 @@ class DressingRoomView(discord.ui.View):
         options = []
         for category in self.cog.categories:
             chinese_name = self.category_names.get(category, category)
-            options.append(discord.SelectOption(
-                label=f"{chinese_name}",
-                value=category,
-                description=f"選擇 {chinese_name} 進行更換"
-            ))
-        
+            options.append(
+                discord.SelectOption(
+                    label=f"{chinese_name}",
+                    value=category,
+                    description=f"選擇 {chinese_name} 進行更換",
+                )
+            )
+
         select = discord.ui.Select(
             placeholder="👗 選擇要更換的部位...",
             options=options,
-            custom_id="category_select"
+            custom_id="category_select",
         )
         select.callback = self.category_selected
         self.add_item(select)
-        
+
         # 隨機搭配按鈕（與返回商店同層）
-        random_button = discord.ui.Button(label="🎲 隨機搭配", style=discord.ButtonStyle.secondary, emoji="🎲")
+        random_button = discord.ui.Button(
+            label="🎲 隨機搭配", style=discord.ButtonStyle.secondary, emoji="🎲"
+        )
         random_button.callback = self.random_outfit
         self.add_item(random_button)
-        
+
         # 返回按鈕
-        back_button = discord.ui.Button(label="返回商店", style=discord.ButtonStyle.secondary, emoji="⬅️")
+        back_button = discord.ui.Button(
+            label="返回商店", style=discord.ButtonStyle.secondary, emoji="⬅️"
+        )
         back_button.callback = self.back_to_shop
         self.add_item(back_button)
 
     async def category_selected(self, interaction: discord.Interaction):
         """處理衣帽間類別選擇：優先 edit 原始訊息，失敗時 fallback 為 followup.send。"""
-        import traceback, time
+        import traceback
+        import time
+
         ts = int(time.time())
 
         # 先 ACK 避免 3 秒超時
@@ -930,7 +1106,7 @@ class DressingRoomView(discord.ui.View):
             return
 
         try:
-            values = (interaction.data or {}).get('values') or []
+            values = (interaction.data or {}).get("values") or []
             if not values:
                 await interaction.followup.send("❌ 未選擇任何部位。", ephemeral=True)
                 return
@@ -939,16 +1115,20 @@ class DressingRoomView(discord.ui.View):
             chinese_name = self.category_names.get(selected_category, selected_category)
 
             # DB 查詢移到執行緒（可能很慢）
-            items = await asyncio.to_thread(self.cog.get_items_by_category, selected_category)
+            items = await asyncio.to_thread(
+                self.cog.get_items_by_category, selected_category
+            )
 
             if not items:
-                await interaction.followup.send(f"❌ {chinese_name} 分類目前沒有物品。", ephemeral=True)
+                await interaction.followup.send(
+                    f"❌ {chinese_name} 分類目前沒有物品。", ephemeral=True
+                )
                 return
 
             embed = discord.Embed(
                 title=f"✂️ 編輯 {chinese_name}",
                 description=f"選擇 {chinese_name} 物品進行預覽或購買。",
-                color=0x87CEEB
+                color=0x87CEEB,
             )
 
             view = EditView(
@@ -958,63 +1138,78 @@ class DressingRoomView(discord.ui.View):
                 items,
                 page=0,
                 embed=embed,
-                original_message=getattr(self, 'original_message', None)
+                original_message=getattr(self, "original_message", None),
             )
 
             # 優先嘗試編輯觸發此互動的訊息（interaction.message）
             edited = False
             try:
-                if getattr(interaction, 'message', None):
+                if getattr(interaction, "message", None):
                     await interaction.message.edit(embed=embed, view=view)
                     view.original_message = interaction.message
                     self.original_message = interaction.message
                     edited = True
             except Exception as e:
-                with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
-                    f.write(f"[{ts}] Failed to edit interaction.message in category_selected: {e}\n")
+                with open("paperdoll_button_error.log", "a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{ts}] Failed to edit interaction.message in category_selected: {e}\n"
+                    )
 
             # 若尚未 edited，嘗試編輯先前儲存的 original_message
             if not edited:
-                orig = getattr(self, 'original_message', None)
+                orig = getattr(self, "original_message", None)
                 if orig:
                     try:
                         await orig.edit(embed=embed, view=view)
                         view.original_message = orig
                         edited = True
                     except Exception as e:
-                        with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
-                            f.write(f"[{ts}] Failed to edit stored original_message in category_selected: {e}\n")
+                        with open(
+                            "paperdoll_button_error.log", "a", encoding="utf-8"
+                        ) as f:
+                            f.write(
+                                f"[{ts}] Failed to edit stored original_message in category_selected: {e}\n"
+                            )
 
             # 若仍未 edited，才發新訊息（fallback）
             if not edited:
-                new_msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                new_msg = await interaction.followup.send(
+                    embed=embed, view=view, ephemeral=True
+                )
                 view.original_message = new_msg
-                if not getattr(self, 'original_message', None):
+                if not getattr(self, "original_message", None):
                     self.original_message = new_msg
 
         except Exception:
             tb = traceback.format_exc()
-            with open('paperdoll_button_error.log', 'a', encoding='utf-8') as f:
+            with open("paperdoll_button_error.log", "a", encoding="utf-8") as f:
                 f.write(f"[{ts}] Exception in category_selected:\n{tb}\n")
             try:
-                await interaction.followup.send("❌ 無法載入該部位，已記錄錯誤。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 無法載入該部位，已記錄錯誤。", ephemeral=True
+                )
             except Exception:
                 pass
 
     async def back_to_shop(self, interaction: discord.Interaction):
         """返回到商人主頁（黑市探索視圖）。"""
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的衣帽間！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的衣帽間！", ephemeral=True
+            )
             return
         # 延遲導入以避免循環引用
         from .merchant.views import ExploreView
-        embed = discord.Embed(title="黑市商人出現了", description="竟然被你發現了，想要買些什麼，還是...")
+
+        embed = discord.Embed(
+            title="黑市商人出現了", description="竟然被你發現了，想要買些什麼，還是..."
+        )
         await interaction.response.edit_message(embed=embed, view=ExploreView(self.cog))
 
     async def random_outfit(self, interaction: discord.Interaction):
         """從允許的類別中隨機挑選一套裝備並直接顯示預覽"""
-        ts = int(__import__('time').time())
-        with open('paperdoll_random.log', 'a', encoding='utf-8') as f:
+        ts = int(__import__("time").time())
+        with open("paperdoll_random.log", "a", encoding="utf-8") as f:
             f.write(f"[{ts}] random_outfit triggered by user {interaction.user.id}\n")
 
         # 先延遲回應以避免 3 秒超時
@@ -1031,20 +1226,28 @@ class DressingRoomView(discord.ui.View):
         # 取得用戶資料 (透過 cog)
         user_data = await self.cog.get_user_data(interaction.user.id)
         if not user_data:
-            await interaction.followup.send("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
+            await interaction.followup.send(
+                "❌ 找不到你的角色數據！請先註冊。", ephemeral=True
+            )
             return
 
         # 建立預覽視圖並填入隨機選項
-        from .merchant.views import PaperDollPreviewView
         preview_view = PaperDollPreviewView(self.cog, user_data)
 
         import random
+
         mapping = {
-            'Face': 'face', 'Hair': 'hair', 'Hat': 'hat',
-            'Top': 'top', 'Overall': 'overall', 'Bottom': 'bottom',
-            'Shoes': 'shoes', 'Face Accessory': 'face_accessory',
-            'Eye Decoration': 'eye_decoration', 'Earrings': 'earrings',
-            'Glove': 'glove'
+            "Face": "face",
+            "Hair": "hair",
+            "Hat": "hat",
+            "Top": "top",
+            "Overall": "overall",
+            "Bottom": "bottom",
+            "Shoes": "shoes",
+            "Face Accessory": "face_accessory",
+            "Eye Decoration": "eye_decoration",
+            "Earrings": "earrings",
+            "Glove": "glove",
         }
         # 將資料庫查詢放在執行緒中，以避免阻塞 (透過 cog)
         for db_cat in self.cog.ALLOWED_DB_CATEGORIES:
@@ -1056,14 +1259,16 @@ class DressingRoomView(discord.ui.View):
                 chosen = random.choice(items)
                 key = mapping.get(db_cat)
                 if key:
-                    preview_view.preview_items[key] = chosen['id']
+                    preview_view.preview_items[key] = chosen["id"]
 
         # 最後更新預覽（已經 earlier deferred）
         await preview_view.update_preview(interaction)
 
 
 class EditView(discord.ui.View):
-    def __init__(self, cog, user_id, category, items, page=0, embed=None, original_message=None):
+    def __init__(
+        self, cog, user_id, category, items, page=0, embed=None, original_message=None
+    ):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
@@ -1074,11 +1279,11 @@ class EditView(discord.ui.View):
         self.embed = embed
         # 原始訊息（如果是從 DressingRoomView 打開，會被傳入），用來執行 edit
         self.original_message = original_message
-        
+
         # 類別中英對照表（與DressingRoomView保持一致）
         self.category_names = {
             "Face": "臉型",
-            "Hair": "髮型", 
+            "Hair": "髮型",
             "Hat": "帽子",
             "Face Accessory": "臉部飾品",
             "Eye Decoration": "眼睛飾品",
@@ -1101,9 +1306,9 @@ class EditView(discord.ui.View):
             "Medal": "勳章",
             "Shoulder": "肩膀裝飾",
             "Pocket Item": "口袋物品",
-            "Bits": "晶片"
+            "Bits": "晶片",
         }
-        
+
         self.update_buttons()
         self.update_embed_description()
 
@@ -1115,26 +1320,36 @@ class EditView(discord.ui.View):
         page_items = self.items[start:end]
 
         for item in page_items:
-            button = discord.ui.Button(label=f"{item['name'][:20]}", style=discord.ButtonStyle.secondary)
+            button = discord.ui.Button(
+                label=f"{item['name'][:20]}", style=discord.ButtonStyle.secondary
+            )
             button.callback = self.create_item_callback(item)
             self.add_item(button)
 
         if self.page > 0:
-            prev_button = discord.ui.Button(label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️")
+            prev_button = discord.ui.Button(
+                label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️"
+            )
             prev_button.callback = self.prev_page
             self.add_item(prev_button)
 
         if end < len(self.items):
-            next_button = discord.ui.Button(label="下一頁", style=discord.ButtonStyle.secondary, emoji="➡️")
+            next_button = discord.ui.Button(
+                label="下一頁", style=discord.ButtonStyle.secondary, emoji="➡️"
+            )
             next_button.callback = self.next_page
             self.add_item(next_button)
 
         # 添加搜索按鈕
-        search_button = discord.ui.Button(label="搜索", style=discord.ButtonStyle.primary, emoji="🔍")
+        search_button = discord.ui.Button(
+            label="搜索", style=discord.ButtonStyle.primary, emoji="🔍"
+        )
         search_button.callback = self.search_items
         self.add_item(search_button)
 
-        back_button = discord.ui.Button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
+        back_button = discord.ui.Button(
+            label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️"
+        )
         back_button.callback = self.back_to_dressing_room
         self.add_item(back_button)
 
@@ -1142,22 +1357,28 @@ class EditView(discord.ui.View):
         """更新 embed 描述以包含頁數信息"""
         if self.embed:
             chinese_name = self.category_names.get(self.category, self.category)
-            total_pages = (len(self.items) + self.items_per_page - 1) // self.items_per_page
+            total_pages = (
+                len(self.items) + self.items_per_page - 1
+            ) // self.items_per_page
             current_page = self.page + 1
             self.embed.description = f"選擇 {chinese_name} 物品進行預覽或購買。\n第 {current_page}/{total_pages} 頁"
 
     async def search_items(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的頁面！", ephemeral=True
+            )
             return
-        
+
         modal = SearchModal(self)
         await interaction.response.send_modal(modal)
 
     def create_item_callback(self, item):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                await interaction.response.send_message("❌ 這不是你的編輯頁！", ephemeral=True)
+                await interaction.response.send_message(
+                    "❌ 這不是你的編輯頁！", ephemeral=True
+                )
                 return
 
             user_data = await self.cog.get_user_data(self.user_id)
@@ -1166,13 +1387,16 @@ class EditView(discord.ui.View):
             embed = discord.Embed(
                 title=f"👀 預覽 {item['name']}",
                 description=f"價格：{self.cog.price} KK幣",
-                color=0x32CD32
+                color=0x32CD32,
             )
             if image_url:
                 embed.set_image(url=image_url)
 
             view = PreviewView(self.cog, self.user_id, item)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message(
+                embed=embed, view=view, ephemeral=True
+            )
+
         return callback
 
     async def prev_page(self, interaction: discord.Interaction):
@@ -1189,12 +1413,14 @@ class EditView(discord.ui.View):
 
     async def back_to_dressing_room(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的頁面！", ephemeral=True
+            )
             return
         embed = discord.Embed(
-            title="👗 衣帽間", 
+            title="👗 衣帽間",
             description="選擇要更改的部位。\n\n💡 **網頁版更快速穿著**:\nhttps://maplestory.studio/ (TWMS 256版本)",
-            color=0xFF69B4
+            color=0xFF69B4,
         )
         view = DressingRoomView(self.cog, self.user_id)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -1210,20 +1436,24 @@ class PreviewView(discord.ui.View):
     @discord.ui.button(label="購買", style=discord.ButtonStyle.danger, emoji="💰")
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的預覽！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的預覽！", ephemeral=True
+            )
             return
 
         user_data = await self.cog.get_user_data(self.user_id)
-        if not user_data or user_data.get('kkcoin', 0) < self.cog.price:
+        if not user_data or user_data.get("kkcoin", 0) < self.cog.price:
             await interaction.response.send_message("❌ KK幣不足！", ephemeral=True)
             return
 
-        image_url = await self.cog.generate_character_image_url(user_data, self.selected_item)
+        image_url = await self.cog.generate_character_image_url(
+            user_data, self.selected_item
+        )
 
         embed = discord.Embed(
             title="⚠️ 確認購買",
             description=f"確定購買 **{self.selected_item['name']}**？\n價格：{self.cog.price} KK幣\n本園區不提供退貨機制。",
-            color=0xFF4500
+            color=0xFF4500,
         )
         if image_url:
             embed.set_image(url=image_url)
@@ -1233,23 +1463,57 @@ class PreviewView(discord.ui.View):
     @discord.ui.button(label="返回", style=discord.ButtonStyle.secondary, emoji="⬅️")
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的頁面！", ephemeral=True
+            )
             return
-        
+
         # 獲取中文類別名稱
         category_names = {
-            "Face": "臉型", "Hair": "髮型", "Hat": "帽子", "Face Accessory": "臉部飾品",
-            "Eye Decoration": "眼睛飾品", "Top": "上衣", "Bottom": "下衣", "Shoes": "鞋子",
-            "Gloves": "手套", "Cape": "披風", "Shield": "盾牌", "Weapon": "武器",
-            "Earrings": "耳環", "Necklace": "項鍊", "Ring": "戒指", "Overall": "套裝",
-            "Pet": "寵物", "Mount": "坐騎", "Android": "機器人", "Mechanical Heart": "機械之心",
-            "Badge": "徽章", "Medal": "勳章", "Shoulder": "肩膀裝飾", "Pocket Item": "口袋物品", "Bits": "晶片"
+            "Face": "臉型",
+            "Hair": "髮型",
+            "Hat": "帽子",
+            "Face Accessory": "臉部飾品",
+            "Eye Decoration": "眼睛飾品",
+            "Top": "上衣",
+            "Bottom": "下衣",
+            "Shoes": "鞋子",
+            "Gloves": "手套",
+            "Cape": "披風",
+            "Shield": "盾牌",
+            "Weapon": "武器",
+            "Earrings": "耳環",
+            "Necklace": "項鍊",
+            "Ring": "戒指",
+            "Overall": "套裝",
+            "Pet": "寵物",
+            "Mount": "坐騎",
+            "Android": "機器人",
+            "Mechanical Heart": "機械之心",
+            "Badge": "徽章",
+            "Medal": "勳章",
+            "Shoulder": "肩膀裝飾",
+            "Pocket Item": "口袋物品",
+            "Bits": "晶片",
         }
-        chinese_name = category_names.get(self.selected_item['category'], self.selected_item['category'])
-        
-        embed = discord.Embed(title=f"✂️ 編輯 {chinese_name}", description=f"選擇 {chinese_name} 物品進行預覽或購買。", color=0x87CEEB)
-        items = self.cog.get_items_by_category(self.selected_item['category'])
-        view = EditView(self.cog, self.user_id, self.selected_item['category'], items, embed=embed, original_message=interaction.message)
+        chinese_name = category_names.get(
+            self.selected_item["category"], self.selected_item["category"]
+        )
+
+        embed = discord.Embed(
+            title=f"✂️ 編輯 {chinese_name}",
+            description=f"選擇 {chinese_name} 物品進行預覽或購買。",
+            color=0x87CEEB,
+        )
+        items = self.cog.get_items_by_category(self.selected_item["category"])
+        view = EditView(
+            self.cog,
+            self.user_id,
+            self.selected_item["category"],
+            items,
+            embed=embed,
+            original_message=interaction.message,
+        )
         await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -1261,9 +1525,13 @@ class ConfirmView(discord.ui.View):
         self.selected_item = selected_item
 
     @discord.ui.button(label="是", style=discord.ButtonStyle.success, emoji="✅")
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的確認頁！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的確認頁！", ephemeral=True
+            )
             return
 
         try:
@@ -1278,21 +1546,37 @@ class ConfirmView(discord.ui.View):
             await update_user_kkcoin(self.user_id, -price)
 
             # Update equipment after successful deduction
-            category_map = {"Hair": "hair", "Face": "face", "Hat": "hat", "Top": "top", "Bottom": "bottom", "Shoes": "shoes"}
-            part = category_map.get(self.selected_item['category'])
+            category_map = {
+                "Hair": "hair",
+                "Face": "face",
+                "Hat": "hat",
+                "Top": "top",
+                "Bottom": "bottom",
+                "Shoes": "shoes",
+            }
+            part = category_map.get(self.selected_item["category"])
             if part:
-                await update_user_equipment(self.user_id, part, self.selected_item['id'])
+                await update_user_equipment(
+                    self.user_id, part, self.selected_item["id"]
+                )
 
             # Read back new balance and inform user
             new_kkcoin = await get_user_kkcoin(self.user_id)
-            await interaction.response.send_message(f"✅ 購買成功！已裝備 {self.selected_item['name']}。剩餘：{new_kkcoin} KKcoin", ephemeral=True)
+            await interaction.response.send_message(
+                f"✅ 購買成功！已裝備 {self.selected_item['name']}。剩餘：{new_kkcoin} KKcoin",
+                ephemeral=True,
+            )
         except Exception as e:
-            await interaction.response.send_message(f"❌ 購買失敗: {str(e)[:100]}", ephemeral=True)
+            await interaction.response.send_message(
+                f"❌ 購買失敗: {str(e)[:100]}", ephemeral=True
+            )
 
     @discord.ui.button(label="否", style=discord.ButtonStyle.danger, emoji="❌")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的頁面！", ephemeral=True
+            )
             return
         await interaction.response.send_message("❌ 取消購買。", ephemeral=True)
 
@@ -1300,7 +1584,7 @@ class ConfirmView(discord.ui.View):
 async def setup(bot):
     try:
         await bot.add_cog(ButtonInteraction(bot))
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
 
 
@@ -1312,7 +1596,7 @@ class SearchModal(discord.ui.Modal):
             label="輸入搜索關鍵字",
             placeholder="例如：黑色、粉色、特別、普通...",
             required=True,
-            max_length=50
+            max_length=50,
         )
         self.add_item(self.search_input)
 
@@ -1320,7 +1604,9 @@ class SearchModal(discord.ui.Modal):
         search_term = self.search_input.value.strip().lower()
 
         if not search_term:
-            await interaction.response.send_message("❌ 請輸入搜索關鍵字！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 請輸入搜索關鍵字！", ephemeral=True
+            )
             return
 
         # 延長互動處理時間並把 CPU 密集型過濾移到執行緒（避免觸發 3 秒超時）
@@ -1328,18 +1614,26 @@ class SearchModal(discord.ui.Modal):
 
         # 在背景執行過濾（items 可能非常多，例如髮型類別）
         filtered_items = await asyncio.to_thread(
-            lambda: [item for item in self.edit_view.items if search_term in item['name'].lower()]
+            lambda: [
+                item
+                for item in self.edit_view.items
+                if search_term in item["name"].lower()
+            ]
         )
 
         if not filtered_items:
-            await interaction.followup.send(f"❌ 找不到包含「{search_term}」的物品！", ephemeral=True)
+            await interaction.followup.send(
+                f"❌ 找不到包含「{search_term}」的物品！", ephemeral=True
+            )
             return
 
-        chinese_name = self.edit_view.category_names.get(self.edit_view.category, self.edit_view.category)
+        chinese_name = self.edit_view.category_names.get(
+            self.edit_view.category, self.edit_view.category
+        )
         embed = discord.Embed(
             title=f"🔍 搜索結果 - {chinese_name}",
             description=f"關鍵字：「{search_term}」\n找到 {len(filtered_items)} 個物品",
-            color=0x00FF7F
+            color=0x00FF7F,
         )
 
         # 創建並回傳搜索結果視圖（embed 已先建立）
@@ -1350,11 +1644,11 @@ class SearchModal(discord.ui.Modal):
             filtered_items,
             search_term,
             embed,
-            original_message=getattr(self.edit_view, 'original_message', None)
+            original_message=getattr(self.edit_view, "original_message", None),
         )
 
         # 優先編輯原始衣帽間訊息（若存在），否則回傳新的 followup 訊息
-        orig = getattr(self.edit_view, 'original_message', None)
+        orig = getattr(self.edit_view, "original_message", None)
         if orig:
             try:
                 await orig.edit(embed=embed, view=search_result_view)
@@ -1363,12 +1657,23 @@ class SearchModal(discord.ui.Modal):
             except Exception:
                 pass
 
-        new_msg = await interaction.followup.send(embed=embed, view=search_result_view, ephemeral=True)
+        new_msg = await interaction.followup.send(
+            embed=embed, view=search_result_view, ephemeral=True
+        )
         search_result_view.original_message = new_msg
 
 
 class SearchResultView(discord.ui.View):
-    def __init__(self, cog, user_id, category, items, search_term, embed=None, original_message=None):
+    def __init__(
+        self,
+        cog,
+        user_id,
+        category,
+        items,
+        search_term,
+        embed=None,
+        original_message=None,
+    ):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
@@ -1380,17 +1685,36 @@ class SearchResultView(discord.ui.View):
         self.embed = embed
         # 如果此視圖對應到原始衣帽間訊息，保存起來以利後續 edit
         self.original_message = original_message
-        
+
         # 類別中英對照表
         self.category_names = {
-            "Face": "臉型", "Hair": "髮型", "Hat": "帽子", "Face Accessory": "臉部飾品",
-            "Eye Decoration": "眼睛飾品", "Top": "上衣", "Bottom": "下衣", "Shoes": "鞋子",
-            "Gloves": "手套", "Cape": "披風", "Shield": "盾牌", "Weapon": "武器",
-            "Earrings": "耳環", "Necklace": "項鍊", "Ring": "戒指", "Overall": "套裝",
-            "Pet": "寵物", "Mount": "坐騎", "Android": "機器人", "Mechanical Heart": "機械之心",
-            "Badge": "徽章", "Medal": "勳章", "Shoulder": "肩膀裝飾", "Pocket Item": "口袋物品", "Bits": "晶片"
+            "Face": "臉型",
+            "Hair": "髮型",
+            "Hat": "帽子",
+            "Face Accessory": "臉部飾品",
+            "Eye Decoration": "眼睛飾品",
+            "Top": "上衣",
+            "Bottom": "下衣",
+            "Shoes": "鞋子",
+            "Gloves": "手套",
+            "Cape": "披風",
+            "Shield": "盾牌",
+            "Weapon": "武器",
+            "Earrings": "耳環",
+            "Necklace": "項鍊",
+            "Ring": "戒指",
+            "Overall": "套裝",
+            "Pet": "寵物",
+            "Mount": "坐騎",
+            "Android": "機器人",
+            "Mechanical Heart": "機械之心",
+            "Badge": "徽章",
+            "Medal": "勳章",
+            "Shoulder": "肩膀裝飾",
+            "Pocket Item": "口袋物品",
+            "Bits": "晶片",
         }
-        
+
         self.update_buttons()
         self.update_embed_description()
 
@@ -1398,7 +1722,9 @@ class SearchResultView(discord.ui.View):
         """更新 embed 描述以包含頁數信息"""
         if self.embed:
             chinese_name = self.category_names.get(self.category, self.category)
-            total_pages = (len(self.items) + self.items_per_page - 1) // self.items_per_page
+            total_pages = (
+                len(self.items) + self.items_per_page - 1
+            ) // self.items_per_page
             current_page = self.page + 1
             self.embed.description = f"關鍵字：「{self.search_term}」\n找到 {len(self.items)} 個物品\n第 {current_page}/{total_pages} 頁"
 
@@ -1409,32 +1735,44 @@ class SearchResultView(discord.ui.View):
         page_items = self.items[start:end]
 
         for item in page_items:
-            button = discord.ui.Button(label=f"{item['name'][:20]}", style=discord.ButtonStyle.secondary)
+            button = discord.ui.Button(
+                label=f"{item['name'][:20]}", style=discord.ButtonStyle.secondary
+            )
             button.callback = self.create_item_callback(item)
             self.add_item(button)
 
         if self.page > 0:
-            prev_button = discord.ui.Button(label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️")
+            prev_button = discord.ui.Button(
+                label="上一頁", style=discord.ButtonStyle.secondary, emoji="⬅️"
+            )
             prev_button.callback = self.prev_page
             self.add_item(prev_button)
 
         if end < len(self.items):
-            next_button = discord.ui.Button(label="下一頁", style=discord.ButtonStyle.secondary, emoji="➡️")
+            next_button = discord.ui.Button(
+                label="下一頁", style=discord.ButtonStyle.secondary, emoji="➡️"
+            )
             next_button.callback = self.next_page
             self.add_item(next_button)
 
-        back_button = discord.ui.Button(label="新搜索", style=discord.ButtonStyle.primary, emoji="🔍")
+        back_button = discord.ui.Button(
+            label="新搜索", style=discord.ButtonStyle.primary, emoji="🔍"
+        )
         back_button.callback = self.new_search
         self.add_item(back_button)
 
-        close_button = discord.ui.Button(label="關閉", style=discord.ButtonStyle.danger, emoji="❌")
+        close_button = discord.ui.Button(
+            label="關閉", style=discord.ButtonStyle.danger, emoji="❌"
+        )
         close_button.callback = self.close_search
         self.add_item(close_button)
 
     def create_item_callback(self, item):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                await interaction.response.send_message("❌ 這不是你的搜索結果！", ephemeral=True)
+                await interaction.response.send_message(
+                    "❌ 這不是你的搜索結果！", ephemeral=True
+                )
                 return
 
             user_data = await self.cog.get_user_data(self.user_id)
@@ -1443,18 +1781,23 @@ class SearchResultView(discord.ui.View):
             embed = discord.Embed(
                 title=f"👀 預覽 {item['name']}",
                 description=f"價格：{self.cog.price} KK幣\n搜索關鍵字：{self.search_term}",
-                color=0x32CD32
+                color=0x32CD32,
             )
             if image_url:
                 embed.set_image(url=image_url)
 
             view = PreviewView(self.cog, self.user_id, item)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message(
+                embed=embed, view=view, ephemeral=True
+            )
+
         return callback
 
     async def prev_page(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的頁面！", ephemeral=True
+            )
             return
         self.page -= 1
         self.update_buttons()
@@ -1463,7 +1806,9 @@ class SearchResultView(discord.ui.View):
 
     async def next_page(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的頁面！", ephemeral=True
+            )
             return
         self.page += 1
         self.update_buttons()
@@ -1472,23 +1817,36 @@ class SearchResultView(discord.ui.View):
 
     async def new_search(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的頁面！", ephemeral=True
+            )
             return
-        
+
         # 返回到原來的物品列表
         chinese_name = self.category_names.get(self.category, self.category)
         embed = discord.Embed(
             title=f"✂️ 編輯 {chinese_name}",
             description=f"選擇 {chinese_name} 物品進行預覽或購買。",
-            color=0x87CEEB
+            color=0x87CEEB,
         )
-        
-        orig_msg = getattr(self, 'original_message', interaction.message)
-        view = EditView(self.cog, self.user_id, self.category, self.cog.get_items_by_category(self.category), embed=embed, original_message=orig_msg)
+
+        orig_msg = getattr(self, "original_message", interaction.message)
+        view = EditView(
+            self.cog,
+            self.user_id,
+            self.category,
+            self.cog.get_items_by_category(self.category),
+            embed=embed,
+            original_message=orig_msg,
+        )
         await interaction.response.edit_message(embed=embed, view=view)
 
     async def close_search(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的頁面！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的頁面！", ephemeral=True
+            )
             return
-        await interaction.response.edit_message(content="✅ 已關閉搜索", embed=None, view=None)
+        await interaction.response.edit_message(
+            content="✅ 已關閉搜索", embed=None, view=None
+        )

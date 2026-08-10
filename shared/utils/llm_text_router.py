@@ -14,10 +14,17 @@ logger = logging.getLogger(__name__)
 
 GEMINI_KEY = os.getenv("AI_API_KEY", "").strip()
 GEMINI_KEY_BK = os.getenv("AI_API_KEY_BACKUP", "").strip()
-GEMINI_MODEL = os.getenv("AI_API_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
+GEMINI_MODEL = (
+    os.getenv("AI_API_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
+)
 GROQ_KEY = os.getenv("GROQ_API_KEY", "").strip()
-GROQ_URL = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions").strip()
-GROQ_MODEL = os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile").strip() or "llama-3.3-70b-versatile"
+GROQ_URL = os.getenv(
+    "GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions"
+).strip()
+GROQ_MODEL = (
+    os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile").strip()
+    or "llama-3.3-70b-versatile"
+)
 TEXT_NVIDIA_TIMEOUT_SEC = int(os.getenv("AI_TEXT_NVIDIA_TIMEOUT", "12"))
 TEXT_GEMINI_TIMEOUT_SEC = int(os.getenv("AI_TEXT_GEMINI_TIMEOUT", "8"))
 TEXT_GROQ_TIMEOUT_SEC = int(os.getenv("AI_TEXT_GROQ_TIMEOUT", "8"))
@@ -30,7 +37,9 @@ def _messages_to_gemini(system_prompt: str, messages: List[Dict[str, str]]) -> D
         if role == "system":
             continue
         gemini_role = "model" if role == "assistant" else "user"
-        contents.append({"role": gemini_role, "parts": [{"text": message.get("content", "")}]})
+        contents.append(
+            {"role": gemini_role, "parts": [{"text": message.get("content", "")}]}
+        )
 
     return {
         "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -61,8 +70,12 @@ async def _call_gemini(
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
 
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout_sec)) as session:
-            async with session.post(url, json=payload, headers={"Content-Type": "application/json"}) as response:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=timeout_sec)
+        ) as session:
+            async with session.post(
+                url, json=payload, headers={"Content-Type": "application/json"}
+            ) as response:
                 if response.status != 200:
                     return None
                 data = await response.json()
@@ -97,8 +110,12 @@ async def _call_groq(
     }
 
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout_sec)) as session:
-            async with session.post(GROQ_URL, json=payload, headers=headers) as response:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=timeout_sec)
+        ) as session:
+            async with session.post(
+                GROQ_URL, json=payload, headers=headers
+            ) as response:
                 if response.status != 200:
                     return None
                 data = await response.json()

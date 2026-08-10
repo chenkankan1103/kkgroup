@@ -3,6 +3,7 @@
 Entry point for running bots as a module: python -m bots
 This ensures sys.path includes the parent directory so relative imports work.
 """
+
 import sys
 import os
 
@@ -16,5 +17,5 @@ from .bot import main
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
 
+    asyncio.run(main())

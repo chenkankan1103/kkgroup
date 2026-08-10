@@ -173,7 +173,7 @@ sudo journalctl --unit=auto-debug.service --show-cursor
    - 點擊：Settings → Secrets and variables → Actions
 
 2. **添加 Repository Secrets**
-   
+
    **必需 Secrets**：
    ```yaml
    NVIDIA_API_KEY: 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
@@ -347,7 +347,7 @@ services=("auto-debug" "bot" "shopbot" "uibot")
 for service in "${services[@]}"; do
     status=$(systemctl is-active $service)
     echo "$service: $status"
-    
+
     if [ "$status" != "active" ]; then
         # 發送告警
         curl -X POST "$DISCORD_WEBHOOK_URL" \

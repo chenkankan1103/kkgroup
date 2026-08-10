@@ -10,7 +10,9 @@ import logging
 from pathlib import Path
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path("/home/e193752468/kkgroup/user_data.db")
@@ -41,7 +43,9 @@ def get_table_columns(cursor, table_name):
 
 def table_exists(cursor, table_name):
     """Check if a table exists"""
-    cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+    cursor.execute(
+        f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
+    )
     return cursor.fetchone() is not None
 
 
@@ -57,11 +61,19 @@ def add_column_if_missing(cursor, table_name, column_name, column_def):
         # Default will be handled by application INSERT statements
         if " DEFAULT " in column_def:
             base_def = column_def.split(" DEFAULT ")[0]
-            logger.info(f"[Migration] Adding column {column_name} to {table_name} ({base_def}) - default handled by application")
-            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {base_def}")
+            logger.info(
+                f"[Migration] Adding column {column_name} to {table_name} ({base_def}) - default handled by application"
+            )
+            cursor.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {base_def}"
+            )
         else:
-            logger.info(f"[Migration] Adding column {column_name} to {table_name} ({column_def})")
-            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+            logger.info(
+                f"[Migration] Adding column {column_name} to {table_name} ({column_def})"
+            )
+            cursor.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"
+            )
         return True
     else:
         logger.info(f"[Migration] Column {column_name} already exists in {table_name}")
@@ -94,11 +106,21 @@ def fix_anime_votes_table(cursor):
             added_count += 1
 
     # Create indexes for better performance
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_video_sn ON {ANIME_VOTES_TABLE}(video_sn)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_anime_sn ON {ANIME_VOTES_TABLE}(anime_sn)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_message_id ON {ANIME_VOTES_TABLE}(message_id)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_videoSn ON {ANIME_VOTES_TABLE}(videoSn)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_messageId ON {ANIME_VOTES_TABLE}(messageId)")
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_video_sn ON {ANIME_VOTES_TABLE}(video_sn)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_anime_sn ON {ANIME_VOTES_TABLE}(anime_sn)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_message_id ON {ANIME_VOTES_TABLE}(message_id)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_videoSn ON {ANIME_VOTES_TABLE}(videoSn)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_VOTES_TABLE}_messageId ON {ANIME_VOTES_TABLE}(messageId)"
+    )
 
     logger.info(f"✅ Fixed {ANIME_VOTES_TABLE}: added {added_count} columns")
     return added_count
@@ -127,9 +149,15 @@ def fix_anime_messages_table(cursor):
             added_count += 1
 
     # Create indexes
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_videoSn ON {ANIME_MESSAGES_TABLE}(videoSn)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_animeSn ON {ANIME_MESSAGES_TABLE}(animeSn)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_video_sn ON {ANIME_MESSAGES_TABLE}(video_sn)")
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_videoSn ON {ANIME_MESSAGES_TABLE}(videoSn)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_animeSn ON {ANIME_MESSAGES_TABLE}(animeSn)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_video_sn ON {ANIME_MESSAGES_TABLE}(video_sn)"
+    )
 
     logger.info(f"✅ Fixed {ANIME_MESSAGES_TABLE}: added {added_count} columns")
     return added_count
@@ -157,8 +185,12 @@ def fix_anime_rewards_table(cursor):
         if add_column_if_missing(cursor, ANIME_REWARDS_TABLE, column_name, column_def):
             added_count += 1
 
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_REWARDS_TABLE}_message_id ON {ANIME_REWARDS_TABLE}(message_id)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_REWARDS_TABLE}_user_id ON {ANIME_REWARDS_TABLE}(user_id)")
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_REWARDS_TABLE}_message_id ON {ANIME_REWARDS_TABLE}(message_id)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_REWARDS_TABLE}_user_id ON {ANIME_REWARDS_TABLE}(user_id)"
+    )
 
     logger.info(f"✅ Fixed {ANIME_REWARDS_TABLE}: added {added_count} columns")
     return added_count
@@ -183,8 +215,12 @@ def fix_anime_details_table(cursor):
     # Special handling for primary key - SQLite doesn't allow adding PK column easily
     columns = get_table_columns(cursor, ANIME_DETAILS_TABLE)
     if "animeSn" not in columns and "anime_sn" not in columns:
-        logger.info(f"[Migration] Adding animeSn as PRIMARY KEY to {ANIME_DETAILS_TABLE}")
-        cursor.execute(f"ALTER TABLE {ANIME_DETAILS_TABLE} ADD COLUMN animeSn INTEGER PRIMARY KEY")
+        logger.info(
+            f"[Migration] Adding animeSn as PRIMARY KEY to {ANIME_DETAILS_TABLE}"
+        )
+        cursor.execute(
+            f"ALTER TABLE {ANIME_DETAILS_TABLE} ADD COLUMN animeSn INTEGER PRIMARY KEY"
+        )
         added = 1
     else:
         added = 0
@@ -196,7 +232,9 @@ def fix_anime_details_table(cursor):
         if add_column_if_missing(cursor, ANIME_DETAILS_TABLE, column_name, column_def):
             added_count += 1
 
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_DETAILS_TABLE}_animeSn ON {ANIME_DETAILS_TABLE}(animeSn)")
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{ANIME_DETAILS_TABLE}_animeSn ON {ANIME_DETAILS_TABLE}(animeSn)"
+    )
 
     logger.info(f"✅ Fixed {ANIME_DETAILS_TABLE}: added {added_count} columns")
     return added_count
@@ -227,8 +265,12 @@ def fix_episode_stats_table(cursor):
         if add_column_if_missing(cursor, EPISODE_STATS_TABLE, column_name, column_def):
             added_count += 1
 
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_videoSn ON {EPISODE_STATS_TABLE}(videoSn)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_video_sn ON {EPISODE_STATS_TABLE}(video_sn)")
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_videoSn ON {EPISODE_STATS_TABLE}(videoSn)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_video_sn ON {EPISODE_STATS_TABLE}(video_sn)"
+    )
 
     logger.info(f"✅ Fixed {EPISODE_STATS_TABLE}: added {added_count} columns")
     return added_count
@@ -261,8 +303,12 @@ def fix_notified_table(cursor):
         if add_column_if_missing(cursor, NOTIFIED_TABLE, column_name, column_def):
             added_count += 1
 
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_videoSn ON {NOTIFIED_TABLE}(videoSn)")
-    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_video_sn ON {NOTIFIED_TABLE}(video_sn)")
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_videoSn ON {NOTIFIED_TABLE}(videoSn)"
+    )
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_video_sn ON {NOTIFIED_TABLE}(video_sn)"
+    )
 
     logger.info(f"✅ Fixed {NOTIFIED_TABLE}: added {added_count} columns")
     return added_count
@@ -271,9 +317,22 @@ def fix_notified_table(cursor):
 def verify_fixes(cursor):
     """Verify all tables have required columns"""
     tables_to_check = {
-        ANIME_VOTES_TABLE: ["video_sn", "anime_sn", "anime_name", "vote_type", "message_id", "voted_at"],
+        ANIME_VOTES_TABLE: [
+            "video_sn",
+            "anime_sn",
+            "anime_name",
+            "vote_type",
+            "message_id",
+            "voted_at",
+        ],
         ANIME_MESSAGES_TABLE: ["video_sn", "anime_sn", "anime_name", "channel_id"],
-        ANIME_REWARDS_TABLE: ["message_id", "reward_type", "reward_amount", "user_id", "awarded_at"],
+        ANIME_REWARDS_TABLE: [
+            "message_id",
+            "reward_type",
+            "reward_amount",
+            "user_id",
+            "awarded_at",
+        ],
     }
 
     all_ok = True

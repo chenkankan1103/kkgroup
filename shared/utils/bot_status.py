@@ -2,6 +2,7 @@
 機器人狀態管理模組
 提供不同主題的狀態訊息供各個 Bot 使用
 """
+
 import random
 import discord
 
@@ -114,16 +115,17 @@ UI_THEMES = [
     "模組化元件建構",
 ]
 
+
 # ============================================================
 # 狀態管理函數
 # ============================================================
 def get_status(bot_type="scam"):
     """
     根據 Bot 類型回傳隨機狀態
-    
+
     Args:
         bot_type: Bot 類型 ("scam", "shop", "ui")
-    
+
     Returns:
         str: 隨機選擇的狀態訊息
     """
@@ -132,34 +134,36 @@ def get_status(bot_type="scam"):
         "shop": SHOP_THEMES,
         "ui": UI_THEMES,
     }
-    
+
     themes = theme_map.get(bot_type.lower(), SCAM_THEMES)
     return random.choice(themes)
+
 
 def build_discord_activity(bot_type="scam", activity_type=None):
     """
     建立 Discord Activity 物件
-    
+
     Args:
         bot_type: Bot 類型 ("scam", "shop", "ui")
         activity_type: Discord 活動類型，預設為 watching
-    
+
     Returns:
         discord.Activity: Discord 狀態物件
     """
     if activity_type is None:
         activity_type = discord.ActivityType.watching
-    
+
     status_text = get_status(bot_type)
     return discord.Activity(type=activity_type, name=status_text)
+
 
 def get_all_statuses(bot_type="scam"):
     """
     取得指定 Bot 類型的所有狀態列表
-    
+
     Args:
         bot_type: Bot 類型 ("bot", "shop", "ui")
-    
+
     Returns:
         list: 狀態訊息列表
     """
@@ -168,5 +172,5 @@ def get_all_statuses(bot_type="scam"):
         "shop": SHOP_THEMES,
         "ui": UI_THEMES,
     }
-    
+
     return theme_map.get(bot_type.lower(), SCAM_THEMES)

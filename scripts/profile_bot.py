@@ -13,16 +13,15 @@ Bot 效能分析腳本
 
 import argparse
 import asyncio
-import os
 import sys
 import time
 import subprocess
-import signal
 from pathlib import Path
 
 # 將專案根目錄加入路徑
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
 
 async def simulate_load(bot, duration_sec: int, qps: float = 2.0):
     """模擬 Discord 訊息負載"""
@@ -58,7 +57,7 @@ async def simulate_load(bot, duration_sec: int, qps: float = 2.0):
         mock_message.channel.typing = MagicMock(return_value=AsyncMock().__aenter__)
         mock_message.reply = AsyncMock()
         mock_message.mentions = [MagicMock()]
-        mock_message.mentions[0].id = bot.user.id if hasattr(bot, 'user') else 999999
+        mock_message.mentions[0].id = bot.user.id if hasattr(bot, "user") else 999999
         mock_message.guild = None
 
         # 觸發 on_message
@@ -143,10 +142,15 @@ asyncio.run(main())
     try:
         # 執行 scalene
         cmd = [
-            sys.executable, "-m", "scalene",
-            "--cpu", "--memory",
-            "--html", "--outfile", str(PROJECT_ROOT / "profiles" / f"scalene_report_{int(time.time())}.html"),
-            str(script_path)
+            sys.executable,
+            "-m",
+            "scalene",
+            "--cpu",
+            "--memory",
+            "--html",
+            "--outfile",
+            str(PROJECT_ROOT / "profiles" / f"scalene_report_{int(time.time())}.html"),
+            str(script_path),
         ]
 
         print(f"執行指令: {' '.join(cmd)}")
@@ -180,10 +184,7 @@ asyncio.run(main())
 
     try:
         # 啟動目標進程
-        proc = subprocess.Popen(
-            [sys.executable, str(script_path)],
-            cwd=PROJECT_ROOT
-        )
+        proc = subprocess.Popen([sys.executable, str(script_path)], cwd=PROJECT_ROOT)
 
         # 給一點時間啟動
         time.sleep(2)
@@ -191,11 +192,16 @@ asyncio.run(main())
         # 執行 py-spy
         output_svg = PROJECT_ROOT / "profiles" / f"flamegraph_{int(time.time())}.svg"
         cmd = [
-            "py-spy", "record",
-            "-o", str(output_svg),
-            "-p", str(proc.pid),
-            "--duration", str(duration),
-            "--rate", "100",
+            "py-spy",
+            "record",
+            "-o",
+            str(output_svg),
+            "-p",
+            str(proc.pid),
+            "--duration",
+            str(duration),
+            "--rate",
+            "100",
             "--native",  # 包含 C extension
         ]
 
@@ -208,7 +214,7 @@ asyncio.run(main())
 
     finally:
         script_path.unlink(missing_ok=True)
-        if 'proc' in locals() and proc.poll() is None:
+        if "proc" in locals() and proc.poll() is None:
             proc.terminate()
 
 
@@ -234,17 +240,17 @@ asyncio.run(main())
     script_path.write_text(profile_script)
 
     try:
-        cmd = [
-            sys.executable, "-m", "memory_profiler",
-            str(script_path)
-        ]
+        cmd = [sys.executable, "-m", "memory_profiler", str(script_path)]
 
         print(f"執行指令: {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=PROJECT_ROOT, timeout=duration + 60,
-                               capture_output=True, text=True)
+        result = subprocess.run(
+            cmd, cwd=PROJECT_ROOT, timeout=duration + 60, capture_output=True, text=True
+        )
 
         # 輸出記憶體分析結果
-        output_file = PROJECT_ROOT / "profiles" / f"memory_profile_{int(time.time())}.txt"
+        output_file = (
+            PROJECT_ROOT / "profiles" / f"memory_profile_{int(time.time())}.txt"
+        )
         output_file.write_text(result.stdout)
         print(f"記憶體分析完成，輸出: {output_file}")
         print(result.stdout[-2000:])  # 顯示最後 2000 字元
@@ -268,7 +274,7 @@ async def simple_benchmark(duration: int):
 
     test_bot = commands.Bot(command_prefix="!", intents=intents)
     # Mock the user property since it's read-only in newer discord.py
-    with patch.object(type(test_bot), 'user', new_callable=PropertyMock) as mock_user:
+    with patch.object(type(test_bot), "user", new_callable=PropertyMock) as mock_user:
         mock_user.return_value = MagicMock()
         mock_user.return_value.id = 999999
 
@@ -323,7 +329,7 @@ async def simple_benchmark(duration: int):
         p99 = latencies[int(n * 0.99)]
         avg = sum(latencies) / n
 
-        print(f"\n📈 延遲統計 (ms):")
+        print("\n📈 延遲統計 (ms):")
         print(f"   平均: {avg:.1f}")
         print(f"   P50:  {p50:.1f}")
         print(f"   P95:  {p95:.1f}")
@@ -341,8 +347,12 @@ async def simple_benchmark(duration: int):
 
 def main():
     parser = argparse.ArgumentParser(description="Bot 效能分析工具")
-    parser.add_argument("--mode", choices=["scalene", "pyspy", "memory", "benchmark"],
-                       default="benchmark", help="分析模式")
+    parser.add_argument(
+        "--mode",
+        choices=["scalene", "pyspy", "memory", "benchmark"],
+        default="benchmark",
+        help="分析模式",
+    )
     parser.add_argument("--duration", type=int, default=30, help="測試持續時間(秒)")
     args = parser.parse_args()
 

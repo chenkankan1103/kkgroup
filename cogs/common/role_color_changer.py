@@ -4,6 +4,7 @@ import random
 import os
 import asyncio
 
+
 class RainbowRole(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -30,22 +31,20 @@ class RainbowRole(commands.Cog):
             guild_id = guild.id
             has_members = len(members) > 0
             last_status = self._last_status.get(guild_id)
-            
+
             # 只有在狀態改變時輸出日誌
             if has_members and last_status != True:
-                print(f"[🌈] 發現成員擁有七彩角色，開始五分鐘變色循環")
+                print("[🌈] 發現成員擁有七彩角色，開始五分鐘變色循環")
                 self._last_status[guild_id] = True
                 await self.run_rainbow_cycle(role)
             elif not has_members and last_status != False:
-                print(f"[⏸️] 沒有成員擁有七彩角色，暫停變色")
+                print("[⏸️] 沒有成員擁有七彩角色，暫停變色")
                 self._last_status[guild_id] = False
 
     async def run_rainbow_cycle(self, role: discord.Role):
         for _ in range(30):  # 每 10 秒變色，共 5 分鐘
             color = discord.Color.from_rgb(
-                random.randint(0, 255),
-                random.randint(0, 255),
-                random.randint(0, 255)
+                random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
             )
             try:
                 await role.edit(color=color, reason="自動七彩變色")
@@ -60,6 +59,7 @@ class RainbowRole(commands.Cog):
     @monitor_members.before_loop
     async def before_monitor_members(self):
         await self.bot.wait_until_ready()
+
 
 async def setup(bot):
     await bot.add_cog(RainbowRole(bot))

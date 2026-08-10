@@ -1,28 +1,22 @@
 """個人置物櫃 - 大麻種植管理 UI + 實時面板"""
+
 import discord
 from discord.ext import commands, tasks
-from discord.ui import View, Button
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import json
 import aiosqlite
 from collections import deque
 from status_dashboard import add_log
-from cogs.shop.merchant.cannabis_farming import (
-    get_user_plants, plant_cannabis, harvest_plant, get_inventory, remove_inventory, add_inventory
-)
-from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from cogs.shop.merchant.database import update_user_kkcoin, get_user_kkcoin
+from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
 
 # 导入拆分的View类
-from .views.personal_locker import PersonalLockerView, WeeklySummaryCannabisPanelView
-from .views.crop_operations import CropOperationView, CropPlantingView, SelectSeedView
-from .views.selection_views import SelectPlantForHarvestView
+from .views.personal_locker import PersonalLockerView
 
 # 配置
-DB_PATH = './shop_commands/merchant/cannabis.db'
-PANEL_DATA_FILE = './shop_commands/locker_panel_data.json'
+DB_PATH = "./shop_commands/merchant/cannabis.db"
+PANEL_DATA_FILE = "./shop_commands/locker_panel_data.json"
 
 
 class PersonalLockerCog(commands.Cog):
@@ -51,11 +45,11 @@ class PersonalLockerCog(commands.Cog):
         """載入持久化的面板數據"""
         try:
             if Path(PANEL_DATA_FILE).exists():
-                with open(PANEL_DATA_FILE, 'r', encoding='utf-8') as f:
+                with open(PANEL_DATA_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self.panel_message_id = data.get('message_id')
-                    self.panel_channel_id = data.get('channel_id')
-                    self.recent_events = deque(data.get('events', []), maxlen=5)
+                    self.panel_message_id = data.get("message_id")
+                    self.panel_channel_id = data.get("channel_id")
+                    self.recent_events = deque(data.get("events", []), maxlen=5)
         except Exception as e:
             print(f"⚠️  載入面板數據失敗: {e}")
 
@@ -63,25 +57,27 @@ class PersonalLockerCog(commands.Cog):
         """保存面板數據"""
         try:
             Path(PANEL_DATA_FILE).parent.mkdir(parents=True, exist_ok=True)
-            with open(PANEL_DATA_FILE, 'w', encoding='utf-8') as f:
+            with open(PANEL_DATA_FILE, "w", encoding="utf-8") as f:
                 data = {
-                    'message_id': self.panel_message_id,
-                    'channel_id': self.panel_channel_id,
-                    'events': list(self.recent_events)
+                    "message_id": self.panel_message_id,
+                    "channel_id": self.panel_channel_id,
+                    "events": list(self.recent_events),
                 }
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"❌ 保存面板數據失敗: {e}")
 
-    async def record_event(self, event_type: str, user: discord.User, details: str = ""):
+    async def record_event(
+        self, event_type: str, user: discord.User, details: str = ""
+    ):
         """記錄事件到面板"""
         try:
             event = {
-                'type': event_type,
-                'user_id': user.id,
-                'user_name': user.display_name,
-                'details': details,
-                'timestamp': datetime.now().isoformat()
+                "type": event_type,
+                "user_id": user.id,
+                "user_name": user.display_name,
+                "details": details,
+                "timestamp": datetime.now().isoformat(),
             }
             self.recent_events.append(event)
             self.save_panel_data()
@@ -105,9 +101,9 @@ class PersonalLockerCog(commands.Cog):
                 if channel:
                     message = await channel.fetch_message(self.panel_message_id)
                     await message.edit(embed=embed)
-                    print(f"✅ 置物櫃面板已更新")
+                    print("✅ 置物櫃面板已更新")
             except discord.NotFound:
-                print(f"⚠️  面板訊息已被刪除")
+                print("⚠️  面板訊息已被刪除")
                 self.panel_message_id = None
         except Exception as e:
             print(f"❌ 面板更新失敗: {e}")
@@ -119,8 +115,10 @@ class PersonalLockerCog(commands.Cog):
             self.last_button_check = datetime.now()
 
             # 檢查 PersonalLockerView 類是否正確定義
-            if not hasattr(PersonalLockerView, 'crop_info_callback'):
-                print(f"❌ [Button Health Check] PersonalLockerView.crop_info_callback not found!")
+            if not hasattr(PersonalLockerView, "crop_info_callback"):
+                print(
+                    "❌ [Button Health Check] PersonalLockerView.crop_info_callback not found!"
+                )
                 self.button_check_failures += 1
                 return
 
@@ -128,9 +126,13 @@ class PersonalLockerCog(commands.Cog):
             try:
                 # 創建一個測試實例來檢查按鈕
                 test_view = PersonalLockerView(None, None, 123, 456, 789, [], None)
-                crop_buttons = [item for item in test_view.children if getattr(item, 'custom_id', None) == 'crop_info']
+                crop_buttons = [
+                    item
+                    for item in test_view.children
+                    if getattr(item, "custom_id", None) == "crop_info"
+                ]
                 if not crop_buttons:
-                    print(f"⚠️  [Button Health Check] Crop info button not found in view")
+                    print("⚠️  [Button Health Check] Crop info button not found in view")
                     self.button_check_failures += 1
                     return
             except Exception as e:
@@ -139,7 +141,7 @@ class PersonalLockerCog(commands.Cog):
                 return
 
             # 檢查成功
-            print(f"✅ [Button Health Check] Crop info button is properly configured")
+            print("✅ [Button Health Check] Crop info button is properly configured")
             self.button_check_failures = 0
 
         except Exception as e:
@@ -160,11 +162,11 @@ class PersonalLockerCog(commands.Cog):
     async def get_locker_stats(self) -> dict:
         """獲取置物櫃統計"""
         stats = {
-            'total_plants': 0,
-            'growing_plants': 0,
-            'ready_plants': 0,
-            'unique_users': 0,
-            'total_inventory_items': 0
+            "total_plants": 0,
+            "growing_plants": 0,
+            "ready_plants": 0,
+            "unique_users": 0,
+            "total_inventory_items": 0,
         }
 
         if not Path(DB_PATH).exists():
@@ -178,9 +180,11 @@ class PersonalLockerCog(commands.Cog):
                 ) as cursor:
                     result = await cursor.fetchone()
                     if result:
-                        stats['total_plants'] = result[0]
-                        stats['ready_plants'] = result[1]
-                        stats['growing_plants'] = stats['total_plants'] - stats['ready_plants']
+                        stats["total_plants"] = result[0]
+                        stats["ready_plants"] = result[1]
+                        stats["growing_plants"] = (
+                            stats["total_plants"] - stats["ready_plants"]
+                        )
 
                 # 用戶統計
                 async with db.execute(
@@ -188,7 +192,7 @@ class PersonalLockerCog(commands.Cog):
                 ) as cursor:
                     result = await cursor.fetchone()
                     if result:
-                        stats['unique_users'] = result[0]
+                        stats["unique_users"] = result[0]
 
                 # 庫存統計
                 async with db.execute(
@@ -196,7 +200,7 @@ class PersonalLockerCog(commands.Cog):
                 ) as cursor:
                     result = await cursor.fetchone()
                     if result:
-                        stats['total_inventory_items'] = result[0]
+                        stats["total_inventory_items"] = result[0]
         except Exception as e:
             print(f"❌ 獲取統計失敗: {e}")
 
@@ -208,7 +212,7 @@ class PersonalLockerCog(commands.Cog):
             title="📦 置物櫃概況面板",
             description="實時伺服器統計",
             color=discord.Color.green(),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         # 統計字段
@@ -221,30 +225,22 @@ class PersonalLockerCog(commands.Cog):
                 f"👥 活躍用戶: **{stats['unique_users']}**\n"
                 f"📦 庫存項目: **{stats['total_inventory_items']}**"
             ),
-            inline=False
+            inline=False,
         )
 
         # 最近事件
         if self.recent_events:
             events_text = ""
             for idx, event in enumerate(reversed(self.recent_events), 1):
-                time_ago = self.get_time_ago(
-                    datetime.fromisoformat(event['timestamp'])
+                time_ago = self.get_time_ago(datetime.fromisoformat(event["timestamp"]))
+                detail_str = f" - {event['details']}" if event["details"] else ""
+                events_text += (
+                    f"{idx}. **{event['user_name']}** {time_ago}{detail_str}\n"
                 )
-                detail_str = f" - {event['details']}" if event['details'] else ""
-                events_text += f"{idx}. **{event['user_name']}** {time_ago}{detail_str}\n"
 
-            embed.add_field(
-                name="🎯 最近事件",
-                value=events_text.strip(),
-                inline=False
-            )
+            embed.add_field(name="🎯 最近事件", value=events_text.strip(), inline=False)
         else:
-            embed.add_field(
-                name="🎯 最近事件",
-                value="暫無事件",
-                inline=False
-            )
+            embed.add_field(name="🎯 最近事件", value="暫無事件", inline=False)
 
         embed.set_footer(text="每30分鐘自動更新")
         return embed
@@ -283,9 +279,12 @@ class PersonalLockerCog(commands.Cog):
                 # 查找置物櫃頻道（假設是論壇頻道）
                 locker_channel = None
                 for channel in guild.channels:
-                    if hasattr(channel, 'type') and channel.type == discord.ChannelType.forum:
+                    if (
+                        hasattr(channel, "type")
+                        and channel.type == discord.ChannelType.forum
+                    ):
                         # 檢查頻道名稱是否包含置物櫃相關關鍵字
-                        if '置物櫃' in channel.name or 'locker' in channel.name.lower():
+                        if "置物櫃" in channel.name or "locker" in channel.name.lower():
                             locker_channel = channel
                             break
 
@@ -300,15 +299,17 @@ class PersonalLockerCog(commands.Cog):
 
                     # 獲取活躍的threads
                     async for thread in locker_channel.active_threads:
-                        if '置物櫃' in thread.name or '的置物櫃' in thread.name:
+                        if "置物櫃" in thread.name or "的置物櫃" in thread.name:
                             active_threads.append(thread)
 
                     # 也檢查最近的已歸檔threads
                     async for thread in locker_channel.archived_threads(limit=20):
-                        if '置物櫃' in thread.name or '的置物櫃' in thread.name:
+                        if "置物櫃" in thread.name or "的置物櫃" in thread.name:
                             active_threads.append(thread)
 
-                    print(f"🧵 [Locker Update] 找到 {len(active_threads)} 個置物櫃threads")
+                    print(
+                        f"🧵 [Locker Update] 找到 {len(active_threads)} 個置物櫃threads"
+                    )
 
                     for thread in active_threads:
                         try:
@@ -316,14 +317,20 @@ class PersonalLockerCog(commands.Cog):
                             if updated:
                                 updated_count += 1
                         except Exception as thread_error:
-                            print(f"❌ [Locker Update] 處理thread {thread.name} 時出錯: {thread_error}")
+                            print(
+                                f"❌ [Locker Update] 處理thread {thread.name} 時出錯: {thread_error}"
+                            )
                             continue
 
                 except Exception as channel_error:
-                    print(f"❌ [Locker Update] 處理頻道 {locker_channel.name} 時出錯: {channel_error}")
+                    print(
+                        f"❌ [Locker Update] 處理頻道 {locker_channel.name} 時出錯: {channel_error}"
+                    )
                     continue
 
-            print(f"✅ [Locker Update] 置物櫃視圖更新完成，共更新 {updated_count} 個threads")
+            print(
+                f"✅ [Locker Update] 置物櫃視圖更新完成，共更新 {updated_count} 個threads"
+            )
 
         except Exception as e:
             print(f"❌ [Locker Update] 置物櫃視圖更新任務出錯: {e}")
@@ -334,16 +341,18 @@ class PersonalLockerCog(commands.Cog):
         try:
             # 從thread名稱提取用戶ID
             user_id = None
-            if '的置物櫃' in thread.name:
+            if "的置物櫃" in thread.name:
                 try:
                     # 獲取thread的擁有者
-                    if hasattr(thread, 'owner_id') and thread.owner_id:
+                    if hasattr(thread, "owner_id") and thread.owner_id:
                         user_id = thread.owner_id
                     else:
                         print(f"⚠️ [Locker Update] Thread {thread.name} 沒有owner_id")
                         return False
                 except Exception as parse_error:
-                    print(f"⚠️ [Locker Update] 解析thread名稱失敗 '{thread.name}': {parse_error}")
+                    print(
+                        f"⚠️ [Locker Update] 解析thread名稱失敗 '{thread.name}': {parse_error}"
+                    )
                     return False
 
             if not user_id:
@@ -365,48 +374,58 @@ class PersonalLockerCog(commands.Cog):
                 for msg in messages:
                     if msg.embeds and len(msg.embeds) > 0:
                         embed = msg.embeds[0]
-                        if '置物櫃' in embed.title or 'Locker' in embed.title:
+                        if "置物櫃" in embed.title or "Locker" in embed.title:
                             locker_message = msg
                             break
 
                 if not locker_message:
-                    print(f"⚠️ [Locker Update] Thread {thread.name} 沒有找到置物櫃embed（將建立新的 canonical 訊息）")
+                    print(
+                        f"⚠️ [Locker Update] Thread {thread.name} 沒有找到置物櫃embed（將建立新的 canonical 訊息）"
+                    )
                     try:
                         await self.send_updated_locker_embed(thread, user_id)
                         return True
                     except Exception as _e:
-                        print(f"❌ [Locker Update] 為 thread {thread.name} 建立置物櫃訊息失敗: {_e}")
+                        print(
+                            f"❌ [Locker Update] 為 thread {thread.name} 建立置物櫃訊息失敗: {_e}"
+                        )
                         return False
 
                 # 檢查當前按鈕數量是否與最新版本匹配
                 current_button_count = 0
                 if locker_message.components:
                     for component in locker_message.components:
-                        if hasattr(component, 'children'):
+                        if hasattr(component, "children"):
                             current_button_count += len(component.children)
 
                 # 檢查當前 embed 的圖片與 footer 是否為 canonical（MapleStory）
-                current_embed = locker_message.embeds[0] if locker_message.embeds else None
+                current_embed = (
+                    locker_message.embeds[0] if locker_message.embeds else None
+                )
                 current_image = None
-                current_footer = ''
+                current_footer = ""
                 try:
-                    if current_embed and getattr(current_embed, 'image', None):
-                        current_image = getattr(current_embed.image, 'url', None)
-                    if current_embed and getattr(current_embed, 'footer', None):
-                        current_footer = (getattr(current_embed.footer, 'text', '') or '')
+                    if current_embed and getattr(current_embed, "image", None):
+                        current_image = getattr(current_embed.image, "url", None)
+                    if current_embed and getattr(current_embed, "footer", None):
+                        current_footer = getattr(current_embed.footer, "text", "") or ""
                 except Exception:
                     current_image = None
-                    current_footer = ''
+                    current_footer = ""
 
                 # 如果缺圖或 footer 非 MapleStory，標記需要更新
-                if not current_image or 'MapleStory' not in (current_footer or ''):
-                    print(f"🔄 [Locker Update] Thread {thread.name} 需要更新: missing image or footer")
+                if not current_image or "MapleStory" not in (current_footer or ""):
+                    print(
+                        f"🔄 [Locker Update] Thread {thread.name} 需要更新: missing image or footer"
+                    )
                     await self.send_updated_locker_embed(thread, user_id)
                     return True
 
                 # 創建一個測試視圖來比較按鈕數量
                 plants = await get_user_plants(user_id)
-                test_view = PersonalLockerView(self.bot, self, user_id, thread.guild.id, thread.id, plants, None)
+                test_view = PersonalLockerView(
+                    self.bot, self, user_id, thread.guild.id, thread.id, plants, None
+                )
                 expected_button_count = len(test_view.children)
 
                 # 檢查按鈕數量是否不匹配或按鈕 custom_id 有差異（包含舊版 custom_id）
@@ -414,17 +433,21 @@ class PersonalLockerCog(commands.Cog):
                 current_custom_ids = []
                 if locker_message.components:
                     for component in locker_message.components:
-                        if hasattr(component, 'children'):
+                        if hasattr(component, "children"):
                             for child in component.children:
-                                cid = getattr(child, 'custom_id', None)
+                                cid = getattr(child, "custom_id", None)
                                 if cid:
                                     current_custom_ids.append(cid)
 
                 # 預期的 custom_id 列表（來自 PersonalLockerView）
-                expected_custom_ids = [getattr(child, 'custom_id', None) for child in test_view.children if getattr(child, 'custom_id', None)]
+                expected_custom_ids = [
+                    getattr(child, "custom_id", None)
+                    for child in test_view.children
+                    if getattr(child, "custom_id", None)
+                ]
 
                 # 簡單的舊版 custom_id 集合（用於快速偵測 legacy 按鈕）
-                legacy_ids = {'locker_crop_info'}
+                legacy_ids = {"locker_crop_info"}
 
                 # 如果按鈕數量不匹配，或 custom_id 列表不相等，或包含舊版 custom_id，則視為需要更新
                 needs_update = False
@@ -436,20 +459,26 @@ class PersonalLockerCog(commands.Cog):
                     reason = f"custom_id mismatch (found {current_custom_ids} expected {expected_custom_ids})"
                 elif any(cid in legacy_ids for cid in current_custom_ids):
                     needs_update = True
-                    reason = f"contains legacy ids {set(current_custom_ids) & legacy_ids}"
+                    reason = (
+                        f"contains legacy ids {set(current_custom_ids) & legacy_ids}"
+                    )
                 else:
-                    reason = 'ok'
+                    reason = "ok"
 
                 if needs_update:
                     print(f"🔄 [Locker Update] Thread {thread.name} 需要更新: {reason}")
                     await self.send_updated_locker_embed(thread, user_id)
                     return True
 
-                print(f"✅ [Locker Update] Thread {thread.name} 按鈕檢查通過 ({reason})")
+                print(
+                    f"✅ [Locker Update] Thread {thread.name} 按鈕檢查通過 ({reason})"
+                )
                 return False
 
             except Exception as msg_error:
-                print(f"❌ [Locker Update] 檢查thread消息失敗 {thread.name}: {msg_error}")
+                print(
+                    f"❌ [Locker Update] 檢查thread消息失敗 {thread.name}: {msg_error}"
+                )
                 return False
 
         except Exception as e:
@@ -466,14 +495,14 @@ class PersonalLockerCog(commands.Cog):
         """
         try:
             from cogs.ui.utils.locker_embed_generator import update_locker_message
-            
+
             plants = await get_user_plants(user_id)
             inventory = await get_inventory(user_id)
             success = await update_locker_message(
                 thread=thread,
                 user_id=user_id,
                 bot=self.bot,
-                cog=self.bot.get_cog('UserPanel'),
+                cog=self.bot.get_cog("UserPanel"),
                 plants=plants,
                 inventory=inventory,
             )

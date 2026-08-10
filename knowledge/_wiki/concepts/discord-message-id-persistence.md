@@ -36,23 +36,23 @@ def _save_message_state(message_id: int):
     """保存訊息 ID 到 .env 檔案"""
     try:
         env_file = os.path.join(parent_dir, ".env")
-        
+
         # 讀取現有 .env 內容
         lines = []
         if os.path.exists(env_file):
             with open(env_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
-        
+
         # 移除舊的行
         lines = [line for line in lines if not line.strip().startswith('MODULE_MESSAGE_ID=')]
-        
+
         # 添加新的 message ID
         lines.append(f"MODULE_MESSAGE_ID={message_id}\n")
-        
+
         # 寫回檔案
         with open(env_file, 'w', encoding='utf-8') as f:
             f.writelines(lines)
-        
+
         logger.info(f"已保存訊息 ID 到 .env: {message_id}")
     except Exception as e:
         logger.error(f"保存訊息 ID 到 .env 失敗: {e}")
@@ -75,18 +75,18 @@ def _load_message_state() -> Optional[int]:
 def _save_and_verify_message_id(self, message_id: int) -> bool:
     """加強版的保存和驗證方法"""
     max_retries = 3
-    
+
     for attempt in range(max_retries):
         # 保存到 .env
         self._write_message_id_to_env(message_id)
         time.sleep(0.3 if attempt < 2 else 0.5)
-        
+
         # 驗證
         verify_id = self._read_message_id_from_env()
         if verify_id == message_id:
             logger.info(f"驗證成功 - MESSAGE_ID 已確認保存: {message_id}")
             return True
-    
+
     # 環境變數備用
     os.environ['MODULE_MESSAGE_ID'] = str(message_id)
     return False
@@ -100,20 +100,20 @@ async def _restore_message_reference(self):
     message_id = _load_message_state()
     if not message_id:
         return
-    
+
     try:
         await self.bot.wait_until_ready()
         channel = self.bot.get_channel(CHANNEL_ID)
-        
+
         if not channel:
             logger.warning(f"找不到通知頻道 {CHANNEL_ID}")
             return
-        
+
         # 嘗試獲取舊訊息
         message = await channel.fetch_message(message_id)
         self._summary_message = message
         logger.info(f"✅ 成功恢復舊訊息引用: {message_id}")
-        
+
     except discord.NotFound:
         logger.info(f"舊訊息 {message_id} 已被刪除，將創建新訊息")
         _clear_message_state()

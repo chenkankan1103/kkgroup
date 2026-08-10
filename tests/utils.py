@@ -10,14 +10,19 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-TW_TZ = ZoneInfo('Asia/Taipei')
+TW_TZ = ZoneInfo("Asia/Taipei")
 
 
 # ==================== Embed 斷言輔助 ====================
 
-def assert_embed_exists(messages: List[discord.Message], expected_count: int = 1) -> List[discord.Embed]:
+
+def assert_embed_exists(
+    messages: List[discord.Message], expected_count: int = 1
+) -> List[discord.Embed]:
     """斷言訊息有 embed 並回傳 embed 列表"""
-    assert len(messages) == expected_count, f"預期 {expected_count} 則訊息，實際 {len(messages)}"
+    assert (
+        len(messages) == expected_count
+    ), f"預期 {expected_count} 則訊息，實際 {len(messages)}"
     embeds = []
     for msg in messages:
         assert msg.embeds, f"訊息 {msg.id} 應有 embed"
@@ -29,16 +34,16 @@ def assert_embed_field(
     embed: discord.Embed,
     field_name: str,
     expected_value: str = None,
-    should_exist: bool = True
+    should_exist: bool = True,
 ):
     """斷言 Embed 包含特定欄位"""
     field = next((f for f in embed.fields if f.name == field_name), None)
     if should_exist:
         assert field is not None, f"Embed 應包含欄位: {field_name}"
         if expected_value is not None:
-            assert expected_value in field.value, (
-                f"欄位 '{field_name}' 應包含 '{expected_value}'，實際: {field.value}"
-            )
+            assert (
+                expected_value in field.value
+            ), f"欄位 '{field_name}' 應包含 '{expected_value}'，實際: {field.value}"
     else:
         assert field is None, f"Embed 不應包含欄位: {field_name}"
     return field
@@ -47,24 +52,25 @@ def assert_embed_field(
 def assert_embed_title(embed: discord.Embed, expected_substring: str):
     """斷言 Embed 標題包含預期文字"""
     assert embed.title is not None, "Embed 應有標題"
-    assert expected_substring in embed.title, f"標題應包含 '{expected_substring}'，實際: {embed.title}"
+    assert (
+        expected_substring in embed.title
+    ), f"標題應包含 '{expected_substring}'，實際: {embed.title}"
 
 
 def assert_embed_color(embed: discord.Embed, expected_color: discord.Color):
     """斷言 Embed 顏色"""
-    assert embed.color == expected_color, f"顏色不符：預期 {expected_color}，實際 {embed.color}"
+    assert (
+        embed.color == expected_color
+    ), f"顏色不符：預期 {expected_color}，實際 {embed.color}"
 
 
 # ==================== 資料庫斷言輔助 ====================
 
+
 def assert_db_record(
-    conn,
-    table: str,
-    where: Dict[str, Any],
-    expected: Dict[str, Any] = None
+    conn, table: str, where: Dict[str, Any], expected: Dict[str, Any] = None
 ):
     """斷言資料庫記錄存在且符合預期"""
-    import sqlite3
     cursor = conn.cursor()
     conditions = " AND ".join([f"{k} = ?" for k in where.keys()])
     params = list(where.values())
@@ -88,7 +94,9 @@ def assert_db_count(conn, table: str, where: Dict[str, Any], expected_count: int
     params = list(where.values())
     cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE {conditions}", params)
     count = cursor.fetchone()[0]
-    assert count == expected_count, f"{table} 記錄筆數不符：預期 {expected_count}，實際 {count}"
+    assert (
+        count == expected_count
+    ), f"{table} 記錄筆數不符：預期 {expected_count}，實際 {count}"
 
 
 def get_db_records(conn, table: str, where: Dict[str, Any] = None) -> List[Dict]:
@@ -107,12 +115,8 @@ def get_db_records(conn, table: str, where: Dict[str, Any] = None) -> List[Dict]
 
 # ==================== dpytest 互動包裝 ====================
 
-async def click_button(
-    member,
-    custom_id: str,
-    message_id: int,
-    channel_id: int = None
-):
+
+async def click_button(member, custom_id: str, message_id: int, channel_id: int = None):
     """包裝 dpytest click，自動處理重試與錯誤"""
     try:
         await member.click(custom_id=custom_id, message_id=message_id)
@@ -121,10 +125,7 @@ async def click_button(
         return False, str(e)
 
 
-async def fill_modal_and_submit(
-    modal,
-    inputs: Dict[str, str]
-) -> tuple[bool, str]:
+async def fill_modal_and_submit(modal, inputs: Dict[str, str]) -> tuple[bool, str]:
     """填寫 Modal 並提交，回傳 (成功, 錯誤訊息)"""
     try:
         for field_name, value in inputs.items():
@@ -135,11 +136,7 @@ async def fill_modal_and_submit(
         return False, str(e)
 
 
-async def send_command(
-    member,
-    command: str,
-    channel_id: int = None
-):
+async def send_command(member, command: str, channel_id: int = None):
     """發送 Slash 指令（透過 dpytest）"""
     # dpytest 使用 message 內容匹配 slash 指令
     if channel_id:
@@ -158,17 +155,19 @@ def get_latest_message(channel_id: int = None) -> Optional[discord.Message]:
 
 
 def get_followup_messages(
-    channel_id: int = None,
-    content_contains: str = None
+    channel_id: int = None, content_contains: str = None
 ) -> List[discord.Message]:
     """取得 follow-up 訊息（dpytest 會把所有訊息放在同一佇列）"""
-    messages = dpytest.get_messages(channel_id) if channel_id else dpytest.get_messages()
+    messages = (
+        dpytest.get_messages(channel_id) if channel_id else dpytest.get_messages()
+    )
     if content_contains:
         messages = [m for m in messages if m.content and content_contains in m.content]
     return messages
 
 
 # ==================== 測試資料建構器 ====================
+
 
 class AnimeTestDataBuilder:
     """動畫測試資料建構器"""
@@ -180,7 +179,7 @@ class AnimeTestDataBuilder:
         title: str = "Test Anime",
         volume: str = "第 1 話",
         cover: str = "https://example.com/cover.jpg",
-        schedule_time: str = "00:00"
+        schedule_time: str = "00:00",
     ) -> Dict[str, Any]:
         return {
             "videoSn": video_sn,
@@ -198,7 +197,7 @@ class AnimeTestDataBuilder:
         video_sn: int = 1001,
         anime_sn: int = 5001,
         title: str = "Test Anime",
-        pushed: bool = False
+        pushed: bool = False,
     ) -> Dict[str, Any]:
         return {
             "day_of_week": day_of_week,
@@ -224,7 +223,6 @@ class AnimeTestDataBuilder:
         cover: str = "https://example.com/test.jpg",
         popular: int = 10000,
     ) -> Dict[str, Any]:
-        from datetime import datetime
         if up_time is None:
             up_time = datetime.now(TW_TZ).strftime("%m/%d")
 
@@ -258,7 +256,7 @@ class VoteTestDataBuilder:
         message_id: int,
         vote_type: str = "masterpiece",
         user_hash: str = "test_user_1",
-        comment: str = None
+        comment: str = None,
     ) -> Dict[str, Any]:
         return {
             "video_sn": video_sn,
@@ -271,25 +269,26 @@ class VoteTestDataBuilder:
 
     @staticmethod
     def multiple_votes(
-        message_id: int,
-        vote_counts: Dict[str, int],
-        base_user_hash: str = "user"
+        message_id: int, vote_counts: Dict[str, int], base_user_hash: str = "user"
     ) -> List[Dict[str, Any]]:
         """建構多筆投票資料供批次插入"""
         votes = []
         for vote_type, count in vote_counts.items():
             for i in range(count):
-                votes.append(VoteTestDataBuilder.vote(
-                    video_sn=1001,
-                    anime_sn=5001,
-                    message_id=message_id,
-                    vote_type=vote_type,
-                    user_hash=f"{base_user_hash}_{vote_type}_{i}"
-                ))
+                votes.append(
+                    VoteTestDataBuilder.vote(
+                        video_sn=1001,
+                        anime_sn=5001,
+                        message_id=message_id,
+                        vote_type=vote_type,
+                        user_hash=f"{base_user_hash}_{vote_type}_{i}",
+                    )
+                )
         return votes
 
 
 # ==================== 時間控制輔助 ====================
+
 
 class TimeController:
     """測試時間控制器（搭配 conftest.py 的 frozen_time fixture）"""
@@ -299,13 +298,12 @@ class TimeController:
 
     def set_to_schedule_time(self, scheduled_time: str, days_offset: int = 0):
         """設定時間到指定排程時刻"""
-        from datetime import datetime
         now = datetime.now(TW_TZ)
         target = now.replace(
             hour=int(scheduled_time[:2]),
             minute=int(scheduled_time[3:]),
             second=0,
-            microsecond=0
+            microsecond=0,
         )
         if days_offset:
             target += datetime.timedelta(days=days_offset)
@@ -314,7 +312,6 @@ class TimeController:
 
     def set_to_refresh_time(self):
         """設定到 22:00 週表刷新時間"""
-        from datetime import datetime
         now = datetime.now(TW_TZ)
         target = now.replace(hour=22, minute=0, second=0, microsecond=0)
         self.frozen.freeze(target)
@@ -328,7 +325,10 @@ class TimeController:
 
 # ==================== 非同步測試工具 ====================
 
-async def wait_for_condition(condition_func, timeout: float = 5.0, interval: float = 0.1):
+
+async def wait_for_condition(
+    condition_func, timeout: float = 5.0, interval: float = 0.1
+):
     """
     等待條件成立
     Args:
@@ -337,6 +337,7 @@ async def wait_for_condition(condition_func, timeout: float = 5.0, interval: flo
         interval: 檢查間隔
     """
     import asyncio
+
     start = asyncio.get_event_loop().time()
     while asyncio.get_event_loop().time() - start < timeout:
         if asyncio.iscoroutinefunction(condition_func):
@@ -350,12 +351,10 @@ async def wait_for_condition(condition_func, timeout: float = 5.0, interval: flo
 
 
 async def wait_for_db_record(
-    get_connection_func,
-    table: str,
-    where: Dict[str, Any],
-    timeout: float = 5.0
+    get_connection_func, table: str, where: Dict[str, Any], timeout: float = 5.0
 ) -> bool:
     """等待資料庫出現記錄"""
+
     async def check():
         conn = get_connection_func()
         cursor = conn.cursor()
@@ -363,6 +362,7 @@ async def wait_for_db_record(
         params = list(where.values())
         cursor.execute(f"SELECT 1 FROM {table} WHERE {conditions}", params)
         return cursor.fetchone() is not None
+
     return await wait_for_condition(check, timeout)
 
 
@@ -370,12 +370,13 @@ async def wait_for_db_record(
 
 from unittest.mock import MagicMock
 
+
 def create_mock_interaction(
     user_id: int = 999999,
     message_id: int = 123456,
     channel_id: int = 789012,
     guild_id: int = 111111,
-    mock_message: "MagicMock" = None
+    mock_message: "MagicMock" = None,
 ):
     """建構模擬的 discord.Interaction"""
     from unittest.mock import AsyncMock, MagicMock
@@ -393,8 +394,10 @@ def create_mock_interaction(
     # 添加 fetch_message 方法，返回 mock_message（預設建立一個基本的 mock message）
     if mock_message is None:
         mock_message = create_mock_message(message_id=message_id, channel_id=channel_id)
+
     async def mock_fetch_message(msg_id):
         return mock_message
+
     interaction.channel.fetch_message = mock_fetch_message
 
     interaction.guild = MagicMock()
@@ -419,7 +422,7 @@ def create_mock_message(
     message_id: int = 123456,
     channel_id: int = 789012,
     embeds: list = None,
-    content: str = None
+    content: str = None,
 ):
     """建構模擬的 discord.Message"""
     from unittest.mock import AsyncMock, MagicMock
@@ -443,6 +446,7 @@ def create_mock_message(
 
 # ==================== 測試報告輔助 ====================
 
+
 def print_test_summary(test_name: str, passed: bool, details: str = ""):
     """統一測試結果輸出格式"""
     status = "✅ PASS" if passed else "❌ FAIL"
@@ -453,12 +457,13 @@ def print_test_summary(test_name: str, passed: bool, details: str = ""):
 
 # ==================== 常用斷言組合 ====================
 
+
 async def assert_vote_flow_complete(
     dpytest_setup,
     isolated_db,
     message_id: int,
     expected_votes: Dict[str, int],
-    expected_comments: List[str] = None
+    expected_comments: List[str] = None,
 ):
     """
     一次性驗證完整投票流程：
@@ -471,16 +476,16 @@ async def assert_vote_flow_complete(
     # 1. 驗證資料庫統計
     stats = get_vote_stats(isolated_db, message_id)
     for vote_type, count in expected_votes.items():
-        assert stats.get(vote_type, 0) == count, (
-            f"投票類型 {vote_type} 數量不符：預期 {count}，實際 {stats.get(vote_type, 0)}"
-        )
+        assert (
+            stats.get(vote_type, 0) == count
+        ), f"投票類型 {vote_type} 數量不符：預期 {count}，實際 {stats.get(vote_type, 0)}"
 
     # 2. 驗證評論
     if expected_comments is not None:
         comments = get_vote_comments(isolated_db, message_id)
-        assert len(comments) == len(expected_comments), (
-            f"評論數不符：預期 {len(expected_comments)}，實際 {len(comments)}"
-        )
+        assert len(comments) == len(
+            expected_comments
+        ), f"評論數不符：預期 {len(expected_comments)}，實際 {len(comments)}"
         for expected in expected_comments:
             assert any(expected in c for c in comments), f"找不到預期評論: {expected}"
 

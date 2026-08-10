@@ -6,7 +6,7 @@ class ButtonInteraction(commands.Cog):
         self.bot = bot
         # 初始化增強版紙娃娃系統
         self.paperdoll_system = EnhancedPaperDollSystem(bot)
-        
+
         # 設定定期清除快取的任務
         self.cache_cleanup_task = bot.loop.create_task(self._periodic_cache_cleanup())
 
@@ -35,7 +35,7 @@ class ButtonInteraction(commands.Cog):
         if not user_data:
             await interaction.response.send_message("❌ 找不到你的角色數據！請先註冊。", ephemeral=True)
             return
-        
+
         await self.paperdoll_system.handle_enhanced_try_on(
             interaction, item_name, item_data, category, user_data
         )

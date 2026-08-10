@@ -6,15 +6,15 @@ from .crop_operations import CropOperationView, CropPlantingView, SelectSeedView
 from .selection_views import SelectPlantForHarvestView
 
 __all__ = [
-    'UpdatePanelView',
-    'WorkCardModal',
-    'WorkCardEditView',
-    'WorkCardActionView',
-    'LockerPanelView',
-    'PersonalLockerView',
-    'WeeklySummaryCannabisPanelView',
-    'CropOperationView',
-    'CropPlantingView',
-    'SelectSeedView',
-    'SelectPlantForHarvestView',
+    "UpdatePanelView",
+    "WorkCardModal",
+    "WorkCardEditView",
+    "WorkCardActionView",
+    "LockerPanelView",
+    "PersonalLockerView",
+    "WeeklySummaryCannabisPanelView",
+    "CropOperationView",
+    "CropPlantingView",
+    "SelectSeedView",
+    "SelectPlantForHarvestView",
 ]

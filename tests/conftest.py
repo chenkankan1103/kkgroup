@@ -6,8 +6,10 @@ pytest 配置與 dpytest 設定
 import asyncio
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 # ==================== 環境變數 Mock (必須在匯入 bots.bot 之前) ====================
 # bots.bot 模組在匯入時會檢查 DISCORD_BOT_TOKEN，測試時需提供假值
@@ -31,10 +33,6 @@ def pytest_configure(config):
     )
     config.addinivalue_line("markers", "unit: 純單元測試，無外部依賴，執行快速")
 
-
-# ==================== 共用測試工具函數 ====================
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 TW_TZ = ZoneInfo("Asia/Taipei")
 

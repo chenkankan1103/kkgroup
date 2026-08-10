@@ -141,10 +141,10 @@ sudo netstat -tlnp | grep -E '5000|80|443'
 
 **觸發流程**：
 ```
-Git Push (main/master) 
-  → GitHub Webhook 
+Git Push (main/master)
+  → GitHub Webhook
   → Cloudflare Tunnel (https://xxx.trycloudflare.com)
-  → Nginx (port 80/443) 
+  → Nginx (port 80/443)
   → Flask (port 5000, web/blueprints/webhook.py)
   → 驗證簽名 → git pull origin main
   → 重啟 bot.service shopbot.service uibot.service
@@ -153,7 +153,7 @@ Git Push (main/master)
 
 **Webhook 端點**：`web/blueprints/webhook.py`
 - 驗證 `X-Hub-Signature-256` 簽名
-- 執行 `git pull` 
+- 執行 `git pull`
 - `systemctl restart` 三個 Bot 服務
 - 發送部署結果到 Discord Webhook
 
@@ -220,7 +220,7 @@ python scripts/commands_manager.py diag all_services
 server {
     listen 80;
     server_name _;
-    
+
     # API 服務代理
     location /api/ {
         proxy_pass http://127.0.0.1:5000;
@@ -229,7 +229,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    
+
     # Webhook 端點
     location /webhook/ {
         proxy_pass http://127.0.0.1:5000;
@@ -238,14 +238,14 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    
+
     # 靜態檔案
     location /static/ {
         alias /home/ubuntu/kkgroup/web/portal/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
-    
+
     # 主要頁面
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -357,16 +357,16 @@ import time
 def update_and_restart():
     # 切換到專案目錄
     os.chdir('/home/ubuntu/kkgroup')
-    
+
     # Git 拉取最新程式碼
     subprocess.run(['git', 'pull', 'origin', 'main'], check=True)
-    
+
     # 重啟所有服務
     services = ['bot.service', 'shopbot.service', 'kkgroup-api.service']
     for service in services:
         subprocess.run(['sudo', 'systemctl', 'restart', service], check=True)
         time.sleep(5)  # 等待服務啟動
-    
+
     print("部署完成")
 
 if __name__ == "__main__":
@@ -446,11 +446,11 @@ import os
 def update_tunnel_url():
     # 獲取當前隧道 URL
     tunnel_url = "https://xxxx.trycloudflare.com"
-    
+
     # 更新本地配置
     with open('locker_refresh_urls.json', 'w') as f:
         json.dump({"tunnel_url": tunnel_url}, f)
-    
+
     # 通知 Discord
     webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
     if webhook_url:
@@ -468,7 +468,7 @@ if __name__ == "__main__":
 server {
     listen 80;
     server_name localhost;
-    
+
     # API 服務代理
     location /api/ {
         proxy_pass http://127.0.0.1:5000;
@@ -477,14 +477,14 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    
+
     # 靜態檔案服務
     location /static/ {
         alias /home/ubuntu/kkgroup/web/portal/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
-    
+
     # 主要頁面
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -513,13 +513,13 @@ class SystemMonitor:
             'disk_usage': psutil.disk_usage('/').percent,
             'uptime': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
-    
+
     def get_service_status(self):
         services = ['bot.service', 'shopbot.service', 'kkgroup-api.service']
         status = {}
         for service in services:
             # 檢查服務狀態
-            result = subprocess.run(['systemctl', 'is-active', service], 
+            result = subprocess.run(['systemctl', 'is-active', service],
                                   capture_output=True, text=True)
             status[service] = result.stdout.strip()
         return status
@@ -552,14 +552,14 @@ def send_error_notification(error_msg: str, context: str = ""):
     webhook_url = os.getenv('ERROR_WEBHOOK_URL')
     if not webhook_url:
         return
-    
+
     embed = {
         "title": "🚨 KKGroup 錯誤通知",
         "description": f"**錯誤:** {error_msg}\n**上下文:** {context}",
         "color": 0xFF0000,
         "timestamp": datetime.now().isoformat()
     }
-    
+
     requests.post(webhook_url, json={"embeds": [embed]})
 
 # 使用範例
@@ -584,28 +584,28 @@ import tarfile
 def create_backup():
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_dir = f"/home/ubuntu/backups/{timestamp}"
-    
+
     # 建立備份目錄
     os.makedirs(backup_dir, exist_ok=True)
-    
+
     # 備份專案檔案
     subprocess.run([
         'tar', '-czf', f'{backup_dir}/kkgroup.tar.gz',
         '-C', '/home/ubuntu', 'kkgroup'
     ], check=True)
-    
+
     # 備份資料庫
     subprocess.run([
         'cp', '/home/ubuntu/kkgroup/data/database.db',
         f'{backup_dir}/database.db'
     ], check=True)
-    
+
     # 清理舊備份 (保留30天)
     subprocess.run([
         'find', '/home/ubuntu/backups', '-type', 'd',
         '-mtime', '+30', '-exec', 'rm', '-rf', '{}', ';'
     ], check=True)
-    
+
     print(f"備份完成: {backup_dir}")
 
 if __name__ == "__main__":
@@ -696,14 +696,14 @@ def monitor_resources():
         cpu = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory().percent
         disk = psutil.disk_usage('/').percent
-        
+
         if cpu > 80:
             send_alert(f"CPU 使用率過高: {cpu}%")
         if memory > 80:
             send_alert(f"記憶體使用率過高: {memory}%")
         if disk > 80:
             send_alert(f"磁碟使用率過高: {disk}%")
-        
+
         time.sleep(60)  # 每分鐘檢查一次
 ```
 
@@ -719,7 +719,7 @@ def health_check():
         'bot.service': 'http://localhost:8080/health',
         'kkgroup-api.service': 'http://localhost:5000/api/health'
     }
-    
+
     for service, health_url in services.items():
         try:
             response = requests.get(health_url, timeout=10)

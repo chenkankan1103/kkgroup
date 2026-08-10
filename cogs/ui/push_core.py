@@ -4,28 +4,21 @@ Bahamut 動畫追蹤 - Push/Core 模組
 """
 
 import discord
-from discord import app_commands
-from discord.ext import commands, tasks
 import asyncio
 import aiohttp
 import sqlite3
 import json
 import re
-import html
-import os
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 from zoneinfo import ZoneInfo  # Python 3.9+, 正確的時區處理
-import time
 
 logger = logging.getLogger(__name__)
-from urllib.parse import quote
-from shared.utils.view_registry import PersistentViewBase
 
 # 台灣時區
-TW_TZ = ZoneInfo('Asia/Taipei')
+TW_TZ = ZoneInfo("Asia/Taipei")
 
 
 def get_week_start_date(now: datetime = None, api_week: bool = False) -> str:
@@ -59,7 +52,9 @@ def get_week_start_date(now: datetime = None, api_week: bool = False) -> str:
     return week_start.strftime("%Y-%m-%d")
 
 
-def find_unpushed_items(today_schedule: list, now: datetime = None, future_only: bool = False) -> list:
+def find_unpushed_items(
+    today_schedule: list, now: datetime = None, future_only: bool = False
+) -> list:
     """
     從今日時程表中找出未推送的項目
 
@@ -78,9 +73,9 @@ def find_unpushed_items(today_schedule: list, now: datetime = None, future_only:
 
     matching = []
     for item in today_schedule:
-        if item.get('pushed'):
+        if item.get("pushed"):
             continue
-        scheduled = item.get('scheduled_time', '')
+        scheduled = item.get("scheduled_time", "")
         try:
             sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
                 year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
@@ -95,7 +90,7 @@ def find_unpushed_items(today_schedule: list, now: datetime = None, future_only:
         except Exception:
             pass
 
-    return sorted(matching, key=lambda x: x.get('scheduled_time', ''))
+    return sorted(matching, key=lambda x: x.get("scheduled_time", ""))
 
 
 # 配置
@@ -113,8 +108,12 @@ EPISODE_STATS_TABLE = "episode_statistics"  # 每集統計數據
 ANIME_MESSAGES_TABLE = "anime_messages"  # 消息 ID 追蹤（用於 bot 重啟時恢復 view）
 ANIME_VOTES_TABLE = "anime_votes"  # 匿名投票結果
 ANIME_REWARDS_TABLE = "anime_rewards"  # KK幣獎勵追踪（防止重複發放）
-ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（防止重複檢查，解決 Bot 重啟問題）
-ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
+ANIME_CHECK_HISTORY_TABLE = (
+    "anime_check_history"  # 每日時刻檢查歷史（防止重複檢查，解決 Bot 重啟問題）
+)
+ANIME_WEEKLY_SCHEDULE_TABLE = (
+    "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
+)
 
 
 class AnimeDatabase:
@@ -275,13 +274,27 @@ class AnimeDatabase:
             self._migrate_schema(cursor)
 
             # 創建索引以提高查詢性能 (in _migrate_schema 之後，確保欄位已存在)
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_videoSn ON {NOTIFIED_TABLE}(videoSn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_DETAILS_TABLE}_animeSn ON {ANIME_DETAILS_TABLE}(animeSn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_videoSn ON {EPISODE_STATS_TABLE}(videoSn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_videoSn ON {ANIME_MESSAGES_TABLE}(videoSn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_animeSn ON {ANIME_MESSAGES_TABLE}(animeSn)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_weekStart ON {ANIME_WEEKLY_SCHEDULE_TABLE}(weekStartDate)")
-            cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_dayTime ON {ANIME_WEEKLY_SCHEDULE_TABLE}(dayOfWeek, scheduledTime)")
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{NOTIFIED_TABLE}_videoSn ON {NOTIFIED_TABLE}(videoSn)"
+            )
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{ANIME_DETAILS_TABLE}_animeSn ON {ANIME_DETAILS_TABLE}(animeSn)"
+            )
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{EPISODE_STATS_TABLE}_videoSn ON {EPISODE_STATS_TABLE}(videoSn)"
+            )
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_videoSn ON {ANIME_MESSAGES_TABLE}(videoSn)"
+            )
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{ANIME_MESSAGES_TABLE}_animeSn ON {ANIME_MESSAGES_TABLE}(animeSn)"
+            )
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_weekStart ON {ANIME_WEEKLY_SCHEDULE_TABLE}(weekStartDate)"
+            )
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{ANIME_WEEKLY_SCHEDULE_TABLE}_dayTime ON {ANIME_WEEKLY_SCHEDULE_TABLE}(dayOfWeek, scheduledTime)"
+            )
 
             conn.commit()
 
@@ -332,14 +345,22 @@ class AnimeDatabase:
             (ANIME_CHECK_HISTORY_TABLE, "weekStartDate", "TEXT"),
             (ANIME_CHECK_HISTORY_TABLE, "dayOfWeek", "INTEGER"),
             (ANIME_CHECK_HISTORY_TABLE, "scheduledTime", "TEXT"),
-            (ANIME_CHECK_HISTORY_TABLE, "checkedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (
+                ANIME_CHECK_HISTORY_TABLE,
+                "checkedAt",
+                "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            ),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "weekStartDate", "TEXT"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "dayOfWeek", "INTEGER"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "scheduledTime", "TEXT"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "animeData", "TEXT"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "pushed", "INTEGER DEFAULT 0"),
-            (ANIME_WEEKLY_SCHEDULE_TABLE, "createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (
+                ANIME_WEEKLY_SCHEDULE_TABLE,
+                "createdAt",
+                "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            ),
             (BOOTSTRAP_FLAG_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
             (BOOTSTRAP_FLAG_TABLE, "bootstrapCompleted", "INTEGER DEFAULT 0"),
             (BOOTSTRAP_FLAG_TABLE, "updatedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
@@ -351,10 +372,16 @@ class AnimeDatabase:
                 cursor.execute(f"PRAGMA table_info({table_name})")
                 columns = [row[1] for row in cursor.fetchall()]
                 if column_name not in columns:
-                    logger.info(f"[Migration] Adding column {column_name} to {table_name}")
-                    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+                    logger.info(
+                        f"[Migration] Adding column {column_name} to {table_name}"
+                    )
+                    cursor.execute(
+                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"
+                    )
             except Exception as e:
-                logger.warning(f"[Migration] Could not add {column_name} to {table_name}: {e}")
+                logger.warning(
+                    f"[Migration] Could not add {column_name} to {table_name}: {e}"
+                )
 
     # ==================== 通知相關方法 ====================
 
@@ -363,48 +390,78 @@ class AnimeDatabase:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT 1 FROM {NOTIFIED_TABLE}
                     WHERE videoSn = ?
-                """, (video_sn,))
+                """,
+                    (video_sn,),
+                )
                 return cursor.fetchone() is not None
         except Exception as e:
-            logger.error(f"❌ [is_notified] Error checking video_sn {video_sn}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [is_notified] Error checking video_sn {video_sn}: {e}",
+                exc_info=True,
+            )
             return False
 
-    def save_message_info(self, message_id: int, video_sn: int, anime_sn: int,
-                         anime_name: str, channel_id: int) -> bool:
+    def save_message_info(
+        self,
+        message_id: int,
+        video_sn: int,
+        anime_sn: int,
+        anime_name: str,
+        channel_id: int,
+    ) -> bool:
         """保存消息資訊"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     INSERT OR REPLACE INTO {ANIME_MESSAGES_TABLE}
                     (messageId, videoSn, animeSn, anime_name, channelId)
                     VALUES (?, ?, ?, ?, ?)
-                """, (message_id, video_sn, anime_sn, anime_name, channel_id))
+                """,
+                    (message_id, video_sn, anime_sn, anime_name, channel_id),
+                )
                 conn.commit()
                 return True
         except Exception as e:
-            logger.error(f"❌ [save_message_info] Error saving message_id {message_id}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [save_message_info] Error saving message_id {message_id}: {e}",
+                exc_info=True,
+            )
             return False
 
-    def add_notified(self, video_sn: int, anime_sn: int, anime_name: str,
-                    volume: str = "", cover_url: str = "") -> bool:
+    def add_notified(
+        self,
+        video_sn: int,
+        anime_sn: int,
+        anime_name: str,
+        volume: str = "",
+        cover_url: str = "",
+    ) -> bool:
         """記錄已通知的動畫"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # 使用新欄位名 (anime_name, cover_url) 配合 migration schema
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     INSERT OR REPLACE INTO {NOTIFIED_TABLE}
                     (videoSn, animeSn, anime_name, volume, cover_url)
                     VALUES (?, ?, ?, ?, ?)
-                """, (video_sn, anime_sn, anime_name, volume, cover_url))
+                """,
+                    (video_sn, anime_sn, anime_name, volume, cover_url),
+                )
                 conn.commit()
                 return True
         except Exception as e:
-            logger.error(f"❌ [add_notified] Error adding video_sn {video_sn}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [add_notified] Error adding video_sn {video_sn}: {e}",
+                exc_info=True,
+            )
             return False
 
     def get_unviewed_messages(self) -> list:
@@ -417,13 +474,16 @@ class AnimeDatabase:
                     FROM {ANIME_MESSAGES_TABLE}
                 """)
                 rows = cursor.fetchall()
-                return [{
-                    'message_id': row[0],
-                    'video_sn': row[1],
-                    'anime_sn': row[2],
-                    'anime_name': row[3],
-                    'channel_id': row[4]
-                } for row in rows]
+                return [
+                    {
+                        "message_id": row[0],
+                        "video_sn": row[1],
+                        "anime_sn": row[2],
+                        "anime_name": row[3],
+                        "channel_id": row[4],
+                    }
+                    for row in rows
+                ]
         except Exception as e:
             logger.error(f"❌ [get_unviewed_messages] Error: {e}", exc_info=True)
             return []
@@ -445,17 +505,21 @@ class AnimeDatabase:
             seen = {}
             deduped = []
             for idx, item in enumerate(schedule_data):
-                key = (item['day_of_week'], item['scheduled_time'])
+                key = (item["day_of_week"], item["scheduled_time"])
                 if key not in seen:
                     seen[key] = idx
                     deduped.append(item)
                 else:
-                    logger.warning(f"⚠️ [save_weekly_schedule] 週 {week_start_date} 發現重複時段: "
-                                   f"day={item['day_of_week']} {item['scheduled_time']}，"
-                                   f"忽略第 {idx+1} 筆 (保留第 {seen[key]+1} 筆)")
+                    logger.warning(
+                        f"⚠️ [save_weekly_schedule] 週 {week_start_date} 發現重複時段: "
+                        f"day={item['day_of_week']} {item['scheduled_time']}，"
+                        f"忽略第 {idx+1} 筆 (保留第 {seen[key]+1} 筆)"
+                    )
             if len(deduped) != len(schedule_data):
-                logger.info(f"📋 [save_weekly_schedule] 週 {week_start_date} 去重: "
-                            f"{len(schedule_data)} -> {len(deduped)} 筆")
+                logger.info(
+                    f"📋 [save_weekly_schedule] 週 {week_start_date} 去重: "
+                    f"{len(schedule_data)} -> {len(deduped)} 筆"
+                )
             schedule_data = deduped
             # --- End pre-dedup ---
 
@@ -463,7 +527,10 @@ class AnimeDatabase:
                 cursor = conn.cursor()
 
                 # 全量覆蓋：先刪除該 week_start_date 不在新 schedule_data 中的舊記錄
-                new_times = {(item['day_of_week'], item['scheduled_time']) for item in schedule_data}
+                new_times = {
+                    (item["day_of_week"], item["scheduled_time"])
+                    for item in schedule_data
+                }
                 if new_times:
                     conditions = []
                     params = [week_start_date]
@@ -471,53 +538,77 @@ class AnimeDatabase:
                         conditions.append("(dayOfWeek = ? AND scheduledTime = ?)")
                         params.extend([dow, st])
                     where_clause = " OR ".join(conditions)
-                    cursor.execute(f"""
-                        DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
-                        WHERE weekStartDate = ? 
-                        AND NOT ({where_clause})
-                    """, params)
-                else:
-                    cursor.execute(f"""
+                    cursor.execute(
+                        f"""
                         DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                         WHERE weekStartDate = ?
-                    """, (week_start_date,))
+                        AND NOT ({where_clause})
+                    """,
+                        params,
+                    )
+                else:
+                    cursor.execute(
+                        f"""
+                        DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        WHERE weekStartDate = ?
+                    """,
+                        (week_start_date,),
+                    )
 
                 for item in schedule_data:
-                    day_of_week = item['day_of_week']
-                    scheduled_time = item['scheduled_time']
-                    anime_data_json = json.dumps(item['anime_data'])
+                    day_of_week = item["day_of_week"]
+                    scheduled_time = item["scheduled_time"]
+                    anime_data_json = json.dumps(item["anime_data"])
 
                     # 🔑 修復 (2026-07-28)：先查詢該 key 的所有記錄，取 pushed 最大值
                     # 然後刪除該 key 的所有記錄，最後插入一筆乾淨記錄
                     # 這樣無論 DB 中有多少重複記錄，都能徹底清理
-                    cursor.execute(f"""
+                    cursor.execute(
+                        f"""
                         SELECT MAX(pushed) FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                         WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
-                    """, (week_start_date, day_of_week, scheduled_time))
+                    """,
+                        (week_start_date, day_of_week, scheduled_time),
+                    )
                     row = cursor.fetchone()
                     was_pushed = (row[0] == 1) if row and row[0] is not None else False
 
                     # 先刪除該 key 的所有記錄（清理可能的重複）
-                    cursor.execute(f"""
+                    cursor.execute(
+                        f"""
                         DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                         WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
-                    """, (week_start_date, day_of_week, scheduled_time))
+                    """,
+                        (week_start_date, day_of_week, scheduled_time),
+                    )
 
                     # 插入唯一一筆記錄，保留 pushed 狀態
-                    cursor.execute(f"""
+                    cursor.execute(
+                        f"""
                         INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
                         (weekStartDate, dayOfWeek, scheduledTime, animeData, pushed)
                         VALUES (?, ?, ?, ?, ?)
-                    """, (week_start_date, day_of_week, scheduled_time,
-                          anime_data_json, 1 if was_pushed else 0))
+                    """,
+                        (
+                            week_start_date,
+                            day_of_week,
+                            scheduled_time,
+                            anime_data_json,
+                            1 if was_pushed else 0,
+                        ),
+                    )
 
                 conn.commit()
-                logger.info(f"✅ [save_weekly_schedule] 週 {week_start_date} 保存完成 "
-                            f"({len(schedule_data)} 個時段)")
+                logger.info(
+                    f"✅ [save_weekly_schedule] 週 {week_start_date} 保存完成 "
+                    f"({len(schedule_data)} 個時段)"
+                )
                 return True
         except Exception as e:
-            logger.error(f"❌ [save_weekly_schedule] Error saving week {week_start_date}: {e}",
-                         exc_info=True)
+            logger.error(
+                f"❌ [save_weekly_schedule] Error saving week {week_start_date}: {e}",
+                exc_info=True,
+            )
             return False
 
     def get_today_schedule(self) -> list:
@@ -529,39 +620,52 @@ class AnimeDatabase:
 
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT scheduledTime, animeData, pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                     WHERE weekStartDate = ? AND dayOfWeek = ?
                     ORDER BY scheduledTime ASC
-                """, (week_start_str, day_of_week))
+                """,
+                    (week_start_str, day_of_week),
+                )
 
                 results = []
                 for row in cursor.fetchall():
-                    results.append({
-                        'scheduled_time': row[0],
-                        'anime_data': json.loads(row[1]),
-                        'pushed': bool(row[2]),
-                        'day_of_week': day_of_week  # 加上 day_of_week 供後續使用
-                    })
+                    results.append(
+                        {
+                            "scheduled_time": row[0],
+                            "anime_data": json.loads(row[1]),
+                            "pushed": bool(row[2]),
+                            "day_of_week": day_of_week,  # 加上 day_of_week 供後續使用
+                        }
+                    )
                 return results
         except Exception as e:
             logger.error(f"❌ [get_today_schedule] Error: {e}", exc_info=True)
             return []
 
-    def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
+    def mark_time_pushed(
+        self, week_start_date: str, day_of_week: int, scheduled_time: str
+    ) -> bool:
         """標記某個時刻已推送過"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
                     SET pushed = 1
                     WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
-                """, (week_start_date, day_of_week, scheduled_time))
+                """,
+                    (week_start_date, day_of_week, scheduled_time),
+                )
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
-            logger.error(f"❌ [mark_time_pushed] Error marking week_start={week_start_date} day={day_of_week} time={scheduled_time}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [mark_time_pushed] Error marking week_start={week_start_date} day={day_of_week} time={scheduled_time}: {e}",
+                exc_info=True,
+            )
             return False
 
     def is_time_checked_today(self, scheduled_time: str, check_date=None) -> bool:
@@ -571,16 +675,19 @@ class AnimeDatabase:
                 check_date = datetime.now(TW_TZ).date()
             elif isinstance(check_date, datetime):
                 check_date = check_date.date()
-            
+
             week_start = check_date - timedelta(days=check_date.weekday())
             day_of_week = (check_date.weekday() + 1) % 7 or 7
-            
+
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT 1 FROM {ANIME_CHECK_HISTORY_TABLE}
                     WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
-                """, (week_start.strftime("%Y-%m-%d"), day_of_week, scheduled_time))
+                """,
+                    (week_start.strftime("%Y-%m-%d"), day_of_week, scheduled_time),
+                )
                 return cursor.fetchone() is not None
         except Exception as e:
             logger.error(f"❌ [is_time_checked_today] Error: {e}", exc_info=True)
@@ -593,25 +700,29 @@ class AnimeDatabase:
                 check_date = datetime.now(TW_TZ).date()
             elif isinstance(check_date, datetime):
                 check_date = check_date.date()
-            
+
             week_start = check_date - timedelta(days=check_date.weekday())
             day_of_week = (check_date.weekday() + 1) % 7 or 7
-            
+
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     INSERT OR IGNORE INTO {ANIME_CHECK_HISTORY_TABLE}
                     (weekStartDate, dayOfWeek, scheduledTime)
                     VALUES (?, ?, ?)
-                """, (week_start.strftime("%Y-%m-%d"), day_of_week, scheduled_time))
+                """,
+                    (week_start.strftime("%Y-%m-%d"), day_of_week, scheduled_time),
+                )
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"❌ [mark_time_checked] Error: {e}", exc_info=True)
             return False
 
-    def get_schedule_video_sns(self, week_start_date: str, day_of_week: int,
-                               scheduled_time: str) -> set:
+    def get_schedule_video_sns(
+        self, week_start_date: str, day_of_week: int, scheduled_time: str
+    ) -> set:
         """從週表取得指定時段預期的 videoSn 集合
 
         用於 send_anime_push 過濾 API 回傳的新番，確保只推送屬於該時段的動畫，
@@ -630,16 +741,19 @@ class AnimeDatabase:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT animeData FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                     WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
-                """, (week_start_date, day_of_week, scheduled_time))
+                """,
+                    (week_start_date, day_of_week, scheduled_time),
+                )
                 rows = cursor.fetchall()
                 video_sns = set()
                 for row in rows:
                     try:
                         anime_data = json.loads(row[0])
-                        video_sn = anime_data.get('videoSn')
+                        video_sn = anime_data.get("videoSn")
                         if video_sn:
                             video_sns.add(int(video_sn))
                     except (json.JSONDecodeError, ValueError, TypeError):
@@ -649,8 +763,9 @@ class AnimeDatabase:
             logger.error(f"❌ [get_schedule_video_sns] Error: {e}", exc_info=True)
             return set()
 
-    def get_schedule_titles(self, week_start_date: str, day_of_week: int,
-                            scheduled_time: str) -> set:
+    def get_schedule_titles(
+        self, week_start_date: str, day_of_week: int, scheduled_time: str
+    ) -> set:
         """從週表取得指定時段預期的動畫標題集合（用於 title 匹配 fallback）
 
         newAnimeSchedule API 的 videoSn 可能跨週不更新（模板值），
@@ -666,16 +781,19 @@ class AnimeDatabase:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT animeData FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                     WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ?
-                """, (week_start_date, day_of_week, scheduled_time))
+                """,
+                    (week_start_date, day_of_week, scheduled_time),
+                )
                 rows = cursor.fetchall()
                 titles = set()
                 for row in rows:
                     try:
                         anime_data = json.loads(row[0])
-                        title = anime_data.get('title', '').strip()
+                        title = anime_data.get("title", "").strip()
                         if title:
                             titles.add(title)
                     except (json.JSONDecodeError, ValueError, TypeError):
@@ -703,48 +821,62 @@ class AnimeDatabase:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                stats = {'messages': 0, 'notified': 0, 'votes': 0, 'rewards': 0}
+                stats = {"messages": 0, "notified": 0, "votes": 0, "rewards": 0}
 
                 # 1. 找出所有存在於週表中的 videoSn
                 if week_start_date:
-                    cursor.execute(f"""
+                    cursor.execute(
+                        f"""
                         SELECT DISTINCT json_extract(animeData, '$.videoSn') as videoSn
                         FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                         WHERE weekStartDate = ?
-                    """, (week_start_date,))
+                    """,
+                        (week_start_date,),
+                    )
                 else:
                     cursor.execute(f"""
                         SELECT DISTINCT json_extract(animeData, '$.videoSn') as videoSn
                         FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                     """)
-                valid_video_sns = {str(row[0]) for row in cursor.fetchall() if row[0] is not None}
+                valid_video_sns = {
+                    str(row[0]) for row in cursor.fetchall() if row[0] is not None
+                }
 
                 if not valid_video_sns:
-                    logger.info(f"ℹ️ [clean_orphaned_records] 週表為空，無有效 videoSn")
+                    logger.info("ℹ️ [clean_orphaned_records] 週表為空，無有效 videoSn")
                     return stats
 
-                placeholders = ','.join('?' * len(valid_video_sns))
+                placeholders = ",".join("?" * len(valid_video_sns))
 
                 # 2. 清理 anime_messages（不在週表中的 videoSn）
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     DELETE FROM {ANIME_MESSAGES_TABLE}
                     WHERE videoSn NOT IN ({placeholders})
-                """, tuple(valid_video_sns))
-                stats['messages'] = cursor.rowcount
+                """,
+                    tuple(valid_video_sns),
+                )
+                stats["messages"] = cursor.rowcount
 
                 # 3. 清理 anime_notified（不在週表中的 videoSn）
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     DELETE FROM {NOTIFIED_TABLE}
                     WHERE videoSn NOT IN ({placeholders})
-                """, tuple(valid_video_sns))
-                stats['notified'] = cursor.rowcount
+                """,
+                    tuple(valid_video_sns),
+                )
+                stats["notified"] = cursor.rowcount
 
                 # 4. 清理 anime_votes（不在週表中的 videoSn）
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     DELETE FROM {ANIME_VOTES_TABLE}
                     WHERE videoSn NOT IN ({placeholders})
-                """, tuple(valid_video_sns))
-                stats['votes'] = cursor.rowcount
+                """,
+                    tuple(valid_video_sns),
+                )
+                stats["votes"] = cursor.rowcount
 
                 # 5. 清理 anime_rewards：刪除 messageId 已不在 anime_messages 中的記錄
                 #    anime_rewards 沒有 videoSn 欄位，需透過 messageId JOIN
@@ -755,17 +887,25 @@ class AnimeDatabase:
                         SELECT DISTINCT messageId FROM {ANIME_MESSAGES_TABLE}
                     )
                 """)
-                stats['rewards'] = cursor.rowcount
+                stats["rewards"] = cursor.rowcount
 
                 conn.commit()
-                logger.info(f"🧹 [clean_orphaned_records] 清理完成: "
-                            f"messages={stats['messages']}, notified={stats['notified']}, "
-                            f"votes={stats['votes']}, rewards={stats['rewards']} "
-                            f"(基於週表有效 videoSn: {len(valid_video_sns)} 個)")
+                logger.info(
+                    f"🧹 [clean_orphaned_records] 清理完成: "
+                    f"messages={stats['messages']}, notified={stats['notified']}, "
+                    f"votes={stats['votes']}, rewards={stats['rewards']} "
+                    f"(基於週表有效 videoSn: {len(valid_video_sns)} 個)"
+                )
                 return stats
         except Exception as e:
             logger.error(f"❌ [clean_orphaned_records] Error: {e}", exc_info=True)
-            return {'messages': 0, 'notified': 0, 'votes': 0, 'rewards': 0, 'error': str(e)}
+            return {
+                "messages": 0,
+                "notified": 0,
+                "votes": 0,
+                "rewards": 0,
+                "error": str(e),
+            }
 
     def cleanup_old_weeks(self, keep_weeks: int = 2) -> int:
         """清理舊週表記錄，只保留「本週 + 必要時上週」的資料
@@ -804,16 +944,21 @@ class AnimeDatabase:
                 if not old_weeks:
                     return 0
 
-                placeholders = ','.join('?' * len(old_weeks))
-                cursor.execute(f"""
+                placeholders = ",".join("?" * len(old_weeks))
+                cursor.execute(
+                    f"""
                     DELETE FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                     WHERE weekStartDate IN ({placeholders})
-                """, old_weeks)
+                """,
+                    old_weeks,
+                )
                 deleted = cursor.rowcount
                 conn.commit()
-                logger.info(f"🧹 [cleanup_old_weeks] 保留 {keep_weeks}，"
-                            f"清理 {len(old_weeks)} 個舊週 ({', '.join(old_weeks)})，"
-                            f"刪除 {deleted} 筆記錄")
+                logger.info(
+                    f"🧹 [cleanup_old_weeks] 保留 {keep_weeks}，"
+                    f"清理 {len(old_weeks)} 個舊週 ({', '.join(old_weeks)})，"
+                    f"刪除 {deleted} 筆記錄"
+                )
                 return deleted
         except Exception as e:
             logger.error(f"❌ [cleanup_old_weeks] Error: {e}", exc_info=True)
@@ -821,17 +966,36 @@ class AnimeDatabase:
 
     # ==================== 動畫詳細資訊快取方法 ====================
 
-    def cache_anime_details(self, anime_sn: int, name: str, content: str,
-                           cover_url: str, tags: list, view_count: int, score: float) -> bool:
+    def cache_anime_details(
+        self,
+        anime_sn: int,
+        name: str,
+        content: str,
+        cover_url: str,
+        tags: list,
+        view_count: int,
+        score: float,
+    ) -> bool:
         """快取動畫詳細資訊"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     INSERT OR REPLACE INTO {ANIME_DETAILS_TABLE}
                     (animeSn, name, content, coverUrl, tags, viewCount, score)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (anime_sn, name, content, cover_url, json.dumps(tags), view_count, score))
+                """,
+                    (
+                        anime_sn,
+                        name,
+                        content,
+                        cover_url,
+                        json.dumps(tags),
+                        view_count,
+                        score,
+                    ),
+                )
                 conn.commit()
                 return True
         except Exception as e:
@@ -843,41 +1007,56 @@ class AnimeDatabase:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT name, content, coverUrl, tags, viewCount, score
                     FROM {ANIME_DETAILS_TABLE}
                     WHERE animeSn = ?
-                """, (anime_sn,))
+                """,
+                    (anime_sn,),
+                )
                 row = cursor.fetchone()
                 if row:
                     return {
-                        'animeSn': anime_sn,
-                        'title': row[0],  # alias for name
-                        'name': row[0],   # keep original for backward compat
-                        'content': row[1],
-                        'cover_url': row[2],
-                        'tags': json.loads(row[3]) if row[3] else [],
-                        'view_count': row[4],
-                        'score': row[5]
+                        "animeSn": anime_sn,
+                        "title": row[0],  # alias for name
+                        "name": row[0],  # keep original for backward compat
+                        "content": row[1],
+                        "cover_url": row[2],
+                        "tags": json.loads(row[3]) if row[3] else [],
+                        "view_count": row[4],
+                        "score": row[5],
                     }
                 return None
         except Exception as e:
-            logger.error(f"❌ [get_anime_details] Error getting anime details for anime_sn {anime_sn}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [get_anime_details] Error getting anime details for anime_sn {anime_sn}: {e}",
+                exc_info=True,
+            )
             return None
 
     # ==================== 集數統計方法 ====================
 
-    def record_episode_stats(self, video_sn: int, anime_sn: int, episode_num: str,
-                            views: int, score: float = 0) -> bool:
+    def record_episode_stats(
+        self,
+        video_sn: int,
+        anime_sn: int,
+        episode_num: str,
+        views: int,
+        score: float = 0,
+    ) -> bool:
         """記錄 集數統計數據"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     INSERT OR REPLACE INTO {EPISODE_STATS_TABLE}
                     (videoSn, animeSn, episodeNum, views, score)
                     VALUES (?, ?, ?, ?, ?)
-                """, (video_sn, anime_sn, episode_num, views, score))
+                """,
+                    (video_sn, anime_sn, episode_num, views, score),
+                )
                 conn.commit()
                 return True
         except Exception as e:
@@ -886,9 +1065,12 @@ class AnimeDatabase:
 
     # ==================== 動畫統計方法 ====================
 
-    def get_top_anime_by_views(self, limit: int = 10,
-                              start_time: Optional[datetime] = None,
-                              end_time: Optional[datetime] = None) -> list:
+    def get_top_anime_by_views(
+        self,
+        limit: int = 10,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> list:
         """依觀看數取得熱門動畫"""
         try:
             with self._get_connection() as conn:
@@ -899,8 +1081,10 @@ class AnimeDatabase:
                 params = []
                 if start_time and end_time:
                     time_condition = " AND es.recordedAt BETWEEN ? AND ?"
-                    params = [start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                             end_time.strftime("%Y-%m-%d %H:%M:%S")]
+                    params = [
+                        start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    ]
 
                 query = f"""
                     SELECT
@@ -920,20 +1104,26 @@ class AnimeDatabase:
 
                 results = []
                 for row in cursor.fetchall():
-                    results.append({
-                        'anime_sn': row[0],
-                        'name': row[1],
-                        'total_views': row[2] if row[2] is not None else 0,
-                        'total_episodes': row[3] if row[3] is not None else 0
-                    })
+                    results.append(
+                        {
+                            "anime_sn": row[0],
+                            "name": row[1],
+                            "total_views": row[2] if row[2] is not None else 0,
+                            "total_episodes": row[3] if row[3] is not None else 0,
+                        }
+                    )
                 return results
         except Exception as e:
             logger.error(f"❌ [get_top_anime_by_views] Error: {e}", exc_info=True)
             return []
 
-    def get_multi_episode_anime_for_chart(self, limit: int = 10, min_episodes: int = 2,
-                                         start_time: Optional[datetime] = None,
-                                         end_time: Optional[datetime] = None) -> list:
+    def get_multi_episode_anime_for_chart(
+        self,
+        limit: int = 10,
+        min_episodes: int = 2,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> list:
         """取得適合製作圖表的多集動畫"""
         try:
             with self._get_connection() as conn:
@@ -944,8 +1134,10 @@ class AnimeDatabase:
                 params = []
                 if start_time and end_time:
                     time_condition = " AND es.recordedAt BETWEEN ? AND ?"
-                    params = [start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                             end_time.strftime("%Y-%m-%d %H:%M:%S")]
+                    params = [
+                        start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    ]
 
                 query = f"""
                     SELECT
@@ -975,22 +1167,22 @@ class AnimeDatabase:
                     anime_sn, name, video_sn, episode_num, views = row
                     if anime_sn not in anime_dict:
                         anime_dict[anime_sn] = {
-                            'anime_sn': anime_sn,
-                            'name': name,
-                            'episodes': []
+                            "anime_sn": anime_sn,
+                            "name": name,
+                            "episodes": [],
                         }
-                    anime_dict[anime_sn]['episodes'].append({
-                        'num': episode_num,
-                        'views': views
-                    })
+                    anime_dict[anime_sn]["episodes"].append(
+                        {"num": episode_num, "views": views}
+                    )
 
                 # 轉換為列表格式並限制數量
                 results = list(anime_dict.values())[:limit]
                 return results
         except Exception as e:
-            logger.error(f"❌ [get_multi_episode_anime_for_chart] Error: {e}", exc_info=True)
+            logger.error(
+                f"❌ [get_multi_episode_anime_for_chart] Error: {e}", exc_info=True
+            )
             return []
-
 
     def get_anime_details_by_videosn(self, video_sn: int) -> Optional[dict]:
         """根據 video_sn 取得動畫詳細資訊"""
@@ -998,37 +1190,47 @@ class AnimeDatabase:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # 先從 episode_stats 找到對應的 anime_sn
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT animeSn, episodeNum FROM {EPISODE_STATS_TABLE}
                     WHERE videoSn = ?
-                """, (video_sn,))
+                """,
+                    (video_sn,),
+                )
                 row = cursor.fetchone()
                 if not row:
                     return None
                 anime_sn, episode_num = row
                 # 再取得動畫詳細資訊
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT name, content, coverUrl, tags, viewCount, score
                     FROM {ANIME_DETAILS_TABLE}
                     WHERE animeSn = ?
-                """, (anime_sn,))
+                """,
+                    (anime_sn,),
+                )
                 row = cursor.fetchone()
                 if row:
                     return {
-                        'videoSn': video_sn,
-                        'animeSn': anime_sn,
-                        'title': row[0],  # alias for name
-                        'name': row[0],
-                        'content': row[1],
-                        'cover_url': row[2],
-                        'tags': json.loads(row[3]) if row[3] else [],
-                        'view_count': row[4],
-                        'score': row[5],
-                        'volume': episode_num or ''  # episode number from episode_stats
+                        "videoSn": video_sn,
+                        "animeSn": anime_sn,
+                        "title": row[0],  # alias for name
+                        "name": row[0],
+                        "content": row[1],
+                        "cover_url": row[2],
+                        "tags": json.loads(row[3]) if row[3] else [],
+                        "view_count": row[4],
+                        "score": row[5],
+                        "volume": episode_num
+                        or "",  # episode number from episode_stats
                     }
                 return None
         except Exception as e:
-            logger.error(f"❌ [get_anime_details_by_videosn] Error for video_sn {video_sn}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [get_anime_details_by_videosn] Error for video_sn {video_sn}: {e}",
+                exc_info=True,
+            )
             return None
 
     def get_anime_statistics(self, anime_sn: int) -> Optional[dict]:
@@ -1036,58 +1238,95 @@ class AnimeDatabase:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT totalViews, avgViews, totalEpisodes, latestScore
                     FROM {ANIME_STATS_TABLE}
                     WHERE animeSn = ?
-                """, (anime_sn,))
+                """,
+                    (anime_sn,),
+                )
                 row = cursor.fetchone()
                 if row:
                     return {
-                        'total_views': row[0] if row[0] is not None else 0,
-                        'avg_views': row[1] if row[1] is not None else 0.0,
-                        'total_episodes': row[2] if row[2] is not None else 0,
-                        'latest_score': row[3] if row[3] is not None else 0.0
+                        "total_views": row[0] if row[0] is not None else 0,
+                        "avg_views": row[1] if row[1] is not None else 0.0,
+                        "total_episodes": row[2] if row[2] is not None else 0,
+                        "latest_score": row[3] if row[3] is not None else 0.0,
                     }
                 return None
         except Exception as e:
-            logger.error(f"❌ [get_anime_statistics] Error for anime_sn {anime_sn}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [get_anime_statistics] Error for anime_sn {anime_sn}: {e}",
+                exc_info=True,
+            )
             return None
 
-    def is_reward_already_given(self, user_id: int, message_id: int, reward_type: str) -> bool:
+    def is_reward_already_given(
+        self, user_id: int, message_id: int, reward_type: str
+    ) -> bool:
         """檢查指定用戶是否已經發放過指定類型的獎勵"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT 1 FROM {ANIME_REWARDS_TABLE}
                     WHERE userId = ? AND messageId = ? AND rewardType = ?
                     LIMIT 1
-                """, (str(user_id), message_id, reward_type))
+                """,
+                    (str(user_id), message_id, reward_type),
+                )
                 return cursor.fetchone() is not None
         except Exception as e:
-            logger.error(f"❌ [is_reward_already_given] Error checking reward status: {e}", exc_info=True)
+            logger.error(
+                f"❌ [is_reward_already_given] Error checking reward status: {e}",
+                exc_info=True,
+            )
             return False
 
-    def record_reward(self, message_id: int, reward_type: str, reward_amount: int, user_id: str) -> bool:
+    def record_reward(
+        self, message_id: int, reward_type: str, reward_amount: int, user_id: str
+    ) -> bool:
         """記錄獎勵發放 - 同時寫入 snake_case 與 camelCase 欄位，避免 NOT NULL constraint 失敗"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     INSERT INTO {ANIME_REWARDS_TABLE}
                     (message_id, messageId, reward_type, rewardType, reward_amount, amount, user_id, userId, awarded_at, rewardedAt)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-                """, (message_id, message_id, reward_type, reward_type, reward_amount, reward_amount, user_id, user_id))
+                """,
+                    (
+                        message_id,
+                        message_id,
+                        reward_type,
+                        reward_type,
+                        reward_amount,
+                        reward_amount,
+                        user_id,
+                        user_id,
+                    ),
+                )
                 conn.commit()
                 return True
         except Exception as e:
-            logger.error(f"❌ [record_reward] Error recording reward: {e}", exc_info=True)
+            logger.error(
+                f"❌ [record_reward] Error recording reward: {e}", exc_info=True
+            )
             return False
 
-    def record_vote(self, video_sn: int, anime_sn: int, message_id: int,
-                    vote_type: str, comment: str = None, user_hash: str = None,
-                    anime_name: str = "") -> bool:
+    def record_vote(
+        self,
+        video_sn: int,
+        anime_sn: int,
+        message_id: int,
+        vote_type: str,
+        comment: str = None,
+        user_hash: str = None,
+        anime_name: str = "",
+    ) -> bool:
         """記錄匿名投票/評論 - 同時寫入 snake_case 與 camelCase 欄位，避免 NOT NULL constraint 失敗
 
         Args:
@@ -1103,21 +1342,44 @@ class AnimeDatabase:
         if not anime_name:
             anime_details = self.get_anime_details(anime_sn)
             if anime_details:
-                anime_name = anime_details.get('title', '') or anime_details.get('name', '')
+                anime_name = anime_details.get("title", "") or anime_details.get(
+                    "name", ""
+                )
 
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     INSERT INTO {ANIME_VOTES_TABLE}
                     (videoSn, animeSn, video_sn, anime_sn, anime_name, vote_type, voteType, user_hash, userId, message_id, messageId, comment, voted_at, votedAt)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-                """, (video_sn, anime_sn, video_sn, anime_sn, anime_name, vote_type, vote_type, user_hash, user_hash, message_id, message_id, comment))
+                """,
+                    (
+                        video_sn,
+                        anime_sn,
+                        video_sn,
+                        anime_sn,
+                        anime_name,
+                        vote_type,
+                        vote_type,
+                        user_hash,
+                        user_hash,
+                        message_id,
+                        message_id,
+                        comment,
+                    ),
+                )
                 conn.commit()
-                logger.info(f"✅ [record_vote] 記錄成功: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, anime_name={anime_name}")
+                logger.info(
+                    f"✅ [record_vote] 記錄成功: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, anime_name={anime_name}"
+                )
                 return True
         except Exception as e:
-            logger.error(f"❌ [record_vote] 記錄失敗: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, anime_name={anime_name}, error={e}", exc_info=True)
+            logger.error(
+                f"❌ [record_vote] 記錄失敗: video_sn={video_sn}, anime_sn={anime_sn}, message_id={message_id}, vote_type={vote_type}, user_hash={user_hash}, anime_name={anime_name}, error={e}",
+                exc_info=True,
+            )
             return False
 
     def get_vote_stats(self, message_id: int) -> Dict[str, int]:
@@ -1125,17 +1387,25 @@ class AnimeDatabase:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT voteType, COUNT(*) as count
                     FROM {ANIME_VOTES_TABLE}
                     WHERE messageId = ? AND voteType != 'comment'
                     GROUP BY voteType
-                """, (message_id,))
+                """,
+                    (message_id,),
+                )
                 result = {row[0]: row[1] for row in cursor.fetchall()}
-                logger.info(f"📊 [get_vote_stats] message_id={message_id}, stats={result}")
+                logger.info(
+                    f"📊 [get_vote_stats] message_id={message_id}, stats={result}"
+                )
                 return result
         except Exception as e:
-            logger.error(f"❌ [get_vote_stats] Error: message_id={message_id}, error={e}", exc_info=True)
+            logger.error(
+                f"❌ [get_vote_stats] Error: message_id={message_id}, error={e}",
+                exc_info=True,
+            )
             return {}
 
     def get_vote_comments(self, message_id: int, limit: int = 5) -> List[str]:
@@ -1143,16 +1413,24 @@ class AnimeDatabase:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT comment FROM {ANIME_VOTES_TABLE}
                     WHERE messageId = ? AND voteType = 'comment' AND comment IS NOT NULL
                     ORDER BY votedAt DESC LIMIT ?
-                """, (message_id, limit))
+                """,
+                    (message_id, limit),
+                )
                 result = [row[0] for row in cursor.fetchall() if row[0]]
-                logger.info(f"💬 [get_vote_comments] message_id={message_id}, comments_count={len(result)}")
+                logger.info(
+                    f"💬 [get_vote_comments] message_id={message_id}, comments_count={len(result)}"
+                )
                 return result
         except Exception as e:
-            logger.error(f"❌ [get_vote_comments] Error: message_id={message_id}, error={e}", exc_info=True)
+            logger.error(
+                f"❌ [get_vote_comments] Error: message_id={message_id}, error={e}",
+                exc_info=True,
+            )
             return []
 
     def get_weekly_vote_stats(self) -> Dict[int, Dict]:
@@ -1163,19 +1441,23 @@ class AnimeDatabase:
                 # 取本週一 00:00 起的投票
                 now = datetime.now(TW_TZ)
                 week_start = (now - timedelta(days=now.weekday())).replace(
-                    hour=0, minute=0, second=0, microsecond=0)
-                cursor.execute(f"""
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                cursor.execute(
+                    f"""
                     SELECT animeSn, voteType, COUNT(*) as count
                     FROM {ANIME_VOTES_TABLE}
                     WHERE votedAt >= ? AND voteType != 'comment'
                     GROUP BY animeSn, voteType
-                """, (week_start.strftime("%Y-%m-%d %H:%M:%S"),))
+                """,
+                    (week_start.strftime("%Y-%m-%d %H:%M:%S"),),
+                )
                 stats: Dict[int, Dict] = {}
                 for anime_sn, vote_type, count in cursor.fetchall():
                     if anime_sn not in stats:
-                        stats[anime_sn] = {'total_votes': 0, 'votes': {}}
-                    stats[anime_sn]['votes'][vote_type] = count
-                    stats[anime_sn]['total_votes'] += count
+                        stats[anime_sn] = {"total_votes": 0, "votes": {}}
+                    stats[anime_sn]["votes"][vote_type] = count
+                    stats[anime_sn]["total_votes"] += count
                 return stats
         except Exception as e:
             logger.error(f"❌ [get_weekly_vote_stats] Error: {e}", exc_info=True)
@@ -1207,7 +1489,9 @@ class AnimePushCore:
         self._push_locks: dict[str, asyncio.Lock] = {}
         self._push_locks_lock = asyncio.Lock()
 
-    async def _get_push_lock(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> asyncio.Lock:
+    async def _get_push_lock(
+        self, week_start_date: str, day_of_week: int, scheduled_time: str
+    ) -> asyncio.Lock:
         """獲取特定時段的獨立鎖 (雙重檢查鎖模式)"""
         key = f"{week_start_date}|{day_of_week}|{scheduled_time}"
         # 快速路徑：鎖已存在
@@ -1247,7 +1531,9 @@ class AnimePushCore:
             elapsed = now - self._last_api_call
             if elapsed < self._min_api_interval:
                 wait_time = self._min_api_interval - elapsed
-                logger.debug(f"⏳ [_rate_limit_api] 等待 {wait_time:.2f} 秒以符合 API 速率限制")
+                logger.debug(
+                    f"⏳ [_rate_limit_api] 等待 {wait_time:.2f} 秒以符合 API 速率限制"
+                )
                 await asyncio.sleep(wait_time)
             self._last_api_call = asyncio.get_event_loop().time()
 
@@ -1263,19 +1549,26 @@ class AnimePushCore:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(API_ENDPOINT) as resp:
                     if resp.status != 200:
-                        logger.warning(f"❌ [fetch_new_anime_from_api] API returned status {resp.status}")
+                        logger.warning(
+                            f"❌ [fetch_new_anime_from_api] API returned status {resp.status}"
+                        )
                         return None
                     data = await resp.json()
 
                     # API 回應結構: { "data": { "newAnime": { "date": [...], "popular": [...] }, ... } }
-                    new_anime = data.get('data', {}).get('newAnime')
-                    if not new_anime or 'date' not in new_anime:
-                        logger.warning("⚠️ [fetch_new_anime_from_api] API response missing 'data.newAnime.date' key")
+                    new_anime = data.get("data", {}).get("newAnime")
+                    if not new_anime or "date" not in new_anime:
+                        logger.warning(
+                            "⚠️ [fetch_new_anime_from_api] API response missing 'data.newAnime.date' key"
+                        )
                         return None
 
-                    return new_anime['date']
+                    return new_anime["date"]
         except Exception as e:
-            logger.error(f"❌ [fetch_new_anime_from_api] Failed to fetch new anime: {e}", exc_info=True)
+            logger.error(
+                f"❌ [fetch_new_anime_from_api] Failed to fetch new anime: {e}",
+                exc_info=True,
+            )
             return None
 
     async def fetch_all_recent_anime_from_api(self) -> List[Dict]:
@@ -1288,18 +1581,25 @@ class AnimePushCore:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(API_ENDPOINT) as resp:
                     if resp.status != 200:
-                        logger.warning(f"❌ [fetch_all_recent_anime_from_api] API returned status {resp.status}")
+                        logger.warning(
+                            f"❌ [fetch_all_recent_anime_from_api] API returned status {resp.status}"
+                        )
                         return None
                     data = await resp.json()
 
-                    new_anime = data.get('data', {}).get('newAnime')
-                    if not new_anime or 'date' not in new_anime:
-                        logger.warning("⚠️ [fetch_all_recent_anime_from_api] API response missing 'data.newAnime.date' key")
+                    new_anime = data.get("data", {}).get("newAnime")
+                    if not new_anime or "date" not in new_anime:
+                        logger.warning(
+                            "⚠️ [fetch_all_recent_anime_from_api] API response missing 'data.newAnime.date' key"
+                        )
                         return None
 
-                    return new_anime['date']
+                    return new_anime["date"]
         except Exception as e:
-            logger.error(f"❌ [fetch_all_recent_anime_from_api] Failed to fetch recent anime: {e}", exc_info=True)
+            logger.error(
+                f"❌ [fetch_all_recent_anime_from_api] Failed to fetch recent anime: {e}",
+                exc_info=True,
+            )
             return None
 
     async def fetch_anime_details_from_api(self, video_sn: int) -> Optional[Dict]:
@@ -1313,7 +1613,9 @@ class AnimePushCore:
         """
         try:
             await self._rate_limit_api()
-            url = f"https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}"
+            url = (
+                f"https://api.gamer.com.tw/mobile_app/anime/v3/video.php?sn={video_sn}"
+            )
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
             headers = {
                 "User-Agent": (
@@ -1323,16 +1625,22 @@ class AnimePushCore:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
-                        logger.debug(f"⚠️ [fetch_anime_details_from_api] HTTP {resp.status} for videoSn={video_sn}")
+                        logger.debug(
+                            f"⚠️ [fetch_anime_details_from_api] HTTP {resp.status} for videoSn={video_sn}"
+                        )
                         return None
                     data = await resp.json()
                     anime = data.get("data", {}).get("anime", {})
                     if not anime:
-                        logger.debug(f"⚠️ [fetch_anime_details_from_api] No anime data for videoSn={video_sn}")
+                        logger.debug(
+                            f"⚠️ [fetch_anime_details_from_api] No anime data for videoSn={video_sn}"
+                        )
                         return None
                     return anime
         except asyncio.TimeoutError:
-            logger.debug(f"⏰ [fetch_anime_details_from_api] timeout for videoSn={video_sn}")
+            logger.debug(
+                f"⏰ [fetch_anime_details_from_api] timeout for videoSn={video_sn}"
+            )
             return None
         except Exception as e:
             logger.debug(f"⚠️ [fetch_anime_details_from_api] videoSn={video_sn}: {e}")
@@ -1361,21 +1669,25 @@ class AnimePushCore:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
-                        logger.warning(f"⚠️ [fetch_anime_page_html] HTTP {resp.status} for videoSn={video_sn}")
+                        logger.warning(
+                            f"⚠️ [fetch_anime_page_html] HTTP {resp.status} for videoSn={video_sn}"
+                        )
                         return None
                     html = await resp.text()
 
             result: Dict[str, Any] = {}
 
             # ① 簡介：<meta name="description" content="...">
-            desc_match = re.search(r'<meta\s+name="description"\s+content="([^"]+)"', html)
+            desc_match = re.search(
+                r'<meta\s+name="description"\s+content="([^"]+)"', html
+            )
             if desc_match:
                 desc = desc_match.group(1)
                 # 去除 HTML entities
-                desc = desc.replace('&nbsp;', ' ').replace('&amp;', '&')
-                desc = desc.replace('&lt;', '<').replace('&gt;', '>')
-                desc = desc.replace('&quot;', '"')
-                result['description'] = desc.strip()
+                desc = desc.replace("&nbsp;", " ").replace("&amp;", "&")
+                desc = desc.replace("&lt;", "<").replace("&gt;", ">")
+                desc = desc.replace("&quot;", '"')
+                result["description"] = desc.strip()
 
             # ② 評分：<div class="score-overall-number">4.7</div>
             #     + <div class="score-overall-people">1,257人評價</div>
@@ -1384,51 +1696,56 @@ class AnimePushCore:
             )
             if score_match:
                 try:
-                    result['score'] = float(score_match.group(1))
+                    result["score"] = float(score_match.group(1))
                 except ValueError:
                     pass
             people_match = re.search(
-                r'<div\s+class="score-overall-people">\s*([\d,]+)\s*人評價\s*</div>', html
+                r'<div\s+class="score-overall-people">\s*([\d,]+)\s*人評價\s*</div>',
+                html,
             )
             if people_match:
-                result['score_count'] = people_match.group(1) + "人評價"
+                result["score_count"] = people_match.group(1) + "人評價"
 
             # ③ 觀看人數：嘗試多種模式
             # 模式1: 巴哈新版樣式
             view_match = re.search(r'class="[^"]*view[^"]*"[^>]*>\s*([\d,]+)\s*<', html)
             if not view_match:
                 # 模式2: remove_red_eye icon 後面跟數字
-                view_match = re.search(r'remove_red_eye[^>]*>\s*</i>\s*([\d,]+)', html)
+                view_match = re.search(r"remove_red_eye[^>]*>\s*</i>\s*([\d,]+)", html)
             if not view_match:
                 # 模式3: 人氣數字
-                view_match = re.search(r'人氣[：:]\s*([\d,]+)', html)
+                view_match = re.search(r"人氣[：:]\s*([\d,]+)", html)
             if not view_match:
                 # 模式4: 觀看數字
-                view_match = re.search(r'觀看[：:]\s*([\d,]+)', html)
+                view_match = re.search(r"觀看[：:]\s*([\d,]+)", html)
             if view_match:
                 try:
-                    result['viewers'] = int(view_match.group(1).replace(',', ''))
+                    result["viewers"] = int(view_match.group(1).replace(",", ""))
                 except ValueError:
                     pass
 
             if result:
-                logger.debug(f"✅ [fetch_anime_page_html] videoSn={video_sn}: "
-                             f"desc={len(result.get('description',''))}chars, "
-                             f"score={result.get('score')}, viewers={result.get('viewers')}")
+                logger.debug(
+                    f"✅ [fetch_anime_page_html] videoSn={video_sn}: "
+                    f"desc={len(result.get('description',''))}chars, "
+                    f"score={result.get('score')}, viewers={result.get('viewers')}"
+                )
             return result if result else None
 
         except asyncio.TimeoutError:
             logger.warning(f"⏰ [fetch_anime_page_html] timeout for videoSn={video_sn}")
             return None
         except Exception as e:
-            logger.error(f"❌ [fetch_anime_page_html] videoSn={video_sn}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [fetch_anime_page_html] videoSn={video_sn}: {e}", exc_info=True
+            )
             return None
 
     def _extract_view_count_from_episode(self, episode: Dict) -> int:
         """從 episode 資料中提取觀看數"""
         views = 0
         # 嘗試多個可能的欄位名
-        for field in ['views', 'viewCount', 'playCount', 'popular']:
+        for field in ["views", "viewCount", "playCount", "popular"]:
             if field in episode and isinstance(episode[field], (int, float)):
                 views = int(episode[field])
                 break
@@ -1436,7 +1753,15 @@ class AnimePushCore:
 
     def _get_weekday_name(self, weekday: int) -> str:
         """獲取星期名稱（1=星期一, 7=星期日）"""
-        weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        weekday_names = [
+            "星期一",
+            "星期二",
+            "星期三",
+            "星期四",
+            "星期五",
+            "星期六",
+            "星期日",
+        ]
         if 1 <= weekday <= 7:
             return weekday_names[weekday - 1]
         return "未知"
@@ -1467,7 +1792,7 @@ class AnimePushCore:
 
             # 🔑 觀看數：從 episode 直接提取（newAnime.date API 的 popular 欄位）
             view_count = 0
-            for field in ['popular', 'viewCount', 'views', 'playCount']:
+            for field in ["popular", "viewCount", "views", "playCount"]:
                 val = episode.get(field)
                 if val is not None:
                     try:
@@ -1489,11 +1814,11 @@ class AnimePushCore:
                     api_details = await self.fetch_anime_details_from_api(video_sn)
                     if api_details:
                         # 簡介
-                        content = api_details.get('content', '')
+                        content = api_details.get("content", "")
                         if content:
                             description_text = self._truncate_text(content, 300)
                         # 評分
-                        api_score = api_details.get('score')
+                        api_score = api_details.get("score")
                         if api_score is not None:
                             try:
                                 score = float(api_score)
@@ -1512,16 +1837,18 @@ class AnimePushCore:
                         )
                         page_data = await self.fetch_anime_page_html(video_sn)
                         if page_data:
-                            desc = page_data.get('description', '')
+                            desc = page_data.get("description", "")
                             if desc:
                                 description_text = self._truncate_text(desc, 300)
-                            if page_data.get('score'):
-                                score = float(page_data['score'])
-                            score_count_text = page_data.get('score_count', '')
-                            if view_count == 0 and page_data.get('viewers'):
-                                view_count = int(page_data['viewers'])
+                            if page_data.get("score"):
+                                score = float(page_data["score"])
+                            score_count_text = page_data.get("score_count", "")
+                            if view_count == 0 and page_data.get("viewers"):
+                                view_count = int(page_data["viewers"])
                 except Exception as e:
-                    logger.debug(f"⚠️ [generate_anime_embed] 取得詳細資訊失敗 videoSn={video_sn}: {e}")
+                    logger.debug(
+                        f"⚠️ [generate_anime_embed] 取得詳細資訊失敗 videoSn={video_sn}: {e}"
+                    )
 
             # 建立 embed
             embed = discord.Embed(
@@ -1529,7 +1856,7 @@ class AnimePushCore:
                 description=description_text if description_text else None,
                 url=f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}",
                 color=discord.Color.from_rgb(178, 108, 196),  # 紫色主題
-                timestamp=datetime.now(TW_TZ)
+                timestamp=datetime.now(TW_TZ),
             )
 
             # 大圖在下方
@@ -1547,48 +1874,57 @@ class AnimePushCore:
             embed.add_field(
                 name="📊 人氣數據",
                 value=f"👥 觀看: {popularity_text} | ⭐ 評分: {score_text}",
-                inline=False
+                inline=False,
             )
 
             # 投票說明
             embed.add_field(
                 name="🎯 匿名投票",
                 value="選擇你認為本作的評價，或留下評論\n投票完全匿名，無法追蹤個人身份",
-                inline=False
+                inline=False,
             )
 
             # 獎勵說明
             embed.add_field(
                 name="🎁 獲得獎勵",
                 value="💬 **投票**: +2000 KK幣\n📝 **評論**: +3000 KK幣\n每條消息僅限一次獎勵",
-                inline=False
+                inline=False,
             )
 
             embed.set_footer(text="動畫瘋新番通知 | 使用下方按鈕進行匿名投票")
             return embed
         except Exception as e:
-            logger.error(f"❌ [generate_anime_embed] Failed to generate embed for "
-                         f"video_sn {episode.get('videoSn')}: {e}", exc_info=True)
+            logger.error(
+                f"❌ [generate_anime_embed] Failed to generate embed for "
+                f"video_sn {episode.get('videoSn')}: {e}",
+                exc_info=True,
+            )
             return None
 
     def _truncate_text(self, text: str, max_length: int) -> str:
         """截斷文字到指定長度"""
         if len(text) <= max_length:
             return text
-        return text[:max_length - 3] + "..."
+        return text[: max_length - 3] + "..."
 
     async def generate_anime_view(self, episode: Dict) -> Optional[discord.ui.View]:
         """為動畫集數生成 Discord View (使用外部工廠函數)"""
         try:
             if self._view_factory:
                 return await self._view_factory(episode)
-            logger.warning("⚠️ [generate_anime_view] No view factory set, returning None")
+            logger.warning(
+                "⚠️ [generate_anime_view] No view factory set, returning None"
+            )
             return None
         except Exception as e:
-            logger.error(f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True)
+            logger.error(
+                f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True
+            )
             return None
 
-    async def _check_and_send_anime(self, scheduled_time_str: str, channel: discord.TextChannel) -> bool:
+    async def _check_and_send_anime(
+        self, scheduled_time_str: str, channel: discord.TextChannel
+    ) -> bool:
         """檢查並發送動畫推送 - 內部委託給 send_anime_push
 
         此方法提供統一介面供 anime_tracker、ranking_stats、schedule_tracker 調用。
@@ -1602,18 +1938,23 @@ class AnimePushCore:
             bool: 是否成功發送通知
         """
         if not channel:
-            logger.warning(f"⚠️ [_check_and_send_anime] 頻道為 None，跳過 {scheduled_time_str}")
+            logger.warning(
+                f"⚠️ [_check_and_send_anime] 頻道為 None，跳過 {scheduled_time_str}"
+            )
             return False
 
         return await self.send_anime_push(
-            scheduled_time=scheduled_time_str,
-            channel_id=channel.id
+            scheduled_time=scheduled_time_str, channel_id=channel.id
         )
 
-    async def send_anime_push(self, scheduled_time: str, channel_id: int,
-                             day_of_week: int = None,
-                             week_start_date: str = None,
-                             prefetched_episodes: list = None) -> bool:
+    async def send_anime_push(
+        self,
+        scheduled_time: str,
+        channel_id: int,
+        day_of_week: int = None,
+        week_start_date: str = None,
+        prefetched_episodes: list = None,
+    ) -> bool:
         """根據時程表發送動畫推送（含時段防火 + 逐時段獨立鎖）
 
         核心修復 (2026-07-25)：
@@ -1644,25 +1985,33 @@ class AnimePushCore:
         # 避免不必要的鎖獲取與 API 呼叫
         today_schedule = self.db.get_today_schedule()
         for item in today_schedule:
-            if item['scheduled_time'] == scheduled_time and item.get('pushed'):
-                logger.info(f"⏭️ [send_anime_push] {scheduled_time} 已在資料庫標記推送過，跳過")
+            if item["scheduled_time"] == scheduled_time and item.get("pushed"):
+                logger.info(
+                    f"⏭️ [send_anime_push] {scheduled_time} 已在資料庫標記推送過，跳過"
+                )
                 return False
 
         # 使用逐時段獨立鎖，防止不同任務對同一時段循序獲鎖
-        push_lock = await self._get_push_lock(week_start_date, day_of_week, scheduled_time)
+        push_lock = await self._get_push_lock(
+            week_start_date, day_of_week, scheduled_time
+        )
         async with push_lock:
-            logger.info(f"🚀 [send_anime_push] 開始處理 {scheduled_time} (lock acquired)")
+            logger.info(
+                f"🚀 [send_anime_push] 開始處理 {scheduled_time} (lock acquired)"
+            )
 
             # 🔑 鎖內二次檢查：重讀週表確認該時段仍為未推送 (pushed=0)
             # 防止：任務 A 獲鎖推送並標記 pushed=1，任務 B 排隊獲鎖後發現已推送
             today_schedule = self.db.get_today_schedule()
             already_pushed = False
             for item in today_schedule:
-                if item['scheduled_time'] == scheduled_time and item.get('pushed'):
+                if item["scheduled_time"] == scheduled_time and item.get("pushed"):
                     already_pushed = True
                     break
             if already_pushed:
-                logger.info(f"⏭️ [send_anime_push] {scheduled_time} 已被其他任務推送 (pushed=1)，跳過")
+                logger.info(
+                    f"⏭️ [send_anime_push] {scheduled_time} 已被其他任務推送 (pushed=1)，跳過"
+                )
                 return False
 
             try:
@@ -1672,9 +2021,13 @@ class AnimePushCore:
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
                     # 頻道不存在是永久性失敗，標記 pushed=1 避免無限重試
-                    logger.warning(f"⚠️ [send_anime_push] 頻道 {channel_id} 不存在，"
-                                   f"標記 {scheduled_time} 為已完成（永久性失敗）")
-                    self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
+                    logger.warning(
+                        f"⚠️ [send_anime_push] 頻道 {channel_id} 不存在，"
+                        f"標記 {scheduled_time} 為已完成（永久性失敗）"
+                    )
+                    self.db.mark_time_pushed(
+                        week_start_date, day_of_week, scheduled_time
+                    )
                     return False
 
                 # 🔑 從週表取得該時段預期的 videoSn 集合
@@ -1684,25 +2037,39 @@ class AnimePushCore:
                 )
                 if not expected_video_sns:
                     # 週表無此時間 → 可能是舊資料或 API 變更，標記 pushed 避免無限重試
-                    logger.info(f"📭 [send_anime_push] {scheduled_time} 週表無對應 videoSn，"
-                                f"標記 pushed 跳過（week_start={week_start_date}, day={day_of_week}）")
-                    self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
+                    logger.info(
+                        f"📭 [send_anime_push] {scheduled_time} 週表無對應 videoSn，"
+                        f"標記 pushed 跳過（week_start={week_start_date}, day={day_of_week}）"
+                    )
+                    self.db.mark_time_pushed(
+                        week_start_date, day_of_week, scheduled_time
+                    )
                     return False
 
-                logger.debug(f"🔍 [send_anime_push] {scheduled_time} 預期 videoSn: {expected_video_sns}")
+                logger.debug(
+                    f"🔍 [send_anime_push] {scheduled_time} 預期 videoSn: {expected_video_sns}"
+                )
 
                 # 獲取最新動畫數據（優先使用預熱結果，避免重複 API 呼叫）
                 if prefetched_episodes:
-                    logger.info(f"📡 [send_anime_push] {scheduled_time} 使用預熱資料 ({len(prefetched_episodes)} 筆)")
+                    logger.info(
+                        f"📡 [send_anime_push] {scheduled_time} 使用預熱資料 ({len(prefetched_episodes)} 筆)"
+                    )
                     episodes = prefetched_episodes
                 else:
-                    logger.info(f"📡 [send_anime_push] {scheduled_time} 呼叫 API 獲取新番...")
+                    logger.info(
+                        f"📡 [send_anime_push] {scheduled_time} 呼叫 API 獲取新番..."
+                    )
                     episodes = await self.fetch_new_anime_from_api()
-                    logger.info(f"📡 [send_anime_push] {scheduled_time} API 回傳 {len(episodes) if episodes else 0} 筆")
+                    logger.info(
+                        f"📡 [send_anime_push] {scheduled_time} API 回傳 {len(episodes) if episodes else 0} 筆"
+                    )
                 if not episodes:
                     # API 失敗 → 不標記，讓補推稍後重試
-                    logger.warning(f"⚠️ [send_anime_push] API 無回應，"
-                                   f"跳過 {scheduled_time}（不標記，稍後重試）")
+                    logger.warning(
+                        f"⚠️ [send_anime_push] API 無回應，"
+                        f"跳過 {scheduled_time}（不標記，稍後重試）"
+                    )
                     return False
 
                 # 🔑 關鍵修復：先按 upTime 過濾只保留今天的集數
@@ -1710,21 +2077,27 @@ class AnimePushCore:
                 today_str = datetime.now(TW_TZ).strftime("%m/%d")  # 格式: "07/27"
                 today_episodes = []
                 for ep in episodes:
-                    ep_up_time = ep.get('upTime', '').strip()
+                    ep_up_time = ep.get("upTime", "").strip()
                     if ep_up_time == today_str:
                         today_episodes.append(ep)
                     else:
-                        logger.debug(f"🔍 [send_anime_push] 過濾非今日集數: {ep.get('title')} (upTime={ep_up_time}, today={today_str})")
+                        logger.debug(
+                            f"🔍 [send_anime_push] 過濾非今日集數: {ep.get('title')} (upTime={ep_up_time}, today={today_str})"
+                        )
 
                 if not today_episodes:
                     # API 回應中有資料，但全部都是非今日的集數 → API 還沒更新當日資料
                     # 這種情況不標記 pushed，讓 dispatcher/catchup 稍後重試
-                    logger.warning(f"⚠️ [send_anime_push] 今日無新番集數 "
-                                   f"(API 回傳 {len(episodes)} 筆 but upTime!=today)，"
-                                   f"跳過 {scheduled_time}（API 尚未更新今日資料，不標記）")
+                    logger.warning(
+                        f"⚠️ [send_anime_push] 今日無新番集數 "
+                        f"(API 回傳 {len(episodes)} 筆 but upTime!=today)，"
+                        f"跳過 {scheduled_time}（API 尚未更新今日資料，不標記）"
+                    )
                     return False
 
-                logger.info(f"📅 [send_anime_push] 今日集數過濾: {len(episodes)} -> {len(today_episodes)} 筆")
+                logger.info(
+                    f"📅 [send_anime_push] 今日集數過濾: {len(episodes)} -> {len(today_episodes)} 筆"
+                )
                 episodes = today_episodes
 
                 # 🔑 關鍵過濾：優先 videoSn 匹配，失敗時 fallback 到 title 匹配
@@ -1751,20 +2124,26 @@ class AnimePushCore:
                         week_start_date, day_of_week, scheduled_time
                     )
                     if expected_titles:
-                        logger.info(f"🔄 [send_anime_push] {scheduled_time} videoSn 匹配失敗，"
-                                    f"改用 title 匹配（預期 titles: {expected_titles}）")
+                        logger.info(
+                            f"🔄 [send_anime_push] {scheduled_time} videoSn 匹配失敗，"
+                            f"改用 title 匹配（預期 titles: {expected_titles}）"
+                        )
                         for ep in episodes:
-                            ep_title = (ep.get('title') or '').strip()
+                            ep_title = (ep.get("title") or "").strip()
                             if ep_title in expected_titles:
                                 new_episodes.append(ep)
-                                logger.info(f"  ✅ title 匹配: {ep_title} (videoSn={ep.get('videoSn')})")
+                                logger.info(
+                                    f"  ✅ title 匹配: {ep_title} (videoSn={ep.get('videoSn')})"
+                                )
 
                 # 🔑 Fallback 2: 若週表匹配完全失敗，直接查 API 是否有「今天上架」且「未推播過」的集數
                 # 解決：Bahamut 週中調整排程、臨時新增集數、週表與實際播出不同步
                 if not new_episodes:
-                    logger.info(f"🔍 [send_anime_push] {scheduled_time} 週表匹配失敗，啟用 API 直接檢查模式...")
+                    logger.info(
+                        f"🔍 [send_anime_push] {scheduled_time} 週表匹配失敗，啟用 API 直接檢查模式..."
+                    )
                     for ep in episodes:
-                        video_sn = ep.get('videoSn')
+                        video_sn = ep.get("videoSn")
                         if not video_sn:
                             continue
                         try:
@@ -1774,9 +2153,13 @@ class AnimePushCore:
                         # 去重：檢查 notified 表（已推播過就跳過）
                         if not self.db.is_notified(video_sn_int):
                             new_episodes.append(ep)
-                            logger.info(f"🔄 [send_anime_push] 發現週表外新番: {ep.get('title')} (videoSn={video_sn_int})")
+                            logger.info(
+                                f"🔄 [send_anime_push] 發現週表外新番: {ep.get('title')} (videoSn={video_sn_int})"
+                            )
                         else:
-                            logger.debug(f"🔍 [send_anime_push] {ep.get('title')} (videoSn={video_sn_int}) 已推播過，跳過")
+                            logger.debug(
+                                f"🔍 [send_anime_push] {ep.get('title')} (videoSn={video_sn_int}) 已推播過，跳過"
+                            )
 
                 # 初始化 sent_count（在邏輯判斷前）
                 sent_count = 0
@@ -1805,17 +2188,21 @@ class AnimePushCore:
                     should_mark_pushed = minutes_since_scheduled > EXHAUST_RETRY_MINUTES
 
                     if not should_mark_pushed:
-                        logger.info(f"⏳ [send_anime_push] {scheduled_time} 排程後 {minutes_since_scheduled:.0f} 分鐘，"
-                                    f"尚無匹配集數 "
-                                    f"（預期 {len(expected_video_sns)} 個 videoSn，"
-                                    f"API 回傳 {len(episodes)} 集，今日 {len(episodes)} 筆），"
-                                    f"暫不標記 pushed（將在 {EXHAUST_RETRY_MINUTES - minutes_since_scheduled:.0f} 分鐘後放棄重試）")
+                        logger.info(
+                            f"⏳ [send_anime_push] {scheduled_time} 排程後 {minutes_since_scheduled:.0f} 分鐘，"
+                            f"尚無匹配集數 "
+                            f"（預期 {len(expected_video_sns)} 個 videoSn，"
+                            f"API 回傳 {len(episodes)} 集，今日 {len(episodes)} 筆），"
+                            f"暫不標記 pushed（將在 {EXHAUST_RETRY_MINUTES - minutes_since_scheduled:.0f} 分鐘後放棄重試）"
+                        )
                         return False
 
-                    logger.info(f"📭 [send_anime_push] {scheduled_time} 無匹配新番需推送"
-                                f"（預期 {len(expected_video_sns)} 個 videoSn，"
-                                f"API 回傳 {len(episodes)} 集，距排程 {minutes_since_scheduled:.0f} 分鐘 > "
-                                f"{EXHAUST_RETRY_MINUTES} 分鐘截止），標記時刻已完成")
+                    logger.info(
+                        f"📭 [send_anime_push] {scheduled_time} 無匹配新番需推送"
+                        f"（預期 {len(expected_video_sns)} 個 videoSn，"
+                        f"API 回傳 {len(episodes)} 集，距排程 {minutes_since_scheduled:.0f} 分鐘 > "
+                        f"{EXHAUST_RETRY_MINUTES} 分鐘截止），標記時刻已完成"
+                    )
                 else:
                     # 有匹配的新番要推送，送出後一定要標記
                     should_mark_pushed = True
@@ -1838,8 +2225,10 @@ class AnimePushCore:
                             anime_sn = 0
 
                         if not video_sn:
-                            logger.warning(f"⚠️ [send_anime_push] Skip episode with "
-                                           f"invalid video_sn: {episode}")
+                            logger.warning(
+                                f"⚠️ [send_anime_push] Skip episode with "
+                                f"invalid video_sn: {episode}"
+                            )
                             continue
 
                         embed = await self.generate_anime_embed(episode)
@@ -1849,32 +2238,40 @@ class AnimePushCore:
                         view = await self.generate_anime_view(episode)
 
                         # 發送訊息（silent=True 靜音推送）
-                        message = await channel.send(embed=embed, view=view, silent=True)
+                        message = await channel.send(
+                            embed=embed, view=view, silent=True
+                        )
 
                         # 🔑 修復：將 message_id 存入 view 實例，供 modal 使用（modal 沒有 message 屬性）
-                        if view and hasattr(view, 'message_id'):
+                        if view and hasattr(view, "message_id"):
                             view.message_id = message.id
 
                         self.db.save_message_info(
                             message.id, video_sn, anime_sn, title, channel_id
                         )
                         self.db.add_notified(
-                            video_sn, anime_sn,
+                            video_sn,
+                            anime_sn,
                             episode.get("title", "未知標題"),
                             episode.get("volume", ""),
-                            episode.get("cover", "")
+                            episode.get("cover", ""),
                         )
 
                         if view:
                             self.bot.add_view(view, message_id=message.id)
 
                         sent_count += 1
-                        logger.info(f"✅ [send_anime_push] 已推送: {title} "
-                                    f"(videoSn={video_sn}, animeSn={anime_sn})")
+                        logger.info(
+                            f"✅ [send_anime_push] 已推送: {title} "
+                            f"(videoSn={video_sn}, animeSn={anime_sn})"
+                        )
 
                     except Exception as e:
-                        logger.error(f"❌ [send_anime_push] Error sending episode "
-                                     f"{episode.get('videoSn')}: {e}", exc_info=True)
+                        logger.error(
+                            f"❌ [send_anime_push] Error sending episode "
+                            f"{episode.get('videoSn')}: {e}",
+                            exc_info=True,
+                        )
                         continue
 
                 # ✅ 只有在「已送出」或「排程時間已過超過 30 分鐘」才標記 pushed=1
@@ -1883,19 +2280,27 @@ class AnimePushCore:
                         week_start_date, day_of_week, scheduled_time
                     )
                     if marked:
-                        logger.info(f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送"
-                                    f"（實際發送 {sent_count} 則，"
-                                    f"預期 videoSn={expected_video_sns}）")
+                        logger.info(
+                            f"✅ [send_anime_push] 已標記 {scheduled_time} 為已推送"
+                            f"（實際發送 {sent_count} 則，"
+                            f"預期 videoSn={expected_video_sns}）"
+                        )
                     else:
-                        logger.warning(f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗"
-                                       f"（週表可能無對應列）")
+                        logger.warning(
+                            f"⚠️ [send_anime_push] 標記 {scheduled_time} 失敗"
+                            f"（週表可能無對應列）"
+                        )
                 else:
-                    logger.info(f"⏭️ [send_anime_push] {scheduled_time} 暫不標記 pushed，留待稍後重試")
+                    logger.info(
+                        f"⏭️ [send_anime_push] {scheduled_time} 暫不標記 pushed，留待稍後重試"
+                    )
 
                 return sent_count > 0
 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.error(f"❌ [send_anime_push] Unexpected error: {e}", exc_info=True)
+                logger.error(
+                    f"❌ [send_anime_push] Unexpected error: {e}", exc_info=True
+                )
                 return False

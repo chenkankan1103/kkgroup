@@ -18,13 +18,13 @@ logger = logging.getLogger("fortress_system")
 TW_TZ = ZoneInfo("Asia/Taipei")
 
 # ── 遊戲常數 ──────────────────────────────────────────────
-FORTRESS_MAX_HP = 15000         # 堡壘最大 HP
-BASE_DAMAGE_FREE = 80           # 免費出兵基礎傷害（降低）
-BASE_DAMAGE_PAID = 250          # 付費強化基礎傷害（降低）
-TAG_BONUS_MULTIPLIER = 2.0      # 興趣標籤加乘倍率
-DIFFICULTY_MULTIPLIER = 0.33    # 敵人整體強度倍率（約降低 2/3）
-FREE_ACTIONS_PER_ROUND = 8      # 每輪免費出兵次數
-PAID_COST_KKCOIN = 100          # 付費強化費用（KKCoin）
+FORTRESS_MAX_HP = 15000  # 堡壘最大 HP
+BASE_DAMAGE_FREE = 80  # 免費出兵基礎傷害（降低）
+BASE_DAMAGE_PAID = 250  # 付費強化基礎傷害（降低）
+TAG_BONUS_MULTIPLIER = 2.0  # 興趣標籤加乘倍率
+DIFFICULTY_MULTIPLIER = 0.33  # 敵人整體強度倍率（約降低 2/3）
+FREE_ACTIONS_PER_ROUND = 8  # 每輪免費出兵次數
+PAID_COST_KKCOIN = 100  # 付費強化費用（KKCoin）
 BASE_VICTORY_REWARD_KKCOIN = 5000
 
 # 封測標誌：True = 失守時無懲罰
@@ -33,27 +33,56 @@ BETA_NO_PENALTY = True
 # 各排名對應的刑警 HP（1=局長, 10=警員）
 # 設計目標：單人需要3.5小時完成
 POLICE_HP_BY_RANK = {
-    1: 30000, 2: 25000, 3: 20000,
-    4: 16000, 5: 13000, 6: 11000,
-    7: 9000, 8: 7500, 9: 6000, 10: 5000
+    1: 30000,
+    2: 25000,
+    3: 20000,
+    4: 16000,
+    5: 13000,
+    6: 11000,
+    7: 9000,
+    8: 7500,
+    9: 6000,
+    10: 5000,
 }
 
 # 興趣標籤 → 關鍵字對應表（用於比對趨勢詞）
 INTEREST_KEYWORDS: Dict[str, List[str]] = {
-    "科技/AI": ["AI", "人工智慧", "ChatGPT", "機器學習", "科技", "蘋果", "Google", "晶片", "半導體"],
+    "科技/AI": [
+        "AI",
+        "人工智慧",
+        "ChatGPT",
+        "機器學習",
+        "科技",
+        "蘋果",
+        "Google",
+        "晶片",
+        "半導體",
+    ],
     "動漫/遊戲": ["動漫", "漫畫", "遊戲", "電競", "NETFLIX", "動畫", "Switch", "Steam"],
     "體育": ["棒球", "籃球", "足球", "奧運", "世界盃", "台灣隊", "運動", "賽事"],
     "娛樂/明星": ["演唱會", "明星", "藝人", "綜藝", "電視劇", "電影", "KPOP", "韓劇"],
-    "財經時事": ["股市", "台積電", "美元", "通貨膨脹", "經濟", "比特幣", "加密貨幣", "基金"],
+    "財經時事": [
+        "股市",
+        "台積電",
+        "美元",
+        "通貨膨脹",
+        "經濟",
+        "比特幣",
+        "加密貨幣",
+        "基金",
+    ],
     "健康/美食": ["美食", "餐廳", "健康", "飲食", "料理", "咖啡", "甜點", "運動"],
     "旅遊/生活": ["旅遊", "景點", "住宿", "交通", "出國", "日本", "韓國", "台灣"],
     "政治": ["政治", "選舉", "政府", "立院", "總統", "台美", "兩岸", "國會"],
 }
 
-STATE_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_state.json")
+STATE_FILE = os.path.join(
+    os.path.dirname(__file__), "..", "..", "data", "fortress_state.json"
+)
 
 
 # ── 資料結構 ──────────────────────────────────────────────
+
 
 @dataclass
 class PoliceUnit:
@@ -62,11 +91,11 @@ class PoliceUnit:
     max_hp: int
     current_hp: int
     wave_number: int = 1
-    category: str = ""          # 來自 Google Trends 的分類
+    category: str = ""  # 來自 Google Trends 的分類
     defeated: bool = False
     reached_fortress: bool = False  # 是否已到達堡壘
-    path_position: int = 0       # 在路徑上的位置（0-based index）
-    last_move_time: str = ""      # 上次移動時間
+    path_position: int = 0  # 在路徑上的位置（0-based index）
+    last_move_time: str = ""  # 上次移動時間
 
     def hp_bar(self, width: int = 10) -> str:
         """生成 HP 血量條"""
@@ -85,7 +114,7 @@ class PoliceUnit:
 @dataclass
 class DefenseAction:
     user_id: int
-    action_type: str        # "free" | "paid"
+    action_type: str  # "free" | "paid"
     damage: int
     has_tag_bonus: bool
     spent_kkcoin: int
@@ -100,10 +129,10 @@ class FortressState:
     fortress_hp: int
     fortress_max_hp: int
     enemies: List[PoliceUnit]
-    defenders: Dict[int, List[DefenseAction]]   # user_id → actions
-    status: str                                  # "active" | "victory" | "defeat"
+    defenders: Dict[int, List[DefenseAction]]  # user_id → actions
+    status: str  # "active" | "victory" | "defeat"
     started_at: str
-    ends_at: str                                 # 自動結算時間（4小時後）
+    ends_at: str  # 自動結算時間（4小時後）
     current_wave_id: str = ""
     current_wave_number: int = 1
     tower_slots: Dict[int, str] = field(default_factory=dict)  # user_id → slot_id
@@ -123,7 +152,11 @@ class FortressState:
     def free_actions_used(self, user_id: int, wave_id: Optional[str] = None) -> int:
         actions = self.defenders.get(user_id, [])
         target_wave_id = wave_id or self.current_wave_id
-        return sum(1 for a in actions if a.action_type == "free" and a.wave_id == target_wave_id)
+        return sum(
+            1
+            for a in actions
+            if a.action_type == "free" and a.wave_id == target_wave_id
+        )
 
     def is_active(self) -> bool:
         return self.status == "active"
@@ -139,6 +172,7 @@ class FortressState:
 
 
 # ── 核心計算函數 ──────────────────────────────────────────
+
 
 def calculate_police_hp(rank: int, search_volume: Optional[int] = None) -> int:
     """根據排名計算刑警 HP，可選用搜尋量微調"""
@@ -164,10 +198,7 @@ def user_interests_match(user_interests: List[str], trend_name: str) -> bool:
     return False
 
 
-def calculate_player_damage(
-    action_type: str,
-    has_tag_bonus: bool
-) -> int:
+def calculate_player_damage(action_type: str, has_tag_bonus: bool) -> int:
     """計算玩家本次行動造成的總傷害"""
     if action_type == "free":
         base = BASE_DAMAGE_FREE
@@ -191,15 +222,17 @@ def trends_to_enemies(trends: List[Dict], wave_number: int = 1) -> List[PoliceUn
         volume = trend.get("search_volume", 0)
         hp = calculate_police_hp(rank, volume)
         category = trend.get("category", "")
-        enemies.append(PoliceUnit(
-            name=name,
-            rank=rank,
-            max_hp=hp,
-            current_hp=hp,
-            wave_number=wave_number,
-            category=category,
-            defeated=False
-        ))
+        enemies.append(
+            PoliceUnit(
+                name=name,
+                rank=rank,
+                max_hp=hp,
+                current_hp=hp,
+                wave_number=wave_number,
+                category=category,
+                defeated=False,
+            )
+        )
     return enemies
 
 
@@ -217,6 +250,7 @@ def _next_midnight(now: datetime) -> datetime:
 
 
 # ── 狀態管理 ──────────────────────────────────────────────
+
 
 def _load_state() -> Optional[FortressState]:
     """從 JSON 載入當前戰況"""
@@ -254,13 +288,17 @@ def _load_state() -> Optional[FortressState]:
 
         battle_date = data.get("battle_date") or str(data.get("round_id", ""))[:10]
         current_wave_number = data.get("current_wave_number", 1)
-        daily_trend_titles = data.get("daily_trend_titles") or [enemy.name for enemy in enemies]
-        wave_history = data.get("wave_history") or [{
-            "wave_id": current_wave_id,
-            "wave_number": current_wave_number,
-            "started_at": data.get("started_at", ""),
-            "titles": daily_trend_titles,
-        }]
+        daily_trend_titles = data.get("daily_trend_titles") or [
+            enemy.name for enemy in enemies
+        ]
+        wave_history = data.get("wave_history") or [
+            {
+                "wave_id": current_wave_id,
+                "wave_number": current_wave_number,
+                "started_at": data.get("started_at", ""),
+                "titles": daily_trend_titles,
+            }
+        ]
 
         return FortressState(
             round_id=data["round_id"],
@@ -300,8 +338,7 @@ def _save_state(state: FortressState):
                 for uid, actions in state.defenders.items()
             },
             "tower_slots": {
-                str(uid): slot_id
-                for uid, slot_id in state.tower_slots.items()
+                str(uid): slot_id for uid, slot_id in state.tower_slots.items()
             },
             "status": state.status,
             "started_at": state.started_at,
@@ -321,7 +358,10 @@ def _save_state(state: FortressState):
 
 # ── 公開 API ──────────────────────────────────────────────
 
-def start_new_battle(trends: List[Dict], started_at: Optional[datetime] = None) -> FortressState:
+
+def start_new_battle(
+    trends: List[Dict], started_at: Optional[datetime] = None
+) -> FortressState:
     """
     開始新一輪戰鬥，由趨勢更新排程呼叫。
     trends: get_trending_topics() 的回傳值
@@ -352,30 +392,40 @@ def start_new_battle(trends: List[Dict], started_at: Optional[datetime] = None) 
         tower_slots={},
         settled_at="",
         daily_trend_titles=trend_titles,
-        wave_history=[{
-            "wave_id": wave_id,
-            "wave_number": 1,
-            "started_at": now.isoformat(),
-            "titles": trend_titles,
-        }],
+        wave_history=[
+            {
+                "wave_id": wave_id,
+                "wave_number": 1,
+                "started_at": now.isoformat(),
+                "titles": trend_titles,
+            }
+        ],
         prize_pool_kkcoin=0,
     )
     _save_state(state)
-    logger.info(f"[Fortress] 單日戰役開始 round={round_id}, wave=1, 刑警={len(enemies)}, 堡壘HP={fortress_hp}")
+    logger.info(
+        f"[Fortress] 單日戰役開始 round={round_id}, wave=1, 刑警={len(enemies)}, 堡壘HP={fortress_hp}"
+    )
     return state
 
 
-def append_wave(trends: List[Dict], started_at: Optional[datetime] = None) -> FortressState:
+def append_wave(
+    trends: List[Dict], started_at: Optional[datetime] = None
+) -> FortressState:
     now = started_at or datetime.now(TW_TZ)
     state = _load_state()
     # 一天只會有一場戰役：若今天已結算（含失守），不開新戰役也不追加波次
     if not state or state.battle_date != now.strftime("%Y-%m-%d"):
         return start_new_battle(trends, started_at=now)
     if state.status != "active":
-        logger.info(f"[Fortress] 今日 {state.battle_date} 戰役狀態為 {state.status}，跳過波次追加")
+        logger.info(
+            f"[Fortress] 今日 {state.battle_date} 戰役狀態為 {state.status}，跳過波次追加"
+        )
         return state
     if state.settled_at:
-        logger.info(f"[Fortress] 今日 {state.battle_date} 戰役已結算（{state.status}），跳過波次追加")
+        logger.info(
+            f"[Fortress] 今日 {state.battle_date} 戰役已結算（{state.status}），跳過波次追加"
+        )
         return state
 
     next_wave_number = state.current_wave_number + 1
@@ -390,14 +440,18 @@ def append_wave(trends: List[Dict], started_at: Optional[datetime] = None) -> Fo
     for title in trend_titles:
         if title not in state.daily_trend_titles:
             state.daily_trend_titles.append(title)
-    state.wave_history.append({
-        "wave_id": wave_id,
-        "wave_number": next_wave_number,
-        "started_at": now.isoformat(),
-        "titles": trend_titles,
-    })
+    state.wave_history.append(
+        {
+            "wave_id": wave_id,
+            "wave_number": next_wave_number,
+            "started_at": now.isoformat(),
+            "titles": trend_titles,
+        }
+    )
     _save_state(state)
-    logger.info(f"[Fortress] 追加波次 wave={next_wave_number}, 新增刑警={len(new_enemies)}, 當日趨勢數={len(state.daily_trend_titles)}")
+    logger.info(
+        f"[Fortress] 追加波次 wave={next_wave_number}, 新增刑警={len(new_enemies)}, 當日趨勢數={len(state.daily_trend_titles)}"
+    )
     return state
 
 
@@ -408,7 +462,7 @@ def get_current_battle() -> Optional[FortressState]:
 
 def apply_defense_action(
     user_id: int,
-    action_type: str,       # "free" | "paid"
+    action_type: str,  # "free" | "paid"
     user_interests: List[str],
     current_enemy_names: Optional[List[str]] = None,
 ) -> Tuple[bool, str, int]:
@@ -424,13 +478,16 @@ def apply_defense_action(
     if action_type == "free":
         used = state.free_actions_used(user_id)
         if used >= FREE_ACTIONS_PER_ROUND:
-            return False, f"本輪免費出兵次數已用完（上限 {FREE_ACTIONS_PER_ROUND} 次）", 0
+            return (
+                False,
+                f"本輪免費出兵次數已用完（上限 {FREE_ACTIONS_PER_ROUND} 次）",
+                0,
+            )
 
     # 判斷標籤加乘：只要用戶興趣標籤與任一存活刑警匹配即觸發
     alive_enemies = [e.name for e in state.enemies if not e.defeated]
     has_bonus = any(
-        user_interests_match(user_interests, name)
-        for name in alive_enemies
+        user_interests_match(user_interests, name) for name in alive_enemies
     )
 
     damage = calculate_player_damage(action_type, has_bonus)
@@ -467,20 +524,26 @@ def apply_defense_action(
     for enemy in state.enemies:
         if not enemy.defeated and not enemy.reached_fortress:
             # 計算推進百分比
-            advance_pct = int((1 - enemy.current_hp / enemy.max_hp) * 100) if enemy.max_hp else 0
+            advance_pct = (
+                int((1 - enemy.current_hp / enemy.max_hp) * 100) if enemy.max_hp else 0
+            )
             if advance_pct >= 100:
                 enemy.reached_fortress = True
                 enemies_reached_fortress.append(enemy)
-                logger.info(f"[Fortress] 刑警 [{enemy.name}] 已到達堡壘！剩餘執法力: {enemy.current_hp}")
-    
+                logger.info(
+                    f"[Fortress] 刑警 [{enemy.name}] 已到達堡壘！剩餘執法力: {enemy.current_hp}"
+                )
+
     # 對堡壘造成傷害（剩餘HP即為攻擊力）
     total_fortress_damage = 0
     for enemy in enemies_reached_fortress:
         # 剩餘HP就是攻擊力
         fortress_damage = enemy.current_hp
         total_fortress_damage += fortress_damage
-        logger.info(f"[Fortress] {enemy.name} 對堡壘造成 {fortress_damage} 傷害（剩餘HP）")
-    
+        logger.info(
+            f"[Fortress] {enemy.name} 對堡壘造成 {fortress_damage} 傷害（剩餘HP）"
+        )
+
     if total_fortress_damage > 0:
         state.fortress_hp = max(0, state.fortress_hp - total_fortress_damage)
         if state.fortress_hp <= 0:
@@ -560,82 +623,85 @@ def tower_auto_attack() -> Tuple[bool, str]:
     state = _load_state()
     if not state or not state.is_active():
         return False, "無活躍戰況"
-    
+
     now = datetime.now(TW_TZ).isoformat()
     attacked_enemies = []
     total_damage_dealt = 0
-    
+
     # 取得地圖配置
     from cogs.ui.fortress_defense import _get_map_layout
+
     layout = _get_map_layout(state)
     path_coords = layout["path_coords"]
     tower_slots = layout["tower_slots"]
-    
+
     for user_id, slot_id in state.tower_slots.items():
         if slot_id not in tower_slots:
             continue
-            
+
         tower_coord = tower_slots[slot_id]["coord"]
         tower_row, tower_col = tower_coord
-        
+
         # 計算砲台攻擊範圍內的刑警
         enemies_in_range = []
         for enemy in state.enemies:
             if enemy.defeated:
                 continue
-                
+
             # 檢查刑警是否在路徑範圍內
             if 0 <= enemy.path_position < len(path_coords):
                 enemy_row, enemy_col = path_coords[enemy.path_position]
-                
+
                 # 計算距離（曼哈頓距離）
                 distance = abs(enemy_row - tower_row) + abs(enemy_col - tower_col)
                 if distance <= 2:  # 範圍2格
                     enemies_in_range.append(enemy)
-        
+
         if not enemies_in_range:
             continue
-            
+
         # 計算砲台傷害（基於玩家免費攻擊力）
         # 取得玩家興趣標籤
         from shared.db.db_adapter import get_user_field
         import json
+
         interests_raw = get_user_field(user_id, "user_interests", default="[]")
         try:
-            interests = json.loads(interests_raw) if isinstance(interests_raw, str) else []
+            interests = (
+                json.loads(interests_raw) if isinstance(interests_raw, str) else []
+            )
         except Exception:
             interests = []
-        
+
         # 判斷是否有標籤加乘
         alive_enemies = [e.name for e in state.enemies if not e.defeated]
-        has_bonus = any(
-            user_interests_match(interests, name)
-            for name in alive_enemies
-        )
-        
+        has_bonus = any(user_interests_match(interests, name) for name in alive_enemies)
+
         tower_damage = calculate_player_damage("free", has_bonus)
-        
+
         # 對範圍內刑警造成傷害（平均分配）
         damage_per_enemy = tower_damage // len(enemies_in_range)
         remaining_damage = tower_damage % len(enemies_in_range)
-        
+
         for i, enemy in enumerate(enemies_in_range):
             damage = damage_per_enemy + (remaining_damage if i == 0 else 0)
             damage = min(damage, enemy.current_hp)
             enemy.current_hp -= damage
             total_damage_dealt += damage
-            
+
             if enemy.current_hp <= 0:
                 enemy.current_hp = 0
                 enemy.defeated = True
                 attacked_enemies.append(f"🗼 砲台擊退了 {enemy.name}!")
             else:
                 attacked_enemies.append(f"🗼 砲台對 {enemy.name} 造成 {damage} 傷害")
-    
+
     _save_state(state)
-    
+
     if attacked_enemies:
-        return True, f"砲台攻擊: {', '.join(attacked_enemies[:5])}" + ("..." if len(attacked_enemies) > 5 else "")
+        return True, f"砲台攻擊: {', '.join(attacked_enemies[:5])}" + (
+            "..." if len(attacked_enemies) > 5 else ""
+        )
     return False, "無砲台攻擊"
 
 
@@ -647,37 +713,41 @@ def move_enemies_forward() -> Tuple[bool, str]:
     state = _load_state()
     if not state or not state.is_active():
         return False, "無活躍戰況"
-    
+
     now = datetime.now(TW_TZ).isoformat()
     moved_enemies = []
     total_fortress_damage = 0
-    
+
     for enemy in state.enemies:
         if enemy.defeated or enemy.reached_fortress:
             continue
-        
+
         # 根據刑警階級決定移動間隔（警員移動快）
         move_interval_seconds = {
             1: 600,  # 局長 10分鐘移動一次
-            2: 540, 3: 540,  # 隊長 9分鐘
-            4: 480, 5: 480,  # 中等 8分鐘
-            6: 420, 7: 420,  # 較快 7分鐘
-            8: 360, 9: 360,  # 快速 6分鐘
-            10: 300  # 警員 5分鐘
+            2: 540,
+            3: 540,  # 隊長 9分鐘
+            4: 480,
+            5: 480,  # 中等 8分鐘
+            6: 420,
+            7: 420,  # 較快 7分鐘
+            8: 360,
+            9: 360,  # 快速 6分鐘
+            10: 300,  # 警員 5分鐘
         }.get(enemy.rank, 450)
-        
+
         # 檢查是否該移動
         if enemy.last_move_time:
             last_move = datetime.fromisoformat(enemy.last_move_time)
             time_since_move = (datetime.now(TW_TZ) - last_move).total_seconds()
             if time_since_move < move_interval_seconds:
                 continue
-        
+
         # 移動到下一格
         enemy.path_position += 1
         enemy.last_move_time = now
         moved_enemies.append(f"{enemy.name} 前進到位置 {enemy.path_position}")
-        
+
         # 檢查是否到達堡壘
         path_length = 32  # 預設路徑長度，實際應從地圖配置取得
         if enemy.path_position >= path_length:
@@ -685,8 +755,10 @@ def move_enemies_forward() -> Tuple[bool, str]:
             # 剩餘HP即為攻擊力
             fortress_damage = enemy.current_hp
             total_fortress_damage += fortress_damage
-            logger.info(f"[Fortress] {enemy.name} 到達堡壘！造成 {fortress_damage} 傷害")
-    
+            logger.info(
+                f"[Fortress] {enemy.name} 到達堡壘！造成 {fortress_damage} 傷害"
+            )
+
     # 對堡壘造成傷害
     if total_fortress_damage > 0:
         state.fortress_hp = max(0, state.fortress_hp - total_fortress_damage)
@@ -694,9 +766,9 @@ def move_enemies_forward() -> Tuple[bool, str]:
             state.fortress_hp = 0
             state.status = "defeat"
             logger.info(f"[Fortress] 堡壘失守！總傷害: {total_fortress_damage}")
-    
+
     _save_state(state)
-    
+
     if moved_enemies:
         return True, f"刑警移動: {', '.join(moved_enemies)}"
     return False, "無刑警移動"
@@ -708,8 +780,6 @@ def _get_map_layout_for_state(state: Optional[FortressState]) -> Dict[str, objec
         return {}
     seed = sum(ord(char) for char in state.round_id)
     return _TD_MAP_LAYOUTS[seed % len(_TD_MAP_LAYOUTS)]
-
-
 
 
 def settle_battle() -> Dict:
@@ -728,14 +798,18 @@ def settle_battle() -> Dict:
     # 計算未擊退且未到達堡壘的刑警造成的傷害
     if state.status in ("active", "victory"):
         # 對於還在路徑上的刑警，直接對堡壘造成剩餘HP傷害（執法力）
-        remaining_enemies = [e for e in state.enemies if not e.defeated and not e.reached_fortress]
+        remaining_enemies = [
+            e for e in state.enemies if not e.defeated and not e.reached_fortress
+        ]
         if remaining_enemies:
             total_remaining_damage = sum(e.current_hp for e in remaining_enemies)
             state.fortress_hp = max(0, state.fortress_hp - total_remaining_damage)
             logger.info(f"[Fortress] 結算時剩餘刑警總執法力: {total_remaining_damage}")
 
         # 檢查已到達堡壘的刑警（已經在攻擊時處理過了）
-        enemies_at_fortress = [e for e in state.enemies if e.reached_fortress and not e.defeated]
+        enemies_at_fortress = [
+            e for e in state.enemies if e.reached_fortress and not e.defeated
+        ]
         for enemy in enemies_at_fortress:
             logger.info(f"[Fortress] 結算時確認 {enemy.name} 已到達堡壘")
 
@@ -754,16 +828,21 @@ def settle_battle() -> Dict:
     damage_map = state.total_damage_by_user()
     total_damage = sum(damage_map.values()) or 1
     contributions = {
-        uid: round(dmg / total_damage * 100, 1)
-        for uid, dmg in damage_map.items()
+        uid: round(dmg / total_damage * 100, 1) for uid, dmg in damage_map.items()
     }
 
     ends_at = datetime.fromisoformat(state.ends_at)
     if ends_at.tzinfo is None:
         ends_at = ends_at.replace(tzinfo=TW_TZ)
     remaining_minutes = max(0, int((ends_at - settled_at).total_seconds() / 60))
-    reward_multiplier = _early_bonus_multiplier(remaining_minutes) if state.status == "victory" else 1.0
-    total_reward_kkcoin = int(BASE_VICTORY_REWARD_KKCOIN * reward_multiplier) if state.status == "victory" else 0
+    reward_multiplier = (
+        _early_bonus_multiplier(remaining_minutes) if state.status == "victory" else 1.0
+    )
+    total_reward_kkcoin = (
+        int(BASE_VICTORY_REWARD_KKCOIN * reward_multiplier)
+        if state.status == "victory"
+        else 0
+    )
     reward_map = _split_reward(total_reward_kkcoin, damage_map)
 
     _save_state(state)
@@ -776,8 +855,8 @@ def settle_battle() -> Dict:
         "fortress_hp_remaining": state.fortress_hp,
         "enemies_defeated": sum(1 for e in state.enemies if e.defeated),
         "enemies_total": len(state.enemies),
-        "contributions": contributions,       # {user_id: 貢獻%}
-        "damage_map": damage_map,             # {user_id: total_damage}
+        "contributions": contributions,  # {user_id: 貢獻%}
+        "damage_map": damage_map,  # {user_id: total_damage}
         "prize_pool_kkcoin": state.prize_pool_kkcoin,
         "remaining_minutes": remaining_minutes,
         "reward_multiplier": reward_multiplier,

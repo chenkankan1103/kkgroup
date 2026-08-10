@@ -1,4 +1,5 @@
 from pathlib import Path
+
 workflow_path = Path('.github/workflows/ai-debug-monitor.yml')
 output_path = Path('temp_ai_debug_check.py')
 text = workflow_path.read_text(encoding='utf-8')

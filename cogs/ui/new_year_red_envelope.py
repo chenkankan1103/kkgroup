@@ -14,8 +14,6 @@ from discord.ext import commands
 logger = logging.getLogger(__name__)
 
 # 用於更新用戶 KKcoin
-from cogs.shop.merchant.database import update_user_kkcoin, get_user_kkcoin
-from shared.utils.view_registry import PersistentViewBase
 
 DATA_PATH = Path("data")
 STORAGE_FILE = DATA_PATH / "red_envelopes.json"
@@ -24,9 +22,11 @@ STORAGE_FILE = DATA_PATH / "red_envelopes.json"
 AWARD_AMOUNT = 2000
 AWARD_RETRY_MAX = 3
 PENDING_RETRY_INTERVAL = 30  # background worker 掃描間隔（秒）
-AWARD_THREAD_TIMEOUT = 2.5   # to_thread 發放 timeout
+AWARD_THREAD_TIMEOUT = 2.5  # to_thread 發放 timeout
 AWARD_BALANCE_TIMEOUT = 1.5  # 讀取餘額 timeout
-PERSISTENT_VIEW_WATCHDOG_INTERVAL = 300  # seconds between automatic persistent-view checks/repairs (5 minutes)
+PERSISTENT_VIEW_WATCHDOG_INTERVAL = (
+    300  # seconds between automatic persistent-view checks/repairs (5 minutes)
+)
 
 
 def _load_storage() -> Dict:
@@ -55,10 +55,7 @@ def _save_storage(data: Dict):
 async def _async_load_storage(timeout=3.0) -> Dict:
     """異步加載存儲（使用線程池避免阻塞）"""
     try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(_load_storage),
-            timeout=timeout
-        )
+        return await asyncio.wait_for(asyncio.to_thread(_load_storage), timeout=timeout)
     except asyncio.TimeoutError:
         logger.warning("[RED ENVELOPE] Timeout loading storage (>3s), returning empty")
         return {"messages": {}, "pending_awards": []}
@@ -70,10 +67,7 @@ async def _async_load_storage(timeout=3.0) -> Dict:
 async def _async_save_storage(data: Dict, timeout=2.0):
     """異步保存存儲（使用線程池避免阻塞）"""
     try:
-        await asyncio.wait_for(
-            asyncio.to_thread(_save_storage, data),
-            timeout=timeout
-        )
+        await asyncio.wait_for(asyncio.to_thread(_save_storage, data), timeout=timeout)
     except asyncio.TimeoutError:
         logger.warning("[RED ENVELOPE] Timeout saving storage (>2s)")
     except Exception as e:
@@ -88,7 +82,14 @@ class RedEnvelopeView(discord.ui.View):
     - Button 使用自訂 custom_id 以支援 bot 重啟後的 persistent view
     """
 
-    def __init__(self, cog, activity_id: str, message_id: Optional[int], expiry_ts: float, claimed: Optional[List[int]] = None):
+    def __init__(
+        self,
+        cog,
+        activity_id: str,
+        message_id: Optional[int],
+        expiry_ts: float,
+        claimed: Optional[List[int]] = None,
+    ):
         super().__init__(timeout=None)
         self.cog = cog
         self.activity_id = activity_id
@@ -98,7 +99,11 @@ class RedEnvelopeView(discord.ui.View):
         self.lock = asyncio.Lock()
 
         # 使用 runtime button（可在啟動時用相同 custom_id 重建）
-        btn = discord.ui.Button(label="領取紅包", style=discord.ButtonStyle.success, custom_id=f"red_envelope:{self.activity_id}")
+        btn = discord.ui.Button(
+            label="領取紅包",
+            style=discord.ButtonStyle.success,
+            custom_id=f"red_envelope:{self.activity_id}",
+        )
         btn.callback = self._on_claim
         self.add_item(btn)
 
@@ -108,23 +113,45 @@ class RedEnvelopeView(discord.ui.View):
         """
         start_ts = time.time()
         user_id = getattr(interaction.user, "id", None)
-        logger.info("red_envelope: claim attempt user=%s message=%s activity=%s", user_id, self.message_id, self.activity_id)
+        logger.info(
+            "red_envelope: claim attempt user=%s message=%s activity=%s",
+            user_id,
+            self.message_id,
+            self.activity_id,
+        )
 
         # Always try to defer first — if that fails, log and try to inform the user.
         try:
             await interaction.response.defer(ephemeral=True)
             # record defer timing to detect Discord 3s ack issues
             defer_elapsed = time.time() - start_ts
-            logger.info("red_envelope: defer done user=%s message=%s defer_elapsed=%.3fs", user_id, self.message_id, defer_elapsed)
+            logger.info(
+                "red_envelope: defer done user=%s message=%s defer_elapsed=%.3fs",
+                user_id,
+                self.message_id,
+                defer_elapsed,
+            )
         except Exception:
-            logger.exception("Failed to defer interaction (red_envelope) user=%s message=%s", user_id, self.message_id)
+            logger.exception(
+                "Failed to defer interaction (red_envelope) user=%s message=%s",
+                user_id,
+                self.message_id,
+            )
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("⚠️ 伺服器忙碌，請稍後再試。", ephemeral=True)
+                    await interaction.response.send_message(
+                        "⚠️ 伺服器忙碌，請稍後再試。", ephemeral=True
+                    )
                 else:
-                    await interaction.followup.send("⚠️ 伺服器忙碌，請稍後再試。", ephemeral=True)
+                    await interaction.followup.send(
+                        "⚠️ 伺服器忙碌，請稍後再試。", ephemeral=True
+                    )
             except Exception:
-                logger.exception("Failed to notify user after defer failure user=%s message=%s", user_id, self.message_id)
+                logger.exception(
+                    "Failed to notify user after defer failure user=%s message=%s",
+                    user_id,
+                    self.message_id,
+                )
             return
 
         try:
@@ -132,12 +159,16 @@ class RedEnvelopeView(discord.ui.View):
             if now >= self.expiry_ts:
                 # 已過期：停用按鈕並回覆
                 await self._expire_message()
-                await interaction.followup.send("⚠️ 活動已結束，無法領取。", ephemeral=True)
+                await interaction.followup.send(
+                    "⚠️ 活動已結束，無法領取。", ephemeral=True
+                )
                 return
 
             async with self.lock:
                 if user_id in self.claimed:
-                    await interaction.followup.send("❌ 你已經領過一次紅包了（每人限領一次）。", ephemeral=True)
+                    await interaction.followup.send(
+                        "❌ 你已經領過一次紅包了（每人限領一次）。", ephemeral=True
+                    )
                     return
 
                 # 記錄領取者（儘早寫入記憶以避免 race）
@@ -146,17 +177,29 @@ class RedEnvelopeView(discord.ui.View):
                 # 嘗試發放 2000 KK 幣（帶重試），若短期失敗會加入 pending_awards 由 background worker 重試
                 new_balance = None
                 try:
-                    new_balance = await self.cog._award_user_with_retries(user_id, amount=AWARD_AMOUNT)
+                    new_balance = await self.cog._award_user_with_retries(
+                        user_id, amount=AWARD_AMOUNT
+                    )
                 except Exception:
-                    logger.exception("award_user_with_retries failed for user=%s message=%s", user_id, self.message_id)
+                    logger.exception(
+                        "award_user_with_retries failed for user=%s message=%s",
+                        user_id,
+                        self.message_id,
+                    )
                     new_balance = None
 
                 if new_balance is None:
                     # 加入待處理清單，background worker 會自動重試
                     try:
-                        await self.cog._add_pending_award(user_id, self.message_id, AWARD_AMOUNT)
+                        await self.cog._add_pending_award(
+                            user_id, self.message_id, AWARD_AMOUNT
+                        )
                     except Exception:
-                        logger.exception("_add_pending_award failed for user=%s message=%s", user_id, self.message_id)
+                        logger.exception(
+                            "_add_pending_award failed for user=%s message=%s",
+                            user_id,
+                            self.message_id,
+                        )
 
                 # 更新 storage
                 try:
@@ -167,7 +210,11 @@ class RedEnvelopeView(discord.ui.View):
                         storage["messages"][msg_key]["claimed"] = self.claimed
                         await _async_save_storage(storage)
                 except Exception:
-                    logger.exception("Failed to persist claimed list user=%s message=%s", user_id, self.message_id)
+                    logger.exception(
+                        "Failed to persist claimed list user=%s message=%s",
+                        user_id,
+                        self.message_id,
+                    )
 
                 # 更新 embed 顯示領取名單（同時顯示已發放獎勵）
                 try:
@@ -178,37 +225,79 @@ class RedEnvelopeView(discord.ui.View):
                         color=0xE74C3C,
                     )
                     claimed_mentions = "\n".join(f"<@{uid}>" for uid in self.claimed)
-                    embed.add_field(name="已領取", value=claimed_mentions or "尚未有人領取", inline=False)
+                    embed.add_field(
+                        name="已領取",
+                        value=claimed_mentions or "尚未有人領取",
+                        inline=False,
+                    )
                     if new_balance is not None:
-                        embed.add_field(name="最近領取獎勵", value=f"<@{user_id}> 獲得 +2000 KKcoin（現有 {new_balance} KKcoin）", inline=False)
-                    embed.set_footer(text=f"活動到期時間：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.expiry_ts))}")
+                        embed.add_field(
+                            name="最近領取獎勵",
+                            value=f"<@{user_id}> 獲得 +2000 KKcoin（現有 {new_balance} KKcoin）",
+                            inline=False,
+                        )
+                    embed.set_footer(
+                        text=f"活動到期時間：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.expiry_ts))}"
+                    )
 
                     await message.edit(embed=embed, view=self)
                 except Exception:
-                    logger.exception("Failed to edit red envelope message after claim user=%s message=%s", user_id, self.message_id)
+                    logger.exception(
+                        "Failed to edit red envelope message after claim user=%s message=%s",
+                        user_id,
+                        self.message_id,
+                    )
 
                 # 回覆使用者（一定會有一個 followup）
                 try:
                     if new_balance is not None:
-                        await interaction.followup.send(f"✅ 你已成功領取紅包並獲得 **{AWARD_AMOUNT} KKcoin**，目前餘額：{new_balance} KKcoin。", ephemeral=True)
+                        await interaction.followup.send(
+                            f"✅ 你已成功領取紅包並獲得 **{AWARD_AMOUNT} KKcoin**，目前餘額：{new_balance} KKcoin。",
+                            ephemeral=True,
+                        )
                     else:
-                        await interaction.followup.send("✅ 你已成功領取紅包（獎勵已加入重試佇列，稍後會自動發放）。", ephemeral=True)
+                        await interaction.followup.send(
+                            "✅ 你已成功領取紅包（獎勵已加入重試佇列，稍後會自動發放）。",
+                            ephemeral=True,
+                        )
                 except Exception:
-                    logger.exception("Failed to send followup after claim user=%s message=%s", user_id, self.message_id)
+                    logger.exception(
+                        "Failed to send followup after claim user=%s message=%s",
+                        user_id,
+                        self.message_id,
+                    )
 
         except Exception:
             # 捕捉所有未預期的錯誤，並保證使用者看得到錯誤訊息而不是 'This interaction failed'
-            logger.exception("Unhandled exception in RedEnvelopeView._on_claim user=%s message=%s", user_id, self.message_id)
+            logger.exception(
+                "Unhandled exception in RedEnvelopeView._on_claim user=%s message=%s",
+                user_id,
+                self.message_id,
+            )
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 發生內部錯誤，請稍後重試。", ephemeral=True)
+                    await interaction.response.send_message(
+                        "❌ 發生內部錯誤，請稍後重試。", ephemeral=True
+                    )
                 else:
-                    await interaction.followup.send("❌ 發生內部錯誤，請稍後重試。", ephemeral=True)
+                    await interaction.followup.send(
+                        "❌ 發生內部錯誤，請稍後重試。", ephemeral=True
+                    )
             except Exception:
-                logger.exception("Also failed to notify user after an exception user=%s message=%s", user_id, self.message_id)
+                logger.exception(
+                    "Also failed to notify user after an exception user=%s message=%s",
+                    user_id,
+                    self.message_id,
+                )
         finally:
             elapsed = time.time() - start_ts
-            logger.info("red_envelope: claim finished user=%s message=%s elapsed=%.3fs", user_id, self.message_id, elapsed)
+            logger.info(
+                "red_envelope: claim finished user=%s message=%s elapsed=%.3fs",
+                user_id,
+                self.message_id,
+                elapsed,
+            )
+
     async def _expire_message(self):
         # 停用按鈕（edit message）並從 storage 刪除
         try:
@@ -233,7 +322,11 @@ class RedEnvelopeView(discord.ui.View):
             channel = None
             try:
                 if channel_id:
-                    channel = self.cog.bot.get_channel(channel_id) if hasattr(self.cog.bot, 'get_channel') else await self.cog._fetch_channel_for_message(self.message_id)
+                    channel = (
+                        self.cog.bot.get_channel(channel_id)
+                        if hasattr(self.cog.bot, "get_channel")
+                        else await self.cog._fetch_channel_for_message(self.message_id)
+                    )
                 else:
                     channel = await self.cog._fetch_channel_for_message(self.message_id)
             except Exception:
@@ -247,8 +340,14 @@ class RedEnvelopeView(discord.ui.View):
                         if hasattr(item, "disabled"):
                             item.disabled = True
                     # 更新 embed footer 說明活動已結束
-                    embed = message.embeds[0] if message.embeds else discord.Embed(title="🧧 新年紅包")
-                    embed.set_footer(text="活動已結束（按鈕已停用），相關臨時資料已移除。")
+                    embed = (
+                        message.embeds[0]
+                        if message.embeds
+                        else discord.Embed(title="🧧 新年紅包")
+                    )
+                    embed.set_footer(
+                        text="活動已結束（按鈕已停用），相關臨時資料已移除。"
+                    )
                     await message.edit(embed=embed, view=self)
                 except discord.NotFound:
                     # message 被刪除，nothing to do
@@ -274,7 +373,9 @@ class NewYearRedEnvelope(commands.Cog):
         # 啟動 watchdog：定期檢查並自動修復失效的 persistent views
         self._watchdog_task = bot.loop.create_task(self._persistent_view_watchdog())
 
-    async def _fetch_channel_for_message(self, message_id: int) -> Optional[discord.abc.GuildChannel]:
+    async def _fetch_channel_for_message(
+        self, message_id: int
+    ) -> Optional[discord.abc.GuildChannel]:
         storage = _load_storage()
         entry = storage.get("messages", {}).get(str(message_id))
         if not entry:
@@ -299,7 +400,13 @@ class NewYearRedEnvelope(commands.Cog):
                     continue
 
                 # 嘗試將 view 加回 bot（支援重啟後的互動處理）
-                view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry, claimed=claimed)
+                view = RedEnvelopeView(
+                    self,
+                    activity_id=activity_id,
+                    message_id=message_id,
+                    expiry_ts=expiry,
+                    claimed=claimed,
+                )
                 # 使用 message_id 讓 discord.py 將互動導回這個 view
                 try:
                     # register message-specific + global view on restore
@@ -308,9 +415,15 @@ class NewYearRedEnvelope(commands.Cog):
                         self.bot.add_view(view)
                     except Exception:
                         pass
-                    logger.info("Restored red envelope view message=%s expiry=%s", message_id, expiry)
+                    logger.info(
+                        "Restored red envelope view message=%s expiry=%s",
+                        message_id,
+                        expiry,
+                    )
                 except Exception:
-                    logger.exception("Failed to add_view for red envelope message=%s", message_id)
+                    logger.exception(
+                        "Failed to add_view for red envelope message=%s", message_id
+                    )
 
                 # 同步在到期時間執行清理
                 self.bot.loop.create_task(self._schedule_expiry(message_id, expiry))
@@ -327,7 +440,13 @@ class NewYearRedEnvelope(commands.Cog):
             return
         # 嘗試停用 message 上的按鈕並刪除資料
         activity_id = entry.get("activity_id")
-        view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry_ts, claimed=entry.get("claimed", []))
+        view = RedEnvelopeView(
+            self,
+            activity_id=activity_id,
+            message_id=message_id,
+            expiry_ts=expiry_ts,
+            claimed=entry.get("claimed", []),
+        )
         await view._expire_message()
 
         # 如果沒有剩下的活動資料，則刪除該臨時模組檔案（移除整個邏輯）
@@ -358,7 +477,9 @@ class NewYearRedEnvelope(commands.Cog):
     # ---------------------------
     # Pending-award (retry) 機制
     # ---------------------------
-    async def _award_user_with_retries(self, user_id: int, amount: int = AWARD_AMOUNT) -> Optional[int]:
+    async def _award_user_with_retries(
+        self, user_id: int, amount: int = AWARD_AMOUNT
+    ) -> Optional[int]:
         """同步地使用執行緒嘗試給予金幣，內部帶重試與 backoff。回傳新餘額或 None。"""
         try:
             from db_adapter import add_user_field, get_user_field
@@ -367,34 +488,48 @@ class NewYearRedEnvelope(commands.Cog):
 
         for attempt in range(AWARD_RETRY_MAX):
             try:
-                await asyncio.wait_for(asyncio.to_thread(add_user_field, user_id, 'kkcoin', amount), timeout=AWARD_THREAD_TIMEOUT)
-                new_balance = await asyncio.wait_for(asyncio.to_thread(get_user_field, user_id, 'kkcoin', 0), timeout=AWARD_BALANCE_TIMEOUT)
+                await asyncio.wait_for(
+                    asyncio.to_thread(add_user_field, user_id, "kkcoin", amount),
+                    timeout=AWARD_THREAD_TIMEOUT,
+                )
+                new_balance = await asyncio.wait_for(
+                    asyncio.to_thread(get_user_field, user_id, "kkcoin", 0),
+                    timeout=AWARD_BALANCE_TIMEOUT,
+                )
                 return new_balance
             except Exception:
                 # 指數退避
-                await asyncio.sleep(0.5 * (2 ** attempt))
+                await asyncio.sleep(0.5 * (2**attempt))
                 continue
 
         return None
 
-    async def _add_pending_award(self, user_id: int, message_id: int, amount: int = AWARD_AMOUNT):
+    async def _add_pending_award(
+        self, user_id: int, message_id: int, amount: int = AWARD_AMOUNT
+    ):
         """將未成功的發放加入 storage.pending_awards（避免重複）。"""
         storage = await _async_load_storage()
         storage.setdefault("pending_awards", [])
         # 避免重複加入
         for p in storage["pending_awards"]:
-            if p.get("user_id") == user_id and p.get("message_id") == message_id and p.get("amount") == amount:
+            if (
+                p.get("user_id") == user_id
+                and p.get("message_id") == message_id
+                and p.get("amount") == amount
+            ):
                 return
 
-        storage["pending_awards"].append({
-            "user_id": user_id,
-            "message_id": message_id,
-            "amount": amount,
-            "attempts": 0,
-            "created_at": time.time(),
-            "last_try": None,
-            "next_try": time.time() + PENDING_RETRY_INTERVAL,
-        })
+        storage["pending_awards"].append(
+            {
+                "user_id": user_id,
+                "message_id": message_id,
+                "amount": amount,
+                "attempts": 0,
+                "created_at": time.time(),
+                "last_try": None,
+                "next_try": time.time() + PENDING_RETRY_INTERVAL,
+            }
+        )
         await _async_save_storage(storage)
 
     async def _pending_awards_worker(self):
@@ -416,11 +551,21 @@ class NewYearRedEnvelope(commands.Cog):
                     amount = item.get("amount", AWARD_AMOUNT)
                     attempts = item.get("attempts", 0)
 
-                    new_balance = await self._award_user_with_retries(user_id, amount=amount)
+                    new_balance = await self._award_user_with_retries(
+                        user_id, amount=amount
+                    )
                     if new_balance is not None:
                         # 移除 pending 並更新 embed（若 message 仍存在）
                         storage = await _async_load_storage()
-                        storage["pending_awards"] = [p for p in storage.get("pending_awards", []) if not (p.get("user_id")==user_id and p.get("message_id")==message_id and p.get("amount")==amount)]
+                        storage["pending_awards"] = [
+                            p
+                            for p in storage.get("pending_awards", [])
+                            if not (
+                                p.get("user_id") == user_id
+                                and p.get("message_id") == message_id
+                                and p.get("amount") == amount
+                            )
+                        ]
                         await _async_save_storage(storage)
                         changed = True
 
@@ -436,10 +581,25 @@ class NewYearRedEnvelope(commands.Cog):
                                 )
                                 # 讀取最新 claimed list
                                 storage_after = await _async_load_storage()
-                                claimed = storage_after.get("messages", {}).get(str(message_id), {}).get("claimed", [])
-                                embed.add_field(name="已領取", value="\n".join(f"<@{uid}>" for uid in claimed) or "尚未有人領取", inline=False)
-                                embed.add_field(name="最近領取獎勵", value=f"<@{user_id}> 獲得 +{amount} KKcoin（現有 {new_balance} KKcoin）", inline=False)
-                                embed.set_footer(text=f"活動到期時間：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(storage_after.get('messages', {}).get(str(message_id), {}).get('expiry', 0)))}")
+                                claimed = (
+                                    storage_after.get("messages", {})
+                                    .get(str(message_id), {})
+                                    .get("claimed", [])
+                                )
+                                embed.add_field(
+                                    name="已領取",
+                                    value="\n".join(f"<@{uid}>" for uid in claimed)
+                                    or "尚未有人領取",
+                                    inline=False,
+                                )
+                                embed.add_field(
+                                    name="最近領取獎勵",
+                                    value=f"<@{user_id}> 獲得 +{amount} KKcoin（現有 {new_balance} KKcoin）",
+                                    inline=False,
+                                )
+                                embed.set_footer(
+                                    text=f"活動到期時間：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(storage_after.get('messages', {}).get(str(message_id), {}).get('expiry', 0)))}"
+                                )
                                 await msg.edit(embed=embed)
                         except Exception:
                             pass
@@ -447,10 +607,16 @@ class NewYearRedEnvelope(commands.Cog):
                         # 更新 attempts/next_try
                         storage = await _async_load_storage()
                         for p in storage.get("pending_awards", []):
-                            if p.get("user_id") == user_id and p.get("message_id") == message_id and p.get("amount") == amount:
+                            if (
+                                p.get("user_id") == user_id
+                                and p.get("message_id") == message_id
+                                and p.get("amount") == amount
+                            ):
                                 p["attempts"] = p.get("attempts", 0) + 1
                                 p["last_try"] = time.time()
-                                backoff = min(300, PENDING_RETRY_INTERVAL * (2 ** p["attempts"]))
+                                backoff = min(
+                                    300, PENDING_RETRY_INTERVAL * (2 ** p["attempts"])
+                                )
                                 p["next_try"] = time.time() + backoff
                                 break
                         await _async_save_storage(storage)
@@ -485,7 +651,9 @@ class NewYearRedEnvelope(commands.Cog):
             info["missing_count"] = info.get("missing_count", 0) + 1
             return "message-not-found"
         except Exception:
-            logger.exception("red_envelope: failed to fetch message=%s during repair", message_id)
+            logger.exception(
+                "red_envelope: failed to fetch message=%s during repair", message_id
+            )
             return "fetch-error"
 
         # check whether the interactive button component is present
@@ -506,24 +674,40 @@ class NewYearRedEnvelope(commands.Cog):
         if button_present:
             # ensure our bot has the view registered so interactions route correctly
             try:
-                view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry_ts, claimed=claimed)
+                view = RedEnvelopeView(
+                    self,
+                    activity_id=activity_id,
+                    message_id=message_id,
+                    expiry_ts=expiry_ts,
+                    claimed=claimed,
+                )
                 self.bot.add_view(view, message_id=message_id)
                 info.pop("missing_count", None)
                 return "re-registered"
             except Exception:
-                logger.exception("red_envelope: failed to add_view for message=%s", message_id)
+                logger.exception(
+                    "red_envelope: failed to add_view for message=%s", message_id
+                )
                 return "add-view-failed"
 
         # button not present -> try to repair message components and re-register
         try:
-            view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry_ts, claimed=claimed)
+            view = RedEnvelopeView(
+                self,
+                activity_id=activity_id,
+                message_id=message_id,
+                expiry_ts=expiry_ts,
+                claimed=claimed,
+            )
             embed = msg.embeds[0] if msg.embeds else discord.Embed(title="🧧 新年紅包")
             await msg.edit(embed=embed, view=view)
             self.bot.add_view(view, message_id=message_id)
             info.pop("missing_count", None)
             return "repaired-components"
         except Exception:
-            logger.exception("red_envelope: failed to repair components for message=%s", message_id)
+            logger.exception(
+                "red_envelope: failed to repair components for message=%s", message_id
+            )
             info["missing_count"] = info.get("missing_count", 0) + 1
             return "repair-failed"
 
@@ -542,42 +726,75 @@ class NewYearRedEnvelope(commands.Cog):
                         message_id = int(mid_str)
                         status = await self._repair_message(message_id, info)
                         if status in ("re-registered", "repaired-components"):
-                            logger.info("red_envelope.watchdog: repaired message=%s status=%s", message_id, status)
+                            logger.info(
+                                "red_envelope.watchdog: repaired message=%s status=%s",
+                                message_id,
+                                status,
+                            )
                             _save_storage(storage)
                         elif status in ("message-not-found", "channel-missing"):
-                            logger.warning("red_envelope.watchdog: message=%s status=%s missing_count=%s", message_id, status, info.get("missing_count"))
+                            logger.warning(
+                                "red_envelope.watchdog: message=%s status=%s missing_count=%s",
+                                message_id,
+                                status,
+                                info.get("missing_count"),
+                            )
                             # if missing repeatedly, remove storage entry
                             if info.get("missing_count", 0) >= 3:
-                                logger.info("red_envelope.watchdog: removing message=%s after repeated missing", message_id)
-                                del storage[ mid_str ]
+                                logger.info(
+                                    "red_envelope.watchdog: removing message=%s after repeated missing",
+                                    message_id,
+                                )
+                                del storage[mid_str]
                                 _save_storage(storage)
                         elif status == "expired":
                             # schedule expiry cleanup immediately
                             try:
-                                view = RedEnvelopeView(self, activity_id=info.get("activity_id"), message_id=message_id, expiry_ts=info.get("expiry", 0), claimed=info.get("claimed", []))
+                                view = RedEnvelopeView(
+                                    self,
+                                    activity_id=info.get("activity_id"),
+                                    message_id=message_id,
+                                    expiry_ts=info.get("expiry", 0),
+                                    claimed=info.get("claimed", []),
+                                )
                                 await view._expire_message()
                             except Exception:
                                 pass
                             # remove storage entry
                             if mid_str in storage.get("messages", {}):
-                                del storage[ mid_str ]
+                                del storage[mid_str]
                                 _save_storage(storage)
                     except Exception:
-                        logger.exception("red_envelope.watchdog: failure while checking message %s", mid_str)
+                        logger.exception(
+                            "red_envelope.watchdog: failure while checking message %s",
+                            mid_str,
+                        )
                     await asyncio.sleep(0.12)
             except Exception:
                 logger.exception("red_envelope.watchdog: unexpected error in loop")
             await asyncio.sleep(interval)
 
-    @app_commands.command(name="發紅包", description="(管理員) 發送臨時新年紅包 — 每人限領一次，明天自動停用")
-    async def send_red_envelope(self, interaction: discord.Interaction, hours: Optional[int] = 24):
+    @app_commands.command(
+        name="發紅包",
+        description="(管理員) 發送臨時新年紅包 — 每人限領一次，明天自動停用",
+    )
+    async def send_red_envelope(
+        self, interaction: discord.Interaction, hours: Optional[int] = 24
+    ):
         # 只有管理員可以發
-        if not interaction.user.guild_permissions.manage_guild and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("🚫 你沒有權限使用這個指令。", ephemeral=True)
+        if (
+            not interaction.user.guild_permissions.manage_guild
+            and not interaction.user.guild_permissions.administrator
+        ):
+            await interaction.response.send_message(
+                "🚫 你沒有權限使用這個指令。", ephemeral=True
+            )
             return
 
         if hours <= 0 or hours > 72:
-            await interaction.response.send_message("⚠️ hours 必須介於 1 到 72 小時之間。", ephemeral=True)
+            await interaction.response.send_message(
+                "⚠️ hours 必須介於 1 到 72 小時之間。", ephemeral=True
+            )
             return
 
         await interaction.response.defer()
@@ -591,9 +808,17 @@ class NewYearRedEnvelope(commands.Cog):
             color=0xE74C3C,
         )
         embed.add_field(name="已領取", value="尚未有人領取", inline=False)
-        embed.set_footer(text=f"活動到期時間：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expiry_ts))}")
+        embed.set_footer(
+            text=f"活動到期時間：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expiry_ts))}"
+        )
 
-        view = RedEnvelopeView(self, activity_id=activity_id, message_id=None, expiry_ts=expiry_ts, claimed=[])
+        view = RedEnvelopeView(
+            self,
+            activity_id=activity_id,
+            message_id=None,
+            expiry_ts=expiry_ts,
+            claimed=[],
+        )
         channel = interaction.channel
         message = await channel.send(embed=embed, view=view)
 
@@ -619,29 +844,52 @@ class NewYearRedEnvelope(commands.Cog):
             except Exception:
                 # registering global view may be optional depending on library state
                 pass
-            logger.info("Registered new red envelope view message=%s activity=%s expiry=%s", message.id, activity_id, expiry_ts)
+            logger.info(
+                "Registered new red envelope view message=%s activity=%s expiry=%s",
+                message.id,
+                activity_id,
+                expiry_ts,
+            )
         except Exception:
-            logger.exception("Failed to register view for red envelope message=%s", message.id)
+            logger.exception(
+                "Failed to register view for red envelope message=%s", message.id
+            )
 
         # 確認已寫入 storage
-        logger.info("Saved red envelope to storage message=%s activity=%s expiry=%s", message.id, activity_id, expiry_ts)
+        logger.info(
+            "Saved red envelope to storage message=%s activity=%s expiry=%s",
+            message.id,
+            activity_id,
+            expiry_ts,
+        )
 
         # 安排到期清理
         self.bot.loop.create_task(self._schedule_expiry(message.id, expiry_ts))
 
-        await interaction.followup.send(f"✅ 已在本頻道發送新年紅包（活動 {hours} 小時）。", ephemeral=True)
+        await interaction.followup.send(
+            f"✅ 已在本頻道發送新年紅包（活動 {hours} 小時）。", ephemeral=True
+        )
 
-    @app_commands.command(name="紅包修復", description="(管理員) 立即檢查並修復所有紅包 persistent view")
+    @app_commands.command(
+        name="紅包修復", description="(管理員) 立即檢查並修復所有紅包 persistent view"
+    )
     async def red_envelope_repair(self, interaction: discord.Interaction):
-        if not interaction.user.guild_permissions.manage_guild and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("🚫 你沒有權限使用這個指令。", ephemeral=True)
+        if (
+            not interaction.user.guild_permissions.manage_guild
+            and not interaction.user.guild_permissions.administrator
+        ):
+            await interaction.response.send_message(
+                "🚫 你沒有權限使用這個指令。", ephemeral=True
+            )
             return
 
         await interaction.response.defer(ephemeral=True)
         storage = _load_storage()
         msgs = storage.get("messages", {})
         if not msgs:
-            await interaction.followup.send("目前沒有正在進行的紅包活動。", ephemeral=True)
+            await interaction.followup.send(
+                "目前沒有正在進行的紅包活動。", ephemeral=True
+            )
             return
 
         lines = []
@@ -651,15 +899,26 @@ class NewYearRedEnvelope(commands.Cog):
             except Exception:
                 continue
             status = await self._repair_message(mid, info)
-            lines.append(f"message={mid} status={status} missing_count={info.get('missing_count',0)}")
+            lines.append(
+                f"message={mid} status={status} missing_count={info.get('missing_count',0)}"
+            )
 
         _save_storage(storage)
         await interaction.followup.send("\n".join(lines), ephemeral=True)
-    @app_commands.command(name="紅包狀態", description="(管理員) 檢查目前新年紅包活動狀態（檢查 storage + message components）")
+
+    @app_commands.command(
+        name="紅包狀態",
+        description="(管理員) 檢查目前新年紅包活動狀態（檢查 storage + message components）",
+    )
     async def red_envelope_status(self, interaction: discord.Interaction):
         """管理員專用：檢查 data/red_envelopes.json 中的活動、嘗試抓取訊息並檢查按鈕 custom_id 是否仍存在。"""
-        if not interaction.user.guild_permissions.manage_guild and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("🚫 你沒有權限使用這個指令。", ephemeral=True)
+        if (
+            not interaction.user.guild_permissions.manage_guild
+            and not interaction.user.guild_permissions.administrator
+        ):
+            await interaction.response.send_message(
+                "🚫 你沒有權限使用這個指令。", ephemeral=True
+            )
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -667,7 +926,9 @@ class NewYearRedEnvelope(commands.Cog):
         storage = _load_storage()
         msgs = storage.get("messages", {})
         if not msgs:
-            await interaction.followup.send("目前沒有正在進行的紅包活動。", ephemeral=True)
+            await interaction.followup.send(
+                "目前沒有正在進行的紅包活動。", ephemeral=True
+            )
             return
 
         lines = []
@@ -683,7 +944,9 @@ class NewYearRedEnvelope(commands.Cog):
             fetchable = False
             button_present = False
             try:
-                channel = self.bot.get_channel(ch_id) or await self._fetch_channel_for_message(mid)
+                channel = self.bot.get_channel(
+                    ch_id
+                ) or await self._fetch_channel_for_message(mid)
                 if channel:
                     msg = await channel.fetch_message(mid)
                     fetchable = True
@@ -699,14 +962,30 @@ class NewYearRedEnvelope(commands.Cog):
             except Exception:
                 pass
 
-            lines.append(f"- message={mid} channel={ch_id} expiry={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expiry))} claimed={len(claimed)} fetchable={fetchable} button={button_present}")
+            lines.append(
+                f"- message={mid} channel={ch_id} expiry={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expiry))} claimed={len(claimed)} fetchable={fetchable} button={button_present}"
+            )
 
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    @app_commands.command(name="紅包掃描", description="(管理員) 掃描頻道/訊息並回復遺失的紅包 persistent view（會註冊 View 並將訊息加入 storage）")
-    async def red_envelope_scan(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None, message_id: Optional[int] = None, limit: Optional[int] = 200):
-        if not interaction.user.guild_permissions.manage_guild and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("🚫 你沒有權限使用這個指令。", ephemeral=True)
+    @app_commands.command(
+        name="紅包掃描",
+        description="(管理員) 掃描頻道/訊息並回復遺失的紅包 persistent view（會註冊 View 並將訊息加入 storage）",
+    )
+    async def red_envelope_scan(
+        self,
+        interaction: discord.Interaction,
+        channel: Optional[discord.TextChannel] = None,
+        message_id: Optional[int] = None,
+        limit: Optional[int] = 200,
+    ):
+        if (
+            not interaction.user.guild_permissions.manage_guild
+            and not interaction.user.guild_permissions.administrator
+        ):
+            await interaction.response.send_message(
+                "🚫 你沒有權限使用這個指令。", ephemeral=True
+            )
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -722,10 +1001,10 @@ class NewYearRedEnvelope(commands.Cog):
                 async for msg in target_channel.history(limit=limit):
                     # quick check for component
                     has_red = False
-                    for comp in getattr(msg, 'components', []):
-                        for child in getattr(comp, 'children', []):
-                            cid = getattr(child, 'custom_id', None)
-                            if cid and cid.startswith('red_envelope:'):
+                    for comp in getattr(msg, "components", []):
+                        for child in getattr(comp, "children", []):
+                            cid = getattr(child, "custom_id", None)
+                            if cid and cid.startswith("red_envelope:"):
                                 has_red = True
                                 break
                         if has_red:
@@ -736,10 +1015,15 @@ class NewYearRedEnvelope(commands.Cog):
                     status = await self._rescue_message(target_channel, msg.id)
                     results.append(f"message={msg.id} status={status}")
             except Exception:
-                logger.exception("red_envelope.scan: failed to iterate channel history %s", getattr(target_channel, 'id', None))
+                logger.exception(
+                    "red_envelope.scan: failed to iterate channel history %s",
+                    getattr(target_channel, "id", None),
+                )
 
         if not results:
-            await interaction.followup.send("未找到任何可回復的紅包訊息。", ephemeral=True)
+            await interaction.followup.send(
+                "未找到任何可回復的紅包訊息。", ephemeral=True
+            )
             return
 
         await interaction.followup.send("\n".join(results), ephemeral=True)
@@ -776,7 +1060,9 @@ class NewYearRedEnvelope(commands.Cog):
             return None
         return None
 
-    async def _rescue_message(self, channel: discord.abc.Messageable, message_id: int) -> str:
+    async def _rescue_message(
+        self, channel: discord.abc.Messageable, message_id: int
+    ) -> str:
         """Attempt to rescue a Discord message that contains a red_envelope component but
         is not present in storage. Returns a status string for logging/reporting.
         """
@@ -806,8 +1092,14 @@ class NewYearRedEnvelope(commands.Cog):
         if str(message_id) in storage.get("messages", {}):
             # ensure view registered
             try:
-                info = storage[ str(message_id) ]
-                view = RedEnvelopeView(self, activity_id=info.get("activity_id"), message_id=message_id, expiry_ts=info.get("expiry", 0), claimed=info.get("claimed", []))
+                info = storage[str(message_id)]
+                view = RedEnvelopeView(
+                    self,
+                    activity_id=info.get("activity_id"),
+                    message_id=message_id,
+                    expiry_ts=info.get("expiry", 0),
+                    claimed=info.get("claimed", []),
+                )
                 self.bot.add_view(view, message_id=message_id)
                 try:
                     self.bot.add_view(view)
@@ -821,15 +1113,17 @@ class NewYearRedEnvelope(commands.Cog):
         embed = msg.embeds[0] if msg.embeds else None
         claimed = await self._parse_claimed_from_embed(embed)
         expiry_ts = None
-        if embed and embed.footer and getattr(embed.footer, 'text', None):
+        if embed and embed.footer and getattr(embed.footer, "text", None):
             expiry_ts = self._parse_expiry_from_footer(embed.footer.text)
         if not expiry_ts:
             expiry_ts = time.time() + 24 * 3600
 
         # save to storage
         storage.setdefault("messages", {})[str(message_id)] = {
-            "guild_id": getattr(msg.guild, 'id', None) if hasattr(msg, 'guild') else None,
-            "channel_id": getattr(msg.channel, 'id', None),
+            "guild_id": getattr(msg.guild, "id", None)
+            if hasattr(msg, "guild")
+            else None,
+            "channel_id": getattr(msg.channel, "id", None),
             "message_id": message_id,
             "activity_id": activity_id,
             "expiry": expiry_ts,
@@ -839,7 +1133,13 @@ class NewYearRedEnvelope(commands.Cog):
 
         # register view
         try:
-            view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=expiry_ts, claimed=claimed)
+            view = RedEnvelopeView(
+                self,
+                activity_id=activity_id,
+                message_id=message_id,
+                expiry_ts=expiry_ts,
+                claimed=claimed,
+            )
             self.bot.add_view(view, message_id=message_id)
             try:
                 self.bot.add_view(view)
@@ -847,7 +1147,10 @@ class NewYearRedEnvelope(commands.Cog):
                 pass
             return "rescued-and-registered"
         except Exception:
-            logger.exception("red_envelope: failed to register view during rescue message=%s", message_id)
+            logger.exception(
+                "red_envelope: failed to register view during rescue message=%s",
+                message_id,
+            )
             return "rescued-but-register-failed"
 
     @commands.Cog.listener()
@@ -858,9 +1161,13 @@ class NewYearRedEnvelope(commands.Cog):
         transient view-registration loss).
         """
         try:
-            data = getattr(interaction, 'data', {}) or {}
-            cid = data.get('custom_id') if isinstance(data, dict) else None
-            if not cid or not isinstance(cid, str) or not cid.startswith('red_envelope:'):
+            data = getattr(interaction, "data", {}) or {}
+            cid = data.get("custom_id") if isinstance(data, dict) else None
+            if (
+                not cid
+                or not isinstance(cid, str)
+                or not cid.startswith("red_envelope:")
+            ):
                 return
 
             # if already handled by discord.py view, do nothing
@@ -870,14 +1177,24 @@ class NewYearRedEnvelope(commands.Cog):
             except Exception:
                 pass
 
-            activity_id = cid.split(':', 1)[1]
+            activity_id = cid.split(":", 1)[1]
             storage = _load_storage()
             # find message by activity_id
-            for mid_str, info in storage.get('messages', {}).items():
-                if info.get('activity_id') == activity_id:
+            for mid_str, info in storage.get("messages", {}).items():
+                if info.get("activity_id") == activity_id:
                     message_id = int(mid_str)
-                    view = RedEnvelopeView(self, activity_id=activity_id, message_id=message_id, expiry_ts=info.get('expiry', 0), claimed=info.get('claimed', []))
-                    logger.info('red_envelope.fallback: handling interaction activity=%s message=%s', activity_id, message_id)
+                    view = RedEnvelopeView(
+                        self,
+                        activity_id=activity_id,
+                        message_id=message_id,
+                        expiry_ts=info.get("expiry", 0),
+                        claimed=info.get("claimed", []),
+                    )
+                    logger.info(
+                        "red_envelope.fallback: handling interaction activity=%s message=%s",
+                        activity_id,
+                        message_id,
+                    )
                     await view._on_claim(interaction)
                     return
 
@@ -885,28 +1202,57 @@ class NewYearRedEnvelope(commands.Cog):
             rescued = False
             try:
                 # if interaction.message available, try to rebuild storage + register view
-                msg = getattr(interaction, 'message', None)
+                msg = getattr(interaction, "message", None)
                 if msg:
                     try:
                         status = await self._rescue_message(msg.channel, msg.id)
-                        logger.info('red_envelope.fallback: rescue attempt for message=%s status=%s', getattr(msg, 'id', None), status)
-                        if status in ('rescued-and-registered', 'already-in-storage-registered-view'):
+                        logger.info(
+                            "red_envelope.fallback: rescue attempt for message=%s status=%s",
+                            getattr(msg, "id", None),
+                            status,
+                        )
+                        if status in (
+                            "rescued-and-registered",
+                            "already-in-storage-registered-view",
+                        ):
                             # now dispatch to claim handler
-                            view = RedEnvelopeView(self, activity_id=activity_id, message_id=msg.id, expiry_ts=_load_storage().get('messages', {}).get(str(msg.id), {}).get('expiry', time.time()), claimed=_load_storage().get('messages', {}).get(str(msg.id), {}).get('claimed', []))
+                            view = RedEnvelopeView(
+                                self,
+                                activity_id=activity_id,
+                                message_id=msg.id,
+                                expiry_ts=_load_storage()
+                                .get("messages", {})
+                                .get(str(msg.id), {})
+                                .get("expiry", time.time()),
+                                claimed=_load_storage()
+                                .get("messages", {})
+                                .get(str(msg.id), {})
+                                .get("claimed", []),
+                            )
                             await view._on_claim(interaction)
                             rescued = True
                     except Exception:
-                        logger.exception('red_envelope.fallback: rescue inner failure for message=%s', getattr(msg, 'id', None))
+                        logger.exception(
+                            "red_envelope.fallback: rescue inner failure for message=%s",
+                            getattr(msg, "id", None),
+                        )
 
                 if not rescued:
                     if not interaction.response.is_done():
-                        await interaction.response.send_message('⚠️ 此活動已失效或找不到。', ephemeral=True)
+                        await interaction.response.send_message(
+                            "⚠️ 此活動已失效或找不到。", ephemeral=True
+                        )
                     else:
-                        await interaction.followup.send('⚠️ 此活動已失效或找不到。', ephemeral=True)
+                        await interaction.followup.send(
+                            "⚠️ 此活動已失效或找不到。", ephemeral=True
+                        )
             except Exception:
-                logger.exception('red_envelope.fallback: failed to inform user activity=%s', activity_id)
+                logger.exception(
+                    "red_envelope.fallback: failed to inform user activity=%s",
+                    activity_id,
+                )
         except Exception:
-            logger.exception('red_envelope.fallback: unexpected error')
+            logger.exception("red_envelope.fallback: unexpected error")
 
 
 async def setup(bot: commands.Bot):

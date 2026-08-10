@@ -49,9 +49,13 @@ WEBHOOK_ENV_KEYS = [
 
 
 def run_step(command: list[str]) -> str:
-    result = subprocess.run(command, cwd=PROJECT_ROOT, check=False, capture_output=True, text=True)
+    result = subprocess.run(
+        command, cwd=PROJECT_ROOT, check=False, capture_output=True, text=True
+    )
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "unknown error")
+        raise RuntimeError(
+            result.stderr.strip() or result.stdout.strip() or "unknown error"
+        )
     if result.stdout.strip():
         print(result.stdout.strip())
     return result.stdout.strip()
@@ -82,7 +86,9 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     try:
-        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        STATE_FILE.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     except Exception:
         pass
 
@@ -95,15 +101,21 @@ def should_skip_webhook(status: str, details: str) -> bool:
     previous_ts = state.get("last_ts", 0)
     now_ts = int(datetime.utcnow().timestamp())
 
-    if signature == previous_signature and status == previous_status and now_ts - int(previous_ts) < WEBHOOK_DEDUP_SECONDS:
+    if (
+        signature == previous_signature
+        and status == previous_status
+        and now_ts - int(previous_ts) < WEBHOOK_DEDUP_SECONDS
+    ):
         print("SKIP_DUPLICATE_WEBHOOK")
         return True
 
-    save_state({
-        "last_signature": signature,
-        "last_status": status,
-        "last_ts": now_ts,
-    })
+    save_state(
+        {
+            "last_signature": signature,
+            "last_status": status,
+            "last_ts": now_ts,
+        }
+    )
     return False
 
 
@@ -156,10 +168,26 @@ def parse_analysis_sections(text: str) -> dict[str, str]:
     }
 
 
-def write_status(status: str, outputs: list[str], steps: int, error_message: str = "") -> None:
+def write_status(
+    status: str, outputs: list[str], steps: int, error_message: str = ""
+) -> None:
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    analysis_text = next((chunk[len("AI_ANALYSIS:\n"):] for chunk in outputs if chunk.startswith("AI_ANALYSIS:\n")), "")
-    analysis_provider = next((chunk.split(":", 1)[1] for chunk in outputs if chunk.startswith("AI_PROVIDER:")), "")
+    analysis_text = next(
+        (
+            chunk[len("AI_ANALYSIS:\n") :]
+            for chunk in outputs
+            if chunk.startswith("AI_ANALYSIS:\n")
+        ),
+        "",
+    )
+    analysis_provider = next(
+        (
+            chunk.split(":", 1)[1]
+            for chunk in outputs
+            if chunk.startswith("AI_PROVIDER:")
+        ),
+        "",
+    )
     payload = {
         "status": status,
         "updated_at": get_taipei_timestamp(),
@@ -170,7 +198,9 @@ def write_status(status: str, outputs: list[str], steps: int, error_message: str
         "outputs": [chunk[:2000] for chunk in outputs if chunk],
         "analysis": parse_analysis_sections(analysis_text) if analysis_text else {},
     }
-    STATUS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    STATUS_FILE.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def send_webhook(status: str, outputs: list[str], error_message: str = "") -> None:
@@ -180,7 +210,11 @@ def send_webhook(status: str, outputs: list[str], error_message: str = "") -> No
 
     color = 0x57F287 if status == "success" else 0xED4245
     title = "AI 知識庫每日更新完成" if status == "success" else "AI 知識庫每日更新失敗"
-    description = "每日 VM 掃描與知識匯入已完成。" if status == "success" else error_message[:1500]
+    description = (
+        "每日 VM 掃描與知識匯入已完成。"
+        if status == "success"
+        else error_message[:1500]
+    )
     details = "\n".join(chunk for chunk in outputs if chunk).strip() or "(無額外輸出)"
 
     payload = {
@@ -211,8 +245,22 @@ def send_webhook(status: str, outputs: list[str], error_message: str = "") -> No
     }
 
     if status == "success":
-        analysis_text = next((chunk[len("AI_ANALYSIS:\n"):] for chunk in outputs if chunk.startswith("AI_ANALYSIS:\n")), "")
-        analysis_provider = next((chunk.split(":", 1)[1] for chunk in outputs if chunk.startswith("AI_PROVIDER:")), "")
+        analysis_text = next(
+            (
+                chunk[len("AI_ANALYSIS:\n") :]
+                for chunk in outputs
+                if chunk.startswith("AI_ANALYSIS:\n")
+            ),
+            "",
+        )
+        analysis_provider = next(
+            (
+                chunk.split(":", 1)[1]
+                for chunk in outputs
+                if chunk.startswith("AI_PROVIDER:")
+            ),
+            "",
+        )
         if analysis_text:
             sections = parse_analysis_sections(analysis_text)
             payload["embeds"][0]["fields"].append(
@@ -285,11 +333,19 @@ def main() -> int:
     print(summary)
     outputs.append(summary)
 
-    scan_report_path = PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "vm-scan-latest.md"
-    feature_report_path = PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "feature-usage-report.md"
+    scan_report_path = (
+        PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "vm-scan-latest.md"
+    )
+    feature_report_path = (
+        PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "feature-usage-report.md"
+    )
     if scan_report_path.exists():
         scan_report = scan_report_path.read_text(encoding="utf-8")
-        feature_report = feature_report_path.read_text(encoding="utf-8") if feature_report_path.exists() else ""
+        feature_report = (
+            feature_report_path.read_text(encoding="utf-8")
+            if feature_report_path.exists()
+            else ""
+        )
         analysis_messages = [
             {
                 "role": "system",
@@ -318,7 +374,9 @@ def main() -> int:
                 ),
             },
         ]
-        analysis_text, provider = asyncio.run(complete_text_with_fallback(analysis_messages, max_tokens=700))
+        analysis_text, provider = asyncio.run(
+            complete_text_with_fallback(analysis_messages, max_tokens=700)
+        )
         if analysis_text:
             print(f"AI_PROVIDER:{provider}")
             print("AI_ANALYSIS:\n" + analysis_text)

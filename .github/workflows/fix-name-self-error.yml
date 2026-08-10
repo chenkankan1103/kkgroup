@@ -31,27 +31,27 @@ jobs:
       pull-requests: write
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-    
+
     steps:
     - name: 檢出代碼
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: 設定Python環境
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
+
     - name: 設定 Python 路徑
       run: |
         echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV
-    
+
     - name: 安裝依賴
       run: |
         pip install requests aiohttp python-dotenv pytz
-    
+
     - name: 執行修復腳本
       env:
         TEST_TYPE: ${{ github.event.inputs.test_type || 'push-auto' }}
@@ -60,9 +60,9 @@ jobs:
         echo "🔧 開始執行修復腳本"
         echo "📊 測試類型: $TEST_TYPE"
         echo "📝 錯誤上下文: $ERROR_CONTEXT"
-        
+
         python3 scripts/fix_name_self_error.py
-    
+
     - name: 發送 Discord 通知
       if: always()
       continue-on-error: true

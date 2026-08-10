@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
+
     _SKLEARN_AVAILABLE = True
 except ImportError:  # pragma: no cover
     TfidfVectorizer = None  # type: ignore
@@ -49,7 +50,9 @@ class KnowledgeVectorIndex:
             records.append(item)
 
         if not corpus:
-            self._save_payload({"engine": "empty", "vectorizer": None, "matrix": None, "records": []})
+            self._save_payload(
+                {"engine": "empty", "vectorizer": None, "matrix": None, "records": []}
+            )
             return 0
 
         if _SKLEARN_AVAILABLE:
@@ -61,11 +64,25 @@ class KnowledgeVectorIndex:
                 sublinear_tf=True,
             )
             matrix = vectorizer.fit_transform(corpus)
-            self._save_payload({"engine": "sklearn", "vectorizer": vectorizer, "matrix": matrix, "records": records})
+            self._save_payload(
+                {
+                    "engine": "sklearn",
+                    "vectorizer": vectorizer,
+                    "matrix": matrix,
+                    "records": records,
+                }
+            )
         else:
             vectors = [self._build_sparse_vector(text) for text in corpus]
             norms = [self._vector_norm(vector) for vector in vectors]
-            self._save_payload({"engine": "fallback", "vectors": vectors, "norms": norms, "records": records})
+            self._save_payload(
+                {
+                    "engine": "fallback",
+                    "vectors": vectors,
+                    "norms": norms,
+                    "records": records,
+                }
+            )
         logger.info("✅ 已重建知識語意索引，共 %s 筆", len(records))
         return len(records)
 
@@ -90,7 +107,9 @@ class KnowledgeVectorIndex:
         scores = self._score_query(payload, query)
 
         ranked: List[Dict[str, Any]] = []
-        ranked_indexes = sorted(range(len(scores)), key=lambda index: float(scores[index]), reverse=True)
+        ranked_indexes = sorted(
+            range(len(scores)), key=lambda index: float(scores[index]), reverse=True
+        )
         for idx in ranked_indexes:
             score = float(scores[idx])
             if score < min_score:
@@ -110,8 +129,12 @@ class KnowledgeVectorIndex:
         limit: int = 5,
         category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        keyword_items = KnowledgeBase.search_knowledge_items(query, limit=max(limit * 2, 10))
-        semantic_items = self.semantic_search(query, limit=max(limit * 2, 10), category=category)
+        keyword_items = KnowledgeBase.search_knowledge_items(
+            query, limit=max(limit * 2, 10)
+        )
+        semantic_items = self.semantic_search(
+            query, limit=max(limit * 2, 10), category=category
+        )
 
         merged: Dict[str, Dict[str, Any]] = {}
 
@@ -136,7 +159,10 @@ class KnowledgeVectorIndex:
 
         ranked = sorted(
             merged.values(),
-            key=lambda item: (float(item.get("score", 0.0)), item.get("updated_at", "")),
+            key=lambda item: (
+                float(item.get("score", 0.0)),
+                item.get("updated_at", ""),
+            ),
             reverse=True,
         )
         return ranked[:limit]
@@ -174,7 +200,11 @@ class KnowledgeVectorIndex:
 
     def _score_query(self, payload: Dict[str, Any], query: str):
         engine = payload.get("engine")
-        if engine == "sklearn" and payload.get("vectorizer") is not None and payload.get("matrix") is not None:
+        if (
+            engine == "sklearn"
+            and payload.get("vectorizer") is not None
+            and payload.get("matrix") is not None
+        ):
             query_vector = payload["vectorizer"].transform([query])
             return cosine_similarity(query_vector, payload["matrix"]).ravel()
 
@@ -192,7 +222,7 @@ class KnowledgeVectorIndex:
             if len(normalized) < size:
                 continue
             for index in range(len(normalized) - size + 1):
-                gram = normalized[index:index + size]
+                gram = normalized[index : index + size]
                 counts[gram] += 1
         return dict(counts)
 

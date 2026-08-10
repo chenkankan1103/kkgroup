@@ -278,18 +278,18 @@ class CommandsManager:
     def __init__(self):
         self.registry_path = Path("config/commands_registry.json")
         self.load_registry()
-    
+
     def load_registry(self):
         if self.registry_path.exists():
             with open(self.registry_path, 'r', encoding='utf-8') as f:
                 self.registry = json.load(f)
         else:
             self.registry = {"commands": []}
-    
+
     def save_registry(self):
         with open(self.registry_path, 'w', encoding='utf-8') as f:
             json.dump(self.registry, f, indent=2, ensure_ascii=False)
-    
+
     def add_command(self, name: str, description: str, category: str = "general"):
         command = {
             "name": name,
@@ -299,12 +299,12 @@ class CommandsManager:
         self.registry["commands"].append(command)
         self.save_registry()
         print(f"指令 '{name}' 已新增到註冊表")
-    
+
     def list_commands(self, category: str = None):
         commands = self.registry["commands"]
         if category:
             commands = [cmd for cmd in commands if cmd["category"] == category]
-        
+
         for cmd in commands:
             print(f"- {cmd['name']}: {cmd['description']}")
 
@@ -326,19 +326,19 @@ from pathlib import Path
 def update_requirements():
     """更新 requirements.txt"""
     print("正在更新依賴套件...")
-    
+
     # 檢查過期套件
-    result = subprocess.run(['pip', 'list', '--outdated'], 
+    result = subprocess.run(['pip', 'list', '--outdated'],
                           capture_output=True, text=True)
-    
+
     if result.stdout:
         print("發現過期套件:")
         print(result.stdout)
-        
+
         # 更新套件
         subprocess.run(['pip', 'install', '--upgrade', 'pip'])
         subprocess.run(['pip', 'install', '--upgrade', '-r', 'requirements.txt'])
-        
+
         # 重新生成 requirements.txt
         subprocess.run(['pip', 'freeze', '>', 'requirements.txt'], shell=True)
         print("依賴套件更新完成")
@@ -362,29 +362,29 @@ def setup_logger(name: str, level: str = "INFO"):
     """設定日誌記錄器"""
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper()))
-    
+
     # 建立日誌目錄
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
-    
+
     # 檔案處理器
     file_handler = logging.FileHandler(log_dir / f"{name}.log")
     file_handler.setLevel(logging.DEBUG)
-    
+
     # 控制台處理器
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
-    
+
     # 格式設定
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
-    
+
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-    
+
     return logger
 ```
 
@@ -402,7 +402,7 @@ def profile_time(func: Callable) -> Callable:
         start_time = time.time()
         result = func(*args, **kwargs)
         end_time = time.time()
-        
+
         print(f"{func.__name__} 執行時間: {end_time - start_time:.4f} 秒")
         return result
     return wrapper
@@ -413,15 +413,15 @@ def profile_memory(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         import psutil
         import os
-        
+
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss / 1024 / 1024  # MB
-        
+
         result = func(*args, **kwargs)
-        
+
         mem_after = process.memory_info().rss / 1024 / 1024  # MB
         print(f"{func.__name__} 記憶體使用: {mem_after - mem_before:.2f} MB")
-        
+
         return result
     return wrapper
 ```
@@ -466,18 +466,18 @@ paths:
 ```python
 def process_user_data(user_id: str, data: dict) -> dict:
     """處理用戶資料
-    
+
     Args:
         user_id: 用戶 ID
         data: 用戶資料字典
-        
+
     Returns:
         處理後的用戶資料
-        
+
     Raises:
         ValueError: 當用戶 ID 無效時
         KeyError: 當必要資料缺失時
-        
+
     Example:
         >>> result = process_user_data("123", {"name": "John"})
         >>> print(result["name"])
@@ -485,12 +485,12 @@ def process_user_data(user_id: str, data: dict) -> dict:
     """
     if not user_id:
         raise ValueError("用戶 ID 不能為空")
-    
+
     # 處理邏輯
     processed_data = data.copy()
     processed_data["user_id"] = user_id
     processed_data["processed_at"] = datetime.now().isoformat()
-    
+
     return processed_data
 ```
 
@@ -509,7 +509,7 @@ def get_version():
 def increment_version(part: str = "patch"):
     """遞增版本號"""
     major, minor, patch = map(int, __version__.split('.'))
-    
+
     if part == "major":
         major += 1
         minor = 0
@@ -519,7 +519,7 @@ def increment_version(part: str = "patch"):
         patch = 0
     else:  # patch
         patch += 1
-    
+
     global __version__
     __version__ = f"{major}.{minor}.{patch}"
     return __version__
@@ -535,22 +535,22 @@ from version import increment_version, get_version
 def create_release():
     """建立新版本發布"""
     print("開始建立發布...")
-    
+
     # 1. 更新版本號
     new_version = increment_version()
     print(f"版本號更新為: {new_version}")
-    
+
     # 2. 提交版本變更
     subprocess.run(['git', 'add', 'version.py'], check=True)
     subprocess.run(['git', 'commit', '-m', f'chore: bump version to {new_version}'], check=True)
-    
+
     # 3. 建立標籤
     subprocess.run(['git', 'tag', '-a', f'v{new_version}', '-m', f'Release version {new_version}'], check=True)
-    
+
     # 4. 推送到遠端
     subprocess.run(['git', 'push', 'origin', 'main'], check=True)
     subprocess.run(['git', 'push', 'origin', f'v{new_version}'], check=True)
-    
+
     print(f"發布 {new_version} 完成！")
 
 if __name__ == "__main__":

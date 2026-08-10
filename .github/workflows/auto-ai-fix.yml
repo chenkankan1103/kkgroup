@@ -15,27 +15,27 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
-    
+
     steps:
     - name: 檢出代碼
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: 設定Python環境
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
+
     - name: 設定 Python 路徑
       run: |
         echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV
-    
+
     - name: 安裝依賴
       run: |
         pip install requests aiohttp python-dotenv gitpython
-    
+
     - name: 執行 AI 修復
       env:
         NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}

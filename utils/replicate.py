@@ -6,6 +6,7 @@ from io import BytesIO
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")  # 你的API金鑰，從.env載入
 REPLICATE_API_BASE = "https://api.replicate.com/v1"
 
+
 # 自動取得最新的模型版本 ID
 async def get_latest_version(model_name: str) -> str:
     """
@@ -20,7 +21,9 @@ async def get_latest_version(model_name: str) -> str:
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             if resp.status != 200:
-                raise Exception(f"取得模型版本失敗：HTTP {resp.status} {await resp.text()}")
+                raise Exception(
+                    f"取得模型版本失敗：HTTP {resp.status} {await resp.text()}"
+                )
             data = await resp.json()
             if "results" not in data or not data["results"]:
                 raise Exception(f"找不到模型 {model_name} 的任何版本")
@@ -38,13 +41,10 @@ async def generate_image_from_replicate(user_input: str, model_name: str) -> Byt
     """
     version_id = await get_latest_version(model_name)
 
-    payload = {
-        "version": version_id,
-        "input": {"prompt": user_input}
-    }
+    payload = {"version": version_id, "input": {"prompt": user_input}}
     headers = {
         "Authorization": f"Token {REPLICATE_API_TOKEN}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     url = f"{REPLICATE_API_BASE}/predictions"
 

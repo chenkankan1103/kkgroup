@@ -11,11 +11,11 @@ from .locker_events import (
 )
 
 __all__ = [
-    'LockerEvent',
-    'EquipmentChangedEvent',
-    'CurrencyChangedEvent',
-    'HealthChangedEvent',
-    'InventoryChangedEvent',
-    'FullRefreshEvent',
-    'SyncRequestedEvent',
+    "LockerEvent",
+    "EquipmentChangedEvent",
+    "CurrencyChangedEvent",
+    "HealthChangedEvent",
+    "InventoryChangedEvent",
+    "FullRefreshEvent",
+    "SyncRequestedEvent",
 ]

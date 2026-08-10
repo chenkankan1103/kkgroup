@@ -177,7 +177,7 @@ from utils.nvidia_ai import NVIDIAAIClient
 
 async def analyze_error():
     client = NVIDIAAIClient()
-    
+
     error_logs = """
     [ERROR] 2024-05-12 20:15:00 - Discord bot disconnected
     Traceback (most recent call last):
@@ -185,7 +185,7 @@ async def analyze_error():
         await tree.sync()
     discord.errors.HTTPException: 429 Too Many Requests
     """
-    
+
     analysis = await client.analyze_error_logs(error_logs)
     print(f"分析結果: {analysis}")
 ```
@@ -195,14 +195,14 @@ async def analyze_error():
 ```python
 async def generate_fix():
     client = NVIDIAAIClient()
-    
+
     analysis_result = {
         "root_cause": "Discord API 速率限制",
         "impact": "Bot 無法正常運行",
         "fix_steps": ["實現速率限制", "添加重試機制"],
         "prevention": ["監控 API 使用量", "實現快取機制"]
     }
-    
+
     fix_code = await client.generate_fix_code(analysis_result)
     print(f"修復代碼: {fix_code}")
 ```
@@ -216,7 +216,7 @@ async def generate_fix():
   run: |
     python3 << 'EOF'
     from utils.nvidia_ai import NVIDIAAIClient
-    
+
     client = NVIDIAAIClient()
     response = await client.call_api(messages, model="deepseek-ai/deepseek-v4-pro")
     print(f"AI 分析結果: {response}")
@@ -230,7 +230,7 @@ async def generate_fix():
 ```python
 # 使用適當的 max_tokens
 response = await client.call_api(
-    messages, 
+    messages,
     max_tokens=1500,  # 分析用
     temperature=0.3     # 較低溫度，更確定性
 )
@@ -331,14 +331,14 @@ class NVIDIAAIClient:
     def __init__(self):
         self.api_calls = 0
         self.last_call_time = None
-    
+
     async def call_api(self, messages, **kwargs):
         self.api_calls += 1
         self.last_call_time = datetime.now()
-        
+
         # API 調用邏輯
         response = await self._make_api_call(messages, **kwargs)
-        
+
         # 記錄使用情況
         print(f"API 調用 #{self.api_calls} - 模型: {kwargs.get('model', 'default')}")
         return response
@@ -382,16 +382,16 @@ class RateLimiter:
     def __init__(self, max_calls_per_minute=60):
         self.max_calls = max_calls_per_minute
         self.calls = []
-    
+
     async def wait_if_needed(self):
         now = datetime.now()
         # 清理超過1分鐘的記錄
         self.calls = [call_time for call_time in self.calls if now - call_time < timedelta(minutes=1)]
-        
+
         if len(self.calls) >= self.max_calls:
             sleep_time = 60 - (now - self.calls[0]).seconds
             await asyncio.sleep(sleep_time)
-        
+
         self.calls.append(now)
 
 # 使用速率限制

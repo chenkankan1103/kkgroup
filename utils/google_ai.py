@@ -5,18 +5,22 @@ Google Generative AI API 封装模块
 
 import os
 import aiohttp
-import json
 from typing import List, Dict, Optional
+
 
 class GoogleAIClient:
     """Google Generative AI 用戶端"""
-    
+
     def __init__(self):
         self.api_key = os.getenv("AI_API_KEY")
         self.backup_api_key = os.getenv("AI_API_KEY_BACKUP")
-        self.base_url = "https://generativelanguage.googleapis.com/v1beta"  # 更新為 v1beta
-        self.model = os.getenv("AI_API_MODEL", "gemini-2.0-flash")  # 使用 .env 的模型，預設為 gemini-2.0-flash
-        
+        self.base_url = (
+            "https://generativelanguage.googleapis.com/v1beta"  # 更新為 v1beta
+        )
+        self.model = os.getenv(
+            "AI_API_MODEL", "gemini-2.0-flash"
+        )  # 使用 .env 的模型，預設為 gemini-2.0-flash
+
         if not self.api_key:
             print("❌ AI_API_KEY 未設置")
 
@@ -36,21 +40,24 @@ class GoogleAIClient:
             "generationConfig": {
                 "temperature": temperature,
                 "maxOutputTokens": max_tokens,
-            }
+            },
         }
 
-        headers = {
-            "Content-Type": "application/json"
-        }
+        headers = {"Content-Type": "application/json"}
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            async with session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as response:
                 if response.status == 200:
                     result = await response.json()
-                    if result.get('candidates'):
-                        content = result['candidates'][0].get('content', {})
-                        if content.get('parts'):
-                            return content['parts'][0].get('text', '')
+                    if result.get("candidates"):
+                        content = result["candidates"][0].get("content", {})
+                        if content.get("parts"):
+                            return content["parts"][0].get("text", "")
                     return None
 
                 error_text = await response.text()
@@ -58,22 +65,22 @@ class GoogleAIClient:
                 if response.status == 429:
                     raise RuntimeError("google_quota_exhausted")
                 return None
-    
+
     async def call_api(
-        self, 
-        messages: List[Dict[str, str]], 
+        self,
+        messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2000,
-        **kwargs
+        **kwargs,
     ) -> Optional[str]:
         """
         調用 Google Generative AI API
-        
+
         Args:
             messages: 訊息列表 [{'role': 'user'/'assistant', 'content': '...'}, ...]
             temperature: 溫度參數 (0-1)
             max_tokens: 最大輸出 tokens
-        
+
         Returns:
             生成的文本或 None
         """
@@ -83,43 +90,45 @@ class GoogleAIClient:
                 return None
 
             try:
-                return await self._call_with_key(self.api_key, messages, temperature, max_tokens)
+                return await self._call_with_key(
+                    self.api_key, messages, temperature, max_tokens
+                )
             except RuntimeError as exc:
                 if str(exc) != "google_quota_exhausted" or not self.backup_api_key:
                     raise
 
                 print("⚠️ Google 主 API Key 配額不足，嘗試備用 Key")
-                return await self._call_with_key(self.backup_api_key, messages, temperature, max_tokens)
-        
+                return await self._call_with_key(
+                    self.backup_api_key, messages, temperature, max_tokens
+                )
+
         except Exception as e:
             print(f"❌ Google API 調用失敗: {e}")
             return None
-    
+
     def _convert_messages(self, messages: List[Dict[str, str]]) -> List[Dict]:
         """
         將 OpenAI 格式的訊息轉換為 Google 格式
-        
+
         OpenAI 格式: [{'role': 'user'/'assistant', 'content': '...'}]
         Google 格式: [{'role': 'user'/'model', 'parts': [{'text': '...'}]}]
         """
         converted = []
         for msg in messages:
-            role = msg.get('role', 'user')
-            content = msg.get('content', '')
-            
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
             # 轉換 role
-            google_role = 'model' if role == 'assistant' else 'user'
-            
-            converted.append({
-                'role': google_role,
-                'parts': [{'text': content}]
-            })
-        
+            google_role = "model" if role == "assistant" else "user"
+
+            converted.append({"role": google_role, "parts": [{"text": content}]})
+
         return converted
 
 
 # 全局客戶端實例
 _google_client = None
+
 
 def get_google_client() -> GoogleAIClient:
     """獲取 Google AI 客戶端單例"""
@@ -130,9 +139,7 @@ def get_google_client() -> GoogleAIClient:
 
 
 async def call_google_ai(
-    messages: List[Dict[str, str]], 
-    temperature: float = 0.7,
-    max_tokens: int = 2000
+    messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 2000
 ) -> Optional[str]:
     """
     簡便函數：調用 Google Generative AI
@@ -144,23 +151,23 @@ async def call_google_ai(
 async def translate_with_google(text: str) -> Optional[str]:
     """
     使用 Google AI 翻譯文本
-    
+
     Args:
         text: 要翻譯的文本
-    
+
     Returns:
         翻譯結果或原文本
     """
     messages = [
         {
-            'role': 'system',
-            'content': 'You are a translator. Translate Chinese to English for image generation prompts. Keep it concise and descriptive.'
+            "role": "system",
+            "content": "You are a translator. Translate Chinese to English for image generation prompts. Keep it concise and descriptive.",
         },
         {
-            'role': 'user',
-            'content': f'Translate this to English for image generation: {text}'
-        }
+            "role": "user",
+            "content": f"Translate this to English for image generation: {text}",
+        },
     ]
-    
+
     result = await call_google_ai(messages, temperature=0.3, max_tokens=100)
     return result if result else text

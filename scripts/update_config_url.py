@@ -1,4 +1,5 @@
 """更新 config.json 使用新的永久網址"""
+
 import json
 import os
 

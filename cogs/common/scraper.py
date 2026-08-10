@@ -5,9 +5,7 @@
 
 import asyncio
 import logging
-import os
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -70,8 +68,17 @@ def _extract_metadata(soup: BeautifulSoup, url: str) -> dict:
     meta = {"source_domain": urlparse(url).netloc}
 
     # Open Graph / Twitter Card
-    for prop in ["og:title", "og:description", "og:image", "og:type", "twitter:card", "twitter:title"]:
-        tag = soup.find("meta", property=prop) or soup.find("meta", attrs={"name": prop})
+    for prop in [
+        "og:title",
+        "og:description",
+        "og:image",
+        "og:type",
+        "twitter:card",
+        "twitter:title",
+    ]:
+        tag = soup.find("meta", property=prop) or soup.find(
+            "meta", attrs={"name": prop}
+        )
         if tag and tag.get("content"):
             meta[prop] = tag["content"]
 
@@ -94,19 +101,28 @@ async def fetch_static(
     """使用 aiohttp + BeautifulSoup 爬取靜態頁面"""
     try:
         headers = {"User-Agent": USER_AGENT}
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=timeout)
+        ) as session:
             async with session.get(url, headers=headers) as resp:
                 if resp.status != 200:
                     return ScrapeResult(
-                        url=url, title="", content="", links=[], metadata={},
-                        success=False, error=f"HTTP {resp.status}"
+                        url=url,
+                        title="",
+                        content="",
+                        links=[],
+                        metadata={},
+                        success=False,
+                        error=f"HTTP {resp.status}",
                     )
                 html = await resp.text()
 
         soup = BeautifulSoup(html, "lxml")
 
         # 移除不需要的標籤
-        for tag in soup(["script", "style", "noscript", "iframe", "nav", "footer", "header"]):
+        for tag in soup(
+            ["script", "style", "noscript", "iframe", "nav", "footer", "header"]
+        ):
             tag.decompose()
 
         # 標題
@@ -118,11 +134,22 @@ async def fetch_static(
         # 內容提取
         if selector:
             elements = soup.select(selector)
-            content = "\n\n".join(el.get_text(separator=" ", strip=True) for el in elements)
+            content = "\n\n".join(
+                el.get_text(separator=" ", strip=True) for el in elements
+            )
         else:
             # 嘗試找主要內容區域
-            main = soup.find("main") or soup.find("article") or soup.find("div", class_=lambda x: x and "content" in x.lower()) or soup.body
-            content = main.get_text(separator="\n", strip=True) if main else soup.get_text(separator="\n", strip=True)
+            main = (
+                soup.find("main")
+                or soup.find("article")
+                or soup.find("div", class_=lambda x: x and "content" in x.lower())
+                or soup.body
+            )
+            content = (
+                main.get_text(separator="\n", strip=True)
+                if main
+                else soup.get_text(separator="\n", strip=True)
+            )
 
         content = _clean_text(content)
 
@@ -135,15 +162,35 @@ async def fetch_static(
         metadata = _extract_metadata(soup, url)
 
         return ScrapeResult(
-            url=url, title=title, content=content, links=links,
-            metadata=metadata, success=True
+            url=url,
+            title=title,
+            content=content,
+            links=links,
+            metadata=metadata,
+            success=True,
         )
 
     except asyncio.TimeoutError:
-        return ScrapeResult(url=url, title="", content="", links=[], metadata={}, success=False, error="Timeout")
+        return ScrapeResult(
+            url=url,
+            title="",
+            content="",
+            links=[],
+            metadata={},
+            success=False,
+            error="Timeout",
+        )
     except Exception as e:
         logger.error(f"靜態爬取失敗 {url}: {e}")
-        return ScrapeResult(url=url, title="", content="", links=[], metadata={}, success=False, error=str(e))
+        return ScrapeResult(
+            url=url,
+            title="",
+            content="",
+            links=[],
+            metadata={},
+            success=False,
+            error=str(e),
+        )
 
 
 # ─── 動態頁面爬取 ──────────────────────────────────────────────────────────
@@ -158,6 +205,7 @@ async def _get_playwright_browser():
         if _playwright_browser is None:
             try:
                 from playwright.async_api import async_playwright
+
                 playwright = await async_playwright().start()
                 _playwright_browser = await playwright.chromium.launch(
                     headless=True,
@@ -201,8 +249,13 @@ async def fetch_dynamic(
         if not response or response.status >= 400:
             await context.close()
             return ScrapeResult(
-                url=url, title="", content="", links=[], metadata={},
-                success=False, error=f"HTTP {response.status if response else 'No response'}"
+                url=url,
+                title="",
+                content="",
+                links=[],
+                metadata={},
+                success=False,
+                error=f"HTTP {response.status if response else 'No response'}",
             )
 
         # 等待特定選擇器（如果有）
@@ -243,15 +296,23 @@ async def fetch_dynamic(
 
         # 用 BeautifulSoup 解析
         soup = BeautifulSoup(html, "lxml")
-        for tag in soup(["script", "style", "noscript", "iframe", "nav", "footer", "header"]):
+        for tag in soup(
+            ["script", "style", "noscript", "iframe", "nav", "footer", "header"]
+        ):
             tag.decompose()
 
         if selector:
             elements = soup.select(selector)
-            content = "\n\n".join(el.get_text(separator=" ", strip=True) for el in elements)
+            content = "\n\n".join(
+                el.get_text(separator=" ", strip=True) for el in elements
+            )
         else:
             main = soup.find("main") or soup.find("article") or soup.body
-            content = main.get_text(separator="\n", strip=True) if main else soup.get_text(separator="\n", strip=True)
+            content = (
+                main.get_text(separator="\n", strip=True)
+                if main
+                else soup.get_text(separator="\n", strip=True)
+            )
 
         content = _clean_text(content)
         links = _extract_links(soup, url)
@@ -261,13 +322,25 @@ async def fetch_dynamic(
             metadata["screenshot"] = "available"
 
         return ScrapeResult(
-            url=url, title=title, content=content, links=links,
-            metadata=metadata, success=True
+            url=url,
+            title=title,
+            content=content,
+            links=links,
+            metadata=metadata,
+            success=True,
         )
 
     except Exception as e:
         logger.error(f"動態爬取失敗 {url}: {e}")
-        return ScrapeResult(url=url, title="", content="", links=[], metadata={}, success=False, error=str(e))
+        return ScrapeResult(
+            url=url,
+            title="",
+            content="",
+            links=[],
+            metadata={},
+            success=False,
+            error=str(e),
+        )
 
 
 # ─── 統一介面 ──────────────────────────────────────────────────────────────
@@ -295,7 +368,15 @@ async def fetch_webpage(
     # 基本 URL 驗證
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
-        return ScrapeResult(url=url, title="", content="", links=[], metadata={}, success=False, error="Invalid URL")
+        return ScrapeResult(
+            url=url,
+            title="",
+            content="",
+            links=[],
+            metadata={},
+            success=False,
+            error="Invalid URL",
+        )
 
     if dynamic:
         return await fetch_dynamic(url, selector, format, wait_for, timeout, screenshot)
@@ -309,16 +390,24 @@ async def search_web(query: str, max_results: int = 5) -> list[dict]:
     回傳: [{"title": ..., "url": ..., "snippet": ...}, ...]
     """
     try:
-        search_url = f"https://html.duckduckgo.com/html/?q={aiohttp.helpers.quote(query)}"
+        search_url = (
+            f"https://html.duckduckgo.com/html/?q={aiohttp.helpers.quote(query)}"
+        )
         result = await fetch_static(search_url, selector=".result__body", timeout=10)
 
         if not result.success:
             return []
 
-        soup = BeautifulSoup(result.content, "lxml") if result.content else BeautifulSoup("", "lxml")
+        soup = (
+            BeautifulSoup(result.content, "lxml")
+            if result.content
+            else BeautifulSoup("", "lxml")
+        )
         # 重新解析搜尋結果頁
         async with aiohttp.ClientSession() as session:
-            async with session.get(search_url, headers={"User-Agent": USER_AGENT}) as resp:
+            async with session.get(
+                search_url, headers={"User-Agent": USER_AGENT}
+            ) as resp:
                 html = await resp.text()
 
         soup = BeautifulSoup(html, "lxml")
@@ -327,11 +416,15 @@ async def search_web(query: str, max_results: int = 5) -> list[dict]:
             title_el = item.select_one(".result__title a")
             snippet_el = item.select_one(".result__snippet")
             if title_el:
-                results.append({
-                    "title": title_el.get_text(strip=True),
-                    "url": title_el.get("href", ""),
-                    "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
-                })
+                results.append(
+                    {
+                        "title": title_el.get_text(strip=True),
+                        "url": title_el.get("href", ""),
+                        "snippet": snippet_el.get_text(strip=True)
+                        if snippet_el
+                        else "",
+                    }
+                )
         return results
     except Exception as e:
         logger.error(f"搜尋失敗: {e}")

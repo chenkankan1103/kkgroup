@@ -8,23 +8,23 @@
     --warning-color: #ffd93d;
     --purple-glow: #a855f7;
     --cyan-glow: #22d3ee;
-    
+
     /* 玻璃拟态背景 */
     --glass-bg: rgba(255, 255, 255, 0.08);
     --glass-border: rgba(255, 255, 255, 0.15);
     --glass-highlight: rgba(255, 255, 255, 0.1);
-    
+
     /* 文字颜色 */
     --text-primary: #ffffff;
     --text-secondary: rgba(255, 255, 255, 0.7);
     --text-muted: rgba(255, 255, 255, 0.5);
-    
+
     /* 阴影与光晕 */
     --shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     --shadow-glow: 0 0 30px rgba(74, 158, 255, 0.3);
     --glow-blue: 0 0 20px rgba(74, 158, 255, 0.6);
     --glow-purple: 0 0 25px rgba(168, 85, 247, 0.5);
-    
+
     /* 字体 */
     --font-title: 'ZCOOL KuaiLe', 'Noto Sans TC', cursive;
     --font-body: 'Noto Sans TC', 'Inter', -apple-system, sans-serif;
@@ -39,7 +39,7 @@
 
 body {
     font-family: var(--font-body);
-    background: 
+    background:
         radial-gradient(ellipse at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
         radial-gradient(ellipse at 80% 20%, rgba(74, 158, 255, 0.2) 0%, transparent 50%),
         radial-gradient(ellipse at 50% 50%, rgba(168, 85, 247, 0.15) 0%, transparent 70%),

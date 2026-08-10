@@ -49,29 +49,29 @@ check_service_exists() {
 show_status() {
     echo -e "${BLUE}📊 系統狀態概覽${NC}"
     echo "================================"
-    
+
     # 系統負載
     echo -e "${YELLOW}🖥️ 系統負載:${NC} $(uptime | awk '{print $10,$11,$12}')"
-    
+
     # 記憶體使用
     echo -e "${YELLOW}🧠 記憶體使用:${NC}"
     free -h | grep "Mem:" | awk '{printf "   使用: %s / %s (%.1f%%)\n", $3, $2, ($3/$2)*100}'
-    
+
     # 磁碟空間
     echo -e "${YELLOW}💾 磁碟空間:${NC}"
     df -h /home/e193752468 | tail -n 1 | awk '{printf "   使用: %s / %s (%s)\n", $3, $2, $5}'
-    
+
     echo ""
     echo -e "${BLUE}🤖 機器人服務狀態${NC}"
     echo "================================"
-    
+
     local services=("discord-bot" "discord-shopbot" "discord-uibot")
-    
+
     for service in "${services[@]}"; do
         if check_service_exists "$service"; then
             local status=$(systemctl is-active "$service" 2>/dev/null)
             local enabled=$(systemctl is-enabled "$service" 2>/dev/null)
-            
+
             case $status in
                 "active")
                     echo -e "${GREEN}✅${NC} $service - 運行中 (啟用: $enabled)"
@@ -99,18 +99,18 @@ show_status() {
 
 show_logs() {
     local service=$1
-    
+
     if [ -z "$service" ]; then
         echo -e "${YELLOW}請指定服務名稱。可用服務:${NC}"
         echo "  discord-bot, discord-shopbot, discord-uibot"
         return 1
     fi
-    
+
     if ! check_service_exists "$service"; then
         echo -e "${RED}❌ 服務 $service 不存在${NC}"
         return 1
     fi
-    
+
     echo -e "${BLUE}📋 $service 日誌 (最近50行):${NC}"
     echo "================================"
     journalctl -u "$service" -n 50 --no-pager -l
@@ -119,7 +119,7 @@ show_logs() {
 manage_service() {
     local action=$1
     local service=$2
-    
+
     if [ -z "$service" ]; then
         # 如果沒指定服務，對所有服務執行操作
         local services=("discord-bot" "discord-shopbot" "discord-uibot")
@@ -128,14 +128,14 @@ manage_service() {
         done
         return
     fi
-    
+
     if ! check_service_exists "$service"; then
         echo -e "${RED}❌ 服務 $service 不存在${NC}"
         return 1
     fi
-    
+
     echo -e "${BLUE}🔄 ${action} $service...${NC}"
-    
+
     case $action in
         "restart")
             sudo systemctl restart "$service"
@@ -151,11 +151,11 @@ manage_service() {
             return 1
             ;;
     esac
-    
+
     # 等待一下再檢查狀態
     sleep 2
     local status=$(systemctl is-active "$service")
-    
+
     case $status in
         "active")
             echo -e "${GREEN}✅ $service $action 成功${NC}"
@@ -169,7 +169,7 @@ manage_service() {
 run_update() {
     echo -e "${BLUE}🔄 執行更新檢查...${NC}"
     cd "$SCRIPT_DIR"
-    
+
     if [ -f "update_and_restart.py" ]; then
         python3 update_and_restart.py
     else
@@ -183,25 +183,25 @@ force_update() {
     echo "這將直接拉取最新代碼並重啟所有服務"
     echo -n "確定要繼續嗎? (y/N): "
     read -r response
-    
+
     if [[ "$response" =~ ^[Yy]$ ]]; then
         echo -e "${BLUE}🔄 強制執行更新...${NC}"
         cd "$SCRIPT_DIR"
-        
+
         # 拉取最新代碼
         echo "📥 拉取最新代碼..."
         git pull origin main
-        
+
         # 重啟所有服務
         echo "🔄 重啟所有服務..."
         manage_service "restart"
-        
+
         # 發送狀態報告
         if [ -f "bot_status_checker.py" ]; then
             echo "📢 發送狀態報告..."
             python3 bot_status_checker.py --detailed
         fi
-        
+
         echo -e "${GREEN}✅ 強制更新完成${NC}"
     else
         echo "取消更新"
@@ -211,18 +211,18 @@ force_update() {
 export_logs() {
     local timestamp=$(date +"%Y%m%d_%H%M%S")
     local export_file="$LOG_DIR/bot_logs_export_$timestamp.txt"
-    
+
     echo -e "${BLUE}📄 匯出日誌到 $export_file${NC}"
-    
+
     {
         echo "=" >> "$export_file"
         echo "Discord Bot 日誌匯出"
         echo "匯出時間: $(date)"
-        echo "=" 
+        echo "="
         echo ""
-        
+
         local services=("discord-bot" "discord-shopbot" "discord-uibot")
-        
+
         for service in "${services[@]}"; do
             if check_service_exists "$service"; then
                 echo "--- $service 日誌 (最近100行) ---"
@@ -231,10 +231,10 @@ export_logs() {
                 echo ""
             fi
         done
-        
+
         echo "--- 系統錯誤日誌 (最近24小時) ---"
         journalctl -p err --since "24 hours ago" --no-pager -l
-        
+
         echo ""
         echo "--- 系統資源資訊 ---"
         echo "系統負載: $(uptime)"
@@ -247,9 +247,9 @@ export_logs() {
         echo ""
         echo "進程資訊:"
         ps aux | grep python | grep -E "(bot|shop|ui)\.py"
-        
+
     } >> "$export_file"
-    
+
     echo -e "${GREEN}✅ 日誌已匯出到: $export_file${NC}"
     echo "檔案大小: $(du -h "$export_file" | cut -f1)"
 }
@@ -257,7 +257,7 @@ export_logs() {
 monitor_bots() {
     echo -e "${BLUE}📊 即時監控模式 (按 Ctrl+C 停止)${NC}"
     echo "================================"
-    
+
     while true; do
         clear
         show_status
