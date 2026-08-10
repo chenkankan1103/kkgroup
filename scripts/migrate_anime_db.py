@@ -67,8 +67,8 @@ def fix_anime_votes_table(cursor):
         ("messageId", "INTEGER"),
         ("message_id", "INTEGER"),
         ("comment", "TEXT"),
-        ("votedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
-        ("voted_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("votedAt", "TEXT DEFAULT (datetime('now'))"),
+        ("voted_at", "TEXT DEFAULT (datetime('now'))"),
     ]
 
     added_count = 0
@@ -95,13 +95,13 @@ def fix_anime_messages_table(cursor):
         ("animeSn", "INTEGER"),
         ("anime_name", "TEXT"),
         ("channelId", "INTEGER"),
-        ("createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("createdAt", "TEXT DEFAULT (datetime('now'))"),
         # snake_case compatibility
         ("video_sn", "INTEGER"),
         ("anime_sn", "INTEGER"),
         ("message_id", "INTEGER"),
         ("channel_id", "INTEGER"),
-        ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("created_at", "TEXT DEFAULT (datetime('now'))"),
     ]
 
     added_count = 0
@@ -126,13 +126,13 @@ def fix_anime_rewards_table(cursor):
         ("rewardType", "TEXT"),
         ("amount", "INTEGER"),
         ("userId", "TEXT"),
-        ("rewardedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("rewardedAt", "TEXT DEFAULT (datetime('now'))"),
         # snake_case compatibility
         ("message_id", "INTEGER"),
         ("reward_type", "TEXT"),
         ("user_id", "TEXT"),
         ("reward_amount", "INTEGER"),
-        ("awarded_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("awarded_at", "TEXT DEFAULT (datetime('now'))"),
     ]
 
     added_count = 0
@@ -156,11 +156,11 @@ def fix_anime_details_table(cursor):
         ("description", "TEXT"),
         ("score", "REAL"),
         ("tags", "TEXT"),
-        ("createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("createdAt", "TEXT DEFAULT (datetime('now'))"),
         # snake_case
         ("anime_sn", "INTEGER PRIMARY KEY"),
         ("cover", "TEXT"),
-        ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("created_at", "TEXT DEFAULT (datetime('now'))"),
     ]
 
     # Special handling for primary key - SQLite doesn't allow adding PK column easily
@@ -193,12 +193,12 @@ def fix_episode_stats_table(cursor):
         ("episodeNum", "TEXT"),
         ("views", "INTEGER"),
         ("score", "REAL DEFAULT 0"),
-        ("recordedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("recordedAt", "TEXT DEFAULT (datetime('now'))"),
         # snake_case
         ("video_sn", "INTEGER"),
         ("anime_sn", "INTEGER"),
         ("episode_num", "TEXT"),
-        ("recorded_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("recorded_at", "TEXT DEFAULT (datetime('now'))"),
     ]
 
     added_count = 0
@@ -221,14 +221,14 @@ def fix_notified_table(cursor):
         ("anime_name", "TEXT"),
         ("volume", "TEXT"),
         ("cover_url", "TEXT"),
-        ("notifiedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("notifiedAt", "TEXT DEFAULT (datetime('now'))"),
         # snake_case
         ("video_sn", "INTEGER"),
         ("anime_sn", "INTEGER"),
         ("anime_name", "TEXT"),  # duplicate name, skip
         ("volume", "TEXT"),
         ("cover", "TEXT"),
-        ("notified_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("notified_at", "TEXT DEFAULT (datetime('now'))"),
     ]
 
     added_count = 0
