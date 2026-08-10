@@ -204,6 +204,10 @@ def fix_anime_details_table(cursor):
 
 def fix_episode_stats_table(cursor):
     """Fix episode_stats table - ensure all required columns exist"""
+    if not table_exists(cursor, EPISODE_STATS_TABLE):
+        logger.info(f"[Migration] Table {EPISODE_STATS_TABLE} does not exist, skipping")
+        return 0
+
     migrations = [
         ("videoSn", "INTEGER PRIMARY KEY"),
         ("animeSn", "INTEGER"),
@@ -232,6 +236,10 @@ def fix_episode_stats_table(cursor):
 
 def fix_notified_table(cursor):
     """Fix notified table - ensure all required columns exist"""
+    if not table_exists(cursor, NOTIFIED_TABLE):
+        logger.info(f"[Migration] Table {NOTIFIED_TABLE} does not exist, skipping")
+        return 0
+
     migrations = [
         ("videoSn", "INTEGER PRIMARY KEY"),
         ("animeSn", "INTEGER"),
