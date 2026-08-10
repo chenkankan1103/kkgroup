@@ -483,7 +483,7 @@ class AnimeTracker(commands.Cog):
 
                             success = await self.send_anime_push(
                                 scheduled_time,
-                                ANIME_CHANNEL_ID,
+                                push_core.ANIME_CHANNEL_ID,
                                 day_of_week=day_of_week,
                                 week_start_date=week_start_str
                             )
@@ -722,7 +722,7 @@ class AnimeTracker(commands.Cog):
 
                     # 傳入預熱結果，避免 send_anime_push 重複呼叫 API
                     success = await self.send_anime_push(
-                        scheduled, ANIME_CHANNEL_ID,
+                        scheduled, push_core.ANIME_CHANNEL_ID,
                         prefetched_episodes=preheat_episodes
                     )
                     if success:
@@ -732,7 +732,7 @@ class AnimeTracker(commands.Cog):
                         logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 推送未完成，30s 後重試...")
                         await asyncio.sleep(30)
                         # 重試時不使用預熱資料，讓 send_anime_push 重新 fetch API
-                        success = await self.send_anime_push(scheduled, ANIME_CHANNEL_ID)
+                        success = await self.send_anime_push(scheduled, push_core.ANIME_CHANNEL_ID)
                         if success:
                             logger.info(f"✅ [_schedule_dispatcher] {scheduled} 重試成功")
                         else:
@@ -790,7 +790,7 @@ class AnimeTracker(commands.Cog):
             missed_sorted = sorted(missed, key=lambda x: x['scheduled_time'])
             logger.info(f"📺 [refresh_weekly_schedule] 發現 {len(missed_sorted)} 個漏推時刻，開始補推")
             for item in missed_sorted:
-                await self.send_anime_push(item['scheduled_time'], ANIME_CHANNEL_ID)
+                await self.send_anime_push(item['scheduled_time'], push_core.ANIME_CHANNEL_ID)
                 await asyncio.sleep(2)
         else:
             logger.info(f"ℹ️ [refresh_weekly_schedule] 今日無漏推項目")
