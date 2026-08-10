@@ -20,7 +20,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import asyncio
 import aiohttp
-from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE, get_week_start_date, find_unpushed_items
+from . import push_core
+from .push_core import AnimeDatabase, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE, get_week_start_date, find_unpushed_items
 
 logger = logging.getLogger(__name__)
 

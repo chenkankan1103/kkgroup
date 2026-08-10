@@ -43,7 +43,8 @@ ANIME_CHECK_HISTORY_TABLE = "anime_check_history"  # 每日時刻檢查歷史（
 ANIME_WEEKLY_SCHEDULE_TABLE = "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
 
 # 導入自定義模組
-from .push_core import AnimePushCore, AnimeDatabase, ANIME_CHANNEL_ID, find_unpushed_items
+from . import push_core
+from .push_core import AnimePushCore, AnimeDatabase, find_unpushed_items
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
@@ -402,7 +403,7 @@ class AnimeTracker(commands.Cog):
                     logger.info(f"📺 [_catchup_missed_pushes] 補推時刻: {scheduled_time} (距今 {diff_seconds:.0f} 秒前)")
 
                     success = await self.send_anime_push(
-                        scheduled_time, ANIME_CHANNEL_ID,
+                        scheduled_time, push_core.ANIME_CHANNEL_ID,
                         week_start_date=week_start_str,
                         day_of_week=day_of_week
                     )

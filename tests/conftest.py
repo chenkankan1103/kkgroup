@@ -67,30 +67,98 @@ def isolated_db(temp_db_path):
 
 # ==================== dpytest Discord 環境 ====================
 
-@pytest_asyncio.fixture(autouse=True, scope="function")
-async def dpytest_setup(event_loop, temp_db_path):
+@pytest_asyncio.fixture(scope="function")
+async def dpytest_setup(event_loop, temp_db_path, frozen_time):
     """
-    每個測試自動配置 dpytest
+    基礎 dpytest Discord 環境配置
     - 建立模擬 guild、channel、member
-    - 載入 AnimeTracker cog
     - 測試後清理 dpytest 狀態
+    - 不載入特定 cog，不打補釘 API
     """
     import discord
     from discord.ext import commands
-    from unittest.mock import AsyncMock, patch
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
-    # 建立新的 Bot 實例給 dpytest 使用（避免與 bots.bot 現有實例衝突）
+    TW_TZ = ZoneInfo('Asia/Taipei')
+
+    # 預設凍結時間：週一 2026-08-10 12:00:00
+    default_time = datetime(2026, 8, 10, 12, 0, 0, tzinfo=TW_TZ)
+    frozen_time.freeze(default_time)
+
+    # 建立新的 Bot 實例給 dpytest 使用
     intents = discord.Intents.all()
     bot = commands.Bot(command_prefix="!", intents=intents)
-    # 關鍵：在 async context 中明確設定 loop
     bot._loop = event_loop
-    # 確保 loop 屬性可正常存取
     bot.loop = event_loop
 
-    # 配置 dpytest (同步函數，不需要 await)
+    # 配置 dpytest
     dpytest.configure(bot)
 
-    # 手動設定 bot ready 狀態 (dpytest v0.7 沒有 run() 函數)
+    # 手動設定 bot ready 狀態
+    bot._ready = asyncio.Event()
+    bot._ready.set()
+
+    # 建立測試用 guild、channel
+    guild = dpytest.get_config().guilds[0]
+    channel = dpytest.get_config().channels[0]
+
+    ctx = {
+        "bot": bot,
+        "guild": guild,
+        "channel": channel,
+        "channel_id": channel.id,
+        "temp_db_path": temp_db_path,
+    }
+
+    yield ctx
+
+    # ===== 測試後清理 =====
+    # 清空 dpytest 內部隊列
+    await dpytest.empty_queue()
+
+    # 重置 dpytest 配置
+    try:
+        dpytest.unconfigure()
+    except Exception:
+        pass
+
+    # 解凍時間
+    frozen_time.unfreeze()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def anime_dpytest_setup(event_loop, temp_db_path, frozen_time, patch_bahamut_api):
+    """
+    完整的動畫測試環境
+    - 包含 dpytest 基礎環境
+    - 載入 AnimeTracker cog
+    - 打補釘 Bahamut API
+    - 設定 ANIME_CHANNEL_ID 和資料庫路徑
+    """
+    import discord
+    from discord.ext import commands
+    from unittest.mock import patch
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from pathlib import Path
+
+    TW_TZ = ZoneInfo('Asia/Taipei')
+
+    # 預設凍結時間：週一 2026-08-10 12:00:00 (避開 00:00 觸發 catchup)
+    default_time = datetime(2026, 8, 10, 12, 0, 0, tzinfo=TW_TZ)
+    frozen_time.freeze(default_time)
+
+    # 建立新的 Bot 實例給 dpytest 使用
+    intents = discord.Intents.all()
+    bot = commands.Bot(command_prefix="!", intents=intents)
+    bot._loop = event_loop
+    bot.loop = event_loop
+
+    # 配置 dpytest
+    dpytest.configure(bot)
+
+    # 手動設定 bot ready 狀態
     bot._ready = asyncio.Event()
     bot._ready.set()
 
@@ -98,7 +166,7 @@ async def dpytest_setup(event_loop, temp_db_path):
 
     # 建立測試用 guild、channel
     guild = dpytest.get_config().guilds[0]
-    channel = dpytest.get_config().channels[0]  # 預設文字頻道
+    channel = dpytest.get_config().channels[0]
 
     # 將頻道 ID 設為 ANIME_CHANNEL_ID 以便測試
     import cogs.ui.push_core as push_core_mod
@@ -110,29 +178,20 @@ async def dpytest_setup(event_loop, temp_db_path):
     original_db_path = anime_tracker_mod.ANIME_DB_PATH
     anime_tracker_mod.ANIME_DB_PATH = Path(temp_db_path)
 
+    # 取得 mock 實例
+    mock_bahamut_api = patch_bahamut_api
+
     # Patch background task startup to avoid loop issues in test
     async def patched_cog_load(self):
-        """Patched cog_load that skips background tasks"""
+        """Patched cog_load that skips background tasks, init, and catchup"""
         try:
             await self._restore_old_message_views()
         except Exception:
             pass
 
-        try:
-            await self._init_weekly_schedule_if_empty()
-        except Exception:
-            pass
-
-        try:
-            await self._catchup_missed_pushes()
-        except Exception:
-            pass
+        # SKIP init and catchup during fixture setup - tests will initialize at their own frozen time
 
         # Skip starting background tasks in tests
-        # self.refresh_weekly_schedule.start()  # SKIP
-        # self._dispatcher_task = ...  # SKIP
-        # self._catchup_check_task = ...  # SKIP
-        # self.sync_episode_stats.start()  # SKIP
 
     with patch.object(AnimeTracker, 'cog_load', patched_cog_load):
         # 載入 cog
@@ -148,6 +207,7 @@ async def dpytest_setup(event_loop, temp_db_path):
             "channel": channel,
             "channel_id": channel.id,
             "temp_db_path": temp_db_path,
+            "mock_bahamut_api": mock_bahamut_api,
         }
 
         yield ctx
@@ -169,15 +229,15 @@ async def dpytest_setup(event_loop, temp_db_path):
     except Exception:
         pass
 
-
-# ==================== Bahamut API Mock ====================
+    # 5. 解凍時間
+    frozen_time.unfreeze()
 
 class MockBahamutAPI:
     """模擬 Bahamut 動畫瘋 API 回應"""
 
     def __init__(self):
         self.schedule_data = self._default_schedule()
-        self.new_anime_data = self._default_new_anime()
+        self.new_anime_data = None  # 延遲初始化，改由 get_new_anime 動態生成 upTime
         self.video_details = {}
         self.call_count = {"schedule": 0, "new_anime": 0, "details": 0}
 
@@ -200,12 +260,13 @@ class MockBahamutAPI:
             "6": [  # 週六
                 {"title": "Attack on Titan", "scheduleTime": "23:30", "videoSn": 1005, "animeSn": 5005, "cover": "https://example.com/aot.jpg"},
             ],
-            "7": [],  # 週日
+            "7": [  # 週日
+                {"title": "Sunday Early Anime", "scheduleTime": "00:00", "videoSn": 1007, "animeSn": 5007, "cover": "https://example.com/sun_early.jpg"},
+            ],
         }
 
-    def _default_new_anime(self):
-        """預設新番資料（模擬 newAnime.date API）"""
-        # upTime 格式：MM/DD
+    def _build_new_anime_data(self):
+        """動態構建新番資料，使用當前系統時間（會被 frozen_time 影響）"""
         from datetime import datetime
         from zoneinfo import ZoneInfo
         today_str = datetime.now(ZoneInfo('Asia/Taipei')).strftime("%m/%d")
@@ -246,9 +307,11 @@ class MockBahamutAPI:
         return {"data": {"newAnimeSchedule": self.schedule_data}}
 
     def get_new_anime(self):
-        """模擬 newAnime.date API"""
+        """模擬 newAnime.date API - 每次呼叫動態生成 upTime 以符合凍結時間"""
         self.call_count["new_anime"] += 1
-        return {"data": {"newAnime": {"date": self.new_anime_data, "popular": []}}}
+        # 如果測試有手動設定 new_anime_data，優先使用；否則動態生成
+        data = self.new_anime_data if self.new_anime_data is not None else self._build_new_anime_data()
+        return {"data": {"newAnime": {"date": data, "popular": []}}}
 
     def get_video_details(self, video_sn):
         """模擬 video.php API"""
@@ -267,46 +330,73 @@ def mock_bahamut_api():
     return MockBahamutAPI()
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def patch_bahamut_api(mock_bahamut_api):
     """
-    自動打補釘所有 Bahamut API 呼叫
+    打補釘所有 Bahamut API 呼叫
     適用於：AnimePushCore、AnimeScheduleTracker、AnimeTracker
     """
     import aiohttp
+    from unittest.mock import AsyncMock, MagicMock, patch
 
-    async def mock_get(url, *args, **kwargs):
-        class MockResponse:
-            def __init__(self, data, status=200):
-                self._data = data
-                self.status = status
+    class MockResponse:
+        """正確實現 async context manager 的 Mock Response"""
+        def __init__(self, data, status=200):
+            self._data = data
+            self.status = status
 
-            async def json(self):
-                return self._data
+        async def json(self):
+            return self._data
 
-            async def __aenter__(self):
-                return self
+        async def __aenter__(self):
+            return self
 
-            async def __aexit__(self, *args):
-                pass
+        async def __aexit__(self, *args):
+            pass
 
-        if "newAnimeSchedule" in url or ("anime/v3/index.php" in url and "schedule" not in url):
-            # 週表 API
-            return MockResponse(mock_bahamut_api.get_schedule())
-        elif "newAnime" in url or "anime/v3/index.php" in url:
-            # 新番 API
-            return MockResponse(mock_bahamut_api.get_new_anime())
-        elif "video.php" in url:
-            # 詳細資訊 API
-            video_sn = int(url.split("sn=")[-1].split("&")[0]) if "sn=" in url else 0
-            return MockResponse(mock_bahamut_api.get_video_details(video_sn))
-        elif "animeVideo.php" in url:
-            # 網頁爬蟲 fallback
-            return MockResponse({"status": 200, "text": "<html></html>"}, status=200)
+    class MockSession:
+        """模擬 ClientSession，其 get 返回 async context manager"""
+        def __init__(self, mock_api):
+            self.mock_api = mock_api
+            self.call_count = 0
 
-        return MockResponse({}, status=404)
+        async def __aenter__(self):
+            return self
 
-    with patch("aiohttp.ClientSession.get", side_effect=mock_get):
+        async def __aexit__(self, *args):
+            pass
+
+        def get(self, url, *args, **kwargs):
+            self.call_count += 1
+            # 處理不同的 API endpoint
+            if "video.php" in url:
+                # 動畫詳細資訊 endpoint: /video.php?sn={video_sn}
+                import re
+                match = re.search(r'sn=(\d+)', url)
+                video_sn = int(match.group(1)) if match else 1001
+                return MockResponse(self.mock_api.get_video_details(video_sn))
+            else:
+                # 主 endpoint (/index.php): 返回 schedule + newAnime
+                return MockResponse({
+                    "data": {
+                        "newAnimeSchedule": self.mock_api.get_schedule()["data"]["newAnimeSchedule"],
+                        "newAnime": self.mock_api.get_new_anime()["data"]["newAnime"],
+                        "popular": []
+                    }
+                })
+
+    # Patch aiohttp.ClientSession to return a MockSession instance directly
+    class MockClientSession:
+        def __init__(self, *args, **kwargs):
+            self._session = MockSession(mock_bahamut_api)
+
+        async def __aenter__(self):
+            return self._session
+
+        async def __aexit__(self, *args):
+            pass
+
+    with patch("aiohttp.ClientSession", MockClientSession):
         yield mock_bahamut_api
 
 
@@ -316,7 +406,7 @@ def patch_bahamut_api(mock_bahamut_api):
 def frozen_time():
     """
     凍結時間用於測試特定時刻的邏輯
-    使用 unittest.mock.patch 正確模擬各模組的 datetime.now
+    使用 unittest.mock.patch 正確模擬 datetime.datetime.now
     """
     from datetime import datetime as real_datetime
     from zoneinfo import ZoneInfo
@@ -329,11 +419,10 @@ def frozen_time():
 
         def freeze(self, dt: real_datetime):
             """凍結到指定時間"""
-            import cogs.ui.push_core as pc
-            import cogs.ui.anime_tracker as at
-            import cogs.ui.schedule_tracker as st
+            # 先清理舊的 patch（支援重複呼叫 freeze）
+            self.unfreeze()
 
-            self.frozen_dt = dt if dt.tzinfo else dt.replace(tzinfo=ZoneInfo('Asia/Taipei'))
+            frozen_dt = dt if dt.tzinfo else dt.replace(tzinfo=ZoneInfo('Asia/Taipei'))
 
             # 建立一個模擬 datetime 類別，其 now classmethod 回傳固定時間
             class FrozenDatetime(real_datetime):
@@ -341,7 +430,26 @@ def frozen_time():
                 def now(cls, tz=None):
                     return self.frozen_dt
 
-            # Patch 各模組的 datetime 參考
+            # 將傳入的真實 datetime 轉換為 FrozenDatetime 實例
+            # 這樣 now() 返回的就是 FrozenDatetime 實例，能通過 isinstance 檢查
+            self.frozen_dt = FrozenDatetime(
+                frozen_dt.year, frozen_dt.month, frozen_dt.day,
+                frozen_dt.hour, frozen_dt.minute, frozen_dt.second,
+                frozen_dt.microsecond, frozen_dt.tzinfo
+            )
+            self._FrozenDatetime = FrozenDatetime
+
+            # Patch datetime.datetime 在 builtins 全域生效
+            # 這對於使用 `from datetime import datetime` 的代碼有效
+            p1 = patch('datetime.datetime', FrozenDatetime)
+            p1.start()
+            self.patches.append(p1)
+
+            # 也 patch 各模組的 datetime 參考（雙重保險）
+            import cogs.ui.push_core as pc
+            import cogs.ui.anime_tracker as at
+            import cogs.ui.schedule_tracker as st
+
             for mod in [pc, at, st]:
                 p = patch.object(mod, 'datetime', FrozenDatetime)
                 p.start()
@@ -365,6 +473,8 @@ def frozen_time():
 
 
 # ==================== 測試資料建構器 ====================
+
+from cogs.ui.push_core import find_unpushed_items
 
 @pytest.fixture
 def sample_schedule_item():
