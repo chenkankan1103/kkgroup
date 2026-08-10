@@ -25,7 +25,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import discord
 from discord.ext import tasks, commands
-from .push_core import AnimeDatabase, ANIME_CHANNEL_ID, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT
+from . import push_core
+from .push_core import AnimeDatabase, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -1029,7 +1030,7 @@ class RankingStats:
             # 獲取頻道
             channel = None  # 需要從外部傳入
             if not channel:
-                logger.error(f"❌ [daily_anime_check] 找不到頻道 ID: {ANIME_CHANNEL_ID}")
+                logger.error(f"❌ [daily_anime_check] 找不到頻道 ID: {push_core.ANIME_CHANNEL_ID}")
                 return
 
             # 檢查並發送新番

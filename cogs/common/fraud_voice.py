@@ -25,13 +25,18 @@ INACTIVE_TIMEOUT = 300  # 5分鐘 = 300秒
 MEMBER_ROLE_ID = int(os.getenv("MEMBER_ROLE_ID", 0))
 
 # 資料庫連線輔助函數：啟用 WAL 模式避免多進程鎖定
-async def _get_db_connection():
-    """獲取配置好 WAL 模式的 aiosqlite 連線"""
-    conn = await aiosqlite.connect(DB_PATH)
+def _get_db_connection():
+    """獲取 aiosqlite 連線物件（非 async 函數，直接返回連線物件供 async with 使用）"""
+    conn = aiosqlite.connect(DB_PATH)
+    # WAL 模式設定將在連線建立時自動套用（透過 __aenter__）
+    return conn
+
+
+async def _configure_db_connection(conn):
+    """配置資料庫連線設定（在 async with 進入後呼叫）"""
     await conn.execute("PRAGMA journal_mode=WAL")
     await conn.execute("PRAGMA busy_timeout=30000")
     await conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
 
 # AI 相關設定
 AI_API_KEY = os.getenv("AI_API_KEY", "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")
@@ -85,7 +90,8 @@ class ScamHub(commands.Cog):
     async def _init_db(self):
         """建立 scam_rooms 表（如果不存在）"""
         try:
-            async with await _get_db_connection() as db:
+            async with _get_db_connection() as db:
+                await _configure_db_connection(db)
                 await db.execute("""
                     CREATE TABLE IF NOT EXISTS scam_rooms (
                         room_id INTEGER PRIMARY KEY,
@@ -108,7 +114,8 @@ class ScamHub(commands.Cog):
     async def _load_active_rooms(self):
         """從數據庫加載所有進行中的房間，Bot 啟動時調用"""
         try:
-            async with await _get_db_connection() as db:
+            async with _get_db_connection() as db:
+                await _configure_db_connection(db)
                 async with db.execute(
                     "SELECT room_id, guild_id, owner_id, room_name, message_id, last_active, next_event_time FROM scam_rooms WHERE is_active=1"
                 ) as cursor:
@@ -206,7 +213,8 @@ class ScamHub(commands.Cog):
     async def _save_room_to_db(self, room_id: int, guild_id: int, owner_id: int, room_name: str, next_event_time: datetime):
         """新房間創建時保存到數據庫"""
         try:
-            async with await _get_db_connection() as db:
+            async with _get_db_connection() as db:
+                await _configure_db_connection(db)
                 await db.execute("""
                     INSERT OR REPLACE INTO scam_rooms
                         (room_id, guild_id, owner_id, room_name, last_active, next_event_time, is_active)
@@ -221,7 +229,8 @@ class ScamHub(commands.Cog):
     async def _update_room_db(self, room_id: int, next_event_time: datetime = None, message_id: int = None):
         """更新數據庫中的房間狀態"""
         try:
-            async with await _get_db_connection() as db:
+            async with _get_db_connection() as db:
+                await _configure_db_connection(db)
                 if next_event_time is not None and message_id is not None:
                     await db.execute("""
                         UPDATE scam_rooms SET last_active=?, next_event_time=?, message_id=? WHERE room_id=?
@@ -245,7 +254,8 @@ class ScamHub(commands.Cog):
     async def _delete_room_from_db(self, room_id: int):
         """從數據庫中刪除房間記錄"""
         try:
-            async with await _get_db_connection() as db:
+            async with _get_db_connection() as db:
+                await _configure_db_connection(db)
                 await db.execute("UPDATE scam_rooms SET is_active=0 WHERE room_id=?", (room_id,))
                 await db.commit()
         except Exception as e:
@@ -459,7 +469,8 @@ class ScamHub(commands.Cog):
     async def update_kkcoin(self, user_id: int, amount: int):
         """更新用戶的KK幣"""
         try:
-            async with await _get_db_connection() as db:
+            async with _get_db_connection() as db:
+                await _configure_db_connection(db)
                 await db.execute("""
                     INSERT INTO users (user_id, kkcoin)
                     VALUES (?, ?)

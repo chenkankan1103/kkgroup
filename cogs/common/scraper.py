@@ -374,3 +374,9 @@ async def test_scraper():
 
 if __name__ == "__main__":
     asyncio.run(test_scraper())
+
+
+# ─── Discord Cog Entry Point (stub - 此模組為工具模組，並非 Cog) ──────────────────
+async def setup(bot):
+    """此模組為工具函式庫，不需要作為 Cog 載入。保留此函數以防被錯誤載入。"""
+    pass
