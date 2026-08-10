@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """檢查 anime.db 中的資料格式"""
-import sqlite3, json
+
+import sqlite3
 
 db = sqlite3.connect("user_data.db")
 
@@ -11,8 +12,15 @@ for r in cur.fetchall():
     print(f"  {r[0]}")
 
 # 1. 檢查 notified_anime 表 (或類似名稱)
-table_names = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
-notified_table = [t for t in table_names if 'notified' in t.lower() or 'anime' in t.lower() and 'schedule' not in t.lower()]
+table_names = [
+    r[0]
+    for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+]
+notified_table = [
+    t
+    for t in table_names
+    if "notified" in t.lower() or "anime" in t.lower() and "schedule" not in t.lower()
+]
 print(f"\n=== 可能包含通知記錄的表: {notified_table} ===")
 for t in notified_table[:3]:
     try:
@@ -32,8 +40,8 @@ try:
     print(f"  欄位: {cols}")
     for r in cur.fetchall():
         d = dict(zip(cols, r))
-        if 'content' in d and d['content']:
-            d['content_preview'] = d['content'][:100]
+        if "content" in d and d["content"]:
+            d["content_preview"] = d["content"][:100]
         print(f"    {d}")
 except Exception as e:
     print(f"  查詢失敗: {e}")

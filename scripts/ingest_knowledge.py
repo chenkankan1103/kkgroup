@@ -19,12 +19,14 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Optional
+from typing import Dict, List, Sequence, Optional
 
 # 專案根目錄
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_KNOWLEDGE_ROOT = PROJECT_ROOT / "knowledge" / "_wiki"
-DEFAULT_SCAN_REPORT = PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "vm-scan-latest.md"
+DEFAULT_SCAN_REPORT = (
+    PROJECT_ROOT / "knowledge" / "_wiki" / "Inbox" / "vm-scan-latest.md"
+)
 DEFAULT_CODE_ROOTS = [
     PROJECT_ROOT / "bots",
     PROJECT_ROOT / "cogs",
@@ -65,12 +67,14 @@ except ImportError:
 @dataclass
 class KnowledgeChunk:
     """知識片段"""
+
     id: str
     text: str
     metadata: Dict[str, object]
 
 
 # ==================== 文件發現 ====================
+
 
 def discover_markdown_files(roots: Sequence[Path]) -> List[Path]:
     files: List[Path] = []
@@ -95,6 +99,7 @@ def discover_python_files(roots: Sequence[Path]) -> List[Path]:
 
 # ==================== Markdown 解析 ====================
 
+
 def parse_front_matter(raw_text: str) -> tuple[Dict[str, object], str]:
     if not raw_text.startswith("---\n"):
         return {}, raw_text
@@ -102,7 +107,7 @@ def parse_front_matter(raw_text: str) -> tuple[Dict[str, object], str]:
     if end_index == -1:
         return {}, raw_text
     meta_text = raw_text[4:end_index]
-    body = raw_text[end_index + 5:]
+    body = raw_text[end_index + 5 :]
     metadata: Dict[str, object] = {}
     for line in meta_text.splitlines():
         if ":" not in line:
@@ -159,36 +164,40 @@ def extract_related_topics(body: str) -> List[str]:
 # ==================== 程式碼切分 ====================
 
 PYTHON_SPLIT_PATTERN = re.compile(
-    r'^(?P<indent>\s*)(?P<type>def|class|async def)\s+(?P<name>\w+)',
-    re.MULTILINE
+    r"^(?P<indent>\s*)(?P<type>def|class|async def)\s+(?P<name>\w+)", re.MULTILINE
 )
 
-def split_python_code(file_path: Path, content: str, max_chunk_chars: int = 2000) -> List[KnowledgeChunk]:
+
+def split_python_code(
+    file_path: Path, content: str, max_chunk_chars: int = 2000
+) -> List[KnowledgeChunk]:
     """將 Python 檔案按函式/類別切分，過大則再細分"""
     chunks: List[KnowledgeChunk] = []
     matches = list(PYTHON_SPLIT_PATTERN.finditer(content))
-    
+
     if not matches:
         # 沒有函式/類別，整個檔案當一個 chunk
-        return [KnowledgeChunk(
-            id=f"{file_path.as_posix()}::full",
-            text=content[:max_chunk_chars],
-            metadata={
-                "source_path": file_path.as_posix(),
-                "source_type": "python",
-                "chunk_type": "full_file",
-                "symbol": file_path.stem,
-            }
-        )]
-    
+        return [
+            KnowledgeChunk(
+                id=f"{file_path.as_posix()}::full",
+                text=content[:max_chunk_chars],
+                metadata={
+                    "source_path": file_path.as_posix(),
+                    "source_type": "python",
+                    "chunk_type": "full_file",
+                    "symbol": file_path.stem,
+                },
+            )
+        ]
+
     for i, match in enumerate(matches):
         start = match.start()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
         chunk_text = content[start:end].strip()
-        
+
         if not chunk_text:
             continue
-            
+
         # 如果太大，按行切分
         if len(chunk_text) > max_chunk_chars:
             lines = chunk_text.splitlines()
@@ -196,54 +205,60 @@ def split_python_code(file_path: Path, content: str, max_chunk_chars: int = 2000
             sub_len = 0
             for line in lines:
                 if sub_len + len(line) > max_chunk_chars and sub_chunk:
-                    chunks.append(KnowledgeChunk(
-                        id=f"{file_path.as_posix()}::{match.group('name')}::{len(chunks)}",
-                        text="\n".join(sub_chunk),
-                        metadata={
-                            "source_path": file_path.as_posix(),
-                            "source_type": "python",
-                            "chunk_type": "symbol_part",
-                            "symbol": match.group('name'),
-                            "symbol_type": match.group('type'),
-                        }
-                    ))
+                    chunks.append(
+                        KnowledgeChunk(
+                            id=f"{file_path.as_posix()}::{match.group('name')}::{len(chunks)}",
+                            text="\n".join(sub_chunk),
+                            metadata={
+                                "source_path": file_path.as_posix(),
+                                "source_type": "python",
+                                "chunk_type": "symbol_part",
+                                "symbol": match.group("name"),
+                                "symbol_type": match.group("type"),
+                            },
+                        )
+                    )
                     sub_chunk = [line]
                     sub_len = len(line)
                 else:
                     sub_chunk.append(line)
                     sub_len += len(line)
             if sub_chunk:
-                chunks.append(KnowledgeChunk(
-                    id=f"{file_path.as_posix()}::{match.group('name')}::{len(chunks)}",
-                    text="\n".join(sub_chunk),
+                chunks.append(
+                    KnowledgeChunk(
+                        id=f"{file_path.as_posix()}::{match.group('name')}::{len(chunks)}",
+                        text="\n".join(sub_chunk),
+                        metadata={
+                            "source_path": file_path.as_posix(),
+                            "source_type": "python",
+                            "chunk_type": "symbol_part",
+                            "symbol": match.group("name"),
+                            "symbol_type": match.group("type"),
+                        },
+                    )
+                )
+        else:
+            chunks.append(
+                KnowledgeChunk(
+                    id=f"{file_path.as_posix()}::{match.group('name')}",
+                    text=chunk_text,
                     metadata={
                         "source_path": file_path.as_posix(),
                         "source_type": "python",
-                        "chunk_type": "symbol_part",
-                        "symbol": match.group('name'),
-                        "symbol_type": match.group('type'),
-                    }
-                ))
-        else:
-            chunks.append(KnowledgeChunk(
-                id=f"{file_path.as_posix()}::{match.group('name')}",
-                text=chunk_text,
-                metadata={
-                    "source_path": file_path.as_posix(),
-                    "source_type": "python",
-                    "chunk_type": "symbol",
-                    "symbol": match.group('name'),
-                    "symbol_type": match.group('type'),
-                }
-            ))
-    
+                        "chunk_type": "symbol",
+                        "symbol": match.group("name"),
+                        "symbol_type": match.group("type"),
+                    },
+                )
+            )
+
     return chunks
 
 
 def split_markdown(content: str, max_chunk_chars: int = 2000) -> List[str]:
     """按標題層級切分 Markdown"""
     # 先按二級標題切分
-    sections = re.split(r'\n## ', content)
+    sections = re.split(r"\n## ", content)
     chunks = []
     for section in sections:
         section = section.strip()
@@ -253,7 +268,7 @@ def split_markdown(content: str, max_chunk_chars: int = 2000) -> List[str]:
             chunks.append(section)
         else:
             # 再按三級標題切
-            sub_sections = re.split(r'\n### ', section)
+            sub_sections = re.split(r"\n### ", section)
             for sub in sub_sections:
                 sub = sub.strip()
                 if not sub:
@@ -263,11 +278,12 @@ def split_markdown(content: str, max_chunk_chars: int = 2000) -> List[str]:
                 else:
                     # 硬切
                     for i in range(0, len(sub), max_chunk_chars):
-                        chunks.append(sub[i:i + max_chunk_chars])
+                        chunks.append(sub[i : i + max_chunk_chars])
     return chunks
 
 
 # ==================== 文件建構 ====================
+
 
 def build_markdown_chunks(path: Path, knowledge_root: Path) -> List[KnowledgeChunk]:
     raw_text = path.read_text(encoding="utf-8")
@@ -276,27 +292,31 @@ def build_markdown_chunks(path: Path, knowledge_root: Path) -> List[KnowledgeChu
     category = derive_category(path, knowledge_root)
     related_topics = extract_related_topics(body)
     relative_path = path.relative_to(PROJECT_ROOT).as_posix()
-    
+
     import json as json_module
 
     base_metadata = {
         "sha1": hashlib.sha1(raw_text.encode("utf-8")).hexdigest(),
         "relative_path": relative_path,
         "line_count": len(body.splitlines()),
-        "front_matter": json_module.dumps(front_matter, ensure_ascii=False) if front_matter else "{}",
+        "front_matter": json_module.dumps(front_matter, ensure_ascii=False)
+        if front_matter
+        else "{}",
         "category": category,
         "related_topics": related_topics,
         "source_type": "markdown",
     }
-    
+
     chunks = split_markdown(body)
     result = []
     for i, chunk_text in enumerate(chunks):
-        result.append(KnowledgeChunk(
-            id=f"{relative_path}::chunk::{i}",
-            text=f"# {topic}\n\n{chunk_text}",
-            metadata={**base_metadata, "chunk_index": i, "topic": topic}
-        ))
+        result.append(
+            KnowledgeChunk(
+                id=f"{relative_path}::chunk::{i}",
+                text=f"# {topic}\n\n{chunk_text}",
+                metadata={**base_metadata, "chunk_index": i, "topic": topic},
+            )
+        )
     return result
 
 
@@ -308,6 +328,7 @@ def build_python_chunks(path: Path) -> List[KnowledgeChunk]:
 
 # ==================== Chroma 客戶端 ====================
 
+
 def get_chroma_client() -> chromadb.Client:
     """取得 Chroma client（支援 Server/Persistent 兩種模式）。"""
     if USE_CHROMA_SERVER:
@@ -315,13 +336,12 @@ def get_chroma_client() -> chromadb.Client:
         return chromadb.HttpClient(
             host=CHROMA_SERVER_HOST,
             port=CHROMA_SERVER_PORT,
-            settings=Settings(anonymized_telemetry=False)
+            settings=Settings(anonymized_telemetry=False),
         )
     else:
         CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
         return chromadb.PersistentClient(
-            path=str(CHROMA_PERSIST_DIR),
-            settings=Settings(anonymized_telemetry=False)
+            path=str(CHROMA_PERSIST_DIR), settings=Settings(anonymized_telemetry=False)
         )
 
 
@@ -336,49 +356,53 @@ def get_or_create_collection(client: chromadb.Client):
     if USE_CHROMA_SERVER:
         # Server 模式：不需要嵌入函數，server 端已配置
         return client.get_or_create_collection(
-            name=CHROMA_COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"}
+            name=CHROMA_COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
         )
     else:
         # Local 模式：需要嵌入函數
         return client.get_or_create_collection(
             name=CHROMA_COLLECTION_NAME,
             embedding_function=get_embedding_function(),
-            metadata={"hnsw:space": "cosine"}
+            metadata={"hnsw:space": "cosine"},
         )
 
 
 # ==================== 匯入邏輯 ====================
 
-def ingest_markdown_files(paths: Sequence[Path], dry_run: bool = False) -> Dict[str, int]:
+
+def ingest_markdown_files(
+    paths: Sequence[Path], dry_run: bool = False
+) -> Dict[str, int]:
     stats = {"processed": 0, "chunks": 0}
     client = get_chroma_client()
     collection = get_or_create_collection(client)
-    
+
     for path in paths:
         chunks = build_markdown_chunks(path, DEFAULT_KNOWLEDGE_ROOT)
         stats["processed"] += 1
-        
+
         if dry_run:
             for chunk in chunks:
                 print(f"[DRY-RUN] {chunk.id} <- {chunk.metadata['relative_path']}")
             continue
-        
+
         # 刪除舊資料（按 source_path）
         try:
-            collection.delete(where={"relative_path": path.relative_to(PROJECT_ROOT).as_posix()})
+            collection.delete(
+                where={"relative_path": path.relative_to(PROJECT_ROOT).as_posix()}
+            )
         except Exception:
             pass
-        
+
         # 批次新增
         ids = [c.id for c in chunks]
         documents = [c.text for c in chunks]
         metadatas = [c.metadata for c in chunks]
-        
+
         collection.add(ids=ids, documents=documents, metadatas=metadatas)
         stats["chunks"] += len(chunks)
         print(f"✅ {path.relative_to(PROJECT_ROOT)} -> {len(chunks)} chunks")
-    
+
     return stats
 
 
@@ -386,36 +410,41 @@ def ingest_python_files(paths: Sequence[Path], dry_run: bool = False) -> Dict[st
     stats = {"processed": 0, "chunks": 0}
     client = get_chroma_client()
     collection = get_or_create_collection(client)
-    
+
     for path in paths:
         chunks = build_python_chunks(path)
         stats["processed"] += 1
-        
+
         if dry_run:
             for chunk in chunks:
                 print(f"[DRY-RUN] {chunk.id} <- {chunk.metadata['source_path']}")
             continue
-        
+
         # 刪除舊資料
         try:
-            collection.delete(where={"source_path": path.relative_to(PROJECT_ROOT).as_posix()})
+            collection.delete(
+                where={"source_path": path.relative_to(PROJECT_ROOT).as_posix()}
+            )
         except Exception:
             pass
-        
+
         ids = [c.id for c in chunks]
         documents = [c.text for c in chunks]
         metadatas = [c.metadata for c in chunks]
-        
+
         collection.add(ids=ids, documents=documents, metadatas=metadatas)
         stats["chunks"] += len(chunks)
         print(f"✅ {path.relative_to(PROJECT_ROOT)} -> {len(chunks)} chunks")
-    
+
     return stats
 
 
 # ==================== 查詢介面（供 AI 使用） ====================
 
-def query_knowledge(query: str, n_results: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
+
+def query_knowledge(
+    query: str, n_results: int = 5, filter_dict: Optional[Dict] = None
+) -> List[Dict]:
     """查詢知識庫，回傳格式化結果"""
     client = get_chroma_client()
     collection = get_or_create_collection(client)
@@ -424,24 +453,31 @@ def query_knowledge(query: str, n_results: int = 5, filter_dict: Optional[Dict] 
         query_texts=[query],
         n_results=n_results,
         where=filter_dict,
-        include=["documents", "metadatas", "distances"]
+        include=["documents", "metadatas", "distances"],
     )
 
     formatted = []
     if results["documents"]:
         for i, doc in enumerate(results["documents"][0]):
-            formatted.append({
-                "text": doc,
-                "metadata": results["metadatas"][0][i],
-                "distance": results["distances"][0][i] if results["distances"] else None
-            })
+            formatted.append(
+                {
+                    "text": doc,
+                    "metadata": results["metadatas"][0][i],
+                    "distance": results["distances"][0][i]
+                    if results["distances"]
+                    else None,
+                }
+            )
     return formatted
 
 
 # ==================== 主程式 ====================
 
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="匯入 knowledge wiki、VM 掃描報告、程式碼到 Chroma 向量資料庫")
+    parser = argparse.ArgumentParser(
+        description="匯入 knowledge wiki、VM 掃描報告、程式碼到 Chroma 向量資料庫"
+    )
     parser.add_argument(
         "paths",
         nargs="*",
@@ -455,14 +491,18 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    
+
     # 決定要匯入的路徑
-    roots = [Path(path).resolve() for path in args.paths] if args.paths else [DEFAULT_KNOWLEDGE_ROOT]
+    roots = (
+        [Path(path).resolve() for path in args.paths]
+        if args.paths
+        else [DEFAULT_KNOWLEDGE_ROOT]
+    )
     if DEFAULT_SCAN_REPORT.exists() and DEFAULT_SCAN_REPORT not in roots:
         roots.append(DEFAULT_SCAN_REPORT)
-    
+
     total_stats = {"processed": 0, "chunks": 0}
-    
+
     if not args.code_only:
         # 匯入 Markdown
         md_files = discover_markdown_files(roots)
@@ -473,7 +513,7 @@ def main() -> int:
             total_stats["chunks"] += stats["chunks"]
         else:
             print("⚠️ 沒有找到可匯入的 Markdown 文件")
-    
+
     if not args.no_code:
         # 匯入 Python 程式碼
         code_roots = DEFAULT_CODE_ROOTS
@@ -485,7 +525,7 @@ def main() -> int:
             total_stats["chunks"] += stats["chunks"]
         else:
             print("⚠️ 沒有找到可匯入的 Python 檔案")
-    
+
     print(json.dumps(total_stats, ensure_ascii=False))
     return 0
 

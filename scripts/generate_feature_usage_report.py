@@ -26,17 +26,26 @@ def main() -> int:
     cold_threshold = int(os.getenv("FEATURE_USAGE_COLD_THRESHOLD", "2"))
 
     output_path.write_text(
-        build_usage_markdown(days=days, recent_days=recent_days, cold_threshold=cold_threshold),
+        build_usage_markdown(
+            days=days, recent_days=recent_days, cold_threshold=cold_threshold
+        ),
         encoding="utf-8",
     )
 
-    summary = summarize_feature_usage(days=days, recent_days=recent_days, cold_threshold=cold_threshold)
-    print(json.dumps({
-        "report": str(output_path.relative_to(PROJECT_ROOT)).replace('\\', '/'),
-        "total_features": summary["total_features"],
-        "cold_features": len(summary["cold_features"]),
-        "total_interactions": summary["total_interactions"],
-    }, ensure_ascii=False))
+    summary = summarize_feature_usage(
+        days=days, recent_days=recent_days, cold_threshold=cold_threshold
+    )
+    print(
+        json.dumps(
+            {
+                "report": str(output_path.relative_to(PROJECT_ROOT)).replace("\\", "/"),
+                "total_features": summary["total_features"],
+                "cold_features": len(summary["cold_features"]),
+                "total_interactions": summary["total_interactions"],
+            },
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 

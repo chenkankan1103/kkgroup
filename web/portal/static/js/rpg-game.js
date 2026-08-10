@@ -426,9 +426,9 @@ function showLoginPrompt() {
                 ">
                     <h2>🎮 KK 群紙娃娃 RPG</h2>
                     <p>請輸入你的用戶 ID 開始遊戲</p>
-                    <input 
-                        type="text" 
-                        id="user-id-input" 
+                    <input
+                        type="text"
+                        id="user-id-input"
                         placeholder="輸入 User ID"
                         style="
                             width: 100%;
@@ -439,8 +439,8 @@ function showLoginPrompt() {
                             font-size: 16px;
                         "
                     />
-                    <button 
-                        onclick="startGame()" 
+                    <button
+                        onclick="startGame()"
                         style="
                             width: 100%;
                             padding: 10px;

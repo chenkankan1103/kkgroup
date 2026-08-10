@@ -16,11 +16,8 @@ import os
 import json
 import asyncio
 import logging
-import shlex
-import subprocess
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Literal, Union
-from datetime import datetime
+from typing import Optional, List, Dict, Union
 
 import discord
 from discord.ext import commands
@@ -30,8 +27,6 @@ import aiohttp
 
 from shared.db.ai_memory import (
     DialogueMemory,
-    PersonalityMemory,
-    KnowledgeBase,
     build_memory_context,
     initialize_memory_system,
 )
@@ -47,11 +42,13 @@ ALLOWED_CHANNEL_ID = 1504438347974705152
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 if not NVIDIA_API_KEY:
     logger.warning("⚠️ NVIDIA_API_KEY 未設定，Claude Code 功能將無法使用")
-NVIDIA_API_URL = os.getenv("NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
+NVIDIA_API_URL = os.getenv(
+    "NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions"
+)
 
 # 兩個 Nemotron 模型（用戶指定）
-MODEL_ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"    # 較難的任務
-MODEL_SUPER = "nvidia/nemotron-3-super-120b-a12b"    # 一般回復
+MODEL_ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"  # 較難的任務
+MODEL_SUPER = "nvidia/nemotron-3-super-120b-a12b"  # 一般回復
 DEFAULT_MODEL = MODEL_SUPER
 
 MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "8192"))
@@ -62,12 +59,35 @@ WORK_DIR = Path(os.getenv("CLAUDE_WORK_DIR", "/home/e193752468/kkgroup")).resolv
 
 # 禁止存取的敏感路徑
 BLOCKED_PATHS = {
-    "/etc", "/root", "/home", "/var", "/usr", "/bin", "/sbin",
-    "/lib", "/lib64", "/boot", "/sys", "/proc", "/dev",
-    "/run", "/tmp", "/srv", "/opt", "/mnt", "/media",
+    "/etc",
+    "/root",
+    "/home",
+    "/var",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/boot",
+    "/sys",
+    "/proc",
+    "/dev",
+    "/run",
+    "/tmp",
+    "/srv",
+    "/opt",
+    "/mnt",
+    "/media",
 }
 BLOCKED_FILES = {".env", ".ssh", "id_rsa", "id_ed25519", "authorized_keys", "config"}
-BLOCKED_PREFIXES = [".git/", ".github/", "__pycache__/", "venv/", ".venv/", "node_modules/"]
+BLOCKED_PREFIXES = [
+    ".git/",
+    ".github/",
+    "__pycache__/",
+    "venv/",
+    ".venv/",
+    "node_modules/",
+]
 
 # ─── 系統提示詞 ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """你是 KK園區的 Claude Code 代理，一個專業的程式開發助手（使用 NVIDIA Nemotron 模型）。
@@ -139,9 +159,16 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "檔案路徑"},
-                "old_string": {"type": "string", "description": "要替換的原始字串（需唯一匹配）"},
+                "old_string": {
+                    "type": "string",
+                    "description": "要替換的原始字串（需唯一匹配）",
+                },
                 "new_string": {"type": "string", "description": "新字串"},
-                "replace_all": {"type": "boolean", "description": "是否替換所有匹配", "default": False},
+                "replace_all": {
+                    "type": "boolean",
+                    "description": "是否替換所有匹配",
+                    "default": False,
+                },
             },
             "required": ["path", "old_string", "new_string"],
         },
@@ -176,7 +203,11 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "command": {"type": "string", "description": "要執行的指令"},
-                "timeout": {"type": "integer", "description": "超時秒數", "default": 30},
+                "timeout": {
+                    "type": "integer",
+                    "description": "超時秒數",
+                    "default": 30,
+                },
             },
             "required": ["command"],
         },
@@ -194,6 +225,7 @@ TOOLS = [
         },
     },
 ]
+
 
 # ─── 路徑安全驗證 ───────────────────────────────────────────────────────────
 def validate_path(path: str, must_exist: bool = False) -> Path:
@@ -250,7 +282,7 @@ class ToolExecutor:
         content = p.read_text(encoding="utf-8")
         lines = content.splitlines()
         if offset or limit != 2000:
-            lines = lines[offset:offset + limit]
+            lines = lines[offset : offset + limit]
         result = "\n".join(lines)
         return f"=== {p} ===\n{result}"
 
@@ -260,7 +292,9 @@ class ToolExecutor:
         p.write_text(content, encoding="utf-8")
         return f"✅ 已寫入: {p} ({len(content)} 字元)"
 
-    async def edit(self, path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
+    async def edit(
+        self, path: str, old_string: str, new_string: str, replace_all: bool = False
+    ) -> str:
         p = validate_path(path, must_exist=True)
         content = p.read_text(encoding="utf-8")
 
@@ -268,9 +302,15 @@ class ToolExecutor:
             raise ValueError("old_string 未在檔案中找到")
 
         if not replace_all and content.count(old_string) > 1:
-            raise ValueError("old_string 匹配多處，請設定 replace_all=true 或提供更精確的字串")
+            raise ValueError(
+                "old_string 匹配多處，請設定 replace_all=true 或提供更精確的字串"
+            )
 
-        new_content = content.replace(old_string, new_string) if replace_all else content.replace(old_string, new_string, 1)
+        new_content = (
+            content.replace(old_string, new_string)
+            if replace_all
+            else content.replace(old_string, new_string, 1)
+        )
         p.write_text(new_content, encoding="utf-8")
         return f"✅ 已編輯: {p}"
 
@@ -305,8 +345,19 @@ class ToolExecutor:
 
     async def bash(self, command: str, timeout: int = 30) -> str:
         # 安全檢查：禁止危險指令
-        dangerous = ["rm -rf /", "shutdown", "reboot", "mkfs", "dd if=", "> /dev/",
-                     "chmod 777", "chown root", "passwd", "userdel", "groupdel"]
+        dangerous = [
+            "rm -rf /",
+            "shutdown",
+            "reboot",
+            "mkfs",
+            "dd if=",
+            "> /dev/",
+            "chmod 777",
+            "chown root",
+            "passwd",
+            "userdel",
+            "groupdel",
+        ]
         for d in dangerous:
             if d in command:
                 raise PermissionError(f"禁止執行危險指令: {d}")
@@ -355,7 +406,7 @@ class NvidiaNimClient:
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
-                }
+                },
             )
         return self.session
 
@@ -364,17 +415,21 @@ class NvidiaNimClient:
         openai_tools = []
         for tool in tools:
             # NVIDIA NIM 使用 functions 格式
-            openai_tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool["description"],
-                    "parameters": tool["input_schema"],
+            openai_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "parameters": tool["input_schema"],
+                    },
                 }
-            })
+            )
         return openai_tools
 
-    def _convert_messages_to_openai(self, messages: List[Dict], system: str) -> List[Dict]:
+    def _convert_messages_to_openai(
+        self, messages: List[Dict], system: str
+    ) -> List[Dict]:
         """將 Anthropic messages 格式轉換為 OpenAI 格式"""
         openai_messages = []
 
@@ -393,11 +448,13 @@ class NvidiaNimClient:
                     # 處理 tool_result 格式
                     for block in content:
                         if block.get("type") == "tool_result":
-                            openai_messages.append({
-                                "role": "tool",
-                                "tool_call_id": block.get("tool_use_id", "unknown"),
-                                "content": str(block.get("content", ""))
-                            })
+                            openai_messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": block.get("tool_use_id", "unknown"),
+                                    "content": str(block.get("content", "")),
+                                }
+                            )
 
             elif role == "assistant":
                 if isinstance(content, str):
@@ -410,14 +467,16 @@ class NvidiaNimClient:
                         if block.get("type") == "text":
                             text_parts.append(block.get("text", ""))
                         elif block.get("type") == "tool_use":
-                            tool_calls.append({
-                                "id": block.get("id"),
-                                "type": "function",
-                                "function": {
-                                    "name": block.get("name"),
-                                    "arguments": json.dumps(block.get("input", {}))
+                            tool_calls.append(
+                                {
+                                    "id": block.get("id"),
+                                    "type": "function",
+                                    "function": {
+                                        "name": block.get("name"),
+                                        "arguments": json.dumps(block.get("input", {})),
+                                    },
                                 }
-                            })
+                            )
 
                     msg_dict = {"role": "assistant"}
                     if text_parts:
@@ -454,9 +513,26 @@ class NvidiaNimClient:
                             last_user_msg = block.get("text", "").lower()
                 break
 
-        complex_keywords = ["重構", "架構", "優化", "debug", "除錯", "重寫", "實現", "設計",
-                           "refactor", "architecture", "optimize", "implement", "design",
-                           "複雜", "complex", "完整", "complete", "系統"]
+        complex_keywords = [
+            "重構",
+            "架構",
+            "優化",
+            "debug",
+            "除錯",
+            "重寫",
+            "實現",
+            "設計",
+            "refactor",
+            "architecture",
+            "optimize",
+            "implement",
+            "design",
+            "複雜",
+            "complex",
+            "完整",
+            "complete",
+            "系統",
+        ]
 
         is_complex = any(kw in last_user_msg for kw in complex_keywords)
 
@@ -476,7 +552,9 @@ class NvidiaNimClient:
 
         # 選擇模型
         model = self._select_model(messages, tools)
-        logger.info(f"🤖 選擇模型: {model} (輪數: {len(messages)//2}, 工具: {len(tools)})")
+        logger.info(
+            f"🤖 選擇模型: {model} (輪數: {len(messages)//2}, 工具: {len(tools)})"
+        )
 
         # 轉換格式
         openai_messages = self._convert_messages_to_openai(messages, system)
@@ -508,16 +586,20 @@ class NvidiaNimClient:
                             try:
                                 delay = float(retry_after)
                             except ValueError:
-                                delay = base_delay * (2 ** attempt)
+                                delay = base_delay * (2**attempt)
                         else:
-                            delay = base_delay * (2 ** attempt)
+                            delay = base_delay * (2**attempt)
 
                         if attempt < max_retries - 1:
-                            logger.warning(f"⚠️ NVIDIA NIM 錯誤 ({resp.status})，第 {attempt + 1}/{max_retries} 次重試，等待 {delay:.1f}s...")
+                            logger.warning(
+                                f"⚠️ NVIDIA NIM 錯誤 ({resp.status})，第 {attempt + 1}/{max_retries} 次重試，等待 {delay:.1f}s..."
+                            )
                             await asyncio.sleep(delay)
                             continue
                         else:
-                            raise Exception(f"NVIDIA NIM 暫時性錯誤 ({resp.status})，重試 {max_retries} 次後仍失敗")
+                            raise Exception(
+                                f"NVIDIA NIM 暫時性錯誤 ({resp.status})，重試 {max_retries} 次後仍失敗"
+                            )
 
                     if resp.status != 200:
                         text = await resp.text()
@@ -528,12 +610,16 @@ class NvidiaNimClient:
 
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    logger.warning(f"⚠️ NVIDIA NIM 網路錯誤: {type(e).__name__}: {e}，第 {attempt + 1}/{max_retries} 次重試，等待 {delay:.1f}s...")
+                    delay = base_delay * (2**attempt)
+                    logger.warning(
+                        f"⚠️ NVIDIA NIM 網路錯誤: {type(e).__name__}: {e}，第 {attempt + 1}/{max_retries} 次重試，等待 {delay:.1f}s..."
+                    )
                     await asyncio.sleep(delay)
                     continue
                 else:
-                    raise Exception(f"NVIDIA NIM 網路錯誤，重試 {max_retries} 次後仍失敗: {e}")
+                    raise Exception(
+                        f"NVIDIA NIM 網路錯誤，重試 {max_retries} 次後仍失敗: {e}"
+                    )
 
     def _convert_response_to_anthropic(self, openai_response: Dict) -> Dict:
         """將 OpenAI 回應格式轉換為 Anthropic 兼容格式"""
@@ -544,20 +630,19 @@ class NvidiaNimClient:
 
         # 文字內容
         if message.get("content"):
-            content.append({
-                "type": "text",
-                "text": message["content"]
-            })
+            content.append({"type": "text", "text": message["content"]})
 
         # 工具調用
         for tool_call in message.get("tool_calls", []):
             func = tool_call.get("function", {})
-            content.append({
-                "type": "tool_use",
-                "id": tool_call.get("id", "call_" + str(hash(str(func)))),
-                "name": func.get("name"),
-                "input": json.loads(func.get("arguments", "{}"))
-            })
+            content.append(
+                {
+                    "type": "tool_use",
+                    "id": tool_call.get("id", "call_" + str(hash(str(func)))),
+                    "name": func.get("name"),
+                    "input": json.loads(func.get("arguments", "{}")),
+                }
+            )
 
         # 如果沒有任何內容
         if not content:
@@ -566,7 +651,7 @@ class NvidiaNimClient:
         return {
             "content": content,
             "stop_reason": "tool_use" if message.get("tool_calls") else "end_turn",
-            "usage": openai_response.get("usage", {})
+            "usage": openai_response.get("usage", {}),
         }
 
     async def close(self):
@@ -594,7 +679,9 @@ class ClaudeCodeAgent:
         self._paused = False  # 暫停狀態
         self._pause_event = asyncio.Event()  # 暫停/恢復事件
         self._pause_event.set()  # 預設為非暫停狀態
-        self._progress_content: list[str] = []  # 累積的完整進度內容（用於編輯同一條 message 顯示所有步驟）
+        self._progress_content: list[
+            str
+        ] = []  # 累積的完整進度內容（用於編輯同一條 message 顯示所有步驟）
 
     async def _flush_progress_buffer(self):
         """將緩衝區內容合併發送"""
@@ -626,6 +713,7 @@ class ClaudeCodeAgent:
                 self._progress_buffer.append(message)
 
             import time
+
             now = time.time()
             if now - self._last_progress_update >= self._progress_interval:
                 self._last_progress_update = now
@@ -653,11 +741,11 @@ class ClaudeCodeAgent:
         self._pause_event.set()
 
     def is_paused(self) -> bool:
-        return getattr(self, '_paused', False)
+        return getattr(self, "_paused", False)
 
     async def _wait_if_paused(self):
         """如果任務被暫停，等待恢復"""
-        while getattr(self, '_paused', False):
+        while getattr(self, "_paused", False):
             await self._pause_event.wait()
             # 等待恢復信號
             await asyncio.sleep(0.5)
@@ -737,19 +825,23 @@ class ClaudeCodeAgent:
                     args = tool_use["input"]
                     # 顯示工具細節
                     detail = self._format_tool_detail(tool_name, args)
-                    await self._add_progress(f"🔧 第 {self.turn_count} 輪：執行 {tool_name} {detail}")
+                    await self._add_progress(
+                        f"🔧 第 {self.turn_count} 輪：執行 {tool_name} {detail}"
+                    )
                     result = await self._execute_tool(tool_use)
                     # 將工具結果加入歷史
-                    self.history.append({
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tool_use["id"],
-                                "content": result,
-                            }
-                        ],
-                    })
+                    self.history.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_use["id"],
+                                    "content": result,
+                                }
+                            ],
+                        }
+                    )
                 continue  # 繼續下一輪
 
             # 純文字回覆：任務完成
@@ -766,7 +858,12 @@ class ClaudeCodeAgent:
         # 超過安全上限
         await self._finalize_progress()
         # 返回特殊標記，讓上層處理繼續按鈕
-        return {"type": "limit_reached", "message": f"⚠️ 已達安全輪數上限（{MAX_SAFE_TURNS}），任務未完成。點擊下方按鈕繼續。", "history": self.history, "system_prompt": system_prompt}
+        return {
+            "type": "limit_reached",
+            "message": f"⚠️ 已達安全輪數上限（{MAX_SAFE_TURNS}），任務未完成。點擊下方按鈕繼續。",
+            "history": self.history,
+            "system_prompt": system_prompt,
+        }
 
     async def _execute_tool(self, tool_use: Dict) -> str:
         name = tool_use["name"]
@@ -864,7 +961,11 @@ class ClaudeCodeAgent:
             sections = history_text.split("\n\n---\n\n")
             for section in sections[-10:]:  # 只取最近 10 輪
                 lines = section.strip().split("\n")
-                if len(lines) >= 2 and lines[0].startswith("用戶:") and lines[1].startswith("AI:"):
+                if (
+                    len(lines) >= 2
+                    and lines[0].startswith("用戶:")
+                    and lines[1].startswith("AI:")
+                ):
                     user_query = lines[0][3:].strip()  # 移除 "用戶: "
                     ai_response = "\n".join(lines[1:])[3:].strip()  # 移除 "AI: "
                     self.history.append({"role": "user", "content": user_query})
@@ -891,11 +992,17 @@ class StopView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.agent = agent
 
-    @discord.ui.button(label="⏸️ 暫停", style=discord.ButtonStyle.danger, custom_id="claude_stop")
-    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="⏸️ 暫停", style=discord.ButtonStyle.danger, custom_id="claude_stop"
+    )
+    async def stop_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         # 只有觸發者能暫停
         if interaction.user.id != self.agent.user_id:
-            await interaction.response.send_message("❌ 只有發起者能暫停任務", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 只有發起者能暫停任務", ephemeral=True
+            )
             return
 
         # 暫停 agent（設置暫停標記，不取消任務）
@@ -904,7 +1011,9 @@ class StopView(discord.ui.View):
         button.label = "⏸️ 已暫停"
         self.clear_items()
         # 添加恢復按鈕
-        resume_button = discord.ui.Button(label="▶️ 恢復", style=discord.ButtonStyle.success, custom_id="claude_resume")
+        resume_button = discord.ui.Button(
+            label="▶️ 恢復", style=discord.ButtonStyle.success, custom_id="claude_resume"
+        )
         resume_button.callback = self._create_resume_callback(interaction)
         self.add_item(resume_button)
 
@@ -913,18 +1022,25 @@ class StopView(discord.ui.View):
     def _create_resume_callback(self, original_interaction: discord.Interaction):
         async def resume_callback(interaction: discord.Interaction):
             if interaction.user.id != self.agent.user_id:
-                await interaction.response.send_message("❌ 只有發起者能恢復任務", ephemeral=True)
+                await interaction.response.send_message(
+                    "❌ 只有發起者能恢復任務", ephemeral=True
+                )
                 return
 
             # 恢復 agent
             self.agent.resume()
             # 重新添加暫停按鈕
             self.clear_items()
-            new_stop_button = discord.ui.Button(label="⏸️ 暫停", style=discord.ButtonStyle.danger, custom_id="claude_stop")
+            new_stop_button = discord.ui.Button(
+                label="⏸️ 暫停",
+                style=discord.ButtonStyle.danger,
+                custom_id="claude_stop",
+            )
             new_stop_button.callback = self.stop_button
             self.add_item(new_stop_button)
 
             await interaction.response.edit_message(view=self)
+
         return resume_callback
 
     async def on_timeout(self):
@@ -941,11 +1057,19 @@ class ResumeView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.agent = agent
 
-    @discord.ui.button(label="▶️ 恢復執行", style=discord.ButtonStyle.success, custom_id="claude_resume_main")
-    async def resume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="▶️ 恢復執行",
+        style=discord.ButtonStyle.success,
+        custom_id="claude_resume_main",
+    )
+    async def resume_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         # 只有觸發者能恢復
         if interaction.user.id != self.agent.user_id:
-            await interaction.response.send_message("❌ 只有發起者能恢復任務", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 只有發起者能恢復任務", ephemeral=True
+            )
             return
 
         self.agent.resume()
@@ -990,7 +1114,7 @@ class ResumeView(discord.ui.View):
             return [text]
         chunks = []
         for i in range(0, len(text), max_len):
-            chunks.append(text[i:i + max_len])
+            chunks.append(text[i : i + max_len])
         return chunks
 
     async def on_timeout(self):
@@ -1006,17 +1130,27 @@ class ResumeView(discord.ui.View):
 class ContinueView(discord.ui.View):
     """輪數上限時的繼續按鈕"""
 
-    def __init__(self, agent: "ClaudeCodeAgent", original_prompt: str, timeout: float = 300):
+    def __init__(
+        self, agent: "ClaudeCodeAgent", original_prompt: str, timeout: float = 300
+    ):
         super().__init__(timeout=timeout)
         self.agent = agent
         self.original_prompt = original_prompt
         self.continued = False
 
-    @discord.ui.button(label="▶️ 繼續執行", style=discord.ButtonStyle.success, custom_id="claude_continue")
-    async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="▶️ 繼續執行",
+        style=discord.ButtonStyle.success,
+        custom_id="claude_continue",
+    )
+    async def continue_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         # 只有觸發者能繼續
         if interaction.user.id != self.agent.user_id:
-            await interaction.response.send_message("❌ 只有發起者能繼續任務", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 只有發起者能繼續任務", ephemeral=True
+            )
             return
 
         self.continued = True
@@ -1029,17 +1163,23 @@ class ContinueView(discord.ui.View):
         MAX_SAFE_TURNS = 100
 
         # 發送新進度訊息
-        progress_msg = await interaction.followup.send("🔄 繼續執行...", view=StopView(self.agent))
+        progress_msg = await interaction.followup.send(
+            "🔄 繼續執行...", view=StopView(self.agent)
+        )
 
         async def update_progress(text: str):
             """更新進度訊息（編輯同一條 message，超長時分割發送）"""
             try:
                 chunks = self._chunk_text(text, 1900)
                 if len(chunks) == 1:
-                    await progress_msg.edit(content=chunks[0], view=StopView(self.agent))
+                    await progress_msg.edit(
+                        content=chunks[0], view=StopView(self.agent)
+                    )
                 else:
                     # 第一塊編輯原訊息，其餘發送新訊息
-                    await progress_msg.edit(content=chunks[0], view=StopView(self.agent))
+                    await progress_msg.edit(
+                        content=chunks[0], view=StopView(self.agent)
+                    )
                     for chunk in chunks[1:]:
                         await interaction.followup.send(chunk)
             except (discord.NotFound, discord.HTTPException):
@@ -1066,7 +1206,7 @@ class ContinueView(discord.ui.View):
             return [text]
         chunks = []
         for i in range(0, len(text), max_len):
-            chunks.append(text[i:i + max_len])
+            chunks.append(text[i : i + max_len])
         return chunks
 
     async def on_timeout(self):
@@ -1087,11 +1227,15 @@ class ClaudeCodeCog(commands.Cog):
         self.bot = bot
         # key: (user_id, thread_id 或 channel_id) -> agent
         self.active_agents: Dict[tuple, ClaudeCodeAgent] = {}
-        self._thread_contexts: Dict[int, str] = {}  # thread_id -> context_key for memory
+        self._thread_contexts: Dict[
+            int, str
+        ] = {}  # thread_id -> context_key for memory
         self._processed_messages: set[int] = set()  # 避免重複處理同一訊息
         logger.info("✅ ClaudeCodeCog 初始化完成")
 
-    def _get_context_key(self, channel: Union[discord.TextChannel, discord.Thread]) -> str:
+    def _get_context_key(
+        self, channel: Union[discord.TextChannel, discord.Thread]
+    ) -> str:
         """獲取對話上下文鍵：thread 用 thread_id，主頻道用 channel_id"""
         if isinstance(channel, discord.Thread):
             return f"thread_{channel.id}"
@@ -1130,7 +1274,9 @@ class ClaudeCodeCog(commands.Cog):
         prompt="任務描述，例如：幫我新增一個 /ping 指令到 bot.py",
         continue_conv="是否繼續上一輪對話（預設新對話）",
     )
-    async def cc(self, interaction: discord.Interaction, prompt: str, continue_conv: bool = False):
+    async def cc(
+        self, interaction: discord.Interaction, prompt: str, continue_conv: bool = False
+    ):
         if not self._check_permission_interaction(interaction):
             await interaction.response.send_message(
                 "❌ 此指令僅限 Discord 管理員在指定頻道使用。", ephemeral=True
@@ -1161,7 +1307,9 @@ class ClaudeCodeCog(commands.Cog):
             stop_view = StopView(agent)
 
             # 發送初始進度訊息（帶停止按鈕）
-            initial_msg = await interaction.followup.send("🔄 開始執行...", view=stop_view)
+            initial_msg = await interaction.followup.send(
+                "🔄 開始執行...", view=stop_view
+            )
 
             async def update_progress(text: str):
                 """更新進度訊息（編輯同一條 message，超長時分割發送）"""
@@ -1217,9 +1365,15 @@ class ClaudeCodeCog(commands.Cog):
             color=discord.Color.blue(),
         )
         embed.add_field(name="活躍 Agent 總數", value=str(active), inline=True)
-        embed.add_field(name="當前對話", value=f"✅ 活躍" if has_active else "💤 無", inline=True)
+        embed.add_field(
+            name="當前對話", value="✅ 活躍" if has_active else "💤 無", inline=True
+        )
         embed.add_field(name="上下文", value=context_key, inline=False)
-        embed.add_field(name="模型 (自動選擇)", value=f"Ultra: {MODEL_ULTRA}\nSuper: {MODEL_SUPER}", inline=False)
+        embed.add_field(
+            name="模型 (自動選擇)",
+            value=f"Ultra: {MODEL_ULTRA}\nSuper: {MODEL_SUPER}",
+            inline=False,
+        )
         embed.add_field(name="工作目錄", value=str(WORK_DIR), inline=False)
         embed.add_field(name="最大輪數", value=str(MAX_TURNS), inline=True)
         embed.add_field(name="最大輸出", value=f"{MAX_TOKENS} tokens", inline=True)
@@ -1251,7 +1405,7 @@ class ClaudeCodeCog(commands.Cog):
             return [text]
         chunks = []
         for i in range(0, len(text), max_len):
-            chunks.append(text[i:i + max_len])
+            chunks.append(text[i : i + max_len])
         return chunks
 
     @commands.Cog.listener()
@@ -1262,34 +1416,44 @@ class ClaudeCodeCog(commands.Cog):
             return
 
         # 調試：記錄所有收到的訊息
-        logger.debug(f"[ClaudeCode] 收到訊息: channel={message.channel.id}, type={type(message.channel).__name__}, author={message.author.id}, content={message.content[:50] if message.content else '(empty)'}")
+        logger.debug(
+            f"[ClaudeCode] 收到訊息: channel={message.channel.id}, type={type(message.channel).__name__}, author={message.author.id}, content={message.content[:50] if message.content else '(empty)'}"
+        )
 
         # 忽略有指令前綴的訊息（讓指令處理器處理）
-        if message.content and message.content.startswith(('!', '/', '?')):
-            logger.debug(f"[ClaudeCode] 忽略指令前綴")
+        if message.content and message.content.startswith(("!", "/", "?")):
+            logger.debug("[ClaudeCode] 忽略指令前綴")
             return
 
         # 權限檢查
         perm_result = self._check_permission_message(message)
-        logger.debug(f"[ClaudeCode] 權限檢查: user={message.author.id} (admin={ADMIN_USER_ID}), channel={message.channel.id}, type={type(message.channel).__name__}, is_thread={isinstance(message.channel, discord.Thread)}, parent={getattr(message.channel, 'parent_id', None)}, allowed_id={ALLOWED_CHANNEL_ID}, perm={perm_result}")
+        logger.debug(
+            f"[ClaudeCode] 權限檢查: user={message.author.id} (admin={ADMIN_USER_ID}), channel={message.channel.id}, type={type(message.channel).__name__}, is_thread={isinstance(message.channel, discord.Thread)}, parent={getattr(message.channel, 'parent_id', None)}, allowed_id={ALLOWED_CHANNEL_ID}, perm={perm_result}"
+        )
         if not perm_result:
             return
 
         # 只在 thread 中自動觸發（主頻道仍需用 /cc 指令）
         is_thread = isinstance(message.channel, discord.Thread)
-        logger.debug(f"[ClaudeCode] Thread 檢查: is_thread={is_thread}, channel_id={message.channel.id}, channel_type={type(message.channel).__name__}")
+        logger.debug(
+            f"[ClaudeCode] Thread 檢查: is_thread={is_thread}, channel_id={message.channel.id}, channel_type={type(message.channel).__name__}"
+        )
         if not is_thread:
-            logger.debug(f"[ClaudeCode] 非 thread，略過")
+            logger.debug("[ClaudeCode] 非 thread，略過")
             return
 
         # 避免重複處理（同一訊息可能觸發多次）
         already_processed = message.id in self._processed_messages
-        logger.debug(f"[ClaudeCode] 重複檢查: msg_id={message.id}, processed={already_processed}, set_size={len(self._processed_messages)}")
+        logger.debug(
+            f"[ClaudeCode] 重複檢查: msg_id={message.id}, processed={already_processed}, set_size={len(self._processed_messages)}"
+        )
         if already_processed:
             return
         self._processed_messages.add(message.id)
 
-        logger.info(f"[ClaudeCode] Thread 觸發: thread={message.channel.id}, parent={message.channel.parent_id}, user={message.author.id}, content={message.content[:50]}")
+        logger.info(
+            f"[ClaudeCode] Thread 觸發: thread={message.channel.id}, parent={message.channel.parent_id}, user={message.author.id}, content={message.content[:50]}"
+        )
 
         has_api_key = bool(NVIDIA_API_KEY)
         logger.debug(f"[ClaudeCode] API Key 檢查: has_key={has_api_key}")

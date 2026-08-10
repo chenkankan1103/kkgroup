@@ -17,11 +17,9 @@ Bahamut 動畫追蹤 Cog - 週表排程系統
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
 import asyncio
 import aiohttp
-from . import push_core
-from .push_core import AnimeDatabase, ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT, ANIME_WEEKLY_SCHEDULE_TABLE, get_week_start_date, find_unpushed_items
+from .push_core import TW_TZ, API_ENDPOINT, API_TIMEOUT, find_unpushed_items
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +43,9 @@ class AnimeScheduleTracker:
         """從 API 獲取日程表 (newAnimeSchedule)"""
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(API_ENDPOINT, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
+                async with session.get(
+                    API_ENDPOINT, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)
+                ) as response:
                     if response.status != 200:
                         logger.error(f"❌ API returned status {response.status}")
                         return {}
@@ -67,22 +67,34 @@ class AnimeScheduleTracker:
         weekday_today = (now.weekday() + 1) % 7 or 7
         weekday_tomorrow = (weekday_today % 7) + 1
 
-        for day_offset, weekday in [(0, str(weekday_today)), (1, str(weekday_tomorrow))]:
+        for day_offset, weekday in [
+            (0, str(weekday_today)),
+            (1, str(weekday_tomorrow)),
+        ]:
             target_date = (now + timedelta(days=day_offset)).date()
             for anime_info in schedule.get(weekday, []):
                 schedule_time = anime_info.get("scheduleTime", "")
                 if schedule_time:
                     try:
-                        scheduled_time = datetime.strptime(schedule_time, "%H:%M").time()
-                        scheduled_dt = datetime.combine(target_date, scheduled_time, tzinfo=TW_TZ)
+                        scheduled_time = datetime.strptime(
+                            schedule_time, "%H:%M"
+                        ).time()
+                        scheduled_dt = datetime.combine(
+                            target_date, scheduled_time, tzinfo=TW_TZ
+                        )
                         # 改用日期過濾：超過 1 天的時刻才篩除，同日所有時刻都保留
                         # 這防止凌晨時早晨時刻被篩除（例如: 凌公元 03:59 時 01:00 不應被篩除）
                         if scheduled_dt.date() >= (now - timedelta(days=1)).date():
                             check_times.append(scheduled_dt)
                     except ValueError as e:
-                        logger.warning(f"⚠️ [_get_expected_check_times] 無法解析時間格式 '{schedule_time}': {e}")
+                        logger.warning(
+                            f"⚠️ [_get_expected_check_times] 無法解析時間格式 '{schedule_time}': {e}"
+                        )
                     except Exception as e:
-                        logger.error(f"❌ [_get_expected_check_times] 處理時間時發生未預期錯誤 '{schedule_time}': {e}", exc_info=True)
+                        logger.error(
+                            f"❌ [_get_expected_check_times] 處理時間時發生未預期錯誤 '{schedule_time}': {e}",
+                            exc_info=True,
+                        )
 
         return sorted(check_times)
 
@@ -111,8 +123,8 @@ class AnimeScheduleTracker:
             is_refresh_time = now.hour == 22  # 台灣時間 22:00-22:59
 
             if not is_refresh_time:
-                logger.debug(f"⏭️ [refresh_weekly_schedule] 跳過（非晚上 10 點）")
-                return {'success': False, 'skipped': True}
+                logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非晚上 10 點）")
+                return {"success": False, "skipped": True}
 
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
 
@@ -120,12 +132,14 @@ class AnimeScheduleTracker:
             schedule = await self._get_anime_schedule()
             if not schedule:
                 logger.warning("⚠️ [refresh_weekly_schedule] 無法拉取時程表")
-                return {'success': False, 'error': 'API 回傳空時程表'}
+                return {"success": False, "error": "API 回傳空時程表"}
 
             # 🔑 修復：正確計算 week_start_date
             # 使用 push_core 的統一計算邏輯 (api_week=True: 用於儲存從 API 拉取的週表)
             week_start_str = self.push_core.get_week_start_date(now, api_week=True)
-            logger.info(f"📅 [refresh_weekly_schedule] 保存週起始日期: {week_start_str} (today={now.strftime('%Y-%m-%d %a')})")
+            logger.info(
+                f"📅 [refresh_weekly_schedule] 保存週起始日期: {week_start_str} (today={now.strftime('%Y-%m-%d %a')})"
+            )
 
             schedule_data = []
             for day_offset in range(7):
@@ -134,51 +148,64 @@ class AnimeScheduleTracker:
 
                 if day_key in schedule:
                     for anime in schedule[day_key]:
-                        scheduled_time = anime.get('scheduleTime', '')
+                        scheduled_time = anime.get("scheduleTime", "")
                         if scheduled_time:
-                            schedule_data.append({
-                                'day_of_week': day_of_week,
-                                'scheduled_time': scheduled_time,
-                                'anime_data': anime
-                            })
+                            schedule_data.append(
+                                {
+                                    "day_of_week": day_of_week,
+                                    "scheduled_time": scheduled_time,
+                                    "anime_data": anime,
+                                }
+                            )
 
             # 全量覆蓋：先刪除該 week_start_date 的舊資料，再插入新資料
             # save_weekly_schedule 內部已做 UPSERT (保留 pushed=1) + pre-dedup
             if schedule_data:
                 self.db.save_weekly_schedule(week_start_str, schedule_data)
-                logger.info(f"✅ [refresh_weekly_schedule] 週表全量覆蓋完成 ({len(schedule_data)} 個時刻)")
+                logger.info(
+                    f"✅ [refresh_weekly_schedule] 週表全量覆蓋完成 ({len(schedule_data)} 個時刻)"
+                )
 
             # 清理孤兒記錄：週表刷新後，清理不在週表中的 anime_messages、anime_notified
-            if hasattr(self.db, 'clean_orphaned_records'):
+            if hasattr(self.db, "clean_orphaned_records"):
                 orphan_stats = self.db.clean_orphaned_records(week_start_str)
-                if orphan_stats.get('messages', 0) > 0 or orphan_stats.get('notified', 0) > 0:
-                    logger.info(f"🧹 [refresh_weekly_schedule] 清理孤兒記錄: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}")
+                if (
+                    orphan_stats.get("messages", 0) > 0
+                    or orphan_stats.get("notified", 0) > 0
+                ):
+                    logger.info(
+                        f"🧹 [refresh_weekly_schedule] 清理孤兒記錄: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}"
+                    )
 
             # 清理舊週記錄，只保留本週（週一則保留上週）（2026-07-28 新增）
-            if hasattr(self.db, 'cleanup_old_weeks'):
+            if hasattr(self.db, "cleanup_old_weeks"):
                 deleted = self.db.cleanup_old_weeks()
                 if deleted > 0:
-                    logger.info(f"🧹 [refresh_weekly_schedule] 清理舊週記錄: {deleted} 筆")
+                    logger.info(
+                        f"🧹 [refresh_weekly_schedule] 清理舊週記錄: {deleted} 筆"
+                    )
 
             # 取得今日時程（含 pushed 狀態）供上層檢查漏推
             today_schedule = self.get_today_schedule()
 
             return {
-                'success': True,
-                'week_start_date': week_start_str,
-                'today_schedule': today_schedule,
-                'total_count': len(schedule_data)
+                "success": True,
+                "week_start_date": week_start_str,
+                "today_schedule": today_schedule,
+                "total_count": len(schedule_data),
             }
 
         except Exception as e:
             logger.error(f"❌ [refresh_weekly_schedule] 失敗: {e}", exc_info=True)
-            return {'success': False, 'error': str(e)}
+            return {"success": False, "error": str(e)}
 
     def get_today_schedule(self) -> list:
         """獲取今天的時程表（從週表中） - 委託給 AnimeDatabase"""
         return self.db.get_today_schedule()
 
-    def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
+    def mark_time_pushed(
+        self, week_start_date: str, day_of_week: int, scheduled_time: str
+    ) -> bool:
         """標記某個時刻已推送過 - 委託給 AnimeDatabase"""
         return self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
 
@@ -196,12 +223,16 @@ class AnimeScheduleTracker:
 
             if matching:
                 # 已由 find_unpushed_items 排序
-                logger.info(f"📺 [check_scheduled_push] 發現 {len(matching)} 個未推送時刻，將依序推送（現在 {current_time}）")
+                logger.info(
+                    f"📺 [check_scheduled_push] 發現 {len(matching)} 個未推送時刻，將依序推送（現在 {current_time}）"
+                )
                 for item in matching:
                     # 這裡會調用 AnimeTracker 的 send_anime_push 方法
                     # 但由於這是個別類別，我們需要將實際的推送邏輯交給 AnimeTracker
                     # 這裡只記錄日誌，實際推送在 AnimeTracker 中完成
-                    logger.info(f"📺 [check_scheduled_push] 準備推送時刻: {item['scheduled_time']}")
+                    logger.info(
+                        f"📺 [check_scheduled_push] 準備推送時刻: {item['scheduled_time']}"
+                    )
                     # 實際推送邏輯應該在 AnimeTracker 中由排程任務觸發
                     await asyncio.sleep(2)  # 避免短時間內連續發送太多訊息
 

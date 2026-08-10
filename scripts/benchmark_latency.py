@@ -26,7 +26,9 @@ from discord.ext import commands
 async def run_benchmark(iterations: int = 100, warmup: int = 10, qps: float = 10.0):
     """Run latency benchmark test"""
 
-    print(f"Starting benchmark: {iterations} iterations, {warmup} warmup, target {qps} QPS")
+    print(
+        f"Starting benchmark: {iterations} iterations, {warmup} warmup, target {qps} QPS"
+    )
 
     # 1. Initialize bot
     intents = discord.Intents.default()
@@ -44,6 +46,7 @@ async def run_benchmark(iterations: int = 100, warmup: int = 10, qps: float = 10
 
     # Load AI Cog
     from cogs.common.AI import AIResponse
+
     ai_cog = AIResponse(bot)
     await bot.add_cog(ai_cog)
 
@@ -93,7 +96,7 @@ async def run_benchmark(iterations: int = 100, warmup: int = 10, qps: float = 10
         msg = create_mock_message(test_messages[i % len(test_messages)])
         try:
             await bot.on_message(msg)
-        except Exception as e:
+        except Exception:
             pass
         await asyncio.sleep(0.05)
 
@@ -108,7 +111,7 @@ async def run_benchmark(iterations: int = 100, warmup: int = 10, qps: float = 10
     for i in range(iterations):
         msg = create_mock_message(
             test_messages[i % len(test_messages)],
-            user_id=123456789 + (i % 20)  # Simulate 20 different users
+            user_id=123456789 + (i % 20),  # Simulate 20 different users
         )
 
         start = time.perf_counter()
@@ -149,19 +152,19 @@ async def run_benchmark(iterations: int = 100, warmup: int = 10, qps: float = 10
 
     # 5. Output report
     print(f"\n{'='*50}")
-    print(f"Latency Benchmark Report")
+    print("Latency Benchmark Report")
     print(f"{'='*50}")
     print(f"Total iterations:    {iterations}")
     print(f"Successful:          {n}")
     print(f"Errors:              {errors}")
     print(f"Success rate:        {n/iterations*100:.1f}%")
-    print(f"\nLatency stats (ms):")
+    print("\nLatency stats (ms):")
     print(f"  Average:           {result['avg_ms']:.1f}")
     print(f"  Median:            {result['median_ms']:.1f}")
     print(f"  StdDev:            {result['stdev_ms']:.1f}")
     print(f"  Min:               {result['min_ms']:.1f}")
     print(f"  Max:               {result['max_ms']:.1f}")
-    print(f"\nPercentiles:")
+    print("\nPercentiles:")
     print(f"  P50:               {result['p50_ms']:.1f}")
     print(f"  P75:               {result['p75_ms']:.1f}")
     print(f"  P90:               {result['p90_ms']:.1f}")
@@ -169,7 +172,7 @@ async def run_benchmark(iterations: int = 100, warmup: int = 10, qps: float = 10
     print(f"  P99:               {result['p99_ms']:.1f}")
 
     # 6. Grade
-    p95 = result['p95_ms']
+    p95 = result["p95_ms"]
     if p95 < 500:
         grade = "GREEN: Excellent (< 500ms)"
     elif p95 < 1000:
@@ -185,19 +188,24 @@ async def run_benchmark(iterations: int = 100, warmup: int = 10, qps: float = 10
 
 def main():
     parser = argparse.ArgumentParser(description="Discord Bot Latency Benchmark")
-    parser.add_argument("--iterations", "-n", type=int, default=100,
-                       help="Test iterations (default 100)")
-    parser.add_argument("--warmup", "-w", type=int, default=10,
-                       help="Warmup iterations (default 10)")
-    parser.add_argument("--qps", type=float, default=10.0,
-                       help="Target QPS (default 10)")
+    parser.add_argument(
+        "--iterations",
+        "-n",
+        type=int,
+        default=100,
+        help="Test iterations (default 100)",
+    )
+    parser.add_argument(
+        "--warmup", "-w", type=int, default=10, help="Warmup iterations (default 10)"
+    )
+    parser.add_argument(
+        "--qps", type=float, default=10.0, help="Target QPS (default 10)"
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(
-        iterations=args.iterations,
-        warmup=args.warmup,
-        qps=args.qps
-    ))
+    asyncio.run(
+        run_benchmark(iterations=args.iterations, warmup=args.warmup, qps=args.qps)
+    )
 
 
 if __name__ == "__main__":

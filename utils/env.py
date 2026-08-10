@@ -1,6 +1,7 @@
 # utils/env.py
 import os
 
+
 def update_env_file(key, value, env_path=".env"):
     lines = []
     found = False

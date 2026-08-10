@@ -1,18 +1,30 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import os, io, time, aiohttp, re, subprocess, json, datetime
+import os
+import io
+import time
+import aiohttp
+import re
+import json
+import datetime
 import asyncio
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from collections import defaultdict
 from dotenv import load_dotenv, set_key
 from io import BytesIO
 
 # 匯入新的 DB 適配層
 from db_adapter import (
-    get_user_field, add_user_field,
-    get_central_reserve, add_to_central_reserve, remove_from_central_reserve, set_central_reserve,
-    get_reserve_pressure, get_dynamic_fee_rate, get_reserve_announcement
+    get_user_field,
+    add_user_field,
+    get_central_reserve,
+    add_to_central_reserve,
+    remove_from_central_reserve,
+    set_central_reserve,
+    get_reserve_pressure,
+    get_dynamic_fee_rate,
+    get_reserve_announcement,
 )
 
 # 匯入排行榜管理模組
@@ -30,7 +42,9 @@ load_dotenv()
 
 # 配置常數
 DB_FILE = "user_data.db"
-FONT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "fonts", "NotoSansCJKtc-Regular.otf")
+FONT_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "fonts", "NotoSansCJKtc-Regular.otf"
+)
 ASSETS_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "assets")
 TROPHY_PATH = os.path.join(ASSETS_PATH, "trophy.png")
 MEDAL_PATHS = [
@@ -41,32 +55,37 @@ MEDAL_PATHS = [
 USER_COOLDOWN_SECONDS = 30
 UPDATE_INTERVAL = 300  # 更新間隔改為 5 分鐘 (300 秒)
 
+
 # 資料庫初始化
 def initialize_database():
     """初始化數據庫 (已遷移到 Sheet-Driven 系統)"""
     try:
         from db_adapter import get_db
+
         db = get_db()
-        print(f"✅ KKCoin DB 就緒")
+        print("✅ KKCoin DB 就緒")
     except Exception as e:
         print(f"❌ KKCoin DB 初始化失敗: {e}")
+
 
 # 資料庫操作方法
 def get_user_balance(user_id):
     """獲取玩家 KKCoin 餘額"""
-    return get_user_field(user_id, 'kkcoin', default=0)
+    return get_user_field(user_id, "kkcoin", default=0)
+
 
 def update_user_balance(user_id, amount):
     """更新玩家 KKCoin 餘額"""
-    return add_user_field(user_id, 'kkcoin', amount)
+    return add_user_field(user_id, "kkcoin", amount)
+
 
 def get_user_digital_usd(user_id):
     """獲取玩家數位美金（洗出的白錢）"""
-    value = get_user_field(user_id, 'digital_usd', default=0)
+    value = get_user_field(user_id, "digital_usd", default=0)
     # 確保返回的是數字類型（處理字符串情況）
     if isinstance(value, str):
         # 處理空字符串
-        if not value or value.strip() == '':
+        if not value or value.strip() == "":
             return 0.0
         try:
             return float(value)
@@ -74,13 +93,16 @@ def get_user_digital_usd(user_id):
             return 0.0
     return float(value) if value else 0.0
 
+
 def update_user_digital_usd(user_id, amount):
     """更新玩家數位美金"""
-    return add_user_field(user_id, 'digital_usd', amount)
+    return add_user_field(user_id, "digital_usd", amount)
+
 
 # 環境變數操作
 def get_from_env(variable_name, default=None):
     return os.getenv(variable_name, default)
+
 
 def save_to_env(variable_name, value):
     """
@@ -92,11 +114,13 @@ def save_to_env(variable_name, value):
     value_str = value_str.strip("'\"")
     set_key(".env", variable_name, value_str)
 
+
 # 生成灰色占位頭像（當頭像加載失敗時使用）
 def create_placeholder_avatar():
     """創建灰色占位圖像"""
-    placeholder = Image.new('RGBA', (48, 48), (200, 200, 200, 255))
+    placeholder = Image.new("RGBA", (48, 48), (200, 200, 200, 255))
     return placeholder
+
 
 # 取得 Discord 使用者頭像
 async def fetch_avatar(session, url):
@@ -107,7 +131,7 @@ async def fetch_avatar(session, url):
     """
     if not url:
         return None
-    
+
     try:
         # 增加超時時間，避免網路波動導致下載失敗
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
@@ -115,23 +139,23 @@ async def fetch_avatar(session, url):
             if resp.status != 200:
                 print(f"⚠️ 頭像 URL 返回 {resp.status}: {url[:50]}...")
                 return None
-            
+
             # 讀取圖片數據
             data = await resp.read()
             if len(data) == 0:
                 print(f"⚠️ 頭像數據為空: {url[:50]}...")
                 return None
-            
+
             # 嘗試加載圖片
             img = Image.open(io.BytesIO(data)).convert("RGBA")
-            
+
             # 檢查圖片尺寸（避免 1x1 的空白圖）
             if img.size[0] < 16 or img.size[1] < 16:
                 print(f"⚠️ 頭像尺寸過小: {img.size}")
                 return None
-            
+
             return img
-    
+
     except asyncio.TimeoutError:
         print(f"⏱️ 頭像加載超時: {url[:50]}...")
         return None
@@ -142,52 +166,62 @@ async def fetch_avatar(session, url):
 
 async def make_leaderboard_image(members_data):
     """已移至 leaderboard_manager.py
-    
+
     此處保留為向後相容性考慮
     """
     from .leaderboard_manager import make_leaderboard_image as _make_leaderboard_image
+
     return await _make_leaderboard_image(members_data)
+
 
 def is_only_emojis(text):
     import regex
-    emoji_pattern = regex.compile(r'^\s*(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base}|\p{Emoji_Component})+\s*$')
+
+    emoji_pattern = regex.compile(
+        r"^\s*(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base}|\p{Emoji_Component})+\s*$"
+    )
     return bool(emoji_pattern.fullmatch(text))
+
 
 class KKCoin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         initialize_database()
-        
+
         # 從 .env 讀取排行榜頻道 ID
         self.rank_channel_id = int(get_from_env("KKCOIN_RANK_CHANNEL_ID", 0))
         self.rank_message_id = int(get_from_env("KKCOIN_RANK_MESSAGE_ID", 0))
-        
+
         # 數位美金排行榜
-        self.digital_usd_channel_id = int(get_from_env("DIGITAL_USD_RANK_CHANNEL_ID", 0))
-        self.digital_usd_message_id = int(get_from_env("DIGITAL_USD_RANK_MESSAGE_ID", 0))
-        
+        self.digital_usd_channel_id = int(
+            get_from_env("DIGITAL_USD_RANK_CHANNEL_ID", 0)
+        )
+        self.digital_usd_message_id = int(
+            get_from_env("DIGITAL_USD_RANK_MESSAGE_ID", 0)
+        )
+
         # 園區中央儲備金狀態
         self.reserve_channel_id = int(get_from_env("RESERVE_STATUS_CHANNEL_ID", 0))
         self.reserve_message_id = int(get_from_env("RESERVE_STATUS_MESSAGE_ID", 0))
-        
+
         self.last_kkcoin_time = defaultdict(lambda: 0)
         self.last_message_cache = defaultdict(str)
         self.last_update_time = 0
         self.last_leaderboard_data = None
         self.last_digital_usd_data = None
         self._config_missing_warned = False  # 追踪是否已警告过 config.json 不存在
-        
+
         # 🎯 事件驅動排行榜生成（資料變化時延遲 5 分鐘後生成，避免頻繁更新）
         self._pending_leaderboard_generation = False  # 標記是否有待生成的任務
         self._generation_timer = None  # 5 分鐘延遲計時器
         self._generation_lock = asyncio.Lock()  # 防止同時多次觸發
-        
+
         # Cloudflare Quick Tunnel 支援
         # 不使用 kkgroup.com（已被第三方公司註冊），改從 config.json 讀取
         self.base_url = self._load_base_url_from_config()
         self.tunnel_url_lock = asyncio.Lock()
         self.last_synced_tunnel_url = None  # 追蹤上一次同步的 URL
-        
+
         # 🔧 [改為事件驅動] 只在資料庫資產有變化時觸發更新，不做定時輪詢
         # 啟動必要的背景任務
         self.auto_update_digital_usd_leaderboard.start()
@@ -197,8 +231,10 @@ class KKCoin(commands.Cog):
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
         print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
         print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
-        print(f"🔄 隧道 URL 自動檢查已啟用（每 10 分鐘掃描一次）")
-        print(f"📤 ✨ 排行榜已改用事件驅動模式：資料有變化時，等 5 分鐘後生成一次（避免頻繁更新，减少 VM 出站流量）")
+        print("🔄 隧道 URL 自動檢查已啟用（每 10 分鐘掃描一次）")
+        print(
+            "📤 ✨ 排行榜已改用事件驅動模式：資料有變化時，等 5 分鐘後生成一次（避免頻繁更新，减少 VM 出站流量）"
+        )
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
@@ -207,12 +243,15 @@ class KKCoin(commands.Cog):
         self.auto_check_tunnel_url.cancel()  # 🔄 取消隧道檢查任務
         if self.auto_push_leaderboard_to_github.is_running():
             self.auto_push_leaderboard_to_github.cancel()  # 📤 取消 GitHub 推送任務
-    
+
     def _load_base_url_from_config(self) -> str:
         """啟動時同步讀取 config/config.json 取得 tunnel URL（避免使用 kkgroup.com 預設值）"""
         try:
             import json
-            config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "config.json")
+
+            config_path = os.path.join(
+                os.path.dirname(__file__), "..", "..", "config", "config.json"
+            )
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -226,10 +265,10 @@ class KKCoin(commands.Cog):
 
     async def sync_to_github(self, new_url):
         """將新的隧道 URL 同步到 GitHub Pages 入口
-        
+
         參數:
             new_url: 新的 Tunnel URL (e.g., https://xxx.trycloudflare.com)
-        
+
         流程:
             1. 讀取現有 config/config.json，保留 imageURL（Discord CDN 由 Bot 自動維護）
             2. 只更新隧道 URL：url 和 API_BASE
@@ -239,56 +278,69 @@ class KKCoin(commands.Cog):
             import subprocess
             import json
             from datetime import datetime
-            
+
             # 使用 config/config.json
-            config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "config.json")
-            
+            config_path = os.path.join(
+                os.path.dirname(__file__), "..", "..", "config", "config.json"
+            )
+
             # 檢查 config 目錄是否存在
             config_dir = os.path.dirname(config_path)
             if not os.path.exists(config_dir):
                 print(f"❌ config 目錄不存在: {config_dir}")
                 return False
-            
+
             # 讀取現有配置（保留排行榜 CDN URL，由 Bot 自動維護）
             existing_image_url = "https://chenkankan1103.github.io/kkgroup/assets/leaderboard.png"  # 備用值
             if os.path.exists(config_path):
                 try:
                     with open(config_path, "r", encoding="utf-8") as f:
                         existing_config = json.load(f)
-                        existing_image_url = existing_config.get("imageURL", existing_image_url)
+                        existing_image_url = existing_config.get(
+                            "imageURL", existing_image_url
+                        )
                 except Exception as e:
                     print(f"⚠️  讀取現有 config.json 失敗，使用備用 URL: {e}")
-            
+
             # 更新 config.json（只更新隧道 URL，保留 imageURL）
             config_data = {
                 "url": new_url,
                 "API_BASE": new_url,
                 "imageURL": existing_image_url,  # 📤 保留現有的排行榜 CDN URL（由 Bot 自動維護）
                 "DISCORD_URL": "https://discord.gg/5JtuJvhhHu",
-                "lastUpdated": datetime.utcnow().isoformat() + "Z"
+                "lastUpdated": datetime.utcnow().isoformat() + "Z",
             }
-            
+
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, ensure_ascii=False, indent=2)
-            
+
             print(f"✅ 已更新 config.json: {new_url}")
-            
+
             # Git 操作（在項目根目錄中執行）
             git_commands = [
                 ["git", "add", "config/config.json"],
                 ["git", "commit", "-m", f"Auto-sync: Update tunnel URL to {new_url}"],
-                ["git", "push", "origin", "main"]
+                ["git", "push", "origin", "main"],
             ]
-            
+
             for cmd in git_commands:
                 try:
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, cwd=os.path.dirname(__file__) + "/../..")
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        cwd=os.path.dirname(__file__) + "/../..",
+                    )
                     if result.returncode == 0:
                         print(f"✅ Git 指令成功: {' '.join(cmd[1:])}")
                     else:
                         # 如果是 commit 時沒有變更，允許這個錯誤
-                        if "nothing to commit" in result.stderr or "nothing added to commit" in result.stderr:
-                            print(f"ℹ️  config.json 未有變更，跳過提交")
+                        if (
+                            "nothing to commit" in result.stderr
+                            or "nothing added to commit" in result.stderr
+                        ):
+                            print("ℹ️  config.json 未有變更，跳過提交")
                         else:
                             print(f"⚠️  Git 指令警告: {result.stderr[:100]}")
                 except subprocess.TimeoutExpired:
@@ -297,25 +349,28 @@ class KKCoin(commands.Cog):
                 except Exception as e:
                     print(f"❌ Git 操作失敗: {e}")
                     return False
-            
-            print(f"🚀 GitHub Pages 已更新隧道 URL: https://chenkankan1103.github.io/kkgroup/")
+
+            print(
+                "🚀 GitHub Pages 已更新隧道 URL: https://chenkankan1103.github.io/kkgroup/"
+            )
             return True
-        
+
         except Exception as e:
             print(f"❌ 同步到 GitHub 失敗: {e}")
             import traceback
+
             traceback.print_exc()
             return False
-    
+
     @tasks.loop(minutes=5)
     async def auto_push_leaderboard_to_github(self):
         """✅ [已停用] 原來的定時推送任務
-        
+
         現在改用事件驅動模式：
         - 只在排行榜資料有變化時才生成圖片
         - 檢測到變化後延遲 5 分鐘再生成（避免頻繁更新）
         - 5 分鐘內多次變化只生成一次（減少出站流量）
-        
+
         生成邏輯已移至 _trigger_leaderboard_generation()
         """
         # 此方法保留以維持向後兼容性，但不再執行任何操作
@@ -323,7 +378,7 @@ class KKCoin(commands.Cog):
 
     async def _upload_leaderboard_to_discord(self, image, user_count):
         """上傳/編輯排行榜圖片到 Discord（只用 Discord CDN，無隧道流量）
-        
+
         邏輯：
         1. 如果已有訊息，編輯其附件（覆蓋舊圖片）
         2. 如果沒有，新建訊息
@@ -335,13 +390,13 @@ class KKCoin(commands.Cog):
             if not channel:
                 print(f"❌ 找不到排行榜頻道 {self.rank_channel_id}")
                 return
-            
+
             # 把圖片存到 BytesIO
             buf = io.BytesIO()
             image.save(buf, format="PNG", optimize=True, compress_level=9)
             buf.seek(0)
             file = discord.File(buf, filename="leaderboard.png")
-            
+
             # 更新或創建訊息
             if self.rank_message_id:
                 try:
@@ -358,25 +413,27 @@ class KKCoin(commands.Cog):
                     msg = await channel.send(file=file)
                     self.rank_message_id = msg.id
                     save_to_env("KKCOIN_RANK_MESSAGE_ID", self.rank_message_id)
-                    print(f"✅ 排行榜訊息已創建（新訊息）")
+                    print("✅ 排行榜訊息已創建（新訊息）")
             else:
                 # 首次上傳
                 msg = await channel.send(file=file)
                 self.rank_message_id = msg.id
                 save_to_env("KKCOIN_RANK_MESSAGE_ID", self.rank_message_id)
-                print(f"✅ 排行榜訊息已創建（首次）")
-            
+                print("✅ 排行榜訊息已創建（首次）")
+
             # 從訊息附件取得 Discord CDN URL
             if msg.attachments and len(msg.attachments) > 0:
                 leaderboard_url = msg.attachments[0].url
                 print(f"📸 Discord CDN URL: {leaderboard_url}")
-                
+
                 # 💾 保存 URL 到 .env
                 save_to_env("LEADERBOARD_URL", leaderboard_url)
-                
+
                 # 💾 更新 config.json 供網頁端讀取
                 try:
-                    config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "config.json")
+                    config_path = os.path.join(
+                        os.path.dirname(__file__), "..", "..", "config", "config.json"
+                    )
                     if os.path.exists(config_path):
                         with open(config_path, "r", encoding="utf-8") as f:
                             config = json.load(f)
@@ -393,137 +450,160 @@ class KKCoin(commands.Cog):
                 except Exception as e:
                     print(f"⚠️ 更新 config.json 失敗: {e}")
                     import traceback
+
                     traceback.print_exc()
             else:
-                print(f"❌ 訊息中沒有附件（attachments={msg.attachments if msg else 'N/A'}）")
-        
+                print(
+                    f"❌ 訊息中沒有附件（attachments={msg.attachments if msg else 'N/A'}）"
+                )
+
         except Exception as e:
             print(f"❌ 上傳排行榜到 Discord 失敗: {e}")
             import traceback
+
             traceback.print_exc()
 
     async def _upload_leaderboard_via_api(self, image, user_count):
         """[已停用] 使用 GitHub API 上傳排行榜 - 已改用 Discord CDN
-        
+
         保留此方法以維持向後兼容性，但不再執行任何操作。
         排行榜現在直接上傳到 Discord CDN 進行存儲。
         """
         try:
             import base64
-            
+
             github_token = get_from_env("GITHUB_TOKEN")
             if not github_token:
                 print("⚠️ 未設定 GITHUB_TOKEN，跳過 API 上傳")
                 return
-            
+
             # 圖片轉 base64
             img_byte_arr = BytesIO()
             image.save(img_byte_arr, format="PNG", optimize=True, compress_level=9)
             img_byte_arr.seek(0)
-            encoded_content = base64.b64encode(img_byte_arr.read()).decode('utf-8')
-            
+            encoded_content = base64.b64encode(img_byte_arr.read()).decode("utf-8")
+
             # GitHub API
             owner = "chenkankan1103"
             repo = "kkgroup"
             file_path = "docs/assets/leaderboard.png"  # 存到 docs 目錄
-            api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
-            
+            api_url = (
+                f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
+            )
+
             async with aiohttp.ClientSession() as session:
                 # 先取得現有文件的 SHA（用於覆蓋）
                 current_sha = None
                 try:
                     async with session.get(
                         api_url,
-                        headers={"Authorization": f"token {github_token}", "Accept": "application/vnd.github.v3+json"},
-                        timeout=aiohttp.ClientTimeout(total=10)
+                        headers={
+                            "Authorization": f"token {github_token}",
+                            "Accept": "application/vnd.github.v3+json",
+                        },
+                        timeout=aiohttp.ClientTimeout(total=10),
                     ) as resp:
                         if resp.status == 200:
                             data = await resp.json()
-                            current_sha = data.get('sha')
+                            current_sha = data.get("sha")
                         elif resp.status == 404:
                             print("ℹ️ 檔案不存在，將創建新檔案")
                 except Exception as e:
                     print(f"⚠️ 獲取 SHA 失敗（首次上傳可忽略）: {e}")
-                
+
                 # 上傳數據
                 upload_data = {
                     "message": f"Auto-update leaderboard: {user_count} users - {datetime.datetime.now().isoformat()}",
                     "content": encoded_content,
-                    "branch": "main"
+                    "branch": "main",
                 }
                 if current_sha:
                     upload_data["sha"] = current_sha
-                
+
                 # PUT 上傳
                 async with session.put(
                     api_url,
                     json=upload_data,
-                    headers={"Authorization": f"token {github_token}", "Accept": "application/vnd.github.v3+json"},
-                    timeout=aiohttp.ClientTimeout(total=15)
+                    headers={
+                        "Authorization": f"token {github_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                    },
+                    timeout=aiohttp.ClientTimeout(total=15),
                 ) as resp:
                     if resp.status in [200, 201]:
                         print(f"✅ GitHub API 上傳成功 ({user_count} 使用者)")
-                        print(f"📍 CDN: https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png")
+                        print(
+                            "📍 CDN: https://raw.githubusercontent.com/chenkankan1103/kkgroup/main/docs/assets/leaderboard.png"
+                        )
                     else:
                         error_text = await resp.text()
-                        print(f"❌ GitHub API 上傳失敗 ({resp.status}): {error_text[:200]}")
-        
+                        print(
+                            f"❌ GitHub API 上傳失敗 ({resp.status}): {error_text[:200]}"
+                        )
+
         except Exception as e:
             print(f"❌ API 上傳錯誤: {e}")
             import traceback
+
             traceback.print_exc()
 
     @auto_push_leaderboard_to_github.before_loop
     async def before_auto_push_leaderboard(self):
         """✅ [已停用] 原來用於初始化定時推送的方法
-        
+
         現在改用事件驅動模式，此方法不再需要
         """
         # 原來的延遲邏輯已不需要，保持空實現以維持結構
         pass
-    
+
     async def get_tunnel_url(self):
         """從 config/config.json 或 /tmp/cloudflared.log 讀取 Cloudflare Quick Tunnel 網址
-        
+
         優先順序:
         1. config/config.json (GitHub同步，優先級最高 - 確保本機開發和GCP部署URL一致)
         2. /tmp/cloudflared.log (GCP VM本地cloudflared - 備用)
-        
+
         成功: 更新 self.base_url 並返回該 URL
         失敗: 返回 None
         """
         async with self.tunnel_url_lock:
             try:
                 import json
-                
+
                 # 1️⃣ 優先方式: 嘗試讀取 config/config.json (GitHub同步，確保URL一致)
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                project_root = os.path.dirname(
+                    os.path.dirname(os.path.abspath(__file__))
+                )
                 config_file = os.path.join(project_root, "config", "config.json")
-                
+
                 if os.path.exists(config_file):
                     try:
                         with open(config_file, "r", encoding="utf-8") as f:
                             config_data = json.load(f)
                             tunnel_url = config_data.get("url")
-                            
+
                             if tunnel_url and tunnel_url.startswith("https://"):
                                 self.base_url = tunnel_url
-                                print(f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}")
+                                print(
+                                    f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}"
+                                )
                                 return tunnel_url
                     except Exception as config_err:
                         print(f"⚠️ 從 config.json 讀取失敗: {config_err}")
-                
+
                 # 2️⃣ 備用方式: 嘗試讀取 /tmp/cloudflared.log (本地cloudflared)
                 log_file = "/tmp/cloudflared.log"
                 if os.path.exists(log_file):
                     try:
-                        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                        with open(
+                            log_file, "r", encoding="utf-8", errors="ignore"
+                        ) as f:
                             content = f.read()
-                        
+
                         # 使用 regex 抓取最新的 https://*.trycloudflare.com URL
                         pattern = r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com"
                         matches = re.findall(pattern, content)
-                        
+
                         if matches:
                             # 取最後一個（最新的）
                             tunnel_url = matches[-1]
@@ -532,26 +612,26 @@ class KKCoin(commands.Cog):
                             return tunnel_url
                     except Exception as log_err:
                         print(f"⚠️ 從 log 讀取失敗: {log_err}")
-                
-                print(f"⚠️ 無法獲取隧道 URL (兩種方式均失敗)")
+
+                print("⚠️ 無法獲取隧道 URL (兩種方式均失敗)")
                 return None
-            
+
             except Exception as e:
                 print(f"❌ 讀取隧道 URL 失敗: {e}")
                 return None
-    
+
     async def _ensure_leaderboard_initialized(self):
         """確保排行榜訊息存在（啟動時一次性初始化）"""
         if not self.rank_channel_id:
             print("❌ 未設定排行榜頻道 ID")
             return
-        
+
         try:
             channel = self.bot.get_channel(self.rank_channel_id)
             if not channel:
                 print(f"❌ 找不到排行榜頻道 {self.rank_channel_id}")
                 return
-            
+
             # 如果已有訊息 ID，驗證訊息是否還存在
             if self.rank_message_id:
                 try:
@@ -559,72 +639,78 @@ class KKCoin(commands.Cog):
                     print(f"✅ 排行榜訊息已存在 (ID: {self.rank_message_id})")
                     return
                 except discord.NotFound:
-                    print(f"⚠️ 排行榜訊息已被刪除，重新創建...")
+                    print("⚠️ 排行榜訊息已被刪除，重新創建...")
                     self.rank_message_id = 0
                     save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
                 except Exception as e:
                     print(f"⚠️ 驗證訊息失敗: {e}")
-            
+
             # 需要創建新訊息
             await self.create_leaderboard()
-        
+
         except Exception as e:
             print(f"❌ 初始化排行榜失敗: {e}")
             import traceback
+
             traceback.print_exc()
-    
+
     @commands.Cog.listener()
     async def on_ready(self):
         """機器人啟動時執行 - 嘗試獲取 Tunnel URL 並同步到 GitHub Pages"""
         print("🔍 正在嘗試獲取 Cloudflare Tunnel URL...")
         tunnel_url = await self.get_tunnel_url()
-        
+
         if tunnel_url:
             # 檢查隧道 URL 是否與上一次不同
-            stored_config_path = os.path.join(os.path.dirname(__file__), "..", "web_portal", "config.json")
+            stored_config_path = os.path.join(
+                os.path.dirname(__file__), "..", "web_portal", "config.json"
+            )
             last_url = None
-            
+
             try:
                 import json
+
                 if os.path.exists(stored_config_path):
                     with open(stored_config_path, "r", encoding="utf-8") as f:
                         stored_config = json.load(f)
                         last_url = stored_config.get("url")
             except Exception as e:
                 print(f"⚠️  無法讀取上一次的隧道 URL: {e}")
-            
+
             # 如果 URL 發生變更，同步到 GitHub
             if last_url != tunnel_url:
-                print(f"📡 偵測到隧道 URL 變更！")
+                print("📡 偵測到隧道 URL 變更！")
                 print(f"   舊: {last_url}")
                 print(f"   新: {tunnel_url}")
                 sync_result = await self.sync_to_github(tunnel_url)
                 if sync_result:
-                    print(f"✅ 已同步到 GitHub Pages 入口")
+                    print("✅ 已同步到 GitHub Pages 入口")
             else:
-                print(f"ℹ️  隧道 URL 未變更，跳過同步")
+                print("ℹ️  隧道 URL 未變更，跳過同步")
         else:
             print(
-                "\n" + "="*70
+                "\n"
+                + "=" * 70
                 + "\n⚠️  【警告】無法獲取 Cloudflare Quick Tunnel 網址！\n"
-                + "="*70
+                + "=" * 70
                 + "\n\n📋 請在 GCP 終端機執行以下指令：\n\n"
                 + "  cloudflared tunnel --url http://localhost:80 --logfile /tmp/cloudflared.log &\n\n"
                 + "✅ 執行後，機器人會自動從 /tmp/cloudflared.log 讀取隧道 URL\n\n"
-                + "="*70 + "\n"
+                + "=" * 70
+                + "\n"
             )
-        
+
         # 🔥 執行 Nginx 健康檢查
         print("\n🔍 正在執行 Nginx 健康檢查...")
         await self.check_nginx_health()
-        
+
         # 🎯 [事件驅動模式] 初始化排行榜訊息（啟動時一次性）
         print("\n📊 正在初始化排行榜...")
         await self._ensure_leaderboard_initialized()
 
     async def check_nginx_health(self):
         """✅ 檢查 Nginx 是否正確提供排行榜圖片
-        
+
         功能:
             1. 測試本地 Nginx: http://127.0.0.1/assets/leaderboard.png
             2. 若返回 200 則成功，否則通知管理員
@@ -634,22 +720,24 @@ class KKCoin(commands.Cog):
         if not admin_id:
             print("⚠️  未設定 ADMIN_USER_ID，無法發送健康檢查通知")
             return
-        
+
         try:
             async with aiohttp.ClientSession() as session:
                 try:
                     # 測試本地 Nginx 連接
                     async with session.get(
-                        "http://127.0.0.1/assets/leaderboard.png", 
-                        timeout=aiohttp.ClientTimeout(total=10)
+                        "http://127.0.0.1/assets/leaderboard.png",
+                        timeout=aiohttp.ClientTimeout(total=10),
                     ) as response:
                         if response.status == 200:
-                            print(f"✅ 【Nginx 健康檢查】排行榜圖片可正確提供 (HTTP {response.status})")
+                            print(
+                                f"✅ 【Nginx 健康檢查】排行榜圖片可正確提供 (HTTP {response.status})"
+                            )
                             return True
                         else:
                             error_msg = f"❌ 【Nginx 健康檢查失敗】HTTP {response.status} (預期 200)"
                             print(error_msg)
-                            
+
                             # 通知管理員
                             try:
                                 admin = await self.bot.fetch_user(admin_id)
@@ -658,21 +746,29 @@ class KKCoin(commands.Cog):
                                         title="🚨 Nginx 健康檢查失敗",
                                         description=error_msg,
                                         color=discord.Color.red(),
-                                        timestamp=discord.utils.utcnow()
+                                        timestamp=discord.utils.utcnow(),
                                     )
-                                    embed.add_field(name="📍 檔案路徑", value="/var/www/html/assets/leaderboard.png", inline=False)
-                                    embed.add_field(name="🔗 Tunnel URL", value=self.base_url, inline=False)
+                                    embed.add_field(
+                                        name="📍 檔案路徑",
+                                        value="/var/www/html/assets/leaderboard.png",
+                                        inline=False,
+                                    )
+                                    embed.add_field(
+                                        name="🔗 Tunnel URL",
+                                        value=self.base_url,
+                                        inline=False,
+                                    )
                                     await admin.send(embed=embed)
                                     print(f"📢 已發送 Discord 警報給管理員 {admin_id}")
                             except Exception as e:
                                 print(f"⚠️  無法發送 Discord 通知: {e}")
-                            
+
                             return False
-                            
+
                 except asyncio.TimeoutError:
                     error_msg = "❌ 【Nginx 健康檢查失敗】連接超時（可能 Nginx 未啟動）"
                     print(error_msg)
-                    
+
                     # 通知管理員
                     try:
                         admin = await self.bot.fetch_user(admin_id)
@@ -681,15 +777,19 @@ class KKCoin(commands.Cog):
                                 title="🚨 Nginx 連接超時",
                                 description=error_msg,
                                 color=discord.Color.red(),
-                                timestamp=discord.utils.utcnow()
+                                timestamp=discord.utils.utcnow(),
                             )
-                            embed.add_field(name="💡 可能原因", value="• Nginx 服務未啟動\n• 防火牆阻擋本地連接\n• 系統資源不足", inline=False)
+                            embed.add_field(
+                                name="💡 可能原因",
+                                value="• Nginx 服務未啟動\n• 防火牆阻擋本地連接\n• 系統資源不足",
+                                inline=False,
+                            )
                             await admin.send(embed=embed)
                     except Exception as e:
                         print(f"⚠️  無法發送 Discord 通知: {e}")
-                    
+
                     return False
-                    
+
         except Exception as e:
             print(f"❌ 【Nginx 健康檢查異常】{e}")
             return False
@@ -697,33 +797,33 @@ class KKCoin(commands.Cog):
     @tasks.loop(minutes=10)
     async def auto_check_tunnel_url(self):
         """🔄 每 10 分鐘檢查一次隧道 URL 是否變更
-        
+
         如果隧道 URL 發生變更：
         1. 更新 self.base_url
-        2. 同步到 GitHub Pages 的 config.json  
+        2. 同步到 GitHub Pages 的 config.json
         3. 發送 Discord 警報通知
         """
         try:
             # 獲取當前隧道 URL
             current_tunnel_url = await self.get_tunnel_url()
-            
+
             if not current_tunnel_url:
                 # 未找到隧道，使用預設域名
                 return
-            
+
             # 檢查 URL 是否與上次已同步的 URL 不同
             if current_tunnel_url != self.last_synced_tunnel_url:
-                print(f"\n⚠️  【隧道 URL 變更偵測】")
+                print("\n⚠️  【隧道 URL 變更偵測】")
                 print(f"   舊 URL: {self.last_synced_tunnel_url}")
                 print(f"   新 URL: {current_tunnel_url}\n")
-                
+
                 # 同步到 GitHub
                 sync_success = await self.sync_to_github(current_tunnel_url)
-                
+
                 if sync_success:
                     self.last_synced_tunnel_url = current_tunnel_url
                     self.base_url = current_tunnel_url
-                    
+
                     # 發送 Discord 通知（如果有指定通知頻道）
                     notify_channel_id = int(get_from_env("TUNNEL_NOTIFY_CHANNEL_ID", 0))
                     if notify_channel_id:
@@ -734,20 +834,31 @@ class KKCoin(commands.Cog):
                                     title="🚀 Cloudflare 隧道 URL 已更新",
                                     description=f"**新網址：** {current_tunnel_url}",
                                     color=discord.Color.green(),
-                                    timestamp=discord.utils.utcnow()
+                                    timestamp=discord.utils.utcnow(),
                                 )
-                                embed.add_field(name="📡 狀態", value="✅ GitHub Pages 已同步", inline=False)
-                                embed.add_field(name="🔗 入口網址", value="https://chenkankan1103.github.io/kkgroup/", inline=False)
+                                embed.add_field(
+                                    name="📡 狀態",
+                                    value="✅ GitHub Pages 已同步",
+                                    inline=False,
+                                )
+                                embed.add_field(
+                                    name="🔗 入口網址",
+                                    value="https://chenkankan1103.github.io/kkgroup/",
+                                    inline=False,
+                                )
                                 await channel.send(embed=embed, silent=True)
-                                print(f"✅ Discord 通知已發送到頻道 {notify_channel_id}")
+                                print(
+                                    f"✅ Discord 通知已發送到頻道 {notify_channel_id}"
+                                )
                         except Exception as e:
                             print(f"⚠️  無法發送 Discord 通知: {e}")
                 else:
-                    print(f"❌ 同步 GitHub 失敗，隧道 URL 未更新")
-        
+                    print("❌ 同步 GitHub 失敗，隧道 URL 未更新")
+
         except Exception as e:
             print(f"❌ 自動檢查隧道 URL 時發生錯誤: {e}")
             import traceback
+
             traceback.print_exc()
 
     @auto_check_tunnel_url.before_loop
@@ -762,25 +873,25 @@ class KKCoin(commands.Cog):
     # 排行榜只在以下情況更新：
     # 1. on_message - 玩家發送訊息獲得KK幣
     # 2. 各個命令操作 - 玩家進行交易、轉換等操作
-    
+
     async def _init_leaderboard_on_startup(self):
         """Bot 啟動時初始化排行榜（一次性）"""
         await self.bot.wait_until_ready()
         print("✅ KKCoin 系統啟動，初始化排行榜...")
         # 確保儲備狀態訊息已初始化
         await self.ensure_reserve_status_initialized()
-        
+
         # 在 bot 啟動時立即查找或創建排行榜
         if not self.rank_channel_id:
             print("❌ 未設定排行榜頻道 ID")
             return
-        
+
         try:
             channel = self.bot.get_channel(self.rank_channel_id)
             if not channel:
                 print(f"❌ 找不到頻道 {self.rank_channel_id}")
                 return
-            
+
             # 優先嘗試使用已保存的 rank_message_id
             if self.rank_message_id:
                 try:
@@ -794,31 +905,39 @@ class KKCoin(commands.Cog):
                     print(f"⚠️ 訊息 {self.rank_message_id} 不存在，嘗試重新查找...")
                     self.rank_message_id = 0
                     save_to_env("KKCOIN_RANK_MESSAGE_ID", 0)
-            
+
             # 在頻道中查找所有訊息，尋找舊的排行榜訊息（可能是 Embed 或附件格式）
             print("🔍 在頻道中查找舊排行榜訊息...")
             async for msg in channel.history(limit=100):
                 if msg.author.id == self.bot.user.id:
                     # 檢查是否有：1. 經由我們發送的排行榜 Embed，或 2. 帶有排行榜附件的消息
-                    is_embed_leaderboard = msg.embeds and any("KK" in embed.title or "排行榜" in embed.title for embed in msg.embeds)
-                    is_attachment_leaderboard = msg.attachments and any("kkcoin_rank" in att.filename for att in msg.attachments)
-                    
+                    is_embed_leaderboard = msg.embeds and any(
+                        "KK" in embed.title or "排行榜" in embed.title
+                        for embed in msg.embeds
+                    )
+                    is_attachment_leaderboard = msg.attachments and any(
+                        "kkcoin_rank" in att.filename for att in msg.attachments
+                    )
+
                     if is_embed_leaderboard or is_attachment_leaderboard:
-                        print(f"✅ 找到舊排行榜訊息 ID: {msg.id}（格式: {'Embed' if is_embed_leaderboard else '附件'}），將重用此訊息")
+                        print(
+                            f"✅ 找到舊排行榜訊息 ID: {msg.id}（格式: {'Embed' if is_embed_leaderboard else '附件'}），將重用此訊息"
+                        )
                         self.rank_message_id = msg.id
                         save_to_env("KKCOIN_RANK_MESSAGE_ID", msg.id)
                         # 立即強制更新一次
                         print("🔄 第一次啟動強制更新排行榜...")
                         await self.update_leaderboard(min_interval=0, force=True)
                         return
-            
+
             # 如果沒有找到舊訊息，立即創建新的
             print("📝 未找到舊訊息，立即創建新的...")
             await self.create_leaderboard()
-        
+
         except Exception as e:
             print(f"❌ 初始化排行榜時發生錯誤: {e}")
             import traceback
+
             traceback.print_exc()
 
     async def create_leaderboard(self):
@@ -826,40 +945,37 @@ class KKCoin(commands.Cog):
         if not self.rank_channel_id:
             print("❌ 未設定排行榜頻道 ID")
             return
-        
+
         # 防止同時創建多個排行榜
         if self.rank_message_id:
             print(f"⚠️ 排行榜已存在 (訊息 ID: {self.rank_message_id})，跳過創建")
             return
-            
+
         try:
             channel = self.bot.get_channel(self.rank_channel_id)
             if not channel:
                 print(f"❌ 找不到頻道 {self.rank_channel_id}")
                 return
-            
+
             members_data = self.get_current_leaderboard_data()
-            
+
             if not members_data:
                 print("❌ 沒有使用者資料，無法創建排行榜")
                 return
-            
+
             # 創建圖片
             print("🎨 生成排行榜圖片...")
             image = await make_leaderboard_image(members_data)
-            
+
             # 固定儲存路徑（用於 Cloudflare Quick Tunnel）
             leaderboard_path = "/var/www/html/assets/leaderboard.png"
             os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
-            
+
             # 儲存到固定路徑（覆蓋舊檔）並進行權限偵測
             try:
                 # 優化 PNG：壓縮級別 9（最大），過濾優化
                 image.save(
-                    leaderboard_path,
-                    format="PNG",
-                    optimize=True,
-                    compress_level=9
+                    leaderboard_path, format="PNG", optimize=True, compress_level=9
                 )
                 file_size_kb = os.path.getsize(leaderboard_path) / 1024
                 print(f"✅ 排行榜已存到: {leaderboard_path} ({file_size_kb:.1f}KB)")
@@ -873,19 +989,24 @@ class KKCoin(commands.Cog):
             except Exception as e:
                 print(f"❌ 保存圖片失敗: {e}")
                 return
-            
+
             # 💾 直接上傳到 Discord 並建立訊息（_upload_leaderboard_to_discord 會處理）
             await self._upload_leaderboard_to_discord(image, len(members_data))
-            
+
             # 快取資料
-            self.last_leaderboard_data = [m[:3] if len(m) >= 3 else m for m in members_data]
+            self.last_leaderboard_data = [
+                m[:3] if len(m) >= 3 else m for m in members_data
+            ]
             self.last_update_time = time.time()
 
-            print(f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {self.rank_message_id}")
-            
+            print(
+                f"✅ 排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {self.rank_message_id}"
+            )
+
         except Exception as e:
             print(f"❌ 創建排行榜失敗: {e}")
             import traceback
+
             traceback.print_exc()
 
     # ============================================================
@@ -897,7 +1018,7 @@ class KKCoin(commands.Cog):
         """每 5 分鐘自動更新數位美金排行榜"""
         if not self.digital_usd_channel_id:
             return
-            
+
         # 如果沒有訊息 ID，嘗試創建排行榜
         if not self.digital_usd_message_id:
             await self.create_digital_usd_leaderboard()
@@ -910,27 +1031,29 @@ class KKCoin(commands.Cog):
         """等待 bot 準備完成，並在啟動時查找/創建數位美金排行榜"""
         await self.bot.wait_until_ready()
         print("✅ 數位美金排行榜自動更新任務已啟動，正在查找舊訊息...")
-        
+
         if not self.digital_usd_channel_id:
             print("⚠️ 未設定數位美金排行榜頻道 ID")
             return
-        
+
         try:
             channel = self.bot.get_channel(self.digital_usd_channel_id)
             if not channel:
                 print(f"❌ 找不到數位美金排行榜頻道 {self.digital_usd_channel_id}")
                 return
-            
+
             if self.digital_usd_message_id:
                 try:
                     msg = await channel.fetch_message(self.digital_usd_message_id)
-                    print(f"✅ 找到並重用數位美金排行榜訊息 ID: {self.digital_usd_message_id}")
+                    print(
+                        f"✅ 找到並重用數位美金排行榜訊息 ID: {self.digital_usd_message_id}"
+                    )
                     return
                 except discord.NotFound:
                     print(f"⚠️ 訊息 {self.digital_usd_message_id} 不存在")
                     self.digital_usd_message_id = 0
                     save_to_env("DIGITAL_USD_RANK_MESSAGE_ID", 0)
-        
+
         except Exception as e:
             print(f"❌ 初始化數位美金排行榜時發生錯誤: {e}")
 
@@ -947,7 +1070,7 @@ class KKCoin(commands.Cog):
         """確保園區儲備狀態訊息已初始化（啟動時調用一次）"""
         if not self.reserve_channel_id:
             return
-            
+
         # 如果沒有訊息 ID，嘗試創建
         if not self.reserve_message_id:
             await self.create_reserve_status()
@@ -958,26 +1081,26 @@ class KKCoin(commands.Cog):
         if not self.reserve_channel_id:
             print("❌ 未設定園區儲備狀態頻道 ID")
             return
-        
+
         if self.reserve_message_id:
             return  # 已存在
-            
+
         try:
             channel = self.bot.get_channel(self.reserve_channel_id)
             if not channel:
                 print(f"❌ 找不到儲備狀態頻道 {self.reserve_channel_id}")
                 return
-            
+
             embed = self.create_reserve_embed()
             msg = await channel.send(embed=embed, silent=True)
-            
+
             # 立即儲存訊息 ID
             self.reserve_message_id = msg.id
             save_to_env("RESERVE_STATUS_CHANNEL_ID", channel.id)
             save_to_env("RESERVE_STATUS_MESSAGE_ID", msg.id)
-            
+
             print(f"✅ 園區儲備狀態已創建 - 訊息 ID: {msg.id}")
-            
+
         except Exception as e:
             print(f"❌ 創建儲備狀態失敗: {e}")
 
@@ -987,83 +1110,73 @@ class KKCoin(commands.Cog):
         pressure = get_reserve_pressure()
         fee_rate = get_dynamic_fee_rate()
         announcement = get_reserve_announcement()
-        
+
         # 繪製壓力條
         bar_length = 20
         filled = int(pressure / 100 * bar_length)
         empty = bar_length - filled
         pressure_bar = "█" * filled + "░" * empty
-        
+
         # 根據壓力等級選擇顏色
         if pressure >= 80:
-            color = 0x00ff00  # 綠色 - 充裕
+            color = 0x00FF00  # 綠色 - 充裕
             status = "✅ 充裕"
         elif pressure >= 50:
-            color = 0xffff00  # 黃色 - 正常
+            color = 0xFFFF00  # 黃色 - 正常
             status = "🟡 正常"
         else:
-            color = 0xff0000  # 紅色 - 風險
+            color = 0xFF0000  # 紅色 - 風險
             status = "⚠️ 風險"
-        
+
         embed = discord.Embed(
             title="🏦 園區中央儲備金 (The Reserve)",
-            description=f"園區資金池管理與金流斷點動態費率系統",
-            color=color
+            description="園區資金池管理與金流斷點動態費率系統",
+            color=color,
         )
-        
-        embed.add_field(
-            name="💰 儲備餘額",
-            value=f"**{reserve:,} KK幣**",
-            inline=False
-        )
-        
+
+        embed.add_field(name="💰 儲備餘額", value=f"**{reserve:,} KK幣**", inline=False)
+
         embed.add_field(
             name="🌡️ 洗錢壓力",
             value=f"{pressure_bar} {pressure:.1f}% ({status})",
-            inline=False
+            inline=False,
         )
-        
+
         embed.add_field(
-            name="💸 動態手續費率",
-            value=f"**{fee_rate*100:.1f}%**",
-            inline=True
+            name="💸 動態手續費率", value=f"**{fee_rate*100:.1f}%**", inline=True
         )
-        
+
         embed.add_field(
             name="📊 壓力影響",
             value="- ≥80% 壓力: 3% 費率 (優待)\n"
-                  "- 50-80% 壓力: 5% 費率 (正常)\n"
-                  "- <50% 壓力: 8% 費率 (高額)",
-            inline=False
+            "- 50-80% 壓力: 5% 費率 (正常)\n"
+            "- <50% 壓力: 8% 費率 (高額)",
+            inline=False,
         )
-        
-        embed.add_field(
-            name="📢 今日公告",
-            value=announcement,
-            inline=False
-        )
-        
+
+        embed.add_field(name="📢 今日公告", value=announcement, inline=False)
+
         embed.add_field(
             name="💡 說明",
             value="**進帳來源:**\n"
-                  "• 玩家股市操作虧損\n"
-                  "• 購買道具扣款\n"
-                  "• 金流斷點手續費\n\n"
-                  "**支出用途:**\n"
-                  "• 金流斷點獎勵發放\n"
-                  "• 日常活動獎勵",
-            inline=False
+            "• 玩家股市操作虧損\n"
+            "• 購買道具扣款\n"
+            "• 金流斷點手續費\n\n"
+            "**支出用途:**\n"
+            "• 金流斷點獎勵發放\n"
+            "• 日常活動獎勵",
+            inline=False,
         )
-        
+
         embed.set_footer(text="自動更新時間: 每 2 分鐘")
-        
+
         return embed
 
     async def update_reserve_status(self, min_interval=60, force=False):
         """更新園區儲備狀態訊息"""
         if not self.reserve_channel_id or not self.reserve_message_id:
             return
-        
+
         if not force and int(time.time()) % min_interval != 0:
             return  # 簡單節流
 
@@ -1086,7 +1199,7 @@ class KKCoin(commands.Cog):
 
             embed = self.create_reserve_embed()
             await msg.edit(embed=embed)
-            print(f"✅ 儲備狀態已更新")
+            print("✅ 儲備狀態已更新")
 
         except Exception as e:
             print(f"❌ 更新儲備狀態時發生錯誤: {e}")
@@ -1096,23 +1209,25 @@ class KKCoin(commands.Cog):
         if not self.digital_usd_channel_id:
             print("❌ 未設定數位美金排行榜頻道 ID")
             return
-        
+
         if self.digital_usd_message_id:
-            print(f"⚠️ 數位美金排行榜已存在 (訊息 ID: {self.digital_usd_message_id})，跳過創建")
+            print(
+                f"⚠️ 數位美金排行榜已存在 (訊息 ID: {self.digital_usd_message_id})，跳過創建"
+            )
             return
-            
+
         try:
             channel = self.bot.get_channel(self.digital_usd_channel_id)
             if not channel:
                 print(f"❌ 找不到頻道 {self.digital_usd_channel_id}")
                 return
-            
+
             members_data = self.get_digital_usd_leaderboard_data()
-            
+
             if not members_data:
                 print("❌ 沒有使用者資料，無法創建數位美金排行榜")
                 return
-            
+
             # 創建圖片
             print("🎨 生成數位美金排行榜圖片...")
             image = await self.make_digital_usd_leaderboard_image(members_data)
@@ -1121,18 +1236,19 @@ class KKCoin(commands.Cog):
                 img_bytes.seek(0)
                 file = discord.File(img_bytes, filename="digital_usd_rank.png")
                 msg = await channel.send(file=file)
-            
+
             # 立即儲存訊息 ID
             self.digital_usd_message_id = msg.id
             save_to_env("DIGITAL_USD_RANK_MESSAGE_ID", msg.id)
-            
+
             self.last_digital_usd_data = members_data.copy()
-            
+
             print(f"✅ 數位美金排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
-            
+
         except Exception as e:
             print(f"❌ 創建數位美金排行榜失敗: {e}")
             import traceback
+
             traceback.print_exc()
 
     def get_digital_usd_leaderboard_data(self):
@@ -1143,7 +1259,9 @@ class KKCoin(commands.Cog):
         """生成數位美金排行榜圖片（已移至 leaderboard_manager）"""
         return await make_digital_usd_leaderboard_image(self.bot, members_data)
 
-    async def update_digital_usd_leaderboard(self, min_interval=UPDATE_INTERVAL, force=False):
+    async def update_digital_usd_leaderboard(
+        self, min_interval=UPDATE_INTERVAL, force=False
+    ):
         """更新數位美金排行榜"""
         current_time = time.time()
         if not self.digital_usd_channel_id or not self.digital_usd_message_id:
@@ -1171,14 +1289,16 @@ class KKCoin(commands.Cog):
                     print(f"❌ 取得訊息失敗: {e}")
                     return
 
-                members_data = await asyncio.to_thread(self.get_digital_usd_leaderboard_data)
+                members_data = await asyncio.to_thread(
+                    self.get_digital_usd_leaderboard_data
+                )
                 if not members_data:
                     return
 
                 if not force and not self.has_digital_usd_data_changed(members_data):
                     return
 
-                print(f"🔄 開始更新數位美金排行榜...")
+                print("🔄 開始更新數位美金排行榜...")
                 image = await self.make_digital_usd_leaderboard_image(members_data)
 
                 with io.BytesIO() as img_bytes:
@@ -1196,34 +1316,46 @@ class KKCoin(commands.Cog):
     def has_digital_usd_data_changed(self, new_data):
         """檢查數位美金排行榜資料是否有變化（已移至 leaderboard_manager）"""
         return has_digital_usd_data_changed(new_data, self.last_digital_usd_data)
-    @app_commands.command(name="kkcoin_admin", description="管理用戶的 KK 幣（管理員專用）")
-    @app_commands.describe(
-        member="要修改 KK 幣的用戶",
-        action="操作類型",
-        amount="數量"
+
+    @app_commands.command(
+        name="kkcoin_admin", description="管理用戶的 KK 幣（管理員專用）"
     )
-    @app_commands.choices(action=[
-        app_commands.Choice(name="增加", value="add"),
-        app_commands.Choice(name="減少", value="subtract"),
-        app_commands.Choice(name="設定為", value="set")
-    ])
+    @app_commands.describe(
+        member="要修改 KK 幣的用戶", action="操作類型", amount="數量"
+    )
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="增加", value="add"),
+            app_commands.Choice(name="減少", value="subtract"),
+            app_commands.Choice(name="設定為", value="set"),
+        ]
+    )
     @app_commands.default_permissions(administrator=True)
-    async def kkcoin_admin(self, interaction: discord.Interaction, member: discord.Member, action: str, amount: int):
+    async def kkcoin_admin(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        action: str,
+        amount: int,
+    ):
         """管理用戶的 KK 幣"""
         if amount < 0:
             await interaction.response.send_message("❌ 數量不能為負數", ephemeral=True)
             return
-            
+
         user_id = str(member.id)
         current_balance = get_user_balance(user_id)
-        
+
         if action == "add":
             new_balance = current_balance + amount
             update_user_balance(user_id, amount)
             action_text = f"增加了 {amount}"
         elif action == "subtract":
             if current_balance < amount:
-                await interaction.response.send_message(f"❌ {member.display_name} 目前只有 {current_balance} KK幣，不足扣除 {amount} KK幣", ephemeral=True)
+                await interaction.response.send_message(
+                    f"❌ {member.display_name} 目前只有 {current_balance} KK幣，不足扣除 {amount} KK幣",
+                    ephemeral=True,
+                )
                 return
             new_balance = current_balance - amount
             update_user_balance(user_id, -amount)
@@ -1233,16 +1365,18 @@ class KKCoin(commands.Cog):
             update_user_balance(user_id, difference)
             new_balance = amount
             action_text = f"設定為 {amount}"
-        
+
         await interaction.response.send_message(
             f"✅ 已為 {member.display_name} {action_text} KK幣\n"
             f"💰 變更前：{current_balance} KK幣\n"
             f"💰 變更後：{new_balance} KK幣",
-            ephemeral=True
+            ephemeral=True,
         )
-        
-        print(f"🔧 管理員 {interaction.user.display_name} 為 {member.display_name} {action_text} KK幣 ({current_balance} → {new_balance})")
-        
+
+        print(
+            f"🔧 管理員 {interaction.user.display_name} 為 {member.display_name} {action_text} KK幣 ({current_balance} → {new_balance})"
+        )
+
         # 異步更新排行榜
         try:
             await self.update_leaderboard(min_interval=0)
@@ -1259,7 +1393,7 @@ class KKCoin(commands.Cog):
 
     async def _schedule_leaderboard_generation(self):
         """🎯 當排行榜資料有變化時，安排 5 分鐘後的圖片生成
-        
+
         優勢：
         - 只有在資料真正變化時才生成（減少不必要的流量）
         - 5 分鐘內多次變化只生成一次（避免頻繁更新）
@@ -1268,44 +1402,46 @@ class KKCoin(commands.Cog):
         async with self._generation_lock:
             # 設置待生成標記
             self._pending_leaderboard_generation = True
-            
+
             # 如果已有計時器在運行，則保持現有計時器（不重置延遲時間）
             if self._generation_timer is not None:
                 print("⏱️ 排行榜即將在 ~5 分鐘後生成...")
                 return
-            
+
             # 首次設置計時器，5 分鐘後觸發生成
             print("🔔 偵測到排行榜數據變化，將在 5 分鐘後自動生成圖片並上傳...")
             self._generation_timer = asyncio.get_event_loop().call_later(
                 300,  # 5 分鐘 = 300 秒
-                lambda: asyncio.create_task(self._trigger_leaderboard_generation())
+                lambda: asyncio.create_task(self._trigger_leaderboard_generation()),
             )
 
     async def _trigger_leaderboard_generation(self):
         """⏰ 延遲時間到達，執行實際的圖片生成和上傳"""
         async with self._generation_lock:
             self._generation_timer = None
-            
+
             # 檢查是否還有待生成的任務
             if not self._pending_leaderboard_generation:
                 return
-            
+
             self._pending_leaderboard_generation = False
-            
+
             try:
                 print("🎨 開始生成排行榜圖片...")
                 if not self.rank_channel_id:
                     return
-                
+
                 # 取得最新排行榜資料
-                members_data = await asyncio.to_thread(self.get_current_leaderboard_data)
+                members_data = await asyncio.to_thread(
+                    self.get_current_leaderboard_data
+                )
                 if not members_data:
                     print("⚠️ 無可用排行榜資料，跳過生成")
                     return
-                
+
                 # 生成圖片
                 image = await make_leaderboard_image(members_data)
-                
+
                 # 保存到本地 Nginx（隧道 URL 用）
                 leaderboard_nginx_path = "/var/www/html/assets/leaderboard.png"
                 try:
@@ -1314,19 +1450,20 @@ class KKCoin(commands.Cog):
                         leaderboard_nginx_path,
                         format="PNG",
                         optimize=True,
-                        compress_level=9
+                        compress_level=9,
                     )
                     file_size_kb = os.path.getsize(leaderboard_nginx_path) / 1024
                     print(f"✅ 排行榜已存到 Nginx: {file_size_kb:.1f}KB")
                 except Exception as e:
                     print(f"⚠️ Nginx 保存失敗（本地開發可忽略）: {e}")
-                
+
                 # 上傳到 Discord CDN（覆蓋模式）
                 await self._upload_leaderboard_to_discord(image, len(members_data))
-                
+
             except Exception as e:
                 print(f"❌ 排行榜生成失敗: {e}")
                 import traceback
+
                 traceback.print_exc()
 
     async def update_leaderboard(self, min_interval=UPDATE_INTERVAL, force=False):
@@ -1365,46 +1502,52 @@ class KKCoin(commands.Cog):
                     return
 
                 # 將資料擷取與計算移到執行緒，減少事件循環阻塞
-                members_data = await asyncio.to_thread(self.get_current_leaderboard_data)
+                members_data = await asyncio.to_thread(
+                    self.get_current_leaderboard_data
+                )
                 if not members_data:
                     return
 
                 has_changed = force or self.has_data_changed(members_data)
-                
+
                 if has_changed:
                     # 🎯 資料有變化，安排 5 分鐘後的圖片生成（減少流量）
                     await self._schedule_leaderboard_generation()
-                    
+
                     # 先更新本地快取（供下次比對用）
                     self.last_leaderboard_data = members_data.copy()
-                    print(f"🔔 排行榜數據已變化 ({len(members_data)} 名使用者)，將在 5 分鐘後生成圖片...")
+                    print(
+                        f"🔔 排行榜數據已變化 ({len(members_data)} 名使用者)，將在 5 分鐘後生成圖片..."
+                    )
                 else:
                     # 資料未變化，跳過本次更新
                     return
 
                 # ✅ 如果是強制更新或首次啟動，立即生成一次（不等 5 分鐘）
                 if force:
-                    print(f"⚡ 強制更新排行榜圖片...")
+                    print("⚡ 強制更新排行榜圖片...")
                     # 立即生成圖片並上傳
                     image = await make_leaderboard_image(members_data)
-                    
+
                     # 保存到本地 Nginx
                     leaderboard_path = "/var/www/html/assets/leaderboard.png"
                     os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
-                    
+
                     try:
                         image.save(
                             leaderboard_path,
                             format="PNG",
                             optimize=True,
-                            compress_level=9
+                            compress_level=9,
                         )
                         file_size_kb = os.path.getsize(leaderboard_path) / 1024
-                        print(f"✅ 排行榜已存到: {leaderboard_path} ({file_size_kb:.1f}KB)")
+                        print(
+                            f"✅ 排行榜已存到: {leaderboard_path} ({file_size_kb:.1f}KB)"
+                        )
                     except Exception as e:
                         print(f"❌ 保存圖片失敗: {e}")
                         return
-                    
+
                     # 上傳到 Discord CDN
                     await self._upload_leaderboard_to_discord(image, len(members_data))
                     self.last_update_time = current_time
@@ -1412,7 +1555,7 @@ class KKCoin(commands.Cog):
                     # 平時只在檢查到變化時調用 _schedule_leaderboard_generation()，不立即生成
                     # 這樣可以避免頻繁的圖片生成和上傳
                     pass
-                
+
                 # 🎯 優化：同時更新儲備狀態（避免每 2 分鐘獨立更新）
                 try:
                     await self.update_reserve_status(min_interval=0)
@@ -1424,6 +1567,7 @@ class KKCoin(commands.Cog):
             except Exception as e:
                 print(f"❌ 更新排行榜時發生錯誤: {e}")
                 import traceback
+
                 traceback.print_exc()
 
     @commands.Cog.listener()
@@ -1436,10 +1580,7 @@ class KKCoin(commands.Cog):
         user_id = str(message.author.id)
         now = time.time()
 
-        if (
-            len(content) < 1 or
-            content == self.last_message_cache[user_id]
-        ):
+        if len(content) < 1 or content == self.last_message_cache[user_id]:
             return
 
         # 字數 * 2 = KK幣，最多100幣，無冷卻時間
@@ -1448,39 +1589,45 @@ class KKCoin(commands.Cog):
         self.last_message_cache[user_id] = content
         # 同步操作寫入資料庫可能較快，但若擔心可改為 to_thread
         update_user_balance(user_id, reward)
-        print(f"💰 {message.author.display_name} 獲得了 {reward} KK幣! (總計: {get_user_balance(user_id)})")
+        print(
+            f"💰 {message.author.display_name} 獲得了 {reward} KK幣! (總計: {get_user_balance(user_id)})"
+        )
 
         # 排行榜更新不等待，透過 create_task 並靠內部節流控制頻率
         asyncio.create_task(self.update_leaderboard())
 
-    @app_commands.command(name="reserve_admin", description="管理園區儲備金（管理員專用）")
-    @app_commands.describe(
-        action="操作類型",
-        amount="金額"
+    @app_commands.command(
+        name="reserve_admin", description="管理園區儲備金（管理員專用）"
     )
-    @app_commands.choices(action=[
-        app_commands.Choice(name="增加", value="add"),
-        app_commands.Choice(name="減少", value="subtract"),
-        app_commands.Choice(name="設定為", value="set")
-    ])
+    @app_commands.describe(action="操作類型", amount="金額")
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="增加", value="add"),
+            app_commands.Choice(name="減少", value="subtract"),
+            app_commands.Choice(name="設定為", value="set"),
+        ]
+    )
     @app_commands.default_permissions(administrator=True)
-    async def reserve_admin(self, interaction: discord.Interaction, action: str, amount: int):
+    async def reserve_admin(
+        self, interaction: discord.Interaction, action: str, amount: int
+    ):
         """管理園區儲備金（測試用）"""
         if amount < 0:
             await interaction.response.send_message("❌ 金額不能為負數", ephemeral=True)
             return
-        
-        from db_adapter import set_central_reserve, remove_from_central_reserve
-        
+
         current = get_central_reserve()
-        
+
         if action == "add":
             add_to_central_reserve(amount)
             action_text = f"增加了 {amount:,}"
             new_amount = current + amount
         elif action == "subtract":
             if current < amount:
-                await interaction.response.send_message(f"❌ 儲備金不足！當前只有 {current:,}，要扣 {amount:,}", ephemeral=True)
+                await interaction.response.send_message(
+                    f"❌ 儲備金不足！當前只有 {current:,}，要扣 {amount:,}",
+                    ephemeral=True,
+                )
                 return
             remove_from_central_reserve(amount)
             action_text = f"減少了 {amount:,}"
@@ -1489,25 +1636,17 @@ class KKCoin(commands.Cog):
             set_central_reserve(amount)
             action_text = f"設定為 {amount:,}"
             new_amount = amount
-        
+
         await interaction.response.send_message(
             f"✅ 已為園區儲備金 {action_text}\n"
             f"💰 變更前：{current:,} KK幣\n"
             f"💰 變更後：{new_amount:,} KK幣",
-            ephemeral=True
+            ephemeral=True,
         )
-        
-        print(f"🔧 管理員 {interaction.user.display_name} {action_text} 園區儲備金 ({current:,} → {new_amount:,})")
 
-
-
-
-
-
-
-
-
-
+        print(
+            f"🔧 管理員 {interaction.user.display_name} {action_text} 園區儲備金 ({current:,} → {new_amount:,})"
+        )
 
 
 async def setup(bot):

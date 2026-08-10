@@ -34,11 +34,12 @@ from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-import os
 import sys
 
 # 添加項目根目錄到Python路徑
-parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+parent_dir = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -55,17 +56,29 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ─── 設定 ─────────────────────────────────────────────────────────────────────
-_LOG_CHANNEL_ID:   int = int(os.getenv("LOG_FORUM_CHANNEL_ID") or os.getenv("DASHBOARD_FORUM_CHANNEL_ID") or "1504438347974705152")
+_LOG_CHANNEL_ID: int = int(
+    os.getenv("LOG_FORUM_CHANNEL_ID")
+    or os.getenv("DASHBOARD_FORUM_CHANNEL_ID")
+    or "1504438347974705152"
+)
 _STAFF_CHANNEL_ID: int = int(os.getenv("STAFF_ID_CHANNEL_ID", "0"))
-_ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID",    "0"))
-_ADMIN_USER_ID:    int = int(os.getenv("ADMIN_USER_ID",       "0"))
-_ADMIN_ROLE_ID:    int = int(os.getenv("ADMIN_ROLE_ID",       "0"))
-_ADMIN_ROLE:       str = os.getenv("ADMIN_ROLE_NAME", "管理員")
+_ADMIN_CHANNEL_ID: int = int(os.getenv("ADMIN_CHANNEL_ID", "0"))
+_ADMIN_USER_ID: int = int(os.getenv("ADMIN_USER_ID", "0"))
+_ADMIN_ROLE_ID: int = int(os.getenv("ADMIN_ROLE_ID", "0"))
+_ADMIN_ROLE: str = os.getenv("ADMIN_ROLE_NAME", "管理員")
 _LOGMONITOR_THREAD_NAME = os.getenv("LOGMONITOR_THREAD_NAME", "🤖 Bot 偵錯流程總覽")
-_LOGMONITOR_ERRORS_THREAD_NAME = os.getenv("LOGMONITOR_ERRORS_THREAD_NAME", "🚨 Bot 錯誤紀錄")
-_LOGMONITOR_ANALYSIS_THREAD_NAME = os.getenv("LOGMONITOR_ANALYSIS_THREAD_NAME", "🧠 GitHub Debug 分析")
-_LOGMONITOR_HEAL_THREAD_NAME = os.getenv("LOGMONITOR_HEAL_THREAD_NAME", "🛠️ 自癒處理結果")
-_DISABLE_REPOSITORY_DISPATCH: bool = os.getenv("DISABLE_REPOSITORY_DISPATCH", "true").lower() in ("true", "1", "yes")
+_LOGMONITOR_ERRORS_THREAD_NAME = os.getenv(
+    "LOGMONITOR_ERRORS_THREAD_NAME", "🚨 Bot 錯誤紀錄"
+)
+_LOGMONITOR_ANALYSIS_THREAD_NAME = os.getenv(
+    "LOGMONITOR_ANALYSIS_THREAD_NAME", "🧠 GitHub Debug 分析"
+)
+_LOGMONITOR_HEAL_THREAD_NAME = os.getenv(
+    "LOGMONITOR_HEAL_THREAD_NAME", "🛠️ 自癒處理結果"
+)
+_DISABLE_REPOSITORY_DISPATCH: bool = os.getenv(
+    "DISABLE_REPOSITORY_DISPATCH", "true"
+).lower() in ("true", "1", "yes")
 
 _THREAD_ENV_KEYS = {
     "panel": "LOGMONITOR_PANEL_THREAD_ID",
@@ -93,7 +106,7 @@ _SERVICES = ["bot.service", "shopbot.service", "uibot.service"]
 
 # 監控的模式（任一匹配就算「錯誤事件」）
 _ERROR_PATTERNS = re.compile(
-    r"(" 
+    r"("
     r"ERROR|CRITICAL|Traceback|Exception|Fatal|Unhandled|"
     r"failed to load|failed with result|status=\d+/FAILURE|"
     r"timeout|timed out|crash(?:ed)?|panic|oom|killed process|"
@@ -119,7 +132,7 @@ _BENIGN_PATTERNS = re.compile(
 _IGNORE_PATTERNS = re.compile(
     r"(Entry Point.*(?:warning|ignored|警告|命令)|"
     r"error code: 50240|"
-    r'"error":\s*[{\[]|'                        # JSON error 欄位（任何開頭，無 ^ anchor）
+    r'"error":\s*[{\[]|'  # JSON error 欄位（任何開頭，無 ^ anchor）
     r"command sync warning|"
     r"已忽略|"
     r"google_quota_exhausted|"
@@ -147,10 +160,10 @@ _HIGH_SEVERITY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-_DEBOUNCE_SEC:  int   = 30    # 累積錯誤的時間窗口（秒）
-_COOLDOWN_SEC:  int   = 600   # 同類錯誤再次通知的最短間隔（秒）
-_MAX_LOG_LINES: int   = 20    # 送給 LLM 分析的最大行數
-_RESTART_DELAY: int   = 60    # subprocess 死亡後等待重啟的秒數
+_DEBOUNCE_SEC: int = 30  # 累積錯誤的時間窗口（秒）
+_COOLDOWN_SEC: int = 600  # 同類錯誤再次通知的最短間隔（秒）
+_MAX_LOG_LINES: int = 20  # 送給 LLM 分析的最大行數
+_RESTART_DELAY: int = 60  # subprocess 死亡後等待重啟的秒數
 _MAX_ACTIVE_INCIDENTS: int = 8
 _MAX_EMBED_INCIDENTS: int = 5
 _TW_TZ = ZoneInfo("Asia/Taipei")
@@ -169,23 +182,27 @@ def _save_message_state(message_id: int):
     """保存訊息 ID 到 .env 檔案"""
     try:
         env_file = os.path.join(parent_dir, ".env")
-        
+
         # 讀取現有 .env 內容
         lines = []
         if os.path.exists(env_file):
-            with open(env_file, 'r', encoding='utf-8') as f:
+            with open(env_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-        
+
         # 移除舊的 LOGMONITOR_MESSAGE_ID 行
-        lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_MESSAGE_ID=')]
-        
+        lines = [
+            line
+            for line in lines
+            if not line.strip().startswith("LOGMONITOR_MESSAGE_ID=")
+        ]
+
         # 添加新的 message ID
         lines.append(f"LOGMONITOR_MESSAGE_ID={message_id}\n")
-        
+
         # 寫回檔案
-        with open(env_file, 'w', encoding='utf-8') as f:
+        with open(env_file, "w", encoding="utf-8") as f:
             f.writelines(lines)
-        
+
         logger.info(f"[LogMonitor] 已保存訊息 ID 到 .env: {message_id}")
     except Exception as e:
         logger.error(f"[LogMonitor] 保存訊息 ID 到 .env 失敗: {e}")
@@ -211,15 +228,19 @@ def _save_thread_state(slot: str, thread_id: int):
 
         lines = []
         if os.path.exists(env_file):
-            with open(env_file, 'r', encoding='utf-8') as f:
+            with open(env_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
-        lines = [line for line in lines if not line.strip().startswith(f'{env_key}=')]
+        lines = [line for line in lines if not line.strip().startswith(f"{env_key}=")]
         if slot == "panel":
-            lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_THREAD_ID=')]
+            lines = [
+                line
+                for line in lines
+                if not line.strip().startswith("LOGMONITOR_THREAD_ID=")
+            ]
         lines.append(f"{env_key}={thread_id}\n")
 
-        with open(env_file, 'w', encoding='utf-8') as f:
+        with open(env_file, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
         logger.info(f"[LogMonitor] 已保存 {slot} thread ID 到 .env: {thread_id}")
@@ -247,15 +268,19 @@ def _clear_message_state():
     try:
         env_file = os.path.join(parent_dir, ".env")
         if os.path.exists(env_file):
-            with open(env_file, 'r', encoding='utf-8') as f:
+            with open(env_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-            
+
             # 移除 LOGMONITOR_MESSAGE_ID 行
-            lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_MESSAGE_ID=')]
-            
-            with open(env_file, 'w', encoding='utf-8') as f:
+            lines = [
+                line
+                for line in lines
+                if not line.strip().startswith("LOGMONITOR_MESSAGE_ID=")
+            ]
+
+            with open(env_file, "w", encoding="utf-8") as f:
                 f.writelines(lines)
-            
+
             logger.info("[LogMonitor] 已從 .env 清除訊息 ID")
     except Exception as e:
         logger.error(f"[LogMonitor] 從 .env 清除訊息 ID 失敗: {e}")
@@ -266,14 +291,20 @@ def _clear_thread_state(slot: str):
         env_file = os.path.join(parent_dir, ".env")
         env_key = _THREAD_ENV_KEYS[slot]
         if os.path.exists(env_file):
-            with open(env_file, 'r', encoding='utf-8') as f:
+            with open(env_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
-            lines = [line for line in lines if not line.strip().startswith(f'{env_key}=')]
+            lines = [
+                line for line in lines if not line.strip().startswith(f"{env_key}=")
+            ]
             if slot == "panel":
-                lines = [line for line in lines if not line.strip().startswith('LOGMONITOR_THREAD_ID=')]
+                lines = [
+                    line
+                    for line in lines
+                    if not line.strip().startswith("LOGMONITOR_THREAD_ID=")
+                ]
 
-            with open(env_file, 'w', encoding='utf-8') as f:
+            with open(env_file, "w", encoding="utf-8") as f:
                 f.writelines(lines)
 
             logger.info(f"[LogMonitor] 已從 .env 清除 {slot} thread ID")
@@ -285,7 +316,7 @@ def _load_known_debugs() -> list[dict[str, str]]:
     try:
         if not os.path.exists(_KNOWN_DEBUGS_PATH):
             return []
-        with open(_KNOWN_DEBUGS_PATH, 'r', encoding='utf-8') as f:
+        with open(_KNOWN_DEBUGS_PATH, "r", encoding="utf-8") as f:
             payload = json.load(f)
         if isinstance(payload, list):
             return payload
@@ -298,7 +329,7 @@ def _load_known_debugs() -> list[dict[str, str]]:
 def _save_known_debugs(entries: list[dict[str, str]]):
     try:
         os.makedirs(os.path.dirname(_KNOWN_DEBUGS_PATH), exist_ok=True)
-        with open(_KNOWN_DEBUGS_PATH, 'w', encoding='utf-8') as f:
+        with open(_KNOWN_DEBUGS_PATH, "w", encoding="utf-8") as f:
             json.dump(entries, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"[LogMonitor] 儲存已知 debug 失敗: {e}")
@@ -349,28 +380,37 @@ def _normalize_incident_signature(text: str) -> str:
 
 
 def _build_incident_signature(log_text: str, severity: str) -> str:
-    first_line = next((line.strip() for line in log_text.splitlines() if line.strip()), log_text.strip())
+    first_line = next(
+        (line.strip() for line in log_text.splitlines() if line.strip()),
+        log_text.strip(),
+    )
     return f"{severity}|{_normalize_incident_signature(first_line)}"
 
 
 def _artifact_key_from_signature(signature: str) -> str:
-    return hashlib.sha256(signature.encode('utf-8')).hexdigest()[:16]
+    return hashlib.sha256(signature.encode("utf-8")).hexdigest()[:16]
 
 
 def _format_debug_analysis_text(analysis_payload) -> str:
     if isinstance(analysis_payload, dict):
-        root_cause = str(analysis_payload.get('root_cause') or '未提供')
-        impact = str(analysis_payload.get('impact') or '未提供')
-        fix_steps = analysis_payload.get('fix_steps') or []
-        prevention = analysis_payload.get('prevention') or []
+        root_cause = str(analysis_payload.get("root_cause") or "未提供")
+        impact = str(analysis_payload.get("impact") or "未提供")
+        fix_steps = analysis_payload.get("fix_steps") or []
+        prevention = analysis_payload.get("prevention") or []
 
         if not isinstance(fix_steps, list):
             fix_steps = [str(fix_steps)]
         if not isinstance(prevention, list):
             prevention = [str(prevention)]
 
-        steps_text = ' / '.join(str(step) for step in fix_steps[:3] if str(step).strip()) or '未提供'
-        prevention_text = ' / '.join(str(item) for item in prevention[:2] if str(item).strip()) or '未提供'
+        steps_text = (
+            " / ".join(str(step) for step in fix_steps[:3] if str(step).strip())
+            or "未提供"
+        )
+        prevention_text = (
+            " / ".join(str(item) for item in prevention[:2] if str(item).strip())
+            or "未提供"
+        )
         return (
             f"【GitHub 根因】{root_cause}\n"
             f"【影響】{impact}\n"
@@ -378,9 +418,9 @@ def _format_debug_analysis_text(analysis_payload) -> str:
             f"【預防】{prevention_text}"
         )
 
-    raw_text = str(analysis_payload or '').strip()
+    raw_text = str(analysis_payload or "").strip()
     if not raw_text:
-        return 'GitHub 未返回分析內容'
+        return "GitHub 未返回分析內容"
 
     try:
         parsed = json.loads(raw_text)
@@ -392,11 +432,17 @@ def _format_debug_analysis_text(analysis_payload) -> str:
 def _estimate_severity_from_lines(lines: list[str]) -> str:
     """根據原始日誌行推估嚴重度：返回 'high'/'medium'/'low'"""
     joined = "\n".join(lines)
-    if re.search(r"google_quota_exhausted|quota exceeded|\b429\b|rate limit|authorization failed", joined, re.IGNORECASE):
+    if re.search(
+        r"google_quota_exhausted|quota exceeded|\b429\b|rate limit|authorization failed",
+        joined,
+        re.IGNORECASE,
+    ):
         return "low"
     if _HIGH_SEVERITY_PATTERNS.search(joined):
         return "high"
-    if re.search(r"\b429\b|rate limit|quota|(?:HTTP|http)\s*[45]\d\d", joined, re.IGNORECASE):
+    if re.search(
+        r"\b429\b|rate limit|quota|(?:HTTP|http)\s*[45]\d\d", joined, re.IGNORECASE
+    ):
         return "medium"
     return "low"
 
@@ -413,7 +459,11 @@ def _extract_relevant_lines(blob: str) -> list[str]:
             continue
         if not _ERROR_PATTERNS.search(line):
             continue
-        if _BENIGN_PATTERNS.search(line) and not re.search(r"\b(ERROR|CRITICAL|Traceback|Exception|Fatal|Unhandled)\b", line, re.IGNORECASE):
+        if _BENIGN_PATTERNS.search(line) and not re.search(
+            r"\b(ERROR|CRITICAL|Traceback|Exception|Fatal|Unhandled)\b",
+            line,
+            re.IGNORECASE,
+        ):
             continue
         relevant_lines.append(line)
     return relevant_lines
@@ -439,7 +489,11 @@ def _extract_relevant_journal_lines(raw_line: str) -> list[str]:
 
 
 def _is_benign_yfinance_line(line: str) -> bool:
-    return bool(re.search(r"\[yfinance\].*possibly delisted; no price data found", line, re.IGNORECASE))
+    return bool(
+        re.search(
+            r"\[yfinance\].*possibly delisted; no price data found", line, re.IGNORECASE
+        )
+    )
 
 
 def _build_local_fallback_summary(lines: list[str]) -> str:
@@ -458,7 +512,9 @@ def _build_local_fallback_summary(lines: list[str]) -> str:
             "【緊急程度】低"
         )
 
-    if re.search(r"Traceback|Exception|CRITICAL|Fatal|Unhandled", joined, re.IGNORECASE):
+    if re.search(
+        r"Traceback|Exception|CRITICAL|Fatal|Unhandled", joined, re.IGNORECASE
+    ):
         return (
             "【根本原因】Bot 執行流程拋出未處理例外，需依 traceback 定位故障點。\n"
             "【建議修復】1. 依錯誤堆疊檢查對應函式 2. 補上防呆與例外處理 3. 修正後重新驗證相同行為\n"
@@ -475,6 +531,7 @@ def _build_local_fallback_summary(lines: list[str]) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 # AutoFixView — 「啟動自動修復」按鈕
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class LogMonitorSummaryView(discord.ui.View):
     """單一彙整訊息的操作按鈕。"""
@@ -498,7 +555,9 @@ class LogMonitorSummaryView(discord.ui.View):
             timestamp=_current_tw_datetime(),
         )
         if detail:
-            embed.add_field(name="詳細資訊", value=_truncate_text(detail, 900), inline=False)
+            embed.add_field(
+                name="詳細資訊", value=_truncate_text(detail, 900), inline=False
+            )
         embed.set_footer(text="僅自己可見")
         return embed
 
@@ -507,12 +566,18 @@ class LogMonitorSummaryView(discord.ui.View):
         style=discord.ButtonStyle.primary,
         custom_id="logmonitor:debug",
     )
-    async def debug_now(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def debug_now(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         try:
-            logger.info(f"[LogMonitorView] debug_now 按鈕被點擊，用戶: {interaction.user}")
+            logger.info(
+                f"[LogMonitorView] debug_now 按鈕被點擊，用戶: {interaction.user}"
+            )
 
             if not _has_admin_access(interaction.user):
-                await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
+                await interaction.response.send_message(
+                    "❌ 管理員限定。", ephemeral=True
+                )
                 return
 
             latest = self._engine.get_latest_incident()
@@ -530,7 +595,9 @@ class LogMonitorSummaryView(discord.ui.View):
             known_debug_detail = self._engine._build_known_debug_summary(latest)
 
             await interaction.response.defer(ephemeral=True)
-            dispatched = await self._engine.manual_debug_latest_incident(triggered_by=interaction.user.display_name)
+            dispatched = await self._engine.manual_debug_latest_incident(
+                triggered_by=interaction.user.display_name
+            )
             if dispatched:
                 await interaction.followup.send(
                     embed=self._build_ephemeral_embed(
@@ -577,13 +644,19 @@ class LogMonitorSummaryView(discord.ui.View):
         style=discord.ButtonStyle.success,
         custom_id="logmonitor:clear",
     )
-    async def clear_errors(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def clear_errors(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         try:
-            logger.info(f"[LogMonitorView] clear_errors 按鈕被點擊，用戶: {interaction.user}")
-            
+            logger.info(
+                f"[LogMonitorView] clear_errors 按鈕被點擊，用戶: {interaction.user}"
+            )
+
             if not _has_admin_access(interaction.user):
                 logger.warning(f"[LogMonitorView] 用戶 {interaction.user} 無管理員權限")
-                await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
+                await interaction.response.send_message(
+                    "❌ 管理員限定。", ephemeral=True
+                )
                 return
 
             cleared_count = len(self._engine._active_incidents)
@@ -598,7 +671,9 @@ class LogMonitorSummaryView(discord.ui.View):
                 ephemeral=True,
             )
             if self._channel:
-                await self._engine._post_clear_history_message(self._channel, interaction.user.display_name, cleared_count)
+                await self._engine._post_clear_history_message(
+                    self._channel, interaction.user.display_name, cleared_count
+                )
                 await self._engine._upsert_summary_message(self._channel)
             logger.info("[LogMonitorView] clear_errors 執行完成")
         except Exception as e:
@@ -617,6 +692,7 @@ class LogMonitorSummaryView(discord.ui.View):
 # LogMonitorEngine — 核心事件驅動引擎
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class LogMonitorEngine:
     """journalctl -f 事件驅動引擎。
 
@@ -626,24 +702,24 @@ class LogMonitorEngine:
     """
 
     def __init__(self, bot: commands.Bot, llm: LLMClient, shell_runner=None):
-        self.bot          = bot
-        self.llm          = llm
+        self.bot = bot
+        self.llm = llm
         self.shell_runner = shell_runner  # ShellAgentRunner，可為 None
-        self.enabled      = True
+        self.enabled = True
         self.cog_instance = None  # 引用 Cog 實例（由 Cog.__init__ 設定）
 
-        self._proc:          Optional[asyncio.subprocess.Process] = None
-        self._error_buffer:  list[str] = []
-        self._debounce_task: Optional[asyncio.Task]               = None
-        self._cooldowns:     dict[str, float]                     = {}
-        self._active_incidents: list[dict[str, str]]              = []
-        self._summary_message: Optional[discord.Message]          = None
-        self._summary_thread: Optional[discord.Thread]            = None
-        self._thread_cache: dict[str, discord.Thread]             = {}
+        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._error_buffer: list[str] = []
+        self._debounce_task: Optional[asyncio.Task] = None
+        self._cooldowns: dict[str, float] = {}
+        self._active_incidents: list[dict[str, str]] = []
+        self._summary_message: Optional[discord.Message] = None
+        self._summary_thread: Optional[discord.Thread] = None
+        self._thread_cache: dict[str, discord.Thread] = {}
         self._message_lock = asyncio.Lock()
-        self._analysis_sync_tasks: dict[str, asyncio.Task]        = {}
-        self._known_debugs: list[dict[str, str]]                  = _load_known_debugs()
-        self._pipeline_status: dict[str, str]                     = {
+        self._analysis_sync_tasks: dict[str, asyncio.Task] = {}
+        self._known_debugs: list[dict[str, str]] = _load_known_debugs()
+        self._pipeline_status: dict[str, str] = {
             "dispatch_status": "尚未觸發",
             "dispatch_detail": "等待下一筆高危錯誤",
             "debug_run": "尚未查詢",
@@ -652,7 +728,7 @@ class LogMonitorEngine:
             "sync_message": "尚未查詢",
             "webhook": f"Discord <#{_ALERT_CHANNEL_ID}> / GitHub {_GITHUB_REPO}",
         }
-        
+
         # 標記需要恢復訊息引用
         self._need_restore = True
 
@@ -685,8 +761,13 @@ class LogMonitorEngine:
             runs_resp.raise_for_status()
             workflow_runs = runs_resp.json().get("workflow_runs", [])
 
-            debug_run = next((run for run in workflow_runs if run.get("name") == "AI Debug Monitor"), None)
-            auto_fix_run = next((run for run in workflow_runs if run.get("name") == "Auto AI Fix"), None)
+            debug_run = next(
+                (run for run in workflow_runs if run.get("name") == "AI Debug Monitor"),
+                None,
+            )
+            auto_fix_run = next(
+                (run for run in workflow_runs if run.get("name") == "Auto AI Fix"), None
+            )
 
             commit_resp = requests.get(
                 f"https://api.github.com/repos/{_GITHUB_REPO}/commits/main",
@@ -696,7 +777,9 @@ class LogMonitorEngine:
             commit_resp.raise_for_status()
             commit_data = commit_resp.json()
             commit_sha = (commit_data.get("sha") or "")[:7] or "unknown"
-            commit_message = (commit_data.get("commit", {}).get("message", "") or "").splitlines()[0] or "無提交訊息"
+            commit_message = (
+                commit_data.get("commit", {}).get("message", "") or ""
+            ).splitlines()[0] or "無提交訊息"
 
             return {
                 "debug_run": self._format_run_status(debug_run, "AI Debug Monitor"),
@@ -730,7 +813,11 @@ class LogMonitorEngine:
 
     def _get_incident_by_signature(self, signature: str) -> Optional[dict[str, str]]:
         return next(
-            (incident for incident in reversed(self._active_incidents) if incident.get("signature") == signature),
+            (
+                incident
+                for incident in reversed(self._active_incidents)
+                if incident.get("signature") == signature
+            ),
             None,
         )
 
@@ -752,7 +839,9 @@ class LogMonitorEngine:
         self._known_debugs = list(known_by_signature.values())[-50:]
         _save_known_debugs(self._known_debugs)
 
-    def _fetch_github_artifact_payload_sync(self, artifact_name: str, signature: str) -> Optional[dict]:
+    def _fetch_github_artifact_payload_sync(
+        self, artifact_name: str, signature: str
+    ) -> Optional[dict]:
         headers = self._github_headers()
         if not headers:
             return None
@@ -765,11 +854,17 @@ class LogMonitorEngine:
             )
             artifacts_resp.raise_for_status()
             artifacts = artifacts_resp.json().get("artifacts", [])
-            matched = [artifact for artifact in artifacts if artifact.get("name") == artifact_name and not artifact.get("expired")]
+            matched = [
+                artifact
+                for artifact in artifacts
+                if artifact.get("name") == artifact_name and not artifact.get("expired")
+            ]
             if not matched:
                 return None
 
-            artifact = sorted(matched, key=lambda item: item.get("created_at") or "", reverse=True)[0]
+            artifact = sorted(
+                matched, key=lambda item: item.get("created_at") or "", reverse=True
+            )[0]
             archive_resp = requests.get(
                 artifact.get("archive_download_url"),
                 headers=headers,
@@ -778,11 +873,13 @@ class LogMonitorEngine:
             archive_resp.raise_for_status()
 
             with zipfile.ZipFile(io.BytesIO(archive_resp.content)) as zipped:
-                json_member = next((name for name in zipped.namelist() if name.endswith('.json')), None)
+                json_member = next(
+                    (name for name in zipped.namelist() if name.endswith(".json")), None
+                )
                 if not json_member:
                     return None
                 with zipped.open(json_member) as artifact_file:
-                    payload = json.loads(artifact_file.read().decode('utf-8'))
+                    payload = json.loads(artifact_file.read().decode("utf-8"))
 
             if payload.get("incident_signature") != signature:
                 return None
@@ -821,38 +918,72 @@ class LogMonitorEngine:
             any_synced = False
 
             for _ in range(attempts):
-                analysis_payload = None if analysis_synced else await asyncio.to_thread(self._fetch_github_analysis_result_sync, signature)
-                heal_payload = None if heal_synced else await asyncio.to_thread(self._fetch_github_heal_result_sync, signature)
+                analysis_payload = (
+                    None
+                    if analysis_synced
+                    else await asyncio.to_thread(
+                        self._fetch_github_analysis_result_sync, signature
+                    )
+                )
+                heal_payload = (
+                    None
+                    if heal_synced
+                    else await asyncio.to_thread(
+                        self._fetch_github_heal_result_sync, signature
+                    )
+                )
 
                 if analysis_payload:
-                    formatted_analysis = _format_debug_analysis_text(analysis_payload.get("analysis"))
+                    formatted_analysis = _format_debug_analysis_text(
+                        analysis_payload.get("analysis")
+                    )
                     incident = self._get_incident_by_signature(signature)
                     if incident:
                         incident["github_analysis"] = formatted_analysis
-                        incident["github_analysis_synced_at"] = analysis_payload.get("completed_at") or analysis_payload.get("artifact_created_at") or _format_tw_time()
-                        incident["github_analysis_source"] = analysis_payload.get("source", "github-actions")
+                        incident["github_analysis_synced_at"] = (
+                            analysis_payload.get("completed_at")
+                            or analysis_payload.get("artifact_created_at")
+                            or _format_tw_time()
+                        )
+                        incident["github_analysis_source"] = analysis_payload.get(
+                            "source", "github-actions"
+                        )
 
-                    self._upsert_known_debug_entry({
-                        "signature": signature,
-                        "severity": analysis_payload.get("severity", "未標註"),
-                        "ai_text": formatted_analysis,
-                        "github_analysis": formatted_analysis,
-                        "sample_log": str(analysis_payload.get("log_excerpt") or ""),
-                        "first_seen_at": analysis_payload.get("timestamp") or analysis_payload.get("completed_at") or _format_tw_time(),
-                        "last_seen_at": analysis_payload.get("completed_at") or _format_tw_time(),
-                        "last_resolved_at": analysis_payload.get("completed_at") or _format_tw_time(),
-                        "last_resolved_by": "GitHub AI Debug Monitor",
-                        "resolved_count": 1,
-                        "repeat_count": 1,
-                        "source": analysis_payload.get("source", "github-actions"),
-                    })
+                    self._upsert_known_debug_entry(
+                        {
+                            "signature": signature,
+                            "severity": analysis_payload.get("severity", "未標註"),
+                            "ai_text": formatted_analysis,
+                            "github_analysis": formatted_analysis,
+                            "sample_log": str(
+                                analysis_payload.get("log_excerpt") or ""
+                            ),
+                            "first_seen_at": analysis_payload.get("timestamp")
+                            or analysis_payload.get("completed_at")
+                            or _format_tw_time(),
+                            "last_seen_at": analysis_payload.get("completed_at")
+                            or _format_tw_time(),
+                            "last_resolved_at": analysis_payload.get("completed_at")
+                            or _format_tw_time(),
+                            "last_resolved_by": "GitHub AI Debug Monitor",
+                            "resolved_count": 1,
+                            "repeat_count": 1,
+                            "source": analysis_payload.get("source", "github-actions"),
+                        }
+                    )
 
                     analysis_synced = True
                     any_synced = True
 
                     channel = await self._resolve_alert_channel()
-                    if incident and channel and not incident.get("github_history_posted_at"):
-                        await self._post_incident_history_message(channel, incident, stage="github_sync")
+                    if (
+                        incident
+                        and channel
+                        and not incident.get("github_history_posted_at")
+                    ):
+                        await self._post_incident_history_message(
+                            channel, incident, stage="github_sync"
+                        )
                         incident["github_history_posted_at"] = _format_tw_time()
 
                 if heal_payload:
@@ -861,7 +992,11 @@ class LogMonitorEngine:
                         incident["heal_summary"] = heal_payload.get("summary", "")
                         incident["heal_service"] = heal_payload.get("service", "")
                         incident["heal_success"] = bool(heal_payload.get("success"))
-                        incident["heal_synced_at"] = heal_payload.get("completed_at") or heal_payload.get("artifact_created_at") or _format_tw_time()
+                        incident["heal_synced_at"] = (
+                            heal_payload.get("completed_at")
+                            or heal_payload.get("artifact_created_at")
+                            or _format_tw_time()
+                        )
 
                     heal_summary = str(heal_payload.get("summary") or "")
                     heal_service = str(heal_payload.get("service") or "未知服務")
@@ -876,20 +1011,32 @@ class LogMonitorEngine:
                         "sample_log": str(heal_payload.get("log_excerpt") or ""),
                     }
                     if heal_success:
-                        entry["last_resolved_at"] = heal_payload.get("completed_at") or _format_tw_time()
-                        entry["last_resolved_by"] = f"Auto AI Fix Agent / {heal_service}"
+                        entry["last_resolved_at"] = (
+                            heal_payload.get("completed_at") or _format_tw_time()
+                        )
+                        entry["last_resolved_by"] = (
+                            f"Auto AI Fix Agent / {heal_service}"
+                        )
                     self._upsert_known_debug_entry(entry)
 
                     heal_synced = True
                     any_synced = True
 
                     channel = await self._resolve_alert_channel()
-                    if incident and channel and not incident.get("heal_history_posted_at"):
-                        await self._post_incident_history_message(channel, incident, stage="heal_result")
+                    if (
+                        incident
+                        and channel
+                        and not incident.get("heal_history_posted_at")
+                    ):
+                        await self._post_incident_history_message(
+                            channel, incident, stage="heal_result"
+                        )
                         incident["heal_history_posted_at"] = _format_tw_time()
 
                     self._pipeline_status["dispatch_status"] = "已回寫已知案例"
-                    self._pipeline_status["dispatch_detail"] = f"GitHub 自癒結果已同步回本地案例庫 / {heal_payload.get('source', 'auto-ai-fix')} / {heal_status}"
+                    self._pipeline_status["dispatch_detail"] = (
+                        f"GitHub 自癒結果已同步回本地案例庫 / {heal_payload.get('source', 'auto-ai-fix')} / {heal_status}"
+                    )
 
                 if analysis_synced and heal_synced:
                     channel = await self._resolve_alert_channel()
@@ -915,7 +1062,9 @@ class LogMonitorEngine:
                 return
 
             self._pipeline_status["dispatch_status"] = "等待 GitHub 回寫逾時"
-            self._pipeline_status["dispatch_detail"] = "GitHub 分析尚未回寫，保留本地分析結果"
+            self._pipeline_status["dispatch_detail"] = (
+                "GitHub 分析尚未回寫，保留本地分析結果"
+            )
         finally:
             self._analysis_sync_tasks.pop(signature, None)
 
@@ -923,9 +1072,13 @@ class LogMonitorEngine:
         task = self._analysis_sync_tasks.get(signature)
         if task and not task.done():
             return
-        self._analysis_sync_tasks[signature] = asyncio.create_task(self._sync_incident_analysis_from_github(signature))
+        self._analysis_sync_tasks[signature] = asyncio.create_task(
+            self._sync_incident_analysis_from_github(signature)
+        )
 
-    def _find_known_debug(self, incident: Optional[dict[str, str]]) -> Optional[dict[str, str]]:
+    def _find_known_debug(
+        self, incident: Optional[dict[str, str]]
+    ) -> Optional[dict[str, str]]:
         if not incident:
             return None
 
@@ -933,7 +1086,14 @@ class LogMonitorEngine:
             incident.get("log_text", ""),
             incident.get("severity", "未標註"),
         )
-        return next((entry for entry in reversed(self._known_debugs) if entry.get("signature") == signature), None)
+        return next(
+            (
+                entry
+                for entry in reversed(self._known_debugs)
+                if entry.get("signature") == signature
+            ),
+            None,
+        )
 
     def _remember_resolved_incidents(self, resolved_by: str):
         if not self._active_incidents:
@@ -953,14 +1113,25 @@ class LogMonitorEngine:
             )
             existing = known_by_signature.get(signature)
             if existing:
-                existing["last_seen_at"] = incident.get("last_seen_at", incident.get("created_at", now_label))
+                existing["last_seen_at"] = incident.get(
+                    "last_seen_at", incident.get("created_at", now_label)
+                )
                 existing["last_resolved_at"] = now_label
                 existing["last_resolved_by"] = resolved_by
                 existing["resolved_count"] = int(existing.get("resolved_count", 0)) + 1
-                existing["repeat_count"] = max(int(existing.get("repeat_count", 1)), int(incident.get("repeat_count", 1)))
-                existing["ai_text"] = incident.get("ai_text", existing.get("ai_text", ""))
-                existing["sample_log"] = incident.get("log_text", existing.get("sample_log", ""))
-                existing["severity"] = incident.get("severity", existing.get("severity", "未標註"))
+                existing["repeat_count"] = max(
+                    int(existing.get("repeat_count", 1)),
+                    int(incident.get("repeat_count", 1)),
+                )
+                existing["ai_text"] = incident.get(
+                    "ai_text", existing.get("ai_text", "")
+                )
+                existing["sample_log"] = incident.get(
+                    "log_text", existing.get("sample_log", "")
+                )
+                existing["severity"] = incident.get(
+                    "severity", existing.get("severity", "未標註")
+                )
                 continue
 
             known_by_signature[signature] = {
@@ -969,7 +1140,9 @@ class LogMonitorEngine:
                 "ai_text": incident.get("ai_text", ""),
                 "sample_log": incident.get("log_text", ""),
                 "first_seen_at": incident.get("created_at", now_label),
-                "last_seen_at": incident.get("last_seen_at", incident.get("created_at", now_label)),
+                "last_seen_at": incident.get(
+                    "last_seen_at", incident.get("created_at", now_label)
+                ),
                 "last_resolved_at": now_label,
                 "last_resolved_by": resolved_by,
                 "resolved_count": 1,
@@ -1003,7 +1176,9 @@ class LogMonitorEngine:
         if channel:
             await self._upsert_summary_message(channel)
 
-    async def _analyze_with_debug_ai(self, log_text: str, severity_hint: str = "low") -> Optional[str]:
+    async def _analyze_with_debug_ai(
+        self, log_text: str, severity_hint: str = "low"
+    ) -> Optional[str]:
         prompt = (
             "你是 KK園區的 DevOps 工程師，專門分析 Discord Bot 的系統日誌。\n"
             "請用繁體中文回覆，格式如下：\n"
@@ -1013,7 +1188,10 @@ class LogMonitorEngine:
             f"以下是剛發生的錯誤日誌：\n```\n{log_text}\n```\n請分析。"
         )
         messages = [
-            {"role": "system", "content": "你是 KK園區的 DevOps 工程師。請依指定格式輸出。"},
+            {
+                "role": "system",
+                "content": "你是 KK園區的 DevOps 工程師。請依指定格式輸出。",
+            },
             {"role": "user", "content": prompt},
         ]
 
@@ -1026,14 +1204,18 @@ class LogMonitorEngine:
                 timeout=_LOGMONITOR_NVIDIA_TIMEOUT_SEC,
             )
             if response:
-                logger.info(f"[LogMonitor] 使用 NVIDIA 完成日誌分析 / model={_LOGMONITOR_NVIDIA_MODEL}")
+                logger.info(
+                    f"[LogMonitor] 使用 NVIDIA 完成日誌分析 / model={_LOGMONITOR_NVIDIA_MODEL}"
+                )
                 return response.strip()
         except Exception as exc:
             logger.warning(f"[LogMonitor] NVIDIA 分析失敗: {exc}")
 
         # 只有在推估為高危的情況下才使用 Gemini（以節省配額）
         if severity_hint != "high":
-            logger.info(f"[LogMonitor] severity_hint={severity_hint} 且 NVIDIA 無回應，跳過 Gemini 以節省配額")
+            logger.info(
+                f"[LogMonitor] severity_hint={severity_hint} 且 NVIDIA 無回應，跳過 Gemini 以節省配額"
+            )
             return None
 
         try:
@@ -1061,9 +1243,14 @@ class LogMonitorEngine:
             logger.warning(f"[LogMonitor] 無法取得通知頻道 {_ALERT_CHANNEL_ID}: {exc}")
             return None
 
-    async def _restore_thread(self, forum_channel: discord.ForumChannel, slot: str) -> Optional[discord.Thread]:
+    async def _restore_thread(
+        self, forum_channel: discord.ForumChannel, slot: str
+    ) -> Optional[discord.Thread]:
         cached_thread = self._thread_cache.get(slot)
-        if cached_thread and getattr(cached_thread, "parent_id", None) == forum_channel.id:
+        if (
+            cached_thread
+            and getattr(cached_thread, "parent_id", None) == forum_channel.id
+        ):
             return cached_thread
 
         thread_id = _load_thread_state(slot)
@@ -1075,7 +1262,9 @@ class LogMonitorEngine:
             try:
                 thread = await self.bot.fetch_channel(thread_id)
             except discord.NotFound:
-                logger.info(f"[LogMonitor] {slot} 舊 thread {thread_id} 已不存在，將建立新 thread")
+                logger.info(
+                    f"[LogMonitor] {slot} 舊 thread {thread_id} 已不存在，將建立新 thread"
+                )
                 _clear_thread_state(slot)
                 return None
             except discord.Forbidden:
@@ -1083,11 +1272,15 @@ class LogMonitorEngine:
                 _clear_thread_state(slot)
                 return None
             except Exception as exc:
-                logger.warning(f"[LogMonitor] 恢復 {slot} thread {thread_id} 失敗: {exc}")
+                logger.warning(
+                    f"[LogMonitor] 恢復 {slot} thread {thread_id} 失敗: {exc}"
+                )
                 return None
 
         if not isinstance(thread, discord.Thread):
-            logger.warning(f"[LogMonitor] 恢復到的 {slot} 頻道 {thread_id} 不是 thread，忽略既有狀態")
+            logger.warning(
+                f"[LogMonitor] 恢復到的 {slot} 頻道 {thread_id} 不是 thread，忽略既有狀態"
+            )
             _clear_thread_state(slot)
             return None
 
@@ -1097,13 +1290,15 @@ class LogMonitorEngine:
         return thread
 
     async def _ensure_thread_writable(self, thread: discord.Thread):
-        if getattr(thread, 'archived', False):
+        if getattr(thread, "archived", False):
             try:
                 await thread.edit(archived=False)
             except Exception as exc:
                 logger.warning(f"[LogMonitor] 無法解除封存 thread {thread.id}: {exc}")
 
-    async def _create_history_thread(self, forum_channel: discord.ForumChannel, slot: str) -> discord.Thread:
+    async def _create_history_thread(
+        self, forum_channel: discord.ForumChannel, slot: str
+    ) -> discord.Thread:
         thread, _ = await forum_channel.create_thread(
             name=_THREAD_NAMES[slot],
             content=_THREAD_STARTERS[slot],
@@ -1134,7 +1329,9 @@ class LogMonitorEngine:
                 target_channel = thread
         return target_channel
 
-    async def _create_summary_thread(self, forum_channel: discord.ForumChannel, embed: discord.Embed, view):
+    async def _create_summary_thread(
+        self, forum_channel: discord.ForumChannel, embed: discord.Embed, view
+    ):
         thread, message = await forum_channel.create_thread(
             name=_THREAD_NAMES["panel"],
             content=_THREAD_STARTERS["panel"],
@@ -1153,19 +1350,21 @@ class LogMonitorEngine:
         """嘗試恢復舊訊息的引用"""
         if not self._need_restore:
             return
-            
+
         message_id = _load_message_state()
         if not message_id:
             self._need_restore = False
             return
-        
+
         try:
             # 等待 bot 準備就緒
             await self.bot.wait_until_ready()
-            
+
             channel = await self._resolve_alert_channel()
             if not channel:
-                logger.warning(f"[LogMonitor] 找不到通知頻道 {_ALERT_CHANNEL_ID}，無法恢復訊息")
+                logger.warning(
+                    f"[LogMonitor] 找不到通知頻道 {_ALERT_CHANNEL_ID}，無法恢復訊息"
+                )
                 self._need_restore = False
                 return
 
@@ -1177,7 +1376,7 @@ class LogMonitorEngine:
                     return
                 await self._ensure_thread_writable(thread)
                 target_channel = thread
-            
+
             # 嘗試獲取舊訊息
             try:
                 message = await target_channel.fetch_message(message_id)
@@ -1193,7 +1392,7 @@ class LogMonitorEngine:
             except discord.Forbidden:
                 logger.warning(f"[LogMonitor] 沒有權限存取訊息 {message_id}")
                 _clear_message_state()
-                
+
         except Exception as e:
             logger.error(f"[LogMonitor] 恢復訊息引用時發生錯誤: {e}")
         finally:
@@ -1232,7 +1431,7 @@ class LogMonitorEngine:
         )
         # 設定 UTF-8 locale，避免 subprocess 讀到亂碼
         env = os.environ.copy()
-        env["LANG"]   = "C.UTF-8"
+        env["LANG"] = "C.UTF-8"
         env["LC_ALL"] = "C.UTF-8"
         self._proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -1262,14 +1461,12 @@ class LogMonitorEngine:
         if self._debounce_task and not self._debounce_task.done():
             self._debounce_task.cancel()
 
-        self._debounce_task = asyncio.create_task(
-            self._flush_after_debounce()
-        )
+        self._debounce_task = asyncio.create_task(self._flush_after_debounce())
 
     async def _flush_after_debounce(self):
         await asyncio.sleep(_DEBOUNCE_SEC)
 
-        batch        = self._error_buffer[:_MAX_LOG_LINES]
+        batch = self._error_buffer[:_MAX_LOG_LINES]
         self._error_buffer.clear()
         self._debounce_task = None
 
@@ -1296,10 +1493,19 @@ class LogMonitorEngine:
         ai_text = await self._analyze_with_debug_ai(log_text, severity_hint)
         if not ai_text:
             # Groq 降級
-            ai_text_raw = await self.llm.groq([
-                {"role": "system", "content": "你是 DevOps 工程師，分析 Discord Bot 日誌。繁體中文，簡潔。"},
-                {"role": "user",   "content": f"錯誤日誌：\n{log_text}\n\n請分析根本原因和建議修復。"},
-            ], max_tokens=300)
+            ai_text_raw = await self.llm.groq(
+                [
+                    {
+                        "role": "system",
+                        "content": "你是 DevOps 工程師，分析 Discord Bot 日誌。繁體中文，簡潔。",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"錯誤日誌：\n{log_text}\n\n請分析根本原因和建議修復。",
+                    },
+                ],
+                max_tokens=300,
+            )
             ai_text = ai_text_raw or _build_local_fallback_summary(lines)
 
         severity = _extract_severity(ai_text)
@@ -1309,13 +1515,19 @@ class LogMonitorEngine:
         now_label = _format_tw_time()
         incident_signature = _build_incident_signature(log_text, severity)
         existing_incident = next(
-            (incident for incident in reversed(self._active_incidents) if incident.get("signature") == incident_signature),
+            (
+                incident
+                for incident in reversed(self._active_incidents)
+                if incident.get("signature") == incident_signature
+            ),
             None,
         )
         incident_stage = "repeat" if existing_incident else "detected"
         if existing_incident:
             existing_incident["last_seen_at"] = now_label
-            existing_incident["repeat_count"] = existing_incident.get("repeat_count", 1) + 1
+            existing_incident["repeat_count"] = (
+                existing_incident.get("repeat_count", 1) + 1
+            )
             existing_incident["log_text"] = log_text
             existing_incident["ai_text"] = ai_text
             existing_incident["severity"] = severity
@@ -1336,12 +1548,18 @@ class LogMonitorEngine:
         self._active_incidents = self._active_incidents[-_MAX_ACTIVE_INCIDENTS:]
 
         known_debug = self._find_known_debug(incident)
-        if known_debug and (known_debug.get("github_analysis") or known_debug.get("ai_text")):
-            incident["github_analysis"] = known_debug.get("github_analysis") or known_debug.get("ai_text", "")
+        if known_debug and (
+            known_debug.get("github_analysis") or known_debug.get("ai_text")
+        ):
+            incident["github_analysis"] = known_debug.get(
+                "github_analysis"
+            ) or known_debug.get("ai_text", "")
             self._pipeline_status["dispatch_status"] = "已命中已知案例"
             self._pipeline_status["dispatch_detail"] = "沿用歷史分析，不自動重送 GitHub"
         else:
-            dispatch_ok = await self._trigger_github_actions_analysis(log_text, ai_text, incident_signature)
+            dispatch_ok = await self._trigger_github_actions_analysis(
+                log_text, ai_text, incident_signature
+            )
             if dispatch_ok:
                 self._schedule_incident_analysis_sync(incident_signature)
 
@@ -1355,12 +1573,16 @@ class LogMonitorEngine:
 
         try:
             await self._upsert_summary_message(channel)
-            await self._post_incident_history_message(channel, incident, stage=incident_stage)
+            await self._post_incident_history_message(
+                channel, incident, stage=incident_stage
+            )
             logger.info("[LogMonitor] 已更新 Discord 彙整通知")
         except Exception as e:
             logger.error(f"[LogMonitor] 送出通知失敗: {e}")
 
-    async def _trigger_github_actions_analysis(self, log_text: str, ai_text: str, incident_signature: str) -> bool:
+    async def _trigger_github_actions_analysis(
+        self, log_text: str, ai_text: str, incident_signature: str
+    ) -> bool:
         """觸發 GitHub Actions 進行更深入的 AI 分析"""
         return await self._dispatch_github_actions_analysis(
             log_text,
@@ -1380,35 +1602,49 @@ class LogMonitorEngine:
     ) -> bool:
         """發送 repository_dispatch 到 GitHub；force=True 時忽略原本的高危門檻。"""
         if _DISABLE_REPOSITORY_DISPATCH:
-            logger.info("[LogMonitor] repository_dispatch 已停用 (DISABLE_REPOSITORY_DISPATCH)")
+            logger.info(
+                "[LogMonitor] repository_dispatch 已停用 (DISABLE_REPOSITORY_DISPATCH)"
+            )
             self._pipeline_status["dispatch_status"] = "未送出"
-            self._pipeline_status["dispatch_detail"] = "DISABLE_REPOSITORY_DISPATCH 已啟用"
+            self._pipeline_status["dispatch_detail"] = (
+                "DISABLE_REPOSITORY_DISPATCH 已啟用"
+            )
             return False
         try:
             # 檢查是否需要觸發（高緊急程度或特定錯誤類型）
             severity = _extract_severity(ai_text)
             if severity == "未標註":
-                severity = _severity_label_from_hint(_estimate_severity_from_lines(log_text.splitlines()))
+                severity = _severity_label_from_hint(
+                    _estimate_severity_from_lines(log_text.splitlines())
+                )
             should_trigger = (
-                severity == "高" or
-                "Traceback" in log_text or
-                "Exception" in log_text or
-                "CRITICAL" in log_text or
-                "Fatal" in log_text
+                severity == "高"
+                or "Traceback" in log_text
+                or "Exception" in log_text
+                or "CRITICAL" in log_text
+                or "Fatal" in log_text
             )
-            
-            if _NOISE_DISPATCH_PATTERNS.search(log_text) or _NOISE_DISPATCH_PATTERNS.search(ai_text):
+
+            if _NOISE_DISPATCH_PATTERNS.search(
+                log_text
+            ) or _NOISE_DISPATCH_PATTERNS.search(ai_text):
                 logger.info("[LogMonitor] 偵測到已知噪聲，跳過 GitHub Actions 觸發")
                 self._pipeline_status["dispatch_status"] = "未送出"
-                self._pipeline_status["dispatch_detail"] = "已知噪聲事件，未觸發 GitHub Actions"
+                self._pipeline_status["dispatch_detail"] = (
+                    "已知噪聲事件，未觸發 GitHub Actions"
+                )
                 return False
 
             if not should_trigger and not force:
-                logger.info(f"[LogMonitor] 錯誤緊急程度為{severity}，跳過 GitHub Actions 觸發")
+                logger.info(
+                    f"[LogMonitor] 錯誤緊急程度為{severity}，跳過 GitHub Actions 觸發"
+                )
                 self._pipeline_status["dispatch_status"] = "未送出"
-                self._pipeline_status["dispatch_detail"] = f"緊急程度 {severity}，未達 GitHub 自動處理門檻"
+                self._pipeline_status["dispatch_detail"] = (
+                    f"緊急程度 {severity}，未達 GitHub 自動處理門檻"
+                )
                 return False
-            
+
             # 準備 webhook 資料
             webhook_data = {
                 "event_type": "error_analysis",
@@ -1420,42 +1656,56 @@ class LogMonitorEngine:
                     "source": source,
                     "incident_signature": incident_signature,
                     "incident_key": _artifact_key_from_signature(incident_signature),
-                }
+                },
             }
-            
+
             # 發送到 GitHub repository_dispatch webhook
             repo_url = "https://api.github.com/repos/chenkankan1103/kkgroup/dispatches"
             token = os.getenv("GITHUB_TOKEN")  # 需要在 .env 中設定 GitHub Token
-            
+
             if not token:
-                logger.warning("[LogMonitor] GITHUB_TOKEN 未設定，無法觸發 GitHub Actions")
+                logger.warning(
+                    "[LogMonitor] GITHUB_TOKEN 未設定，無法觸發 GitHub Actions"
+                )
                 self._pipeline_status["dispatch_status"] = "送出失敗"
                 self._pipeline_status["dispatch_detail"] = "GITHUB_TOKEN 未設定"
                 return False
-            
+
             headers = {
                 "Authorization": f"token {token}",
                 "Accept": "application/vnd.github.v3+json",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
-            
-            response = requests.post(repo_url, json=webhook_data, headers=headers, timeout=10)
-            
+
+            response = requests.post(
+                repo_url, json=webhook_data, headers=headers, timeout=10
+            )
+
             if response.status_code == 204:
-                logger.info(f"[LogMonitor] ✅ 已觸發 GitHub Actions AI 分析 (緊急程度: {severity})")
+                logger.info(
+                    f"[LogMonitor] ✅ 已觸發 GitHub Actions AI 分析 (緊急程度: {severity})"
+                )
                 self._pipeline_status["dispatch_status"] = "已送出"
                 detail_severity = severity if not force else "高(手動)"
-                self._pipeline_status["dispatch_detail"] = f"error_analysis / 緊急程度 {detail_severity} / source={source}"
+                self._pipeline_status["dispatch_detail"] = (
+                    f"error_analysis / 緊急程度 {detail_severity} / source={source}"
+                )
                 asyncio.create_task(self._refresh_pipeline_status_later())
                 return True
             else:
-                logger.error(f"[LogMonitor] ❌ 觸發 GitHub Actions 失敗: {response.status_code} - {response.text}")
+                logger.error(
+                    f"[LogMonitor] ❌ 觸發 GitHub Actions 失敗: {response.status_code} - {response.text}"
+                )
                 self._pipeline_status["dispatch_status"] = "送出失敗"
-                self._pipeline_status["dispatch_detail"] = f"HTTP {response.status_code}: {_truncate_text(response.text, 120)}"
+                self._pipeline_status["dispatch_detail"] = (
+                    f"HTTP {response.status_code}: {_truncate_text(response.text, 120)}"
+                )
                 return False
-                
+
         except Exception as e:
-            logger.error(f"[LogMonitor] 觸發 GitHub Actions 時發生錯誤: {e}", exc_info=True)
+            logger.error(
+                f"[LogMonitor] 觸發 GitHub Actions 時發生錯誤: {e}", exc_info=True
+            )
             self._pipeline_status["dispatch_status"] = "送出失敗"
             self._pipeline_status["dispatch_detail"] = _truncate_text(str(e), 120)
             return False
@@ -1469,7 +1719,9 @@ class LogMonitorEngine:
             return False
 
         self._pipeline_status["dispatch_status"] = "手動送出中"
-        self._pipeline_status["dispatch_detail"] = f"由 {triggered_by} 手動要求 GitHub Debug"
+        self._pipeline_status["dispatch_detail"] = (
+            f"由 {triggered_by} 手動要求 GitHub Debug"
+        )
         channel = await self._resolve_alert_channel()
         if channel:
             await self._upsert_summary_message(channel)
@@ -1477,18 +1729,28 @@ class LogMonitorEngine:
         result = await self._dispatch_github_actions_analysis(
             latest["log_text"],
             latest["ai_text"],
-            latest.get("signature") or _build_incident_signature(latest.get("log_text", ""), latest.get("severity", "未標註")),
+            latest.get("signature")
+            or _build_incident_signature(
+                latest.get("log_text", ""), latest.get("severity", "未標註")
+            ),
             force=True,
             source="log_monitor_manual_debug",
         )
         if result:
-            self._schedule_incident_analysis_sync(latest.get("signature") or _build_incident_signature(latest.get("log_text", ""), latest.get("severity", "未標註")))
+            self._schedule_incident_analysis_sync(
+                latest.get("signature")
+                or _build_incident_signature(
+                    latest.get("log_text", ""), latest.get("severity", "未標註")
+                )
+            )
         await self._refresh_pipeline_status()
         if channel:
-            await self._post_incident_history_message(channel, latest, stage="manual_debug")
+            await self._post_incident_history_message(
+                channel, latest, stage="manual_debug"
+            )
             await self._upsert_summary_message(channel)
         return result
-    
+
     def build_fix_goal(self) -> str:
         if not self._active_incidents:
             return ""
@@ -1504,7 +1766,9 @@ class LogMonitorEngine:
                 f"AI 分析摘要：{_truncate_text(incident['ai_text'], 350)}\n"
                 f"原始錯誤日誌：{_truncate_text(incident['log_text'], 280)}"
             )
-        return "根據以下 Bot 未清除錯誤彙整，請診斷並嘗試修復問題。\n\n" + "\n\n".join(parts)
+        return "根據以下 Bot 未清除錯誤彙整，請診斷並嘗試修復問題。\n\n" + "\n\n".join(
+            parts
+        )
 
     def clear_summary(self, cleared_by: str) -> discord.Embed:
         self._remember_resolved_incidents(cleared_by)
@@ -1516,8 +1780,16 @@ class LogMonitorEngine:
             timestamp=_current_tw_datetime(),
         )
         embed.add_field(name="檢測到 BUG", value="目前沒有待處理錯誤", inline=False)
-        embed.add_field(name="Debug 流程", value="等待下一筆事件。若是小錯誤，可按「🧠 送交 Debug」手動決定是否送 GitHub。", inline=False)
-        embed.add_field(name="同步 / Webhook", value=f"最新 main: {self._pipeline_status['sync_commit']}\n{self._pipeline_status['webhook']}\n由 {cleared_by} 清空", inline=False)
+        embed.add_field(
+            name="Debug 流程",
+            value="等待下一筆事件。若是小錯誤，可按「🧠 送交 Debug」手動決定是否送 GitHub。",
+            inline=False,
+        )
+        embed.add_field(
+            name="同步 / Webhook",
+            value=f"最新 main: {self._pipeline_status['sync_commit']}\n{self._pipeline_status['webhook']}\n由 {cleared_by} 清空",
+            inline=False,
+        )
         embed.set_footer(text="同一則面板持續重用 · 台灣時間")
         return embed
 
@@ -1567,20 +1839,33 @@ class LogMonitorEngine:
         embed.set_footer(text="固定控制面板 · 歷史錯誤改用追加訊息保留")
         return embed
 
-    def _build_incident_history_embed(self, incident: dict[str, str], stage: str) -> discord.Embed:
+    def _build_incident_history_embed(
+        self, incident: dict[str, str], stage: str
+    ) -> discord.Embed:
         stage_map = {
             "detected": ("🚨 偵測到錯誤", discord.Color.red()),
             "repeat": ("🔁 錯誤再次出現", discord.Color.orange()),
             "manual_debug": ("🧠 已手動送交 GitHub Debug", discord.Color.blurple()),
             "github_sync": ("📥 GitHub Debug 已回寫", discord.Color.blue()),
-            "heal_result": ("🛠️ 自癒結果已回寫", discord.Color.green() if incident.get("heal_success") else discord.Color.orange()),
+            "heal_result": (
+                "🛠️ 自癒結果已回寫",
+                discord.Color.green()
+                if incident.get("heal_success")
+                else discord.Color.orange(),
+            ),
             "cleared": ("✅ 偵錯狀態已清空", discord.Color.green()),
         }
-        title, color = stage_map.get(stage, ("ℹ️ LogMonitor 事件", discord.Color.blurple()))
-        embed = discord.Embed(title=title, color=color, timestamp=_current_tw_datetime())
+        title, color = stage_map.get(
+            stage, ("ℹ️ LogMonitor 事件", discord.Color.blurple())
+        )
+        embed = discord.Embed(
+            title=title, color=color, timestamp=_current_tw_datetime()
+        )
 
         if stage == "cleared":
-            embed.description = incident.get("summary") or "本次 active incident 已清空。"
+            embed.description = (
+                incident.get("summary") or "本次 active incident 已清空。"
+            )
             embed.set_footer(text="歷史保留於 thread")
             return embed
 
@@ -1592,14 +1877,32 @@ class LogMonitorEngine:
             f"重複次數: {repeat_count}"
         )
         embed.add_field(name="事件摘要", value=bug_summary, inline=False)
-        embed.add_field(name="原始錯誤", value=_truncate_text(incident.get("log_text", "無"), 1000), inline=False)
+        embed.add_field(
+            name="原始錯誤",
+            value=_truncate_text(incident.get("log_text", "無"), 1000),
+            inline=False,
+        )
 
         if stage in {"detected", "repeat", "manual_debug"}:
-            embed.add_field(name="本地分析", value=_truncate_text(incident.get("ai_text", "無"), 1000), inline=False)
-            embed.add_field(name="已知案例", value=_truncate_text(self._build_known_debug_summary(incident), 1000), inline=False)
+            embed.add_field(
+                name="本地分析",
+                value=_truncate_text(incident.get("ai_text", "無"), 1000),
+                inline=False,
+            )
+            embed.add_field(
+                name="已知案例",
+                value=_truncate_text(self._build_known_debug_summary(incident), 1000),
+                inline=False,
+            )
 
         if stage == "github_sync":
-            embed.add_field(name="GitHub 分析", value=_truncate_text(incident.get("github_analysis", "GitHub 未回傳內容"), 1000), inline=False)
+            embed.add_field(
+                name="GitHub 分析",
+                value=_truncate_text(
+                    incident.get("github_analysis", "GitHub 未回傳內容"), 1000
+                ),
+                inline=False,
+            )
 
         if stage == "heal_result":
             heal_status = "成功" if incident.get("heal_success") else "失敗"
@@ -1611,10 +1914,14 @@ class LogMonitorEngine:
             )
             embed.add_field(name="自癒回寫", value=heal_value, inline=False)
 
-        embed.set_footer(text=f"signature: {_artifact_key_from_signature(incident.get('signature', 'unknown'))}")
+        embed.set_footer(
+            text=f"signature: {_artifact_key_from_signature(incident.get('signature', 'unknown'))}"
+        )
         return embed
 
-    async def _post_incident_history_message(self, channel, incident: dict[str, str], stage: str):
+    async def _post_incident_history_message(
+        self, channel, incident: dict[str, str], stage: str
+    ):
         slot = {
             "detected": "errors",
             "repeat": "errors",
@@ -1629,7 +1936,9 @@ class LogMonitorEngine:
         embed = self._build_incident_history_embed(incident, stage)
         await target_channel.send(embed=embed)
 
-    async def _post_clear_history_message(self, channel, cleared_by: str, cleared_count: int):
+    async def _post_clear_history_message(
+        self, channel, cleared_by: str, cleared_count: int
+    ):
         payload = {
             "summary": f"由 {cleared_by} 清除 active 狀態，共 {cleared_count} 筆。先前錯誤歷史仍保留在本 thread。"
         }
@@ -1637,7 +1946,7 @@ class LogMonitorEngine:
 
     async def _upsert_summary_message(self, channel):
         embed = self._build_summary_embed()
-        
+
         # ✅ 使用已註冊的全局視圖（而非每次都新建）
         view = None
         if self.cog_instance and self.cog_instance._global_view:
@@ -1656,7 +1965,9 @@ class LogMonitorEngine:
                     target_channel = thread
                     await self._ensure_aux_threads(channel)
                 else:
-                    thread, message = await self._create_summary_thread(channel, embed, view)
+                    thread, message = await self._create_summary_thread(
+                        channel, embed, view
+                    )
                     await self._ensure_aux_threads(channel)
                     if view:
                         view._channel = thread
@@ -1671,7 +1982,10 @@ class LogMonitorEngine:
                 if view:
                     view._channel = target_channel
 
-            if self._summary_message and self._summary_message.channel.id == target_channel.id:
+            if (
+                self._summary_message
+                and self._summary_message.channel.id == target_channel.id
+            ):
                 return
 
             # 創建新訊息並保存 ID 到 .env
@@ -1687,6 +2001,7 @@ class LogMonitorEngine:
 # LogMonitor — Discord Cog
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class LogMonitor(commands.Cog):
     """日誌事件監控 Cog（事件驅動）。"""
 
@@ -1698,19 +2013,25 @@ class LogMonitor(commands.Cog):
         self._engine.cog_instance = self  # ✅ 設定引用，讓 engine 能訪問全局視圖
         self._task: Optional[asyncio.Task] = None
         self._global_view = None  # 全局視圖實例，用於持久化按鈕
-        
+
         # ✅ 直接在 __init__ 時註冊持久化視圖（而不是等待 cog_load）
         try:
             if _ALERT_CHANNEL_ID and _ALERT_CHANNEL_ID > 0:
                 # 建立模板視圖實例
                 self._global_view = LogMonitorSummaryView(self._engine, None)
                 self.bot.add_view(self._global_view)
-                logger.info(f"[LogMonitor] ✅ 持久化視圖已在 __init__ 註冊到 bot（頻道 {_ALERT_CHANNEL_ID}）")
+                logger.info(
+                    f"[LogMonitor] ✅ 持久化視圖已在 __init__ 註冊到 bot（頻道 {_ALERT_CHANNEL_ID}）"
+                )
             else:
-                logger.warning(f"[LogMonitor] ⚠️ _ALERT_CHANNEL_ID 無效或未設定 ({_ALERT_CHANNEL_ID})")
+                logger.warning(
+                    f"[LogMonitor] ⚠️ _ALERT_CHANNEL_ID 無效或未設定 ({_ALERT_CHANNEL_ID})"
+                )
         except Exception as e:
-            logger.error(f"[LogMonitor] ❌ 在 __init__ 中視圖註冊失敗: {e}", exc_info=True)
-        
+            logger.error(
+                f"[LogMonitor] ❌ 在 __init__ 中視圖註冊失敗: {e}", exc_info=True
+            )
+
         logger.info("✅ LogMonitor Cog 已初始化")
 
     async def cog_load(self):
@@ -1721,7 +2042,9 @@ class LogMonitor(commands.Cog):
             if channel:
                 await self._engine._upsert_summary_message(channel)
             self._task = asyncio.create_task(self._engine.start())
-            logger.info(f"[LogMonitor] 監控已在 cog_load 中啟動（通知頻道 {_ALERT_CHANNEL_ID}）")
+            logger.info(
+                f"[LogMonitor] 監控已在 cog_load 中啟動（通知頻道 {_ALERT_CHANNEL_ID}）"
+            )
         else:
             logger.warning("[LogMonitor] 通知頻道未設定，監控未啟動")
 
@@ -1735,33 +2058,43 @@ class LogMonitor(commands.Cog):
 
     @app_commands.command(name="logmonitor", description="日誌監控控制（管理員限定）")
     @app_commands.describe(action="pause=暫停 / resume=恢復 / status=狀態 / test=測試")
-    @app_commands.choices(action=[
-        app_commands.Choice(name="status",  value="status"),
-        app_commands.Choice(name="pause",   value="pause"),
-        app_commands.Choice(name="resume",  value="resume"),
-        app_commands.Choice(name="test",    value="test"),
-    ])
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="status", value="status"),
+            app_commands.Choice(name="pause", value="pause"),
+            app_commands.Choice(name="resume", value="resume"),
+            app_commands.Choice(name="test", value="test"),
+        ]
+    )
     async def logmonitor(self, interaction: discord.Interaction, action: str):
         if not self._check_perm(interaction):
             await interaction.response.send_message("❌ 管理員限定。", ephemeral=True)
             return
 
         if action == "status":
-            proc    = self._engine._proc
+            proc = self._engine._proc
             running = proc is not None and proc.returncode is None
             enabled = self._engine.enabled
             buf_len = len(self._engine._error_buffer)
             incident_len = len(self._engine._active_incidents)
-            embed   = discord.Embed(
+            embed = discord.Embed(
                 title="📊 日誌監控狀態",
-                color=discord.Color.green() if (running and enabled) else discord.Color.orange(),
+                color=discord.Color.green()
+                if (running and enabled)
+                else discord.Color.orange(),
             )
-            embed.add_field(name="監控",     value="✅ 運行中" if (running and enabled) else "⏸️ 已暫停", inline=True)
+            embed.add_field(
+                name="監控",
+                value="✅ 運行中" if (running and enabled) else "⏸️ 已暫停",
+                inline=True,
+            )
             embed.add_field(name="🔕 靜音送出", value="已啟用", inline=True)
-            embed.add_field(name="監控服務", value="\n".join(_SERVICES),                                  inline=True)
-            embed.add_field(name="緩衝行數", value=str(buf_len),                                          inline=True)
-            embed.add_field(name="未清除事件", value=str(incident_len),                                   inline=True)
-            embed.add_field(name="通知頻道", value=f"<#{_ALERT_CHANNEL_ID}>",                            inline=True)
+            embed.add_field(name="監控服務", value="\n".join(_SERVICES), inline=True)
+            embed.add_field(name="緩衝行數", value=str(buf_len), inline=True)
+            embed.add_field(name="未清除事件", value=str(incident_len), inline=True)
+            embed.add_field(
+                name="通知頻道", value=f"<#{_ALERT_CHANNEL_ID}>", inline=True
+            )
             await interaction.response.send_message(embed=embed)
 
         elif action == "pause":
@@ -1796,10 +2129,14 @@ class LogMonitor(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = LogMonitor(bot)
     await bot.add_cog(cog)
-    
+
     # ℹ️ 視圖已在 Cog.__init__() 中註冊，此處無需重複註冊
     # 但我們驗證視圖是否成功創建
     if cog._global_view:
-        print(f"[LogMonitor] ✅ 視圖已正確初始化並註冊（custom_ids: {[b.custom_id for b in cog._global_view.children]}）")
+        print(
+            f"[LogMonitor] ✅ 視圖已正確初始化並註冊（custom_ids: {[b.custom_id for b in cog._global_view.children]}）"
+        )
     else:
-        print(f"[LogMonitor] ⚠️ 警告：視圖未被創建（_ALERT_CHANNEL_ID={_ALERT_CHANNEL_ID}）")
+        print(
+            f"[LogMonitor] ⚠️ 警告：視圖未被創建（_ALERT_CHANNEL_ID={_ALERT_CHANNEL_ID}）"
+        )

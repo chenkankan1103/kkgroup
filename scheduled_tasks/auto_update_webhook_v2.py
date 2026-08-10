@@ -22,28 +22,27 @@ import subprocess
 # 嘗試導入 requests，如果失敗則使用 urllib
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
-    import urllib.request
-    import urllib.error
     HAS_REQUESTS = False
 
 from dotenv import load_dotenv
 
 # 載入 .env 以取得 GITHUB_* 等變數
-dotenv_path = Path(__file__).resolve().parents[2] / '.env'
+dotenv_path = Path(__file__).resolve().parents[2] / ".env"
 if dotenv_path.exists():
     load_dotenv(dotenv_path)
 
 # 配置
-CONFIG_FILE = Path(__file__).parent.parent / 'config' / 'config.json'
-WEBHOOK_CONFIG_FILE = Path(__file__).parent.parent / 'config' / 'webhook_config.json'
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
-GITHUB_WEBHOOK_SECRET = os.getenv('GITHUB_WEBHOOK_SECRET', '321qwe321')
-REPO_OWNER = 'chenkankan1103'
-REPO_NAME = 'kkgroup'
-WEBHOOK_ENDPOINT = '/webhook/github'
-DISCORD_WEBHOOK = os.getenv('DISCORD_WEBHOOK_URL')
+CONFIG_FILE = Path(__file__).parent.parent / "config" / "config.json"
+WEBHOOK_CONFIG_FILE = Path(__file__).parent.parent / "config" / "webhook_config.json"
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "321qwe321")
+REPO_OWNER = "chenkankan1103"
+REPO_NAME = "kkgroup"
+WEBHOOK_ENDPOINT = "/webhook/github"
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # 秒
 
@@ -64,23 +63,24 @@ def log_discord(message, is_error=False):
     try:
         color = 0xFF6B6B if is_error else 0x4ECDC4
         payload = {
-            "embeds": [{
-                "title": "🤖 隧道 Webhook 更新",
-                "description": message,
-                "color": color,
-                "timestamp": datetime.utcnow().isoformat() + "Z"
-            }]
+            "embeds": [
+                {
+                    "title": "🤖 隧道 Webhook 更新",
+                    "description": message,
+                    "color": color,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                }
+            ]
         }
 
         if HAS_REQUESTS:
             requests.post(DISCORD_WEBHOOK, json=payload, timeout=5)
         else:
             import urllib.request
-            data = json.dumps(payload).encode('utf-8')
+
+            data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
-                DISCORD_WEBHOOK,
-                data=data,
-                headers={'Content-Type': 'application/json'}
+                DISCORD_WEBHOOK, data=data, headers={"Content-Type": "application/json"}
             )
             urllib.request.urlopen(req, timeout=5)
     except Exception as e:
@@ -95,10 +95,12 @@ def _get_url_from_cloudflared_config():
             shell=True,
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
         if result.stdout:
-            match = re.search(r'"url":"(https://[a-z0-9\-]+\.trycloudflare\.com)"', result.stdout)
+            match = re.search(
+                r'"url":"(https://[a-z0-9\-]+\.trycloudflare\.com)"', result.stdout
+            )
             if match:
                 return match.group(1)
     except Exception:
@@ -115,17 +117,25 @@ def get_current_tunnel_url():
         result = subprocess.run(
             ["grep", "-oP", r"https://[a-zA-Z0-9_-]+\.trycloudflare\.com"],
             input=subprocess.run(
-                ["sudo", "journalctl", "-u", "cloudflared.service", "-n", "100", "--no-pager"],
+                [
+                    "sudo",
+                    "journalctl",
+                    "-u",
+                    "cloudflared.service",
+                    "-n",
+                    "100",
+                    "--no-pager",
+                ],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             ).stdout,
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
 
-        urls = [url.strip() for url in result.stdout.strip().split('\n') if url.strip()]
+        urls = [url.strip() for url in result.stdout.strip().split("\n") if url.strip()]
         if urls:
             current_url = urls[-1]  # 取最後一個（最新的）
             print(f"✅ 提取到隧道 URL (journalctl): {current_url}")
@@ -157,30 +167,30 @@ def load_webhook_config():
     """加載上次保存的 webhook 配置"""
     if WEBHOOK_CONFIG_FILE.exists():
         try:
-            with open(WEBHOOK_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            with open(WEBHOOK_CONFIG_FILE, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 print(f"✅ 加載 webhook 配置: {config}")
                 return config
         except Exception as e:
             print(f"⚠️ 加載配置失敗: {e}")
 
-    return {'tunnel_url': None, 'webhook_id': None}
+    return {"tunnel_url": None, "webhook_id": None}
 
 
 def save_webhook_config(tunnel_url, webhook_id):
     """保存 webhook 配置"""
     try:
         config = {
-            'tunnel_url': tunnel_url,
-            'webhook_id': webhook_id,
-            'last_updated': datetime.utcnow().isoformat() + "Z"
+            "tunnel_url": tunnel_url,
+            "webhook_id": webhook_id,
+            "last_updated": datetime.utcnow().isoformat() + "Z",
         }
         WEBHOOK_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(WEBHOOK_CONFIG_FILE, 'w', encoding='utf-8') as f:
+        with open(WEBHOOK_CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
 
-        print(f"✅ 保存 webhook 配置")
+        print("✅ 保存 webhook 配置")
     except Exception as e:
         print(f"❌ 保存配置失敗: {e}")
 
@@ -190,17 +200,17 @@ def update_config_json(tunnel_url):
     try:
         config = {}
         if CONFIG_FILE.exists():
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
-        config['url'] = tunnel_url
-        config['API_BASE'] = tunnel_url
-        config['lastUpdated'] = datetime.utcnow().isoformat() + "Z"
+        config["url"] = tunnel_url
+        config["API_BASE"] = tunnel_url
+        config["lastUpdated"] = datetime.utcnow().isoformat() + "Z"
         # 保留原有 imageURL（若有）
         # Note: imageURL 處理在原腳本中保留
 
         CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
 
         print(f"✅ config.json 已更新: {tunnel_url}")
@@ -221,7 +231,7 @@ def update_github_webhook(tunnel_url, retry_count=0):
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "kkgroup-webhook-updater"
+        "User-Agent": "kkgroup-webhook-updater",
     }
 
     try:
@@ -232,17 +242,18 @@ def update_github_webhook(tunnel_url, retry_count=0):
             response = requests.get(
                 f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks",
                 headers=headers,
-                timeout=10
+                timeout=10,
             )
             webhooks = response.json()
         else:
             import urllib.request
+
             req = urllib.request.Request(
                 f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks",
-                headers=headers
+                headers=headers,
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
-                webhooks = json.loads(resp.read().decode('utf-8'))
+                webhooks = json.loads(resp.read().decode("utf-8"))
 
         if not isinstance(webhooks, list):
             print(f"❌ GitHub API 返回錯誤: {webhooks}")
@@ -251,9 +262,9 @@ def update_github_webhook(tunnel_url, retry_count=0):
         # 查找 webhook
         webhook_id = None
         for hook in webhooks:
-            if WEBHOOK_ENDPOINT in hook.get('config', {}).get('url', ''):
-                webhook_id = hook.get('id')
-                old_url = hook.get('config', {}).get('url')
+            if WEBHOOK_ENDPOINT in hook.get("config", {}).get("url", ""):
+                webhook_id = hook.get("id")
+                old_url = hook.get("config", {}).get("url")
                 print(f"✅ 找到 webhook ID: {webhook_id}")
                 print(f"   舊 URL: {old_url}")
                 print(f"   新 URL: {webhook_url}")
@@ -264,16 +275,16 @@ def update_github_webhook(tunnel_url, retry_count=0):
             return False
 
         # 更新 webhook
-        print(f"🔄 更新 webhook URL...")
+        print("🔄 更新 webhook URL...")
         update_data = {
             "config": {
                 "url": webhook_url,
                 "content_type": "json",
                 "secret": GITHUB_WEBHOOK_SECRET,
-                "insecure_ssl": "0"
+                "insecure_ssl": "0",
             },
             "events": ["push"],
-            "active": True
+            "active": True,
         }
 
         if HAS_REQUESTS:
@@ -281,39 +292,48 @@ def update_github_webhook(tunnel_url, retry_count=0):
                 f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks/{webhook_id}",
                 headers=headers,
                 json=update_data,
-                timeout=10
+                timeout=10,
             )
             if response.status_code == 200:
-                print(f"✅ Webhook 已更新成功")
+                print("✅ Webhook 已更新成功")
                 log_discord(f"✅ Webhook 已更新成功\n新 URL: {webhook_url}")
                 return True
             else:
-                print(f"❌ Webhook 更新失敗 (HTTP {response.status_code}): {response.text}")
+                print(
+                    f"❌ Webhook 更新失敗 (HTTP {response.status_code}): {response.text}"
+                )
                 if retry_count < MAX_RETRIES:
-                    print(f"⏱️ 等待 {RETRY_DELAY} 秒後重試 ({retry_count + 1}/{MAX_RETRIES})...")
+                    print(
+                        f"⏱️ 等待 {RETRY_DELAY} 秒後重試 ({retry_count + 1}/{MAX_RETRIES})..."
+                    )
                     time.sleep(RETRY_DELAY)
                     return update_github_webhook(tunnel_url, retry_count + 1)
                 return False
         else:
             import urllib.request
             import urllib.error
-            data = json.dumps(update_data).encode('utf-8')
+
+            data = json.dumps(update_data).encode("utf-8")
             req = urllib.request.Request(
                 f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks/{webhook_id}",
                 data=data,
-                headers={**headers, 'Content-Type': 'application/json'},
-                method='PATCH'
+                headers={**headers, "Content-Type": "application/json"},
+                method="PATCH",
             )
             try:
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     if resp.status == 200:
-                        print(f"✅ Webhook 已更新成功")
+                        print("✅ Webhook 已更新成功")
                         log_discord(f"✅ Webhook 已更新成功\n新 URL: {webhook_url}")
                         return True
             except urllib.error.HTTPError as e:
-                print(f"❌ Webhook 更新失敗 (HTTP {e.code}): {e.read().decode('utf-8')}")
+                print(
+                    f"❌ Webhook 更新失敗 (HTTP {e.code}): {e.read().decode('utf-8')}"
+                )
                 if retry_count < MAX_RETRIES:
-                    print(f"⏱️ 等待 {RETRY_DELAY} 秒後重試 ({retry_count + 1}/{MAX_RETRIES})...")
+                    print(
+                        f"⏱️ 等待 {RETRY_DELAY} 秒後重試 ({retry_count + 1}/{MAX_RETRIES})..."
+                    )
                     time.sleep(RETRY_DELAY)
                     return update_github_webhook(tunnel_url, retry_count + 1)
                 return False
@@ -324,7 +344,10 @@ def update_github_webhook(tunnel_url, retry_count=0):
             time.sleep(RETRY_DELAY)
             return update_github_webhook(tunnel_url, retry_count + 1)
 
-        log_discord(f"❌ Webhook 更新失敗（已重試 {MAX_RETRIES} 次）\n錯誤: {str(e)}", is_error=True)
+        log_discord(
+            f"❌ Webhook 更新失敗（已重試 {MAX_RETRIES} 次）\n錯誤: {str(e)}",
+            is_error=True,
+        )
         return False
 
 
@@ -339,7 +362,7 @@ def git_commit_changes(tunnel_url):
             cwd=repo_dir,
             capture_output=True,
             timeout=10,
-            check=True
+            check=True,
         )
 
         print("📝 git commit...")
@@ -348,7 +371,7 @@ def git_commit_changes(tunnel_url):
             cwd=repo_dir,
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         if result.returncode == 0:
@@ -360,7 +383,7 @@ def git_commit_changes(tunnel_url):
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
 
             if push_result.returncode == 0:
@@ -395,14 +418,14 @@ def main():
 
     # 2. 加載上次保存的配置
     old_config = load_webhook_config()
-    old_url = old_config.get('tunnel_url')
+    old_url = old_config.get("tunnel_url")
 
     # 3. 檢查是否需要更新
     if current_url == old_url:
-        print(f"✅ 隧道 URL 無變化，無需更新")
+        print("✅ 隧道 URL 無變化，無需更新")
         return True
 
-    print(f"⚠️ 隧道 URL 已變更！")
+    print("⚠️ 隧道 URL 已變更！")
     print(f"   舊 URL: {old_url}")
     print(f"   新 URL: {current_url}")
     log_discord(f"🚨 隧道 URL 已變更\n舊: {old_url}\n新: {current_url}")
@@ -418,7 +441,7 @@ def main():
         return False
 
     # 6. 保存配置
-    save_webhook_config(current_url, old_config.get('webhook_id'))
+    save_webhook_config(current_url, old_config.get("webhook_id"))
 
     # 7. git commit
     if not git_commit_changes(current_url):
@@ -430,7 +453,7 @@ def main():
     return True
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         success = main()
         sys.exit(0 if success else 1)

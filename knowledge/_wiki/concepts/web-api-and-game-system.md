@@ -148,7 +148,7 @@ def get_sheet_data(sheet_name):
     <div class="game-container">
         <!-- 遊戲畫布 -->
         <canvas id="gameCanvas" width="800" height="600"></canvas>
-        
+
         <!-- UI 面板 -->
         <div class="ui-panel">
             <div id="character-stats">
@@ -162,7 +162,7 @@ def get_sheet_data(sheet_name):
             </div>
         </div>
     </div>
-    
+
     <script>
         // 遊戲引擎
         class RPGGame {
@@ -173,20 +173,20 @@ def get_sheet_data(sheet_name):
                 this.enemies = [];
                 this.items = [];
             }
-            
+
             // 遊戲循環
             gameLoop() {
                 this.update();
                 this.render();
                 requestAnimationFrame(() => this.gameLoop());
             }
-            
+
             // 更新遊戲狀態
             update() {
                 this.player.update();
                 this.enemies.forEach(enemy => enemy.update());
             }
-            
+
             // 渲染畫面
             render() {
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -194,7 +194,7 @@ def get_sheet_data(sheet_name):
                 this.enemies.forEach(enemy => enemy.render(this.ctx));
             }
         }
-        
+
         // 啟動遊戲
         const game = new RPGGame();
         game.gameLoop();
@@ -220,10 +220,10 @@ def get_sheet_data(sheet_name):
 class AIMemory:
     def __init__(self):
         self.memory_store = {}
-    
+
     def store_memory(self, key: str, value: any):
         self.memory_store[key] = value
-    
+
     def retrieve_memory(self, key: str) -> any:
         return self.memory_store.get(key)
 ```
@@ -308,16 +308,16 @@ class GameUI {
         };
         this.init();
     }
-    
+
     init() {
         this.bindEvents();
         this.loadGameData();
     }
-    
+
     bindEvents() {
         this.elements.gameCanvas.addEventListener('click', this.handleCanvasClick.bind(this));
     }
-    
+
     async loadGameData() {
         try {
             const response = await fetch('/api/game/data');
@@ -357,7 +357,7 @@ WantedBy=multi-user.target
 server {
     listen 80;
     server_name localhost;
-    
+
     location / {
         proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
@@ -365,7 +365,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    
+
     location /static/ {
         alias /home/ubuntu/kkgroup/web/portal/static/;
         expires 1y;
@@ -381,11 +381,11 @@ import requests
 
 def update_tunnel_url():
     tunnel_url = "https://your-tunnel-url.trycloudflare.com"
-    
+
     # 更新配置檔案
     with open('config/tunnel_url.json', 'w') as f:
         json.dump({"url": tunnel_url}, f)
-    
+
     # 通知 Discord Bot
     webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
     requests.post(webhook_url, json={"content": f"隧道 URL 已更新: {tunnel_url}"})
@@ -420,7 +420,7 @@ SQLALCHEMY_ENGINE_OPTIONS = {
 
 ### 1. CORS 配置
 ```python
-CORS(app, 
+CORS(app,
      origins=['https://your-domain.com', 'https://your-tunnel-url.trycloudflare.com'],
      methods=['GET', 'POST', 'PUT', 'DELETE'],
      allow_headers=['Content-Type', 'Authorization'])

@@ -4,18 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KK 群紙娃娃 RPG 遊戲 Pro</title>
-    
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    
+
     <!-- Tailwind Config -->
     <script>
         tailwind.config = {
@@ -74,19 +74,19 @@
             },
         }
     </script>
-    
+
     <!-- Custom Styles -->
     <style>
         body {
             font-family: 'Noto Sans TC', 'Inter', sans-serif;
-            background: 
+            background:
                 radial-gradient(ellipse at 20% 80%, rgba(120, 119, 198, 0.25) 0%, transparent 50%),
                 radial-gradient(ellipse at 80% 20%, rgba(74, 158, 255, 0.15) 0%, transparent 50%),
                 radial-gradient(ellipse at 50% 50%, rgba(168, 85, 247, 0.1) 0%, transparent 70%),
                 linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0f0c29 100%);
             min-height: 100vh;
         }
-        
+
         /* Glassmorphism utilities */
         .glass {
             background: rgba(255, 255, 255, 0.06);
@@ -94,29 +94,29 @@
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.12);
         }
-        
+
         .glass-strong {
             background: rgba(26, 26, 62, 0.85);
             backdrop-filter: blur(30px);
             -webkit-backdrop-filter: blur(30px);
             border: 1px solid rgba(74, 158, 255, 0.2);
         }
-        
+
         .glass-hover:hover {
             background: rgba(255, 255, 255, 0.1);
             border-color: rgba(74, 158, 255, 0.3);
             box-shadow: 0 0 30px rgba(74, 158, 255, 0.2);
         }
-        
+
         /* Glow effects */
         .glow-blue {
             box-shadow: 0 0 20px rgba(74, 158, 255, 0.4);
         }
-        
+
         .glow-purple {
             box-shadow: 0 0 25px rgba(168, 85, 247, 0.4);
         }
-        
+
         /* Gradient text */
         .text-gradient {
             background: linear-gradient(135deg, #4a9eff, #a855f7, #22d3ee);
@@ -126,32 +126,32 @@
             background-clip: text;
             animation: gradient 4s ease infinite;
         }
-        
+
         /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
         }
-        
+
         ::-webkit-scrollbar-track {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 3px;
         }
-        
+
         ::-webkit-scrollbar-thumb {
             background: rgba(74, 158, 255, 0.3);
             border-radius: 3px;
         }
-        
+
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(74, 158, 255, 0.5);
         }
-        
+
         /* Button shine effect */
         .btn-shine {
             position: relative;
             overflow: hidden;
         }
-        
+
         .btn-shine::before {
             content: '';
             position: absolute;
@@ -162,32 +162,32 @@
             background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
             transition: left 0.5s ease;
         }
-        
+
         .btn-shine:hover::before {
             left: 100%;
         }
-        
+
         /* XP bar animation */
         .xp-bar-fill {
             background: linear-gradient(90deg, #51cf66, #4a9eff, #a855f7);
             background-size: 200% 100%;
             animation: shimmer 2s ease-in-out infinite;
         }
-        
+
         /* Card hover lift */
         .card-lift {
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
-        
+
         .card-lift:hover {
             transform: translateY(-5px);
         }
-        
+
         /* Neon border */
         .neon-border {
             position: relative;
         }
-        
+
         .neon-border::after {
             content: '';
             position: absolute;
@@ -198,7 +198,7 @@
             opacity: 0;
             transition: opacity 0.3s ease;
         }
-        
+
         .neon-border:hover::after {
             opacity: 0.5;
         }
@@ -296,13 +296,13 @@
                         <i data-lucide="activity" class="w-4 h-4"></i>
                         屬性
                     </h3>
-                    
+
                     <div class="space-y-4">
                         <div>
                             <div class="text-[10px] text-white/40 font-semibold uppercase tracking-wider mb-1">等級</div>
                             <div id="stat-level" class="text-2xl font-bold font-mono text-white drop-shadow-[0_0_10px_rgba(74,158,255,0.5)]">1</div>
                         </div>
-                        
+
                         <div>
                             <div class="text-[10px] text-white/40 font-semibold uppercase tracking-wider mb-2">經驗值</div>
                             <div class="h-3 bg-white/10 rounded-full overflow-hidden border border-white/10">
@@ -310,7 +310,7 @@
                             </div>
                             <div id="exp-text" class="text-[10px] text-white/50 mt-1 font-mono">0/1000</div>
                         </div>
-                        
+
                         <div>
                             <div class="text-[10px] text-white/40 font-semibold uppercase tracking-wider mb-1">KKcoin</div>
                             <div class="flex items-center gap-2">
@@ -453,20 +453,20 @@
     <script>
         // Initialize Lucide icons
         lucide.createIcons();
-        
+
         // Modal functions
         function openModal(name) {
             const modal = document.getElementById(`modal-${name}`);
             modal.classList.remove('hidden');
             modal.classList.add('flex');
         }
-        
+
         function closeModal(name) {
             const modal = document.getElementById(`modal-${name}`);
             modal.classList.add('hidden');
             modal.classList.remove('flex');
         }
-        
+
         // Close modal on backdrop click
         document.querySelectorAll('[id^="modal-"]').forEach(modal => {
             modal.addEventListener('click', (e) => {
@@ -476,7 +476,7 @@
                 }
             });
         });
-        
+
         // Close on Escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {

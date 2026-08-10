@@ -1,6 +1,5 @@
 # 大麻種植系統工具函數
 
-import discord
 from datetime import datetime
 from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
@@ -62,10 +61,7 @@ def create_plant_embed(plant, idx=None):
     progress_text = format_plant_progress(plant)
 
     name = f"#{idx} {seed_config['emoji']}" if idx else f"{seed_config['emoji']}"
-    value = (
-        f"🌾 種類：{plant['seed_type']}\n"
-        f"📊 進度：{progress_text}"
-    )
+    value = f"🌾 種類：{plant['seed_type']}\n" f"📊 進度：{progress_text}"
 
     return {"name": name, "value": value, "inline": False}
 
@@ -84,15 +80,14 @@ def calculate_harvest_value(plant):
 
     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
     # Prefer yield_amount, then harvested_amount, then yield to support multiple naming variants
-    yield_amount = plant.get("yield_amount", plant.get("harvested_amount", plant.get("yield", config["max_yield"])))
+    yield_amount = plant.get(
+        "yield_amount",
+        plant.get("harvested_amount", plant.get("yield", config["max_yield"])),
+    )
     price = CANNABIS_HARVEST_PRICES[plant["seed_type"]]
     total_value = yield_amount * price
 
-    return {
-        "yield_amount": yield_amount,
-        "price": price,
-        "total_value": total_value
-    }
+    return {"yield_amount": yield_amount, "price": price, "total_value": total_value}
 
 
 def validate_plant_operation(user_id, plant_id, operation_type):
@@ -111,14 +106,18 @@ def validate_plant_operation(user_id, plant_id, operation_type):
 
     try:
         plants = get_user_plants(user_id)
-        plant = next((p for p in plants if p['id'] == plant_id), None)
+        plant = next((p for p in plants if p["id"] == plant_id), None)
 
         if not plant:
             return {"valid": False, "reason": "找不到指定的植物", "plant": None}
 
         if operation_type == "fertilize":
             if plant["status"] == "harvested":
-                return {"valid": False, "reason": "植物已成熟，無法施肥", "plant": plant}
+                return {
+                    "valid": False,
+                    "reason": "植物已成熟，無法施肥",
+                    "plant": plant,
+                }
 
             inventory = get_inventory(user_id)
             if not inventory.get("肥料"):

@@ -5,7 +5,7 @@
   "status": "operational",
   "last_verified": "2026-04-04T13:27:06.896953Z",
   "documentation": "https://github.com/chenkankan1103/kkgroup",
-  
+
   "endpoints": {
     "system": {
       "root": {
@@ -32,7 +32,7 @@
         "purpose": "監控、負載均衡、故障偵測"
       }
     },
-    
+
     "stats": {
       "stats": {
         "method": "GET",
@@ -59,7 +59,7 @@
         "response_code": 200
       }
     },
-    
+
     "sheets": {
       "sync": {
         "method": "POST",
@@ -109,7 +109,7 @@
         "error_codes": [400, 401, 404]
       }
     },
-    
+
     "game": {
       "paperdoll": {
         "method": ["GET", "POST"],
@@ -122,7 +122,7 @@
       }
     }
   },
-  
+
   "error_responses": {
     "400": {
       "code": 400,
@@ -150,7 +150,7 @@
       "description": "服務器內部錯誤"
     }
   },
-  
+
   "response_formats": {
     "success": {
       "status": "ok",
@@ -164,7 +164,7 @@
       "timestamp": "ISO 8601"
     }
   },
-  
+
   "authentication": {
     "methods": [
       "Session Cookie",
@@ -179,7 +179,7 @@
       "sameSite": "Lax"
     }
   },
-  
+
   "test_results": {
     "date": "2026-04-04",
     "time": "13:27:06",
@@ -189,7 +189,7 @@
     "success_rate": "100%",
     "status": "all_systems_operational"
   },
-  
+
   "performance_metrics": {
     "startup_time_seconds": 2.5,
     "average_response_time_ms": 20,

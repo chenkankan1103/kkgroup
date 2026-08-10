@@ -38,7 +38,6 @@ FIELD_TYPE_HINTS = {
     "draws": "INTEGER",
     "count": "INTEGER",
     "number": "INTEGER",
-    
     # 玩家信息
     "nickname": "TEXT",
     "username": "TEXT",
@@ -53,7 +52,6 @@ FIELD_TYPE_HINTS = {
     "description": "TEXT",
     "bio": "TEXT",
     "notes": "TEXT",
-    
     # 時間字段
     "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "created": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
@@ -63,7 +61,6 @@ FIELD_TYPE_HINTS = {
     "last_seen": "TIMESTAMP",
     "joined_at": "TIMESTAMP",
     "registered_at": "TIMESTAMP",
-    
     # 布爾值字段
     "active": "INTEGER",  # SQLite 用 0/1 表示 boolean
     "is_active": "INTEGER",
@@ -75,66 +72,113 @@ FIELD_TYPE_HINTS = {
     "is_muted": "INTEGER",
     "verified": "INTEGER",
     "is_verified": "INTEGER",
-
     # 堡壘保衛戰 / 興趣標籤
-    "user_interests": "TEXT",           # JSON 陣列，如 ["科技/AI","動漫/遊戲"]
-    "trend_alert_enabled": "INTEGER",   # 0/1，預設 1
-    "fortress_total_damage": "INTEGER", # 累計貢獻傷害（排行榜用）
-    "fortress_wins": "INTEGER",         # 累計守城次數
+    "user_interests": "TEXT",  # JSON 陣列，如 ["科技/AI","動漫/遊戲"]
+    "trend_alert_enabled": "INTEGER",  # 0/1，預設 1
+    "fortress_total_damage": "INTEGER",  # 累計貢獻傷害（排行榜用）
+    "fortress_wins": "INTEGER",  # 累計守城次數
 }
 
 # ============================================================
 # 類型推斷規則（優先級順序）
 # ============================================================
 
+
 def infer_column_type(header: str) -> str:
     """
     根據欄位名稱智能推斷欄位類型
-    
+
     優先級：
     1. 精確匹配（在 FIELD_TYPE_HINTS 中）
     2. 包含關鍵字的規則
     3. 預設 TEXT
     """
     header_lower = header.lower()
-    
+
     # 1. 精確匹配
     if header_lower in FIELD_TYPE_HINTS:
         return FIELD_TYPE_HINTS[header_lower]
-    
+
     # 2. 包含關鍵字的規則
-    
+
     # ID 相關
-    if 'id' in header_lower or 'code' in header_lower:
-        return 'INTEGER'
-    
+    if "id" in header_lower or "code" in header_lower:
+        return "INTEGER"
+
     # 數值相關
-    if any(x in header_lower for x in [
-        'coin', 'gold', 'money', 'price', 'cost', 'value',
-        'level', 'exp', 'xp', 'experience',
-        'hp', 'health', 'stamina', 'energy', 'mana', 'mp',
-        'attack', 'defense', 'speed', 'luck',
-        'count', 'number', 'amount', 'total', 'sum',
-        'rank', 'wins', 'losses', 'draws', 'score', 'points'
-    ]):
-        return 'INTEGER'
-    
+    if any(
+        x in header_lower
+        for x in [
+            "coin",
+            "gold",
+            "money",
+            "price",
+            "cost",
+            "value",
+            "level",
+            "exp",
+            "xp",
+            "experience",
+            "hp",
+            "health",
+            "stamina",
+            "energy",
+            "mana",
+            "mp",
+            "attack",
+            "defense",
+            "speed",
+            "luck",
+            "count",
+            "number",
+            "amount",
+            "total",
+            "sum",
+            "rank",
+            "wins",
+            "losses",
+            "draws",
+            "score",
+            "points",
+        ]
+    ):
+        return "INTEGER"
+
     # 時間相關
-    if any(x in header_lower for x in [
-        'time', 'date', 'at', 'created', 'updated', 
-        'joined', 'registered', 'last_'
-    ]):
-        return 'TIMESTAMP'
-    
+    if any(
+        x in header_lower
+        for x in [
+            "time",
+            "date",
+            "at",
+            "created",
+            "updated",
+            "joined",
+            "registered",
+            "last_",
+        ]
+    ):
+        return "TIMESTAMP"
+
     # 布爾相關
-    if any(x in header_lower for x in [
-        'is_', 'has_', 'can_', 'active', 'enabled', 
-        'banned', 'muted', 'verified', 'approved'
-    ]):
-        return 'INTEGER'  # SQLite 用 0/1 表示
-    
+    if any(
+        x in header_lower
+        for x in [
+            "is_",
+            "has_",
+            "can_",
+            "active",
+            "enabled",
+            "banned",
+            "muted",
+            "verified",
+            "approved",
+        ]
+    ):
+        return "INTEGER"  # SQLite 用 0/1 表示
+
     # 3. 預設
-    return 'TEXT'
+    return "TEXT"
 
 
 # ============================================================
@@ -158,10 +202,10 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- 自動更新時間戳的觸發器
-CREATE TRIGGER IF NOT EXISTS update_users_timestamp 
+CREATE TRIGGER IF NOT EXISTS update_users_timestamp
 AFTER UPDATE ON users
 BEGIN
-    UPDATE users SET updated_at = CURRENT_TIMESTAMP 
+    UPDATE users SET updated_at = CURRENT_TIMESTAMP
     WHERE user_id = NEW.user_id;
 END;
 """
@@ -176,24 +220,24 @@ POSTGRESQL_SCHEMA_TEMPLATE = """
 
 CREATE TABLE IF NOT EXISTS users (
     user_id BIGINT PRIMARY KEY,
-    
+
     -- 核心玩家信息
     nickname VARCHAR(255),
     level INTEGER,
     xp INTEGER,
-    
+
     -- 遊戲數據
     kkcoin INTEGER DEFAULT 0,
     hp INTEGER DEFAULT 100,
     stamina INTEGER DEFAULT 50,
-    
+
     -- 元數據
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
-    
+
     -- 靈活的 JSONB 欄位（存儲動態數據）
     custom_data JSONB DEFAULT '{}'::jsonb,
-    
+
     -- 索引
     CONSTRAINT valid_user_id CHECK (user_id > 0)
 );
@@ -220,21 +264,22 @@ CREATE INDEX idx_users_custom_data ON users USING GIN (custom_data);
 # 遷移策略
 # ============================================================
 
+
 class MigrationStrategy:
     """
     支持 SQLite → PostgreSQL 的遷移
     """
-    
+
     SQLALCHEMY_URLS = {
         "sqlite": "sqlite:///user_data.db",
         "postgresql": "postgresql://user:password@localhost/kkgroup",
     }
-    
+
     @staticmethod
     def generate_sqlalchemy_models(headers: list):
         """
         根據表頭生成 SQLAlchemy ORM 模型
-        
+
         這樣可以無痛支持 SQLite 和 PostgreSQL 切換
         """
         return f"""
@@ -245,15 +290,15 @@ db = SQLAlchemy()
 
 class User(db.Model):
     __tablename__ = 'users'
-    
+
     user_id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # 自動生成的欄位
 {chr(10).join([f'    {header} = db.Column({infer_column_type(header)})'
                for header in headers if header not in ['user_id', 'created_at', 'updated_at']])}
-    
+
     def to_dict(self):
         return {{
             'user_id': self.user_id,
@@ -267,18 +312,18 @@ class User(db.Model):
 # ============================================================
 
 RECOMMENDED_SHEET_HEADERS = [
-    "user_id",           # Discord user ID
-    "nickname",          # 玩家名
-    "level",             # 等級
-    "xp",                # 經驗值
-    "kkcoin",            # 貨幣
-    "hp",                # 血量
-    "stamina",           # 耐力
-    "title",             # 頭銜
-    "role",              # 職位/身份
-    "status",            # 狀態（online/offline/dnd）
-    "joined_at",         # 加入時間
-    "last_seen",         # 上次見面時間
+    "user_id",  # Discord user ID
+    "nickname",  # 玩家名
+    "level",  # 等級
+    "xp",  # 經驗值
+    "kkcoin",  # 貨幣
+    "hp",  # 血量
+    "stamina",  # 耐力
+    "title",  # 頭銜
+    "role",  # 職位/身份
+    "status",  # 狀態（online/offline/dnd）
+    "joined_at",  # 加入時間
+    "last_seen",  # 上次見面時間
     # 可以繼續添加更多欄位...
 ]
 

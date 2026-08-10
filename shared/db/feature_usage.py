@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import sqlite3
 from collections import defaultdict
@@ -109,11 +108,17 @@ def _component_type_name(component_type: Any) -> str:
         return str(component_type).lower()
 
 
-def extract_interaction_event(interaction: discord.Interaction, bot_name: str) -> Optional[InteractionEvent]:
+def extract_interaction_event(
+    interaction: discord.Interaction, bot_name: str
+) -> Optional[InteractionEvent]:
     data = interaction.data or {}
 
     if interaction.type == discord.InteractionType.application_command:
-        raw_name = getattr(interaction.command, "qualified_name", None) or data.get("name") or "unknown"
+        raw_name = (
+            getattr(interaction.command, "qualified_name", None)
+            or data.get("name")
+            or "unknown"
+        )
         event_type = "slash_command"
         feature_key = normalize_feature_name(raw_name, event_type)
         source_name = getattr(interaction.command, "cog_name", None) or "unknown"
@@ -122,14 +127,20 @@ def extract_interaction_event(interaction: discord.Interaction, bot_name: str) -
         raw_name = data.get("custom_id") or "unknown"
         event_type = "component"
         feature_key = normalize_feature_name(raw_name, event_type)
-        source_name = interaction.message.author.name if interaction.message and interaction.message.author else "unknown"
+        source_name = (
+            interaction.message.author.name
+            if interaction.message and interaction.message.author
+            else "unknown"
+        )
         component_type = _component_type_name(data.get("component_type"))
     else:
         return None
 
     metadata = {
         "message_id": str(interaction.message.id) if interaction.message else "",
-        "command_name": getattr(interaction.command, "qualified_name", "") if getattr(interaction, "command", None) else "",
+        "command_name": getattr(interaction.command, "qualified_name", "")
+        if getattr(interaction, "command", None)
+        else "",
     }
 
     return InteractionEvent(
@@ -177,21 +188,27 @@ def record_feature_usage(event: InteractionEvent) -> None:
         logger.warning("⚠️ 記錄功能使用量失敗: %s", exc)
 
 
-async def track_discord_interaction(interaction: discord.Interaction, bot_name: str) -> None:
+async def track_discord_interaction(
+    interaction: discord.Interaction, bot_name: str
+) -> None:
     event = extract_interaction_event(interaction, bot_name)
     if not event:
         return
     record_feature_usage(event)
 
 
-def summarize_feature_usage(days: int = 30, cold_threshold: int = 2, recent_days: int = 7) -> Dict[str, Any]:
+def summarize_feature_usage(
+    days: int = 30, cold_threshold: int = 2, recent_days: int = 7
+) -> Dict[str, Any]:
     ensure_feature_usage_db()
     conn = sqlite3.connect(FEATURE_USAGE_DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     start_at = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-    recent_start = (datetime.utcnow() - timedelta(days=recent_days)).strftime("%Y-%m-%d %H:%M:%S")
+    recent_start = (datetime.utcnow() - timedelta(days=recent_days)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
     cursor.execute(
         """
@@ -253,8 +270,12 @@ def summarize_feature_usage(days: int = 30, cold_threshold: int = 2, recent_days
     }
 
 
-def build_usage_markdown(days: int = 30, cold_threshold: int = 2, recent_days: int = 7) -> str:
-    summary = summarize_feature_usage(days=days, cold_threshold=cold_threshold, recent_days=recent_days)
+def build_usage_markdown(
+    days: int = 30, cold_threshold: int = 2, recent_days: int = 7
+) -> str:
+    summary = summarize_feature_usage(
+        days=days, cold_threshold=cold_threshold, recent_days=recent_days
+    )
 
     lines = [
         "# Feature Usage Report",
@@ -292,5 +313,12 @@ def build_usage_markdown(days: int = 30, cold_threshold: int = 2, recent_days: i
     else:
         lines.append("- No cold features in current window")
 
-    lines.extend(["", "## Notes", "- Buttons and selects are tracked through global Discord interactions.", "- Dynamic custom_id values are normalized to reduce fragmentation."])
+    lines.extend(
+        [
+            "",
+            "## Notes",
+            "- Buttons and selects are tracked through global Discord interactions.",
+            "- Dynamic custom_id values are normalized to reduce fragmentation.",
+        ]
+    )
     return "\n".join(lines) + "\n"

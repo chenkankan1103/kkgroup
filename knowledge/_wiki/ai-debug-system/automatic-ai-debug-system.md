@@ -90,8 +90,8 @@ analysis_prompt = f"""
 
 # 3. 調用 NVIDIA AI
 response = await client.call_api(
-    messages, 
-    model="deepseek-ai/deepseek-v4-pro", 
+    messages,
+    model="deepseek-ai/deepseek-v4-pro",
     max_tokens=2000
 )
 ```

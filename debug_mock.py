@@ -1,5 +1,5 @@
-import asyncio
 import sys
+
 sys.path.insert(0, r'C:\Users\88697\Desktop\kkgroup')
 from tests.conftest import MockBahamutAPI
 from datetime import datetime
@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 TW_TZ = ZoneInfo('Asia/Taipei')
 mock_api = MockBahamutAPI()
+
 
 class TimeFreezer:
     def __init__(self):
@@ -24,9 +25,14 @@ class TimeFreezer:
 
         # 建立 FrozenDatetime 實例
         self.frozen_dt = FrozenDatetime(
-            frozen_dt.year, frozen_dt.month, frozen_dt.day,
-            frozen_dt.hour, frozen_dt.minute, frozen_dt.second,
-            frozen_dt.microsecond, frozen_dt.tzinfo
+            frozen_dt.year,
+            frozen_dt.month,
+            frozen_dt.day,
+            frozen_dt.hour,
+            frozen_dt.minute,
+            frozen_dt.second,
+            frozen_dt.microsecond,
+            frozen_dt.tzinfo,
         )
         self._FrozenDatetime = FrozenDatetime
 
@@ -35,14 +41,17 @@ class TimeFreezer:
         self.patches.append(p1)
 
         import cogs.ui.push_core as pc
+
         p2 = patch.object(pc, 'datetime', FrozenDatetime)
         p2.start()
         self.patches.append(p2)
         import cogs.ui.anime_tracker as at
+
         p3 = patch.object(at, 'datetime', FrozenDatetime)
         p3.start()
         self.patches.append(p3)
         import cogs.ui.schedule_tracker as st
+
         p4 = patch.object(st, 'datetime', FrozenDatetime)
         p4.start()
         self.patches.append(p4)
@@ -51,6 +60,7 @@ class TimeFreezer:
         for p in self.patches:
             p.stop()
         self.patches.clear()
+
 
 freezer = TimeFreezer()
 target_time = datetime(2026, 8, 10, 1, 0, 0, tzinfo=TW_TZ)

@@ -60,7 +60,7 @@ on:
      uses: actions/setup-python@v4
      with:
        python-version: '3.11'
-   
+
    - name: 設定 Python 路徑
      run: |
        echo "PYTHONPATH=$GITHUB_WORKSPACE:$PYTHONPATH" >> $GITHUB_ENV

@@ -1,6 +1,6 @@
-import discord
 from discord.ext import commands
 from db_adapter import set_user, delete_user, get_user
+
 
 class MemberSync(commands.Cog):
     def __init__(self, bot):
@@ -21,6 +21,7 @@ class MemberSync(commands.Cog):
     async def on_member_remove(self, member):
         delete_user(member.id)
         print(f"❌ 已從資料庫刪除用戶 {member}")
+
 
 async def setup(bot):
     await bot.add_cog(MemberSync(bot))

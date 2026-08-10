@@ -11,6 +11,7 @@ try:
     import chromadb
     from chromadb.config import Settings
     from chromadb.utils import embedding_functions
+
     _CHROMADB_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _CHROMADB_AVAILABLE = False
@@ -68,14 +69,14 @@ class ChromaKnowledgeIndex:
                 self._client = chromadb.HttpClient(
                     host=self.host,
                     port=self.port,
-                    settings=Settings(anonymized_telemetry=False)
+                    settings=Settings(anonymized_telemetry=False),
                 )
             else:
                 # Local 模式：直接存取本地持久化目錄
                 self.persist_dir.mkdir(parents=True, exist_ok=True)
                 self._client = chromadb.PersistentClient(
                     path=str(self.persist_dir),
-                    settings=Settings(anonymized_telemetry=False)
+                    settings=Settings(anonymized_telemetry=False),
                 )
         return self._client
 
@@ -85,8 +86,7 @@ class ChromaKnowledgeIndex:
             if self.use_server:
                 # Server 模式：不需要嵌入函數，server 端已配置
                 self._collection = client.get_or_create_collection(
-                    name=self.collection_name,
-                    metadata={"hnsw:space": "cosine"}
+                    name=self.collection_name, metadata={"hnsw:space": "cosine"}
                 )
             else:
                 # Local 模式：需要嵌入函數
@@ -96,7 +96,7 @@ class ChromaKnowledgeIndex:
                 self._collection = client.get_or_create_collection(
                     name=self.collection_name,
                     embedding_function=ef,
-                    metadata={"hnsw:space": "cosine"}
+                    metadata={"hnsw:space": "cosine"},
                 )
         return self._collection
 
@@ -119,7 +119,7 @@ class ChromaKnowledgeIndex:
                 query_texts=[query],
                 n_results=limit,
                 where=where,
-                include=["documents", "metadatas", "distances"]
+                include=["documents", "metadatas", "distances"],
             )
         except Exception as e:
             logger.warning(f"Chroma semantic_search 失敗: {e}")
@@ -149,8 +149,12 @@ class ChromaKnowledgeIndex:
         category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """混合搜尋：語意 + 關鍵字，去重並加權排序。"""
-        semantic_items = self.semantic_search(query, limit=max(limit * 2, 10), category=category)
-        keyword_items = self.keyword_search(query, limit=max(limit * 2, 10), category=category)
+        semantic_items = self.semantic_search(
+            query, limit=max(limit * 2, 10), category=category
+        )
+        keyword_items = self.keyword_search(
+            query, limit=max(limit * 2, 10), category=category
+        )
 
         merged: Dict[str, Dict[str, Any]] = {}
 
@@ -178,7 +182,7 @@ class ChromaKnowledgeIndex:
         ranked = sorted(
             merged.values(),
             key=lambda x: (float(x.get("score", 0.0)), x.get("updated_at", "")),
-            reverse=True
+            reverse=True,
         )
         return ranked[:limit]
 
@@ -189,8 +193,12 @@ class ChromaKnowledgeIndex:
             return formatted
 
         docs = results["documents"][0]
-        metadatas = results["metadatas"][0] if results.get("metadatas") else [{} for _ in docs]
-        distances = results["distances"][0] if results.get("distances") else [1.0 for _ in docs]
+        metadatas = (
+            results["metadatas"][0] if results.get("metadatas") else [{} for _ in docs]
+        )
+        distances = (
+            results["distances"][0] if results.get("distances") else [1.0 for _ in docs]
+        )
 
         for doc, metadata, distance in zip(docs, metadatas, distances):
             similarity = 1.0 - distance

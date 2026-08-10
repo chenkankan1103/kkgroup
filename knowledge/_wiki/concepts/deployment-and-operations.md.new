@@ -101,15 +101,15 @@ import time
 
 def update_and_restart():
     # ?‡æ??°å?æ¡ˆç›®??    os.chdir('/home/ubuntu/kkgroup')
-    
+
     # Git ?‰å??€?°ç?å¼ç¢¼
     subprocess.run(['git', 'pull', 'origin', 'main'], check=True)
-    
+
     # ?å??€?‰æ???    services = ['bot.service', 'shopbot.service', 'kkgroup-api.service']
     for service in services:
         subprocess.run(['sudo', 'systemctl', 'restart', service], check=True)
         time.sleep(5)  # ç­‰å??å??Ÿå?
-    
+
     print("?¨ç½²å®Œæ?")
 
 if __name__ == "__main__":
@@ -183,11 +183,11 @@ import os
 def update_tunnel_url():
     # ?²å??¶å??§é? URL
     tunnel_url = "https://xxxx.trycloudflare.com"
-    
+
     # ?´æ–°?¬åœ°?ç½®
     with open('locker_refresh_urls.json', 'w') as f:
         json.dump({"tunnel_url": tunnel_url}, f)
-    
+
     # ?šçŸ¥ Discord
     webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
     if webhook_url:
@@ -205,7 +205,7 @@ if __name__ == "__main__":
 server {
     listen 80;
     server_name localhost;
-    
+
     # API ?å?ä»??
     location /api/ {
         proxy_pass http://127.0.0.1:5000;
@@ -214,14 +214,14 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    
+
     # ?œæ?æª”æ??å?
     location /static/ {
         alias /home/ubuntu/kkgroup/web/portal/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
-    
+
     # ä¸»è??é¢
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -249,12 +249,12 @@ class SystemMonitor:
             'disk_usage': psutil.disk_usage('/').percent,
             'uptime': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
-    
+
     def get_service_status(self):
         services = ['bot.service', 'shopbot.service', 'kkgroup-api.service']
         status = {}
         for service in services:
-            # æª¢æŸ¥?å??€??            result = subprocess.run(['systemctl', 'is-active', service], 
+            # æª¢æŸ¥?å??€??            result = subprocess.run(['systemctl', 'is-active', service],
                                   capture_output=True, text=True)
             status[service] = result.stdout.strip()
         return status
@@ -287,14 +287,14 @@ def send_error_notification(error_msg: str, context: str = ""):
     webhook_url = os.getenv('ERROR_WEBHOOK_URL')
     if not webhook_url:
         return
-    
+
     embed = {
         "title": "?š¨ KKGroup ?¯èª¤?šçŸ¥",
         "description": f"**?¯èª¤:** {error_msg}\n**ä¸Šä???** {context}",
         "color": 0xFF0000,
         "timestamp": datetime.now().isoformat()
     }
-    
+
     requests.post(webhook_url, json={"embeds": [embed]})
 
 # ä½¿ç”¨ç¯„ä?
@@ -318,27 +318,27 @@ import tarfile
 def create_backup():
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_dir = f"/home/ubuntu/backups/{timestamp}"
-    
+
     # å»ºç??™ä»½?®é?
     os.makedirs(backup_dir, exist_ok=True)
-    
+
     # ?™ä»½å°ˆæ?æª”æ?
     subprocess.run([
         'tar', '-czf', f'{backup_dir}/kkgroup.tar.gz',
         '-C', '/home/ubuntu', 'kkgroup'
     ], check=True)
-    
+
     # ?™ä»½è³‡æ?åº?    subprocess.run([
         'cp', '/home/ubuntu/kkgroup/data/database.db',
         f'{backup_dir}/database.db'
     ], check=True)
-    
+
     # æ¸…ç??Šå?ä»?(ä¿ç?30å¤?
     subprocess.run([
         'find', '/home/ubuntu/backups', '-type', 'd',
         '-mtime', '+30', '-exec', 'rm', '-rf', '{}', ';'
     ], check=True)
-    
+
     print(f"?™ä»½å®Œæ?: {backup_dir}")
 
 if __name__ == "__main__":
@@ -424,14 +424,14 @@ def monitor_resources():
         cpu = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory().percent
         disk = psutil.disk_usage('/').percent
-        
+
         if cpu > 80:
             send_alert(f"CPU ä½¿ç”¨?‡é?é«? {cpu}%")
         if memory > 80:
             send_alert(f"è¨˜æ†¶é«”ä½¿?¨ç??é?: {memory}%")
         if disk > 80:
             send_alert(f"ç£ç?ä½¿ç”¨?‡é?é«? {disk}%")
-        
+
         time.sleep(60)  # æ¯å??˜æª¢?¥ä?æ¬?```
 
 ### 2. ?å??ªå??å?
@@ -446,7 +446,7 @@ def health_check():
         'bot.service': 'http://localhost:8080/health',
         'kkgroup-api.service': 'http://localhost:5000/api/health'
     }
-    
+
     for service, health_url in services.items():
         try:
             response = requests.get(health_url, timeout=10)

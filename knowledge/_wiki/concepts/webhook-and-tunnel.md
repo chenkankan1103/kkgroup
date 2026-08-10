@@ -3,13 +3,13 @@
 ## 流程
 
 ```
-GitHub push 
-  → Cloudflare Tunnel (cloudflared) 
-  → Nginx (reverse proxy, port 80/443 → 5000) 
-  → Flask webhook (web/blueprints/webhook.py, port 5000) 
-  → 驗證簽名 
-  → git pull origin main 
-  → 重啟三個 Bot 服務 (bot, shopbot, uibot) 
+GitHub push
+  → Cloudflare Tunnel (cloudflared)
+  → Nginx (reverse proxy, port 80/443 → 5000)
+  → Flask webhook (web/blueprints/webhook.py, port 5000)
+  → 驗證簽名
+  → git pull origin main
+  → 重啟三個 Bot 服務 (bot, shopbot, uibot)
   → 發送 Discord 通知
 ```
 

@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # ─── 工具箱 ────────────────────────────────────────────────────────────────
 try:
     import agent_tools
+
     _TOOLS_AVAILABLE = True
 except ImportError:
     agent_tools = None  # type: ignore
@@ -50,31 +51,49 @@ try:
         initialize_memory_system,
     )
     from shared.db.chroma_knowledge_index import ChromaKnowledgeIndex
+
     _MEMORY_AVAILABLE = True
 except ImportError:
     _MEMORY_AVAILABLE = False
+
     def build_memory_context():
-        return {"system_instructions": "", "dialogue_history": "", "knowledge_context": "", "estimated_tokens": 0}
+        return {
+            "system_instructions": "",
+            "dialogue_history": "",
+            "knowledge_context": "",
+            "estimated_tokens": 0,
+        }
+
     class DialogueMemory:  # type: ignore
         @staticmethod
-        def add_dialogue(q, a, importance=0.5): pass
+        def add_dialogue(q, a, importance=0.5):
+            pass
+
     class KnowledgeBase:  # type: ignore
         @staticmethod
-        def search_knowledge(keyword, max_tokens=1000): return ""
+        def search_knowledge(keyword, max_tokens=1000):
+            return ""
+
         @staticmethod
-        def get_recent_items(limit=20, category=None): return []
+        def get_recent_items(limit=20, category=None):
+            return []
+
     class ChromaKnowledgeIndex:  # type: ignore
-        def hybrid_search(self, query, limit=5, category=None): return []
-    def initialize_memory_system(): pass
+        def hybrid_search(self, query, limit=5, category=None):
+            return []
+
+    def initialize_memory_system():
+        pass
+
 
 # ─── 環境變數 ────────────────────────────────────────────────────────────────
-GEMINI_KEY    = os.getenv("AI_API_KEY")
+GEMINI_KEY = os.getenv("AI_API_KEY")
 GEMINI_KEY_BK = os.getenv("AI_API_KEY_BACKUP")
-GEMINI_MODEL  = os.getenv("AI_API_MODEL", "gemini-2.0-flash")
-GROQ_KEY      = os.getenv("GROQ_API_KEY")
-GROQ_URL      = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
-GROQ_MODEL    = os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile")
-MAX_HISTORY   = 10  # 每用戶保留的最大對話輪數
+GEMINI_MODEL = os.getenv("AI_API_MODEL", "gemini-2.0-flash")
+GROQ_KEY = os.getenv("GROQ_API_KEY")
+GROQ_URL = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+GROQ_MODEL = os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile")
+MAX_HISTORY = 10  # 每用戶保留的最大對話輪數
 AI_INTERACTIVE_TIMEOUT_SEC = int(os.getenv("AI_INTERACTIVE_TIMEOUT", "45"))
 AI_GEMINI_TIMEOUT_SEC = int(os.getenv("AI_GEMINI_TIMEOUT", "12"))
 AI_GROQ_TIMEOUT_SEC = int(os.getenv("AI_GROQ_TIMEOUT", "10"))
@@ -89,9 +108,10 @@ AI_LITELLM_MAX_RETRIES = int(os.getenv("AI_LITELLM_MAX_RETRIES", "1"))
 # 1. LLMClient — 低層 API 呼叫（Gemini + Groq）
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class LLMClient:
     """統一的 LLM API 客戶端 (使用 LiteLLM)。
-    
+
     - gemini()：呼叫 Gemini generateContent，支援原生 Function Calling
     - groq()  ：呼叫 Groq（OpenAI 相容格式），純文字，無工具
     - 內建自動降級、重試、速率限制保護
@@ -100,6 +120,7 @@ class LLMClient:
     def __init__(self):
         try:
             from .ai_client_liteLLM import LiteLLMClient
+
             self._litellm_client = LiteLLMClient()
             self._use_litellm = True
             logger.info("✅ LLMClient 使用 LiteLLM")
@@ -135,18 +156,26 @@ class LLMClient:
         label: str = "Gemini",
     ) -> Optional[Dict]:
         """呼叫 Gemini generateContent，回傳第一個 candidate 或 None。
-        
+
         caller 透過 candidate["content"]["parts"] 解析文字或 functionCall。
         """
-        use_litellm = self._use_litellm and not tools_spec and all(
-            all("text" in part for part in content.get("parts", []))
-            for content in contents
+        use_litellm = (
+            self._use_litellm
+            and not tools_spec
+            and all(
+                all("text" in part for part in content.get("parts", []))
+                for content in contents
+            )
         )
 
         if use_litellm:
-            return await self._gemini_with_litellm(api_key, model, system, contents, tools_spec, label)
+            return await self._gemini_with_litellm(
+                api_key, model, system, contents, tools_spec, label
+            )
         else:
-            return await self._gemini_traditional(api_key, model, system, contents, tools_spec, label)
+            return await self._gemini_traditional(
+                api_key, model, system, contents, tools_spec, label
+            )
 
     async def _gemini_with_litellm(
         self,
@@ -160,58 +189,66 @@ class LLMClient:
         """使用 LiteLLM 呼叫 Gemini"""
         # 轉換格式
         messages = [{"role": "system", "content": system}]
-        
+
         for content in contents:
             role = content["role"]
             parts = content.get("parts", [])
             if parts and "text" in parts[0]:
-                messages.append({
-                    "role": "assistant" if role == "model" else "user",
-                    "content": parts[0]["text"],
-                })
+                messages.append(
+                    {
+                        "role": "assistant" if role == "model" else "user",
+                        "content": parts[0]["text"],
+                    }
+                )
             elif parts and "functionCall" in parts[0]:
                 # 處理工具調用
                 fc = parts[0]["functionCall"]
-                messages.append({
-                    "role": "assistant", 
-                    "content": f"調用工具: {fc['name']}({fc.get('args', {})})"
-                })
-        
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": f"調用工具: {fc['name']}({fc.get('args', {})})",
+                    }
+                )
+
         response = await self._litellm_client.acomplete(
             messages,
             tools_spec,
             timeout=AI_LITELLM_TIMEOUT_SEC,
             max_retries=AI_LITELLM_MAX_RETRIES,
         )
-        
+
         if response:
             tool_calls = response.get("tool_calls") or []
             if tool_calls:
                 first_call = tool_calls[0]
                 function_data = getattr(first_call, "function", None)
-                arguments = getattr(function_data, "arguments", "{}") if function_data else "{}"
+                arguments = (
+                    getattr(function_data, "arguments", "{}") if function_data else "{}"
+                )
                 try:
-                    parsed_args = json.loads(arguments) if isinstance(arguments, str) else (arguments or {})
+                    parsed_args = (
+                        json.loads(arguments)
+                        if isinstance(arguments, str)
+                        else (arguments or {})
+                    )
                 except json.JSONDecodeError:
                     parsed_args = {}
 
                 return {
                     "content": {
-                        "parts": [{
-                            "functionCall": {
-                                "name": getattr(function_data, "name", ""),
-                                "args": parsed_args,
+                        "parts": [
+                            {
+                                "functionCall": {
+                                    "name": getattr(function_data, "name", ""),
+                                    "args": parsed_args,
+                                }
                             }
-                        }]
+                        ]
                     }
                 }
 
-            return {
-                "content": {
-                    "parts": [{"text": response["content"]}]
-                }
-            }
-        
+            return {"content": {"parts": [{"text": response["content"]}]}}
+
         return None
 
     async def _gemini_traditional(
@@ -244,7 +281,9 @@ class LLMClient:
             payload["tools"] = tools_spec
 
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_GEMINI_TIMEOUT_SEC)) as s:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=AI_GEMINI_TIMEOUT_SEC)
+            ) as s:
                 async with s.post(
                     url, json=payload, headers={"Content-Type": "application/json"}
                 ) as r:
@@ -314,7 +353,9 @@ class LLMClient:
             "Content-Type": "application/json",
         }
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_GROQ_TIMEOUT_SEC)) as s:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=AI_GROQ_TIMEOUT_SEC)
+            ) as s:
                 async with s.post(GROQ_URL, json=payload, headers=headers) as r:
                     if r.status == 429:
                         self._cool("Groq")
@@ -337,6 +378,7 @@ class LLMClient:
 # 2. AgentSession — 每用戶 Session 記憶（短期）
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class AgentSession:
     """管理每個用戶的短期 Session 記憶（最近 N 輪，滑動窗口）。"""
 
@@ -346,10 +388,10 @@ class AgentSession:
 
     def add(self, user_id: int, user_msg: str, bot_msg: str):
         h = self._history.setdefault(user_id, [])
-        h.append({"role": "user",  "parts": [{"text": user_msg}]})
+        h.append({"role": "user", "parts": [{"text": user_msg}]})
         h.append({"role": "model", "parts": [{"text": bot_msg}]})
         if len(h) > self.max_turns * 2:
-            self._history[user_id] = h[-(self.max_turns * 2):]
+            self._history[user_id] = h[-(self.max_turns * 2) :]
 
     def build_contents(self, user_id: int, new_msg: str) -> List[Dict]:
         """組合歷史對話 + 新訊息，返回 Gemini contents 格式。"""
@@ -381,11 +423,36 @@ _SYSTEM_PROMPT = """\
 _MAX_TOOL_ROUNDS = int(os.getenv("AI_MAX_TOOL_ROUNDS", "2"))
 
 _TOOL_KEYWORDS = [
-    "餘額", "KK幣", "kkcoin", "排行", "狀態", "裝備", "配裝",
-    "查詢", "查一下", "查", "找", "搜尋", "爬取", "抓取",
-    "搜索", "search", "crawl", "fetch", "查找",
-    "git", "推送", "日誌", "錯誤", "error",
-    "代碼", "程式", "bot", "Bot", "服務", "service",
+    "餘額",
+    "KK幣",
+    "kkcoin",
+    "排行",
+    "狀態",
+    "裝備",
+    "配裝",
+    "查詢",
+    "查一下",
+    "查",
+    "找",
+    "搜尋",
+    "爬取",
+    "抓取",
+    "搜索",
+    "search",
+    "crawl",
+    "fetch",
+    "查找",
+    "git",
+    "推送",
+    "日誌",
+    "錯誤",
+    "error",
+    "代碼",
+    "程式",
+    "bot",
+    "Bot",
+    "服務",
+    "service",
 ]
 
 
@@ -394,12 +461,12 @@ class KKBotAgent:
 
     Agentic Loop（官方 Sequential Workflow）：
       Think → Act（工具）→ Observe（結果）→ Think → ... → Final Reply
-    
+
     API 降級：Gemini（主 Key → 備用 Key）→ Groq（純文字，無工具）
     """
 
     def __init__(self, llm: LLMClient, session: AgentSession):
-        self.llm     = llm
+        self.llm = llm
         self.session = session
         self._tools_spec: Optional[List[Dict]] = (
             agent_tools.get_gemini_tools_spec() if _TOOLS_AVAILABLE else None
@@ -440,7 +507,9 @@ class KKBotAgent:
             prompt_parts.append(f"=== 與目前問題最相關的知識 ===\n{related_knowledge}")
 
         if semantic_lines:
-            prompt_parts.append("=== 語意檢索命中的知識 ===\n" + "\n".join(semantic_lines))
+            prompt_parts.append(
+                "=== 語意檢索命中的知識 ===\n" + "\n".join(semantic_lines)
+            )
 
         if vm_lines:
             prompt_parts.append("=== 最近 VM 掃描摘要 ===\n" + "\n".join(vm_lines))
@@ -454,7 +523,9 @@ class KKBotAgent:
         return "\n\n".join(part for part in prompt_parts if part)
 
     @staticmethod
-    def _contents_to_messages(system_prompt: str, contents: List[Dict]) -> List[Dict[str, str]]:
+    def _contents_to_messages(
+        system_prompt: str, contents: List[Dict]
+    ) -> List[Dict[str, str]]:
         messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
         for content in contents:
             role = content.get("role", "user")
@@ -465,17 +536,19 @@ class KKBotAgent:
                     break
             if not text:
                 continue
-            messages.append({
-                "role": "assistant" if role == "model" else "user",
-                "content": text,
-            })
+            messages.append(
+                {
+                    "role": "assistant" if role == "model" else "user",
+                    "content": text,
+                }
+            )
         return messages
 
     async def run(self, user_id: int, user_msg: str) -> str:
         """主入口：給定用戶 ID 和訊息，回傳 AI 回應文字。"""
-        contents   = self.session.build_contents(user_id, user_msg)
+        contents = self.session.build_contents(user_id, user_msg)
         needs_tools = self._needs_tools(user_msg)
-        tools_spec  = self._tools_spec if (needs_tools and _TOOLS_AVAILABLE) else None
+        tools_spec = self._tools_spec if (needs_tools and _TOOLS_AVAILABLE) else None
         system_prompt = self._build_system_prompt(user_msg)
 
         if not needs_tools:
@@ -494,22 +567,26 @@ class KKBotAgent:
 
         # ── 嘗試 Gemini（主要 Key → 備用 Key）────────────────────────────
         for key, label in [
-            (GEMINI_KEY,    "Gemini (主)"),
+            (GEMINI_KEY, "Gemini (主)"),
             (GEMINI_KEY_BK, "Gemini (備)"),
         ]:
             if not key:
                 continue
-            result = await self._gemini_loop(key, label, system_prompt, contents, tools_spec, user_id)
+            result = await self._gemini_loop(
+                key, label, system_prompt, contents, tools_spec, user_id
+            )
             if result:
                 self._save(user_id, user_msg, result)
                 return result
 
         # ── Gemini 全部失敗 → 降級至 Groq（無工具）─────────────────────
         logger.warning("⚠️ Gemini 全部不可用，降級至 Groq")
-        groq_result = await self.llm.groq([
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_msg},
-        ])
+        groq_result = await self.llm.groq(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ]
+        )
         if groq_result:
             self._save(user_id, user_msg, groq_result)
             return groq_result
@@ -531,7 +608,10 @@ class KKBotAgent:
         for _round in range(_MAX_TOOL_ROUNDS + 1):
             # 最後一輪不帶工具，強制 LLM 輸出文字
             candidate = await self.llm.gemini(
-                api_key, GEMINI_MODEL, system_prompt, contents,
+                api_key,
+                GEMINI_MODEL,
+                system_prompt,
+                contents,
                 tools_spec=(tools_spec if _round < _MAX_TOOL_ROUNDS else None),
                 label=label,
             )
@@ -551,7 +631,7 @@ class KKBotAgent:
                 logger.warning(f"⚠️ {label} 未知 parts 類型: {list(parts[0].keys())}")
                 return None
 
-            fc        = parts[0]["functionCall"]
+            fc = parts[0]["functionCall"]
             tool_name = fc.get("name", "")
             tool_args = fc.get("args", {})
 
@@ -561,13 +641,19 @@ class KKBotAgent:
 
             # 官方 Function Calling 格式：注入 model 的工具呼叫 + user 的工具結果
             contents.append({"role": "model", "parts": [{"functionCall": fc}]})
-            contents.append({
-                "role": "user",
-                "parts": [{"functionResponse": {
-                    "name": tool_name,
-                    "response": {"result": str(tool_result)},
-                }}],
-            })
+            contents.append(
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                "name": tool_name,
+                                "response": {"result": str(tool_result)},
+                            }
+                        }
+                    ],
+                }
+            )
 
         logger.warning(f"⚠️ {label} 達到工具呼叫上限（{_MAX_TOOL_ROUNDS} 輪）")
         return None
@@ -608,9 +694,9 @@ class AIResponse(commands.Cog):
     """處理 @tag 訊息，路由至 KKBotAgent。"""
 
     def __init__(self, bot: commands.Bot):
-        self.bot    = bot
-        _llm        = LLMClient()
-        _session    = AgentSession()
+        self.bot = bot
+        _llm = LLMClient()
+        _session = AgentSession()
         self._agent = KKBotAgent(_llm, _session)
         try:
             initialize_memory_system()

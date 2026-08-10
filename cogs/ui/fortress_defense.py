@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 */
+# -*- coding: utf-8 */
 """
 KK 園區對抗刑警大隊 - Discord Cog
 玩家透過按鈕參與塔防遊戲，對抗 Google Trends 前來執法的刑警大隊
@@ -12,21 +12,23 @@ import json
 import os
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional
 
 from shared.utils.view_registry import PersistentViewBase
 from shared.utils import fortress_system as fs
-from shared.db.db_adapter import (
-    get_user_field, set_user_field, add_user_field, get_all_users
-)
+from shared.db.db_adapter import get_user_field, set_user_field, add_user_field
 
 log = logging.getLogger("fortress_defense")
 TW_TZ = ZoneInfo("Asia/Taipei")
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
-FORTRESS_COMMAND_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "fortress_command.json")
+FORTRESS_COMMAND_FILE = os.path.join(
+    os.path.dirname(__file__), "..", "..", "data", "fortress_command.json"
+)
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
 FORTRESS_CHANNEL_ID_DEFAULT = 1505861352215019570
 FORTRESS_ALLOWED_HOURS = {8, 11, 14, 20, 22}
@@ -44,26 +46,79 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
         "path_tile": "🟫",
         "ground_tile": "🟩",
         "path_coords": [
-            (0, 0), (0, 1), (0, 2), (0, 3),
-            (1, 3), (2, 3),
-            (2, 2), (2, 1), (2, 0),
-            (3, 0), (4, 0),
-            (4, 1), (4, 2), (4, 3), (4, 4), (4, 5),
-            (3, 5), (2, 5), (1, 5),
-            (1, 6), (1, 7), (1, 8), (1, 9), (1, 10),
-            (2, 10), (3, 10), (4, 10), (5, 10),
-            (5, 11), (5, 12), (5, 13), (5, 14), (5, 15), (5, 16),
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (1, 3),
+            (2, 3),
+            (2, 2),
+            (2, 1),
+            (2, 0),
+            (3, 0),
+            (4, 0),
+            (4, 1),
+            (4, 2),
+            (4, 3),
+            (4, 4),
+            (4, 5),
+            (3, 5),
+            (2, 5),
+            (1, 5),
+            (1, 6),
+            (1, 7),
+            (1, 8),
+            (1, 9),
+            (1, 10),
+            (2, 10),
+            (3, 10),
+            (4, 10),
+            (5, 10),
+            (5, 11),
+            (5, 12),
+            (5, 13),
+            (5, 14),
+            (5, 15),
+            (5, 16),
         ],
         "fort_coord": (5, 17),
         "tower_slots": {
-            "north_gate": {"label": "北門入口", "desc": "開局壓制第一波", "coord": (0, 4)},
-            "west_corner": {"label": "西側急彎", "desc": "專打轉角卡位", "coord": (1, 1)},
-            "mid_choke": {"label": "中央瓶頸", "desc": "火力最密集的彎道", "coord": (3, 2)},
-            "inner_curve": {"label": "內圈彎道", "desc": "攔截中段推進", "coord": (2, 5)},
-            "east_bridge": {"label": "東側橋頭", "desc": "守住後段長線", "coord": (3, 8)},
+            "north_gate": {
+                "label": "北門入口",
+                "desc": "開局壓制第一波",
+                "coord": (0, 4),
+            },
+            "west_corner": {
+                "label": "西側急彎",
+                "desc": "專打轉角卡位",
+                "coord": (1, 1),
+            },
+            "mid_choke": {
+                "label": "中央瓶頸",
+                "desc": "火力最密集的彎道",
+                "coord": (3, 2),
+            },
+            "inner_curve": {
+                "label": "內圈彎道",
+                "desc": "攔截中段推進",
+                "coord": (2, 5),
+            },
+            "east_bridge": {
+                "label": "東側橋頭",
+                "desc": "守住後段長線",
+                "coord": (3, 8),
+            },
             "last_stand": {"label": "園區前哨", "desc": "最後防線", "coord": (4, 16)},
-            "new_tower_1": {"label": "東側高地", "desc": "俯射東路直線", "coord": (0, 7)},
-            "new_tower_2": {"label": "中央要塞", "desc": "覆蓋核心路段", "coord": (3, 10)},
+            "new_tower_1": {
+                "label": "東側高地",
+                "desc": "俯射東路直線",
+                "coord": (0, 7),
+            },
+            "new_tower_2": {
+                "label": "中央要塞",
+                "desc": "覆蓋核心路段",
+                "coord": (3, 10),
+            },
         },
     },
     {
@@ -74,24 +129,70 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
         "path_tile": "🟨",
         "ground_tile": "🟧",
         "path_coords": [
-            (0, 0), (1, 0), (2, 0), (2, 1), (2, 2), (2, 3),
-            (1, 3), (0, 3), (0, 4), (0, 5), (0, 6),
-            (1, 6), (2, 6), (3, 6),
-            (3, 5), (3, 4), (3, 3),
-            (4, 3), (5, 3), (5, 4), (5, 5), (5, 6),
-            (5, 7), (4, 7), (3, 7), (2, 7),
-            (2, 8), (2, 9), (2, 10), (3, 10), (4, 10), (5, 10),
-            (5, 11), (5, 12), (5, 13), (5, 14), (5, 15), (5, 16),
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+            (2, 3),
+            (1, 3),
+            (0, 3),
+            (0, 4),
+            (0, 5),
+            (0, 6),
+            (1, 6),
+            (2, 6),
+            (3, 6),
+            (3, 5),
+            (3, 4),
+            (3, 3),
+            (4, 3),
+            (5, 3),
+            (5, 4),
+            (5, 5),
+            (5, 6),
+            (5, 7),
+            (4, 7),
+            (3, 7),
+            (2, 7),
+            (2, 8),
+            (2, 9),
+            (2, 10),
+            (3, 10),
+            (4, 10),
+            (5, 10),
+            (5, 11),
+            (5, 12),
+            (5, 13),
+            (5, 14),
+            (5, 15),
+            (5, 16),
         ],
         "fort_coord": (6, 17),
         "tower_slots": {
-            "sand_entry": {"label": "沙門入口", "desc": "截斷第一段直線", "coord": (1, 1)},
+            "sand_entry": {
+                "label": "沙門入口",
+                "desc": "截斷第一段直線",
+                "coord": (1, 1),
+            },
             "high_dune": {"label": "高坡沙丘", "desc": "俯射上路折返", "coord": (1, 4)},
             "sun_pit": {"label": "烈日坑道", "desc": "壓制中段會車點", "coord": (2, 5)},
-            "crosswind": {"label": "側風轉盤", "desc": "打擊右側長走廊", "coord": (4, 6)},
+            "crosswind": {
+                "label": "側風轉盤",
+                "desc": "打擊右側長走廊",
+                "coord": (4, 6),
+            },
             "oasis_wall": {"label": "綠洲外牆", "desc": "最後封口", "coord": (4, 16)},
-            "desert_tower_1": {"label": "沙丘頂點", "desc": "制高點打擊", "coord": (0, 5)},
-            "desert_tower_2": {"label": "綠洲守衛", "desc": "保護終點前線", "coord": (3, 10)},
+            "desert_tower_1": {
+                "label": "沙丘頂點",
+                "desc": "制高點打擊",
+                "coord": (0, 5),
+            },
+            "desert_tower_2": {
+                "label": "綠洲守衛",
+                "desc": "保護終點前線",
+                "coord": (3, 10),
+            },
         },
     },
     {
@@ -102,28 +203,82 @@ _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
         "path_tile": "🟫",
         "ground_tile": "🌲",
         "path_coords": [
-            (0, 0), (0, 1), (0, 2), (0, 3), (0, 4),
-            (1, 4), (2, 4),
-            (2, 3), (2, 2), (2, 1),
-            (3, 1), (4, 1),
-            (4, 2), (4, 3), (4, 4), (4, 5), (4, 6),
-            (3, 6), (2, 6), (1, 6),
-            (1, 7), (1, 8), (1, 9), (1, 10), (1, 11),
-            (2, 11), (3, 11), (4, 11), (5, 11),
-            (5, 12), (5, 13), (5, 14), (5, 15), (5, 16),
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (0, 4),
+            (1, 4),
+            (2, 4),
+            (2, 3),
+            (2, 2),
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            (4, 2),
+            (4, 3),
+            (4, 4),
+            (4, 5),
+            (4, 6),
+            (3, 6),
+            (2, 6),
+            (1, 6),
+            (1, 7),
+            (1, 8),
+            (1, 9),
+            (1, 10),
+            (1, 11),
+            (2, 11),
+            (3, 11),
+            (4, 11),
+            (5, 11),
+            (5, 12),
+            (5, 13),
+            (5, 14),
+            (5, 15),
+            (5, 16),
         ],
         "fort_coord": (6, 17),
         "tower_slots": {
-            "wood_gate": {"label": "林地前哨", "desc": "卡死最前段入口", "coord": (1, 2)},
-            "spiral_top": {"label": "回旋上緣", "desc": "覆蓋雙重折返", "coord": (1, 3)},
-            "spiral_core": {"label": "回旋核心", "desc": "地圖中心火力井", "coord": (3, 4)},
-            "fern_bridge": {"label": "蕨橋彎口", "desc": "攔截右路進軍", "coord": (2, 7)},
-            "fort_watch": {"label": "堡前瞭望", "desc": "園區前最後一塔", "coord": (4, 16)},
-            "forest_tower_1": {"label": "樹冠狙擊點", "desc": "高遠打擊位置", "coord": (0, 8)},
-            "forest_tower_2": {"label": "林間哨站", "desc": "中段支援火力", "coord": (3, 11)},
+            "wood_gate": {
+                "label": "林地前哨",
+                "desc": "卡死最前段入口",
+                "coord": (1, 2),
+            },
+            "spiral_top": {
+                "label": "回旋上緣",
+                "desc": "覆蓋雙重折返",
+                "coord": (1, 3),
+            },
+            "spiral_core": {
+                "label": "回旋核心",
+                "desc": "地圖中心火力井",
+                "coord": (3, 4),
+            },
+            "fern_bridge": {
+                "label": "蕨橋彎口",
+                "desc": "攔截右路進軍",
+                "coord": (2, 7),
+            },
+            "fort_watch": {
+                "label": "堡前瞭望",
+                "desc": "園區前最後一塔",
+                "coord": (4, 16),
+            },
+            "forest_tower_1": {
+                "label": "樹冠狙擊點",
+                "desc": "高遠打擊位置",
+                "coord": (0, 8),
+            },
+            "forest_tower_2": {
+                "label": "林間哨站",
+                "desc": "中段支援火力",
+                "coord": (3, 11),
+            },
         },
     },
 ]
+
 
 # 堡壘戰固定發送到新頻道，避免 VM 上舊 .env 覆蓋部署結果
 def _get_fortress_channel_id() -> int:
@@ -204,6 +359,7 @@ def _clear_settlement_message_state():
 
 # ─── 興趣標籤 Modal ────────────────────────────────────────
 
+
 class TagEditModal(Modal, title="🏷️ 設定你的興趣標籤"):
     tags_input = TextInput(
         label="選擇感興趣的話題（用逗號分隔）",
@@ -229,26 +385,31 @@ class TagEditModal(Modal, title="🏷️ 設定你的興趣標籤"):
 
         if not valid and raw:
             await interaction.response.send_message(
-                f"❌ 未識別到有效標籤。請從以下選擇：\n"
+                "❌ 未識別到有效標籤。請從以下選擇：\n"
                 + "、".join(fs.INTEREST_KEYWORDS.keys()),
-                ephemeral=True
+                ephemeral=True,
             )
             return
 
-        set_user_field(interaction.user.id, "user_interests", json.dumps(valid, ensure_ascii=False))
+        set_user_field(
+            interaction.user.id, "user_interests", json.dumps(valid, ensure_ascii=False)
+        )
         set_user_field(interaction.user.id, "trend_alert_enabled", 1)
 
         if valid:
             await interaction.response.send_message(
                 f"✅ 已設定興趣標籤：**{' / '.join(valid)}**\n"
                 "🏰 當你的標籤話題出現在熱搜時，對抗刑警大隊攻擊力將 **×2**！",
-                ephemeral=True
+                ephemeral=True,
             )
         else:
-            await interaction.response.send_message("✅ 已清空興趣標籤。", ephemeral=True)
+            await interaction.response.send_message(
+                "✅ 已清空興趣標籤。", ephemeral=True
+            )
 
 
 # ─── 戰鬥按鈕視圖 ─────────────────────────────────────────
+
 
 class FortressEnemyView(PersistentViewBase):
     """戰鬥 Embed 下方的互動按鈕"""
@@ -275,7 +436,9 @@ class FortressEnemyView(PersistentViewBase):
             user_interests=interests,
         )
         if not success:
-            await interaction.edit_original_response(content=f"❌ {msg}", embed=None, view=None)
+            await interaction.edit_original_response(
+                content=f"❌ {msg}", embed=None, view=None
+            )
             return
 
         # 更新全域傷害統計
@@ -294,7 +457,9 @@ class FortressEnemyView(PersistentViewBase):
             damage=damage,
             kkcoin_balance=balance_after,
         )
-        await interaction.edit_original_response(content=None, embed=action_embed, view=None)
+        await interaction.edit_original_response(
+            content=None, embed=action_embed, view=None
+        )
 
     @discord.ui.button(
         label=f"💎 強化防禦（{fs.PAID_COST_KKCOIN} KKCoin）",
@@ -326,7 +491,9 @@ class FortressEnemyView(PersistentViewBase):
         if not success:
             # 退款
             add_user_field(user_id, "kkcoin", fs.PAID_COST_KKCOIN)
-            await interaction.edit_original_response(content=f"❌ {msg}", embed=None, view=None)
+            await interaction.edit_original_response(
+                content=f"❌ {msg}", embed=None, view=None
+            )
             return
 
         add_user_field(user_id, "fortress_total_damage", damage)
@@ -344,7 +511,9 @@ class FortressEnemyView(PersistentViewBase):
             damage=damage,
             kkcoin_balance=balance_after,
         )
-        await interaction.edit_original_response(content=None, embed=action_embed, view=None)
+        await interaction.edit_original_response(
+            content=None, embed=action_embed, view=None
+        )
 
     @discord.ui.button(
         label="📊 查看戰況",
@@ -356,7 +525,9 @@ class FortressEnemyView(PersistentViewBase):
         await interaction.response.defer(ephemeral=True, thinking=True)
         state = fs.get_current_battle()
         if not state:
-            await interaction.edit_original_response(content="目前沒有進行中的戰鬥。", embed=None, view=None)
+            await interaction.edit_original_response(
+                content="目前沒有進行中的戰鬥。", embed=None, view=None
+            )
             return
         embed = build_status_embed(state, interaction.user.id)
         await interaction.edit_original_response(content=None, embed=embed, view=None)
@@ -390,7 +561,8 @@ class FortressEnemyView(PersistentViewBase):
         actions = state.defenders.get(user.id, []) if state else []
         current_wave_id = state.current_wave_id if state else ""
         free_count = sum(
-            1 for action in actions
+            1
+            for action in actions
             if action.action_type == "free" and action.wave_id == current_wave_id
         )
         paid_count = sum(1 for action in actions if action.action_type == "paid")
@@ -539,7 +711,9 @@ def _get_tower_label_for_user(state: Optional[fs.FortressState], user_id: int) -
     return _tower_slot_label(slot_id, state) if slot_id else ""
 
 
-def _find_slot_owner_name(state: fs.FortressState, slot_id: str, bot: discord.Client) -> str:
+def _find_slot_owner_name(
+    state: fs.FortressState, slot_id: str, bot: discord.Client
+) -> str:
     for owner_id, owned_slot in state.tower_slots.items():
         if owned_slot != slot_id:
             continue
@@ -564,7 +738,7 @@ def _build_td_map(state: fs.FortressState) -> str:
     for slot_id, meta in layout["tower_slots"].items():
         row, col = meta["coord"]
         grid[row][col] = "🗼" if slot_id in occupied_slots else "🔲"
-        
+
         # 如果砲台被被佔用，顯示攻擊範圍（2格範圍）
         if slot_id in occupied_slots:
             for dr in range(-2, 3):
@@ -573,8 +747,10 @@ def _build_td_map(state: fs.FortressState) -> str:
                     # 曼哈頓距離 <= 2
                     if abs(dr) + abs(dc) <= 2 and 0 <= nr < rows and 0 <= nc < cols:
                         # 不覆蓋路徑、堡壘、其他砲台
-                        if (grid[nr][nc] == layout["ground_tile"] or 
-                            grid[nr][nc] == "🔲"):
+                        if (
+                            grid[nr][nc] == layout["ground_tile"]
+                            or grid[nr][nc] == "🔲"
+                        ):
                             grid[nr][nc] = "⚡"
 
     # 畫堡壘
@@ -582,13 +758,15 @@ def _build_td_map(state: fs.FortressState) -> str:
     grid[fort_row][fort_col] = "🏯"
 
     # 畫刑警（根據實際位置）
-    alive = sorted([e for e in state.enemies if not e.defeated], key=lambda enemy: enemy.rank)
+    alive = sorted(
+        [e for e in state.enemies if not e.defeated], key=lambda enemy: enemy.rank
+    )
     occupied_path_cells = set()
-    
+
     for enemy in alive:
         icon = _rank_to_icon(enemy.rank)
         position = enemy.path_position
-        
+
         # 確保位置在有效範圍內
         if 0 <= position < len(layout["path_coords"]):
             row, col = layout["path_coords"][position]
@@ -604,16 +782,18 @@ def _build_td_map(state: fs.FortressState) -> str:
                                 break
                     if (row, col) not in occupied_path_cells:
                         break
-            
+
             grid[row][col] = icon
             occupied_path_cells.add((row, col))
-            
+
             # 添加推進效果（在刑警後面顯示移動軌跡）
             for trail_offset in range(1, min(4, len(layout["path_coords"]) - position)):
                 trail_pos = position - trail_offset
                 if trail_pos >= 0:
                     trail_row, trail_col = layout["path_coords"][trail_pos]
-                    if (trail_row, trail_col) not in occupied_path_cells and grid[trail_row][trail_col] == layout["path_tile"]:
+                    if (trail_row, trail_col) not in occupied_path_cells and grid[
+                        trail_row
+                    ][trail_col] == layout["path_tile"]:
                         # 根據刑警階級顯示不同軌跡
                         if enemy.rank <= 3:  # 局長和隊長
                             grid[trail_row][trail_col] = "🔥"
@@ -628,7 +808,14 @@ def _tower_summary_lines(state: fs.FortressState, bot: discord.Client) -> List[s
     layout = _get_map_layout(state)
     lines = []
     for slot_id, meta in layout["tower_slots"].items():
-        owner_id = next((uid for uid, owned_slot in state.tower_slots.items() if owned_slot == slot_id), None)
+        owner_id = next(
+            (
+                uid
+                for uid, owned_slot in state.tower_slots.items()
+                if owned_slot == slot_id
+            ),
+            None,
+        )
         if owner_id is None:
             lines.append(f"▫️ {_tower_slot_label(slot_id, state)}：空位")
             continue
@@ -655,7 +842,9 @@ def _build_enemy_status_field(state: fs.FortressState) -> str:
     current_length = len(header)
     remaining_count = 0
 
-    for enemy in sorted(state.enemies, key=lambda x: (x.defeated, x.wave_number, x.rank, x.name)):
+    for enemy in sorted(
+        state.enemies, key=lambda x: (x.defeated, x.wave_number, x.rank, x.name)
+    ):
         label = rank_labels.get(enemy.rank, f"🚨 警員#{enemy.rank}")
         if enemy.defeated:
             status = "擊退"
@@ -664,7 +853,9 @@ def _build_enemy_status_field(state: fs.FortressState) -> str:
         else:
             status = "作戰"
             path_len = len(_get_map_layout(state)["path_coords"])
-            progress_pct = int((enemy.path_position / path_len) * 100) if path_len > 0 else 0
+            progress_pct = (
+                int((enemy.path_position / path_len) * 100) if path_len > 0 else 0
+            )
             hp_display = f"{enemy.current_hp}/{enemy.max_hp}"
             progress_display = f"{progress_pct}%"
 
@@ -686,7 +877,9 @@ def _build_enemy_status_field(state: fs.FortressState) -> str:
     return "".join(lines)
 
 
-def _chunk_lines_for_embed(lines: List[str], chunk_size: int = 8, hard_limit: int = 1024) -> List[str]:
+def _chunk_lines_for_embed(
+    lines: List[str], chunk_size: int = 8, hard_limit: int = 1024
+) -> List[str]:
     chunks: List[str] = []
     current: List[str] = []
     current_length = 0
@@ -694,7 +887,9 @@ def _chunk_lines_for_embed(lines: List[str], chunk_size: int = 8, hard_limit: in
     for line in lines:
         normalized = _truncate_embed_line(line, min(hard_limit, 240))
         added_length = len(normalized) + (1 if current else 0)
-        if current and (len(current) >= chunk_size or current_length + added_length > hard_limit):
+        if current and (
+            len(current) >= chunk_size or current_length + added_length > hard_limit
+        ):
             chunks.append("\n".join(current))
             current = [normalized]
             current_length = len(normalized)
@@ -709,6 +904,7 @@ def _chunk_lines_for_embed(lines: List[str], chunk_size: int = 8, hard_limit: in
 
 # ─── Embed 建構函數 ────────────────────────────────────────
 
+
 def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.Embed:
     """塔防風格戰鬥 Embed"""
     now = datetime.now(TW_TZ)
@@ -719,15 +915,19 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
         ends = ends.replace(tzinfo=TW_TZ)
     remaining_min = max(0, int((ends - now).total_seconds() / 60))
 
-    alive         = [e for e in state.enemies if not e.defeated]
+    alive = [e for e in state.enemies if not e.defeated]
     defeated_count = len(state.enemies) - len(alive)
     latest_wave_titles = []
     if state.wave_history:
         latest_wave_titles = state.wave_history[-1].get("titles", [])
-    latest_wave_text = "、".join(latest_wave_titles[:10]) if latest_wave_titles else "等待趨勢資料"
+    latest_wave_text = (
+        "、".join(latest_wave_titles[:10]) if latest_wave_titles else "等待趨勢資料"
+    )
 
     # 堡壘狀態 → 動態顏色與警示
-    fort_pct = state.fortress_hp / state.fortress_max_hp if state.fortress_max_hp else 1.0
+    fort_pct = (
+        state.fortress_hp / state.fortress_max_hp if state.fortress_max_hp else 1.0
+    )
     if fort_pct > 0.6:
         embed_color = 0xE74C3C
         fort_status = "🟢 穩固"
@@ -810,14 +1010,20 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
     )
 
     status_map = {"active": "🟢 進行中", "victory": "🎉 勝利", "defeat": "💀 失守"}
-    embed.set_footer(text=f"狀態：{status_map.get(state.status, state.status)} | 單日戰役 {state.round_id} | 目前第 {state.current_wave_number} 波")
+    embed.set_footer(
+        text=f"狀態：{status_map.get(state.status, state.status)} | 單日戰役 {state.round_id} | 目前第 {state.current_wave_number} 波"
+    )
     return embed
 
 
 def build_status_embed(state: fs.FortressState, user_id: int) -> discord.Embed:
     """個人戰況 Embed（ephemeral）"""
     actions = state.defenders.get(user_id, [])
-    free_used = sum(1 for a in actions if a.action_type == "free" and a.wave_id == state.current_wave_id)
+    free_used = sum(
+        1
+        for a in actions
+        if a.action_type == "free" and a.wave_id == state.current_wave_id
+    )
     total_dmg = sum(a.damage for a in actions)
 
     interests_raw = get_user_field(user_id, "user_interests", default="[]")
@@ -827,9 +1033,15 @@ def build_status_embed(state: fs.FortressState, user_id: int) -> discord.Embed:
         interests = []
 
     embed = discord.Embed(title="📊 你的戰況", color=0x3498DB)
-    embed.add_field(name="本波免費出兵", value=f"{free_used}/{fs.FREE_ACTIONS_PER_ROUND} 次", inline=True)
+    embed.add_field(
+        name="本波免費出兵",
+        value=f"{free_used}/{fs.FREE_ACTIONS_PER_ROUND} 次",
+        inline=True,
+    )
     embed.add_field(name="累計傷害", value=f"{total_dmg:,}", inline=True)
-    embed.add_field(name="目前波次", value=f"第 {state.current_wave_number} 波", inline=True)
+    embed.add_field(
+        name="目前波次", value=f"第 {state.current_wave_number} 波", inline=True
+    )
     embed.add_field(
         name="興趣標籤",
         value=" / ".join(interests) if interests else "尚未設定",
@@ -869,9 +1081,10 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
         )
     else:
         title = f"💀 {result.get('battle_date', result['round_id'])} 堡壘失守"
-        desc = (
-            f"堡壘剩餘 HP：{result['fortress_hp_remaining']:,}\n"
-            + ("（封測期間暫無懲罰，放心繼續試玩！）" if result.get("beta_no_penalty") else "")
+        desc = f"堡壘剩餘 HP：{result['fortress_hp_remaining']:,}\n" + (
+            "（封測期間暫無懲罰，放心繼續試玩！）"
+            if result.get("beta_no_penalty")
+            else ""
         )
 
     embed = discord.Embed(title=title, description=desc, color=color)
@@ -879,17 +1092,23 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
     # 英雄榜
     damage_map: dict = result.get("damage_map", {})
     if damage_map:
-        sorted_heroes = sorted(damage_map.items(), key=lambda x: x[1], reverse=True)[:10]
+        sorted_heroes = sorted(damage_map.items(), key=lambda x: x[1], reverse=True)[
+            :10
+        ]
         medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         lines = []
         for i, (uid, dmg) in enumerate(sorted_heroes):
             user = bot.get_user(int(uid))
             name = user.display_name if user else f"玩家 {uid}"
-            pct = result["contributions"].get(uid, result["contributions"].get(str(uid), 0))
+            pct = result["contributions"].get(
+                uid, result["contributions"].get(str(uid), 0)
+            )
             reward = result.get("reward_map", {}).get(str(uid), 0)
             reward_suffix = f" | +{reward:,} KKCoin" if reward else ""
             safe_name = _truncate_embed_line(name, 32)
-            lines.append(f"{medals[i]} **{safe_name}** — {dmg:,} 傷害 ({pct}%){reward_suffix}")
+            lines.append(
+                f"{medals[i]} **{safe_name}** — {dmg:,} 傷害 ({pct}%){reward_suffix}"
+            )
         hero_chunks = _chunk_lines_for_embed(lines, chunk_size=5)
         for index, chunk in enumerate(hero_chunks, start=1):
             field_name = "🏆 對抗英雄榜" if index == 1 else f"🏆 對抗英雄榜 {index}"
@@ -904,7 +1123,9 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
             wave_lines.append(f"第 {wave.get('wave_number', '?')} 波：{title_text}")
         trend_chunks = _chunk_lines_for_embed(wave_lines, chunk_size=4)
         for index, chunk in enumerate(trend_chunks, start=1):
-            field_name = "📰 當天出現的趨勢標題" if index == 1 else f"📰 當天趨勢標題 {index}"
+            field_name = (
+                "📰 當天出現的趨勢標題" if index == 1 else f"📰 當天趨勢標題 {index}"
+            )
             embed.add_field(name=field_name, value=chunk, inline=False)
 
     embed.set_footer(text=f"單日戰役 {result['round_id']}")
@@ -912,6 +1133,7 @@ def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
 
 
 # ─── 主 Cog ───────────────────────────────────────────────
+
 
 class FortressDefenseCog(commands.Cog):
     """KK 園區對抗刑警大隊"""
@@ -943,7 +1165,9 @@ class FortressDefenseCog(commands.Cog):
 
     # ── 斜線指令 ───────────────────────────────────────────
 
-    @app_commands.command(name="fortress_status", description="查看對抗刑警大隊當前戰況")
+    @app_commands.command(
+        name="fortress_status", description="查看對抗刑警大隊當前戰況"
+    )
     async def fortress_status(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         state = fs.get_current_battle()
@@ -953,7 +1177,9 @@ class FortressDefenseCog(commands.Cog):
         embed = build_status_embed(state, interaction.user.id)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="my_interests", description="查看或修改你的興趣標籤（影響塔防加乘）")
+    @app_commands.command(
+        name="my_interests", description="查看或修改你的興趣標籤（影響塔防加乘）"
+    )
     async def my_interests(self, interaction: discord.Interaction):
         raw = get_user_field(interaction.user.id, "user_interests", default="[]")
         try:
@@ -996,10 +1222,17 @@ class FortressDefenseCog(commands.Cog):
         current_state = fs.get_current_battle()
         now = datetime.now(TW_TZ)
         # 一天只會有一場：只有換日才算新的一天
-        is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d")
+        is_new_day = not current_state or current_state.battle_date != now.strftime(
+            "%Y-%m-%d"
+        )
         await self.start_or_update_battle(trends, scheduled_at=now, new_day=is_new_day)
 
-    async def _delete_message_if_exists(self, channel: discord.abc.Messageable, message_id: Optional[int], state_clearer=None):
+    async def _delete_message_if_exists(
+        self,
+        channel: discord.abc.Messageable,
+        message_id: Optional[int],
+        state_clearer=None,
+    ):
         if not message_id:
             return
         try:
@@ -1015,7 +1248,12 @@ class FortressDefenseCog(commands.Cog):
             if state_clearer:
                 state_clearer()
 
-    async def start_or_update_battle(self, trends: list, scheduled_at: Optional[datetime] = None, new_day: bool = False):
+    async def start_or_update_battle(
+        self,
+        trends: list,
+        scheduled_at: Optional[datetime] = None,
+        new_day: bool = False,
+    ):
         """08:00 開新戰役，其餘時段將趨勢作為新波次追加到同一則戰況 Embed。"""
         battle_time = scheduled_at or datetime.now(TW_TZ)
 
@@ -1025,14 +1263,20 @@ class FortressDefenseCog(commands.Cog):
             return
 
         if new_day:
-            await self._delete_message_if_exists(channel, self._settlement_message_id, _clear_settlement_message_state)
+            await self._delete_message_if_exists(
+                channel, self._settlement_message_id, _clear_settlement_message_state
+            )
             self._settlement_message_id = None
-            await self._delete_message_if_exists(channel, self._battle_message_id, _clear_battle_message_state)
+            await self._delete_message_if_exists(
+                channel, self._battle_message_id, _clear_battle_message_state
+            )
             self._battle_message_id = None
             state = fs.start_new_battle(trends, started_at=battle_time)
         else:
             state = fs.append_wave(trends, started_at=battle_time)
-            if state.battle_date == battle_time.strftime("%Y-%m-%d") and (state.settled_at or state.status != "active"):
+            if state.battle_date == battle_time.strftime("%Y-%m-%d") and (
+                state.settled_at or state.status != "active"
+            ):
                 log.info(
                     f"[Fortress] 今日戰役已不可追加（status={state.status}, settled_at={bool(state.settled_at)}），跳過戰場訊息更新"
                 )
@@ -1044,7 +1288,9 @@ class FortressDefenseCog(commands.Cog):
             try:
                 msg = await channel.fetch_message(self._battle_message_id)
                 await msg.edit(embed=embed, view=view)
-                log.info(f"[Fortress] 戰鬥 Embed 已更新 msg={msg.id}, new_day={new_day}, wave={state.current_wave_number}")
+                log.info(
+                    f"[Fortress] 戰鬥 Embed 已更新 msg={msg.id}, new_day={new_day}, wave={state.current_wave_number}"
+                )
                 return
             except discord.NotFound:
                 self._battle_message_id = None
@@ -1055,7 +1301,9 @@ class FortressDefenseCog(commands.Cog):
         msg = await channel.send(embed=embed, view=view)
         self._battle_message_id = msg.id
         _save_battle_message_state(msg.id)
-        log.info(f"[Fortress] 戰鬥 Embed 發送成功 msg={msg.id}, new_day={new_day}, wave={state.current_wave_number}")
+        log.info(
+            f"[Fortress] 戰鬥 Embed 發送成功 msg={msg.id}, new_day={new_day}, wave={state.current_wave_number}"
+        )
 
     async def _start_battle_from_trends(self) -> tuple[bool, str, int]:
         """抓取趨勢並啟動戰鬥，供 slash 與文字指令共用。"""
@@ -1080,19 +1328,32 @@ class FortressDefenseCog(commands.Cog):
             if (
                 current_state
                 and current_state.battle_date == now.strftime("%Y-%m-%d")
-                and (current_state.settled_at or current_state.status in ("victory", "defeat"))
+                and (
+                    current_state.settled_at
+                    or current_state.status in ("victory", "defeat")
+                )
             ):
-                return False, f"今日戰役已結束（{current_state.status}），不會重新開戰", 0
+                return (
+                    False,
+                    f"今日戰役已結束（{current_state.status}），不會重新開戰",
+                    0,
+                )
             # 一天只會有一場：只有換日才算新的一天
-            is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d")
-            await self.start_or_update_battle(trends_data, scheduled_at=now, new_day=is_new_day)
+            is_new_day = not current_state or current_state.battle_date != now.strftime(
+                "%Y-%m-%d"
+            )
+            await self.start_or_update_battle(
+                trends_data, scheduled_at=now, new_day=is_new_day
+            )
             log.info(f"[Fortress] 手動開戰成功，敵人數={len(trends_data)}")
             return True, "堡壘保衛戰已手動啟動！", len(trends_data)
         except asyncio.TimeoutError:
             log.warning(
                 f"[Fortress] 手動開戰逾時：趨勢來源超過 {FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS} 秒未返回，改用快取/備援資料"
             )
-            trends_data = get_cached_trending_topics(limit=10, allow_stale=True) or get_fallback_trending_topics(limit=10)
+            trends_data = get_cached_trending_topics(
+                limit=10, allow_stale=True
+            ) or get_fallback_trending_topics(limit=10)
             if not trends_data:
                 return False, "取得趨勢資料逾時，且沒有可用快取", 0
 
@@ -1101,12 +1362,23 @@ class FortressDefenseCog(commands.Cog):
             if (
                 current_state
                 and current_state.battle_date == now.strftime("%Y-%m-%d")
-                and (current_state.settled_at or current_state.status in ("victory", "defeat"))
+                and (
+                    current_state.settled_at
+                    or current_state.status in ("victory", "defeat")
+                )
             ):
-                return False, f"今日戰役已結束（{current_state.status}），不會重新開戰", 0
+                return (
+                    False,
+                    f"今日戰役已結束（{current_state.status}），不會重新開戰",
+                    0,
+                )
             # 一天只會有一場：只有換日才算新的一天
-            is_new_day = not current_state or current_state.battle_date != now.strftime("%Y-%m-%d")
-            await self.start_or_update_battle(trends_data, scheduled_at=now, new_day=is_new_day)
+            is_new_day = not current_state or current_state.battle_date != now.strftime(
+                "%Y-%m-%d"
+            )
+            await self.start_or_update_battle(
+                trends_data, scheduled_at=now, new_day=is_new_day
+            )
             return True, "趨勢來源逾時，已用快取/備援資料啟動堡壘戰。", len(trends_data)
         except Exception as e:
             log.exception(f"[Fortress] 手動開戰失敗: {e}")
@@ -1133,7 +1405,9 @@ class FortressDefenseCog(commands.Cog):
 
         channel = self.bot.get_channel(self._battle_channel_id)
         if channel:
-            await self._delete_message_if_exists(channel, self._battle_message_id, _clear_battle_message_state)
+            await self._delete_message_if_exists(
+                channel, self._battle_message_id, _clear_battle_message_state
+            )
             self._battle_message_id = None
             embed = build_settlement_embed(result, self.bot)
             settlement_msg = await channel.send(embed=embed)
@@ -1144,7 +1418,9 @@ class FortressDefenseCog(commands.Cog):
 
         log.info(f"[Fortress] 結算完成: {result['status']}")
 
-    async def refresh_battle_embed(self, interaction: discord.Interaction, force: bool = False):
+    async def refresh_battle_embed(
+        self, interaction: discord.Interaction, force: bool = False
+    ):
         """在有人出兵後更新戰況 Embed"""
         try:
             if not self._battle_message_id or not self._battle_channel_id:
@@ -1222,6 +1498,7 @@ class FortressDefenseCog(commands.Cog):
             # 相容 naive/aware datetime
             if ends.tzinfo is None:
                 from datetime import timezone
+
                 ends = ends.replace(tzinfo=timezone.utc).astimezone(TW_TZ)
 
             if now < ends:
@@ -1256,7 +1533,11 @@ class FortressDefenseCog(commands.Cog):
                 self._last_started_schedule_round_id = scheduled_wave_id
                 return
 
-            if current_state and current_state.status in ("victory", "defeat") and not current_state.settled_at:
+            if (
+                current_state
+                and current_state.status in ("victory", "defeat")
+                and not current_state.settled_at
+            ):
                 await self._finalize_and_announce_battle()
 
             log.info(f"[Fortress] ⏰ 趨勢排程啟動 {now.strftime('%H:%M %Z')}")
@@ -1266,6 +1547,7 @@ class FortressDefenseCog(commands.Cog):
                 get_fallback_trending_topics,
                 get_trending_topics,
             )
+
             try:
                 trends_data = await asyncio.wait_for(
                     get_trending_topics(limit=10),
@@ -1275,15 +1557,21 @@ class FortressDefenseCog(commands.Cog):
                 log.warning(
                     f"[Fortress] 排程抓趨勢逾時，改用快取/備援資料（>{FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS} 秒）"
                 )
-                trends_data = get_cached_trending_topics(limit=10, allow_stale=True) or get_fallback_trending_topics(limit=10)
+                trends_data = get_cached_trending_topics(
+                    limit=10, allow_stale=True
+                ) or get_fallback_trending_topics(limit=10)
             if not trends_data:
                 log.warning("[Fortress] ⚠️ 取得趨勢資料失敗，跳過本輪")
                 return
 
             is_new_day = now.hour == 8
-            await self.start_or_update_battle(trends_data, scheduled_at=now, new_day=is_new_day)
+            await self.start_or_update_battle(
+                trends_data, scheduled_at=now, new_day=is_new_day
+            )
             self._last_started_schedule_round_id = scheduled_wave_id
-            log.info(f"[Fortress] ✅ 單日堡壘戰已更新（wave_id={scheduled_wave_id}, 趨勢數={len(trends_data)}）")
+            log.info(
+                f"[Fortress] ✅ 單日堡壘戰已更新（wave_id={scheduled_wave_id}, 趨勢數={len(trends_data)}）"
+            )
 
         except Exception as e:
             log.error(f"[Fortress] 趨勢排程出錯: {e}")
@@ -1362,15 +1650,15 @@ class FortressDefenseCog(commands.Cog):
         try:
             if not self._battle_message_id or not self._battle_channel_id:
                 return
-            
+
             channel = self.bot.get_channel(self._battle_channel_id)
             if not channel:
                 return
-            
+
             state = fs.get_current_battle()
             if not state or not state.is_active():
                 return
-            
+
             try:
                 message = await channel.fetch_message(self._battle_message_id)
                 embed = build_battle_embed(state, self.bot)
@@ -1388,23 +1676,29 @@ class FortressDefenseCog(commands.Cog):
 
     # ── 管理員手動開戰 ────────────────────────────────────
 
-    @app_commands.command(name="fortress_admin_start", description="[管理員] 立即抓取趨勢並建立新戰役或追加新波次")
+    @app_commands.command(
+        name="fortress_admin_start",
+        description="[管理員] 立即抓取趨勢並建立新戰役或追加新波次",
+    )
     @app_commands.default_permissions(administrator=True)
     async def fortress_admin_start(self, interaction: discord.Interaction):
         """管理員手動觸發堡壘保衛戰（補發或手動追加波次）"""
-        log.info(f"[Fortress] slash /fortress_admin_start invoked by {interaction.user.id}")
+        log.info(
+            f"[Fortress] slash /fortress_admin_start invoked by {interaction.user.id}"
+        )
         await interaction.response.defer(ephemeral=True)
         success, msg, count = await self._start_battle_from_trends()
         if not success:
             await interaction.followup.send(f"❌ {msg}", ephemeral=True)
             return
         await interaction.followup.send(
-            f"✅ {msg} 共 {count} 個趨勢敵人。",
-            ephemeral=True
+            f"✅ {msg} 共 {count} 個趨勢敵人。", ephemeral=True
         )
 
     @fortress_admin_start.error
-    async def fortress_admin_start_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+    async def fortress_admin_start_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ):
         log.exception(f"[Fortress] slash /fortress_admin_start error: {error}")
         if interaction.response.is_done():
             await interaction.followup.send(f"❌ 開戰失敗：{error}", ephemeral=True)
@@ -1425,6 +1719,7 @@ class FortressDefenseCog(commands.Cog):
 
 # ─── 興趣管理視圖（/my_interests 用）─────────────────────
 
+
 class InterestManageView(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=120)
@@ -1433,23 +1728,30 @@ class InterestManageView(discord.ui.View):
     @discord.ui.button(label="✏️ 修改標籤", style=discord.ButtonStyle.primary)
     async def edit_tags(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的操作！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的操作！", ephemeral=True
+            )
             return
         await interaction.response.send_modal(TagEditModal())
 
     @discord.ui.button(label="🔕 關閉推播通知", style=discord.ButtonStyle.secondary)
     async def toggle_alert(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 這不是你的操作！", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 這不是你的操作！", ephemeral=True
+            )
             return
         current = get_user_field(self.user_id, "trend_alert_enabled", default=1)
         new_val = 0 if current else 1
         set_user_field(self.user_id, "trend_alert_enabled", new_val)
         status = "開啟" if new_val else "關閉"
-        await interaction.response.send_message(f"✅ 趨勢通知已{status}。", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ 趨勢通知已{status}。", ephemeral=True
+        )
 
 
 # ─── Cog 載入 ─────────────────────────────────────────────
+
 
 async def setup(bot: commands.Bot):
     cog = FortressDefenseCog(bot)

@@ -7,14 +7,14 @@ DB 適配層相容層 - 保持向後相容性
 
 使用示例（現存代碼）:
     from db_adapter import get_user_field, set_user_field
-    
+
 新代碼應使用:
     from shared.db.db_adapter import get_user_field, set_user_field
-    
+
 說明：
   - 根目錄 db_adapter.py：相容層轉導文件（重定向 import）
   - shared/db/db_adapter.py：核心實現文件（實際邏輯）
-  
+
   所有 import 都指向同一個實現，保持向後相容性。
 """
 
@@ -83,5 +83,9 @@ try:
     )
 except ImportError as e:
     import warnings
-    warnings.warn(f"無法導入 shared.db.db_adapter: {e}。請確保已執行 Phase 2 import 更新。", DeprecationWarning)
+
+    warnings.warn(
+        f"無法導入 shared.db.db_adapter: {e}。請確保已執行 Phase 2 import 更新。",
+        DeprecationWarning,
+    )
     raise

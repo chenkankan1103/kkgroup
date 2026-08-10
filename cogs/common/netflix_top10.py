@@ -5,9 +5,10 @@ Netflix 台灣每日排行榜 Cog
 
 API 文件: https://docs.movieofthenight.com/resource/shows#get-top-shows
 """
+
 import logging
 import os
-from typing import Optional, List, Tuple
+from typing import Optional
 import asyncio
 from io import BytesIO
 
@@ -125,7 +126,7 @@ class NetflixTop10Cog(commands.Cog):
             "Reality-TV": "真人秀",
             "Game-Show": "遊戲節目",
             "News": "新聞",
-            "Sporting-Event": "體育賽事"
+            "Sporting-Event": "體育賽事",
         }
 
         translated = []
@@ -154,7 +155,9 @@ class NetflixTop10Cog(commands.Cog):
         cached_shows = _cache.get(cache_key)
         cached_timestamp = _cache.get(f"{cache_key}_timestamp", 0)
         if cached_shows and (now - cached_timestamp) < CACHE_TTL:
-            logger.debug(f"使用快取: {country}/{show_type} (剩餘 {CACHE_TTL - (now - cached_timestamp):.0f}s)")
+            logger.debug(
+                f"使用快取: {country}/{show_type} (剩餘 {CACHE_TTL - (now - cached_timestamp):.0f}s)"
+            )
             return cached_shows, _cache.get(f"{cache_key}_country", country)
 
         api_key = self._get_api_key()
@@ -163,7 +166,7 @@ class NetflixTop10Cog(commands.Cog):
             "country": country,
             "service": service,
             "show_type": show_type,
-            "language": "zh-TW"  # 嘗試取得繁體中文資料
+            "language": "zh-TW",  # 嘗試取得繁體中文資料
         }
         headers = {
             "X-RapidAPI-Key": api_key,
@@ -185,7 +188,11 @@ class NetflixTop10Cog(commands.Cog):
                     text = await resp.text()
                     logger.error(f"API 錯誤 HTTP {resp.status}: {text[:300]}")
                     # 如果是 country 不支援，嘗試 fallback 到香港 (僅限首次請求為 TW 時)
-                    if "country" in text.lower() and "not supported" in text.lower() and country.lower() == "tw":
+                    if (
+                        "country" in text.lower()
+                        and "not supported" in text.lower()
+                        and country.lower() == "tw"
+                    ):
                         logger.info(f"Country {country} 不支援，嘗試 fallback 到 HK")
                         return await self._fetch_top_shows("hk", service, show_type)
                     # 如果語言參數不被支援，移除它並重試
@@ -193,7 +200,9 @@ class NetflixTop10Cog(commands.Cog):
                         logger.info("語言參數不被支援，移除並重試")
                         params.pop("language", None)
                         # 遞迴重試，但避免無限迴圈
-                        return await self._fetch_top_shows_without_language(country, service, show_type, api_key, headers)
+                        return await self._fetch_top_shows_without_language(
+                            country, service, show_type, api_key, headers
+                        )
                     return [], country
                 data = await resp.json()
 
@@ -233,7 +242,11 @@ class NetflixTop10Cog(commands.Cog):
                 if resp.status != 200:
                     text = await resp.text()
                     logger.error(f"API 錯誤 HTTP {resp.status}: {text[:300]}")
-                    if "country" in text.lower() and "not supported" in text.lower() and country.lower() == "tw":
+                    if (
+                        "country" in text.lower()
+                        and "not supported" in text.lower()
+                        and country.lower() == "tw"
+                    ):
                         logger.info(f"Country {country} 不支援，嘗試 fallback 到 HK")
                         return await self._fetch_top_shows("hk", service, show_type)
                     return [], country
@@ -246,10 +259,14 @@ class NetflixTop10Cog(commands.Cog):
         _cache[f"{cache_key}_country"] = country
         return shows, country
 
-    async def _fetch_image_bytes(self, session: aiohttp.ClientSession, url: str) -> Optional[bytes]:
+    async def _fetch_image_bytes(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> Optional[bytes]:
         """下載圖片二進位資料，失敗返回 None"""
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
                 if resp.status == 200:
                     return await resp.read()
                 else:
@@ -263,13 +280,13 @@ class NetflixTop10Cog(commands.Cog):
         """非同步製作貼圖並回傳 discord.File"""
         shows = shows[:10]
         if not shows:
-            img = Image.new('RGB', (400, 100), color=(30, 30, 30))
+            img = Image.new("RGB", (400, 100), color=(30, 30, 30))
             draw = ImageDraw.Draw(img)
             font = ImageFont.load_default()
             draw.text((10, 40), "無法取得海報", fill=(255, 255, 255), font=font)
             buf = BytesIO()
-            img.save(buf, format='PNG')
-            return discord.File(fp=buf, filename='collage.png')
+            img.save(buf, format="PNG")
+            return discord.File(fp=buf, filename="collage.png")
 
         # 下載所有海報
         async with aiohttp.ClientSession() as session:
@@ -283,7 +300,9 @@ class NetflixTop10Cog(commands.Cog):
                 else:
                     download_tasks.append(None)
             # 並行下載（過濾掉 None）
-            results = await asyncio.gather(*[t for t in download_tasks if t is not None], return_exceptions=False)
+            results = await asyncio.gather(
+                *[t for t in download_tasks if t is not None], return_exceptions=False
+            )
 
         # 組合結果，保持順序
         images = []
@@ -316,7 +335,9 @@ class NetflixTop10Cog(commands.Cog):
             # 創建底圖
             img_width, img_height = img.size
             extra_height = 30  # 文字區域高度
-            new_img = Image.new('RGB', (img_width, img_height + extra_height), color=(0, 0, 0))
+            new_img = Image.new(
+                "RGB", (img_width, img_height + extra_height), color=(0, 0, 0)
+            )
             new_img.paste(img, (0, 0))
             draw = ImageDraw.Draw(new_img)
             font = ImageFont.load_default()
@@ -334,19 +355,19 @@ class NetflixTop10Cog(commands.Cog):
 
         if not images:
             # 若全部下載失敗
-            img = Image.new('RGB', (400, 100), color=(30, 30, 30))
+            img = Image.new("RGB", (400, 100), color=(30, 30, 30))
             draw = ImageDraw.Draw(img)
             font = ImageFont.load_default()
             draw.text((10, 40), "無法取得海報", fill=(255, 255, 255), font=font)
             buf = BytesIO()
-            img.save(buf, format='PNG')
-            return discord.File(fp=buf, filename='collage.png')
+            img.save(buf, format="PNG")
+            return discord.File(fp=buf, filename="collage.png")
 
         # 垂直堆疊所有圖片，間距 10 px
         spacing = 10
         total_width = max(img.width for img in images)
         total_height = sum(img.height for img in images) + spacing * (len(images) - 1)
-        combined = Image.new('RGB', (total_width, total_height), color=(0, 0, 0))
+        combined = Image.new("RGB", (total_width, total_height), color=(0, 0, 0))
         y_offset = 0
         for img in images:
             # 置中粘貼（若寬度不足則靠左）
@@ -356,8 +377,8 @@ class NetflixTop10Cog(commands.Cog):
 
         # 輸出到 bytes
         buf = BytesIO()
-        combined.save(buf, format='PNG')
-        return discord.File(fp=buf, filename='collage.png')
+        combined.save(buf, format="PNG")
+        return discord.File(fp=buf, filename="collage.png")
 
     @app_commands.command(
         name="netflix_top10",
@@ -386,9 +407,7 @@ class NetflixTop10Cog(commands.Cog):
         try:
             shows, country_used = await self._fetch_top_shows("tw", "netflix", st)
         except ValueError as e:
-            await interaction.followup.send(
-                f"❌ {e}", ephemeral=True
-            )
+            await interaction.followup.send(f"❌ {e}", ephemeral=True)
             return
         except Exception as e:
             logger.error(f"取得 Netflix 排行榜失敗: {e}")
@@ -431,12 +450,12 @@ class NetflixTop10Cog(commands.Cog):
                 "my": "馬來西亞 (MY)",
                 "ph": "菲律賓 (PH)",
                 "th": "泰國 (TH)",
-                "vn": "越南 (VN)"
+                "vn": "越南 (VN)",
             }
             country_name = country_names.get(country_used.lower(), country_used.upper())
             embed.set_footer(
                 text=f"資料來源: Streaming Availability API by Movie of the Night\n"
-                     f"※ 因台灣無資料，顯示 {country_name} 排名"
+                f"※ 因台灣無資料，顯示 {country_name} 排名"
             )
         else:
             embed.set_footer(

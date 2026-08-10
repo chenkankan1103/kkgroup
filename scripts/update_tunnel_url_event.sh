@@ -20,16 +20,16 @@ WAIT_TIME=60
     echo "[$(date)] 🚀 cloudflared 事件觸發 - 等待隧道建立..."
     echo "============================================================"
     echo "等待 $WAIT_TIME 秒讓隧道完全註冊..."
-    
+
     sleep $WAIT_TIME
-    
+
     echo "[$(date)] ⏱️  隧道應該已就緒，現在提取 URL..."
     echo "============================================================"
-    
+
     cd "$REPO_DIR"
     /home/e193752468/kkgroup/venv/bin/python3 \
         scheduled_tasks/auto_update_webhook_v2.py
-    
+
     echo "[$(date)] ✅ 隧道 URL 更新完成"
     echo "============================================================"
 } >> "$LOG_FILE" 2>&1

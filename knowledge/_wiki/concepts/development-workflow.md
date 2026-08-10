@@ -53,7 +53,7 @@ git push origin main
 
 ### GitHub Webhook 部署
 - **觸發條件**: Push 到 `main` 或 `master` 分支
-- **執行流程**: 
+- **執行流程**:
   1. GitHub 發送 webhook 到 VM
   2. VM 接收器執行 `git pull`
   3. 自動重啟所有服務
@@ -61,7 +61,7 @@ git push origin main
 
 ### 服務列表
 - `bot.service` - 主 Discord Bot
-- `shopbot.service` - 商店 Bot  
+- `shopbot.service` - 商店 Bot
 - `uibot.service` - UI Bot
 - `kkgroup-api.service` - Web API 服務
 

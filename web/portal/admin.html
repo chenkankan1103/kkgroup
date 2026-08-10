@@ -325,8 +325,8 @@
             if (discordUser) {
                 loginBtn.classList.add('hidden');
                 logoutBtn.classList.remove('hidden');
-                const avatarUrl = discordUser.avatar_url 
-                    ? `<img src="${discordUser.avatar_url}" style="width:20px;height:20px;border-radius:50%;vertical-align:middle;margin-right:4px;">` 
+                const avatarUrl = discordUser.avatar_url
+                    ? `<img src="${discordUser.avatar_url}" style="width:20px;height:20px;border-radius:50%;vertical-align:middle;margin-right:4px;">`
                     : '';
                 statusEl.innerHTML = `${avatarUrl}✅ 已登入: <strong>${discordUser.username}</strong>`;
                 statusEl.style.color = 'var(--success)';

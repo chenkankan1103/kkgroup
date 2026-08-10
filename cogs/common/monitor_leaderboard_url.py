@@ -24,10 +24,12 @@ class LeaderboardURLMonitor(commands.Cog):
         self.bot = bot
         self.rank_channel_id = int(os.getenv("KKCOIN_RANK_CHANNEL_ID", 0))
         self.rank_message_id = int(os.getenv("KKCOIN_RANK_MESSAGE_ID", 0))
-        self.config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "config.json")
+        self.config_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "config", "config.json"
+        )
         self._config_missing_warned = False  # 追踪是否已警告过 config.json 不存在
         self._last_url = None  # 追踪上一次的 URL
-        
+
         # 啟動監控任務
         self.monitor_url.start()
         print("✅ LeaderboardURLMonitor 已啟動（每小時檢查一次）")
@@ -89,11 +91,11 @@ class LeaderboardURLMonitor(commands.Cog):
                 return
 
             # URL 已變更或為空 - 執行更新
-            print(f"\n📍 Discord CDN URL 已變更:")
+            print("\n📍 Discord CDN URL 已變更:")
             if old_url:
                 print(f"   舊: {old_url[:70]}...")
             print(f"   新: {current_url[:70]}...")
-            print(f"🔄 更新 config.json 中...")
+            print("🔄 更新 config.json 中...")
 
             # 更新 config.json
             config["imageURL"] = current_url
@@ -102,7 +104,9 @@ class LeaderboardURLMonitor(commands.Cog):
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
 
-            print(f"✅ config.json 已更新 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+            print(
+                f"✅ config.json 已更新 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
+            )
             self._last_url = current_url
 
             # 可選：自動提交到 Git
@@ -112,6 +116,7 @@ class LeaderboardURLMonitor(commands.Cog):
         except Exception as e:
             print(f"❌ 監控排行榜 URL 失敗: {e}")
             import traceback
+
             traceback.print_exc()
 
     async def _commit_to_git(self, new_url):
@@ -159,7 +164,10 @@ class LeaderboardURLMonitor(commands.Cog):
             print("⚠️ Git 操作超時")
         except subprocess.CalledProcessError as e:
             # 如果沒有更改，git commit 會失敗，但這是正常的
-            if "nothing to commit" in e.stderr or "nothing staged for commit" in e.stderr:
+            if (
+                "nothing to commit" in e.stderr
+                or "nothing staged for commit" in e.stderr
+            ):
                 print("ℹ️ 沒有新變更需要提交")
             else:
                 print(f"⚠️ Git 操作失敗: {e.stderr}")

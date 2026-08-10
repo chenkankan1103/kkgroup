@@ -30,17 +30,17 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ─── 設定 ────────────────────────────────────────────────────────────────────
-ADMIN_USER_ID:  int = int(os.getenv("ADMIN_USER_ID", "0"))
+ADMIN_USER_ID: int = int(os.getenv("ADMIN_USER_ID", "0"))
 ADMIN_ROLE_NAME: str = os.getenv("ADMIN_ROLE_NAME", "管理員")
-MAX_STEPS:          int = 10
-CONFIRM_TIMEOUT:    int = 60  # Discord Button 等待秒數
+MAX_STEPS: int = 10
+CONFIRM_TIMEOUT: int = 60  # Discord Button 等待秒數
 
-_GEMINI_KEY    = os.getenv("AI_API_KEY")
+_GEMINI_KEY = os.getenv("AI_API_KEY")
 _GEMINI_KEY_BK = os.getenv("AI_API_KEY_BACKUP")
-_GEMINI_MODEL  = os.getenv("AI_API_MODEL", "gemini-2.0-flash")
-_GROQ_KEY      = os.getenv("GROQ_API_KEY")
-_GROQ_URL      = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
-_GROQ_MODEL    = os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile")
+_GEMINI_MODEL = os.getenv("AI_API_MODEL", "gemini-2.0-flash")
+_GROQ_KEY = os.getenv("GROQ_API_KEY")
+_GROQ_URL = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+_GROQ_MODEL = os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile")
 
 _SHELL_SYSTEM = """\
 你是 KK園區的 Shell Agent，一位專業的 Linux 伺服器工程師助手。
@@ -63,26 +63,31 @@ _SHELL_SYSTEM = """\
 # 1. ConfirmCommandView — Discord 確認按鈕
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class ConfirmCommandView(PersistentViewBase):
     """顯示「✅ 執行」與「❌ 取消任務」的確認介面。"""
 
     def __init__(self, command: str):
         super().__init__()
-        self.command:   str           = command
+        self.command: str = command
         self.confirmed: Optional[bool] = None  # True / False / None（超時）
 
-        self.add_button(label="✅ 執行",       callback=self._confirm, style="success")
-        self.add_button(label="❌ 取消任務",   callback=self._cancel,  style="danger")
+        self.add_button(label="✅ 執行", callback=self._confirm, style="success")
+        self.add_button(label="❌ 取消任務", callback=self._cancel, style="danger")
 
     @staticmethod
     def _check_perm(interaction: discord.Interaction) -> bool:
         if interaction.user.id == ADMIN_USER_ID:
             return True
-        return any(r.name == ADMIN_ROLE_NAME for r in getattr(interaction.user, "roles", []))
+        return any(
+            r.name == ADMIN_ROLE_NAME for r in getattr(interaction.user, "roles", [])
+        )
 
     async def _confirm(self, interaction: discord.Interaction):
         if not self._check_perm(interaction):
-            await interaction.response.send_message("❌ 你沒有權限確認指令。", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 你沒有權限確認指令。", ephemeral=True
+            )
             return
         self.confirmed = True
         for item in self.children:
@@ -95,7 +100,9 @@ class ConfirmCommandView(PersistentViewBase):
 
     async def _cancel(self, interaction: discord.Interaction):
         if not self._check_perm(interaction):
-            await interaction.response.send_message("❌ 你沒有權限中止任務。", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 你沒有權限中止任務。", ephemeral=True
+            )
             return
         self.confirmed = False
         for item in self.children:
@@ -111,6 +118,7 @@ class ConfirmCommandView(PersistentViewBase):
 # 2. ShellAgentRunner — ADK Sequential Workflow
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class ShellAgentRunner:
     """ADK 風格 Shell Agent 執行器。
 
@@ -122,15 +130,16 @@ class ShellAgentRunner:
     """
 
     def __init__(self, tools_module):
-        self._tools      = tools_module
+        self._tools = tools_module
         self._tools_spec = self._build_shell_spec(tools_module)
 
     @staticmethod
     def _build_shell_spec(tools_module) -> List[Dict]:
         """只取 run_terminal 的工具規格，給 Gemini 使用。"""
-        full  = tools_module.get_gemini_tools_spec()
+        full = tools_module.get_gemini_tools_spec()
         decls = [
-            d for group in full
+            d
+            for group in full
             for d in group.get("functionDeclarations", [])
             if d["name"] == "run_terminal"
         ]
@@ -138,10 +147,12 @@ class ShellAgentRunner:
 
     async def run(self, goal: str, channel: discord.TextChannel, caller_id: int):
         """主入口：執行完整 Agentic Loop。"""
-        conversation: List[Dict] = [{
-            "role": "user",
-            "parts": [{"text": f"目標：{goal}\n請開始逐步達成它。"}],
-        }]
+        conversation: List[Dict] = [
+            {
+                "role": "user",
+                "parts": [{"text": f"目標：{goal}\n請開始逐步達成它。"}],
+            }
+        ]
 
         for step in range(1, MAX_STEPS + 1):
             await channel.send(f"🧠 **步驟 {step}/{MAX_STEPS}** — 思考中…")
@@ -151,7 +162,11 @@ class ShellAgentRunner:
 
             # 純文字 → 任務結束
             if text_reply is not None:
-                color = discord.Color.green() if ("完成" in text_reply) else discord.Color.orange()
+                color = (
+                    discord.Color.green()
+                    if ("完成" in text_reply)
+                    else discord.Color.orange()
+                )
                 embed = discord.Embed(
                     title="🏁 Shell Agent 任務結束",
                     description=text_reply,
@@ -170,15 +185,27 @@ class ShellAgentRunner:
 
             # ── Act（非 run_terminal：直接執行，無需確認）────────────────
             if tool_name != "run_terminal":
-                result = self._tools.dispatch_tool(tool_name, tool_args, caller_id=caller_id)
+                result = self._tools.dispatch_tool(
+                    tool_name, tool_args, caller_id=caller_id
+                )
                 conversation.append({"role": "model", "parts": [{"functionCall": fc}]})
-                conversation.append({"role": "user", "parts": [{"functionResponse": {
-                    "name": tool_name, "response": {"result": str(result)},
-                }}]})
+                conversation.append(
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "functionResponse": {
+                                    "name": tool_name,
+                                    "response": {"result": str(result)},
+                                }
+                            }
+                        ],
+                    }
+                )
                 continue
 
             # ── Act（run_terminal：Discord 確認後執行）────────────────────
-            shell_cmd   = tool_args.get("command", "").strip()
+            shell_cmd = tool_args.get("command", "").strip()
             timeout_sec = int(tool_args.get("timeout_sec", 30))
             if not shell_cmd:
                 await channel.send("⚠️ 空白指令，跳過。")
@@ -189,7 +216,9 @@ class ShellAgentRunner:
                 description=f"```bash\n{shell_cmd}\n```",
                 color=discord.Color.yellow(),
             )
-            confirm_embed.add_field(name="⏱️ 逾時設定", value=f"{timeout_sec}s", inline=True)
+            confirm_embed.add_field(
+                name="⏱️ 逾時設定", value=f"{timeout_sec}s", inline=True
+            )
             confirm_embed.set_footer(text=f"等待確認（{CONFIRM_TIMEOUT}s 後自動取消）")
 
             view = ConfirmCommandView(command=shell_cmd)
@@ -222,10 +251,19 @@ class ShellAgentRunner:
 
             # 注入官方 Function Calling 格式（model 呼叫 + user 回應）
             conversation.append({"role": "model", "parts": [{"functionCall": fc}]})
-            conversation.append({"role": "user", "parts": [{"functionResponse": {
-                "name": "run_terminal",
-                "response": {"result": str(tool_result)},
-            }}]})
+            conversation.append(
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                "name": "run_terminal",
+                                "response": {"result": str(tool_result)},
+                            }
+                        }
+                    ],
+                }
+            )
 
         await channel.send(f"⚠️ 已達最大步驟數（{MAX_STEPS} 步），任務終止。")
 
@@ -280,25 +318,32 @@ class ShellAgentRunner:
                 "Authorization": f"Bearer {_GROQ_KEY}",
                 "Content-Type": "application/json",
             }
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as s:
                 async with s.post(_GROQ_URL, json=payload, headers=headers) as r:
                     if r.status != 200:
                         logger.warning(f"⚠️ Groq Shell HTTP {r.status}")
                         return None, None
-                    data    = await r.json()
-                    reply   = data["choices"][0]["message"]["content"].strip()
+                    data = await r.json()
+                    reply = data["choices"][0]["message"]["content"].strip()
         except Exception as e:
             logger.warning(f"⚠️ Groq Shell 錯誤: {e}")
             return None, None
 
         if reply.startswith("CMD:"):
             cmd = reply[4:].strip()
-            return {"name": "run_terminal", "args": {"command": cmd, "timeout_sec": 30}}, None
+            return {
+                "name": "run_terminal",
+                "args": {"command": cmd, "timeout_sec": 30},
+            }, None
         if reply.startswith("DONE:"):
             return None, reply[5:].strip()
         return None, reply  # 直接當純文字處理
 
-    async def _gemini_call(self, api_key: str, conversation: List[Dict]) -> Optional[Dict]:
+    async def _gemini_call(
+        self, api_key: str, conversation: List[Dict]
+    ) -> Optional[Dict]:
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{_GEMINI_MODEL}:generateContent?key={api_key}"
@@ -310,14 +355,16 @@ class ShellAgentRunner:
             "generationConfig": {"temperature": 0.2, "maxOutputTokens": 400},
         }
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as s:
                 async with s.post(
                     url, json=payload, headers={"Content-Type": "application/json"}
                 ) as r:
                     if r.status != 200:
                         logger.warning(f"⚠️ Gemini Shell HTTP {r.status}")
                         return None
-                    data  = await r.json()
+                    data = await r.json()
                     cands = data.get("candidates", [])
                     return cands[0] if cands else None
         except Exception as e:
@@ -329,14 +376,16 @@ class ShellAgentRunner:
 # 3. ShellAgent — Discord Cog
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class ShellAgent(commands.Cog):
     """Shell Agent：讓 AI 在管理員監督下自主操作伺服器。"""
 
     def __init__(self, bot: commands.Bot):
-        self.bot     = bot
+        self.bot = bot
         self._runner: Optional[ShellAgentRunner] = None
         try:
             import agent_tools as _at
+
             self._runner = ShellAgentRunner(_at)
             logger.info("✅ ShellAgent（ADK 架構）初始化完成")
         except ImportError:
@@ -345,7 +394,9 @@ class ShellAgent(commands.Cog):
     def _has_permission(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id == ADMIN_USER_ID:
             return True
-        return any(r.name == ADMIN_ROLE_NAME for r in getattr(interaction.user, "roles", []))
+        return any(
+            r.name == ADMIN_ROLE_NAME for r in getattr(interaction.user, "roles", [])
+        )
 
     @app_commands.command(
         name="shellagent",
@@ -354,7 +405,9 @@ class ShellAgent(commands.Cog):
     @app_commands.describe(goal="任務目標，例如：查看 bot.service 最近 20 筆錯誤日誌")
     async def shellagent(self, interaction: discord.Interaction, goal: str):
         if not self._has_permission(interaction):
-            await interaction.response.send_message("❌ 此指令僅限管理員使用。", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 此指令僅限管理員使用。", ephemeral=True
+            )
             return
         if not self._runner:
             await interaction.response.send_message(

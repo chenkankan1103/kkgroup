@@ -82,7 +82,7 @@ def timestamp_to_iso_string(ts) -> str:
     """將時間戳轉換為 ISO 字串格式，修復類型檢查問題"""
     if ts is None or ts == "" or ts == "0":
         return ""
-    
+
     try:
         # 確保轉換為整數
         ts_int = int(float(str(ts)))
@@ -100,11 +100,11 @@ class GameUserSync:
         self.sheet_url = sheet_url
         self.db_path = os.path.join(BASE_DIR, db_path)
         self.sheet = None
-        
+
         # 定義遊戲用戶資料的欄位結構
         self.game_fields = [
             "user_id",
-            "level", 
+            "level",
             "xp",
             "kkcoin",
             "title",
@@ -120,21 +120,29 @@ class GameUserSync:
             "shoes",
             "streak",
             "last_work_date",
-            "last_action_date", 
+            "last_action_date",
             "actions_used",
             "gender",
             "is_stunned",
             "is_locked",
             "last_recovery",
-            "sync_flag"  # 同步控制欄位
+            "sync_flag",  # 同步控制欄位
         ]
-        
+
         # 定義需要特殊處理的欄位
         self.date_fields = ["last_work_date", "last_action_date", "last_recovery"]
         self.json_fields = ["inventory", "character_config"]  # JSON 字串欄位
         self.boolean_fields = ["is_stunned", "is_locked"]  # 布林值欄位
-        self.numeric_fields = ["level", "xp", "kkcoin", "hp", "stamina", "actions_used", "streak"]
-        
+        self.numeric_fields = [
+            "level",
+            "xp",
+            "kkcoin",
+            "hp",
+            "stamina",
+            "actions_used",
+            "streak",
+        ]
+
         self._init_google_sheet()
         self._init_database()
 
@@ -150,7 +158,7 @@ class GameUserSync:
             client = gspread.authorize(creds)
             self.sheet = client.open_by_url(self.sheet_url).sheet1
             logger.info("Google Sheet 連線成功")
-            
+
             # 檢查並確保表頭完整
             headers = self.sheet.row_values(1) if self.sheet.get_all_values() else []
             if not headers:
@@ -160,7 +168,7 @@ class GameUserSync:
                 headers.append("sync_flag")
                 self.sheet.update("A1", [headers])
                 logger.info("已在現有 Sheet 加入 sync_flag 欄位")
-                
+
         except Exception as e:
             logger.error(f"Google Sheet 連接失敗: {e}")
             raise
@@ -169,9 +177,9 @@ class GameUserSync:
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
-            
+
             # 建立遊戲用戶表
-            cur.execute(f"""
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS game_users (
                     user_id TEXT PRIMARY KEY,
                     level INTEGER DEFAULT 1,
@@ -180,8 +188,8 @@ class GameUserSync:
                     title TEXT DEFAULT '',
                     hp INTEGER DEFAULT 100,
                     stamina INTEGER DEFAULT 100,
-                    inventory TEXT DEFAULT '{{}}',
-                    character_config TEXT DEFAULT '{{}}',
+                    inventory TEXT DEFAULT '{}',
+                    character_config TEXT DEFAULT '{}',
                     face TEXT DEFAULT '',
                     hair TEXT DEFAULT '',
                     skin TEXT DEFAULT '',
@@ -199,21 +207,27 @@ class GameUserSync:
                     sync_flag TEXT DEFAULT 'N'
                 )
             """)
-            
+
             # 檢查並新增缺少的欄位
             cur.execute("PRAGMA table_info(game_users)")
             existing_columns = [row[1] for row in cur.fetchall()]
-            
+
             for field in self.game_fields:
                 if field not in existing_columns:
                     if field in self.numeric_fields:
-                        cur.execute(f"ALTER TABLE game_users ADD COLUMN {field} INTEGER DEFAULT 0")
+                        cur.execute(
+                            f"ALTER TABLE game_users ADD COLUMN {field} INTEGER DEFAULT 0"
+                        )
                     elif field in self.boolean_fields:
-                        cur.execute(f"ALTER TABLE game_users ADD COLUMN {field} INTEGER DEFAULT 0")
+                        cur.execute(
+                            f"ALTER TABLE game_users ADD COLUMN {field} INTEGER DEFAULT 0"
+                        )
                     else:
-                        cur.execute(f"ALTER TABLE game_users ADD COLUMN {field} TEXT DEFAULT ''")
+                        cur.execute(
+                            f"ALTER TABLE game_users ADD COLUMN {field} TEXT DEFAULT ''"
+                        )
                     logger.info(f"已在 DB 加入欄位: {field}")
-            
+
             # 同步歷史表
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS sync_log (
@@ -225,11 +239,11 @@ class GameUserSync:
                     details TEXT
                 )
             """)
-            
+
             conn.commit()
             conn.close()
             logger.info("遊戲用戶資料庫初始化完成")
-            
+
         except Exception as e:
             logger.error(f"資料庫初始化失敗: {e}")
             raise
@@ -243,7 +257,7 @@ class GameUserSync:
             return parse_datetime_to_timestamp(value)
         elif field in self.boolean_fields:
             if isinstance(value, str):
-                return 1 if value.lower() in ('true', '1', 'yes', 'y') else 0
+                return 1 if value.lower() in ("true", "1", "yes", "y") else 0
             return 1 if value else 0
         elif field in self.numeric_fields:
             try:
@@ -260,7 +274,7 @@ class GameUserSync:
         elif field in self.boolean_fields:
             # 處理布林值轉換，確保正確的類型檢查
             if isinstance(value, str):
-                bool_val = value.lower() in ('true', '1', 'yes', 'y')
+                bool_val = value.lower() in ("true", "1", "yes", "y")
             else:
                 bool_val = bool(value) if value is not None else False
             return "TRUE" if bool_val else "FALSE"
@@ -289,7 +303,9 @@ class GameUserSync:
             converted_data = {}
             for field in self.game_fields:
                 if field in data:
-                    converted_data[field] = self._convert_value_for_db(field, data[field])
+                    converted_data[field] = self._convert_value_for_db(
+                        field, data[field]
+                    )
                 elif field == "sync_flag":
                     converted_data[field] = "N"
                 else:
@@ -302,28 +318,34 @@ class GameUserSync:
                         converted_data[field] = "{}"
                     else:
                         converted_data[field] = ""
-            
+
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
-            
+
             # 檢查記錄是否存在
             user_id = converted_data.get("user_id")
             if not user_id:
                 logger.error("缺少 user_id，無法更新 DB")
                 return False
-                
+
             cur.execute("SELECT COUNT(*) FROM game_users WHERE user_id = ?", (user_id,))
             exists = cur.fetchone()[0] > 0
-            
+
             if exists:
                 # 更新現有記錄，但保留 sync_flag 為 'N'（除非明確設定）
                 if data.get("sync_flag", "").upper() != "Y":
                     converted_data["sync_flag"] = "N"
-                    
-                set_clause = ", ".join([f"{col} = ?" for col in converted_data.keys() if col != "user_id"])
-                values = [converted_data[col] for col in converted_data.keys() if col != "user_id"]
+
+                set_clause = ", ".join(
+                    [f"{col} = ?" for col in converted_data.keys() if col != "user_id"]
+                )
+                values = [
+                    converted_data[col]
+                    for col in converted_data.keys()
+                    if col != "user_id"
+                ]
                 values.append(user_id)
-                
+
                 q = f"UPDATE game_users SET {set_clause} WHERE user_id = ?"
                 cur.execute(q, values)
                 logger.info(f"更新用戶 {user_id} 成功")
@@ -334,14 +356,16 @@ class GameUserSync:
                 q = f"INSERT INTO game_users ({', '.join(cols)}) VALUES ({placeholders})"
                 cur.execute(q, [converted_data[c] for c in cols])
                 logger.info(f"新增用戶 {user_id} 成功")
-            
+
             conn.commit()
             conn.close()
             return True
-            
+
         except Exception as e:
-            logger.error(f"更新 DB 失敗 (user_id={data.get('user_id', 'unknown')}): {e}")
-            if 'conn' in locals():
+            logger.error(
+                f"更新 DB 失敗 (user_id={data.get('user_id', 'unknown')}): {e}"
+            )
+            if "conn" in locals():
                 conn.close()
             return False
 
@@ -350,19 +374,19 @@ class GameUserSync:
             all_values = self.sheet.get_all_values()
             if not all_values or len(all_values) < 2:
                 return []
-            
+
             headers = all_values[0]
             data: List[Dict] = []
-            
+
             for r_idx, row in enumerate(all_values[1:], start=2):
                 if not any(str(c).strip() for c in row):
                     continue
-                    
+
                 item: Dict = {}
                 for j, h in enumerate(headers):
                     val = row[j] if j < len(row) else ""
                     item[h] = str(val).strip()
-                
+
                 # 確保有 user_id
                 if item.get("user_id"):
                     # 設定預設值
@@ -371,7 +395,7 @@ class GameUserSync:
                     data.append(item)
                 else:
                     logger.warning(f"第 {r_idx} 行缺少 user_id，已跳過")
-                    
+
             return data
         except Exception as e:
             logger.error(f"讀取 Sheet 失敗: {e}")
@@ -389,13 +413,15 @@ class GameUserSync:
             logger.error(f"查找 Sheet 行號失敗 (user_id={user_id}): {e}")
             return None
 
-    def log_sync_action(self, direction: str, user_id: str, action: str, details: str = ""):
+    def log_sync_action(
+        self, direction: str, user_id: str, action: str, details: str = ""
+    ):
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
             cur.execute(
                 "INSERT INTO sync_log (sync_time, direction, user_id, action, details) VALUES (?, ?, ?, ?, ?)",
-                (self._now_ts(), direction, user_id, action, details)
+                (self._now_ts(), direction, user_id, action, details),
             )
             conn.commit()
             conn.close()
@@ -408,7 +434,7 @@ class GameUserSync:
     def flag_based_sync(self):
         """基於 sync_flag 標記的遊戲用戶資料同步"""
         logger.info("🚩 開始遊戲用戶資料同步")
-        
+
         try:
             cols, db_rows = self.get_db_data()
             sheet_rows = self.get_sheet_data()
@@ -440,15 +466,17 @@ class GameUserSync:
             for uid, srow in sheet_dict.items():
                 if str(srow.get("sync_flag", "")).upper() == "Y":
                     logger.info(f"同步 Sheet → DB: {uid}")
-                    
+
                     # 設定 sync_flag 為 N，避免重複同步
                     srow_for_db = srow.copy()
                     srow_for_db["sync_flag"] = "N"
-                    
+
                     if self.update_db_row(srow_for_db):
                         stats["sheet_to_db"] += 1
-                        self.log_sync_action("Sheet→DB", uid, "SYNC", "從 Sheet 同步遊戲資料")
-                        
+                        self.log_sync_action(
+                            "Sheet→DB", uid, "SYNC", "從 Sheet 同步遊戲資料"
+                        )
+
                         row_index = self.find_sheet_row_by_user_id(uid)
                         if row_index:
                             sheet_updates_to_reset.append((row_index, uid))
@@ -457,7 +485,7 @@ class GameUserSync:
 
             # ===== DB → Sheet 同步 =====
             logger.info("📤 處理 DB → Sheet (sync_flag = 'Y')")
-            
+
             batch_updates = []
             batch_appends = []
 
@@ -473,15 +501,15 @@ class GameUserSync:
             for uid, drow in db_dict.items():
                 if str(drow.get("sync_flag", "")).upper() == "Y":
                     logger.info(f"同步 DB → Sheet: {uid}")
-                    
+
                     # 重設標記
                     drow_copy = drow.copy()
                     drow_copy["sync_flag"] = "N"
                     self.update_db_row(drow_copy)
-                    
+
                     srow = sheet_dict.get(uid)
                     row_vals = to_sheet_row_values(drow_copy)
-                    
+
                     if not srow:
                         batch_appends.append(row_vals)
                         stats["db_to_sheet"] += 1
@@ -491,7 +519,9 @@ class GameUserSync:
                         if row_index:
                             batch_updates.append((row_index, row_vals))
                             stats["db_to_sheet"] += 1
-                            self.log_sync_action("DB→Sheet", uid, "UPDATE", "更新遊戲用戶")
+                            self.log_sync_action(
+                                "DB→Sheet", uid, "UPDATE", "更新遊戲用戶"
+                            )
 
             # ===== 批次寫入 Sheet =====
             # 重設 Sheet 中的標記
@@ -517,7 +547,7 @@ class GameUserSync:
             logger.info("=" * 60)
             logger.info("🎯 遊戲用戶資料同步完成")
             logger.info(f"   Sheet → DB: {stats['sheet_to_db']} 筆")
-            logger.info(f"   DB → Sheet: {stats['db_to_sheet']} 筆") 
+            logger.info(f"   DB → Sheet: {stats['db_to_sheet']} 筆")
             logger.info(f"   標記重設: {stats['flags_reset']} 筆")
             logger.info("=" * 60)
 
@@ -532,11 +562,13 @@ class GameUserSync:
             for row_index, row_vals in updates:
                 rng = f"A{row_index}:{rowcol_to_a1(row_index, len(row_vals))}"
                 ranges.append({"range": rng, "values": [row_vals]})
-            
-            self.sheet.spreadsheet.values_batch_update({
-                "value_input_option": "RAW",
-                "data": ranges,
-            })
+
+            self.sheet.spreadsheet.values_batch_update(
+                {
+                    "value_input_option": "RAW",
+                    "data": ranges,
+                }
+            )
             logger.info(f"批次更新成功：{len(updates)} 行")
             time.sleep(0.3)
         except Exception as e:
@@ -579,30 +611,40 @@ class GameUserSync:
     def debug_sync_flags(self):
         """檢查同步標記狀態"""
         logger.info("🔍 檢查遊戲用戶同步標記狀態")
-        
+
         try:
             cols, db_rows = self.get_db_data()
             sheet_rows = self.get_sheet_data()
-            
-            db_dict = {str(dict(zip(cols, r))["user_id"]): dict(zip(cols, r)) for r in db_rows}
+
+            db_dict = {
+                str(dict(zip(cols, r))["user_id"]): dict(zip(cols, r)) for r in db_rows
+            }
             sheet_dict = {str(d["user_id"]): d for d in sheet_rows}
-            
-            print(f"\n=== 遊戲用戶同步狀態報告 ===")
+
+            print("\n=== 遊戲用戶同步狀態報告 ===")
             print(f"DB 總數: {len(db_dict)}")
             print(f"Sheet 總數: {len(sheet_dict)}")
-            
+
             # 檢查待同步的記錄
-            db_y_flags = [uid for uid, d in db_dict.items() if str(d.get("sync_flag", "")).upper() == "Y"]
-            sheet_y_flags = [uid for uid, d in sheet_dict.items() if str(d.get("sync_flag", "")).upper() == "Y"]
-            
+            db_y_flags = [
+                uid
+                for uid, d in db_dict.items()
+                if str(d.get("sync_flag", "")).upper() == "Y"
+            ]
+            sheet_y_flags = [
+                uid
+                for uid, d in sheet_dict.items()
+                if str(d.get("sync_flag", "")).upper() == "Y"
+            ]
+
             if db_y_flags:
                 print(f"\nDB 中標記為 'Y' 的記錄: {db_y_flags}")
             if sheet_y_flags:
                 print(f"Sheet 中標記為 'Y' 的記錄: {sheet_y_flags}")
-                
+
             if not db_y_flags and not sheet_y_flags:
                 print("\n✅ 沒有發現需要同步的標記")
-                
+
         except Exception as e:
             logger.error(f"檢查失敗: {e}")
 
@@ -612,7 +654,7 @@ class GameUserSync:
             cur = conn.cursor()
             cur.execute(
                 "SELECT sync_time, direction, user_id, action, details FROM sync_log ORDER BY sync_time DESC LIMIT ?",
-                (limit,)
+                (limit,),
             )
             rows = cur.fetchall()
             conn.close()
@@ -629,10 +671,10 @@ def main():
     DB_FILE = "game_users.db"
 
     syncer = GameUserSync(CREDENTIALS_JSON, SHEET_URL, DB_FILE)
-    
+
     # 檢查同步標記狀態
     syncer.debug_sync_flags()
-    
+
     # 執行同步
     syncer.flag_based_sync()
 

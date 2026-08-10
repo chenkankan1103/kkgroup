@@ -1,50 +1,55 @@
 import discord
 import time
-import sqlite3
-import asyncio
 from db_adapter import async_set_user_field, async_get_user
-from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
-from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
-from .work_card import WorkCardModal, WorkCardEditView, WorkCardActionView
+from cogs.shop.merchant.cannabis_farming import get_user_plants
+from .work_card import WorkCardActionView
 from status_dashboard import add_log
-from shared.utils.view_registry import PersistentViewBase
 
 
 class LockerPanelView(discord.ui.View):
     """置物櫃面板 - 包含更新和大麻系統按鈕"""
+
     def __init__(self, cog, user_id: int, thread=None):
         super().__init__(timeout=None)  # 永久View
         self.cog = cog
         self.user_id = user_id
         self.thread = thread
         self.current_view = "locker"
-        if not hasattr(LockerPanelView, 'last_update'):
+        if not hasattr(LockerPanelView, "last_update"):
             LockerPanelView.last_update = {}
-    
+
     async def get_owner_user_id(self, interaction: discord.Interaction) -> int:
         """根據 self.user_id 或 thread_id 獲取置物櫃所有者 user_id - 使用非同步 DB 查詢避免阻塞"""
-        if getattr(self, 'user_id', 0):
+        if getattr(self, "user_id", 0):
             return self.user_id
 
         try:
             # 先嘗試用 locker_message_id 快速定位（針對持久視圖重啟後的場景）
-            if interaction.message and getattr(interaction.message, 'id', None):
+            if interaction.message and getattr(interaction.message, "id", None):
                 from db_adapter import async_get_user_by_field
+
                 # 使用非同步版本，避免阻塞事件迴圈
-                user_row = await async_get_user_by_field('locker_message_id', interaction.message.id)
-                if user_row and user_row.get('user_id'):
-                    return user_row['user_id']
+                user_row = await async_get_user_by_field(
+                    "locker_message_id", interaction.message.id
+                )
+                if user_row and user_row.get("user_id"):
+                    return user_row["user_id"]
 
             # 直接從 interaction.channel 獲取 thread，不依賴 self.thread
-            thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
+            thread = (
+                interaction.channel
+                if isinstance(interaction.channel, discord.Thread)
+                else None
+            )
             if thread:
                 # 使用非同步版本的 get_all_users，避免阻塞事件迴圈
                 from db_adapter import async_get_all_users
+
                 all_users = await async_get_all_users()
 
                 for user_data in all_users:
-                    if user_data and user_data.get('thread_id') == thread.id:
-                        return user_data['user_id']
+                    if user_data and user_data.get("thread_id") == thread.id:
+                        return user_data["user_id"]
 
                 print(f"⚠️ 在資料庫中找不到 thread_id={thread.id} 對應的用戶")
 
@@ -53,7 +58,7 @@ class LockerPanelView(discord.ui.View):
 
         # 後備方案：優先使用 interaction.user.id，因為這是最可靠的當前用戶標識
         return interaction.user.id
-    
+
     def _get_growth_stage_emoji(self, progress: int) -> str:
         """根據進度獲取階段 emoji"""
         if progress < 25:
@@ -64,14 +69,24 @@ class LockerPanelView(discord.ui.View):
             return "🌾"
         else:
             return "🌲"
-        
-    @discord.ui.button(label="更新面板", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="locker_update_panel")
-    async def update_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    @discord.ui.button(
+        label="更新面板",
+        style=discord.ButtonStyle.primary,
+        emoji="🔄",
+        custom_id="locker_update_panel",
+    )
+    async def update_panel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         current_time = time.time()
         last_update_time = LockerPanelView.last_update.get(interaction.user.id, 0)
-        
+
         if current_time - last_update_time < 5:
-            await interaction.response.send_message(f"⏰ 請等待 {5 - (current_time - last_update_time):.1f} 秒後再更新面板！", ephemeral=True)
+            await interaction.response.send_message(
+                f"⏰ 請等待 {5 - (current_time - last_update_time):.1f} 秒後再更新面板！",
+                ephemeral=True,
+            )
             return
 
         # 立即 defer 避免 Discord 3 秒交互失敗
@@ -89,37 +104,50 @@ class LockerPanelView(discord.ui.View):
 
         try:
             LockerPanelView.last_update[interaction.user.id] = current_time
-            
+
             # 更新最後活動時間（使用非同步版本）
-            await async_set_user_field(owner_user_id, 'last_activity', int(time.time()))
-            
+            await async_set_user_field(owner_user_id, "last_activity", int(time.time()))
+
             # 重新獲取最新的用戶資料（確保數據是最新的）
             user_data = self.cog.get_user_data(owner_user_id)
             if not user_data:
                 await interaction.followup.send("❌ 沒有找到你的資料！", ephemeral=True)
                 return
-            
+
             # 使用 interaction.user 而非從數據中提取用戶信息
-            user = self.cog.bot.get_user(owner_user_id) or await self.cog.bot.fetch_user(owner_user_id)
+            user = self.cog.bot.get_user(
+                owner_user_id
+            ) or await self.cog.bot.fetch_user(owner_user_id)
             embed = await self.cog.create_user_embed(user_data, user)
-            
+
             # 直接編輯當前消息
             try:
                 await interaction.message.edit(embed=embed, view=self)
                 await interaction.followup.send("✅ 面板已更新！", ephemeral=True)
             except Exception as e:
                 print(f"❌ 編輯消息失敗: {e}")
-                await interaction.followup.send("❌ 更新失敗，請聯繫管理員！", ephemeral=True)
-                
+                await interaction.followup.send(
+                    "❌ 更新失敗，請聯繫管理員！", ephemeral=True
+                )
+
         except Exception as e:
             print(f"❌ 更新面板出錯: {e}")
             try:
-                await interaction.followup.send("❌ 更新面板時發生錯誤！", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 更新面板時發生錯誤！", ephemeral=True
+                )
             except:
                 pass
-    
-    @discord.ui.button(label="個人置物櫃", style=discord.ButtonStyle.primary, emoji="📦", custom_id="locker_personal_view")
-    async def personal_locker_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    @discord.ui.button(
+        label="個人置物櫃",
+        style=discord.ButtonStyle.primary,
+        emoji="📦",
+        custom_id="locker_personal_view",
+    )
+    async def personal_locker_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """個人置物櫃 - 打開永久按鈕視圖"""
         # 立即 defer 以避免 3 秒超時
         try:
@@ -127,61 +155,84 @@ class LockerPanelView(discord.ui.View):
         except Exception as e:
             print(f"❌ [Locker] 無法 defer interaction: {e}")
             return
-            
+
         try:
             owner_user_id = await self.get_owner_user_id(interaction)
             if interaction.user.id != owner_user_id:
                 await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
-            
+
             # 更新最後活動時間（使用非同步版本）
-            await async_set_user_field(owner_user_id, 'last_activity', int(time.time()))
-            
+            await async_set_user_field(owner_user_id, "last_activity", int(time.time()))
+
             # 獲取用戶的植物數據
             plants = await get_user_plants(owner_user_id)
-            
+
             # 創建PersonalLockerView
             from .personal_locker import PersonalLockerView
+
             guild_id = interaction.guild.id if interaction.guild else 0
             channel_id = interaction.channel.id
             # 獲取 PersonalLockerCog 實例
             add_log("ui", f"Available cogs: {list(self.cog.bot.cogs.keys())}")
-            locker_cog = self.cog.bot.get_cog('PersonalLockerCog')
+            locker_cog = self.cog.bot.get_cog("PersonalLockerCog")
             add_log("ui", f"locker_cog: {locker_cog}, type: {type(locker_cog)}")
             if not locker_cog:
-                await interaction.followup.send("❌ 置物櫃系統未載入，請聯繫管理員。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 置物櫃系統未載入，請聯繫管理員。", ephemeral=True
+                )
                 return
-            if not hasattr(locker_cog, 'record_event'):
-                await interaction.followup.send("❌ 置物櫃系統缺少必要方法，請聯繫管理員。", ephemeral=True)
+            if not hasattr(locker_cog, "record_event"):
+                await interaction.followup.send(
+                    "❌ 置物櫃系統缺少必要方法，請聯繫管理員。", ephemeral=True
+                )
                 return
-            view = PersonalLockerView(self.cog.bot, locker_cog, owner_user_id, guild_id, channel_id, plants, user_panel=self.cog)
-            
+            view = PersonalLockerView(
+                self.cog.bot,
+                locker_cog,
+                owner_user_id,
+                guild_id,
+                channel_id,
+                plants,
+                user_panel=self.cog,
+            )
+
             embed = discord.Embed(
                 title="📦 個人置物櫃",
                 description="使用下方按鈕管理你的作物種植、施肥和收割操作。",
-                color=discord.Color.blue()
+                color=discord.Color.blue(),
             )
-            
+
             embed.add_field(
                 name="🌱 作物管理",
                 value="• 作物種植：開始種植新的作物\n• 收割：收割成熟的作物\n• 個人物品：查看你的物品庫存",
-                inline=False
+                inline=False,
             )
-            
+
             embed.set_footer(text="💡 這個視圖是永久的，按鈕不會過期")
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-            
+
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             print(f"❌ [Locker Personal] 錯誤: {e}")
             try:
-                await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+                await interaction.followup.send(
+                    f"❌ 錯誤：{str(e)[:100]}", ephemeral=True
+                )
             except Exception as follow_e:
                 print(f"❌ [Locker Personal] 無法發送錯誤消息: {follow_e}")
-    
-    @discord.ui.button(label="變換性別", style=discord.ButtonStyle.secondary, emoji="👤", custom_id="locker_change_gender")
-    async def locker_change_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    @discord.ui.button(
+        label="變換性別",
+        style=discord.ButtonStyle.secondary,
+        emoji="👤",
+        custom_id="locker_change_gender",
+    )
+    async def locker_change_gender(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """從永久置物櫃面板打開性別選擇（立即 defer，避免 3 秒超時）"""
         # 立即 defer 避免 Discord 3 秒交互失敗（在任何重操作前）
         try:
@@ -189,7 +240,7 @@ class LockerPanelView(discord.ui.View):
         except Exception as e:
             print(f"❌ [Gender Change] 無法 defer: {e}")
             return
-        
+
         try:
             owner_user_id = await self.get_owner_user_id(interaction)
             if interaction.user.id != owner_user_id:
@@ -200,21 +251,35 @@ class LockerPanelView(discord.ui.View):
             try:
                 from .work_card import GenderSelectView
             except Exception:
-                await interaction.followup.send("❌ 系統錯誤：無法載入性別選擇視圖。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 系統錯誤：無法載入性別選擇視圖。", ephemeral=True
+                )
                 return
 
             gender_view = GenderSelectView(self.cog, owner_user_id)
-            await interaction.followup.send("請選擇你的性別：", view=gender_view, ephemeral=True)
-        except Exception as e:
+            await interaction.followup.send(
+                "請選擇你的性別：", view=gender_view, ephemeral=True
+            )
+        except Exception:
             import traceback
+
             traceback.print_exc()
             try:
-                await interaction.followup.send("❌ 系統錯誤：無法打開性別選擇。", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ 系統錯誤：無法打開性別選擇。", ephemeral=True
+                )
             except:
                 pass
 
-    @discord.ui.button(label="領取員工證", style=discord.ButtonStyle.danger, emoji="🎫", custom_id="locker_work_card")
-    async def work_card_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="領取員工證",
+        style=discord.ButtonStyle.danger,
+        emoji="🎫",
+        custom_id="locker_work_card",
+    )
+    async def work_card_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """領取或修改員工證（紅色按鈕）"""
         # 立即 defer 避免 Discord 3 秒交互失敗（在任何重操作前）
         try:
@@ -222,37 +287,49 @@ class LockerPanelView(discord.ui.View):
         except Exception as e:
             print(f"❌ [Work Card] 無法 defer: {e}")
             return
-        
+
         try:
             owner_user_id = await self.get_owner_user_id(interaction)
             if interaction.user.id != owner_user_id:
                 await interaction.followup.send("❌ 這不是你的置物櫃！", ephemeral=True)
                 return
-            
+
             # 更新最後活動時間（使用非同步版本）
-            await async_set_user_field(owner_user_id, 'last_activity', int(time.time()))
-            
+            await async_set_user_field(owner_user_id, "last_activity", int(time.time()))
+
             user_data = await async_get_user(owner_user_id)
-            
+
             # 檢查是否已填寫工作證信息（pre_job 存在表示已領取）
-            if user_data and user_data.get('pre_job'):
+            if user_data and user_data.get("pre_job"):
                 # 已有工作證，顯示修改選項
                 view = WorkCardActionView(self.cog, owner_user_id, user_data)
-                await interaction.followup.send("✅ 你已經有員工證了！", view=view, ephemeral=True)
+                await interaction.followup.send(
+                    "✅ 你已經有員工證了！", view=view, ephemeral=True
+                )
             else:
                 # 首次領取，提供填寫按鈕
                 from .work_card import WorkCardCreateView
+
                 view = WorkCardCreateView(self.cog, owner_user_id)
-                await interaction.followup.send("📝 歡迎申請員工證！請點擊下方按鈕填寫您的信息。", view=view, ephemeral=True)
-        
+                await interaction.followup.send(
+                    "📝 歡迎申請員工證！請點擊下方按鈕填寫您的信息。",
+                    view=view,
+                    ephemeral=True,
+                )
+
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             print(f"❌ [Locker Work Card] 錯誤: {e}")
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+                    await interaction.response.send_message(
+                        f"❌ 錯誤：{str(e)[:100]}", ephemeral=True
+                    )
                 else:
-                    await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
+                    await interaction.followup.send(
+                        f"❌ 錯誤：{str(e)[:100]}", ephemeral=True
+                    )
             except Exception as follow_e:
                 print(f"❌ [Locker Work Card] 無法發送錯誤消息: {follow_e}")

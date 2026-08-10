@@ -1,17 +1,17 @@
 import discord
 from discord.ext import commands, tasks
 import aiosqlite
-import asyncio
 from datetime import datetime, timedelta
 import traceback
 
+
 class RoleExpiryManager(commands.Cog):
     """管理身份組到期的系統"""
-    
+
     def __init__(self, bot):
         self.bot = bot
-        self.db_path = './user_data.db'
-        
+        self.db_path = "./user_data.db"
+
     async def cog_load(self):
         """Cog 載入時初始化資料庫並啟動檢查任務"""
         try:
@@ -21,12 +21,12 @@ class RoleExpiryManager(commands.Cog):
         except Exception as e:
             print(f"❌ 身份組到期管理系統啟動失敗: {e}")
             traceback.print_exc()
-    
+
     async def cog_unload(self):
         """Cog 卸載時停止檢查任務"""
         self.check_expired_roles.cancel()
         print("⚠️ 身份組到期管理系統已停止")
-    
+
     async def init_database(self):
         """初始化資料庫表格"""
         try:
@@ -45,29 +45,35 @@ class RoleExpiryManager(commands.Cog):
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
-                
+
                 # 創建索引以提高查詢效率
                 await db.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_expire_time 
+                    CREATE INDEX IF NOT EXISTS idx_expire_time
                     ON role_purchases(expire_time, is_expired)
                 """)
-                
+
                 await db.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_user_role 
+                    CREATE INDEX IF NOT EXISTS idx_user_role
                     ON role_purchases(user_id, role_id, is_expired)
                 """)
-                
+
                 await db.commit()
                 print("✅ 身份組購買記錄資料庫初始化完成")
-                
+
         except Exception as e:
             print(f"❌ 資料庫初始化失敗: {e}")
             traceback.print_exc()
-    
-    async def record_role_purchase(self, user_id: int, guild_id: int, role_id: int, 
-                                   role_name: str, duration_seconds: int):
+
+    async def record_role_purchase(
+        self,
+        user_id: int,
+        guild_id: int,
+        role_id: int,
+        role_name: str,
+        duration_seconds: int,
+    ):
         """記錄身份組購買
-        
+
         Args:
             user_id: 用戶 ID
             guild_id: 伺服器 ID
@@ -78,88 +84,108 @@ class RoleExpiryManager(commands.Cog):
         try:
             now = datetime.now()
             expire_time = now + timedelta(seconds=duration_seconds)
-            
+
             async with aiosqlite.connect(self.db_path) as db:
-                await db.execute("""
-                    INSERT INTO role_purchases 
+                await db.execute(
+                    """
+                    INSERT INTO role_purchases
                     (user_id, guild_id, role_id, role_name, purchase_time, expire_time, is_expired)
                     VALUES (?, ?, ?, ?, ?, ?, 0)
-                """, (
-                    user_id,
-                    guild_id,
-                    role_id,
-                    role_name,
-                    now.isoformat(),
-                    expire_time.isoformat()
-                ))
+                """,
+                    (
+                        user_id,
+                        guild_id,
+                        role_id,
+                        role_name,
+                        now.isoformat(),
+                        expire_time.isoformat(),
+                    ),
+                )
                 await db.commit()
-                
-            print(f"✅ 記錄身份組購買: 用戶 {user_id} 購買 {role_name}，將於 {expire_time} 到期")
+
+            print(
+                f"✅ 記錄身份組購買: 用戶 {user_id} 購買 {role_name}，將於 {expire_time} 到期"
+            )
             return True
-            
+
         except Exception as e:
             print(f"❌ 記錄身份組購買失敗: {e}")
             traceback.print_exc()
             return False
-    
+
     @tasks.loop(minutes=10)
     async def check_expired_roles(self):
         """每10分鐘檢查一次到期的身份組"""
         try:
             print(f"[{datetime.now()}] 🔍 開始檢查到期的身份組...")
-            
+
             now = datetime.now().isoformat()
-            
+
             async with aiosqlite.connect(self.db_path) as db:
                 # 查詢所有到期但尚未處理的身份組
-                cursor = await db.execute("""
+                cursor = await db.execute(
+                    """
                     SELECT id, user_id, guild_id, role_id, role_name, expire_time
                     FROM role_purchases
                     WHERE expire_time <= ? AND is_expired = 0
                     ORDER BY expire_time ASC
-                """, (now,))
-                
+                """,
+                    (now,),
+                )
+
                 expired_records = await cursor.fetchall()
-                
+
                 if not expired_records:
                     print("✅ 沒有到期的身份組")
                     return
-                
+
                 print(f"📋 找到 {len(expired_records)} 個到期的身份組記錄")
-                
+
                 # 處理每個到期記錄
                 for record in expired_records:
-                    record_id, user_id, guild_id, role_id, role_name, expire_time = record
-                    
+                    record_id, user_id, guild_id, role_id, role_name, expire_time = (
+                        record
+                    )
+
                     success = await self.remove_expired_role(
                         record_id, user_id, guild_id, role_id, role_name, expire_time
                     )
-                    
+
                     if success:
                         # 標記為已處理
-                        await db.execute("""
-                            UPDATE role_purchases 
-                            SET is_expired = 1 
+                        await db.execute(
+                            """
+                            UPDATE role_purchases
+                            SET is_expired = 1
                             WHERE id = ?
-                        """, (record_id,))
+                        """,
+                            (record_id,),
+                        )
                         await db.commit()
-                
-                print(f"✅ 到期身份組檢查完成")
-                
+
+                print("✅ 到期身份組檢查完成")
+
         except Exception as e:
             print(f"❌ 檢查到期身份組時發生錯誤: {e}")
             traceback.print_exc()
-    
+
     @check_expired_roles.before_loop
     async def before_check_expired_roles(self):
         """等待機器人準備就緒後再開始檢查"""
         await self.bot.wait_until_ready()
         print("✅ 機器人已就緒，身份組到期檢查任務準備啟動")
-    
-    async def remove_expired_role(self, record_id: int, user_id: int, guild_id: int, 
-                                  role_id: int, role_name: str, expire_time: str):
+
+    async def remove_expired_role(
+        self,
+        record_id: int,
+        user_id: int,
+        guild_id: int,
+        role_id: int,
+        role_name: str,
+        expire_time: str,
+    ):
         """移除到期的身份組
-        
+
         Returns:
             bool: 是否成功移除
         """
@@ -168,46 +194,54 @@ class RoleExpiryManager(commands.Cog):
             if not guild:
                 print(f"⚠️ 找不到伺服器 {guild_id}，跳過記錄 {record_id}")
                 return True  # 標記為已處理，避免重複嘗試
-            
+
             member = guild.get_member(user_id)
             if not member:
-                print(f"⚠️ 用戶 {user_id} 已離開伺服器 {guild.name}，跳過記錄 {record_id}")
+                print(
+                    f"⚠️ 用戶 {user_id} 已離開伺服器 {guild.name}，跳過記錄 {record_id}"
+                )
                 return True
-            
+
             role = guild.get_role(role_id)
             if not role:
                 print(f"⚠️ 找不到身份組 {role_id} ({role_name})，跳過記錄 {record_id}")
                 return True
-            
+
             # 檢查用戶是否還擁有該身份組
             if role not in member.roles:
-                print(f"ℹ️ 用戶 {member.display_name} 已經沒有身份組 {role_name}，跳過記錄 {record_id}")
+                print(
+                    f"ℹ️ 用戶 {member.display_name} 已經沒有身份組 {role_name}，跳過記錄 {record_id}"
+                )
                 return True
-            
+
             # 移除身份組
-            await member.remove_roles(role, reason=f"身份組到期 (過期時間: {expire_time})")
-            print(f"✅ 成功移除 {member.display_name} 的身份組 {role_name} (記錄 {record_id})")
-            
+            await member.remove_roles(
+                role, reason=f"身份組到期 (過期時間: {expire_time})"
+            )
+            print(
+                f"✅ 成功移除 {member.display_name} 的身份組 {role_name} (記錄 {record_id})"
+            )
+
             # 發送通知給用戶（可選）
             try:
                 embed = discord.Embed(
                     title="⏰ 身份組已到期",
                     description=f"你在 **{guild.name}** 的 **{role_name}** 身份組已到期並被移除。",
                     color=discord.Color.orange(),
-                    timestamp=datetime.now()
+                    timestamp=datetime.now(),
                 )
                 embed.add_field(name="到期時間", value=expire_time, inline=False)
                 embed.set_footer(text="如需繼續使用，請重新購買")
-                
+
                 await member.send(embed=embed)
                 print(f"📧 已向 {member.display_name} 發送到期通知")
             except discord.Forbidden:
                 print(f"⚠️ 無法向 {member.display_name} 發送私訊")
             except Exception as e:
                 print(f"⚠️ 發送通知時發生錯誤: {e}")
-            
+
             return True
-            
+
         except discord.Forbidden:
             print(f"❌ 權限不足，無法移除 {role_name} (記錄 {record_id})")
             return False
@@ -215,42 +249,50 @@ class RoleExpiryManager(commands.Cog):
             print(f"❌ 移除身份組時發生錯誤 (記錄 {record_id}): {e}")
             traceback.print_exc()
             return False
-    
+
     async def get_user_active_roles(self, user_id: int, guild_id: int):
         """獲取用戶所有活躍的身份組購買記錄"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
-                cursor = await db.execute("""
+                cursor = await db.execute(
+                    """
                     SELECT role_id, role_name, purchase_time, expire_time
                     FROM role_purchases
                     WHERE user_id = ? AND guild_id = ? AND is_expired = 0
                     ORDER BY expire_time ASC
-                """, (user_id, guild_id))
-                
+                """,
+                    (user_id, guild_id),
+                )
+
                 records = await cursor.fetchall()
                 return records
-                
+
         except Exception as e:
             print(f"❌ 獲取用戶活躍身份組失敗: {e}")
             return []
-    
+
     async def cancel_role_purchase(self, user_id: int, guild_id: int, role_id: int):
         """取消身份組購買記錄（用於手動移除或退款）"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
-                await db.execute("""
-                    UPDATE role_purchases 
-                    SET is_expired = 1 
+                await db.execute(
+                    """
+                    UPDATE role_purchases
+                    SET is_expired = 1
                     WHERE user_id = ? AND guild_id = ? AND role_id = ? AND is_expired = 0
-                """, (user_id, guild_id, role_id))
+                """,
+                    (user_id, guild_id, role_id),
+                )
                 await db.commit()
-                
+
             print(f"✅ 已取消用戶 {user_id} 的身份組 {role_id} 購買記錄")
             return True
-            
+
         except Exception as e:
             print(f"❌ 取消身份組購買記錄失敗: {e}")
             return False
+
+
 async def setup(bot):
     """Cog 設置函數"""
     try:
