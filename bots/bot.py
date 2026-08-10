@@ -234,6 +234,7 @@ async def find_and_load_extensions(base_path, package_prefix="", bot_client=None
 
     # 列出不應該被加載為 Cog 的模組
     excluded_modules = {
+        "scraper",  # 工具模組：爬蟲函式庫，非 Cog（async setup 不相容）
         "cannabis_farming",
         "cannabis_merchant_view_v2",
         "cannabis_config",
