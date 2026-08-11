@@ -169,12 +169,15 @@ def verify_github_signature(payload_body, signature_header):
 # ============================================================
 
 
-def execute_git_pull():
+def execute_git_pull(branch_name="main"):
     """
     執行 git pull 並更新代碼
+
+    Args:
+        branch_name: 要重置的分支名稱 (main 或 auto-self-heal)
     """
     try:
-        logger.info("📥 開始執行 git pull...")
+        logger.info(f"📥 開始執行 git pull (分支: {branch_name})...")
 
         # 移除鎖檔（如果存在）
         lockfile = PROJECT_DIR / ".git/index.lock"
@@ -198,9 +201,9 @@ def execute_git_pull():
             logger.error(f"❌ git fetch 失敗: {result.stderr}")
             return False, f"git fetch 失敗: {result.stderr}"
 
-        # 強制重置到最新
+        # 強制重置到指定分支最新
         result = subprocess.run(
-            ["git", "reset", "--hard", "origin/main"],
+            ["git", "reset", "--hard", f"origin/{branch_name}"],
             cwd=PROJECT_DIR,
             capture_output=True,
             text=True,
@@ -211,8 +214,8 @@ def execute_git_pull():
             logger.error(f"❌ git reset 失敗: {result.stderr}")
             return False, f"git reset 失敗: {result.stderr}"
 
-        logger.info("✅ Git pull 成功")
-        return True, "Git pull 成功"
+        logger.info(f"✅ Git pull 成功 (分支: {branch_name})")
+        return True, f"Git pull 成功 (分支: {branch_name})"
 
     except subprocess.TimeoutExpired:
         logger.error("⏱️ git 操作超時")
@@ -465,9 +468,12 @@ def github_webhook():
 
         payload_info = f"branch={branch_name}, commits={len(commits)}"
 
-        # 只處理 main 分支
-        if branch_name != "main":
-            logger.info(f"⏭️ 忽略分支 {branch_name}，僅監控 main")
+        # 支援的分支：main 和 auto-self-heal
+        SUPPORTED_BRANCHES = ("main", "auto-self-heal")
+
+        # 只處理支援的分支
+        if branch_name not in SUPPORTED_BRANCHES:
+            logger.info(f"⏭️ 忽略分支 {branch_name}，僅監控 {', '.join(SUPPORTED_BRANCHES)}")
             log_audit(client_ip, "ALLOWED", f"已忽略分支 {branch_name}", payload_info)
             return jsonify({"status": "ok", "message": "已忽略該分支"}), 200
 
@@ -475,7 +481,7 @@ def github_webhook():
         log_audit(client_ip, "ALLOWED", f"開始部署 {branch_name}", payload_info)
 
         # 執行更新和重啟
-        pull_success, pull_msg = execute_git_pull()
+        pull_success, pull_msg = execute_git_pull(branch_name)
 
         if not pull_success:
             logger.error(f"❌ 部署失敗: {pull_msg}")
