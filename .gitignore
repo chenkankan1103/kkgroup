@@ -1,14 +1,14 @@
-# 数据库文件
+﻿# ?唳摨?隞?
 *.db
 user_data.db
 user_data.db.*
 game_users.db
 
-# 环境配置
+# ?臬??蔭
 memory.json
 memory.json.backup
 
-# Python 缓存
+# Python 蝻?
 __pycache__/
 *.pyc
 *.pyo
@@ -18,17 +18,17 @@ __pycache__/
 dist/
 build/
 
-# 虚拟环境
+# ???臬?
 venv/
 env/
 ENV/
 .venv/
 
-# 工作區文件（文檔、測試、臨時工具）- 不提交 Git
+# 撌乩???辣嚗?瑼葫閰艾?極?瘀?- 銝?鈭?Git
 /docs_and_tests/
 /scripts/tests/
 
-# IDE 和编辑器
+# IDE ??颲
 .vscode/
 .idea/
 *.swp
@@ -38,96 +38,96 @@ ENV/
 .github/*
 !.github/workflows/
 
-# Godot 游戏开发（等完整输出后再推送）
+# Godot 皜豢?撘??蝑??渲??箏????
 game/
 
 *~
 
-# 日志文件
+# ?亙??辣
 *.log
 *.log.*
 update.log
 update_cron.log
 sync_cron.log
 
-# Graphify 知識圖譜輸出（本地生成，不提交）
+# Graphify ?亥???頛詨嚗?啁???銝?鈭歹?
 graphify-out/
 game_sync.log
 sync.log
 
-# 日志备份
+# ?亙?憭遢
 *.log.1
 *.log.2
 *.log.3
 
-# 仪表板日志
+# 隞芾”?踵敹?
 dashboard_logs.json
 
-# 测试文件
+# 瘚??辣
 test_*.py
 temp_*.py
 add_test_*.py
 WEEKLY_PANEL_DEMO.py
 
-# 本地開發/除錯腳本（不追蹤）
+# ?砍?/?日?單嚗?餈質馱嚗?
 check_*.py
 fix_*.py
 migrate_*.py
 verify_*.py
 push_core_b64.txt
-.copilot-instructions備份.md
+.copilot-instructions?遢.md
 
-# 文档和测试资源（本地开发用，不追踪）
+# ?﹝??霂?皞??砍撘?嚗?餈質葵嚗?
 docs_and_tests/
 docs_and_tests/**
 
-# 临时文件
+# 銝湔?辣
 *.backup
 *.tmp
 *.bak
 *.save
 
-# AI 知識刷新產物
+# AI ?亥??瑟?Ｙ
 knowledge/_wiki/Inbox/
 status/knowledge_refresh_status.json
 shared/db/data/knowledge_vector_index.pkl
 
-# 向量資料庫（本地產生，VM 會自動重建）
+# ??鞈?摨恬??砍?Ｙ?嚗M ???撱綽?
 chroma_db/
 
-# AI 記憶資料庫（本地產生）
+# AI 閮鞈?摨恬??砍?Ｙ?嚗?
 shared/db/data/ai_memory.db
 shared/db/data/feature_usage.db
 
-# 系统文件
+# 蝟餌??辣
 .DS_Store
 Thumbs.db
 
-# GCP 和本地開發工具（包含敏感信息，不追踪）
+# GCP ??圈??澆極?瘀????靽⊥嚗?餈質葵嚗?
 scripts/gcp-ssh.ps1
 scripts/*.ps1
 !scripts/open-knowledge-vault.ps1
 !scripts/sync-knowledge-to-vm.ps1
 
 # ===============================================
-# CRITICAL: 绝不追踪敏感信息
+# CRITICAL: 蝏?餈質葵??靽⊥
 # ===============================================
 
-# 环境变量和配置（绝不追踪）
+# ?臬?????蝵殷?蝏?餈質葵嚗?
 .env
 .env.*
 .env.backup.*
 .env.local
 .env.example
 
-# 凭据文件（绝不追踪）
+# ?剜?辣嚗?銝蕭頦迎?
 google_credentials.json
 *-credentials.json
 *_credentials.json
 credentials/
 .credentials/
 
-# 密钥和令牌文件
+# 撖?誘??隞?
 *.key
 *.pem
 *.p8
@@ -137,44 +137,45 @@ secrets.json
 config.local.json
 .vault
 
-# Cloud 配置（绝不追踪）
+# Cloud ?蔭嚗?銝蕭頦迎?
 .aws/
 .azure/
 .gcp/
 ~/.config/gcloud/
 
-# Python 供应商文件（不追踪）
+# Python 靘???隞塚?銝蕭頦迎?
 .local/
 .cache/
 .pip/
 
-# API 令牌和密钥（绝不追踪）
+# API 隞斤????伐?蝏?餈質葵嚗?
 *.token
 *.secret
 api_key.txt
 tokens.json
 
-# IDE 敏感信息
+# IDE ??靽⊥
 .idea/vcs.xml
 .idea/workspace.xml
 .vscode/settings.json
 
-# GCP 相关
+# GCP ?詨
 *_gcp.py
 gcp_secrets/
 
-# 工具脚本（不追踪）
+# 撌亙?嚗?餈質葵嚗?
 tools/
 tools/**
 
 # Ignore Claude configuration and runtime dirs
-.claude/
+# .claude/
 .claude-flow/
 
 # Ignore Claude Swarm directory
 .swarm/
 CLAUDE.md
 
-# Graphify 知識圖譜（本地建置，團隊可選擇提交 graphify-out/）
+# Graphify ?亥???嚗?啣遣蝵殷????舫??鈭?graphify-out/嚗?
 graphify-out/cost.json
 graphify-out/cache/
+
