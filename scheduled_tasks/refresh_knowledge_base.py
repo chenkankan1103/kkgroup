@@ -306,7 +306,7 @@ def main() -> int:
     steps = [
         [sys.executable, "scripts/scan_vm_state.py"],
         [sys.executable, "scripts/generate_feature_usage_report.py"],
-        [sys.executable, "scripts/ingest_knowledge.py"],
+        # Chroma 已移除，不再需要 ingest_knowledge.py
     ]
 
     outputs: list[str] = []
