@@ -22,17 +22,11 @@ try:
 except ImportError:  # pragma: no cover
     ZoneInfo = None
 
-# Chroma Server 模式環境變數（需在 import chroma_knowledge_index 之前設定）
-os.environ.setdefault("USE_CHROMA_SERVER", "true")
-os.environ.setdefault("CHROMA_SERVER_HOST", "127.0.0.1")
-os.environ.setdefault("CHROMA_SERVER_PORT", "8000")
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from shared.utils.llm_text_router import complete_text_with_fallback
-from shared.db.chroma_knowledge_index import ChromaKnowledgeIndex
 
 LOCK_FILE = PROJECT_ROOT / ".knowledge_refresh.lock"
 STATE_FILE = PROJECT_ROOT / ".knowledge_refresh_state.json"
@@ -320,8 +314,8 @@ def main() -> int:
     try:
         for command in steps:
             outputs.append(run_step(command))
-        indexed = ChromaKnowledgeIndex().rebuild_from_database()
-        outputs.append(json.dumps({"semantic_indexed": indexed}, ensure_ascii=False))
+        # Chroma 已移除，不再需要 rebuild_from_database
+        outputs.append(json.dumps({"semantic_indexed": 0, "note": "Chroma removed, using SQLite only"}, ensure_ascii=False))
     except Exception as exc:
         write_status("failure", outputs, len(steps), str(exc))
         send_webhook("failure", outputs, str(exc))
