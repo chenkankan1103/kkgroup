@@ -1,0 +1,9 @@
+{
+  "provider": "codex",
+  "model": "gpt-5",
+  "fallbackProvider": "gemini",
+  "fallbackModel": "gemini-2.5-pro",
+  "mode": "deliberate",
+  "chunkSize": 3000,
+  "timeoutSec": 300
+}
