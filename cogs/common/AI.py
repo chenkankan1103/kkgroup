@@ -50,7 +50,6 @@ try:
         KnowledgeBase,
         initialize_memory_system,
     )
-    from shared.db.chroma_knowledge_index import ChromaKnowledgeIndex
 
     _MEMORY_AVAILABLE = True
 except ImportError:
@@ -75,11 +74,11 @@ except ImportError:
             return ""
 
         @staticmethod
-        def get_recent_items(limit=20, category=None):
+        def search_knowledge_items(keyword, limit=10):
             return []
 
-    class ChromaKnowledgeIndex:  # type: ignore
-        def hybrid_search(self, query, limit=5, category=None):
+        @staticmethod
+        def get_recent_items(limit=20, category=None):
             return []
 
     def initialize_memory_system():
@@ -478,8 +477,8 @@ class KKBotAgent:
             return _SYSTEM_PROMPT
 
         memory_context = build_memory_context()
-        vector_index = ChromaKnowledgeIndex()
-        semantic_items = vector_index.hybrid_search(user_msg, limit=4)
+        # 使用 SQLite keyword search 替代 Chroma hybrid_search
+        semantic_items = KnowledgeBase.search_knowledge_items(user_msg, limit=4)
         related_knowledge = KnowledgeBase.search_knowledge(user_msg, max_tokens=500)
         recent_vm_items = KnowledgeBase.get_recent_items(limit=3, category="vm_scan")
 

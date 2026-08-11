@@ -47,13 +47,13 @@ logger = logging.getLogger(__name__)
 # 註冊 Blueprints
 # ============================================================
 
-from blueprints.stats import stats_bp
-from blueprints.sheets import sheets_bp
-from blueprints.discord_auth import discord_auth_bp
-from blueprints.knowledge_api import knowledge_api_bp
-from blueprints.stocks_api import stocks_api_bp
-from blueprints.webhook import webhook_bp
-from api.game_api import game_bp, init_game_api
+from web.blueprints.stats import stats_bp
+from web.blueprints.sheets import sheets_bp
+from web.blueprints.discord_auth import discord_auth_bp
+from web.blueprints.knowledge_api import knowledge_api_bp
+from web.blueprints.stocks_api import stocks_api_bp
+from web.blueprints.webhook import webhook_bp
+from web.api.game_api import game_bp, init_game_api
 
 app.register_blueprint(stats_bp)
 app.register_blueprint(sheets_bp)

@@ -19,7 +19,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Optional
+from typing import Dict, List, Sequence, Optional, Any
 
 # 專案根目錄
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +45,28 @@ CHROMA_COLLECTION_NAME = "kkgroup_knowledge"
 CHROMA_SERVER_HOST = os.getenv("CHROMA_SERVER_HOST", "localhost")
 CHROMA_SERVER_PORT = int(os.getenv("CHROMA_SERVER_PORT", "8000"))
 USE_CHROMA_SERVER = os.getenv("USE_CHROMA_SERVER", "false").lower() == "true"
+
+
+def sanitize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """將 metadata 值轉為 chromadb 相容類型 (str, int, float, bool, list, None)。"""
+    import json as json_module
+    result = {}
+    for key, value in metadata.items():
+        if value is None or isinstance(value, (str, int, float, bool)):
+            result[key] = value
+        elif isinstance(value, (list, tuple)):
+            # 確保 list 內元素也是基本類型
+            result[key] = [
+                v if isinstance(v, (str, int, float, bool, type(None))) else str(v)
+                for v in value
+            ]
+        elif isinstance(value, dict):
+            # dict 序列化為 JSON 字串
+            result[key] = json_module.dumps(value, ensure_ascii=False)
+        else:
+            # 其他類型轉字串
+            result[key] = str(value)
+    return result
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -310,11 +332,12 @@ def build_markdown_chunks(path: Path, knowledge_root: Path) -> List[KnowledgeChu
     chunks = split_markdown(body)
     result = []
     for i, chunk_text in enumerate(chunks):
+        raw_metadata = {**base_metadata, "chunk_index": i, "topic": topic}
         result.append(
             KnowledgeChunk(
                 id=f"{relative_path}::chunk::{i}",
                 text=f"# {topic}\n\n{chunk_text}",
-                metadata={**base_metadata, "chunk_index": i, "topic": topic},
+                metadata=sanitize_metadata(raw_metadata),
             )
         )
     return result
@@ -323,7 +346,11 @@ def build_markdown_chunks(path: Path, knowledge_root: Path) -> List[KnowledgeChu
 def build_python_chunks(path: Path) -> List[KnowledgeChunk]:
     content = path.read_text(encoding="utf-8")
     relative_path = path.relative_to(PROJECT_ROOT).as_posix()
-    return split_python_code(path, content)
+    chunks = split_python_code(path, content)
+    # 套用 metadata sanitizer 到所有 chunks
+    for chunk in chunks:
+        chunk.metadata = sanitize_metadata(chunk.metadata)
+    return chunks
 
 
 # ==================== Chroma 客戶端 ====================
