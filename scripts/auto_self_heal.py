@@ -27,23 +27,42 @@ import time
 import traceback
 from datetime import datetime
 from pathlib import Path
-from shared.utils.llm_text_router import GROQ_MODEL
 from typing import Optional, Dict, List, Tuple
 
-# ---------- NEW: Agent‑specific imports ----------
-from collections import deque
-
-# ─── 工具模組 ────────────────────────────────────────────────
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-from utils.nvidia_ai import call_nvidia_ai
+# ─── 專案根目錄 (需在 shared import 之前加入 sys.path) ─────────────
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(PROJECT_ROOT))
 
 # ─── 路徑設定 ────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BACKUP_DIR = PROJECT_ROOT / "archive" / "self_heal_backups"
 FIXES_DIR = PROJECT_ROOT / "archive" / "self_heal_fixes"
 MEMORY_DIR = PROJECT_ROOT / "data"
 MEMORY_FILE = MEMORY_DIR / "self_heal_agent_memory.json"
 STATE_FILE = PROJECT_ROOT / "data" / "self_heal_state.json"
+
+from shared.utils.llm_text_router import GROQ_MODEL
+
+# ─── 工具模組 ────────────────────────────────────────────────
+from utils.nvidia_ai import call_nvidia_ai
+
+# ─── 導入 ClaudeCodeAgent (完整工具集: read/write/edit/list/glob/bash/task)
+try:
+    from cogs.common.claude_code import (
+        ClaudeCodeAgent,
+        WORK_DIR as CLAUDE_WORK_DIR,
+        NVIDIA_API_KEY as CLAUDE_NVIDIA_KEY,
+    )
+    CLAUDE_CODE_AVAILABLE = True
+except ImportError as e:
+    _log(f"⚠️ 無法導入 ClaudeCodeAgent: {e}", "WARN")
+    CLAUDE_CODE_AVAILABLE = False
+    CLAUDE_WORK_DIR = PROJECT_ROOT
+    CLAUDE_NVIDIA_KEY = os.getenv("NVIDIA_API_KEY", "")
+
+# ─── 防呆設定 ────────────────────────────────────────────────
+MAX_AGENT_RETRIES = int(os.getenv("SELF_HEAL_MAX_RETRIES", "5"))  # 連續失敗 N 次回滾
+ROLLBACK_BRANCH = os.getenv("SELF_HEAL_ROLLBACK_BRANCH", "main")  # 回滾目標分支
+STABLE_COMMIT_FILE = PROJECT_ROOT / "data" / "self_heal_stable_commit.txt"
 
 # ─── 錯誤分級 ────────────────────────────────────────────────
 # L1: 可直接自動修復的錯誤類型
@@ -253,7 +272,12 @@ def _load_env():
 def _log(msg: str, level: str = "INFO"):
     """統一日誌輸出"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] [{level}] {msg}", flush=True)
+    try:
+        print(f"[{timestamp}] [{level}] {msg}", flush=True)
+    except UnicodeEncodeError:
+        # Windows cp950 兼容：移除無法編碼的字符
+        safe_msg = msg.encode("cp950", errors="ignore").decode("cp950")
+        print(f"[{timestamp}] [{level}] {safe_msg}", flush=True)
 
 
 def _load_state() -> dict:
@@ -264,7 +288,7 @@ def _load_state() -> dict:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             pass
-    return {"last_check": {}, "incidents": [], "fix_history": []}
+    return {"last_check": {}, "incidents": [], "fix_history": [], "agent_failures": 0, "last_stable_commit": ""}
 
 
 def _save_state(state: dict):
@@ -272,6 +296,106 @@ def _save_state(state: dict):
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def get_stable_commit() -> Optional[str]:
+    """獲取最後穩定的 commit hash"""
+    # 1. 先嘗試從狀態檔讀取
+    state = _load_state()
+    commit = state.get("last_stable_commit")
+    if commit:
+        return commit
+    # 2. 再嘗試讀取獨立檔案
+    if STABLE_COMMIT_FILE.exists():
+        try:
+            return STABLE_COMMIT_FILE.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+    # 3. 最後回退到 origin/main
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "origin/main"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=PROJECT_ROOT,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+def save_stable_commit(commit_hash: str):
+    """記錄穩定的 commit hash（服務正常運行時調用）"""
+    state = _load_state()
+    state["last_stable_commit"] = commit_hash
+    _save_state(state)
+    STABLE_COMMIT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STABLE_COMMIT_FILE.write_text(commit_hash, encoding="utf-8")
+    _log(f"💾 已記錄穩定 commit: {commit_hash[:8]}", "INFO")
+
+
+def rollback_to_stable_commit(service: str) -> bool:
+    """強制回滾到最後穩定 commit，並重啟服務"""
+    stable_commit = get_stable_commit()
+    if not stable_commit:
+        _log("❌ 找不到穩定 commit，無法回滾", "ERROR")
+        return False
+
+    _log(f"🔄 觸發防呆回滾到穩定 commit: {stable_commit[:8]}", "WARN")
+
+    try:
+        # 硬重置到穩定 commit
+        result = subprocess.run(
+            ["git", "reset", "--hard", stable_commit],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=PROJECT_ROOT,
+        )
+        if result.returncode != 0:
+            _log(f"❌ git reset 失敗: {result.stderr[:300]}", "ERROR")
+            return False
+
+        _log(f"✅ 已重置到穩定 commit: {stable_commit[:8]}", "INFO")
+
+        # 重啟服務
+        fix_executor = FixExecutor()
+        return fix_executor._restart_service(service)
+
+    except Exception as e:
+        _log(f"❌ 回滾異常: {e}", "ERROR")
+        return False
+
+
+def record_agent_failure():
+    """記錄 Agent 失敗次數"""
+    state = _load_state()
+    state["agent_failures"] = state.get("agent_failures", 0) + 1
+    _save_state(state)
+    return state["agent_failures"]
+
+
+def reset_agent_failures():
+    """重置 Agent 失敗計數（修復成功時調用）"""
+    state = _load_state()
+    state["agent_failures"] = 0
+    _save_state(state)
+    # 同時更新穩定 commit
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=PROJECT_ROOT,
+        )
+        if result.returncode == 0:
+            save_stable_commit(result.stdout.strip())
+    except Exception:
+        pass
 
 
 def _normalize_timestamp(ts_str: str) -> Optional[datetime]:
@@ -509,323 +633,145 @@ def list_backups(file_path: str, max_results: int = 5) -> List[str]:
     return [str(b) for b in backups[:max_results]]
 
 
-# ─── L1 修復器 ────────────────────────────────────────────────
+# ─── Agent 修復引擎 (取代 L1/L2) ──────────────────────────────
 
 
-class L1Fixer:
-    """L1 自動修復：處理常見的可預測錯誤"""
+class AgentFixEngine:
+    """
+    統一修復引擎：使用 ClaudeCodeAgent 進行完整的 ReAct 循環修復
+    - 7 工具: read, write, edit, list, glob, bash, task
+    - 完整代碼搜尋、編輯、測試、驗證能力
+    - 內建失敗計數與自動回滾機制
+    """
 
-    @staticmethod
-    def fix_import_error(error_text: str, file_path: str) -> Optional[str]:
-        """修復 ImportError - 嘗試 pip install 缺少的模組"""
-        match = re.search(r"ImportError: No module named ['\"](.+?)['\"]", error_text)
-        if not match:
-            match = re.search(
-                r"ModuleNotFoundError: No module named ['\"](.+?)['\"]", error_text
-            )
-        if not match:
-            return None
+    def __init__(self, fix_executor: "FixExecutor", notifier: "DiscordNotifier"):
+        self.fix_executor = fix_executor
+        self.notifier = notifier
+        self.agent = None
+        self._init_agent()
 
-        module_name = match.group(1)
-        _log(f"🔧 L1: 嘗試安裝缺少模組: {module_name}", "INFO")
+    def _init_agent(self):
+        """初始化 ClaudeCodeAgent"""
+        if not CLAUDE_CODE_AVAILABLE:
+            _log("⚠️ ClaudeCodeAgent 不可用，將使用降級模式", "WARN")
+            return
 
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", module_name],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if result.returncode == 0:
-                _log(f"✅ L1: 成功安裝 {module_name}", "INFO")
-                return f"pip install {module_name}"
-            else:
-                _log(f"❌ L1: 安裝 {module_name} 失敗: {result.stderr[:200]}", "WARN")
-                return None
-        except subprocess.TimeoutExpired:
-            _log(f"❌ L1: 安裝 {module_name} 逾時", "WARN")
-            return None
-        except Exception as e:
-            _log(f"❌ L1: 安裝異常: {e}", "ERROR")
-            return None
-
-    @staticmethod
-    def fix_name_error(error_text: str, file_path: str) -> Optional[str]:
-        """修復 NameError - 記錄但通常需要人工確認"""
-        match = re.search(r"NameError: name ['\"](.+?)['\"] is not defined", error_text)
-        if not match:
-            return None
-
-        var_name = match.group(1)
-        _log(f"🔧 L1: NameError - '{var_name}' 未定義，需檢查檔案 {file_path}", "INFO")
-        # NameError 通常需要理解上下文，回傳 None 讓它升級到 L2
-        return None
-
-    @staticmethod
-    def fix_file_not_found(error_text: str, file_path: str) -> Optional[str]:
-        """修復 FileNotFoundError - 嘗試建立目錄"""
-        match = re.search(
-            r"FileNotFoundError: \[Errno 2\] No such file or directory: ['\"](.+?)['\"]",
-            error_text,
-        )
-        if not match:
-            return None
-
-        missing_path = match.group(1)
-        _log(f"🔧 L1: 嘗試建立缺少的目錄: {missing_path}", "INFO")
+        if not CLAUDE_NVIDIA_KEY:
+            _log("⚠️ NVIDIA_API_KEY 未設定，ClaudeCodeAgent 無法啟動", "WARN")
+            return
 
         try:
-            os.makedirs(os.path.dirname(missing_path), exist_ok=True)
-            _log(f"✅ L1: 已建立目錄 {os.path.dirname(missing_path)}", "INFO")
-            return f"mkdir -p {os.path.dirname(missing_path)}"
+            # 建立 agent（無 Discord 互動，使用內部 callback 收集進度）
+            self.agent = ClaudeCodeAgent(user_id=0, channel_id=0)
+            self.agent.progress_callback = self._collect_progress
+            self.progress_log = []
+            _log("🤖 AgentFixEngine 初始化完成 (ClaudeCodeAgent)", "INFO")
         except Exception as e:
-            _log(f"❌ L1: 建立目錄失敗: {e}", "WARN")
-            return None
+            _log(f"❌ Agent 初始化失敗: {e}", "ERROR")
+            self.agent = None
 
-    @staticmethod
-    def fix_permission_error(error_text: str, file_path: str) -> Optional[str]:
-        """修復 PermissionError - 嘗試修正權限"""
-        match = re.search(r"PermissionError: \[Errno 13\] (.+)", error_text)
-        if not match:
-            return None
+    def _collect_progress(self, text: str):
+        self.progress_log.append(text)
 
-        _log("🔧 L1: 嘗試修正檔案權限", "INFO")
+    def is_available(self) -> bool:
+        return self.agent is not None
+
+    async def diagnose_and_fix(self, error_info: dict, error_text: str, file_path: str, service: str) -> dict:
+        """
+        執行完整的診斷+修復循環
+        返回: {"success": bool, "root_cause": str, "fixes_applied": list, "verification": str, "progress_log": list}
+        """
+        if not self.is_available():
+            return {"success": False, "reason": "agent_unavailable", "progress_log": []}
+
+        _log(f"🤖 AgentFixEngine 開始修復: {service}", "INFO")
+
+        # 構建包含完整上下文的修復提示
+        prompt = self._build_diagnosis_prompt(error_info, error_text, file_path, service)
+
+        # 執行 agentic loop
         try:
-            # 找出錯誤中提到的檔案路徑
-            path_match = re.search(r"['\"](.+?)['\"]", match.group(1))
-            if path_match:
-                target = path_match.group(1)
-                if os.path.exists(target):
-                    os.chmod(target, 0o644)
-                    _log(f"✅ L1: 已修正權限: {target}", "INFO")
-                    return f"chmod 644 {target}"
+            reply = await self.agent.run(prompt)
         except Exception as e:
-            _log(f"❌ L1: 修正權限失敗: {e}", "WARN")
-        return None
+            _log(f"❌ Agent 執行異常: {e}", "ERROR")
+            return {"success": False, "reason": f"agent_exception: {e}", "progress_log": self.progress_log}
 
-    @staticmethod
-    def fix_discord_not_found(error_text: str, file_path: str) -> Optional[str]:
-        """修復 Discord NotFound - 通常是暫時性問題，記錄即可"""
-        _log("🔧 L1: Discord 404 錯誤，通常為暫時性問題", "INFO")
-        return "discord_not_found_ignored"
+        # 解析結果
+        return self._parse_repair_result(reply, service)
 
-    @staticmethod
-    def ignore_with_backoff(
-        error_text: str, file_path: str, backoff_seconds: int = 60
-    ) -> Optional[str]:
-        """Benign pattern matched - log and ignore with backoff"""
-        _log(f"🔧 L1: 偵測到良性錯誤模式，忽略並退避 {backoff_seconds} 秒", "INFO")
-        return f"ignore_with_backoff:{backoff_seconds}"
-
-    @classmethod
-    def try_fix(cls, error_type: str, error_text: str, file_path: str) -> Optional[str]:
-        """嘗試執行 L1 修復"""
-        fixers = {
-            "import_error": cls.fix_import_error,
-            "module_not_found": cls.fix_import_error,
-            "name_error": cls.fix_name_error,
-            "file_not_found": cls.fix_file_not_found,
-            "permission_error": cls.fix_permission_error,
-            "discord_not_found": cls.fix_discord_not_found,
-            "discord_forbidden": cls.fix_discord_not_found,
-            "gemini_quota": lambda t, p: cls.ignore_with_backoff(t, p, 300),
-            "discord_gateway_reconnect": lambda t, p: cls.ignore_with_backoff(t, p, 60),
-            "tunnel_url_failure": lambda t, p: cls.ignore_with_backoff(t, p, 120),
-        }
-
-        fixer = fixers.get(error_type)
-        if fixer:
-            return fixer(error_text, file_path)
-        return None
-
-
-# ─── L2 AI 修復器 ────────────────────────────────────────────
-
-
-class L2Fixer:
-    """L2 AI 輔助修復：使用 NVIDIA/Groq AI 分析並生成修復"""
-
-    def __init__(self):
-        self.nvidia_key = os.getenv("NVIDIA_API_KEY", "")
-        self.groq_key = os.getenv("GROQ_API_KEY", "")
-        self.nvidia_model = os.getenv(
-            "NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b"
-        )
-
-    async def analyze_and_fix(
-        self, error_text: str, file_path: str, service: str
-    ) -> Optional[dict]:
-        """使用 AI 分析錯誤並生成修復"""
-        _log(f"🤖 L2: 使用 AI 分析錯誤 ({service})", "INFO")
-
-        # 讀取出錯檔案內容
-        abs_path = Path(file_path)
-        if not abs_path.is_absolute():
-            abs_path = PROJECT_ROOT / file_path
-
-        file_content = ""
-        if abs_path.exists():
-            try:
-                with open(abs_path, "r", encoding="utf-8") as f:
-                    file_content = f.read()
-            except Exception as e:
-                _log(f"⚠️ 無法讀取檔案 {file_path}: {e}", "WARN")
-
-        # 構建 AI 提示
-        prompt = self._build_prompt(error_text, file_path, file_content, service)
-
-        # 嘗試 NVIDIA
-        analysis = await self._call_nvidia(prompt)
-
-        # 備援 Groq
-        if not analysis:
-            analysis = await self._call_groq(prompt)
-
-        if not analysis:
-            _log("❌ L2: AI 分析失敗（NVIDIA + Groq 皆無回應）", "ERROR")
-            return None
-
-        return analysis
-
-    def _build_prompt(
-        self, error_text: str, file_path: str, file_content: str, service: str
-    ) -> str:
-        """構建 AI 分析提示"""
-        prompt = f"""你是 KKGroup Discord Bot 系統的 AI 除錯專家。
-請分析以下錯誤並生成修復代碼。
-
-## 系統環境
-- GCP VM: e2-micro (1GB RAM + 4GB swap)
-- 服務: {service}
-- 技術棧: Python 3.11 + Discord.py + systemd
+    def _build_diagnosis_prompt(self, error_info: dict, error_text: str, file_path: str, service: str) -> str:
+        """構建包含完整上下文的修復提示"""
+        return f"""你是 KKGroup Discord Bot 系統的自動修復專家（Claude Code 模式）。
 
 ## 錯誤資訊
-- 檔案: {file_path}
-- 錯誤訊息: {error_text}
+- 服務: {service}
+- 錯誤日誌:
+{error_text[:4000]}
+- 疑似檔案: {file_path}
 
-## 檔案內容（前 200 行）
-{file_content[:5000] if file_content else "(無法讀取檔案內容)"}
+## 系統環境
+- 專案根目錄: {CLAUDE_WORK_DIR}
+- 三服務: bot.service, shopbot.service, uibot.service
+- 技術棧: Python 3.11 + Discord.py 2.0 + SQLite (WAL模式) + systemd
+- 記憶體: e2-micro (1GB RAM + 4GB swap)
 
-## 請以 JSON 格式回覆（只輸出 JSON，不要有其他文字）：
-{{
-    "root_cause": "根本原因（繁體中文）",
-    "fix_type": "modify_file | install_package | restart_service | other",
-    "fix_target": "需要修改的檔案路徑",
-    "fix_code": "具體的修復代碼（如果是 modify_file）",
-    "fix_command": "需要執行的 shell 命令（如果不是 modify_file）",
-    "verification": "如何驗證修復成功（例如：systemctl is-active <service> 或一個應返回 0 的指令）",
-    "confidence": 0.0-1.0
-}}"""
-        return prompt
+## 你的任務
+1. **讀取**疑似檔案與相關代碼，理解錯誤根因 (用 read/glob 工具)
+2. **搜尋**相關模組（用 glob/rg 工具），找出所有受影響處
+3. **編輯修復**代碼（用 edit/write 工具，精確字串替換）
+4. **驗證**修復：執行測試或重啟服務檢查狀態 (用 bash 工具)
+5. **輸出**結構化總結
 
-    async def _call_nvidia(self, prompt: str) -> Optional[dict]:
-        """呼叫 NVIDIA AI API"""
-        if not self.nvidia_key:
-            return None
+## 可用工具
+- read <path>: 讀取檔案
+- write <path> <content>: 寫入檔案
+- edit <path> <old_str> <new_str>: 精確編輯
+- list <path>: 列出目錄
+- glob <pattern>: 搜尋檔案
+- bash <command>: 執行指令 (受白名單限制)
+- task <description>: 啟動子任務
 
-        try:
-            messages = [
-                {
-                    "role": "system",
-                    "content": "你是 KKGroup Discord Bot 系統的 AI 除錯專家。請只輸出 JSON。",
-                },
-                {"role": "user", "content": prompt},
-            ]
+## 限制
+- 禁止修改 .env、敏感設定檔
+- 禁止執行危險指令（rm -rf, shutdown, reboot, git push main 等）
+- bash 指令需通過白名單驗證
+- 修復後必須用 `systemctl is-active {service}` 驗證服務啟動
 
-            content = await call_nvidia_ai(
-                messages,
-                temperature=0.3,
-                max_tokens=2000,
-                model=self.nvidia_model,
-            )
+## 輸出格式（任務完成時必須包含）
+任務完成：
+- 根本原因: <一句話>
+- 修復檔案: <檔案路徑列表，逗號分隔>
+- 修復摘要: <做了什麼>
+- 驗證結果: systemctl is-active {service} -> active/inactive
+"""
 
-            if content:
-                return self._parse_ai_response(content)
-            else:
-                return None
-        except Exception as e:
-            _log(f"NVIDIA API 異常: {e}", "WARN")
-            return None
+    def _parse_repair_result(self, reply: str, service: str) -> dict:
+        """解析 agent 回覆，提取結構化結果"""
+        result = {
+            "success": False,
+            "root_cause": "",
+            "fixes_applied": [],
+            "verification": "",
+            "raw_reply": reply[:3000],
+            "progress_log": self.progress_log.copy(),
+        }
 
-    async def _call_groq(self, prompt: str) -> Optional[dict]:
-        """呼叫 Groq API（免費備援）"""
-        if not self.groq_key:
-            return None
+        if "任務完成" in reply:
+            result["success"] = True
+            lines = reply.split("\n")
+            for line in lines:
+                line = line.strip()
+                if line.startswith("根本原因:") or line.startswith("- 根本原因:"):
+                    result["root_cause"] = line.split(":", 1)[1].strip().lstrip("- ")
+                elif line.startswith("修復檔案:") or line.startswith("- 修復檔案:"):
+                    files_str = line.split(":", 1)[1].strip()
+                    result["fixes_applied"] = [f.strip() for f in files_str.split(",") if f.strip()]
+                elif line.startswith("驗證結果:") or line.startswith("- 驗證結果:"):
+                    result["verification"] = line.split(":", 1)[1].strip()
+                elif line.startswith("修復摘要:") or line.startswith("- 修復摘要:"):
+                    result["fix_summary"] = line.split(":", 1)[1].strip()
 
-        try:
-            import aiohttp
-
-            messages = [
-                {
-                    "role": "system",
-                    "content": "你是 KKGroup Discord Bot 系統的 AI 除錯專家。請只輸出 JSON。",
-                },
-                {"role": "user", "content": prompt},
-            ]
-
-            payload = {
-                "model": GROQ_MODEL,
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 2000,
-            }
-
-            headers = {
-                "Authorization": f"Bearer {self.groq_key}",
-                "Content-Type": "application/json",
-            }
-
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=15)
-            ) as session:
-                async with session.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    json=payload,
-                    headers=headers,
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        content = (
-                            data.get("choices", [{}])[0]
-                            .get("message", {})
-                            .get("content", "")
-                        )
-                        if content:
-                            return self._parse_ai_response(content)
-                    else:
-                        _log(f"Groq API 錯誤: {resp.status}", "WARN")
-                        return None
-        except Exception as e:
-            _log(f"Groq API 異常: {e}", "WARN")
-            return None
-
-    def _parse_ai_response(self, content: str) -> Optional[dict]:
-        """解析 AI 回應的 JSON"""
-        # 嘗試直接解析
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            pass
-
-        # 嘗試從 markdown code block 中提取
-        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # 嘗試從大括號中提取
-        brace_match = re.search(r"\{[\s\S]*\}", content)
-        if brace_match:
-            try:
-                return json.loads(brace_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
-        _log("⚠️ 無法解析 AI 回應為 JSON", "WARN")
-        _log(f"原始回應: {content[:500]}", "DEBUG")
-        return None
+        return result
 
 
 # ─── 修復執行器 ──────────────────────────────────────────────
@@ -1362,315 +1308,6 @@ class DiscordNotifier:
             )
 
 
-# ---------- NEW: Agent‑specific classes ----------
-
-
-class _AgentMemory:
-    """Simple JSON‑based short‑term + long‑term memory."""
-
-    def __init__(self, path: Path, max_recent: int = 20):
-        self.path = path
-        self.max_recent = max_recent
-        self.recent: deque[Dict] = deque(maxlen=max_recent)
-        self._load()
-
-    def _load(self):
-        try:
-            if self.path.is_file():
-                data = json.loads(self.path.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    self.recent.extend(data[-self.max_recent :])
-        except Exception:
-            self.recent.clear()
-
-    def _save(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(list(self.recent), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    def add(self, entry: Dict):
-        self.recent.append(entry)
-        self._save()
-
-    def recent_as_text(self) -> str:
-        if not self.recent:
-            return "(no recent memory)"
-        lines = []
-        for i, m in enumerate(self.recent, 1):
-            lines.append(
-                f"{i}. [{m.get('timestamp')}] {m.get('error','')} -> "
-                f"{m.get('tool')} ({m.get('result')})"
-            )
-        return "\n".join(lines)
-
-
-class AutonomousAgent:
-    """
-    ReAct‑style loop:
-      Observation → LLM (thought+tool+args) → Execute → Observation → …
-    All tools are whitelisted and delegated to the existing FixExecutor.
-    """
-
-    def __init__(
-        self,
-        llm_client,  # callable: (messages, **kw) -> str
-        fix_executor: FixExecutor,
-        notifier: DiscordNotifier,
-        memory_path: Path,
-        max_steps: int = 5,
-        temperature: float = 0.3,
-    ):
-        self.llm = llm_client
-        self.fix = fix_executor
-        self.notifier = notifier
-        self.memory = _AgentMemory(memory_path)
-        self.max_steps = max_steps
-        self.temperature = temperature
-
-    # -----------------------------------------------------------------
-    # Prompt engineering (ReAct)
-    # -----------------------------------------------------------------
-    def _build_prompt(self, observation: str) -> str:
-        """Return a prompt that asks the LLM to output a JSON action."""
-        tool_descr = "\n".join(
-            [
-                "- pip_install <package>: install a Python package via pip",
-                "- restart_service <service>: restart a systemd service",
-                "- run_command <shell_cmd>: execute a whitelisted shell command",
-                "- no_op: do nothing (useful when the error is transient)",
-            ]
-        )
-        return f"""You are an autonomous self‑healing agent for a Discord‑bot VM.
-You receive an observation (error log) and may choose a tool to fix it.
-You have access to a short‑term memory of recent actions.
-
-Available tools:
-{tool_descr}
-
-Memory (most recent first):
-{self.memory.recent_as_text()}
-
-Observation:
-{observation}
-
-Respond **only** with a JSON object that follows this exact schema:
-{{
-  "thought": "<brief reasoning why you chose this action>",
-  "tool": "<one of the tool names above>",
-  "args": {{ "<tool‑specific key>": "<value>", ... }}
-}}
-
-If you believe no action is needed, set tool to "no_op" and leave args empty.
-Do not include any extra text outside the JSON.
-"""
-
-    # -----------------------------------------------------------------
-    # LLM interaction (with fallback to Groq if NVIDIA fails)
-    # -----------------------------------------------------------------
-    async def _call_llm(self, prompt: str) -> Optional[str]:
-        messages = [
-            {
-                "role": "system",
-                "content": "You are a helpful autonomous agent. Output only valid JSON.",
-            },
-            {"role": "user", "content": prompt},
-        ]
-        # Try NVIDIA first
-        try:
-            resp = await self.llm(
-                messages,
-                temperature=self.temperature,
-                max_tokens=800,
-            )
-            if resp:
-                return resp.strip()
-        except Exception:
-            # log but continue to fallback
-            pass
-        # Fallback – use the shared Groq client (same as elsewhere)
-        try:
-            from shared.utils.llm_text_router import (
-                groq_text,
-            )  # assuming a helper exists
-
-            resp = await groq_text(
-                prompt,
-                temperature=self.temperature,
-                max_tokens=800,
-            )
-            if resp:
-                return resp.strip()
-        except Exception:
-            pass
-        return None
-
-    # -----------------------------------------------------------------
-    # Parse LLM JSON safely
-    # -----------------------------------------------------------------
-    def _parse_llm_response(self, text: str) -> Optional[Dict]:
-        try:
-            data = json.loads(text)
-            if not isinstance(data, dict):
-                return None
-            # Basic validation
-            if "tool" not in data or not isinstance(data["tool"], str):
-                return None
-            if "thought" not in data or not isinstance(data["thought"], str):
-                data["thought"] = ""
-            if "args" not in data or not isinstance(data["args"], dict):
-                data["args"] = {}
-            return data
-        except Exception:
-            return None
-
-    # -----------------------------------------------------------------
-    # Dispatch the chosen tool to the existing FixExecutor (whitelisted)
-    # -----------------------------------------------------------------
-    async def _dispatch_tool(self, action: Dict) -> bool:
-        tool = action.get("tool", "").lower().strip()
-        args = action.get("args", {})
-        thought = action.get("thought", "")
-
-        # Log the thought for Discord / debugging
-        if thought:
-            await self.notifier.send_notification(
-                title="🤖 Agent Thought",
-                description=thought,
-                color=0x0099FF,
-            )
-
-        if tool == "no_op":
-            return True  # considered a successful “do nothing”
-
-        if tool == "pip_install":
-            pkg = args.get("package")
-            if not pkg or not isinstance(pkg, str):
-                return False
-            # Use the existing FixExecutor._run_command via whitelist
-            cmd = f"pip install {pkg}"
-            return await self.fix.run_command(cmd)
-
-        if tool == "restart_service":
-            svc = args.get("service")
-            if not svc or not isinstance(svc, str):
-                return False
-            return await self.fix.restart_service(svc)
-
-        if tool == "run_command":
-            cmd = args.get("command")
-            if not cmd or not isinstance(cmd, str):
-                return False
-            # Re‑use the whitelist inside FixExecutor._run_command
-            return await self.fix.run_command(cmd)
-
-        # Unknown tool → refuse
-        return False
-
-    # -----------------------------------------------------------------
-    # Main per‑error‑batch loop
-    # -----------------------------------------------------------------
-    async def run_once(self, error_batch: List[dict]):
-        """
-        error_batch: list of dicts as returned by collect_errors().
-        We process the *first* error in the batch (the daemon already
-        de‑duplicates via its own cooldown logic).
-        """
-        if not error_batch:
-            return
-        err = error_batch[0]
-        observation = err.get("message", "")
-        service = err.get("service", "unknown")
-
-        for step in range(1, self.max_steps + 1):
-            prompt = self._build_prompt(observation)
-            llm_raw = await self._call_llm(prompt)
-            if not llm_raw:
-                await self.notifier.send_notification(
-                    title="⚠️ Agent LLM failure",
-                    description="Both NVIDIA and Groq returned empty output.",
-                    color=0xFFA500,
-                )
-                break
-
-            action = self._parse_llm_response(llm_raw)
-            if not action:
-                await self.notifier.send_notification(
-                    title="⚠️ Agent JSON parse error",
-                    description=f"LLM output: {llm_raw[:200]}",
-                    color=0xFFA500,
-                )
-                break
-
-            # Execute the chosen tool
-            success = await self._dispatch_tool(action)
-
-            # Build observation for next step (service status + command output)
-            # For simplicity we just check if the service is active now.
-            # More sophisticated agents could capture stdout/stderr.
-            service_ok = False
-            try:
-                result = subprocess.run(
-                    ["systemctl", "is-active", service],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                service_ok = result.stdout.strip() == "active"
-            except Exception:
-                service_ok = False
-
-            # Record to memory
-            self.memory.add(
-                {
-                    "timestamp": datetime.now().isoformat(),
-                    "error": observation[:200],
-                    "tool": action.get("tool"),
-                    "args": action.get("args"),
-                    "thought": action.get("thought"),
-                    "result": "success" if success else "failure",
-                    "service_active_after": service_ok,
-                }
-            )
-
-            # Notify Discord of the step
-            await self.notifier.send_notification(
-                title=f"🤖 Agent Step {step}/{self.max_steps}",
-                description=(
-                    f"**Thought:** {action.get('thought')}\n"
-                    f"**Tool:** {action.get('tool')}\n"
-                    f"**Args:** {json.dumps(action.get('args'), ensure_ascii=False)}\n"
-                    f"**Result:** {'✅ Success' if success else '❌ Failure'}\n"
-                    f"**Service {service} active?:** {service_ok}"
-                ),
-                color=0x00FF00 if success else 0xFF8800,
-            )
-
-            # If we think the problem is solved, break
-            if success and service_ok:
-                return
-            # Otherwise prepare next observation: tell the LLM what we observed
-            observation = (
-                f"Previous action ({action.get('tool')}) resulted in "
-                f"{'success' if success else 'failure'}. "
-                f"Service {service} is now {'active' if service_ok else 'inactive'}."
-            )
-
-        # If we exit the loop without success, escalate to L3 (human)
-        await self.notifier.send_notification(
-            title="🚨 Agent gave up – escalating to human",
-            description=(
-                f"Agent tried up to {self.max_steps} steps but could not recover "
-                f"the service {service}. See earlier notifications for details."
-            ),
-            color=0xFF0000,
-        )
-
-        # Optionally push a placeholder fix to git so the incident is recorded
-        # (re‑use existing L3 path – we simply notify)
-
-
 # ─── 主流程 ──────────────────────────────────────────────────
 
 
@@ -1680,32 +1317,50 @@ class SelfHealDaemon:
     def __init__(self):
         _load_env()
         self.services = ["bot.service", "shopbot.service", "uibot.service"]
-        self.l1_fixer = L1Fixer()
-        self.l2_fixer = L2Fixer()
         self.fix_executor = FixExecutor()
         self.git_manager = GitManager()
         self.notifier = DiscordNotifier()
         self.state = _load_state()
         self.incident_cooldown = {}  # {(service, error_type): last_time}
-        # ---- Agent mode switch -------------------------------------------------
-        self.agent_enabled = os.getenv("AUTO_SELF_HEAL_AGENT", "true").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
-        if self.agent_enabled:
-            # LLM client – reuse the same NVIDIA wrapper used elsewhere
-            self.llm_client = lambda messages, **kw: call_nvidia_ai(
-                messages,
-                model=os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
-                **kw,
-            )
-            self.agent = AutonomousAgent(
-                llm_client=self.llm_client,
-                fix_executor=self.fix_executor,
-                notifier=self.notifier,
-                memory_path=MEMORY_FILE,
-            )
+
+        # Agent 修復引擎 (取代 L1/L2)
+        self.agent_engine = AgentFixEngine(self.fix_executor, self.notifier)
+
+        # 防呆：啟動時檢查服務狀態，若正常則記錄為穩定 commit
+        self._check_and_record_stable_commit()
+
+    def _check_and_record_stable_commit(self):
+        """啟動時檢查所有服務是否正常，若正常則記錄當前 commit 為穩定點"""
+        try:
+            all_active = True
+            for svc in self.services:
+                result = subprocess.run(
+                    ["systemctl", "is-active", svc],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.stdout.strip() != "active":
+                    all_active = False
+                    break
+
+            if all_active:
+                # 所有服務正常，記錄穩定 commit
+                result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=PROJECT_ROOT,
+                )
+                if result.returncode == 0:
+                    save_stable_commit(result.stdout.strip())
+                    _log("✅ 啟動檢查: 所有服務正常，已記錄穩定 commit", "INFO")
+            else:
+                _log("⚠️ 啟動檢查: 部分服務異常，不更新穩定 commit", "WARN")
+
+        except Exception as e:
+            _log(f"⚠️ 啟動檢查異常: {e}", "WARN")
 
     def _check_cooldown(self, service: str, error_type: str, minutes: int = 30) -> bool:
         """檢查冷卻時間"""
@@ -1735,135 +1390,144 @@ class SelfHealDaemon:
             await self._handle_error(error)
 
     async def _handle_error(self, error: dict):
-        """處理單一錯誤"""
+        """處理單一錯誤 - 統一使用 Agent 修復引擎"""
         error_text = error.get("message", "")
         service = error.get("service", "")
-
-        # 分類
-        level, error_type, description = classify_error(error_text)
-        _log(f"📋 錯誤分類: {level}/{error_type} ({description})", "INFO")
-        _log(f"   服務: {service}", "INFO")
-        _log(f"   訊息: {error_text[:200]}", "INFO")
-
-        # 冷卻檢查
-        if not self._check_cooldown(service, error_type):
-            _log(f"⏳ 冷卻中，跳過 ({error_type})", "INFO")
-            return
 
         # 提取檔案路徑
         file_path = _extract_file_path_from_traceback([error_text])
         if not file_path:
             file_path = "unknown"
 
-        if level == "L1":
-            await self._handle_l1(error, error_type, error_text, file_path)
-        elif level == "L2":
-            await self._handle_l2(error, error_text, file_path, service)
-        else:
-            await self._handle_l3(error)
+        _log(f"📋 錯誤處理: {service} -> {file_path}", "INFO")
+        _log(f"   訊息: {error_text[:200]}", "INFO")
 
-    async def _handle_l1(
-        self, error: dict, error_type: str, error_text: str, file_path: str
-    ):
-        """處理 L1 錯誤 - 自動修復"""
-        _log(f"🔧 L1 自動修復: {error_type}", "INFO")
-
-        # 嘗試 L1 修復
-        fix_result = self.l1_fixer.try_fix(error_type, error_text, file_path)
-
-        if fix_result:
-            _log(f"✅ L1 修復成功: {fix_result}", "INFO")
-
-            # Git commit + push (only if we have a valid file path)
-            if file_path and file_path != "unknown":
-                commit_msg = (
-                    f"fix: L1 自動修復 - {error_type} ({error.get('service', '')})"
-                )
-                self.git_manager.commit_and_push(commit_msg, file_path=file_path)
-
-            # If agent mode is on, we *skip* L2/L3 after a successful L1 fix
-            if self.agent_enabled:
-                return
-
-            # Discord 通知
-            await self.notifier.notify_fix_result(
-                error, success=True, level="L1", details=fix_result
-            )
-        else:
-            _log(f"⚠️ L1 無法修復 {error_type}，嘗試升級到 L2", "INFO")
-            await self._handle_l2(
-                error, error_text, file_path, error.get("service", "")
-            )
-
-    async def _handle_l2(
-        self, error: dict, error_text: str, file_path: str, service: str
-    ):
-        """處理 L2 錯誤 - AI 輔助修復"""
-        # ---- NEW: hand off to autonomous agent if enabled -------------
-        if self.agent_enabled:
-            await self.agent.run_once([error])  # pass a list with the single error
+        # 冷卻檢查
+        error_type = "agent_fix"  # 統一錯誤類型用於冷卻
+        if not self._check_cooldown(service, error_type):
+            _log(f"⏳ 冷卻中，跳過 ({service})", "INFO")
             return
 
-        _log("🤖 L2 AI 輔助修復", "INFO")
-
-        # AI 分析
-        analysis = await self.l2_fixer.analyze_and_fix(error_text, file_path, service)
-
-        if not analysis:
-            _log("❌ L2 AI 分析失敗，升級到 L3", "WARN")
+        # 檢查 Agent 是否可用
+        if not self.agent_engine.is_available():
+            _log("⚠️ Agent 不可用，降級為 L3 人工介入", "WARN")
             await self._handle_l3(error)
             return
 
-        confidence = analysis.get("confidence", 0)
-        _log(f"📊 AI 信心度: {confidence}", "INFO")
+        # 執行 Agent 修復
+        result = await self.agent_engine.diagnose_and_fix(error, error_text, file_path, service)
 
-        if confidence < 0.5:
-            _log(f"⚠️ AI 信心度不足 ({confidence})，升級到 L3", "WARN")
-            await self._handle_l3(error)
-            return
+        if result.get("success"):
+            _log(f"✅ Agent 修復成功: {result.get('root_cause', '未知')}", "INFO")
 
-        # 備份
-        fix_target = analysis.get("fix_target", "")
-        if fix_target:
-            backup_file(fix_target)
-
-        # 執行修復
-        success = self.fix_executor.apply_fix(analysis, error)
-
-        if success:
-            # 驗證
+            # 驗證服務
             verified = self.fix_executor.verify_fix(service)
 
             if verified:
-                _log("✅ L2 修復成功且驗證通過", "INFO")
+                _log("✅ 修復驗證通過", "INFO")
 
-                # Git commit + push (only if we have a valid file path)
-                fix_target = analysis.get("fix_target") or file_path
-                if fix_target and fix_target != "unknown":
-                    root_cause = analysis.get("root_cause", "AI 自動修復")
-                    commit_msg = f"fix: L2 AI 修復 - {root_cause[:100]}"
-                    self.git_manager.commit_and_push(commit_msg, file_path=fix_target)
+                # 重置失敗計數，記錄穩定 commit
+                reset_agent_failures()
+
+                # Git commit + push (若有修復檔案)
+                for fix_file in result.get("fixes_applied", []):
+                    if fix_file and fix_file != "unknown":
+                        commit_msg = f"fix: Agent 自動修復 - {result.get('root_cause', '未知')[:80]}"
+                        self.git_manager.commit_and_push(commit_msg, file_path=fix_file)
 
                 await self.notifier.notify_fix_result(
                     error,
                     success=True,
-                    level="L2",
-                    details=f"根本原因: {root_cause[:200]}",
+                    level="Agent",
+                    details=f"根因: {result.get('root_cause', '')}\n修復: {', '.join(result.get('fixes_applied', []))}\n驗證: {result.get('verification', '')}",
                 )
             else:
-                _log("❌ L2 修復後驗證失敗，執行回滾", "ERROR")
-                self.fix_executor.rollback(error)
-                await self.notifier.notify_fix_result(
-                    error,
-                    success=False,
-                    level="L2",
-                    details="修復後服務異常，已自動回滾",
-                )
+                _log("❌ Agent 修復後驗證失敗，記錄失敗並嘗試回滾", "ERROR")
+                failures = record_agent_failure()
+                _log(f"📊 連續失敗次數: {failures}/{MAX_AGENT_RETRIES}", "WARN")
+
+                if failures >= MAX_AGENT_RETRIES:
+                    await self._trigger_rollback_and_alert(service, error, result)
+                else:
+                    # 回滾到最近備份
+                    self.fix_executor.rollback(error)
+                    await self.notifier.notify_fix_result(
+                        error,
+                        success=False,
+                        level="Agent",
+                        details=f"修復後服務異常，已回滾備份 (失敗 {failures}/{MAX_AGENT_RETRIES})",
+                    )
         else:
-            _log("❌ L2 修復執行失敗", "ERROR")
-            await self.notifier.notify_fix_result(
-                error, success=False, level="L2", details="修復執行失敗"
+            _log(f"❌ Agent 無法完成修復: {result.get('reason', '未知原因')}", "ERROR")
+            failures = record_agent_failure()
+            _log(f"📊 連續失敗次數: {failures}/{MAX_AGENT_RETRIES}", "WARN")
+
+            if failures >= MAX_AGENT_RETRIES:
+                await self._trigger_rollback_and_alert(service, error, result)
+            else:
+                await self.notifier.send_notification(
+                    title="⚠️ Agent 修復失敗",
+                    description=f"服務: {service}\n錯誤: {error_text[:300]}\n原因: {result.get('reason', '未知')}\n進度: {result.get('progress_log', [])[-3:] if result.get('progress_log') else '無'}\n失敗計數: {failures}/{MAX_AGENT_RETRIES}",
+                    color=0xFFA500,
+                )
+
+    async def _trigger_rollback_and_alert(self, service: str, error: dict, result: dict):
+        """觸發防呆回滾並通知人工"""
+        _log(f"🚨 連續 {MAX_AGENT_RETRIES} 次失敗，觸發防呆回滾到穩定 commit", "ERROR")
+
+        # 執行硬性回滾
+        rollback_ok = rollback_to_stable_commit(service)
+
+        # 重置失敗計數（已回滾到穩定點）
+        state = _load_state()
+        state["agent_failures"] = 0
+        _save_state(state)
+
+        if rollback_ok:
+            _log("✅ 防呆回滾成功，服務恢復穩定", "INFO")
+            alert_msg = f"✅ **自動回滾成功**\n服務已恢復至穩定 commit 運行\n請人工檢查根因並手動修復後再部署"
+            color = 0x00FF00
+        else:
+            _log("❌ 防呆回滾失敗，服務可能仍異常", "ERROR")
+            alert_msg = f"❌ **自動回滾失敗**\n服務可能仍處於異常狀態\n**請立即 SSH 進 VM 人工介入**"
+            color = 0xFF0000
+
+        # 發送緊急通知
+        await self.notifier.send_notification(
+            title="🚨 防呆機制觸發：自動回滾",
+            description=f"**服務**: {service}\n**原始錯誤**: {error.get('message', '')[:500]}\n**Agent 失敗詳情**: {result.get('reason', '未知')}\n**進度**: {result.get('progress_log', [])[-5:] if result.get('progress_log') else '無'}\n\n{alert_msg}",
+            color=color,
+            fields=[
+                {"name": "建議操作", "value": "SSH 進 VM 檢查日誌，手動修復後 git push 部署", "inline": False},
+                {"name": "穩定 Commit", "value": get_stable_commit()[:8] if get_stable_commit() else "未知", "inline": True},
+                {"name": "當前 Commit", "value": self._get_current_commit()[:8], "inline": True},
+            ],
+        )
+
+        # 同時記錄到 L3 事件
+        state = _load_state()
+        state.setdefault("incidents", []).append({
+            "timestamp": datetime.now().isoformat(),
+            "service": service,
+            "message": error.get("message", ""),
+            "level": "L3_ROLLBACK",
+            "rollback": rollback_ok,
+            "failures": MAX_AGENT_RETRIES,
+        })
+        _save_state(state)
+
+    def _get_current_commit(self) -> str:
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=PROJECT_ROOT,
             )
+            return result.stdout.strip() if result.returncode == 0 else "未知"
+        except Exception:
+            return "未知"
 
     async def _handle_l3(self, error: dict):
         """處理 L3 錯誤 - 通知人工"""
