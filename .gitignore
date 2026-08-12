@@ -167,8 +167,12 @@ gcp_secrets/
 tools/
 tools/**
 
-# Ignore Claude configuration and runtime dirs
-# .claude/
+# Ignore Claude generated dirs (keep .claude/scripts, .claude/settings.json)
+.claude/agents/
+.claude/skills/
+.claude/worktrees/
+.claude/.proven-config-version
+.claude/memory.db
 .claude-flow/
 
 # Ignore Claude Swarm directory
@@ -178,4 +182,3 @@ CLAUDE.md
 # Graphify ?亥???嚗?啣遣蝵殷????舫??鈭?graphify-out/嚗?
 graphify-out/cost.json
 graphify-out/cache/
-
