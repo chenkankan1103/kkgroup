@@ -1136,9 +1136,32 @@ class RankingStats:
                 and self.last_weekly_stats_sent != week_start_date
             ):
                 logger.info("📊 [send_weekly_stats] 禮拜天時間到，準備發送週統計...")
-                # 實際發送邏輯已移至 AnimeTracker.send_weekly_stats()
-                # 此處保留介面避免中斷現有調用，不再引發 NotImplementedError
-                pass
+
+                # 計算本週時間範圍：週一 00:00 ~ 週日 23:59
+                week_start_dt = datetime.combine(week_start_date, datetime.min.time()).replace(tzinfo=TW_TZ)
+                week_end_dt = week_start_dt + timedelta(days=7)
+
+                # 生成排行榜 Embed（含趨勢圖）
+                embed = await self.generate_ranking_embed(
+                    start_time=week_start_dt,
+                    end_time=week_end_dt,
+                    period_label="本週"
+                )
+
+                if embed and self.bot:
+                    try:
+                        from .push_core import ANIME_CHANNEL_ID
+                        channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+                        if channel:
+                            await channel.send(embed=embed)
+                            logger.info(f"✅ [send_weekly_stats] 週統計已發送到頻道 {ANIME_CHANNEL_ID}")
+                            self.last_weekly_stats_sent = week_start_date
+                        else:
+                            logger.error(f"❌ [send_weekly_stats] 找不到頻道 {ANIME_CHANNEL_ID}")
+                    except Exception as e:
+                        logger.error(f"❌ [send_weekly_stats] 發送失敗: {e}", exc_info=True)
+                else:
+                    logger.warning("⚠️ [send_weekly_stats] 生成 embed 失敗或 bot 未就緒")
 
         except Exception as e:
             logger.error(f"❌ [send_weekly_stats] 發送週統計失敗: {e}", exc_info=True)

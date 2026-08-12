@@ -1041,9 +1041,23 @@ class AnimeTracker(commands.Cog):
 
     @tasks.loop(hours=6)
     async def sync_episode_stats(self):
-        """自動發送週統計 - 每週天 台灣時間 23:00 發送 - 已停用：被每日檢查取代"""
-        # 此功能已被 daily_anime_check 取代
-        pass
+        """每 6 小時同步 episode 統計 + 檢查週日週統發送"""
+        try:
+            now = datetime.now(TW_TZ)
+            logger.info(f"🔄 [sync_episode_stats] 開始同步 (time: {now.strftime('%Y-%m-%d %H:%M:%S')})")
+
+            # 1. 同步 episode 統計數據（每 6 小時）
+            await self.ranking_stats.sync_episode_stats()
+
+            # 2. 檢查是否為週日 23:00，發送週統計
+            if now.weekday() == 6 and now.hour == 23:
+                logger.info("📊 [sync_episode_stats] 偵測到週日 23 時，嘗試發送週統計...")
+                await self.ranking_stats.send_weekly_stats()
+            else:
+                logger.debug(f"⏭️ [sync_episode_stats] 非週統時間 ({now.strftime('%a %H:%M')})，僅同步統計")
+
+        except Exception as e:
+            logger.error(f"❌ [sync_episode_stats] 執行異常: {e}", exc_info=True)
 
     # ==================== 任務啟動和錯誤處理 ====================
 
