@@ -13,6 +13,13 @@ warn() { log "WARN: $*"; }
 
 STDIN_DATA=$(cat)
 parts=($STDIN_DATA)
+
+# Guard: if no stdin data, just allow push
+if [[ -z "$STDIN_DATA" || ${#parts[@]} -lt 4 ]]; then
+    info "No stdin data, allowing push"
+    exit 0
+fi
+
 LOCAL_REF=${parts[0]}
 LOCAL_SHA=${parts[1]}
 REMOTE_REF=${parts[2]}
