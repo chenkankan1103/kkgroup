@@ -1,12 +1,15 @@
 <#
-Consensus review loop for Windows PowerShell
+Consensus review loop for Windows PowerShell 5.1+
 Called by Stop hook. Exit 0 = approved, 1 = rejected (block stop)
 #>
 
 param()
 
 $ErrorActionPreference = "Stop"
-$SESSION_ID = $env:CLAUDE_SESSION_ID ?? (Get-Date).ToString("yyyyMMddHHmmss")
+
+function Coalesce($val, $default) { if ($null -ne $val) { $val } else { $default } }
+
+$SESSION_ID = Coalesce $env:CLAUDE_SESSION_ID ((Get-Date).ToString("yyyyMMddHHmmss"))
 $MAX_ROUNDS = 3
 $ROUND = 1
 $PREV_FINDINGS = ""
@@ -36,8 +39,9 @@ while ($ROUND -le $MAX_ROUNDS) {
         exit 0  # Don't block on infrastructure failures
     }
 
-    $VERDICT = ($RESULT | ConvertFrom-Json).verdict ?? "unknown"
-    $FINDINGS = ($RESULT | ConvertFrom-Json).findings ?? @()
+    $parsed = $RESULT | ConvertFrom-Json
+    $VERDICT = Coalesce $parsed.verdict "unknown"
+    $FINDINGS = Coalesce $parsed.findings @()
 
     Write-Host "Verdict: $VERDICT"
     Write-Host "Findings count: $($FINDINGS.Count)"
@@ -52,8 +56,8 @@ while ($ROUND -le $MAX_ROUNDS) {
         foreach ($f in $FINDINGS) {
             $file = if ($f.file) { $f.file } else { "general" }
             $line = if ($f.line) { $f.line } else { 0 }
-            $msg  = $f.message ?? ""
-            Write-Host "  - $file:$line $msg"
+            $msg  = Coalesce $f.message ""
+            Write-Host "  - $($file):$($line) $msg"
         }
         $PREV_FINDINGS = ($FINDINGS | ConvertTo-Json -Compress -Depth 5)
     }
@@ -66,7 +70,7 @@ Write-Host "📋 Final findings:"
 $PREV_FINDINGS | ConvertFrom-Json | ForEach-Object {
     $file = if ($_.file) { $_.file } else { "general" }
     $line = if ($_.line) { $_.line } else { 0 }
-    $msg  = $_.message ?? ""
-    Write-Host "  - $file:$line $msg"
+    $msg  = Coalesce $_.message ""
+    Write-Host "  - $($file):$($line) $msg"
 }
 exit 1
