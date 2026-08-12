@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Find all related files for a given set of changed files.
 Includes: imports, same module, test files, shared utils, reverse imports.
@@ -16,7 +16,7 @@ def get_changed_files(ref_spec: str) -> list[Path]:
     try:
         result = subprocess.run(
             ['git', 'diff', '--name-only', ref_spec],
-            cwd=ROOT, capture_output=True, text=True, check=True
+            cwd=ROOT, capture_output=True, text=True, check=True, encoding='utf-8', errors='ignore'
         )
         return [ROOT / f for f in result.stdout.strip().split('\n') if f and (ROOT / f).exists()]
     except subprocess.CalledProcessError:
@@ -108,7 +108,7 @@ def main():
         try:
             result = subprocess.run(
                 ['git', 'diff', '--name-only', 'HEAD'],
-                cwd=ROOT, capture_output=True, text=True, check=True
+                cwd=ROOT, capture_output=True, text=True, check=True, encoding='utf-8', errors='ignore'
             )
             changed = [ROOT / f for f in result.stdout.strip().split('\n') if f and (ROOT / f).exists()]
         except subprocess.CalledProcessError:
@@ -150,3 +150,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
