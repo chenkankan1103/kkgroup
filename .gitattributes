@@ -1,3 +1,5 @@
 # 只管理排行榜的 PNG 图片
 assets/leaderboard.png filter=lfs diff=lfs merge=lfs -text
 graphify-out/graph.json merge=graphify
+.githooks/* text eol=lf
+.claude/scripts/*.sh text eol=lf
