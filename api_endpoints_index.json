@@ -78,7 +78,7 @@
         "parameters": ["format", "sheet_id"],
         "response_code": 200,
         "error_codes": [400, 401, 403]
-      }
+      },
       "clean_virtual": {
         "method": "POST",
         "path": "/api/clean-virtual",
