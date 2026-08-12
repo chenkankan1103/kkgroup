@@ -51,14 +51,16 @@ if [[ -z "$DIFF" ]]; then
 fi
 
 info "Running Codex review on diff..."
+info "Diff size: ${#DIFF} chars"
 
-# Run Codex review (non-deliberate for speed, can add --deliberate if needed)
-echo "$DIFF" | codex-claude-bridge review-code \
-  --diff - \
-  --session "pre-push-$(date +%s)" \
-  --json > /tmp/prepush-review.json 2>&1 || true
-
-# Show the raw review for debugging
+# Run Codex review with timeout - simple pipe with explicit path
+info "Starting codex-claude-bridge..."
+if ! timeout 120 bash -c "echo \"\$DIFF\" | /c/Users/88697/AppData/Roaming/npm/codex-claude-bridge review-code --diff - --session \"pre-push-\$(date +%s)\" --json > /tmp/prepush-review.json 2>&1"; then
+    info "Codex timed out or failed (exit code: \$?)"
+    info "Allowing push despite timeout"
+else
+    info "Codex review completed"
+fi
 cat /tmp/prepush-review.json
 
 # Parse verdict
