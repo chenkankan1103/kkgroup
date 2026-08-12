@@ -1,0 +1,84 @@
+#!/bin/bash
+# ============================================================
+# PRE-PUSH HOOK: Codex Consensus Review (MANDATORY)
+# Cannot be bypassed with --no-verify
+# ============================================================
+
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+HOOK_LOG="$ROOT_DIR/.claude/logs/pre-push-$(date +%Y%m%d-%H%M%S).log"
+mkdir -p "$ROOT_DIR/.claude/logs"
+
+log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$HOOK_LOG"; }
+error() { log "❌ ERROR: $*"; exit 1; }
+warn() { log "⚠️  WARN: $*"; }
+info() { log "ℹ️  INFO: $*"; }
+
+# Read stdin (git passes: <local_ref> <local_sha> <remote_ref> <remote_sha>)
+STDIN_DATA=$(cat)
+
+# Get changed files using our Python script
+info "Scanning for changed files and related code..."
+RELATED_FILES=$(echo "$STDIN_DATA" | python3 "$ROOT_DIR/.claude/scripts/find-related.py" 2>>"$HOOK_LOG")
+
+if [[ -z "$RELATED_FILES" || "$RELATED_FILES" == "[]" ]]; then
+    info "No Python files changed, skipping Codex review"
+    exit 0
+fi
+
+FILE_COUNT=$(echo "$RELATED_FILES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+info "Found $FILE_COUNT related files to review:"
+echo "$RELATED_FILES" | python3 -c "import sys,json; [print(f'  - {f}') for f in json.load(sys.stdin)]" | tee -a "$HOOK_LOG"
+
+# Stage these files temporarily for review
+info "Staging files for review..."
+echo "$RELATED_FILES" | python3 -c "
+import sys, json, subprocess
+files = json.load(sys.stdin)
+for f in files:
+    subprocess.run(['git', 'add', f], cwd='$ROOT_DIR', capture_output=True)
+"
+
+# Run Codex review
+info "Starting Codex consensus review (max 3 rounds)..."
+SESSION_ID="prepush-$(date +%Y%m%d%H%M%S)"
+
+REVIEW_JSON=$(python3 -c "
+import json, sys
+files = json.load(sys.stdin)
+ctx = {
+    'sessionId': '$SESSION_ID',
+    'context': 'Pre-push review of ' + str(len(files)) + ' files. ' + json.dumps(files),
+    'mode': 'deliberate-deep'
+}
+print(json.dumps(ctx))
+" <<< "$RELATED_FILES")
+
+REVIEW_RESULT=$(echo "$REVIEW_JSON" | npx -y codex-claude-bridge@latest review-precommit 2>>"$HOOK_LOG" || true)
+
+# Parse result
+VERDICT=$(echo "$REVIEW_RESULT" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('verdict', 'unknown'))
+except:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+
+# Check if approved
+if [[ "$VERDICT" == "approved" ]]; then
+    info "✅ Codex review APPROVED"
+    # Unstage the files (they were only staged for review)
+    git reset HEAD >/dev/null 2>&1 || true
+    exit 0
+else
+    error "❌ Codex review REJECTED or FAILED (verdict: $VERDICT)
+
+Review output:
+$REVIEW_RESULT
+
+Fix the issues and try pushing again.
+To see full log: cat $HOOK_LOG"
+fi
