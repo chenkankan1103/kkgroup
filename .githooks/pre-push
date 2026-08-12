@@ -1,5 +1,6 @@
 #!/bin/bash
-# PRE-PUSH HOOK: Warn about CI review (non-blocking)
+# PRE-PUSH HOOK: Blocking Codex Review (local, mandatory)
+# Requires: npm install -g codex-claude-bridge
 set -euo pipefail
 
 ROOT_DIR=$(git rev-parse --show-toplevel)
@@ -10,6 +11,7 @@ mkdir -p $ROOT_DIR/.claude/logs
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a $HOOK_LOG; }
 info() { log "INFO: $*"; }
 warn() { log "WARN: $*"; }
+err() { log "ERROR: $*"; }
 
 STDIN_DATA=$(cat)
 parts=($STDIN_DATA)
@@ -27,18 +29,84 @@ REMOTE_SHA=${parts[3]}
 
 info "Push: $LOCAL_REF -> $REMOTE_REF"
 
-# Quick check: any Python files?
+# Get diff for pushed commits (exclude test/docs/config files)
 if [[ "$REMOTE_SHA" != "0000000000000000000000000000000000000000" ]]; then
-    PY_FILES=$(git diff $REMOTE_SHA..$LOCAL_SHA --name-only -- '*.py' 2>/dev/null | wc -l)
+    DIFF=$(git diff $REMOTE_SHA..$LOCAL_SHA -- . \
+      ':!tests/**' ':!docs/**' ':!*.md' \
+      ':!.venv/' ':!node_modules/' ':!.claude/worktrees/' \
+      ':!chroma_db/' ':!graphify-out/' ':!game/' \
+      ':!tools/' ':!docs_and_tests/' 2>/dev/null || true)
 else
-    PY_FILES=$(git diff --name-only $LOCAL_SHA -- '*.py' 2>/dev/null | wc -l)
+    DIFF=$(git diff --name-only $LOCAL_SHA -- . \
+      ':!tests/**' ':!docs/**' ':!*.md' \
+      ':!.venv/' ':!node_modules/' ':!.claude/worktrees/' \
+      ':!chroma_db/' ':!graphify-out/' ':!game/' \
+      ':!tools/' ':!docs_and_tests/' 2>/dev/null || true)
 fi
 
-if [[ "$PY_FILES" -gt 0 ]]; then
-    warn "Python files changed ($PY_FILES) - GitHub Actions will run Codex review on PR"
-    warn "To run locally first: pre-commit run --all-files"
+# No code changes? Allow push
+if [[ -z "$DIFF" ]]; then
+    info "No code changes to review, allowing push"
+    exit 0
 fi
 
-# Always allow push (non-blocking)
-info "Push allowed - CI will run on PR"
-exit 0
+info "Running Codex review on diff..."
+
+# Run Codex review (non-deliberate for speed, can add --deliberate if needed)
+echo "$DIFF" | codex-claude-bridge review-code \
+  --diff - \
+  --session "pre-push-$(date +%s)" \
+  --json > /tmp/prepush-review.json 2>&1 || true
+
+# Show the raw review for debugging
+cat /tmp/prepush-review.json
+
+# Parse verdict
+VERDICT=$(cat /tmp/prepush-review.json | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('verdict', 'unknown'))
+except:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+
+# Print findings
+cat /tmp/prepush-review.json | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    findings = data.get('findings', [])
+    if findings:
+        print('')
+        print('=== Codex Findings ===')
+        for f in findings:
+            file = f.get('file', 'general')
+            line = f.get('line', 0)
+            msg = f.get('message', '')
+            print(f'  {file}:{line} - {msg}')
+    elif data.get('verdict') == 'approved':
+        print('')
+        print('✅ No issues found')
+except:
+    pass
+"
+
+# Decision
+case "$VERDICT" in
+    approved)
+        info "Codex approved - push allowed"
+        exit 0
+        ;;
+    changes_requested|rejected)
+        err "Codex verdict: $VERDICT"
+        err "Fix the issues above, then push again"
+        err "To skip (not recommended): git push --no-verify"
+        exit 1
+        ;;
+    *)
+        warn "Codex verdict unclear: $VERDICT"
+        warn "Allowing push but review output above for reference"
+        exit 0
+        ;;
+esac
