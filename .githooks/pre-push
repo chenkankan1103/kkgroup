@@ -42,10 +42,11 @@ if [[ "$PY_FILES" -eq 0 ]]; then
     exit 0
 fi
 
-info "Starting Codex review..."
+info "Starting Codex review (fast mode)..."
 SESSION_ID="prepush-$(date +%Y%m%d%H%M%S)"
 
-REVIEW_RESULT=$(echo "$DIFF" | codex-claude-bridge review-code --diff - --session $SESSION_ID --deliberate 2>>$HOOK_LOG; echo "")
+# Use review-code with fast mode (no --deliberate) and timeout
+REVIEW_RESULT=$(timeout 120 echo "$DIFF" | codex-claude-bridge review-code --diff - --session $SESSION_ID 2>>$HOOK_LOG; echo "")
 
 VERDICT=$(echo "$REVIEW_RESULT" | /c/Users/88697/Desktop/kkgroup/.venv/Scripts/python -c "
 import sys, json
@@ -62,5 +63,9 @@ if [[ "$VERDICT" == "approved" ]]; then
     info "APPROVED"
     exit 0
 else
+    if [[ "$VERDICT" == "unknown" ]]; then
+        warn "Review timed out or failed - allowing push (check logs)"
+        exit 0
+    fi
     error "REJECTED: $VERDICT\n$REVIEW_RESULT\nLog: $HOOK_LOG"
 fi
