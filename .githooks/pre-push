@@ -1,0 +1,66 @@
+#!/bin/bash
+# PRE-PUSH HOOK: Codex Consensus Review
+set -euo pipefail
+
+ROOT_DIR=$(git rev-parse --show-toplevel)
+export ROOT_DIR
+HOOK_LOG=$ROOT_DIR/.claude/logs/pre-push-$(date +%Y%m%d-%H%M%S).log
+mkdir -p $ROOT_DIR/.claude/logs
+
+log() { echo "[$(date +%H:%M:%S)] $*" | tee -a $HOOK_LOG; }
+error() { log "ERROR: $*"; exit 1; }
+warn() { log "WARN: $*"; }
+info() { log "INFO: $*"; }
+
+STDIN_DATA=$(cat)
+parts=($STDIN_DATA)
+LOCAL_REF=${parts[0]}
+LOCAL_SHA=${parts[1]}
+REMOTE_REF=${parts[2]}
+REMOTE_SHA=${parts[3]}
+
+info "Push: $LOCAL_REF ($LOCAL_SHA) -> $REMOTE_REF ($REMOTE_SHA)"
+
+if [[ "$REMOTE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+    info "New branch push"
+    DIFF=$(git diff $(git hash-object -t tree /dev/null) $LOCAL_SHA -- . 2>>$HOOK_LOG; echo "")
+else
+    info "Existing branch push: $REMOTE_SHA..$LOCAL_SHA"
+    DIFF=$(git diff $REMOTE_SHA..$LOCAL_SHA -- . 2>>$HOOK_LOG; echo "")
+fi
+
+if [[ -z "$DIFF" ]]; then
+    info "No changes to review"
+    exit 0
+fi
+
+PY_FILES=$(echo "$DIFF" | grep -E '^(diff --git.*\.py|new file.*\.py|deleted file.*\.py)' | wc -l)
+info "Found $PY_FILES Python files changed"
+
+if [[ "$PY_FILES" -eq 0 ]]; then
+    info "No Python changes, skipping"
+    exit 0
+fi
+
+info "Starting Codex review..."
+SESSION_ID="prepush-$(date +%Y%m%d%H%M%S)"
+
+REVIEW_RESULT=$(echo "$DIFF" | codex-claude-bridge review-code --diff - --session $SESSION_ID --deliberate 2>>$HOOK_LOG; echo "")
+
+VERDICT=$(echo "$REVIEW_RESULT" | /c/Users/88697/Desktop/kkgroup/.venv/Scripts/python -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('verdict', 'unknown'))
+except:
+    print('unknown')
+" 2>/dev/null; echo "unknown")
+
+info "Codex verdict: $VERDICT"
+
+if [[ "$VERDICT" == "approved" ]]; then
+    info "APPROVED"
+    exit 0
+else
+    error "REJECTED: $VERDICT\n$REVIEW_RESULT\nLog: $HOOK_LOG"
+fi
