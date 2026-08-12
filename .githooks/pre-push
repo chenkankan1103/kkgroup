@@ -13,6 +13,9 @@ info() { log "INFO: $*"; }
 warn() { log "WARN: $*"; }
 err() { log "ERROR: $*"; }
 
+# Add PATH for npm globals
+export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
 STDIN_DATA=$(cat)
 parts=($STDIN_DATA)
 
@@ -28,6 +31,8 @@ REMOTE_REF=${parts[2]}
 REMOTE_SHA=${parts[3]}
 
 info "Push: $LOCAL_REF -> $REMOTE_REF"
+info "PATH=$PATH"
+info "which codex-claude-bridge=$(which codex-claude-bridge)"
 
 # Get diff for pushed commits (exclude test/docs/config files)
 if [[ "$REMOTE_SHA" != "0000000000000000000000000000000000000000" ]]; then
@@ -51,14 +56,16 @@ if [[ -z "$DIFF" ]]; then
 fi
 
 info "Running Codex review on diff..."
+info "Diff size: ${#DIFF} chars"
 
-# Run Codex review (non-deliberate for speed, can add --deliberate if needed)
-echo "$DIFF" | codex-claude-bridge review-code \
+# Run Codex review with timeout
+timeout 120 codex-claude-bridge review-code \
   --diff - \
   --session "pre-push-$(date +%s)" \
-  --json > /tmp/prepush-review.json 2>&1 || true
+  --json <<< "$DIFF" > /tmp/prepush-review.json 2>&1 || true
 
 # Show the raw review for debugging
+info "Codex review completed"
 cat /tmp/prepush-review.json
 
 # Parse verdict
