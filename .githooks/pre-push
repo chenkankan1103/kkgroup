@@ -1,0 +1,37 @@
+#!/bin/bash
+# PRE-PUSH HOOK: Warn about CI review (non-blocking)
+set -euo pipefail
+
+ROOT_DIR=$(git rev-parse --show-toplevel)
+export ROOT_DIR
+HOOK_LOG=$ROOT_DIR/.claude/logs/pre-push-$(date +%Y%m%d-%H%M%S).log
+mkdir -p $ROOT_DIR/.claude/logs
+
+log() { echo "[$(date +%H:%M:%S)] $*" | tee -a $HOOK_LOG; }
+info() { log "INFO: $*"; }
+warn() { log "WARN: $*"; }
+
+STDIN_DATA=$(cat)
+parts=($STDIN_DATA)
+LOCAL_REF=${parts[0]}
+LOCAL_SHA=${parts[1]}
+REMOTE_REF=${parts[2]}
+REMOTE_SHA=${parts[3]}
+
+info "Push: $LOCAL_REF -> $REMOTE_REF"
+
+# Quick check: any Python files?
+if [[ "$REMOTE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+    PY_FILES=$(git diff $REMOTE_SHA..$LOCAL_SHA --name-only -- '*.py' 2>/dev/null | wc -l)
+else
+    PY_FILES=$(git diff --name-only $LOCAL_SHA -- '*.py' 2>/dev/null | wc -l)
+fi
+
+if [[ "$PY_FILES" -gt 0 ]]; then
+    warn "Python files changed ($PY_FILES) - GitHub Actions will run Codex review on PR"
+    warn "To run locally first: pre-commit run --all-files"
+fi
+
+# Always allow push (non-blocking)
+info "Push allowed - CI will run on PR"
+exit 0
