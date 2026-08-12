@@ -13,9 +13,6 @@ info() { log "INFO: $*"; }
 warn() { log "WARN: $*"; }
 err() { log "ERROR: $*"; }
 
-# Add PATH for npm globals
-export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-
 STDIN_DATA=$(cat)
 parts=($STDIN_DATA)
 
@@ -31,8 +28,6 @@ REMOTE_REF=${parts[2]}
 REMOTE_SHA=${parts[3]}
 
 info "Push: $LOCAL_REF -> $REMOTE_REF"
-info "PATH=$PATH"
-info "which codex-claude-bridge=$(which codex-claude-bridge)"
 
 # Get diff for pushed commits (exclude test/docs/config files)
 if [[ "$REMOTE_SHA" != "0000000000000000000000000000000000000000" ]]; then
@@ -58,13 +53,22 @@ fi
 info "Running Codex review on diff..."
 info "Diff size: ${#DIFF} chars"
 
-# Run Codex review with timeout
-timeout 120 codex-claude-bridge review-code \
+# Run Codex review with timeout - capture both stdout and stderr
+info "Starting codex-claude-bridge..."
+/c/Users/88697/AppData/Roaming/npm/codex-claude-bridge review-code \
   --diff - \
   --session "pre-push-$(date +%s)" \
-  --json <<< "$DIFF" > /tmp/prepush-review.json 2>&1 || true
+  --json <<< "$DIFF" > /tmp/prepush-review.json 2>&1 &
+CODEX_PID=$!
+info "Codex PID: $CODEX_PID"
 
-# Show the raw review for debugging
+# Wait with timeout
+timeout 120 bash -c "wait $CODEX_PID" || {
+    info "Codex timed out, killing..."
+    kill -9 $CODEX_PID 2>/dev/null || true
+    info "Codex process killed"
+}
+
 info "Codex review completed"
 cat /tmp/prepush-review.json
 
