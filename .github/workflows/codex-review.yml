@@ -52,14 +52,7 @@ jobs:
             --deliberate \
             --json > /tmp/review.json 2>&1 || true
           cat /tmp/review.json
-          VERDICT=$(cat /tmp/review.json | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    print(data.get('verdict', 'unknown'))
-except:
-    print('unknown')
-")
+          VERDICT=$(cat /tmp/review.json | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('verdict', 'unknown'))" 2>/dev/null || echo "unknown")
           echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
 
       - name: Post Review Comment
