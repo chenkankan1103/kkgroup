@@ -728,3 +728,59 @@ gstack 是一個虛擬工程團隊（CEO review → Engineering review → QA �
 | 儲存當前進度 | `context-save` |
 | 恢復先前上下文 | `context-restore` |
 | 撰寫 backlog-ready spec/issue | `spec` |
+
+
+---
+
+## AI 專用查��工具（新增）
+
+本專案提供三個工具�� AI Agent ���速理解代��庫，無需����大量原始��：
+
+### 1. scripts/query_graph.py — Graphify 知������查��
+`ash
+python scripts/query_graph.py stats                    # ����統計
+python scripts/query_graph.py hubs                     # ��心社群排行
+python scripts/query_graph.py community KKCoin         # ��社群所有節點
+python scripts/query_graph.py search update_user_kkcoin # 關���字�����
+python scripts/query_graph.py callers <node_id>        # ��呼叫者（反向��）
+python scripts/query_graph.py callees <node_id>        # ��被呼叫者（正向��）
+python scripts/query_graph.py impact cogs/shop/shop.py # 影響����分��
+python scripts/query_graph.py node <node_id>           # 節點詳細資��
+`
+- **資料來源**：graphify-out/graph.json (4570 節點、8512 ��、263 社群)
+- **優勢**：架構級、離線、多語言、社群/依��關係、影響分��
+- **自動更新**：.github/workflows/graphify-update.yml ��次 push main 自動重建
+
+### 2. scripts/lsp_query.py — Pylance LSP 封��查��
+`ash
+python scripts/lsp_query.py --file <路��> symbols      # 列出��案所有符號
+python scripts/lsp_query.py --file <路��> refs <符號>      # ��引用
+python scripts/lsp_query.py --file <路��> def <符號>       # ��定義
+python scripts/lsp_query.py --file <路��> hierarchy <符號> # ���叫��級
+python scripts/lsp_query.py --file <路��> diagnostics      # �����/警告
+python scripts/lsp_query.py --file <路��> type <符號>      # ���別推導
+python scripts/lsp_query.py --file <路��> hover <符號>     # Hover ����
+`
+- **資料來源**：Pylance LSP (VS Code 內建 Python Extension)
+- **優勢**：符號級、即時、精確、型別/重構/定義跳��
+- **MCP ��合**：可直接呼叫 mcp_pylance_mcp_s_pylanceLSP
+
+### 3. .github/workflows/graphify-update.yml — Graphify 自動更新
+- **��發**：push 到 main、PR merged、手動��發、每日 03:00 UTC
+- **行為**：比對 uilt_at_commit，過期才重建，自動 commit 回 repo
+- **權限**：contents: write 可推送更新
+
+### 兩者互補關係
+
+| ����需求 | 用 Graphify | 用 LSP |
+|----------|-------------|--------|
+| 「KK��系統包含哪些��案？」 | community KKCoin | 無 |
+| 「誰呼叫了 update_user_kkcoin？」 | callers (��態����) | 
+efs (精確引用) |
+| 「改 shop.py 會��哪��？」 | impact (按社群影響) | 無 |
+| 「這個��數的型別��名？」 | 無 | 	ype |
+| 「專案架構��心是什���？」 | hubs | 無 |
+| 「這個類別有哪些方法？」 | 部分 | symbols |
+
+**Graphify** = ��構級、離線、多語言、社群/依��關係  
+**LSP** = 符號級、即時、精確、型別/重構/定義跳��
