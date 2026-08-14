@@ -10,7 +10,11 @@ from cogs.shop.merchant.cannabis_farming import (
     remove_inventory,
     plant_cannabis,
 )
-from db_adapter import get_user_field
+# 使用非同步 DB 適配器避免阻塞事件循環
+from shared.db.async_adapter import (
+    get_user_field as async_get_user_field,
+    set_user_field as async_set_user_field,
+)
 from status_dashboard import add_log
 
 
@@ -374,7 +378,7 @@ class PersonalLockerView(discord.ui.View):
             # defer 已在 personal_items_callback 中完成，此處不需重複 defer
             inventory = await get_inventory(self.user_id)
             digital_usd = float(
-                get_user_field(self.user_id, "digital_usd", default=0) or 0
+                await async_get_user_field(self.user_id, "digital_usd", default=0) or 0
             )
 
             embed = discord.Embed(

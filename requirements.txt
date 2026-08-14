@@ -34,3 +34,6 @@ playwright>=1.40.0
 # Vector Database & Embeddings (for Chroma RAG)
 chromadb>=0.4.0
 sentence-transformers>=2.2.0
+
+# Async SQLite for non-blocking DB operations
+aiosqlite>=0.19.0
