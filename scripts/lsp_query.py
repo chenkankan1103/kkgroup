@@ -34,19 +34,19 @@ def find_symbol_position(file_path: str, symbol: str) -> Optional[Dict[str, int]
     path = Path(file_path)
     if not path.is_absolute():
         path = PROJECT_ROOT / path
-    
+
     if not path.exists():
         return None
-    
+
     content = path.read_text(encoding='utf-8')
     lines = content.split('\n')
-    
+
     for i, line in enumerate(lines):
         if symbol in line and not line.strip().startswith('#'):
             # Find column position
             col = line.index(symbol)
             return {'line': i, 'character': col}
-    
+
     return None
 
 
@@ -61,7 +61,7 @@ def cmd_refs(args):
     print("Use the MCP tool: mcp_pylance_mcp_s_pylanceLSP")
     print("Method: textDocument/references")
     print("Params: { textDocument: { uri }, position: { line, character }, context: { includeDeclaration: true } }")
-    
+
     # Try to find position if file given
     if args.file:
         pos = find_symbol_position(args.file, args.symbol)
@@ -78,7 +78,7 @@ def cmd_def(args):
     print("\nMCP Tool: mcp_pylance_mcp_s_pylanceLSP")
     print("Method: textDocument/definition")
     print("Params: { textDocument: { uri }, position: { line, character } }")
-    
+
     if args.file:
         pos = find_symbol_position(args.file, args.symbol)
         if pos:
@@ -97,7 +97,7 @@ def cmd_hierarchy(args):
     print("  2. callHierarchy/incomingCalls - who calls this")
     print("  3. callHierarchy/outgoingCalls - what this calls")
     print("Params: { textDocument: { uri }, position: { line, character } }")
-    
+
     if args.file:
         pos = find_symbol_position(args.file, args.symbol)
         if pos:
@@ -112,7 +112,7 @@ def cmd_symbols(args):
     print("\nMCP Tool: mcp_pylance_mcp_s_pylanceLSP")
     print("Method: textDocument/documentSymbol")
     print(f"Params: {{ textDocument: {{ uri: '{get_file_uri(args.file)}' }} }}")
-    
+
     # Also show file content summary
     path = Path(args.file)
     if not path.is_absolute():
@@ -146,7 +146,7 @@ def cmd_type(args):
     print("\nMCP Tool: mcp_pylance_mcp_s_pylanceAnalyze")
     print("Command: typeAt")
     print("Params: { fileUri, position: { line, character } }")
-    
+
     if args.file:
         pos = find_symbol_position(args.file, args.symbol)
         if pos:
@@ -162,7 +162,7 @@ def cmd_hover(args):
     print("\nMCP Tool: mcp_pylance_mcp_s_pylanceLSP")
     print("Method: textDocument/hover")
     print("Params: { textDocument: { uri }, position: { line, character } }")
-    
+
     if args.file:
         pos = find_symbol_position(args.file, args.symbol)
         if pos:
@@ -174,35 +174,35 @@ def main():
     parser = argparse.ArgumentParser(description='Query Pylance LSP for Python code intelligence')
     parser.add_argument('--file', '-f', help='File path (relative to project root)')
     subparsers = parser.add_subparsers(dest='command', required=True)
-    
+
     # refs
     p = subparsers.add_parser('refs', help='Find all references to a symbol')
     p.add_argument('symbol', help='Symbol name')
-    
+
     # def
     p = subparsers.add_parser('def', help='Go to definition')
     p.add_argument('symbol', help='Symbol name')
-    
+
     # hierarchy
     p = subparsers.add_parser('hierarchy', help='Call hierarchy (incoming/outgoing)')
     p.add_argument('symbol', help='Symbol name')
-    
+
     # symbols
     p = subparsers.add_parser('symbols', help='List all symbols in a file')
-    
+
     # diagnostics
     p = subparsers.add_parser('diagnostics', help='Get diagnostics for a file')
-    
+
     # type
     p = subparsers.add_parser('type', help='Get inferred type at position')
     p.add_argument('symbol', help='Symbol name')
-    
+
     # hover
     p = subparsers.add_parser('hover', help='Get hover info at position')
     p.add_argument('symbol', help='Symbol name')
-    
+
     args = parser.parse_args()
-    
+
     commands = {
         'refs': cmd_refs,
         'def': cmd_def,
@@ -212,7 +212,7 @@ def main():
         'type': cmd_type,
         'hover': cmd_hover,
     }
-    
+
     if args.command in commands:
         commands[args.command](args)
     else:

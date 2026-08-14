@@ -775,12 +775,12 @@ python scripts/lsp_query.py --file <路��> hover <符號>     # Hover ��
 | ����需求 | 用 Graphify | 用 LSP |
 |----------|-------------|--------|
 | 「KK��系統包含哪些��案？」 | community KKCoin | 無 |
-| 「誰呼叫了 update_user_kkcoin？」 | callers (��態����) | 
+| 「誰呼叫了 update_user_kkcoin？」 | callers (��態����) |
 efs (精確引用) |
 | 「改 shop.py 會��哪��？」 | impact (按社群影響) | 無 |
 | 「這個��數的型別��名？」 | 無 | 	ype |
 | 「專案架構��心是什���？」 | hubs | 無 |
 | 「這個類別有哪些方法？」 | 部分 | symbols |
 
-**Graphify** = ��構級、離線、多語言、社群/依��關係  
+**Graphify** = ��構級、離線、多語言、社群/依��關係
 **LSP** = 符號級、即時、精確、型別/重構/定義跳��
