@@ -1,6 +1,7 @@
 import discord
 import datetime
-from db_adapter import set_user_field, get_user
+# 使用非同步 DB 適配器避免阻塞事件循環
+from shared.db.async_adapter import get_user, set_user_field
 from shared.utils.view_registry import PersistentViewBase
 from cogs.ui.utils import paperdoll_manager
 
@@ -34,7 +35,7 @@ class GenderSelectView(discord.ui.View):
         appearance = paperdoll_manager.get_random(preserve_gender=gender)
 
         for key, value in appearance.items():
-            set_user_field(self.user_id, key, value)
+            await async_set_user_field(self.user_id, key, value)
 
         gender_text = "男性" if gender == "male" else "女性"
         await interaction.followup.send(
@@ -75,12 +76,12 @@ class WorkCardModal(discord.ui.Modal):
             await interaction.response.defer(ephemeral=True)
 
             # 保存到資料庫
-            set_user_field(self.user_id, "pre_job", str(self.pre_job.value))
-            set_user_field(self.user_id, "hobby", str(self.hobby.value))
-            set_user_field(self.user_id, "work_card_enabled", 1)
+            await async_set_user_field(self.user_id, "pre_job", str(self.pre_job.value))
+            await async_set_user_field(self.user_id, "hobby", str(self.hobby.value))
+            await async_set_user_field(self.user_id, "work_card_enabled", 1)
 
             # 生成工作證 embed
-            user_data = get_user(self.user_id)
+            user_data = await async_get_user(self.user_id)
             user_obj = await self.cog.bot.fetch_user(self.user_id)
 
             embed = await self.create_work_card_embed(user_data, user_obj)

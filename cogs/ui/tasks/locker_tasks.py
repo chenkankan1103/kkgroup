@@ -1,7 +1,8 @@
 import asyncio
 import discord
 import time
-from db_adapter import get_all_users, set_user_field
+# 使用非同步 DB 適配器避免阻塞事件循環
+from shared.db.async_adapter import get_all_users, set_user_field
 
 
 class LockerTasks:
@@ -39,7 +40,7 @@ class LockerTasks:
                 print("❌ 找不到論壇頻道")
                 return
 
-            all_users = get_all_users()
+            all_users = await get_all_users()
             backfilled_count = 0
 
             for user_data in all_users:
@@ -67,8 +68,8 @@ class LockerTasks:
                         thread_id
                     ) or await self.bot.fetch_channel(thread_id)
                     if not thread or not isinstance(thread, discord.Thread):
-                        set_user_field(user_id, "thread_id", None)
-                        set_user_field(user_id, "locker_message_id", None)
+                        await set_user_field(user_id, "thread_id", None)
+                        await set_user_field(user_id, "locker_message_id", None)
                         continue
 
                     if getattr(thread, "archived", False):
@@ -95,7 +96,7 @@ class LockerTasks:
                         print(f"⚠️ 無法掃描 {user_id} 的 thread 歷史: {_e}")
 
                     if found_msg:
-                        set_user_field(user_id, "locker_message_id", found_msg.id)
+                        await set_user_field(user_id, "locker_message_id", found_msg.id)
                         print(
                             f"✅ 回填 locker_message_id: user {user_id} → {found_msg.id}"
                         )
@@ -141,7 +142,7 @@ class LockerTasks:
     async def _sync_changed_users(self):
         """增量同步主邏輯"""
         try:
-            all_users = get_all_users()
+            all_users = await get_all_users()
             changed_count = 0
 
             for user_data in all_users:
@@ -160,8 +161,8 @@ class LockerTasks:
                         thread_id
                     ) or await self.bot.fetch_channel(thread_id)
                     if not thread or not isinstance(thread, discord.Thread):
-                        set_user_field(user_id, "thread_id", None)
-                        set_user_field(user_id, "locker_message_id", None)
+                        await set_user_field(user_id, "thread_id", None)
+                        await set_user_field(user_id, "locker_message_id", None)
                         continue
 
                     if getattr(thread, "archived", False):
@@ -170,7 +171,7 @@ class LockerTasks:
                     try:
                         message = await thread.fetch_message(locker_message_id)
                     except discord.NotFound:
-                        set_user_field(user_id, "locker_message_id", None)
+                        await set_user_field(user_id, "locker_message_id", None)
                         continue
 
                     changed = await self._detect_field_changes(

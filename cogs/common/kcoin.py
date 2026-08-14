@@ -14,9 +14,12 @@ from collections import defaultdict
 from dotenv import load_dotenv, set_key
 from io import BytesIO
 
-# 匯入新的 DB 適配層
-from db_adapter import (
+# 匯入非同步 DB 適配層
+from shared.db.async_adapter import (
+    get_user_kkcoin,
+    update_user_kkcoin,
     get_user_field,
+    set_user_field,
     add_user_field,
     get_central_reserve,
     add_to_central_reserve,
@@ -25,6 +28,8 @@ from db_adapter import (
     get_reserve_pressure,
     get_dynamic_fee_rate,
     get_reserve_announcement,
+    get_user_digital_usd,
+    update_user_digital_usd,
 )
 
 # 匯入排行榜管理模組
@@ -56,47 +61,24 @@ USER_COOLDOWN_SECONDS = 30
 UPDATE_INTERVAL = 300  # 更新間隔改為 5 分鐘 (300 秒)
 
 
-# 資料庫初始化
-def initialize_database():
-    """初始化數據庫 (已遷移到 Sheet-Driven 系統)"""
-    try:
-        from db_adapter import get_db
-
-        db = get_db()
-        print("✅ KKCoin DB 就緒")
-    except Exception as e:
-        print(f"❌ KKCoin DB 初始化失敗: {e}")
-
-
-# 資料庫操作方法
-def get_user_balance(user_id):
+# 資料庫操作方法 (非同步版本)
+async def get_user_balance(user_id):
     """獲取玩家 KKCoin 餘額"""
-    return get_user_field(user_id, "kkcoin", default=0)
+    return await get_user_kkcoin(user_id)
 
 
-def update_user_balance(user_id, amount):
-    """更新玩家 KKCoin 餘額"""
-    return add_user_field(user_id, "kkcoin", amount)
+async def update_user_balance(user_id, amount):  # 已修改
+        """更新玩家 KKCoin 餘額"""
+        return await update_user_kkcoin(user_id, amount)
 
 
-def get_user_digital_usd(user_id):
-    """獲取玩家數位美金（洗出的白錢）"""
-    value = get_user_field(user_id, "digital_usd", default=0)
-    # 確保返回的是數字類型（處理字符串情況）
-    if isinstance(value, str):
-        # 處理空字符串
-        if not value or value.strip() == "":
-            return 0.0
-        try:
-            return float(value)
-        except (ValueError, TypeError):
-            return 0.0
-    return float(value) if value else 0.0
 
 
-def update_user_digital_usd(user_id, amount):
-    """更新玩家數位美金"""
-    return add_user_field(user_id, "digital_usd", amount)
+
+
+
+
+
 
 
 # 環境變數操作
@@ -186,7 +168,7 @@ def is_only_emojis(text):
 class KKCoin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        initialize_database()
+        # initialize_database() - async adapter 自動初始化，無需手動呼叫
 
         # 從 .env 讀取排行榜頻道 ID
         self.rank_channel_id = int(get_from_env("KKCOIN_RANK_CHANNEL_ID", 0))
@@ -1091,7 +1073,7 @@ class KKCoin(commands.Cog):
                 print(f"❌ 找不到儲備狀態頻道 {self.reserve_channel_id}")
                 return
 
-            embed = self.create_reserve_embed()
+            embed = await self.create_reserve_embed()
             msg = await channel.send(embed=embed, silent=True)
 
             # 立即儲存訊息 ID
@@ -1104,12 +1086,12 @@ class KKCoin(commands.Cog):
         except Exception as e:
             print(f"❌ 創建儲備狀態失敗: {e}")
 
-    def create_reserve_embed(self) -> discord.Embed:
+    async def create_reserve_embed(self) -> discord.Embed:
         """建立園區儲備狀態 Embed"""
-        reserve = get_central_reserve()
-        pressure = get_reserve_pressure()
-        fee_rate = get_dynamic_fee_rate()
-        announcement = get_reserve_announcement()
+        reserve = await get_central_reserve()
+        pressure = await get_reserve_pressure()
+        fee_rate = await get_dynamic_fee_rate()
+        announcement = await get_reserve_announcement()
 
         # 繪製壓力條
         bar_length = 20
@@ -1197,7 +1179,7 @@ class KKCoin(commands.Cog):
                 print(f"❌ 取得訊息失敗: {e}")
                 return
 
-            embed = self.create_reserve_embed()
+            embed = await self.create_reserve_embed()
             await msg.edit(embed=embed)
             print("✅ 儲備狀態已更新")
 
@@ -1344,11 +1326,11 @@ class KKCoin(commands.Cog):
             return
 
         user_id = str(member.id)
-        current_balance = get_user_balance(user_id)
+        current_balance = await get_user_balance(user_id)
 
         if action == "add":
             new_balance = current_balance + amount
-            update_user_balance(user_id, amount)
+            await update_user_balance(user_id, amount)
             action_text = f"增加了 {amount}"
         elif action == "subtract":
             if current_balance < amount:
@@ -1358,11 +1340,11 @@ class KKCoin(commands.Cog):
                 )
                 return
             new_balance = current_balance - amount
-            update_user_balance(user_id, -amount)
+            await update_user_balance(user_id, -amount)
             action_text = f"減少了 {amount}"
         else:  # set
             difference = amount - current_balance
-            update_user_balance(user_id, difference)
+            await update_user_balance(user_id, difference)
             new_balance = amount
             action_text = f"設定為 {amount}"
 
@@ -1587,10 +1569,11 @@ class KKCoin(commands.Cog):
         reward = min(len(content) * 2, 100)
 
         self.last_message_cache[user_id] = content
-        # 同步操作寫入資料庫可能較快，但若擔心可改為 to_thread
-        update_user_balance(user_id, reward)
+        # 非同步寫入資料庫
+        await update_user_balance(user_id, reward)
+        new_balance = await get_user_balance(user_id)
         print(
-            f"💰 {message.author.display_name} 獲得了 {reward} KK幣! (總計: {get_user_balance(user_id)})"
+            f"💰 {message.author.display_name} 獲得了 {reward} KK幣! (總計: {new_balance})"
         )
 
         # 排行榜更新不等待，透過 create_task 並靠內部節流控制頻率
@@ -1616,10 +1599,10 @@ class KKCoin(commands.Cog):
             await interaction.response.send_message("❌ 金額不能為負數", ephemeral=True)
             return
 
-        current = get_central_reserve()
+        current = await get_central_reserve()
 
         if action == "add":
-            add_to_central_reserve(amount)
+            await add_to_central_reserve(amount)
             action_text = f"增加了 {amount:,}"
             new_amount = current + amount
         elif action == "subtract":
@@ -1629,11 +1612,11 @@ class KKCoin(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            remove_from_central_reserve(amount)
+            await remove_from_central_reserve(amount)
             action_text = f"減少了 {amount:,}"
             new_amount = current - amount
         else:  # set
-            set_central_reserve(amount)
+            await set_central_reserve(amount)
             action_text = f"設定為 {amount:,}"
             new_amount = amount
 
