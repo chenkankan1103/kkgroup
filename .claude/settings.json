@@ -1,20 +1,7 @@
 ﻿{
     "autoCompactEnabled":  true,
     "autoCompactWindow":  1000000,
-    "hooks":  {
-                  "Stop":  [
-                               {
-                                   "matcher":  ".*",
-                                   "hooks":  [
-                                                 {
-                                                     "type":  "command",
-                                                     "command":  "powershell -File .claude/scripts/consensus-review.ps1",
-                                                     "timeout":  180
-                                                 }
-                                             ]
-                               }
-                           ]
-              },
+    "hooks":  {},
     "permissions":  {
                         "allow":  [
                                       "Read(*)",

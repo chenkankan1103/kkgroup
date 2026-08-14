@@ -1,0 +1,145 @@
+name: Graphify Knowledge Graph Auto-Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.py'
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.json'
+      - '**/*.md'
+      - '!graphify-out/**'
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  update-graphify:
+    name: Update Graphify Knowledge Graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Graphify CLI
+        run: |
+          npm install -g @graphify/cli@latest
+          graphify --version
+
+      - name: Check if graph is stale
+        id: freshness
+        run: |
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          echo "current_commit=$CURRENT_COMMIT" >> $GITHUB_OUTPUT
+
+          if [ -f graphify-out/graph.json ]; then
+            BUILT_COMMIT=$(jq -r '.built_at_commit // "unknown"' graphify-out/graph.json)
+            echo "built_commit=$BUILT_COMMIT" >> $GITHUB_OUTPUT
+
+            if [ "$CURRENT_COMMIT" = "$BUILT_COMMIT" ]; then
+              echo "stale=false" >> $GITHUB_OUTPUT
+              echo "Graph is up to date (commit: $CURRENT_COMMIT)"
+            else
+              echo "stale=true" >> $GITHUB_OUTPUT
+              echo "Graph is stale. Current: $CURRENT_COMMIT, Built: $BUILT_COMMIT"
+            fi
+          else
+            echo "stale=true" >> $GITHUB_OUTPUT
+            echo "No graph found, will build fresh"
+          fi
+
+      - name: Build Graphify Knowledge Graph
+        if: steps.freshness.outputs.stale == 'true'
+        id: build
+        run: |
+          echo "Building Graphify knowledge graph..."
+          graphify build . --output graphify-out
+
+          if [ -f graphify-out/graph.json ]; then
+            NODES=$(jq '.nodes | length' graphify-out/graph.json)
+            EDGES=$(jq '.links | length' graphify-out/graph.json)
+            COMMUNITIES=$(jq '[.nodes[].community_name] | unique | length' graphify-out/graph.json)
+            echo "nodes=$NODES" >> $GITHUB_OUTPUT
+            echo "edges=$EDGES" >> $GITHUB_OUTPUT
+            echo "communities=$COMMUNITIES" >> $GITHUB_OUTPUT
+            echo "Graph built successfully:"
+            echo "  Nodes: $NODES"
+            echo "  Edges: $EDGES"
+            echo "  Communities: $COMMUNITIES"
+          else
+            echo "Error: graph.json not generated"
+            exit 1
+          fi
+
+      - name: Commit and push graph updates
+        if: steps.freshness.outputs.stale == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add graphify-out/
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update Graphify knowledge graph [skip ci]
+
+            - Nodes: ${{ steps.build.outputs.nodes }}
+            - Edges: ${{ steps.build.outputs.edges }}
+            - Communities: ${{ steps.build.outputs.communities }}
+            - Built from: $(git rev-parse --short HEAD)"
+
+            git push origin HEAD:main
+            echo "Graphify knowledge graph updated and pushed"
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: '**Graphify Knowledge Graph Updated**\n\nThe knowledge graph has been rebuilt with the latest changes from this PR.\n\n- Nodes: ${{ steps.build.outputs.nodes }}\n- Edges: ${{ steps.build.outputs.edges }}\n- Communities: ${{ steps.build.outputs.communities }}\n\nYou can now query the updated graph using:\n```bash\npython scripts/query_graph.py stats\npython scripts/query_graph.py hubs\n```'
+            });
+
+      - name: Summary
+        run: |
+          echo "## Graphify Update Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.freshness.outputs.stale }}" = "true" ]; then
+            echo "Graph was **rebuilt** and committed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Nodes | ${{ steps.build.outputs.nodes }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Edges | ${{ steps.build.outputs.edges }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Communities | ${{ steps.build.outputs.communities }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Built from commit | $(git rev-parse --short HEAD) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Graph was **already up to date**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Current commit: ${{ steps.freshness.outputs.current_commit }}" >> $GITHUB_STEP_SUMMARY
+          fi
