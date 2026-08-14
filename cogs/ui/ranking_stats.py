@@ -329,7 +329,7 @@ class RankingStats:
                     existing = self.db.get_anime_details(int(anime_sn))
                     if not existing:
                         self.db.cache_anime_details(
-                            int(anime_sn), anime_name, "", [], views, 0
+                            int(anime_sn), anime_name, "", "", [], views, 0
                         )
 
                 recorded += 1
@@ -495,7 +495,7 @@ class RankingStats:
                     # 快取到數據庫
                     if anime_sn:
                         self.db.cache_anime_details(
-                            anime_sn, title, content, tags, view_count, score
+                            anime_sn, title, content, "", tags, view_count, score
                         )
                         # 同時記錄統計數據（用於數據分析）
                         self.db.record_episode_stats(

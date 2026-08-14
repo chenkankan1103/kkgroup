@@ -364,6 +364,15 @@ class AnimeDatabase:
             (BOOTSTRAP_FLAG_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
             (BOOTSTRAP_FLAG_TABLE, "bootstrapCompleted", "INTEGER DEFAULT 0"),
             (BOOTSTRAP_FLAG_TABLE, "updatedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            # ANIME_DETAILS_TABLE 遷移
+            (ANIME_DETAILS_TABLE, "animeSn", "INTEGER PRIMARY KEY"),
+            (ANIME_DETAILS_TABLE, "name", "TEXT"),
+            (ANIME_DETAILS_TABLE, "content", "TEXT"),
+            (ANIME_DETAILS_TABLE, "coverUrl", "TEXT"),
+            (ANIME_DETAILS_TABLE, "tags", "TEXT"),
+            (ANIME_DETAILS_TABLE, "viewCount", "INTEGER DEFAULT 0"),
+            (ANIME_DETAILS_TABLE, "score", "REAL DEFAULT 0"),
+            (ANIME_DETAILS_TABLE, "updatedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ]
 
         for table_name, column_name, column_def in migrations:
