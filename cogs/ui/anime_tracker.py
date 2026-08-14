@@ -1,4 +1,4 @@
-﻿"""
+"""
 Bahamut 動畫追蹤 Cog - 自動通知新上架集數
 已重構為三個模組：Push/Core、Schedule Tracker、Ranking Stats
 """
@@ -16,6 +16,12 @@ from typing import Optional, Dict, List
 from zoneinfo import ZoneInfo  # Python 3.9+, 正確的時區處理
 import time
 from shared.utils.view_registry import PersistentViewBase
+
+# 非同步 DB 適配器 - 避免阻塞事件循環
+from shared.db.async_adapter import (
+    get_user_field as async_get_user_field,
+    set_user_field as async_set_user_field,
+)
 
 # 台灣時區
 TW_TZ = ZoneInfo("Asia/Taipei")
@@ -1083,7 +1089,8 @@ class AnimeTracker(commands.Cog):
                 # === KK幣獎勵邏輯 (投票 +2000) ===
                 reward_given = False
                 try:
-                    from db_adapter import set_user_field, get_user_field
+                    # 使用非同步 DB 適配器
+                    # from db_adapter import set_user_field, get_user_field
 
                     # 檢查是否已發放過獎勵 - 使用 message_id
                     reward_message_id = (
@@ -1097,12 +1104,12 @@ class AnimeTracker(commands.Cog):
                     ):
                         # 獲取當前 KK幣
                         current_kkcoin = (
-                            get_user_field(interaction.user.id, "kkcoin") or 0
+                            await async_get_user_field(interaction.user.id, "kkcoin") or 0
                         )
                         new_kkcoin = int(current_kkcoin) + 2000
 
                         # 更新 KK幣
-                        set_user_field(interaction.user.id, "kkcoin", new_kkcoin)
+                        await async_set_user_field(interaction.user.id, "kkcoin", new_kkcoin)
 
                         # 記錄獎勵發放
                         self.tracker.db.record_reward(
@@ -1251,7 +1258,7 @@ class AnimeTracker(commands.Cog):
                             # === KK幣獎勵邏輯 (評論 +3000) ===
                             reward_message = "✅ 評論已保存！感謝你的意見"
                             try:
-                                from db_adapter import set_user_field, get_user_field
+                                # from db_adapter import set_user_field, get_user_field
 
                                 # 檢查是否已發放過獎勵 - 使用 view 的 message_id
                                 if (
@@ -1262,7 +1269,7 @@ class AnimeTracker(commands.Cog):
                                 ):
                                     # 獲取當前 KK幣
                                     current_kkcoin = (
-                                        get_user_field(
+                                        await async_get_user_field(
                                             modal_interaction.user.id, "kkcoin"
                                         )
                                         or 0
@@ -1270,7 +1277,7 @@ class AnimeTracker(commands.Cog):
                                     new_kkcoin = int(current_kkcoin) + 3000
 
                                     # 更新 KK幣
-                                    set_user_field(
+                                    await async_set_user_field(
                                         modal_interaction.user.id, "kkcoin", new_kkcoin
                                     )
 

@@ -6,7 +6,12 @@ import asyncio
 from typing import Optional
 from dotenv import load_dotenv
 from pathlib import Path
-from db_adapter import get_user, set_user_field, get_all_users
+# 非同步 DB 適配器 - 避免阻塞事件循環
+from shared.db.async_adapter import (
+    get_user as async_get_user,
+    set_user_field as async_set_user_field,
+    get_all_users as async_get_all_users,
+)
 import datetime
 import logging
 
@@ -80,10 +85,10 @@ class UserPanel(commands.Cog):
 
     # ============= 工具函數 =============
 
-    def get_user_data(self, user_id: int) -> Optional[dict]:
+    async def get_user_data(self, user_id: int) -> Optional[dict]:
         """獲取用戶資料"""
         try:
-            user = get_user(user_id)
+            user = await async_get_user(user_id)
             if not user:
                 return None
 
@@ -201,7 +206,7 @@ class UserPanel(commands.Cog):
             if not permissions.send_messages or not permissions.create_public_threads:
                 return
 
-            all_users = get_all_users()
+            all_users = await async_get_all_users()
 
             threads_to_create = []
             existing_threads = 0
@@ -228,7 +233,7 @@ class UserPanel(commands.Cog):
                             existing_threads += 1
                             continue
                         else:
-                            set_user_field(user_id, "thread_id", 0)
+                            await async_set_user_field(user_id, "thread_id", 0)
                             threads_to_create.append(member)
                     else:
                         threads_to_create.append(member)
@@ -279,7 +284,7 @@ class UserPanel(commands.Cog):
             if not self.ensure_user_exists(user.id):
                 return None
 
-            user_data = self.get_user_data(user.id)
+            user_data = await self.get_user_data(user.id)
             if not user_data:
                 return None
 
@@ -297,7 +302,7 @@ class UserPanel(commands.Cog):
                 if thread:
                     return thread
                 else:
-                    set_user_field(user.id, "thread_id", 0)
+                    await async_set_user_field(user.id, "thread_id", 0)
 
             bot_member = forum_channel.guild.get_member(self.bot.user.id)
             if not bot_member:
@@ -320,7 +325,7 @@ class UserPanel(commands.Cog):
                     view=view,
                     content="👋 這是你的專屬置物櫃～",
                 )
-                set_user_field(user.id, "locker_message_id", message.id)
+                await async_set_user_field(user.id, "locker_message_id", message.id)
                 try:
                     await thread.add_user(user)
                     print(f"✅ 用戶 {user.id} 已添加到線程 {thread.id}")
@@ -348,7 +353,7 @@ class UserPanel(commands.Cog):
                     raise
 
             try:
-                set_user_field(user.id, "thread_id", thread.id)
+                await async_set_user_field(user.id, "thread_id", thread.id)
                 print(f"✅ 已保存 thread_id {thread.id} 給用戶 {user.id}")
             except Exception as db_err:
                 print(f"⚠️ 保存 thread_id 失敗: {db_err}")
@@ -455,10 +460,11 @@ class UserPanel(commands.Cog):
     async def register_persistent_workcard_views(self):
         """全域註冊員工證視圖（和 work_cog 的 register_persistent_views 類似邏輯）"""
         try:
-            from db_adapter import get_all_users
+            # 使用非同步 DB 適配器
+            from shared.db.async_adapter import get_all_users as async_get_all_users
             from .views import WorkCardActionView
 
-            all_users = get_all_users()
+            all_users = await async_get_all_users()
             registered_count = 0
 
             for user in all_users:
@@ -499,7 +505,7 @@ class UserPanel(commands.Cog):
             if not forum_channel or not isinstance(forum_channel, discord.ForumChannel):
                 return
 
-            all_users = get_all_users()
+            all_users = await async_get_all_users()
 
             for user_data in all_users:
                 user_id = user_data.get("user_id")
@@ -593,9 +599,9 @@ class UserPanel(commands.Cog):
                             continue
                         raise
 
-                    set_user_field(user_id, "last_kkcoin_snapshot", current_kkcoin)
-                    set_user_field(user_id, "last_xp_snapshot", current_xp)
-                    set_user_field(user_id, "last_level_snapshot", current_level)
+                    await async_set_user_field(user_id, "last_kkcoin_snapshot", current_kkcoin)
+                    await async_set_user_field(user_id, "last_xp_snapshot", current_xp)
+                    await async_set_user_field(user_id, "last_level_snapshot", current_level)
 
                 except Exception:
                     continue
@@ -633,7 +639,7 @@ class UserPanel(commands.Cog):
                                     print(
                                         f"🗑️ 已刪除已離開成員 {user_id} 的帖子 (thread_id: {thread_id})"
                                     )
-                                    set_user_field(user_id, "thread_id", 0)
+                                    await async_set_user_field(user_id, "thread_id", 0)
                                 except discord.NotFound:
                                     pass
                     except Exception as e:
@@ -670,7 +676,7 @@ class UserPanel(commands.Cog):
     async def on_member_remove(self, member):
         """成員離開時刪除其論壇帖子"""
         try:
-            user_data = self.get_user_data(member.id)
+            user_data = await self.get_user_data(member.id)
             if not user_data or not user_data.get("thread_id"):
                 return
 
@@ -686,7 +692,7 @@ class UserPanel(commands.Cog):
             except (discord.NotFound, Exception):
                 pass
 
-            set_user_field(member.id, "thread_id", 0)
+            await async_set_user_field(member.id, "thread_id", 0)
 
         except Exception:
             pass

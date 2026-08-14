@@ -388,14 +388,10 @@ class ButtonInteraction(commands.Cog):
     async def get_user_data(self, user_id: int) -> dict:
         """獲取用戶完整資料"""
         try:
-            # 匯入 db_adapter 的功能
-            import sys
-            import os
+            # 使用非同步 DB 適配器
+            from shared.db.async_adapter import get_user
 
-            sys.path.insert(0, os.path.dirname(__file__) + "/..")
-            from db_adapter import get_user
-
-            user = get_user(user_id)
+            user = await get_user(user_id)
 
             if not user:
                 return None
