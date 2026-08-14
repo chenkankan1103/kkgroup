@@ -363,10 +363,11 @@ async def update_locker_message(
     """
     restore_archived = False
     try:
-        from db_adapter import get_user, set_user_field
+        # 使用非同步 DB 適配器避免阻塞事件循環
+        from shared.db.async_adapter import get_user, set_user_field
 
         # 獲取用戶數據
-        user_data = get_user(user_id)
+        user_data = await get_user(user_id)
         if not user_data:
             print(f"❌ [Update Locker Message] 無法找到用戶 {user_id} 的數據")
             return False
@@ -412,7 +413,7 @@ async def update_locker_message(
                         message_obj = msg
                         # 同步更新 DB，避免下次再掃
                         try:
-                            set_user_field(user_id, "locker_message_id", msg.id)
+                            await set_user_field(user_id, "locker_message_id", msg.id)
                         except Exception:
                             pass
                         print(
@@ -440,7 +441,7 @@ async def update_locker_message(
             try:
                 new_msg = await thread.send(embed=embed, view=view, silent=True)
                 try:
-                    set_user_field(user_id, "locker_message_id", new_msg.id)
+                    await set_user_field(user_id, "locker_message_id", new_msg.id)
                 except Exception:
                     pass
                 print(f"✅ [Update Locker Message] 已發送新置物櫃訊息給用戶 {user_id}")
