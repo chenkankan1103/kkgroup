@@ -28,8 +28,6 @@ from shared.db.async_adapter import (
     get_reserve_pressure,
     get_dynamic_fee_rate,
     get_reserve_announcement,
-    get_user_digital_usd,
-    update_user_digital_usd,
 )
 
 # 匯入排行榜管理模組
@@ -37,9 +35,6 @@ from .leaderboard_manager import (
     make_leaderboard_image,
     get_current_leaderboard_data,
     has_data_changed,
-    get_digital_usd_leaderboard_data,
-    has_digital_usd_data_changed,
-    make_digital_usd_leaderboard_image,
 )
 
 # 載入 .env 檔案
@@ -174,14 +169,6 @@ class KKCoin(commands.Cog):
         self.rank_channel_id = int(get_from_env("KKCOIN_RANK_CHANNEL_ID", 0))
         self.rank_message_id = int(get_from_env("KKCOIN_RANK_MESSAGE_ID", 0))
 
-        # 數位美金排行榜
-        self.digital_usd_channel_id = int(
-            get_from_env("DIGITAL_USD_RANK_CHANNEL_ID", 0)
-        )
-        self.digital_usd_message_id = int(
-            get_from_env("DIGITAL_USD_RANK_MESSAGE_ID", 0)
-        )
-
         # 園區中央儲備金狀態
         self.reserve_channel_id = int(get_from_env("RESERVE_STATUS_CHANNEL_ID", 0))
         self.reserve_message_id = int(get_from_env("RESERVE_STATUS_MESSAGE_ID", 0))
@@ -190,7 +177,6 @@ class KKCoin(commands.Cog):
         self.last_message_cache = defaultdict(str)
         self.last_update_time = 0
         self.last_leaderboard_data = None
-        self.last_digital_usd_data = None
         self._config_missing_warned = False  # 追踪是否已警告过 config.json 不存在
 
         # 🎯 事件驅動排行榜生成（資料變化時延遲 5 分鐘後生成，避免頻繁更新）
@@ -206,12 +192,10 @@ class KKCoin(commands.Cog):
 
         # 🔧 [改為事件驅動] 只在資料庫資產有變化時觸發更新，不做定時輪詢
         # 啟動必要的背景任務
-        self.auto_update_digital_usd_leaderboard.start()
         # self.auto_update_reserve_status.start()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
         self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
         # self.auto_push_leaderboard_to_github.start()  # 📤 ⏸️ 暫停：網頁開發的部分先停用
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
-        print(f"✅ 數位美金排行榜頻道: {self.digital_usd_channel_id}")
         print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
         print("🔄 隧道 URL 自動檢查已啟用（每 10 分鐘掃描一次）")
         print(
@@ -220,7 +204,6 @@ class KKCoin(commands.Cog):
 
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
-        self.auto_update_digital_usd_leaderboard.cancel()
         # self.auto_update_reserve_status.cancel()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
         self.auto_check_tunnel_url.cancel()  # 🔄 取消隧道檢查任務
         if self.auto_push_leaderboard_to_github.is_running():
@@ -991,63 +974,6 @@ class KKCoin(commands.Cog):
 
             traceback.print_exc()
 
-    # ============================================================
-    # 數位美金排行榜相關
-    # ============================================================
-
-    @tasks.loop(minutes=5)
-    async def auto_update_digital_usd_leaderboard(self):
-        """每 5 分鐘自動更新數位美金排行榜"""
-        if not self.digital_usd_channel_id:
-            return
-
-        # 如果沒有訊息 ID，嘗試創建排行榜
-        if not self.digital_usd_message_id:
-            await self.create_digital_usd_leaderboard()
-        else:
-            # 否則更新現有排行榜
-            await self.update_digital_usd_leaderboard(min_interval=0)
-
-    @auto_update_digital_usd_leaderboard.before_loop
-    async def before_auto_update_digital_usd(self):
-        """等待 bot 準備完成，並在啟動時查找/創建數位美金排行榜"""
-        await self.bot.wait_until_ready()
-        print("✅ 數位美金排行榜自動更新任務已啟動，正在查找舊訊息...")
-
-        if not self.digital_usd_channel_id:
-            print("⚠️ 未設定數位美金排行榜頻道 ID")
-            return
-
-        try:
-            channel = self.bot.get_channel(self.digital_usd_channel_id)
-            if not channel:
-                print(f"❌ 找不到數位美金排行榜頻道 {self.digital_usd_channel_id}")
-                return
-
-            if self.digital_usd_message_id:
-                try:
-                    msg = await channel.fetch_message(self.digital_usd_message_id)
-                    print(
-                        f"✅ 找到並重用數位美金排行榜訊息 ID: {self.digital_usd_message_id}"
-                    )
-                    return
-                except discord.NotFound:
-                    print(f"⚠️ 訊息 {self.digital_usd_message_id} 不存在")
-                    self.digital_usd_message_id = 0
-                    save_to_env("DIGITAL_USD_RANK_MESSAGE_ID", 0)
-
-        except Exception as e:
-            print(f"❌ 初始化數位美金排行榜時發生錯誤: {e}")
-
-    # ============================================================
-    # 園區中央儲備金狀態相關
-    # ============================================================
-
-    # ✅ 優化：儲備狀態現已改為隨排行榜更新而更新
-    # async def auto_update_reserve_status(self):
-    #     """[已優化] 不再每 2 分鐘獨立更新，改為隨排行榜更新而更新"""
-    #     pass
-
     async def ensure_reserve_status_initialized(self):
         """確保園區儲備狀態訊息已初始化（啟動時調用一次）"""
         if not self.reserve_channel_id:
@@ -1186,118 +1112,7 @@ class KKCoin(commands.Cog):
         except Exception as e:
             print(f"❌ 更新儲備狀態時發生錯誤: {e}")
 
-    async def create_digital_usd_leaderboard(self):
-        """自動創建數位美金排行榜訊息"""
-        if not self.digital_usd_channel_id:
-            print("❌ 未設定數位美金排行榜頻道 ID")
-            return
-
-        if self.digital_usd_message_id:
-            print(
-                f"⚠️ 數位美金排行榜已存在 (訊息 ID: {self.digital_usd_message_id})，跳過創建"
-            )
-            return
-
-        try:
-            channel = self.bot.get_channel(self.digital_usd_channel_id)
-            if not channel:
-                print(f"❌ 找不到頻道 {self.digital_usd_channel_id}")
-                return
-
-            members_data = self.get_digital_usd_leaderboard_data()
-
-            if not members_data:
-                print("❌ 沒有使用者資料，無法創建數位美金排行榜")
-                return
-
-            # 創建圖片
-            print("🎨 生成數位美金排行榜圖片...")
-            image = await self.make_digital_usd_leaderboard_image(members_data)
-            with io.BytesIO() as img_bytes:
-                image.save(img_bytes, format="PNG")
-                img_bytes.seek(0)
-                file = discord.File(img_bytes, filename="digital_usd_rank.png")
-                msg = await channel.send(file=file)
-
-            # 立即儲存訊息 ID
-            self.digital_usd_message_id = msg.id
-            save_to_env("DIGITAL_USD_RANK_MESSAGE_ID", msg.id)
-
-            self.last_digital_usd_data = members_data.copy()
-
-            print(f"✅ 數位美金排行榜已創建 - 頻道: {channel.name}, 訊息 ID: {msg.id}")
-
-        except Exception as e:
-            print(f"❌ 創建數位美金排行榜失敗: {e}")
-            import traceback
-
-            traceback.print_exc()
-
-    def get_digital_usd_leaderboard_data(self):
-        """取得當前數位美金排行榜資料（已移至 leaderboard_manager）"""
-        return get_digital_usd_leaderboard_data(self.bot, self.digital_usd_channel_id)
-
-    async def make_digital_usd_leaderboard_image(self, members_data):
-        """生成數位美金排行榜圖片（已移至 leaderboard_manager）"""
-        return await make_digital_usd_leaderboard_image(self.bot, members_data)
-
-    async def update_digital_usd_leaderboard(
-        self, min_interval=UPDATE_INTERVAL, force=False
-    ):
-        """更新數位美金排行榜"""
-        current_time = time.time()
-        if not self.digital_usd_channel_id or not self.digital_usd_message_id:
-            return
-        if not force and current_time - self.last_update_time < min_interval:
-            return
-
-        if not hasattr(self, "_digital_usd_update_lock"):
-            self._digital_usd_update_lock = asyncio.Lock()
-        async with self._digital_usd_update_lock:
-            try:
-                channel = self.bot.get_channel(self.digital_usd_channel_id)
-                if not channel:
-                    return
-
-                try:
-                    msg = await channel.fetch_message(self.digital_usd_message_id)
-                except discord.NotFound:
-                    print("❌ 數位美金排行榜訊息已被刪除，將重新創建")
-                    self.digital_usd_message_id = 0
-                    save_to_env("DIGITAL_USD_RANK_MESSAGE_ID", 0)
-                    await self.create_digital_usd_leaderboard()
-                    return
-                except Exception as e:
-                    print(f"❌ 取得訊息失敗: {e}")
-                    return
-
-                members_data = await asyncio.to_thread(
-                    self.get_digital_usd_leaderboard_data
-                )
-                if not members_data:
-                    return
-
-                if not force and not self.has_digital_usd_data_changed(members_data):
-                    return
-
-                print("🔄 開始更新數位美金排行榜...")
-                image = await self.make_digital_usd_leaderboard_image(members_data)
-
-                with io.BytesIO() as img_bytes:
-                    image.save(img_bytes, format="PNG")
-                    img_bytes.seek(0)
-                    file = discord.File(img_bytes, filename="digital_usd_rank.png")
-                    await msg.edit(attachments=[file])
-
-                self.last_digital_usd_data = members_data.copy()
-                print(f"✅ 數位美金排行榜更新成功 ({len(members_data)} 名使用者)")
-
-            except Exception as e:
-                print(f"❌ 更新數位美金排行榜時發生錯誤: {e}")
-
-    def has_digital_usd_data_changed(self, new_data):
-        """檢查數位美金排行榜資料是否有變化（已移至 leaderboard_manager）"""
-        return has_digital_usd_data_changed(new_data, self.last_digital_usd_data)
+    
 
     @app_commands.command(
         name="kkcoin_admin", description="管理用戶的 KK 幣（管理員專用）"
