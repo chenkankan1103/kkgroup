@@ -5,13 +5,3 @@
 
 echo "[pre-push] Codex review hook disabled. Push allowed."
 exit 0
-        err "Fix the issues above, then push again"
-        err "To skip (not recommended): git push --no-verify"
-        exit 1
-        ;;
-    *)
-        warn "Codex verdict unclear: $VERDICT"
-        warn "Allowing push but review output above for reference"
-        exit 0
-        ;;
-esac
