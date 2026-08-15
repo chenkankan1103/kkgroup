@@ -40,6 +40,7 @@ from .push_core import (
     ANIME_REWARDS_TABLE,
     ANIME_CHECK_HISTORY_TABLE,
     ANIME_WEEKLY_SCHEDULE_TABLE,
+    get_week_start_date,
 )
 
 # 導入自定義模組
@@ -463,7 +464,7 @@ class AnimeTracker(commands.Cog):
                 return
 
             now = datetime.now(TW_TZ)
-            week_start_str = self.get_week_start_date(now, api_week=True)
+            week_start_str = get_week_start_date(now, api_week=True)
 
             schedule_data = []
             for day_offset in range(7):
@@ -531,7 +532,7 @@ class AnimeTracker(commands.Cog):
 
         # 啟動時檢查 week_start_date 是否為本週（防止跨週重啟帶舊資料）
         now = datetime.now(TW_TZ)
-        expected_week_start = self.get_week_start_date(now, api_week=True)
+        expected_week_start = get_week_start_date(now, api_week=True)
         logger.info(
             f"📅 [_schedule_dispatcher] 啟動驗證：期望週起始日期={expected_week_start}，今日={now.strftime('%Y-%m-%d %a')}"
         )
