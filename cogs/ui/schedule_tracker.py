@@ -3,23 +3,20 @@
 Bahamut 動畫追蹤 Cog - 週表排程系統
 
 負責週表機制：
-- 每週一禮拜晚上 10 點自動從 Bahamut API 下載完整一週時程表
+- 每天晚上 22:00 自動從 Bahamut API 下載完整一週時程表
 - 將時程表儲存到本地資料庫 (anime_weekly_schedule 表)
-- 每小時檢查是否到達預定時刻，若到則進行實時 API 查詢確認新番
-- 實時查詢成功後發送通知並標記該時刻已推送
-- 大幅減少 API 呼叫頻率：從每天 288 次減少到每週 1 次（節省 99.65%）
+- 大幅減少 API 呼叫頻率：從每天 288 次減少到每天 1 次
 
 此設計解決機器人重啟時可能錯過推送時刻的問題：
 - 週表機制保證每個時刻只會被檢查一次
-- 錯過的時刻會在機器人重啟時被標記為已推送（不進行實際推送）
-- 避免重複嘗試同一時刻的推送
+- 重啟時由 dispatcher 自動補推已過時段
 """
 
 import logging
 from datetime import datetime, timedelta
 import asyncio
 import aiohttp
-from .push_core import TW_TZ, API_ENDPOINT, API_TIMEOUT, find_unpushed_items
+from .push_core import TW_TZ, API_ENDPOINT, API_TIMEOUT, get_week_start_date
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +131,8 @@ class AnimeScheduleTracker:
                 logger.warning("⚠️ [refresh_weekly_schedule] 無法拉取時程表")
                 return {"success": False, "error": "API 回傳空時程表"}
 
-            # 🔑 修復：正確計算 week_start_date
-            # 使用 push_core 的統一計算邏輯 (api_week=True: 用於儲存從 API 拉取的週表)
-            week_start_str = self.push_core.get_week_start_date(now, api_week=True)
+            # 🔑 正確計算 week_start_date (api_week=True: 用於儲存從 API 拉取的週表)
+            week_start_str = get_week_start_date(now, api_week=True)
             logger.info(
                 f"📅 [refresh_weekly_schedule] 保存週起始日期: {week_start_str} (today={now.strftime('%Y-%m-%d %a')})"
             )
@@ -208,33 +204,3 @@ class AnimeScheduleTracker:
     ) -> bool:
         """標記某個時刻已推送過 - 委託給 AnimeDatabase"""
         return self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
-
-    async def check_scheduled_push(self) -> None:
-        """每小時檢查是否有預定推送時刻 - 供週表系統使用"""
-        now = datetime.now(TW_TZ)
-        current_time = now.strftime("%H:%M")
-
-        try:
-            # 獲取今天的時程表
-            today_schedule = self.get_today_schedule()
-
-            # 尋找符合現在時刻的項目（尚未推送的） - 使用統一 helper
-            matching = find_unpushed_items(today_schedule, now, future_only=False)
-
-            if matching:
-                # 已由 find_unpushed_items 排序
-                logger.info(
-                    f"📺 [check_scheduled_push] 發現 {len(matching)} 個未推送時刻，將依序推送（現在 {current_time}）"
-                )
-                for item in matching:
-                    # 這裡會調用 AnimeTracker 的 send_anime_push 方法
-                    # 但由於這是個別類別，我們需要將實際的推送邏輯交給 AnimeTracker
-                    # 這裡只記錄日誌，實際推送在 AnimeTracker 中完成
-                    logger.info(
-                        f"📺 [check_scheduled_push] 準備推送時刻: {item['scheduled_time']}"
-                    )
-                    # 實際推送邏輯應該在 AnimeTracker 中由排程任務觸發
-                    await asyncio.sleep(2)  # 避免短時間內連續發送太多訊息
-
-        except Exception as e:
-            logger.error(f"❌ [check_scheduled_push] 失敗: {e}", exc_info=True)
