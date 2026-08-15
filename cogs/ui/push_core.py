@@ -553,6 +553,71 @@ class AnimeDatabase:
             logger.error(f"❌ [mark_time_pushed] Error: {e}", exc_info=True)
             return False
 
+    def save_weekly_schedule(self, week_start_date: str, schedule_data: list) -> bool:
+        """保存週表數據 - UPSERT 保留 pushed=1，並去重"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for item in schedule_data:
+                    day_of_week = item["day_of_week"]
+                    scheduled_time = item["scheduled_time"]
+                    anime_data = json.dumps(item["anime_data"], ensure_ascii=False)
+                    # 先查詢是否已存在
+                    cursor.execute(
+                        f"""
+                        SELECT pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ? AND videoSn = ?
+                        """,
+                        (week_start_date, day_of_week, scheduled_time, item["anime_data"].get("videoSn", 0)),
+                    )
+                    existing = cursor.fetchone()
+                    pushed = 1 if (existing and existing[0]) else 0
+                    # UPSERT
+                    cursor.execute(
+                        f"""
+                        INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
+                        (weekStartDate, dayOfWeek, scheduledTime, videoSn, animeData, pushed)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(weekStartDate, dayOfWeek, scheduledTime, videoSn) DO UPDATE SET
+                            animeData = excluded.animeData,
+                            pushed = excluded.pushed
+                        """,
+                        (week_start_date, day_of_week, scheduled_time, item["anime_data"].get("videoSn", 0), anime_data, pushed),
+                    )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"❌ [save_weekly_schedule] Error: {e}", exc_info=True)
+            return False
+
+    def get_unviewed_messages(self) -> list:
+        """獲取所有需要恢復視圖的消息"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"""
+                    SELECT messageId, videoSn, animeSn, anime_name, channelId, createdAt
+                    FROM {ANIME_MESSAGES_TABLE}
+                    WHERE messageId IS NOT NULL
+                    ORDER BY createdAt DESC
+                    """,
+                )
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        "messageId": row[0],
+                        "videoSn": row[1],
+                        "animeSn": row[2],
+                        "anime_name": row[3],
+                        "channelId": row[4],
+                        "createdAt": row[5],
+                    })
+                return results
+        except Exception as e:
+            logger.error(f"❌ [get_unviewed_messages] Error: {e}", exc_info=True)
+            return []
+
     # ==================== Anime Details Cache ====================
     def cache_anime_details(
         self,
@@ -1224,6 +1289,22 @@ class AnimePushCore:
         except Exception as e:
             logger.error(f"❌ [_fetch_new_anime_from_api] Error: {e}", exc_info=True)
             return []
+
+    async def _get_anime_schedule(self) -> dict:
+        """從 API 獲取日程表 (newAnimeSchedule) - 供外部呼叫"""
+        try:
+            timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(API_ENDPOINT) as response:
+                    if response.status != 200:
+                        logger.error(f"❌ API returned status {response.status}")
+                        return {}
+                    data = await response.json()
+                    schedule = data.get("data", {}).get("newAnimeSchedule", {})
+                    return schedule
+        except Exception as e:
+            logger.error(f"❌ Error fetching schedule: {e}")
+            return {}
 
     async def _generate_anime_embed(self, episode: Dict) -> Optional[discord.Embed]:
         """生成動畫嵌入訊息"""
