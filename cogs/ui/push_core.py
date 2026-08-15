@@ -9,10 +9,15 @@ from typing import Optional, Dict, List, Any, Set
 from zoneinfo import ZoneInfo
 
 # ==================== Constants ====================
+from pathlib import Path
+
 TW_TZ = ZoneInfo("Asia/Taipei")
 ANIME_CHANNEL_ID = 1252204317453324333
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # seconds
+
+# Database path - 統一使用主數據庫
+ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
 
 # Table names
 NOTIFIED_TABLE = "anime_notified"
