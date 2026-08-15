@@ -23,30 +23,23 @@ from shared.db.async_adapter import (
     set_user_field as async_set_user_field,
 )
 
-# 台灣時區
-TW_TZ = ZoneInfo("Asia/Taipei")
-
-# 配置
-ANIME_DB_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "user_data.db"
-)  # 統一使用主數據庫，所有表在同一個 user_data.db 中
-API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
-API_TIMEOUT = 15  # 秒
-
-# 表名與欄位
-NOTIFIED_TABLE = "anime_notified"
-BOOTSTRAP_FLAG_TABLE = "anime_bootstrap"
-ANIME_DETAILS_TABLE = "anime_details"  # 永恆快取動畫詳細信息
-ANIME_STATS_TABLE = "anime_statistics"  # 動畫統計數據（觀看人數、評分趨勢等）
-EPISODE_STATS_TABLE = "episode_statistics"  # 每集統計數據
-ANIME_MESSAGES_TABLE = "anime_messages"  # 消息 ID 追蹤（用於 bot 重啟時恢復 view）
-ANIME_VOTES_TABLE = "anime_votes"  # 匿名投票結果
-ANIME_REWARDS_TABLE = "anime_rewards"  # KK幣獎勵追踪（防止重複發放）
-ANIME_CHECK_HISTORY_TABLE = (
-    "anime_check_history"  # 每日時刻檢查歷史（防止重複檢查，解決 Bot 重啟問題）
-)
-ANIME_WEEKLY_SCHEDULE_TABLE = (
-    "anime_weekly_schedule"  # 週表：每週一自動拉取的完整時程表（減少 API 調用）
+# 導入共用常數
+from .push_core import (
+    TW_TZ,
+    ANIME_DB_PATH,
+    ANIME_CHANNEL_ID,
+    API_ENDPOINT,
+    API_TIMEOUT,
+    NOTIFIED_TABLE,
+    BOOTSTRAP_FLAG_TABLE,
+    ANIME_DETAILS_TABLE,
+    ANIME_STATS_TABLE,
+    EPISODE_STATS_TABLE,
+    ANIME_MESSAGES_TABLE,
+    ANIME_VOTES_TABLE,
+    ANIME_REWARDS_TABLE,
+    ANIME_CHECK_HISTORY_TABLE,
+    ANIME_WEEKLY_SCHEDULE_TABLE,
 )
 
 # 導入自定義模組
