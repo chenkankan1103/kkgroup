@@ -554,13 +554,14 @@ class AnimeDatabase:
             return False
 
     def save_weekly_schedule(self, week_start_date: str, schedule_data: list) -> bool:
-        """保存週表數據 - UPSERT 保留 pushed=1，並去重"""
+        """保存週表數據 - 手動 UPSERT 保留 pushed=1，並去重"""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 for item in schedule_data:
                     day_of_week = item["day_of_week"]
                     scheduled_time = item["scheduled_time"]
+                    video_sn = item["anime_data"].get("videoSn", 0)
                     anime_data = json.dumps(item["anime_data"], ensure_ascii=False)
                     # 先查詢是否已存在
                     cursor.execute(
@@ -568,22 +569,30 @@ class AnimeDatabase:
                         SELECT pushed FROM {ANIME_WEEKLY_SCHEDULE_TABLE}
                         WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ? AND videoSn = ?
                         """,
-                        (week_start_date, day_of_week, scheduled_time, item["anime_data"].get("videoSn", 0)),
+                        (week_start_date, day_of_week, scheduled_time, video_sn),
                     )
                     existing = cursor.fetchone()
                     pushed = 1 if (existing and existing[0]) else 0
-                    # UPSERT
-                    cursor.execute(
-                        f"""
-                        INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
-                        (weekStartDate, dayOfWeek, scheduledTime, videoSn, animeData, pushed)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(weekStartDate, dayOfWeek, scheduledTime, videoSn) DO UPDATE SET
-                            animeData = excluded.animeData,
-                            pushed = excluded.pushed
-                        """,
-                        (week_start_date, day_of_week, scheduled_time, item["anime_data"].get("videoSn", 0), anime_data, pushed),
-                    )
+                    # 嘗試插入，若 UNIQUE constraint violation 則更新
+                    try:
+                        cursor.execute(
+                            f"""
+                            INSERT INTO {ANIME_WEEKLY_SCHEDULE_TABLE}
+                            (weekStartDate, dayOfWeek, scheduledTime, videoSn, animeData, pushed)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (week_start_date, day_of_week, scheduled_time, video_sn, anime_data, pushed),
+                        )
+                    except sqlite3.IntegrityError:
+                        # UNIQUE constraint violation - 更新現有記錄
+                        cursor.execute(
+                            f"""
+                            UPDATE {ANIME_WEEKLY_SCHEDULE_TABLE}
+                            SET animeData = ?, pushed = ?
+                            WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ? AND videoSn = ?
+                            """,
+                            (anime_data, pushed, week_start_date, day_of_week, scheduled_time, video_sn),
+                        )
                 conn.commit()
                 return True
         except Exception as e:
