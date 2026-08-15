@@ -596,7 +596,7 @@ class AnimeTracker(commands.Cog):
                 # Debug: log today's schedule status
                 pending_count = sum(1 for item in today_schedule if not item["pushed"])
                 logger.info(
-                    f"🔍 [_schedule_dispatcher] 今日時程 {len(today_schedule)} 筆，待推送 {pending_count} 筆"
+                    f"🔍 [_schedule_dispatcher] 今日時程 {len(today_schedule)} 部動畫，待推送 {pending_count} 部"
                 )
                 for item in today_schedule:
                     status = "✅已推" if item["pushed"] else "⏳待推"
@@ -606,7 +606,7 @@ class AnimeTracker(commands.Cog):
                         if isinstance(anime_data, dict)
                         else json.loads(anime_data).get("title", "N/A")
                     )
-                    logger.info(f"   {item['scheduled_time']} {status} - {title[:30]}")
+                    logger.info(f"   {item['scheduled_time']} {status} - {title[:30]} (videoSn={item.get('video_sn')})")
 
                 # 如果 today_schedule 為空，嘗試從 API 拉取週表
                 if not today_schedule:
@@ -626,15 +626,16 @@ class AnimeTracker(commands.Cog):
                         await asyncio.sleep(sleep_seconds)
                         continue
 
-                # 找出今天「尚未推送」且「時間 >= 現在」的最早一筆
-                next_item = None
+                # 找出今天「有未推送動畫」且「時間 >= 現在」的最早時段
+                # 支援同一時段多部動畫：找到最早時段後，一次處理該時段所有未推送動畫
+                next_scheduled = None
                 for item in today_schedule:
                     if item["pushed"]:
                         continue
                     scheduled = item["scheduled_time"]
                     try:
                         datetime.strptime(scheduled, "%H:%M")  # 驗證格式
-                        next_item = item
+                        next_scheduled = scheduled
                         break
                     except ValueError as e:
                         logger.warning(
@@ -646,8 +647,8 @@ class AnimeTracker(commands.Cog):
                             exc_info=True,
                         )
 
-                if next_item:
-                    scheduled = next_item["scheduled_time"]
+                if next_scheduled:
+                    scheduled = next_scheduled
                     # 計算要睡多久（秒）
                     try:
                         sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
@@ -777,7 +778,8 @@ class AnimeTracker(commands.Cog):
         )
 
         # 篩選：pushed=0 且 scheduled_time <= 22:00（今天的推送時段已結束）
-        missed = []
+        # 去重：同一時段可能有多部動畫，只需按 scheduled_time 分組
+        missed_times = set()
         for item in today_schedule:
             if item["pushed"]:
                 continue
@@ -785,21 +787,21 @@ class AnimeTracker(commands.Cog):
             try:
                 # 僅處理 <= 當前時間（22:00 執行時，當前即為 22:xx，所以 <=22:00 即為今日已過去時段）
                 if scheduled <= current_time_str:
-                    missed.append(item)
+                    missed_times.add(scheduled)
             except Exception as e:
                 logger.error(
                     f"❌ [refresh_weekly_schedule] 處理時刻時發生錯誤 '{scheduled}': {e}",
                     exc_info=True,
                 )
 
-        if missed:
-            missed_sorted = sorted(missed, key=lambda x: x["scheduled_time"])
+        if missed_times:
+            missed_sorted = sorted(missed_times)
             logger.info(
-                f"📺 [refresh_weekly_schedule] 發現 {len(missed_sorted)} 個漏推時刻，開始補推"
+                f"📺 [refresh_weekly_schedule] 發現 {len(missed_sorted)} 個漏推時段，開始補推"
             )
-            for item in missed_sorted:
+            for scheduled in missed_sorted:
                 await self.send_anime_push(
-                    item["scheduled_time"], push_core.ANIME_CHANNEL_ID
+                    scheduled, push_core.ANIME_CHANNEL_ID
                 )
                 await asyncio.sleep(2)
         else:
@@ -1736,7 +1738,7 @@ class AnimeTracker(commands.Cog):
                 if pending > 0:
                     embed.add_field(
                         name="⏳ 待補推項目",
-                        value=f"{pending} 個時刻未推送",
+                        value=f"{pending} 部動畫未推送",
                         inline=False,
                     )
                 await interaction.followup.send(embed=embed, ephemeral=True)
