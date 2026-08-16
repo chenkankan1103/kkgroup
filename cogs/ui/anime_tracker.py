@@ -49,15 +49,16 @@ from .push_core import AnimePushCore, AnimeDatabase, find_unpushed_items
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
-# Logger
-logger = logging.getLogger(__name__)
+# Logger - 使用 UTF-8 安全日誌配置
+from shared.utils.encoding_handler import setup_utf8_logging
+
+logger = setup_utf8_logging(__name__, logging.INFO)
 
 
 class AnimeTracker(commands.Cog):
     """Bahamut 動畫追蹤主 Cog"""
 
     def __init__(self, bot: commands.Bot):
-        print("[ANIME_INIT_START] 🎬 AnimeTracker.__init__ 開始執行")
         import sys
 
         sys.stdout.flush()
@@ -111,9 +112,9 @@ class AnimeTracker(commands.Cog):
     async def cog_load(self):
         """Cog 加載時啟動任務"""
         import sys
+        import time
 
         start_time = time.perf_counter()
-        print("[COG_LOAD_START] 🎬 cog_load() 開始執行", flush=True)
         sys.stdout.flush()
 
         import logging
@@ -125,14 +126,12 @@ class AnimeTracker(commands.Cog):
 
         try:
             # 恢復舊消息的視圖 - 在 bot 重啟時重新註冊所有永久視圖
-            print("[COG_LOAD] 嘗試恢復舊消息 view...", flush=True)
             await self._restore_old_message_views()
-            print("[COG_LOAD] ✅ 舊消息 view 恢復完成", flush=True)
+            logger.info("✅ 舊消息 view 恢復完成")
 
             # 如果週表為空，立即拉取（解決首次部署/非禮拜天重啟問題）
-            print("[COG_LOAD] 檢查週表是否需要初始化...", flush=True)
             await self._init_weekly_schedule_if_empty()
-            print("[COG_LOAD] ✅ 週表初始化檢查完成", flush=True)
+            logger.info("✅ 週表初始化檢查完成")
 
 
             # 啟動週表刷新任務
@@ -306,21 +305,16 @@ class AnimeTracker(commands.Cog):
                 )
                 print("[COG_LOAD] ⚠️ sync_episode_stats 已在運行", flush=True)
 
-            print("[COG_LOAD_END] ✅ cog_load() 執行完成", flush=True)
-            sys.stdout.flush()
             logger.info("✅ [AnimeTracker.cog_load] 任務啟動完成")
 
         except Exception as e:
             import traceback
 
             error_msg = f"❌ [cog_load] 執行失敗: {e}"
-            print(f"[COG_LOAD_ERROR] {error_msg}", flush=True)
-            print(f"[COG_LOAD_ERROR] Traceback:\n{traceback.format_exc()}", flush=True)
             logger.error(error_msg, exc_info=True)
             raise
         elapsed = time.perf_counter() - start_time
         logger.info(f"⏱️ [AnimeTracker.cog_load] 總耗時: {elapsed:.2f} 秒")
-        print(f"[COG_LOAD_TIMING] 總耗時: {elapsed:.2f} 秒", flush=True)
         logger.info("=" * 50)
 
     def cog_unload(self):
@@ -387,6 +381,7 @@ class AnimeTracker(commands.Cog):
 
     async def _restore_old_message_views(self):
         """Bot 重啟時恢復舊消息的視圖"""
+        logger = logging.getLogger(__name__)
         try:
             # 獲取所有保存的消息資訊
             messages = self.get_unviewed_messages()
@@ -432,29 +427,26 @@ class AnimeTracker(commands.Cog):
                                 )
 
                 except Exception as e:
-                    logger = logging.getLogger(__name__)
                     logger.error(
                         f"❌ [_restore_old_message_views] 復原視圖失敗 for message {msg_info.get('messageId')}: {e}"
                     )
                     continue
 
         except Exception as e:
-            logger = logging.getLogger(__name__)
             logger.error(f"❌ [_restore_old_message_views] 失敗: {e}")
 
     async def _init_weekly_schedule_if_empty(self):
         """如果本週的週表為空，立即從 API 拉取（解決首次部署/非禮拜天重啟問題）"""
+        logger = logging.getLogger(__name__)
         try:
             await self.bot.wait_until_ready()
             today_schedule = self.get_today_schedule()
             if today_schedule:
-                logger = logging.getLogger(__name__)
                 logger.info(
                     f"✅ [_init_weekly_schedule_if_empty] 週表已有 {len(today_schedule)} 筆，跳過"
                 )
                 return
 
-            logger = logging.getLogger(__name__)
             logger.info(
                 "🔄 [_init_weekly_schedule_if_empty] 週表為空，立即從 API 拉取..."
             )
@@ -530,35 +522,31 @@ class AnimeTracker(commands.Cog):
             logger.error("❌ [_schedule_dispatcher] wait_until_ready() timeout 60s，終止任務")
             return
 
-        # 啟動時檢查 week_start_date 是否為本週（防止跨週重啟帶舊資料）
-        now = datetime.now(TW_TZ)
-        expected_week_start = get_week_start_date(now, api_week=True)
-        logger.info(
-            f"📅 [_schedule_dispatcher] 啟動驗證：期望週起始日期={expected_week_start}，今日={now.strftime('%Y-%m-%d %a')}"
-        )
-
         while not self.bot.is_closed():
             try:
+                # 每次迴圈檢查 week_start_date 是否正確（處理跨週重啟）
                 now = datetime.now(TW_TZ)
+                expected_week_start = get_week_start_date(now, api_week=True)
                 today_schedule = self.get_today_schedule()
+
+                # 如果 today_schedule 為空，表示週表可能過期或跨週，嘗試重新拉取
+                if not today_schedule:
+                    logger.warning(
+                        f"⚠️ [_schedule_dispatcher] today_schedule 為空 (expected_week={expected_week_start})，嘗試從 API 重新拉取週表..."
+                    )
+                    await self._init_weekly_schedule_if_empty()
+                    today_schedule = self.get_today_schedule()
+                    if not today_schedule:
+                        logger.warning("⚠️ [_schedule_dispatcher] 週表重新拉取後仍為空，60秒後重試")
+                        await asyncio.sleep(60)
+                        continue
+                    logger.info(f"✅ [_schedule_dispatcher] 週表重新載入成功，共 {len(today_schedule)} 筆")
 
                 # Debug: log today's schedule status
                 pending_count = sum(1 for item in today_schedule if not item["pushed"])
                 logger.info(
                     f"🔍 [_schedule_dispatcher] 今日時程 {len(today_schedule)} 部動畫，待推送 {pending_count} 部"
                 )
-
-                # 如果 today_schedule 為空，嘗試從 API 拉取週表
-                if not today_schedule:
-                    logger.warning("⚠️ [_schedule_dispatcher] today_schedule 為空，嘗試從 API 拉取週表...")
-                    await self._init_weekly_schedule_if_empty()
-                    today_schedule = self.get_today_schedule()
-                    if not today_schedule:
-                        logger.warning("⚠️ [_schedule_dispatcher] 週表初始化後仍為空，睡到明天 00:00 重試")
-                        tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-                        sleep_seconds = (tomorrow - now).total_seconds()
-                        await asyncio.sleep(sleep_seconds)
-                        continue
 
                 # 找出今天「有未推送動畫」且「時間 >= 現在」的最早時段
                 next_scheduled = None

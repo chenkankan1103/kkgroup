@@ -16,6 +16,14 @@ ANIME_CHANNEL_ID = 1252204317453324333
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15  # seconds
 
+# API 需要的 Headers (防止 403 Forbidden)
+API_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://ani.gamer.com.tw/",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+}
+
 # Database path - 統一使用主數據庫
 ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
 
@@ -174,7 +182,7 @@ class AnimeDatabase:
                     videoSn INTEGER,
                     animeSn INTEGER,
                     anime_name TEXT,
-                    animeName_old TEXT,
+                    animeName_old TEXT DEFAULT '',
                     channelId INTEGER,
                     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -269,9 +277,9 @@ class AnimeDatabase:
             (ANIME_MESSAGES_TABLE, "videoSn", "INTEGER"),
             (ANIME_MESSAGES_TABLE, "animeSn", "INTEGER"),
             (ANIME_MESSAGES_TABLE, "anime_name", "TEXT"),
-            (ANIME_MESSAGES_TABLE, "animeName_old", "TEXT"),
+            (ANIME_MESSAGES_TABLE, "animeName_old", "TEXT DEFAULT ''"),
             (ANIME_MESSAGES_TABLE, "channelId", "INTEGER"),
-            (ANIME_MESSAGES_TABLE, "createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_MESSAGES_TABLE, "createdAt", "TIMESTAMP"),
             (EPISODE_STATS_TABLE, "videoSn", "INTEGER PRIMARY KEY"),
             (EPISODE_STATS_TABLE, "animeSn", "INTEGER"),
             (EPISODE_STATS_TABLE, "episodeNum", "TEXT"),
@@ -303,7 +311,7 @@ class AnimeDatabase:
             (ANIME_CHECK_HISTORY_TABLE, "weekStartDate", "TEXT"),
             (ANIME_CHECK_HISTORY_TABLE, "dayOfWeek", "INTEGER"),
             (ANIME_CHECK_HISTORY_TABLE, "scheduledTime", "TEXT"),
-            (ANIME_CHECK_HISTORY_TABLE, "checkedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_CHECK_HISTORY_TABLE, "checkedAt", "TIMESTAMP"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "weekStartDate", "TEXT"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "dayOfWeek", "INTEGER"),
@@ -311,7 +319,7 @@ class AnimeDatabase:
             (ANIME_WEEKLY_SCHEDULE_TABLE, "videoSn", "INTEGER"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "animeData", "TEXT"),
             (ANIME_WEEKLY_SCHEDULE_TABLE, "pushed", "INTEGER DEFAULT 0"),
-            (ANIME_WEEKLY_SCHEDULE_TABLE, "createdAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_WEEKLY_SCHEDULE_TABLE, "createdAt", "TIMESTAMP"),
             (ANIME_DETAILS_TABLE, "animeSn", "INTEGER PRIMARY KEY"),
             (ANIME_DETAILS_TABLE, "name", "TEXT"),
             (ANIME_DETAILS_TABLE, "content", "TEXT"),
@@ -319,7 +327,7 @@ class AnimeDatabase:
             (ANIME_DETAILS_TABLE, "tags", "TEXT"),
             (ANIME_DETAILS_TABLE, "viewCount", "INTEGER DEFAULT 0"),
             (ANIME_DETAILS_TABLE, "score", "REAL DEFAULT 0"),
-            (ANIME_DETAILS_TABLE, "updatedAt", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            (ANIME_DETAILS_TABLE, "updatedAt", "TIMESTAMP"),
         ]
 
         for table_name, column_name, column_def in migrations:
@@ -1286,9 +1294,10 @@ class AnimePushCore:
         """從 API 獲取新番資料"""
         try:
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, headers=API_HEADERS) as session:
                 async with session.get(API_ENDPOINT) as resp:
                     if resp.status != 200:
+                        logger.warning(f"⚠️ [_fetch_new_anime_from_api] API returned status {resp.status}")
                         return []
                     data = await resp.json()
                     new_anime = data.get("data", {}).get("newAnime")
@@ -1303,7 +1312,7 @@ class AnimePushCore:
         """從 API 獲取日程表 (newAnimeSchedule) - 供外部呼叫"""
         try:
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, headers=API_HEADERS) as session:
                 async with session.get(API_ENDPOINT) as response:
                     if response.status != 200:
                         logger.error(f"❌ API returned status {response.status}")

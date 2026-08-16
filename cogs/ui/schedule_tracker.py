@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta
 import asyncio
 import aiohttp
-from .push_core import TW_TZ, API_ENDPOINT, API_TIMEOUT, get_week_start_date
+from .push_core import TW_TZ, API_ENDPOINT, API_TIMEOUT, API_HEADERS, get_week_start_date
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class AnimeScheduleTracker:
     async def _get_anime_schedule(self) -> dict:
         """從 API 獲取日程表 (newAnimeSchedule)"""
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=API_HEADERS) as session:
                 async with session.get(
                     API_ENDPOINT, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)
                 ) as response:
