@@ -331,9 +331,9 @@
       },
       "netflix_top10": {
         "name": "netflix_top10",
-        "description": "查看台灣 Netflix 每日 TOP 10 排行榜",
+        "description": "查看台灣 Netflix 熱門電影/影集 TOP 16（顯示實際海報圖片）",
         "type": "user",
-        "file": "common/netflix_top10.py",
+        "file": "ui/netflix_top10.py",
         "line": 1,
         "usage": "/netflix_top10 [電影|影集]",
         "status": "✅ 活躍",
