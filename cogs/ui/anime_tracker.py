@@ -598,9 +598,10 @@ class AnimeTracker(commands.Cog):
                     if success:
                         logger.info(f"✅ [_schedule_dispatcher] {scheduled} 推送完成")
                     else:
-                        logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 推送未完成（可能無匹配動畫或 API 暫時無回應），下一輪重試")
-                        # 短暫等待避免緊迴圈
+                        logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 推送失敗，30秒後重試同一時段")
                         await asyncio.sleep(30)
+                        # 重試同一時段，不 continue 到下一個
+                        continue
                 else:
                     # 今天沒有待推送項目 → 睡到明天 00:00 重新載入時程
                     tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -819,9 +820,20 @@ class AnimeTracker(commands.Cog):
                 score = episode.get("score", 0.0)
 
                 if video_sn and anime_sn:
+                    # 記錄劇集統計
                     self.record_episode_stats(
                         video_sn, anime_sn, episode_num, views, score
                     )
+                    
+                    # 差分法：計算每日新增觀看數
+                    current_popular = views
+                    prev_popular = self.db.get_latest_popular(anime_sn)
+                    if prev_popular is not None and current_popular > prev_popular:
+                        daily_new = current_popular - prev_popular
+                        if current_popular > prev_popular:
+                            self.db.record_daily_views(anime_sn, video_sn, daily_new)
+                            logger.info(f"📈 [差分法] animeSn={anime_sn} 新增觀看: {daily_new}")
+
                     processed_count += 1
 
             logger = logging.getLogger(__name__)
