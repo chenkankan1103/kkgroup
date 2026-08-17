@@ -84,9 +84,9 @@ These run beneath other skills — reach for them directly when the **words** ar
 /ponytail full          # Enable standard enforcement
 /ponytail-review        # Review changes for over-engineering
 /ponytail-audit         # Full codebase audit
-/ponytail-debt         # Show accumulated tech debt
-/ponytail-gain         # Show code/tokens saved
-/ponytail-help         # Show help
+/ponytail-debt          # Show accumulated tech debt
+/ponytail-gain          # Show code/tokens saved
+/ponytail-help          # Show help
 ```
 
 - **GitHub**: https://github.com/dietrichgebert/ponytail
@@ -318,6 +318,38 @@ shared/
 - Max line length: 100 chars
 - Use `black` for formatting, `ruff` for linting
 
+### 🧹 臨時檔案管理規則（必遵守）
+
+**核心原則**：所有為了檢查、測試、除錯、查看而臨時建立的腳本/檔案，**使用完畢後必須立即刪除**，不得留在專案中。
+
+| 臨時檔案類型 | 命名模式 | 處理方式 |
+|-------------|----------|----------|
+| 檢查腳本 | `check_*.py` | 用完即刪 |
+| 測試腳本 | `test_*.py` (非正式測試目錄) | 用完即刪 |
+| 修復腳本 | `fix_*.py` | 驗證後刪除 |
+| 除錯腳本 | `debug_*.py` | 用完即刪 |
+| 簡易驗證 | `simple_*.py`, `crawl_*.py`, `reset_*.py` | 用完即刪 |
+| 檢查用資料檔 | `*_debug_*.json`, `*_test_*.json` | 用完即刪 |
+
+**強制執行規則**：
+1. **建立前先思考**：能用現有工具（`scripts/commands_manager.py`、`scripts/query_graph.py`、`scripts/lsp_query.py`）解決就不用寫新檔
+2. **必須建立時**：放在專案根目錄或 `scripts/`，用完**立即刪除**（同一個對話結束前）
+3. **正式測試才放 `scripts/tests/`**：經過 code review、有明確目的、可重複執行的測試才可留存
+4. **資料庫備份**：只保留最新生產庫（`user_data.db`）與向量庫（`ruvector.db`），舊備份/空檔定期清理
+5. **`__pycache__`**：定期清理（`scripts/`、`cogs/`、`shared/`、`web/` 等專案目錄），`.venv/` 不需管
+
+**違規後果**：下次對話開頭會發現殘留檔案 → 強制清理 → 浪費時間
+
+---
+
+**檢查清單**（每次對話結束/建立臨時檔案時必查）：
+| # | 檢查項 | ✅ |
+|---|--------|-----|
+| 1 | 是否有 `check_*` `test_*` `fix_*` `debug_*` `simple_*` `crawl_*` `reset_*` 殘留？ | |
+| 2 | 臨時建立的 `.py`/`.json`/`.md` 是否已刪除？ | |
+| 3 | 是否誤留資料庫備份/空檔？ | |
+| 4 | 專案目錄 `__pycache__` 是否需清理？ | |
+
 ## Skill Invocation Patterns
 
 When user says... | Invoke skill
@@ -326,7 +358,7 @@ When user says... | Invoke skill
 "Help me plan this feature" | `grill-with-docs` (has codebase) or `grill-me` (no codebase)
 "This is too big for one session" | `wayfinder`
 "Turn this into a spec" | `to-spec`
-"Break this into tickets" | `to-tickets"
+"Break this into tickets" | `to-tickets`
 "Implement this spec" | `implement`
 "Review my changes" | `code-review`
 "Debug this bug" | `diagnosing-bugs`
@@ -684,6 +716,8 @@ await self.cog.update_user_data(user_id, appearance)
 - 逼近 token 限制 (~120k) 時，用 `/handoff` 輸出文件後重新開始
 - 每個 `/implement` 從其 ticket 重新開始
 
+---
+
 ## graphify — 專案知識圖譜（優先使用！）
 
 > `graphify-out/` 是預先建立的專案知識圖譜，包含 **4,100 個節點、8,301 條邊、258 個社群**。
@@ -722,6 +756,8 @@ await self.cog.update_user_data(user_id, appearance)
 
 當專案結構有重大變更時，請求使用者執行 `/graphify` 重建圖譜。
 
+---
+
 ## gstack Skill Routing (auto-trigger)
 
 gstack 是一個虛擬工程團隊（CEO review → Engineering review → QA → Ship pipeline）。當對話內容匹配時會**自動觸發**，不需要打 `/` 指令。
@@ -741,7 +777,6 @@ gstack 是一個虛擬工程團隊（CEO review → Engineering review → QA �
 | 保存當前進度 | `context-save` |
 | 恢復先前上下文 | `context-restore` |
 | 產出 backlog-ready spec/issue | `spec` |
-
 
 ---
 
@@ -799,5 +834,5 @@ python scripts/lsp_query.py --file <路徑> hover <符號>     # Hover 詳細資
 | 「專案架構核心是什麼？」 | hubs | 無 |
 | 「這個類別有哪些方法？」 | 部分 | symbols |
 
-**Graphify** = 架構級、離線、多語言、社群/依賴關係
+**Graphify** = 架構級、離線、多語言、社群/依賴關係  
 **LSP** = 符號級、即時、精確、型別/重構/定義跳轉
