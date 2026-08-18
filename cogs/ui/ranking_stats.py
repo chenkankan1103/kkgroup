@@ -622,14 +622,14 @@ class RankingStats:
 
         tags_str = " | ".join(tag_parts) if tag_parts else "無特殊標籤"
 
-        # 構建描述，優先使用 API 返回的簡介
-        if not content:
-            web_details = (
-                await self.fetch_anime_web_details(str(anime_sn)) if anime_sn else {}
-            )
-            content = web_details.get("summary", "")
+        # 構建描述 - 包含集數和簡介（如果有的話）
+        description_parts = [f"**集數：{volume}**"]
 
-        description_text = f"**集數：{volume}**"
+        # 如果有簡介，加到 description 中（而不是 field）
+        if content:
+            description_parts.append(self._truncate_text(content, 200))
+
+        description_text = "\n\n".join(description_parts)
 
         # 人氣度和評分信息 - 改為以平均觀看人數為主
         # 嘗試獲取動畫統計信息（用於顯示平均數據）
@@ -670,13 +670,6 @@ class RankingStats:
         embed.add_field(name="📊 人氣數據", value="\n".join(stats_lines), inline=False)
 
         embed.add_field(name="📌 標籤", value=tags_str, inline=False)
-
-        if content:
-            embed.add_field(
-                name="📝 劇情簡介",
-                value=self._truncate_text(content, 140),
-                inline=False,
-            )
 
         embed.add_field(
             name="🎯 匿名投票",
