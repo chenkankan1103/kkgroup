@@ -14,11 +14,14 @@ import aiohttp
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Set
 from zoneinfo import ZoneInfo
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 # 常數
 TW_TZ = ZoneInfo("Asia/Taipei")
+ANIME_CHANNEL_ID = 1252204317453324333
+ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
 API_ENDPOINT = "https://ani.gamer.com.tw/animeList.php?type=newAnime"
 API_TIMEOUT = 15
 API_HEADERS = {
