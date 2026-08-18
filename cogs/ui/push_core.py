@@ -11,6 +11,7 @@
 import logging
 import asyncio
 import aiohttp
+import discord
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Set
 from zoneinfo import ZoneInfo
