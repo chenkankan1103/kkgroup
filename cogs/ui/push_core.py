@@ -1280,6 +1280,10 @@ class AnimePushCore:
             new_episodes = []
 
             logger.info(f"🔄 [send_anime_push] {scheduled_time} 直接使用 API videoSn 更新週表 (pending={pending_video_sns})")
+            # 將 pending_video_sns 轉為列表以便消費
+            pending_list = list(pending_video_sns)
+            pending_idx = 0
+
             for ep in today_episodes:
                 video_sn = ep.get("videoSn")
                 if not video_sn:
@@ -1288,11 +1292,17 @@ class AnimePushCore:
                     video_sn_int = int(video_sn)
                 except (ValueError, TypeError):
                     continue
-                # 更新第一個 pending 的 videoSn
-                for old_vsn in pending_video_sns:
+
+                # 若有 pending slot，取用一個並更新 videoSn
+                if pending_idx < len(pending_list):
+                    old_vsn = pending_list[pending_idx]
                     self.db.update_schedule_videosn(week_start_date, day_of_week, scheduled_time, old_vsn, video_sn_int)
                     logger.info(f"  ✅ 更新 videoSn: {old_vsn} -> {video_sn_int}")
-                    break
+                    pending_idx += 1
+                else:
+                    # 沒有 pending slot 了，可能是新增的動畫，記錄 log 但仍嘗試推送
+                    logger.warning(f"  ⚠️ 無可用 pending slot，但仍嘗試推送: {ep.get('title')} (videoSn={video_sn_int})")
+
                 new_episodes.append(ep)
                 logger.info(f"  ✅ 待推送: {ep.get('title')} (videoSn={video_sn_int})")
 
