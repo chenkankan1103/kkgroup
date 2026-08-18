@@ -28,24 +28,11 @@ from .push_core import (
     TW_TZ,
     ANIME_DB_PATH,
     ANIME_CHANNEL_ID,
-    API_ENDPOINT,
-    API_TIMEOUT,
-    NOTIFIED_TABLE,
-    BOOTSTRAP_FLAG_TABLE,
-    ANIME_DETAILS_TABLE,
-    ANIME_STATS_TABLE,
-    EPISODE_STATS_TABLE,
-    ANIME_MESSAGES_TABLE,
-    ANIME_VOTES_TABLE,
-    ANIME_REWARDS_TABLE,
-    ANIME_CHECK_HISTORY_TABLE,
-    ANIME_WEEKLY_SCHEDULE_TABLE,
     get_week_start_date,
 )
 
 # 導入自定義模組
-from . import push_core
-from .push_core import AnimePushCore, AnimeDatabase, find_unpushed_items
+from .push_core import AnimePushCore
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
@@ -79,12 +66,12 @@ class AnimeTracker(commands.Cog):
             raise
 
         # 初始化三個模組
-        self.push_core = AnimePushCore(ANIME_DB_PATH)
+        self.push_core = AnimePushCore(self.db)
         self.schedule_tracker = AnimeScheduleTracker(ANIME_DB_PATH)
         self.ranking_stats = RankingStats(ANIME_DB_PATH)
 
         # 設置相互依賴
-        self.push_core.set_bot_and_db(bot, self.db)
+        self.push_core.set_bot(bot)
         self.schedule_tracker.set_dependencies(bot, self.db, self.push_core)
         self.ranking_stats.set_dependencies(bot, self.db)
 
@@ -510,9 +497,9 @@ class AnimeTracker(commands.Cog):
     # 排程分發器：在「下一個待推送時刻」精確喚醒 → 推送 → 睡到下一個時刻
     # 簡化版：無預熱，時間到直接查 API 推送；重試邏輯在 push_core 內部處理
     async def _schedule_dispatcher(self):
-        """背景任務：精確在每個 scheduled_time 喚醒並推送"""
+        """背景任務：精確在每個 scheduled_time 喚醒並推送 — 極簡版"""
         logger = logging.getLogger(__name__)
-        logger.info("🚀 [_schedule_dispatcher] 排程分發器啟動")
+        logger.info("🚀 [_schedule_dispatcher] 排程分發器啟動（極簡版）")
 
         # 等待 bot ready，但設 timeout 防止卡死
         try:
@@ -587,21 +574,21 @@ class AnimeTracker(commands.Cog):
                     if sleep_seconds > 0:
                         await asyncio.sleep(min(sleep_seconds, 86400))
 
-                    # 時間到 → 推送（重試邏輯在 push_core 內部）
+                    # 時間到 → 推送（核心邏輯全在 push_core）
                     now = datetime.now(TW_TZ)
                     logger.info(f"⏰ [_schedule_dispatcher] 時間到 {scheduled}，開始推送（當前 {now.strftime('%H:%M:%S')}）")
 
-                    success = await self.send_anime_push(
+                    success = await self.push_core.send_anime_push(
                         scheduled,
-                        push_core.ANIME_CHANNEL_ID,
+                        ANIME_CHANNEL_ID,
+                        day_of_week=now.weekday() + 1,
+                        week_start_date=get_week_start_date(now, api_week=False),
                     )
                     if success:
                         logger.info(f"✅ [_schedule_dispatcher] {scheduled} 推送完成")
                     else:
-                        logger.warning(f"⚠️ [_schedule_dispatcher] {scheduled} 推送失敗，30秒後重試同一時段")
-                        await asyncio.sleep(30)
-                        # 重試同一時段，不 continue 到下一個
-                        continue
+                        logger.info(f"ℹ️ [_schedule_dispatcher] {scheduled} 無推送或已完成，繼續下一輪")
+
                 else:
                     # 今天沒有待推送項目 → 睡到明天 00:00 重新載入時程
                     tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -635,7 +622,7 @@ class AnimeTracker(commands.Cog):
         # 也可手動呼叫 catchup_missed_pushes()
 
     async def catchup_missed_pushes(self) -> int:
-        """手動/啟動時補推：檢查今日已過去時段且未推送的項目"""
+        """手動/啟動時補推：檢查今日已過去時段且未推送的項目 — 極簡版（1小時閾值）"""
         logger = logging.getLogger(__name__)
         now = datetime.now(TW_TZ)
         current_time_str = now.strftime("%H:%M")
@@ -647,20 +634,40 @@ class AnimeTracker(commands.Cog):
                 continue
             scheduled = item["scheduled_time"]
             try:
+                # 檢查是否已過期
                 if scheduled <= current_time_str:
-                    missed_times.add(scheduled)
+                    # 計算過期多久
+                    sched_dt = datetime.strptime(scheduled, "%H:%M").replace(
+                        year=now.year, month=now.month, day=now.day, tzinfo=TW_TZ
+                    )
+                    overdue_seconds = (now - sched_dt).total_seconds()
+
+                    if overdue_seconds <= 3600:  # 1小時內
+                        logger.info(f"⏰ [catchup] {scheduled} 過期 {overdue_seconds:.0f}s (< 1hr)，加入補推")
+                        missed_times.add(scheduled)
+                    else:
+                        logger.info(f"⏭️ [catchup] {scheduled} 過期 {overdue_seconds:.0f}s (> 1hr)，標記 completed 並放棄")
+                        # 直接標記該時刻為完成，不再補推
+                        week_start_date = get_week_start_date(now, api_week=False)
+                        day_of_week = now.weekday() + 1
+                        self.push_core.mark_time_pushed(week_start_date, day_of_week, scheduled)
             except Exception as e:
                 logger.error(f"❌ [catchup] 處理時刻錯誤 '{scheduled}': {e}")
 
         if not missed_times:
-            logger.info("ℹ️ [catchup] 無漏推項目")
+            logger.info("ℹ️ [catchup] 無需補推項目")
             return 0
 
         missed_sorted = sorted(missed_times)
-        logger.info(f"📺 [catchup] 發現 {len(missed_sorted)} 個漏推時段，開始補推")
+        logger.info(f"📺 [catchup] 發現 {len(missed_sorted)} 個需補推時段，開始補推")
         success_count = 0
         for scheduled in missed_sorted:
-            success = await self.send_anime_push(scheduled, push_core.ANIME_CHANNEL_ID)
+            success = await self.push_core.send_anime_push(
+                scheduled,
+                ANIME_CHANNEL_ID,
+                day_of_week=now.weekday() + 1,
+                week_start_date=get_week_start_date(now, api_week=False),
+            )
             if success:
                 success_count += 1
             await asyncio.sleep(1)
