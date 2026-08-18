@@ -9,6 +9,9 @@ from discord.ext import commands
 from typing import Optional, Callable, List, Dict, Any
 from enum import Enum
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # 按鈕樣式列舉
@@ -342,3 +345,201 @@ def create_embed_with_view(
             )
 
     return embed, view
+
+
+class AnimePushView(discord.ui.View):
+    """
+    動畫推送視圖 - 投票按鈕 + 評論按鈕 + 動畫頁/觀看連結 (永久視圖)
+
+    用於動畫推送的簡化版視圖，不依賴 AnimeTracker 類別。
+    包含 6 個投票按鈕、1 個評論按鈕、動畫頁連結、觀看連結。
+    """
+
+    # 投票類型配置 (與 AnimeVoteView 保持一致)
+    VOTE_TYPES = {
+        "masterpiece": ("神作", "🟩"),
+        "great": ("佳作", "🟦"),
+        "darkhorse": ("黑馬", "🟪"),
+        "decent": ("普作/小品", "🟨"),
+        "controversial": ("爭議作", "🟧"),
+        "disaster": ("雷作/糞作", "🟥"),
+    }
+
+    def __init__(self, episode: dict, db_adapter=None):
+        # 永久視圖：timeout=None
+        super().__init__(timeout=None)
+        self.episode = episode
+        self.db = db_adapter
+        self.video_sn = episode.get("videoSn")
+        self.anime_sn = episode.get("animeSn")
+        self.message_id = None
+
+        if not self.video_sn or not self.anime_sn:
+            logger.warning("AnimePushView: 缺少 videoSn 或 animeSn")
+            return
+
+        # 添加投票按鈕
+        for vote_key, (vote_label, color_emoji) in self.VOTE_TYPES.items():
+            button = discord.ui.Button(
+                label=f"{color_emoji} {vote_label}",
+                custom_id=f"anime_vote_{vote_key}_{self.video_sn}",
+                style=discord.ButtonStyle.secondary,  # 灰色
+            )
+            button.callback = self._vote_callback
+            self.add_item(button)
+
+        # 添加評論按鈕
+        comment_button = discord.ui.Button(
+            label="💬 留言",
+            custom_id=f"anime_comment_{self.video_sn}",
+            style=discord.ButtonStyle.secondary,
+        )
+        comment_button.callback = self._comment_callback
+        self.add_item(comment_button)
+
+        # 添加動畫頁連結
+        anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={self.anime_sn}"
+        self.add_item(
+            discord.ui.Button(
+                label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link
+            )
+        )
+
+        # 添加觀看連結
+        video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={self.video_sn}"
+        self.add_item(
+            discord.ui.Button(
+                label="▶️ 觀看", url=video_url, style=discord.ButtonStyle.link
+            )
+        )
+
+    async def _vote_callback(self, interaction: discord.Interaction):
+        """處理投票按鈕點擊"""
+        try:
+            logger.info(f"🎯 [AnimePushView._vote_callback] 用戶 {interaction.user.name}({interaction.user.id}) 點擊投票")
+
+            # 🔑 關鍵：立即 defer() 回應 Discord，避免 3 秒超時
+            await interaction.response.defer()
+
+            # 解析投票類型
+            vote_key = interaction.custom_id.replace("anime_vote_", "").rsplit("_", 1)[0]
+            vote_label, _ = self.VOTE_TYPES.get(vote_key, ("未知", None))
+
+            # 獲取用戶的匿名雜湊
+            user_hash = str(hash(interaction.user.id))[:10]
+
+            # 取得動畫名稱
+            anime_name = self.episode.get("title", "") if self.episode else ""
+
+            # 記錄投票 (需要 db adapter 有 record_vote 方法)
+            message_id = interaction.message.id if interaction.message else None
+            if self.db and hasattr(self.db, 'record_vote'):
+                vote_recorded = self.db.record_vote(
+                    video_sn=self.video_sn,
+                    anime_sn=self.anime_sn,
+                    message_id=message_id,
+                    vote_type=vote_key,
+                    user_hash=user_hash,
+                    anime_name=anime_name,
+                )
+                if not vote_recorded:
+                    logger.error(f"❌ 投票記錄失敗")
+
+            # 先發送 follow-up 確認給用戶
+            try:
+                await interaction.followup.send(
+                    f"✅ 投票成功！{vote_label}", ephemeral=True
+                )
+            except Exception as e:
+                logger.error(f"發送 follow-up 失敗: {e}")
+
+        except Exception as e:
+            logger.error(f"❌ [AnimePushView._vote_callback] 投票失敗: {e}", exc_info=True)
+
+    async def _comment_callback(self, interaction: discord.Interaction):
+        """處理評論按鈕點擊 - 彈出評論輸入框"""
+        try:
+            logger.info(f"💬 [AnimePushView._comment_callback] 用戶 {interaction.user.name} 點擊評論")
+
+            outer_self = self
+
+            class CommentModal(discord.ui.Modal, title="留下匿名評論"):
+                comment_input = discord.ui.TextInput(
+                    label="評論內容",
+                    placeholder="寫下你對這部動畫的看法...",
+                    max_length=200,
+                    required=False,
+                )
+
+                async def on_submit(self, modal_interaction: discord.Interaction):
+                    try:
+                        comment = str(self.comment_input).strip()
+                        if not comment:
+                            await modal_interaction.response.send_message(
+                                "評論不能為空", ephemeral=True
+                            )
+                            return
+
+                        user_hash = str(hash(modal_interaction.user.id))[:10]
+                        message_id = outer_self.message_id
+                        anime_name = outer_self.episode.get("title", "") if outer_self.episode else ""
+
+                        # 記錄評論
+                        if outer_self.db and hasattr(outer_self.db, 'record_vote'):
+                            vote_recorded = outer_self.db.record_vote(
+                                video_sn=outer_self.video_sn,
+                                anime_sn=outer_self.anime_sn,
+                                message_id=message_id,
+                                vote_type="comment",
+                                comment=comment,
+                                user_hash=user_hash,
+                                anime_name=anime_name,
+                            )
+
+                        await modal_interaction.response.send_message(
+                            "✅ 評論已保存！感謝你的意見", ephemeral=True
+                        )
+
+                    except Exception as e:
+                        logger.error(f"❌ [CommentModal.on_submit] 失敗: {e}")
+                        try:
+                            await modal_interaction.response.send_message(
+                                f"❌ 評論失敗: {str(e)[:50]}", ephemeral=True
+                            )
+                        except:
+                            pass
+
+            # 發送 Modal
+            await interaction.response.send_modal(CommentModal())
+
+        except Exception as e:
+            logger.error(f"❌ [AnimePushView._comment_callback] 評論失敗: {e}")
+            try:
+                await interaction.response.send_message(
+                    f"❌ 無法開啟評論: {str(e)[:50]}", ephemeral=True
+                )
+            except:
+                pass
+
+
+def create_anime_push_view(episode: dict, db_adapter=None) -> Optional[AnimePushView]:
+    """
+    創建動畫推送視圖
+
+    Args:
+        episode: 動畫集數資料字典 (需包含 videoSn, animeSn 等)
+        db_adapter: 可選的資料庫適配器，用於記錄投票/評論
+
+    Returns:
+        AnimePushView 實例，或 None (如果資料不完整)
+    """
+    try:
+        video_sn = episode.get("videoSn")
+        anime_sn = episode.get("animeSn")
+        if not video_sn or not anime_sn:
+            logger.warning("create_anime_push_view: 缺少 videoSn 或 animeSn")
+            return None
+        return AnimePushView(episode, db_adapter)
+    except Exception as e:
+        logger.error(f"create_anime_push_view 失敗: {e}")
+        return None
