@@ -32,9 +32,9 @@ API_HEADERS = {
 }
 
 def _get_db_connection():
-    """獲取資料庫連線"""
+    """獲取資料庫連線 - 不使用 row_factory 避免 UTF-8 解碼問題"""
     conn = sqlite3.connect(str(ANIME_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    # 不設定 row_factory，直接返回 tuple 避免 animeData 欄位的 UTF-8 解碼錯誤
     return conn
 
 
@@ -109,7 +109,7 @@ class AnimePushCore:
             )
             rows = c.fetchall()
             conn.close()
-            return {row["videoSn"] for row in rows if row["videoSn"] is not None}
+            return {row[0] for row in rows if row[0] is not None}
         except Exception as e:
             logger.error(f"get_schedule_video_sns 錯誤: {e}")
             return set()
@@ -119,16 +119,26 @@ class AnimePushCore:
         try:
             conn = _get_db_connection()
             c = conn.cursor()
-            c.execute("SELECT * FROM anime_weekly_schedule")
+            c.execute("SELECT videoSn, weekStartDate, dayOfWeek, scheduledTime, pushed, animeData FROM anime_weekly_schedule")
             rows = c.fetchall()
             conn.close()
             result = []
             for row in rows:
-                item = dict(row)
-                if item.get("animeData"):
+                video_sn, week_start_date, day_of_week, scheduled_time, pushed, anime_data_raw = row
+                item = {
+                    "video_sn": video_sn,
+                    "week_start_date": week_start_date,
+                    "day_of_week": day_of_week,
+                    "scheduled_time": scheduled_time,
+                    "pushed": bool(pushed) if pushed is not None else False,
+                }
+                if anime_data_raw:
                     try:
-                        item["anime_data"] = json.loads(item["animeData"])
-                    except Exception:
+                        if isinstance(anime_data_raw, bytes):
+                            anime_data_raw = anime_data_raw.decode('utf-8', errors='replace')
+                        item["anime_data"] = json.loads(anime_data_raw)
+                    except Exception as e:
+                        logger.warning(f"animeData 解析失敗 videoSn={video_sn}: {e}")
                         item["anime_data"] = {}
                 else:
                     item["anime_data"] = {}
