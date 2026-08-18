@@ -12,6 +12,8 @@ import logging
 import asyncio
 import aiohttp
 import discord
+import sqlite3
+import json
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Set
 from zoneinfo import ZoneInfo
@@ -28,6 +30,12 @@ API_TIMEOUT = 15
 API_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
+
+def _get_db_connection():
+    """獲取資料庫連線"""
+    conn = sqlite3.connect(str(ANIME_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def get_week_start_date(dt: datetime, api_week: bool = True) -> str:
@@ -87,6 +95,79 @@ class AnimePushCore:
             return self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
         except Exception as e:
             logger.error(f"mark_time_pushed 錯誤: {e}")
+            return False
+
+    # ========== 直接查詢 anime_weekly_schedule 表 ==========
+    def get_schedule_video_sns(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> Set[int]:
+        """獲取某時段預期的 videoSn 集合"""
+        try:
+            conn = _get_db_connection()
+            c = conn.cursor()
+            c.execute(
+                "SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
+                (week_start_date, day_of_week, scheduled_time)
+            )
+            rows = c.fetchall()
+            conn.close()
+            return {row["videoSn"] for row in rows if row["videoSn"] is not None}
+        except Exception as e:
+            logger.error(f"get_schedule_video_sns 錯誤: {e}")
+            return set()
+
+    def get_today_schedule(self) -> List[Dict]:
+        """獲取今天的所有排程"""
+        try:
+            conn = _get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT * FROM anime_weekly_schedule")
+            rows = c.fetchall()
+            conn.close()
+            result = []
+            for row in rows:
+                item = dict(row)
+                if item.get("animeData"):
+                    try:
+                        item["anime_data"] = json.loads(item["animeData"])
+                    except Exception:
+                        item["anime_data"] = {}
+                else:
+                    item["anime_data"] = {}
+                result.append(item)
+            return result
+        except Exception as e:
+            logger.error(f"get_today_schedule 錯誤: {e}")
+            return []
+
+    def mark_anime_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str, video_sn: int) -> bool:
+        """標記某動畫已推送 (設定 pushed=1)"""
+        try:
+            conn = _get_db_connection()
+            c = conn.cursor()
+            c.execute(
+                "UPDATE anime_weekly_schedule SET pushed=1 WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=? AND videoSn=?",
+                (week_start_date, day_of_week, scheduled_time, video_sn)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"mark_anime_pushed 錯誤: {e}")
+            return False
+
+    def save_message_info(self, message_id: int, video_sn: int, anime_sn: int, title: str, channel_id: int) -> bool:
+        """儲存訊息資訊到 anime_messages 表"""
+        try:
+            conn = _get_db_connection()
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO anime_messages (message_id, video_sn, anime_sn, title, channel_id) VALUES (?, ?, ?, ?, ?)",
+                (message_id, video_sn, anime_sn, title, channel_id)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"save_message_info 錯誤: {e}")
             return False
 
     # ========== API 獲取 ==========
