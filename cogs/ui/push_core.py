@@ -83,8 +83,8 @@ class AnimeDatabase:
         return self.db.record_reward(user_id, message_id, reward_type, reward_amount)
 
     # ---- 投票系統 ----
-    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None) -> bool:
-        return self.db.record_vote(video_sn, anime_sn, message_id, vote_type, comment, user_hash)
+    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None, anime_name: str = "") -> bool:
+        return self.db.record_vote(video_sn, anime_sn, message_id, vote_type, comment, user_hash, anime_name)
 
     def get_vote_stats(self, message_id: int) -> dict:
         return self.db.get_vote_stats(message_id)
@@ -105,12 +105,547 @@ class AnimeDatabase:
     def cache_anime_details(self, anime_sn: int, title: str, content: str, cover: str, tags: list, views: int, score: float) -> bool:
         return self.db.cache_anime_details(anime_sn, title, content, cover, tags, views, score)
 
+    # ---- 統計查詢 (for ranking_stats) ----
+    def get_anime_statistics(self, anime_sn: int) -> Optional[dict]:
+        return self.db.get_anime_statistics(anime_sn)
+
+    def get_top_anime_by_views(self, limit: int = 10, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None) -> list:
+        return self.db.get_top_anime_by_views(limit, start_time, end_time)
+
+    def get_multi_episode_anime_for_chart(self, limit: int = 10, min_episodes: int = 1, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None) -> list:
+        return self.db.get_multi_episode_anime_for_chart(limit, min_episodes, start_time, end_time)
+
+    @property
+    def db_path(self) -> str:
+        return self.db.db_path
+
     # ---- 維護 ----
     def clean_orphaned_records(self, week_start_date: str) -> dict:
         return self.db.clean_orphaned_records(week_start_date)
 
     def cleanup_old_weeks(self) -> int:
         return self.db.cleanup_old_weeks()
+
+
+class AnimeDBImpl:
+    """AnimeDatabase 的完整 SQLite 實現 - 提供所有必要的方法"""
+
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._init_tables()
+
+    def _init_tables(self):
+        """初始化所有必要的資料表"""
+        conn = self._get_conn()
+        c = conn.cursor()
+
+        # anime_notified 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_notified (
+                videoSn INTEGER PRIMARY KEY,
+                animeSn INTEGER NOT NULL,
+                anime_name TEXT NOT NULL,
+                volume TEXT,
+                cover_url TEXT,
+                notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                animeName TEXT,
+                coverUrl TEXT,
+                notifiedAt TIMESTAMP
+            )
+        """)
+
+        # anime_votes 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_sn INTEGER NOT NULL,
+                anime_sn INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                vote_type TEXT NOT NULL,
+                comment TEXT,
+                user_hash TEXT,
+                voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                animeName TEXT,
+                voteType TEXT,
+                userId TEXT,
+                messageId INTEGER,
+                votedAt TIMESTAMP,
+                anime_name TEXT
+            )
+        """)
+
+        # anime_rewards 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_rewards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                reward_type TEXT NOT NULL,
+                reward_amount INTEGER NOT NULL,
+                awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                messageId INTEGER,
+                rewardType TEXT,
+                amount INTEGER,
+                userId TEXT,
+                rewardedAt TIMESTAMP,
+                UNIQUE(user_id, message_id, reward_type)
+            )
+        """)
+
+        # anime_messages 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_messages (
+                messageId INTEGER PRIMARY KEY,
+                videoSn INTEGER NOT NULL,
+                animeSn INTEGER NOT NULL,
+                animeName_old TEXT NOT NULL,
+                channelId INTEGER NOT NULL,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                anime_name TEXT,
+                video_sn INTEGER,
+                anime_sn INTEGER,
+                message_id INTEGER,
+                channel_id INTEGER,
+                created_at TEXT
+            )
+        """)
+
+        # anime_weekly_schedule 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_weekly_schedule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                weekStartDate TEXT NOT NULL,
+                dayOfWeek INTEGER NOT NULL,
+                scheduledTime TEXT NOT NULL,
+                pushed INTEGER DEFAULT 0,
+                animeData TEXT,
+                videoSn INTEGER,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # anime_details_cache 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_details_cache (
+                animeSn INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT,
+                tags TEXT,
+                popular INTEGER,
+                score REAL,
+                cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                coverUrl TEXT,
+                viewCount INTEGER DEFAULT 0,
+                updatedAt TIMESTAMP,
+                cover_url TEXT,
+                description TEXT,
+                createdAt TEXT,
+                cover TEXT,
+                created_at TEXT,
+                name TEXT
+            )
+        """)
+
+        # episode_statistics 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS episode_statistics (
+                videoSn INTEGER PRIMARY KEY,
+                animeSn INTEGER NOT NULL,
+                episode_num TEXT,
+                views INTEGER,
+                score REAL,
+                recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                episodeNum TEXT,
+                recordedAt TIMESTAMP
+            )
+        """)
+
+        # anime_statistics 表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_statistics (
+                animeSn INTEGER PRIMARY KEY,
+                anime_name TEXT NOT NULL,
+                total_episodes INTEGER DEFAULT 0,
+                avg_views REAL DEFAULT 0,
+                avg_score REAL DEFAULT 0,
+                total_views INTEGER DEFAULT 0,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                totalEpisodes INTEGER DEFAULT 0,
+                totalViews INTEGER DEFAULT 0,
+                avgViews REAL DEFAULT 0,
+                latestScore REAL DEFAULT 0,
+                updatedAt TIMESTAMP
+            )
+        """)
+
+        conn.commit()
+        conn.close()
+
+    @property
+    def db_path(self) -> str:
+        return self._db_path
+
+    def _get_conn(self):
+        """獲取連線，禁用 row_factory 避免 UTF-8 解碼問題"""
+        import sqlite3
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = None
+        conn.text_factory = bytes
+        return conn
+
+    # ---- 通知/推送相關 ----
+    def is_notified(self, video_sn: int) -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM anime_notified WHERE video_sn=?", (video_sn,))
+        row = c.fetchone()
+        conn.close()
+        return row is not None
+
+    def add_notified(self, video_sn: int, anime_sn: int, title: str, volume: str = "", cover: str = "") -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            """INSERT OR IGNORE INTO anime_notified
+               (video_sn, anime_sn, anime_name, volume, cover_url, notified_at, animeName, coverUrl, notifiedAt)
+               VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'))""",
+            (video_sn, anime_sn, title, volume, cover, title, cover, cover)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE anime_weekly_schedule SET pushed=1 WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
+            (week_start_date, day_of_week, scheduled_time)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    def mark_anime_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str, video_sn: int) -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE anime_weekly_schedule SET pushed=1 WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=? AND videoSn=?",
+            (week_start_date, day_of_week, scheduled_time, video_sn)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    def save_message_info(self, message_id: int, video_sn: int, anime_sn: int, title: str, channel_id: int) -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "INSERT OR REPLACE INTO anime_messages (messageId, videoSn, animeSn, animeName_old, channelId) VALUES (?, ?, ?, ?, ?)",
+            (message_id, video_sn, anime_sn, title, channel_id)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    # ---- 時程查詢 ----
+    def get_today_schedule(self) -> list:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute("SELECT videoSn, weekStartDate, dayOfWeek, scheduledTime, pushed, animeData FROM anime_weekly_schedule")
+        rows = c.fetchall()
+        conn.close()
+        import json
+        result = []
+        for row in rows:
+            video_sn, week_start_date, day_of_week, scheduled_time, pushed, anime_data_raw = row
+            item = {
+                "video_sn": video_sn,
+                "week_start_date": week_start_date,
+                "day_of_week": day_of_week,
+                "scheduled_time": scheduled_time,
+                "pushed": bool(pushed) if pushed is not None else False,
+            }
+            if anime_data_raw:
+                try:
+                    if isinstance(anime_data_raw, bytes):
+                        anime_data_raw = anime_data_raw.decode('utf-8', errors='replace')
+                    item["anime_data"] = json.loads(anime_data_raw)
+                except Exception as e:
+                    logger.warning(f"animeData 解析失敗 videoSn={video_sn}: {e}")
+                    item["anime_data"] = {}
+            else:
+                item["anime_data"] = {}
+            result.append(item)
+        return result
+
+    def get_schedule_video_sns(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> set:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
+            (week_start_date, day_of_week, scheduled_time)
+        )
+        rows = c.fetchall()
+        conn.close()
+        return {row[0] for row in rows if row[0] is not None}
+
+    # ---- 獎勵系統 ----
+    def is_reward_already_given(self, user_id: int, message_id: int, reward_type: str) -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT 1 FROM anime_rewards WHERE user_id=? AND message_id=? AND reward_type=?",
+            (user_id, message_id, reward_type)
+        )
+        row = c.fetchone()
+        conn.close()
+        return row is not None
+
+    def record_reward(self, user_id: int, message_id: int, reward_type: str, reward_amount: int) -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "INSERT OR IGNORE INTO anime_rewards (user_id, message_id, reward_type, reward_amount, awarded_at) VALUES (?, ?, ?, ?, datetime('now'))",
+            (user_id, message_id, reward_type, reward_amount)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    # ---- 投票系統 ----
+    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None, anime_name: str = "") -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            """INSERT OR REPLACE INTO anime_votes
+               (video_sn, anime_sn, message_id, vote_type, comment, user_hash, anime_name, voted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            (video_sn, anime_sn, message_id, vote_type, comment, user_hash, anime_name)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    def get_vote_stats(self, message_id: int) -> dict:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT vote_type, COUNT(*) as count FROM anime_votes WHERE message_id=? GROUP BY vote_type",
+            (message_id,)
+        )
+        rows = c.fetchall()
+        conn.close()
+        return {row[0]: row[1] for row in rows}
+
+    def get_vote_comments(self, message_id: int, limit: int = 5) -> list:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT user_hash, comment, vote_type, anime_name, voted_at FROM anime_votes WHERE message_id=? AND comment IS NOT NULL AND comment != '' ORDER BY voted_at DESC LIMIT ?",
+            (message_id, limit)
+        )
+        rows = c.fetchall()
+        conn.close()
+        result = []
+        for row in rows:
+            user_hash, comment, vote_type, anime_name, voted_at = row
+            result.append({
+                "user_hash": user_hash,
+                "comment": comment if isinstance(comment, str) else comment.decode('utf-8', errors='replace'),
+                "vote_type": vote_type if isinstance(vote_type, str) else vote_type.decode('utf-8', errors='replace'),
+                "anime_name": anime_name if isinstance(anime_name, str) else anime_name.decode('utf-8', errors='replace'),
+                "created_at": voted_at if isinstance(voted_at, str) else voted_at.decode('utf-8', errors='replace'),
+            })
+        return result
+
+    def get_weekly_vote_stats(self) -> dict:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT vote_type, COUNT(*) as count FROM anime_votes WHERE vote_type IN ('masterpiece', 'great', 'darkhorse', 'decent', 'controversial', 'disaster') GROUP BY vote_type"
+        )
+        rows = c.fetchall()
+        conn.close()
+        return {row[0]: row[1] for row in rows}
+
+    # ---- 統計/快取 ----
+    def record_episode_stats(self, video_sn: int, anime_sn: int, episode_num: str, views: int, score: float) -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            """INSERT OR REPLACE INTO anime_episode_stats
+               (video_sn, anime_sn, episode_num, views, score, updated_at)
+               VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+            (video_sn, anime_sn, episode_num, views, score)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    def get_anime_details(self, anime_sn: int) -> dict:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT title, content, cover, tags, views, score FROM anime_details_cache WHERE anime_sn=?",
+            (anime_sn,)
+        )
+        row = c.fetchone()
+        conn.close()
+        if row:
+            title, content, cover, tags, views, score = row
+            import json
+            return {
+                "title": title if isinstance(title, str) else title.decode('utf-8', errors='replace'),
+                "content": content if isinstance(content, str) else content.decode('utf-8', errors='replace'),
+                "cover": cover if isinstance(cover, str) else cover.decode('utf-8', errors='replace'),
+                "tags": json.loads(tags) if isinstance(tags, str) else json.loads(tags.decode('utf-8', errors='replace')),
+                "views": views,
+                "score": score,
+            }
+        return {}
+
+    def cache_anime_details(self, anime_sn: int, title: str, content: str, cover: str, tags: list, views: int, score: float) -> bool:
+        conn = self._get_conn()
+        c = conn.cursor()
+        import json
+        c.execute(
+            """INSERT OR REPLACE INTO anime_details_cache
+               (anime_sn, title, content, cover, tags, views, score, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            (anime_sn, title, content, cover, json.dumps(tags, ensure_ascii=False), views, score)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    # ---- 維護 ----
+    def clean_orphaned_records(self, week_start_date: str) -> dict:
+        conn = self._get_conn()
+        c = conn.cursor()
+        result = {"deleted_schedule": 0, "deleted_notified": 0, "deleted_votes": 0}
+        # 清理該週的 schedule 記錄
+        c.execute("DELETE FROM anime_weekly_schedule WHERE weekStartDate=?", (week_start_date,))
+        result["deleted_schedule"] = c.rowcount
+        # 清理該週相關的 notified 記錄 (通過 videoSn 關聯)
+        c.execute("""
+            DELETE FROM anime_notified
+            WHERE video_sn IN (SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=?)
+        """, (week_start_date,))
+        result["deleted_notified"] = c.rowcount
+        conn.commit()
+        conn.close()
+        return result
+
+    def cleanup_old_weeks(self) -> int:
+        conn = self._get_conn()
+        c = conn.cursor()
+        # 刪除 4 週前的資料
+        cutoff_date = datetime.now().date() - timedelta(weeks=4)
+        c.execute("DELETE FROM anime_weekly_schedule WHERE weekStartDate < ?", (cutoff_date.strftime("%Y-%m-%d"),))
+        deleted = c.rowcount
+        conn.commit()
+        conn.close()
+        return deleted
+
+    # ---- 統計查詢 (for ranking_stats) ----
+    def get_anime_statistics(self, anime_sn: int) -> Optional[dict]:
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            """SELECT AVG(views) as avg_views, AVG(score) as avg_score, COUNT(*) as total_episodes
+               FROM episode_statistics WHERE animeSn=?""",
+            (anime_sn,)
+        )
+        row = c.fetchone()
+        conn.close()
+        if row and row[0] is not None:
+            return {
+                "avg_views": row[0],
+                "avg_score": row[1] if row[1] is not None else 0,
+                "total_episodes": row[2],
+            }
+        return None
+
+    def get_top_anime_by_views(self, limit: int = 10, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None) -> list:
+        conn = self._get_conn()
+        c = conn.cursor()
+        query = """SELECT animeSn, SUM(views) as total_views, COUNT(*) as total_episodes
+                   FROM episode_statistics"""
+        params = []
+        if start_time or end_time:
+            conditions = []
+            if start_time:
+                conditions.append("recorded_at >= ?")
+                params.append(start_time.strftime("%Y-%m-%d %H:%M:%S"))
+            if end_time:
+                conditions.append("recorded_at <= ?")
+                params.append(end_time.strftime("%Y-%m-%d %H:%M:%S"))
+            query += " WHERE " + " AND ".join(conditions)
+        query += " GROUP BY animeSn ORDER BY total_views DESC LIMIT ?"
+        params.append(limit)
+        c.execute(query, params)
+        rows = c.fetchall()
+        conn.close()
+        result = []
+        for row in rows:
+            anime_sn, total_views, total_episodes = row
+            result.append({
+                "anime_sn": anime_sn,
+                "total_views": total_views,
+                "total_episodes": total_episodes,
+            })
+        return result
+
+    def get_multi_episode_anime_for_chart(self, limit: int = 10, min_episodes: int = 1, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None) -> list:
+        conn = self._get_conn()
+        c = conn.cursor()
+        query = """SELECT animeSn, episode_num, views, score, recorded_at
+                   FROM episode_statistics"""
+        params = []
+        if start_time or end_time:
+            conditions = []
+            if start_time:
+                conditions.append("recorded_at >= ?")
+                params.append(start_time.strftime("%Y-%m-%d %H:%M:%S"))
+            if end_time:
+                conditions.append("recorded_at <= ?")
+                params.append(end_time.strftime("%Y-%m-%d %H:%M:%S"))
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY animeSn, recorded_at"
+        c.execute(query, params)
+        rows = c.fetchall()
+        conn.close()
+        # 聚合按 animeSn
+        anime_map = {}
+        for row in rows:
+            anime_sn, episode_num, views, score, recorded_at = row
+            if anime_sn not in anime_map:
+                anime_map[anime_sn] = {"episodes": [], "total_views": 0}
+            anime_map[anime_sn]["episodes"].append({
+                "episode_num": episode_num,
+                "views": views if views is not None else 0,
+                "score": score if score is not None else 0,
+                "recorded_at": recorded_at,
+            })
+            if views is not None:
+                anime_map[anime_sn]["total_views"] += views
+        result = []
+        for anime_sn, data in anime_map.items():
+            if len(data["episodes"]) >= min_episodes:
+                result.append({
+                    "anime_sn": anime_sn,
+                    "name": "",
+                    "episodes": data["episodes"],
+                    "total_views": data["total_views"],
+                })
+        # 排序並限制
+        result.sort(key=lambda x: x["total_views"], reverse=True)
+        return result[:limit]
+
+    @property
+    def db_path(self) -> str:
+        return self._db_path
 
 
 def _get_db_connection():
@@ -148,10 +683,56 @@ class AnimePushCore:
     def __init__(self, db):
         self.db = db
         self.bot = None
+        self._view_factory = None
+        self._embed_factory = None
 
     def set_bot(self, bot):
         """設置 bot 實例"""
         self.bot = bot
+
+    def set_view_factory(self, factory):
+        """設置視圖生成工廠函數"""
+        self._view_factory = factory
+
+    def set_embed_factory(self, factory):
+        """設置 embed 生成工廠函數"""
+        self._embed_factory = factory
+
+    async def _generate_anime_view(self, episode: Dict):
+        """生成動畫推送視圖 - 使用工廠函數或預設"""
+        try:
+            if self._view_factory:
+                return await self._view_factory(episode)
+            from shared.utils.embed_views import create_anime_push_view
+            return create_anime_push_view(episode)
+        except Exception as e:
+            logger.error(f"生成 view 失敗: {e}")
+            return None
+
+    async def _generate_anime_embed(self, episode: Dict) -> Optional[discord.Embed]:
+        """生成動畫推送 embed - 使用工廠函數或預設"""
+        try:
+            if self._embed_factory:
+                return await self._embed_factory(episode)
+            # 預設實現
+            import discord
+            title = episode.get("title", "未知標題")
+            cover = episode.get("cover", "")
+            description = episode.get("description", "")
+
+            embed = discord.Embed(
+                title=title,
+                description=description,
+                color=discord.Color.blue()
+            )
+
+            if cover:
+                embed.set_image(url=cover)  # 大圖在下方
+
+            return embed
+        except Exception as e:
+            logger.error(f"生成 embed 失敗: {e}")
+            return None
 
     # ========== 核心查詢方法 ==========
 
@@ -454,39 +1035,6 @@ class AnimePushCore:
             logger.info(f"✅ 時刻 {scheduled_time} 全部完成")
 
         return sent_count > 0
-
-    # ========== Embed & View 生成 (保留原有邏輯) ==========
-
-    async def _generate_anime_embed(self, episode: Dict) -> Optional[discord.Embed]:
-        """生成動畫推送 embed - 大圖在下方"""
-        try:
-            import discord
-            title = episode.get("title", "未知標題")
-            cover = episode.get("cover", "")
-            description = episode.get("description", "")
-
-            embed = discord.Embed(
-                title=title,
-                description=description,
-                color=discord.Color.blue()
-            )
-
-            if cover:
-                embed.set_image(url=cover)  # 大圖在下方
-
-            return embed
-        except Exception as e:
-            logger.error(f"生成 embed 失敗: {e}")
-            return None
-
-    async def _generate_anime_view(self, episode: Dict):
-        """生成動畫推送視圖"""
-        try:
-            from shared.utils.embed_views import create_anime_push_view
-            return create_anime_push_view(episode)
-        except Exception as e:
-            logger.error(f"生成 view 失敗: {e}")
-            return None
 
 
 # ========== 為了相容性保留的介面 (scheduled_tasks 用) ==========

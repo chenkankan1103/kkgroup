@@ -1,36 +1,49 @@
-﻿{
-    "autoCompactEnabled":  true,
-    "autoCompactWindow":  1000000,
-    "hooks":  {},
-    "permissions":  {
-                        "allow":  [
-                                      "Read(*)",
-                                      "Write(*)",
-                                      "Edit(*)",
-                                      "Glob(*)",
-                                      "Grep(*)",
-                                      "Bash(*)",
-                                      "PowerShell(*)",
-                                      "mcp__claude-flow__*"
-                                  ],
-                        "deny":  [
-                                     "Write(./.env)",
-                                     "Write(./.env.*)",
-                                     "Edit(./.env)",
-                                     "Edit(./.env.*)",
-                                     "Bash(rm -rf /)",
-                                     "Bash(rm -rf /*)",
-                                     "Bash(rm -rf ~)",
-                                     "Bash(rm -rf ~*)",
-                                     "Bash(git push --force *)",
-                                     "Bash(git reset --hard *)",
-                                     "Bash(rm -rf .*)",
-                                     "Bash(rm *)",
-                                     "PowerShell(Remove-Item -Recurse -Force *)",
-                                     "PowerShell(Remove-Item *)"
-                                 ]
-                    },
-    "additionalDirectories":  [
-                                  "C:\\Users\\88697\\Desktop\\kkgroup"
-                              ]
+{
+  "autoCompactEnabled": true,
+  "autoCompactWindow": 1000000,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/async_codex_review.sh \"Review ${FILE_PATH} for bugs, security issues, and performance problems. Focus on recent changes.\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Bash(*)",
+      "PowerShell(*)",
+      "mcp__claude-flow__*"
+    ],
+    "deny": [
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~*)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Bash(rm -rf .*)",
+      "Bash(rm *)",
+      "PowerShell(Remove-Item -Recurse -Force *)",
+      "PowerShell(Remove-Item *)"
+    ]
+  },
+  "additionalDirectories": [
+    "C:\\Users\\88697\\Desktop\\kkgroup"
+  ]
 }

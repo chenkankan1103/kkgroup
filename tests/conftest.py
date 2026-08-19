@@ -114,9 +114,10 @@ def isolated_db(temp_db_path):
     使用臨時資料庫的 AnimeDatabase 實例
     直接操作 SQLite，不經過 bot
     """
-    from cogs.ui.push_core import AnimeDatabase
+    from cogs.ui.push_core import AnimeDatabase, AnimeDBImpl
 
-    db = AnimeDatabase(temp_db_path)
+    db_impl = AnimeDBImpl(temp_db_path)
+    db = AnimeDatabase(db_impl)
     yield db
     # 測試結束，連接會自動關閉
 
