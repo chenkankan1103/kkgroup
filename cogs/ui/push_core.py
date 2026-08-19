@@ -1234,7 +1234,8 @@ class AnimePushCore:
         pending_video_sns = expected_video_sns - pushed_video_sns
 
         if not pending_video_sns:
-            logger.info(f"⏭️ 所有預期動畫已推送 ({expected_video_sns})")
+            logger.info(f"⏭️ 所有預期動畫已推送 ({expected_video_sns})，標記時刻完成")
+            self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
             return False
 
         logger.info(f"📋 待推送 videoSn: {pending_video_sns}")
