@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 TW_TZ = ZoneInfo("Asia/Taipei")
 ANIME_CHANNEL_ID = 1252204317453324333
 ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
-API_ENDPOINT = "https://ani.gamer.com.tw/animeList.php?type=newAnime"
+API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/anime_list.php"
 API_TIMEOUT = 15
 
 # 完整瀏覽器指紋 Header（繞過 Cloudflare WAF）
@@ -39,15 +39,15 @@ API_HEADERS = {
     "Connection": "keep-alive",
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-Site": "cross-site",
     "X-Requested-With": "XMLHttpRequest",
 }
 
 
 def _get_db_connection():
-    """獲取資料庫連線 - 不使用 row_factory 避免 UTF-8 解碼問題"""
+    """獲取資料庫連線 - 使用 text_factory=bytes 避免 UTF-8 解碼問題"""
     conn = sqlite3.connect(str(ANIME_DB_PATH))
-    # 不設定 row_factory，直接返回 tuple 避免 animeData 欄位的 UTF-8 解碼錯誤
+    conn.text_factory = bytes  # 所有 TEXT 欄位回傳 bytes，由上層自行 decode
     return conn
 
 
@@ -112,17 +112,26 @@ class AnimePushCore:
 
     # ========== 直接查詢 anime_weekly_schedule 表 ==========
     def get_schedule_video_sns(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> Set[int]:
-        """獲取某時段預期的 videoSn 集合"""
+        """獲取某時段預期的 videoSn 集合 (從 anime_data JSON 提取)"""
         try:
             conn = _get_db_connection()
             c = conn.cursor()
+            # 使用 JSON_EXTRACT 從 anime_data 提取 videoSn
             c.execute(
-                "SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
+                "SELECT JSON_EXTRACT(animeData, '$.videoSn') as videoSn FROM anime_weekly_schedule WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
                 (week_start_date, day_of_week, scheduled_time)
             )
             rows = c.fetchall()
             conn.close()
-            return {row[0] for row in rows if row[0] is not None}
+            result = set()
+            for row in rows:
+                if row[0] is not None:
+                    try:
+                        # JSON_EXTRACT 可能回傳字串或整數
+                        result.add(int(row[0]))
+                    except (ValueError, TypeError):
+                        pass
+            return result
         except Exception as e:
             logger.error(f"get_schedule_video_sns 錯誤: {e}")
             return set()
@@ -132,17 +141,29 @@ class AnimePushCore:
         try:
             conn = _get_db_connection()
             c = conn.cursor()
-            c.execute("SELECT videoSn, weekStartDate, dayOfWeek, scheduledTime, pushed, animeData FROM anime_weekly_schedule")
+            # 移除 videoSn 欄位 (不存在)，從 anime_data JSON 提取
+            c.execute("""SELECT weekStartDate, dayOfWeek, scheduledTime, pushed,
+                           CAST(animeData AS BLOB) as animeData
+                        FROM anime_weekly_schedule""")
             rows = c.fetchall()
             conn.close()
             result = []
             for row in rows:
-                video_sn, week_start_date, day_of_week, scheduled_time, pushed, anime_data_raw = row
+                week_start_date, day_of_week, scheduled_time, pushed, anime_data_raw = row
+                video_sn = None
+                if anime_data_raw:
+                    try:
+                        if isinstance(anime_data_raw, bytes):
+                            anime_data_raw = anime_data_raw.decode('utf-8', errors='replace')
+                        anime_data = json.loads(anime_data_raw)
+                        video_sn = anime_data.get("videoSn")
+                    except Exception:
+                        pass
                 item = {
                     "video_sn": video_sn,
-                    "week_start_date": week_start_date,
+                    "week_start_date": week_start_date.decode('utf-8', errors='replace') if isinstance(week_start_date, bytes) else week_start_date,
                     "day_of_week": day_of_week,
-                    "scheduled_time": scheduled_time,
+                    "scheduled_time": scheduled_time.decode('utf-8', errors='replace') if isinstance(scheduled_time, bytes) else scheduled_time,
                     "pushed": bool(pushed) if pushed is not None else False,
                 }
                 if anime_data_raw:
@@ -196,19 +217,26 @@ class AnimePushCore:
     # ========== API 獲取 ==========
 
     async def _fetch_new_anime_from_api(self) -> List[Dict]:
-        """從 API 獲取新番資料 - 單次請求，完整 Header，失敗直接回空"""
+        """從 API 獲取新番資料 - 單次請求，完整 Header，失敗直接回空
+
+        新 API: https://api.gamer.com.tw/anime/v1/anime_list.php?type=newAnime
+        回傳格式: {"data": {"animeList": [...], "totalPage": N}}
+        每個項目包含: videoSn, animeSn, title, cover, dateInfo, totalEpisode, popular 等
+        """
         try:
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
+            params = {"type": "newAnime"}
             async with aiohttp.ClientSession(timeout=timeout, headers=API_HEADERS) as session:
-                async with session.get(API_ENDPOINT) as resp:
+                async with session.get(API_ENDPOINT, params=params) as resp:
                     if resp.status != 200:
                         logger.warning(f"API 回傳狀態碼 {resp.status}")
                         return []
                     data = await resp.json()
-                    new_anime = data.get("data", {}).get("newAnime")
-                    if not new_anime or "date" not in new_anime:
+                    # 新 API 格式: data.animeList
+                    anime_list = data.get("data", {}).get("animeList", [])
+                    if not anime_list:
                         return []
-                    return new_anime.get("date", [])
+                    return anime_list
         except Exception as e:
             logger.error(f"API 呼叫失敗: {e}")
             return []
@@ -281,32 +309,28 @@ class AnimePushCore:
             logger.warning("API 無回應")
             return False
 
-        # 5. 過濾今日上架的集數
-        today_str = now.strftime("%m/%d")
-        today_episodes = [ep for ep in episodes if ep.get("upTime", "").strip() == today_str]
+        # 5. 直接用 videoSn 比對 (API 回傳完整 animeList，不需要按日期過濾)
+        # 建立 videoSn -> episode 的映射
+        episodes_by_vsn = {}
+        for ep in episodes:
+            ep_vsn = ep.get("videoSn")
+            if ep_vsn:
+                try:
+                    episodes_by_vsn[int(ep_vsn)] = ep
+                except (ValueError, TypeError):
+                    pass
 
-        if not today_episodes:
-            logger.warning(f"今日無新番 (API 回傳 {len(episodes)} 筆 but upTime!=today)")
-            return False
+        logger.info(f"📋 API 回傳 {len(episodes)} 筆，可比對 {len(episodes_by_vsn)} 筆 videoSn")
 
-        logger.info(f"📅 今日集數: {len(today_episodes)} 筆")
-
-        # 6. 配對並推送：每個 pending_videoSn 找對應的 today_episodes
+        # 6. 配對並推送：每個 pending_videoSn 直接從映射找對應 episode
         sent_count = 0
         matched_videosns: Set[int] = set()
 
         for video_sn in pending_video_sns:
-            # 在 today_episodes 中找 matching videoSn
-            matched_ep = None
-            for ep in today_episodes:
-                ep_vsn = ep.get("videoSn")
-                if ep_vsn:
-                    try:
-                        if int(ep_vsn) == video_sn:
-                            matched_ep = ep
-                            break
-                    except (ValueError, TypeError):
-                        continue
+            matched_ep = episodes_by_vsn.get(video_sn)
+            if matched_ep is None:
+                logger.warning(f"week 表有 videoSn={video_sn} 但 API 無對應資料，略過")
+                continue
 
             if matched_ep is None:
                 logger.warning(f"week 表有 videoSn={video_sn} 但 API 當日無對應資料，略過")
