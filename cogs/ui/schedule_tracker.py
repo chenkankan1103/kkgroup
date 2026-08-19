@@ -16,7 +16,13 @@ import logging
 from datetime import datetime, timedelta
 import asyncio
 import aiohttp
-from .push_core import TW_TZ, API_ENDPOINT, API_TIMEOUT, API_HEADERS, get_week_start_date
+from .push_core import (
+    TW_TZ,
+    API_ENDPOINT,
+    API_TIMEOUT,
+    API_HEADERS,
+    get_week_start_date,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -470,6 +470,14 @@ class AnimeTracker(commands.Cog):
                     f"✅ [_init_weekly_schedule_if_empty] 週表初始化完成: {len(schedule_data)} 筆"
                 )
 
+                # 清理舊週資料（啟動時立即清理，避免累積）
+                if hasattr(self.db, "cleanup_old_weeks"):
+                    deleted = self.db.cleanup_old_weeks()
+                    if deleted > 0:
+                        logger.info(
+                            f"🧹 [_init_weekly_schedule_if_empty] 清理舊週記錄: {deleted} 筆"
+                        )
+
                 # 清理孤兒記錄
                 if hasattr(self.db, "clean_orphaned_records"):
                     orphan_stats = self.db.clean_orphaned_records(week_start_str)
@@ -585,7 +593,7 @@ class AnimeTracker(commands.Cog):
                         scheduled,
                         ANIME_CHANNEL_ID,
                         day_of_week=now.weekday() + 1,
-                        week_start_date=get_week_start_date(now, api_week=False),
+                        week_start_date=get_week_start_date(now, api_week=True),
                     )
                     if success:
                         logger.info(f"✅ [_schedule_dispatcher] {scheduled} 推送完成")

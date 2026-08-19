@@ -427,21 +427,33 @@ class AnimeDBImpl:
         return True
 
     # ---- 時程查詢 ----
-    def get_today_schedule(self) -> list:
+    def get_today_schedule(self, week_start_date: str | None = None) -> list:
+        """獲取今天的時程表（從週表中） - 可選擇按 week_start_date 過濾
+
+        Args:
+            week_start_date: 週起始日期 "YYYY-MM-DD"，若不提供則使用當前週 (api_week=True)
+        """
+        from datetime import datetime
+        import json
+        from .push_core import get_week_start_date, TW_TZ
+
+        if week_start_date is None:
+            week_start_date = get_week_start_date(datetime.now(TW_TZ), api_week=True)
+
         conn = self._get_conn()
         c = conn.cursor()
         c.execute(
-            "SELECT videoSn, weekStartDate, dayOfWeek, scheduledTime, pushed, animeData FROM anime_weekly_schedule"
+            "SELECT videoSn, weekStartDate, dayOfWeek, scheduledTime, pushed, animeData FROM anime_weekly_schedule WHERE weekStartDate=?",
+            (week_start_date,),
         )
         rows = c.fetchall()
         conn.close()
-        import json
 
         result = []
         for row in rows:
             (
                 video_sn,
-                week_start_date,
+                week_start_date_db,
                 day_of_week,
                 scheduled_time,
                 pushed,
@@ -449,7 +461,7 @@ class AnimeDBImpl:
             ) = row
             item = {
                 "video_sn": video_sn,
-                "week_start_date": week_start_date,
+                "week_start_date": week_start_date_db,
                 "day_of_week": day_of_week,
                 "scheduled_time": scheduled_time,
                 "pushed": bool(pushed) if pushed is not None else False,
@@ -1058,20 +1070,31 @@ class AnimePushCore:
             logger.error(f"get_schedule_video_sns 錯誤: {e}")
             return set()
 
-    def get_today_schedule(self) -> list[dict]:
-        """獲取今天的所有排程"""
+    def get_today_schedule(self, week_start_date: str | None = None) -> list[dict]:
+        """獲取今天的所有排程
+
+        Args:
+            week_start_date: 週起始日期 "YYYY-MM-DD"，若不提供則使用當前週 (api_week=True)
+        """
+        from datetime import datetime
+        from .push_core import get_week_start_date, TW_TZ
+
+        if week_start_date is None:
+            week_start_date = get_week_start_date(datetime.now(TW_TZ), api_week=True)
+
         try:
             conn = _get_db_connection()
             c = conn.cursor()
             # 移除 videoSn 欄位 (不存在)，從 anime_data JSON 提取
             c.execute("""SELECT weekStartDate, dayOfWeek, scheduledTime, pushed,
                            CAST(animeData AS BLOB) as animeData
-                        FROM anime_weekly_schedule""")
+                        FROM anime_weekly_schedule WHERE weekStartDate=?""",
+                        (week_start_date,))
             rows = c.fetchall()
             conn.close()
             result = []
             for row in rows:
-                week_start_date, day_of_week, scheduled_time, pushed, anime_data_raw = (
+                week_start_date_db, day_of_week, scheduled_time, pushed, anime_data_raw = (
                     row
                 )
                 video_sn = None
@@ -1088,9 +1111,9 @@ class AnimePushCore:
                 item = {
                     "video_sn": video_sn,
                     "week_start_date": (
-                        week_start_date.decode("utf-8", errors="replace")
-                        if isinstance(week_start_date, bytes)
-                        else week_start_date
+                        week_start_date_db.decode("utf-8", errors="replace")
+                        if isinstance(week_start_date_db, bytes)
+                        else week_start_date_db
                     ),
                     "day_of_week": day_of_week,
                     "scheduled_time": (
@@ -1208,8 +1231,8 @@ class AnimePushCore:
             day_of_week = now.weekday() + 1
         if week_start_date is None:
             week_start_date = get_week_start_date(
-                now, api_week=False
-            )  # Dispatcher 用本週
+                now, api_week=True
+            )  # API 週，與週表儲存一致
 
         logger.info(
             f"🚀 [send_anime_push] 開始 {scheduled_time} (week={week_start_date}, day={day_of_week})"
