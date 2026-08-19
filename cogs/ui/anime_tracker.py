@@ -1639,6 +1639,105 @@ class AnimeTracker(commands.Cog):
             logger.error(f"❌ [/anime_refresh] 異常: {e}", exc_info=True)
             await interaction.followup.send(f"❌ 執行異常: {e}", ephemeral=True)
 
+    @app_commands.command(
+        name="anime_push_test", description="🎬 測試動畫推送通知（僅推送，不修改資料庫 pushed 狀態）"
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def anime_push_test(self, interaction: discord.Interaction):
+        """測試動畫推送：抓取最近的待推送時段並發送通知（僅測試推送不修改 DB）"""
+        await interaction.response.defer(ephemeral=True)
+        logger = logging.getLogger(__name__)
+        logger.info(f"🧪 [/anime_push_test] 管理員 {interaction.user} 觸發推送測試")
+
+        try:
+            # 獲取今日時程
+            today_schedule = self.get_today_schedule()
+
+            if not today_schedule:
+                await interaction.followup.send("❌ 今日無時程資料，請先執行 `/anime_refresh` 刷新週表", ephemeral=True)
+                return
+
+            # 找出第一個 pushed=0 的時段（最近的待推送）
+            target_item = None
+            for item in today_schedule:
+                if not item.get("pushed", False):
+                    target_item = item
+                    break
+
+            if not target_item:
+                await interaction.followup.send("✅ 今日所有時段均已推送完畢", ephemeral=True)
+                return
+
+            scheduled_time = target_item["scheduled_time"]
+            week_start_date = target_item["week_start_date"]
+            day_of_week = target_item["day_of_week"]
+            video_sn = target_item.get("video_sn")
+
+            logger.info(f"📌 [/anime_push_test] 選定測試時段: videoSn={video_sn}, week={week_start_date}, day={day_of_week}, time={scheduled_time}")
+
+            # 先檢查 API 是否有此 videoSn 的資料
+            episodes = await self.push_core._fetch_new_anime_from_api()
+            episodes_by_vsn = {int(ep.get("videoSn", 0)): ep for ep in episodes if ep.get("videoSn")}
+            matched_ep = episodes_by_vsn.get(int(video_sn)) if video_sn else None
+
+            if not matched_ep:
+                await interaction.followup.send(
+                    f"⚠️ 選定時段 videoSn={video_sn} 在 API 中找不到對應資料（測試資料可能較舊），嘗試用最新 API 第一筆測試...",
+                    ephemeral=True
+                )
+                # 回退：使用最新 API 的第一筆
+                if episodes:
+                    matched_ep = episodes[0]
+                    video_sn = matched_ep.get("videoSn")
+                    logger.info(f"🔄 [/anime_push_test] 回退使用最新 API 第一筆: videoSn={video_sn}, title={matched_ep.get('title')}")
+                else:
+                    await interaction.followup.send("❌ API 無任何資料", ephemeral=True)
+                    return
+
+            # 生成 Embed 和 View 測試
+            embed = await self.push_core._generate_anime_embed(matched_ep)
+            view = await self.push_core._generate_anime_view(matched_ep)
+
+            if not embed or not view:
+                await interaction.followup.send("❌ Embed/View 生成失敗", ephemeral=True)
+                return
+
+            # 發送測試推送到指定頻道 (1509078418312921128)
+            TEST_CHANNEL_ID = 1509078418312921128
+            channel = self.bot.get_channel(TEST_CHANNEL_ID)
+
+            if not channel:
+                await interaction.followup.send(f"❌ 找不到頻道 ID: {TEST_CHANNEL_ID}", ephemeral=True)
+                return
+
+            # 發送測試訊息（不標記資料庫 pushed=1）
+            message = await channel.send(
+                content="🧪 **[測試推送]** 動畫上架通知測試",
+                embed=embed,
+                view=view
+            )
+
+            # 儲存 message_id 到 view 以便永久視圖恢復
+            if hasattr(view, 'message_id'):
+                view.message_id = message.id
+            self.bot.add_view(view, message_id=message.id)
+
+            await interaction.followup.send(
+                f"✅ **測試推送成功！**\n"
+                f"📺 頻道: {channel.mention}\n"
+                f"📌 目標 videoSn: {video_sn}\n"
+                f"📅 時段: {scheduled_time} (週{day_of_week}, 週起始: {week_start_date})\n"
+                f"📝 標題: {matched_ep.get('title', 'N/A')}\n"
+                f"🔗 訊息 ID: {message.id}\n"
+                f"⚠️ **注意**: 此測試**未修改資料庫 pushed 狀態**，正式推送仍會在排程時間執行",
+                ephemeral=True
+            )
+            logger.info(f"✅ [/anime_push_test] 測試推送完成: message_id={message.id}, videoSn={video_sn}")
+
+        except Exception as e:
+            logger.error(f"❌ [/anime_push_test] 異常: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ 執行異常: {e}", ephemeral=True)
+
     # ==================== 任務重啟包裝函數 ====================
 
     async def _wrap_task_with_restart(self, name: str, coro_func):
