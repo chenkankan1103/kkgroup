@@ -27,9 +27,22 @@ ANIME_CHANNEL_ID = 1252204317453324333
 ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
 API_ENDPOINT = "https://ani.gamer.com.tw/animeList.php?type=newAnime"
 API_TIMEOUT = 15
+
+# 完整瀏覽器指紋 Header（繞過 Cloudflare WAF）
 API_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Referer": "https://ani.gamer.com.tw/",
+    "Origin": "https://ani.gamer.com.tw",
+    "Connection": "keep-alive",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "X-Requested-With": "XMLHttpRequest",
 }
+
 
 def _get_db_connection():
     """獲取資料庫連線 - 不使用 row_factory 避免 UTF-8 解碼問題"""
@@ -183,7 +196,7 @@ class AnimePushCore:
     # ========== API 獲取 ==========
 
     async def _fetch_new_anime_from_api(self) -> List[Dict]:
-        """從 API 獲取新番資料"""
+        """從 API 獲取新番資料 - 單次請求，完整 Header，失敗直接回空"""
         try:
             timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout, headers=API_HEADERS) as session:
@@ -376,7 +389,6 @@ class AnimePushCore:
     async def _generate_anime_view(self, episode: Dict):
         """生成動畫推送視圖"""
         try:
-            # 這裡保留原有的 view 生成邏輯，或從原檔複製
             from shared.utils.embed_views import create_anime_push_view
             return create_anime_push_view(episode)
         except Exception as e:
@@ -399,7 +411,7 @@ async def push_new_anime_episodes(bot, channel_id: int, db, target_time: str = N
     day_of_week = now.weekday() + 1
 
     if target_time:
-        # 推送指定時刻
+        # 推送指定時段
         return await core.send_anime_push(target_time, channel_id, day_of_week, week_start_date)
     else:
         # 推送今日所有未推送時段
@@ -426,7 +438,7 @@ async def push_new_anime_episodes(bot, channel_id: int, db, target_time: str = N
 class AnimeDatabase:
     """相容性包裝：將舊版 AnimeDatabase 介面委託給 db adapter"""
 
-    def __init__(self, db):
+    def ____init__(self, db):
         self.db = db
 
     # ---- 通知/推送相關 ----
