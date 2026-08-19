@@ -44,6 +44,75 @@ API_HEADERS = {
 }
 
 
+# ========== 相容性介面：AnimeDatabase 類別 (需在 AnimePushCore 之前定義，供 anime_tracker 匯入) ==========
+
+class AnimeDatabase:
+    """相容性包裝：將舊版 AnimeDatabase 介面委託給 db adapter"""
+
+    def __init__(self, db):
+        self.db = db
+
+    # ---- 通知/推送相關 ----
+    def is_notified(self, video_sn: int) -> bool:
+        return self.db.is_notified(video_sn)
+
+    def add_notified(self, video_sn: int, anime_sn: int, title: str, volume: str = "", cover: str = "") -> bool:
+        return self.db.add_notified(video_sn, anime_sn, title, volume, cover)
+
+    def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
+        return self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
+
+    def mark_anime_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str, video_sn: int) -> bool:
+        return self.db.mark_anime_pushed(week_start_date, day_of_week, scheduled_time, video_sn)
+
+    def save_message_info(self, message_id: int, video_sn: int, anime_sn: int, title: str, channel_id: int) -> bool:
+        return self.db.save_message_info(message_id, video_sn, anime_sn, title, channel_id)
+
+    # ---- 時程查詢 ----
+    def get_today_schedule(self) -> list:
+        return self.db.get_today_schedule()
+
+    def get_schedule_video_sns(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> set:
+        return self.db.get_schedule_video_sns(week_start_date, day_of_week, scheduled_time)
+
+    # ---- 獎勵系統 ----
+    def is_reward_already_given(self, user_id: int, message_id: int, reward_type: str) -> bool:
+        return self.db.is_reward_already_given(user_id, message_id, reward_type)
+
+    def record_reward(self, user_id: int, message_id: int, reward_type: str, reward_amount: int) -> bool:
+        return self.db.record_reward(user_id, message_id, reward_type, reward_amount)
+
+    # ---- 投票系統 ----
+    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None) -> bool:
+        return self.db.record_vote(video_sn, anime_sn, message_id, vote_type, comment, user_hash)
+
+    def get_vote_stats(self, message_id: int) -> dict:
+        return self.db.get_vote_stats(message_id)
+
+    def get_vote_comments(self, message_id: int, limit: int = 5) -> list:
+        return self.db.get_vote_comments(message_id, limit)
+
+    def get_weekly_vote_stats(self) -> dict:
+        return self.db.get_weekly_vote_stats()
+
+    # ---- 統計/快取 ----
+    def record_episode_stats(self, video_sn: int, anime_sn: int, episode_num: str, views: int, score: float) -> bool:
+        return self.db.record_episode_stats(video_sn, anime_sn, episode_num, views, score)
+
+    def get_anime_details(self, anime_sn: int) -> dict:
+        return self.db.get_anime_details(anime_sn)
+
+    def cache_anime_details(self, anime_sn: int, title: str, content: str, cover: str, tags: list, views: int, score: float) -> bool:
+        return self.db.cache_anime_details(anime_sn, title, content, cover, tags, views, score)
+
+    # ---- 維護 ----
+    def clean_orphaned_records(self, week_start_date: str) -> dict:
+        return self.db.clean_orphaned_records(week_start_date)
+
+    def cleanup_old_weeks(self) -> int:
+        return self.db.cleanup_old_weeks()
+
+
 def _get_db_connection():
     """獲取資料庫連線 - 使用 text_factory=bytes 避免 UTF-8 解碼問題"""
     conn = sqlite3.connect(str(ANIME_DB_PATH))
@@ -454,73 +523,3 @@ async def push_new_anime_episodes(bot, channel_id: int, db, target_time: str = N
             results.append(await core.send_anime_push(st, channel_id, day_of_week, week_start_date))
 
         return any(results)
-
-
-# ========== 相容性介面：供 ranking_stats.py、schedule_tracker.py 透過 __getattr__ 呼叫 ==========
-# 這些方法一律委託給 self.db (真正的資料庫適配器)，保持與舊版 AnimeDatabase 相同介面
-
-class AnimeDatabase:
-    """相容性包裝：將舊版 AnimeDatabase 介面委託給 db adapter"""
-
-    def ____init__(self, db):
-        self.db = db
-
-    # ---- 通知/推送相關 ----
-    def is_notified(self, video_sn: int) -> bool:
-        return self.db.is_notified(video_sn)
-
-    def add_notified(self, video_sn: int, anime_sn: int, title: str, volume: str = "", cover: str = "") -> bool:
-        return self.db.add_notified(video_sn, anime_sn, title, volume, cover)
-
-    def mark_time_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> bool:
-        return self.db.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
-
-    def mark_anime_pushed(self, week_start_date: str, day_of_week: int, scheduled_time: str, video_sn: int) -> bool:
-        return self.db.mark_anime_pushed(week_start_date, day_of_week, scheduled_time, video_sn)
-
-    def save_message_info(self, message_id: int, video_sn: int, anime_sn: int, title: str, channel_id: int) -> bool:
-        return self.db.save_message_info(message_id, video_sn, anime_sn, title, channel_id)
-
-    # ---- 時程查詢 ----
-    def get_today_schedule(self) -> list:
-        return self.db.get_today_schedule()
-
-    def get_schedule_video_sns(self, week_start_date: str, day_of_week: int, scheduled_time: str) -> set:
-        return self.db.get_schedule_video_sns(week_start_date, day_of_week, scheduled_time)
-
-    # ---- 獎勵系統 ----
-    def is_reward_already_given(self, user_id: int, message_id: int, reward_type: str) -> bool:
-        return self.db.is_reward_already_given(user_id, message_id, reward_type)
-
-    def record_reward(self, user_id: int, message_id: int, reward_type: str, reward_amount: int) -> bool:
-        return self.db.record_reward(user_id, message_id, reward_type, reward_amount)
-
-    # ---- 投票系統 ----
-    def record_vote(self, video_sn: int, anime_sn: int, message_id: int, vote_type: str, comment: str = None, user_hash: str = None) -> bool:
-        return self.db.record_vote(video_sn, anime_sn, message_id, vote_type, comment, user_hash)
-
-    def get_vote_stats(self, message_id: int) -> dict:
-        return self.db.get_vote_stats(message_id)
-
-    def get_vote_comments(self, message_id: int, limit: int = 5) -> list:
-        return self.db.get_vote_comments(message_id, limit)
-
-    def get_weekly_vote_stats(self) -> dict:
-        return self.db.get_weekly_vote_stats()
-
-    # ---- 統計/快取 ----
-    def record_episode_stats(self, video_sn: int, anime_sn: int, episode_num: str, views: int, score: float) -> bool:
-        return self.db.record_episode_stats(video_sn, anime_sn, episode_num, views, score)
-
-    def get_anime_details(self, anime_sn: int) -> dict:
-        return self.db.get_anime_details(anime_sn)
-
-    def cache_anime_details(self, anime_sn: int, title: str, content: str, cover: str, tags: list, views: int, score: float) -> bool:
-        return self.db.cache_anime_details(anime_sn, title, content, cover, tags, views, score)
-
-    # ---- 維護 ----
-    def clean_orphaned_records(self, week_start_date: str) -> dict:
-        return self.db.clean_orphaned_records(week_start_date)
-
-    def cleanup_old_weeks(self) -> int:
-        return self.db.cleanup_old_weeks()
