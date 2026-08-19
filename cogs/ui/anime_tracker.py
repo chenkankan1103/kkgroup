@@ -29,6 +29,7 @@ from .push_core import (
     ANIME_DB_PATH,
     ANIME_CHANNEL_ID,
     get_week_start_date,
+    AnimeDBImpl,
 )
 
 # 導入自定義模組
@@ -57,7 +58,9 @@ class AnimeTracker(commands.Cog):
         logger.info("📺 [AnimeTracker.__init__] 開始初始化")
         self.bot = bot
         try:
-            self.db = AnimeDatabase(ANIME_DB_PATH)
+            # 使用完整的 SQLite 實現類別
+            db_impl = AnimeDBImpl(str(ANIME_DB_PATH))
+            self.db = AnimeDatabase(db_impl)
             logger.info(f"✅ [AnimeTracker.__init__] 數據庫已初始化: {ANIME_DB_PATH}")
         except Exception as e:
             logger.error(

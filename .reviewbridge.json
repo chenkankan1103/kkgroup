@@ -1,9 +1,11 @@
 {
   "provider": "codex",
-  "model": "gpt-5",
-  "fallbackProvider": "gemini",
-  "fallbackModel": "gemini-2.5-pro",
-  "mode": "deliberate",
-  "chunkSize": 3000,
-  "timeoutSec": 300
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "fallbackProvider": "codex",
+  "fallbackModel": "nvidia/nemotron-3-ultra-550b-a55b",
+  "mode": "fast",
+  "chunkSize": 1500,
+  "timeoutSec": 30,
+  "async": true,
+  "notifyOnComplete": true
 }
