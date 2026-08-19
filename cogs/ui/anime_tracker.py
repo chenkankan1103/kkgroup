@@ -32,7 +32,7 @@ from .push_core import (
 )
 
 # 導入自定義模組
-from .push_core import AnimePushCore
+from .push_core import AnimePushCore, AnimeDatabase
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
