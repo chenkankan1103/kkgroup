@@ -1323,9 +1323,6 @@ class AnimePushCore:
                 matched_videosns.add(video_sn)
                 sent_count += 1
                 logger.info(f"✅ 已推送: {title} (videoSn={video_sn})")
-                matched_videosns.add(video_sn)
-                sent_count += 1
-                logger.info(f"✅ 已推送: {title} (videoSn={video_sn})")
 
             except Exception as e:
                 logger.error(f"發送失敗 videoSn={video_sn}: {e}")
