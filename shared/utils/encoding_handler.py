@@ -135,7 +135,7 @@ class TaiwanTimeFormatter(logging.Formatter):
         """
         使用台灣時區格式化時間
         """
-        dt = datetime.now(TZ_TAIPEI)
+        dt = datetime.fromtimestamp(record.created, TZ_TAIPEI)
         if datefmt:
             s = dt.strftime(datefmt)
         else:
@@ -148,13 +148,23 @@ class TaiwanTimeFormatter(logging.Formatter):
         if isinstance(record.msg, str):
             record.msg = safe_encode_for_log(record.msg)
 
-        # 處理日誌參數
+        # 處理日誌參數，保持原始類型以確保正確的格式化
         if record.args:
             if isinstance(record.args, dict):
+                # 針對字典，清理每個值
+                sanitized_args = {}
                 for key, value in record.args.items():
-                    record.args[key] = safe_encode_for_log(value)
-            elif isinstance(record.args, (list, tuple)):
+                    sanitized_args[key] = safe_encode_for_log(value)
+                record.args = sanitized_args
+            elif isinstance(record.args, list):
+                # 針對列表，清理每個元素並保持列表類型
+                record.args = [safe_encode_for_log(arg) for arg in record.args]
+            elif isinstance(record.args, tuple):
+                # 針對元組，清理每個元素並保持元組類型
                 record.args = tuple(safe_encode_for_log(arg) for arg in record.args)
+            else:
+                # 針對其他單個值（包括字符串），清理該值但保持其作為單個值
+                record.args = safe_encode_for_log(record.args)
 
         # 調用父類方法進行格式化
         result = super().format(record)
