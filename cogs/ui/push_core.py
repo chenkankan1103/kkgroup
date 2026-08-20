@@ -1248,22 +1248,9 @@ class AnimePushCore:
             self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
             return False
 
-        # 2. 篩選出尚未推送的 videoSn (去除已 pushed=1 的)
-        pushed_video_sns = {
-            item["video_sn"]
-            for item in self.get_today_schedule()
-            if item["scheduled_time"] == scheduled_time and item.get("pushed")
-        }
-        pending_video_sns = expected_video_sns - pushed_video_sns
+        logger.info(f"📋 本時段預期 videoSn: {expected_video_sns}")
 
-        if not pending_video_sns:
-            logger.info(f"⏭️ 所有預期動畫已推送 ({expected_video_sns})，標記時刻完成")
-            self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
-            return False
-
-        logger.info(f"📋 待推送 videoSn: {pending_video_sns}")
-
-        # 3. 檢查 bot 和頻道
+        # 2. 檢查 bot 和頻道
         if self.bot is None:
             logger.error("Bot 未初始化")
             return False
@@ -1275,14 +1262,13 @@ class AnimePushCore:
             # 不標記 push，讓下次重試
             return False
 
-        # 4. 呼叫 API 獲取最新動畫資料
+        # 3. 呼叫 API 獲取最新動畫資料
         episodes = await self._fetch_new_anime_from_api()
         if not episodes:
             logger.warning("API 無回應")
             return False
 
-        # 5. 直接用 videoSn 比對 (API 回傳完整 animeList，不需要按日期過濾)
-        # 建立 videoSn -> episode 的映射
+        # 4. 建立 videoSn -> episode 的映射
         episodes_by_vsn = {}
         for ep in episodes:
             ep_vsn = ep.get("videoSn")
@@ -1296,33 +1282,17 @@ class AnimePushCore:
             f"📋 API 回傳 {len(episodes)} 筆，可比對 {len(episodes_by_vsn)} 筆 videoSn"
         )
 
-        # 6. 配對並推送：每個 pending_videoSn 直接從映射找對應 episode
+        # 5. 配對並推送：處理所有預期 videoSn（不進行去重檢查）
         sent_count = 0
         matched_videosns: set[int] = set()
 
-        for video_sn in pending_video_sns:
+        for video_sn in expected_video_sns:
             matched_ep = episodes_by_vsn.get(video_sn)
             if matched_ep is None:
                 logger.warning(f"week 表有 videoSn={video_sn} 但 API 無對應資料，略過")
                 continue
 
-            if matched_ep is None:
-                logger.warning(
-                    f"week 表有 videoSn={video_sn} 但 API 當日無對應資料，略過"
-                )
-                continue
-
-            # 7. 雙重去重檢查：anime_notified + week pushed
-            if self.is_notified(video_sn):
-                logger.info(
-                    f"⏭️ videoSn={video_sn} 已在 notified 表，標記 pushed 並略過"
-                )
-                self.mark_anime_pushed(
-                    week_start_date, day_of_week, scheduled_time, video_sn
-                )
-                continue
-
-            # 8. 生成 embed 和 view
+            # 6. 生成 embed 和 view
             embed = await self._generate_anime_embed(matched_ep)
             if not embed:
                 continue
@@ -1332,35 +1302,27 @@ class AnimePushCore:
                 logger.warning(f"無 view for videoSn={video_sn}")
                 continue
 
-            # 9. 發送
+            # 7. 發送
             try:
                 message = await channel.send(embed=embed, view=view, silent=True)
 
                 if view and hasattr(view, "message_id"):
                     view.message_id = message.id
 
-                # 記錄
+                # 記錄（僅作為日誌，不用於去重）
                 anime_sn = int(matched_ep.get("animeSn", 0))
                 title = matched_ep.get("title", "未知標題")
                 self.save_message_info(
                     message.id, video_sn, anime_sn, title, channel_id
-                )
-                self.add_notified(
-                    video_sn,
-                    anime_sn,
-                    title,
-                    matched_ep.get("volume", ""),
-                    matched_ep.get("cover", ""),
                 )
 
                 # 註冊永久視圖
                 if self.bot is not None:
                     self.bot.add_view(view, message_id=message.id)
 
-                # 標記 pushed=1
-                self.mark_anime_pushed(
-                    week_start_date, day_of_week, scheduled_time, video_sn
-                )
+                matched_videosns.add(video_sn)
+                sent_count += 1
+                logger.info(f"✅ 已推送: {title} (videoSn={video_sn})")
                 matched_videosns.add(video_sn)
                 sent_count += 1
                 logger.info(f"✅ 已推送: {title} (videoSn={video_sn})")
@@ -1369,10 +1331,9 @@ class AnimePushCore:
                 logger.error(f"發送失敗 videoSn={video_sn}: {e}")
                 continue
 
-        # 10. 若該時段所有預期都已推送，標記時刻完成
-        if expected_video_sns.issubset(pushed_video_sns | matched_videosns):
-            self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
-            logger.info(f"✅ 時刻 {scheduled_time} 全部完成")
+        # 8. 標記時刻已處理（嘗試推送所有預期動畫）
+        self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
+        logger.info(f"✅ 時刻 {scheduled_time} 處理完成")
 
         return sent_count > 0
 
