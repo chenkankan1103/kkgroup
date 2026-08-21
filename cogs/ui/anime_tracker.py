@@ -90,7 +90,13 @@ class AnimeTracker(commands.Cog):
         self.last_weekly_stats_sent = None
 
         # 初始化排程器
-        self.scheduler = AsyncIOScheduler(timezone=TW_TZ)
+        # 配置錯誤處理以避免錯誤迴圈
+        self.scheduler = AsyncIOScheduler(
+            timezone=TW_TZ,
+            misfire_grace_time=30,  # 允許30秒的誤差時間
+            coalesce=True,          # 合併錯誤執行（如果錯過多次，只執行一次）
+            max_instances=1         # 每個任務最多只能有一個實例運行
+        )
 
     def __getattr__(self, name):
         """Delegate attribute access to sub-modules (push_core, db, schedule_tracker, ranking_stats)."""
@@ -475,6 +481,8 @@ class AnimeTracker(commands.Cog):
             logger.error(
                 f"❌ [AnimeTracker._push_job_wrapper] 推送失敗: {e}", exc_info=True
             )
+            # 避免在發生錯誤時觸發緊湊循環，記錄錯誤但不重新拋出
+            # 讓 APScheduler 按正常排程處理下次執行
 
     # ==================== 保留的原有方法（未修改） ====================
 
@@ -494,9 +502,10 @@ class AnimeTracker(commands.Cog):
                 await self.ranking_stats.send_weekly_stats()
             else:
                 logger.debug(f"⏭️ [sync_episode_stats] 非週統時間 ({now.strftime('%a %H:%M')})，僅同步統計")
-
         except Exception as e:
             logger.error(f"❌ [sync_episode_stats] 執行異常: {e}", exc_info=True)
+            # 避免在發生錯誤時觸發緊湊循環，記錄錯誤但不重新拋出
+            # 讓 tasks.loop 按正常間隔處理下次執行
 
     # ==================== 輔助方法 ====================
 
