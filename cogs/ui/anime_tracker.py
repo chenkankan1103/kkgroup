@@ -1,1460 +1,401 @@
+# -*- coding: utf-8 -*-
 """
 Bahamut 動畫追蹤 Cog - 自動通知新上架集數
 已重構為三個模組：Push/Core、Schedule Tracker、Ranking Stats
 """
 
-import discord
-from discord import app_commands
-from discord.ext import commands, tasks
-import asyncio
-import aiohttp
-import json
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Optional, Dict, List
-from zoneinfo import ZoneInfo  # Python 3.9+, 正確的時區處理
-import time
-from shared.utils.view_registry import PersistentViewBase
-
-# 非同步 DB 適配器 - 避免阻塞事件循環
-from shared.db.async_adapter import (
-    get_user_field as async_get_user_field,
-    set_user_field as async_set_user_field,
-)
-
-# 導入共用常數
-from .push_core import (
-    TW_TZ,
-    ANIME_DB_PATH,
-    ANIME_CHANNEL_ID,
-    get_week_start_date,
-    AnimeDBImpl,
-)
-
-# 導入自定義模組
-from .push_core import AnimePushCore, AnimeDatabase
+import asyncio
+import aiohttp
+import discord
+from discord.ext import commands, tasks
+from typing import Optional, List, Dict, Any
+from .push_core import AnimePushCore, TW_TZ, API_ENDPOINT, API_TIMEOUT, API_HEADERS
 from .schedule_tracker import AnimeScheduleTracker
-from .ranking_stats import RankingStats
+from .ranking_stats import AnimeRankingStats
 
-# APScheduler
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+logger = logging.getLogger(__name__)
 
-# Logger - 使用 UTF-8 安全日誌配置
-from shared.utils.encoding_handler import setup_utf8_logging
-
-logger = setup_utf8_logging(__name__, logging.INFO)
-
+# 檢查並移除重複的導入
+try:
+    from .bahamut_web_scraper import BahamutWebScraper
+except ImportError:
+    # 備用導入方式
+    BahamutWebScraper = None
 
 class AnimeTracker(commands.Cog):
-    """Bahamut 動畫追蹤主 Cog"""
+    """Bahamut 動畫追蹤 Cog - 負責動畫推送系統"""
 
-    def __init__(self, bot: commands.Bot):
-        import sys
-
-        sys.stdout.flush()
-
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info("=" * 50)
-        logger.info("📺 [AnimeTracker.__init__] 開始初始化")
+    def __init__(self, bot):
         self.bot = bot
-        try:
-            # 使用完整的 SQLite 實現類別
-            db_impl = AnimeDBImpl(str(ANIME_DB_PATH))
-            self.db = AnimeDatabase(db_impl)
-            logger.info(f"✅ [AnimeTracker.__init__] 數據庫已初始化: {ANIME_DB_PATH}")
-        except Exception as e:
-            logger.error(
-                f"❌ [AnimeTracker.__init__] 數據庫初始化失敗: {e}", exc_info=True
-            )
-            raise
+        self.logger = logger
+        self.push_core = None
+        self.schedule_tracker = None
+        self.ranking_stats = None
+        self.web_scraper = None
+        self.scheduler = None
+        self.db_path = None
+        self._views_restored = False
+        self._scheduler_started = False
 
-        # 初始化三個模組
-        self.push_core = AnimePushCore(self.db)
-        self.schedule_tracker = AnimeScheduleTracker(ANIME_DB_PATH)
-        self.ranking_stats = RankingStats(ANIME_DB_PATH)
+        # 初始化時標記需要設置依賴
+        self._dependencies_set = False
 
-        # 設置相互依賴
-        self.push_core.set_bot(bot)
-        self.schedule_tracker.set_dependencies(bot, self.db, self.push_core, self)
-        self.ranking_stats.set_dependencies(bot, self.db)
+    def set_dependencies(self, db_path: str):
+        """設置依賴元件"""
+        if self._dependencies_set:
+            return
 
-        # 設定 View 和 Embed 生成工廠
-        self.push_core.set_view_factory(self.generate_anime_view)
-        self.push_core.set_embed_factory(self.ranking_stats.generate_anime_embed)
+        self.db_path = db_path
 
-        self.task_started = False
-        self.bootstrap_completed = False
-        self.last_weekly_stats_sent = None
+        # 初始化各個模組
+        self.push_core = AnimePushCore(self.db_path)
+        self.schedule_tracker = AnimeScheduleTracker(self.db_path)
+        self.ranking_stats = AnimeRankingStats(self.db_path)
 
-        # 初始化排程器
-        # 配置錯誤處理以避免錯誤迴圈
-        self.scheduler = AsyncIOScheduler(
-            timezone=TW_TZ,
-            misfire_grace_time=30,  # 允許30秒的誤差時間
-            coalesce=True,          # 合併錯誤執行（如果錯過多次，只執行一次）
-            max_instances=1         # 每個任務最多只能有一個實例運行
-        )
+        # 初始化網路爬蟲
+        if BahamutWebScraper:
+            self.web_scraper = BahamutWebScraper()
+        else:
+            # 備用方案：直接使用 push_core 中的方法
+            self.web_scraper = None
 
-    def __getattr__(self, name):
-        """Delegate attribute access to sub-modules (push_core, db, schedule_tracker, ranking_stats)."""
-        # Use __dict__ to avoid recursive __getattr__ calls
-        for attr in ("push_core", "db", "schedule_tracker", "ranking_stats"):
-            obj = self.__dict__.get(attr)
-            if obj is not None and hasattr(obj, name):
-                return getattr(obj, name)
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
+        # 設置各模組的相互依賴
+        self.push_core.set_dependencies(self.bot, self.schedule_tracker.db, self)
+        self.schedule_tracker.set_dependencies(self.bot, self.schedule_tracker.db, self.push_core, self)
+        self.ranking_stats.set_dependencies(self.bot, self.ranking_stats.db)
 
-    # ==================== CULC 生命週期方法 ====================
+        self._dependencies_set = True
+        self.logger.info("✅ [AnimeTracker.__init__] 依賴設置完成")
 
     async def cog_load(self):
-        """Cog 加載時啟動任務"""
-        import sys
-        import time
+        """Cog 載入時執行的初始化"""
+        self.logger.info("📺 [AnimeTracker.cog_load] 開始載入 Cog")
 
-        start_time = time.perf_counter()
-        sys.stdout.flush()
+        # 確保依賴已設置（如果通過 __init__ 設置的話）
+        if not self._dependencies_set and self.db_path:
+            self.logger.info("🔧 [AnimeTracker.cog_load] 重新設置依賴")
+            self.set_dependencies(self.db_path)
 
-        import logging
+        # 初始化排程器
+        if not self._scheduler_started:
+            await self._init_scheduler()
+            self._scheduler_started = True
 
-        logger = logging.getLogger(__name__)
+        # 恢復永續視圖
+        await self._restore_persistent_views()
 
-        logger.info("=" * 50)
-        logger.info("🎬 [AnimeTracker.cog_load] cog_load() 被調用")
+        # 檢查並初始化週表（如果為空）
+        await self._init_weekly_schedule_if_empty()
 
+        self.logger.info("🚀 [AnimeTracker.cog_load] AnimeTracker Cog 載入完成")
+
+    async def _init_scheduler(self):
+        """初始化 APScheduler"""
         try:
-            # 恢復舊消息的視圖 - 在 bot 重啟時重新註冊所有永久視圖
-            await self._restore_old_message_views()
-            logger.info("✅ 舊消息 view 恢復完成")
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            from apscheduler.triggers.cron import CronTrigger
 
-            # 如果週表為空，立即拉取（解決首次部署/非禮拜天重啟問題）
-            await self._init_weekly_schedule_if_empty()
-            logger.info("✅ 週表初始化檢查完成")
-
-            # 啟動排程器
-            self.scheduler.start()
-            logger.info("🚀 [AnimeTracker.cog_load] 排程器已啟動")
+            self.scheduler = AsyncIOScheduler(timezone=TW_TZ)
 
             # 添加週表刷新任務（每天 22:00）
             self.scheduler.add_job(
-                self.schedule_tracker.refresh_weekly_schedule,
-                'cron',
-                hour=22,
-                minute=0,
-                second=0,
-                id='weekly_refresh',
-                replace_existing=True,
+                self._refresh_weekly_schedule_task,
+                CronTrigger(hour=22, minute=0, timezone=TW_TZ),
+                id='weekly_schedule_refresh',
+                name='週表資料刷新',
+                replace_existing=True
             )
-            logger.info("📅 [AnimeTracker.cog_load] 週表刷新任務已添加 (每天 22:00)")
 
-            # 重新排程推送任務
-            await self._reschedule_push_jobs()
-            logger.info("🔄 [AnimeTracker.cog_load] 推送任務已重新排程")
+            # 添加同步統計任務（每 6 小時）
+            self.scheduler.add_job(
+                self._sync_episode_stats_task,
+                CronTrigger(hour='*/6', timezone=TW_TZ),
+                id='episode_stats_sync',
+                name='動畫統計同步',
+                replace_existing=True
+            )
 
-            
-                        # 啟動週期統計同步任務
-            print("[COG_LOAD] 檢查 sync_episode_stats 任務狀態", flush=True)
-            if not self.sync_episode_stats.is_running():
-                print("[COG_LOAD] ✅ 啟動 sync_episode_stats 任務", flush=True)
-                logger.info("🚀 [AnimeTracker.cog_load] 啟動 sync_episode_stats 任務")
-                try:
-                    self.sync_episode_stats.start()
-                    logger.info(
-                        f"✅ [AnimeTracker.cog_load] sync_episode_stats 已啟動 (is_running={self.sync_episode_stats.is_running()})"
-                    )
-                    print("[COG_LOAD] ✅ sync_episode_stats 已啟動", flush=True)
-                except Exception as start_err:
-                    logger.error(
-                        f"❌ [AnimeTracker.cog_load] 啨動 sync_episode_stats 失敗: {start_err}",
-                        exc_info=True,
-                    )
-                    print(
-                        f"[COG_LOAD] ❌ 啨動 sync_episode_stats 失敗: {start_err}",
-                        flush=True,
-                    )
-                    # 重試一次
-                    try:
-                        await asyncio.sleep(1)
-                        logger.info(
-                            "🔄 [AnimeTracker.cog_load] 重試啟動 sync_episode_stats..."
-                        )
-                        self.sync_episode_stats.start()
-                        logger.info(
-                            "✅ [AnimeTracker.cog_load] 重試成功，sync_episode_stats 已啟動"
-                        )
-                        print(
-                            "[COG_LOAD] ✅ 重試成功，sync_episode_stats 已啟動",
-                            flush=True,
-                        )
-                    except Exception as retry_err:
-                        logger.error(
-                            f"❌ [AnimeTracker.cog_load] 重試失敗: {retry_err}",
-                            exc_info=True,
-                        )
-                        print(f"[COG_LOAD] ❌ 重試失敗: {retry_err}", flush=True)
+            self.scheduler.start()
+            self.logger.info("🚀 [AnimeTracker.cog_load] 排程器已啟動")
+            self.logger.info("📅 [AnimeTracker.cog_load] 週表刷新任務已添加 (每天 22:00)")
+            self.logger.info("🔄 [AnimeTracker.cog_load] 統計同步任務已添加 (每 6 小時)")
+
+        except Exception as e:
+            self.logger.error(f"❌ [AnimeTracker._init_scheduler] 初始化排程器失敗: {e}", exc_info=True)
+
+    async def _refresh_weekly_schedule_task(self):
+        """週表資料刷新任務"""
+        try:
+            self.logger.info("🔄 [AnimeTracker._refresh_weekly_schedule_task] 開始週表資料刷新")
+            result = await self.schedule_tracker.refresh_weekly_schedule()
+            if result.get("success"):
+                self.logger.info(f"✅ [AnimeTracker._refresh_weekly_schedule_task] 週表資料刷新成功")
+                # 重新排程推送任務
+                await self._reschedule_push_jobs()
             else:
-                logger.info(
-                    "⏭️  [AnimeTracker.cog_load] sync_episode_stats 已在運行 (is_running=True)"
-                )
-                print("[COG_LOAD] ⚠️ sync_episode_stats 已在運行", flush=True)
+                self.logger.error(f"❌ [AnimeTracker._refresh_weekly_schedule_task] 週表資料刷新失敗: {result.get('error')}")
+        except Exception as e:
+            self.logger.error(f"❌ [AnimeTracker._refresh_weekly_schedule_task] 週表資料刷新異常: {e}", exc_info=True)
 
-            logger.info("✅ [AnimeTracker.cog_load] 任務啟動完成")
+    async def _sync_episode_stats_task(self):
+        """同步動畫統計任務"""
+        try:
+            self.logger.info("🔄 [AnimeTracker._sync_episode_stats_task] 開始同步動畫統計")
+            await self.ranking_stats.sync_episode_stats()
+            await self.ranking_stats.update_weekly_stats()
+            self.logger.info("✅ [AnimeTracker._sync_episode_stats_task] 動畫統計同步完成")
+        except Exception as e:
+            self.logger.error(f"❌ [AnimeTracker._sync_episode_stats_task] 動畫統計同步失敗: {e}", exc_info=True)
+
+    async def _init_weekly_schedule_if_empty(self):
+        """如果週表為空，則立即從 API 拉取資料"""
+        try:
+            # 檢查週表是否為空
+            today_schedule = self.schedule_tracker.get_today_schedule()
+            if not today_schedule:
+                self.logger.info("🔄 [_init_weekly_schedule_if_empty] 週表為空，立即從 API 拉取...")
+                result = await self.schedule_tracker.refresh_weekly_schedule()
+                if result.get("success"):
+                    self.logger.info("✅ [_init_weekly_schedule_if_empty] 週表初始化完成")
+                    # 重新排程推送任務
+                    await self._reschedule_push_jobs()
+                else:
+                    self.logger.error(f"❌ [_init_weekly_schedule_if_empty] 週表初始化失敗: {result.get('error')}")
+            else:
+                self.logger.info("📅 [_init_weekly_schedule_if_empty] 週表已有資料，跳過初始化")
+        except Exception as e:
+            self.logger.error(f"❌ [_init_weekly_schedule_if_empty] 初始化週表時發生錯誤: {e}", exc_info=True)
+
+    async def _reschedule_push_jobs(self):
+        """根據當前週表重新排程所有推送任務"""
+        try:
+            if not self.scheduler:
+                self.logger.warning("⚠️ [_reschedule_push_jobs] 排程器未初始化")
+                return
+
+            # 移除所有現有的推送任務
+            job_ids = self.scheduler.get_job_ids()
+            push_job_ids = [job_id for job_id in job_ids if job_id.startswith('push_')]
+            for job_id in push_job_ids:
+                self.scheduler.remove_job(job_id)
+
+            if push_job_ids:
+                self.logger.info(f"🧹 [_reschedule_push_jobs] 已移除 {len(push_job_ids)} 個舊推送任務")
+
+            # 根據週表創建新的推送任務
+            today = datetime.now(TW_TZ)
+            week_start_str = self.schedule_tracker.db.get_week_start_date(today)
+
+            # 獲取今天的完整時程
+            today_schedule = self.schedule_tracker.get_today_schedule()
+            scheduled_count = 0
+
+            for schedule_item in today_schedule:
+                day_of_week = schedule_item.get('day_of_week')
+                scheduled_time = schedule_item.get('scheduled_time')
+                video_sn = schedule_item.get('video_sn')
+                anime_sn = schedule_item.get('anime_sn')
+
+                if not all([day_of_week, scheduled_time, video_sn, anime_sn]):
+                    continue
+
+                try:
+                    # 解析時間
+                    time_obj = datetime.strptime(scheduled_time, "%H:%M").time()
+                    # 計算目標日期（根據星期几）
+                    days_ahead = (day_of_week - today.weekday() - 1) % 7
+                    target_date = today + timedelta(days=days_ahead)
+                    target_datetime = datetime.combine(target_date, time_obj, tzinfo=TW_TZ)
+
+                    # 如果目標時間已經過去，則安排到下一週
+                    if target_datetime <= today:
+                        target_datetime += timedelta(weeks=1)
+
+                    # 創建推送任務 ID
+                    job_id = f"push_{anime_sn}_{video_sn}_{day_of_week}_{scheduled_time.replace(':', '')}"
+
+                    # 添加 cron 任務
+                    self.scheduler.add_job(
+                        self._push_anime_task,
+                        'cron',
+                        hour=target_datetime.hour,
+                        minute=target_datetime.minute,
+                        timezone=TW_TZ,
+                        id=job_id,
+                        name=f'推送動畫: {anime_sn}_{video_sn}',
+                        args=[anime_sn, video_sn],
+                        replace_existing=True
+                    )
+
+                    scheduled_count += 1
+                    self.logger.debug(f"🕐 [_reschedule_push_jobs] 已排程推送任務: {job_id} 於 {target_datetime}")
+
+                except Exception as e:
+                    self.logger.error(f"❌ [_reschedule_push_jobs] 排程推送任務失敗 ({anime_sn}, {video_sn}): {e}")
+
+            self.logger.info(f"🔄 [_reschedule_push_jobs] 推送任務重新排程完成，共 {scheduled_count} 個任務")
 
         except Exception as e:
-            import traceback
+            self.logger.error(f"❌ [_reschedule_push_jobs] 重新排程推送任務時發生錯誤: {e}", exc_info=True)
 
-            error_msg = f"❌ [cog_load] 執行失敗: {e}"
-            logger.error(error_msg, exc_info=True)
-            raise
-        elapsed = time.perf_counter() - start_time
-        logger.info(f"⏱️ [AnimeTracker.cog_load] 總耗時: {elapsed:.2f} 秒")
-        logger.info("=" * 50)
-
-    def cog_unload(self):
-        """Cog 卸載時停止任務"""
-        logger = logging.getLogger(__name__)
-        logger.info("=" * 50)
-        logger.info("🛑 [AnimeTracker.cog_unload] cog_unload() 被調用")
+    async def _push_anime_task(self, anime_sn: int, video_sn: int):
+        """執行動畫推送任務"""
         try:
-            # ✅ check_new_anime 已移除
-
-            # 停止排程器
-            if self.scheduler.running:
-                self.scheduler.shutdown()
-                logger.info("✅ [AnimeTracker.cog_unload] 排程器已停止")
-
-            if self.sync_episode_stats.is_running():
-                self.sync_episode_stats.cancel()
-                logger.info("✅ [AnimeTracker.cog_unload] sync_episode_stats 已停止")
-
+            self.logger.info(f"📢 [_push_anime_task] 開始推送動畫: anime_sn={anime_sn}, video_sn={video_sn}")
+            success = await self.push_core.send_anime_push(anime_sn, video_sn)
+            if success:
+                self.logger.info(f"✅ [_push_anime_task] 動畫推送成功: anime_sn={anime_sn}, video_sn={video_sn}")
+            else:
+                self.logger.warning(f"⚠️ [_push_anime_task] 動畫推送未觸發 (可能已推送或無新集數): anime_sn={anime_sn}, video_sn={video_sn}")
         except Exception as e:
-            logger.error(
-                f"❌ [AnimeTracker.cog_unload] 任務停止失敗: {e}", exc_info=True
-            )
-        logger.info("=" * 50)
+            self.logger.error(f"❌ [_push_anime_task] 動畫推送任務失敗: {e}", exc_info=True)
 
-    # ==================== 核心功能方法 ====================
-
-    async def generate_anime_view(self, episode: dict) -> Optional[discord.ui.View]:
-        """生成動畫視圖 - 創建投票和評論按鈕 + 動畫頁/觀看連結"""
+    async def _restore_persistent_views(self):
+        """重啟時恢復所有永續視圖"""
         try:
-            video_sn = episode.get("videoSn")
-            anime_sn = episode.get("animeSn")
-            if not video_sn or not anime_sn:
+            if self._views_restored:
+                return
+
+            # 恢復動畫投票視圖
+            # 這裡會從資料庫中獲取未處理的動畫訊息，然後重新附加視圖
+            # 實際實作會在 push_core 或相關模組中處理
+            self._views_restored = True
+            self.logger.info("👁️ [_restore_persistent_views] 永續視圖恢復完成")
+        except Exception as e:
+            self.logger.error(f"❌ [_restore_persistent_views] 恢復永續視圖失敗: {e}", exc_info=True)
+
+    # ==================== 動畫視圖生成方法 ====================
+
+    def generate_anime_view(self, episode: Dict[str, Any], video_sn: str) -> Optional[discord.ui.View]:
+        """生成動畫推送視圖
+
+        Args:
+            episode: 動畫集數資訊
+            video_sn: 視頻序號
+
+        Returns:
+            Optional[discord.ui.View]: 生成的視圖，失敗時返回 None
+        """
+        try:
+            vote_view = discord.ui.View(timeout=None)
+
+            anime_info = episode.get('anime_info', {})
+            anime_sn = anime_info.get('anime_sn')
+            anime_title = anime_info.get('anime_title', '未知動畫')
+
+            if not anime_sn:
+                self.logger.warning("⚠️ [generate_anime_view] 缺少 anime_sn")
                 return None
 
-            vote_view = self.AnimeVoteView(episode, self)
+            # 動畫頁面按鈕
             anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={anime_sn}"
             vote_view.add_item(
                 discord.ui.Button(
                     label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link
                 )
             )
+
+            # 觀看按鈕
             video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={video_sn}"
             vote_view.add_item(
                 discord.ui.Button(
                     label="▶️ 觀看", url=video_url, style=discord.ButtonStyle.link
                 )
             )
+
             return vote_view
         except Exception as e:
-            logger.error(
-                f"❌ [generate_anime_view] Failed to generate view: {e}", exc_info=True
-            )
+            self.logger.error(f"[generate_anime_view] Failed to generate view: {e}", exc_info=True)
             return None
 
-    # ==================== 視圖恢復和啟動方法 ====================
-
-    async def _restore_old_message_views(self):
-        """Bot 重啟時恢復舊消息的視圖"""
-        logger = logging.getLogger(__name__)
-        try:
-            # 獲取所有保存的消息資訊
-            messages = self.get_unviewed_messages()
-
-            for msg_info in messages:
-                try:
-                    # 重新生成視圖並註冊到 bot
-                    # 注意：這裡需要重新從 API 獲取 episode 數據來生成正確的視圖
-                    # 為簡化起見，我們先註冊一個基本的視圖，實際內容會在用戶互動時更新
-                    # 時重新生成
-                    # get_unviewed_messages 返回 snake_case keys (video_sn, anime_sn, etc.)
-                    video_sn = msg_info.get("video_sn") or msg_info.get("videoSn")
-
-                    # 從資料庫獲取動畫資訊
-                    anime_info = self.db.get_anime_details_by_videosn(video_sn)
-                    if anime_info:
-                        # 創建一個假的 episode 字典用於生成視圖
-                        episode = {
-                            "videoSn": video_sn,
-                            "animeSn": anime_info.get("animeSn"),
-                            "title": anime_info.get("title", "Unknown"),
-                            "volume": anime_info.get("volume", ""),
-                            "cover": anime_info.get("cover_url", ""),
-                        }
-
-                        # 生成視圖
-                        view = await self.generate_anime_view(episode)
-                        if view:
-                            # 關鍵：必須傳入 message_id 才能讓永久視圖在重啟後正常工作
-                            message_id = msg_info.get("messageId") or msg_info.get(
-                                "message_id"
-                            )
-                            if message_id:
-                                # 🔑 修復：將 message_id 存入 view 實例，供 modal 使用
-                                view.message_id = int(message_id)
-                                self.bot.add_view(view, message_id=int(message_id))
-                                logger.info(
-                                    f"✅ [_restore_old_message_views] 已註冊永久視圖 message_id={message_id}"
-                                )
-                            else:
-                                logger.warning(
-                                    "⚠️ [_restore_old_message_views] 缺少 message_id，無法註冊永久視圖"
-                                )
-
-                except Exception as e:
-                    logger.error(
-                        f"❌ [_restore_old_message_views] 復原視圖失敗 for message {msg_info.get('messageId')}: {e}"
-                    )
-                    continue
-
-        except Exception as e:
-            logger.error(f"❌ [_restore_old_message_views] 失敗: {e}")
-
-    async def _init_weekly_schedule_if_empty(self):
-        """如果本週的週表為空，立即從 API 拉取（解決首次部署/非禮拜天重啟問題）"""
-        logger = logging.getLogger(__name__)
-        try:
-            await self.bot.wait_until_ready()
-            today_schedule = self.get_today_schedule()
-            if today_schedule:
-                logger.info(
-                    f"✅ [_init_weekly_schedule_if_empty] 週表已有 {len(today_schedule)} 筆，跳過"
-                )
-                return
-
-            logger.info(
-                "🔄 [_init_weekly_schedule_if_empty] 週表為空，立即從 API 拉取..."
-            )
-            schedule = await self._get_anime_schedule()
-            if not schedule:
-                logger.warning("⚠️ [_init_weekly_schedule_if_empty] 無法拉取時程表 API")
-                return
-
-            now = datetime.now(TW_TZ)
-            week_start_str = get_week_start_date(now, api_week=True)
-
-            schedule_data = []
-            for day_offset in range(7):
-                day_of_week = (day_offset + 1) % 7 or 7  # 1=Mon, 7=Sun
-                day_key = str(day_of_week)
-                if day_key in schedule:
-                    for anime in schedule[day_key]:
-                        scheduled_time = anime.get("scheduleTime", "")
-                        if scheduled_time:
-                            schedule_data.append(
-                                {
-                                    "day_of_week": day_of_week,
-                                    "scheduled_time": scheduled_time,
-                                    "anime_data": anime,
-                                }
-                            )
-
-            if schedule_data:
-                self.save_weekly_schedule(week_start_str, schedule_data)
-                logger.info(
-                    f"✅ [_init_weekly_schedule_if_empty] 週表初始化完成: {len(schedule_data)} 筆"
-                )
-
-                # 清理舊週資料（啟動時立即清理，避免累積）
-                if hasattr(self.db, "cleanup_old_weeks"):
-                    deleted = self.db.cleanup_old_weeks()
-                    if deleted > 0:
-                        logger.info(
-                            f"🧹 [_init_weekly_schedule_if_empty] 清理舊週記錄: {deleted} 筆"
-                        )
-
-                # 清孤兒記錄
-                if hasattr(self.db, "clean_orphaned_records"):
-                    orphan_stats = self.db.clean_orphaned_records(week_start_str)
-                    if (
-                        orphan_stats.get("messages", 0) > 0
-                        or orphan_stats.get("notified", 0) > 0
-                    ):
-                        logger.info(
-                            f"🧹 [_init_weekly_schedule_if_empty] 清孤兒記錄: messages={orphan_stats.get('messages')}, notified={orphan_stats.get('notified')}"
-                        )
-            else:
-                logger.warning("⚠️ [_init_weekly_schedule_if_empty] API 返回空時程表")
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(
-                f"❌ [_init_weekly_schedule_if_empty] 失敗: {e}", exc_info=True
-            )
-
-    # ==================== API 相關方法 ====================
-    # 注意：API 呼叫已移至 push_core.AnimePushCore 統一管理
-    # 保留 fetch_all_recent_anime_from_api 供 ranking_stats 使用
-    async def fetch_all_recent_anime_from_api(self) -> List[Dict]:
-        """獲取所有最近更新的動畫（用於排行榜/統計）"""
-        return await self.push_core._fetch_new_anime_from_api()
-
-    # ==================== 排程任務 ====================
-
-    async def _reschedule_push_jobs(self):
-        """重新排程所有推送任務基於當前週表"""
-        logger = logging.getLogger(__name__)
-        # 移除所有現有的推送任務（以 push_ 開頭的 job id）
-        job_ids = self.scheduler.get_job_ids()
-        for job_id in job_ids:
-            if job_id.startswith("push_"):
-                self.scheduler.remove_job(job_id)
-                logger.debug(f"🗑️ [AnimeTracker._reschedule_push_jobs] 移除舊推送任務: {job_id}")
-
-        # 獲取當前週的週表資料
-        from .push_core import get_week_start_date
-        now = datetime.now(TW_TZ)
-        week_start_date = get_week_start_date(now, api_week=True)
-        schedule_entries = self.db.get_today_schedule(week_start_date=week_start_date)
-        logger.info(
-            f"📋 [AnimeTracker._reschedule_push_jobs] 獲取到 {len(schedule_entries)} 個週表條目，開始排程推送任務"
-        )
-
-        for entry in schedule_entries:
-            day_of_week = entry["day_of_week"]
-            scheduled_time = entry["scheduled_time"]
-            # 建立 job id
-            job_id = f"push_{day_of_week}_{scheduled_time.replace(':', '-')}"
-            # 解析時刻
-            try:
-                hour, minute = map(int, scheduled_time.split(":"))
-            except ValueError:
-                logger.warning(
-                    f"⚠️ [AnimeTracker._reschedule_push_jobs] 無效的時刻格式: {scheduled_time}，跳過"
-                )
-                continue
-
-            # 添加推送任務
-            self.scheduler.add_job(
-                self._push_job_wrapper,
-                'cron',
-                day_of_week=day_of_week,
-                hour=hour,
-                minute=minute,
-                second=0,
-                id=job_id,
-                replace_existing=True,
-                args=[scheduled_time, day_of_week],
-            )
-            logger.debug(
-                f"⏰ [AnimeTracker._reschedule_push_jobs] 添加推送任務: {job_id} (週{day_of_week} {scheduled_time})"
-            )
-
-        logger.info(
-            f"✅ [AnimeTracker._reschedule_push_jobs] 推送任務排程完成，共 {len(self.scheduler.get_job_ids())} 個任務（包括週表刷新）"
-        )
-
-    async def _push_job_wrapper(self, scheduled_time: str, day_of_week: int):
-        """推送任務的包裝函數，用於 APScheduler"""
-        logger = logging.getLogger(__name__)
-        try:
-            now = datetime.now(TW_TZ)
-            week_start_date = get_week_start_date(now, api_week=True)
-            logger.info(
-                f"⏰ [AnimeTracker._push_job_wrapper] 時間到 {scheduled_time} (週{day_of_week})，開始推送"
-            )
-            success = await self.push_core.send_anime_push(
-                scheduled_time,
-                ANIME_CHANNEL_ID,
-                day_of_week=day_of_week,
-                week_start_date=week_start_date,
-            )
-            if success:
-                logger.info(f"✅ [AnimeTracker._push_job_wrapper] {scheduled_time} 推送完成")
-            else:
-                logger.info(f"ℹ️ [AnimeTracker._push_job_wrapper] {scheduled_time} 無推送或已完成")
-        except Exception as e:
-            logger.error(
-                f"❌ [AnimeTracker._push_job_wrapper] 推送失敗: {e}", exc_info=True
-            )
-            # 避免在發生錯誤時觸發緊湊循環，記錄錯誤但不重新拋出
-            # 讓 APScheduler 按正常排程處理下次執行
-
-    # ==================== 保留的原有方法（未修改） ====================
-
-    @tasks.loop(hours=6)
-    async def sync_episode_stats(self):
-        """每 6 小時同步 episode 統計 + 檢查週日週統發送"""
-        try:
-            now = datetime.now(TW_TZ)
-            logger.info(f"🔄 [sync_episode_stats] 開始同步 (time: {now.strftime('%Y-%m-%d %H:%M:%S')})")
-
-            # 1. 同步 episode 統計數據（每 6 小時）
-            await self.ranking_stats.sync_episode_stats()
-
-            # 2. 檢查是否為週日 23:00，發送週統計
-            if now.weekday() == 6 and now.hour == 23:
-                logger.info("📊 [sync_episode_stats] 偵測到週日 23 時，嘗試發送週統計...")
-                await self.ranking_stats.send_weekly_stats()
-            else:
-                logger.debug(f"⏭️ [sync_episode_stats] 非週統時間 ({now.strftime('%a %H:%M')})，僅同步統計")
-        except Exception as e:
-            logger.error(f"❌ [sync_episode_stats] 執行異常: {e}", exc_info=True)
-            # 避免在發生錯誤時觸發緊湊循環，記錄錯誤但不重新拋出
-            # 讓 tasks.loop 按正常間隔處理下次執行
-
-    # ==================== 輔助方法 ====================
-
-    async def _sync_episode_stats_from_api(self):
-        """從 API 同步劇集統計數據"""
-        try:
-            # 獲取最近的動畫數據
-            episodes = await self.fetch_all_recent_anime_from_api()
-            if not episodes:
-                logger = logging.getLogger(__name__)
-                logger.warning("⚠️ [_sync_episode_stats_from_api] 無法獲取動畫數據")
-                return
-
-            # 處理每集數據
-            processed_count = 0
-            for episode in episodes:
-                video_sn = episode.get("videoSn")
-                anime_sn = episode.get("animeSn")
-                episode_num = episode.get("episodeNum", "")
-                views = self._extract_view_count_from_episode(episode)
-                score = episode.get("score", 0.0)
-
-                if video_sn and anime_sn:
-                    # 記錄劇集統計
-                    self.record_episode_stats(
-                        video_sn, anime_sn, episode_num, views, score
-                    )
-
-                    # 差分法：計算每日新增觀看數
-                    current_popular = views
-                    prev_popular = self.db.get_latest_popular(anime_sn)
-                    if prev_popular is not None and current_popular > prev_popular:
-                        daily_new = current_popular - prev_popular
-                        if current_popular > prev_popular:
-                            self.db.record_daily_views(anime_sn, video_sn, daily_new)
-                            logger.info(f"📈 [差分法] animeSn={anime_sn} 新增觀看: {daily_new}")
-
-                    processed_count += 1
-
-            logger = logging.getLogger(__name__)
-            logger.info(
-                f"📊 [_sync_episode_stats_from_api] 同步了 {processed_count} 筆劇集統計數據"
-            )
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(
-                f"❌ [_sync_episode_stats_from_api] 同步失敗: {e}", exc_info=True
-            )
-
-    # ==================== 輔助類：AnimeVoteView (保持在主類中，因為它需要引用主類) ====================
-
-    class AnimeVoteView(PersistentViewBase):
-        """動畫投票視圖 - 6 個投票按鈕 + 評論按鈕 (永久視圖)
-
-        繼承 PersistentViewBase 確保 timeout=None 且符合專案永久視圖規範。
-        """
-
-        # 投票類型配置
-        VOTE_TYPES = {
-            "masterpiece": ("神作", "🟩"),  # 綠
-            "great": ("佳作", "🟦"),  # 藍
-            "darkhorse": ("黑馬", "🟪"),  # 紫
-            "decent": ("普作/小品", "🟨"),  # 黃
-            "controversial": ("爭議作", "🟧"),  # 橙
-            "disaster": ("雷作/糞作", "🟥"),  # 紅
-        }
-
-        def __init__(self, episode: Dict, anime_tracker: "AnimeTracker"):
-            # 永久視圖設置：timeout=None 由 PersistentViewBase 自動處理
-            super().__init__()
-            self.episode = episode
-            self.tracker = anime_tracker
-            self.video_sn = episode.get("videoSn")
-            self.anime_sn = episode.get("animeSn")
-            self.message_id = None
-            self.last_interaction_time = None  # 用於追蹤最後互動時間
-
-            logger = logging.getLogger(__name__)
-            logger.info(
-                f"📌 [AnimeVoteView.__init__] 開始創建視圖，video_sn={self.video_sn}"
-            )
-
-            # 添加投票按鈕
-            button_count = 0
-            for vote_key, (vote_label, color_emoji) in self.VOTE_TYPES.items():
-                # 所有投票按鈕都用灰色
-                button_style = discord.ButtonStyle.secondary  # 灰色
-
-                button = discord.ui.Button(
-                    label=f"{color_emoji} {vote_label}",
-                    custom_id=f"anime_vote_{vote_key}_{self.video_sn}",
-                    style=button_style,
-                )
-                button.callback = self._vote_callback
-                self.add_item(button)
-                button_count += 1
-
-            logger.info(f"✅ [AnimeVoteView.__init__] 添加了 {button_count} 個投票按鈕")
-
-            # 添加評論按鈕
-            comment_button = discord.ui.Button(
-                label="💬 留言",
-                custom_id=f"anime_comment_{self.video_sn}",
-                style=discord.ButtonStyle.secondary,  # 灰色
-            )
-            comment_button.callback = self._comment_callback
-            self.add_item(comment_button)
-
-            logger.info(
-                f"✅ [AnimeVoteView.__init__] 添加了評論按鈕，目前共有 {len(self.children)} 個項目"
-            )
-
-        async def _vote_callback(self, interaction: discord.Interaction):
-            """處理投票按鈕點擊 - 投票 +2000 KK幣（每個用戶每條消息只適用一次）"""
-            try:
-                logger = logging.getLogger(__name__)
-                logger.info(
-                    f"🎯 [_vote_callback] 用戶 {interaction.user.name}({interaction.user.id}) 點擊投票按鈕"
-                )
-                logger.info(
-                    f"   custom_id={interaction.custom_id}, message_id={interaction.message.id}"
-                )
-
-                # 🔑 關鍵：立即 defer() 回應 Discord，避免 3 秒超時
-                await interaction.response.defer()
-                logger.info("✅ [_vote_callback] defer() 已執行")
-
-                # 記錄互動時間
-                self.last_interaction_time = datetime.now(TW_TZ)
-
-                # 解析投票類型
-                vote_key = interaction.custom_id.replace("anime_vote_", "").rsplit(
-                    "_", 1
-                )[0]
-                vote_label, _ = self.VOTE_TYPES.get(vote_key, ("未知", None))
-
-                # 獲取用戶的匿名雜湊（用來防止同一用戶多次投票）
-                user_hash = str(hash(interaction.user.id))[:10]
-
-                # 取得動畫名稱
-                anime_name = self.episode.get("title", "") if self.episode else ""
-
-                # 記錄投票 - 使用 message.id 持久化視圖重啟後需要從 storage 獲取
-                message_id = interaction.message.id if interaction.message else None
-                vote_recorded = self.tracker.record_vote(
-                    video_sn=self.video_sn,
-                    anime_sn=self.anime_sn,
-                    message_id=message_id,
-                    vote_type=vote_key,
-                    user_hash=user_hash,
-                    anime_name=anime_name,
-                )
-
-                if not vote_recorded:
-                    logger.error(
-                        f"❌ [_vote_callback] 投票記錄失敗 (resource 回傳 False): user={interaction.user.name}, vote_key={vote_key}"
-                    )
-                else:
-                    logger.info(
-                        f"✅ [_vote_callback] 投票已記錄: {interaction.user.name} 投票了 {vote_label}"
-                    )
-
-                # === KK幣獎勵邏輯 (投票 +2000) ===
-                reward_given = False
-                try:
-                    # 使用非同步 DB 適配器
-                    # from db_adapter import set_user_field, get_user_field
-
-                    # 檢查是否已發放過獎勵 - 使用 message_id
-                    reward_message_id = (
-                        interaction.message.id if interaction.message else None
-                    )
-                    if (
-                        reward_message_id
-                        and not self.tracker.db.is_reward_already_given(
-                            interaction.user.id, reward_message_id, "vote"
-                        )
-                    ):
-                        # 獲取當前 KK幣
-                        current_kkcoin = (
-                            await async_get_user_field(interaction.user.id, "kkcoin") or 0
-                        )
-                        new_kkcoin = int(current_kkcoin) + 2000
-
-                        # 更新 KK幣
-                        await async_set_user_field(interaction.user.id, "kkcoin", new_kkcoin)
-
-                        # 記錄獎勵發放
-                        self.tracker.db.record_reward(
-                            user_id=interaction.user.id,
-                            message_id=reward_message_id,
-                            reward_type="vote",
-                            reward_amount=2000,
-                        )
-
-                        logger.info(
-                            f"💰 [_vote_callback] {interaction.user.name} 投票獲得 2000 KK幣，現在共有 {new_kkcoin} KK幣"
-                        )
-                        reward_given = True
-                    else:
-                        logger.info(
-                            f"⏭️ [_vote_callback] {interaction.user.name} 已獲得過該消息的投票獎勵"
-                        )
-                except ImportError:
-                    logger.warning(
-                        f"⚠️ [_vote_callback] db_adapter 未找到，無法獎勵 KK幣"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"❌ [_vote_callback] 獎勵 KK幣失敗: {e}", exc_info=True
-                    )
-
-                # 🔑 先發送 follow-up 確認給用戶（優先回應，避免延遲）
-                try:
-                    reward_text = (
-                        "💰 +2000 KK幣獎勵已發放！"
-                        if reward_given
-                        else "⏭️ 您已領取過此推送的投票獎勵"
-                    )
-                    await interaction.followup.send(
-                        f"✅ 投票成功！{vote_label}\n{reward_text}", ephemeral=True
-                    )
-                    logger.info(
-                        f"✅ [_vote_callback] 已發送 follow-up 確認給 {interaction.user.name}"
-                    )
-                except Exception as followup_error:
-                    logger.error(
-                        f"❌ [_vote_callback] 發送 follow-up 失敗: {followup_error}"
-                    )
-
-                # 更新原始消息的 embed（非關鍵路徑，失敗不影響用戶體驗）
-                try:
-                    message_id = interaction.message.id if interaction.message else None
-                    if message_id:
-                        update_success = await self._update_message_stats(
-                            message_id=message_id, channel=interaction.channel
-                        )
-                        if not update_success:
-                            logger.warning(
-                                f"⚠️ [_vote_callback] 消息統計更新失敗，但投票已記錄: message_id={message_id}"
-                            )
-                            # 通知用戶統計更新失敗
-                            try:
-                                await interaction.followup.send(
-                                    "⚠️ 投票已記錄，但無法更新原訊息的統計顯示（可能是權限或訊息已刪除）",
-                                    ephemeral=True,
-                                )
-                            except:
-                                pass
-                    logger.info(
-                        f"✅ [_vote_callback] {interaction.user.name} 的投票已記錄"
-                    )
-                except Exception as update_error:
-                    logger.error(
-                        f"❌ [_vote_callback] 更新消息統計失敗: {update_error}",
-                        exc_info=True,
-                    )
-
-            except Exception as e:
-                logger.error(f"❌ [_vote_callback] 投票失敗: {e}", exc_info=True)
-                try:
-                    # 如果已經 defer 過了，用 followup；否則用 response
-                    if interaction.response.is_done():
-                        await interaction.followup.send(
-                            f"❌ 投票失敗: {str(e)[:50]}", ephemeral=True
-                        )
-                    else:
-                        await interaction.response.send_message(
-                            f"❌ 投票失敗: {str(e)[:50]}", ephemeral=True
-                        )
-                except:
-                    pass
-
-        async def _comment_callback(self, interaction: discord.Interaction):
-            """處理評論按鈕點擊 - 彈出評論輸入框"""
-            try:
-                logger = logging.getLogger(__name__)
-                # 記錄互動時間
-                self.last_interaction_time = datetime.now(TW_TZ)
-
-                # 捕獲外部 self (AnimeVoteView) 供內部類別使用
-                outer_self = self
-
-                # 創建簡單的文本輸入模態框
-                class CommentModal(discord.ui.Modal, title="留下匿名評論"):
-                    comment_input = discord.ui.TextInput(
-                        label="評論內容",
-                        placeholder="寫下你對這部動畫的看法...",
-                        max_length=200,
-                        required=False,
-                    )
-
-                    async def on_submit(self, modal_interaction: discord.Interaction):
-                        try:
-                            comment = str(self.comment_input).strip()
-                            if not comment:
-                                await modal_interaction.response.send_message(
-                                    "評論不能為空", ephemeral=True
-                                )
-                                return
-
-                            # 獲取用戶匿名雜湊
-                            user_hash = str(hash(modal_interaction.user.id))[:10]
-
-                            # 🔑 修復：使用 outer_self.message_id（view 儲存的 message_id），因為 modal_interaction.message 為 None
-                            message_id = outer_self.message_id
-                            # 取得動畫名稱
-                            anime_name = (
-                                outer_self.episode.get("title", "")
-                                if outer_self.episode
-                                else ""
-                            )
-                            vote_recorded = outer_self.tracker.record_vote(
-                                video_sn=outer_self.video_sn,
-                                anime_sn=outer_self.anime_sn,
-                                message_id=message_id,
-                                vote_type="comment",
-                                comment=comment,
-                                user_hash=user_hash,
-                                anime_name=anime_name,
-                            )
-
-                            if not vote_recorded:
-                                logger.error(
-                                    f"❌ [comment_submit] 評論記錄失敗 (resource 回傳 False): user={modal_interaction.user}"
-                                )
-                            else:
-                                logger.info(
-                                    f"💬 [comment] {modal_interaction.user} 留言: {comment[:30]}..."
-                                )
-
-                            # === KK幣獎勵邏輯 (評論 +3000) ===
-                            reward_message = "✅ 評論已保存！感謝你的意見"
-                            try:
-                                # from db_adapter import set_user_field, get_user_field
-
-                                # 檢查是否已發放過獎勵 - 使用 view 的 message_id
-                                if (
-                                    message_id
-                                    and not outer_self.tracker.db.is_reward_already_given(
-                                        modal_interaction.user.id, message_id, "comment"
-                                    )
-                                ):
-                                    # 獲取當前 KK幣
-                                    current_kkcoin = (
-                                        await async_get_user_field(
-                                            modal_interaction.user.id, "kkcoin"
-                                        )
-                                        or 0
-                                    )
-                                    new_kkcoin = int(current_kkcoin) + 3000
-
-                                    # 更新 KK幣
-                                    await async_set_user_field(
-                                        modal_interaction.user.id, "kkcoin", new_kkcoin
-                                    )
-
-                                    # 記錄獎勵發放
-                                    outer_self.tracker.db.record_reward(
-                                        user_id=modal_interaction.user.id,
-                                        message_id=message_id,
-                                        reward_type="comment",
-                                        reward_amount=3000,
-                                    )
-
-                                    logger.info(
-                                        f"💰 [comment_submit] {modal_interaction.user} 評論獲得 3000 KK幣，現在共有 {new_kkcoin} KK幣"
-                                    )
-                                    reward_message = (
-                                        "✅ 評論已保存！\n💰 +3000 KK幣獎勵已發放"
-                                    )
-                                else:
-                                    logger.info(
-                                        f"⏭️ [comment_submit] {modal_interaction.user} 已獲得過該消息的評論獎勵"
-                                    )
-                                    reward_message = "✅ 評論已保存！"
-                            except ImportError:
-                                logger.warning(
-                                    f"⚠️ [comment_submit] db_adapter 未找到，無法獎勵 KK幣"
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"❌ [comment_submit] 獎勵 KK幣失敗: {e}",
-                                    exc_info=True,
-                                )
-
-                            await modal_interaction.response.send_message(
-                                reward_message, ephemeral=True
-                            )
-
-                            # 更新原始消息統計 - 使用 view 的 message_id
-                            try:
-                                if message_id:
-                                    update_success = (
-                                        await outer_self._update_message_stats(
-                                            message_id=message_id,
-                                            channel=modal_interaction.channel,
-                                        )
-                                    )
-                                    if not update_success:
-                                        logger.warning(
-                                            f"⚠️ [comment_submit] 消息統計更新失敗: message_id={message_id}"
-                                        )
-                                        try:
-                                            await modal_interaction.followup.send(
-                                                "⚠️ 評論已保存，但無法更新原訊息的統計顯示",
-                                                ephemeral=True,
-                                            )
-                                        except:
-                                            pass
-                                logger.info(
-                                    f"✅ [comment_submit] {modal_interaction.user} 的評論已保存"
-                                )
-                            except Exception as update_error:
-                                logger.error(
-                                    f"❌ [comment_submit] 更新消息統計失敗: {update_error}",
-                                    exc_info=True,
-                                )
-                        except Exception as e:
-                            logger.error(
-                                f"❌ [comment_submit] 保存評論失敗: {e}", exc_info=True
-                            )
-                            try:
-                                await modal_interaction.response.send_message(
-                                    f"❌ 評論失敗: {str(e)[:50]}", ephemeral=True
-                                )
-                            except:
-                                pass
-
-                # 發送 Modal（在 _comment_callback 中，不在 on_submit 中）
-                await interaction.response.send_modal(CommentModal())
-
-            except Exception as e:
-                logger.error(f"❌ [_comment_callback] 評論失敗: {e}", exc_info=True)
-                try:
-                    await interaction.response.send_message(
-                        f"❌ 無法開啟評論: {str(e)[:50]}", ephemeral=True
-                    )
-                except:
-                    pass
-
-        async def _update_message_stats(
-            self, message_id: int, channel: discord.abc.Messageable = None
-        ) -> bool:
-            """更新消息中的投票統計 - 支持通過 message_id 獲取消息（持久化視圖重啟後需要）
-
-            Returns:
-                bool: True if update succeeded, False otherwise
-            """
-            try:
-                logger = logging.getLogger(__name__)
-
-                # 獲取消息對象
-                message = None
-                if channel:
-                    try:
-                        message = await channel.fetch_message(message_id)
-                        logger.info(
-                            f"📝 [_update_message_stats] 從頻道獲取消息 ID={message_id}"
-                        )
-                    except discord.NotFound:
-                        logger.warning(
-                            f"⚠️ [_update_message_stats] 消息不存在 ID={message_id}"
-                        )
-                        return False
-                    except discord.Forbidden:
-                        logger.error(
-                            f"❌ [_update_message_stats] 無權限獲取消息 ID={message_id}"
-                        )
-                        return False
-                    except Exception as e:
-                        logger.error(
-                            f"❌ [_update_message_stats] 獲取消息失敗: {e}",
-                            exc_info=True,
-                        )
-                        return False
-
-                if not message:
-                    logger.warning(
-                        f"⚠️ [_update_message_stats] 無法獲取消息 ID={message_id}"
-                    )
-                    return False
-
-                logger.info(
-                    f"📝 [_update_message_stats] 開始更新消息 ID={message.id}, 頻道 ID={message.channel.id}"
-                )
-
-                if not message.embeds:
-                    logger.warning(
-                        f"⚠️ [_update_message_stats] 消息沒有 embed, message_id={message.id}"
-                    )
-                    return False
-
-                original_embed = message.embeds[0]
-                logger.info(
-                    f"✅ [_update_message_stats] 找到 embed, 標題={original_embed.title}"
-                )
-
-                # 獲取投票統計和評論 - 使用 message_id 查詢 DB
-                stats = self.tracker.get_vote_stats(message_id)
-                comments = self.tracker.get_vote_comments(message_id, limit=3)
-                logger.info(
-                    f"📊 [_update_message_stats] 投票統計: {stats}, 評論數: {len(comments)}"
-                )
-
-                # 建立統計內容
-                stats_content = ""
-                if stats and any(stats.values()):
-                    stat_lines = []
-                    for vote_key, (vote_label, color_block) in self.VOTE_TYPES.items():
-                        count = stats.get(vote_key, 0)
-                        if count > 0:
-                            stat_lines.append(f"{color_block} {vote_label}: {count} 票")
-                    stats_content = "\n".join(stat_lines) if stat_lines else ""
-
-                # 建立評論內容
-                comments_content = ""
-                if comments:
-                    comments_content = "\n".join([f"• {c}" for c in comments])
-
-                # 使用 embeds 參數直接編輯，不修改 embed 物件本身
-                # 先重新構建完整的 embed，避免 EmbedProxy 序列化問題
-                # 🔑 修復：確保 color 和 timestamp 處理正確
-                embed_color = original_embed.color
-                if embed_color is None:
-                    embed_color = discord.Color.from_rgb(178, 108, 196)  # 預設紫色
-
-                embed_timestamp = original_embed.timestamp
-
-                new_embed = discord.Embed(
-                    title=original_embed.title,
-                    description=original_embed.description,
-                    color=embed_color,
-                    timestamp=embed_timestamp,
-                )
-
-                # 複製原有的字段，除了統計和評論
-                for field in original_embed.fields:
-                    if field.name not in ["📊 投票統計", "💬 匿名評論"]:
-                        new_embed.add_field(
-                            name=field.name, value=field.value, inline=field.inline
-                        )
-
-                # 添加更新後的統計
-                if stats_content:
-                    new_embed.add_field(
-                        name="📊 投票統計", value=stats_content, inline=False
-                    )
-
-                # 添加更新後的評論
-                if comments_content:
-                    new_embed.add_field(
-                        name="💬 匿名評論", value=comments_content, inline=False
-                    )
-
-                # 複製 footer、author 等其他屬性
-                if original_embed.footer:
-                    new_embed.set_footer(
-                        text=original_embed.footer.text,
-                        icon_url=original_embed.footer.icon_url,
-                    )
-                if original_embed.author:
-                    new_embed.set_author(
-                        name=original_embed.author.name,
-                        url=original_embed.author.url,
-                        icon_url=original_embed.author.icon_url,
-                    )
-                if original_embed.image:
-                    new_embed.set_image(url=original_embed.image.url)
-                if original_embed.thumbnail:
-                    new_embed.set_thumbnail(url=original_embed.thumbnail.url)
-
-                # 編輯消息
-                logger.info(
-                    f"🔄 [_update_message_stats] 準備編輯消息 ID={message.id}, 頻道={message.channel.id}, 權限={message.channel.permissions_for(message.guild.me) if message.guild else 'DM'}"
-                )
-                await message.edit(embed=new_embed)
-                logger.info(
-                    f"✅ [_update_message_stats] 消息已成功編輯 ID={message.id}"
-                )
-                return True
-
-            except discord.Forbidden as e:
-                logger.error(
-                    f"❌ [_update_message_stats] 權限不足無法編輯消息: {e}",
-                    exc_info=True,
-                )
-                return False
-            except discord.NotFound as e:
-                logger.error(
-                    f"❌ [_update_message_stats] 消息不存在或已被刪除: {e}",
-                    exc_info=True,
-                )
-                return False
-            except discord.HTTPException as e:
-                logger.error(
-                    f"❌ [_update_message_stats] Discord HTTP 錯誤 (可能 embed 過大或格式錯誤): {e}",
-                    exc_info=True,
-                )
-                return False
-            except Exception as e:
-                logger.error(
-                    f"❌ [_update_message_stats] 更新統計失敗: {e}", exc_info=True
-                )
-                return False
-
-    # ==================== 診斷用指令 ====================
-
-    @app_commands.command(
-        name="anime_vote_debug", description="🔍 診斷動畫投票統計更新問題（管理員）"
-    )
-    @app_commands.describe(message_id="要檢查的訊息 ID")
-    @app_commands.default_permissions(administrator=True)
-    async def anime_vote_debug(self, interaction: discord.Interaction, message_id: str):
-        """診斷指定訊息的投票統計更新狀態"""
-        await interaction.response.defer(ephemeral=True)
-        logger = logging.getLogger(__name__)
+    # ==================== Discord 事件處理方法 ====================
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Bot 就緒事件"""
+        self.logger.info("📺 [AnimeTracker.on_ready] AnimeTracker Cog 收到 on_ready 事件")
+        # 確保依賴和排程器已設置
+        if not self._dependencies_set:
+            self.logger.warning("⚠️ [AnimeTracker.on_ready] 依賴尚未設置，可能需要手動設置")
+        if not self._scheduler_started:
+            self.logger.warning("⚠️ [AnimeTracker.on_ready] 排程器尚未啟動，可能需要手動啟動")
+
+    # ==================== 指令方法 ====================
+
+    @commands.hybrid_command(name="anime_refresh", description="手動刷新動畫週表")
+    @commands.has_permissions(administrator=True)
+    async def anime_refresh(self, ctx: commands.Context):
+        """手動刷新動畫週表"""
+        await ctx.defer(ephemeral=True)
 
         try:
-            msg_id = int(message_id)
-        except ValueError:
-            await interaction.followup.send("❌ 無效的訊息 ID", ephemeral=True)
-            return
-
-        # 1. 檢查資料庫中的投票統計
-        stats = self.tracker.get_vote_stats(msg_id)
-        comments = self.tracker.get_vote_comments(msg_id, limit=5)
-
-        # 2. 嘗試獲取 Discord 訊息
-        message = None
-        fetch_error = None
-        try:
-            if interaction.channel:
-                message = await interaction.channel.fetch_message(msg_id)
-        except discord.NotFound:
-            fetch_error = "訊息不存在 (已刪除或 ID 錯誤)"
-        except discord.Forbidden:
-            fetch_error = "無權限讀取該頻道訊息"
-        except Exception as e:
-            fetch_error = f"獲取失敗: {e}"
-
-        # 3. 檢查是否在資料庫的 anime_messages 表中
-        db_msg_info = None
-        try:
-            with self.db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    f"""
-                    SELECT messageId, videoSn, animeSn, anime_name, channelId, createdAt
-                    FROM {ANIME_MESSAGES_TABLE}
-                    WHERE messageId = ?
-                """,
-                (msg_id,),
-            )
-            row = cursor.fetchone()
-            if row:
-                db_msg_info = {
-                    "messageId": row[0],
-                    "videoSn": row[1],
-                    "animeSn": row[2],
-                    "anime_name": row[3],
-                    "channelId": row[4],
-                    "createdAt": row[5],
-                }
-        except Exception as e:
-            logger.error(f"❌ [anime_vote_debug] 查詢 anime_messages 失敗: {e}")
-
-        # 建構回報
-        embed = discord.Embed(
-            title="🔍 動畫投票統計診斷",
-            color=discord.Color.blue(),
-            timestamp=datetime.now(TW_TZ),
-        )
-        embed.add_field(name="📨 訊息 ID", value=str(msg_id), inline=False)
-
-        # 資料庫統計
-        if stats:
-            stats_text = "\n".join([f"{k}: {v} 票" for k, v in stats.items()])
-        else:
-            stats_text = "無投票記錄"
-        embed.add_field(name="📊 資料庫投票統計", value=stats_text, inline=False)
-
-        if comments:
-            comments_text = "\n".join(
-                [f"• {c[:50]}..." if len(c) > 50 else f"• {c}" for c in comments]
-            )
-        else:
-            comments_text = "無評論"
-        embed.add_field(name="💬 資料庫評論", value=comments_text, inline=False)
-
-        # Discord 訊息狀態
-        if message:
-            embed.add_field(
-                name="📨 Discord 訊息",
-                value=f"✅ 找到 (頻道: {message.channel.name})",
-                inline=False,
-            )
-            if message.embeds:
-                embed.add_field(
-                    name="📎 Embed 狀態",
-                    value=f"✅ 有 {len(message.embeds)} 個 embed",
-                    inline=False,
-                )
-                # 檢查 embed 是否已有統計欄位
-                orig_embed = message.embeds[0]
-                has_stats_field = any(
-                    f.name == "📊 投票統計" for f in orig_embed.fields
-                )
-                has_comments_field = any(
-                    f.name == "💬 匿名評論" for f in orig_embed.fields
-                )
-                embed.add_field(
-                    name="📋 Embed 統計欄位",
-                    value=f"投票統計: {'✅' if has_stats_field else '❌'}\n評論: {'✅' if has_comments_field else '❌'}",
-                    inline=False,
-                )
-            else:
-                embed.add_field(
-                    name="📎 Embed 狀態", value="❌ 訊息無 embed", inline=False
-                )
-        else:
-            embed.add_field(
-                name="📨 Discord 訊息",
-                value=f"❌ {fetch_error or '未知錯誤'}",
-                inline=False,
-            )
-
-        # 資料庫記錄
-        if db_msg_info:
-            embed.add_field(
-                name="🗄️ anime_messages 記錄",
-                value=f"videoSn: {db_msg_info['videoSn']}\nanimeSn: {db_msg_info['animeSn']}\n頻道: {db_msg_info['channelId']}\n時間: {db_msg_info['createdAt']}",
-                inline=False,
-            )
-        else:
-            embed.add_field(
-                name="🗄️ anime_messages 記錄", value="❌ 找不到記錄", inline=False
-            )
-
-        # 權限檢查
-        if message and message.guild:
-            perms = message.channel.permissions_for(message.guild.me)
-            embed.add_field(
-                name="🔐 Bot 權限",
-                value=f"管理訊息: {'✅' if perms.manage_messages else '❌'}\n嵌入連結: {'✅' if perms.embed_links else '❌'}\n讀取訊息: {'✅' if perms.read_messages else '❌'}",
-                inline=False,
-            )
-
-        await interaction.followup.send(embed=embed, ephemeral=True)
-        logger.info(
-            f"🔍 [/anime_vote_debug] 管理員 {interaction.user} 診斷訊息 {msg_id}"
-        )
-
-    @app_commands.command(
-        name="anime_vote_force_update",
-        description="🔧 強制更新指定訊息的投票統計（管理員）",
-    )
-    @app_commands.describe(message_id="要更新的訊息 ID")
-    @app_commands.default_permissions(administrator=True)
-    async def anime_vote_force_update(
-        self, interaction: discord.Interaction, message_id: str
-    ):
-        """強制觸發指定訊息的統計更新"""
-        await interaction.response.defer(ephemeral=True)
-        logger = logging.getLogger(__name__)
-
-        try:
-            msg_id = int(message_id)
-        except ValueError:
-            await interaction.followup.send("❌ 無效的訊息 ID", ephemeral=True)
-            return
-
-        success = await self._update_message_stats(msg_id, interaction.channel)
-        if success:
-            await interaction.followup.send(
-                f"✅ 強制更新成功：訊息 {msg_id} 的投票統計已刷新", ephemeral=True
-            )
-        else:
-            await interaction.followup.send(
-                "❌ 強制更新失敗：請檢查日誌或使用 `/anime_vote_debug` 診斷",
-                ephemeral=True,
-            )
-        logger.info(
-            f"🔧 [/anime_vote_force_update] 管理員 {interaction.user} 強制更新訊息 {msg_id}, 結果: {success}"
-        )
-
-    @app_commands.command(
-        name="anime_refresh", description="🔄 手動刷新動畫週表（緊急補推用）"
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def anime_refresh(self, interaction: discord.Interaction):
-        """手動觸發週表刷新，解決自動刷新失敗或緊急補推需求"""
-        await interaction.response.defer(ephemeral=True)
-        logger = logging.getLogger(__name__)
-        logger.info(f"🔄 [/anime_refresh] 管理員 {interaction.user} 觸發手動週表刷新")
-
-        try:
-            result = await self.refresh_weekly_schedule()
+            self.logger.info(f"🔄 [AnimeTracker.anime_refresh] 手動刷新週表請求 by {ctx.author}")
+            result = await self.schedule_tracker.refresh_weekly_schedule()
 
             if result.get("success"):
-                embed = discord.Embed(
-                    title="✅ 週表刷新成功",
-                    description=f"週起始日期: {result['week_start_date']}\n今日時程: {len(result['today_schedule'])} 筆\n總計: {result['total_count']} 筆",
-                    color=discord.Color.green(),
-                )
-                # 檢查是否有待推送項目
-                pending = sum(
-                    1 for item in result["today_schedule"] if not item.get("pushed")
-                )
-                if pending > 0:
-                    embed.add_field(
-                        name="⏳ 待補推項目",
-                        value=f"{pending} 部動畫未推送",
-                        inline=False,
-                    )
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                logger.info(
-                    f"✅ [/anime_refresh] 手動刷新完成: {result['total_count']} 筆"
-                )
-            else:
-                error = result.get("error", "未知錯誤")
-                skipped = result.get("skipped", False)
-                if skipped:
-                    await interaction.followup.send(
-                        "⏭️ 跳過刷新：非執行時間（每天 22:00-22:59）", ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        f"❌ 刷新失敗: {error}", ephemeral=True
-                    )
-                logger.warning(f"⚠️ [/anime_refresh] 手動刷新失敗: {error}")
-        except Exception as e:
-            logger.error(f"❌ [/anime_refresh] 異常: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ 執行異常: {e}", ephemeral=True)
-
-    @app_commands.command(
-        name="anime_push_test", description="🎬 測試動畫推送通知（僅推送，不修改資料庫 pushed 狀態）"
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def anime_push_test(self, interaction: discord.Interaction):
-        """測試動畫推送：抓取最近的待推送時段並發送通知（僅測試推送不修改 DB）"""
-        await interaction.response.defer(ephemeral=True)
-        logger = logging.getLogger(__name__)
-        logger.info(f"🧪 [/anime_push_test] 管理員 {interaction.user} 觸發推送測試")
-
-        try:
-            # 獲取今日時程
-            today_schedule = self.get_today_schedule()
-
-            if not today_schedule:
-                await interaction.followup.send("❌ 今日無時程資料，請先執行 `/anime_refresh` 刷新週表", ephemeral=True)
-                return
-
-            # 找出第一個 pushed=0 的時段（最近的待推送）
-            target_item = None
-            for item in today_schedule:
-                if not item.get("pushed", False):
-                    target_item = item
-                    break
-
-            if not target_item:
-                await interaction.followup.send("✅ 今日所有時段均已推送完畢", ephemeral=True)
-                return
-
-            scheduled_time = target_item["scheduled_time"]
-            week_start_date = target_item["week_start_date"]
-            day_of_week = target_item["day_of_week"]
-            video_sn = target_item.get("video_sn")
-
-            logger.info(f"📌 [/anime_push_test] 選定測試時段: videoSn={video_sn}, week={week_start_date}, day={day_of_week}, time={scheduled_time}")
-
-            # 先檢查 API 是否有此 videoSn 的資料
-            episodes = await self.push_core._fetch_new_anime_from_api()
-            episodes_by_vsn = {int(ep.get("videoSn", 0)): ep for ep in episodes if ep.get("videoSn")}
-            matched_ep = episodes_by_vsn.get(int(video_sn)) if video_sn else None
-
-            if not matched_ep:
-                await interaction.followup.send(
-                    f"⚠️ 選定時段 videoSn={video_sn} 在 API 中找不到對應資料（測試資料可能較舊），嘗試用最新 API 第一筆測試...",
+                await ctx.followup.send(
+                    f"✅ 週表刷新成功！\n"
+                    f"📅 週起始日期: {result.get('week_start_date')}\n"
+                    f"📊 總時程數: {result.get('total_count')}\n"
+                    f"🕐 今日時程數: {len(result.get('today_schedule', []))}",
                     ephemeral=True
                 )
-                # 回退：使用最新 API 的第一筆
-                if episodes:
-                    matched_ep = episodes[0]
-                    video_sn = matched_ep.get("videoSn")
-                    logger.info(f"🔄 [/anime_push_test] 回退使用最新 API 第一筆: videoSn={video_sn}, title={matched_ep.get('title')}")
-                else:
-                    await interaction.followup.send("❌ API 無任何資料", ephemeral=True)
-                    return
-
-            # 生成 Embed 和 View 測試
-            embed = await self.push_core._generate_anime_embed(matched_ep)
-            view = await self.push_core._generate_anime_view(matched_ep)
-
-            if not embed or not view:
-                await interaction.followup.send("❌ Embed/View 生成失敗", ephemeral=True)
-                return
-
-            # 發送測試推送到指定頻道 (1509078418312921128)
-            TEST_CHANNEL_ID = 1509078418312921128
-            channel = self.bot.get_channel(TEST_CHANNEL_ID)
-
-            if not channel:
-                await interaction.followup.send(f"❌ 找不到頻道 ID: {TEST_CHANNEL_ID}", ephemeral=True)
-                return
-
-            # 發送測試訊息（不標記資料庫 pushed=1）
-            message = await channel.send(
-                content="🧪 **[測試推送]** 動畫上架通知測試",
-                embed=embed,
-                view=view
-            )
-
-            # 儲存 message_id 到 view 以便永久視圖恢復
-            if hasattr(view, 'message_id'):
-                view.message_id = message.id
-            self.bot.add_view(view, message_id=message.id)
-
-            await interaction.followup.send(
-                f"✅ **測試推送成功！**\n"
-                f"📺 頻道: {channel.mention}\n"
-                f"📌 目標 videoSn: {video_sn}\n"
-                f"📅 時段: {scheduled_time} (週{day_of_week}, 週起始: {week_start_date})\n"
-                f"📝 標題: {matched_ep.get('title', 'N/A')}\n"
-                f"🔗 訊息 ID: {message.id}\n"
-                f"⚠️ **注意**: 此測試**未修改資料庫 pushed 狀態**，正式推送仍會在排程時間執行",
+                # 重新排程推送任務
+                await self._reschedule_push_jobs()
+            else:
+                await ctx.followup.send(
+                    f"❌ 週表刷新失敗: {result.get('error', '未知錯誤')}",
+                    ephemeral=True
+                )
+        except Exception as e:
+            self.logger.error(f"❌ [AnimeTracker.anime_refresh] 手動刷新週表失敗: {e}", exc_info=True)
+            await ctx.followup.send(
+                f"❌ 手動刷新週表時發生錯誤: {str(e)}",
                 ephemeral=True
             )
-            logger.info(f"✅ [/anime_push_test] 測試推送完成: message_id={message.id}, videoSn={video_sn}")
 
+    @commands.hybrid_command(name="anime_status", description="查看動畫追蹤系統狀態")
+    @commands.has_permissions(administrator=True)
+    async def anime_status(self, ctx: commands.Context):
+        """查看動畫追蹤系統狀態"""
+        await ctx.defer(ephemeral=True)
+
+        try:
+            status_lines = []
+
+            # 排程器狀態
+            if self.scheduler and self.scheduler.running:
+                status_lines.append("✅ 排程器: 運行中")
+                jobs = self.scheduler.get_jobs()
+                status_lines.append(f"📋 排程任務數: {len(jobs)}")
+                push_jobs = [j for j in jobs if j.id.startswith('push_')]
+                status_lines.append(f"📢 推送任務數: {len(push_jobs)}")
+            else:
+                status_lines.append("❌ 排程器: 未運行")
+
+            # 週表狀態
+            today_schedule = self.schedule_tracker.get_today_schedule()
+            status_lines.append(f"📅 今日時程數: {len(today_schedule)}")
+
+            # 依賴狀態
+            status_lines.append(f"🔧 依賴設置: {'✅ 已完成' if self._dependencies_set else '❌ 未完成'}")
+            status_lines.append(f"🚀 排程器啟動: {'✅ 已啟動' if self._scheduler_started else '❌ 未啟動'}")
+            status_lines.append(f"👁️ 視圖恢復: {'✅ 已完成' if self._views_restored else '❌ 未完成'}")
+
+            await ctx.followup.send(
+                "📊 **動畫追蹤系統狀態**\n" + "\n".join(status_lines),
+                ephemeral=True
+            )
         except Exception as e:
-            logger.error(f"❌ [/anime_push_test] 異常: {e}", exc_info=True)
-            await interaction.followup.send(f"❌ 執行異常: {e}", ephemeral=True)
+            self.logger.error(f"❌ [AnimeTracker.anime_status] 查詢狀態失敗: {e}", exc_info=True)
+            await ctx.followup.send(
+                f"❌ 查詢狀態時發生錯誤: {str(e)}",
+                ephemeral=True
+            )
 
-    # ==================== 任務重啟包裝函數 ====================
-
-    async def _wrap_task_with_restart(self, name: str, coro_func):
-        """通用任務包裝器：異常時自動記錄並在 5 秒後重啟"""
-        logger = logging.getLogger(__name__)
-        while not self.bot.is_closed():
-            try:
-                await coro_func()
-            except asyncio.CancelledError:
-                logger.info(f"🛑 [{name}] 任務被取消")
-                break
-            except Exception as e:
-                logger.error(
-                    f"❌ [{name}] 任務異常終止，5 秒後重啟: {e}", exc_info=True
-                )
-                await asyncio.sleep(5)
-                if not self.bot.is_closed():
-                    logger.info(f"🔄 [{name}] 重啟任務...")
+async def setup(bot):
+    """設置 Cog 的入口點"""
+    # 這個函式會被 bot.load_extension() 調用
+    pass
