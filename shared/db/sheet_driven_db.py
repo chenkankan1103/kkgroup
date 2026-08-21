@@ -104,6 +104,40 @@ class SheetDrivenDB:
         conn.execute("PRAGMA busy_timeout=30000")  # 30 秒等待超時
         return conn
 
+    def _execute_with_retry(self, conn: sqlite3.Connection, sql: str, params: tuple = (), max_retries: int = 3, delay: float = 0.1) -> sqlite3.Cursor:
+        """執行 SQL 語句並進行重試，以處理鎖定錯誤 (SQLITE_BUSY)。
+
+        Args:
+            conn: 數據庫連接
+            sql: 要執行的 SQL 語句
+            params: SQL 語句的參數
+            max_retries: 最大重試次數
+            delay: 每次重試之間的延遲（秒）
+
+        Returns:
+            執行後的游標對象
+
+        Raises:
+            sqlite3.OperationalError: 如果在重試後仍然失敗
+        """
+        import time
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                return cursor
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower() or "busy" in str(e).lower():
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        time.sleep(delay)
+                        continue
+                # 如果不是鎖定錯誤或已達到最大重試次數，則重新拋出異常
+                raise
+        # 如果遍歷完所有重試次數仍未成功，則拋出最後一次異常
+        raise last_exception
+
     def _refresh_columns_cache(self):
         """刷新列快取"""
         conn = self._get_connection()
@@ -170,7 +204,7 @@ class SheetDrivenDB:
             # 添加新列
             sql = f'ALTER TABLE {self.table_name} ADD COLUMN "{header}" {col_type}'
             try:
-                cursor.execute(sql)
+                cursor = self._execute_with_retry(conn, sql)
                 print(f"➕ 添加欄位: {header} ({col_type})")
                 added_count += 1
             except sqlite3.OperationalError as e:
@@ -183,9 +217,7 @@ class SheetDrivenDB:
 
             if "_updated_at" in existing_cols:
                 try:
-                    cursor.execute(
-                        f"UPDATE {self.table_name} SET _updated_at = CURRENT_TIMESTAMP"
-                    )
+                    cursor = self._execute_with_retry(conn, f"UPDATE {self.table_name} SET _updated_at = CURRENT_TIMESTAMP")
                 except sqlite3.OperationalError as e:
                     print(f"⚠️ 更新 _updated_at 失敗: {e}")
 
@@ -262,18 +294,17 @@ class SheetDrivenDB:
         user_id = int(user_id)
 
         conn = self._get_connection()
-        cursor = conn.cursor()
+        try:
+            cursor = self._execute_with_retry(conn, f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
 
-        cursor.execute(f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
+            if not row:
+                return None
 
-        conn.close()
-
-        if not row:
-            return None
-
-        # 轉換為字典，並解析 JSON 字段
-        return self._row_to_dict(row)
+            # 轉換為字典，並解析 JSON 字段
+            return self._row_to_dict(row)
+        finally:
+            conn.close()
 
     def set_user(self, user_id: Union[int, str], data: Dict[str, Any]) -> bool:
         """
@@ -293,28 +324,27 @@ class SheetDrivenDB:
 
             # 第一步：獲取現有用戶數據
             conn = self._get_connection()
-            cursor = conn.cursor()
+            try:
+                cursor = self._execute_with_retry(conn,
+                    f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,)
+                )
+                existing_row = cursor.fetchone()
 
-            cursor.execute(
-                f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,)
-            )
-            existing_row = cursor.fetchone()
-
-            if existing_row:
-                # 更新現有用戶
-                existing_data = self._row_to_dict(existing_row)
-                existing_data.update(data)
-                existing_data["_updated_at"] = datetime.now().isoformat()
-            else:
-                # 創建新用戶
-                existing_data = {
-                    "user_id": user_id,
-                    "_created_at": datetime.now().isoformat(),
-                    "_updated_at": datetime.now().isoformat(),
-                }
-                existing_data.update(data)
-
-            conn.close()  # 關閉原連接
+                if existing_row:
+                    # 更新現有用戶
+                    existing_data = self._row_to_dict(existing_row)
+                    existing_data.update(data)
+                    existing_data["_updated_at"] = datetime.now().isoformat()
+                else:
+                    # 創建新用戶
+                    existing_data = {
+                        "user_id": user_id,
+                        "_created_at": datetime.now().isoformat(),
+                        "_updated_at": datetime.now().isoformat(),
+                    }
+                    existing_data.update(data)
+            finally:
+                conn.close()  # 關閉原連接
 
             # 第二步：確保所有列都存在
             try:
@@ -328,51 +358,50 @@ class SheetDrivenDB:
 
             # 🔑 第三步：執行 INSERT OR REPLACE（在新連接中）
             conn = self._get_connection()
-            cursor = conn.cursor()
+            try:
+                # 構建 SQL INSERT OR REPLACE
+                columns = list(existing_data.keys())
+                placeholders = ", ".join(["?" for _ in columns])
+                columns_str = ", ".join([f'"{col}"' for col in columns])
 
-            # 構建 SQL INSERT OR REPLACE
-            columns = list(existing_data.keys())
-            placeholders = ", ".join(["?" for _ in columns])
-            columns_str = ", ".join([f'"{col}"' for col in columns])
+                sql = f"INSERT OR REPLACE INTO {self.table_name} ({columns_str}) VALUES ({placeholders})"
+                values = [existing_data.get(col) for col in columns]
 
-            sql = f"INSERT OR REPLACE INTO {self.table_name} ({columns_str}) VALUES ({placeholders})"
-            values = [existing_data.get(col) for col in columns]
+                print(f"📝 [SET_USER] user_id={user_id}, 欄位數={len(columns)}")
+                print(f"   SQL: {sql[:100]}...")
 
-            print(f"📝 [SET_USER] user_id={user_id}, 欄位數={len(columns)}")
-            print(f"   SQL: {sql[:100]}...")
+                # 轉換複雜類型為 JSON
+                converted_values = []
+                for i, col in enumerate(columns):
+                    val = values[i]
+                    if isinstance(val, (dict, list)):
+                        converted_values.append(json.dumps(val, ensure_ascii=False))
+                    else:
+                        converted_values.append(val)
 
-            # 轉換複雜類型為 JSON
-            converted_values = []
-            for i, col in enumerate(columns):
-                val = values[i]
-                if isinstance(val, (dict, list)):
-                    converted_values.append(json.dumps(val, ensure_ascii=False))
-                else:
-                    converted_values.append(val)
+                cursor = self._execute_with_retry(conn, sql, tuple(converted_values))
+                conn.commit()
+                print("   ✅ SQL 執行成功，提交完成")
 
-            cursor.execute(sql, converted_values)
-            conn.commit()
-            print("   ✅ SQL 執行成功，提交完成")
-
-            # ✅ 驗證寫入
-            cursor.execute(
-                f"SELECT COUNT(*) FROM {self.table_name} WHERE user_id = ?", (user_id,)
-            )
-            count = cursor.fetchone()[0]
-            print(f"   📊 驗證：數據庫中的計數 = {count}")
-
-            if count > 0:
-                print(f"✅ user_id {user_id} 成功寫入數據庫")
-                conn.close()
-                return True
-            else:
-                print(f"❌ user_id {user_id} 寫入驗證失敗（計數為 0）")
-                print(f"   📝 嘗試的欄位: {list(existing_data.keys())}")
-                print(
-                    f"   📝 嘗試的值類型: {[(col, type(existing_data.get(col)).__name__) for col in list(existing_data.keys())[:5]]}"
+                # ✅ 驗證寫入
+                cursor = self._execute_with_retry(conn,
+                    f"SELECT COUNT(*) FROM {self.table_name} WHERE user_id = ?", (user_id,)
                 )
+                count = cursor.fetchone()[0]
+                print(f"   📊 驗證：數據庫中的計數 = {count}")
+
+                if count > 0:
+                    print(f"✅ user_id {user_id} 成功寫入數據庫")
+                    return True
+                else:
+                    print(f"❌ user_id {user_id} 寫入驗證失敗（計數為 0）")
+                    print(f"   📝 嘗試的欄位: {list(existing_data.keys())}")
+                    print(
+                        f"   📝 嘗試的值類型: {[(col, type(existing_data.get(col)).__name__) for col in list(existing_data.keys())[:5]]}"
+                    )
+                    return False
+            finally:
                 conn.close()
-                return False
 
         except sqlite3.IntegrityError as ie:
             print(f"❌ 數據完整性錯誤 (user_id {user_id}): {ie}")
