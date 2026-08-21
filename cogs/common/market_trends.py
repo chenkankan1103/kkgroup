@@ -20,7 +20,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from market_trends_serpapi import (
+from shared.market_trends.serpapi import (
     get_trending_topics,
     format_trends_embed,
     format_trends_text,

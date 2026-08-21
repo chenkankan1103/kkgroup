@@ -1309,7 +1309,7 @@ class FortressDefenseCog(commands.Cog):
         """抓取趨勢並啟動戰鬥，供 slash 與文字指令共用。"""
         log.info("[Fortress] 手動開戰流程開始")
         try:
-            from market_trends_serpapi import (
+            from shared.market_trends.serpapi import (
                 get_cached_trending_topics,
                 get_fallback_trending_topics,
                 get_trending_topics,
@@ -1542,7 +1542,7 @@ class FortressDefenseCog(commands.Cog):
 
             log.info(f"[Fortress] ⏰ 趨勢排程啟動 {now.strftime('%H:%M %Z')}")
 
-            from market_trends_serpapi import (
+            from shared.market_trends.serpapi import (
                 get_cached_trending_topics,
                 get_fallback_trending_topics,
                 get_trending_topics,
