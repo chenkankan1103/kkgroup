@@ -9,13 +9,18 @@
 
 import json
 import logging
+import re
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional, List, Dict
 from zoneinfo import ZoneInfo
 
 import aiohttp
 import discord
+
+# 導入新的網頁爬蟲模組
+from .bahamut_web_scraper import fetch_new_anime_from_web
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +28,6 @@ logger = logging.getLogger(__name__)
 TW_TZ = ZoneInfo("Asia/Taipei")
 ANIME_CHANNEL_ID = 1252204317453324333
 ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
-API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/anime_list.php"
-API_TIMEOUT = 15
 
 # 完整瀏覽器指紋 Header（繞過 Cloudflare WAF）
 API_HEADERS = {
@@ -1177,33 +1180,188 @@ class AnimePushCore:
             logger.error(f"save_message_info 錯誤: {e}")
             return False
 
-    # ========== API 獲取 ==========
+    # ========== 網頁爬取 ==========
 
-    async def _fetch_new_anime_from_api(self) -> list[dict]:
-        """從 API 獲取新番資料 - 單次請求，完整 Header，失敗直接回空
+    async def _fetch_new_anime_from_web(self) -> List[Dict]:
+        """獲取新番動畫列表 - 使用網頁爬取"""
+        return await fetch_new_anime_from_web()
 
-        新 API: https://api.gamer.com.tw/anime/v1/anime_list.php?type=newAnime
-        回傳格式: {"data": {"animeList": [...], "totalPage": N}}
-        每個項目包含: videoSn, animeSn, title, cover, dateInfo, totalEpisode, popular 等
-        """
+    def _extract_video_sn_from_html(self, html_text: str, anime_sn: int) -> Optional[int]:
+        """從HTML片段中提取 videoSn"""
         try:
-            timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
-            params = {"type": "newAnime"}
-            async with aiohttp.ClientSession(
-                timeout=timeout, headers=API_HEADERS
-            ) as session, session.get(API_ENDPOINT, params=params) as resp:
-                if resp.status != 200:
-                    logger.warning(f"API 回傳狀態碼 {resp.status}")
-                    return []
-                data = await resp.json()
-                # 新 API 格式: data.animeList
-                anime_list = data.get("data", {}).get("animeList", [])
-                if not anime_list:
-                    return []
-                return anime_list
+            # 尋找 animeVideo.php?sn=XXXX 鏈接
+            video_pattern = r'animeVideo\.php\?sn=(\d+)'
+            video_matches = re.findall(video_pattern, html_text, re.IGNORECASE)
+
+            if video_matches:
+                # 取第一個找到的 videoSn
+                return int(video_matches[0])
+
+            # 另外可能是 data-video-sn 屬性
+            data_pattern = r'data-video-sn\s*=\s*["\'](\d+)["\']'
+            data_matches = re.findall(data_pattern, html_text, re.IGNORECASE)
+            if data_matches:
+                return int(data_matches[0])
+
+        except (ValueError, IndexError):
+            pass
+        return None
+
+    def _extract_cover_from_html(self, html_text: str) -> Optional[str]:
+        """從HTML片段中提取封面圖 URL"""
+        try:
+            # 尋找 img 標籤，優先找看起來像封面的圖片
+            img_patterns = [
+                r'<img\s[^>]*src\s*=\s*["\']([^"\']*\/cover[^"\']*)["\'][^>]*>',  # 包含 cover 的 URL
+                r'<img\s[^>]*src\s*=\s*["\']([^"\']*\.(jpg|jpeg|png|webp))["\'][^>]*>',  # 圖片檔案
+                r'<img\s[^>]*data-src\s*=\s*["\']([^"\']*)["\'][^>]*>',  # lazy loading
+                r'<img\s[^>]*src\s*=\s*["\']([^"\']*)["\'][^>]*>',  # 任意圖片
+            ]
+
+            for pattern in img_patterns:
+                matches = re.findall(pattern, html_text, re.IGNORECASE)
+                if matches:
+                    # 取第一個匹配的 URL
+                    src = matches[0] if isinstance(matches[0], str) else matches[0][0]
+                    # 確保是完整 URL
+                    if src.startswith('//'):
+                        src = 'https:' + src
+                    elif src.startswith('/'):
+                        src = 'https://ani.gamer.com.tw' + src
+                    elif not src.startswith('http'):
+                        src = 'https://ani.gamer.com.tw/' + src
+                    return src
+
+        except Exception:
+            pass
+        return None
+
+    def _extract_title_from_html(self, html_text: str, anime_sn: int) -> Optional[str]:
+        """從HTML片段中提取標題"""
+        try:
+            # 嘗試找看起來像標題的文字
+            # 常見標題位置：在 h1-h6 標籤中，或有特定 class 的元素中
+            title_patterns = [
+                r'<h[1-6][^>]*>([^<]+)</h[1-6]>',  # 標題標籤
+                r'<[^>]*class\s*=\s*["\'][^"\']*title[^"\']*["\'][^>]*>([^<]*)</[^>]*>',  # title class
+                r'<[^>]*class\s*=\s*["\'][^"\']*name[^"\']*["\'][^>]*>([^<]*)</[^>]*>',  # name class
+                r'<[^>]*class\s*=\s*["\'][^"\']*anime-name[^"\']*["\'][^>]*>([^<]*)</[^>]*>',  # anime-name class
+            ]
+
+            for pattern in title_patterns:
+                matches = re.findall(pattern, html_text, re.IGNORECASE)
+                if matches:
+                    # 取第一個非空的匹配
+                    for match in matches:
+                        title = match.strip()
+                        if title and len(title) > 1:
+                            return title
+
+            # 如果上面都沒找到，嘗試從 alt 屬性中取得
+            alt_pattern = r'<img\s[^>]*alt\s*=\s*["\']([^"\']*)["\'][^>]*>'
+            alt_matches = re.findall(alt_pattern, html_text, re.IGNORECASE)
+            if alt_matches:
+                for alt in alt_matches:
+                    if alt.strip() and len(alt.strip()) > 1:
+                        return alt.strip()
+
+        except Exception:
+            pass
+        return None
+
+    def _extract_volume_from_html(self, html_text: str) -> Optional[str]:
+        """從HTML片段中提取卷數/集數"""
+        try:
+            # 常見的集數顯示模式
+            volume_patterns = [
+                r'第\s*(\d+)\s*話',  # 第1話
+                r'Vol\.?\s*(\d+)',  # Vol.1 或 Vol1
+                r'EP\.?\s*(\d+)',   # EP.1 或 EP1
+                r'(\d+)\s*話',      # 1話
+                r'(\d+)\s*集',      # 1集
+            ]
+
+            for pattern in volume_patterns:
+                match = re.search(pattern, html_text, re.IGNORECASE)
+                if match:
+                    return match.group(0)  # 返回完整匹配，如 "第1話"
+
+        except Exception:
+            pass
+        return None
+
+    def _parse_by_containers(self, html_text: str) -> list[dict]:
+        """按容器元素解析動畫列表 - 備用方法"""
+        anime_list = []
+
+        try:
+            # 嘗試找可能的動畫條目容器
+            container_patterns = [
+                r'<div\s[^>]*class\s*=\s*["\'][^"\']*anime[^"\']*["\'][^>]*>.*?</div>',
+                r'<li\s[^>]*class\s*=\s*["\'][^"\']*anime[^"\']*["\'][^>]*>.*?</li>',
+                r'<div\s[^>]*class\s*=\s*["\'][^"\']*item[^"\']*["\'][^>]*>.*?</div>',
+                r'<div\s[^>]*class\s*=\s*["\'][^"\']*entry[^"\']*["\'][^>]*>.*?</div>',
+                r'<div\s[^>]*class\s*=\s*["\'][^"\']*card[^"\']*["\'][^>]*>.*?</div>',
+            ]
+
+            for container_pattern in container_patterns:
+                containers = re.findall(container_pattern, html_text, re.IGNORECASE | re.DOTALL)
+                for container in containers:
+                    anime = self._extract_anime_from_container(container)
+                    if anime:
+                        anime_list.append(anime)
+
+                # 如果這個模式找到了動畫，就停止嘗試其他模式
+                if anime_list:
+                    break
+
         except Exception as e:
-            logger.error(f"API 呼叫失敗: {e}")
-            return []
+            logger.error(f"按容器解析時發生錯誤: {e}")
+
+        return anime_list
+
+    def _extract_anime_from_container(self, container_html: str) -> Optional[dict]:
+        """從容器HTML中提取動畫資訊"""
+        try:
+            # 尋找 animeRef.php 鏈接取得 animeSn
+            ref_match = re.search(r'animeRef\.php\?sn=(\d+)', container_html, re.IGNORECASE)
+            if not ref_match:
+                return None
+            anime_sn = int(ref_match.group(1))
+
+            # 尋找 animeVideo.php 鏈接取得 videoSn
+            video_match = re.search(r'animeVideo\.php\?sn=(\d+)', container_html, re.IGNORECASE)
+            if not video_match:
+                return None
+            video_sn = int(video_match.group(1))
+
+            # 尋找封面圖
+            cover_url = self._extract_cover_from_html(container_html)
+
+            # 尋找標題
+            title = self._extract_title_from_html(container_html, anime_sn)
+            if not title:
+                # 嘗試從連結文字中取得
+                link_text_match = re.search(r'<a[^>]*animeRef\.php\?sn=' + str(anime_sn) + '[^>]*>([^<]*)</a>', container_html, re.IGNORECASE)
+                if link_text_match:
+                    title = link_text_match.group(1).strip()
+                if not title:
+                    title = f"未知標題_{anime_sn}"
+
+            # 尋找卷數/集數
+            volume = self._extract_volume_from_html(container_html)
+
+            return {
+                "videoSn": video_sn,
+                "animeSn": anime_sn,
+                "title": title,
+                "cover": cover_url or "",
+                "volume": volume or ""
+            }
+
+        except Exception as e:
+            logger.debug(f"從容器提取動畫資訊失敗: {e}")
+            return None
 
     # ========== 核心推送流程 ==========
 
@@ -1248,9 +1406,22 @@ class AnimePushCore:
             self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
             return False
 
-        logger.info(f"📋 本時段預期 videoSn: {expected_video_sns}")
+        # 2. 篩選出尚未推送的 videoSn (去除已 pushed=1 的)
+        pushed_video_sns = {
+            item["video_sn"]
+            for item in self.get_today_schedule()
+            if item["scheduled_time"] == scheduled_time and item.get("pushed")
+        }
+        pending_video_sns = expected_video_sns - pushed_video_sns
 
-        # 2. 檢查 bot 和頻道
+        if not pending_video_sns:
+            logger.info(f"⏭️ 所有預期動畫已推送 ({expected_video_sns})，標記時刻完成")
+            self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
+            return False
+
+        logger.info(f"📋 待推送 videoSn: {pending_video_sns}")
+
+        # 3. 檢查 bot 和頻道
         if self.bot is None:
             logger.error("Bot 未初始化")
             return False
@@ -1262,13 +1433,14 @@ class AnimePushCore:
             # 不標記 push，讓下次重試
             return False
 
-        # 3. 呼叫 API 獲取最新動畫資料
-        episodes = await self._fetch_new_anime_from_api()
+        # 4. 呼叫網頁爬取獲取最新動畫資料
+        episodes = await fetch_new_anime_from_web()
         if not episodes:
             logger.warning("API 無回應")
             return False
 
-        # 4. 建立 videoSn -> episode 的映射
+        # 5. 直接用 videoSn 比對 (API 回傳完整 animeList，不需要按日期過濾)
+        # 建立 videoSn -> episode 的映射
         episodes_by_vsn = {}
         for ep in episodes:
             ep_vsn = ep.get("videoSn")
@@ -1282,17 +1454,33 @@ class AnimePushCore:
             f"📋 API 回傳 {len(episodes)} 筆，可比對 {len(episodes_by_vsn)} 筆 videoSn"
         )
 
-        # 5. 配對並推送：處理所有預期 videoSn（不進行去重檢查）
+        # 6. 配對並推送：每個 pending_videoSn 直接從映射找對應 episode
         sent_count = 0
         matched_videosns: set[int] = set()
 
-        for video_sn in expected_video_sns:
+        for video_sn in pending_video_sns:
             matched_ep = episodes_by_vsn.get(video_sn)
             if matched_ep is None:
                 logger.warning(f"week 表有 videoSn={video_sn} 但 API 無對應資料，略過")
                 continue
 
-            # 6. 生成 embed 和 view
+            if matched_ep is None:
+                logger.warning(
+                    f"week 表有 videoSn={video_sn} 但 API 當日無對應資料，略過"
+                )
+                continue
+
+            # 7. 雙重去重檢查：anime_notified + week pushed
+            if self.is_notified(video_sn):
+                logger.info(
+                    f"⏭️ videoSn={video_sn} 已在 notified 表，標記 pushed 並略過"
+                )
+                self.mark_anime_pushed(
+                    week_start_date, day_of_week, scheduled_time, video_sn
+                )
+                continue
+
+            # 8. 生成 embed 和 view
             embed = await self._generate_anime_embed(matched_ep)
             if not embed:
                 continue
@@ -1302,24 +1490,35 @@ class AnimePushCore:
                 logger.warning(f"無 view for videoSn={video_sn}")
                 continue
 
-            # 7. 發送
+            # 9. 發送
             try:
                 message = await channel.send(embed=embed, view=view, silent=True)
 
                 if view and hasattr(view, "message_id"):
                     view.message_id = message.id
 
-                # 記錄（僅作為日誌，不用於去重）
+                # 記錄
                 anime_sn = int(matched_ep.get("animeSn", 0))
                 title = matched_ep.get("title", "未知標題")
                 self.save_message_info(
                     message.id, video_sn, anime_sn, title, channel_id
+                )
+                self.add_notified(
+                    video_sn,
+                    anime_sn,
+                    title,
+                    matched_ep.get("volume", ""),
+                    matched_ep.get("cover", ""),
                 )
 
                 # 註冊永久視圖
                 if self.bot is not None:
                     self.bot.add_view(view, message_id=message.id)
 
+                # 標記 pushed=1
+                self.mark_anime_pushed(
+                    week_start_date, day_of_week, scheduled_time, video_sn
+                )
                 matched_videosns.add(video_sn)
                 sent_count += 1
                 logger.info(f"✅ 已推送: {title} (videoSn={video_sn})")
@@ -1328,9 +1527,10 @@ class AnimePushCore:
                 logger.error(f"發送失敗 videoSn={video_sn}: {e}")
                 continue
 
-        # 8. 標記時刻已處理（嘗試推送所有預期動畫）
-        self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
-        logger.info(f"✅ 時刻 {scheduled_time} 處理完成")
+        # 10. 若該時段所有預期都已推送，標記時刻完成
+        if expected_video_sns.issubset(pushed_video_sns | matched_videosns):
+            self.mark_time_pushed(week_start_date, day_of_week, scheduled_time)
+            logger.info(f"✅ 時刻 {scheduled_time} 全部完成")
 
         return sent_count > 0
 
