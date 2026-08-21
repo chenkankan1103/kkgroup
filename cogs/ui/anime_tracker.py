@@ -13,7 +13,7 @@ from discord.ext import commands, tasks
 from typing import Optional, List, Dict, Any
 from .push_core import AnimePushCore, TW_TZ, API_ENDPOINT, API_TIMEOUT, API_HEADERS
 from .schedule_tracker import AnimeScheduleTracker
-from .ranking_stats import AnimeRankingStats
+from .ranking_stats import RankingStats
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class AnimeTracker(commands.Cog):
         # 初始化各個模組
         self.push_core = AnimePushCore(self.db_path)
         self.schedule_tracker = AnimeScheduleTracker(self.db_path)
-        self.ranking_stats = AnimeRankingStats(self.db_path)
+        self.ranking_stats = RankingStats(self.db_path)
 
         # 初始化網路爬蟲
         if BahamutWebScraper:
@@ -172,7 +172,7 @@ class AnimeTracker(commands.Cog):
         """根據當前週表重新排程所有推送任務"""
         try:
             if not self.scheduler:
-                self.logger.warning("⚠️ [_reschedule_push_jobs] 排程器未初始化")
+                self.logger.warning("⚠️ [_reschedule_push_jobs] 掑程器未初始化")
                 return
 
             # 移除所有現有的推送任務
@@ -367,13 +367,13 @@ class AnimeTracker(commands.Cog):
 
             # 排程器狀態
             if self.scheduler and self.scheduler.running:
-                status_lines.append("✅ 排程器: 運行中")
+                status_lines.append("✅ 掑程器: 運行中")
                 jobs = self.scheduler.get_jobs()
                 status_lines.append(f"📋 排程任務數: {len(jobs)}")
                 push_jobs = [j for j in jobs if j.id.startswith('push_')]
                 status_lines.append(f"📢 推送任務數: {len(push_jobs)}")
             else:
-                status_lines.append("❌ 排程器: 未運行")
+                status_lines.append("❌ 掑程器: 未運行")
 
             # 週表狀態
             today_schedule = self.schedule_tracker.get_today_schedule()
@@ -381,7 +381,7 @@ class AnimeTracker(commands.Cog):
 
             # 依賴狀態
             status_lines.append(f"🔧 依賴設置: {'✅ 已完成' if self._dependencies_set else '❌ 未完成'}")
-            status_lines.append(f"🚀 排程器啟動: {'✅ 已啟動' if self._scheduler_started else '❌ 未啟動'}")
+            status_lines.append(f"🚀 掑程器啟動: {'✅ 已啟動' if self._scheduler_started else '❌ 未啟動'}")
             status_lines.append(f"👁️ 視圖恢復: {'✅ 已完成' if self._views_restored else '❌ 未完成'}")
 
             await ctx.followup.send(
