@@ -646,7 +646,7 @@ class SheetDrivenDB:
         cursor = conn.cursor()
 
         # 獲取所有列名 (除了系統列)
-        cursor.execute(f"PRAGMA table_info({self.table_name})")
+        cursor = self._execute_with_retry(conn, f"PRAGMA table_info({self.table_name})")
         all_columns = [row[1] for row in cursor.fetchall()]
 
         headers = [col for col in all_columns if not col.startswith("_")]
@@ -654,7 +654,7 @@ class SheetDrivenDB:
         # 獲取所有數據
         quoted_headers = [f'"{col}"' for col in headers]
         columns_str = ", ".join(quoted_headers)
-        cursor.execute(f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id")
+        cursor = self._execute_with_retry(conn, f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id")
         rows = []
         for row in cursor.fetchall():
             row_list = []
@@ -688,7 +688,7 @@ class SheetDrivenDB:
         cursor = conn.cursor()
 
         # 先取得所有用戶數據（原始順序）
-        cursor.execute(f"PRAGMA table_info({self.table_name})")
+        cursor = self._execute_with_retry(conn, f"PRAGMA table_info({self.table_name})")
         all_db_columns = [row[1] for row in cursor.fetchall()]
 
         # 過濾出實際存在於 DB 中的列（排除系統列）
@@ -708,7 +708,7 @@ class SheetDrivenDB:
         # 獲取所有數據，按所需的欄位順序排列
         quoted_headers = [f'"{col}"' for col in db_headers]
         columns_str = ", ".join(quoted_headers)
-        cursor.execute(f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id")
+        cursor = self._execute_with_retry(conn, f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id")
 
         rows = []
         for db_row in cursor.fetchall():
