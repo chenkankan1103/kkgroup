@@ -9,7 +9,7 @@ Bahamut 動畫追蹤 Cog - 週表排程系統
 
 此設計解決機器人重啟時可能錯過推送時刻的問題：
 - 週表機制保證每個時刻只會被檢查一次
-- 重啟時由 dispatcher 自動補推已過時段
+- 重啟時由 APScheduler 排程系統確保時準推送
 """
 
 import logging
@@ -36,11 +36,12 @@ class AnimeScheduleTracker:
         self._last_fallback_check = None
         self._last_schedule_fallback = None
 
-    def set_dependencies(self, bot, db, push_core):
+    def set_dependencies(self, bot, db, push_core, anime_tracker=None):
         """設置依賴"""
         self.bot = bot
         self.db = db
         self.push_core = push_core
+        self.anime_tracker = anime_tracker
 
     async def _get_anime_schedule(self) -> dict:
         """從 API 獲取日程表 (newAnimeSchedule)"""
@@ -189,6 +190,12 @@ class AnimeScheduleTracker:
 
             # 取得今日時程（含 pushed 狀態）供上層檢查漏推
             today_schedule = self.get_today_schedule()
+
+            # 重新排程推送任務（週表更新後需要重新設定排程）
+            if self.anime_tracker and hasattr(self.anime_tracker, '_reschedule_push_jobs'):
+                import asyncio
+                # 創建任務但不等待完成，避免阻塞
+                asyncio.create_task(self.anime_tracker._reschedule_push_jobs())
 
             return {
                 "success": True,
