@@ -416,6 +416,119 @@ class BahamutWebScraper:
         return anime_list
 
 
+    async def fetch_weekly_schedule_from_homepage(self) -> List[Dict]:
+        """從首頁爬取完整週表時程
+
+        Returns:
+            List[Dict]: 每個時程條目的字典，包含:
+                - anime_sn (int): 動畫序號
+                - video_sn (int): 影片序號
+                - title (str): 動畫標題
+                - day_of_week (int): 星期 (1=一, 2=二, ..., 7=日)
+                - scheduled_time (str): 排程時間 (HH:MM)
+                - episode (str): 集數資訊
+        """
+        try:
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout, headers=self.headers) as session:
+                async with session.get("https://ani.gamer.com.tw/") as resp:
+                    if resp.status != 200:
+                        logger.warning(f"首頁返回狀態碼: {resp.status}")
+                        return []
+
+                    html_text = await resp.text()
+                    return self._parse_homepage_schedule(html_text)
+
+        except Exception as e:
+            logger.error(f"爬取首頁週表失敗: {e}")
+            return []
+
+    def _parse_homepage_schedule(self, html_text: str) -> List[Dict]:
+        """解析首頁 HTML 獲取週表時程
+
+        使用 newanime-date-area 區塊，包含完整資料：
+        - data-animesn: 動畫序號
+        - data-date-code: 日期代碼 (1=週一, 2=週二, ..., 7=週日)
+        - animeVideo.php?sn=VIDEO_SN
+        - p.anime-name: 動畫標題
+        - span.anime-hours: 時間
+        - p: 集數資訊 (格式: 蝚?N?)
+
+        Args:
+            html_text: 首頁 HTML 內容
+
+        Returns:
+            List[Dict]: 時程條目列表
+        """
+        schedule = []
+
+        try:
+            # Find all newanime-date-area blocks (handles both single and double quotes)
+            # Pattern: <div class='newanime-date-area ...' data-animesn='ANIME_SN' data-date-code='DATE_CODE'>
+            day_pattern = r"<div class=[\'\"']newanime-date-area[^\'\"']*[\'\"'] data-animesn=[\'\"'](\d+)[\'\"'] data-date-code=[\'\"'](\d+)[\'\"']([\s\S]*?)</div>\s*</div>\s*</div>"
+            matches = re.findall(day_pattern, html_text, re.DOTALL)
+            logger.debug(f"Found {len(matches)} newanime-date-area blocks on homepage")
+
+            # dateCode mapping: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 7=Sun
+            for anime_sn_str, date_code_str, content in matches:
+                try:
+                    anime_sn = int(anime_sn_str)
+                    day_of_week = int(date_code_str)
+
+                    # Extract video_sn from animeVideo.php?sn=VIDEO_SN
+                    video_match = re.search(r"animeVideo\.php\?sn=(\d+)", content)
+                    if not video_match:
+                        logger.debug(f"anime_sn={anime_sn}: No video_sn found")
+                        continue
+                    video_sn = int(video_match.group(1))
+
+                    # Extract name from <p class='anime-name'>NAME</p>
+                    name_match = re.search(r"<p class=[\'\"']anime-name[\'\"']>([^<]+)</p>", content)
+                    if not name_match:
+                        logger.debug(f"anime_sn={anime_sn}: No name found")
+                        continue
+                    title = name_match.group(1).strip()
+
+                    # Extract time from <span class='anime-hours'>HH:MM</span>
+                    time_match = re.search(r"<span class=[\'\"']anime-hours[\'\"']>(\d+:\d+)</span>", content)
+                    if not time_match:
+                        logger.debug(f"anime_sn={anime_sn}: No time found")
+                        continue
+                    scheduled_time = time_match.group(1)
+
+                    # Extract episode from <p>蝚?N?</p> or other patterns
+                    episode = ""
+                    ep_match = re.search(r"<p>蝚\?(\d+)\?</p>", content)
+                    if ep_match:
+                        episode = f"第{ep_match.group(1)}集"
+                    else:
+                        # Fallback: look for other episode patterns
+                        ep_match2 = re.search(r"第(\d+)集", content)
+                        if ep_match2:
+                            episode = f"第{ep_match2.group(1)}集"
+
+                    schedule.append({
+                        'anime_sn': anime_sn,
+                        'video_sn': video_sn,
+                        'title': title,
+                        'day_of_week': day_of_week,
+                        'scheduled_time': scheduled_time,
+                        'episode': episode
+                    })
+                    logger.debug(f"Parsed: {title} (anime_sn={anime_sn}, video_sn={video_sn}, day={day_of_week}, time={scheduled_time}, ep={episode})")
+
+                except (ValueError, IndexError) as e:
+                    logger.debug(f"Error parsing newanime-date-area entry: {e}")
+                    continue
+
+            logger.info(f"📅 [BahamutWebScraper] 從首頁解析到 {len(schedule)} 筆週表時程")
+            return schedule
+
+        except Exception as e:
+            logger.error(f"解析首頁週表失敗: {e}")
+            return []
+
+
 # 便利函數：直接從網頁版爬取新番動畫列表
 async def fetch_new_anime_from_web() -> List[Dict]:
     """便利函數：從網頁版爬取新番動畫列表
