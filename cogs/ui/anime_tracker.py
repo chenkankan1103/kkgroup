@@ -199,9 +199,9 @@ class AnimeTracker(commands.Cog):
                 day_of_week = schedule_item.get('day_of_week')
                 scheduled_time = schedule_item.get('scheduled_time')
                 video_sn = schedule_item.get('video_sn')
-                anime_sn = schedule_item.get('anime_sn')
+                anime_sn = schedule_item.get('anime_sn') or 0  # anime_sn 可能為 None，預設為 0
 
-                if not all([day_of_week, scheduled_time, video_sn, anime_sn]):
+                if not all([day_of_week, scheduled_time, video_sn]):
                     continue
 
                 try:
