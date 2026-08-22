@@ -993,6 +993,14 @@ class AnimePushCore:
         """設置 embed 生成工廠函數"""
         self._embed_factory = factory
 
+    def set_dependencies(self, bot, db, anime_tracker=None):
+        """設置依賴 (for compatibility with anime_tracker)"""
+        self.set_bot(bot)
+        # The db is already set in constructor, but we can update it if needed
+        if db is not None:
+            self.db = db
+        # anime_tracker reference not needed for core functionality
+
     async def _generate_anime_view(self, episode: dict):
         """生成動畫推送視圖 - 使用工廠函數或預設"""
         try:
