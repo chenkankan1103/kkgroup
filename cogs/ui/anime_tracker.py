@@ -50,9 +50,12 @@ class AnimeTracker(commands.Cog):
         self.db_path = db_path
 
         # 初始化各個模組
-        self.push_core = AnimePushCore(self.db_path)
+        from .push_core import AnimeDatabase, AnimeDBImpl
+        db_impl = AnimeDBImpl(self.db_path)
+        db = AnimeDatabase(db_impl)
+        self.push_core = AnimePushCore(db)
         self.schedule_tracker = AnimeScheduleTracker(self.db_path)
-        self.ranking_stats = RankingStats(self.db_path)
+        self.ranking_stats = RankingStats(db)
 
         # 初始化網路爬蟲
         if BahamutWebScraper:
@@ -61,10 +64,10 @@ class AnimeTracker(commands.Cog):
             # 備用方案：直接使用 push_core 中的方法
             self.web_scraper = None
 
-        # 設置各模組的相互依賴
-        self.push_core.set_dependencies(self.bot, self.schedule_tracker.db, self)
-        self.schedule_tracker.set_dependencies(self.bot, self.schedule_tracker.db, self.push_core, self)
-        self.ranking_stats.set_dependencies(self.bot, self.ranking_stats.db)
+        # 先設置各模組的 db 依賴
+        self.push_core.set_dependencies(self.bot, db, self)
+        self.schedule_tracker.set_dependencies(self.bot, db, self.push_core, self)
+        self.ranking_stats.set_dependencies(self.bot, db)
 
         self._dependencies_set = True
         self.logger.info("✅ [AnimeTracker.__init__] 依賴設置完成")
