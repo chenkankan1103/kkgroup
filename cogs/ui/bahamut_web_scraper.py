@@ -23,6 +23,19 @@ class BahamutWebScraper:
             "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
             "Accept-Encoding": "gzip, deflate, br",
             "Referer": "https://ani.gamer.com.tw/",
+            "Sec-CH-UA": '"Not)A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
+            "Sec-CH-UA-Mobile": "?0",
+            "Sec-CH-UA-Platform": '"Windows"',
+            "Sec-CH-UA-Bitness": "64",
+            "Sec-CH-UA-Arch": "x86",
+            "Sec-CH-UA-Full-Version": "127.0.0.0",
+            "Sec-CH-UA-Platform-Version": "10.0.0",
+            "Sec-CH-UA-Full-Version-List": '"Not)A;Brand";v="99.0.0.0", "Google Chrome";v="127.0.0.0", "Chromium";v="127.0.0.0"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
         }
 
         # 要嘗試的URL列表（按優先順序）
