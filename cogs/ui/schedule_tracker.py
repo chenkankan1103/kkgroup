@@ -67,6 +67,46 @@ class AnimeScheduleTracker:
             logger.error(f"❌ Error fetching schedule: {e}")
             return {}
 
+    async def _get_anime_schedule_from_homepage(self) -> dict:
+        """從首頁爬取日程表 (備用方案 - 當 API 失效時使用)
+
+        Returns:
+            dict: 模擬 API 格式的時程表 { "1": [...], "2": [...], ... }
+        """
+        if BahamutWebScraper is None:
+            logger.warning("⚠️ [_get_anime_schedule_from_homepage] BahamutWebScraper 不可用")
+            return {}
+
+        try:
+            scraper = BahamutWebScraper()
+            homepage_schedule = await scraper.fetch_weekly_schedule_from_homepage()
+
+            if not homepage_schedule:
+                logger.warning("⚠️ [_get_anime_schedule_from_homepage] 首頁爬取無資料")
+                return {}
+
+            # 將首頁爬取的資料轉換為 API 相容格式
+            schedule = {}
+            for entry in homepage_schedule:
+                day_str = str(entry['day_of_week'])
+                if day_str not in schedule:
+                    schedule[day_str] = []
+
+                schedule[day_str].append({
+                    'videoSn': entry['video_sn'],
+                    'animeSn': entry['anime_sn'],
+                    'scheduleTime': entry['scheduled_time'],
+                    'animeTitle': entry['title'],
+                    'episode': entry['episode']
+                })
+
+            logger.info(f"✅ [_get_anime_schedule_from_homepage] 從首頁獲取到 {len(homepage_schedule)} 筆時程")
+            return schedule
+
+        except Exception as e:
+            logger.error(f"❌ [_get_anime_schedule_from_homepage] 首頁爬取失敗: {e}")
+            return {}
+
     def _get_expected_check_times(self, schedule: dict, now: datetime) -> list:
         """取得今天和明天的所有預期檢查時刻
 
@@ -140,11 +180,16 @@ class AnimeScheduleTracker:
 
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
 
-            # 拉取完整一週的時程表
+            # 拉取完整一週的時程表 (優先使用 API，失敗則嘗試首頁爬取)
             schedule = await self._get_anime_schedule()
             if not schedule:
-                logger.warning("⚠️ [refresh_weekly_schedule] 無法拉取時程表")
-                return {"success": False, "error": "API 回傳空時程表"}
+                logger.warning("⚠️ [refresh_weekly_schedule] API 拉取失敗，嘗試從首頁爬取...")
+                schedule = await self._get_anime_schedule_from_homepage()
+                if not schedule:
+                    logger.error("❌ [refresh_weekly_schedule] API 和首頁爬取均失敗")
+                    return {"success": False, "error": "所有來源皆無法取得時程表"}
+                else:
+                    logger.info("✅ [refresh_weekly_schedule] 成功從首頁爬取到時程表")
 
             # 🔑 正確計算 week_start_date (api_week=True: 用於儲存從 API 拉取的週表)
             week_start_str = get_week_start_date(now, api_week=True)
@@ -239,7 +284,7 @@ class AnimeScheduleTracker:
 
     async def _build_video_to_anime_map(self) -> dict:
         """
-        使用 BahamutWebScraper 建立 videoSn -> animeSn 映射表
+        使用 BahamutWebScraper 從首頁爬取完整週表並建立 videoSn -> animeSn 映射表
 
         Returns:
             dict: {videoSn: animeSn}
@@ -252,18 +297,18 @@ class AnimeScheduleTracker:
 
         try:
             scraper = BahamutWebScraper()
-            logger.info("🕷️ [_build_video_to_anime_map] 開始爬取巴哈動畫瘋首頁獲取 animeSn 映射...")
+            logger.info("🕷️ [_build_video_to_anime_map] 開始爬取巴哈動畫瘋首頁週表獲取 animeSn 映射...")
 
-            anime_list = await scraper.fetch_new_anime_from_web()
+            homepage_schedule = await scraper.fetch_weekly_schedule_from_homepage()
 
-            for anime in anime_list:
-                video_sn = anime.get("videoSn")
-                anime_sn = anime.get("animeSn")
+            for entry in homepage_schedule:
+                video_sn = entry.get('video_sn')
+                anime_sn = entry.get('anime_sn')
                 if video_sn and anime_sn:
                     video_to_anime_map[video_sn] = anime_sn
-                    logger.debug(f"🔗 [_build_video_to_anime_map] 映射: videoSn={video_sn} -> animeSn={anime_sn} ({anime.get('title', '未知標題')})")
+                    logger.debug(f"🔗 [_build_video_to_anime_map] 映射: videoSn={video_sn} -> animeSn={anime_sn} ({entry.get('title', '未知標題')})")
 
-            logger.info(f"✅ [_build_video_to_anime_map] 爬蟲完成，獲得 {len(video_to_anime_map)} 個映射關係")
+            logger.info(f"✅ [_build_video_to_anime_map] 爬蟲完成，從首頁週表獲得 {len(video_to_anime_map)} 個映射關係")
 
         except Exception as e:
             logger.error(f"❌ [_build_video_to_anime_map] 爬蟲失敗: {e}", exc_info=True)
