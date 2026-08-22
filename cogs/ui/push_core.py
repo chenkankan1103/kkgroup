@@ -47,6 +47,27 @@ API_HEADERS = {
 
 # ========== 相容性介面：AnimeDatabase 類別 (需在 AnimePushCore 之前定義，供 anime_tracker 匯入) ==========
 
+# 匯入 API 常數以供相容性使用（實際定義在 anime_scraper.py 中）
+try:
+    from .anime_scraper import API_ENDPOINT, API_TIMEOUT, API_HEADERS
+except ImportError:
+    # 後備方案：如果無法從 anime_scraper 導入，則定義預設值
+    API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/anime_list.php"
+    API_TIMEOUT = 15
+    API_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Referer": "https://ani.gamer.com.tw/",
+        "Origin": "https://ani.gamer.com.tw",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "cross-site",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
 
 class AnimeDatabase:
     """相容性包裝：將舊版 AnimeDatabase 介面委託給 db adapter"""
@@ -971,6 +992,14 @@ class AnimePushCore:
     def set_embed_factory(self, factory):
         """設置 embed 生成工廠函數"""
         self._embed_factory = factory
+
+    def set_dependencies(self, bot, db, anime_tracker=None):
+        """設置依賴 (for compatibility with anime_tracker)"""
+        self.set_bot(bot)
+        # The db is already set in constructor, but we can update it if needed
+        if db is not None:
+            self.db = db
+        # anime_tracker reference not needed for core functionality
 
     async def _generate_anime_view(self, episode: dict):
         """生成動畫推送視圖 - 使用工廠函數或預設"""
