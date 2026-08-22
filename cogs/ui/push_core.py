@@ -496,12 +496,17 @@ class AnimeDBImpl:
                         anime_data_raw = anime_data_raw.decode(
                             "utf-8", errors="replace"
                         )
-                    item["anime_data"] = json.loads(anime_data_raw)
+                    anime_data = json.loads(anime_data_raw)
+                    item["anime_data"] = anime_data
+                    # 從 anime_data 提取 anime_sn (支援 camelCase 和 snake_case)
+                    item["anime_sn"] = anime_data.get("animeSn") or anime_data.get("anime_sn")
                 except Exception as e:
                     logger.warning(f"animeData 解析失敗 videoSn={video_sn}: {e}")
                     item["anime_data"] = {}
+                    item["anime_sn"] = None
             else:
                 item["anime_data"] = {}
+                item["anime_sn"] = None
             result.append(item)
         return result
 
@@ -1161,12 +1166,17 @@ class AnimePushCore:
                             anime_data_raw = anime_data_raw.decode(
                                 "utf-8", errors="replace"
                             )
-                        item["anime_data"] = json.loads(anime_data_raw)
+                        anime_data = json.loads(anime_data_raw)
+                        item["anime_data"] = anime_data
+                        # 從 anime_data 提取 anime_sn (支援 camelCase 和 snake_case)
+                        item["anime_sn"] = anime_data.get("animeSn") or anime_data.get("anime_sn")
                     except Exception as e:
                         logger.warning(f"animeData 解析失敗 videoSn={video_sn}: {e}")
                         item["anime_data"] = {}
+                        item["anime_sn"] = None
                 else:
                     item["anime_data"] = {}
+                    item["anime_sn"] = None
                 result.append(item)
             return result
         except Exception as e:
