@@ -50,22 +50,13 @@ class AnimeScheduleTracker:
         self.anime_tracker = anime_tracker
 
     async def _get_anime_schedule(self) -> dict:
-        """從 API 獲取日程表 (newAnimeSchedule)"""
-        try:
-            async with aiohttp.ClientSession(headers=API_HEADERS) as session:
-                async with session.get(
-                    API_ENDPOINT, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)
-                ) as response:
-                    if response.status != 200:
-                        logger.error(f"❌ API returned status {response.status}")
-                        return {}
+        """從 API 獲取日程表
 
-                    data = await response.json()
-                    schedule = data.get("data", {}).get("newAnimeSchedule", {})
-                    return schedule
-        except Exception as e:
-            logger.error(f"❌ Error fetching schedule: {e}")
-            return {}
+        注意：新版 API 已改版為 data.animeList (分頁)，不再提供按星期分組的 newAnimeSchedule 格式。
+        因此此方法直接返回空字典，讓 refresh_weekly_schedule 改用首頁爬蟲作為主要資料來源。
+        """
+        logger.info("📡 新版 API 不再提供按星期分組的資料，改用首頁爬蟲獲取週表")
+        return {}
 
     async def _get_anime_schedule_from_homepage(self) -> dict:
         """從首頁爬取日程表 (備用方案 - 當 API 失效時使用)
@@ -315,9 +306,13 @@ class AnimeScheduleTracker:
 
         return video_to_anime_map
 
-    def get_today_schedule(self) -> list:
-        """獲取今天的時程表（從週表中） - 委託給 AnimeDatabase"""
-        return self.db.get_today_schedule()
+    def get_today_schedule(self, week_start_date: str | None = None) -> list:
+        """獲取今天的時程表（從週表中） - 委託給 AnimeDatabase
+
+        Args:
+            week_start_date: 週起始日期 "YYYY-MM-DD"，若不提供則使用當前週
+        """
+        return self.db.get_today_schedule(week_start_date)
 
     def mark_time_pushed(
         self, week_start_date: str, day_of_week: int, scheduled_time: str
