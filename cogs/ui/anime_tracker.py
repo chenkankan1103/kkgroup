@@ -97,6 +97,7 @@ class AnimeTracker(commands.Cog):
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from apscheduler.triggers.cron import CronTrigger
 
+            print("[AnimeTracker._init_scheduler] 開始初始化排程器...", flush=True)
             self.scheduler = AsyncIOScheduler(timezone=TW_TZ)
 
             # 添加週表刷新任務（每天 22:00）
@@ -118,12 +119,22 @@ class AnimeTracker(commands.Cog):
             )
 
             self.scheduler.start()
-            self.logger.info("🚀 [AnimeTracker.cog_load] 排程器已啟動")
-            self.logger.info("📅 [AnimeTracker.cog_load] 週表刷新任務已添加 (每天 22:00)")
-            self.logger.info("🔄 [AnimeTracker.cog_load] 統計同步任務已添加 (每 6 小時)")
+            msg = "🚀 [AnimeTracker._init_scheduler] 排程器已啟動"
+            print(msg, flush=True)
+            self.logger.info(msg)
+            msg = "📅 [AnimeTracker._init_scheduler] 週表刷新任務已添加 (每天 22:00)"
+            print(msg, flush=True)
+            self.logger.info(msg)
+            msg = "🔄 [AnimeTracker._init_scheduler] 統計同步任務已添加 (每 6 小時)"
+            print(msg, flush=True)
+            self.logger.info(msg)
 
         except Exception as e:
-            self.logger.error(f"❌ [AnimeTracker._init_scheduler] 初始化排程器失敗: {e}", exc_info=True)
+            msg = f"❌ [AnimeTracker._init_scheduler] 初始化排程器失敗: {e}"
+            print(msg, flush=True)
+            import traceback
+            traceback.print_exc()
+            self.logger.error(msg, exc_info=True)
 
     async def _refresh_weekly_schedule_task(self):
         """週表資料刷新任務"""
