@@ -42,6 +42,14 @@ API_HEADERS = {
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "cross-site",
     "X-Requested-With": "XMLHttpRequest",
+    "Sec-CH-UA": '"Not)A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"Windows"',
+    "Sec-CH-UA-Arch": '"x86_64"',
+    "Sec-CH-UA-Bitness": '"64"',
+    "Sec-CH-UA-Full-Version": '"127.0.0.0"',
+    "Sec-CH-UA-Platform-Version": '"10.0.0"',
+    "Sec-CH-UA-Full-Version-List": '"Not)A;Brand";v="99.0.0.0", "Google Chrome";v="127.0.0.0", "Chromium";v="127.0.0.0"',
 }
 
 
@@ -66,6 +74,14 @@ except ImportError:
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "cross-site",
         "X-Requested-With": "XMLHttpRequest",
+        "Sec-CH-UA": '"Not A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": '"Windows"',
+        "Sec-CH-UA-Arch": '"x86_64"',
+        "Sec-CH-UA-Bitness": '"64"',
+        "Sec-CH-UA-Full-Version": '"127.0.0.0"',
+        "Sec-CH-UA-Platform-Version": '"10.0.0"',
+        "Sec-CH-UA-Full-Version-List": '"Not A;Brand";v="99.0.0.0", "Google Chrome";v="127.0.0.0", "Chromium";v="127.0.0.0"',
     }
 
 
@@ -1103,13 +1119,13 @@ class AnimePushCore:
     def get_schedule_video_sns(
         self, week_start_date: str, day_of_week: int, scheduled_time: str
     ) -> set[int]:
-        """獲取某時段預期的 videoSn 集合 (從 anime_data JSON 提取)"""
+        """獲取某時段預期的 videoSn 集合 (同時查 videoSn 欄位與 anime_data JSON)"""
         try:
             conn = _get_db_connection()
             c = conn.cursor()
-            # 使用 JSON_EXTRACT 從 anime_data 提取 videoSn
+            # 優先查 videoSn 欄位，若為 NULL 則從 anime_data JSON 提取 (COALESCE)
             c.execute(
-                "SELECT JSON_EXTRACT(animeData, '$.videoSn') as videoSn FROM anime_weekly_schedule WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
+                "SELECT COALESCE(videoSn, JSON_EXTRACT(animeData, '$.videoSn')) as videoSn FROM anime_weekly_schedule WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
                 (week_start_date, day_of_week, scheduled_time),
             )
             rows = c.fetchall()
@@ -1118,7 +1134,7 @@ class AnimePushCore:
             for row in rows:
                 if row[0] is not None:
                     try:
-                        # JSON_EXTRACT 可能回傳字串或整數
+                        # COALESCE/JSON_EXTRACT 可能回傳字串或整數
                         result.add(int(row[0]))
                     except (ValueError, TypeError):
                         pass
