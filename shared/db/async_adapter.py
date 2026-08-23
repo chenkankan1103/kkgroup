@@ -11,59 +11,78 @@ Async DB Adapter - 給 Cog 直接 import 的非同步便捷函數
     # 在 async 函數中直接 await
     balance = await get_user_kkcoin(user_id)
     await update_user_kkcoin(user_id, 100)
+
+注意：內部已改用 DatabaseManager 統一連線池，確保多服務共用同一連線池。
 """
 
-from .async_db import get_async_db
+from .manager import DatabaseManager
 from typing import Any, Optional, Union, Dict, List, Tuple
 
 
-# ========== 核心便捷函數 ==========
+# ========== 核心便捷函數（帶重試機制） ==========
+
+async def _get_db():
+    """取得配好連線池的 AsyncSheetDrivenDB 實例"""
+    from .async_db import AsyncSheetDrivenDB
+    db = AsyncSheetDrivenDB()
+    db._pool = await DatabaseManager.get_pool_or_init()
+    return db
+
 
 async def get_user(user_id: Union[int, str]) -> Optional[Dict[str, Any]]:
     """獲取用戶完整資料"""
-    return await (await get_async_db()).get_user(user_id)
+    db = await _get_db()
+    return await db.get_user(user_id)
 
 
 async def set_user(user_id: Union[int, str], data: Dict[str, Any]) -> bool:
     """設置用戶資料 (INSERT OR REPLACE)"""
-    return await (await get_async_db()).set_user(user_id, data)
+    db = await _get_db()
+    return await db.set_user(user_id, data)
 
 
 async def get_user_field(user_id: Union[int, str], field: str, default: Any = None) -> Any:
     """獲取用戶特定欄位的值"""
-    return await (await get_async_db()).get_user_field(user_id, field, default)
+    db = await _get_db()
+    return await db.get_user_field(user_id, field, default)
 
 
 async def set_user_field(user_id: Union[int, str], field: str, value: Any) -> bool:
     """更新用戶特定欄位"""
-    return await (await get_async_db()).set_user_field(user_id, field, value)
+    db = await _get_db()
+    return await db.set_user_field(user_id, field, value)
 
 
 async def add_user_field(
     user_id: Union[int, str], field: str, amount: Union[int, float]
 ) -> bool:
     """增加/減少用戶特定欄位的值 (僅限數字類型)"""
-    return await (await get_async_db()).update_user_field(user_id, field, amount)
+    db = await _get_db()
+    return await db.update_user_field(user_id, field, amount)
 
 
 async def get_user_by_field(field: str, value: Any) -> Optional[Dict[str, Any]]:
     """根據指定欄位和值查詢用戶"""
-    return await (await get_async_db()).get_user_by_field(field, value)
+    db = await _get_db()
+    return await db.get_user_by_field(field, value)
 
 
 async def get_all_users(limit: Optional[int] = None) -> List[Dict[str, Any]]:
     """獲取所有用戶"""
-    return await (await get_async_db()).get_all_users(limit)
+    db = await _get_db()
+    return await db.get_all_users(limit)
 
 
 async def delete_user(user_id: Union[int, str]) -> bool:
     """刪除用戶"""
-    return await (await get_async_db()).delete_user(user_id)
+    db = await _get_db()
+    return await db.delete_user(user_id)
 
 
 async def get_db_stats() -> Dict[str, Any]:
     """取得資料庫統計資訊"""
-    return await (await get_async_db()).get_stats()
+    db = await _get_db()
+    return await db.get_stats()
 
 
 async def count_users() -> int:
@@ -465,17 +484,24 @@ async def get_inflation_info() -> Dict[str, float]:
 # ========== 初始化/關閉 ==========
 
 async def init_async_db(db_path: str = "user_data.db"):
-    """應用啟動時呼叫：初始化連線池並建立資料表"""
-    from .async_db import get_pool, AsyncSheetDrivenDB
-    pool = get_pool(db_path)
-    await pool.initialize()
+    """應用啟動時呼叫：初始化統一連線池並建立資料表、執行啟動 PRAGMA"""
+    from .manager import DatabaseManager
+    from .async_db import AsyncSheetDrivenDB
+
+    # 初始化全域連線池
+    await DatabaseManager.initialize(db_path)
+
+    # 執行啟動時 PRAGMA（wal_autocheckpoint、TRUNCATE checkpoint）
+    await DatabaseManager.execute_startup_pragmas()
+
+    # 確保資料表存在
     db = AsyncSheetDrivenDB(db_path)
+    db._pool = await DatabaseManager.get_pool_or_init()
     await db._ensure_initialized()
     return db
 
 
 async def close_async_db():
-    """應用關閉時呼叫：關閉所有連線"""
-    from .async_db import _pool
-    if _pool:
-        await _pool.close_all()
+    """應用關閉時呼叫：關閉統一連線池"""
+    from .manager import DatabaseManager
+    await DatabaseManager.close()
