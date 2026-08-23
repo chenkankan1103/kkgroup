@@ -26,7 +26,9 @@ async def main():
     tracker.db = db
 
     # Create anime_tracker instance for rescheduling push jobs
-    anime_tracker = AnimeTracker(None, db)  # bot=None for CLI usage
+    # AnimeTracker only takes bot in constructor, dependencies set via set_dependencies
+    anime_tracker = AnimeTracker(None)  # bot=None for CLI usage
+    await anime_tracker.set_dependencies(db_path)
     anime_tracker.schedule_tracker = tracker
 
     # 直接呼叫內部邏輯，不檢查時間

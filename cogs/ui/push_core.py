@@ -129,8 +129,8 @@ class AnimeDatabase:
         )
 
     # ---- 時程查詢 ----
-    def get_today_schedule(self) -> list:
-        return self.db.get_today_schedule()
+    def get_today_schedule(self, week_start_date: str | None = None) -> list:
+        return self.db.get_today_schedule(week_start_date)
 
     def get_schedule_video_sns(
         self, week_start_date: str, day_of_week: int, scheduled_time: str
@@ -227,6 +227,9 @@ class AnimeDatabase:
         return self.db.db_path
 
     # ---- 維護 ----
+    def save_weekly_schedule(self, week_start_date: str, schedule_data: list) -> bool:
+        return self.db.save_weekly_schedule(week_start_date, schedule_data)
+
     def clean_orphaned_records(self, week_start_date: str) -> dict:
         return self.db.clean_orphaned_records(week_start_date)
 
