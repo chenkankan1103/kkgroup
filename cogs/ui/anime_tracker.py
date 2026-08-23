@@ -212,10 +212,11 @@ class AnimeTracker(commands.Cog):
 
             # 根據週表創建新的推送任務
             today = datetime.now(TW_TZ)
-            week_start_str = get_week_start_date(today)
+            # 使用 API 週語義 (api_week=True)，與 push_core、週表刷新、資料庫儲存保持一致
+            week_start_str = get_week_start_date(today, api_week=True)
 
-            # 獲取今天的完整時程
-            today_schedule = self.schedule_tracker.get_today_schedule()
+            # 獲取今天的完整時程 (使用相同的週起始日期)
+            today_schedule = self.schedule_tracker.get_today_schedule(week_start_date=week_start_str)
             scheduled_count = 0
 
             for schedule_item in today_schedule:
