@@ -252,13 +252,28 @@ class AnimeTracker(commands.Cog):
             self.logger.info(f"📢 [_push_anime_task] 開始推送動畫: anime_sn={anime_sn}, video_sn={video_sn}")
 
             # Query anime_weekly_schedule for the entry matching anime_sn and video_sn
-            # anime_sn is stored in animeData JSON field
-            query = """
-                SELECT weekStartDate, dayOfWeek, scheduledTime
-                FROM anime_weekly_schedule
-                WHERE videoSn = ? AND json_extract(animeData, '$.anime_sn') = ?
-            """
-            row = await self.db.fetchone(query, (video_sn, anime_sn))
+            # Data may have videoSn in column OR in JSON animeData
+            # anime_sn may be in JSON as animeSn (camelCase) or anime_sn (snake_case)
+            # json_extract returns integers, so use integer parameters
+            if anime_sn > 0:
+                # If we have anime_sn, try matching:
+                # - videoSn: either column or JSON
+                # - anime_sn: JSON as animeSn or anime_sn
+                query = """
+                    SELECT weekStartDate, dayOfWeek, scheduledTime
+                    FROM anime_weekly_schedule
+                    WHERE (videoSn = ? OR json_extract(animeData, '$.videoSn') = ?)
+                      AND (json_extract(animeData, '$.animeSn') = ? OR json_extract(animeData, '$.anime_sn') = ?)
+                """
+                row = await self.db.fetchone(query, (video_sn, video_sn, anime_sn, anime_sn))
+            else:
+                # If anime_sn is 0 or unknown, match only by videoSn (column or JSON)
+                query = """
+                    SELECT weekStartDate, dayOfWeek, scheduledTime
+                    FROM anime_weekly_schedule
+                    WHERE videoSn = ? OR json_extract(animeData, '$.videoSn') = ?
+                """
+                row = await self.db.fetchone(query, (video_sn, video_sn))
 
             if not row:
                 self.logger.warning(f"⚠️ [_push_anime_task] 找不到排程資料: anime_sn={anime_sn}, video_sn={video_sn}")
