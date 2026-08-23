@@ -45,7 +45,9 @@ class AnimeTracker(commands.Cog):
 
     async def set_dependencies(self, db_path: str):
         """設置依賴元件（非同步版本，包含排程器初始化）"""
+        print("[AnimeTracker.set_dependencies] 開始...", flush=True)
         if self._dependencies_set:
+            print("[AnimeTracker.set_dependencies] 已設置過，跳過", flush=True)
             return
 
         self.db_path = db_path
@@ -72,15 +74,22 @@ class AnimeTracker(commands.Cog):
         self.ranking_stats.set_dependencies(self.bot, db)
 
         self._dependencies_set = True
-        self.logger.info("✅ [AnimeTracker.set_dependencies] 依賴設置完成")
+        msg = "✅ [AnimeTracker.set_dependencies] 依賴設置完成"
+        print(msg, flush=True)
+        self.logger.info(msg)
 
         # 初始化排程器
+        print(f"[AnimeTracker.set_dependencies] _scheduler_started={self._scheduler_started}", flush=True)
         if not self._scheduler_started:
+            print("[AnimeTracker.set_dependencies] 呼叫 _init_scheduler()...", flush=True)
             await self._init_scheduler()
             self._scheduler_started = True
+            print("[AnimeTracker.set_dependencies] _init_scheduler() 完成", flush=True)
 
         # 檢查並初始化週表（如果為空）
+        print("[AnimeTracker.set_dependencies] 呼叫 _init_weekly_schedule_if_empty()...", flush=True)
         await self._init_weekly_schedule_if_empty()
+        print("[AnimeTracker.set_dependencies] 完成", flush=True)
 
     async def cog_load(self):
         """Cog 載入時執行的初始化"""
