@@ -75,6 +75,10 @@ class AnimeDatabase:
     def __init__(self, db):
         self.db = db
 
+    async def fetchone(self, query: str, params: tuple = ()):
+        """通用查詢單行結果 - 委託給底層實現"""
+        return await self.db.fetchone(query, params)
+
     # ---- 通知/推送相關 ----
     def is_notified(self, video_sn: int) -> bool:
         return self.db.is_notified(video_sn)
@@ -483,11 +487,18 @@ class AnimeDBImpl:
                 pushed,
                 anime_data_raw,
             ) = row
+
+            # 解析可能為 bytes 的字串欄位
+            def decode_if_bytes(val):
+                if isinstance(val, bytes):
+                    return val.decode("utf-8", errors="replace")
+                return val
+
             item = {
                 "video_sn": video_sn,
-                "week_start_date": week_start_date_db,
+                "week_start_date": decode_if_bytes(week_start_date_db),
                 "day_of_week": day_of_week,
-                "scheduled_time": scheduled_time,
+                "scheduled_time": decode_if_bytes(scheduled_time),
                 "pushed": bool(pushed) if pushed is not None else False,
             }
             if anime_data_raw:
@@ -946,6 +957,15 @@ class AnimeDBImpl:
     @property
     def db_path(self) -> str:
         return self._db_path
+
+    async def fetchone(self, query: str, params: tuple = ()):
+        """通用查詢單行結果"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(query, params)
+        row = c.fetchone()
+        conn.close()
+        return row
 
 
 def _get_db_connection():

@@ -1,0 +1,506 @@
+[
+  {
+    "anime_sn": 114136,
+    "video_sn": 50689,
+    "title": "岩元前輩的推薦",
+    "day_of_week": 1,
+    "scheduled_time": "22:00",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114041,
+    "video_sn": 50360,
+    "title": "入間同學入魔了！第四季",
+    "day_of_week": 1,
+    "scheduled_time": "21:00",
+    "episode": "第19集"
+  },
+  {
+    "anime_sn": 114106,
+    "video_sn": 50691,
+    "title": "貓與龍",
+    "day_of_week": 1,
+    "scheduled_time": "21:00",
+    "episode": "第9集"
+  },
+  {
+    "anime_sn": 114116,
+    "video_sn": 50693,
+    "title": "BLACK TORCH 闇黑燈火",
+    "day_of_week": 1,
+    "scheduled_time": "21:00",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114058,
+    "video_sn": 50696,
+    "title": "小書痴的下剋上  為了成為圖書管理員不擇手段！領主的養女",
+    "day_of_week": 1,
+    "scheduled_time": "17:30",
+    "episode": "第19集"
+  },
+  {
+    "anime_sn": 114053,
+    "video_sn": 50703,
+    "title": "拉拉熊",
+    "day_of_week": 1,
+    "scheduled_time": "09:00",
+    "episode": "第21集"
+  },
+  {
+    "anime_sn": 114111,
+    "video_sn": 50700,
+    "title": "超人力霸王狄奧",
+    "day_of_week": 1,
+    "scheduled_time": "09:00",
+    "episode": ""
+  },
+  {
+    "anime_sn": 114133,
+    "video_sn": 50708,
+    "title": "我家的弟弟們真是讓您費心了",
+    "day_of_week": 1,
+    "scheduled_time": "00:30",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114135,
+    "video_sn": 50710,
+    "title": "地獄模式 ～喜歡挑戰特殊成就的玩家在廢設定的異世界成為無雙～ 2nd Season",
+    "day_of_week": 1,
+    "scheduled_time": "00:30",
+    "episode": "第20集"
+  },
+  {
+    "anime_sn": 114112,
+    "video_sn": 50712,
+    "title": "擅長逃跑的殿下 第二季",
+    "day_of_week": 1,
+    "scheduled_time": "00:00",
+    "episode": "第18集"
+  },
+  {
+    "anime_sn": 114032,
+    "video_sn": 50716,
+    "title": "神之雫",
+    "day_of_week": 2,
+    "scheduled_time": "23:30",
+    "episode": "第20集"
+  },
+  {
+    "anime_sn": 114114,
+    "video_sn": 50713,
+    "title": "畫完這個再去死",
+    "day_of_week": 2,
+    "scheduled_time": "23:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114040,
+    "video_sn": 50970,
+    "title": "關於我轉生變成史萊姆這檔事 第四季",
+    "day_of_week": 2,
+    "scheduled_time": "23:00",
+    "episode": "第91集"
+  },
+  {
+    "anime_sn": 114124,
+    "video_sn": 50718,
+    "title": "從 0 位居民開始的邊境領主大人",
+    "day_of_week": 2,
+    "scheduled_time": "21:30",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114120,
+    "video_sn": 50720,
+    "title": "少女怪獸焦糖戀心",
+    "day_of_week": 2,
+    "scheduled_time": "01:28",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114118,
+    "video_sn": 50724,
+    "title": "遭到流放的轉生重騎士憑藉遊戲知識大開無雙",
+    "day_of_week": 3,
+    "scheduled_time": "23:56",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114121,
+    "video_sn": 50726,
+    "title": "BanG Dream！YUME∞MITA",
+    "day_of_week": 3,
+    "scheduled_time": "22:00",
+    "episode": "第10集"
+  },
+  {
+    "anime_sn": 114100,
+    "video_sn": 50728,
+    "title": "文豪野犬 汪！第二季",
+    "day_of_week": 3,
+    "scheduled_time": "20:40",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114141,
+    "video_sn": 50730,
+    "title": "令和妖神斑小姐",
+    "day_of_week": 3,
+    "scheduled_time": "20:30",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 113922,
+    "video_sn": 50955,
+    "title": "無尾熊繪日記",
+    "day_of_week": 3,
+    "scheduled_time": "19:00",
+    "episode": "第45集"
+  },
+  {
+    "anime_sn": 114099,
+    "video_sn": 50538,
+    "title": "盜墓王",
+    "day_of_week": 3,
+    "scheduled_time": "01:25",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114132,
+    "video_sn": 50541,
+    "title": "花樣少年少女 第二季",
+    "day_of_week": 3,
+    "scheduled_time": "01:00",
+    "episode": "第9集"
+  },
+  {
+    "anime_sn": 114052,
+    "video_sn": 50536,
+    "title": "CANDY CARIES 蛀在糖糖裡",
+    "day_of_week": 3,
+    "scheduled_time": "00:00",
+    "episode": "第19集"
+  },
+  {
+    "anime_sn": 114098,
+    "video_sn": 50543,
+    "title": "女性向遊戲世界對路人角色很不友好 第二季",
+    "day_of_week": 4,
+    "scheduled_time": "23:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114123,
+    "video_sn": 50545,
+    "title": "不虐待我的繼母與繼姐",
+    "day_of_week": 4,
+    "scheduled_time": "22:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114044,
+    "video_sn": 50567,
+    "title": "Re：從零開始的異世界生活 第四季",
+    "day_of_week": 4,
+    "scheduled_time": "22:00",
+    "episode": "第13集"
+  },
+  {
+    "anime_sn": 114096,
+    "video_sn": 50547,
+    "title": "幼女戰記 2",
+    "day_of_week": 4,
+    "scheduled_time": "21:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114105,
+    "video_sn": 50549,
+    "title": "澈底對你成癮",
+    "day_of_week": 4,
+    "scheduled_time": "21:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114097,
+    "video_sn": 50551,
+    "title": "Clevatess Ⅱ－魔獸之王與虛假的勇者傳承－",
+    "day_of_week": 4,
+    "scheduled_time": "20:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 113923,
+    "video_sn": 50553,
+    "title": "從前從前有隻貓！世界喵童話",
+    "day_of_week": 4,
+    "scheduled_time": "19:00",
+    "episode": "第45集"
+  },
+  {
+    "anime_sn": 114142,
+    "video_sn": 50564,
+    "title": "與妳相戀到生命盡頭",
+    "day_of_week": 4,
+    "scheduled_time": "10:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 113907,
+    "video_sn": 50555,
+    "title": "假面騎士 ZEZTZ",
+    "day_of_week": 4,
+    "scheduled_time": "08:00",
+    "episode": "第44集"
+  },
+  {
+    "anime_sn": 114095,
+    "video_sn": 50560,
+    "title": "奇招百出的維多利亞",
+    "day_of_week": 5,
+    "scheduled_time": "23:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114104,
+    "video_sn": 50562,
+    "title": "拯救替身千金的是冷酷無情冰之王子的愛",
+    "day_of_week": 5,
+    "scheduled_time": "21:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114143,
+    "video_sn": 50565,
+    "title": "感謝對戰。～大小姐才不玩格鬥遊戲～",
+    "day_of_week": 5,
+    "scheduled_time": "19:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114125,
+    "video_sn": 50516,
+    "title": "GRAND BLUE 碧藍之海 3",
+    "day_of_week": 5,
+    "scheduled_time": "00:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114093,
+    "video_sn": 50518,
+    "title": "鬥球女彈子",
+    "day_of_week": 6,
+    "scheduled_time": "23:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114094,
+    "video_sn": 50520,
+    "title": "無用聖女的異世界美食之旅 憑藉隱藏技能召喚露營車",
+    "day_of_week": 6,
+    "scheduled_time": "22:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114113,
+    "video_sn": 50522,
+    "title": "THE WORLD IS DANCING 世界在起舞",
+    "day_of_week": 6,
+    "scheduled_time": "21:30",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114117,
+    "video_sn": 50524,
+    "title": "骸骨騎士大人異世界冒險中 第二季",
+    "day_of_week": 6,
+    "scheduled_time": "21:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114092,
+    "video_sn": 50526,
+    "title": "與奔馳於透明之夜的你，談一場看不見的戀愛。",
+    "day_of_week": 6,
+    "scheduled_time": "20:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114140,
+    "video_sn": 50528,
+    "title": "Animatica「北斗之拳 拳王軍雜兵們的輓歌」",
+    "day_of_week": 6,
+    "scheduled_time": "19:05",
+    "episode": "第19集"
+  },
+  {
+    "anime_sn": 114024,
+    "video_sn": 50530,
+    "title": "MAO 摩緒",
+    "day_of_week": 6,
+    "scheduled_time": "12:00",
+    "episode": "第20集"
+  },
+  {
+    "anime_sn": 114126,
+    "video_sn": 50654,
+    "title": "碧藍航線 微速前進！2！！",
+    "day_of_week": 6,
+    "scheduled_time": "00:45",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114138,
+    "video_sn": 50656,
+    "title": "我是不才惡女",
+    "day_of_week": 7,
+    "scheduled_time": "23:45",
+    "episode": "第6集"
+  },
+  {
+    "anime_sn": 114144,
+    "video_sn": 50658,
+    "title": "再見菈菈",
+    "day_of_week": 7,
+    "scheduled_time": "23:30",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114029,
+    "video_sn": 50660,
+    "title": "黑貓與魔女的教室",
+    "day_of_week": 7,
+    "scheduled_time": "23:00",
+    "episode": "第19集"
+  },
+  {
+    "anime_sn": 114115,
+    "video_sn": 50662,
+    "title": "無職轉生～到了異世界就拿出真本事～第三季",
+    "day_of_week": 7,
+    "scheduled_time": "23:00",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 113382,
+    "video_sn": 50664,
+    "title": "超超超超超喜歡你的 100 個女朋友",
+    "day_of_week": 7,
+    "scheduled_time": "22:00",
+    "episode": "第31集"
+  },
+  {
+    "anime_sn": 114119,
+    "video_sn": 50666,
+    "title": "世界最強後衛 ～迷宮國的新人探索者～",
+    "day_of_week": 7,
+    "scheduled_time": "21:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114109,
+    "video_sn": 50668,
+    "title": "相反的你和我 第二季",
+    "day_of_week": 7,
+    "scheduled_time": "16:30",
+    "episode": "第19集"
+  },
+  {
+    "anime_sn": 114102,
+    "video_sn": 50670,
+    "title": "才女的侍從 在滿是高嶺之花的貴族學校暗中照顧（毫無生活自理能力的）學院第一大小姐",
+    "day_of_week": 7,
+    "scheduled_time": "03:08",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114108,
+    "video_sn": 50672,
+    "title": "花織即使是轉生也想打架",
+    "day_of_week": 7,
+    "scheduled_time": "01:30",
+    "episode": "第6集"
+  },
+  {
+    "anime_sn": 114134,
+    "video_sn": 50674,
+    "title": "鬼的新娘",
+    "day_of_week": 7,
+    "scheduled_time": "01:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114137,
+    "video_sn": 50676,
+    "title": "魔法少女奈葉 EXCEEDS Gun Blaze Vengeance",
+    "day_of_week": 7,
+    "scheduled_time": "01:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114038,
+    "video_sn": 50682,
+    "title": "黃泉使者",
+    "day_of_week": 7,
+    "scheduled_time": "00:00",
+    "episode": "第19集"
+  },
+  {
+    "anime_sn": 114122,
+    "video_sn": 50680,
+    "title": "Grow Up Show ～向日葵馬戲團～",
+    "day_of_week": 7,
+    "scheduled_time": "00:00",
+    "episode": "第7集"
+  },
+  {
+    "anime_sn": 114127,
+    "video_sn": 50678,
+    "title": "穹廬下的魔女",
+    "day_of_week": 7,
+    "scheduled_time": "00:00",
+    "episode": "第8集"
+  },
+  {
+    "anime_sn": 114107,
+    "video_sn": 50686,
+    "title": "BLEACH 死神 千年血戰篇-禍進譚-",
+    "day_of_week": 8,
+    "scheduled_time": "23:00",
+    "episode": "第44集"
+  },
+  {
+    "anime_sn": 114139,
+    "video_sn": 49956,
+    "title": "香蕉喵 10 週年紀念篇",
+    "day_of_week": 9,
+    "scheduled_time": "08:00",
+    "episode": "第1集"
+  },
+  {
+    "anime_sn": 114154,
+    "video_sn": 50697,
+    "title": "IDOLiSH7 - 偶像星願 - First BEAT！ 劇場版總集篇 前篇",
+    "day_of_week": 10,
+    "scheduled_time": "00:00",
+    "episode": ""
+  },
+  {
+    "anime_sn": 114155,
+    "video_sn": 50698,
+    "title": "IDOLiSH7 - 偶像星願 - First BEAT！ 劇場版總集篇 後篇",
+    "day_of_week": 10,
+    "scheduled_time": "00:00",
+    "episode": ""
+  },
+  {
+    "anime_sn": 114151,
+    "video_sn": 50568,
+    "title": "劇場版「鬼滅之刃」無限城篇 第一章 猗窩座再襲",
+    "day_of_week": 10,
+    "scheduled_time": "23:00",
+    "episode": ""
+  }
+]
