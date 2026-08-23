@@ -431,6 +431,18 @@ async def on_ready():
             _on_ready_called = True
             loaded_extensions = await setup_modules(client)
 
+            # 🔧 初始化 AnimeTracker 的資料庫依賴（啟用排程器）
+            try:
+                anime_tracker_cog = client.get_cog("AnimeTracker")
+                if anime_tracker_cog:
+                    db_path = os.path.join(os.path.dirname(__file__), "..", "user_data.db")
+                    await anime_tracker_cog.set_dependencies(db_path)
+                    file_log("✅ AnimeTracker set_dependencies 已初始化")
+                else:
+                    file_log("⚠️ AnimeTracker cog 未找到")
+            except Exception as e:
+                file_log(f"❌ AnimeTracker set_dependencies 失敗: {e}")
+
             # 🔧 確保 recovery_cog 被載入
             try:
                 if not client.get_cog("UserRecoveryCog"):

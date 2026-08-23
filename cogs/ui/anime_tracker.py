@@ -5,13 +5,14 @@ Bahamut 動畫追蹤 Cog - 自動通知新上架集數
 """
 
 import logging
+import sqlite3
 from datetime import datetime, timedelta
 import asyncio
 import aiohttp
 import discord
 from discord.ext import commands, tasks
 from typing import Optional, List, Dict, Any
-from .push_core import AnimePushCore, TW_TZ, API_ENDPOINT, API_TIMEOUT, API_HEADERS, get_week_start_date
+from .push_core import AnimePushCore, TW_TZ, API_ENDPOINT, API_TIMEOUT, API_HEADERS, get_week_start_date, ANIME_CHANNEL_ID
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
@@ -42,8 +43,8 @@ class AnimeTracker(commands.Cog):
         # 初始化時標記需要設置依賴
         self._dependencies_set = False
 
-    def set_dependencies(self, db_path: str):
-        """設置依賴元件"""
+    async def set_dependencies(self, db_path: str):
+        """設置依賴元件（非同步版本，包含排程器初始化）"""
         if self._dependencies_set:
             return
 
@@ -53,6 +54,7 @@ class AnimeTracker(commands.Cog):
         from .push_core import AnimeDatabase, AnimeDBImpl
         db_impl = AnimeDBImpl(self.db_path)
         db = AnimeDatabase(db_impl)
+        self.db = db
         self.push_core = AnimePushCore(db)
         self.schedule_tracker = AnimeScheduleTracker(self.db_path)
         self.ranking_stats = RankingStats(db)
@@ -70,29 +72,24 @@ class AnimeTracker(commands.Cog):
         self.ranking_stats.set_dependencies(self.bot, db)
 
         self._dependencies_set = True
-        self.logger.info("✅ [AnimeTracker.__init__] 依賴設置完成")
-
-    async def cog_load(self):
-        """Cog 載入時執行的初始化"""
-        self.logger.info("📺 [AnimeTracker.cog_load] 開始載入 Cog")
-
-        # 確保依賴已設置（如果通過 __init__ 設置的話）
-        if not self._dependencies_set and self.db_path:
-            self.logger.info("🔧 [AnimeTracker.cog_load] 重新設置依賴")
-            self.set_dependencies(self.db_path)
+        self.logger.info("✅ [AnimeTracker.set_dependencies] 依賴設置完成")
 
         # 初始化排程器
         if not self._scheduler_started:
             await self._init_scheduler()
             self._scheduler_started = True
 
-        # 恢復永續視圖
-        await self._restore_persistent_views()
-
         # 檢查並初始化週表（如果為空）
         await self._init_weekly_schedule_if_empty()
 
-        self.logger.info("🚀 [AnimeTracker.cog_load] AnimeTracker Cog 載入完成")
+    async def cog_load(self):
+        """Cog 載入時執行的初始化"""
+        self.logger.info("📺 [AnimeTracker.cog_load] 開始載入 Cog")
+
+        # 只恢復永續視圖，依賴和排程器由 uibot.py 的 on_ready 中的 set_dependencies 初始化
+        await self._restore_persistent_views()
+
+        self.logger.info("🚀 [AnimeTracker.cog_load] AnimeTracker Cog 載入完成（等待 set_dependencies 初始化依賴）")
 
     async def _init_scheduler(self):
         """初始化 APScheduler"""
@@ -153,7 +150,7 @@ class AnimeTracker(commands.Cog):
             self.logger.error(f"❌ [AnimeTracker._sync_episode_stats_task] 動畫統計同步失敗: {e}", exc_info=True)
 
     async def _init_weekly_schedule_if_empty(self):
-        """如果週表為空，則立即從 API 拉取資料"""
+        """如果週表為空，則立即從 API 拉取資料；無論如何都會排程推送任務"""
         try:
             # 檢查週表是否為空
             today_schedule = self.schedule_tracker.get_today_schedule()
@@ -162,12 +159,18 @@ class AnimeTracker(commands.Cog):
                 result = await self.schedule_tracker.refresh_weekly_schedule()
                 if result.get("success"):
                     self.logger.info("✅ [_init_weekly_schedule_if_empty] 週表初始化完成")
-                    # 重新排程推送任務
-                    await self._reschedule_push_jobs()
                 else:
                     self.logger.error(f"❌ [_init_weekly_schedule_if_empty] 週表初始化失敗: {result.get('error')}")
             else:
-                self.logger.info("📅 [_init_weekly_schedule_if_empty] 週表已有資料，跳過初始化")
+                self.logger.info(f"📅 [_init_weekly_schedule_if_empty] 週表已有資料 ({len(today_schedule)} 筆)，跳過 API 拉取")
+
+            # 無論週表是否為空，都要排程推送任務
+            await self._reschedule_push_jobs()
+        except sqlite3.OperationalError as e:
+            if "no such table: anime_weekly_schedule" in str(e):
+                self.logger.warning("⚠️ [_init_weekly_schedule_if_empty] 週表尚未建立，跳過初始化")
+            else:
+                self.logger.error(f"❌ [_init_weekly_schedule_if_empty] 初始化週表時發生資料庫錯誤: {e}", exc_info=True)
         except Exception as e:
             self.logger.error(f"❌ [_init_weekly_schedule_if_empty] 初始化週表時發生錯誤: {e}", exc_info=True)
 
@@ -179,8 +182,8 @@ class AnimeTracker(commands.Cog):
                 return
 
             # 移除所有現有的推送任務
-            job_ids = self.scheduler.get_job_ids()
-            push_job_ids = [job_id for job_id in job_ids if job_id.startswith('push_')]
+            jobs = self.scheduler.get_jobs()
+            push_job_ids = [job.id for job in jobs if job.id.startswith('push_')]
             for job_id in push_job_ids:
                 self.scheduler.remove_job(job_id)
 
@@ -247,7 +250,27 @@ class AnimeTracker(commands.Cog):
         """執行動畫推送任務"""
         try:
             self.logger.info(f"📢 [_push_anime_task] 開始推送動畫: anime_sn={anime_sn}, video_sn={video_sn}")
-            success = await self.push_core.send_anime_push(anime_sn, video_sn)
+
+            # Query anime_weekly_schedule for the entry matching anime_sn and video_sn
+            # anime_sn is stored in animeData JSON field
+            query = """
+                SELECT weekStartDate, dayOfWeek, scheduledTime
+                FROM anime_weekly_schedule
+                WHERE videoSn = ? AND json_extract(animeData, '$.anime_sn') = ?
+            """
+            row = await self.db.fetchone(query, (video_sn, anime_sn))
+
+            if not row:
+                self.logger.warning(f"⚠️ [_push_anime_task] 找不到排程資料: anime_sn={anime_sn}, video_sn={video_sn}")
+                return
+
+            week_start_date, day_of_week, scheduled_time = row
+            self.logger.info(f"📌 [_push_anime_task] 找到排程: week_start={week_start_date}, day={day_of_week}, time={scheduled_time}")
+
+            # Use the configured anime push channel ID
+            channel_id = ANIME_CHANNEL_ID
+
+            success = await self.push_core.send_anime_push(scheduled_time, channel_id, day_of_week, week_start_date)
             if success:
                 self.logger.info(f"✅ [_push_anime_task] 動畫推送成功: anime_sn={anime_sn}, video_sn={video_sn}")
             else:
@@ -319,11 +342,7 @@ class AnimeTracker(commands.Cog):
     async def on_ready(self):
         """Bot 就緒事件"""
         self.logger.info("📺 [AnimeTracker.on_ready] AnimeTracker Cog 收到 on_ready 事件")
-        # 確保依賴和排程器已設置
-        if not self._dependencies_set:
-            self.logger.warning("⚠️ [AnimeTracker.on_ready] 依賴尚未設置，可能需要手動設置")
-        if not self._scheduler_started:
-            self.logger.warning("⚠️ [AnimeTracker.on_ready] 排程器尚未啟動，可能需要手動啟動")
+        # 依賴和排程器由 uibot.py 的 on_ready 中的 set_dependencies 初始化
 
     # ==================== 指令方法 ====================
 
@@ -401,4 +420,4 @@ class AnimeTracker(commands.Cog):
 async def setup(bot):
     """設置 Cog 的入口點"""
     # 這個函式會被 bot.load_extension() 調用
-    pass
+    await bot.add_cog(AnimeTracker(bot))
