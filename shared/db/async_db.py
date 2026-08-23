@@ -17,11 +17,11 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, Union, Set
 from pathlib import Path
 
-# 連線池配置
-DEFAULT_POOL_SIZE = 8
-MAX_POOL_SIZE = 16
+# 連線池配置 - 導出供 manager.py 使用
+DEFAULT_POOL_SIZE = 16  # 增加：支援 5 服務並發
+MAX_POOL_SIZE = 32      # 增加：上限提高
 BUSY_TIMEOUT_MS = 30000
-ACQUIRE_TIMEOUT = 5.0  # 等待可用連線的最長秒數
+ACQUIRE_TIMEOUT = 10.0  # 增加：高並發時等待更久
 
 
 class AsyncConnectionPool:
@@ -48,11 +48,13 @@ class AsyncConnectionPool:
     async def _create_connection(self) -> aiosqlite.Connection:
         conn = await aiosqlite.connect(self.db_path)
         conn.row_factory = aiosqlite.Row
-        # 每個連線都要設定 WAL + busy_timeout
+        # 每個連線都要設定 WAL + busy_timeout + 積極 checkpoint
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         await conn.execute("PRAGMA synchronous=NORMAL")
         await conn.execute("PRAGMA foreign_keys=ON")
+        # 減少 WAL 檔案堆積：每 100 頁 checkpoint（預設 1000）
+        await conn.execute("PRAGMA wal_autocheckpoint=100")
         self._created += 1
         return conn
 
@@ -62,9 +64,9 @@ class AsyncConnectionPool:
         try:
             # 等待可用連線
             conn = await asyncio.wait_for(self._queue.get(), timeout=ACQUIRE_TIMEOUT)
-            # 驗證連線仍存活
+            # 驗證連線仍存活 - 使用輕量查詢避免鎖爭用
             try:
-                await conn.execute("SELECT 1")
+                await conn.execute("PRAGMA quick_check")
             except Exception:
                 conn = await self._create_connection()
             return conn
@@ -73,6 +75,33 @@ class AsyncConnectionPool:
             if self._created < MAX_POOL_SIZE:
                 return await self._create_connection()
             raise RuntimeError("DB connection pool exhausted")
+
+    async def execute_with_retry(
+        self, sql: str, params: tuple = (), max_retries: int = 3, base_delay: float = 0.1
+    ):
+        """帶重試的執行器，處理 database is locked 等暫時性錯誤"""
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                async with self.connection() as conn:
+                    cursor = await conn.execute(sql, params)
+                    await conn.commit()
+                    return cursor
+            except aiosqlite.OperationalError as e:
+                last_error = e
+                error_msg = str(e).lower()
+                if "locked" in error_msg or "busy" in error_msg or "malformed" in error_msg:
+                    delay = base_delay * (attempt + 1)
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+            except RuntimeError as e:
+                if "event loop is closed" in str(e).lower():
+                    # 事件循環關閉，嘗試重新獲取連線
+                    await asyncio.sleep(base_delay)
+                    continue
+                raise
+        raise last_error or RuntimeError("Max retries exceeded")
 
     async def release(self, conn: aiosqlite.Connection):
         if self._created <= self.pool_size:
@@ -99,10 +128,12 @@ class AsyncConnectionPool:
             await self.release(conn)
 
 
-# 全域單例
+# 全域單例 - 棄用：改用 DatabaseManager
+# 保留以相容現有代碼，但內部委託給 DatabaseManager
 _pool: Optional[AsyncConnectionPool] = None
 
 def get_pool(db_path: str = "user_data.db") -> AsyncConnectionPool:
+    """@deprecated 使用 shared.db.manager.get_db_pool()"""
     global _pool
     if _pool is None:
         _pool = AsyncConnectionPool(db_path)
@@ -351,10 +382,12 @@ class AsyncSheetDrivenDB:
             return stats
 
 
-# 全域單例
+# 全域單例 - 棄用：改用 DatabaseManager
+# 保留以相容現有代碼，但內部委託給 DatabaseManager
 _async_db_instance: Optional[AsyncSheetDrivenDB] = None
 
 async def get_async_db(db_path: str = "user_data.db") -> AsyncSheetDrivenDB:
+    """@deprecated 使用 shared.db.manager.DatabaseManager 直接操作"""
     global _async_db_instance
     if _async_db_instance is None:
         _async_db_instance = AsyncSheetDrivenDB(db_path)

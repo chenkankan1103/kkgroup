@@ -22,6 +22,7 @@ from watchdog.events import FileSystemEventHandler
 from shared.utils.bot_status import build_discord_activity
 from shared.utils.mutual_rescue import ensure_mutual_rescue_monitor
 from shared.db.feature_usage import track_discord_interaction
+from shared.db.async_adapter import init_async_db, close_async_db
 from status_dashboard import (
     initialize_dashboard,
     load_message_ids,
@@ -625,6 +626,14 @@ async def main():
     # )
     # observer.start()
 
+    # 初始化資料庫連線池
+    try:
+        await init_async_db()
+        file_log("[DB] 連線池初始化完成")
+    except Exception as e:
+        file_log(f"[DB] ❌ 連線池初始化失敗: {e}")
+        raise
+
     try:
         while True:
             try:
@@ -646,6 +655,12 @@ async def main():
     finally:
         if update_status.is_running():
             update_status.stop()
+        # 關閉資料庫連線池
+        try:
+            await close_async_db()
+            file_log("[DB] 連線池已關閉")
+        except Exception as e:
+            file_log(f"[DB] ❌ 關閉連線池失敗: {e}")
         # if observer is defined:
         #     observer.stop()
         #     observer.join()
