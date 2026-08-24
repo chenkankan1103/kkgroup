@@ -396,12 +396,17 @@ class AnimeDBImpl:
         return self._db_path
 
     def _get_conn(self):
-        """獲取連線，禁用 row_factory 避免 UTF-8 解碼問題"""
+        """獲取連線，啟用 WAL 模式和 busy_timeout 避免鎖定問題"""
         import sqlite3
 
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = None
         conn.text_factory = bytes
+        # 啟用 WAL 模式：讀取不阻塞寫入，寫入不阻塞讀取
+        conn.execute("PRAGMA journal_mode=WAL")
+        # 設定 30 秒等待超時，避免無限阻塞
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     # ---- 通知/推送相關 ----
@@ -988,9 +993,14 @@ class AnimeDBImpl:
 
 
 def _get_db_connection():
-    """獲取資料庫連線 - 使用 text_factory=bytes 避免 UTF-8 解碼問題"""
+    """獲取資料庫連線 - 啟用 WAL 模式和 busy_timeout 避免鎖定問題"""
     conn = sqlite3.connect(str(ANIME_DB_PATH))
     conn.text_factory = bytes  # 所有 TEXT 欄位回傳 bytes，由上層自行 decode
+    # 啟用 WAL 模式：讀取不阻塞寫入，寫入不阻塞讀取
+    conn.execute("PRAGMA journal_mode=WAL")
+    # 設定 30 秒等待超時，避免無限阻塞
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 
