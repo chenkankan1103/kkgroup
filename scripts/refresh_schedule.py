@@ -5,7 +5,8 @@ import sys
 import os
 
 # 確保在專案根目錄執行
-project_root = "/home/e193752468/kkgroup"
+import os
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 os.chdir(project_root)
 

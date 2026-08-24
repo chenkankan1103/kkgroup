@@ -1,0 +1,192 @@
+{
+  "response_structure": {
+    "root": {
+      "data": {
+        "animeList": [
+          {
+            "acgSn": 146138,
+            "animeSn": 114107,
+            "videoSn": 50402,
+            "title": "BLEACH 死神 千年血戰篇-訣譚-",
+            "favorite": false,
+            "flag": 0,
+            "cover": "https://p2.bahamut.com.tw/B/ACG/c/38/0000146138.JPG",
+            "dateInfo": "年份：2026/07",
+            "totalEpisode": 4,
+            "popular": 359569,
+            "highlightTag": {
+              "bilingual": false,
+              "edition": "",
+              "vipTime": "",
+              "newArrival": false
+            },
+            "score": 5
+          }
+        ],
+        "totalPage": 67
+      }
+    },
+    "note": "The API at https://api.gamer.com.tw/anime/v1/anime_list.php returns data.animeList (paginated), NOT data.newAnimeSchedule. The schedule-by-weekday format (newAnimeSchedule) is deprecated/no longer provided by this API endpoint."
+  },
+  "pagination": {
+    "parameter": "page",
+    "default": 1,
+    "total_pages": 67,
+    "items_per_page": 30,
+    "usage": "https://api.gamer.com.tw/anime/v1/anime_list.php?page=2"
+  },
+  "required_headers": {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Referer": "https://ani.gamer.com.tw/",
+    "Origin": "https://ani.gamer.com.tw",
+    "Connection": "keep-alive",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "cross-site",
+    "X-Requested-With": "XMLHttpRequest"
+  },
+  "field_mapping": {
+    "videoSn": {
+      "json_path": "data.animeList[*].videoSn",
+      "type": "integer",
+      "description": "Video/episode ID for playback URL (animeVideo.php?sn=VIDEO_SN)",
+      "required": true
+    },
+    "animeSn": {
+      "json_path": "data.animeList[*].animeSn",
+      "type": "integer",
+      "description": "Anime series ID for detail page (animeRef.php?sn=ANIME_SN)",
+      "required": true
+    },
+    "acgSn": {
+      "json_path": "data.animeList[*].acgSn",
+      "type": "integer",
+      "description": "ACG content ID (used in cover URL)",
+      "required": false
+    },
+    "title": {
+      "json_path": "data.animeList[*].title",
+      "type": "string",
+      "description": "Anime title (Unicode escaped in JSON)",
+      "required": true
+    },
+    "cover": {
+      "json_path": "data.animeList[*].cover",
+      "type": "string",
+      "description": "Cover image URL (HTTPS)",
+      "required": false
+    },
+    "dateInfo": {
+      "json_path": "data.animeList[*].dateInfo",
+      "type": "string",
+      "description": "Release date info (e.g., '年份：2026/07')",
+      "required": false
+    },
+    "totalEpisode": {
+      "json_path": "data.animeList[*].totalEpisode",
+      "type": "integer",
+      "description": "Total episodes in this season/series",
+      "required": false
+    },
+    "popular": {
+      "json_path": "data.animeList[*].popular",
+      "type": "integer",
+      "description": "Popularity/view count",
+      "required": false
+    },
+    "score": {
+      "json_path": "data.animeList[*].score",
+      "type": "float",
+      "description": "User rating score (0-5)",
+      "required": false
+    },
+    "highlightTag": {
+      "json_path": "data.animeList[*].highlightTag",
+      "type": "object",
+      "description": "Special tags: bilingual, edition, vipTime, newArrival",
+      "required": false
+    },
+    "flag": {
+      "json_path": "data.animeList[*].flag",
+      "type": "integer",
+      "description": "Flag/status indicator",
+      "required": false
+    },
+    "favorite": {
+      "json_path": "data.animeList[*].favorite",
+      "type": "boolean",
+      "description": "Whether user favorited (always false in public API)",
+      "required": false
+    }
+  },
+  "schedule_tracker_integration": {
+    "current_approach": "The codebase (schedule_tracker.py) notes that newAnimeSchedule is no longer available. It uses BahamutWebScraper.fetch_weekly_schedule_from_homepage() as primary data source, which parses HTML from https://ani.gamer.com.tw/ looking for 'newanime-date-area' divs with data-animesn and data-date-code attributes.",
+    "api_vs_scraper": "API (anime_list.php) provides full anime catalog with videoSn/animeSn mapping but NO schedule time/weekday. Homepage scraping provides schedule (day_of_week, scheduled_time, video_sn, anime_sn) but limited to currently airing shows.",
+    "recommended_flow": [
+      "1. Use API anime_list.php (all pages) to build videoSn -> animeSn mapping and get cover/title/score",
+      "2. Use homepage scraping (newanime-date-area) to get weekly schedule with dayOfWeek and scheduledTime",
+      "3. Merge both: enrich scraped schedule entries with anime_data from API using videoSn as key"
+    ]
+  },
+  "sample_data": {
+    "api_response_first_page_truncated": {
+      "data": {
+        "animeList": [
+          {
+            "acgSn": 146138,
+            "animeSn": 114107,
+            "videoSn": 50402,
+            "title": "BLEACH 死神 千年血戰篇-訣譚-",
+            "favorite": false,
+            "flag": 0,
+            "cover": "https://p2.bahamut.com.tw/B/ACG/c/38/0000146138.JPG",
+            "dateInfo": "年份：2026/07",
+            "totalEpisode": 4,
+            "popular": 359569,
+            "highlightTag": {
+              "bilingual": false,
+              "edition": "",
+              "vipTime": "",
+              "newArrival": false
+            },
+            "score": 5
+          },
+          {
+            "acgSn": 141781,
+            "animeSn": 114112,
+            "videoSn": 49853,
+            "title": "捕長追走的咕嚕 第2季",
+            "favorite": false,
+            "flag": 0,
+            "cover": "https://p2.bahamut.com.tw/B/ACG/c/81/0000141781.JPG",
+            "dateInfo": "年份：2026/07",
+            "totalEpisode": 6,
+            "popular": 251582,
+            "highlightTag": {
+              "bilingual": false,
+              "edition": "",
+              "vipTime": "",
+              "newArrival": false
+            },
+            "score": 5
+          }
+        ],
+        "totalPage": 67
+      }
+    },
+    "homepage_schedule_format": {
+      "source": "newanime-date-area divs on https://ani.gamer.com.tw/",
+      "fields": {
+        "data-animesn": "animeSn (integer)",
+        "data-date-code": "dayOfWeek (1=Mon, 2=Tue, ..., 7=Sun)",
+        "animeVideo.php?sn=VIDEO_SN": "videoSn (integer, extracted from link)",
+        "p.anime-name": "title (string)",
+        "span.anime-hours": "scheduled_time (HH:MM)",
+        "p>蝚?N?": "episode (e.g., '第1集')"
+      }
+    }
+  }
+}
