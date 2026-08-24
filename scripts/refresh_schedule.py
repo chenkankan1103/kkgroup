@@ -5,22 +5,20 @@ import sys
 import os
 
 # 確保在專案根目錄執行
-import os
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 os.chdir(project_root)
 
 from cogs.ui.schedule_tracker import AnimeScheduleTracker
 from cogs.ui.anime_tracker import AnimeTracker
-from shared.db.async_db import AsyncSheetDrivenDB
+from cogs.ui.push_core import AnimeDBImpl, _get_db_connection
 from shared.db.manager import DatabaseManager
 
 async def main():
     # 初始化資料庫
     db_path = "user_data.db"
     await DatabaseManager.initialize(db_path)
-    db = AsyncSheetDrivenDB(db_path)
-    db._pool = await DatabaseManager.get_pool_or_init()
+    db = AnimeDBImpl(db_path)
 
     # 建立 tracker 並強制刷新（繞過 22:00 檢查）
     tracker = AnimeScheduleTracker(db_path)
