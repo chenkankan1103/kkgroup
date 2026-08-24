@@ -179,6 +179,42 @@ tools/**
 .swarm/
 CLAUDE.md
 
+# ===============================================
+# VM 執行時自動修改的檔案 (阻礙 webhook git reset --hard)
+# ===============================================
+
+# 設定檔 - 執行時會更新 lastUpdated / URL
+config/config.json
+web/portal/config.json
+
+# 自我修復守護程式狀態檔
+data/
+
+# 定期任務追蹤檔 (已棄用但可能殘留)
+.last_update_check
+.last_git_fetch
+
+# 大型資料檔 (不應進 Git)
+ruvector.db
+twms_fashion_db.json
+
+# .claude-flow 執行時狀態
+.claude-flow/daemon.pid
+.claude-flow/daemon-state.json
+.claude-flow/policy/
+.claude-flow/terminals/
+.claude-flow/metrics/
+.claude-flow/performance/
+.claude-flow/learning/
+.claude-flow/security/
+.claude-flow/hooks/
+.claude-flow/graph/
+.claude-flow/data/
+.claude-flow/agents/
+.claude-flow/swarm/
+.claude-flow/system/
+.claude-flow/workflows/
+
 # Graphify ?亥???嚗?啣遣蝵殷????舫??鈭?graphify-out/嚗?
 graphify-out/cost.json
 graphify-out/cache/
