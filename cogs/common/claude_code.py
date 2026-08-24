@@ -3,7 +3,7 @@ KK園區 Claude Code CLI 移植版
 ====================================================================
 完整移植 Claude Code CLI 核心功能到 Discord Bot，僅限：
 - Discord 管理員（.env 中 ADMIN_USER_ID 設定）
-- 指定頻道：1504438347974705152
+- 透過 /cc 指令觸發（移除自動監聽 thread 功能）
 
 架構：
 - 使用 Anthropic Messages API (tool_use) 實現 agentic loop
@@ -12,18 +12,17 @@ KK園區 Claude Code CLI 移植版
 - 記憶持久化：對話歷史儲存到 ai_memory.db
 """
 
-import os
-import json
 import asyncio
+import json
 import logging
+import os
 from pathlib import Path
-from typing import Optional, List, Dict, Union
 
-import discord
-from discord.ext import commands
-from discord import app_commands
-from dotenv import load_dotenv
 import aiohttp
+import discord
+from discord import app_commands
+from discord.ext import commands
+from dotenv import load_dotenv
 
 from shared.db.ai_memory import (
     DialogueMemory,
@@ -36,7 +35,6 @@ logger = logging.getLogger(__name__)
 
 # ─── 環境變數與權限設定 ─────────────────────────────────────────────────────
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
-ALLOWED_CHANNEL_ID = 1504438347974705152
 
 # NVIDIA NIM API (OpenAI compatible)
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
@@ -378,7 +376,7 @@ class ToolExecutor:
             if err:
                 result += f"\n[stderr]\n{err}"
             return result[:10000]  # 限制輸出大小
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise TimeoutError(f"指令超時 ({timeout}s)")
 
     async def task(self, description: str, prompt: str) -> str:
@@ -397,7 +395,7 @@ class NvidiaNimClient:
 
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
@@ -410,7 +408,7 @@ class NvidiaNimClient:
             )
         return self.session
 
-    def _convert_tools_to_openai(self, tools: List[Dict]) -> List[Dict]:
+    def _convert_tools_to_openai(self, tools: list[dict]) -> list[dict]:
         """將 Anthropic tool 格式轉換為 OpenAI function calling 格式"""
         openai_tools = []
         for tool in tools:
@@ -428,8 +426,8 @@ class NvidiaNimClient:
         return openai_tools
 
     def _convert_messages_to_openai(
-        self, messages: List[Dict], system: str
-    ) -> List[Dict]:
+        self, messages: list[dict], system: str
+    ) -> list[dict]:
         """將 Anthropic messages 格式轉換為 OpenAI 格式"""
         openai_messages = []
 
@@ -487,7 +485,7 @@ class NvidiaNimClient:
 
         return openai_messages
 
-    def _select_model(self, messages: List[Dict], tools: List[Dict]) -> str:
+    def _select_model(self, messages: list[dict], tools: list[dict]) -> str:
         """根據任務複雜度選擇模型
 
         較難的任務特徵：
@@ -542,11 +540,11 @@ class NvidiaNimClient:
 
     async def create_message(
         self,
-        messages: List[Dict],
+        messages: list[dict],
         system: str,
-        tools: List[Dict],
+        tools: list[dict],
         max_tokens: int = MAX_TOKENS,
-    ) -> Dict:
+    ) -> dict:
         """創建聊天完成請求，返回 Anthropic 兼容格式（含限流重試）"""
         session = await self._get_session()
 
@@ -608,7 +606,7 @@ class NvidiaNimClient:
                     result = await resp.json()
                     return self._convert_response_to_anthropic(result)
 
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            except (TimeoutError, aiohttp.ClientError) as e:
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
                     logger.warning(
@@ -621,7 +619,7 @@ class NvidiaNimClient:
                         f"NVIDIA NIM 網路錯誤，重試 {max_retries} 次後仍失敗: {e}"
                     )
 
-    def _convert_response_to_anthropic(self, openai_response: Dict) -> Dict:
+    def _convert_response_to_anthropic(self, openai_response: dict) -> dict:
         """將 OpenAI 回應格式轉換為 Anthropic 兼容格式"""
         choice = openai_response.get("choices", [{}])[0]
         message = choice.get("message", {})
@@ -668,7 +666,7 @@ class ClaudeCodeAgent:
         self.channel_id = channel_id
         self.client = NvidiaNimClient(NVIDIA_API_KEY)
         self.tools = ToolExecutor(WORK_DIR)
-        self.history: List[Dict] = []
+        self.history: list[dict] = []
         self.turn_count = 0
         self.progress_callback = progress_callback  # 進度回調函數
         self._last_progress_update = 0  # 上次更新時間戳
@@ -865,7 +863,7 @@ class ClaudeCodeAgent:
             "system_prompt": system_prompt,
         }
 
-    async def _execute_tool(self, tool_use: Dict) -> str:
+    async def _execute_tool(self, tool_use: dict) -> str:
         name = tool_use["name"]
         args = tool_use["input"]
 
@@ -898,7 +896,7 @@ class ClaudeCodeAgent:
 
         return result
 
-    def _format_tool_detail(self, tool_name: str, args: Dict) -> str:
+    def _format_tool_detail(self, tool_name: str, args: dict) -> str:
         """格式化工具參數用於進度顯示"""
         if tool_name == "read":
             path = args.get("path", "")
@@ -1108,7 +1106,7 @@ class ResumeView(discord.ui.View):
             for chunk in chunks:
                 await interaction.followup.send(chunk)
 
-    def _chunk_text(self, text: str, max_len: int) -> List[str]:
+    def _chunk_text(self, text: str, max_len: int) -> list[str]:
         """將長文字分割"""
         if len(text) <= max_len:
             return [text]
@@ -1122,7 +1120,7 @@ class ResumeView(discord.ui.View):
             item.disabled = True
         try:
             await self.message.edit(view=self)
-        except:
+        except Exception:
             pass
 
 
@@ -1160,7 +1158,6 @@ class ContinueView(discord.ui.View):
 
         # 重置 agent 的輪數計數器，繼續執行
         self.agent.turn_count = 0
-        MAX_SAFE_TURNS = 100
 
         # 發送新進度訊息
         progress_msg = await interaction.followup.send(
@@ -1200,7 +1197,7 @@ class ContinueView(discord.ui.View):
             for chunk in chunks:
                 await interaction.followup.send(chunk)
 
-    def _chunk_text(self, text: str, max_len: int) -> List[str]:
+    def _chunk_text(self, text: str, max_len: int) -> list[str]:
         """將長文字分割"""
         if len(text) <= max_len:
             return [text]
@@ -1215,7 +1212,7 @@ class ContinueView(discord.ui.View):
             item.disabled = True
         try:
             await self.message.edit(view=self)
-        except:
+        except Exception:
             pass
 
 
@@ -1225,42 +1222,12 @@ class ClaudeCodeCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # key: (user_id, thread_id 或 channel_id) -> agent
-        self.active_agents: Dict[tuple, ClaudeCodeAgent] = {}
-        self._thread_contexts: Dict[
-            int, str
-        ] = {}  # thread_id -> context_key for memory
-        self._processed_messages: set[int] = set()  # 避免重複處理同一訊息
+        # key: (user_id, channel_id) -> agent
+        self.active_agents: dict[tuple, ClaudeCodeAgent] = {}
         logger.info("✅ ClaudeCodeCog 初始化完成")
 
-    def _get_context_key(
-        self, channel: Union[discord.TextChannel, discord.Thread]
-    ) -> str:
-        """獲取對話上下文鍵：thread 用 thread_id，主頻道用 channel_id"""
-        if isinstance(channel, discord.Thread):
-            return f"thread_{channel.id}"
-        return f"channel_{channel.id}"
-
-    def _check_permission_message(self, message: discord.Message) -> bool:
-        """檢查訊息權限：管理員且在指定頻道（或其 thread）"""
-        # 頻道檢查：主頻道或其 thread
-        if message.channel.id != ALLOWED_CHANNEL_ID:
-            if isinstance(message.channel, discord.Thread):
-                if message.channel.parent_id != ALLOWED_CHANNEL_ID:
-                    return False
-            else:
-                return False
-        # 管理員檢查
-        if message.author.id == ADMIN_USER_ID:
-            return True
-        # 角色檢查
-        admin_role = os.getenv("ADMIN_ROLE_NAME", "管理員")
-        return any(r.name == admin_role for r in getattr(message.author, "roles", []))
-
     def _check_permission_interaction(self, interaction: discord.Interaction) -> bool:
-        """檢查互動權限：管理員且在指定頻道"""
-        if interaction.channel_id != ALLOWED_CHANNEL_ID:
-            return False
+        """檢查互動權限：僅限 Discord 管理員"""
         if interaction.user.id == ADMIN_USER_ID:
             return True
         admin_role = os.getenv("ADMIN_ROLE_NAME", "管理員")
@@ -1279,7 +1246,7 @@ class ClaudeCodeCog(commands.Cog):
     ):
         if not self._check_permission_interaction(interaction):
             await interaction.response.send_message(
-                "❌ 此指令僅限 Discord 管理員在指定頻道使用。", ephemeral=True
+                "❌ 此指令僅限 Discord 管理員使用。", ephemeral=True
             )
             return
 
@@ -1292,9 +1259,8 @@ class ClaudeCodeCog(commands.Cog):
         await interaction.response.defer()
 
         try:
-            # 以 thread 或 channel 為 context key
-            context_key = self._get_context_key(interaction.channel)
-            agent_key = (interaction.user.id, context_key)
+            # 使用 channel_id 作為 context key
+            agent_key = (interaction.user.id, interaction.channel_id)
 
             # 獲取或建立 agent
             if continue_conv and agent_key in self.active_agents:
@@ -1356,9 +1322,8 @@ class ClaudeCodeCog(commands.Cog):
             return
 
         active = len(self.active_agents)
-        context_key = self._get_context_key(interaction.channel)
-        user_agent_key = (interaction.user.id, context_key)
-        has_active = user_agent_key in self.active_agents
+        agent_key = (interaction.user.id, interaction.channel_id)
+        has_active = agent_key in self.active_agents
 
         embed = discord.Embed(
             title="🤖 Claude Code 狀態 (NVIDIA NIM)",
@@ -1368,7 +1333,7 @@ class ClaudeCodeCog(commands.Cog):
         embed.add_field(
             name="當前對話", value="✅ 活躍" if has_active else "💤 無", inline=True
         )
-        embed.add_field(name="上下文", value=context_key, inline=False)
+        embed.add_field(name="Channel ID", value=str(interaction.channel_id), inline=False)
         embed.add_field(
             name="模型 (自動選擇)",
             value=f"Ultra: {MODEL_ULTRA}\nSuper: {MODEL_SUPER}",
@@ -1388,8 +1353,7 @@ class ClaudeCodeCog(commands.Cog):
             await interaction.response.send_message("❌ 權限不足。", ephemeral=True)
             return
 
-        context_key = self._get_context_key(interaction.channel)
-        agent_key = (interaction.user.id, context_key)
+        agent_key = (interaction.user.id, interaction.channel_id)
 
         if agent_key in self.active_agents:
             await self.active_agents[agent_key].close()
@@ -1399,7 +1363,7 @@ class ClaudeCodeCog(commands.Cog):
             await interaction.response.send_message("無活躍對話", ephemeral=True)
 
     @staticmethod
-    def _chunk_text(text: str, max_len: int) -> List[str]:
+    def _chunk_text(text: str, max_len: int) -> list[str]:
         """將長文字分割"""
         if len(text) <= max_len:
             return [text]
@@ -1408,118 +1372,7 @@ class ClaudeCodeCog(commands.Cog):
             chunks.append(text[i : i + max_len])
         return chunks
 
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        """自動監聽 thread 訊息：管理員在允許頻道的 thread 說話即觸發"""
-        # 忽略 bot 自己的訊息
-        if message.author.bot:
-            return
-
-        # 調試：記錄所有收到的訊息
-        logger.debug(
-            f"[ClaudeCode] 收到訊息: channel={message.channel.id}, type={type(message.channel).__name__}, author={message.author.id}, content={message.content[:50] if message.content else '(empty)'}"
-        )
-
-        # 忽略有指令前綴的訊息（讓指令處理器處理）
-        if message.content and message.content.startswith(("!", "/", "?")):
-            logger.debug("[ClaudeCode] 忽略指令前綴")
-            return
-
-        # 權限檢查
-        perm_result = self._check_permission_message(message)
-        logger.debug(
-            f"[ClaudeCode] 權限檢查: user={message.author.id} (admin={ADMIN_USER_ID}), channel={message.channel.id}, type={type(message.channel).__name__}, is_thread={isinstance(message.channel, discord.Thread)}, parent={getattr(message.channel, 'parent_id', None)}, allowed_id={ALLOWED_CHANNEL_ID}, perm={perm_result}"
-        )
-        if not perm_result:
-            return
-
-        # 只在 thread 中自動觸發（主頻道仍需用 /cc 指令）
-        is_thread = isinstance(message.channel, discord.Thread)
-        logger.debug(
-            f"[ClaudeCode] Thread 檢查: is_thread={is_thread}, channel_id={message.channel.id}, channel_type={type(message.channel).__name__}"
-        )
-        if not is_thread:
-            logger.debug("[ClaudeCode] 非 thread，略過")
-            return
-
-        # 避免重複處理（同一訊息可能觸發多次）
-        already_processed = message.id in self._processed_messages
-        logger.debug(
-            f"[ClaudeCode] 重複檢查: msg_id={message.id}, processed={already_processed}, set_size={len(self._processed_messages)}"
-        )
-        if already_processed:
-            return
-        self._processed_messages.add(message.id)
-
-        logger.info(
-            f"[ClaudeCode] Thread 觸發: thread={message.channel.id}, parent={message.channel.parent_id}, user={message.author.id}, content={message.content[:50]}"
-        )
-
-        has_api_key = bool(NVIDIA_API_KEY)
-        logger.debug(f"[ClaudeCode] API Key 檢查: has_key={has_api_key}")
-        if not has_api_key:
-            logger.warning("[ClaudeCode] NVIDIA_API_KEY 未設定")
-            return  # 靜默失效
-
-        try:
-            context_key = self._get_context_key(message.channel)
-            agent_key = (message.author.id, context_key)
-
-            # 獲取或建立 agent
-            if agent_key in self.active_agents:
-                agent = self.active_agents[agent_key]
-            else:
-                agent = ClaudeCodeAgent(message.author.id, message.channel.id)
-                self.active_agents[agent_key] = agent
-
-            # 建立停止按鈕 View
-            stop_view = StopView(agent)
-
-            # 發送初始進度訊息（帶停止按鈕）
-            initial_msg = await message.channel.send("🔄 開始執行...", view=stop_view)
-
-            async def update_progress(text: str):
-                """更新進度訊息（編輯同一條 message，超長時分割發送）"""
-                try:
-                    chunks = self._chunk_text(text, 1900)
-                    if len(chunks) == 1:
-                        await initial_msg.edit(content=chunks[0], view=stop_view)
-                    else:
-                        # 第一塊編輯原訊息，其餘發送新訊息
-                        await initial_msg.edit(content=chunks[0], view=stop_view)
-                        for chunk in chunks[1:]:
-                            await message.channel.send(chunk)
-                except (discord.NotFound, discord.HTTPException):
-                    pass
-
-            # 執行
-            reply = await agent.run(message.content, progress_callback=update_progress)
-
-            # 檢查是否達到輪數上限
-            if isinstance(reply, dict) and reply.get("type") == "limit_reached":
-                # 顯示繼續按鈕
-                continue_view = ContinueView(agent, message.content)
-                await initial_msg.edit(content=reply["message"], view=continue_view)
-            else:
-                # 正常完成
-                stop_view.stop()
-                try:
-                    await initial_msg.edit(view=stop_view)
-                except (discord.NotFound, discord.HTTPException):
-                    pass
-
-                # 發送最終結果
-                chunks = self._chunk_text(reply, 1900)
-                for chunk in chunks:
-                    await message.channel.send(chunk)
-
-        except Exception as e:
-            logger.exception("Thread auto-trigger 執行錯誤")
-            try:
-                await message.reply(f"❌ 執行錯誤: {e}", mention_author=False)
-            except:
-                pass
-
+    
     async def cog_unload(self):
         """卸載時關閉所有 agent"""
         for agent in self.active_agents.values():
@@ -1532,5 +1385,5 @@ async def setup(bot: commands.Bot):
     # 初始化記憶系統
     try:
         initialize_memory_system()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"記憶系統初始化失敗: {e}")
