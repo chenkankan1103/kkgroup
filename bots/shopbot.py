@@ -345,14 +345,23 @@ async def update_status():
     """定期更新 Bot 狀態和日誌 Embed"""
     try:
         activity = build_discord_activity(BOT_TYPE)
-        await client.change_presence(activity=activity)
+        await asyncio.wait_for(client.change_presence(activity=activity), timeout=10.0)
 
-        # 每 2 分鐘更新一次日誌 embed
+        # 每 10 分鐘更新一次日誌 embed
         from status_dashboard import update_dashboard_logs
 
         await update_dashboard_logs(client, BOT_TYPE)
+        file_log("[DEBUG] Status updated")
+    except asyncio.TimeoutError:
+        file_log("[ERROR] Status update timeout - presence change exceeded 10s")
+        print("[ERROR] Status update timeout")
+    except (ImportError, OSError, RuntimeError, discord.HTTPException, discord.Forbidden, discord.NotFound, discord.InvalidArgument, discord.GatewayNotFound) as e:
+        file_log(f"[ERROR] Failed to update status: {type(e).__name__}: {e}")
+        print(f"[ERROR] Failed to update status: {type(e).__name__}: {e}")
     except Exception as e:
-        print(f"❌ 狀態更新失敗: {e}")
+        # 兜底：任何未預期的異常都記錄但不讓任務崩潰
+        file_log(f"[ERROR] Unexpected error in update_status: {type(e).__name__}: {e}")
+        print(f"[ERROR] Unexpected error in update_status: {type(e).__name__}: {e}")
 
 
 @update_status.before_loop

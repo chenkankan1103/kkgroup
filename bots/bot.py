@@ -449,15 +449,20 @@ async def update_status():
         # 添加超時防護，防止長時間掛起
         activity = build_discord_activity(BOT_TYPE)
         await asyncio.wait_for(client.change_presence(activity=activity), timeout=10.0)
+        file_log("[DEBUG] Status updated")  # 成功也記錄，方便追蹤
 
         # 日誌更新已移交給 status_dashboard.py 的獨立 10 分鐘定時任務
         # 此函式現在只負責更新 bot 的狀態活動
     except asyncio.TimeoutError:
         file_log("[ERROR] Status update timeout - presence change exceeded 10s")
         print("[ERROR] Status update timeout")
-    except (ImportError, OSError, RuntimeError) as e:
-        file_log(f"[ERROR] Failed to update status: {e}")
-        print(f"[ERROR] Failed to update status: {e}")
+    except (ImportError, OSError, RuntimeError, discord.HTTPException, discord.Forbidden, discord.NotFound, discord.InvalidArgument, discord.GatewayNotFound) as e:
+        file_log(f"[ERROR] Failed to update status: {type(e).__name__}: {e}")
+        print(f"[ERROR] Failed to update status: {type(e).__name__}: {e}")
+    except Exception as e:
+        # 兜底：任何未預期的異常都記錄但不讓任務崩潰
+        file_log(f"[ERROR] Unexpected error in update_status: {type(e).__name__}: {e}")
+        print(f"[ERROR] Unexpected error in update_status: {type(e).__name__}: {e}")
 
 
 @update_status.before_loop
