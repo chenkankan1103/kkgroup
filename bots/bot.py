@@ -252,6 +252,7 @@ async def find_and_load_extensions(base_path, package_prefix="", bot_client=None
         "ai_client_liteLLM",  # AI 客戶端工具模組，不是 Cog
         "auto_debug_system",  # 自動除錯流程模組，不是 Cog
         "uibody",  # UserPanel 由 uibody.setup() 統一管理
+        "justwatch_client",  # 工具模組：JustWatch GraphQL 客戶端，非 Cog
     }
 
     for item in sorted(os.listdir(base_path)):
