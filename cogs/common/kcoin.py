@@ -533,7 +533,7 @@ class KKCoin(commands.Cog):
         """
         async with self.tunnel_url_lock:
             try:
-            import json
+                import json
 
             # 1️⃣ 優先方式: 嘗試讀取 config/config.json (GitHub同步，確保URL一致)
             project_root = os.path.dirname(
