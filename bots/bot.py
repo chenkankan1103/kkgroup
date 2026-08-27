@@ -3,18 +3,12 @@ import os
 import sys
 import asyncio
 
-# Fix sys.path for proper imports
-# This ensures that imports like 'from shared' work correctly
-try:
-    from shared.utils.encoding_handler import init_all, setup_utf8_logging
-except ImportError:
-    import sys
-    import os
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, parent_dir)
-    from shared.utils.encoding_handler import init_all, setup_utf8_logging
 
-# 🔧 在任何其他導入之前初始化全局 UTF-8 編碼
+# Fix sys.path for proper imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
+# 初始化全局 UTF-8 編碼
 from shared.utils.encoding_handler import init_all, setup_utf8_logging
 
 init_all()
