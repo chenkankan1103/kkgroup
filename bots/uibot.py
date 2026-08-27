@@ -290,51 +290,7 @@ async def reload_extension_on_change(ext_name):
             _pending_reloads.discard(ext_name)
 
 
-# ============================================================
-# 檔案監控系統
-# ============================================================
-class FileEventHandler(FileSystemEventHandler):
-    def __init__(self, loop):
-        self.loop = loop
-        self.last_modified = {}
 
-    def on_modified(self, event):
-        self.handle(event)
-
-    def on_created(self, event):
-        self.handle(event)
-
-    def on_moved(self, event):
-        self.handle(event)
-
-    def handle(self, event):
-        if not event.is_directory and event.src_path.endswith(".py"):
-            # 排除 __pycache__ 目錄中的文件
-            if "__pycache__" in event.src_path:
-                return
-
-            filename = os.path.basename(event.src_path)
-            if filename == "__init__.py":
-                return
-
-            # 防止重複觸發（1秒內同一檔案只處理一次）
-            import time
-
-            current_time = time.time()
-            if event.src_path in self.last_modified:
-                if current_time - self.last_modified[event.src_path] < 1.0:
-                    return
-            self.last_modified[event.src_path] = current_time
-
-            rel_path = os.path.relpath(
-                event.src_path, os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
-            )
-            module_path = rel_path.replace(os.sep, ".")[:-3]
-            ext_name = f"{COMMANDS_DIR}.{module_path}"
-
-            asyncio.run_coroutine_threadsafe(
-                reload_extension_on_change(ext_name), self.loop
-            )
 
 
 # ============================================================

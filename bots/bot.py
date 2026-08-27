@@ -5,9 +5,14 @@ import asyncio
 
 # Fix sys.path for proper imports
 # This ensures that imports like 'from shared' work correctly
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
+try:
+    from shared.utils.encoding_handler import init_all, setup_utf8_logging
+except ImportError:
+    import sys
+    import os
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, parent_dir)
+    from shared.utils.encoding_handler import init_all, setup_utf8_logging
 
 # 🔧 在任何其他導入之前初始化全局 UTF-8 編碼
 from shared.utils.encoding_handler import init_all, setup_utf8_logging
@@ -359,51 +364,7 @@ async def reload_extension_on_change(ext_name):
             _pending_reloads.discard(ext_name)
 
 
-# ============================================================
-# 檔案監控系統
-# ============================================================
-class FileEventHandler(FileSystemEventHandler):
-    def __init__(self, loop):
-        self.loop = loop
-        self.last_modified = {}
 
-    def on_modified(self, event):
-        self.handle(event)
-
-    def on_created(self, event):
-        self.handle(event)
-
-    def on_moved(self, event):
-        self.handle(event)
-
-    def handle(self, event):
-        if not event.is_directory and event.src_path.endswith(".py"):
-            # 排除 __pycache__ 目錄中的文件
-            if "__pycache__" in event.src_path:
-                return
-
-            filename = os.path.basename(event.src_path)
-            if filename == "__init__.py":
-                return
-
-            # 防止重複觸發（1秒內同一檔案只處理一次）
-            import time
-
-            current_time = time.time()
-            if event.src_path in self.last_modified:
-                if current_time - self.last_modified[event.src_path] < 1.0:
-                    return
-            self.last_modified[event.src_path] = current_time
-
-            rel_path = os.path.relpath(
-                event.src_path, os.path.join(os.path.dirname(__file__), COMMANDS_DIR)
-            )
-            module_path = rel_path.replace(os.sep, ".")[:-3]
-            ext_name = f"{COMMANDS_DIR}.{module_path}"
-
-            asyncio.run_coroutine_threadsafe(
-                reload_extension_on_change(ext_name), self.loop
-            )
 
 
 # ============================================================
@@ -448,6 +409,10 @@ async def update_status():
     try:
         # 添加超時防護，防止長時間掛起
         activity = build_discord_activity(BOT_TYPE)
+        # Debug: log activity details and ensure non-empty name
+        print(f"[DEBUG] Activity built: type={activity.type}, name='{activity.name}'")
+        if not activity.name or activity.name.strip() == "":
+            activity = discord.Activity(type=discord.ActivityType.watching, name="Bot Online")
         await asyncio.wait_for(client.change_presence(activity=activity), timeout=10.0)
         file_log("[DEBUG] Status updated")  # 成功也記錄，方便追蹤
 
