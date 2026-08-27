@@ -191,6 +191,7 @@ class AnnouncementButtonView(PersistentViewBase):
         """建立按鈕回調函數"""
 
         async def callback(interaction: discord.Interaction):
+            await interaction.response.defer()
             self.current_announcement_id = announcement_id
 
             # 找到選中的公告
