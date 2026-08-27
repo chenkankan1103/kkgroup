@@ -1,0 +1,47 @@
+[Unit]
+Description=KKGroup Agent Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=e193752468
+Group=e193752468
+WorkingDirectory=/home/e193752468/kkgroup
+Environment=PYTHONPATH=/home/e193752468/kkgroup
+Environment=PYTHONIOENCODING=utf-8
+Environment=LANG=C.UTF-8
+Environment=AGENT_TASK_DB=/home/e193752468/kkgroup/shared/db/data/agent_tasks.db
+Environment=CLAUDE_WORK_DIR=/home/e193752468/kkgroup
+Environment=AGENT_SERVER_PORT=8081
+# 從 .env 讀取敏感環境變數
+EnvironmentFile=/home/e193752468/kkgroup/.env
+ExecStart=/home/e193752468/kkgroup/venv/bin/python /home/e193752468/kkgroup/agent_server.py
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+# 記憶體保護（防止 Agent 佔滿記憶體影響主 Bot）
+MemoryMax=512M
+MemoryHigh=400M
+MemorySwapMax=1G
+
+# CPU 限制
+CPUQuota=200%
+
+# 安全性
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/e193752468/kkgroup/shared/db/data
+ReadWritePaths=/home/e193752468/kkgroup/logs
+
+# 日誌
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kkgroup-agent
+
+[Install]
+WantedBy=multi-user.target
