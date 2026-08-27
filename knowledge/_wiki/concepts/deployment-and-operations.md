@@ -297,7 +297,7 @@ sudo tail -50 /var/log/nginx/error.log
 ### 3. 知識庫自動刷新
 - **排程**：每天 18:00（台灣時間）
 - **腳本**：`scheduled_tasks/refresh_knowledge_base.py`
-- **流程**：`scan_vm_state.py` → `ingest_knowledge.py` → 更新 `ai_memory.py` 知識庫
+- **流程**：`scan_vm_state.py` → `refresh_knowledge_base.py` → 更新 `ai_memory.py` 知識庫
 - **通知**：Discord Webhook（`KNOWLEDGE_WEBHOOK_URL` 或 `DISCORD_WEBHOOK_URL`）
 
 ## 備份和恢復

@@ -148,7 +148,7 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 ### 8. 腳本系統 (`scripts/`) — 20+ 管理腳本
 - **commands_manager.py**: 統一維運入口（SSH、systemd、日誌、診斷）
 - **scan_vm_state.py**: 掃描 VM 狀態 → 產生 `knowledge/_wiki/Inbox/vm-scan-latest.md`
-- **ingest_knowledge.py**: 掃描 wiki 建立知識庫向量索引
+- **refresh_knowledge_base.py**: 每日更新 knowledge wiki 與 VM 掃描結果到 AI 知識庫
 - **sync-knowledge-to-vm.ps1** / **gcp-ssh.ps1**: PowerShell 管理腳本
 - **fetch_db_from_gcp.ps1**: 從 GCP 抓取資料庫
 - **auto_ai_fix.py** / **auto_error_detector.py** / **auto_self_heal.py**: 自動修復系統

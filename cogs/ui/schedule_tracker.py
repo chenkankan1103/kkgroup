@@ -3,7 +3,7 @@
 Bahamut 動畫追蹤 Cog - 週表排程系統
 
 負責週表機制：
-- 每天晚上 22:00 自動從 Bahamut API 下載完整一週時程表
+- 每天 19:00 自動從 Bahamut API 下載完整一週時程表
 - 將時程表儲存到本地資料庫 (anime_weekly_schedule 表)
 - 大幅減少 API 呼叫頻率：從每天 288 次減少到每天 1 次
 
@@ -141,14 +141,14 @@ class AnimeScheduleTracker:
 
     async def refresh_weekly_schedule(self) -> dict:
         """
-        每天晚上 22:00 拉取完整週表並全量覆蓋 - 兼具「填滿行事曆」與「檢查漏推」功能
+        每天 19:00 拉取完整週表並全量覆蓋 - 兼具「填滿行事曆」與「檢查漏推」功能
 
         流程：
         1. 呼叫 newAnimeSchedule API 取得 7 天時程表
         2. 使用 BahamutWebScraper 爬取 animeSn <-> videoSn 映射關係
         3. 豐富 anime_data 使其包含 animeSn
         4. 以「本週一」為 week_start_date 全量覆蓋 anime_weekly_schedule 表
-        5. 回傳今日時程供上層檢查 <=22:00 的漏推項目
+        5. 回傳今日時程供上層檢查 <=19:00 的漏推項目
 
         Returns:
             dict: {
@@ -162,11 +162,11 @@ class AnimeScheduleTracker:
         current_time_str = now.strftime("%H:%M")
 
         try:
-            # 每天 22:00 執行（移除 is_sunday 判斷）
-            is_refresh_time = now.hour == 22  # 台灣時間 22:00-22:59
+            # 每天 19:00 執行
+            is_refresh_time = now.hour == 19 and now.minute == 0  # 台灣時間 19:00
 
             if not is_refresh_time:
-                logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非晚上 10 點）")
+                logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非晚上 7 點）")
                 return {"success": False, "skipped": True}
 
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
