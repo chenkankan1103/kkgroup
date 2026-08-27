@@ -812,7 +812,23 @@ class AnimeDBImpl:
             )
 
             # 3. 插入新資料，保留 pushed=1
+            # Pre-deduplicate by (day_of_week, scheduled_time) to avoid UNIQUE constraint failure
+            seen = set()
+            deduped_schedule_data = []
+            duplicates = 0
             for item in schedule_data:
+                key = (item["day_of_week"], item["scheduled_time"])
+                if key in seen:
+                    duplicates += 1
+                    logger.warning(f"⚠️ [save_weekly_schedule] Duplicate schedule entry ignored: day_of_week={item['day_of_week']}, scheduled_time={item['scheduled_time']}")
+                    continue
+                seen.add(key)
+                deduped_schedule_data.append(item)
+
+            if duplicates > 0:
+                logger.info(f"📝 [save_weekly_schedule] Removed {duplicates} duplicate schedule entries")
+
+            for item in deduped_schedule_data:
                 day_of_week = item["day_of_week"]
                 scheduled_time = item["scheduled_time"]
                 anime_data = item.get("anime_data", {})

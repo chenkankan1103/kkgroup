@@ -4,12 +4,11 @@
 
 讓 KK 園區中控室 NPC 不只會聊天，而是真的能把 repo 與 VM 狀態持續寫進長期記憶。
 
-這條流程現在分成四個步驟：
+這條流程現在分成三個步驟：
 
 1. `scripts/scan_vm_state.py`
-2. `scripts/ingest_knowledge.py`
-3. `scheduled_tasks/refresh_knowledge_base.py`
-4. `shared/db/ai_memory.py` + `cogs/common/AI.py`
+2. `scheduled_tasks/refresh_knowledge_base.py`
+3. `shared/db/ai_memory.py` + `cogs/common/AI.py`
 
 ## 資料流
 
@@ -23,10 +22,6 @@
 - [scripts/scan_vm_state.py](../../../scripts/scan_vm_state.py)
   - 掃描目前主機平台、systemd 服務狀態、git 狀態、repo 熱區與可拓展建議
   - 產生 [knowledge/_wiki/Inbox/vm-scan-latest.md](../Inbox/vm-scan-latest.md)
-- [scripts/ingest_knowledge.py](../../../scripts/ingest_knowledge.py)
-  - 掃描 `knowledge/_wiki` 下所有 Markdown
-  - 解析標題、link、front matter、來源路徑
-  - 寫入 `knowledge_base`，並建立 related topics
 - [scheduled_tasks/refresh_knowledge_base.py](../../../scheduled_tasks/refresh_knowledge_base.py)
   - 每次執行時先掃描 VM，再重建知識資料
 - [shared/db/ai_memory.py](../../../shared/db/ai_memory.py)
