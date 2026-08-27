@@ -5,10 +5,9 @@ import asyncio
 
 # Fix sys.path for proper imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+sys.path.insert(0, parent_dir)
 
-# 🔧 在任何其他導入之前初始化全局 UTF-8 編碼
+# 初始化全局 UTF-8 編碼
 from shared.utils.encoding_handler import init_all, setup_utf8_logging
 
 init_all()
