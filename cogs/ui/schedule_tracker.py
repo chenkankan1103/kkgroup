@@ -162,11 +162,11 @@ class AnimeScheduleTracker:
         current_time_str = now.strftime("%H:%M")
 
         try:
-            # 每天 19:00 執行
-            is_refresh_time = now.hour == 19 and now.minute == 0  # 台灣時間 19:00
+            # 每天 18:10 執行
+            is_refresh_time = now.hour == 18 and now.minute == 10  # 台灣時間 18:10
 
             if not is_refresh_time:
-                logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非晚上 7 點）")
+                logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非下午 6 點 10 分）")
                 return {"success": False, "skipped": True}
 
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
