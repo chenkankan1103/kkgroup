@@ -177,6 +177,7 @@ tools/**
 .claude/.proven-config-version
 .claude/memory.db
 .claude-flow/
+.agent-teams/
 
 # Ignore Claude Swarm directory
 .swarm/
@@ -221,4 +222,4 @@ twms_fashion_db.json
 # Graphify ?亥???嚗?啣遣蝵殷????舫??鈭?graphify-out/嚗?
 graphify-out/cost.json
 graphify-out/cache/
-.desloppify/
+.desloppify/scorecard.png
