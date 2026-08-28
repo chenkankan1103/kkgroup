@@ -56,6 +56,7 @@ class InterestOnboardingView(discord.ui.View):
     async def interest_select(
         self, interaction: discord.Interaction, select: discord.ui.Select
     ):
+        await interaction.response.defer()
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
                 "❌ 這不是你的選項！", ephemeral=True
@@ -76,12 +77,13 @@ class InterestOnboardingView(discord.ui.View):
 
     @discord.ui.button(label="跳過", style=discord.ButtonStyle.secondary)
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ 這不是你的按鈕！", ephemeral=True
             )
             return
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "已跳過。你可以隨時使用 `/my_interests` 設定標籤。", ephemeral=True
         )
         self.stop()
@@ -379,10 +381,11 @@ class TestWelcomeView(discord.ui.View):
     async def _refresh_preview(
         self, interaction: discord.Interaction, notice: str, *, clear_view: bool = False
     ):
+        await interaction.response.defer()
         embed = await self.cog.create_welcome_embed(
             self.preview_user_data, self.preview_user
         )
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             embed=embed, view=None if clear_view else self
         )
         await interaction.followup.send(notice, ephemeral=True)
