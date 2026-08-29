@@ -535,59 +535,59 @@ class KKCoin(commands.Cog):
             try:
                 import json
 
-            # 1️⃣ 優先方式: 嘗試讀取 config/config.json (GitHub同步，確保URL一致)
-            project_root = os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__))
-            )
-            config_file = os.path.join(project_root, "config", "config.json")
+                # 1️⃣ 優先方式: 嘗試讀取 config/config.json (GitHub同步，確保URL一致)
+                project_root = os.path.dirname(
+                    os.path.dirname(os.path.abspath(__file__))
+                )
+                config_file = os.path.join(project_root, "config", "config.json")
 
-            if os.path.exists(config_file):
-                try:
-                    def _read_config():
-                        with open(config_file, "r", encoding="utf-8") as f:
-                            return json.load(f)
-                    config_data = await asyncio.to_thread(_read_config)
-                    tunnel_url = config_data.get("url")
+                if os.path.exists(config_file):
+                    try:
+                        def _read_config():
+                            with open(config_file, "r", encoding="utf-8") as f:
+                                return json.load(f)
+                        config_data = await asyncio.to_thread(_read_config)
+                        tunnel_url = config_data.get("url")
 
-                    if tunnel_url and tunnel_url.startswith("https://"):
-                        self.base_url = tunnel_url
-                        print(
-                            f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}"
-                        )
-                        return tunnel_url
-                except Exception as config_err:
-                    print(f"⚠️ 從 config.json 讀取失敗: {config_err}")
+                        if tunnel_url and tunnel_url.startswith("https://"):
+                            self.base_url = tunnel_url
+                            print(
+                                f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}"
+                            )
+                            return tunnel_url
+                    except Exception as config_err:
+                        print(f"⚠️ 從 config.json 讀取失敗: {config_err}")
 
-            # 2️⃣ 備用方式: 嘗試讀取 /tmp/cloudflared.log (本地cloudflared)
-            log_file = "/tmp/cloudflared.log"
-            if os.path.exists(log_file):
-                try:
-                    def _read_log():
-                        with open(
-                            log_file, "r", encoding="utf-8", errors="ignore"
-                        ) as f:
-                            return f.read()
-                    content = await asyncio.to_thread(_read_log)
+                # 2️⃣ 備用方式: 嘗試讀取 /tmp/cloudflared.log (本地cloudflared)
+                log_file = "/tmp/cloudflared.log"
+                if os.path.exists(log_file):
+                    try:
+                        def _read_log():
+                            with open(
+                                log_file, "r", encoding="utf-8", errors="ignore"
+                            ) as f:
+                                return f.read()
+                        content = await asyncio.to_thread(_read_log)
 
-                    # 使用 regex 抓取最新的 https://*.trycloudflare.com URL
-                    pattern = r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com"
-                    matches = re.findall(pattern, content)
+                        # 使用 regex 抓取最新的 https://*.trycloudflare.com URL
+                        pattern = r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com"
+                        matches = re.findall(pattern, content)
 
-                    if matches:
-                        # 取最後一個（最新的）
-                        tunnel_url = matches[-1]
-                        self.base_url = tunnel_url
-                        print(f"✅ 已設定 Tunnel URL (from log): {tunnel_url}")
-                        return tunnel_url
-                except Exception as log_err:
-                    print(f"⚠️ 從 log 讀取失敗: {log_err}")
+                        if matches:
+                            # 取最後一個（最新的）
+                            tunnel_url = matches[-1]
+                            self.base_url = tunnel_url
+                            print(f"✅ 已設定 Tunnel URL (from log): {tunnel_url}")
+                            return tunnel_url
+                    except Exception as log_err:
+                        print(f"⚠️ 從 log 讀取失敗: {log_err}")
 
-            print("⚠️ 無法獲取隧道 URL (兩種方式均失敗)")
-            return None
+                print("⚠️ 無法獲取隧道 URL (兩種方式均失敗)")
+                return None
 
-        except Exception as e:
-            print(f"❌ 讀取隧道 URL 失敗: {e}")
-            return None
+            except Exception as e:
+                print(f"❌ 讀取隧道 URL 失敗: {e}")
+                return None
 
 async def setup(bot):
     await bot.add_cog(KKCoin(bot))
