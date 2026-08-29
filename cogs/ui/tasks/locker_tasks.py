@@ -1,8 +1,6 @@
 import asyncio
-import time
-
 import discord
-
+import time
 # 使用非同步 DB 適配器避免阻塞事件循環
 from shared.db.async_adapter import get_all_users, set_user_field
 
@@ -105,8 +103,9 @@ class LockerTasks:
                         backfilled_count += 1
                     else:
                         try:
-                            from ..utils.locker_embed_generator import \
-                                update_locker_message
+                            from ..utils.locker_embed_generator import (
+                                update_locker_message,
+                            )
 
                             success = await update_locker_message(
                                 thread=thread,

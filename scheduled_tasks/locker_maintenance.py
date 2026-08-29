@@ -5,14 +5,12 @@
     await bot.load_extension('locker_maintenance')
 """
 
-import sqlite3
-import traceback
-from datetime import datetime
-from pathlib import Path
-
 import discord
 from discord.ext import commands, tasks
-
+import sqlite3
+from pathlib import Path
+from datetime import datetime
+import traceback
 from status_dashboard import add_log
 
 DB_PATH = "./shop_commands/merchant/cannabis.db"

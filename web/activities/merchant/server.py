@@ -1,8 +1,7 @@
+from flask import Flask, request, jsonify
 import asyncio
 import os
 import sys
-
-from flask import Flask, jsonify, request
 
 # ensure root of project on path so we can import existing modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))

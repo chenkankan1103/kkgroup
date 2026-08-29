@@ -1,26 +1,31 @@
-import asyncio
-import datetime
-import logging
-import os
-from pathlib import Path
-from typing import Optional
-
-import aiohttp
 import discord
 from discord.ext import commands, tasks
+import os
+import aiohttp
+import asyncio
+from typing import Optional
 from dotenv import load_dotenv
-
+from pathlib import Path
 # 非同步 DB 適配器 - 避免阻塞事件循環
-from shared.db.async_adapter import get_all_users as async_get_all_users
-from shared.db.async_adapter import get_user as async_get_user
-from shared.db.async_adapter import set_user_field as async_set_user_field
+from shared.db.async_adapter import (
+    get_user as async_get_user,
+    set_user_field as async_set_user_field,
+    get_all_users as async_get_all_users,
+)
+import datetime
+import logging
 
-from .tasks import LockerTasks
-from .utils import (create_user_embed, ensure_user_exists,
-                    generate_character_cache_key, generate_locker_grid,
-                    get_plant_progress_info, restore_image_cache_from_storage)
 # 導入拆分出去的模組
-from .views import LockerPanelView, UpdatePanelView
+from .views import UpdatePanelView, LockerPanelView
+from .utils import (
+    generate_locker_grid,
+    get_plant_progress_info,
+    create_user_embed,
+    generate_character_cache_key,
+    restore_image_cache_from_storage,
+    ensure_user_exists,
+)
+from .tasks import LockerTasks
 
 load_dotenv()
 
@@ -456,9 +461,7 @@ class UserPanel(commands.Cog):
         """全域註冊員工證視圖（和 work_cog 的 register_persistent_views 類似邏輯）"""
         try:
             # 使用非同步 DB 適配器
-            from shared.db.async_adapter import \
-                get_all_users as async_get_all_users
-
+            from shared.db.async_adapter import get_all_users as async_get_all_users
             from .views import WorkCardActionView
 
             all_users = await async_get_all_users()
@@ -596,13 +599,9 @@ class UserPanel(commands.Cog):
                             continue
                         raise
 
-                    await async_set_user_field(
-                        user_id, "last_kkcoin_snapshot", current_kkcoin
-                    )
+                    await async_set_user_field(user_id, "last_kkcoin_snapshot", current_kkcoin)
                     await async_set_user_field(user_id, "last_xp_snapshot", current_xp)
-                    await async_set_user_field(
-                        user_id, "last_level_snapshot", current_level
-                    )
+                    await async_set_user_field(user_id, "last_level_snapshot", current_level)
 
                 except Exception:
                     continue

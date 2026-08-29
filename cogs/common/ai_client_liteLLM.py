@@ -17,16 +17,15 @@
 
 import asyncio
 import json
-import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
-
+import logging
+from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
 try:
+    from litellm import completion, acompletion
     import litellm
-    from litellm import acompletion, completion
 
     _LITELLM_AVAILABLE = True
 except ImportError:
@@ -495,9 +494,9 @@ def get_usage_stats() -> Dict[str, Any]:
                 for m in MODEL_LIST
                 if m["litellm_params"].get("api_key")
             ],
-            "litellm_version": (
-                litellm.__version__ if hasattr(litellm, "__version__") else "unknown"
-            ),
+            "litellm_version": litellm.__version__
+            if hasattr(litellm, "__version__")
+            else "unknown",
         }
     except Exception as e:
         return {"status": f"錯誤: {e}"}

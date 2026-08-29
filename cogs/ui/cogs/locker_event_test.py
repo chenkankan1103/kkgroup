@@ -4,11 +4,15 @@ Locker Event Test Command
 """
 
 import discord
-from discord import app_commands
 from discord.ext import commands
+from discord import app_commands
 
-from cogs.ui.events import (CurrencyChangedEvent, EquipmentChangedEvent,
-                            FullRefreshEvent, HealthChangedEvent)
+from cogs.ui.events import (
+    EquipmentChangedEvent,
+    CurrencyChangedEvent,
+    HealthChangedEvent,
+    FullRefreshEvent,
+)
 
 
 class LockerEventTestCog(commands.Cog):

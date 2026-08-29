@@ -1,8 +1,6 @@
-from typing import Optional
-
 from discord.ext import commands
-
-from db_adapter import get_all_users, get_user, set_user
+from db_adapter import get_user, set_user, get_all_users
+from typing import Optional
 
 
 class AvatarReset(commands.Cog):

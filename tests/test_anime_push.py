@@ -1,18 +1,16 @@
+import pytest
+import pytest_asyncio
 import asyncio
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
-import discord
-import pytest
-import pytest_asyncio
-
 # Import the modules we need to test
 from cogs.ui.anime_tracker import AnimeTracker
-from cogs.ui.push_core import TW_TZ, AnimePushCore
-from cogs.ui.ranking_stats import RankingStats
 from cogs.ui.schedule_tracker import AnimeScheduleTracker
-
+from cogs.ui.push_core import AnimePushCore, TW_TZ
+from cogs.ui.ranking_stats import RankingStats
+import discord
 
 # Helper function to create a mock bot
 def create_mock_bot():
@@ -23,8 +21,8 @@ def create_mock_bot():
 
 def create_test_db_path():
     """Create a temporary database file path for testing"""
-    import os
     import tempfile
+    import os
     fd, path = tempfile.mkstemp(suffix='.db', prefix='test_anime_')
     os.close(fd)
     return path

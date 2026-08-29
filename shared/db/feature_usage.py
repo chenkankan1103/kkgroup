@@ -28,7 +28,8 @@ def ensure_feature_usage_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(FEATURE_USAGE_DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS feature_usage_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_type TEXT NOT NULL,
@@ -43,7 +44,8 @@ def ensure_feature_usage_db() -> None:
             metadata_json TEXT DEFAULT '{}',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        """)
+        """
+    )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_feature_usage_feature_time ON feature_usage_events(feature_key, created_at)"
     )
@@ -136,11 +138,9 @@ def extract_interaction_event(
 
     metadata = {
         "message_id": str(interaction.message.id) if interaction.message else "",
-        "command_name": (
-            getattr(interaction.command, "qualified_name", "")
-            if getattr(interaction, "command", None)
-            else ""
-        ),
+        "command_name": getattr(interaction.command, "qualified_name", "")
+        if getattr(interaction, "command", None)
+        else "",
     }
 
     return InteractionEvent(

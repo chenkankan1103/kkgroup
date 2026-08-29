@@ -1,17 +1,18 @@
 """大麻種植指令和交互界面"""
 
-import traceback
-from datetime import datetime
-
 import discord
 from discord.ext import commands
-
+import traceback
+from datetime import datetime
 from shared.utils.view_registry import PersistentViewBase
-
-from .merchant.cannabis_config import CANNABIS_HARVEST_PRICES, CANNABIS_SHOP
-from .merchant.cannabis_farming import (get_inventory, get_user_plants,
-                                        harvest_plant, plant_cannabis,
-                                        remove_inventory)
+from .merchant.cannabis_farming import (
+    plant_cannabis,
+    get_user_plants,
+    harvest_plant,
+    get_inventory,
+    remove_inventory,
+)
+from .merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 from .merchant.database import get_user_kkcoin, update_user_kkcoin
 
 
@@ -207,11 +208,9 @@ class PlantActionButton(discord.ui.Button):
         )
         super().__init__(
             label=status,
-            style=(
-                discord.ButtonStyle.success
-                if plant["status"] == "harvested"
-                else discord.ButtonStyle.secondary
-            ),
+            style=discord.ButtonStyle.success
+            if plant["status"] == "harvested"
+            else discord.ButtonStyle.secondary,
             custom_id=f"plant_{plant['id']}",
         )
 

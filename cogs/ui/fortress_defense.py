@@ -4,22 +4,21 @@ KK 園區對抗刑警大隊 - Discord Cog
 玩家透過按鈕參與塔防遊戲，對抗 Google Trends 前來執法的刑警大隊
 """
 
-import asyncio
-import json
-import logging
-import os
-from datetime import datetime
-from typing import Dict, List, Optional
-from zoneinfo import ZoneInfo
-
 import discord
-from discord import app_commands
 from discord.ext import commands, tasks
-from discord.ui import Button, Modal, Select, TextInput
+from discord import app_commands
+from discord.ui import Button, Modal, TextInput, Select
+import json
+import os
+import asyncio
+import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from typing import Dict, List, Optional
 
-from shared.db.db_adapter import add_user_field, get_user_field, set_user_field
-from shared.utils import fortress_system as fs
 from shared.utils.view_registry import PersistentViewBase
+from shared.utils import fortress_system as fs
+from shared.db.db_adapter import get_user_field, set_user_field, add_user_field
 
 log = logging.getLogger("fortress_defense")
 TW_TZ = ZoneInfo("Asia/Taipei")
@@ -1311,8 +1310,10 @@ class FortressDefenseCog(commands.Cog):
         log.info("[Fortress] 手動開戰流程開始")
         try:
             from shared.market_trends.serpapi import (
-                get_cached_trending_topics, get_fallback_trending_topics,
-                get_trending_topics)
+                get_cached_trending_topics,
+                get_fallback_trending_topics,
+                get_trending_topics,
+            )
 
             trends_data = await asyncio.wait_for(
                 get_trending_topics(limit=10),
@@ -1542,8 +1543,10 @@ class FortressDefenseCog(commands.Cog):
             log.info(f"[Fortress] ⏰ 趨勢排程啟動 {now.strftime('%H:%M %Z')}")
 
             from shared.market_trends.serpapi import (
-                get_cached_trending_topics, get_fallback_trending_topics,
-                get_trending_topics)
+                get_cached_trending_topics,
+                get_fallback_trending_topics,
+                get_trending_topics,
+            )
 
             try:
                 trends_data = await asyncio.wait_for(

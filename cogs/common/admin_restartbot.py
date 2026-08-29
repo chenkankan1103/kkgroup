@@ -1,6 +1,5 @@
 import os
 import subprocess
-
 from discord.ext import commands
 
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))

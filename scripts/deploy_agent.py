@@ -18,9 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path("/home/e193752468/kkgroup")
@@ -29,9 +27,7 @@ SERVICE_FILE = PROJECT_ROOT / "config" / "services" / "agent.service"
 SYSTEMD_DIR = Path("/etc/systemd/system")
 
 
-def run_cmd(
-    cmd: list[str], check: bool = True, capture: bool = False
-) -> subprocess.CompletedProcess:
+def run_cmd(cmd: list[str], check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
     """執行命令並記錄"""
     log.info(f"$ {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=capture, text=True)
@@ -66,17 +62,13 @@ async def init_database() -> bool:
     # 觸發資料庫初始化（透過 import）
     sys.path.insert(0, str(PROJECT_ROOT))
     from shared.agent.memory import get_task_store
-
     store = get_task_store()
     await store._ensure_init()
 
     # 驗證表存在
     import aiosqlite
-
     async with aiosqlite.connect(db_path) as db:
-        async with db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'"
-        ) as cur:
+        async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'") as cur:
             row = await cur.fetchone()
             if row:
                 log.info(f"  ✅ 資料庫就緒: {db_path}")
@@ -111,29 +103,14 @@ async def start_service() -> bool:
     await asyncio.sleep(3)  # 等待啟動
 
     # 檢查狀態
-    result = run_cmd(
-        ["sudo", "systemctl", "is-active", "kkgroup-agent.service"],
-        check=False,
-        capture=True,
-    )
+    result = run_cmd(["sudo", "systemctl", "is-active", "kkgroup-agent.service"], check=False, capture=True)
     if result.returncode == 0 and "active" in result.stdout:
         log.info("  ✅ 服務運行中")
         return True
     else:
         log.error(f"  ❌ 服務啟動失敗: {result.stdout} {result.stderr}")
         # 顯示日誌
-        run_cmd(
-            [
-                "sudo",
-                "journalctl",
-                "-u",
-                "kkgroup-agent.service",
-                "-n",
-                "30",
-                "--no-pager",
-            ],
-            check=False,
-        )
+        run_cmd(["sudo", "journalctl", "-u", "kkgroup-agent.service", "-n", "30", "--no-pager"], check=False)
         return False
 
 
@@ -145,10 +122,7 @@ async def health_check() -> bool:
     for attempt in range(10):
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    "http://localhost:8080/health",
-                    timeout=aiohttp.ClientTimeout(total=5),
-                ) as resp:
+                async with session.get("http://localhost:8080/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         log.info(f"  ✅ 健康檢查通過: {data}")
@@ -188,9 +162,7 @@ async def test_submit_task() -> bool:
                     # 等待完成
                     for _ in range(30):
                         await asyncio.sleep(1)
-                        async with session.get(
-                            f"http://localhost:8080/agent/task/{task_id}"
-                        ) as r:
+                        async with session.get(f"http://localhost:8080/agent/task/{task_id}") as r:
                             if r.status == 200:
                                 task = await r.json()
                                 if task.get("status") in ("completed", "failed"):

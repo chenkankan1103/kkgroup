@@ -1,13 +1,12 @@
 # shop_commands/merchant/paperdoll_system.py
-import asyncio
-import hashlib
-import io
-import json
-from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
-
-import aiohttp
 import discord
+import aiohttp
+import asyncio
+import json
+import io
+import hashlib
+from typing import Optional, List, Tuple
+from datetime import datetime, timedelta
 
 
 class EnhancedPaperDollSystem:
@@ -354,8 +353,8 @@ class EnhancedPaperDollSystem:
                     name="錯誤詳情", value=str(e)[:1000], inline=False
                 )
 
-            from .database import get_user_kkcoin
             from .views import ItemDetailView
+            from .database import get_user_kkcoin
 
             kkcoin = await get_user_kkcoin(interaction.user.id)
             can_afford = kkcoin >= item_data["price"]

@@ -1,14 +1,17 @@
+import discord
+from discord.ui import Button
 import traceback
 from datetime import datetime
 
-import discord
-from discord.ui import Button
-
 from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
-from cogs.shop.merchant.cannabis_farming import (add_inventory, get_inventory,
-                                                 get_user_plants,
-                                                 harvest_plant, plant_cannabis,
-                                                 remove_inventory)
+from cogs.shop.merchant.cannabis_farming import (
+    get_inventory,
+    get_user_plants,
+    add_inventory,
+    remove_inventory,
+    plant_cannabis,
+    harvest_plant,
+)
 
 
 class CropOperationView(discord.ui.View):
@@ -1038,8 +1041,7 @@ class SelectSeedView(discord.ui.View):
                     await add_inventory(self.user_id, "種子", seed_name, 1)
                 except Exception as refund_error:
                     print(
-                        f"⚠️ 退還種子失敗：{refund_error}",
-                        file=__import__("sys").stderr,
+                        f"⚠️ 退還種子失敗：{refund_error}", file=__import__("sys").stderr
                     )
                 await interaction.followup.send(
                     f"❌ 錯誤：{str(e)[:100]}", ephemeral=True

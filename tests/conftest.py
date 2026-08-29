@@ -133,11 +133,10 @@ async def dpytest_setup(event_loop, temp_db_path, frozen_time):
     - 測試後清理 dpytest 狀態
     - 不載入特定 cog，不打補釘 API
     """
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
     import discord
     from discord.ext import commands
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     TW_TZ = ZoneInfo("Asia/Taipei")
 
@@ -195,12 +194,11 @@ async def anime_dpytest_setup(event_loop, temp_db_path, frozen_time, patch_baham
     - 打補釘 Bahamut API
     - 設定 ANIME_CHANNEL_ID 和資料庫路徑
     """
-    from datetime import datetime
-    from pathlib import Path
-    from zoneinfo import ZoneInfo
-
     import discord
     from discord.ext import commands
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from pathlib import Path
 
     TW_TZ = ZoneInfo("Asia/Taipei")
 
@@ -568,8 +566,8 @@ def frozen_time():
             self.patches.append(p1)
 
             # 也 patch 各模組的 datetime 參考（雙重保險）
-            import cogs.ui.anime_tracker as at
             import cogs.ui.push_core as pc
+            import cogs.ui.anime_tracker as at
             import cogs.ui.schedule_tracker as st
 
             for mod in [pc, at, st]:

@@ -10,19 +10,23 @@
 這個模組從 kcoin.py 中獨立出來，以提升代碼可讀性和維護性。
 """
 
-import asyncio
-import io
 import os
-
+import io
 import aiohttp
-from dotenv import load_dotenv, set_key
+import asyncio
 from PIL import Image, ImageDraw, ImageFont
+from dotenv import load_dotenv, set_key
 
 # 匯入資料庫相關
-from shared.db.db_adapter import (get_all_users, get_central_reserve,
-                                  get_dynamic_exchange_rate,
-                                  get_inflation_info, get_reserve_announcement,
-                                  get_reserve_pressure, get_user_stocks)
+from shared.db.db_adapter import (
+    get_central_reserve,
+    get_reserve_pressure,
+    get_reserve_announcement,
+    get_all_users,
+    get_dynamic_exchange_rate,
+    get_inflation_info,
+    get_user_stocks,
+)
 
 # 載入 .env 檔案
 load_dotenv()
@@ -826,9 +830,8 @@ def _sync_build_leaderboard_image(
 def _calculate_stock_value(user_id):
     """計算用戶持有股票的市值"""
     try:
-        import asyncio
-
         from utils.stock_api import fetch_price as async_fetch_price
+        import asyncio
 
         def fetch_price_sync(symbol: str):
             """同步包裝 async fetch_price"""

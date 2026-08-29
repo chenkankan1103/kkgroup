@@ -4,13 +4,12 @@ Netflix 台灣熱門排行榜 Cog
 提供 /netflix_top10 指令查詢台灣 Netflix 電影/影集熱門排行
 顯示實際海報圖片（標題已嵌入海報中）
 """
-
-import asyncio
 import logging
+import asyncio
 import time
+from typing import Optional, List, Dict
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import aiohttp
 import discord
@@ -44,9 +43,7 @@ class NetflixTop10Cog(commands.Cog):
         self.bot = bot
         # 載入中文字體（用於備用顯示，不過海報圖片本身已有標題）
         self._font = None
-        font_path = (
-            Path(__file__).parent.parent.parent / "fonts" / "NotoSansCJKtc-Regular.otf"
-        )
+        font_path = Path(__file__).parent.parent.parent / "fonts" / "NotoSansCJKtc-Regular.otf"
         if font_path.exists():
             try:
                 self._font = ImageFont.truetype(str(font_path), 18)
@@ -100,7 +97,10 @@ class NetflixTop10Cog(commands.Cog):
         }
         """
 
-        variables = {"country": country, "first": page_size}
+        variables = {
+            "country": country,
+            "first": page_size
+        }
 
         try:
             async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
@@ -115,36 +115,30 @@ class NetflixTop10Cog(commands.Cog):
 
                     if resp.status != 200:
                         text = await resp.text()
-                        logger.error(
-                            f"JustWatch GraphQL API 錯誤 HTTP {resp.status}: {text[:300]}"
-                        )
+                        logger.error(f"JustWatch GraphQL API 錯誤 HTTP {resp.status}: {text[:300]}")
                         return cached[0] if cached else []
 
                     data = await resp.json()
 
             # 解析 GraphQL 回應
             results = []
-            if "data" in data and "popularTitles" in data["data"]:
-                popular_data = data["data"]["popularTitles"]
-                edges = popular_data.get("edges", [])
+            if 'data' in data and 'popularTitles' in data['data']:
+                popular_data = data['data']['popularTitles']
+                edges = popular_data.get('edges', [])
 
                 for edge in edges:
-                    node = edge.get("node", {})
-                    content = node.get("content", {})
+                    node = edge.get('node', {})
+                    content = node.get('content', {})
 
                     # 只取得我們需要的欄位
-                    title = content.get("title", "未知標題")
-                    object_type = node.get("objectType", "").upper()  # SHOW or MOVIE
-                    show_id = node.get("id", "")
-                    poster_url_template = content.get("posterUrl", "")
+                    title = content.get('title', '未知標題')
+                    object_type = node.get('objectType', '').upper()  # SHOW or MOVIE
+                    show_id = node.get('id', '')
+                    poster_url_template = content.get('posterUrl', '')
 
                     # 構建實際海報 URL
                     poster_url = ""
-                    if (
-                        poster_url_template
-                        and "{profile}" in poster_url_template
-                        and "{format}" in poster_url_template
-                    ):
+                    if poster_url_template and '{profile}' in poster_url_template and '{format}' in poster_url_template:
                         # 使用常見的海報尺寸和格式
                         profile = "S166"  # 標準海報尺寸
                         image_format = "jpg"  # JPEG 格式
@@ -153,22 +147,18 @@ class NetflixTop10Cog(commands.Cog):
                     # 根據物件類型過濾
                     target_type = "SHOW" if content_type == "show" else "MOVIE"
                     if object_type == target_type:
-                        results.append(
-                            {
-                                "title": title,
-                                "object_type": object_type,
-                                "id": show_id,
-                                "poster_url": poster_url,
-                                "content_type": content_type,  # 為了向後相容
-                                "release_year": "N/A",  # 暫時無法取得，保持向後相容
-                            }
-                        )
+                        results.append({
+                            "title": title,
+                            "object_type": object_type,
+                            "id": show_id,
+                            "poster_url": poster_url,
+                            "content_type": content_type,  # 為了向後相容
+                            "release_year": "N/A",  # 暫時無法取得，保持向後相容
+                        })
 
             # 更新快取
             _cache[cache_key] = (results, now)
-            logger.info(
-                f"JustWatch GraphQL 成功取得 {len(results)} 筆 {content_type} 資料"
-            )
+            logger.info(f"JustWatch GraphQL 成功取得 {len(results)} 筆 {content_type} 資料")
             return results
 
         except Exception as e:
@@ -179,9 +169,7 @@ class NetflixTop10Cog(commands.Cog):
         """從 JustWatch GraphQL 取得 Netflix 熱門排行"""
         return await self._fetch_popular_netflix(show_type)
 
-    async def _create_show_embeds(
-        self, shows: list[dict], max_shows: int
-    ) -> list[discord.Embed]:
+    async def _create_show_embeds(self, shows: list[dict], max_shows: int) -> list[discord.Embed]:
         """建立顯示節目的 Embeds（每個 Embed 顯示一張海報）"""
         shows = shows[:max_shows]
         if not shows:
@@ -189,7 +177,7 @@ class NetflixTop10Cog(commands.Cog):
             embed = discord.Embed(
                 title="無法取得資料",
                 description="暫時無法取得 Netflix 熱門排行榜資料，請稍後再試。",
-                colour=discord.Color.dark_grey(),
+                colour=discord.Color.dark_grey()
             )
             return [embed]
 
@@ -202,11 +190,7 @@ class NetflixTop10Cog(commands.Cog):
             # 建立 Embed
             embed = discord.Embed(
                 title=f"[{object_type}] {title}",
-                colour=(
-                    discord.Color.blue()
-                    if object_type == "SHOW"
-                    else discord.Color.red()
-                ),
+                colour=discord.Color.blue() if object_type == "SHOW" else discord.Color.red(),
             )
 
             # 如果有海報 URL，設定為 Embed 的圖片
@@ -264,10 +248,8 @@ class NetflixTop10Cog(commands.Cog):
         embeds = await self._create_show_embeds(shows, max_shows)
 
         # 分批發送（每批最多 MAX_EMBEDS_PER_MESSAGE 個 Embeds）
-        batches = [
-            embeds[i : i + MAX_EMBEDS_PER_MESSAGE]
-            for i in range(0, len(embeds), MAX_EMBEDS_PER_MESSAGE)
-        ]
+        batches = [embeds[i:i + MAX_EMBEDS_PER_MESSAGE]
+                  for i in range(0, len(embeds), MAX_EMBEDS_PER_MESSAGE)]
 
         # 發送第一批（使用 followup.send）
         first_batch = batches[0]
@@ -278,15 +260,15 @@ class NetflixTop10Cog(commands.Cog):
             await interaction.followup.send(embeds=batch)
 
         # 發送統計資訊
-        shows_count = len([s for s in shows if s.get("object_type") == "SHOW"])
-        movies_count = len([s for s in shows if s.get("object_type") == "MOVIE"])
+        shows_count = len([s for s in shows if s.get('object_type') == 'SHOW'])
+        movies_count = len([s for s in shows if s.get('object_type') == 'MOVIE'])
         stats_embed = discord.Embed(
             title="📊 排行榜統計",
             description=f"共取得 {len(shows)} 筆資料\n"
-            f"📺 影集: {shows_count} 筆\n"
-            f"🎬 電影: {movies_count} 筆\n"
-            f"📋 顯示前 {max_shows} 名 {'影集' if st == 'series' else '電影'}",
-            colour=discord.Color.blue(),
+                       f"📺 影集: {shows_count} 筆\n"
+                       f"🎬 電影: {movies_count} 筆\n"
+                       f"📋 顯示前 {max_shows} 名 {'影集' if st == 'series' else '電影'}",
+            colour=discord.Color.blue()
         )
         await interaction.followup.send(embed=stats_embed)
 

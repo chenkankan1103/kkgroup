@@ -4,12 +4,11 @@ KK幣排行榜視覺化增強模組
 """
 
 import io
+import aiohttp
+from PIL import Image, ImageDraw, ImageFont
 import os
 from datetime import datetime
 from io import BytesIO
-
-import aiohttp
-from PIL import Image, ImageDraw, ImageFont
 
 # 延迟导入 matplotlib（用于图表生成）
 try:
@@ -176,11 +175,11 @@ async def create_colorful_leaderboard_image(members_data, limit=20):
             medal_color = (
                 (255, 215, 0)
                 if rank == 1
-                else (
-                    (192, 192, 192)
-                    if rank == 2
-                    else (205, 127, 50) if rank == 3 else (100, 80, 200)
-                )
+                else (192, 192, 192)
+                if rank == 2
+                else (205, 127, 50)
+                if rank == 3
+                else (100, 80, 200)
             )
             draw.text(
                 (MARGIN + 10, y + 12), medal_text, fill=medal_color, font=FONT_RANK
@@ -221,11 +220,9 @@ async def create_colorful_leaderboard_image(members_data, limit=20):
                                 halo_color = (
                                     (255, 215, 0, 80)
                                     if rank == 1
-                                    else (
-                                        (192, 192, 192, 60)
-                                        if rank == 2
-                                        else (205, 127, 50, 60)
-                                    )
+                                    else (192, 192, 192, 60)
+                                    if rank == 2
+                                    else (205, 127, 50, 60)
                                 )
                                 halo = Image.new(
                                     "RGBA",
@@ -324,7 +321,9 @@ async def create_colorful_leaderboard_image(members_data, limit=20):
             trend_color = (
                 (100, 200, 100)
                 if trend == "▲"
-                else (100, 150, 200) if trend == "▼" else (180, 180, 180)
+                else (100, 150, 200)
+                if trend == "▼"
+                else (180, 180, 180)
             )
             draw.text(
                 (WIDTH - MARGIN - 25, y + 28), trend, fill=trend_color, font=FONT_RANK

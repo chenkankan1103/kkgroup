@@ -12,21 +12,20 @@
 6. 速率限制 - 防止暴力觸發
 """
 
-import asyncio
-import hashlib
-import hmac
-import json
-import logging
 import os
+import hmac
+import hashlib
 import subprocess
+import asyncio
 import threading
 from datetime import datetime
 from pathlib import Path
-
+from flask import Blueprint, request, jsonify
+import logging
+import json
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from flask import Blueprint, jsonify, request
 
 # 設置日誌
 logger = logging.getLogger(__name__)
@@ -402,16 +401,13 @@ def github_webhook():
             f"🚫 速率限制 | IP: {client_ip} | 剩餘等待時間: {time_remaining:.1f}s"
         )
         log_audit(client_ip, "RATE_LIMITED", f"須等待 {time_remaining:.1f}s", "")
-        return (
-            jsonify(
-                {
-                    "status": "rate_limited",
-                    "message": f"請求過於頻繁，請在 {time_remaining:.1f} 秒後再試",
-                    "retry_after": int(time_remaining) + 1,
-                }
-            ),
-            429,
-        )
+        return jsonify(
+            {
+                "status": "rate_limited",
+                "message": f"請求過於頻繁，請在 {time_remaining:.1f} 秒後再試",
+                "retry_after": int(time_remaining) + 1,
+            }
+        ), 429
 
     # ============================================================
     # 第 2 層：簽名驗證
@@ -450,10 +446,9 @@ def github_webhook():
                 f"已忽略 {event_type} 事件",
                 f"event_type={event_type}",
             )
-            return (
-                jsonify({"status": "ok", "message": f"已忽略 {event_type} 事件"}),
-                200,
-            )
+            return jsonify(
+                {"status": "ok", "message": f"已忽略 {event_type} 事件"}
+            ), 200
 
         logger.info("🔔 收到 GitHub push 事件")
 
@@ -492,12 +487,9 @@ def github_webhook():
                 0xFF0000,
                 {"錯誤": pull_msg},
             )
-            return (
-                jsonify(
-                    {"status": "error", "message": "Git pull 失敗", "details": pull_msg}
-                ),
-                500,
-            )
+            return jsonify(
+                {"status": "error", "message": "Git pull 失敗", "details": pull_msg}
+            ), 500
 
         # Git pull 成功，重啟服務
         restart_success, restart_msg = restart_services()
@@ -522,16 +514,13 @@ def github_webhook():
                 details,
             )
 
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "message": "自動部署完成",
-                        "details": {"git_pull": pull_msg, "restart": restart_msg},
-                    }
-                ),
-                200,
-            )
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "自動部署完成",
+                    "details": {"git_pull": pull_msg, "restart": restart_msg},
+                }
+            ), 200
         else:
             logger.error(f"❌ 部分服務重啟失敗: {restart_msg}")
             log_audit(
@@ -545,16 +534,13 @@ def github_webhook():
                 {"錯誤": restart_msg},
             )
 
-            return (
-                jsonify(
-                    {
-                        "status": "partial",
-                        "message": "部分部署失敗",
-                        "details": {"git_pull": pull_msg, "restart": restart_msg},
-                    }
-                ),
-                206,
-            )
+            return jsonify(
+                {
+                    "status": "partial",
+                    "message": "部分部署失敗",
+                    "details": {"git_pull": pull_msg, "restart": restart_msg},
+                }
+            ), 206
 
     except Exception as e:
         logger.error(f"❌ Webhook 處理異常: {e}")
@@ -562,10 +548,9 @@ def github_webhook():
 
         logger.error(traceback.format_exc())
 
-        return (
-            jsonify({"status": "error", "message": "伺服器內部錯誤", "error": str(e)}),
-            500,
-        )
+        return jsonify(
+            {"status": "error", "message": "伺服器內部錯誤", "error": str(e)}
+        ), 500
 
 
 @webhook_bp.route("/health", methods=["GET"])
@@ -573,14 +558,11 @@ def webhook_health():
     """
     Webhook 健康檢查
     """
-    return (
-        jsonify(
-            {
-                "status": "ok",
-                "service": "GitHub Webhook Receiver",
-                "configured": bool(GITHUB_WEBHOOK_SECRET),
-                "discord_enabled": bool(DISCORD_BOT_TOKEN and DISCORD_SYS_CHANNEL_ID),
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "GitHub Webhook Receiver",
+            "configured": bool(GITHUB_WEBHOOK_SECRET),
+            "discord_enabled": bool(DISCORD_BOT_TOKEN and DISCORD_SYS_CHANNEL_ID),
+        }
+    ), 200

@@ -5,17 +5,19 @@
 提供 Google Sheets 同步介面
 """
 
+from flask import Blueprint, request, jsonify
 import logging
-import os
-import sys
-import traceback
 from datetime import datetime
+import traceback
+import sys
+import os
 
-from flask import Blueprint, jsonify, request
+# 添加項目根目錄到路徑，以支持導入
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # 匯入同步管理器和 DB 引擎
-from .sheet_driven_db import SheetDrivenDB
 from blueprints.sheet_sync_manager import SheetSyncManager
+from blueprints.sheet_driven_db import SheetDrivenDB
 
 sheets_bp = Blueprint("sheets", __name__, url_prefix="/api")
 
@@ -138,16 +140,13 @@ def api_sync_sheet():
             data = request.get_json(force=True, silent=False)
         except Exception as json_err:
             logger.error(f"❌ JSON 解析失敗: {json_err}")
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": f"請求體不是有效的 JSON: {str(json_err)}",
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                ),
-                400,
-            )
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": f"請求體不是有效的 JSON: {str(json_err)}",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            ), 400
 
         if not data:
             return jsonify({"status": "error", "message": "請求體為空"}), 400
@@ -174,21 +173,18 @@ def api_sync_sheet():
 
         if not rows:
             logger.info("⚠️ 沒有資料行要同步")
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "message": "沒有資料行要同步",
-                        "stats": {
-                            "updated": 0,
-                            "inserted": 0,
-                            "errors": 0,
-                            "total_parsed": 0,
-                        },
-                    }
-                ),
-                200,
-            )
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "沒有資料行要同步",
+                    "stats": {
+                        "updated": 0,
+                        "inserted": 0,
+                        "errors": 0,
+                        "total_parsed": 0,
+                    },
+                }
+            ), 200
 
         # 1. 確保 DB schema（自動新增缺失的欄位）
         print("\n🔧 確保 DB schema...")
@@ -203,21 +199,18 @@ def api_sync_sheet():
 
         if len(records) == 0:
             logger.warning("⚠️ 沒有有效的記錄（所有記錄都被過濾）")
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "message": "沒有有效的記錄",
-                        "stats": {
-                            "updated": 0,
-                            "inserted": 0,
-                            "errors": 0,
-                            "total_parsed": 0,
-                        },
-                    }
-                ),
-                200,
-            )
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "沒有有效的記錄",
+                    "stats": {
+                        "updated": 0,
+                        "inserted": 0,
+                        "errors": 0,
+                        "total_parsed": 0,
+                    },
+                }
+            ), 200
 
         # 3. 同步到 DB
         print("\n📤 同步到 DB...")
@@ -254,23 +247,15 @@ def api_sync_sheet():
         print(f"{traceback.format_exc()}")
         print(f"{'='*60}\n")
 
-        return (
-            jsonify(
-                {
-                    "status": "error",
-                    "message": f"同步失敗: {str(e)}",
-                    "error_type": type(e).__name__,
-                    "stats": {
-                        "updated": 0,
-                        "inserted": 0,
-                        "errors": 1,
-                        "total_parsed": 0,
-                    },
-                    "timestamp": datetime.now().isoformat(),
-                }
-            ),
-            500,
-        )
+        return jsonify(
+            {
+                "status": "error",
+                "message": f"同步失敗: {str(e)}",
+                "error_type": type(e).__name__,
+                "stats": {"updated": 0, "inserted": 0, "errors": 1, "total_parsed": 0},
+                "timestamp": datetime.now().isoformat(),
+            }
+        ), 500
 
 
 @sheets_bp.route("/export", methods=["GET", "POST"])
@@ -343,17 +328,14 @@ def api_export_db():
         logger.error(f"❌ 導出失敗: {e}")
         logger.error(traceback.format_exc())
 
-        return (
-            jsonify(
-                {
-                    "status": "error",
-                    "message": f"導出失敗: {str(e)}",
-                    "error_type": type(e).__name__,
-                    "timestamp": datetime.now().isoformat(),
-                }
-            ),
-            500,
-        )
+        return jsonify(
+            {
+                "status": "error",
+                "message": f"導出失敗: {str(e)}",
+                "error_type": type(e).__name__,
+                "timestamp": datetime.now().isoformat(),
+            }
+        ), 500
 
 
 @sheets_bp.route("/clean-virtual", methods=["POST"])
@@ -362,16 +344,13 @@ def api_clean_virtual():
     try:
         deleted, errors = get_sync_manager().clean_virtual_accounts()
 
-        return (
-            jsonify(
-                {
-                    "status": "success" if errors == 0 else "warning",
-                    "message": f"清理完成: 刪除 {deleted} 筆虛擬帳號",
-                    "stats": {"deleted": deleted, "errors": errors},
-                }
-            ),
-            200,
-        )
+        return jsonify(
+            {
+                "status": "success" if errors == 0 else "warning",
+                "message": f"清理完成: 刪除 {deleted} 筆虛擬帳號",
+                "stats": {"deleted": deleted, "errors": errors},
+            }
+        ), 200
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -387,10 +366,9 @@ def api_get_user(user_id):
         user = get_db().get_user(user_id)
 
         if user is None:
-            return (
-                jsonify({"status": "error", "message": f"用戶不存在: {user_id}"}),
-                404,
-            )
+            return jsonify(
+                {"status": "error", "message": f"用戶不存在: {user_id}"}
+            ), 404
 
         # 將 user_id 轉為字串避免 JS 大數字精度丟失
         if isinstance(user.get("user_id"), (int, float)):
@@ -407,15 +385,12 @@ def api_update_user(user_id):
     """更新特定用戶的資料（需管理員角色或 API Key）"""
     if not _check_admin_or_key():
         logger.warning(f"❌ 管理員驗證失敗: user_id={user_id}")
-        return (
-            jsonify(
-                {
-                    "status": "error",
-                    "message": "管理員驗證失敗 — 需要伺服器管理員角色或 API Key",
-                }
-            ),
-            403,
-        )
+        return jsonify(
+            {
+                "status": "error",
+                "message": "管理員驗證失敗 — 需要伺服器管理員角色或 API Key",
+            }
+        ), 403
 
     try:
         data = request.get_json()
@@ -438,10 +413,9 @@ def api_update_user(user_id):
         if success:
             return jsonify({"status": "ok", "message": f"用戶 {user_id} 已更新"}), 200
         else:
-            return (
-                jsonify({"status": "error", "message": f"更新用戶 {user_id} 失敗"}),
-                500,
-            )
+            return jsonify(
+                {"status": "error", "message": f"更新用戶 {user_id} 失敗"}
+            ), 500
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

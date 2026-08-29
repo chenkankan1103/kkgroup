@@ -3,10 +3,9 @@
 提供紙娃娃遊戲所需的數據接口
 """
 
-from flask import Blueprint, jsonify, redirect, request
-
-from cogs.shop.merchant.paperdoll_system import EnhancedPaperDollSystem
+from flask import Blueprint, jsonify, request, redirect
 from db_adapter import get_user, set_user_field
+from cogs.shop.merchant.paperdoll_system import EnhancedPaperDollSystem
 
 # 建立 Blueprint
 game_bp = Blueprint("game_api", __name__, url_prefix="/api/game")
@@ -146,8 +145,7 @@ def get_user_inventory(user_id: str):
     }
     """
     try:
-        from shop_commands.merchant.paperdoll_merchant import \
-            PaperdollMerchantSystem
+        from shop_commands.merchant.paperdoll_merchant import PaperdollMerchantSystem
 
         user = get_user(user_id)
         if not user:
@@ -190,8 +188,7 @@ def change_paperdoll_part(user_id: str):
             return jsonify({"error": "User not found"}), 404
 
         # 驗證 item_id 是否在庫存中
-        from shop_commands.merchant.paperdoll_merchant import \
-            PaperdollMerchantSystem
+        from shop_commands.merchant.paperdoll_merchant import PaperdollMerchantSystem
 
         inventory = PaperdollMerchantSystem.get_user_inventory(user_id)
 

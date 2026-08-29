@@ -1,15 +1,17 @@
+import discord
+from discord.ui import Button
 import traceback
 from datetime import datetime
 
-import discord
-from discord.ui import Button
-
-from cogs.shop.merchant.cannabis_config import (CANNABIS_HARVEST_PRICES,
-                                                CANNABIS_SHOP)
-from cogs.shop.merchant.cannabis_farming import (add_inventory, get_inventory,
-                                                 get_user_plants,
-                                                 harvest_plant, plant_cannabis,
-                                                 remove_inventory)
+from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from cogs.shop.merchant.cannabis_farming import (
+    get_inventory,
+    get_user_plants,
+    add_inventory,
+    remove_inventory,
+    plant_cannabis,
+    harvest_plant,
+)
 from cogs.shop.merchant.database import update_user_kkcoin
 
 
@@ -397,8 +399,7 @@ class SelectPlantForHarvestView(discord.ui.View):
             if growing:
                 embed.add_field(name="🌱 成長中的植物", value="━" * 25, inline=False)
                 for idx, plant in enumerate(growing, 1):
-                    from cogs.shop.merchant.cannabis_config import \
-                        CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
                     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
                     # 計算進度
@@ -442,8 +443,7 @@ class SelectPlantForHarvestView(discord.ui.View):
             if harvested:
                 embed.add_field(name="✅ 已成熟的植物", value="━" * 25, inline=False)
                 for idx, plant in enumerate(harvested, 1):
-                    from cogs.shop.merchant.cannabis_config import \
-                        CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
                     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
                     embed.add_field(
@@ -532,8 +532,7 @@ class SelectSeedView(discord.ui.View):
                 )
 
                 if result and not result.get("success") == False:
-                    from cogs.shop.merchant.cannabis_config import \
-                        CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
                     config = CANNABIS_SHOP["種子"][seed_name]
                     embed = discord.Embed(
@@ -578,8 +577,7 @@ class SelectSeedView(discord.ui.View):
                     await add_inventory(self.user_id, "種子", seed_name, 1)
                 except Exception as refund_error:
                     print(
-                        f"⚠️ 退還種子失敗：{refund_error}",
-                        file=__import__("sys").stderr,
+                        f"⚠️ 退還種子失敗：{refund_error}", file=__import__("sys").stderr
                     )
                 await interaction.followup.send(
                     f"❌ 錯誤：{str(e)[:100]}", ephemeral=True
@@ -633,8 +631,7 @@ class SelectSeedView(discord.ui.View):
             for seed_name, success, reason in results:
                 emoji = ""
                 try:
-                    from cogs.shop.merchant.cannabis_config import \
-                        CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
                     emoji = CANNABIS_SHOP["種子"][seed_name]["emoji"]
                 except Exception:
@@ -699,8 +696,7 @@ class SelectSeedView(discord.ui.View):
             if growing:
                 embed.add_field(name="🌱 成長中的植物", value="━" * 25, inline=False)
                 for idx, plant in enumerate(growing, 1):
-                    from cogs.shop.merchant.cannabis_config import \
-                        CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
                     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
                     # 計算進度
@@ -744,8 +740,7 @@ class SelectSeedView(discord.ui.View):
             if harvested:
                 embed.add_field(name="✅ 已成熟的植物", value="━" * 25, inline=False)
                 for idx, plant in enumerate(harvested, 1):
-                    from cogs.shop.merchant.cannabis_config import \
-                        CANNABIS_SHOP
+                    from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
                     config = CANNABIS_SHOP["種子"][plant["seed_type"]]
                     embed.add_field(

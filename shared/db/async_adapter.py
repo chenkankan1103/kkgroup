@@ -15,17 +15,15 @@ Async DB Adapter - 給 Cog 直接 import 的非同步便捷函數
 注意：內部已改用 DatabaseManager 統一連線池，確保多服務共用同一連線池。
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
-
 from .manager import DatabaseManager
+from typing import Any, Optional, Union, Dict, List, Tuple
+
 
 # ========== 核心便捷函數（帶重試機制） ==========
-
 
 async def _get_db():
     """取得配好連線池的 AsyncSheetDrivenDB 實例"""
     from .async_db import AsyncSheetDrivenDB
-
     db = AsyncSheetDrivenDB()
     db._pool = await DatabaseManager.get_pool_or_init()
     return db
@@ -43,9 +41,7 @@ async def set_user(user_id: Union[int, str], data: Dict[str, Any]) -> bool:
     return await db.set_user(user_id, data)
 
 
-async def get_user_field(
-    user_id: Union[int, str], field: str, default: Any = None
-) -> Any:
+async def get_user_field(user_id: Union[int, str], field: str, default: Any = None) -> Any:
     """獲取用戶特定欄位的值"""
     db = await _get_db()
     return await db.get_user_field(user_id, field, default)
@@ -97,7 +93,6 @@ async def count_users() -> int:
 
 # ========== 向後相容別名 (供 kcoin.py 等現有代碼使用) ==========
 
-
 async def get_user_balance(user_id: Union[int, str]) -> int:
     """向後相容：獲取玩家 KKCoin 餘額"""
     return await get_user_kkcoin(user_id)
@@ -109,7 +104,6 @@ async def update_user_balance(user_id: Union[int, str], amount: int) -> bool:
 
 
 # ========== 向後相容性函數 (為舊代碼提供支持) ==========
-
 
 async def get_user_kkcoin(user_id: Union[int, str]) -> int:
     """(向後相容) 獲取玩家 kkcoin"""
@@ -163,7 +157,6 @@ async def update_user_stamina(user_id: Union[int, str], amount: int) -> bool:
 
 # ========== 裝備系統 (shop_commands 專用) ==========
 
-
 async def get_user_equipment(user_id: Union[int, str]) -> Dict[str, int]:
     """(向後相容) 獲取玩家所有裝備"""
     user = await get_user(user_id)
@@ -195,7 +188,6 @@ async def update_user_equipment(
 
 # ========== 匯出和導入 ==========
 
-
 async def export_to_json(filename: str) -> bool:
     """導出所有資料到 JSON"""
     db = await get_async_db()
@@ -216,11 +208,9 @@ async def export_to_sheet_format() -> tuple:
 
 # ========== 股票市場系統 ==========
 
-
 async def get_user_stocks(user_id: Union[int, str]) -> List[Dict[str, Any]]:
     """獲取使用者持有的股票列表"""
     import json
-
     stocks_json = await get_user_field(user_id, "stocks", default="[]")
     try:
         if isinstance(stocks_json, str):
@@ -233,12 +223,9 @@ async def get_user_stocks(user_id: Union[int, str]) -> List[Dict[str, Any]]:
         return []
 
 
-async def set_user_stocks(
-    user_id: Union[int, str], stocks: List[Dict[str, Any]]
-) -> bool:
+async def set_user_stocks(user_id: Union[int, str], stocks: List[Dict[str, Any]]) -> bool:
     """設置使用者的股票列表"""
     import json
-
     stocks_json = json.dumps(stocks, ensure_ascii=False)
     return await set_user_field(user_id, "stocks", stocks_json)
 
@@ -453,7 +440,6 @@ async def get_reserve_announcement() -> str:
 
 # ========== 浮動匯率系統 ==========
 
-
 async def get_total_kkcoin_supply() -> float:
     """計算全網 KK 幣總供應量"""
     all_users = await get_all_users()
@@ -497,11 +483,10 @@ async def get_inflation_info() -> Dict[str, float]:
 
 # ========== 初始化/關閉 ==========
 
-
 async def init_async_db(db_path: str = "user_data.db"):
     """應用啟動時呼叫：初始化統一連線池並建立資料表、執行啟動 PRAGMA"""
-    from .async_db import AsyncSheetDrivenDB
     from .manager import DatabaseManager
+    from .async_db import AsyncSheetDrivenDB
 
     # 初始化全域連線池
     await DatabaseManager.initialize(db_path)
@@ -519,5 +504,4 @@ async def init_async_db(db_path: str = "user_data.db"):
 async def close_async_db():
     """應用關閉時呼叫：關閉統一連線池"""
     from .manager import DatabaseManager
-
     await DatabaseManager.close()

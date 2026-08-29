@@ -21,20 +21,20 @@
 """
 
 import asyncio
-import hashlib
-import io
-import json
-import logging
 import os
 import re
-import sys
 import time
+import logging
+import json
+import io
+import hashlib
 import zipfile
+import requests
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-import requests
+import sys
 
 # 添加項目根目錄到Python路徑
 parent_dir = os.path.dirname(
@@ -44,8 +44,8 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 import discord
-from discord import app_commands
 from discord.ext import commands
+from discord import app_commands
 from dotenv import load_dotenv
 
 from cogs.common.AI import LLMClient
@@ -1849,11 +1849,9 @@ class LogMonitorEngine:
             "github_sync": ("📥 GitHub Debug 已回寫", discord.Color.blue()),
             "heal_result": (
                 "🛠️ 自癒結果已回寫",
-                (
-                    discord.Color.green()
-                    if incident.get("heal_success")
-                    else discord.Color.orange()
-                ),
+                discord.Color.green()
+                if incident.get("heal_success")
+                else discord.Color.orange(),
             ),
             "cleared": ("✅ 偵錯狀態已清空", discord.Color.green()),
         }
@@ -2081,11 +2079,9 @@ class LogMonitor(commands.Cog):
             incident_len = len(self._engine._active_incidents)
             embed = discord.Embed(
                 title="📊 日誌監控狀態",
-                color=(
-                    discord.Color.green()
-                    if (running and enabled)
-                    else discord.Color.orange()
-                ),
+                color=discord.Color.green()
+                if (running and enabled)
+                else discord.Color.orange(),
             )
             embed.add_field(
                 name="監控",

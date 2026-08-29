@@ -3,8 +3,8 @@
 事件驅動系統：當使用者資料變更時，觸發特定事件，由監聽器根據事件類型進行局部 embed 更新
 """
 
+from typing import Set, Optional
 from datetime import datetime
-from typing import Optional, Set
 
 
 class LockerEvent:

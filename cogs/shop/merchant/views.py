@@ -1,13 +1,10 @@
+import discord
+from discord.ui import Button, View, Modal, TextInput, Select
 import asyncio
 import random
 import traceback
-
-import discord
-from discord.ui import Button, Modal, Select, TextInput, View
-
-from shared.utils.view_registry import PersistentViewBase
-
 from .config import EQUIPMENT_SHOP, ROLE_SHOP
+from shared.utils.view_registry import PersistentViewBase
 
 
 class CustomAmountModal(Modal):
@@ -419,8 +416,8 @@ class ExploreView(PersistentViewBase):
     async def paperdoll_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        import time
         import traceback
+        import time
 
         ts = int(time.time())
         # 先 ACK 以避免 3 秒超時
@@ -817,8 +814,8 @@ class TryOnResultView(discord.ui.View):
     async def try_other_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        from .database import get_user_kkcoin
         from .views import EquipmentShopView
+        from .database import get_user_kkcoin
 
         kkcoin = await get_user_kkcoin(interaction.user.id)
         embed = discord.Embed(

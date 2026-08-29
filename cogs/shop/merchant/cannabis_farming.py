@@ -1,9 +1,8 @@
 """大麻種植系統 - 完整的種植管理"""
 
 from datetime import datetime, timedelta
-
-from .cannabis_config import CANNABIS_HARVEST_PRICES, CANNABIS_SHOP
 from .cannabis_unified import get_adapter
+from .cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
 
 
 # ==================== 數據庫初始化 ====================

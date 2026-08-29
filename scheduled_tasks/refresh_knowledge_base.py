@@ -5,12 +5,12 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -315,12 +315,7 @@ def main() -> int:
         for command in steps:
             outputs.append(run_step(command))
         # Chroma 已移除，不再需要 rebuild_from_database
-        outputs.append(
-            json.dumps(
-                {"semantic_indexed": 0, "note": "Chroma removed, using SQLite only"},
-                ensure_ascii=False,
-            )
-        )
+        outputs.append(json.dumps({"semantic_indexed": 0, "note": "Chroma removed, using SQLite only"}, ensure_ascii=False))
     except Exception as exc:
         write_status("failure", outputs, len(steps), str(exc))
         send_webhook("failure", outputs, str(exc))
