@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import logging
 import math
 import pickle
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 

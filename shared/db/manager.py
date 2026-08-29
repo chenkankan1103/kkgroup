@@ -6,11 +6,13 @@ Database Manager - 全域單例資料庫連線池管理器
 """
 
 import asyncio
-import aiosqlite
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from .async_db import AsyncConnectionPool, BUSY_TIMEOUT_MS, DEFAULT_POOL_SIZE, MAX_POOL_SIZE
+import aiosqlite
+
+from .async_db import (BUSY_TIMEOUT_MS, DEFAULT_POOL_SIZE, MAX_POOL_SIZE,
+                       AsyncConnectionPool)
 
 
 async def execute_with_retry(
@@ -24,7 +26,7 @@ async def execute_with_retry(
 class DatabaseManager:
     """全域資料庫管理器 - 單例模式"""
 
-    _instance: Optional['DatabaseManager'] = None
+    _instance: Optional["DatabaseManager"] = None
     _pool: Optional[AsyncConnectionPool] = None
     _db_path: str = "user_data.db"
     _initialized: bool = False
@@ -36,7 +38,9 @@ class DatabaseManager:
         return cls._instance
 
     @classmethod
-    async def initialize(cls, db_path: str = "user_data.db", pool_size: int = DEFAULT_POOL_SIZE) -> AsyncConnectionPool:
+    async def initialize(
+        cls, db_path: str = "user_data.db", pool_size: int = DEFAULT_POOL_SIZE
+    ) -> AsyncConnectionPool:
         """初始化全域連線池（應用啟動時呼叫一次）"""
         async with cls._init_lock:
             if cls._initialized and cls._pool is not None:
@@ -54,7 +58,9 @@ class DatabaseManager:
         return cls._pool
 
     @classmethod
-    async def get_pool_or_init(cls, db_path: str = "user_data.db") -> AsyncConnectionPool:
+    async def get_pool_or_init(
+        cls, db_path: str = "user_data.db"
+    ) -> AsyncConnectionPool:
         """取得連線池，若未初始化則自動初始化"""
         if cls._pool is None:
             return await cls.initialize(db_path)
@@ -114,17 +120,23 @@ class DatabaseManager:
 # 全域單例快捷函數
 _db_manager = DatabaseManager()
 
+
 async def get_db_pool(db_path: str = "user_data.db") -> AsyncConnectionPool:
     """取得全域連線池（相容原有 get_pool API）"""
     return await _db_manager.get_pool_or_init(db_path)
 
-async def init_db_pool(db_path: str = "user_data.db", pool_size: int = DEFAULT_POOL_SIZE) -> AsyncConnectionPool:
+
+async def init_db_pool(
+    db_path: str = "user_data.db", pool_size: int = DEFAULT_POOL_SIZE
+) -> AsyncConnectionPool:
     """初始化全域連線池"""
     return await _db_manager.initialize(db_path, pool_size)
+
 
 async def close_db_pool():
     """關閉全域連線池"""
     await _db_manager.close()
+
 
 @asynccontextmanager
 async def db_connection():

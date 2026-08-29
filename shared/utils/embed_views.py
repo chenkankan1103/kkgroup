@@ -4,12 +4,13 @@
 提供可重複使用的 embed 按鈕視圖，支持永久視圖和自定義超時
 """
 
-import discord
-from discord.ext import commands
-from typing import Optional, Callable, List, Dict, Any
-from enum import Enum
 import asyncio
 import logging
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
+
+import discord
+from discord.ext import commands
 
 logger = logging.getLogger(__name__)
 
@@ -416,13 +417,17 @@ class AnimePushView(discord.ui.View):
     async def _vote_callback(self, interaction: discord.Interaction):
         """處理投票按鈕點擊"""
         try:
-            logger.info(f"🎯 [AnimePushView._vote_callback] 用戶 {interaction.user.name}({interaction.user.id}) 點擊投票")
+            logger.info(
+                f"🎯 [AnimePushView._vote_callback] 用戶 {interaction.user.name}({interaction.user.id}) 點擊投票"
+            )
 
             # 🔑 關鍵：立即 defer() 回應 Discord，避免 3 秒超時
             await interaction.response.defer()
 
             # 解析投票類型
-            vote_key = interaction.custom_id.replace("anime_vote_", "").rsplit("_", 1)[0]
+            vote_key = interaction.custom_id.replace("anime_vote_", "").rsplit("_", 1)[
+                0
+            ]
             vote_label, _ = self.VOTE_TYPES.get(vote_key, ("未知", None))
 
             # 獲取用戶的匿名雜湊
@@ -433,7 +438,7 @@ class AnimePushView(discord.ui.View):
 
             # 記錄投票 (需要 db adapter 有 record_vote 方法)
             message_id = interaction.message.id if interaction.message else None
-            if self.db and hasattr(self.db, 'record_vote'):
+            if self.db and hasattr(self.db, "record_vote"):
                 vote_recorded = self.db.record_vote(
                     video_sn=self.video_sn,
                     anime_sn=self.anime_sn,
@@ -454,12 +459,16 @@ class AnimePushView(discord.ui.View):
                 logger.error(f"發送 follow-up 失敗: {e}")
 
         except Exception as e:
-            logger.error(f"❌ [AnimePushView._vote_callback] 投票失敗: {e}", exc_info=True)
+            logger.error(
+                f"❌ [AnimePushView._vote_callback] 投票失敗: {e}", exc_info=True
+            )
 
     async def _comment_callback(self, interaction: discord.Interaction):
         """處理評論按鈕點擊 - 彈出評論輸入框"""
         try:
-            logger.info(f"💬 [AnimePushView._comment_callback] 用戶 {interaction.user.name} 點擊評論")
+            logger.info(
+                f"💬 [AnimePushView._comment_callback] 用戶 {interaction.user.name} 點擊評論"
+            )
 
             outer_self = self
 
@@ -482,10 +491,14 @@ class AnimePushView(discord.ui.View):
 
                         user_hash = str(hash(modal_interaction.user.id))[:10]
                         message_id = outer_self.message_id
-                        anime_name = outer_self.episode.get("title", "") if outer_self.episode else ""
+                        anime_name = (
+                            outer_self.episode.get("title", "")
+                            if outer_self.episode
+                            else ""
+                        )
 
                         # 記錄評論
-                        if outer_self.db and hasattr(outer_self.db, 'record_vote'):
+                        if outer_self.db and hasattr(outer_self.db, "record_vote"):
                             vote_recorded = outer_self.db.record_vote(
                                 video_sn=outer_self.video_sn,
                                 anime_sn=outer_self.anime_sn,

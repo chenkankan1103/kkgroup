@@ -1,21 +1,19 @@
-from discord.ext import commands
-import discord
-import os
-import json
-import traceback
 import asyncio
+import json
 import logging
+import os
+import traceback
 from datetime import datetime, timedelta
-from .database import init_db, get_user, update_user, get_all_users
-from .work_system import (
-    LEVELS,
-    process_checkin,
-    process_work_action,
-    check_level_up,
-    required_days_for_level,
-    get_taiwan_time,
-)
+
+import discord
+from discord.ext import commands
+
 from status_dashboard import add_log
+
+from .database import get_all_users, get_user, init_db, update_user
+from .work_system import (LEVELS, check_level_up, get_taiwan_time,
+                          process_checkin, process_work_action,
+                          required_days_for_level)
 
 
 def get_bot_type(client):
@@ -747,9 +745,7 @@ class WorkCog(commands.Cog):
                     risk_emoji = (
                         "🟢"
                         if action["risk"] <= 0.2
-                        else "🟡"
-                        if action["risk"] <= 0.4
-                        else "🔴"
+                        else "🟡" if action["risk"] <= 0.4 else "🔴"
                     )
                     success_rate = int(action["success_rate"] * 100)
                     base_reward = action["base_reward"]

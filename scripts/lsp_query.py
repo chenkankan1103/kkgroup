@@ -11,11 +11,11 @@ Usage:
     python scripts/lsp_query.py diagnostics cogs/shop/shop.py
 """
 
-import sys
 import argparse
 import json
+import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 # Add project root to path for imports
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -38,14 +38,14 @@ def find_symbol_position(file_path: str, symbol: str) -> Optional[Dict[str, int]
     if not path.exists():
         return None
 
-    content = path.read_text(encoding='utf-8')
-    lines = content.split('\n')
+    content = path.read_text(encoding="utf-8")
+    lines = content.split("\n")
 
     for i, line in enumerate(lines):
-        if symbol in line and not line.strip().startswith('#'):
+        if symbol in line and not line.strip().startswith("#"):
             # Find column position
             col = line.index(symbol)
-            return {'line': i, 'character': col}
+            return {"line": i, "character": col}
 
     return None
 
@@ -60,7 +60,9 @@ def cmd_refs(args):
     print("\nThis command requires MCP Pylance LSP integration.")
     print("Use the MCP tool: mcp_pylance_mcp_s_pylanceLSP")
     print("Method: textDocument/references")
-    print("Params: { textDocument: { uri }, position: { line, character }, context: { includeDeclaration: true } }")
+    print(
+        "Params: { textDocument: { uri }, position: { line, character }, context: { includeDeclaration: true } }"
+    )
 
     # Try to find position if file given
     if args.file:
@@ -118,13 +120,13 @@ def cmd_symbols(args):
     if not path.is_absolute():
         path = PROJECT_ROOT / path
     if path.exists():
-        content = path.read_text(encoding='utf-8')
-        lines = content.split('\n')
+        content = path.read_text(encoding="utf-8")
+        lines = content.split("\n")
         print(f"\nFile has {len(lines)} lines")
         # Quick grep for class/def
         for i, line in enumerate(lines):
             stripped = line.strip()
-            if stripped.startswith(('class ', 'def ', 'async def ')):
+            if stripped.startswith(("class ", "def ", "async def ")):
                 print(f"  L{i+1}: {stripped[:80]}")
 
 
@@ -171,46 +173,48 @@ def cmd_hover(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Query Pylance LSP for Python code intelligence')
-    parser.add_argument('--file', '-f', help='File path (relative to project root)')
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    parser = argparse.ArgumentParser(
+        description="Query Pylance LSP for Python code intelligence"
+    )
+    parser.add_argument("--file", "-f", help="File path (relative to project root)")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
     # refs
-    p = subparsers.add_parser('refs', help='Find all references to a symbol')
-    p.add_argument('symbol', help='Symbol name')
+    p = subparsers.add_parser("refs", help="Find all references to a symbol")
+    p.add_argument("symbol", help="Symbol name")
 
     # def
-    p = subparsers.add_parser('def', help='Go to definition')
-    p.add_argument('symbol', help='Symbol name')
+    p = subparsers.add_parser("def", help="Go to definition")
+    p.add_argument("symbol", help="Symbol name")
 
     # hierarchy
-    p = subparsers.add_parser('hierarchy', help='Call hierarchy (incoming/outgoing)')
-    p.add_argument('symbol', help='Symbol name')
+    p = subparsers.add_parser("hierarchy", help="Call hierarchy (incoming/outgoing)")
+    p.add_argument("symbol", help="Symbol name")
 
     # symbols
-    p = subparsers.add_parser('symbols', help='List all symbols in a file')
+    p = subparsers.add_parser("symbols", help="List all symbols in a file")
 
     # diagnostics
-    p = subparsers.add_parser('diagnostics', help='Get diagnostics for a file')
+    p = subparsers.add_parser("diagnostics", help="Get diagnostics for a file")
 
     # type
-    p = subparsers.add_parser('type', help='Get inferred type at position')
-    p.add_argument('symbol', help='Symbol name')
+    p = subparsers.add_parser("type", help="Get inferred type at position")
+    p.add_argument("symbol", help="Symbol name")
 
     # hover
-    p = subparsers.add_parser('hover', help='Get hover info at position')
-    p.add_argument('symbol', help='Symbol name')
+    p = subparsers.add_parser("hover", help="Get hover info at position")
+    p.add_argument("symbol", help="Symbol name")
 
     args = parser.parse_args()
 
     commands = {
-        'refs': cmd_refs,
-        'def': cmd_def,
-        'hierarchy': cmd_hierarchy,
-        'symbols': cmd_symbols,
-        'diagnostics': cmd_diagnostics,
-        'type': cmd_type,
-        'hover': cmd_hover,
+        "refs": cmd_refs,
+        "def": cmd_def,
+        "hierarchy": cmd_hierarchy,
+        "symbols": cmd_symbols,
+        "diagnostics": cmd_diagnostics,
+        "type": cmd_type,
+        "hover": cmd_hover,
     }
 
     if args.command in commands:
@@ -219,5 +223,5 @@ def main():
         parser.print_help()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -4,10 +4,11 @@ Discord ID 偏差診斷與修復工具
 利用 Discord 機器人 API 檢驗 user_data.db 中的 user_id 是否與實際 Discord 成員 ID 一致
 """
 
-import discord
-from discord.ext import commands
-from discord import app_commands
 import sqlite3
+
+import discord
+from discord import app_commands
+from discord.ext import commands
 
 GUILD_ID = 1133112693356773416
 DB_PATH = "./user_data.db"

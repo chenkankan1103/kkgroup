@@ -1,14 +1,9 @@
 """Events module for locker system"""
 
-from .locker_events import (
-    LockerEvent,
-    EquipmentChangedEvent,
-    CurrencyChangedEvent,
-    HealthChangedEvent,
-    InventoryChangedEvent,
-    FullRefreshEvent,
-    SyncRequestedEvent,
-)
+from .locker_events import (CurrencyChangedEvent, EquipmentChangedEvent,
+                            FullRefreshEvent, HealthChangedEvent,
+                            InventoryChangedEvent, LockerEvent,
+                            SyncRequestedEvent)
 
 __all__ = [
     "LockerEvent",

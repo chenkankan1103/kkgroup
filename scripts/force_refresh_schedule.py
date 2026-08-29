@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """強制刷新週動畫排程（繞過 22:00 檢查）"""
+
 import asyncio
-import sys
 import os
+import sys
 
 project_root = "/home/e193752468/kkgroup"
 sys.path.insert(0, project_root)
 os.chdir(project_root)
 
-from cogs.ui.schedule_tracker import AnimeScheduleTracker
-from cogs.ui.anime_tracker import AnimeTracker
-from shared.db.async_db import AsyncSheetDrivenDB
-from shared.db.manager import DatabaseManager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-TW_TZ = ZoneInfo('Asia/Taipei')
+from cogs.ui.anime_tracker import AnimeTracker
+from cogs.ui.schedule_tracker import AnimeScheduleTracker
+from shared.db.async_db import AsyncSheetDrivenDB
+from shared.db.manager import DatabaseManager
+
+TW_TZ = ZoneInfo("Asia/Taipei")
+
 
 async def main():
     db_path = "user_data.db"
@@ -36,8 +39,10 @@ async def main():
     print(f"目前台灣時間: {now}")
 
     # 直接執行刷新邏輯，不檢查時間
-    from cogs.ui.push_core import API_ENDPOINT, API_TIMEOUT, API_HEADERS, get_week_start_date
     import aiohttp
+
+    from cogs.ui.push_core import (API_ENDPOINT, API_HEADERS, API_TIMEOUT,
+                                   get_week_start_date)
 
     # 1. 拉取完整週表
     schedule = {}
@@ -51,7 +56,9 @@ async def main():
                 else:
                     data = await response.json()
                     schedule = data.get("data", {}).get("newAnimeSchedule", {})
-                    print(f"✅ API 獲取到 {sum(len(v) for v in schedule.values())} 筆時程")
+                    print(
+                        f"✅ API 獲取到 {sum(len(v) for v in schedule.values())} 筆時程"
+                    )
     except Exception as e:
         print(f"❌ Error fetching schedule: {e}")
 
@@ -60,21 +67,24 @@ async def main():
         print("⚠️ API 失敗，嘗試首頁爬取...")
         try:
             from cogs.ui.bahamut_web_scraper import BahamutWebScraper
+
             scraper = BahamutWebScraper()
             homepage_schedule = await scraper.fetch_weekly_schedule_from_homepage()
             if homepage_schedule:
                 schedule = {}
                 for entry in homepage_schedule:
-                    day_str = str(entry['day_of_week'])
+                    day_str = str(entry["day_of_week"])
                     if day_str not in schedule:
                         schedule[day_str] = []
-                    schedule[day_str].append({
-                        'videoSn': entry['video_sn'],
-                        'animeSn': entry['anime_sn'],
-                        'scheduleTime': entry['scheduled_time'],
-                        'animeTitle': entry['title'],
-                        'episode': entry['episode']
-                    })
+                    schedule[day_str].append(
+                        {
+                            "videoSn": entry["video_sn"],
+                            "animeSn": entry["anime_sn"],
+                            "scheduleTime": entry["scheduled_time"],
+                            "animeTitle": entry["title"],
+                            "episode": entry["episode"],
+                        }
+                    )
                 print(f"✅ 從首頁爬取到 {len(homepage_schedule)} 筆時程")
         except Exception as e:
             print(f"❌ 首頁爬取失敗: {e}")
@@ -118,7 +128,9 @@ async def main():
                         }
                     )
 
-    print(f"📊 爬蟲映射表大小: {len(video_to_anime_map)}, 成功豐富: {enriched_count}/{len(schedule_data)}")
+    print(
+        f"📊 爬蟲映射表大小: {len(video_to_anime_map)}, 成功豐富: {enriched_count}/{len(schedule_data)}"
+    )
 
     # 5. 全量覆蓋週表
     if schedule_data:
@@ -140,6 +152,7 @@ async def main():
 
     print("✅ 強制週排程刷新完成！")
     await DatabaseManager.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

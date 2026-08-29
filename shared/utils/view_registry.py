@@ -10,9 +10,10 @@
 - 使用 PersistentViewBase 基類自動設置 timeout=None
 """
 
-import discord
-from typing import Optional, Callable
 import asyncio
+from typing import Callable, Optional
+
+import discord
 
 
 def _is_expired_interaction_error(error: Exception) -> bool:

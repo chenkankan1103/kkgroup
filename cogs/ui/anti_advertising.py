@@ -3,12 +3,13 @@
 監聽消息，檢測廣告內容，並採取相應措施（刪除、禁言、踢出）
 """
 
-import discord
-from discord.ext import commands, tasks
 import os
 import re
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
+
+import discord
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -82,15 +83,15 @@ class AntiAdvertising(commands.Cog):
         self.bot = bot
         self.violations: Dict[int, List[datetime]] = {}  # 追蹤過去 24 小時的違規
         self.muted_users: Dict[int, datetime] = {}  # 追蹤禁言狀態
-        self.duplicate_links: Dict[
-            str, List[datetime]
-        ] = {}  # 追蹤重複連結 {連結: [timestamp, ...]}
-        self.spam_mentions: Dict[
-            int, List[datetime]
-        ] = {}  # 追蹤 @everyone/@here 使用 {user_id: [timestamp, ...]}
-        self.cross_channel_spam: Dict[
-            int, List[dict]
-        ] = {}  # 追蹤跨頻道洗版 {user_id: [{channel_id, content, timestamp}, ...]}
+        self.duplicate_links: Dict[str, List[datetime]] = (
+            {}
+        )  # 追蹤重複連結 {連結: [timestamp, ...]}
+        self.spam_mentions: Dict[int, List[datetime]] = (
+            {}
+        )  # 追蹤 @everyone/@here 使用 {user_id: [timestamp, ...]}
+        self.cross_channel_spam: Dict[int, List[dict]] = (
+            {}
+        )  # 追蹤跨頻道洗版 {user_id: [{channel_id, content, timestamp}, ...]}
         self.cleanup_mutes.start()
         print("✅ 防廣告系統已初始化")
 
@@ -362,7 +363,9 @@ class AntiAdvertising(commands.Cog):
                     color=discord.Color.red(),
                 )
                 embed.add_field(
-                    name="⏱️ 禁言時長", value=f"{mute_duration // 60} 分鐘", inline=False
+                    name="⏱️ 禁言時長",
+                    value=f"{mute_duration // 60} 分鐘",
+                    inline=False,
                 )
                 embed.add_field(
                     name="📎 違規連結", value=f"`{matched_content[:100]}`", inline=False
@@ -453,7 +456,9 @@ class AntiAdvertising(commands.Cog):
                     color=discord.Color.red(),
                 )
                 embed.add_field(
-                    name="⏱️ 禁言時長", value=f"{mute_duration // 60} 分鐘", inline=False
+                    name="⏱️ 禁言時長",
+                    value=f"{mute_duration // 60} 分鐘",
+                    inline=False,
                 )
                 try:
                     await user.send(embed=embed)

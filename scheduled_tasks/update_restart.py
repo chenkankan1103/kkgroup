@@ -15,18 +15,18 @@
 保留此文件只供參考。如需恢復定期檢查，請參考 git 歷史。
 """
 
-import os
-import sys
-import discord
-from discord.ext import commands
-from dotenv import load_dotenv
-import subprocess
 import asyncio
+# 強制設置正確的 locale 和編碼
+import locale
+import os
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# 強制設置正確的 locale 和編碼
-import locale
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv
 
 locale.setlocale(locale.LC_ALL, "C.utf8")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")

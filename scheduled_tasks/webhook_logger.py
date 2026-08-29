@@ -2,11 +2,12 @@
 統一的啟動資訊發送器 - 使用 Webhook
 """
 
-import os
-import json
-import aiohttp
 import asyncio
+import json
+import os
 from datetime import datetime
+
+import aiohttp
 from dotenv import load_dotenv, set_key
 
 load_dotenv()
@@ -114,7 +115,11 @@ async def create_overview_embed() -> dict:
 
 
 async def create_bot_detail_embed(bot_type: str) -> dict:
-    bot_name_map = {"bot": "🤖 Main Bot", "shopbot": "🛍️ Shop Bot", "uibot": "🎨 UI Bot"}
+    bot_name_map = {
+        "bot": "🤖 Main Bot",
+        "shopbot": "🛍️ Shop Bot",
+        "uibot": "🎨 UI Bot",
+    }
     color_map = {"bot": 3447003, "shopbot": 9442302, "uibot": 16776960}
 
     info = bots_info[bot_type]

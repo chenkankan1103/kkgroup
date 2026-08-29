@@ -1,15 +1,17 @@
 """個人置物櫃 - 大麻種植管理 UI + 實時面板"""
 
-import discord
-from discord.ext import commands, tasks
+import json
 import traceback
+from collections import deque
 from datetime import datetime
 from pathlib import Path
-import json
+
 import aiosqlite
-from collections import deque
+import discord
+from discord.ext import commands, tasks
+
+from cogs.shop.merchant.cannabis_farming import get_inventory, get_user_plants
 from status_dashboard import add_log
-from cogs.shop.merchant.cannabis_farming import get_user_plants, get_inventory
 
 # 导入拆分的View类
 from .views.personal_locker import PersonalLockerView
@@ -132,7 +134,9 @@ class PersonalLockerCog(commands.Cog):
                     if getattr(item, "custom_id", None) == "crop_info"
                 ]
                 if not crop_buttons:
-                    print("⚠️  [Button Health Check] Crop info button not found in view")
+                    print(
+                        "⚠️  [Button Health Check] Crop info button not found in view"
+                    )
                     self.button_check_failures += 1
                     return
             except Exception as e:
@@ -494,7 +498,8 @@ class PersonalLockerCog(commands.Cog):
         - 編輯現有 canonical 訊息（DB 中的 locker_message_id）或發送新訊息
         """
         try:
-            from cogs.ui.utils.locker_embed_generator import update_locker_message
+            from cogs.ui.utils.locker_embed_generator import \
+                update_locker_message
 
             plants = await get_user_plants(user_id)
             inventory = await get_inventory(user_id)

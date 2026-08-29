@@ -3,20 +3,16 @@ Locker Event Listener Cog
 監聽置物櫃事件，根據事件類型進行局部或完整 embed 更新
 """
 
-import discord
-from discord.ext import commands
 from typing import Optional
 
-from cogs.ui.events import (
-    EquipmentChangedEvent,
-    CurrencyChangedEvent,
-    HealthChangedEvent,
-    InventoryChangedEvent,
-    FullRefreshEvent,
-    SyncRequestedEvent,
-)
-from db_adapter import get_user, set_user_field, get_user_field
+import discord
+from discord.ext import commands
+
+from cogs.ui.events import (CurrencyChangedEvent, EquipmentChangedEvent,
+                            FullRefreshEvent, HealthChangedEvent,
+                            InventoryChangedEvent, SyncRequestedEvent)
 from cogs.ui.utils.locker_cache import locker_cache
+from db_adapter import get_user, get_user_field, set_user_field
 
 
 class LockerEventListenerCog(commands.Cog):

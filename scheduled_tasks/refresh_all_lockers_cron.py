@@ -14,9 +14,9 @@
   - 腳本本身只發一個 HTTPS POST，最省 VM 資源
 """
 
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 
 # 添加路徑

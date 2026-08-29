@@ -5,18 +5,20 @@ KK群組 - Agent 任務持久化存儲 (SQLite)
 支援：建立、更新、查詢、列表、清理。
 """
 
-import aiosqlite
 import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+
+import aiosqlite
 
 logger = logging.getLogger(__name__)
 
 # 資料庫路徑
-DB_PATH = Path(os.getenv("AGENT_TASK_DB", "/home/e193752468/kkgroup/shared/db/data/agent_tasks.db")).resolve()
+DB_PATH = Path(
+    os.getenv("AGENT_TASK_DB", "/home/e193752468/kkgroup/shared/db/data/agent_tasks.db")
+).resolve()
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -77,7 +79,7 @@ class SQLiteTaskStore:
                     payload.get("channel_id"),
                     now,
                     now,
-                )
+                ),
             )
             await db.commit()
 
@@ -89,8 +91,12 @@ class SQLiteTaskStore:
 
         # 允許更新的欄位
         allowed = {
-            "status", "result", "error", "progress",
-            "started_at", "completed_at"
+            "status",
+            "result",
+            "error",
+            "progress",
+            "started_at",
+            "completed_at",
         }
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
@@ -110,18 +116,20 @@ class SQLiteTaskStore:
             await db.execute(f"UPDATE tasks SET {set_clause} WHERE task_id = ?", values)
             await db.commit()
 
-    async def get(self, task_id: str) -> Optional[dict]:
+    async def get(self, task_id: str) -> dict | None:
         """查詢單一任務"""
         await self._ensure_init()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)) as cur:
+            async with db.execute(
+                "SELECT * FROM tasks WHERE task_id = ?", (task_id,)
+            ) as cur:
                 row = await cur.fetchone()
                 if not row:
                     return None
                 return self._row_to_dict(row)
 
-    async def list(self, status: Optional[str] = None, limit: int = 50) -> list[dict]:
+    async def list(self, status: str | None = None, limit: int = 50) -> list[dict]:
         """列出任務（可按狀態過濾）"""
         await self._ensure_init()
         async with aiosqlite.connect(self.db_path) as db:
@@ -129,7 +137,7 @@ class SQLiteTaskStore:
             if status:
                 async with db.execute(
                     "SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-                    (status, limit)
+                    (status, limit),
                 ) as cur:
                     rows = await cur.fetchall()
             else:
@@ -146,7 +154,7 @@ class SQLiteTaskStore:
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
                 "DELETE FROM tasks WHERE created_at < ? AND status IN (?, ?, ?)",
-                (cutoff, "completed", "failed", "cancelled")
+                (cutoff, "completed", "failed", "cancelled"),
             )
             await db.commit()
             return cur.rowcount
@@ -154,11 +162,10 @@ class SQLiteTaskStore:
     async def get_stats(self) -> dict:
         """取得統計資訊"""
         await self._ensure_init()
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute("""
+        async with aiosqlite.connect(self.db_path) as db, db.execute("""
                 SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status
             """) as cur:
-                rows = await cur.fetchall()
+            rows = await cur.fetchall()
         return {row[0]: row[1] for row in rows}
 
     def _row_to_dict(self, row: aiosqlite.Row) -> dict:
@@ -174,7 +181,7 @@ class SQLiteTaskStore:
 
 
 # 全域實例（單例模式）
-_task_store: Optional[SQLiteTaskStore] = None
+_task_store: SQLiteTaskStore | None = None
 
 
 def get_task_store() -> SQLiteTaskStore:
@@ -193,11 +200,11 @@ async def update_task(task_id: str, **fields):
     await get_task_store().update(task_id, **fields)
 
 
-async def get_task(task_id: str) -> Optional[dict]:
+async def get_task(task_id: str) -> dict | None:
     return await get_task_store().get(task_id)
 
 
-async def list_tasks(status: Optional[str] = None, limit: int = 50) -> list[dict]:
+async def list_tasks(status: str | None = None, limit: int = 50) -> list[dict]:
     return await get_task_store().list(status, limit)
 
 

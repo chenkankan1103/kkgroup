@@ -8,15 +8,16 @@
 4. 自動 git commit 和 push
 """
 
-import subprocess
 import json
-import re
-import time
-import sys
 import os
-import requests
+import re
+import subprocess
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
+
+import requests
 
 
 def log(msg):

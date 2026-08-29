@@ -1,5 +1,6 @@
-import discord
 import time
+
+import discord
 
 
 class UpdatePanelView(discord.ui.View):

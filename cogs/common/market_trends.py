@@ -9,10 +9,11 @@ Discord Bot Cog：台灣 Google Trends 市場趨勢
     - 命令：/trends 或定時推送
 """
 
-import discord
-from discord.ext import commands, tasks
 import os
 import sys
+
+import discord
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 # 添加根目錄到 sys.path，以便正確導入 market_trends_serpapi
@@ -20,11 +21,9 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from shared.market_trends.serpapi import (
-    get_trending_topics,
-    format_trends_embed,
-    format_trends_text,
-)
+from shared.market_trends.serpapi import (format_trends_embed,
+                                          format_trends_text,
+                                          get_trending_topics)
 
 load_dotenv()
 

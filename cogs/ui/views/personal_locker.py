@@ -1,20 +1,17 @@
-import discord
-from datetime import datetime
 import traceback
+from datetime import datetime
 
-from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
-from cogs.shop.merchant.cannabis_farming import (
-    get_inventory,
-    get_user_plants,
-    add_inventory,
-    remove_inventory,
-    plant_cannabis,
-)
+import discord
+
+from cogs.shop.merchant.cannabis_config import (CANNABIS_HARVEST_PRICES,
+                                                CANNABIS_SHOP)
+from cogs.shop.merchant.cannabis_farming import (add_inventory, get_inventory,
+                                                 get_user_plants,
+                                                 plant_cannabis,
+                                                 remove_inventory)
 # 使用非同步 DB 適配器避免阻塞事件循環
-from shared.db.async_adapter import (
-    get_user_field as async_get_user_field,
-    set_user_field as async_set_user_field,
-)
+from shared.db.async_adapter import get_user_field as async_get_user_field
+from shared.db.async_adapter import set_user_field as async_set_user_field
 from status_dashboard import add_log
 
 
@@ -269,7 +266,8 @@ class PersonalLockerView(discord.ui.View):
                     await add_inventory(self.user_id, "種子", seed_name, 1)
                 except Exception as refund_error:
                     print(
-                        f"⚠️ 退還種子失敗：{refund_error}", file=__import__("sys").stderr
+                        f"⚠️ 退還種子失敗：{refund_error}",
+                        file=__import__("sys").stderr,
                     )
                 await interaction.followup.send(
                     f"❌ 錯誤：{str(e)[:100]}", ephemeral=True

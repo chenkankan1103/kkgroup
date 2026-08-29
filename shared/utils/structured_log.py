@@ -19,7 +19,7 @@ import threading
 import time
 import uuid
 from contextvars import ContextVar
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 
 # ─── Context Variables（支援 async/多執行緒） ─────────────────────────
 _trace_id_var: ContextVar[Optional[str]] = ContextVar("trace_id", default=None)
@@ -74,7 +74,9 @@ class StructuredLogger:
         # 確保只有一個 handler
         if not self.logger.handlers:
             handler = logging.StreamHandler(sys.stdout)
-            handler.setFormatter(logging.Formatter('%(message)s'))  # 只輸出 message（我們自己組 JSON）
+            handler.setFormatter(
+                logging.Formatter("%(message)s")
+            )  # 只輸出 message（我們自己組 JSON）
             handler.setLevel(level)
             self.logger.addHandler(handler)
 
@@ -106,7 +108,9 @@ class StructuredLogger:
 
         # 輸出 JSON Lines
         try:
-            self.logger.info(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+            self.logger.info(
+                json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+            )
         except Exception as e:
             # 最後手段：避免日誌本身出錯導致程式崩潰
             fallback = {
@@ -121,20 +125,29 @@ class StructuredLogger:
 
     def _utc_now(self) -> str:
         """ISO 8601 UTC 時間戳"""
-        return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int(time.time() * 1000000) % 1000000:06d}Z"
+        return (
+            time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+            + f".{int(time.time() * 1000000) % 1000000:06d}Z"
+        )
 
     # 便利方法
-    def debug(self, event: str, **fields): self._log("debug", event, **fields)
-    def info(self, event: str, **fields): self._log("info", event, **fields)
-    def warning(self, event: str, **fields): self._log("warning", event, **fields)
-    def error(self, event: str, **fields): self._log("error", event, **fields)
+    def debug(self, event: str, **fields):
+        self._log("debug", event, **fields)
+
+    def info(self, event: str, **fields):
+        self._log("info", event, **fields)
+
+    def warning(self, event: str, **fields):
+        self._log("warning", event, **fields)
+
+    def error(self, event: str, **fields):
+        self._log("error", event, **fields)
 
     def exception(self, event: str, exc: Exception, **fields):
         """記錄例外（自動帶入型別與訊息）"""
-        self._log("error", event,
-                  exc_type=type(exc).__name__,
-                  exc_msg=str(exc),
-                  **fields)
+        self._log(
+            "error", event, exc_type=type(exc).__name__, exc_msg=str(exc), **fields
+        )
 
     # 兼容 logging.Logger 介面
     def log(self, level: int, msg: str, *args, **kwargs):
@@ -160,7 +173,12 @@ def get_structured_logger(name: str, level: int = logging.INFO) -> StructuredLog
 class TraceContext:
     """Context Manager：自動設定/清理 trace_id, span_id"""
 
-    def __init__(self, trace_id: Optional[str] = None, span_id: Optional[str] = None, service: Optional[str] = None):
+    def __init__(
+        self,
+        trace_id: Optional[str] = None,
+        span_id: Optional[str] = None,
+        service: Optional[str] = None,
+    ):
         self.trace_id = trace_id
         self.span_id = span_id
         self.service = service
@@ -217,6 +235,7 @@ def with_trace(func):
 # 需要 import asyncio
 import asyncio
 
+
 # ───Journalctl 查詢輔助 ────────────────────────────────────────────
 def parse_journalctl_json(line: str) -> Optional[Dict]:
     """解析 journalctl -o json 的單行輸出"""
@@ -230,11 +249,12 @@ def extract_error_fingerprint(message: str, length: int = 80) -> str:
     """提取錯誤指紋（用於去重聚類）"""
     # 移除動態部分（數字、路徑、UUID、時間戳）
     import re
+
     fp = message
-    fp = re.sub(r'\b\d+\b', '<NUM>', fp)
-    fp = re.sub(r'/[^/\s]+(/\w+)*', '<PATH>', fp)
-    fp = re.sub(r'[0-9a-f]{8,}', '<HASH>', fp)
-    fp = re.sub(r'\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}', '<TIME>', fp)
+    fp = re.sub(r"\b\d+\b", "<NUM>", fp)
+    fp = re.sub(r"/[^/\s]+(/\w+)*", "<PATH>", fp)
+    fp = re.sub(r"[0-9a-f]{8,}", "<HASH>", fp)
+    fp = re.sub(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}", "<TIME>", fp)
     return fp[:length]
 
 
@@ -252,7 +272,9 @@ if __name__ == "__main__":
     # 帶 trace_id
     with TraceContext(trace_id="abc123", service="api"):
         log.info("request_received", method="POST", path="/agent/task")
-        log.error("processing_failed", exc_type="TimeoutError", exc_msg="Request timeout")
+        log.error(
+            "processing_failed", exc_type="TimeoutError", exc_msg="Request timeout"
+        )
 
     # Exception 記錄
     try:

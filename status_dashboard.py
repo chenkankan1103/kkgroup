@@ -6,18 +6,19 @@
 每個機器人獨立初始化自己的面板（防止重複創建）
 """
 
-import discord
-import os
-import json
 import asyncio
-import traceback
-import re
+import json
+import os
 import random
-from types import SimpleNamespace
+import re
+import traceback
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict
-from dotenv import load_dotenv, set_key
+from types import SimpleNamespace
+from typing import Dict, Optional
+
+import discord
 from discord.ext import tasks
+from dotenv import load_dotenv, set_key
 
 load_dotenv()
 

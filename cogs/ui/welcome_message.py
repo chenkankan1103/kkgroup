@@ -1,19 +1,21 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-from dotenv import load_dotenv
+import asyncio
+import io
+import json
 import os
 import random
-import asyncio
-import json
-import io
-from PIL import Image
-from typing import Optional
-from pathlib import Path
 import time
 from datetime import datetime
-from db_adapter import get_user, set_user, get_user_field, set_user_field
+from pathlib import Path
+from typing import Optional
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+from dotenv import load_dotenv
+from PIL import Image
+
 from cogs.ui.utils import paperdoll_manager
+from db_adapter import get_user, get_user_field, set_user, set_user_field
 
 load_dotenv()
 
@@ -79,9 +81,7 @@ class InterestOnboardingView(discord.ui.View):
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         if interaction.user.id != self.user_id:
-            await interaction.followup.send(
-                "❌ 這不是你的按鈕！", ephemeral=True
-            )
+            await interaction.followup.send("❌ 這不是你的按鈕！", ephemeral=True)
             return
         await interaction.followup.send(
             "已跳過。你可以隨時使用 `/my_interests` 設定標籤。", ephemeral=True
@@ -1172,7 +1172,9 @@ class WelcomeFlow(commands.Cog):
                 inline=False,
             )
 
-            gender_display = "男性 ♂️" if user_data.get("gender") == "male" else "女性 ♀️"
+            gender_display = (
+                "男性 ♂️" if user_data.get("gender") == "male" else "女性 ♀️"
+            )
             embed.add_field(name="👤 性別", value=gender_display, inline=True)
             embed.add_field(
                 name="👔 上衣", value=f"ID: {user_data['top']}", inline=True
@@ -1454,9 +1456,9 @@ class WelcomeFlow(commands.Cog):
                     welcome_msg = await channel.send(
                         embed=embed, view=self.persistent_view
                     )
-                    self.welcome_messages.setdefault(guild.id, {})[member.id] = (
-                        welcome_msg.id
-                    )
+                    self.welcome_messages.setdefault(guild.id, {})[
+                        member.id
+                    ] = welcome_msg.id
 
                     print(f"✅ 成功發送歡迎訊息給 {member.name} (嘗試 {attempt}/2)")
                     break

@@ -3,12 +3,14 @@
 - 玩家點击按鈕 → 彈出 Modal 表單 → 輸入反饋 → 發送到管理員頻道
 """
 
+import os
+from datetime import datetime
+
 import discord
 from discord.ext import commands
 from discord.ui import Modal, TextInput
-import os
-from datetime import datetime
 from dotenv import load_dotenv
+
 from shared.utils.view_registry import PersistentViewBase
 
 # 載入環境變數
@@ -70,9 +72,9 @@ class FeedbackModal(Modal):
             # 添加用戶信息
             embed.set_author(
                 name=f"{interaction.user.name} ({interaction.user.id})",
-                icon_url=interaction.user.avatar.url
-                if interaction.user.avatar
-                else None,
+                icon_url=(
+                    interaction.user.avatar.url if interaction.user.avatar else None
+                ),
             )
 
             # 添加回饋主題

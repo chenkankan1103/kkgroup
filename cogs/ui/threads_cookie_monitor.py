@@ -5,12 +5,13 @@ Threads Cookie 失效 Discord 通知系統
 當 Cookies 過期或失效時，自動通知管理員頻道
 """
 
-import discord
-from discord.ext import commands
-import logging
 import json
+import logging
 import os
 from datetime import datetime
+
+import discord
+from discord.ext import commands
 
 logger = logging.getLogger(__name__)
 
@@ -113,8 +114,8 @@ class ThreadsCookieMonitor(commands.Cog):
         Usage: /cookie_status
         """
 
-        from datetime import datetime
         import os
+        from datetime import datetime
 
         cookies_file = "threads_cookies.json"
 

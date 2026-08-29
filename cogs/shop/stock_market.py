@@ -11,39 +11,31 @@
 - 自動發送 embed 至指定頻道，並持久化 MESSAGE ID
 """
 
-import discord
-from discord.ext import commands
 import asyncio
 import json
 import logging
 import math
 import os
-import time
 import random
 import string
-from datetime import datetime
-from dotenv import load_dotenv, set_key
-from typing import Optional, Dict, List, Tuple
+import time
 import traceback
-from pathlib import Path
+from datetime import datetime
 from enum import Enum
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
-from db_adapter import (
-    get_user_kkcoin,
-    update_user_kkcoin,
-    get_user_stocks,
-    add_stock_position,
-    close_stock_position,
-    get_user_field,
-    set_user_field,
-    get_all_users,
-    get_central_reserve,
-    add_to_central_reserve,
-    get_dynamic_fee_rate,
-    get_reserve_announcement,
-    get_dynamic_exchange_rate,
-)
-from utils.stock_api import fetch_price, fetch_chart, get_popular_stocks
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv, set_key
+
+from db_adapter import (add_stock_position, add_to_central_reserve,
+                        close_stock_position, get_all_users,
+                        get_central_reserve, get_dynamic_exchange_rate,
+                        get_dynamic_fee_rate, get_reserve_announcement,
+                        get_user_field, get_user_kkcoin, get_user_stocks,
+                        set_user_field, update_user_kkcoin)
+from utils.stock_api import fetch_chart, fetch_price, get_popular_stocks
 
 logger = logging.getLogger(__name__)
 
@@ -2148,11 +2140,7 @@ class StockMarket(commands.Cog):
                         emoji = (
                             "🥇"
                             if idx == 0
-                            else "🥈"
-                            if idx == 1
-                            else "🥉"
-                            if idx == 2
-                            else f"{idx+1}."
+                            else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx+1}."
                         )
                         leaderboard_lines.append(f"{emoji} ${dusd:,.2f} USD")
                     embed.add_field(
@@ -2197,7 +2185,9 @@ class StockMarket(commands.Cog):
                 return
             self.last_market_snapshot = current_snapshot
 
-            print("✏️ [STOCK_MARKET] Embed 已生成，checking message 狀態...", flush=True)
+            print(
+                "✏️ [STOCK_MARKET] Embed 已生成，checking message 狀態...", flush=True
+            )
             print(
                 f"   - market_message 存在: {self.market_message is not None}",
                 flush=True,

@@ -3,9 +3,11 @@ JustWatch Popular Titles GraphQL Client
 取得台灣區 Netflix 熱門電影/影集（含標題、類型和海報 URL）
 使用 GraphQL API 無需 API Key
 """
+
 import logging
 import time
 from typing import Optional
+
 import aiohttp
 
 logger = logging.getLogger(__name__)
@@ -61,10 +63,7 @@ async def fetch_popular_netflix(
     }
     """
 
-    variables = {
-        "country": country,
-        "first": page_size
-    }
+    variables = {"country": country, "first": page_size}
 
     try:
         async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
@@ -79,30 +78,36 @@ async def fetch_popular_netflix(
 
                 if resp.status != 200:
                     text = await resp.text()
-                    logger.error(f"JustWatch GraphQL API 錯誤 HTTP {resp.status}: {text[:300]}")
+                    logger.error(
+                        f"JustWatch GraphQL API 錯誤 HTTP {resp.status}: {text[:300]}"
+                    )
                     return cached[0] if cached else []
 
                 data = await resp.json()
 
         # 解析 GraphQL 回應
         results = []
-        if 'data' in data and 'popularTitles' in data['data']:
-            popular_data = data['data']['popularTitles']
-            edges = popular_data.get('edges', [])
+        if "data" in data and "popularTitles" in data["data"]:
+            popular_data = data["data"]["popularTitles"]
+            edges = popular_data.get("edges", [])
 
             for edge in edges:
-                node = edge.get('node', {})
-                content = node.get('content', {})
+                node = edge.get("node", {})
+                content = node.get("content", {})
 
                 # 只取得我們需要的欄位
-                title = content.get('title', '未知標題')
-                object_type = node.get('objectType', '').upper()  # SHOW or MOVIE
-                show_id = node.get('id', '')
-                poster_url_template = content.get('posterUrl', '')
+                title = content.get("title", "未知標題")
+                object_type = node.get("objectType", "").upper()  # SHOW or MOVIE
+                show_id = node.get("id", "")
+                poster_url_template = content.get("posterUrl", "")
 
                 # 構建實際海報 URL
                 poster_url = ""
-                if poster_url_template and '{profile}' in poster_url_template and '{format}' in poster_url_template:
+                if (
+                    poster_url_template
+                    and "{profile}" in poster_url_template
+                    and "{format}" in poster_url_template
+                ):
                     # 使用常見的海報尺寸和格式
                     profile = "S166"  # 標準海報尺寸
                     image_format = "jpg"  # JPEG 格式
@@ -111,14 +116,16 @@ async def fetch_popular_netflix(
                 # 根據物件類型過濾
                 target_type = "SHOW" if content_type == "show" else "MOVIE"
                 if object_type == target_type:
-                    results.append({
-                        "title": title,
-                        "object_type": object_type,
-                        "id": show_id,
-                        "poster_url": poster_url,
-                        "content_type": content_type,  # 為了向後相容
-                        "release_year": "N/A",  # 暫時無法取得，保持向後相容
-                    })
+                    results.append(
+                        {
+                            "title": title,
+                            "object_type": object_type,
+                            "id": show_id,
+                            "poster_url": poster_url,
+                            "content_type": content_type,  # 為了向後相容
+                            "release_year": "N/A",  # 暫時無法取得，保持向後相容
+                        }
+                    )
 
         # 更新快取
         _cache[cache_key] = (results, now)

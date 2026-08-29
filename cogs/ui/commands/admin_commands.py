@@ -1,9 +1,13 @@
-import discord
 import asyncio
-from discord.ext import commands
+
+import discord
 from discord import app_commands
+from discord.ext import commands
+
 from db_adapter import get_all_users, set_user_field
-from ..utils.locker_embed_generator import message_needs_update, update_locker_message
+
+from ..utils.locker_embed_generator import (message_needs_update,
+                                            update_locker_message)
 
 
 class AdminCommands(commands.Cog):
