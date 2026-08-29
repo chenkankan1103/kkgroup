@@ -21,7 +21,10 @@ from discord.ext.commands import ExtensionError
 from dotenv import load_dotenv
 from watchdog.events import FileSystemEventHandler
 
-from shared.db.async_adapter import close_async_db, init_async_db
-from shared.db.feature_usage import track_discord_interaction
-from shared.utils.bot_status import build_discord_activity
-from shared.utils.mutual_rescue import ensure_mutual_rescue_monitor
+from shared.bot_integrations import (
+    close_async_db,
+    init_async_db,
+    track_discord_interaction,
+    build_discord_activity,
+    ensure_mutual_rescue_monitor,
+)
