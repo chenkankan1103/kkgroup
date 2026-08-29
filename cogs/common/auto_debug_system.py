@@ -3,19 +3,18 @@
 監控系統錯誤，自動觸發 GitHub Actions 進行 AI 分析和修復
 """
 
-import os
 import asyncio
-import aiohttp
 import json
-from datetime import datetime
 import logging
-from typing import Optional, Dict
+import os
+from datetime import datetime
+from typing import Dict, Optional
 
-from shared.utils.mutual_rescue import (
-    _attempt_local_service_heal,
-    _decide_repair_action,
-    _read_service_snapshot,
-)
+import aiohttp
+
+from shared.utils.mutual_rescue import (_attempt_local_service_heal,
+                                        _decide_repair_action,
+                                        _read_service_snapshot)
 
 # 設置日誌
 logging.basicConfig(

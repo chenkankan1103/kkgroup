@@ -1,19 +1,20 @@
-import discord
-from discord.ext import commands
-import aiohttp
 import asyncio
+import io
+import json
+import logging
 import os
 import random
-import json
-import io
 from typing import Optional
-from utils.persona import build_persona_prompt
-from dotenv import load_dotenv
-import logging
 
-# 匯入新的 DB 適配層
-from db_adapter import get_user, set_user_field, get_user_field
+import aiohttp
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv
+
 from cogs.ui.utils import paperdoll_manager
+# 匯入新的 DB 適配層
+from db_adapter import get_user, get_user_field, set_user_field
+from utils.persona import build_persona_prompt
 
 load_dotenv()
 

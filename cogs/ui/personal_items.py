@@ -1,4 +1,5 @@
 import discord
+
 from status_dashboard import add_log
 
 

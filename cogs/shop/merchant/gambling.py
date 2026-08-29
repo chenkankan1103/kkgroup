@@ -1,6 +1,8 @@
 import random
-from .config import SLOT_MACHINE_CONFIG
+
 from db_adapter import add_to_central_reserve
+
+from .config import SLOT_MACHINE_CONFIG
 
 
 async def process_slot_machine_bet(bet_amount: int) -> tuple:

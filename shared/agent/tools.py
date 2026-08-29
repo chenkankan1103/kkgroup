@@ -9,12 +9,8 @@ import asyncio
 import json
 import logging
 import os
-import re
 import shlex
-import subprocess
-import shutil
 from pathlib import Path
-from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +18,36 @@ logger = logging.getLogger(__name__)
 WORK_DIR = Path(os.getenv("CLAUDE_WORK_DIR", "/home/e193752468/kkgroup")).resolve()
 
 BLOCKED_PATHS = {
-    "/etc", "/root", "/home", "/var", "/usr", "/bin", "/sbin",
-    "/lib", "/lib64", "/boot", "/sys", "/proc", "/dev", "/run",
-    "/tmp", "/srv", "/opt", "/mnt", "/media",
+    "/etc",
+    "/root",
+    "/home",
+    "/var",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/boot",
+    "/sys",
+    "/proc",
+    "/dev",
+    "/run",
+    "/tmp",
+    "/srv",
+    "/opt",
+    "/mnt",
+    "/media",
 }
 
 BLOCKED_FILES = {".env", ".ssh", "id_rsa", "id_ed25519", "authorized_keys", "config"}
-BLOCKED_PREFIXES = [".git/", ".github/", "__pycache__/", "venv/", ".venv/", "node_modules/"]
+BLOCKED_PREFIXES = [
+    ".git/",
+    ".github/",
+    "__pycache__/",
+    "venv/",
+    ".venv/",
+    "node_modules/",
+]
 
 
 def secure_path(path: str) -> Path:
@@ -68,7 +87,7 @@ class ToolImpl:
         self.work_dir = work_dir
 
     # ----- 檔案讀寫 -----
-    async def read(self, path: str, offset: int = 0, limit: Optional[int] = None) -> str:
+    async def read(self, path: str, offset: int = 0, limit: int | None = None) -> str:
         """讀取檔案（支援行號範圍）"""
         target = secure_path(path)
         if not target.exists():
@@ -93,7 +112,9 @@ class ToolImpl:
         target.write_text(content, encoding="utf-8")
         return f"✅ 已寫入: {path} ({len(content)} 字元)"
 
-    async def edit(self, path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
+    async def edit(
+        self, path: str, old_string: str, new_string: str, replace_all: bool = False
+    ) -> str:
         """編輯檔案（精確替換）"""
         target = secure_path(path)
         if not target.exists():
@@ -108,7 +129,9 @@ class ToolImpl:
             count = content.count(old_string)
         else:
             if content.count(old_string) != 1:
-                raise ValueError(f"匹配不唯一 (找到 {content.count(old_string)} 處)，談確指定或用 replace_all=true")
+                raise ValueError(
+                    f"匹配不唯一 (找到 {content.count(old_string)} 處)，談確指定或用 replace_all=true"
+                )
             new_content = content.replace(old_string, new_string)
             count = 1
 
@@ -142,7 +165,11 @@ class ToolImpl:
 
         matches = list(target.glob(pattern))
         matches.sort()
-        return "\n".join(str(m.relative_to(self.work_dir)) for m in matches) if matches else "(無匹配)"
+        return (
+            "\n".join(str(m.relative_to(self.work_dir)) for m in matches)
+            if matches
+            else "(無匹配)"
+        )
 
     # ----- 命令執行 -----
     async def bash(self, command: str, timeout: int = 60) -> str:
@@ -158,11 +185,38 @@ class ToolImpl:
 
         # 命令白名單（防止任意命令執行）
         ALLOWED_COMMANDS = {
-            "python3", "python", "pip", "pytest", "ruff", "black", "mypy",
-            "git", "grep", "rg", "find", "cat", "head", "tail", "wc",
-            "ls", "stat", "file", "which", "ps", "free", "df",
-            "journalctl", "systemctl", "systemd-analyze",
-            "curl", "wget", "jq", "awk", "sed", "sort", "uniq",
+            "python3",
+            "python",
+            "pip",
+            "pytest",
+            "ruff",
+            "black",
+            "mypy",
+            "git",
+            "grep",
+            "rg",
+            "find",
+            "cat",
+            "head",
+            "tail",
+            "wc",
+            "ls",
+            "stat",
+            "file",
+            "which",
+            "ps",
+            "free",
+            "df",
+            "journalctl",
+            "systemctl",
+            "systemd-analyze",
+            "curl",
+            "wget",
+            "jq",
+            "awk",
+            "sed",
+            "sort",
+            "uniq",
         }
         if parts[0] not in ALLOWED_COMMANDS:
             return f"❌ 命令不在白名單: {parts[0]}"
@@ -187,7 +241,7 @@ class ToolImpl:
                 result += f"STDERR:\n{err}"
             return result.strip()
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return f"❌ 命令超時 ({timeout}s)"
         except Exception as e:
             return f"❌ 執行失敗: {e}"
@@ -255,11 +309,22 @@ class ToolImpl:
             return f"❌ 未知服務: {service}"
 
         since = f"-{since_minutes}min"
-        target_services = [services[service]] if service != "all" else list(services.values())[:-1]
+        target_services = (
+            [services[service]] if service != "all" else list(services.values())[:-1]
+        )
 
         all_entries = []
         for svc in target_services:
-            cmd = ["journalctl", "-u", svc, "--since", since, "--no-pager", "-o", "json"]
+            cmd = [
+                "journalctl",
+                "-u",
+                svc,
+                "--since",
+                since,
+                "--no-pager",
+                "-o",
+                "json",
+            ]
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
@@ -275,7 +340,9 @@ class ToolImpl:
                     try:
                         entry = json.loads(line)
                         msg = entry.get("MESSAGE", "")
-                        pri = entry.get("PRIORITY", "6")  # 0=emerg, 3=err, 4=warning, 6=info
+                        pri = entry.get(
+                            "PRIORITY", "6"
+                        )  # 0=emerg, 3=err, 4=warning, 6=info
 
                         # 級別過濾
                         if level == "error" and pri not in ("0", "1", "2", "3"):
@@ -287,12 +354,14 @@ class ToolImpl:
                         if pattern and pattern.lower() not in msg.lower():
                             continue
 
-                        all_entries.append({
-                            "service": svc.replace(".service", ""),
-                            "priority": pri,
-                            "timestamp": entry.get("__REALTIME_TIMESTAMP", ""),
-                            "message": msg[:500],  # 截斷過長訊息
-                        })
+                        all_entries.append(
+                            {
+                                "service": svc.replace(".service", ""),
+                                "priority": pri,
+                                "timestamp": entry.get("__REALTIME_TIMESTAMP", ""),
+                                "message": msg[:500],  # 截斷過長訊息
+                            }
+                        )
                     except json.JSONDecodeError:
                         continue
 
@@ -304,6 +373,7 @@ class ToolImpl:
 
         # 統計分析
         from collections import Counter
+
         by_service = Counter(e["service"] for e in all_entries)
         by_priority = Counter(e["priority"] for e in all_entries)
 
@@ -327,7 +397,7 @@ class ToolImpl:
         lines.append(f"📋 最近 {min(limit, len(all_entries))} 筆原始日誌:")
         for e in all_entries[-limit:]:
             ts = e["timestamp"][:19] if e["timestamp"] else "??"
-            pri_mark = "🔴" if e["priority"] in ("0","1","2","3") else "🟡"
+            pri_mark = "🔴" if e["priority"] in ("0", "1", "2", "3") else "🟡"
             lines.append(f"  {pri_mark} [{e['service']}] {ts} {e['message'][:200]}")
 
         return "\n".join(lines)

@@ -14,16 +14,17 @@ Agentic Loop（官方 Sequential Workflow）：
     - 最多 MAX_STEPS 步，防止無限迴圈
 """
 
-import discord
-from discord.ext import commands
-from discord import app_commands
-import aiohttp
 import asyncio
-import os
 import logging
-from typing import Optional, List, Dict
+import os
+from typing import Dict, List, Optional
 
+import aiohttp
+import discord
+from discord import app_commands
+from discord.ext import commands
 from dotenv import load_dotenv
+
 from shared.utils.view_registry import PersistentViewBase
 
 load_dotenv()

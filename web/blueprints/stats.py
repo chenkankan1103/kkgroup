@@ -5,18 +5,15 @@
 提供即時統計 API 端點供前端使用
 """
 
-from flask import Blueprint, jsonify
-from datetime import datetime
-import os
 import json
+import os
+from datetime import datetime
+
+from flask import Blueprint, jsonify
 
 # 匯入資料庫適配層
-from db_adapter import (
-    get_all_users,
-    get_central_reserve,
-    get_reserve_pressure,
-    get_reserve_announcement,
-)
+from db_adapter import (get_all_users, get_central_reserve,
+                        get_reserve_announcement, get_reserve_pressure)
 
 stats_bp = Blueprint("stats", __name__, url_prefix="/api")
 
@@ -55,20 +52,23 @@ def get_stats():
         reserve_pressure = get_reserve_pressure()
         reserve_announcement = get_reserve_announcement()
 
-        return jsonify(
-            {
-                "status": "success",
-                "data": {
-                    "total_traders": total_traders,
-                    "total_volume": int(total_volume),
-                    "active_traders": active_traders,
-                    "reserve": int(reserve),
-                    "reserve_pressure": float(reserve_pressure),
-                    "reserve_announcement": reserve_announcement,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                },
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "data": {
+                        "total_traders": total_traders,
+                        "total_volume": int(total_volume),
+                        "active_traders": active_traders,
+                        "reserve": int(reserve),
+                        "reserve_pressure": float(reserve_pressure),
+                        "reserve_announcement": reserve_announcement,
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                    },
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         print(f"❌ 獲取統計數據失敗: {e}")
@@ -105,18 +105,21 @@ def get_stats_detailed():
         # 按總資產排序
         users_by_balance.sort(key=lambda x: x["total_assets"], reverse=True)
 
-        return jsonify(
-            {
-                "status": "success",
-                "data": {
-                    "total_users": len(all_users),
-                    "active_users": len(users_by_balance),
-                    "top_users": users_by_balance[:10],
-                    "reserve": int(get_central_reserve()),
-                    "reserve_pressure": float(get_reserve_pressure()),
-                },
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "data": {
+                        "total_users": len(all_users),
+                        "active_users": len(users_by_balance),
+                        "top_users": users_by_balance[:10],
+                        "reserve": int(get_central_reserve()),
+                        "reserve_pressure": float(get_reserve_pressure()),
+                    },
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         print(f"❌ 獲取詳細統計失敗: {e}")

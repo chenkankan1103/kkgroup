@@ -17,16 +17,18 @@ API 優先級：
     3. Groq llama-3.3-70b（最終降級，純文字，無工具）
 """
 
-import discord
-from discord.ext import commands
-import aiohttp
 import asyncio
-import os
-import time
 import json
 import logging
-from typing import Optional, List, Dict, Any
+import os
+import time
+from typing import Any, Dict, List, Optional
+
+import aiohttp
+import discord
+from discord.ext import commands
 from dotenv import load_dotenv
+
 from shared.utils.llm_text_router import complete_text_with_fallback
 
 load_dotenv()
@@ -44,12 +46,9 @@ except ImportError:
 
 # ─── 長期記憶（修正 import 路徑）───────────────────────────────────────────
 try:
-    from shared.db.ai_memory import (
-        build_memory_context,
-        DialogueMemory,
-        KnowledgeBase,
-        initialize_memory_system,
-    )
+    from shared.db.ai_memory import (DialogueMemory, KnowledgeBase,
+                                     build_memory_context,
+                                     initialize_memory_system)
 
     _MEMORY_AVAILABLE = True
 except ImportError:

@@ -5,17 +5,17 @@
 整合統計 API + Google Sheets 同步 API + Discord OAuth 認證
 """
 
-import os
-import requests as req_lib
-from flask import Flask, jsonify, request, send_from_directory, Response
-from flask_cors import CORS
-from dotenv import load_dotenv
-from datetime import datetime, timedelta
-import logging
 import base64
-
+import logging
+import os
+from datetime import datetime, timedelta
 # 載入環境變數 - 明確指定 .env 路徑確保正確加載
 from pathlib import Path
+
+import requests as req_lib
+from dotenv import load_dotenv
+from flask import Flask, Response, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(env_path)
@@ -47,13 +47,13 @@ logger = logging.getLogger(__name__)
 # 註冊 Blueprints
 # ============================================================
 
-from web.blueprints.stats import stats_bp
-from web.blueprints.sheets import sheets_bp
+from web.api.game_api import game_bp, init_game_api
 from web.blueprints.discord_auth import discord_auth_bp
 from web.blueprints.knowledge_api import knowledge_api_bp
+from web.blueprints.sheets import sheets_bp
+from web.blueprints.stats import stats_bp
 from web.blueprints.stocks_api import stocks_api_bp
 from web.blueprints.webhook import webhook_bp
-from web.api.game_api import game_bp, init_game_api
 
 app.register_blueprint(stats_bp)
 app.register_blueprint(sheets_bp)
@@ -83,13 +83,8 @@ import sys as _sys
 _sys.path.insert(0, os.path.join(BASE_DIR, "..", ".."))
 
 try:
-    from shared.db.db_adapter import (
-        get_user,
-        get_all_users,
-        set_user,
-        get_db_stats,
-        count_users,
-    )
+    from shared.db.db_adapter import (count_users, get_all_users, get_db_stats,
+                                      get_user, set_user)
     from shared.db.sheet_driven_db import get_db_instance
 
     _db = get_db_instance("user_data.db")
@@ -178,9 +173,10 @@ def api_user(user_id):
         user = get_user(user_id)
         if user:
             return jsonify({"status": "ok", "user": _user_id_to_str(user)})
-        return jsonify(
-            {"status": "error", "message": f"找不到使用者 ID: {user_id}"}
-        ), 404
+        return (
+            jsonify({"status": "error", "message": f"找不到使用者 ID: {user_id}"}),
+            404,
+        )
 
     elif request.method == "PUT":
         data = request.get_json(force=True, silent=True) or {}
@@ -456,14 +452,17 @@ def handle_exception(e):
 
     # HTTP 異常（如 405 Method Not Allowed）應該返回原狀態碼而不是 500
     if isinstance(e, HTTPException):
-        return jsonify(
-            {
-                "status": "error",
-                "message": e.description,
-                "error_code": e.code,
-                "timestamp": datetime.now().isoformat(),
-            }
-        ), e.code
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": e.description,
+                    "error_code": e.code,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            ),
+            e.code,
+        )
 
     # 其他異常才返回 500
     logger.error(f"❌ 未捕捉的異常: {e}")
@@ -471,51 +470,60 @@ def handle_exception(e):
 
     logger.error(traceback.format_exc())
 
-    return jsonify(
-        {
-            "status": "error",
-            "message": f"服務器內部錯誤: {str(e)}",
-            "error_type": type(e).__name__,
-            "timestamp": datetime.now().isoformat(),
-        }
-    ), 500
+    return (
+        jsonify(
+            {
+                "status": "error",
+                "message": f"服務器內部錯誤: {str(e)}",
+                "error_type": type(e).__name__,
+                "timestamp": datetime.now().isoformat(),
+            }
+        ),
+        500,
+    )
 
 
 @app.errorhandler(400)
 def handle_bad_request(e):
     """處理 400 錯誤"""
-    return jsonify(
-        {
-            "status": "error",
-            "message": f"請求格式錯誤: {str(e)}",
-            "timestamp": datetime.now().isoformat(),
-        }
-    ), 400
+    return (
+        jsonify(
+            {
+                "status": "error",
+                "message": f"請求格式錯誤: {str(e)}",
+                "timestamp": datetime.now().isoformat(),
+            }
+        ),
+        400,
+    )
 
 
 @app.errorhandler(404)
 def handle_not_found(e):
     """處理 404 錯誤 - 提供可用端點列表"""
-    return jsonify(
-        {
-            "status": "error",
-            "message": f"端點不存在: {request.path}",
-            "available_endpoints": [
-                "/",
-                "/api/stats",
-                "/api/stats/detailed",
-                "/api/config",
-                "/api/health",
-                "/api/sync",
-                "/api/export",
-                "/api/clean-virtual",
-                "/api/user/<id>",
-                "/api/game/*",
-                "/api/proxy/paperdoll?url=<base64>",
-            ],
-            "timestamp": datetime.now().isoformat(),
-        }
-    ), 404
+    return (
+        jsonify(
+            {
+                "status": "error",
+                "message": f"端點不存在: {request.path}",
+                "available_endpoints": [
+                    "/",
+                    "/api/stats",
+                    "/api/stats/detailed",
+                    "/api/config",
+                    "/api/health",
+                    "/api/sync",
+                    "/api/export",
+                    "/api/clean-virtual",
+                    "/api/user/<id>",
+                    "/api/game/*",
+                    "/api/proxy/paperdoll?url=<base64>",
+                ],
+                "timestamp": datetime.now().isoformat(),
+            }
+        ),
+        404,
+    )
 
 
 # ============================================================
@@ -526,42 +534,48 @@ def handle_not_found(e):
 @app.route("/", methods=["GET"])
 def index():
     """API 根路由"""
-    return jsonify(
-        {
-            "status": "ok",
-            "service": "KKCoin Unified API",
-            "version": "2.0",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "endpoints": {
-                "stats": {
-                    "GET /api/stats": "即時統計數據",
-                    "GET /api/stats/detailed": "詳細統計（包含玩家排名）",
-                    "GET /api/config": "前端配置",
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "service": "KKCoin Unified API",
+                "version": "2.0",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "endpoints": {
+                    "stats": {
+                        "GET /api/stats": "即時統計數據",
+                        "GET /api/stats/detailed": "詳細統計（包含玩家排名）",
+                        "GET /api/config": "前端配置",
+                    },
+                    "sheets": {
+                        "POST /api/sync": "同步 Google Sheets 資料到 DB",
+                        "GET|POST /api/export": "導出 DB 資料為 Sheets 格式",
+                        "POST /api/clean-virtual": "清理虛擬帳號",
+                        "GET /api/user/<id>": "取得用戶資料",
+                        "PUT /api/user/<id>": "更新用戶資料",
+                    },
+                    "system": {"GET /api/health": "健康檢查"},
                 },
-                "sheets": {
-                    "POST /api/sync": "同步 Google Sheets 資料到 DB",
-                    "GET|POST /api/export": "導出 DB 資料為 Sheets 格式",
-                    "POST /api/clean-virtual": "清理虛擬帳號",
-                    "GET /api/user/<id>": "取得用戶資料",
-                    "PUT /api/user/<id>": "更新用戶資料",
-                },
-                "system": {"GET /api/health": "健康檢查"},
-            },
-        }
-    ), 200
+            }
+        ),
+        200,
+    )
 
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
     """健康檢查端點"""
-    return jsonify(
-        {
-            "status": "ok",
-            "service": "KKCoin Unified API",
-            "version": "2.0",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
-    ), 200
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "service": "KKCoin Unified API",
+                "version": "2.0",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+        ),
+        200,
+    )
 
 
 # ============================================================

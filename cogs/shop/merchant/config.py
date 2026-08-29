@@ -1,6 +1,7 @@
 import os
-from dotenv import load_dotenv
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # 確保載入 .env 檔案 - 在上上層資料夾
 env_path = Path(__file__).parent.parent.parent / ".env"

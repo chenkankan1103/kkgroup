@@ -23,11 +23,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 os.environ.setdefault("CLAUDE_WORK_DIR", "/home/e193752468/kkgroup")
-os.environ.setdefault("AGENT_TASK_DB", "/home/e193752468/kkgroup/shared/db/data/agent_tasks.db")
+os.environ.setdefault(
+    "AGENT_TASK_DB", "/home/e193752468/kkgroup/shared/db/data/agent_tasks.db"
+)
 
+from shared.agent.memory import get_task_store
 # ─── 導入 ─────────────────────────────────────────────────────────
 from shared.agent.tools import create_tool_impl
-from shared.agent.memory import get_task_store
 from shared.utils.structured_log import get_structured_logger
 
 # ─── 設定 ─────────────────────────────────────────────────────────
@@ -55,7 +57,9 @@ async def scan_journalctl(
     level: str = "error",
 ) -> list[dict]:
     """掃描 journalctl，回傳結構化錯誤列表"""
-    tool_impl = create_tool_impl(Path(os.getenv("CLAUDE_WORK_DIR", "/home/e193752468/kkgroup")))
+    tool_impl = create_tool_impl(
+        Path(os.getenv("CLAUDE_WORK_DIR", "/home/e193752468/kkgroup"))
+    )
     result = await tool_impl.scan_journalctl(
         service=service,
         since_minutes=since_minutes,
@@ -83,13 +87,22 @@ async def scan_raw_journalctl(
         "cloudflared": "cloudflared.service",
     }
 
-    target_services = [services_map[service]] if service != "all" else list(services_map.values())
+    target_services = (
+        [services_map[service]] if service != "all" else list(services_map.values())
+    )
     since = f"-{since_minutes}min"
     all_entries = []
 
     for svc in target_services:
         proc = await asyncio.create_subprocess_exec(
-            "journalctl", "-u", svc, "--since", since, "--no-pager", "-o", "json",
+            "journalctl",
+            "-u",
+            svc,
+            "--since",
+            since,
+            "--no-pager",
+            "-o",
+            "json",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -113,13 +126,15 @@ async def scan_raw_journalctl(
                 if any(p in msg.lower() for p in KNOWN_HARMLESS_PATTERNS):
                     continue
 
-                all_entries.append({
-                    "service": svc.replace(".service", ""),
-                    "priority": pri,
-                    "timestamp": entry.get("__REALTIME_TIMESTAMP", ""),
-                    "message": msg,
-                    "_raw": entry,
-                })
+                all_entries.append(
+                    {
+                        "service": svc.replace(".service", ""),
+                        "priority": pri,
+                        "timestamp": entry.get("__REALTIME_TIMESTAMP", ""),
+                        "message": msg,
+                        "_raw": entry,
+                    }
+                )
             except json.JSONDecodeError:
                 continue
 
@@ -129,11 +144,12 @@ async def scan_raw_journalctl(
 def extract_fingerprint(message: str) -> str:
     """提取錯誤指紋（用於去重聚類）"""
     import re
+
     fp = message
-    fp = re.sub(r'\b\d+\b', '<NUM>', fp)
-    fp = re.sub(r'/[^/\s]+(/\w+)*', '<PATH>', fp)
-    fp = re.sub(r'[0-9a-f]{8,}', '<HASH>', fp)
-    fp = re.sub(r'\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}', '<TIME>', fp)
+    fp = re.sub(r"\b\d+\b", "<NUM>", fp)
+    fp = re.sub(r"/[^/\s]+(/\w+)*", "<PATH>", fp)
+    fp = re.sub(r"[0-9a-f]{8,}", "<HASH>", fp)
+    fp = re.sub(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}", "<TIME>", fp)
     return fp[:100]
 
 
@@ -150,14 +166,16 @@ async def analyze_and_alert(entries: list[dict]) -> list[dict]:
         if count >= ERROR_THRESHOLD:
             # 找代表性錯誤
             sample = next(e for e in entries if extract_fingerprint(e["message"]) == fp)
-            alerts.append({
-                "fingerprint": fp,
-                "count": count,
-                "sample_message": sample["message"][:500],
-                "service": sample["service"],
-                "first_seen": sample["timestamp"],
-                "severity": "high" if count >= 10 else "medium",
-            })
+            alerts.append(
+                {
+                    "fingerprint": fp,
+                    "count": count,
+                    "sample_message": sample["message"][:500],
+                    "service": sample["service"],
+                    "first_seen": sample["timestamp"],
+                    "severity": "high" if count >= 10 else "medium",
+                }
+            )
 
     return alerts
 
@@ -174,21 +192,35 @@ async def send_discord_alert(alerts: list[dict]):
     for alert in alerts:
         embed = {
             "title": f"🚨 Agent Log Monitor: {alert['severity'].upper()} 頻率告警",
-            "color": 0xff0000 if alert["severity"] == "high" else 0xffaa00,
+            "color": 0xFF0000 if alert["severity"] == "high" else 0xFFAA00,
             "fields": [
                 {"name": "服務", "value": alert["service"], "inline": True},
                 {"name": "出現次數", "value": str(alert["count"]), "inline": True},
                 {"name": "嚴重度", "value": alert["severity"], "inline": True},
-                {"name": "錯誤指紋", "value": f"`{alert['fingerprint']}`", "inline": False},
-                {"name": "範例訊息", "value": f"```\n{alert['sample_message']}\n```", "inline": False},
+                {
+                    "name": "錯誤指紋",
+                    "value": f"`{alert['fingerprint']}`",
+                    "inline": False,
+                },
+                {
+                    "name": "範例訊息",
+                    "value": f"```\n{alert['sample_message']}\n```",
+                    "inline": False,
+                },
             ],
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
         try:
             async with aiohttp.ClientSession() as session:
-                await session.post(webhook_url, json={"embeds": [embed]}, timeout=aiohttp.ClientTimeout(total=10))
-            log.info("alert_sent", fingerprint=alert["fingerprint"], count=alert["count"])
+                await session.post(
+                    webhook_url,
+                    json={"embeds": [embed]},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                )
+            log.info(
+                "alert_sent", fingerprint=alert["fingerprint"], count=alert["count"]
+            )
         except Exception as e:
             log.error("alert_send_failed", error=str(e))
 
@@ -197,11 +229,13 @@ async def store_alert(alerts: list[dict]):
     """將告警存入資料庫（擴充 agent_tasks 表或新表）"""
     # 簡化：記錄到結構化日誌
     for alert in alerts:
-        log.warning("error_pattern_detected",
-                    fingerprint=alert["fingerprint"],
-                    count=alert["count"],
-                    service=alert["service"],
-                    severity=alert["severity"])
+        log.warning(
+            "error_pattern_detected",
+            fingerprint=alert["fingerprint"],
+            count=alert["count"],
+            service=alert["service"],
+            severity=alert["severity"],
+        )
 
 
 async def main():
@@ -225,7 +259,11 @@ async def main():
         await send_discord_alert(alerts)
         await store_alert(alerts)
     else:
-        log.info("log_scan_complete", total_entries=len(all_entries), message="無達閾值異常模式")
+        log.info(
+            "log_scan_complete",
+            total_entries=len(all_entries),
+            message="無達閾值異常模式",
+        )
 
 
 if __name__ == "__main__":

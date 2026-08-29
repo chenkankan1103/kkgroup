@@ -12,17 +12,14 @@ Bahamut 動畫追蹤 Cog - 週表排程系統
 - 重啟時由 APScheduler 排程系統確保時準推送
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
-import asyncio
+
 import aiohttp
-from .push_core import (
-    TW_TZ,
-    API_ENDPOINT,
-    API_TIMEOUT,
-    API_HEADERS,
-    get_week_start_date,
-)
+
+from .push_core import (API_ENDPOINT, API_HEADERS, API_TIMEOUT, TW_TZ,
+                        get_week_start_date)
 
 # 嘗試導入 BahamutWebScraper
 try:
@@ -65,7 +62,9 @@ class AnimeScheduleTracker:
             dict: 模擬 API 格式的時程表 { "1": [...], "2": [...], ... }
         """
         if BahamutWebScraper is None:
-            logger.warning("⚠️ [_get_anime_schedule_from_homepage] BahamutWebScraper 不可用")
+            logger.warning(
+                "⚠️ [_get_anime_schedule_from_homepage] BahamutWebScraper 不可用"
+            )
             return {}
 
         try:
@@ -79,19 +78,23 @@ class AnimeScheduleTracker:
             # 將首頁爬取的資料轉換為 API 相容格式
             schedule = {}
             for entry in homepage_schedule:
-                day_str = str(entry['day_of_week'])
+                day_str = str(entry["day_of_week"])
                 if day_str not in schedule:
                     schedule[day_str] = []
 
-                schedule[day_str].append({
-                    'videoSn': entry['video_sn'],
-                    'animeSn': entry['anime_sn'],
-                    'scheduleTime': entry['scheduled_time'],
-                    'animeTitle': entry['title'],
-                    'episode': entry['episode']
-                })
+                schedule[day_str].append(
+                    {
+                        "videoSn": entry["video_sn"],
+                        "animeSn": entry["anime_sn"],
+                        "scheduleTime": entry["scheduled_time"],
+                        "animeTitle": entry["title"],
+                        "episode": entry["episode"],
+                    }
+                )
 
-            logger.info(f"✅ [_get_anime_schedule_from_homepage] 從首頁獲取到 {len(homepage_schedule)} 筆時程")
+            logger.info(
+                f"✅ [_get_anime_schedule_from_homepage] 從首頁獲取到 {len(homepage_schedule)} 筆時程"
+            )
             return schedule
 
         except Exception as e:
@@ -174,7 +177,9 @@ class AnimeScheduleTracker:
             # 拉取完整一週的時程表 (優先使用 API，失敗則嘗試首頁爬取)
             schedule = await self._get_anime_schedule()
             if not schedule:
-                logger.warning("⚠️ [refresh_weekly_schedule] API 拉取失敗，嘗試從首頁爬取...")
+                logger.warning(
+                    "⚠️ [refresh_weekly_schedule] API 拉取失敗，嘗試從首頁爬取..."
+                )
                 schedule = await self._get_anime_schedule_from_homepage()
                 if not schedule:
                     logger.error("❌ [refresh_weekly_schedule] API 和首頁爬取均失敗")
@@ -208,11 +213,15 @@ class AnimeScheduleTracker:
                                 enriched_anime = anime.copy()
                                 enriched_anime["animeSn"] = video_to_anime_map[video_sn]
                                 enriched_count += 1
-                                logger.debug(f"🔗 [refresh_weekly_schedule] 找到映射: videoSn={video_sn} -> animeSn={video_to_anime_map[video_sn]}")
+                                logger.debug(
+                                    f"🔗 [refresh_weekly_schedule] 找到映射: videoSn={video_sn} -> animeSn={video_to_anime_map[video_sn]}"
+                                )
                             else:
                                 enriched_anime = anime
                                 if video_sn:
-                                    logger.debug(f"⚠️ [refresh_weekly_schedule] 未找到 animeSn 映射: videoSn={video_sn}")
+                                    logger.debug(
+                                        f"⚠️ [refresh_weekly_schedule] 未找到 animeSn 映射: videoSn={video_sn}"
+                                    )
 
                             schedule_data.append(
                                 {
@@ -257,8 +266,11 @@ class AnimeScheduleTracker:
             today_schedule = self.get_today_schedule()
 
             # 重新排程推送任務（週表更新後需要重新設定排程）
-            if self.anime_tracker and hasattr(self.anime_tracker, '_reschedule_push_jobs'):
+            if self.anime_tracker and hasattr(
+                self.anime_tracker, "_reschedule_push_jobs"
+            ):
                 import asyncio
+
                 # 創建任務但不等待完成，避免阻塞
                 asyncio.create_task(self.anime_tracker._reschedule_push_jobs())
 
@@ -283,23 +295,31 @@ class AnimeScheduleTracker:
         video_to_anime_map = {}
 
         if BahamutWebScraper is None:
-            logger.warning("⚠️ [_build_video_to_anime_map] BahamutWebScraper 不可用，跳過爬蟲映射")
+            logger.warning(
+                "⚠️ [_build_video_to_anime_map] BahamutWebScraper 不可用，跳過爬蟲映射"
+            )
             return video_to_anime_map
 
         try:
             scraper = BahamutWebScraper()
-            logger.info("🕷️ [_build_video_to_anime_map] 開始爬取巴哈動畫瘋首頁週表獲取 animeSn 映射...")
+            logger.info(
+                "🕷️ [_build_video_to_anime_map] 開始爬取巴哈動畫瘋首頁週表獲取 animeSn 映射..."
+            )
 
             homepage_schedule = await scraper.fetch_weekly_schedule_from_homepage()
 
             for entry in homepage_schedule:
-                video_sn = entry.get('video_sn')
-                anime_sn = entry.get('anime_sn')
+                video_sn = entry.get("video_sn")
+                anime_sn = entry.get("anime_sn")
                 if video_sn and anime_sn:
                     video_to_anime_map[video_sn] = anime_sn
-                    logger.debug(f"🔗 [_build_video_to_anime_map] 映射: videoSn={video_sn} -> animeSn={anime_sn} ({entry.get('title', '未知標題')})")
+                    logger.debug(
+                        f"🔗 [_build_video_to_anime_map] 映射: videoSn={video_sn} -> animeSn={anime_sn} ({entry.get('title', '未知標題')})"
+                    )
 
-            logger.info(f"✅ [_build_video_to_anime_map] 爬蟲完成，從首頁週表獲得 {len(video_to_anime_map)} 個映射關係")
+            logger.info(
+                f"✅ [_build_video_to_anime_map] 爬蟲完成，從首頁週表獲得 {len(video_to_anime_map)} 個映射關係"
+            )
 
         except Exception as e:
             logger.error(f"❌ [_build_video_to_anime_map] 爬蟲失敗: {e}", exc_info=True)

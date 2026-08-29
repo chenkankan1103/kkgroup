@@ -1,5 +1,6 @@
 import json
 from typing import Optional
+
 from db_adapter import get_user, set_user
 
 from . import paperdoll_manager

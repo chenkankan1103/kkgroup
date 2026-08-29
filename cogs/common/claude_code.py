@@ -48,7 +48,9 @@ MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "8192"))
 class AgentAPIClient:
     """Agent Server HTTP API 客戶端"""
 
-    def __init__(self, base_url: str = AGENT_SERVER_URL, timeout: int = AGENT_SERVER_TIMEOUT):
+    def __init__(
+        self, base_url: str = AGENT_SERVER_URL, timeout: int = AGENT_SERVER_TIMEOUT
+    ):
         self.base_url = base_url.rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self._session: Optional[aiohttp.ClientSession] = None
@@ -80,7 +82,9 @@ class AgentAPIClient:
             },
             "callback_url": callback_url,
         }
-        async with self.session.post(f"{self.base_url}/agent/task", json=payload) as resp:
+        async with self.session.post(
+            f"{self.base_url}/agent/task", json=payload
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"Agent Server Error {resp.status}: {text}")
@@ -152,16 +156,24 @@ class LocalTaskTracker:
 class StopView(discord.ui.View):
     """停止/暫停按鈕 View"""
 
-    def __init__(self, cog: "ClaudeCodeCog", user_id: int, task_id: str, timeout: float = 300):
+    def __init__(
+        self, cog: "ClaudeCodeCog", user_id: int, task_id: str, timeout: float = 300
+    ):
         super().__init__(timeout=timeout)
         self.cog = cog
         self.user_id = user_id
         self.task_id = task_id
 
-    @discord.ui.button(label="⏸️ 暫停", style=discord.ButtonStyle.danger, custom_id="claude_stop")
-    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="⏸️ 暫停", style=discord.ButtonStyle.danger, custom_id="claude_stop"
+    )
+    async def stop_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有發起者能暫停任務", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 只有發起者能暫停任務", ephemeral=True
+            )
             return
 
         try:
@@ -170,7 +182,9 @@ class StopView(discord.ui.View):
             button.label = "⏸️ 已暫停"
             self.clear_items()
             resume_button = discord.ui.Button(
-                label="▶️ 恢復", style=discord.ButtonStyle.success, custom_id="claude_resume"
+                label="▶️ 恢復",
+                style=discord.ButtonStyle.success,
+                custom_id="claude_resume",
             )
             resume_button.callback = self._create_resume_callback(interaction)
             self.add_item(resume_button)
@@ -181,17 +195,30 @@ class StopView(discord.ui.View):
     def _create_resume_callback(self, original_interaction: discord.Interaction):
         async def resume_callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                await interaction.response.send_message("❌ 只有發起者能恢復任務", ephemeral=True)
+                await interaction.response.send_message(
+                    "❌ 只有發起者能恢復任務", ephemeral=True
+                )
                 return
             try:
-                await self.cog.api.cancel_task(self.task_id, force=False)  # 暫停用 cancel force=false
+                await self.cog.api.cancel_task(
+                    self.task_id, force=False
+                )  # 暫停用 cancel force=false
                 self.clear_items()
-                new_stop = discord.ui.Button(label="⏸️ 暫停", style=discord.ButtonStyle.danger, custom_id="claude_stop")
+                new_stop = discord.ui.Button(
+                    label="⏸️ 暫停",
+                    style=discord.ButtonStyle.danger,
+                    custom_id="claude_stop",
+                )
                 new_stop.callback = self.stop_button
                 self.add_item(new_stop)
-                await interaction.response.edit_message(content="▶️ 任務已恢復", view=self)
+                await interaction.response.edit_message(
+                    content="▶️ 任務已恢復", view=self
+                )
             except Exception as e:
-                await interaction.response.send_message(f"❌ 恢復失敗: {e}", ephemeral=True)
+                await interaction.response.send_message(
+                    f"❌ 恢復失敗: {e}", ephemeral=True
+                )
+
         return resume_callback
 
     async def on_timeout(self):
@@ -202,17 +229,32 @@ class StopView(discord.ui.View):
 class ContinueView(discord.ui.View):
     """繼續執行按鈕"""
 
-    def __init__(self, cog: "ClaudeCodeCog", user_id: int, task_id: str, original_prompt: str, timeout: float = 300):
+    def __init__(
+        self,
+        cog: "ClaudeCodeCog",
+        user_id: int,
+        task_id: str,
+        original_prompt: str,
+        timeout: float = 300,
+    ):
         super().__init__(timeout=timeout)
         self.cog = cog
         self.user_id = user_id
         self.task_id = task_id
         self.original_prompt = original_prompt
 
-    @discord.ui.button(label="▶️ 繼續執行", style=discord.ButtonStyle.success, custom_id="claude_continue")
-    async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="▶️ 繼續執行",
+        style=discord.ButtonStyle.success,
+        custom_id="claude_continue",
+    )
+    async def continue_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有發起者能繼續任務", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 只有發起者能繼續任務", ephemeral=True
+            )
             return
 
         button.disabled = True
@@ -229,19 +271,32 @@ class ContinueView(discord.ui.View):
                 task_id=self.task_id,
             )
             new_task_id = result.get("task_id")
-            self.cog.tracker.set(self.user_id, interaction.channel_id, new_task_id, interaction.message.id)
+            self.cog.tracker.set(
+                self.user_id,
+                interaction.channel_id,
+                new_task_id,
+                interaction.message.id,
+            )
 
             # 新的進度訊息
             stop_view = StopView(self.cog, self.user_id, new_task_id)
-            progress_msg = await interaction.followup.send("🔄 繼續執行...", view=stop_view)
-            self.cog.tracker.set(self.user_id, interaction.channel_id, new_task_id, progress_msg.id)
+            progress_msg = await interaction.followup.send(
+                "🔄 繼續執行...", view=stop_view
+            )
+            self.cog.tracker.set(
+                self.user_id, interaction.channel_id, new_task_id, progress_msg.id
+            )
 
             # 背景輪詢進度
-            asyncio.create_task(self._poll_progress(progress_msg, new_task_id, stop_view))
+            asyncio.create_task(
+                self._poll_progress(progress_msg, new_task_id, stop_view)
+            )
         except Exception as e:
             await interaction.followup.send(f"❌ 繼續失敗: {e}")
 
-    async def _poll_progress(self, message: discord.Message, task_id: str, view: StopView):
+    async def _poll_progress(
+        self, message: discord.Message, task_id: str, view: StopView
+    ):
         """背景輪詢進度並更新訊息"""
         last_progress = ""
         for _ in range(1800):  # 最多 30 分鐘
@@ -279,7 +334,7 @@ class ContinueView(discord.ui.View):
     def _chunk_text(text: str, max_len: int) -> list[str]:
         if len(text) <= max_len:
             return [text]
-        return [text[i:i+max_len] for i in range(0, len(text), max_len)]
+        return [text[i : i + max_len] for i in range(0, len(text), max_len)]
 
     async def on_timeout(self):
         for item in self.children:
@@ -302,15 +357,25 @@ class ClaudeCodeCog(commands.Cog):
         admin_role = os.getenv("ADMIN_ROLE_NAME", "管理員")
         return any(r.name == admin_role for r in getattr(interaction.user, "roles", []))
 
-    @app_commands.command(name="cc", description="Claude Code Agent - AI 程式開發助手（管理員限定）")
-    @app_commands.describe(prompt="任務描述，例如：幫我新增一個 /ping 指令", continue_conv="繼續上一輪對話")
-    async def cc(self, interaction: discord.Interaction, prompt: str, continue_conv: bool = False):
+    @app_commands.command(
+        name="cc", description="Claude Code Agent - AI 程式開發助手（管理員限定）"
+    )
+    @app_commands.describe(
+        prompt="任務描述，例如：幫我新增一個 /ping 指令", continue_conv="繼續上一輪對話"
+    )
+    async def cc(
+        self, interaction: discord.Interaction, prompt: str, continue_conv: bool = False
+    ):
         if not self._check_permission(interaction):
-            await interaction.response.send_message("❌ 僅限 Discord 管理員使用。", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 僅限 Discord 管理員使用。", ephemeral=True
+            )
             return
 
         if not NVIDIA_API_KEY:
-            await interaction.response.send_message("❌ NVIDIA_API_KEY 未設定。", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ NVIDIA_API_KEY 未設定。", ephemeral=True
+            )
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -345,14 +410,20 @@ class ClaudeCodeCog(commands.Cog):
             self.tracker.set(user_id, channel_id, task_id, initial_msg.id)
 
             # 背景輪詢進度
-            asyncio.create_task(self._poll_progress(initial_msg, task_id, stop_view, prompt))
+            asyncio.create_task(
+                self._poll_progress(initial_msg, task_id, stop_view, prompt)
+            )
 
         except Exception as e:
             logger.exception("CC command error")
             await interaction.followup.send(f"❌ 提交失敗: {e}", ephemeral=True)
 
     async def _poll_progress(
-        self, message: discord.Message, task_id: str, view: StopView, original_prompt: str
+        self,
+        message: discord.Message,
+        task_id: str,
+        view: StopView,
+        original_prompt: str,
     ):
         """背景輪詢 Agent Server 進度並更新 Discord 訊息"""
         last_progress = ""
@@ -407,7 +478,7 @@ class ClaudeCodeCog(commands.Cog):
     def _chunk_text(text: str, max_len: int) -> list[str]:
         if len(text) <= max_len:
             return [text]
-        return [text[i:i+max_len] for i in range(0, len(text), max_len)]
+        return [text[i : i + max_len] for i in range(0, len(text), max_len)]
 
     @app_commands.command(name="cc_status", description="查看 Agent Server 狀態")
     async def cc_status(self, interaction: discord.Interaction):
@@ -419,14 +490,24 @@ class ClaudeCodeCog(commands.Cog):
             health = await self.api.health_check()
             local_active = len(self.tracker._tasks)
 
-            embed = discord.Embed(title="🤖 Agent Server 狀態", color=discord.Color.blue())
-            embed.add_field(name="Server 狀態", value=health.get("status", "unknown"), inline=True)
-            embed.add_field(name="執行中任務", value=str(health.get("running_tasks", 0)), inline=True)
+            embed = discord.Embed(
+                title="🤖 Agent Server 狀態", color=discord.Color.blue()
+            )
+            embed.add_field(
+                name="Server 狀態", value=health.get("status", "unknown"), inline=True
+            )
+            embed.add_field(
+                name="執行中任務",
+                value=str(health.get("running_tasks", 0)),
+                inline=True,
+            )
             embed.add_field(name="本地追蹤任務", value=str(local_active), inline=True)
             embed.add_field(name="Server URL", value=AGENT_SERVER_URL, inline=False)
             await interaction.response.send_message(embed=embed, ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ 無法連線 Agent Server: {e}", ephemeral=True)
+            await interaction.response.send_message(
+                f"❌ 無法連線 Agent Server: {e}", ephemeral=True
+            )
 
     @app_commands.command(name="cc_clear", description="清除本地任務追蹤記錄")
     async def cc_clear(self, interaction: discord.Interaction):

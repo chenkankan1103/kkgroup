@@ -11,10 +11,11 @@ Bahamut Anime Web Scraper - Standalone Version
 """
 
 import asyncio
+import logging
 import re
 from typing import Dict, List, Optional
+
 import aiohttp
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +55,14 @@ class BahamutWebScraper:
             logger.info("📡 [BahamutWebScraper] 從移動版 API index.php 獲取新番列表...")
 
             timeout = aiohttp.ClientTimeout(total=15)
-            async with aiohttp.ClientSession(timeout=timeout, headers=self.api_headers) as session:
+            async with aiohttp.ClientSession(
+                timeout=timeout, headers=self.api_headers
+            ) as session:
                 async with session.get(self.api_url) as resp:
                     if resp.status != 200:
-                        logger.warning(f"📺 [BahamutWebScraper] API 返回狀態碼: {resp.status}")
+                        logger.warning(
+                            f"📺 [BahamutWebScraper] API 返回狀態碼: {resp.status}"
+                        )
                         return []
 
                     data = await resp.json()
@@ -72,31 +77,41 @@ class BahamutWebScraper:
         anime_list = []
 
         try:
-            if 'data' not in data or 'newAnime' not in data['data'] or 'date' not in data['data']['newAnime']:
-                logger.warning("⚠️ [BahamutWebScraper] API 回應結構異常，缺少 data.newAnime.date")
+            if (
+                "data" not in data
+                or "newAnime" not in data["data"]
+                or "date" not in data["data"]["newAnime"]
+            ):
+                logger.warning(
+                    "⚠️ [BahamutWebScraper] API 回應結構異常，缺少 data.newAnime.date"
+                )
                 return anime_list
 
-            date_items = data['data']['newAnime']['date']
+            date_items = data["data"]["newAnime"]["date"]
             logger.info(f"📺 [BahamutWebScraper] API 回傳 {len(date_items)} 筆動畫資料")
 
             for item in date_items:
                 try:
-                    video_sn = int(item.get('videoSn', 0))
-                    anime_sn = int(item.get('animeSn', 0))
-                    title = item.get('title', '').strip()
-                    cover = item.get('cover', '')
-                    volume = item.get('volume', '')
+                    video_sn = int(item.get("videoSn", 0))
+                    anime_sn = int(item.get("animeSn", 0))
+                    title = item.get("title", "").strip()
+                    cover = item.get("cover", "")
+                    volume = item.get("volume", "")
 
                     if video_sn and anime_sn and title:
-                        anime_list.append({
-                            "videoSn": video_sn,
-                            "animeSn": anime_sn,
-                            "title": title,
-                            "cover": cover,
-                            "volume": volume
-                        })
+                        anime_list.append(
+                            {
+                                "videoSn": video_sn,
+                                "animeSn": anime_sn,
+                                "title": title,
+                                "cover": cover,
+                                "volume": volume,
+                            }
+                        )
                     else:
-                        logger.debug(f"Skipping item with missing fields: videoSn={video_sn}, animeSn={anime_sn}, title={title}")
+                        logger.debug(
+                            f"Skipping item with missing fields: videoSn={video_sn}, animeSn={anime_sn}, title={title}"
+                        )
 
                 except (ValueError, KeyError) as e:
                     logger.debug(f"Error parsing item: {e}")
@@ -105,7 +120,9 @@ class BahamutWebScraper:
         except Exception as e:
             logger.error(f"解析 API 回應失敗: {e}")
 
-        logger.info(f"✅ [BahamutWebScraper] 成功解析 {len(anime_list)} 部新番動畫 (含 videoSn/animeSn 映射)")
+        logger.info(
+            f"✅ [BahamutWebScraper] 成功解析 {len(anime_list)} 部新番動畫 (含 videoSn/animeSn 映射)"
+        )
         return anime_list
 
     async def fetch_weekly_schedule_from_homepage(self) -> List[Dict]:
@@ -127,10 +144,14 @@ class BahamutWebScraper:
             logger.info("📡 [BahamutWebScraper] 從移動版 API index.php 獲取完整週表...")
 
             timeout = aiohttp.ClientTimeout(total=15)
-            async with aiohttp.ClientSession(timeout=timeout, headers=self.api_headers) as session:
+            async with aiohttp.ClientSession(
+                timeout=timeout, headers=self.api_headers
+            ) as session:
                 async with session.get(self.api_url) as resp:
                     if resp.status != 200:
-                        logger.warning(f"📅 [BahamutWebScraper] API 返回狀態碼: {resp.status}")
+                        logger.warning(
+                            f"📅 [BahamutWebScraper] API 返回狀態碼: {resp.status}"
+                        )
                         return []
 
                     data = await resp.json()
@@ -150,24 +171,28 @@ class BahamutWebScraper:
         try:
             # 1. 先建立 videoSn -> {anime_sn, title, cover, volume} 映射 (從 newAnime.date)
             anime_map = {}
-            if 'data' in data and 'newAnime' in data['data'] and 'date' in data['data']['newAnime']:
-                for item in data['data']['newAnime']['date']:
-                    video_sn = int(item.get('videoSn', 0))
-                    anime_sn = int(item.get('animeSn', 0))
-                    title = item.get('title', '').strip()
-                    cover = item.get('cover', '')
-                    volume = item.get('volume', '')
+            if (
+                "data" in data
+                and "newAnime" in data["data"]
+                and "date" in data["data"]["newAnime"]
+            ):
+                for item in data["data"]["newAnime"]["date"]:
+                    video_sn = int(item.get("videoSn", 0))
+                    anime_sn = int(item.get("animeSn", 0))
+                    title = item.get("title", "").strip()
+                    cover = item.get("cover", "")
+                    volume = item.get("volume", "")
                     if video_sn and anime_sn and title:
                         anime_map[video_sn] = {
-                            'anime_sn': anime_sn,
-                            'title': title,
-                            'cover': cover,
-                            'volume': volume
+                            "anime_sn": anime_sn,
+                            "title": title,
+                            "cover": cover,
+                            "volume": volume,
                         }
 
             # 2. 解析 newAnimeSchedule (按星期 1-7 分組)
-            if 'data' in data and 'newAnimeSchedule' in data['data']:
-                for day_str, day_items in data['data']['newAnimeSchedule'].items():
+            if "data" in data and "newAnimeSchedule" in data["data"]:
+                for day_str, day_items in data["data"]["newAnimeSchedule"].items():
                     try:
                         day_of_week = int(day_str)  # 1=週一, ..., 7=週日
                     except ValueError:
@@ -175,39 +200,45 @@ class BahamutWebScraper:
 
                     for item in day_items:
                         try:
-                            video_sn = int(item.get('videoSn', 0))
-                            schedule_time = item.get('scheduleTime', '')
-                            volume_string = item.get('volumeString', '')
-                            title_from_schedule = item.get('title', '')
+                            video_sn = int(item.get("videoSn", 0))
+                            schedule_time = item.get("scheduleTime", "")
+                            volume_string = item.get("volumeString", "")
+                            title_from_schedule = item.get("title", "")
 
                             if not video_sn or not schedule_time:
                                 continue
 
                             # 從 anime_map 補充詳細資訊
                             detail = anime_map.get(video_sn, {})
-                            title = detail.get('title', title_from_schedule)
-                            anime_sn = detail.get('anime_sn', 0)
-                            cover = detail.get('cover', '')
-                            episode = detail.get('volume', volume_string)
+                            title = detail.get("title", title_from_schedule)
+                            anime_sn = detail.get("anime_sn", 0)
+                            cover = detail.get("cover", "")
+                            episode = detail.get("volume", volume_string)
 
                             if anime_sn and title:
-                                schedule.append({
-                                    'anime_sn': anime_sn,
-                                    'video_sn': video_sn,
-                                    'title': title,
-                                    'day_of_week': day_of_week,
-                                    'scheduled_time': schedule_time,
-                                    'episode': episode,
-                                    'cover': cover
-                                })
+                                schedule.append(
+                                    {
+                                        "anime_sn": anime_sn,
+                                        "video_sn": video_sn,
+                                        "title": title,
+                                        "day_of_week": day_of_week,
+                                        "scheduled_time": schedule_time,
+                                        "episode": episode,
+                                        "cover": cover,
+                                    }
+                                )
                             else:
-                                logger.debug(f"Missing anime_sn or title for videoSn={video_sn}")
+                                logger.debug(
+                                    f"Missing anime_sn or title for videoSn={video_sn}"
+                                )
 
                         except (ValueError, KeyError) as e:
                             logger.debug(f"Error parsing schedule item: {e}")
                             continue
 
-            logger.info(f"✅ [BahamutWebScraper] 從 API 解析到 {len(schedule)} 筆週表時程")
+            logger.info(
+                f"✅ [BahamutWebScraper] 從 API 解析到 {len(schedule)} 筆週表時程"
+            )
             return schedule
 
         except Exception as e:

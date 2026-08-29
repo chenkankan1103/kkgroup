@@ -1,9 +1,10 @@
-from .update_panel import UpdatePanelView
-from .work_card import WorkCardModal, WorkCardEditView, WorkCardActionView
+from .crop_operations import (CropOperationView, CropPlantingView,
+                              SelectSeedView)
 from .locker_panel import LockerPanelView
 from .personal_locker import PersonalLockerView, WeeklySummaryCannabisPanelView
-from .crop_operations import CropOperationView, CropPlantingView, SelectSeedView
 from .selection_views import SelectPlantForHarvestView
+from .update_panel import UpdatePanelView
+from .work_card import WorkCardActionView, WorkCardEditView, WorkCardModal
 
 __all__ = [
     "UpdatePanelView",

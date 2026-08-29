@@ -10,14 +10,14 @@
   crontab: */5 * * * * cd /home/e193752468/kkgroup && python3 scheduled_tasks/auto_update_webhook_v2.py >> /var/log/webhook_auto_update_v2.log 2>&1
 """
 
-import os
 import json
-import sys
+import os
 import re
-import time
-from pathlib import Path
-from datetime import datetime
 import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
 
 # 嘗試導入 requests，如果失敗則使用 urllib
 try:
@@ -310,8 +310,8 @@ def update_github_webhook(tunnel_url, retry_count=0):
                     return update_github_webhook(tunnel_url, retry_count + 1)
                 return False
         else:
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             data = json.dumps(update_data).encode("utf-8")
             req = urllib.request.Request(
@@ -340,7 +340,9 @@ def update_github_webhook(tunnel_url, retry_count=0):
     except Exception as e:
         print(f"❌ 更新 webhook 失敗: {e}")
         if retry_count < MAX_RETRIES:
-            print(f"⏱️ 等待 {RETRY_DELAY} 秒後重試 ({retry_count + 1}/{MAX_RETRIES})...")
+            print(
+                f"⏱️ 等待 {RETRY_DELAY} 秒後重試 ({retry_count + 1}/{MAX_RETRIES})..."
+            )
             time.sleep(RETRY_DELAY)
             return update_github_webhook(tunnel_url, retry_count + 1)
 

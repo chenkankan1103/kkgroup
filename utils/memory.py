@@ -1,7 +1,7 @@
 import json
-import time
-import os
 import logging
+import os
+import time
 
 logger = logging.getLogger(__name__)
 

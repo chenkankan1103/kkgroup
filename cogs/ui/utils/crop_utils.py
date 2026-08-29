@@ -1,6 +1,7 @@
 # 大麻種植系統工具函數
 
 from datetime import datetime
+
 from cogs.shop.merchant.cannabis_config import CANNABIS_SHOP
 
 
@@ -102,7 +103,7 @@ def validate_plant_operation(user_id, plant_id, operation_type):
     Returns:
         dict: 驗證結果 {'valid': bool, 'reason': str, 'plant': dict or None}
     """
-    from shop_commands import get_user_plants, get_inventory
+    from shop_commands import get_inventory, get_user_plants
 
     try:
         plants = get_user_plants(user_id)

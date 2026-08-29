@@ -1,34 +1,25 @@
+import asyncio
+import io
+import json
+import random
+import sqlite3
+import traceback
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-import asyncio
-import aiohttp
-import json
-import io
-import random
-import traceback
-import sqlite3
-from typing import Dict, Optional
-from datetime import datetime, timedelta
 
-from .merchant.views import (
-    PersistentView,
-    ExploreView,
-    RoleShopView,
-    EquipmentShopView,
-    SlotMachineView,
-    PaperDollPreviewView,
-    EquipmentPreviewView,
-    ItemDetailView,
-)
-from .merchant.database import (
-    get_user_kkcoin,
-    update_user_kkcoin,
-    update_user_equipment,
-    get_user_equipment,
-)
-from .merchant.config import MUTE_ROLE_ID, MEMBER_ROLE_ID
 from cogs.ui.utils import paperdoll_manager
+
+from .merchant.config import MEMBER_ROLE_ID, MUTE_ROLE_ID
+from .merchant.database import (get_user_equipment, get_user_kkcoin,
+                                update_user_equipment, update_user_kkcoin)
+from .merchant.views import (EquipmentPreviewView, EquipmentShopView,
+                             ExploreView, ItemDetailView, PaperDollPreviewView,
+                             PersistentView, RoleShopView, SlotMachineView)
 from .role_expiration_manager import get_manager as get_expiration_manager
 
 
@@ -1082,8 +1073,8 @@ class DressingRoomView(discord.ui.View):
 
     async def category_selected(self, interaction: discord.Interaction):
         """處理衣帽間類別選擇：優先 edit 原始訊息，失敗時 fallback 為 followup.send。"""
-        import traceback
         import time
+        import traceback
 
         ts = int(time.time())
 

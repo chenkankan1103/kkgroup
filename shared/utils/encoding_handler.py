@@ -4,13 +4,14 @@
 提供統一的編碼規範，確保所有日誌和輸出都正確處理 UTF-8 字符和台灣時間
 """
 
-import sys
-import os
+import json
 import locale
 import logging
-import json
-from typing import Optional, Union
+import os
+import sys
 from datetime import datetime
+from typing import Optional, Union
+
 import pytz
 
 # 台灣時區

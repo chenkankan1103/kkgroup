@@ -6,11 +6,11 @@ KK 園區堡壘保衛戰 - 遊戲引擎
 """
 
 import json
-import os
 import logging
+import os
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, asdict, field
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("fortress_system")
@@ -662,8 +662,9 @@ def tower_auto_attack() -> Tuple[bool, str]:
 
         # 計算砲台傷害（基於玩家免費攻擊力）
         # 取得玩家興趣標籤
-        from shared.db.db_adapter import get_user_field
         import json
+
+        from shared.db.db_adapter import get_user_field
 
         interests_raw = get_user_field(user_id, "user_interests", default="[]")
         try:

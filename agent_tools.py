@@ -19,13 +19,13 @@ KK園區 AI 代理工具箱 (Agent Tools)
     （無需啟動 Discord Bot 即可驗證所有工具）
 """
 
-import os
-import subprocess
-import json
+import asyncio
 import datetime
 import functools
-import asyncio
-from typing import Any, Dict, List, Optional, Callable
+import json
+import os
+import subprocess
+from typing import Any, Callable, Dict, List, Optional
 
 # ==================== 權限設定 ====================
 
@@ -2734,8 +2734,8 @@ def smart_config_modifier(
     Returns:
         str: 詳細的修改分析報告
     """
-    import re
     import pathlib
+    import re
 
     try:
         project_root = _get_project_root()

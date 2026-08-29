@@ -8,14 +8,15 @@
 3. 確保所有用戶都有有效的 API 圖片
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 )
 
 from db_adapter import get_all_users, set_user_field
+
 from . import paperdoll_manager
 
 # 委派到統一的 paperdoll_manager

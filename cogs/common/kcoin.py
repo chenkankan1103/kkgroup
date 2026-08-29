@@ -1,41 +1,33 @@
+import asyncio
+import datetime
+import io
+import json
+import os
+import re
+import time
+from collections import defaultdict
+from io import BytesIO
+
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-import os
-import io
-import time
-import aiohttp
-import re
-import json
-import datetime
-import asyncio
-from PIL import Image
-from collections import defaultdict
 from dotenv import load_dotenv, set_key
-from io import BytesIO
+from PIL import Image
 
 # 匯入非同步 DB 適配層
-from shared.db.async_adapter import (
-    get_user_kkcoin,
-    update_user_kkcoin,
-    get_user_field,
-    set_user_field,
-    add_user_field,
-    get_central_reserve,
-    add_to_central_reserve,
-    remove_from_central_reserve,
-    set_central_reserve,
-    get_reserve_pressure,
-    get_dynamic_fee_rate,
-    get_reserve_announcement,
-)
+from shared.db.async_adapter import (add_to_central_reserve, add_user_field,
+                                     get_central_reserve, get_dynamic_fee_rate,
+                                     get_reserve_announcement,
+                                     get_reserve_pressure, get_user_field,
+                                     get_user_kkcoin,
+                                     remove_from_central_reserve,
+                                     set_central_reserve, set_user_field,
+                                     update_user_kkcoin)
 
 # 匯入排行榜管理模組
-from .leaderboard_manager import (
-    make_leaderboard_image,
-    get_current_leaderboard_data,
-    has_data_changed,
-)
+from .leaderboard_manager import (get_current_leaderboard_data,
+                                  has_data_changed, make_leaderboard_image)
 
 # 載入 .env 檔案
 load_dotenv()
@@ -146,7 +138,8 @@ async def make_leaderboard_image(members_data):
 
     此處保留為向後相容性考慮
     """
-    from .leaderboard_manager import make_leaderboard_image as _make_leaderboard_image
+    from .leaderboard_manager import \
+        make_leaderboard_image as _make_leaderboard_image
 
     return await _make_leaderboard_image(members_data)
 
@@ -240,8 +233,8 @@ class KKCoin(commands.Cog):
             3. Git add/commit/push 到遠端 GitHub
         """
         try:
-            import subprocess
             import json
+            import subprocess
             from datetime import datetime
 
             # 使用 config/config.json
@@ -535,58 +528,58 @@ class KKCoin(commands.Cog):
             try:
                 import json
 
-            # 1️⃣ 優先方式: 嘗試讀取 config/config.json (GitHub同步，確保URL一致)
-            project_root = os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__))
-            )
-            config_file = os.path.join(project_root, "config", "config.json")
+                # 1️⃣ 優先方式: 嘗試讀取 config/config.json (GitHub同步，確保URL一致)
+                project_root = os.path.dirname(
+                    os.path.dirname(os.path.abspath(__file__))
+                )
+                config_file = os.path.join(project_root, "config", "config.json")
 
-            if os.path.exists(config_file):
-                try:
-                    def _read_config():
-                        with open(config_file, "r", encoding="utf-8") as f:
-                            return json.load(f)
-                    config_data = await asyncio.to_thread(_read_config)
-                    tunnel_url = config_data.get("url")
+                if os.path.exists(config_file):
+                    try:
+                        def _read_config():
+                            with open(config_file, "r", encoding="utf-8") as f:
+                                return json.load(f)
+                        config_data = await asyncio.to_thread(_read_config)
+                        tunnel_url = config_data.get("url")
 
-                    if tunnel_url and tunnel_url.startswith("https://"):
-                        self.base_url = tunnel_url
-                        print(
-                            f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}"
-                        )
-                        return tunnel_url
-                except Exception as config_err:
-                    print(f"⚠️ 從 config.json 讀取失敗: {config_err}")
+                        if tunnel_url and tunnel_url.startswith("https://"):
+                            self.base_url = tunnel_url
+                            print(
+                                f"✅ 已設定 Tunnel URL (from config.json): {tunnel_url}"
+                            )
+                            return tunnel_url
+                    except Exception as config_err:
+                        print(f"⚠️ 從 config.json 讀取失敗: {config_err}")
 
-            # 2️⃣ 備用方式: 嘗試讀取 /tmp/cloudflared.log (本地cloudflared)
-            log_file = "/tmp/cloudflared.log"
-            if os.path.exists(log_file):
-                try:
-                    def _read_log():
-                        with open(
-                            log_file, "r", encoding="utf-8", errors="ignore"
-                        ) as f:
-                            return f.read()
-                    content = await asyncio.to_thread(_read_log)
+                # 2️⃣ 備用方式: 嘗試讀取 /tmp/cloudflared.log (本地cloudflared)
+                log_file = "/tmp/cloudflared.log"
+                if os.path.exists(log_file):
+                    try:
+                        def _read_log():
+                            with open(
+                                log_file, "r", encoding="utf-8", errors="ignore"
+                            ) as f:
+                                return f.read()
+                        content = await asyncio.to_thread(_read_log)
 
-                    # 使用 regex 抓取最新的 https://*.trycloudflare.com URL
-                    pattern = r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com"
-                    matches = re.findall(pattern, content)
+                        # 使用 regex 抓取最新的 https://*.trycloudflare.com URL
+                        pattern = r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com"
+                        matches = re.findall(pattern, content)
 
-                    if matches:
-                        # 取最後一個（最新的）
-                        tunnel_url = matches[-1]
-                        self.base_url = tunnel_url
-                        print(f"✅ 已設定 Tunnel URL (from log): {tunnel_url}")
-                        return tunnel_url
-                except Exception as log_err:
-                    print(f"⚠️ 從 log 讀取失敗: {log_err}")
+                        if matches:
+                            # 取最後一個（最新的）
+                            tunnel_url = matches[-1]
+                            self.base_url = tunnel_url
+                            print(f"✅ 已設定 Tunnel URL (from log): {tunnel_url}")
+                            return tunnel_url
+                    except Exception as log_err:
+                        print(f"⚠️ 從 log 讀取失敗: {log_err}")
 
-            print("⚠️ 無法獲取隧道 URL (兩種方式均失敗)")
-            return None
+                print("⚠️ 無法獲取隧道 URL (兩種方式均失敗)")
+                return None
 
-        except Exception as e:
-            print(f"❌ 讀取隧道 URL 失敗: {e}")
+            except Exception as e:
+                print(f"❌ 讀取隧道 URL 失敗: {e}")
             return None
 
 async def setup(bot):

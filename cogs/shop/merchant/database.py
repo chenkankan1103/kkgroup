@@ -2,20 +2,14 @@
 商店系統數據庫適配層 - 使用 Sheet-Driven DB
 """
 
-from datetime import datetime, timedelta
-
+import os
 # 匯入新的 DB 適配層
 import sys
-import os
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(__file__) + "/../..")
-from db_adapter import (
-    get_user_field,
-    set_user_field,
-    add_user_field,
-    get_user_equipment,
-    update_user_equipment,
-)
+from db_adapter import (add_user_field, get_user_equipment, get_user_field,
+                        set_user_field, update_user_equipment)
 
 
 async def get_user_kkcoin(user_id: int) -> int:
@@ -71,8 +65,9 @@ async def add_temp_role(
     """添加臨時角色記錄"""
     # 在新系統中，可以使用 JSON 欄位存儲臨時角色信息
     try:
-        from db_adapter import set_user_field
         import json
+
+        from db_adapter import set_user_field
 
         expires_at = (datetime.now() + timedelta(seconds=duration_seconds)).isoformat()
 
@@ -99,8 +94,9 @@ async def get_expired_roles() -> list:
     """獲取已過期的角色"""
     # 在新系統中，需要檢查所有用戶的 temp_role_info 是否已過期
     try:
-        from db_adapter import get_db
         import json
+
+        from db_adapter import get_db
 
         db = get_db()
         all_users = db.get_all_users()

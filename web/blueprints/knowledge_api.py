@@ -35,18 +35,21 @@ def search_knowledge():
         item["match_mode"] = "keyword"
         item["score"] = 0.5
 
-    return jsonify(
-        {
-            "status": "success",
-            "data": {
-                "query": query,
-                "mode": "keyword",
-                "category": category,
-                "count": len(items),
-                "items": items,
-            },
-        }
-    ), 200
+    return (
+        jsonify(
+            {
+                "status": "success",
+                "data": {
+                    "query": query,
+                    "mode": "keyword",
+                    "category": category,
+                    "count": len(items),
+                    "items": items,
+                },
+            }
+        ),
+        200,
+    )
 
 
 @knowledge_api_bp.route("/recent", methods=["GET"])
@@ -54,20 +57,24 @@ def recent_knowledge():
     category = (request.args.get("category") or "").strip() or None
     limit = min(max(int(request.args.get("limit", 10)), 1), 50)
     items = KnowledgeBase.get_recent_items(limit=limit, category=category)
-    return jsonify(
-        {"status": "success", "data": {"count": len(items), "items": items}}
-    ), 200
+    return (
+        jsonify({"status": "success", "data": {"count": len(items), "items": items}}),
+        200,
+    )
 
 
 @knowledge_api_bp.route("/status", methods=["GET"])
 def knowledge_status():
     if not STATUS_FILE.exists():
-        return jsonify(
-            {
-                "status": "success",
-                "data": {"status": "unknown", "message": "尚未產生刷新狀態"},
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "data": {"status": "unknown", "message": "尚未產生刷新狀態"},
+                }
+            ),
+            200,
+        )
 
     try:
         data = json.loads(STATUS_FILE.read_text(encoding="utf-8"))

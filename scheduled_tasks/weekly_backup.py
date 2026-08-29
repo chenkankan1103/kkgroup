@@ -5,12 +5,13 @@ weekly_backup.py - 每週自動備份 DB 至本機 + Google Sheets
 排程: crontab -e  →  0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python weekly_backup.py >> /tmp/weekly_backup.log 2>&1
 """
 
-import sqlite3
 import os
 import shutil
+import sqlite3
+from datetime import datetime
+
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
 
 DB_PATH = "/home/e193752468/kkgroup/user_data.db"
 BACKUP_DIR = "/home/e193752468/kkgroup/backups"

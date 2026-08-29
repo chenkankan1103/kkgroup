@@ -4,21 +4,17 @@
 """
 
 import asyncio
-from flask import Blueprint, request, jsonify
-from datetime import datetime
 import logging
+from datetime import datetime
+
+from blueprints.discord_auth import user_sessions
+from flask import Blueprint, jsonify, request
 
 # 導入數據庫和股票 API 函數
-from db_adapter import (
-    get_user_stocks,
-    add_stock_position,
-    close_stock_position,
-    get_user_kkcoin,
-    update_user_kkcoin,
-    get_all_users,
-)
+from db_adapter import (add_stock_position, close_stock_position,
+                        get_all_users, get_user_kkcoin, get_user_stocks,
+                        update_user_kkcoin)
 from utils.stock_api import fetch_price as async_fetch_price
-from blueprints.discord_auth import user_sessions
 
 
 # 同步包裝函數
@@ -140,15 +136,18 @@ def get_portfolio():
             total_value += value
             total_pnl += unrealized_pnl
 
-        return jsonify(
-            {
-                "status": "success",
-                "portfolio": portfolio,
-                "cash": round(kkcoin, 2),
-                "total_value": round(total_value, 2),
-                "total_pnl": round(total_pnl, 2),
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "portfolio": portfolio,
+                    "cash": round(kkcoin, 2),
+                    "total_value": round(total_value, 2),
+                    "total_pnl": round(total_pnl, 2),
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         logger.error(f"❌ 獲取持倉失敗: {str(e)}")
@@ -235,9 +234,12 @@ def execute_trade():
             return jsonify({"status": "error", "message": "無效的交易參數"}), 400
 
         if action not in ["buy", "sell"]:
-            return jsonify(
-                {"status": "error", "message": "action 必須是 'buy' 或 'sell'"}
-            ), 400
+            return (
+                jsonify(
+                    {"status": "error", "message": "action 必須是 'buy' 或 'sell'"}
+                ),
+                400,
+            )
 
         # 計算手續費（假設 0.25%）
         fee_rate = 0.0025
@@ -249,12 +251,15 @@ def execute_trade():
             # 檢查現金是否充足
             kkcoin = get_user_kkcoin(user_id) or 0
             if kkcoin < net_total:
-                return jsonify(
-                    {
-                        "status": "error",
-                        "message": f"資金不足。需要: {net_total:.2f} KKB，現有: {kkcoin:.2f} KKB",
-                    }
-                ), 400
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": f"資金不足。需要: {net_total:.2f} KKB，現有: {kkcoin:.2f} KKB",
+                        }
+                    ),
+                    400,
+                )
 
             # 執行買入
             add_stock_position(user_id, symbol, shares, price)
@@ -268,12 +273,15 @@ def execute_trade():
             position = next((s for s in stocks if s["symbol"] == symbol), None)
 
             if not position or position["shares"] < shares:
-                return jsonify(
-                    {
-                        "status": "error",
-                        "message": f"持倉不足。需要: {shares} 股，現有: {position['shares'] if position else 0} 股",
-                    }
-                ), 400
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": f"持倉不足。需要: {shares} 股，現有: {position['shares'] if position else 0} 股",
+                        }
+                    ),
+                    400,
+                )
 
             # 執行賣出
             success, realized_pnl = close_stock_position(user_id, symbol, shares, price)
@@ -292,22 +300,25 @@ def execute_trade():
             if s_price:
                 portfolio_value += stock["shares"] * s_price
 
-        return jsonify(
-            {
-                "status": "success",
-                "transaction": {
-                    "action": action,
-                    "symbol": symbol,
-                    "shares": shares,
-                    "price": round(price, 2),
-                    "total": round(total_cost, 2),
-                    "fee": round(fee, 2),
-                    "net_total": round(net_total, 2),
-                },
-                "new_cash": round(new_cash, 2),
-                "portfolio_value": round(portfolio_value, 2),
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "transaction": {
+                        "action": action,
+                        "symbol": symbol,
+                        "shares": shares,
+                        "price": round(price, 2),
+                        "total": round(total_cost, 2),
+                        "fee": round(fee, 2),
+                        "net_total": round(net_total, 2),
+                    },
+                    "new_cash": round(new_cash, 2),
+                    "portfolio_value": round(portfolio_value, 2),
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         logger.error(f"❌ 交易執行失敗: {str(e)}")
@@ -413,10 +424,13 @@ def get_leaderboard():
 @stocks_api_bp.route("/health", methods=["GET"])
 def health_check():
     """健康檢查"""
-    return jsonify(
-        {
-            "status": "ok",
-            "service": "stocks_api",
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-    ), 200
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "service": "stocks_api",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        ),
+        200,
+    )

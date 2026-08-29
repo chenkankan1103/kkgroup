@@ -8,13 +8,15 @@
 4. /locker_fix_missing - 批量為沒有置物櫃的會員初始化
 """
 
-import discord
-from discord.ext import commands
-from discord import app_commands
-from datetime import datetime
-from db_adapter import get_all_users, set_user_field, get_user
 import json
 import os
+from datetime import datetime
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from db_adapter import get_all_users, get_user, set_user_field
 
 
 class LockerAdminCog(commands.Cog):
@@ -202,11 +204,10 @@ class LockerAdminCog(commands.Cog):
                     )
 
                 # 發送 canonical 置物櫃訊息
-                from cogs.ui.utils.locker_embed_generator import update_locker_message
                 from cogs.shop.merchant.cannabis_farming import (
-                    get_user_plants,
-                    get_inventory,
-                )
+                    get_inventory, get_user_plants)
+                from cogs.ui.utils.locker_embed_generator import \
+                    update_locker_message
 
                 plants = await get_user_plants(user.id)
                 inventory = await get_inventory(user.id)
@@ -414,13 +415,10 @@ class LockerAdminCog(commands.Cog):
                             )
 
                         # 發送 canonical 置物櫃訊息
-                        from cogs.ui.utils.locker_embed_generator import (
-                            update_locker_message,
-                        )
                         from cogs.shop.merchant.cannabis_farming import (
-                            get_user_plants,
-                            get_inventory,
-                        )
+                            get_inventory, get_user_plants)
+                        from cogs.ui.utils.locker_embed_generator import \
+                            update_locker_message
 
                         plants = await get_user_plants(user_id)
                         inventory = await get_inventory(user_id)
@@ -519,11 +517,10 @@ class LockerAdminCog(commands.Cog):
                 )
 
             # 發送 canonical 置物櫃訊息
-            from cogs.ui.utils.locker_embed_generator import update_locker_message
-            from cogs.shop.merchant.cannabis_farming import (
-                get_user_plants,
-                get_inventory,
-            )
+            from cogs.shop.merchant.cannabis_farming import (get_inventory,
+                                                             get_user_plants)
+            from cogs.ui.utils.locker_embed_generator import \
+                update_locker_message
 
             plants = await get_user_plants(user.id)
             inventory = await get_inventory(user.id)
