@@ -817,7 +817,7 @@ class WelcomeFlow(commands.Cog):
 
         return resolved_user_data
 
-    def create_user_data(self, user_id: int) -> bool:
+    async def create_user_data(self, user_id: int) -> bool:
         """Create new user data with random appearance and default values. Returns True if successful. Includes retry logic."""
         max_retries = 3
         default_inventory = json.dumps(["手機", "身分證"])
@@ -866,9 +866,7 @@ class WelcomeFlow(commands.Cog):
                         f"⚠️ set_user 返回 False: {user_id} (嘗試 {attempt}/{max_retries})"
                     )
                     if attempt < max_retries:
-                        import time
-
-                        time.sleep(0.5)
+                        await asyncio.sleep(0.5)
                         continue
                     return False
 
@@ -877,9 +875,7 @@ class WelcomeFlow(commands.Cog):
                     f"❌ 創建用戶資料錯誤 (嘗試 {attempt}/{max_retries}): {type(e).__name__}: {e}"
                 )
                 if attempt < max_retries:
-                    import time
-
-                    time.sleep(0.5)
+                    await asyncio.sleep(0.5)
                     continue
                 else:
                     import traceback
@@ -1336,7 +1332,7 @@ class WelcomeFlow(commands.Cog):
                 print("⚠️ TEMP_ROLE1_ID 未設置 (將繼續)")
 
             # 創建用戶資料（帶重試）
-            user_created = self.create_user_data(member.id)
+            user_created = await self.create_user_data(member.id)
             if not user_created:
                 print("⚠️ 創建用戶資料失敗，但嘗試繼續...")
 
