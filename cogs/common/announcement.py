@@ -872,9 +872,7 @@ class Announcement(commands.Cog):
             self._update_env_message_id(message_id)
 
             # 短暫延遲確保文件系統同步
-            import time
-
-            time.sleep(0.3 if attempt < 2 else 0.5)
+            await asyncio.sleep(0.3 if attempt < 2 else 0.5)
 
             # 驗證
             verify_id = self._read_message_id_from_env()

@@ -564,7 +564,7 @@ async def on_ready():
         try:
             from tools.migrate_locker_event_system import migrate_locker_event_columns
 
-            migrate_locker_event_columns()
+            await asyncio.to_thread(migrate_locker_event_columns)
         except (ImportError, OSError) as e:
             print(f"⚠️  DB migration 失敗: {e}")
 
