@@ -5,9 +5,8 @@
 確保一致性和動態 MapleStory API URL 的使用
 """
 
-from typing import Any, Dict, Optional
-
 import discord
+from typing import Optional, Dict, Any
 
 
 def _resolve_user_panel_cog(cog=None, bot=None):
@@ -166,10 +165,11 @@ async def generate_canonical_locker_embed(
 
     # Step 4: 附加大麻系統信息（可選）
     if include_cannabis_info and plants:
-        from datetime import datetime
-
         from cogs.shop.merchant.cannabis_config import (
-            CANNABIS_HARVEST_PRICES, CANNABIS_SHOP)
+            CANNABIS_SHOP,
+            CANNABIS_HARVEST_PRICES,
+        )
+        from datetime import datetime
 
         for plant in plants:
             seed_config = CANNABIS_SHOP.get("種子", {}).get(plant.get("seed_type"), {})

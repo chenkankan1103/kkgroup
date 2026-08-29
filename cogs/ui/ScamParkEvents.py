@@ -1,19 +1,23 @@
-import asyncio
-import datetime
-import math
-import os
-import random
-import urllib.parse
-import zoneinfo
-
-import aiohttp
 import discord
 from discord.ext import commands, tasks
+import random
+import asyncio
+import datetime
+import os
+import aiohttp
+import urllib.parse
+import math
+import zoneinfo
 
 TW_TZ = zoneinfo.ZoneInfo("Asia/Taipei")
 # add_user_field is needed by update_user_kkcoin
-from db_adapter import (add_user_field, get_all_users, get_user,
-                        get_user_field, set_user_field)
+from db_adapter import (
+    get_user,
+    set_user_field,
+    get_user_field,
+    get_all_users,
+    add_user_field,
+)
 
 
 class ScamParkEvents(commands.Cog):

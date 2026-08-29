@@ -1,16 +1,13 @@
 """黑市商人 - 大麻系統整合版（在同一個embed中編輯）"""
 
-import logging
-import traceback
-
 import discord
 from discord.ui import Button, Select
-
-from shared.utils.view_registry import PersistentViewBase
-
-from .cannabis_config import CANNABIS_HARVEST_PRICES, CANNABIS_SHOP
-from .cannabis_farming import add_inventory, get_inventory, remove_inventory
+import traceback
+import logging
 from .database import get_user_kkcoin, update_user_kkcoin
+from .cannabis_farming import add_inventory, remove_inventory, get_inventory
+from .cannabis_config import CANNABIS_SHOP, CANNABIS_HARVEST_PRICES
+from shared.utils.view_registry import PersistentViewBase
 
 # 取得 logger 用於上報錯誤
 logger = logging.getLogger(__name__)

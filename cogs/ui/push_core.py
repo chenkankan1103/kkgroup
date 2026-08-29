@@ -13,7 +13,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional, List, Dict
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -57,7 +57,7 @@ API_HEADERS = {
 
 # 匯入 API 常數以供相容性使用（實際定義在 anime_scraper.py 中）
 try:
-    from .anime_scraper import API_ENDPOINT, API_HEADERS, API_TIMEOUT
+    from .anime_scraper import API_ENDPOINT, API_TIMEOUT, API_HEADERS
 except ImportError:
     # 後備方案：如果無法從 anime_scraper 導入，則定義預設值
     API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/anime_list.php"
@@ -485,10 +485,9 @@ class AnimeDBImpl:
         Args:
             week_start_date: 週起始日期 "YYYY-MM-DD"，若不提供則使用當前週 (api_week=True)
         """
-        import json
         from datetime import datetime
-
-        from .push_core import TW_TZ, get_week_start_date
+        import json
+        from .push_core import get_week_start_date, TW_TZ
 
         if week_start_date is None:
             week_start_date = get_week_start_date(datetime.now(TW_TZ), api_week=True)
@@ -535,9 +534,7 @@ class AnimeDBImpl:
                     anime_data = json.loads(anime_data_raw)
                     item["anime_data"] = anime_data
                     # 從 anime_data 提取 anime_sn (支援 camelCase 和 snake_case)
-                    item["anime_sn"] = anime_data.get("animeSn") or anime_data.get(
-                        "anime_sn"
-                    )
+                    item["anime_sn"] = anime_data.get("animeSn") or anime_data.get("anime_sn")
                 except Exception as e:
                     logger.warning(f"animeData 解析失敗 videoSn={video_sn}: {e}")
                     item["anime_data"] = {}
@@ -823,17 +820,13 @@ class AnimeDBImpl:
                 key = (item["day_of_week"], item["scheduled_time"])
                 if key in seen:
                     duplicates += 1
-                    logger.warning(
-                        f"⚠️ [save_weekly_schedule] Duplicate schedule entry ignored: day_of_week={item['day_of_week']}, scheduled_time={item['scheduled_time']}"
-                    )
+                    logger.warning(f"⚠️ [save_weekly_schedule] Duplicate schedule entry ignored: day_of_week={item['day_of_week']}, scheduled_time={item['scheduled_time']}")
                     continue
                 seen.add(key)
                 deduped_schedule_data.append(item)
 
             if duplicates > 0:
-                logger.info(
-                    f"📝 [save_weekly_schedule] Removed {duplicates} duplicate schedule entries"
-                )
+                logger.info(f"📝 [save_weekly_schedule] Removed {duplicates} duplicate schedule entries")
 
             for item in deduped_schedule_data:
                 day_of_week = item["day_of_week"]
@@ -1186,8 +1179,7 @@ class AnimePushCore:
             week_start_date: 週起始日期 "YYYY-MM-DD"，若不提供則使用當前週 (api_week=True)
         """
         from datetime import datetime
-
-        from .push_core import TW_TZ, get_week_start_date
+        from .push_core import get_week_start_date, TW_TZ
 
         if week_start_date is None:
             week_start_date = get_week_start_date(datetime.now(TW_TZ), api_week=True)
@@ -1196,23 +1188,17 @@ class AnimePushCore:
             conn = _get_db_connection()
             c = conn.cursor()
             # 移除 videoSn 欄位 (不存在)，從 anime_data JSON 提取
-            c.execute(
-                """SELECT weekStartDate, dayOfWeek, scheduledTime, pushed,
+            c.execute("""SELECT weekStartDate, dayOfWeek, scheduledTime, pushed,
                            CAST(animeData AS BLOB) as animeData
                         FROM anime_weekly_schedule WHERE weekStartDate=?""",
-                (week_start_date,),
-            )
+                        (week_start_date,))
             rows = c.fetchall()
             conn.close()
             result = []
             for row in rows:
-                (
-                    week_start_date_db,
-                    day_of_week,
-                    scheduled_time,
-                    pushed,
-                    anime_data_raw,
-                ) = row
+                week_start_date_db, day_of_week, scheduled_time, pushed, anime_data_raw = (
+                    row
+                )
                 video_sn = None
                 if anime_data_raw:
                     try:
@@ -1248,9 +1234,7 @@ class AnimePushCore:
                         anime_data = json.loads(anime_data_raw)
                         item["anime_data"] = anime_data
                         # 從 anime_data 提取 anime_sn (支援 camelCase 和 snake_case)
-                        item["anime_sn"] = anime_data.get("animeSn") or anime_data.get(
-                            "anime_sn"
-                        )
+                        item["anime_sn"] = anime_data.get("animeSn") or anime_data.get("anime_sn")
                     except Exception as e:
                         logger.warning(f"animeData 解析失敗 videoSn={video_sn}: {e}")
                         item["anime_data"] = {}
@@ -1306,13 +1290,11 @@ class AnimePushCore:
         """獲取新番動畫列表 - 使用網頁爬取"""
         return await fetch_new_anime_from_web()
 
-    def _extract_video_sn_from_html(
-        self, html_text: str, anime_sn: int
-    ) -> Optional[int]:
+    def _extract_video_sn_from_html(self, html_text: str, anime_sn: int) -> Optional[int]:
         """從HTML片段中提取 videoSn"""
         try:
             # 尋找 animeVideo.php?sn=XXXX 鏈接
-            video_pattern = r"animeVideo\.php\?sn=(\d+)"
+            video_pattern = r'animeVideo\.php\?sn=(\d+)'
             video_matches = re.findall(video_pattern, html_text, re.IGNORECASE)
 
             if video_matches:
@@ -1346,12 +1328,12 @@ class AnimePushCore:
                     # 取第一個匹配的 URL
                     src = matches[0] if isinstance(matches[0], str) else matches[0][0]
                     # 確保是完整 URL
-                    if src.startswith("//"):
-                        src = "https:" + src
-                    elif src.startswith("/"):
-                        src = "https://ani.gamer.com.tw" + src
-                    elif not src.startswith("http"):
-                        src = "https://ani.gamer.com.tw/" + src
+                    if src.startswith('//'):
+                        src = 'https:' + src
+                    elif src.startswith('/'):
+                        src = 'https://ani.gamer.com.tw' + src
+                    elif not src.startswith('http'):
+                        src = 'https://ani.gamer.com.tw/' + src
                     return src
 
         except Exception:
@@ -1364,7 +1346,7 @@ class AnimePushCore:
             # 嘗試找看起來像標題的文字
             # 常見標題位置：在 h1-h6 標籤中，或有特定 class 的元素中
             title_patterns = [
-                r"<h[1-6][^>]*>([^<]+)</h[1-6]>",  # 標題標籤
+                r'<h[1-6][^>]*>([^<]+)</h[1-6]>',  # 標題標籤
                 r'<[^>]*class\s*=\s*["\'][^"\']*title[^"\']*["\'][^>]*>([^<]*)</[^>]*>',  # title class
                 r'<[^>]*class\s*=\s*["\'][^"\']*name[^"\']*["\'][^>]*>([^<]*)</[^>]*>',  # name class
                 r'<[^>]*class\s*=\s*["\'][^"\']*anime-name[^"\']*["\'][^>]*>([^<]*)</[^>]*>',  # anime-name class
@@ -1396,11 +1378,11 @@ class AnimePushCore:
         try:
             # 常見的集數顯示模式
             volume_patterns = [
-                r"第\s*(\d+)\s*話",  # 第1話
-                r"Vol\.?\s*(\d+)",  # Vol.1 或 Vol1
-                r"EP\.?\s*(\d+)",  # EP.1 或 EP1
-                r"(\d+)\s*話",  # 1話
-                r"(\d+)\s*集",  # 1集
+                r'第\s*(\d+)\s*話',  # 第1話
+                r'Vol\.?\s*(\d+)',  # Vol.1 或 Vol1
+                r'EP\.?\s*(\d+)',   # EP.1 或 EP1
+                r'(\d+)\s*話',      # 1話
+                r'(\d+)\s*集',      # 1集
             ]
 
             for pattern in volume_patterns:
@@ -1427,9 +1409,7 @@ class AnimePushCore:
             ]
 
             for container_pattern in container_patterns:
-                containers = re.findall(
-                    container_pattern, html_text, re.IGNORECASE | re.DOTALL
-                )
+                containers = re.findall(container_pattern, html_text, re.IGNORECASE | re.DOTALL)
                 for container in containers:
                     anime = self._extract_anime_from_container(container)
                     if anime:
@@ -1448,17 +1428,13 @@ class AnimePushCore:
         """從容器HTML中提取動畫資訊"""
         try:
             # 尋找 animeRef.php 鏈接取得 animeSn
-            ref_match = re.search(
-                r"animeRef\.php\?sn=(\d+)", container_html, re.IGNORECASE
-            )
+            ref_match = re.search(r'animeRef\.php\?sn=(\d+)', container_html, re.IGNORECASE)
             if not ref_match:
                 return None
             anime_sn = int(ref_match.group(1))
 
             # 尋找 animeVideo.php 鏈接取得 videoSn
-            video_match = re.search(
-                r"animeVideo\.php\?sn=(\d+)", container_html, re.IGNORECASE
-            )
+            video_match = re.search(r'animeVideo\.php\?sn=(\d+)', container_html, re.IGNORECASE)
             if not video_match:
                 return None
             video_sn = int(video_match.group(1))
@@ -1470,11 +1446,7 @@ class AnimePushCore:
             title = self._extract_title_from_html(container_html, anime_sn)
             if not title:
                 # 嘗試從連結文字中取得
-                link_text_match = re.search(
-                    r"<a[^>]*animeRef\.php\?sn=" + str(anime_sn) + "[^>]*>([^<]*)</a>",
-                    container_html,
-                    re.IGNORECASE,
-                )
+                link_text_match = re.search(r'<a[^>]*animeRef\.php\?sn=' + str(anime_sn) + '[^>]*>([^<]*)</a>', container_html, re.IGNORECASE)
                 if link_text_match:
                     title = link_text_match.group(1).strip()
                 if not title:
@@ -1488,7 +1460,7 @@ class AnimePushCore:
                 "animeSn": anime_sn,
                 "title": title,
                 "cover": cover_url or "",
-                "volume": volume or "",
+                "volume": volume or ""
             }
 
         except Exception as e:

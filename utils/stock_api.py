@@ -4,14 +4,13 @@
 處理價格獲取、圖表生成、快取等功能
 """
 
+import yfinance as yf
 import asyncio
 import json
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
-
 import requests
-import yfinance as yf
+from datetime import datetime, timedelta
+from typing import Optional, Dict, List, Tuple
+import logging
 
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 

@@ -1,13 +1,12 @@
+import discord
+from discord.ext import commands
+from discord import app_commands, ui
 import asyncio
+import aiosqlite
 import os
 import random
-from datetime import datetime, timedelta
-
 import aiohttp
-import aiosqlite
-import discord
-from discord import app_commands, ui
-from discord.ext import commands
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -526,11 +525,9 @@ class ScamHub(commands.Cog):
 
             embed = discord.Embed(
                 title="📢 詐騙小組活動狀態",
-                description=(
-                    "💰 等待詐騙事件中..."
-                    if not event_text
-                    else f"💰 **當前詐騙行動**\n{event_text}"
-                ),
+                description="💰 等待詐騙事件中..."
+                if not event_text
+                else f"💰 **當前詐騙行動**\n{event_text}",
                 color=discord.Color.green(),
             )
             embed.add_field(name="🏆 組長", value=owner_mention, inline=True)

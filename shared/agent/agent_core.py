@@ -12,25 +12,24 @@ KK群組 - 核心 Agent 邏輯 (獨立模組，無 Discord 依賴)
 """
 
 import asyncio
+import json
 import logging
 import os
+import time
+import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 # ─── 環境變數與設定 ─────────────────────────────────────────────────────
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-NVIDIA_API_URL = os.getenv(
-    "NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions"
-)
+NVIDIA_API_URL = os.getenv("NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
 MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "8192"))
 MAX_TURNS = int(os.getenv("CLAUDE_MAX_TURNS", "20"))
 WORK_DIR = Path(os.getenv("CLAUDE_WORK_DIR", "/home/e193752468/kkgroup")).resolve()
-
 
 # ─── 狀態定義 ─────────────────────────────────────────────────────
 class TaskStatus:
@@ -59,11 +58,11 @@ class TaskStore(ABC):
         pass
 
     @abstractmethod
-    async def get(self, task_id: str) -> dict | None:
+    async def get(self, task_id: str) -> Optional[dict]:
         pass
 
     @abstractmethod
-    async def list(self, status: str | None = None, limit: int = 50) -> list[dict]:
+    async def list(self, status: Optional[str] = None, limit: int = 50) -> list[dict]:
         pass
 
 
@@ -74,17 +73,17 @@ class NvidiaNimClient:
     def __init__(self, api_key: str, api_url: str = NVIDIA_API_URL):
         self.api_key = api_key
         self.api_url = api_url
-        self._session: aiohttp.ClientSession | None = None
+        self._session: Optional["aiohttp.ClientSession"] = None
 
     @property
     def session(self) -> "aiohttp.ClientSession":
         """延遲建立 session"""
         if self._session is None or self._session.closed:
             import aiohttp
-
             timeout = aiohttp.ClientTimeout(total=300)
             self._session = aiohttp.ClientSession(
-                headers={"Authorization": f"Bearer {self.api_key}"}, timeout=timeout
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=timeout
             )
         return self._session
 
@@ -135,7 +134,6 @@ class ToolExecutor:
         """延遲導入 tools 實作"""
         if self._tools_module is None:
             from . import tools  # 延遲導入
-
             self._tools_module = tools.ToolImpl(self.work_dir)
         return self._tools_module
 
@@ -172,8 +170,8 @@ class ClaudeCodeAgent:
         task_id: str,
         user_id: int = 0,
         channel_id: int = 0,
-        progress_callback: ProgressCallback | None = None,
-        task_store: TaskStore | None = None,
+        progress_callback: Optional[ProgressCallback] = None,
+        task_store: Optional[TaskStore] = None,
     ):
         self.task_id = task_id
         self.user_id = user_id
@@ -249,7 +247,6 @@ class ClaudeCodeAgent:
         # 延遲導入記憶系統
         try:
             from shared.db.ai_memory import build_memory_context
-
             memory = build_memory_context()
             context = SYSTEM_PROMPT.format(work_dir=WORK_DIR)
             if memory.get("system_instructions"):
@@ -305,9 +302,7 @@ class ClaudeCodeAgent:
                     if thinking:
                         if len(thinking) > 200:
                             thinking = thinking[:197] + "..."
-                        await self._add_progress(
-                            f"💭 第 {self.turn_count} 輪：{thinking}"
-                        )
+                        await self._add_progress(f"💭 第 {self.turn_count} 輪：{thinking}")
 
                 # 執行工具
                 if tool_uses:
@@ -317,23 +312,17 @@ class ClaudeCodeAgent:
                         tool_name = tool_use["name"]
                         args = tool_use["input"]
                         detail = self._format_tool_detail(tool_name, args)
-                        await self._add_progress(
-                            f"🔧 第 {self.turn_count} 輪：執行 {tool_name} {detail}"
-                        )
+                        await self._add_progress(f"🔧 第 {self.turn_count} 輪：執行 {tool_name} {detail}")
 
                         result = await self.tools.execute(tool_name, args)
-                        self.history.append(
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "tool_result",
-                                        "tool_use_id": tool_use["id"],
-                                        "content": result,
-                                    }
-                                ],
-                            }
-                        )
+                        self.history.append({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": tool_use["id"],
+                                "content": result,
+                            }]
+                        })
                     continue
 
                 # 純文字回覆：任務完成
@@ -408,18 +397,13 @@ class ClaudeCodeAgent:
         """從資料庫載入該用戶的最近對話"""
         try:
             from shared.db.ai_memory import DialogueMemory
-
             history_text = DialogueMemory.get_recent_dialogue(max_tokens=2000)
             if not history_text:
                 return
             sections = history_text.split("\n\n---\n\n")
             for section in sections[-10:]:
                 lines = section.strip().split("\n")
-                if (
-                    len(lines) >= 2
-                    and lines[0].startswith("用戶:")
-                    and lines[1].startswith("AI:")
-                ):
+                if len(lines) >= 2 and lines[0].startswith("用戶:") and lines[1].startswith("AI:"):
                     user_query = lines[0][3:].strip()
                     ai_response = "\n".join(lines[1:])[3:].strip()
                     self.history.append({"role": "user", "content": user_query})
@@ -431,7 +415,6 @@ class ClaudeCodeAgent:
         """儲存對話到記憶系統"""
         try:
             from shared.db.ai_memory import DialogueMemory
-
             DialogueMemory.add_dialogue(user_input, reply, importance=0.6)
         except Exception as e:
             logger.warning(f"儲存記憶失敗: {e}")
@@ -487,16 +470,9 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "檔案路徑"},
-                "old_string": {
-                    "type": "string",
-                    "description": "要替換的原字串（需唯一匹配）",
-                },
+                "old_string": {"type": "string", "description": "要替換的原字串（需唯一匹配）"},
                 "new_string": {"type": "string", "description": "新字串"},
-                "replace_all": {
-                    "type": "boolean",
-                    "description": "是否替換所有匹配",
-                    "default": False,
-                },
+                "replace_all": {"type": "boolean", "description": "是否替換所有匹配", "default": False},
             },
             "required": ["path", "old_string", "new_string"],
         },
@@ -530,11 +506,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "command": {"type": "string", "description": "命令字串"},
-                "timeout": {
-                    "type": "integer",
-                    "description": "超時秒數",
-                    "default": 60,
-                },
+                "timeout": {"type": "integer", "description": "超時秒數", "default": 60},
             },
             "required": ["command"],
         },
@@ -558,17 +530,9 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "service": {
-                    "type": "string",
-                    "enum": ["bot", "shopbot", "uibot", "kkgroup-api", "all"],
-                    "default": "all",
-                },
+                "service": {"type": "string", "enum": ["bot", "shopbot", "uibot", "kkgroup-api", "all"], "default": "all"},
                 "since_minutes": {"type": "integer", "default": 15},
-                "level": {
-                    "type": "string",
-                    "enum": ["error", "warning", "all"],
-                    "default": "error",
-                },
+                "level": {"type": "string", "enum": ["error", "warning", "all"], "default": "error"},
                 "pattern": {"type": "string", "description": "grep 模式"},
                 "limit": {"type": "integer", "default": 50},
             },

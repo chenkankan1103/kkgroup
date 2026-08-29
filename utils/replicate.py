@@ -1,8 +1,7 @@
-import asyncio
-import os
-from io import BytesIO
-
 import aiohttp
+import os
+import asyncio
+from io import BytesIO
 
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")  # 你的API金鑰，從.env載入
 REPLICATE_API_BASE = "https://api.replicate.com/v1"

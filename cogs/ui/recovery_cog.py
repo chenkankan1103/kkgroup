@@ -1,12 +1,15 @@
 import asyncio
+from discord.ext import commands, tasks
+from datetime import datetime, timedelta
 import logging
 import traceback
-from datetime import datetime, timedelta
-
-from discord.ext import commands, tasks
-
-from db_adapter import (async_batch_set_users, async_get_all_users,
-                        get_all_users, get_user, set_user)
+from db_adapter import (
+    get_user,
+    set_user,
+    get_all_users,
+    async_batch_set_users,
+    async_get_all_users,
+)
 
 
 class UserRecoveryCog(commands.Cog):

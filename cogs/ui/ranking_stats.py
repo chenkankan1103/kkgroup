@@ -14,19 +14,17 @@ Bahamut 動畫追蹤 Cog - 排名和統計系統
 - ranking_stats.py: 排名統計和報告生成
 """
 
-import asyncio
-import json
 import logging
-import sqlite3
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-
+import json
 import aiohttp
+import sqlite3
+import asyncio
+from datetime import datetime, timedelta
+from typing import Optional, Dict, List
 import discord
 from discord.ext import commands
-
 from . import push_core
-from .push_core import ANIME_DB_PATH, API_ENDPOINT, API_TIMEOUT, TW_TZ
+from .push_core import ANIME_DB_PATH, TW_TZ, API_ENDPOINT, API_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -109,18 +107,14 @@ class RankingStats:
             chart_config_with_params = {
                 **chart_config,
                 "bkg": "white",
-                "w": (
-                    950
-                    if chart_config.get("type") == "line"
-                    and len(chart_config.get("data", {}).get("datasets", [])) > 1
-                    else 850
-                ),
-                "h": (
-                    400
-                    if chart_config.get("type") == "line"
-                    and len(chart_config.get("data", {}).get("datasets", [])) > 1
-                    else 350
-                ),
+                "w": 950
+                if chart_config.get("type") == "line"
+                and len(chart_config.get("data", {}).get("datasets", [])) > 1
+                else 850,
+                "h": 400
+                if chart_config.get("type") == "line"
+                and len(chart_config.get("data", {}).get("datasets", [])) > 1
+                else 350,
             }
 
             async with aiohttp.ClientSession() as session:
@@ -1103,11 +1097,9 @@ class RankingStats:
                 embed.add_field(name="📋 排行名單", value=ranking_summary, inline=False)
 
             embed.set_footer(
-                text=(
-                    "📊 排行與集數觀看趨勢"
-                    if ranked_chart_anime and len(ranked_chart_anime) >= 2
-                    else "📈 觀看排行"
-                )
+                text="📊 排行與集數觀看趨勢"
+                if ranked_chart_anime and len(ranked_chart_anime) >= 2
+                else "📈 觀看排行"
             )
 
             logger.info(
@@ -1139,39 +1131,30 @@ class RankingStats:
                 logger.info("📊 [send_weekly_stats] 禮拜天時間到，準備發送週統計...")
 
                 # 計算本週時間範圍：週一 00:00 ~ 週日 23:59
-                week_start_dt = datetime.combine(
-                    week_start_date, datetime.min.time()
-                ).replace(tzinfo=TW_TZ)
+                week_start_dt = datetime.combine(week_start_date, datetime.min.time()).replace(tzinfo=TW_TZ)
                 week_end_dt = week_start_dt + timedelta(days=7)
 
                 # 生成排行榜 Embed（含趨勢圖）
                 embed = await self.generate_ranking_embed(
-                    start_time=week_start_dt, end_time=week_end_dt, period_label="本週"
+                    start_time=week_start_dt,
+                    end_time=week_end_dt,
+                    period_label="本週"
                 )
 
                 if embed and self.bot:
                     try:
                         from .push_core import ANIME_CHANNEL_ID
-
                         channel = self.bot.get_channel(ANIME_CHANNEL_ID)
                         if channel:
                             await channel.send(embed=embed)
-                            logger.info(
-                                f"✅ [send_weekly_stats] 週統計已發送到頻道 {ANIME_CHANNEL_ID}"
-                            )
+                            logger.info(f"✅ [send_weekly_stats] 週統計已發送到頻道 {ANIME_CHANNEL_ID}")
                             self.last_weekly_stats_sent = week_start_date
                         else:
-                            logger.error(
-                                f"❌ [send_weekly_stats] 找不到頻道 {ANIME_CHANNEL_ID}"
-                            )
+                            logger.error(f"❌ [send_weekly_stats] 找不到頻道 {ANIME_CHANNEL_ID}")
                     except Exception as e:
-                        logger.error(
-                            f"❌ [send_weekly_stats] 發送失敗: {e}", exc_info=True
-                        )
+                        logger.error(f"❌ [send_weekly_stats] 發送失敗: {e}", exc_info=True)
                 else:
-                    logger.warning(
-                        "⚠️ [send_weekly_stats] 生成 embed 失敗或 bot 未就緒"
-                    )
+                    logger.warning("⚠️ [send_weekly_stats] 生成 embed 失敗或 bot 未就緒")
 
         except Exception as e:
             logger.error(f"❌ [send_weekly_stats] 發送週統計失敗: {e}", exc_info=True)
@@ -1253,8 +1236,8 @@ async def setup(bot: commands.Bot):
         # 此處提供基本框架
 
         from .push_core import AnimeDatabase
-        from .ranking_stats import RankingStats
         from .schedule_tracker import AnimeScheduleTracker
+        from .ranking_stats import RankingStats
 
         db = AnimeDatabase(ANIME_DB_PATH)
         schedule_tracker = AnimeScheduleTracker(db)

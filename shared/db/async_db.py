@@ -10,17 +10,16 @@ Async SQLite Connection Pool + AsyncSheetDrivenDB
 """
 
 import asyncio
+import aiosqlite
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple, Union, Set
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
-
-import aiosqlite
 
 # 連線池配置 - 導出供 manager.py 使用
 DEFAULT_POOL_SIZE = 16  # 增加：支援 5 服務並發
-MAX_POOL_SIZE = 32  # 增加：上限提高
+MAX_POOL_SIZE = 32      # 增加：上限提高
 BUSY_TIMEOUT_MS = 30000
 ACQUIRE_TIMEOUT = 10.0  # 增加：高並發時等待更久
 
@@ -31,9 +30,7 @@ class AsyncConnectionPool:
     def __init__(self, db_path: str, pool_size: int = DEFAULT_POOL_SIZE):
         self.db_path = db_path
         self.pool_size = pool_size
-        self._queue: asyncio.Queue[aiosqlite.Connection] = asyncio.Queue(
-            maxsize=pool_size
-        )
+        self._queue: asyncio.Queue[aiosqlite.Connection] = asyncio.Queue(maxsize=pool_size)
         self._created = 0
         self._init_lock = asyncio.Lock()
         self._initialized = False
@@ -80,11 +77,7 @@ class AsyncConnectionPool:
             raise RuntimeError("DB connection pool exhausted")
 
     async def execute_with_retry(
-        self,
-        sql: str,
-        params: tuple = (),
-        max_retries: int = 3,
-        base_delay: float = 0.1,
+        self, sql: str, params: tuple = (), max_retries: int = 3, base_delay: float = 0.1
     ):
         """帶重試的執行器，處理 database is locked 等暫時性錯誤"""
         last_error = None
@@ -97,11 +90,7 @@ class AsyncConnectionPool:
             except aiosqlite.OperationalError as e:
                 last_error = e
                 error_msg = str(e).lower()
-                if (
-                    "locked" in error_msg
-                    or "busy" in error_msg
-                    or "malformed" in error_msg
-                ):
+                if "locked" in error_msg or "busy" in error_msg or "malformed" in error_msg:
                     delay = base_delay * (attempt + 1)
                     await asyncio.sleep(delay)
                     continue
@@ -143,7 +132,6 @@ class AsyncConnectionPool:
 # 保留以相容現有代碼，但內部委託給 DatabaseManager
 _pool: Optional[AsyncConnectionPool] = None
 
-
 def get_pool(db_path: str = "user_data.db") -> AsyncConnectionPool:
     """@deprecated 使用 shared.db.manager.get_db_pool()"""
     global _pool
@@ -168,7 +156,7 @@ class AsyncSheetDrivenDB:
         async with self._pool.connection() as conn:
             cursor = await conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                (self.table_name,),
+                (self.table_name,)
             )
             if not await cursor.fetchone():
                 await conn.execute(f"""
@@ -188,9 +176,7 @@ class AsyncSheetDrivenDB:
         existing = {row[1] async for row in cursor}
         for col in ("_created_at", "_updated_at"):
             if col not in existing:
-                await conn.execute(
-                    f'ALTER TABLE {self.table_name} ADD COLUMN "{col}" TIMESTAMP'
-                )
+                await conn.execute(f'ALTER TABLE {self.table_name} ADD COLUMN "{col}" TIMESTAMP')
                 await conn.commit()
 
     async def _refresh_columns_cache(self, conn: aiosqlite.Connection):
@@ -260,15 +246,11 @@ class AsyncSheetDrivenDB:
             count = (await cursor.fetchone())[0]
             return count > 0
 
-    async def get_user_field(
-        self, user_id: Union[int, str], field: str, default: Any = None
-    ) -> Any:
+    async def get_user_field(self, user_id: Union[int, str], field: str, default: Any = None) -> Any:
         user = await self.get_user(user_id)
         return user.get(field, default) if user else default
 
-    async def set_user_field(
-        self, user_id: Union[int, str], field: str, value: Any
-    ) -> bool:
+    async def set_user_field(self, user_id: Union[int, str], field: str, value: Any) -> bool:
         return await self.set_user(user_id, {field: value})
 
     async def update_user_field(
@@ -302,9 +284,7 @@ class AsyncSheetDrivenDB:
                 continue
             col_type = self._infer_sql_type(header)
             try:
-                await conn.execute(
-                    f'ALTER TABLE {self.table_name} ADD COLUMN "{header}" {col_type}'
-                )
+                await conn.execute(f'ALTER TABLE {self.table_name} ADD COLUMN "{header}" {col_type}')
                 added += 1
             except aiosqlite.OperationalError:
                 pass
@@ -319,31 +299,11 @@ class AsyncSheetDrivenDB:
     def _infer_sql_type(self, header: str) -> str:
         """沿用同步版邏輯"""
         h = header.lower()
-        if any(
-            w in h
-            for w in [
-                "id",
-                "level",
-                "xp",
-                "coin",
-                "kkcoin",
-                "hp",
-                "stamina",
-                "streak",
-                "count",
-                "num",
-                "amount",
-                "is_",
-                "unlocked",
-                "enabled",
-            ]
-        ):
+        if any(w in h for w in ["id", "level", "xp", "coin", "kkcoin", "hp", "stamina", "streak", "count", "num", "amount", "is_", "unlocked", "enabled"]):
             return "INTEGER DEFAULT 0"
         if any(w in h for w in ["date", "time", "timestamp", "at"]):
             return "TEXT DEFAULT NULL"
-        if any(
-            w in h for w in ["config", "setting", "data", "json", "info", "inventory"]
-        ):
+        if any(w in h for w in ["config", "setting", "data", "json", "info", "inventory"]):
             return "TEXT DEFAULT '{}'"
         return "TEXT DEFAULT ''"
 
@@ -359,9 +319,7 @@ class AsyncSheetDrivenDB:
 
     # ========== 批量/統計操作 ==========
 
-    async def get_user_by_field(
-        self, field: str, value: Any
-    ) -> Optional[Dict[str, Any]]:
+    async def get_user_by_field(self, field: str, value: Any) -> Optional[Dict[str, Any]]:
         await self._ensure_initialized()
         if not self._columns_cache_valid:
             async with self._pool.connection() as conn:
@@ -369,9 +327,7 @@ class AsyncSheetDrivenDB:
         if field not in self._columns_cache:
             return None
         async with self._pool.connection() as conn:
-            cursor = await conn.execute(
-                f'SELECT * FROM {self.table_name} WHERE "{field}" = ?', (value,)
-            )
+            cursor = await conn.execute(f'SELECT * FROM {self.table_name} WHERE "{field}" = ?', (value,))
             row = await cursor.fetchone()
             return self._row_to_dict(row) if row else None
 
@@ -429,7 +385,6 @@ class AsyncSheetDrivenDB:
 # 全域單例 - 棄用：改用 DatabaseManager
 # 保留以相容現有代碼，但內部委託給 DatabaseManager
 _async_db_instance: Optional[AsyncSheetDrivenDB] = None
-
 
 async def get_async_db(db_path: str = "user_data.db") -> AsyncSheetDrivenDB:
     """@deprecated 使用 shared.db.manager.DatabaseManager 直接操作"""

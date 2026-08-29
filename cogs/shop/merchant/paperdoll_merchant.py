@@ -3,12 +3,10 @@
 紙娃娃商人系統 - 讓玩家購買楓之谷紙娃娃部位
 """
 
+from discord.ext import commands
 import json
 from typing import Dict
-
-from discord.ext import commands
-
-from db_adapter import get_user, get_user_field, set_user_field
+from db_adapter import get_user, set_user_field, get_user_field
 
 
 class PaperdollMerchantSystem:

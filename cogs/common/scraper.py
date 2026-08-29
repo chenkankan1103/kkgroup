@@ -420,9 +420,9 @@ async def search_web(query: str, max_results: int = 5) -> list[dict]:
                     {
                         "title": title_el.get_text(strip=True),
                         "url": title_el.get("href", ""),
-                        "snippet": (
-                            snippet_el.get_text(strip=True) if snippet_el else ""
-                        ),
+                        "snippet": snippet_el.get_text(strip=True)
+                        if snippet_el
+                        else "",
                     }
                 )
         return results

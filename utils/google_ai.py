@@ -4,9 +4,8 @@ Google Generative AI API 封装模块
 """
 
 import os
-from typing import Dict, List, Optional
-
 import aiohttp
+from typing import List, Dict, Optional
 
 
 class GoogleAIClient:

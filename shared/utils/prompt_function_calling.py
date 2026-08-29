@@ -21,10 +21,9 @@ Prompt-Based Function Calling System
     # 得到: [{"name": "get_kkcoin_balance", "args": {"user_id": "123"}}]
 """
 
-import json
 import re
-from typing import Any, Dict, List
-
+import json
+from typing import List, Dict, Any
 from agent_tools import get_gemini_tools_spec
 
 

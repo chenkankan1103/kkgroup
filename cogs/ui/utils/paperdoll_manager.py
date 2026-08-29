@@ -15,11 +15,11 @@
     )
 """
 
-import base64
-import json
-import os
 import random
-from typing import Any, Dict, Optional
+import json
+import base64
+import os
+from typing import Optional, Dict, Any
 
 # ============================================================
 # 常數：預設角色配置（所有值皆為字串，與資料庫一致）

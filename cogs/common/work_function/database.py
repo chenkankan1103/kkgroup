@@ -7,15 +7,16 @@ Work 系統數據庫適配層 - 使用新的 Sheet-Driven DB
 
 import os
 import traceback
-from typing import Any, Dict, Optional
-
+from typing import Dict, Any, Optional
 from discord.ext import commands
 
 # 匯入統一的數據庫適配層
-from db_adapter import delete_user as db_delete_user
-from db_adapter import get_all_users as db_get_all_users
-from db_adapter import get_user as db_get_user
-from db_adapter import set_user
+from db_adapter import (
+    get_user as db_get_user,
+    set_user,
+    delete_user as db_delete_user,
+    get_all_users as db_get_all_users,
+)
 
 DB_PATH = os.getenv("DB_PATH", "user_data.db")
 

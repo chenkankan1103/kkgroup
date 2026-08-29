@@ -22,10 +22,10 @@ Sheet-Driven Database Engine - 完全以 SHEET 為主導的數據庫系統
     db.sync_from_sheet(headers, rows)
 """
 
-import json
 import sqlite3
+import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Any, Optional, Tuple, Union
 
 
 class SheetDrivenDB:
@@ -104,14 +104,7 @@ class SheetDrivenDB:
         conn.execute("PRAGMA busy_timeout=30000")  # 30 秒等待超時
         return conn
 
-    def _execute_with_retry(
-        self,
-        conn: sqlite3.Connection,
-        sql: str,
-        params: tuple = (),
-        max_retries: int = 3,
-        delay: float = 0.1,
-    ) -> sqlite3.Cursor:
+    def _execute_with_retry(self, conn: sqlite3.Connection, sql: str, params: tuple = (), max_retries: int = 3, delay: float = 0.1) -> sqlite3.Cursor:
         """執行 SQL 語句並進行重試，以處理鎖定錯誤 (SQLITE_BUSY)。
 
         Args:
@@ -128,7 +121,6 @@ class SheetDrivenDB:
             sqlite3.OperationalError: 如果在重試後仍然失敗
         """
         import time
-
         last_exception = None
         for attempt in range(max_retries):
             try:
@@ -225,10 +217,7 @@ class SheetDrivenDB:
 
             if "_updated_at" in existing_cols:
                 try:
-                    cursor = self._execute_with_retry(
-                        conn,
-                        f"UPDATE {self.table_name} SET _updated_at = CURRENT_TIMESTAMP",
-                    )
+                    cursor = self._execute_with_retry(conn, f"UPDATE {self.table_name} SET _updated_at = CURRENT_TIMESTAMP")
                 except sqlite3.OperationalError as e:
                     print(f"⚠️ 更新 _updated_at 失敗: {e}")
 
@@ -306,9 +295,7 @@ class SheetDrivenDB:
 
         conn = self._get_connection()
         try:
-            cursor = self._execute_with_retry(
-                conn, f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,)
-            )
+            cursor = self._execute_with_retry(conn, f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
 
             if not row:
@@ -338,10 +325,8 @@ class SheetDrivenDB:
             # 第一步：獲取現有用戶數據
             conn = self._get_connection()
             try:
-                cursor = self._execute_with_retry(
-                    conn,
-                    f"SELECT * FROM {self.table_name} WHERE user_id = ?",
-                    (user_id,),
+                cursor = self._execute_with_retry(conn,
+                    f"SELECT * FROM {self.table_name} WHERE user_id = ?", (user_id,)
                 )
                 existing_row = cursor.fetchone()
 
@@ -399,10 +384,8 @@ class SheetDrivenDB:
                 print("   ✅ SQL 執行成功，提交完成")
 
                 # ✅ 驗證寫入
-                cursor = self._execute_with_retry(
-                    conn,
-                    f"SELECT COUNT(*) FROM {self.table_name} WHERE user_id = ?",
-                    (user_id,),
+                cursor = self._execute_with_retry(conn,
+                    f"SELECT COUNT(*) FROM {self.table_name} WHERE user_id = ?", (user_id,)
                 )
                 count = cursor.fetchone()[0]
                 print(f"   📊 驗證：數據庫中的計數 = {count}")
@@ -671,9 +654,7 @@ class SheetDrivenDB:
         # 獲取所有數據
         quoted_headers = [f'"{col}"' for col in headers]
         columns_str = ", ".join(quoted_headers)
-        cursor = self._execute_with_retry(
-            conn, f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id"
-        )
+        cursor = self._execute_with_retry(conn, f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id")
         rows = []
         for row in cursor.fetchall():
             row_list = []
@@ -727,9 +708,7 @@ class SheetDrivenDB:
         # 獲取所有數據，按所需的欄位順序排列
         quoted_headers = [f'"{col}"' for col in db_headers]
         columns_str = ", ".join(quoted_headers)
-        cursor = self._execute_with_retry(
-            conn, f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id"
-        )
+        cursor = self._execute_with_retry(conn, f"SELECT {columns_str} FROM {self.table_name} ORDER BY user_id")
 
         rows = []
         for db_row in cursor.fetchall():

@@ -3,14 +3,13 @@ Discord OAuth 2.0 認證系統
 支持用戶登錄、會話管理、用戶信息獲取
 """
 
-import json
-import logging
 import os
+import json
+import requests
+from flask import Blueprint, request, jsonify, redirect
 from datetime import datetime, timedelta
 from functools import wraps
-
-import requests
-from flask import Blueprint, jsonify, redirect, request
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +65,9 @@ def login():
     """🔐 產生 Discord OAuth 登錄 URL"""
 
     if not DISCORD_CLIENT_ID:
-        return (
-            jsonify(
-                {"status": "error", "message": "Discord 配置不完整", "oauth_url": None}
-            ),
-            500,
-        )
+        return jsonify(
+            {"status": "error", "message": "Discord 配置不完整", "oauth_url": None}
+        ), 500
 
     redirect_uri = _get_redirect_uri()
     oauth_url = (
@@ -82,16 +78,13 @@ def login():
         f"&scope=identify%20email%20guilds"
     )
 
-    return (
-        jsonify(
-            {
-                "status": "success",
-                "oauth_url": oauth_url,
-                "message": "請複製此 URL 到瀏覽器進行認證",
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "status": "success",
+            "oauth_url": oauth_url,
+            "message": "請複製此 URL 到瀏覽器進行認證",
+        }
+    ), 200
 
 
 @discord_auth_bp.route("/callback", methods=["GET"])
@@ -205,40 +198,28 @@ def verify_token():
     auth_token = request.headers.get("Authorization", "").replace("Bearer ", "")
 
     if not auth_token or auth_token not in user_sessions:
-        return (
-            jsonify(
-                {
-                    "status": "error",
-                    "authenticated": False,
-                    "message": "無效或過期的 token",
-                }
-            ),
-            401,
-        )
+        return jsonify(
+            {"status": "error", "authenticated": False, "message": "無效或過期的 token"}
+        ), 401
 
     user = user_sessions[auth_token]
 
-    return (
-        jsonify(
-            {
-                "status": "success",
-                "authenticated": True,
-                "user": {
-                    "id": user.get("user_id"),
-                    "username": user.get("username"),
-                    "email": user.get("email"),
-                    "avatar_url": (
-                        f"https://cdn.discordapp.com/avatars/{user.get('user_id')}/{user.get('avatar')}.png"
-                        if user.get("avatar")
-                        else None
-                    ),
-                    "is_member": user.get("is_member"),
-                    "roles": user.get("roles"),
-                },
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "status": "success",
+            "authenticated": True,
+            "user": {
+                "id": user.get("user_id"),
+                "username": user.get("username"),
+                "email": user.get("email"),
+                "avatar_url": f"https://cdn.discordapp.com/avatars/{user.get('user_id')}/{user.get('avatar')}.png"
+                if user.get("avatar")
+                else None,
+                "is_member": user.get("is_member"),
+                "roles": user.get("roles"),
+            },
+        }
+    ), 200
 
 
 @discord_auth_bp.route("/logout", methods=["POST"])
@@ -262,27 +243,22 @@ def get_user():
 
     user = request.user
 
-    return (
-        jsonify(
-            {
-                "status": "success",
-                "user": {
-                    "id": user.get("user_id"),
-                    "username": user.get("username"),
-                    "email": user.get("email"),
-                    "avatar_url": (
-                        f"https://cdn.discordapp.com/avatars/{user.get('user_id')}/{user.get('avatar')}.png"
-                        if user.get("avatar")
-                        else None
-                    ),
-                    "is_member": user.get("is_member"),
-                    "roles": user.get("roles"),
-                    "created_at": user.get("created_at"),
-                },
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "status": "success",
+            "user": {
+                "id": user.get("user_id"),
+                "username": user.get("username"),
+                "email": user.get("email"),
+                "avatar_url": f"https://cdn.discordapp.com/avatars/{user.get('user_id')}/{user.get('avatar')}.png"
+                if user.get("avatar")
+                else None,
+                "is_member": user.get("is_member"),
+                "roles": user.get("roles"),
+                "created_at": user.get("created_at"),
+            },
+        }
+    ), 200
 
 
 @discord_auth_bp.route("/user-info", methods=["GET"])
@@ -296,39 +272,33 @@ def get_user_info():
 
     user = user_sessions[auth_token]
 
-    return (
-        jsonify(
-            {
-                "status": "success",
-                "user_id": int(user.get("user_id", 0)),  # 轉換為整數用於遊戲
-                "username": user.get("username"),
-                "email": user.get("email"),
-                "is_member": user.get("is_member"),
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "status": "success",
+            "user_id": int(user.get("user_id", 0)),  # 轉換為整數用於遊戲
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "is_member": user.get("is_member"),
+        }
+    ), 200
 
 
 @discord_auth_bp.route("/status", methods=["GET"])
 def auth_status():
     """📊 獲取認證系統狀態"""
 
-    return (
-        jsonify(
-            {
-                "status": "ok",
-                "service": "Discord OAuth 認證",
-                "configured": bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET),
-                "active_sessions": len(user_sessions),
-                "endpoints": {
-                    "GET /api/auth/login": "獲取 OAuth URL",
-                    "GET /api/auth/callback": "OAuth 回調（由 Discord 調用）",
-                    "GET /api/auth/verify": "驗證 token 有效性",
-                    "POST /api/auth/logout": "登出（需要認證）",
-                    "GET /api/auth/user": "獲取用戶信息（需要認證）",
-                },
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "Discord OAuth 認證",
+            "configured": bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET),
+            "active_sessions": len(user_sessions),
+            "endpoints": {
+                "GET /api/auth/login": "獲取 OAuth URL",
+                "GET /api/auth/callback": "OAuth 回調（由 Discord 調用）",
+                "GET /api/auth/verify": "驗證 token 有效性",
+                "POST /api/auth/logout": "登出（需要認證）",
+                "GET /api/auth/user": "獲取用戶信息（需要認證）",
+            },
+        }
+    ), 200

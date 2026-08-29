@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import logging
 import os
-import sqlite3
 import time
-from datetime import datetime, timedelta
+import sqlite3
+import logging
 from logging.handlers import RotatingFileHandler
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Dict, List, Tuple, Optional
 
 import gspread
 from gspread.utils import rowcol_to_a1

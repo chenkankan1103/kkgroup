@@ -1,12 +1,12 @@
 import asyncio
 import json
-import logging
 import os
 import time
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import logging
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -1120,9 +1120,9 @@ class NewYearRedEnvelope(commands.Cog):
 
         # save to storage
         storage.setdefault("messages", {})[str(message_id)] = {
-            "guild_id": (
-                getattr(msg.guild, "id", None) if hasattr(msg, "guild") else None
-            ),
+            "guild_id": getattr(msg.guild, "id", None)
+            if hasattr(msg, "guild")
+            else None,
             "channel_id": getattr(msg.channel, "id", None),
             "message_id": message_id,
             "activity_id": activity_id,

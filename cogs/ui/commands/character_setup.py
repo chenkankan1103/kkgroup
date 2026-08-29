@@ -5,9 +5,8 @@
 """
 
 import discord
-from discord import app_commands
 from discord.ext import commands
-
+from discord import app_commands
 from db_adapter import get_user, set_user_field
 
 

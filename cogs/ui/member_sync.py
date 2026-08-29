@@ -1,6 +1,5 @@
 from discord.ext import commands
-
-from db_adapter import delete_user, get_user, set_user
+from db_adapter import set_user, delete_user, get_user
 
 
 class MemberSync(commands.Cog):

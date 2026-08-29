@@ -3,16 +3,14 @@
 UIBot 管理員指令 - 置物櫃批量操作
 """
 
-import asyncio
-import logging
-import os
-
 import discord
-from discord import app_commands
 from discord.ext import commands
-
-from cogs.ui.utils.locker_embed_generator import update_locker_message
+from discord import app_commands
 from db_adapter import get_all_users
+from cogs.ui.utils.locker_embed_generator import update_locker_message
+import asyncio
+import os
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +113,7 @@ class AdminLockerCommands(commands.Cog):
                                     )
                                 else:
                                     fail_count += 1
-                                    logger.warning(
-                                        f"⚠️ 用戶 {user_id} 的置物櫃更新失敗"
-                                    )
+                                    logger.warning(f"⚠️ 用戶 {user_id} 的置物櫃更新失敗")
                             else:
                                 # thread 不存在，將 thread_id 重設為 0，轉為路徑 B（創建新的）
                                 from db_adapter import set_user_field

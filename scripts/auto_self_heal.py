@@ -15,23 +15,23 @@ Usage:
     python3 scripts/auto_self_heal.py --watch  # 持續監控模式
 """
 
-import argparse
-import asyncio
-import json
 import os
-import re
-import shutil
-import subprocess
 import sys
+import re
+import json
+import asyncio
+import subprocess
+import shutil
+import argparse
 import time
 import traceback
-# ---------- NEW: Agent‑specific imports ----------
-from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
 from shared.utils.llm_text_router import GROQ_MODEL
+from typing import Optional, Dict, List, Tuple
+
+# ---------- NEW: Agent‑specific imports ----------
+from collections import deque
 
 # ─── 工具模組 ────────────────────────────────────────────────
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -1491,8 +1491,9 @@ Do not include any extra text outside the JSON.
             pass
         # Fallback – use the shared Groq client (same as elsewhere)
         try:
-            from shared.utils.llm_text_router import \
-                groq_text  # assuming a helper exists
+            from shared.utils.llm_text_router import (
+                groq_text,
+            )  # assuming a helper exists
 
             resp = await groq_text(
                 prompt,

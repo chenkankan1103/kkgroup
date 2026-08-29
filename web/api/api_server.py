@@ -5,19 +5,22 @@
 提供即時統計 API 端點供前端使用
 """
 
-import json
 import os
-
-from dotenv import load_dotenv
+import json
 from flask import Flask, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
 
 # 載入環境變數
 load_dotenv()
 
 # 匯入資料庫適配層
-from db_adapter import (get_all_users, get_central_reserve,
-                        get_reserve_announcement, get_reserve_pressure)
+from db_adapter import (
+    get_all_users,
+    get_central_reserve,
+    get_reserve_pressure,
+    get_reserve_announcement,
+)
 
 app = Flask(__name__)
 # 啟用 CORS，允許前端跨域請求
@@ -60,23 +63,20 @@ def get_stats():
 
         from datetime import datetime
 
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "data": {
-                        "total_traders": total_traders,
-                        "total_volume": int(total_volume),
-                        "active_traders": active_traders,
-                        "reserve": int(reserve),
-                        "reserve_pressure": float(reserve_pressure),
-                        "reserve_announcement": reserve_announcement,
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                    },
-                }
-            ),
-            200,
-        )
+        return jsonify(
+            {
+                "status": "success",
+                "data": {
+                    "total_traders": total_traders,
+                    "total_volume": int(total_volume),
+                    "active_traders": active_traders,
+                    "reserve": int(reserve),
+                    "reserve_pressure": float(reserve_pressure),
+                    "reserve_announcement": reserve_announcement,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                },
+            }
+        ), 200
 
     except Exception as e:
         print(f"❌ 獲取統計數據失敗: {e}")
@@ -113,21 +113,18 @@ def get_stats_detailed():
         # 按總資產排序
         users_by_balance.sort(key=lambda x: x["total_assets"], reverse=True)
 
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "data": {
-                        "total_users": len(all_users),
-                        "active_users": len(users_by_balance),
-                        "top_users": users_by_balance[:10],
-                        "reserve": int(get_central_reserve()),
-                        "reserve_pressure": float(get_reserve_pressure()),
-                    },
-                }
-            ),
-            200,
-        )
+        return jsonify(
+            {
+                "status": "success",
+                "data": {
+                    "total_users": len(all_users),
+                    "active_users": len(users_by_balance),
+                    "top_users": users_by_balance[:10],
+                    "reserve": int(get_central_reserve()),
+                    "reserve_pressure": float(get_reserve_pressure()),
+                },
+            }
+        ), 200
 
     except Exception as e:
         print(f"❌ 獲取詳細統計失敗: {e}")
@@ -137,16 +134,13 @@ def get_stats_detailed():
 @app.route("/api/health", methods=["GET"])
 def health_check():
     """健康檢查端點"""
-    return (
-        jsonify(
-            {
-                "status": "ok",
-                "service": "KKCoin API Server",
-                "timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "KKCoin API Server",
+            "timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        }
+    ), 200
 
 
 @app.route("/api/config", methods=["GET"])
@@ -172,23 +166,20 @@ def get_config():
 @app.route("/", methods=["GET"])
 def index():
     """根路徑 - 提供 API 信息"""
-    return (
-        jsonify(
-            {
-                "service": "KKCoin Unified API",
-                "status": "operational",
-                "version": "2.0",
-                "endpoints": {
-                    "health": "GET /api/health",
-                    "stats": "GET /api/stats",
-                    "stats_detailed": "GET /api/stats/detailed",
-                    "config": "GET /api/config",
-                },
-                "documentation": "https://github.com/chenkankan1103/kkgroup",
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "service": "KKCoin Unified API",
+            "status": "operational",
+            "version": "2.0",
+            "endpoints": {
+                "health": "GET /api/health",
+                "stats": "GET /api/stats",
+                "stats_detailed": "GET /api/stats/detailed",
+                "config": "GET /api/config",
+            },
+            "documentation": "https://github.com/chenkankan1103/kkgroup",
+        }
+    ), 200
 
 
 # ============================================================
@@ -198,22 +189,19 @@ def index():
 
 @app.errorhandler(404)
 def not_found(error):
-    return (
-        jsonify(
-            {
-                "status": "error",
-                "error": "Endpoint not found",
-                "available_endpoints": [
-                    "/",
-                    "/api/health",
-                    "/api/stats",
-                    "/api/stats/detailed",
-                    "/api/config",
-                ],
-            }
-        ),
-        404,
-    )
+    return jsonify(
+        {
+            "status": "error",
+            "error": "Endpoint not found",
+            "available_endpoints": [
+                "/",
+                "/api/health",
+                "/api/stats",
+                "/api/stats/detailed",
+                "/api/config",
+            ],
+        }
+    ), 404
 
 
 @app.errorhandler(500)

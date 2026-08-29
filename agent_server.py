@@ -18,7 +18,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,9 +26,7 @@ from pydantic import BaseModel, Field
 
 # ─── 環境設定 ─────────────────────────────────────────────────────
 os.environ.setdefault("CLAUDE_WORK_DIR", "/home/e193752468/kkgroup")
-os.environ.setdefault(
-    "AGENT_TASK_DB", "/home/e193752468/kkgroup/shared/db/data/agent_tasks.db"
-)
+os.environ.setdefault("AGENT_TASK_DB", "/home/e193752468/kkgroup/shared/db/data/agent_tasks.db")
 
 # 記錄設定
 logging.basicConfig(
@@ -44,10 +42,15 @@ _agent_module = None
 def get_agent_module():
     global _agent_module
     if _agent_module is None:
-        from shared.agent import (ClaudeCodeAgent, TaskStatus, create_task,
-                                  get_task, get_task_stats, list_tasks,
-                                  update_task)
-
+        from shared.agent import (
+            ClaudeCodeAgent,
+            create_task,
+            get_task,
+            list_tasks,
+            update_task,
+            get_task_stats,
+            TaskStatus,
+        )
         _agent_module = {
             "ClaudeCodeAgent": ClaudeCodeAgent,
             "create_task": create_task,
@@ -68,7 +71,7 @@ _running_tasks: dict[str, "ClaudeCodeAgent"] = {}
 class TaskRequest(BaseModel):
     task_type: str = Field(default="code_agent", description="任務類型")
     payload: dict = Field(default_factory=dict, description="任務參數")
-    callback_url: str | None = Field(None, description="完成後回調 URL")
+    callback_url: Optional[str] = Field(None, description="完成後回調 URL")
 
 
 class TaskResponse(BaseModel):
@@ -82,15 +85,15 @@ class TaskStatusResponse(BaseModel):
     status: str
     task_type: str
     payload: dict
-    result: Any | None = None
-    error: str | None = None
-    progress: str | None = None
-    user_id: int | None = None
-    channel_id: int | None = None
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    progress: Optional[str] = None
+    user_id: Optional[int] = None
+    channel_id: Optional[int] = None
     created_at: str
     updated_at: str
-    started_at: str | None = None
-    completed_at: str | None = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
 
 class CancelRequest(BaseModel):
@@ -98,13 +101,7 @@ class CancelRequest(BaseModel):
 
 
 # ─── 背景任務執行器 ───────────────────────────────────────────────
-async def run_agent_task(
-    task_id: str,
-    user_id: int,
-    channel_id: int,
-    instruction: str,
-    callback_url: str | None,
-):
+async def run_agent_task(task_id: str, user_id: int, channel_id: int, instruction: str, callback_url: Optional[str]):
     """背景執行 Agent 任務"""
     mod = get_agent_module()
     ClaudeCodeAgent = mod["ClaudeCodeAgent"]
@@ -155,23 +152,19 @@ async def run_agent_task(
 async def _send_callback(url: str, task_id: str, result: Any):
     """發送 Webhook 回調（帶重試）"""
     import httpx
-
     for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                await client.post(
-                    url,
-                    json={
-                        "task_id": task_id,
-                        "result": result,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    },
-                )
+                await client.post(url, json={
+                    "task_id": task_id,
+                    "result": result,
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
             logger.info(f"Callback sent for {task_id}")
             return
         except Exception as e:
             logger.warning(f"Callback attempt {attempt+1} failed: {e}")
-            await asyncio.sleep(2**attempt)
+            await asyncio.sleep(2 ** attempt)
     logger.error(f"Callback failed for {task_id} after 3 attempts")
 
 
@@ -206,7 +199,6 @@ app.add_middleware(
 
 # ─── API Routes ───────────────────────────────────────────────────
 
-
 @app.post("/agent/task", response_model=TaskResponse)
 async def submit_task(request: TaskRequest, background: BackgroundTasks):
     """提交新任務（非阻塞，立即回傳 task_id）"""
@@ -223,21 +215,15 @@ async def submit_task(request: TaskRequest, background: BackgroundTasks):
         raise HTTPException(400, "Missing 'instruction' or 'prompt' in payload")
 
     # 建立任務記錄
-    await get_agent_module()["create_task"](
-        task_id,
-        task_type,
-        {
-            **payload,
-            "instruction": instruction,
-            "user_id": user_id,
-            "channel_id": channel_id,
-        },
-    )
+    await get_agent_module()["create_task"](task_id, task_type, {
+        **payload,
+        "instruction": instruction,
+        "user_id": user_id,
+        "channel_id": channel_id,
+    })
 
     # 背景執行
-    background.add_task(
-        run_agent_task, task_id, user_id, channel_id, instruction, request.callback_url
-    )
+    background.add_task(run_agent_task, task_id, user_id, channel_id, instruction, request.callback_url)
 
     return TaskResponse(task_id=task_id, status="accepted")
 
@@ -252,9 +238,7 @@ async def get_task_status(task_id: str):
 
 
 @app.get("/agent/task/{task_id}/progress")
-async def get_task_progress(
-    task_id: str, wait: bool = Query(False, description="長輪詢等待更新")
-):
+async def get_task_progress(task_id: str, wait: bool = Query(False, description="長輪詢等待更新")):
     """取得任務進度（支援長輪詢）"""
     task = await get_agent_module()["get_task"](task_id)
     if not task:
@@ -266,16 +250,8 @@ async def get_task_progress(
             await asyncio.sleep(1)
             fresh = await get_agent_module()["get_task"](task_id)
             if fresh and fresh.get("progress") != task.get("progress"):
-                return {
-                    "task_id": task_id,
-                    "progress": fresh.get("progress"),
-                    "status": fresh.get("status"),
-                }
-    return {
-        "task_id": task_id,
-        "progress": task.get("progress"),
-        "status": task.get("status"),
-    }
+                return {"task_id": task_id, "progress": fresh.get("progress"), "status": fresh.get("status")}
+    return {"task_id": task_id, "progress": task.get("progress"), "status": task.get("status")}
 
 
 @app.post("/agent/task/{task_id}/cancel")
@@ -287,32 +263,16 @@ async def cancel_task(task_id: str, request: CancelRequest):
         if not task:
             raise HTTPException(404, "Task not found")
         if task["status"] in ("completed", "failed", "cancelled"):
-            return {
-                "task_id": task_id,
-                "status": task["status"],
-                "message": "Task already finished",
-            }
+            return {"task_id": task_id, "status": task["status"], "message": "Task already finished"}
         await get_agent_module()["update_task"](task_id, status="cancelled")
-        return {
-            "task_id": task_id,
-            "status": "cancelled",
-            "message": "Task marked as cancelled",
-        }
+        return {"task_id": task_id, "status": "cancelled", "message": "Task marked as cancelled"}
 
     if request.force:
         agent.cancel()
-        return {
-            "task_id": task_id,
-            "status": "cancelled",
-            "message": "Task force cancelled",
-        }
+        return {"task_id": task_id, "status": "cancelled", "message": "Task force cancelled"}
     else:
         agent.pause()
-        return {
-            "task_id": task_id,
-            "status": "paused",
-            "message": "Task paused (use force=true to cancel)",
-        }
+        return {"task_id": task_id, "status": "paused", "message": "Task paused (use force=true to cancel)"}
 
 
 @app.post("/agent/task/{task_id}/resume")
@@ -327,21 +287,13 @@ async def resume_task(task_id: str):
     if not task:
         raise HTTPException(404, "Task not found")
     if task["status"] != "paused":
-        return {
-            "task_id": task_id,
-            "status": task["status"],
-            "message": "Task not paused",
-        }
+        return {"task_id": task_id, "status": task["status"], "message": "Task not paused"}
     # 重新啟動背景任務（簡化：實際需重建 agent）
-    return {
-        "task_id": task_id,
-        "status": "paused",
-        "message": "Resume not implemented for paused tasks",
-    }
+    return {"task_id": task_id, "status": "paused", "message": "Resume not implemented for paused tasks"}
 
 
 @app.get("/agent/tasks")
-async def list_tasks(status: str | None = None, limit: int = 50):
+async def list_tasks(status: Optional[str] = None, limit: int = 50):
     """列出任務"""
     tasks = await get_agent_module()["list_tasks"](status, limit)
     return {"tasks": tasks, "count": len(tasks)}
@@ -357,16 +309,11 @@ async def get_stats():
 @app.get("/health")
 async def health_check():
     """健康檢查"""
-    return {
-        "status": "healthy",
-        "running_tasks": len(_running_tasks),
-        "timestamp": datetime.utcnow().isoformat(),
-    }
+    return {"status": "healthy", "running_tasks": len(_running_tasks), "timestamp": datetime.utcnow().isoformat()}
 
 
 # ─── 啟動入口 ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.getenv("AGENT_SERVER_PORT", "8081"))
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

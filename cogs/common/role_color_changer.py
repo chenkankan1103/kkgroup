@@ -1,9 +1,8 @@
-import asyncio
-import os
-import random
-
 import discord
 from discord.ext import commands, tasks
+import random
+import os
+import asyncio
 
 
 class RainbowRole(commands.Cog):

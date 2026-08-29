@@ -3,13 +3,16 @@ AI 記憶管理指令
 允許用戶設置 AI 角色、添加知識、管理記憶
 """
 
+from discord.ext import commands
 import logging
 
-from discord.ext import commands
-
 try:
-    from ai_memory import (DialogueMemory, KnowledgeBase, PersonalityMemory,
-                           initialize_memory_system)
+    from ai_memory import (
+        DialogueMemory,
+        PersonalityMemory,
+        KnowledgeBase,
+        initialize_memory_system,
+    )
 except ImportError:
     # Stub
     class DialogueMemory:

@@ -14,12 +14,10 @@
     manager.set_user(user_id, data)         # 設置用戶
 """
 
-import hashlib
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-from status_dashboard import add_log
-
 from .sheet_driven_db import SheetDrivenDB
+import hashlib
+from typing import Dict, List, Any, Optional, Tuple, Union
+from status_dashboard import add_log
 
 
 class SheetSyncManager:

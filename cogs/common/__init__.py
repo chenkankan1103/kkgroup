@@ -1,6 +1,6 @@
-import inspect
 from importlib import import_module
 from pathlib import Path
+import inspect
 
 
 async def setup_commands(tree, client):

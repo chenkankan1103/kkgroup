@@ -4,12 +4,11 @@
 供所有 cog 測試共用
 """
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-from zoneinfo import ZoneInfo
-
 import discord
 import discord.ext.test as dpytest
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 TW_TZ = ZoneInfo("Asia/Taipei")
 
@@ -472,7 +471,7 @@ async def assert_vote_flow_complete(
     - Embed 包含統計欄位
     - 評論正確（若提供）
     """
-    from cogs.ui.push_core import get_vote_comments, get_vote_stats
+    from cogs.ui.push_core import get_vote_stats, get_vote_comments
 
     # 1. 驗證資料庫統計
     stats = get_vote_stats(isolated_db, message_id)

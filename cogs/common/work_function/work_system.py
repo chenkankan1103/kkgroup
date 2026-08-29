@@ -1,16 +1,13 @@
-import asyncio
+import discord
 import json
-import os
 import random
 import traceback
-from datetime import datetime, timedelta, timezone
-
+import os
+import asyncio
 import aiohttp
-import discord
-
-from shared.utils.llm_text_router import complete_text_with_fallback
-
+from datetime import datetime, timedelta, timezone
 from .database import get_user, update_user
+from shared.utils.llm_text_router import complete_text_with_fallback
 
 # 台灣時區（UTC+8）
 TAIWAN_TZ = timezone(timedelta(hours=8))
@@ -455,7 +452,9 @@ def create_work_embed(user, user_obj):
             risk_emoji = (
                 "🟢"
                 if action["risk"] <= 0.2
-                else "🟡" if action["risk"] <= 0.4 else "🔴"
+                else "🟡"
+                if action["risk"] <= 0.4
+                else "🔴"
             )
             actions_text += f"{risk_emoji} **{action['name']}** - 成功率 {int(action['success_rate']*100)}% | 最高 {action['base_reward']} 幣\n"
 
@@ -603,7 +602,7 @@ async def process_checkin(user_id, user_obj, guild):
         # 初始化：確保中央儲備池系統配置記錄存在
         # ============================================================
         try:
-            from db_adapter import SYSTEM_CONFIG_ID, get_user, set_user
+            from db_adapter import get_user, set_user, SYSTEM_CONFIG_ID
 
             system_config = get_user(SYSTEM_CONFIG_ID)
             if not system_config:
@@ -717,8 +716,7 @@ async def process_checkin(user_id, user_obj, guild):
             print("  ⚠️ 薪資為 0，跳過金庫流入")
         else:
             try:
-                from db_adapter import (add_to_central_reserve,
-                                        get_central_reserve)
+                from db_adapter import add_to_central_reserve, get_central_reserve
 
                 # 記錄流入前的金庫金額
                 before_reserve = get_central_reserve()
@@ -761,9 +759,9 @@ async def process_checkin(user_id, user_obj, guild):
                 generate_daily_checkin_story(
                     level_title=LEVELS.get(updated_level, LEVELS[0])["title"],
                     salary_percent=salary_multiplier,
-                    streak=(
-                        original_streak if leveled_up else streak
-                    ),  # 升級時用升級前的值
+                    streak=original_streak
+                    if leveled_up
+                    else streak,  # 升級時用升級前的值
                     user_name=user_obj.display_name,
                 ),
                 timeout=5.0,
@@ -859,8 +857,8 @@ async def generate_daily_checkin_story(level_title, salary_percent, streak, user
         # 備用方案：使用 LLMClient (包含速率限制和備用機制)
         try:
             # 從 work_system.py 的開頭導入 LLMClient
-            import os
             import sys
+            import os
 
             parent_dir = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1150,7 +1148,9 @@ async def generate_daily_checkin_story(level_title, salary_percent, streak, user
             salary_desc = (
                 "大豐收"
                 if salary_percent > 0.8
-                else "普通" if salary_percent > 0.5 else "不太順利"
+                else "普通"
+                if salary_percent > 0.5
+                else "不太順利"
             )
             return f"今天的工作表現{salary_desc}，連續出勤已達 {streak} 天。"
 
@@ -1160,7 +1160,9 @@ async def generate_daily_checkin_story(level_title, salary_percent, streak, user
         salary_desc = (
             "大豐收"
             if salary_percent > 0.8
-            else "普通" if salary_percent > 0.5 else "不太順利"
+            else "普通"
+            if salary_percent > 0.5
+            else "不太順利"
         )
         return f"今天的工作表現{salary_desc}，連續出勤已達 {streak} 天。"
 

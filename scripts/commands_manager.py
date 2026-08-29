@@ -16,13 +16,13 @@ KKGroup 統一指令管理工具
   python scripts/commands_manager.py list
 """
 
-import argparse
 import json
-import shutil
 import subprocess
+import argparse
 import sys
+import shutil
+from typing import Dict, List, Any
 from pathlib import Path
-from typing import Any, Dict, List
 
 
 def resolve_gcloud_command() -> List[str]:

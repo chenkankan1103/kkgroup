@@ -4,8 +4,8 @@ Entry point for running bots as a module: python -m bots
 This ensures sys.path includes the parent directory so relative imports work.
 """
 
-import os
 import sys
+import os
 
 # Ensure parent directory is in sys.path for relative imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

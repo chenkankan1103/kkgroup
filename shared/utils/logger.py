@@ -1,15 +1,14 @@
-import hashlib
-import logging
-import os
-import random
+import requests
 import sys
+import os
 import threading
 import time
+import logging
 import traceback
+import hashlib
 from collections import deque
 from datetime import datetime
-
-import requests
+import random
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -248,20 +247,20 @@ def discord_sender():
 
 # 啟動背景發送執行緒（避免重複啟動）
 # 使用模組層級標記防止熱重載時重複啟動
-if not getattr(sys.modules[__name__], "_discord_sender_thread_started", False):
+if not getattr(sys.modules[__name__], '_discord_sender_thread_started', False):
     thread = threading.Thread(target=discord_sender, daemon=True)
     thread.start()
-    setattr(sys.modules[__name__], "_discord_sender_thread_started", True)
+    setattr(sys.modules[__name__], '_discord_sender_thread_started', True)
 
 # 啟動計時器(不同 bot 不同延遲)
 print(
     f"[Discord] {BOT_NAME} 將在 {STARTUP_WAIT_TIME:.1f} 秒後發送啟動訊息",
     file=sys.__stderr__,
 )
-if not getattr(sys.modules[__name__], "_startup_timer_started", False):
+if not getattr(sys.modules[__name__], '_startup_timer_started', False):
     startup_timer = threading.Timer(STARTUP_WAIT_TIME, send_startup_messages)
     startup_timer.start()
-    setattr(sys.modules[__name__], "_startup_timer_started", True)
+    setattr(sys.modules[__name__], '_startup_timer_started', True)
 
 
 def discord_print(*args, **kwargs):
