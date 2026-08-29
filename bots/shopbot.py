@@ -18,7 +18,7 @@ from watchdog.events import FileSystemEventHandler
 
 from shared.db.async_adapter import close_async_db, init_async_db
 from shared.db.feature_usage import track_discord_interaction
-from shared.utils.bot_status = build_discord_activity
-from shared.utils.mutual_rescue = ensure_mutual_rescue_monitor
+from shared.utils.bot_status import build_discord_activity
+from shared.utils.mutual_rescue import ensure_mutual_rescue_monitor
 from status_dashboard import (initialize_dashboard, load_message_ids,
                               update_dashboard_logs)
