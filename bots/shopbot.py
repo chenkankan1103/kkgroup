@@ -3,6 +3,10 @@ import asyncio
 import os
 import sys
 
+# Fix sys.path for proper imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
 # Bootstrap environment setup
 from shared.bootstrap import setup_environment
 setup_utf8_logging = setup_environment()
