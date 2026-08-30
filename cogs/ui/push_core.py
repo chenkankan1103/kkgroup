@@ -413,7 +413,7 @@ class AnimeDBImpl:
     def is_notified(self, video_sn: int) -> bool:
         conn = self._get_conn()
         c = conn.cursor()
-        c.execute("SELECT 1 FROM anime_notified WHERE video_sn=?", (video_sn,))
+        c.execute("SELECT 1 FROM anime_notified WHERE videoSn=?", (video_sn,))
         row = c.fetchone()
         conn.close()
         return row is not None
@@ -430,7 +430,7 @@ class AnimeDBImpl:
         c = conn.cursor()
         c.execute(
             """INSERT OR IGNORE INTO anime_notified
-               (video_sn, anime_sn, anime_name, volume, cover_url, notified_at, animeName, coverUrl, notifiedAt)
+               (videoSn, animeSn, anime_name, volume, cover_url, notified_at, animeName, coverUrl, notifiedAt)
                VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'))""",
             (video_sn, anime_sn, title, volume, cover, title, cover, cover),
         )
@@ -770,7 +770,7 @@ class AnimeDBImpl:
         c.execute(
             """
             DELETE FROM anime_notified
-            WHERE video_sn IN (SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=?)
+            WHERE videoSn IN (SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=?)
         """,
             (week_start_date,),
         )
