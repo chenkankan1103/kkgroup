@@ -164,7 +164,7 @@ class AnimeTracker(commands.Cog):
         try:
             self.logger.info("🔄 [AnimeTracker._sync_episode_stats_task] 開始同步動畫統計")
             await self.ranking_stats.sync_episode_stats()
-            await self.ranking_stats.update_weekly_stats()
+            await self.ranking_stats.send_weekly_stats()
             self.logger.info("✅ [AnimeTracker._sync_episode_stats_task] 動畫統計同步完成")
         except Exception as e:
             self.logger.error(f"❌ [AnimeTracker._sync_episode_stats_task] 動畫統計同步失敗: {e}", exc_info=True)
