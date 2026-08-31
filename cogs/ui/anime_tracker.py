@@ -271,6 +271,7 @@ class AnimeTracker(commands.Cog):
         """執行動畫推送任務"""
         try:
             self.logger.info(f"📢 [_push_anime_task] 開始推送動畫: anime_sn={anime_sn}, video_sn={video_sn}")
+            self.logger.debug(f"[_push_anime_task] 參數: anime_sn={anime_sn}, video_sn={video_sn}")
 
             # Query anime_weekly_schedule for the entry matching anime_sn and video_sn
             # Data may have videoSn in column OR in JSON animeData
@@ -286,7 +287,9 @@ class AnimeTracker(commands.Cog):
                     WHERE (videoSn = ? OR json_extract(animeData, '$.videoSn') = ?)
                       AND (json_extract(animeData, '$.animeSn') = ? OR json_extract(animeData, '$.anime_sn') = ?)
                 """
+                self.logger.debug(f"[_push_anime_task] 執行查詢 (anime_sn > 0): {query.strip()} with params ({video_sn}, {video_sn}, {anime_sn}, {anime_sn})")
                 row = await self.db.fetchone(query, (video_sn, video_sn, anime_sn, anime_sn))
+                self.logger.debug(f"[_push_anime_task] 查詢結果: {row}")
             else:
                 # If anime_sn is 0 or unknown, match only by videoSn (column or JSON)
                 query = """
@@ -294,7 +297,9 @@ class AnimeTracker(commands.Cog):
                     FROM anime_weekly_schedule
                     WHERE videoSn = ? OR json_extract(animeData, '$.videoSn') = ?
                 """
+                self.logger.debug(f"[_push_anime_task] 執行查詢 (anime_sn <= 0): {query.strip()} with params ({video_sn}, {video_sn})")
                 row = await self.db.fetchone(query, (video_sn, video_sn))
+                self.logger.debug(f"[_push_anime_task] 查詢結果: {row}")
 
             if not row:
                 self.logger.warning(f"⚠️ [_push_anime_task] 找不到排程資料: anime_sn={anime_sn}, video_sn={video_sn}")
@@ -302,17 +307,23 @@ class AnimeTracker(commands.Cog):
 
             week_start_date, day_of_week, scheduled_time = row
             self.logger.info(f"📌 [_push_anime_task] 找到排程: week_start={week_start_date}, day={day_of_week}, time={scheduled_time}")
+            self.logger.debug(f"[_push_anime_task] 排程詳情: week_start_date={week_start_date}, day_of_week={day_of_week}, scheduled_time={scheduled_time}")
 
             # Use the configured anime push channel ID
             channel_id = ANIME_CHANNEL_ID
+            self.logger.debug(f"[_push_anime_task] 使用頻道 ID: {channel_id}")
 
+            self.logger.info(f"[_push_anime_task] 呼叫 push_core.send_anime_push: scheduled_time={scheduled_time}, channel_id={channel_id}, day_of_week={day_of_week}, week_start_date={week_start_date}")
             success = await self.push_core.send_anime_push(scheduled_time, channel_id, day_of_week, week_start_date)
+            self.logger.debug(f"[_push_anime_task] push_core.send_anime_push 返回: {success}")
+
             if success:
                 self.logger.info(f"✅ [_push_anime_task] 動畫推送成功: anime_sn={anime_sn}, video_sn={video_sn}")
             else:
                 self.logger.warning(f"⚠️ [_push_anime_task] 動畫推送未觸發 (可能已推送或無新集數): anime_sn={anime_sn}, video_sn={video_sn}")
         except Exception as e:
             self.logger.error(f"❌ [_push_anime_task] 動畫推送任務失敗: {e}", exc_info=True)
+            self.logger.debug(f"[_push_anime_task] 異常詳情: anime_sn={anime_sn}, video_sn={video_sn}", exc_info=True)
 
     async def _restore_persistent_views(self):
         """重啟時恢復所有永續視圖"""
