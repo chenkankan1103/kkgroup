@@ -1026,16 +1026,14 @@ def get_week_start_date(dt: datetime, api_week: bool = True) -> str:
 
     Args:
         dt: 參考日期
-        api_week: True=API 語義週（上週一），False=Dispatcher 語義週（本週一）
+        api_week: True=API 語義週（本週一），False=Dispatcher 語義週（本週一）
 
     Returns:
         str: "YYYY-MM-DD" 格式的週一日期
     """
     if api_week:
-        # API 週：當天是週一，週起始是上週一 (7 天前)
-        days_back = (dt.weekday() + 7) % 7
-        if days_back == 0:
-            days_back = 7
+        # API 週：標準週起始（週一）
+        days_back = dt.weekday()
     else:
         # Dispatcher 週：標準週一
         days_back = dt.weekday()
