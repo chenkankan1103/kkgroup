@@ -127,6 +127,12 @@
       "commands": [
         "cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_knowledge_base.py"
       ]
+    },
+    "sync_anime_database": {
+      "name": "同步動畫資料庫 (Bahamut videoSn)",
+      "commands": [
+        "cd /home/e193752468/kkgroup && python3 sync_anime_database.py"
+      ]
     }
   },
 
