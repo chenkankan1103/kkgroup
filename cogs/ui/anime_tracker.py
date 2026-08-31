@@ -131,7 +131,7 @@ class AnimeTracker(commands.Cog):
             msg = "🚀 [AnimeTracker._init_scheduler] 排程器已啟動"
             print(msg, flush=True)
             self.logger.info(msg)
-            msg = "📅 [AnimeTracker._init_scheduler] 週表刷新任務已添加 (每天 22:00)"
+            msg = "📅 [AnimeTracker._init_scheduler] 週表刷新任務已添加 (每天 18:10)"
             print(msg, flush=True)
             self.logger.info(msg)
             msg = "🔄 [AnimeTracker._init_scheduler] 統計同步任務已添加 (每 6 小時)"
