@@ -180,7 +180,13 @@ class AnimeTracker(commands.Cog):
                 if result.get("success"):
                     self.logger.info("✅ [_init_weekly_schedule_if_empty] 週表初始化完成")
                 else:
-                    self.logger.error(f"❌ [_init_weekly_schedule_if_empty] 週表初始化失敗: {result.get('error')}")
+                    error_msg = result.get('error')
+                    if error_msg is None:
+                        if result.get('skipped'):
+                            error_msg = "週表更新被跳過（非刷新時間）"
+                        else:
+                            error_msg = "未知錯誤"
+                    self.logger.error(f"❌ [_init_weekly_schedule_if_empty] 週表初始化失敗: {error_msg}")
             else:
                 self.logger.info(f"📅 [_init_weekly_schedule_if_empty] 週表已有資料 ({len(today_schedule)} 筆)，跳過 API 拉取")
 
