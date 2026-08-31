@@ -176,7 +176,7 @@ class AnimeTracker(commands.Cog):
             today_schedule = self.schedule_tracker.get_today_schedule()
             if not today_schedule:
                 self.logger.info("🔄 [_init_weekly_schedule_if_empty] 週表為空，立即從 API 拉取...")
-                result = await self.schedule_tracker.refresh_weekly_schedule()
+                result = await self.schedule_tracker.refresh_weekly_schedule(force=True)
                 if result.get("success"):
                     self.logger.info("✅ [_init_weekly_schedule_if_empty] 週表初始化完成")
                 else:

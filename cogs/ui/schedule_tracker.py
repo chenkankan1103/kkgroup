@@ -139,7 +139,7 @@ class AnimeScheduleTracker:
 
         return sorted(check_times)
 
-    async def refresh_weekly_schedule(self) -> dict:
+    async def refresh_weekly_schedule(self, force: bool = False) -> dict:
         """
         每天 19:00 拉取完整週表並全量覆蓋 - 兼具「填滿行事曆」與「檢查漏推」功能
 
@@ -149,6 +149,9 @@ class AnimeScheduleTracker:
         3. 豐富 anime_data 使其包含 animeSn
         4. 以「本週一」為 week_start_date 全量覆蓋 anime_weekly_schedule 表
         5. 回傳今日時程供上層檢查 <=19:00 的漏推項目
+
+        Args:
+            force: 如果為 True，則忽略時間限制並強制執行週表更新
 
         Returns:
             dict: {
@@ -162,12 +165,12 @@ class AnimeScheduleTracker:
         current_time_str = now.strftime("%H:%M")
 
         try:
-            # 每天 18:10 執行
-            is_refresh_time = now.hour == 18 and now.minute == 10  # 台灣時間 18:10
-
-            if not is_refresh_time:
-                logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非下午 6 點 10 分）")
-                return {"success": False, "skipped": True}
+            # 每天 18:10 執行（除非強制執行）
+            if not force:
+                is_refresh_time = now.hour == 18 and now.minute == 10  # 台灣時間 18:10
+                if not is_refresh_time:
+                    logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非下午 6 點 10 分）")
+                    return {"success": False, "skipped": True}
 
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
 
