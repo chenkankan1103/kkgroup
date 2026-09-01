@@ -403,14 +403,19 @@ class AnimeTracker(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def anime_refresh(self, ctx: commands.Context):
         """手動刷新動畫週表"""
-        await ctx.defer(ephemeral=True)
+        # Handle both interaction (slash command) and context (prefix command) contexts
+        if hasattr(ctx, 'response'):  # Interaction object (slash command)
+            await ctx.response.defer(ephemeral=True)
+            send_response = lambda content, ephemeral=True: ctx.followup.send(content, ephemeral=ephemeral)
+        else:  # Context object (prefix command)
+            send_response = lambda content, ephemeral=True: ctx.send(content) if not ephemeral else ctx.send(content, ephemeral=ephemeral)
 
         try:
             self.logger.info(f"🔄 [AnimeTracker.anime_refresh] 手動刷新週表請求 by {ctx.author}")
             result = await self.schedule_tracker.refresh_weekly_schedule()
 
             if result.get("success"):
-                await ctx.followup.send(
+                await send_response(
                     f"✅ 週表刷新成功！\n"
                     f"📅 週起始日期: {result.get('week_start_date')}\n"
                     f"📊 總時程數: {result.get('total_count')}\n"
@@ -420,13 +425,13 @@ class AnimeTracker(commands.Cog):
                 # 重新排程推送任務
                 await self._reschedule_push_jobs()
             else:
-                await ctx.followup.send(
+                await send_response(
                     f"❌ 週表刷新失敗: {result.get('error', '未知錯誤')}",
                     ephemeral=True
                 )
         except Exception as e:
             self.logger.error(f"❌ [AnimeTracker.anime_refresh] 手動刷新週表失敗: {e}", exc_info=True)
-            await ctx.followup.send(
+            await send_response(
                 f"❌ 手動刷新週表時發生錯誤: {str(e)}",
                 ephemeral=True
             )
@@ -435,7 +440,12 @@ class AnimeTracker(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def anime_status(self, ctx: commands.Context):
         """查看動畫追蹤系統狀態"""
-        await ctx.defer(ephemeral=True)
+        # Handle both interaction (slash command) and context (prefix command) contexts
+        if hasattr(ctx, 'response'):  # Interaction object (slash command)
+            await ctx.response.defer(ephemeral=True)
+            send_response = lambda content, ephemeral=True: ctx.followup.send(content, ephemeral=ephemeral)
+        else:  # Context object (prefix command)
+            send_response = lambda content, ephemeral=True: ctx.send(content) if not ephemeral else ctx.send(content, ephemeral=ephemeral)
 
         try:
             status_lines = []
@@ -459,13 +469,13 @@ class AnimeTracker(commands.Cog):
             status_lines.append(f"🚀 掑程器啟動: {'✅ 已啟動' if self._scheduler_started else '❌ 未啟動'}")
             status_lines.append(f"👁️ 視圖恢復: {'✅ 已完成' if self._views_restored else '❌ 未完成'}")
 
-            await ctx.followup.send(
+            await send_response(
                 "📊 **動畫追蹤系統狀態**\n" + "\n".join(status_lines),
                 ephemeral=True
             )
         except Exception as e:
             self.logger.error(f"❌ [AnimeTracker.anime_status] 查詢狀態失敗: {e}", exc_info=True)
-            await ctx.followup.send(
+            await send_response(
                 f"❌ 查詢狀態時發生錯誤: {str(e)}",
                 ephemeral=True
             )
