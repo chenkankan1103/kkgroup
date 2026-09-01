@@ -109,10 +109,10 @@ class AnimeTracker(commands.Cog):
             print("[AnimeTracker._init_scheduler] 開始初始化排程器...", flush=True)
             self.scheduler = AsyncIOScheduler(timezone=TW_TZ)
 
-            # 添加週表刷新任務（每天 18:10）
+            # 添加週表刷新任務（每天 02:00）
             self.scheduler.add_job(
                 self._refresh_weekly_schedule_task,
-                CronTrigger(hour=18, minute=10, timezone=TW_TZ),
+                CronTrigger(hour=2, minute=0, timezone=TW_TZ),
                 id='weekly_schedule_refresh',
                 name='週表資料刷新',
                 replace_existing=True
@@ -131,7 +131,7 @@ class AnimeTracker(commands.Cog):
             msg = "🚀 [AnimeTracker._init_scheduler] 排程器已啟動"
             print(msg, flush=True)
             self.logger.info(msg)
-            msg = "📅 [AnimeTracker._init_scheduler] 週表刷新任務已添加 (每天 18:10)"
+            msg = "📅 [AnimeTracker._init_scheduler] 週表刷新任務已添加 (每天 02:00)"
             print(msg, flush=True)
             self.logger.info(msg)
             msg = "🔄 [AnimeTracker._init_scheduler] 統計同步任務已添加 (每 6 小時)"
