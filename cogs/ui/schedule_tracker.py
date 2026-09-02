@@ -273,8 +273,11 @@ class AnimeScheduleTracker:
             }
 
         except Exception as e:
-            logger.error(f"❌ [refresh_weekly_schedule] 失敗: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
+            error_msg = str(e)
+            if not error_msg:
+                error_msg = f"{type(e).__name__} with empty message"
+            logger.error(f"❌ [refresh_weekly_schedule] 失敗: {error_msg}", exc_info=True)
+            return {"success": False, "error": error_msg}
 
     async def _build_video_to_anime_map(self) -> dict:
         """

@@ -408,7 +408,7 @@ class AnimeTracker(commands.Cog):
             await ctx.response.defer(ephemeral=True)
             send_response = lambda content, ephemeral=True: ctx.followup.send(content, ephemeral=ephemeral)
         else:  # Context object (prefix command)
-            send_response = lambda content, ephemeral=True: ctx.send(content) if not ephemeral else ctx.send(content, ephemeral=ephemeral)
+            send_response = lambda content, ephemeral=True: ctx.send(content)
 
         try:
             self.logger.info(f"🔄 [AnimeTracker.anime_refresh] 手動刷新週表請求 by {ctx.author}")
@@ -424,6 +424,11 @@ class AnimeTracker(commands.Cog):
                 )
                 # 重新排程推送任務
                 await self._reschedule_push_jobs()
+            elif result.get("skipped"):
+                await send_response(
+                    "⏭️ 週表刷新已跳過（非更新時間）",
+                    ephemeral=True
+                )
             else:
                 await send_response(
                     f"❌ 週表刷新失敗: {result.get('error', '未知錯誤')}",
@@ -445,7 +450,7 @@ class AnimeTracker(commands.Cog):
             await ctx.response.defer(ephemeral=True)
             send_response = lambda content, ephemeral=True: ctx.followup.send(content, ephemeral=ephemeral)
         else:  # Context object (prefix command)
-            send_response = lambda content, ephemeral=True: ctx.send(content) if not ephemeral else ctx.send(content, ephemeral=ephemeral)
+            send_response = lambda content: ctx.send(content)
 
         try:
             status_lines = []
@@ -454,7 +459,7 @@ class AnimeTracker(commands.Cog):
             if self.scheduler and self.scheduler.running:
                 status_lines.append("✅ 掑程器: 運行中")
                 jobs = self.scheduler.get_jobs()
-                status_lines.append(f"📋 排程任務數: {len(jobs)}")
+                status_lines.append(f"📋 掑程任務數: {len(jobs)}")
                 push_jobs = [j for j in jobs if j.id.startswith('push_')]
                 status_lines.append(f"📢 推送任務數: {len(push_jobs)}")
             else:
