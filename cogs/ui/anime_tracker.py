@@ -12,7 +12,7 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 from typing import Optional, List, Dict, Any
-from .push_core import AnimePushCore, TW_TZ, API_ENDPOINT, API_TIMEOUT, API_HEADERS, get_week_start_date, ANIME_CHANNEL_ID
+from .push_core import AnimePushCore, TW_TZ, API_ENDPOINT, API_TIMEOUT, API_HEADERS, get_week_start_date, ANIME_CHANNEL_ID, ANIME_DB_PATH
 from .schedule_tracker import AnimeScheduleTracker
 from .ranking_stats import RankingStats
 
@@ -95,10 +95,19 @@ class AnimeTracker(commands.Cog):
         """Cog 載入時執行的初始化"""
         self.logger.info("📺 [AnimeTracker.cog_load] 開始載入 Cog")
 
-        # 只恢復永續視圖，依賴和排程器由 uibot.py 的 on_ready 中的 set_dependencies 初始化
+        # 只恢復永續視圖
         await self._restore_persistent_views()
 
-        self.logger.info("🚀 [AnimeTracker.cog_load] AnimeTracker Cog 載入完成（等待 set_dependencies 初始化依賴）")
+        # 如果依賴尚未設置，則自行初始化（備援機制）
+        if not self._dependencies_set:
+            self.logger.info("🔧 [AnimeTracker.cog_load] 依賴尚未設置，嘗試自行初始化...")
+            try:
+                await self.set_dependencies(str(ANIME_DB_PATH))
+                self.logger.info("✅ [AnimeTracker.cog_load] 依賴自行初始化成功")
+            except Exception as e:
+                self.logger.error(f"❌ [AnimeTracker.cog_load] 依賴自行初始化失敗: {e}", exc_info=True)
+        else:
+            self.logger.info("🚀 [AnimeTracker.cog_load] AnimeTracker Cog 載入完成（依賴已由 uibot.py 設置）")
 
     async def _init_scheduler(self):
         """初始化 APScheduler"""
@@ -409,6 +418,11 @@ class AnimeTracker(commands.Cog):
             send_response = lambda content, ephemeral=True: ctx.followup.send(content, ephemeral=ephemeral)
         else:  # Context object (prefix command)
             send_response = lambda content, ephemeral=True: ctx.send(content)
+
+        # Check if dependencies are initialized
+        if self.schedule_tracker is None:
+            await send_response("❌ 系統尚未初始化完成，請稍後再試或聯繫管理員", ephemeral=True)
+            return
 
         try:
             self.logger.info(f"🔄 [AnimeTracker.anime_refresh] 手動刷新週表請求 by {ctx.author}")
