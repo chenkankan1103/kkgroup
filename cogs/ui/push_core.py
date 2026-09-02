@@ -268,7 +268,7 @@ class AnimeDBImpl:
         c.execute("""
             CREATE TABLE IF NOT EXISTS anime_votes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                video_sn INTEGER NOT NULL,
+                videoSn INTEGER NOT NULL,
                 anime_sn INTEGER NOT NULL,
                 message_id INTEGER NOT NULL,
                 vote_type TEXT NOT NULL,
@@ -312,7 +312,7 @@ class AnimeDBImpl:
                 channelId INTEGER NOT NULL,
                 createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 anime_name TEXT,
-                video_sn INTEGER,
+                videoSn INTEGER,
                 anime_sn INTEGER,
                 message_id INTEGER,
                 channel_id INTEGER,
@@ -519,7 +519,7 @@ class AnimeDBImpl:
                 return val
 
             item = {
-                "video_sn": video_sn,
+                "videoSn": video_sn,
                 "week_start_date": decode_if_bytes(week_start_date_db),
                 "day_of_week": day_of_week,
                 "scheduled_time": decode_if_bytes(scheduled_time),
@@ -1510,7 +1510,7 @@ class AnimePushCore:
 
         # 2. 篩選出尚未推送的 videoSn (去除已 pushed=1 的)
         pushed_video_sns = {
-            item["video_sn"]
+            item["videoSn"]
             for item in self.get_today_schedule()
             if item["scheduled_time"] == scheduled_time and item.get("pushed")
         }
