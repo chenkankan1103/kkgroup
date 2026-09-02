@@ -834,7 +834,7 @@ class AnimeDBImpl:
                 anime_data = item.get("anime_data", {})
 
                 # 從 anime_data 提取 videoSn
-                video_sn = anime_data.get("videoSn") or anime_data.get("video_sn")
+                video_sn = anime_data.get("videoSn")
 
                 # 檢查是否已經推送過
                 pushed = (
@@ -1209,7 +1209,7 @@ class AnimePushCore:
                     except Exception:
                         pass
                 item = {
-                    "video_sn": video_sn,
+                    "videoSn": video_sn,
                     "week_start_date": (
                         week_start_date_db.decode("utf-8", errors="replace")
                         if isinstance(week_start_date_db, bytes)
