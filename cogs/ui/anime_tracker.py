@@ -466,6 +466,11 @@ class AnimeTracker(commands.Cog):
         else:  # Context object (prefix command)
             send_response = lambda content: ctx.send(content)
 
+        # Check if dependencies are initialized
+        if self.schedule_tracker is None:
+            await send_response("❌ 系統尚未初始化完成，請稍後再試或聯繫管理員", ephemeral=True)
+            return
+
         try:
             status_lines = []
 
