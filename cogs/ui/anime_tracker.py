@@ -412,7 +412,7 @@ class AnimeTracker(commands.Cog):
 
         try:
             self.logger.info(f"🔄 [AnimeTracker.anime_refresh] 手動刷新週表請求 by {ctx.author}")
-            result = await self.schedule_tracker.refresh_weekly_schedule()
+            result = await self.schedule_tracker.refresh_weekly_schedule(force=True)
 
             if result.get("success"):
                 await send_response(
