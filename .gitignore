@@ -487,3 +487,29 @@ crawl_*.py
 reset_*.py
 *_debug_*.json
 *_test_*.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# Claude Code and claude-flow directories
+.agent-teams/
+.claude-flow/
+.claude/agents/
+.claude/skills/
+.claude/worktrees/
+.desloppify/
+.local/
+.swarm/
+graphify-out/
+knowledge/_wiki/Inbox/
+scheduled_tasks/
+scripts/
+shared/db/data/
+status/
+web/api/game/
+.claude/
+
+
+# Temporary files
+temp_*.py
+test.txt
