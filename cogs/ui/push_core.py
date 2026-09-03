@@ -257,10 +257,7 @@ class AnimeDBImpl:
                 anime_name TEXT NOT NULL,
                 volume TEXT,
                 cover_url TEXT,
-                notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                animeName TEXT,
-                coverUrl TEXT,
-                notifiedAt TIMESTAMP
+                notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -274,13 +271,7 @@ class AnimeDBImpl:
                 vote_type TEXT NOT NULL,
                 comment TEXT,
                 user_hash TEXT,
-                voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                animeName TEXT,
-                voteType TEXT,
-                userId TEXT,
-                messageId INTEGER,
-                votedAt TIMESTAMP,
-                anime_name TEXT
+                voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -293,11 +284,6 @@ class AnimeDBImpl:
                 reward_type TEXT NOT NULL,
                 reward_amount INTEGER NOT NULL,
                 awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                messageId INTEGER,
-                rewardType TEXT,
-                amount INTEGER,
-                userId TEXT,
-                rewardedAt TIMESTAMP,
                 UNIQUE(user_id, message_id, reward_type)
             )
         """)
@@ -310,13 +296,7 @@ class AnimeDBImpl:
                 animeSn INTEGER NOT NULL,
                 animeName_old TEXT NOT NULL,
                 channelId INTEGER NOT NULL,
-                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                anime_name TEXT,
-                videoSn INTEGER,
-                anime_sn INTEGER,
-                message_id INTEGER,
-                channel_id INTEGER,
-                created_at TEXT
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -760,21 +740,26 @@ class AnimeDBImpl:
         conn = self._get_conn()
         c = conn.cursor()
         result = {"deleted_schedule": 0, "deleted_notified": 0, "deleted_votes": 0}
-        # 清理該週的 schedule 記錄
-        c.execute(
-            "DELETE FROM anime_weekly_schedule WHERE weekStartDate=?",
-            (week_start_date,),
-        )
-        result["deleted_schedule"] = c.rowcount
         # 清理該週相關的 notified 記錄 (通過 videoSn 關聯)
+        # 只保留當週 schedule 中存在的 videoSn 對應的 notified 記錄
         c.execute(
             """
             DELETE FROM anime_notified
-            WHERE videoSn IN (SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=?)
+            WHERE videoSn NOT IN (SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=?)
         """,
             (week_start_date,),
         )
         result["deleted_notified"] = c.rowcount
+        # 清理該週相關的 messages 記錄 (通過 videoSn 關聯)
+        # 只保留當週 schedule 中存在的 videoSn 對應的 messages 記錄
+        c.execute(
+            """
+            DELETE FROM anime_messages
+            WHERE videoSn NOT IN (SELECT videoSn FROM anime_weekly_schedule WHERE weekStartDate=?)
+        """,
+            (week_start_date,),
+        )
+        result["deleted_messages"] = c.rowcount
         conn.commit()
         conn.close()
         return result
