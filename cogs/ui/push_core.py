@@ -59,29 +59,13 @@ API_HEADERS = {
 try:
     from .anime_scraper import API_ENDPOINT, API_TIMEOUT, API_HEADERS
 except ImportError:
-    # 後備方案：如果無法從 anime_scraper 導入，則定義預設值
-    API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/anime_list.php"
+    # 後備方案：如果無法從 anime_scraper 導入，則定義預設值（使用移動版 API）
+    API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
     API_TIMEOUT = 15
     API_HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Accept": "application/json",
         "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Referer": "https://ani.gamer.com.tw/",
-        "Origin": "https://ani.gamer.com.tw",
-        "Connection": "keep-alive",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "cross-site",
-        "X-Requested-With": "XMLHttpRequest",
-        "Sec-CH-UA": '"Not A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
-        "Sec-CH-UA-Mobile": "?0",
-        "Sec-CH-UA-Platform": '"Windows"',
-        "Sec-CH-UA-Arch": '"x86_64"',
-        "Sec-CH-UA-Bitness": '"64"',
-        "Sec-CH-UA-Full-Version": '"127.0.0.0"',
-        "Sec-CH-UA-Platform-Version": '"10.0.0"',
-        "Sec-CH-UA-Full-Version-List": '"Not A;Brand";v="99.0.0.0", "Google Chrome";v="127.0.0.0", "Chromium";v="127.0.0.0"',
     }
 
 
