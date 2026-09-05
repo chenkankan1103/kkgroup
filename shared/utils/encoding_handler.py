@@ -163,8 +163,8 @@ class TaiwanTimeFormatter(logging.Formatter):
                 # 針對元組，清理每個元素並保持元組類型
                 record.args = tuple(safe_encode_for_log(arg) for arg in record.args)
             else:
-                # 針對其他單個值（包括字符串），清理該值但保持其作為單個值
-                record.args = safe_encode_for_log(record.args)
+                # 針對其他單個值（包括字符串），清理該值並轉換為單元素元組
+                record.args = (safe_encode_for_log(record.args),)
 
         # 調用父類方法進行格式化
         result = super().format(record)

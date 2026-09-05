@@ -41,6 +41,7 @@ class AnimeScheduleTracker:
         self.db = None
         self._last_fallback_check = None
         self._last_schedule_fallback = None
+        self._last_run_date = None
 
     def set_dependencies(self, bot, db, push_core, anime_tracker=None):
         """設置依賴"""
@@ -167,9 +168,13 @@ class AnimeScheduleTracker:
         try:
             # 每天 02:00 執行（除非強制執行）
             if not force:
-                is_refresh_time = now.hour == 2 and now.minute == 0  # 台灣時間 02:00
-                if not is_refresh_time:
-                    logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非凌晨 2 點 00 分）")
+                # 限制為每日一次，且在 02:00 時段執行（容忍分鐘誤差）
+                if now.hour != 2:
+                    logger.debug("⏭️ [refresh_weekly_schedule] 跳過（非凌晨 2 點時段）")
+                    return {"success": False, "skipped": True}
+                # 防止同一天重複執行多次
+                if self._last_run_date == now.date():
+                    logger.debug("⏭️ [refresh_weekly_schedule] 今日已執行過，跳過")
                     return {"success": False, "skipped": True}
 
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
