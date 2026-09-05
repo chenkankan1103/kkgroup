@@ -639,8 +639,8 @@ class AnimeDBImpl:
         conn = self._get_conn()
         c = conn.cursor()
         c.execute(
-            """INSERT OR REPLACE INTO anime_episode_stats
-               (video_sn, anime_sn, episode_num, views, score, updated_at)
+            """INSERT OR REPLACE INTO episode_statistics
+               (video_sn, anime_sn, episode_num, views, score, recorded_at)
                VALUES (?, ?, ?, ?, ?, datetime('now'))""",
             (video_sn, anime_sn, episode_num, views, score),
         )
