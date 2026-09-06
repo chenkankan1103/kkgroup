@@ -80,8 +80,8 @@ class AnimeDatabase:
         return await self.db.fetchone(query, params)
 
     # ---- 通知/推送相關 ----
-    def is_notified(self, video_sn: int) -> bool:
-        return self.db.is_notified(video_sn)
+    def is_notified(self, video_sn: int, volume: str = "") -> bool:
+        return self.db.is_notified(video_sn, volume)
 
     def add_notified(
         self,
@@ -374,13 +374,17 @@ class AnimeDBImpl:
         return conn
 
     # ---- 通知/推送相關 ----
-    def is_notified(self, video_sn: int) -> bool:
-        conn = self._get_conn()
-        c = conn.cursor()
-        c.execute("SELECT 1 FROM anime_notified WHERE videoSn=?", (video_sn,))
-        row = c.fetchone()
-        conn.close()
-        return row is not None
+    def is_notified(self, video_sn: int, volume: str = "") -> bool:
+          conn = self._get_conn()
+          c = conn.cursor()
+          if volume:
+              c.execute("SELECT 1 FROM anime_notified WHERE videoSn=? AND volume=?", (video_sn, volume))
+          else:
+              # 向後相容：如果沒提供volume，只檢查videoSn
+              c.execute("SELECT 1 FROM anime_notified WHERE videoSn=?", (video_sn,))
+          row = c.fetchone()
+          conn.close()
+          return row is not None
 
     def add_notified(
         self,
@@ -1076,12 +1080,12 @@ class AnimePushCore:
 
     # ========== 核心查詢方法 ==========
 
-    def is_notified(self, video_sn: int) -> bool:
-        """檢查 video_sn 是否已推送過 (anime_notified 表)"""
+    def is_notified(self, video_sn: int, volume: str = "") -> bool:
+        """檢查 video_sn 和 volume 是否已推送過 (anime_notified 表)"""
         try:
-            return self.db.is_notified(video_sn)
+            return self.db.is_notified(video_sn, volume)
         except Exception as e:
-            logger.error(f"is_notified 錯誤 video_sn={video_sn}: {e}")
+            logger.error(f"is_notified 錯誤 video_sn={video_sn}, volume={volume}: {e}")
             return False
 
     def add_notified(
@@ -1542,7 +1546,7 @@ class AnimePushCore:
                 continue
 
             # 7. 雙重去重檢查：anime_notified + week pushed
-            if self.is_notified(video_sn):
+            if self.is_notified(video_sn, matched_ep.get("volume", "")):
                 logger.info(
                     f"⏭️ videoSn={video_sn} 已在 notified 表，標記 pushed 並略過"
                 )
