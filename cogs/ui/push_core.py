@@ -91,7 +91,17 @@ class AnimeDatabase:
         volume: str = "",
         cover: str = "",
     ) -> bool:
-        return self.db.add_notified(video_sn, anime_sn, title, volume, cover)
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            """INSERT OR IGNORE INTO anime_notified
+               (videoSn, animeSn, anime_name, volume, cover_url, notified_at)
+               VALUES (?, ?, ?, ?, ?, datetime('now'))"""
+            , (video_sn, anime_sn, title, volume, cover),
+        )
+        conn.commit()
+        conn.close()
+        return True
 
     def mark_time_pushed(
         self, week_start_date: str, day_of_week: int, scheduled_time: str
@@ -232,16 +242,17 @@ class AnimeDBImpl:
         """初始化所有必要的資料表"""
         conn = self._get_conn()
         c = conn.cursor()
-
         # anime_notified 表
         c.execute("""
             CREATE TABLE IF NOT EXISTS anime_notified (
-                videoSn INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                videoSn INTEGER NOT NULL,
                 animeSn INTEGER NOT NULL,
                 anime_name TEXT NOT NULL,
-                volume TEXT,
+                volume TEXT NOT NULL DEFAULT '',
                 cover_url TEXT,
-                notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(videoSn, volume)
             )
         """)
 
@@ -385,7 +396,6 @@ class AnimeDBImpl:
           row = c.fetchone()
           conn.close()
           return row is not None
-
     def add_notified(
         self,
         video_sn: int,
@@ -398,9 +408,9 @@ class AnimeDBImpl:
         c = conn.cursor()
         c.execute(
             """INSERT OR IGNORE INTO anime_notified
-               (videoSn, animeSn, anime_name, volume, cover_url, notified_at, animeName, coverUrl, notifiedAt)
-               VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'))""",
-            (video_sn, anime_sn, title, volume, cover, title, cover, cover),
+               (videoSn, animeSn, anime_name, volume, cover_url, notified_at)
+               VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+            (video_sn, anime_sn, title, volume, cover),
         )
         conn.commit()
         conn.close()
