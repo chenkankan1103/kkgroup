@@ -9,6 +9,7 @@ Bahamut 動畫追蹤 Cog - 簡化版 15分鐘輪詢
 
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import asyncio
 import discord
 from discord.ext import commands
