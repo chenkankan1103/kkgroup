@@ -13,6 +13,7 @@ import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Set
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import discord
