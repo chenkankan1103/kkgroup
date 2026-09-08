@@ -1204,11 +1204,12 @@ class WelcomeFlow(commands.Cog):
                     f"📸 【create_welcome_embed】開始獲取角色圖片 (User: {user.name}, ID: {user.id})"
                 )
                 character_image_url = await self.get_character_image_url(user_data)
+                    
                 if character_image_url:
                     embed.set_image(url=character_image_url)
                     print("✅ 【create_welcome_embed】紙娃娃已設置")
                 else:
-                    print("⚠️ 【create_welcome_embed】無法獲取紙娃娃圖片。")
+                    print("⚠️ 【create_welcome_embed】無法獲取紙娃娃圖片。 user_data: {user_data}")
             except Exception as e:
                 print(
                     f"❌ 【create_welcome_embed】獲取紙娃娃失敗: {type(e).__name__}: {e}"
