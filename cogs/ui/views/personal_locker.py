@@ -439,12 +439,14 @@ class PersonalLockerView(discord.ui.View):
             await interaction.followup.send(f"❌ 錯誤：{str(e)[:100]}", ephemeral=True)
 
     async def back_to_main_callback(self, interaction: discord.Interaction):
-        """返回到主選項
+        """返回到主選項"""
+        # 立即 defer 以避免 3 秒超時
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception as e:
+            print(f"❌ 無法defer (back_to_main_callback): {e}")
+            return
 
-        - 如果正在編輯的是論壇中的永久置物櫃訊息（DB 中的 locker_message_id），
-          使用 `UserPanel.create_user_embed` 還原完整置物櫃（保留紙娃娃圖片）。
-        - 否則顯示簡化的主選單（ephemeral / 非永久上下文）。
-        """
         try:
             # 判斷此訊息是否為該使用者的永久置物櫃訊息
             is_permanent_locker_msg = False
@@ -478,14 +480,17 @@ class PersonalLockerView(discord.ui.View):
                         user_panel_cog, self.user_id, interaction.channel
                     )
 
+                    # 使用 followup 方法編輯原始訊息
                     try:
-                        await interaction.message.edit(embed=embed, view=view)
-                    except discord.NotFound:
+                        await interaction.edit_original_response(embed=embed, view=view)
+                    except Exception as edit_error:
+                        print(f"❌ 編輯原始回應失敗: {edit_error}")
+                        # 嘗試發送新的 followup 訊息
                         await interaction.followup.send(
                             embed=embed, view=view, ephemeral=True
                         )
                 else:
-                    # fallback：當找不到 UserPanel cog 時仍回覆簡化版（但不覆蓋永久訊息）
+                    # fallback：當找不到 UserPanel cog 時仍回覆簡化版
                     await interaction.followup.send(
                         "❌ 系統暫時無法還原置物櫃內容，請稍後再試。", ephemeral=True
                     )
@@ -513,13 +518,9 @@ class PersonalLockerView(discord.ui.View):
                     self.plants,
                     self.user_panel,
                 )
-                try:
-                    # 優先更新原始互動回覆（若為 ephemeral 會編輯成功）
-                    await interaction.response.edit_message(embed=embed, view=view)
-                except Exception:
-                    await interaction.followup.send(
-                        embed=embed, view=view, ephemeral=True
-                    )
+                await interaction.followup.send(
+                    embed=embed, view=view, ephemeral=True
+                )
 
         except Exception as e:
             traceback.print_exc()
