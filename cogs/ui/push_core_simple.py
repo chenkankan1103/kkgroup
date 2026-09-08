@@ -107,7 +107,7 @@ class AnimePushDB:
         """獲取連線，啟用 WAL 模式"""
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = None
-        conn.text_factory = bytes
+        conn.text_factory = str  # Use str for TEXT columns (default)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -162,15 +162,17 @@ class AnimePushDB:
         conn = self._get_conn()
         c = conn.cursor()
         try:
-            # 取得今天的日期 (YYYY-MM-DD)
-            today = datetime.now(TW_TZ).strftime("%Y-%m-%d")
+            now = datetime.now(TW_TZ)
+            # Monday of the current week (weekStartDate)
+            monday = now - timedelta(days=now.weekday())
+            monday_str = monday.strftime("%Y-%m-%d")
             # 取得今天是星期幾 (1-7, 週一=1)
-            weekday = datetime.now(TW_TZ).weekday() + 1
+            weekday = now.weekday() + 1
             # 查詢今日的排程
             c.execute("""
                 SELECT * FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND dayOfWeek = ?
-            """, (today, weekday))
+            """, (monday_str, weekday))
             rows = c.fetchall()
             # 取得欄位名稱
             column_names = [description[0] for description in c.description]
@@ -191,38 +193,41 @@ class AnimePushDB:
         c = conn.cursor()
         try:
             now = datetime.now(TW_TZ)
-            today_str = now.strftime("%Y-%m-%d")
+            # Monday of the current week (weekStartDate)
+            monday_now = now - timedelta(days=now.weekday())
+            monday_now_str = monday_now.strftime("%Y-%m-%d")
             weekday = now.weekday() + 1
             # 查詢今日尚未推送的排程
             c.execute("""
                 SELECT scheduledTime FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND (pushed IS NULL OR pushed = 0)
                 ORDER BY scheduledTime
-            """, (today_str, weekday))
+            """, (monday_now_str, weekday))
             rows = c.fetchall()
             if rows:
                 # 取得第一個未推送的時間
                 next_time_str = rows[0][0]  # scheduledTime 是 HH:MM 格式
-                next_time = datetime.strptime(f"{today_str} {next_time_str}", "%Y-%m-%d %H:%M")
-                next_time = TW_TZ.localize(next_time)
+                next_time = datetime.strptime(f"{monday_now_str} {next_time_str}", "%Y-%m-%d %H:%M")
+                next_time = next_time.replace(tzinfo=TW_TZ)
                 if next_time > now:
                     return next_time
-            # 若今日無未推送排程，找明日的第一個排程
-            # 簡單做法：找未來 7 天內的最近排程
+            # 若今日無未推送排程，找未來 7 天內的最近排程
             for offset in range(1, 8):
                 check_date = now + timedelta(days=offset)
-                check_date_str = check_date.strftime("%Y-%m-%d")
+                # Monday of the check_date's week
+                monday_check = check_date - timedelta(days=check_date.weekday())
+                monday_check_str = monday_check.strftime("%Y-%m-%d")
                 check_weekday = check_date.weekday() + 1
                 c.execute("""
                     SELECT scheduledTime FROM anime_weekly_schedule
                     WHERE weekStartDate = ? AND dayOfWeek = ? AND (pushed IS NULL OR pushed = 0)
                     ORDER BY scheduledTime LIMIT 1
-                """, (check_date_str, check_weekday))
+                """, (monday_check_str, check_weekday))
                 row = c.fetchone()
                 if row:
                     next_time_str = row[0]
-                    next_time = datetime.strptime(f"{check_date_str} {next_time_str}", "%Y-%m-%d %H:%M")
-                    next_time = TW_TZ.localize(next_time)
+                    next_time = datetime.strptime(f"{monday_check_str} {next_time_str}", "%Y-%m-%d %H:%M")
+                    next_time = next_time.replace(tzinfo=TW_TZ)
                     if next_time > now:
                         return next_time
             return None
@@ -237,19 +242,22 @@ class AnimePushDB:
         conn = self._get_conn()
         c = conn.cursor()
         try:
-            today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
+            now = datetime.now(TW_TZ)
+            # Monday of the current week (weekStartDate)
+            monday = now - timedelta(days=now.weekday())
+            monday_str = monday.strftime("%Y-%m-%d")
             # 更新週表中的 pushed 欄位為 1
             c.execute("""
                 UPDATE anime_weekly_schedule
                 SET pushed = 1
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ? AND videoSn = ?
-            """, (today_str, day_of_week, scheduled_time, video_sn))
+            """, (monday_str, day_of_week, scheduled_time, video_sn))
             conn.commit()
             updated = c.rowcount > 0
             if updated:
-                logger.info(f"✅ [AnimePushDB] 標記已推送: weekStartDate={today_str}, dayOfWeek={day_ofWeek}, time={scheduled_time}, videoSn={video_sn}")
+                logger.info(f"✅ [AnimePushDB] 標記已推送: weekStartDate={monday_str}, dayOfWeek={day_ofWeek}, time={scheduled_time}, videoSn={video_sn}")
             else:
-                logger.warning(f"⚠️ [AnimePushDB] 找不到匹配的排程記錄進行標記: weekStartDate={today_str}, dayOfWeek={day_ofWeek}, time={scheduled_time}, videoSn={video_sn}")
+                logger.warning(f"⚠️ [AnimePushDB] 找不到匹配的排程記錄進行標記: weekStartDate={monday_str}, dayOfWeek={day_ofWeek}, time={scheduled_time}, videoSn={video_sn}")
             return updated
         except Exception as e:
             logger.error(f"❌ [AnimePushDB] 標記已推送失敗: {e}")
