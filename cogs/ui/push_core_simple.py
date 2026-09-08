@@ -561,3 +561,8 @@ class AnimeDatabase:
     @property
     def db_path(self) -> str:
         return self.db._db_path
+
+
+async def setup(bot):
+    """Setup function for extension loading."""
+    pass

@@ -100,7 +100,7 @@ class AnimeTracker(commands.Cog):
             status_lines = [
                 "📊 **動畫推送系統狀態 (智能排程推送)**",
                 f"🔄 排程檢查狀態: {'✅ 運行中' if self._running else '❌ 已停止'}",
-                f"📊 資料庫: user_data.db",
+                f"📊 資料庫: anime_push.db",
                 f"📋 排程表: anime_weekly_schedule",
                 f"📝 推送記錄: 由 anime_notified 表管理",
                 f"⏱️ 檢查機制: 智能睡眠直到下次排程時間",
