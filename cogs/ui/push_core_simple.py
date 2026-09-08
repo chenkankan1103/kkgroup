@@ -1,9 +1,9 @@
 """
-動畫推送核心模組 - 簡化版 15分鐘輪詢
+動畫推送核心模組 - 增強版輪詢 with 排程檢查
 
-核心邏輯：每 15 分鐘 → 查 API → 推送 → 標記 notified
-移除所有過度設計：週表/排程器/重複表/複雜時間計算
-使用獨立資料庫：anime_push.db
+核心邏輯：智能輪詢 → 檢查排程表 → 推送 → 標記 notified
+保持簡單架構：移除過度設計但保留排程檢查能力
+使用主要資料庫：anime_push.db (利用 anime_weekly_schedule 表)
 """
 
 import json
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 TW_TZ = ZoneInfo("Asia/Taipei")
 ANIME_CHANNEL_ID = 1252204317453324333
 
-# 獨立推送資料庫
+# 主要推送資料庫 (使用 anime_push.db)
 ANIME_PUSH_DB_PATH = Path(__file__).resolve().parent.parent.parent / "anime_push.db"
 
 # API 常數
@@ -60,18 +60,18 @@ API_HEADERS = {
 # ========== 資料庫實現 ==========
 
 class AnimePushDB:
-    """動畫推送專用資料庫 - 只維護 anime_notified 表"""
+    """動畫推送專用資料庫 - 維護 anime_notified 表和讀取 anime_weekly_schedule 表"""
 
     def __init__(self, db_path: str = None):
         self._db_path = db_path or str(ANIME_PUSH_DB_PATH)
         self._init_tables()
 
     def _init_tables(self):
-        """初始化 anime_notified 表"""
+        """初始化 anime_notified 表和 anime_weekly_schedule 表"""
         conn = self._get_conn()
         c = conn.cursor()
 
-        # anime_notified 表 - 唯一需要的表
+        # anime_notified 表 - 追蹤已推送的動畫
         c.execute("""
             CREATE TABLE IF NOT EXISTS anime_notified (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +82,20 @@ class AnimePushDB:
                 cover_url TEXT,
                 notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(videoSn, volume)
+            )
+        """)
+
+        # anime_weekly_schedule 表 - 存放每週動畫排程
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_weekly_schedule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                weekStartDate TEXT NOT NULL,
+                dayOfWeek INTEGER NOT NULL,
+                scheduledTime TEXT NOT NULL,
+                pushed INTEGER DEFAULT 0,
+                animeData TEXT,
+                videoSn INTEGER NOT NULL,
+                UNIQUE(weekStartDate, dayOfWeek, scheduledTime, videoSn)
             )
         """)
 
@@ -141,6 +155,107 @@ class AnimePushDB:
         rows = c.fetchall()
         conn.close()
         return {int(row[0]) for row in rows if row[0] is not None}
+
+    # ---- 週表相關 ----
+    def get_today_schedule(self) -> List[Dict]:
+        """取得今日應該推送的動畫排程"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        try:
+            # 取得今天的日期 (YYYY-MM-DD)
+            today = datetime.now(TW_TZ).strftime("%Y-%m-%d")
+            # 取得今天是星期幾 (1-7, 週一=1)
+            weekday = datetime.now(TW_TZ).weekday() + 1
+            # 查詢今日的排程
+            c.execute("""
+                SELECT * FROM anime_weekly_schedule
+                WHERE weekStartDate = ? AND dayOfWeek = ?
+            """, (today, weekday))
+            rows = c.fetchall()
+            # 取得欄位名稱
+            column_names = [description[0] for description in c.description]
+            # 轉換為字典列表
+            schedule = []
+            for row in rows:
+                schedule.append(dict(zip(column_names, row)))
+            return schedule
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] 取得今日排程失敗: {e}")
+            return []
+        finally:
+            conn.close()
+
+    def get_next_push_time(self) -> Optional[datetime]:
+        """計算距離下次排程推送的時間"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        try:
+            now = datetime.now(TW_TZ)
+            today_str = now.strftime("%Y-%m-%d")
+            weekday = now.weekday() + 1
+            # 查詢今日尚未推送的排程
+            c.execute("""
+                SELECT scheduledTime FROM anime_weekly_schedule
+                WHERE weekStartDate = ? AND dayOfWeek = ? AND (pushed IS NULL OR pushed = 0)
+                ORDER BY scheduledTime
+            """, (today_str, weekday))
+            rows = c.fetchall()
+            if rows:
+                # 取得第一個未推送的時間
+                next_time_str = rows[0][0]  # scheduledTime 是 HH:MM 格式
+                next_time = datetime.strptime(f"{today_str} {next_time_str}", "%Y-%m-%d %H:%M")
+                next_time = TW_TZ.localize(next_time)
+                if next_time > now:
+                    return next_time
+            # 若今日無未推送排程，找明日的第一個排程
+            # 簡單做法：找未來 7 天內的最近排程
+            for offset in range(1, 8):
+                check_date = now + timedelta(days=offset)
+                check_date_str = check_date.strftime("%Y-%m-%d")
+                check_weekday = check_date.weekday() + 1
+                c.execute("""
+                    SELECT scheduledTime FROM anime_weekly_schedule
+                    WHERE weekStartDate = ? AND dayOfWeek = ? AND (pushed IS NULL OR pushed = 0)
+                    ORDER BY scheduledTime LIMIT 1
+                """, (check_date_str, check_weekday))
+                row = c.fetchone()
+                if row:
+                    next_time_str = row[0]
+                    next_time = datetime.strptime(f"{check_date_str} {next_time_str}", "%Y-%m-%d %H:%M")
+                    next_time = TW_TZ.localize(next_time)
+                    if next_time > now:
+                        return next_time
+            return None
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] 計算下次推送時間失敗: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def mark_time_pushed(self, day_of_week: int, scheduled_time: str, video_sn: int) -> bool:
+        """標記特定時間的動畫已推送（更新週表 pushed 欄位）"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        try:
+            today_str = datetime.now(TW_TZ).strftime("%Y-%m-%d")
+            # 更新週表中的 pushed 欄位為 1
+            c.execute("""
+                UPDATE anime_weekly_schedule
+                SET pushed = 1
+                WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ? AND videoSn = ?
+            """, (today_str, day_of_week, scheduled_time, video_sn))
+            conn.commit()
+            updated = c.rowcount > 0
+            if updated:
+                logger.info(f"✅ [AnimePushDB] 標記已推送: weekStartDate={today_str}, dayOfWeek={day_ofWeek}, time={scheduled_time}, videoSn={video_sn}")
+            else:
+                logger.warning(f"⚠️ [AnimePushDB] 找不到匹配的排程記錄進行標記: weekStartDate={today_str}, dayOfWeek={day_ofWeek}, time={scheduled_time}, videoSn={video_sn}")
+            return updated
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] 標記已推送失敗: {e}")
+            return False
+        finally:
+            conn.close()
 
 
 # ========== API 獲取方法（保留自 ranking_stats）==========
@@ -288,7 +403,7 @@ async def _generate_anime_view(episode: dict):
 # ========== 簡化推送核心 ==========
 
 class SimpleAnimePushCore:
-    """極簡動畫推送核心：15分鐘輪詢"""
+    """增強動畫推送核心：智能排程檢查"""
 
     def __init__(self, db: AnimePushDB):
         self.db = db
@@ -300,17 +415,17 @@ class SimpleAnimePushCore:
         self.bot = bot
 
     async def start_polling(self, channel_id: int):
-        """啟動 15 分鐘輪詢"""
+        """啟動智能排程檢查"""
         if self._running:
-            logger.warning("輪詢已在運行中")
+            logger.warning("排程檢查已在運行中")
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._polling_loop(channel_id))
-        logger.info("🚀 [SimpleAnimePushCore] 15分鐘輪詢已啟動")
+        self._task = asyncio.create_task(self._schedule_loop(channel_id))
+        logger.info("🚀 [SimpleAnimePushCore] 智能排程檢查已啟動")
 
     async def stop_polling(self):
-        """停止輪詢"""
+        """停止排程檢查"""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -318,97 +433,90 @@ class SimpleAnimePushCore:
                 await self._task
             except asyncio.CancelledError:
                 pass
-        logger.info("🛑 [SimpleAnimePushCore] 輪詢已停止")
+        logger.info("🛑 [SimpleAnimePushCore] 排程檢查已停止")
 
-    async def _polling_loop(self, channel_id: int):
-        """15分鐘輪詢主循環"""
+    async def _schedule_loop(self, channel_id: int):
+        """智能排程檢查主循環"""
         while self._running:
             try:
-                await self._check_and_push(channel_id)
+                # 取得下次推送時間
+                next_push = self.db.get_next_push_time()
+                if next_push is None:
+                    # 沒有即將到來的排程，休息一小時後再檢查
+                    await asyncio.sleep(3600)
+                    continue
+                now = datetime.now(TW_TZ)
+                wait_seconds = (next_push - now).total_seconds()
+                if wait_seconds > 0:
+                    # 休息但不超過 30 分鐘（避免因時間異常錯過排程）
+                    sleep_time = min(wait_seconds, 1800)
+                    await asyncio.sleep(sleep_time)
+                # 休息後再次檢查是否真的到達推送時間
+                await self._check_and_push_schedule(channel_id)
             except Exception as e:
-                logger.error(f"❌ [SimpleAnimePushCore] 輪詢異常: {e}", exc_info=True)
+                logger.error(f"❌ [SimpleAnimePushCore] 排程循環異常: {e}", exc_info=True)
+                await asyncio.sleep(60)  # 發生錯誤時休息一分鐘
 
-            # 等待 15 分鐘 (900 秒)
-            await asyncio.sleep(900)
-
-    async def _check_and_push(self, channel_id: int):
-        """檢查並推送新動畫"""
+    async def _check_and_push_schedule(self, channel_id: int):
+        """檢查當前時間的排程並推送"""
         if not self.bot:
             return
+        now = datetime.now(TW_TZ)
+        current_time_str = now.strftime("%H:%M")
+        current_weekday = now.weekday() + 1  # 週一=1
+        week_start_date = now.strftime("%Y-%m-%d")
+        # 取得今日排程
+        todays_schedule = self.db.get_today_schedule()
+        pushed_any = False
+        for item in todays_schedule:
+            if (item.get("day_of_week") == current_weekday and
+                item.get("scheduledTime") == current_time_str and
+                not item.get("pushed", False)):
+                video_sn = item.get("videoSn")
+                if video_sn is None:
+                    continue
+                # 從 API 獲取動畫詳情
+                episode = await fetch_anime_details_from_api(video_sn)
+                if not episode:
+                    logger.warning(f"⚠️ [SimpleAnimePushCore] 無法獲取動畫詳情 videoSn={video_sn}")
+                    continue
+                # 生成 embed 和 view
+                embed = await _generate_anime_embed(episode)
+                view = await _generate_anime_view(episode)
+                if not embed or not view:
+                    continue
+                # 發送推送
+                channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+                if channel and isinstance(channel, discord.TextChannel):
+                    try:
+                        message = await channel.send(embed=embed, view=view, silent=True)
+                        if view and hasattr(view, "message_id"):
+                            view.message_id = message.id
+                        # 記錄為已通知
+                        anime_sn = episode.get("anime_sn")
+                        title = episode.get("title")
+                        volume = episode.get("volume", "")
+                        cover = episode.get("cover", "")
+                        self.db.add_notified(video_sn, anime_sn, title, volume, cover)
+                        # 標記排程為已推送
+                        self.db.mark_time_pushed(current_weekday, current_time_str, video_sn)
+                        # 註冊永久視圖
+                        if self.bot:
+                            self.bot.add_view(view, message_id=message.id)
+                        logger.info(f"✅ [SimpleAnimePushCore] 推送排程動畫: {title} (videoSn={video_sn})")
+                        pushed_any = True
+                    except Exception as e:
+                        logger.error(f"❌ [SimpleAnimePushCore] 發送失敗 videoSn={video_sn}: {e}")
+                else:
+                    logger.warning(f"頻道 {ANIME_CHANNEL_ID} 不存在或非文字頻道")
+        # 如果已推送任何項目，休息一下避免同一分鐘內重複推送（依賴 pushed 標記也會防止）
+        if pushed_any:
+            await asyncio.sleep(60)  # 推送後休息一分鐘
 
-        # 1. 從 API 獲取最新動畫列表
-        episodes = await fetch_all_recent_anime_from_api()
-        if not episodes:
-            logger.warning("API 無回應")
-            return
-
-        # 2. 獲取已通知的 videoSn 集合
-        notified_video_sns = self.db.get_notified_video_sns()
-
-        # 3. 找出新動畫
-        new_episodes = []
-        for ep in episodes:
-            video_sn = ep.get("videoSn")
-            if video_sn and int(video_sn) not in notified_video_sns:
-                new_episodes.append(ep)
-
-        if not new_episodes:
-            logger.info("📭 無新動畫需推送")
-            return
-
-        logger.info(f"📋 發現 {len(new_episodes)} 部新動畫")
-
-        # 4. 檢查頻道
-        await self.bot.wait_until_ready()
-        channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-        if not channel or not isinstance(channel, discord.TextChannel):
-            logger.warning(f"頻道 {ANIME_CHANNEL_ID} 不存在")
-            return
-
-        # 5. 推送每部新動畫
-        for ep in new_episodes:
-            video_sn = int(ep.get("videoSn", 0))
-            volume = ep.get("volume", "")
-
-            # 雙重檢查：再次確認是否已推送（防止並發）
-            if self.db.is_notified(video_sn, volume):
-                continue
-
-            # 生成 embed 和 view
-            embed = await _generate_anime_embed(ep)
-            if not embed:
-                continue
-
-            view = await _generate_anime_view(ep)
-            if not view:
-                continue
-
-            # 發送
-            try:
-                message = await channel.send(embed=embed, view=view, silent=True)
-
-                if view and hasattr(view, "message_id"):
-                    view.message_id = message.id
-
-                # 記錄
-                anime_sn = int(ep.get("animeSn", 0))
-                title = ep.get("title", "未知標題")
-                self.db.add_notified(
-                    video_sn,
-                    anime_sn,
-                    title,
-                    volume,
-                    ep.get("cover", ""),
-                )
-
-                # 註冊永久視圖
-                if self.bot:
-                    self.bot.add_view(view, message_id=message.id)
-
-                logger.info(f"✅ 已推送: {title} (videoSn={video_sn}, volume={volume})")
-
-            except Exception as e:
-                logger.error(f"發送失敗 videoSn={video_sn}: {e}")
+    # 保留 _check_and_push 方法以相容手動觸發（但改為排程檢查）
+    async def _check_and_push(self, channel_id: int):
+        """手動觸發時的檢查與推送（基於當前時間的排程）"""
+        await self._check_and_push_schedule(channel_id)
 
 
 # ========== 相容性介面 ==========
