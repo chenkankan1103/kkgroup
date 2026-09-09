@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # 常數
 TW_TZ = ZoneInfo("Asia/Taipei")
 ANIME_CHANNEL_ID = 1252204317453324333
-ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
+ANIME_DB_PATH = Path(__file__).resolve().parent.parent.parent / "anime_push.db"
 
 # 完整瀏覽器指紋 Header（繞過 Cloudflare WAF）
 API_HEADERS = {
@@ -991,6 +991,13 @@ class AnimeDBImpl:
         return row
 
 
+# ========== 擴展載入入口 ==========
+
+async def setup(bot):
+    """設置擴展的入口點"""
+    pass
+
+
 def _get_db_connection():
     """獲取資料庫連線 - 啟用 WAL 模式和 busy_timeout 避免鎖定問題"""
     conn = sqlite3.connect(str(ANIME_DB_PATH))
@@ -1031,6 +1038,8 @@ class AnimePushCore:
         self.bot = None
         self._view_factory = None
         self._embed_factory = None
+        self._polling_task = None
+        self._running = False
 
     def set_bot(self, bot):
         """設置 bot 實例"""
@@ -1064,26 +1073,11 @@ class AnimePushCore:
             logger.error(f"生成 view 失敗: {e}")
             return None
 
-    async def _generate_anime_embed(self, episode: dict) -> discord.Embed | None:
-        """生成動畫推送 embed - 使用工廠函數或預設"""
+    async def _generate_anime_embed(self, episode: dict, push_mode: str = "unknown") -> discord.Embed | None:
+        """生成動畫推送 embed - 使用 push_embed 模組"""
         try:
-            if self._embed_factory:
-                return await self._embed_factory(episode)
-            # 預設實現
-            import discord
-
-            title = episode.get("title", "未知標題")
-            cover = episode.get("cover", "")
-            description = episode.get("description", "")
-
-            embed = discord.Embed(
-                title=title, description=description, color=discord.Color.blue()
-            )
-
-            if cover:
-                embed.set_image(url=cover)  # 大圖在下方
-
-            return embed
+            from .push_embed import generate_anime_embed
+            return await generate_anime_embed(episode, push_mode)
         except Exception as e:
             logger.error(f"生成 embed 失敗: {e}")
             return None
@@ -1566,7 +1560,7 @@ class AnimePushCore:
                 continue
 
             # 8. 生成 embed 和 view
-            embed = await self._generate_anime_embed(matched_ep)
+            embed = await self._generate_anime_embed(matched_ep, push_mode="排程推送")
             if not embed:
                 continue
 
