@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Bahamut 動畫追蹤 Cog - 雙系統推送
-- 推送系統：使用 AnimePushCore (push_core.py) 基於 anime_push.db 的週表進行精準排程推送，生成 embed
-- 輪詢系統：使用 SimpleAnimePushCore (push_core_simple.py) 基於 anime_push.db 的 anime_notified 表進行 15 分鐘輪詢，僅發送圖片+按鈕
-兩系統互不共享狀態，各自使用獨立的資料庫連線（但實際指向同一 anime_push.db）
+Bahamut 動畫追蹤 Cog - 增強版排程推送系統
+- 增強版推送系統：使用 SimpleAnimePushCore (push_core_simple.py) 基於 anime_push.db
+  實現精準排程推送與15分鐘輪詢備案機制
+- 排程推送：基於 anime_weekly_schedule 表在實際播出時間精確推送
+- 備案機制：連續3次失敗後自動切換至15分鐘輪詢，恢復條件為成功推送
+- 單一資料庫連線：各組件共用同一 anime_push.db 連線
 """
 
 import logging
@@ -14,9 +16,9 @@ import discord
 from discord.ext import commands
 from typing import Optional
 
-from .push_core import AnimePushCore, AnimeDatabase as AnimePushDB
 from .push_core_simple import (
     SimpleAnimePushCore,
+    AnimePushDB,
     ANIME_PUSH_DB_PATH,
     ANIME_CHANNEL_ID,
     TW_TZ,
@@ -26,43 +28,36 @@ logger = logging.getLogger(__name__)
 
 
 class AnimeTracker(commands.Cog):
-    """Bahamut 動畫追蹤 Cog - 雙系統推送"""
+    """Bahamut 動畫追蹤 Cog - 增強版排程推送系統 (含15分鐘輪詢備案)"""
 
     def __init__(self, bot):
         self.bot = bot
         self.logger = logger
-        self.schedule_core = None
         self.polling_core = None
         self.db = None
         self._running = False
 
     async def set_dependencies(self, db_path: str = None):
-        """設置依賴元件 - 初始化兩個推送系統並啟動"""
+        """設置依賴元件 - 初始化增強版推送系統並啟動"""
         if self._running:
             logger.info("[AnimeTracker.set_dependencies] 已運行中，跳過")
             return
 
         db_path = db_path or str(ANIME_PUSH_DB_PATH)
-        logger.info(f"🔧 [AnimeTracker.set_dependencies] 初始化雙系統推送: {db_path}")
+        logger.info(f"🔧 [AnimeTracker.set_dependencies] 初始化增強版推送系統: {db_path}")
 
-        # 初始化獨立資料庫實例（不共享狀態）
-        self.schedule_db = AnimePushDB(db_path)  # 推送系統專用連線
-        self.polling_db = AnimePushDB(db_path)   # 輪詢系統專用連線
+        # 初始化資料庫實例
+        self.db = AnimePushDB(db_path)
 
-        # 初始化排程推送系統 (embed 版)
-        self.schedule_core = AnimePushCore(self.schedule_db)
-        self.schedule_core.set_bot(self.bot)
-
-        # 初始化輪詢推送系統 (圖片版)
-        self.polling_core = SimpleAnimePushCore(self.polling_db)
+        # 初始化增強版推送系統 (排程推送 + 15分鐘輪詢備案)
+        self.polling_core = SimpleAnimePushCore(self.db)
         self.polling_core.set_bot(self.bot)
 
-        # 啟動兩個系統
-        await self.schedule_core.start_polling(ANIME_CHANNEL_ID)
+        # 啟動推送系統
         await self.polling_core.start_polling(ANIME_CHANNEL_ID)
 
         self._running = True
-        msg = "✅ [AnimeTracker.set_dependencies] 雙系統推送啟動完成 (排程+輪詢)"
+        msg = "✅ [AnimeTracker.set_dependencies] 增強版推送系統啟動完成 (排程+輪詢備案)"
         logger.info(msg)
 
     async def cog_load(self):
@@ -82,14 +77,12 @@ class AnimeTracker(commands.Cog):
 
     async def cog_unload(self):
         """Cog 卸載時清理"""
-        self.logger.info("🛑 [AnimeTracker.cog_unload] 正在停止兩個推送系統...")
+        self.logger.info("🛑 [AnimeTracker.cog_unload] 正在停止推送系統...")
         if self._running:
-            if self.schedule_core:
-                await self.schedule_core.stop_polling()
             if self.polling_core:
                 await self.polling_core.stop_polling()
             self._running = False
-        self.logger.info("🛑 [AnimeTracker.cog_unload] 兩個推送系統已停止")
+        self.logger.info("🛑 [AnimeTracker.cog_unload] 推送系統已停止")
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -110,42 +103,44 @@ class AnimeTracker(commands.Cog):
 
         try:
             status_lines = [
-                "📊 **動畫推送系統狀態 (雙系統)**",
+                "📊 **動畫推送系統狀態 (增強版)**",
                 f"🔄 總系統狀態: {'✅ 運行中' if self._running else '❌ 已停止'}",
-                f"📊 資料庫: anime_push.db (獨立連線)",
+                f"📊 資料庫: anime_push.db",
             ]
 
-            # 排程推送系統狀態
-            if self.schedule_core:
-                schedule_running = getattr(self.schedule_core, '_running', False)
-                status_lines.append(f"⏰ 排程推送系統: {'✅ 運行中' if schedule_running else '❌ 已停止'}")
-
-                if schedule_running and self.schedule_db:
-                    try:
-                        today_schedule = self.schedule_db.get_today_schedule()
-                        pending_count = sum(1 for item in today_schedule
-                                          if not item.get("pushed", False))
-                        status_lines.append(f"📋 排程今日待推送: {pending_count} 項")
-                    except Exception as e:
-                        self.logger.warning(f"無法獲取排程統計: {e}")
-
-            # 輪詢推送系統狀態
+            # 推送系統狀態 (現在是增強版：排程推送 + 15分鐘輪詢備案)
             if self.polling_core:
                 polling_running = getattr(self.polling_core, '_running', False)
-                status_lines.append(f"🔁 輪詢推送系統: {'✅ 運行中' if polling_running else '❌ 已停止'}")
+                in_fallback = getattr(self.polling_core, '_in_fallback', False)
+                fail_count = getattr(self.polling_core, '_fail_count', 0)
+                max_failures = getattr(self.polling_core, '_max_failures', 3)
 
-                if polling_running and self.polling_db:
+                if in_fallback:
+                    status_lines.append(f"⏰ 推送系統: {'✅ 運行中' if polling_running else '❌ 已停止'} (備案模式: 15分鐘輪詢)")
+                    status_lines.append(f"📉 失敗計數: {fail_count}/{max_failures}")
+                else:
+                    status_lines.append(f"⏰ 推送系統: {'✅ 運行中' if polling_running else '❌ 已停止'} (排程模式)")
+                    status_lines.append(f"📊 失敗計數: {fail_count}/{max_failures}")
+
+                if polling_running and self.db:
                     try:
-                        notified_count = len(self.polling_db.get_notified_video_sns()) if hasattr(self.polling_db, 'get_notified_video_sns') else 0
-                        status_lines.append(f"📼 輪詢已通知動畫數: {notified_count}")
+                        # 顯示今日待推送數量
+                        today_schedule = self.db.get_today_schedule()
+                        pending_count = sum(1 for item in today_schedule
+                                          if not item.get("pushed", False))
+                        status_lines.append(f"📋 推程今日待推送: {pending_count} 項")
+
+                        # 顯示已通知的動畫數
+                        notified_count = len(self.db.get_notified_video_sns()) if hasattr(self.db, 'get_notified_video_sns') else 0
+                        status_lines.append(f"📼 已通知動畫數: {notified_count}")
                     except Exception as e:
-                        self.logger.warning(f"無法獲取輪詢統計: {e}")
+                        self.logger.warning(f"無法獲取推送統計: {e}")
 
             status_lines.extend([
                 f"📋 推送表: anime_weekly_schedule",
                 f"📝 通知記錄: anime_notified 表",
                 f"⏱️ 排程機制: 智能睡眠直到下次排程時間 (最多30分鐘)",
-                f"⏱️ 輪詢機制: 固定15分鐘輪詢",
+                f"⏱️ 備案機制: 連續{max_failures}次失敗後切換到15分鐘輪詢",
             ])
 
             await send_response("\n".join(status_lines), ephemeral=True)
@@ -166,15 +161,12 @@ class AnimeTracker(commands.Cog):
         try:
             self.logger.info(f"🔄 [AnimeTracker.anime_manual_check] 手動檢查請求 by {ctx.author}")
 
-            if not self.schedule_core or not self.polling_core:
+            if not self.polling_core:
                 await send_response("❌ 推送核心未完全初始化", ephemeral=True)
                 return
 
-            # 手動觸發兩個系統的檢查
-            await send_response("🔄 正在手動檢查排程推送系統...", ephemeral=True)
-            await self.schedule_core._check_and_push(ANIME_CHANNEL_ID)
-
-            await send_response("🔄 正在手動檢查輪詢推送系統...", ephemeral=True)
+            # 手動觸發增強版推送系統的檢查 (包含排程推送和輪詢備案)
+            await send_response("🔄 正在手動檢查增強版推送系統...", ephemeral=True)
             await self.polling_core._check_and_push(ANIME_CHANNEL_ID)
 
             await send_response("✅ 手動檢查完成", ephemeral=True)
