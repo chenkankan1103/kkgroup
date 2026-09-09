@@ -450,8 +450,10 @@ class SimpleAnimePushCore:
                 # 取得下次推送時間
                 next_push = self.db.get_next_push_time()
                 if next_push is None:
-                    # 沒有即將到來的排程，休息一小時後再檢查
-                    await asyncio.sleep(3600)
+                    # 沒有即將到來的排程，先檢查是否有過去未推送的排程
+                    await self._check_and_push_schedule(channel_id)
+                    # 休息較長時間以避免頻繁檢查（例如 30 分鐘）
+                    await asyncio.sleep(1800)
                     continue
                 now = datetime.now(TW_TZ)
                 wait_seconds = (next_push - now).total_seconds()
@@ -466,57 +468,92 @@ class SimpleAnimePushCore:
                 await asyncio.sleep(60)  # 發生錯誤時休息一分鐘
 
     async def _check_and_push_schedule(self, channel_id: int):
-        """檢查當前時間的排程並推送"""
+        """檢查當前時間的排程並推送（包括過去未推送的排程）"""
         if not self.bot:
             return
         now = datetime.now(TW_TZ)
-        current_time_str = now.strftime("%H:%M")
-        current_weekday = now.weekday() + 1  # 週一=1
-        week_start_date = now.strftime("%Y-%m-%d")
-        # 取得今日排程
-        todays_schedule = self.db.get_today_schedule()
+        # 取得本週的週一日期 (不含時分)
+        monday = now - timedelta(days=now.weekday())
+        monday_str = monday.strftime("%Y-%m-%d")
+        # 產生週一 00:00:00 的 datetime 物件 (無時區)
+        monday_naive = datetime.strptime(monday_str, "%Y-%m-%d")
+
+        # 取得本週的排程
+        conn = self._get_conn()
+        c = conn.cursor()
+        try:
+            c.execute("""
+                SELECT * FROM anime_weekly_schedule
+                WHERE weekStartDate = ?
+            """, (monday_str,))
+            rows = c.fetchall()
+            column_names = [description[0] for description in c.description]
+            schedule = []
+            for row in rows:
+                schedule.append(dict(zip(column_names, row)))
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] 取得本週排程失敗: {e}")
+            return
+        finally:
+            conn.close()
+
         pushed_any = False
-        for item in todays_schedule:
-            if (item.get("day_of_week") == current_weekday and
-                item.get("scheduledTime") == current_time_str and
-                not item.get("pushed", False)):
-                video_sn = item.get("videoSn")
-                if video_sn is None:
-                    continue
-                # 從 API 獲取動畫詳情
-                episode = await fetch_anime_details_from_api(video_sn)
-                if not episode:
-                    logger.warning(f"⚠️ [SimpleAnimePushCore] 無法獲取動畫詳情 videoSn={video_sn}")
-                    continue
-                # 生成 embed 和 view
-                embed = await _generate_anime_embed(episode)
-                view = await _generate_anime_view(episode)
-                if not embed or not view:
-                    continue
-                # 發送推送
-                channel = self.bot.get_channel(ANIME_CHANNEL_ID)
-                if channel and isinstance(channel, discord.TextChannel):
-                    try:
-                        message = await channel.send(embed=embed, view=view, silent=True)
-                        if view and hasattr(view, "message_id"):
-                            view.message_id = message.id
-                        # 記錄為已通知
-                        anime_sn = episode.get("anime_sn")
-                        title = episode.get("title")
-                        volume = episode.get("volume", "")
-                        cover = episode.get("cover", "")
-                        self.db.add_notified(video_sn, anime_sn, title, volume, cover)
-                        # 標記排程為已推送
-                        self.db.mark_time_pushed(current_weekday, current_time_str, video_sn)
-                        # 註冊永久視圖
-                        if self.bot:
-                            self.bot.add_view(view, message_id=message.id)
-                        logger.info(f"✅ [SimpleAnimePushCore] 推送排程動畫: {title} (videoSn={video_sn})")
-                        pushed_any = True
-                    except Exception as e:
-                        logger.error(f"❌ [SimpleAnimePushCore] 發送失敗 videoSn={video_sn}: {e}")
-                else:
-                    logger.warning(f"頻道 {ANIME_CHANNEL_ID} 不存在或非文字頻道")
+        for item in schedule:
+            # 如果已標記為已推送，則跳過
+            if item.get("pushed", 1) == 1:
+                continue
+            day_of_week = item.get("dayOfWeek")
+            scheduled_time = item.get("scheduledTime")
+            video_sn = item.get("videoSn")
+            if day_of_week is None or scheduled_time is None or video_sn is None:
+                continue
+
+            # 計算此排程項目應該推送的日期時間
+            try:
+                # 週一 + (dayOfWeek-1) 天
+                schedule_date = monday_naive + timedelta(days=day_of_week-1)
+                # 合併日期和時間
+                schedule_datetime = datetime.strptime(f"{schedule_date.strftime('%Y-%m-%d')} {scheduled_time}", "%Y-%m-%d %H:%M")
+                schedule_datetime = schedule_datetime.replace(tzinfo=TW_TZ)
+            except Exception as e:
+                logger.error(f"❌ [SimpleAnimePushCore] 解析排程時間失敗: {e}")
+                continue
+
+            # 如果排程時間在未來，則跳過
+            if schedule_datetime > now:
+                continue
+
+            # 此排程項目已到達推送時間且未推送
+            episode = await fetch_anime_details_from_api(video_sn)
+            if not episode:
+                logger.warning(f"⚠️ [SimpleAnimePushCore] 無法獲取動畫詳情 videoSn={video_sn}")
+                continue
+            embed = await _generate_anime_embed(episode)
+            view = await _generate_anime_view(episode)
+            if not embed or not view:
+                continue
+            channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+            if channel and isinstance(channel, discord.TextChannel):
+                try:
+                    message = await channel.send(embed=embed, view=view, silent=True)
+                    if view and hasattr(view, "message_id"):
+                        view.message_id = message.id
+                    anime_sn = episode.get("anime_sn")
+                    title = episode.get("title")
+                    volume = episode.get("volume", "")
+                    cover = episode.get("cover", "")
+                    self.db.add_notified(video_sn, anime_sn, title, volume, cover)
+                    # 標記排程為已推送
+                    self.db.mark_time_pushed(day_of_week, scheduled_time, video_sn)
+                    if self.bot:
+                        self.bot.add_view(view, message_id=message.id)
+                    logger.info(f"✅ [SimpleAnimePushCore] 推送排程動畫: {title} (videoSn={video_sn})")
+                    pushed_any = True
+                except Exception as e:
+                    logger.error(f"❌ [SimpleAnimePushCore] 發送失敗 videoSn={video_sn}: {e}")
+            else:
+                logger.warning(f"頻道 {ANIME_CHANNEL_ID} 不存在或非文字頻道")
+
         # 如果已推送任何項目，休息一下避免同一分鐘內重複推送（依賴 pushed 標記也會防止）
         if pushed_any:
             await asyncio.sleep(60)  # 推送後休息一分鐘
