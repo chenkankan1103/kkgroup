@@ -21,6 +21,8 @@ import discord
 
 # 導入新的網頁爬蟲模組
 from .bahamut_web_scraper import fetch_new_anime_from_web
+# 導入詳細資訊獲取函式（從推送簡化版）
+from .push_core_simple import fetch_anime_details_from_api
 
 logger = logging.getLogger(__name__)
 
@@ -1558,6 +1560,14 @@ class AnimePushCore:
                     week_start_date, day_of_week, scheduled_time, video_sn
                 )
                 continue
+
+            # 取得詳細資訊（含簡介）
+            try:
+                details = await fetch_anime_details_from_api(video_sn)
+                if details:
+                    matched_ep = {**matched_ep, "description": details.get("content", "")}
+            except Exception as e:
+                logger.debug(f"取得動畫詳細資訊失敗 videoSn={video_sn}: {e}")
 
             # 8. 生成 embed 和 view
             embed = await self._generate_anime_embed(matched_ep, push_mode="排程推送")
