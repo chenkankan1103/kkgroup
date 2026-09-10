@@ -413,6 +413,7 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                     "tags": anime.get("tags", []),
                     "popular": view_count,
                     "score": anime.get("score", 0),
+                    "cover": anime.get("cover", ""),
                 }
     except Exception as e:
         logger.warning(f"⚠️ fetch_anime_details_from_api error videoSn={video_sn}: {e}")
