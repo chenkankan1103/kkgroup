@@ -15,8 +15,15 @@ import asyncio
 import discord
 from discord.ext import commands
 from typing import Optional
+import sys
+from pathlib import Path
 
-from .push_core_simple import (
+# Add kkgroup directory to sys.path for absolute imports
+kkgroup_dir = Path(__file__).resolve().parent.parent.parent
+if str(kkgroup_dir) not in sys.path:
+    sys.path.insert(0, str(kkgroup_dir))
+
+from cogs.ui.push_core_simple import (
     SimpleAnimePushCore,
     AnimePushDB,
     ANIME_PUSH_DB_PATH,

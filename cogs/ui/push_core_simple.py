@@ -14,12 +14,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Set
 from zoneinfo import ZoneInfo
+import sys
 
 import aiohttp
 import discord
 
-from .bahamut_web_scraper import fetch_new_anime_from_web
-from .push_embed import generate_anime_view, generate_anime_embed
+# Add kkgroup directory to sys.path for absolute imports
+kkgroup_dir = Path(__file__).resolve().parent.parent.parent
+if str(kkgroup_dir) not in sys.path:
+    sys.path.insert(0, str(kkgroup_dir))
+
+from cogs.ui.bahamut_web_scraper import fetch_new_anime_from_web
+from cogs.ui.push_embed import generate_anime_view, generate_anime_embed
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +34,7 @@ TW_TZ = ZoneInfo("Asia/Taipei")
 ANIME_CHANNEL_ID = 1252204317453324333
 
 # 獨立推送資料庫
-ANIME_PUSH_DB_PATH = Path(__file__).resolve().parent.parent.parent / "anime_push.db"
+ANIME_PUSH_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
 
 # API 常數
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
