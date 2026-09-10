@@ -406,6 +406,17 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                     except (ValueError, TypeError):
                         view_count = 0
 
+                # 嘗試獲取 episode-specific 的縮圖，如果沒有則退回到 series cover
+                # 常見的 episode thumbnail 欄位名稱
+                episode_cover = (
+                    anime.get("episodeCover") or
+                    anime.get("episodeThumb") or
+                    anime.get("thumb") or
+                    anime.get("thumbnail") or
+                    anime.get("videoThumb") or
+                    anime.get("cover")  # fallback to series cover
+                )
+
                 return {
                     "anime_sn": anime.get("anime_sn", 0),
                     "title": anime.get("title", ""),
@@ -413,7 +424,7 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                     "tags": anime.get("tags", []),
                     "popular": view_count,
                     "score": anime.get("score", 0),
-                    "cover": anime.get("cover", ""),
+                    "cover": episode_cover,  # 使用 episode-specific 的縮圖如果可用
                 }
     except Exception as e:
         logger.warning(f"⚠️ fetch_anime_details_from_api error videoSn={video_sn}: {e}")
@@ -586,11 +597,11 @@ class SimpleAnimePushCore:
             if self.db.is_notified(video_sn, volume):
                 continue
 
-            # 取得詳細資訊（含簡介）
+            # 取得詳細資訊（含簡介和封面）
             try:
                 details = await fetch_anime_details_from_api(video_sn)
                 if details:
-                    ep = {**ep, "description": details.get("content", "")}
+                    ep = {**ep, "description": details.get("content", ""), "cover": details.get("cover", "")}
             except Exception as e:
                 logger.debug(f"取得動畫詳細資訊失敗 videoSn={video_sn}: {e}")
 
@@ -742,7 +753,16 @@ class SimpleAnimePushCore:
                         episode.update({
                             "title": anime_data_parsed.get("title", episode["title"]),
                             "content": anime_data_parsed.get("content", episode["content"]),
-                            "cover": anime_data_parsed.get("cover", episode["cover"]),
+                            # 嘗試獲取 episode-specific 的縮圖
+                            "cover": (
+                                anime_data_parsed.get("episodeCover") or
+                                anime_data_parsed.get("episodeThumb") or
+                                anime_data_parsed.get("thumb") or
+                                anime_data_parsed.get("thumbnail") or
+                                anime_data_parsed.get("videoThumb") or
+                                anime_data_parsed.get("cover") or
+                                episode["cover"]  # fallback to already determined cover
+                            ),
                         })
                     except:
                         pass  # 使用 API 取得的資料
