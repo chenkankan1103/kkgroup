@@ -164,8 +164,11 @@ class AnimePushDB:
             # 取得今天的日期和星期
             now = datetime.now(TW_TZ)
             today_date = now.strftime("%Y-%m-%d")
-            # 星期：0=週一, 6=週日
-            weekday = now.weekday()
+            # Python的weekday(): 0=週一, 6=週日
+            # 資料庫中的weekday: 0=星期日, 1=星期一, ..., 6=星期六
+            # 轉換公式: database_weekday = (python_weekday + 1) % 7
+            python_weekday = now.weekday()
+            database_weekday = (python_weekday + 1) % 7
             # 取得本週的週一日期
             week_start_date = self._get_week_start_date(now)
 
@@ -173,7 +176,7 @@ class AnimePushDB:
             c.execute("""
                 SELECT * FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
-            """, (week_start_date, weekday))
+            """, (week_start_date, database_weekday))
 
             rows = c.fetchall()
             conn.close()
@@ -210,7 +213,11 @@ class AnimePushDB:
             # 取得現在時間
             now = datetime.now(TW_TZ)
             today_date = now.strftime("%Y-%m-%d")
-            weekday = now.weekday()
+            # Python的weekday(): 0=週一, 6=週日
+            # 資料庫中的weekday: 0=星期日, 1=星期一, ..., 6=星期六
+            # 轉換公式: database_weekday = (python_weekday + 1) % 7
+            python_weekday = now.weekday()
+            database_weekday = (python_weekday + 1) % 7
             current_time = now.strftime("%H:%M")
             # 取得本週的週一日期
             week_start_date = self._get_week_start_date(now)
@@ -220,7 +227,7 @@ class AnimePushDB:
                 SELECT scheduledTime FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
                 ORDER BY scheduledTime ASC
-            """, (week_start_date, weekday))
+            """, (week_start_date, database_weekday))
 
             today_schedule = c.fetchall()
 
@@ -241,7 +248,9 @@ class AnimePushDB:
             # 我們只需要查詢未來7天內的最近一個排程
             for days_ahead in range(1, 8):  # 未來1到7天
                 target_date = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-                target_weekday = (now + timedelta(days=days_ahead)).weekday()
+                target_python_weekday = (now + timedelta(days=days_ahead)).weekday()
+                # 轉換為資料庫中的weekday: 0=星期日, 1=星期一, ..., 6=星期六
+                target_database_weekday = (target_python_weekday + 1) % 7
                 # 取得目標日期所在週的週一日期
                 target_date_obj = datetime.strptime(target_date, "%Y-%m-%d")
                 target_week_start_date = self._get_week_start_date(target_date_obj)
@@ -249,7 +258,7 @@ class AnimePushDB:
                 c.execute("""
                     SELECT MIN(scheduledTime) FROM anime_weekly_schedule
                     WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
-                """, (target_week_start_date, target_weekday))
+                """, (target_week_start_date, target_database_weekday))
 
                 result = c.fetchone()
                 if result and result[0]:
