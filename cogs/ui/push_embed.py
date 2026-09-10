@@ -3,6 +3,7 @@
 專門負責生成動畫推送的 Embed 格式
 """
 
+import logging
 import discord
 from typing import Optional, Dict
 
