@@ -10,7 +10,7 @@ import json
 import logging
 import sqlite3
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Set
 from zoneinfo import ZoneInfo
@@ -59,10 +59,8 @@ API_HEADERS = {
     "Sec-CH-UA-Arch": '"x86_64"',
     "Sec-CH-UA-Bitness": '"64"',
     "Sec-CH-UA-Full-Version": '"127.0.0.0"',
-    "Sec-CH-UA-Platform-Version": '"10.0.0"',
     "Sec-CH-UA-Full-Version-List": '"Not)A;Brand";v="99.0.0.0", "Google Chrome";v="127.0.0.0", "Chromium";v="127.0.0.0"',
 }
-
 
 # ========== 資料庫實現 ==========
 
@@ -151,6 +149,12 @@ class AnimePushDB:
 
     # ====== 新增：週表相關方法 ======
 
+    def _get_week_start_date(self, date_obj: datetime) -> str:
+        """取得指定日期所在週的週一日期 (YYYY-MM-DD)"""
+        # weekday() 回傳 0 為週一, 6 為週日
+        monday = date_obj - timedelta(days=date_obj.weekday())
+        return monday.strftime("%Y-%m-%d")
+
     def get_today_schedule(self) -> List[Dict]:
         """查詢今日應該推送的動畫排程"""
         try:
@@ -162,13 +166,14 @@ class AnimePushDB:
             today_date = now.strftime("%Y-%m-%d")
             # 星期：0=週一, 6=週日
             weekday = now.weekday()
-            today_time = now.strftime("%H:%M")
+            # 取得本週的週一日期
+            week_start_date = self._get_week_start_date(now)
 
             # 查詢今日的排程
             c.execute("""
                 SELECT * FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
-            """, (today_date, weekday))
+            """, (week_start_date, weekday))
 
             rows = c.fetchall()
             conn.close()
@@ -177,13 +182,17 @@ class AnimePushDB:
             schedule = []
             for row in rows:
                 # 假設表結構為：id, weekStartDate, dayOfWeek, scheduledTime, pushed, animeData, videoSn
+                # 由於連線使用 text_factory = bytes，需要解碼文字欄位
+                weekStartDate = row[1].decode('utf-8') if isinstance(row[1], bytes) else row[1]
+                scheduledTime = row[3].decode('utf-8') if isinstance(row[3], bytes) else row[3]
+                animeData = row[5].decode('utf-8') if isinstance(row[5], bytes) else row[5]
                 schedule.append({
                     "id": row[0],
-                    "weekStartDate": row[1],
+                    "weekStartDate": weekStartDate,
                     "dayOfWeek": row[2],
-                    "scheduledTime": row[3],
+                    "scheduledTime": scheduledTime,
                     "pushed": bool(row[4]),
-                    "animeData": row[5],  # 這可能是JSON字符串
+                    "animeData": animeData,  # 這可能是JSON字符串
                     "videoSn": row[6]
                 })
 
@@ -203,46 +212,58 @@ class AnimePushDB:
             today_date = now.strftime("%Y-%m-%d")
             weekday = now.weekday()
             current_time = now.strftime("%H:%M")
+            # 取得本週的週一日期
+            week_start_date = self._get_week_start_date(now)
 
             # 查詢今日尚未推送的排程
             c.execute("""
                 SELECT scheduledTime FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
                 ORDER BY scheduledTime ASC
-            """, (today_date, weekday))
+            """, (week_start_date, weekday))
 
             today_schedule = c.fetchall()
+
+            # 先找今日尚未推送且在未來的排程（按時間順序）
+            for (scheduled_time_bytes,) in today_schedule:
+                try:
+                    # 解碼 bytes 為 string
+                    scheduled_time = scheduled_time_bytes.decode('utf-8')
+                    schedule_dt = datetime.strptime(f"{today_date} {scheduled_time}", "%Y-%m-%d %H:%M")
+                    schedule_dt = schedule_dt.replace(tzinfo=TW_TZ)
+                    if schedule_dt > now:
+                        conn.close()
+                        return schedule_dt
+                except (ValueError, UnicodeDecodeError):
+                    continue
 
             # 查詢未來日期的排程（從明天開始）
             # 我們只需要查詢未來7天內的最近一個排程
             for days_ahead in range(1, 8):  # 未來1到7天
                 target_date = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
                 target_weekday = (now + timedelta(days=days_ahead)).weekday()
+                # 取得目標日期所在週的週一日期
+                target_date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+                target_week_start_date = self._get_week_start_date(target_date_obj)
 
                 c.execute("""
                     SELECT MIN(scheduledTime) FROM anime_weekly_schedule
                     WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
-                """, (target_date, target_weekday))
+                """, (target_week_start_date, target_weekday))
 
                 result = c.fetchone()
                 if result and result[0]:
                     # 找到了未來某一天的最近排程
-                    target_time = result[0]
-                    target_datetime = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
-                    target_datetime = TW_TZ.localize(target_datetime)
-                    conn.close()
-                    return target_datetime
-
-            # 如果今日有未推送的排程，返回最早的一個
-            if today_schedule:
-                earliest_time = today_schedule[0][0]  # 因為我們已經按時間排序了
-                # 但需要確認這個時間是否已經過去了
-                earliest_datetime = datetime.strptime(f"{today_date} {earliest_time}", "%Y-%m-%d %H:%M")
-                earliest_datetime = TW_TZ.localize(earliest_datetime)
-
-                if earliest_datetime > now:
-                    conn.close()
-                    return earliest_datetime
+                    target_time_bytes = result[0]
+                    try:
+                        # 解碼 bytes 為 string
+                        target_time = target_time_bytes.decode('utf-8')
+                        target_datetime = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
+                        target_datetime = target_datetime.replace(tzinfo=TW_TZ)
+                        conn.close()
+                        return target_datetime
+                    except (ValueError, UnicodeDecodeError):
+                        continue
 
             conn.close()
             return None  # 沒有找到未來的排程
@@ -259,13 +280,15 @@ class AnimePushDB:
             # 取得今天的日期（週StartDate）
             now = datetime.now(TW_TZ)
             today_date = now.strftime("%Y-%m-%d")
+            # 取得本週的週一日期
+            week_start_date = self._get_week_start_date(now)
 
             # 更新對應的記錄
             c.execute("""
                 UPDATE anime_weekly_schedule
                 SET pushed = 1
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ? AND videoSn = ?
-            """, (today_date, day_of_week, scheduled_time, video_sn))
+            """, (week_start_date, day_of_week, scheduled_time, video_sn))
 
             conn.commit()
             conn.close()
@@ -375,7 +398,7 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                         view_count = 0
 
                 return {
-                    "anime_sn": anime.get("anime_sn"),
+                    "anime_sn": anime.get("anime_sn", 0),
                     "title": anime.get("title", ""),
                     "content": anime.get("content", ""),
                     "tags": anime.get("tags", []),
@@ -474,7 +497,7 @@ class SimpleAnimePushCore:
         now = datetime.now(TW_TZ)
         if now >= next_push_time:
             # 到達推送時間，檢查並推送當前時間的排程
-            await self._check_and_push_schedule(channel_id)
+            await self._check_and_push(channel_id)
         else:
             # 時間還沒到，這不應該發生，但為安全起見繼續循環
             logger.debug(f"⏰ 睡眠結束但尚未到達推送時間，當前時間: {now}, 推送時間: {next_push_time}")
@@ -482,7 +505,7 @@ class SimpleAnimePushCore:
     async def _fallback_polling_loop(self, channel_id: int):
         """備案模式：原始15分鐘輪詢"""
         logger.info("🔄 進入備案模式：使用原始15分鐘輪詢")
-        await self._check_and_push(channel_id)
+        await self._check_and_push_polling(channel_id)
 
         # 等待 15 分鐘 (900 秒)
         await asyncio.sleep(900)
@@ -510,7 +533,7 @@ class SimpleAnimePushCore:
         self._fail_count = 0
         logger.info("✅ 退出備案模式：恢復智能排程檢查")
 
-    async def _check_and_push(self, channel_id: int):
+    async def _check_and_push_polling(self, channel_id: int):
         """檢查並推送新動畫 (僅圖片)"""
         if not self.bot:
             return
@@ -598,7 +621,7 @@ class SimpleAnimePushCore:
             except Exception as e:
                 logger.error(f"發送失敗 videoSn={video_sn}: {e}")
 
-    async def _check_and_push_schedule(self, channel_id: int):
+    async def _check_and_push(self, channel_id: int):
         """根據當前時間的排程檢查並推送動畫"""
         if not self.bot:
             return
@@ -812,7 +835,6 @@ class AnimeDatabase:
     @property
     def db_path(self) -> str:
         return self.db._db_path
-
 
 # ========== 擴展載入入口 ==========
 
