@@ -151,27 +151,17 @@ def _load_fashion_db():
                     female_ids + neutral_ids if female_ids else all_ids
                 )
 
-        print("✓ 成功載入 fashion DB（含性別分類）")
-        print(
-            f"  Face: {len(CHARACTER_VARIATIONS.get('face', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('face_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('face_female', []))})"
-        )
-        print(
-            f"  Hair: {len(CHARACTER_VARIATIONS.get('hair', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('hair_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('hair_female', []))})"
-        )
-        print(
-            f"  Top: {len(CHARACTER_VARIATIONS.get('top', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('top_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('top_female', []))})"
-        )
-        print(
-            f"  Bottom: {len(CHARACTER_VARIATIONS.get('bottom', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('bottom_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('bottom_female', []))})"
-        )
-        print(
-            f"  Shoes: {len(CHARACTER_VARIATIONS.get('shoes', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('shoes_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('shoes_female', []))})"
-        )
+        print("[SUCCESS] 成功載入 fashion DB（含性別分類）")
+        print(f"  Face: {len(CHARACTER_VARIATIONS.get('face', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('face_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('face_female', []))})")
+        print(f"  Hair: {len(CHARACTER_VARIATIONS.get('hair', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('hair_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('hair_female', []))})")
+        print(f"  Top: {len(CHARACTER_VARIATIONS.get('top', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('top_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('top_female', []))})")
+        print(f"  Bottom: {len(CHARACTER_VARIATIONS.get('bottom', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('bottom_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('bottom_female', []))})")
+        print(f"  Shoes: {len(CHARACTER_VARIATIONS.get('shoes', []))} 個 (男:{len(CHARACTER_VARIATIONS.get('shoes_male', []))} / 女:{len(CHARACTER_VARIATIONS.get('shoes_female', []))})")
 
         return fashion_items
 
     except Exception as e:
-        print(f"⚠️ 載入 fashion DB 失敗，使用預設值: {e}")
+        print(f"[WARNING] 載入 fashion DB 失敗，使用預設值: {e}")
         # 回退到預設值（所有 ID 來自 fashion DB 驗證）
         CHARACTER_VARIATIONS.update(
             {

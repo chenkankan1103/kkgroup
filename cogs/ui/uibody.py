@@ -37,7 +37,7 @@ class UserPanel(commands.Cog):
     """用戶面板 Cog - 管理置物櫃、角色、和AI評論"""
 
     def __init__(self, bot):
-        print("🚀 UserPanel __init__ 開始")
+        print("[UserPanel] __init__ 開始")
         self.bot = bot
         self.db_path = "./user_data.db"
         self.FORUM_CHANNEL_ID = int(os.getenv("FORUM_CHANNEL_ID", "0"))
@@ -67,12 +67,12 @@ class UserPanel(commands.Cog):
         # 初始化任務
         self.locker_tasks = LockerTasks(self)
 
-        # ⏹️ 背景自動更新已完全禁用
+        # 背景自動更新已完全禁用
         # 原因：背景任務每 30 分鐘覆蓋置物櫃 embed，會覆蓋 /update_forum_lockers 的高品質動態 API 圖片
         # 用戶需手動執行 /update_forum_lockers 命令來更新置物櫃
         self.update_embeds_task = None
         print(
-            "⏹️  置物櫃背景自動更新已禁用。請使用 /update_forum_lockers 命令手動更新。"
+            "[INFO] 置物櫃背景自動更新已禁用。請使用 /update_forum_lockers 命令手動更新。"
         )
 
     def cog_unload(self):

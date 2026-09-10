@@ -1,13 +1,31 @@
 """
 動畫推送 Embed 格式模組
-專門負責生成動畫推送的 Embed 格式
+專門負責生成動畫推送的 Embed 格式和 View (按鈕)
 """
 
 import logging
 import discord
 from typing import Optional, Dict
+from shared.utils.embed_views import create_anime_push_view
 
 logger = logging.getLogger(__name__)
+
+async def generate_anime_view(episode: dict) -> Optional[discord.ui.View]:
+    """
+    生成動畫推送視圖 (按鈕)
+
+    Args:
+        episode: 動畫資訊字典
+
+    Returns:
+        discord.ui.View: 生成的 view 物件，失敗則返回 None
+    """
+    try:
+        # 使用共用的 AnimePushView 創建函數
+        return create_anime_push_view(episode)
+    except Exception as e:
+        logger.error(f"生成 view 失敗: {e}")
+        return None
 
 async def generate_anime_embed(episode: dict, push_mode: str = "unknown") -> Optional[discord.Embed]:
     """

@@ -27,7 +27,6 @@ from status_dashboard import (
     load_message_ids,
     update_dashboard_logs,
 )
-import syslog
 import logging
 
 # 設置日誌
