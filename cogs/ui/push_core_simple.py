@@ -72,11 +72,11 @@ class AnimePushDB:
         self._init_tables()
 
     def _init_tables(self):
-        """初始化 anime_notified 表"""
+        """初始化 anime_notified 表和 anime_votes 表"""
         conn = self._get_conn()
         c = conn.cursor()
 
-        # anime_notified 表 - 唯一需要的表
+        # anime_notified 表 - 追蹤已推送的動畫
         c.execute("""
             CREATE TABLE IF NOT EXISTS anime_notified (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,6 +87,22 @@ class AnimePushDB:
                 cover_url TEXT,
                 notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(videoSn, volume)
+            )
+        """)
+
+        # anime_votes 表 - 追蹤動畫投票
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                videoSn INTEGER NOT NULL,
+                animeSn INTEGER NOT NULL,
+                message_id INTEGER,
+                vote_type TEXT NOT NULL,  -- masterpiece, great, decent, small_audience, disaster, comment
+                user_hash TEXT NOT NULL,  -- 匿名用戶雜湊
+                comment TEXT,             -- 只有在 vote_type='comment' 時有值
+                anime_name TEXT,          -- 動畫名稱（備用）
+                voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(videoSn, user_hash, vote_type)  -- 同一用戶對同一動畫只能投同一類型的一票
             )
         """)
 
@@ -146,6 +162,120 @@ class AnimePushDB:
         rows = c.fetchall()
         conn.close()
         return {int(row[0]) for row in rows if row[0] is not None}
+
+    # ====== 投票功能 ======
+
+    def record_vote(
+        self,
+        video_sn: int,
+        anime_sn: int,
+        message_id: Optional[int],
+        vote_type: str,
+        user_hash: str,
+        anime_name: str = "",
+        comment: str = "",
+    ) -> bool:
+        """記錄投票（如果用戶已投過同類型票則更新）"""
+        try:
+            conn = self._get_conn()
+            c = conn.cursor()
+
+            # 使用 INSERT OR REPLACE 來實現「新票替換舊票」的邏輯
+            c.execute(
+                """
+                INSERT OR REPLACE INTO anime_votes
+                (videoSn, animeSn, message_id, vote_type, user_hash, comment, anime_name, voted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                """,
+                (video_sn, anime_sn, message_id, vote_type, user_hash, comment, anime_name),
+            )
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"❌ 記錄投票失敗: {e}")
+            return False
+
+    def get_vote_stats(self, video_sn: int) -> Dict[str, int]:
+        """獲取指定動畫的投票統計"""
+        try:
+            conn = self._get_conn()
+            c = conn.cursor()
+
+            # 統計每種投票類型的數量（不包括評論）
+            c.execute(
+                """
+                SELECT vote_type, COUNT(*) as count
+                FROM anime_votes
+                WHERE videoSn = ? AND vote_type != 'comment'
+                GROUP BY vote_type
+                """,
+                (video_sn,),
+            )
+
+            rows = c.fetchall()
+            conn.close()
+
+            # 初始化所有投票類型為0
+            vote_stats = {
+                "masterpiece": 0,
+                "great": 0,
+                "decent": 0,
+                "small_audience": 0,
+                "disaster": 0,
+            }
+
+            # 填入實際統計值
+            for row in rows:
+                vote_type = row[0]
+                count = int(row[1])
+                if vote_type in vote_stats:
+                    vote_stats[vote_type] = count
+
+            return vote_stats
+        except Exception as e:
+            logger.error(f"❌ 獲取投票統計失敗: {e}")
+            return {
+                "masterpiece": 0,
+                "great": 0,
+                "decent": 0,
+                "small_audience": 0,
+                "disaster": 0,
+            }
+
+    def get_vote_comments(self, video_sn: int, limit: int = 10) -> List[Dict]:
+        """獲取指定動畫的評論"""
+        try:
+            conn = self._get_conn()
+            c = conn.cursor()
+
+            c.execute(
+                """
+                SELECT user_hash, comment, voted_at
+                FROM anime_votes
+                WHERE videoSn = ? AND vote_type = 'comment' AND comment IS NOT NULL AND comment != ''
+                ORDER BY voted_at DESC
+                LIMIT ?
+                """,
+                (video_sn, limit),
+            )
+
+            rows = c.fetchall()
+            conn.close()
+
+            comments = []
+            for row in rows:
+                comments.append({
+                    "user_hash": row[0],
+                    "comment": row[1],
+                    "voted_at": row[2],
+                })
+
+            return comments
+        except Exception as e:
+            logger.error(f"❌ 獲取評論失敗: {e}")
+            return []
 
     # ====== 新增：週表相關方法 ======
 
@@ -626,7 +756,7 @@ class SimpleAnimePushCore:
 
             # 生成 embed 和發送訊息
             try:
-                embed = await generate_anime_embed(ep, push_mode="輪詢 (備案模式)")
+                embed = await generate_anime_embed(ep, push_mode="輪詢 (備案模式)", db=self.db)
                 message = await channel.send(
                     embed=embed,
                     view=view,
@@ -825,7 +955,7 @@ class SimpleAnimePushCore:
 
             # 生成 embed
             try:
-                embed = await generate_anime_embed(episode, push_mode="排程推送")
+                embed = await generate_anime_embed(episode, push_mode="排程推送", db=self.db)
             except Exception as e:
                 logger.error(f"❌ 生成 embed 失敗 videoSn={video_sn}: {e}")
                 continue  # skip to next item
@@ -900,27 +1030,27 @@ class AnimeDatabase:
     def get_notified_video_sns(self) -> Set[int]:
         return self.db.get_notified_video_sns()
 
-    # 為相容性保留的空實現
-    def mark_time_pushed(self, *args, **kwargs): return True
-    def mark_anime_pushed(self, *args, **kwargs): return True
-    def save_message_info(self, *args, **kwargs): return True
-    def get_today_schedule(self, *args, **kwargs): return []
-    def get_schedule_video_sns(*args, **kwargs): return set()
-    def is_reward_already_given(*args, **kwargs): return False
-    def record_reward(*args, **kwargs): return True
-    def record_vote(*args, **kwargs): return True
-    def get_vote_stats(*args, **kwargs): return {}
-    def get_vote_comments(*args, **kwargs): return []
-    def get_weekly_vote_stats(*args, **kwargs): return {}
-    def record_episode_stats(*args, **kwargs): return True
-    def get_anime_details(*args, **kwargs): return {}
-    def cache_anime_details(*args, **kwargs): return True
-    def get_anime_statistics(*args, **kwargs): return None
-    def get_top_anime_by_views(*args, **kwargs): return []
-    def get_multi_episode_anime_for_chart(*args, **kwargs): return []
-    def save_weekly_schedule(*args, **kwargs): return True
-    def clean_orphaned_records(*args, **kwargs): return {}
-    def cleanup_old_weeks(*args, **kwargs): return 0
+    # 為相容性保留的實現（委託給實際的 db 實例）
+    def mark_time_pushed(self, *args, **kwargs): return self.db.mark_time_pushed(*args, **kwargs)
+    def mark_anime_pushed(self, *args, **kwargs): return self.db.mark_anime_pushed(*args, **kwargs)
+    def save_message_info(self, *args, **kwargs): return self.db.save_message_info(*args, **kwargs)
+    def get_today_schedule(self, *args, **kwargs): return self.db.get_today_schedule(*args, **kwargs)
+    def get_schedule_video_sns(self, *args, **kwargs): return self.db.get_schedule_video_sns(*args, **kwargs)
+    def is_reward_already_given(self, *args, **kwargs): return self.db.is_reward_already_given(*args, **kwargs)
+    def record_reward(self, *args, **kwargs): return self.db.record_reward(*args, **kwargs)
+    def record_vote(self, *args, **kwargs): return self.db.record_vote(*args, **kwargs)
+    def get_vote_stats(self, *args, **kwargs): return self.db.get_vote_stats(*args, **kwargs)
+    def get_vote_comments(self, *args, **kwargs): return self.db.get_vote_comments(*args, **kwargs)
+    def get_weekly_vote_stats(self, *args, **kwargs): return self.db.get_weekly_vote_stats(*args, **kwargs)
+    def record_episode_stats(self, *args, **kwargs): return self.db.record_episode_stats(*args, **kwargs)
+    def get_anime_details(self, *args, **kwargs): return self.db.get_anime_details(*args, **kwargs)
+    def cache_anime_details(self, *args, **kwargs): return self.db.cache_anime_details(*args, **kwargs)
+    def get_anime_statistics(self, *args, **kwargs): return self.db.get_anime_statistics(*args, **kwargs)
+    def get_top_anime_by_views(self, *args, **kwargs): return self.db.get_top_anime_by_views(*args, **kwargs)
+    def get_multi_episode_anime_for_chart(self, *args, **kwargs): return self.db.get_multi_episode_anime_for_chart(*args, **kwargs)
+    def save_weekly_schedule(self, *args, **kwargs): return self.db.save_weekly_schedule(*args, **kwargs)
+    def clean_orphaned_records(self, *args, **kwargs): return self.db.clean_orphaned_records(*args, **kwargs)
+    def cleanup_old_weeks(self, *args, **kwargs): return self.db.cleanup_old_weeks(*args, **kwargs)
 
     @property
     def db_path(self) -> str:

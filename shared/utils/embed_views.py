@@ -352,17 +352,16 @@ class AnimePushView(discord.ui.View):
     動畫推送視圖 - 投票按鈕 + 評論按鈕 + 動畫頁/觀看連結 (永久視圖)
 
     用於動畫推送的簡化版視圖，不依賴 AnimeTracker 類別。
-    包含 6 個投票按鈕、1 個評論按鈕、動畫頁連結、觀看連結。
+    包含 5 個投票按鈕、1 個評論按鈕、動畫頁連結、觀看連結。
     """
 
     # 投票類型配置 (與 AnimeVoteView 保持一致)
     VOTE_TYPES = {
         "masterpiece": ("神作", "🟩"),
         "great": ("佳作", "🟦"),
-        "darkhorse": ("黑馬", "🟪"),
-        "decent": ("普作/小品", "🟨"),
-        "controversial": ("爭議作", "🟧"),
-        "disaster": ("雷作/糞作", "🟥"),
+        "decent": ("普作", "🟨"),
+        "small_audience": ("小眾", "🟧"),
+        "disaster": ("爛作", "🟥"),
     }
 
     def __init__(self, episode: dict, db_adapter=None):

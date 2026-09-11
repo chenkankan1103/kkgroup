@@ -8,6 +8,7 @@ import discord
 import re
 from typing import Optional, Dict
 from shared.utils.embed_views import create_anime_push_view
+from cogs.ui.push_core_simple import AnimePushDB
 
 logger = logging.getLogger(__name__)
 
@@ -80,16 +81,17 @@ async def generate_anime_view(episode: dict) -> Optional[discord.ui.View]:
         return None
 
 
-async def generate_anime_embed(episode: dict, push_mode: str = "unknown") -> Optional[discord.Embed]:
+async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Optional[AnimePushDB] = None) -> Optional[discord.Embed]:
     """
     生成動畫推送 embed（美化版）
 
-    依序呈現：標題 → 描述（截斷）→ 人氣/評分/集數資訊欄 → 縮圖 → footer。
+    依序呈現：標題 → 描述（截斷）→ 人氣/評分/集數資訊欄 → 投票統計 → 縮圖 → footer。
     依推送模式使用不同主題色，並在 footer 標記時間戳。
 
     Args:
         episode: 動畫資訊字典
         push_mode: 推送模式 ("排程推送" or "輪詢 (備案模式)")
+        db: AnimePushDB 實例，用於獲取投票統計（可選）
 
     Returns:
         discord.Embed: 生成的 embed 物件，失敗則返回 None
@@ -132,6 +134,41 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown") -> Opt
             embed.add_field(name="⭐ 評分", value=score_text, inline=True)
 
         embed.add_field(name="📡 推送方式", value=push_mode, inline=True)
+
+        # 新增：投票統計欄位
+        if db and episode.get("videoSn"):
+            try:
+                video_sn = int(episode.get("videoSn"))
+                vote_stats = db.get_vote_stats(video_sn)
+
+                # 格式化投票統計文字
+                vote_lines = []
+                vote_emojis = {
+                    "masterpiece": "🟩",
+                    "great": "🟦",
+                    "decent": "🟨",
+                    "small_audience": "🟧",
+                    "disaster": "🟥"
+                }
+                vote_labels = {
+                    "masterpiece": "神作",
+                    "great": "佳作",
+                    "decent": "普作",
+                    "small_audience": "小眾",
+                    "disaster": "爛作"
+                }
+
+                for vote_key in ["masterpiece", "great", "decent", "small_audience", "disaster"]:
+                    emoji = vote_emojis[vote_key]
+                    label = vote_labels[vote_key]
+                    count = vote_stats.get(vote_key, 0)
+                    vote_lines.append(f"{emoji} {label}: {count}")
+
+                if vote_lines:
+                    vote_text = "\n".join(vote_lines)
+                    embed.add_field(name="📊 投票統計", value=vote_text, inline=False)
+            except Exception as e:
+                logger.error(f"❌ 獲取投票統計失敗 videoSn={episode.get('videoSn')}: {e}")
 
         if cover:
             embed.set_image(url=cover)
