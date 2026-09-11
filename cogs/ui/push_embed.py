@@ -113,7 +113,7 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown") -> Opt
             episode_pattern = r'第\s*\d+\s*[集話]|\\d+\s*話|Ep\s*\d+'
             if vol_text and not re.search(episode_pattern, title, re.IGNORECASE):
                 # 以「·」分隔，避免與標題本身的文字混淆
-                display_title = f"{title} · {vol_text}
+                display_title = f"{title} · {vol_text}"
 
         embed = discord.Embed(
             title=display_title,
