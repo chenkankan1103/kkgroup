@@ -387,21 +387,24 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                     return None
 
                 data = await resp.json()
-                anime = data.get("data", {}).get("anime", {})
-                if not anime:
+                video_data = data.get("data", {}).get("video", {})
+                anime_data = data.get("data", {}).get("anime", {})
+                if not video_data and not anime_data:
                     return None
 
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"fetch_anime_details_from_api videoSn={video_sn} anime keys: {list(anime.keys())}")
-                    logger.debug(f"episodeCover={anime.get('episodeCover')}, episodeThumb={anime.get('episodeThumb')}, thumb={anime.get('thumb')}, thumbnail={anime.get('thumbnail')}, videoThumb={anime.get('videoThumb')}, cover={anime.get('cover')}")
+                    logger.debug(f"fetch_anime_details_from_api videoSn={video_sn} video keys: {list(video_data.keys())}")
+                    logger.debug(f"fetch_anime_details_from_api videoSn={video_sn} anime keys: {list(anime_data.keys())}")
+                    logger.debug(f"videoCover={video_data.get('cover')}")
+                    logger.debug(f"episodeCover={anime_data.get('episodeCover')}, episodeThumb={anime_data.get('episodeThumb')}, thumb={anime_data.get('thumb')}, thumbnail={anime_data.get('thumbnail')}, videoThumb={anime_data.get('videoThumb')}, cover={anime_data.get('cover')}")
 
                 view_count = (
-                    anime.get("popular", 0)
-                    or anime.get("viewCount", 0)
-                    or anime.get("counter", 0)
-                    or anime.get("views", 0)
-                    or anime.get("view_counter", 0)
-                    or anime.get("page_views", 0)
+                    anime_data.get("popular", 0)
+                    or anime_data.get("viewCount", 0)
+                    or anime_data.get("counter", 0)
+                    or anime_data.get("views", 0)
+                    or anime_data.get("view_counter", 0)
+                    or anime_data.get("page_views", 0)
                     or 0
                 )
                 if not isinstance(view_count, (int, float)):
@@ -411,23 +414,24 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                         view_count = 0
 
                 # 嘗試獲取 episode-specific 的縮圖，如果沒有則退回到 series cover
-                # 常見的 episode thumbnail 欄位名稱
+                # 先嘗試 video 的 cover (episode-specific)
                 episode_cover = (
-                    anime.get("episodeCover") or
-                    anime.get("episodeThumb") or
-                    anime.get("thumb") or
-                    anime.get("thumbnail") or
-                    anime.get("videoThumb") or
-                    anime.get("cover")  # fallback to series cover
+                    video_data.get("cover") or
+                    anime_data.get("episodeCover") or
+                    anime_data.get("episodeThumb") or
+                    anime_data.get("thumb") or
+                    anime_data.get("thumbnail") or
+                    anime_data.get("videoThumb") or
+                    anime_data.get("cover")  # fallback to series cover
                 )
 
                 return {
-                    "anime_sn": anime.get("anime_sn", 0),
-                    "title": anime.get("title", ""),
-                    "content": anime.get("content", ""),
-                    "tags": anime.get("tags", []),
+                    "anime_sn": anime_data.get("anime_sn", 0),
+                    "title": anime_data.get("title", ""),
+                    "content": anime_data.get("content", ""),
+                    "tags": anime_data.get("tags", []),
                     "popular": view_count,
-                    "score": anime.get("score", 0),
+                    "score": anime_data.get("score", 0),
                     "cover": episode_cover,  # 使用 episode-specific 的縮圖如果可用
                 }
     except Exception as e:
