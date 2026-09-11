@@ -102,6 +102,7 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown") -> Opt
             _DESCRIPTION_LIMIT,
         )
         volume = episode.get("volume", "")
+        logger.debug(f"[PushEmbed] Generating embed for videoSn={episode.get('videoSn', 'unknown')} cover={cover}")
 
         color = _PUSH_MODE_COLORS.get(push_mode, _DEFAULT_COLOR)
 
