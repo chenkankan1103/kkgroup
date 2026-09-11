@@ -5,6 +5,7 @@
 
 import logging
 import discord
+import re
 from typing import Optional, Dict
 from shared.utils.embed_views import create_anime_push_view
 
@@ -104,13 +105,15 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown") -> Opt
 
         color = _PUSH_MODE_COLORS.get(push_mode, _DEFAULT_COLOR)
 
-        # 標題若含集數資訊則直接沿用，否則在標題後方補充集數
+        # 標題若已含集數資訊則直接沿用，否則依需求附加集數資訊
         display_title = title
         if volume:
             vol_text = str(volume).strip()
-            # 避免重複標示（例如標題已含「第 12 集」）
-            if vol_text and vol_text not in display_title:
-                display_title = f"{title} · 第 {vol_text} 集"
+            # 只在標題中未出現明顯的集數模式時才附加
+            episode_pattern = r'第\s*\d+\s*[集話]|\\d+\s*話|Ep\s*\d+'
+            if vol_text and not re.search(episode_pattern, title, re.IGNORECASE):
+                # 以「·」分隔，避免與標題本身的文字混淆
+                display_title = f"{title} · {vol_text}
 
         embed = discord.Embed(
             title=display_title,
