@@ -391,6 +391,10 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                 if not anime:
                     return None
 
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"fetch_anime_details_from_api videoSn={video_sn} anime keys: {list(anime.keys())}")
+                    logger.debug(f"episodeCover={anime.get('episodeCover')}, episodeThumb={anime.get('episodeThumb')}, thumb={anime.get('thumb')}, thumbnail={anime.get('thumbnail')}, videoThumb={anime.get('videoThumb')}, cover={anime.get('cover')}")
+
                 view_count = (
                     anime.get("popular", 0)
                     or anime.get("viewCount", 0)
