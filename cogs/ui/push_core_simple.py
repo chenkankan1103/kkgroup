@@ -601,7 +601,13 @@ class SimpleAnimePushCore:
             try:
                 details = await fetch_anime_details_from_api(video_sn)
                 if details:
-                    ep = {**ep, "description": details.get("content", ""), "cover": details.get("cover", "")}
+                    ep = {
+                        **ep,
+                        "description": details.get("content", ""),
+                        "cover": details.get("cover", ""),
+                        "popular": details.get("popular", 0),
+                        "score": details.get("score", 0),
+                    }
             except Exception as e:
                 logger.debug(f"取得動畫詳細資訊失敗 videoSn={video_sn}: {e}")
 
