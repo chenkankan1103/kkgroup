@@ -34,7 +34,7 @@ TW_TZ = ZoneInfo("Asia/Taipei")
 ANIME_CHANNEL_ID = 1252204317453324333
 
 # 獨立推送資料庫
-ANIME_PUSH_DB_PATH = Path(__file__).resolve().parent.parent.parent / "user_data.db"
+ANIME_PUSH_DB_PATH = Path(__file__).resolve().parent.parent.parent / "anime_push.db"
 
 # API 常數
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
@@ -753,19 +753,47 @@ class SimpleAnimePushCore:
                         episode.update({
                             "title": anime_data_parsed.get("title", episode["title"]),
                             "content": anime_data_parsed.get("content", episode["content"]),
-                            # 嘗試獲取 episode-specific 的縮圖
+                            # 嘗試獲取 episode-specific 的縮圖 - 優先使用 API 取得的資料
                             "cover": (
+                                episode["cover"] or  # 先使用 API 取得的封面（可能是episode-specific）
                                 anime_data_parsed.get("episodeCover") or
                                 anime_data_parsed.get("episodeThumb") or
                                 anime_data_parsed.get("thumb") or
                                 anime_data_parsed.get("thumbnail") or
                                 anime_data_parsed.get("videoThumb") or
-                                anime_data_parsed.get("cover") or
-                                episode["cover"]  # fallback to already determined cover
+                                anime_data_parsed.get("cover")  # 最後才使用週表的通用封面
                             ),
                         })
                     except:
                         pass  # 使用 API 取得的資料
+
+                # 顯示調試資訊：記錄實際獲取到的縮圖來源
+                cover_source = "unknown"
+                if episode.get("cover"):
+                    # 檢查縮圖來自哪個來源
+                    if anime_data_str and isinstance(anime_data_str, str) and anime_data_str.startswith('{'):
+                        try:
+                            anime_data_parsed = json.loads(anime_data_str)
+                            if anime_data_parsed.get("episodeCover") == episode["cover"]:
+                                cover_source = "episodeCover"
+                            elif anime_data_parsed.get("episodeThumb") == episode["cover"]:
+                                cover_source = "episodeThumb"
+                            elif anime_data_parsed.get("thumb") == episode["cover"]:
+                                cover_source = "thumb"
+                            elif anime_data_parsed.get("thumbnail") == episode["cover"]:
+                                cover_source = "thumbnail"
+                            elif anime_data_parsed.get("videoThumb") == episode["cover"]:
+                                cover_source = "videoThumb"
+                            elif anime_data_parsed.get("cover") == episode["cover"]:
+                                cover_source = "seriesCover"
+                            else:
+                                cover_source = "apiOrOther"
+                        except:
+                            cover_source = "apiOrOther"
+                    else:
+                        cover_source = "api"
+
+                logger.debug(f"🖼️ 縮圖來源: {cover_source} for videoSn={video_sn}")
 
             except Exception as e:
                 logger.error(f"❌ 取得動畫詳細資訊失敗 videoSn={video_sn}: {e}")
