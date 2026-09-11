@@ -823,47 +823,65 @@ class SimpleAnimePushCore:
                 logger.error(f"❌ 生成視圖失敗 videoSn={video_sn}: {e}")
                 continue
 
-            # 生成 embed 和發送訊息
+            # 生成 embed
             try:
                 embed = await generate_anime_embed(episode, push_mode="排程推送")
-                message = await channel.send(
-                    embed=embed,
-                    view=view,
-                    silent=True
-                )
-
-                if view and hasattr(view, "message_id"):
-                    view.message_id = message.id
-
-                # 記錄為已推送
-                anime_sn = episode.get("animeSn", 0)
-                title = episode.get("title", "未知標題")
-                self.db.add_notified(
-                    video_sn,
-                    anime_sn,
-                    title,
-                    "",  # volume（週表中沒有這個欄位）
-                    episode.get("cover", ""),
-                )
-
-                # 同時更新週表的 pushed 欄位
-                day_of_week = item.get("dayOfWeek", weekday)
-                scheduled_time = item.get("scheduledTime", current_time)
-                self.db.mark_time_pushed(day_of_week, scheduled_time, video_sn)
-
-                # 註冊永久視圖
-                if self.bot:
-                    self.bot.add_view(view, message_id=message.id)
-
-                logger.info(f"✅ 已排程推送 Embed: {title} (videoSn={video_sn})")
-
-                # 重置失敗計數（成功推送）
-                self._fail_count = max(0, self._fail_count - 1)
-
             except Exception as e:
-                logger.error(f"❌ 發送失敗 videoSn={video_sn}: {e}")
+                logger.error(f"❌ 生成 embed 失敗 videoSn={video_sn}: {e}")
+                continue  # skip to next item
+
+            # 發送訊息 (帶重試機制)
+            message_sent = False
+            last_send_error = None
+            for attempt in range(3):
+                try:
+                    message = await channel.send(
+                        embed=embed,
+                        view=view,
+                        silent=True
+                    )
+                    message_sent = True
+                    break
+                except Exception as e:
+                    last_send_error = e
+                    logger.warning(f"⚠️ 發送失敗 (嘗試 {attempt + 1}/3) videoSn={video_sn}: {e}")
+                    if attempt < 2:  # not the last attempt
+                        await asyncio.sleep(1 * (attempt + 1))  # 1s, 2s, 4s delay
+
+            if not message_sent:
+                logger.error(f"❌ 發送失敗 videoSn={video_sn}: {last_send_error}")
                 # 發送失敗時增加失敗計數
                 self._fail_count += 1
+                continue  # skip marking and move to next item
+
+            # 只有發送成功時才進行後續處理
+            if view and hasattr(view, "message_id"):
+                view.message_id = message.id
+
+            # 記錄為已推送
+            anime_sn = episode.get("animeSn", 0)
+            title = episode.get("title", "未知標題")
+            self.db.add_notified(
+                video_sn,
+                anime_sn,
+                title,
+                "",  # volume（週表中沒有這個欄位）
+                episode.get("cover", ""),
+            )
+
+            # 同時更新週表的 pushed 欄位
+            day_of_week = item.get("dayOfWeek", weekday)
+            scheduled_time = item.get("scheduledTime", current_time)
+            self.db.mark_time_pushed(day_of_week, scheduled_time, video_sn)
+
+            # 註冊永久視圖
+            if self.bot:
+                self.bot.add_view(view, message_id=message.id)
+
+            logger.info(f"✅ 已排程推送 Embed: {title} (videoSn={video_sn})")
+
+            # 重置失敗計數（成功推送）
+            self._fail_count = max(0, self._fail_count - 1)
 
 # ========== 相容性介面 ==========
 
