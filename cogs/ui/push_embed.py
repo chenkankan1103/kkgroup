@@ -6,9 +6,8 @@
 import logging
 import discord
 import re
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from shared.utils.embed_views import create_anime_push_view
-from cogs.ui.push_core_simple import AnimePushDB
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +80,7 @@ async def generate_anime_view(episode: dict) -> Optional[discord.ui.View]:
         return None
 
 
-async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Optional[AnimePushDB] = None) -> Optional[discord.Embed]:
+async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Optional["AnimePushDB"] = None) -> Optional[discord.Embed]:
     """
     生成動畫推送 embed（美化版）
 

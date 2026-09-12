@@ -25,7 +25,6 @@ if str(kkgroup_dir) not in sys.path:
     sys.path.insert(0, str(kkgroup_dir))
 
 from cogs.ui.bahamut_web_scraper import fetch_new_anime_from_web
-from cogs.ui.push_embed import generate_anime_view, generate_anime_embed
 
 logger = logging.getLogger(__name__)
 
@@ -697,6 +696,9 @@ class SimpleAnimePushCore:
         if not self.bot:
             return
 
+        # Import here to avoid circular import
+        from cogs.ui.push_embed import generate_anime_view, generate_anime_embed
+
         # 1. 從 API 獲取最新動畫列表
         episodes = await fetch_all_recent_anime_from_api()
         if not episodes:
@@ -790,6 +792,8 @@ class SimpleAnimePushCore:
         """根據當前時間的排程檢查並推送動畫"""
         if not self.bot:
             return
+        # Import here to avoid circular import
+        from cogs.ui.push_embed import generate_anime_view, generate_anime_embed
 
         # 取得現在時間
         now = datetime.now(TW_TZ)
