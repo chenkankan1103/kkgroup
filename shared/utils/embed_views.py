@@ -397,12 +397,12 @@ class AnimePushView(discord.ui.View):
         self.add_item(comment_button)
 
         # 添加動畫頁連結
-        anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={self.anime_sn}"
-        self.add_item(
-            discord.ui.Button(
-                label="🔗 動畫頁", url=anime_url, style=discord.ButtonStyle.link
-            )
-        )
+                anime_url = f"https://ani.gamer.com.tw/animeRef.php?sn={self.anime_sn}"
+                self.add_item(
+                    discord.ui.Button(
+                        label="▶️ 觀看第一集", url=anime_url, style=discord.ButtonStyle.link
+                    )
+                )
 
         # 添加觀看連結
         video_url = f"https://ani.gamer.com.tw/animeVideo.php?sn={self.video_sn}"

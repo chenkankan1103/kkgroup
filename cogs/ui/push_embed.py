@@ -112,7 +112,7 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Op
         if volume:
             vol_text = str(volume).strip()
             # 只在標題中未出現明顯的集數模式時才附加
-            episode_pattern = r'第\s*\d+\s*[集話]|\\d+\s*話|Ep\s*\d+'
+            episode_pattern = r'第\\s*\\d+\\s*[集話]|\\\\d+\\s*話|Ep\\s*\\d+'
             if vol_text and not re.search(episode_pattern, title, re.IGNORECASE):
                 # 以「·」分隔，避免與標題本身的文字混淆
                 display_title = f"{title} · {vol_text}"
@@ -126,6 +126,15 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Op
         # 資訊欄：人氣 / 評分 / 推送方式
         popular_text = _format_count(episode.get("popular", 0))
         score_text = _format_score(episode.get("score", 0))
+
+        # Calculate total views and average views if we have multiple episodes data
+        total_views = episode.get("total_views", 0)
+        episode_count = episode.get("episode_count", 1)
+        if total_views > 0 and episode_count > 0:
+            avg_views = total_views // episode_count  # Integer division for whole number
+            popular_text = f"{_format_count(total_views)} (平均 {_format_count(avg_views)}/集)"
+        elif popular_text:
+            popular_text = f"{popular_text} 總觀看"
 
         if popular_text:
             embed.add_field(name="👁️ 觀看次數", value=popular_text, inline=True)
