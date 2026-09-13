@@ -950,7 +950,20 @@ class WelcomeFlow(commands.Cog):
             print(f"❌ 移除物品錯誤: {e}")
 
     def create_progress_bar(self, current: int, maximum: int, length: int = 10) -> str:
-        percentage = max(0, min(1, current / maximum)) if maximum > 0 else 0
+        """創建進度條"""
+        try:
+            # 確保輸入為整數（處理從資料庫取得的字串值）
+            current = int(current)
+            maximum = int(maximum)
+        except (ValueError, TypeError):
+            # 若轉換失敗，視為無效值，將當前值設為 0
+            current = 0
+            maximum = 1  # 避免除以零
+    
+        if maximum == 0:
+            percentage = 0
+        else:
+            percentage = max(0, min(1, current / maximum))
         filled = int(length * percentage)
         return "█" * filled + "░" * (length - filled)
 
