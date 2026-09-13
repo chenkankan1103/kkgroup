@@ -178,6 +178,99 @@ class CheckInButton(discord.ui.Button):
                     performance = "✅普通"
                 else:
                     performance = "⚠️不太順利..."
+                new_level = updated_user.get("level")
+                new_streak = updated_user.get("streak")
+
+                salary_percent = int(salary_multiplier * 100)
+                if salary_multiplier > 0.8:
+                    performance = "🔥大豐收！"
+                elif salary_multiplier > 0.5:
+                    performance = "✅普通"
+                else:
+                    performance = "⚠️不太順利..."
+            if embeds_tuple and updated_user:
+                work_view = WorkActionView(updated_user, user_id)
+
+                base_salary = LEVELS[updated_user["level"]]["salary"]
+                actual_salary = int(base_salary * salary_multiplier)
+                new_level = updated_user.get("level")
+                new_streak = updated_user.get("streak")
+
+                salary_percent = int(salary_multiplier * 100)
+                if salary_multiplier > 0.8:
+                    performance = "🔥大豐收！"
+                elif salary_multiplier > 0.5:
+                    performance = "✅普通"
+                else:
+                    performance = "⚠️不太順利..."
+            if embeds_tuple and updated_user:
+                work_view = WorkActionView(updated_user, user_id)
+
+                base_salary = LEVELS[updated_user["level"]]["salary"]
+                actual_salary = int(base_salary * salary_multiplier)
+                new_level = updated_user.get("level")
+                new_streak = updated_user.get("streak")
+
+                salary_percent = int(salary_multiplier * 100)
+                if salary_multiplier > 0.8:
+                    performance = "🔥大豐收！"
+                elif salary_multiplier > 0.5:
+                    performance = "✅普通"
+                else:
+                    performance = "⚠️不太順利..."
+            if embeds_tuple and updated_user:
+                work_view = WorkActionView(updated_user, user_id)
+
+                base_salary = LEVELS[updated_user["level"]]["salary"]
+                actual_salary = int(base_salary * salary_multiplier)
+                new_level = updated_user.get("level")
+                new_streak = updated_user.get("streak")
+
+                salary_percent = int(salary_multiplier * 100)
+                if salary_multiplier > 0.8:
+                    performance = "🔥大豐收！"
+                elif salary_multiplier > 0.5:
+                    performance = "✅普通"
+                else:
+                    performance = "⚠️不太順利..."
+            if embeds_tuple and updated_user:
+                work_view = WorkActionView(updated_user, user_id)
+
+                base_salary = LEVELS[updated_user["level"]]["salary"]
+                actual_salary = int(base_salary * salary_multiplier)
+                new_level = updated_user.get("level")
+                new_streak = updated_user.get("streak")
+
+                salary_percent = int(salary_multiplier * 100)
+                if salary_multiplier > 0.8:
+                    performance = "🔥大豐收！"
+                elif salary_multiplier > 0.5:
+                    performance = "✅普通"
+                else:
+                    performance = "⚠️不太順利..."
+            if embeds_tuple and updated_user:
+                work_view = WorkActionView(updated_user, user_id)
+
+                base_salary = LEVELS[updated_user["level"]]["salary"]
+                actual_salary = int(base_salary * salary_multiplier)
+                new_level = updated_user.get("level")
+                new_streak = updated_user.get("streak")
+
+                salary_percent = int(salary_multiplier * 100)
+                if salary_multiplier > 0.8:
+                    performance = "🔥大豐收！"
+                elif salary_multiplier > 0.5:
+                    performance = "✅普通"
+                else:
+                    performance = "⚠️不太順利..."
+
+                salary_percent = int(salary_multiplier * 100)
+                if salary_multiplier > 0.8:
+                    performance = "🔥大豐收！"
+                elif salary_multiplier > 0.5:
+                    performance = "✅普通"
+                else:
+                    performance = "⚠️不太順利..."
 
                 # 記錄打卡成功日誌
                 logger.info(f"✅ 打卡成功! (user: {user_name})")
