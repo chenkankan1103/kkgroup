@@ -9,12 +9,13 @@ from datetime import datetime, timedelta
 from .database import init_db, get_user, update_user, get_all_users
 from .work_system import (
     LEVELS,
+    _safe_int,
     process_checkin,
     process_work_action,
     check_level_up,
     required_days_for_level,
     get_taiwan_time,
-)
+    )
 from status_dashboard import add_log
 
 
@@ -163,7 +164,7 @@ class CheckInButton(discord.ui.Button):
             )
 
             if embeds_tuple and updated_user:
-                work_view = WorkActionView(updated_user)
+                            work_view = WorkActionView(updated_user, user_id)
 
                 base_salary = LEVELS[updated_user["level"]]["salary"]
                 actual_salary = int(base_salary * salary_multiplier)
@@ -409,7 +410,7 @@ class WorkActionButton(discord.ui.Button):
                 await interaction.followup.send(embed=embeds_tuple[0], ephemeral=True)
 
                 # 創建新的 View 並更新按鈕狀態
-                view = WorkActionView(updated_user)
+                view = WorkActionView(updated_user, user_id)
                 actions_used = updated_user.get("actions_used", {})
                 view.update_button_states(actions_used)
 
@@ -452,7 +453,7 @@ class WorkActionButton(discord.ui.Button):
                         updated_user if updated_user is not None else get_user(user_id)
                     )
                     if current_user:
-                        view = WorkActionView(current_user)
+                        view = WorkActionView(current_user, user_id)
                         actions_used = current_user.get("actions_used", {})
                         view.update_button_states(actions_used)
 
@@ -488,13 +489,25 @@ class WorkActionButton(discord.ui.Button):
 
 
 class WorkActionView(discord.ui.View):
-    def __init__(self, user):
+    def __init__(self, user, user_id=None):
         super().__init__(timeout=None)
-        self.user_id = user["user_id"]
-
-        level = user.get("level", 1)
+        # Get user_id: try user dict first, then parameter, then fallback
+        self.user_id = user.get("user_id")
+        if self.user_id is None and user_id is not None:
+            self.user_id = user_id
+        if self.user_id is None:
+            self.user_id = "unknown"
+            logger.warning("WorkActionView: Unable to determine user_id from user dict or parameters")
+    
+        # Safely get and validate level
+        level_raw = user.get("level", 1)
+        level = _safe_int(level_raw, 1)
+        # Ensure level is within valid range (0-6)
+        if level not in LEVELS:
+            level = 1  # fallback to level 1
+            logger.warning(f"WorkActionView: Invalid level {level_raw}, falling back to level 1")
         level_info = LEVELS[level]
-
+    
         # 安全地解析 actions_used（可能是字典或JSON字符串）
         actions_used_raw = user.get("actions_used", {})
         try:
@@ -506,17 +519,17 @@ class WorkActionView(discord.ui.View):
                 actions_used = {}
         except (json.JSONDecodeError, TypeError):
             actions_used = {}
-
+    
         for action_data in level_info["actions"]:
             button = WorkActionButton(
                 label=action_data["name"],
                 custom_id=f"work:act:{action_data['name']}:{self.user_id}",
                 risk_level=action_data["risk"],
             )
-
+    
             if action_data["name"] in actions_used:
                 button.disabled = True
-
+    
             self.add_item(button)
 
     def update_button_states(self, actions_used):
@@ -579,7 +592,7 @@ class WorkCog(commands.Cog):
                 # 為今天和昨天打卡的用戶都註冊（防止跨日問題）
                 if last_work_date in [today, yesterday]:
                     try:
-                        view = WorkActionView(user)
+                        view = WorkActionView(user, user.get("user_id"))
                         self.bot.add_view(view)
                         registered_count += 1
                     except Exception as e:
