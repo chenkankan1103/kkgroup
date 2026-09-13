@@ -164,7 +164,7 @@ class CheckInButton(discord.ui.Button):
             )
 
             if embeds_tuple and updated_user:
-                            work_view = WorkActionView(updated_user, user_id)
+                work_view = WorkActionView(updated_user, user_id)
 
                 base_salary = LEVELS[updated_user["level"]]["salary"]
                 actual_salary = int(base_salary * salary_multiplier)
