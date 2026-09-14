@@ -47,6 +47,8 @@ NVIDIA_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 LITELLM_TIMEOUT_SEC = int(os.getenv("AI_LITELLM_TIMEOUT", "12"))
 LITELLM_MAX_RETRIES = int(os.getenv("AI_LITELLM_MAX_RETRIES", "1"))
+logger.info("API 金鑰載入狀態 - Gemini: %s, Backup: %s, Groq: %s, Samba: %s, NVIDIA: %s",
+            bool(GEMINI_KEY), bool(GEMINI_KEY_BK), bool(GROQ_KEY), bool(SAMBA_KEY), bool(NVIDIA_KEY))
 
 # LiteLLM 模型配置 - 按優先級排序（獨立額度的優先）
 MODEL_LIST = [
@@ -148,6 +150,7 @@ class LiteLLMClient:
         max_retries: int = LITELLM_MAX_RETRIES,
     ) -> Optional[Dict]:
         """異步完成 AI 請求，支援工具調用"""
+        logger.info("開始 AI 請求，訊息數量: %d, 工具規格: %s", len(messages), bool(tools_spec))
 
         if not _LITELLM_AVAILABLE:
             return await self._fallback_completion(messages, tools_spec)
@@ -169,68 +172,26 @@ class LiteLLMClient:
             # 準備參數
             params = model_config["litellm_params"].copy()
             params["messages"] = messages
-            params["timeout"] = timeout
-
             if tools_spec:
                 params["tools"] = tools_spec
 
-            # 重試機制
-            for attempt in range(max_retries):
-                try:
-                    response = await acompletion(**params)
+            try:
+                # 呼叫 LiteLLM
+                response = await self._litellm.acompletion(**params, timeout=timeout)
+                # 更新成功計數並返回結果
+                self._success_counts[model_name] = self._success_counts.get(model_name, 0) + 1
+                return response
+            except Exception as e:
+                logger.warning(f"{model_name} 呼叫失敗: {e}")
+                # 錯誤計數
+                self._error_counts[model_name] = self._error_counts.get(model_name, 0) + 1
+                # 觸發冷卻
+                self._cool(model_name, secs=60)
+                continue
 
-                    if response and response.choices:
-                        content = response.choices[0].message
-                        return {
-                            "content": content.content or "",
-                            "tool_calls": getattr(content, "tool_calls", None),
-                            "model": model_name,
-                            "usage": response.usage._asdict() if response.usage else {},
-                        }
-
-                except Exception as e:
-                    error_msg = str(e).lower()
-
-                    # 配額耗盡 - 立即冷卻，不重試
-                    if (
-                        "quota exceeded" in error_msg
-                        or "limit: 0" in error_msg
-                        or ("quota" in error_msg and "exceeded" in error_msg)
-                    ):
-                        logger.error(f"💀 {model_name} 配額耗盡，立即進入冷卻 300s")
-                        self._cool(model_name, 300)  # 5分鐘冷卻
-                        break  # 不重試，直接換下一個模型
-
-                    # 速率限制 - 指數退避
-                    if "429" in error_msg or "rate limit" in error_msg:
-                        delay = 2**attempt + 1
-                        logger.warning(
-                            f"⏳ {model_name} 速率限制，等待 {delay}s (嘗試 {attempt + 1}/{max_retries})"
-                        )
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(delay)
-                            continue
-                        else:
-                            self._cool(model_name, 60)
-                            logger.error(f"❌ {model_name} 速率限制，進入冷卻")
-                            break
-
-                    # API Key 錯誤
-                    elif "api key" in error_msg or "unauthorized" in error_msg:
-                        logger.error(f"❌ {model_name} API Key 無效")
-                        break
-
-                    # 其他錯誤
-                    else:
-                        logger.warning(f"⚠️ {model_name} 錯誤: {e}")
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(1)
-                            continue
-                        else:
-                            break
-
+        # 所有模型都失敗了
+        logger.error("所有模型均不可用，返回 None")
         return None
-
     async def _fallback_completion(
         self, messages: List[Dict[str, str]], tools_spec: Optional[List[Dict]] = None
     ) -> Optional[Dict]:

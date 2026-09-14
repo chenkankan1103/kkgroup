@@ -68,7 +68,7 @@ class AgentAPIClient:
         task_id: Optional[str] = None,
         callback_url: Optional[str] = None,
     ) -> dict:
-        """提交任務到 Agent Server"""
+        logger.info("提交任務到 Agent Server，user_id: %d, channel_id: %d, 續傳: %s", user_id, channel_id, continue_conv)
         payload = {
             "task_type": "code_agent",
             "payload": {
@@ -80,21 +80,25 @@ class AgentAPIClient:
             },
             "callback_url": callback_url,
         }
+        logger.debug("Agent Server 請求 payload: %s", payload)
         async with self.session.post(f"{self.base_url}/agent/task", json=payload) as resp:
             if resp.status != 200:
                 text = await resp.text()
+                logger.error("Agent Server 錯誤 %s: %s", resp.status, text)
                 raise RuntimeError(f"Agent Server Error {resp.status}: {text}")
-            return await resp.json()
+            result = await resp.json()
+            logger.info("Agent Server 任務提交成功，task_id: %s", result.get("task_id"))
+            return result
 
     async def get_task_status(self, task_id: str) -> dict:
-        """查詢任務狀態"""
-        async with self.session.get(f"{self.base_url}/agent/task/{task_id}") as resp:
-            if resp.status == 404:
-                raise ValueError("Task not found")
-            if resp.status != 200:
-                text = await resp.text()
-                raise RuntimeError(f"Agent Server Error {resp.status}: {text}")
-            return await resp.json()
+            """查詢任務狀態"""
+            async with self.session.get(f"{self.base_url}/agent/task/{task_id}") as resp:
+                if resp.status == 404:
+                    raise ValueError("Task not found")
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise RuntimeError(f"Agent Server Error {resp.status}: {text}")
+                return await resp.json()
 
     async def get_task_progress(self, task_id: str, wait: bool = False) -> dict:
         """查詢任務進度"""
@@ -304,6 +308,8 @@ class ClaudeCodeCog(commands.Cog):
 
     @app_commands.command(name="cc", description="Claude Code Agent - AI 程式開發助手（管理員限定）")
     @app_commands.describe(prompt="任務描述，例如：幫我新增一個 /ping 指令", continue_conv="繼續上一輪對話")
+    @app_commands.command(name="cc", description="Claude Code Agent - AI 程式開發助手（管理員限定）")
+    @app_commands.describe(prompt="任務描述，例如：幫我新增一個 /ping 指令", continue_conv="繼續上一輪對話")
     async def cc(self, interaction: discord.Interaction, prompt: str, continue_conv: bool = False):
         if not self._check_permission(interaction):
             await interaction.response.send_message("❌ 僅限 Discord 管理員使用。", ephemeral=True)
@@ -318,6 +324,8 @@ class ClaudeCodeCog(commands.Cog):
         try:
             user_id = interaction.user.id
             channel_id = interaction.channel_id
+            logger.info("收到 /cc 指令，user_id: %d, channel_id: %d, 續傳: %s, 提示詞長度: %d", 
+                        user_id, channel_id, continue_conv, len(prompt))
 
             # 檢查是否有進行中的任務
             existing = self.tracker.get(user_id, channel_id)
@@ -332,6 +340,7 @@ class ClaudeCodeCog(commands.Cog):
                 task_id=task_id,
             )
             task_id = result["task_id"]
+            logger.info("任務已提交，task_id: %s", task_id)
 
             # 發送初始進度訊息
             stop_view = StopView(self, user_id, task_id)
@@ -343,6 +352,7 @@ class ClaudeCodeCog(commands.Cog):
 
             # 記錄區域追蹤
             self.tracker.set(user_id, channel_id, task_id, initial_msg.id)
+            logger.debug("已設定區域任務追蹤，task_id: %s, message_id: %d", task_id, initial_msg.id)
 
             # 背景輪詢進度
             asyncio.create_task(self._poll_progress(initial_msg, task_id, stop_view, prompt))
