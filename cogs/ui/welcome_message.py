@@ -1213,7 +1213,8 @@ class WelcomeFlow(commands.Cog):
 
             embed.set_thumbnail(url=user.display_avatar.url)
 
-        # 獲取並設置角色圖片 API URL
+            # 獲取並設置角色圖片 API URL
+
             try:
                 logger.info(
                     f"【create_welcome_embed】開始獲取角色圖片 (User: {user.name}, ID: {user.id})"
@@ -1237,7 +1238,6 @@ class WelcomeFlow(commands.Cog):
                 embed.set_footer(text="⚠️ 園區已自動為你關閉離開選項，安心享受吧。")
 
             return embed
-
         except Exception as e:
             print(f"⚠️ create_welcome_embed 發生錯誤: {e}")
             import traceback
