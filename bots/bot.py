@@ -122,11 +122,13 @@ GUILD_ID = os.getenv(f"{BOT_PREFIX}_GUILD_ID")
 SYS_CHANNEL_ID_STR = os.getenv(f"{BOT_PREFIX}_SYS_CHANNEL_ID", "0")
 SYS_CHANNEL_ID = int(SYS_CHANNEL_ID_STR) if SYS_CHANNEL_ID_STR else 0
 
+logger.info(f"{BOT_NAME} 配置載入完成 - STAGE: {STAGE}, TOKEN: {'set' if TOKEN else 'not set'}, GUILD_ID: {'set' if GUILD_ID else 'not set'}, SYS_CHANNEL_ID: {SYS_CHANNEL_ID}")
+
 if not TOKEN:
     raise RuntimeError(f"❌ {BOT_PREFIX}_BOT_TOKEN 未在 .env 中設定")
 
 # ============================================================
-# Discord 客戶端初始化
+# 配置區 - 根據不同 BOT 修改此區域
 # ============================================================
 guild = discord.Object(id=GUILD_ID) if GUILD_ID else None
 intents = discord.Intents.default()
@@ -151,8 +153,13 @@ def _delete_stale_entry_point_commands_sync(application_id: int) -> int:
     }
     commands_url = f"https://discord.com/api/v10/applications/{application_id}/commands"
 
-    response = requests.get(commands_url, headers=headers, timeout=15)
-    response.raise_for_status()
+    logger.info(f"Fetching commands for application {application_id}")
+    try:
+        response = requests.get(commands_url, headers=headers, timeout=15)
+        response.raise_for_status()
+    except Exception as e:
+        logger.error(f"Failed to fetch commands for application {application_id}: {e}")
+        raise
     commands_payload = response.json()
 
     deleted = 0
@@ -160,12 +167,18 @@ def _delete_stale_entry_point_commands_sync(application_id: int) -> int:
         if int(command.get("type", 0)) != 4:
             continue
 
-        delete_response = requests.delete(
-            f"{commands_url}/{command['id']}",
-            headers=headers,
-            timeout=15,
-        )
+        logger.info(f"Deleting Entry Point command {command['id']}")
+        try:
+            delete_response = requests.delete(
+                f"{commands_url}/{command['id']}",
+                headers=headers,
+                timeout=15,
+            )
+        except Exception as e:
+            logger.error(f"Exception when deleting Entry Point command {command['id']}: {e}")
+            raise
         if delete_response.status_code not in (200, 204):
+            logger.error(f"Failed to delete Entry Point command {command['id']}: {delete_response.status_code} {delete_response.text}")
             raise RuntimeError(
                 f"刪除 Entry Point command 失敗: {delete_response.status_code} {delete_response.text}"
             )
@@ -321,15 +334,12 @@ async def setup_modules(bot_client):
         return []
 
     file_log(f"[setup_modules] 調用 find_and_load_extensions() - 包: {package_prefix}")
-
     extensions = await find_and_load_extensions(full_path, package_prefix, bot_client)
-
     file_log(f"[setup_modules] find_and_load_extensions() 返回 {len(extensions)} 擴展")
     file_log(f"[setup_modules] 函數完成，共 {len(extensions)} 個擴展")
-
+    if extensions:
+        file_log(f"[setup_modules] 已載入擴展: {', '.join(extensions)}")
     return extensions
-
-
 async def reload_extension_on_change(ext_name):
     """熱重載擴展（防止重複觸發）"""
     async with _reload_lock:

@@ -71,9 +71,10 @@ class NvidiaNimClient:
     """NVIDIA NIM API 客戶端 (OpenAI 相容格式)"""
 
     def __init__(self, api_key: str, api_url: str = NVIDIA_API_URL):
-        self.api_key = api_key
-        self.api_url = api_url
-        self._session: Optional["aiohttp.ClientSession"] = None
+            self.api_key = api_key
+            self.api_url = api_url
+            logger.info("NVIDIA NIM Client initialized with API URL: %s", self.api_url)
+            self._session: Optional["aiohttp.ClientSession"] = None
 
     @property
     def session(self) -> "aiohttp.ClientSession":
@@ -88,37 +89,43 @@ class NvidiaNimClient:
         return self._session
 
     async def create_message(
-        self,
-        messages: list[dict],
-        system: str,
-        tools: list[dict],
-        model: str = "auto",
-        max_tokens: int = MAX_TOKENS,
-    ) -> dict:
-        # 模型自動選擇邏輯
-        if model == "auto":
-            model = "nvidia/nemotron-3-super-120b-a12b"  # 默認較快模型
+            self,
+            messages: list[dict],
+            system: str,
+            tools: list[dict],
+            model: str = "auto",
+            max_tokens: int = MAX_TOKENS,
+        ) -> dict:
+            logger.info("調用 NVIDIA NIM API，模型: %s, 訊息數量: %d, 工具數量: %d", 
+                        model if model != "auto" else "nvidia/nemotron-3-super-120b-a12b", 
+                        len(messages), len(tools))
+            # 模型自動選擇邏輯
+            if model == "auto":
+                model = "nvidia/nemotron-3-super-120b-a12b"  # 默認較快模型
 
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "tools": tools,
-            "tool_choice": "auto",
-        }
-        if system:
-            payload["system"] = system
+            payload = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "tools": tools,
+                "tool_choice": "auto",
+            }
+            if system:
+                payload["system"] = system
 
-        async with self.session.post(self.api_url, json=payload) as resp:
-            if resp.status != 200:
-                error_text = await resp.text()
-                raise RuntimeError(f"NVIDIA API Error {resp.status}: {error_text}")
-            data = await resp.json()
-            return data["choices"][0]["message"]
+            logger.debug("NVIDIA API 請求 payload: %s", payload)
+            async with self.session.post(self.api_url, json=payload) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error("NVIDIA API 錯誤 %s: %s", resp.status, error_text)
+                    raise RuntimeError(f"NVIDIA API Error {resp.status}: {error_text}")
+                data = await resp.json()
+                logger.info("NVIDIA API 調用成功")
+                return data["choices"][0]["message"]
 
-    async def close(self):
-        if self._session and not self._session.closed:
-            await self._session.close()
+        async def close(self):
+            if self._session and not self._session.closed:
+                await self._session.close()
 
 
 # ─── 基礎設施：工具執行器 (延遲載入) ─────────────────────────────────
@@ -138,24 +145,27 @@ class ToolExecutor:
         return self._tools_module
 
     async def execute(self, name: str, args: dict) -> str:
+        logger.info("執行工具: %s, 參數: %s", name, args)
         method = getattr(self.tools, name, None)
         if not method:
             return f"❌ 未知工具: {name}"
         try:
-            return await method(**args)
+            result = await method(**args)
+            logger.info("工具 %s 執行成功", name)
+            return result
         except PermissionError as e:
+            logger.warning("工具 %s 權限拒絕: %s", name, e)
             return f"❌ 權限拒絕: {e}"
         except FileNotFoundError as e:
+            logger.warning("工具 %s 檔案不存在: %s", name, e)
             return f"❌ 檔案不存在: {e}"
         except TimeoutError as e:
+            logger.warning("工具 %s 超時: %s", name, e)
             return f"❌ {e}"
         except Exception as e:
             logger.exception(f"Tool {name} error")
             return f"❌ 執行錯誤: {e}"
 
-
-# ─── 核心 Agent 類別 ─────────────────────────────────────────────────
-class ClaudeCodeAgent:
     """
     Claude Code Agent - Agentic Loop 實作
 
