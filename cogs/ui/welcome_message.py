@@ -14,6 +14,8 @@ import time
 from datetime import datetime
 from db_adapter import get_user, set_user, get_user_field, set_user_field
 from cogs.ui.utils import paperdoll_manager
+import logging
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -1211,21 +1213,22 @@ class WelcomeFlow(commands.Cog):
 
             embed.set_thumbnail(url=user.display_avatar.url)
 
-            # 獲取並設置角色圖片 API URL
+        # 獲取並設置角色圖片 API URL
             try:
-                print(
-                    f"📸 【create_welcome_embed】開始獲取角色圖片 (User: {user.name}, ID: {user.id})"
+                logger.info(
+                    f"【create_welcome_embed】開始獲取角色圖片 (User: {user.name}, ID: {user.id})"
                 )
                 character_image_url = await self.get_character_image_url(user_data)
-                    
+
                 if character_image_url:
                     embed.set_image(url=character_image_url)
-                    print("✅ 【create_welcome_embed】紙娃娃已設置")
+                    logger.info(f"【create_welcome_embed】紙娃娃已設置 for user {user.id}")
                 else:
-                    print("⚠️ 【create_welcome_embed】無法獲取紙娃娃圖片。 user_data: {user_data}")
+                    logger.warning(f"【create_welcome_embed】無法獲取紙娃娃圖片 for user {user.id}. user_data: {user_data}")
             except Exception as e:
-                print(
-                    f"❌ 【create_welcome_embed】獲取紙娃娃失敗: {type(e).__name__}: {e}"
+                logger.error(
+                    f"【create_welcome_embed】獲取紙娃娃失敗: {type(e).__name__}: {e}",
+                    exc_info=True
                 )
 
             if user_data.get("is_stunned", 0) == 1:
