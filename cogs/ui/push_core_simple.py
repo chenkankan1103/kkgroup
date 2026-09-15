@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 TW_TZ = ZoneInfo("Asia/Taipei")
 ANIME_CHANNEL_ID = 1252204317453324333
 
-# 獨立推送資料庫
+# 獨立推送資料庫（anime_notified、anime_votes、anime_weekly_schedule）
+# 週表與推送資料同庫管理，與 user_data.db 完全分離
 ANIME_PUSH_DB_PATH = Path(__file__).resolve().parent.parent.parent / "anime_push.db"
 
 # API 常數
@@ -63,6 +64,7 @@ API_HEADERS = {
 
 # ========== 資料庫實現 ==========
 
+
 class AnimePushDB:
     """動畫推送專用資料庫 - 只維護 anime_notified 表"""
 
@@ -71,7 +73,7 @@ class AnimePushDB:
         self._init_tables()
 
     def _init_tables(self):
-        """初始化 anime_notified 表和 anime_votes 表"""
+        """初始化 anime_notified、anime_votes 和 anime_weekly_schedule 表"""
         conn = self._get_conn()
         c = conn.cursor()
 
@@ -105,6 +107,21 @@ class AnimePushDB:
             )
         """)
 
+        # anime_weekly_schedule 表 - 週表排程（本庫專屬，與 user_data.db 分離）
+        # dayOfWeek 慣例: 1=週一, ..., 7=週日（與填充腳本一致）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_weekly_schedule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                weekStartDate TEXT NOT NULL,
+                dayOfWeek INTEGER NOT NULL,
+                scheduledTime TEXT NOT NULL,
+                pushed INTEGER DEFAULT 0,
+                animeData TEXT,
+                videoSn INTEGER,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         conn.commit()
         conn.close()
         logger.info("✅ [AnimePushDB] 資料庫初始化完成: anime_push.db")
@@ -125,7 +142,10 @@ class AnimePushDB:
         conn = self._get_conn()
         c = conn.cursor()
         if volume:
-            c.execute("SELECT 1 FROM anime_notified WHERE videoSn=? AND volume=?", (video_sn, volume))
+            c.execute(
+                "SELECT 1 FROM anime_notified WHERE videoSn=? AND volume=?",
+                (video_sn, volume),
+            )
         else:
             c.execute("SELECT 1 FROM anime_notified WHERE videoSn=?", (video_sn,))
         row = c.fetchone()
@@ -186,7 +206,15 @@ class AnimePushDB:
                 (videoSn, animeSn, message_id, vote_type, user_hash, comment, anime_name, voted_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 """,
-                (video_sn, anime_sn, message_id, vote_type, user_hash, comment, anime_name),
+                (
+                    video_sn,
+                    anime_sn,
+                    message_id,
+                    vote_type,
+                    user_hash,
+                    comment,
+                    anime_name,
+                ),
             )
 
             conn.commit()
@@ -265,11 +293,13 @@ class AnimePushDB:
 
             comments = []
             for row in rows:
-                comments.append({
-                    "user_hash": row[0],
-                    "comment": row[1],
-                    "voted_at": row[2],
-                })
+                comments.append(
+                    {
+                        "user_hash": row[0],
+                        "comment": row[1],
+                        "voted_at": row[2],
+                    }
+                )
 
             return comments
         except Exception as e:
@@ -284,8 +314,12 @@ class AnimePushDB:
         monday = date_obj - timedelta(days=date_obj.weekday())
         return monday.strftime("%Y-%m-%d")
 
-    def get_today_schedule(self) -> List[Dict]:
-        """查詢今日應該推送的動畫排程"""
+    def get_today_schedule(self, week_start_date: str = None) -> List[Dict]:
+        """查詢今日應該推送的動畫排程（anime_weekly_schedule 表）
+
+        week_start_date 參數為相容 AnimeScheduleTracker 的委託呼叫，忽略之
+        （本方法一律以目前時間計算所在週）
+        """
         try:
             conn = self._get_conn()
             c = conn.cursor()
@@ -294,18 +328,22 @@ class AnimePushDB:
             now = datetime.now(TW_TZ)
             today_date = now.strftime("%Y-%m-%d")
             # Python的weekday(): 0=週一, 6=週日
-            # 資料庫中的weekday: 0=星期日, 1=星期一, ..., 6=星期六
-            # 轉換公式: database_weekday = (python_weekday + 1) % 7
+            # 資料庫中的weekday: 1=週一, ..., 7=週日（與填充腳本一致）
+            # 轉換公式: database_weekday = python_weekday + 1
             python_weekday = now.weekday()
-            database_weekday = (python_weekday + 1) % 7
+            database_weekday = python_weekday + 1
             # 取得本週的週一日期
             week_start_date = self._get_week_start_date(now)
 
-            # 查詢今日的排程
-            c.execute("""
-                SELECT * FROM anime_weekly_schedule
+            # 查詢今日的排程（明確欄位，避免依賴表結構順序）
+            c.execute(
+                """
+                SELECT id, weekStartDate, dayOfWeek, scheduledTime, pushed, animeData, videoSn
+                FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
-            """, (week_start_date, database_weekday))
+            """,
+                (week_start_date, database_weekday),
+            )
 
             rows = c.fetchall()
             conn.close()
@@ -315,18 +353,26 @@ class AnimePushDB:
             for row in rows:
                 # 假設表結構為：id, weekStartDate, dayOfWeek, scheduledTime, pushed, animeData, videoSn
                 # 由於連線使用 text_factory = bytes，需要解碼文字欄位
-                weekStartDate = row[1].decode('utf-8') if isinstance(row[1], bytes) else row[1]
-                scheduledTime = row[3].decode('utf-8') if isinstance(row[3], bytes) else row[3]
-                animeData = row[5].decode('utf-8') if isinstance(row[5], bytes) else row[5]
-                schedule.append({
-                    "id": row[0],
-                    "weekStartDate": weekStartDate,
-                    "dayOfWeek": row[2],
-                    "scheduledTime": scheduledTime,
-                    "pushed": bool(row[4]),
-                    "animeData": animeData,  # 這可能是JSON字符串
-                    "videoSn": row[6]
-                })
+                weekStartDate = (
+                    row[1].decode("utf-8") if isinstance(row[1], bytes) else row[1]
+                )
+                scheduledTime = (
+                    row[3].decode("utf-8") if isinstance(row[3], bytes) else row[3]
+                )
+                animeData = (
+                    row[5].decode("utf-8") if isinstance(row[5], bytes) else row[5]
+                )
+                schedule.append(
+                    {
+                        "id": row[0],
+                        "weekStartDate": weekStartDate,
+                        "dayOfWeek": row[2],
+                        "scheduledTime": scheduledTime,
+                        "pushed": bool(row[4]),
+                        "animeData": animeData,  # 這可能是JSON字符串
+                        "videoSn": row[6],
+                    }
+                )
 
             return schedule
         except Exception as e:
@@ -334,7 +380,7 @@ class AnimePushDB:
             return []
 
     def get_next_push_time(self) -> Optional[datetime]:
-        """計算距離下次排程推送的時間"""
+        """計算距離下次排程推送的時間（anime_weekly_schedule 表）"""
         try:
             conn = self._get_conn()
             c = conn.cursor()
@@ -343,20 +389,23 @@ class AnimePushDB:
             now = datetime.now(TW_TZ)
             today_date = now.strftime("%Y-%m-%d")
             # Python的weekday(): 0=週一, 6=週日
-            # 資料庫中的weekday: 0=星期日, 1=星期一, ..., 6=星期六
-            # 轉換公式: database_weekday = (python_weekday + 1) % 7
+            # 資料庫中的weekday: 1=週一, ..., 7=週日（與填充腳本一致）
+            # 轉換公式: database_weekday = python_weekday + 1
             python_weekday = now.weekday()
-            database_weekday = (python_weekday + 1) % 7
+            database_weekday = python_weekday + 1
             current_time = now.strftime("%H:%M")
             # 取得本週的週一日期
             week_start_date = self._get_week_start_date(now)
 
             # 查詢今日尚未推送的排程
-            c.execute("""
+            c.execute(
+                """
                 SELECT scheduledTime FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
                 ORDER BY scheduledTime ASC
-            """, (week_start_date, database_weekday))
+            """,
+                (week_start_date, database_weekday),
+            )
 
             today_schedule = c.fetchall()
 
@@ -364,8 +413,10 @@ class AnimePushDB:
             for (scheduled_time_bytes,) in today_schedule:
                 try:
                     # 解碼 bytes 為 string
-                    scheduled_time = scheduled_time_bytes.decode('utf-8')
-                    schedule_dt = datetime.strptime(f"{today_date} {scheduled_time}", "%Y-%m-%d %H:%M")
+                    scheduled_time = scheduled_time_bytes.decode("utf-8")
+                    schedule_dt = datetime.strptime(
+                        f"{today_date} {scheduled_time}", "%Y-%m-%d %H:%M"
+                    )
                     schedule_dt = schedule_dt.replace(tzinfo=TW_TZ)
                     if schedule_dt > now:
                         conn.close()
@@ -378,16 +429,19 @@ class AnimePushDB:
             for days_ahead in range(1, 8):  # 未來1到7天
                 target_date = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
                 target_python_weekday = (now + timedelta(days=days_ahead)).weekday()
-                # 轉換為資料庫中的weekday: 0=星期日, 1=星期一, ..., 6=星期六
-                target_database_weekday = (target_python_weekday + 1) % 7
+                # 轉換為資料庫中的weekday: 1=週一, ..., 7=週日（與填充腳本一致）
+                target_database_weekday = target_python_weekday + 1
                 # 取得目標日期所在週的週一日期
                 target_date_obj = datetime.strptime(target_date, "%Y-%m-%d")
                 target_week_start_date = self._get_week_start_date(target_date_obj)
 
-                c.execute("""
+                c.execute(
+                    """
                     SELECT MIN(scheduledTime) FROM anime_weekly_schedule
                     WHERE weekStartDate = ? AND dayOfWeek = ? AND pushed = 0
-                """, (target_week_start_date, target_database_weekday))
+                """,
+                    (target_week_start_date, target_database_weekday),
+                )
 
                 result = c.fetchone()
                 if result and result[0]:
@@ -395,8 +449,10 @@ class AnimePushDB:
                     target_time_bytes = result[0]
                     try:
                         # 解碼 bytes 為 string
-                        target_time = target_time_bytes.decode('utf-8')
-                        target_datetime = datetime.strptime(f"{target_date} {target_time}", "%Y-%m-%d %H:%M")
+                        target_time = target_time_bytes.decode("utf-8")
+                        target_datetime = datetime.strptime(
+                            f"{target_date} {target_time}", "%Y-%m-%d %H:%M"
+                        )
                         target_datetime = target_datetime.replace(tzinfo=TW_TZ)
                         conn.close()
                         return target_datetime
@@ -409,7 +465,9 @@ class AnimePushDB:
             logger.error(f"❌ 計算下次推送時間失敗: {e}")
             return None
 
-    def mark_time_pushed(self, day_of_week: int, scheduled_time: str, video_sn: int) -> bool:
+    def mark_time_pushed(
+        self, day_of_week: int, scheduled_time: str, video_sn: int
+    ) -> bool:
         """標記特定時間的動畫已推送"""
         try:
             conn = self._get_conn()
@@ -422,23 +480,101 @@ class AnimePushDB:
             week_start_date = self._get_week_start_date(now)
 
             # 更新對應的記錄
-            c.execute("""
+            c.execute(
+                """
                 UPDATE anime_weekly_schedule
                 SET pushed = 1
                 WHERE weekStartDate = ? AND dayOfWeek = ? AND scheduledTime = ? AND videoSn = ?
-            """, (week_start_date, day_of_week, scheduled_time, video_sn))
+            """,
+                (week_start_date, day_of_week, scheduled_time, video_sn),
+            )
 
             conn.commit()
             conn.close()
 
-            logger.debug(f"✅ 標記排程為已推送: videoSn={video_sn}, day={day_of_week}, time={scheduled_time}")
+            logger.debug(
+                f"✅ 標記排程為已推送: videoSn={video_sn}, day={day_of_week}, time={scheduled_time}"
+            )
             return True
         except Exception as e:
             logger.error(f"❌ 標記排程為已推送失敗: {e}")
             return False
 
+    def save_weekly_schedule(self, week_start_date: str, schedule_data: list) -> bool:
+        """全量覆蓋週表：先刪除該週資料再插入，保留 pushed=1（UPSERT 機制）
+
+        Args:
+            week_start_date: 週起始日期 "YYYY-MM-DD"
+            schedule_data: 列表，每項包含 {day_of_week, scheduled_time, anime_data}
+        """
+        conn = self._get_conn()
+        c = conn.cursor()
+
+        try:
+            # 1. 查詢該週已推送的記錄（保留 pushed=1）
+            c.execute(
+                "SELECT dayOfWeek, scheduledTime, videoSn FROM anime_weekly_schedule WHERE weekStartDate=? AND pushed=1",
+                (week_start_date,),
+            )
+            pushed_records = c.fetchall()
+            pushed_set = {(row[0], row[1], row[2]) for row in pushed_records}
+
+            # 2. 刪除該週所有資料
+            c.execute(
+                "DELETE FROM anime_weekly_schedule WHERE weekStartDate=?",
+                (week_start_date,),
+            )
+
+            # 3. Pre-dedup by (day_of_week, scheduled_time) 避免重複插入
+            seen = set()
+            deduped = []
+            for item in schedule_data:
+                key = (item["day_of_week"], item["scheduled_time"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(item)
+
+            for item in deduped:
+                day_of_week = item["day_of_week"]
+                scheduled_time = item["scheduled_time"]
+                anime_data = item.get("anime_data", {})
+                video_sn = anime_data.get("videoSn")
+                pushed = (
+                    1 if (day_of_week, scheduled_time, video_sn) in pushed_set else 0
+                )
+
+                c.execute(
+                    """INSERT INTO anime_weekly_schedule
+                       (weekStartDate, dayOfWeek, scheduledTime, pushed, animeData, videoSn)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        week_start_date,
+                        day_of_week,
+                        scheduled_time,
+                        pushed,
+                        json.dumps(anime_data, ensure_ascii=False),
+                        video_sn,
+                    ),
+                )
+
+            conn.commit()
+            logger.info(
+                f"✅ [AnimePushDB] 週表覆蓋完成: {week_start_date} ({len(deduped)} 個時刻)"
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                f"❌ [AnimePushDB] save_weekly_schedule 失敗: {e}", exc_info=True
+            )
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
 
 # ========== API 獲取方法（保留自 ranking_stats）==========
+
 
 async def fetch_all_recent_anime_from_api() -> Optional[List[Dict]]:
     """從 Bahamut API 獲取所有最近的動畫集"""
@@ -471,7 +607,9 @@ async def fetch_all_recent_anime_from_api() -> Optional[List[Dict]]:
                             seen.add(video_sn)
                             unique_episodes.append(ep)
 
-                logger.info(f"🔍 [fetch_all_recent_anime_from_api] 獲得 {len(unique_episodes)} 部最近的動畫")
+                logger.info(
+                    f"🔍 [fetch_all_recent_anime_from_api] 獲得 {len(unique_episodes)} 部最近的動畫"
+                )
                 return unique_episodes
     except asyncio.TimeoutError:
         logger.warning(f"⚠️ API timeout ({API_TIMEOUT}s)")
@@ -484,8 +622,14 @@ async def fetch_all_recent_anime_from_api() -> Optional[List[Dict]]:
 def extract_view_count_from_episode(episode: dict, default: int = 0) -> int:
     """從 episode 物件提取觀看數"""
     view_candidates = [
-        "popular", "viewCount", "counter", "views", "view_counter",
-        "page_views", "click", "playCount",
+        "popular",
+        "viewCount",
+        "counter",
+        "views",
+        "view_counter",
+        "page_views",
+        "click",
+        "playCount",
     ]
     for field in view_candidates:
         raw = episode.get(field)
@@ -510,7 +654,9 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
             async with session.get(
                 api_url,
                 timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
-                headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)"
+                },
             ) as resp:
                 if resp.status != 200:
                     return None
@@ -522,10 +668,16 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                     return None
 
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"fetch_anime_details_from_api videoSn={video_sn} video keys: {list(video_data.keys())}")
-                    logger.debug(f"fetch_anime_details_from_api videoSn={video_sn} anime keys: {list(anime_data.keys())}")
+                    logger.debug(
+                        f"fetch_anime_details_from_api videoSn={video_sn} video keys: {list(video_data.keys())}"
+                    )
+                    logger.debug(
+                        f"fetch_anime_details_from_api videoSn={video_sn} anime keys: {list(anime_data.keys())}"
+                    )
                     logger.debug(f"videoCover={video_data.get('cover')}")
-                    logger.debug(f"episodeCover={anime_data.get('episodeCover')}, episodeThumb={anime_data.get('episodeThumb')}, thumb={anime_data.get('thumb')}, thumbnail={anime_data.get('thumbnail')}, videoThumb={anime_data.get('videoThumb')}, cover={anime_data.get('cover')}")
+                    logger.debug(
+                        f"episodeCover={anime_data.get('episodeCover')}, episodeThumb={anime_data.get('episodeThumb')}, thumb={anime_data.get('thumb')}, thumbnail={anime_data.get('thumbnail')}, videoThumb={anime_data.get('videoThumb')}, cover={anime_data.get('cover')}"
+                    )
 
                 view_count = (
                     anime_data.get("popular", 0)
@@ -545,13 +697,13 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                 # 嘗試獲取 episode-specific 的縮圖，如果沒有則退回到 series cover
                 # 先嘗試 video 的 cover (episode-specific)
                 episode_cover = (
-                    video_data.get("cover") or
-                    anime_data.get("episodeCover") or
-                    anime_data.get("episodeThumb") or
-                    anime_data.get("thumb") or
-                    anime_data.get("thumbnail") or
-                    anime_data.get("videoThumb") or
-                    anime_data.get("cover")  # fallback to series cover
+                    video_data.get("cover")
+                    or anime_data.get("episodeCover")
+                    or anime_data.get("episodeThumb")
+                    or anime_data.get("thumb")
+                    or anime_data.get("thumbnail")
+                    or anime_data.get("videoThumb")
+                    or anime_data.get("cover")  # fallback to series cover
                 )
 
                 return {
@@ -569,6 +721,7 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
 
 
 # ========== 簡化推送核心 ==========
+
 
 class SimpleAnimePushCore:
     """極簡動畫推送核心：智能排程檢查與15分鐘輪詢備案"""
@@ -646,7 +799,9 @@ class SimpleAnimePushCore:
         # 設置上限為30分鐘（1800秒）以避免錯過排程
         sleep_seconds = min(sleep_seconds, 1800)
 
-        logger.debug(f"😴 智能睡眠 {sleep_seconds:.0f} 秒直到下次推送時間: {next_push_time}")
+        logger.debug(
+            f"😴 智能睡眠 {sleep_seconds:.0f} 秒直到下次推送時間: {next_push_time}"
+        )
 
         # 睡眠
         await asyncio.sleep(sleep_seconds)
@@ -658,7 +813,9 @@ class SimpleAnimePushCore:
             await self._check_and_push(channel_id)
         else:
             # 時間還沒到，這不應該發生，但為安全起見繼續循環
-            logger.debug(f"⏰ 睡眠結束但尚未到達推送時間，當前時間: {now}, 推送時間: {next_push_time}")
+            logger.debug(
+                f"⏰ 睡眠結束但尚未到達推送時間，當前時間: {now}, 推送時間: {next_push_time}"
+            )
 
     async def _fallback_polling_loop(self, channel_id: int):
         """備案模式：原始15分鐘輪詢"""
@@ -758,12 +915,10 @@ class SimpleAnimePushCore:
 
             # 生成 embed 和發送訊息
             try:
-                embed = await generate_anime_embed(ep, push_mode="輪詢 (備案模式)", db=self.db)
-                message = await channel.send(
-                    embed=embed,
-                    view=view,
-                    silent=True
+                embed = await generate_anime_embed(
+                    ep, push_mode="輪詢 (備案模式)", db=self.db
                 )
+                message = await channel.send(embed=embed, view=view, silent=True)
 
                 if view and hasattr(view, "message_id"):
                     view.message_id = message.id
@@ -783,7 +938,9 @@ class SimpleAnimePushCore:
                 if self.bot:
                     self.bot.add_view(view, message_id=message.id)
 
-                logger.info(f"✅ 已推送 Embed: {title} (videoSn={video_sn}, volume={volume})")
+                logger.info(
+                    f"✅ 已推送 Embed: {title} (videoSn={video_sn}, volume={volume})"
+                )
 
             except Exception as e:
                 logger.error(f"發送失敗 videoSn={video_sn}: {e}")
@@ -801,7 +958,9 @@ class SimpleAnimePushCore:
         weekday = now.weekday()
         current_time = now.strftime("%H:%M")
 
-        logger.debug(f"🔍 檢查排程: 日期={today_date}, 星期={weekday}, 時間={current_time}")
+        logger.debug(
+            f"🔍 檢查排程: 日期={today_date}, 星期={weekday}, 時間={current_time}"
+        )
 
         # 取得今日的排程
         today_schedule = self.db.get_today_schedule()
@@ -867,6 +1026,7 @@ class SimpleAnimePushCore:
                     try:
                         # 嘗試解析 JSON
                         import json
+
                         episode_data = json.loads(anime_data_str)
                         # 確保有必要的欄位
                         if not episode_data.get("title"):
@@ -888,30 +1048,47 @@ class SimpleAnimePushCore:
                     "title": episode_data.get("title", "未知標題"),
                     "content": episode_data.get("content", ""),
                     "cover": episode_data.get("cover", ""),
-                    "description": episode_data.get("content", ""),  # embed 需要 description
+                    "description": episode_data.get(
+                        "content", ""
+                    ),  # embed 需要 description
                     "popular": episode_data.get("popular", 0),
                     "score": episode_data.get("score", 0),
                 }
 
                 # 從週表補充資訊（如果有的話）
-                if anime_data_str and isinstance(anime_data_str, str) and anime_data_str.startswith('{'):
+                if (
+                    anime_data_str
+                    and isinstance(anime_data_str, str)
+                    and anime_data_str.startswith("{")
+                ):
                     try:
                         import json
+
                         anime_data_parsed = json.loads(anime_data_str)
-                        episode.update({
-                            "title": anime_data_parsed.get("title", episode["title"]),
-                            "content": anime_data_parsed.get("content", episode["content"]),
-                            # 嘗試獲取 episode-specific 的縮圖 - 優先使用 API 取得的資料
-                            "cover": (
-                                episode["cover"] or  # 先使用 API 取得的封面（可能是episode-specific）
-                                anime_data_parsed.get("episodeCover") or
-                                anime_data_parsed.get("episodeThumb") or
-                                anime_data_parsed.get("thumb") or
-                                anime_data_parsed.get("thumbnail") or
-                                anime_data_parsed.get("videoThumb") or
-                                anime_data_parsed.get("cover")  # 最後才使用週表的通用封面
-                            ),
-                        })
+                        episode.update(
+                            {
+                                "title": anime_data_parsed.get(
+                                    "title", episode["title"]
+                                ),
+                                "content": anime_data_parsed.get(
+                                    "content", episode["content"]
+                                ),
+                                # 嘗試獲取 episode-specific 的縮圖 - 優先使用 API 取得的資料
+                                "cover": (
+                                    episode[
+                                        "cover"
+                                    ]  # 先使用 API 取得的封面（可能是episode-specific）
+                                    or anime_data_parsed.get("episodeCover")
+                                    or anime_data_parsed.get("episodeThumb")
+                                    or anime_data_parsed.get("thumb")
+                                    or anime_data_parsed.get("thumbnail")
+                                    or anime_data_parsed.get("videoThumb")
+                                    or anime_data_parsed.get(
+                                        "cover"
+                                    )  # 最後才使用週表的通用封面
+                                ),
+                            }
+                        )
                     except:
                         pass  # 使用 API 取得的資料
 
@@ -919,18 +1096,30 @@ class SimpleAnimePushCore:
                 cover_source = "unknown"
                 if episode.get("cover"):
                     # 檢查縮圖來自哪個來源
-                    if anime_data_str and isinstance(anime_data_str, str) and anime_data_str.startswith('{'):
+                    if (
+                        anime_data_str
+                        and isinstance(anime_data_str, str)
+                        and anime_data_str.startswith("{")
+                    ):
                         try:
                             anime_data_parsed = json.loads(anime_data_str)
-                            if anime_data_parsed.get("episodeCover") == episode["cover"]:
+                            if (
+                                anime_data_parsed.get("episodeCover")
+                                == episode["cover"]
+                            ):
                                 cover_source = "episodeCover"
-                            elif anime_data_parsed.get("episodeThumb") == episode["cover"]:
+                            elif (
+                                anime_data_parsed.get("episodeThumb")
+                                == episode["cover"]
+                            ):
                                 cover_source = "episodeThumb"
                             elif anime_data_parsed.get("thumb") == episode["cover"]:
                                 cover_source = "thumb"
                             elif anime_data_parsed.get("thumbnail") == episode["cover"]:
                                 cover_source = "thumbnail"
-                            elif anime_data_parsed.get("videoThumb") == episode["cover"]:
+                            elif (
+                                anime_data_parsed.get("videoThumb") == episode["cover"]
+                            ):
                                 cover_source = "videoThumb"
                             elif anime_data_parsed.get("cover") == episode["cover"]:
                                 cover_source = "seriesCover"
@@ -959,7 +1148,9 @@ class SimpleAnimePushCore:
 
             # 生成 embed
             try:
-                embed = await generate_anime_embed(episode, push_mode="排程推送", db=self.db)
+                embed = await generate_anime_embed(
+                    episode, push_mode="排程推送", db=self.db
+                )
             except Exception as e:
                 logger.error(f"❌ 生成 embed 失敗 videoSn={video_sn}: {e}")
                 continue  # skip to next item
@@ -969,16 +1160,14 @@ class SimpleAnimePushCore:
             last_send_error = None
             for attempt in range(3):
                 try:
-                    message = await channel.send(
-                        embed=embed,
-                        view=view,
-                        silent=True
-                    )
+                    message = await channel.send(embed=embed, view=view, silent=True)
                     message_sent = True
                     break
                 except Exception as e:
                     last_send_error = e
-                    logger.warning(f"⚠️ 發送失敗 (嘗試 {attempt + 1}/3) videoSn={video_sn}: {e}")
+                    logger.warning(
+                        f"⚠️ 發送失敗 (嘗試 {attempt + 1}/3) videoSn={video_sn}: {e}"
+                    )
                     if attempt < 2:  # not the last attempt
                         await asyncio.sleep(1 * (attempt + 1))  # 1s, 2s, 4s delay
 
@@ -1017,7 +1206,9 @@ class SimpleAnimePushCore:
             # 重置失敗計數（成功推送）
             self._fail_count = max(0, self._fail_count - 1)
 
+
 # ========== 相容性介面 ==========
+
 
 class AnimeDatabase:
     """相容性包裝：提供給舊代碼使用"""
@@ -1028,39 +1219,87 @@ class AnimeDatabase:
     def is_notified(self, video_sn: int, volume: str = "") -> bool:
         return self.db.is_notified(video_sn, volume)
 
-    def add_notified(self, video_sn: int, anime_sn: int, title: str, volume: str = "", cover: str = "") -> bool:
+    def add_notified(
+        self,
+        video_sn: int,
+        anime_sn: int,
+        title: str,
+        volume: str = "",
+        cover: str = "",
+    ) -> bool:
         return self.db.add_notified(video_sn, anime_sn, title, volume, cover)
 
     def get_notified_video_sns(self) -> Set[int]:
         return self.db.get_notified_video_sns()
 
     # 為相容性保留的實現（委託給實際的 db 實例）
-    def mark_time_pushed(self, *args, **kwargs): return self.db.mark_time_pushed(*args, **kwargs)
-    def mark_anime_pushed(self, *args, **kwargs): return self.db.mark_anime_pushed(*args, **kwargs)
-    def save_message_info(self, *args, **kwargs): return self.db.save_message_info(*args, **kwargs)
-    def get_today_schedule(self, *args, **kwargs): return self.db.get_today_schedule(*args, **kwargs)
-    def get_schedule_video_sns(self, *args, **kwargs): return self.db.get_schedule_video_sns(*args, **kwargs)
-    def is_reward_already_given(self, *args, **kwargs): return self.db.is_reward_already_given(*args, **kwargs)
-    def record_reward(self, *args, **kwargs): return self.db.record_reward(*args, **kwargs)
-    def record_vote(self, *args, **kwargs): return self.db.record_vote(*args, **kwargs)
-    def get_vote_stats(self, *args, **kwargs): return self.db.get_vote_stats(*args, **kwargs)
-    def get_vote_comments(self, *args, **kwargs): return self.db.get_vote_comments(*args, **kwargs)
-    def get_weekly_vote_stats(self, *args, **kwargs): return self.db.get_weekly_vote_stats(*args, **kwargs)
-    def record_episode_stats(self, *args, **kwargs): return self.db.record_episode_stats(*args, **kwargs)
-    def get_anime_details(self, *args, **kwargs): return self.db.get_anime_details(*args, **kwargs)
-    def cache_anime_details(self, *args, **kwargs): return self.db.cache_anime_details(*args, **kwargs)
-    def get_anime_statistics(self, *args, **kwargs): return self.db.get_anime_statistics(*args, **kwargs)
-    def get_top_anime_by_views(self, *args, **kwargs): return self.db.get_top_anime_by_views(*args, **kwargs)
-    def get_multi_episode_anime_for_chart(self, *args, **kwargs): return self.db.get_multi_episode_anime_for_chart(*args, **kwargs)
-    def save_weekly_schedule(self, *args, **kwargs): return self.db.save_weekly_schedule(*args, **kwargs)
-    def clean_orphaned_records(self, *args, **kwargs): return self.db.clean_orphaned_records(*args, **kwargs)
-    def cleanup_old_weeks(self, *args, **kwargs): return self.db.cleanup_old_weeks(*args, **kwargs)
+    def mark_time_pushed(self, *args, **kwargs):
+        return self.db.mark_time_pushed(*args, **kwargs)
+
+    def mark_anime_pushed(self, *args, **kwargs):
+        return self.db.mark_anime_pushed(*args, **kwargs)
+
+    def save_message_info(self, *args, **kwargs):
+        return self.db.save_message_info(*args, **kwargs)
+
+    def get_today_schedule(self, *args, **kwargs):
+        return self.db.get_today_schedule(*args, **kwargs)
+
+    def get_schedule_video_sns(self, *args, **kwargs):
+        return self.db.get_schedule_video_sns(*args, **kwargs)
+
+    def is_reward_already_given(self, *args, **kwargs):
+        return self.db.is_reward_already_given(*args, **kwargs)
+
+    def record_reward(self, *args, **kwargs):
+        return self.db.record_reward(*args, **kwargs)
+
+    def record_vote(self, *args, **kwargs):
+        return self.db.record_vote(*args, **kwargs)
+
+    def get_vote_stats(self, *args, **kwargs):
+        return self.db.get_vote_stats(*args, **kwargs)
+
+    def get_vote_comments(self, *args, **kwargs):
+        return self.db.get_vote_comments(*args, **kwargs)
+
+    def get_weekly_vote_stats(self, *args, **kwargs):
+        return self.db.get_weekly_vote_stats(*args, **kwargs)
+
+    def record_episode_stats(self, *args, **kwargs):
+        return self.db.record_episode_stats(*args, **kwargs)
+
+    def get_anime_details(self, *args, **kwargs):
+        return self.db.get_anime_details(*args, **kwargs)
+
+    def cache_anime_details(self, *args, **kwargs):
+        return self.db.cache_anime_details(*args, **kwargs)
+
+    def get_anime_statistics(self, *args, **kwargs):
+        return self.db.get_anime_statistics(*args, **kwargs)
+
+    def get_top_anime_by_views(self, *args, **kwargs):
+        return self.db.get_top_anime_by_views(*args, **kwargs)
+
+    def get_multi_episode_anime_for_chart(self, *args, **kwargs):
+        return self.db.get_multi_episode_anime_for_chart(*args, **kwargs)
+
+    def save_weekly_schedule(self, *args, **kwargs):
+        return self.db.save_weekly_schedule(*args, **kwargs)
+
+    def clean_orphaned_records(self, *args, **kwargs):
+        return self.db.clean_orphaned_records(*args, **kwargs)
+
+    def cleanup_old_weeks(self, *args, **kwargs):
+        return self.db.cleanup_old_weeks(*args, **kwargs)
 
     @property
     def db_path(self) -> str:
         return self.db._db_path
 
+
 # ========== 擴展載入入口 ==========
+
 
 async def setup(bot):
     """設置擴展的入口點"""
