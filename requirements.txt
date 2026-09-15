@@ -28,6 +28,7 @@ litellm>=1.83.0
 beautifulsoup4
 html5lib
 serpapi
+trendspyg
 
 playwright>=1.40.0
 
