@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Google Trends API via pytrends (free, unofficial).
+Google Trends API via trendspyg (free, unofficial, uses RSS).
 Provides the same interface as the previous SerpApi stub.
 """
 
@@ -10,77 +10,62 @@ import os
 import asyncio
 from typing import List, Any
 
-import pandas as pd
-from pytrends.request import TrendReq
-
 log = logging.getLogger(__name__)
 
-# Global pytrends session (reuse to avoid too many requests)
-_pytrends = TrendReq(hl='en-US', tz=360)  # Taiwan time? tz=0 for UTC, but we can adjust.
+# Use trendspyg's RSS method for trending searches
+try:
+    from trendspyg import download_google_trends_rss
+    TRENDSPYG_AVAILABLE = True
+except ImportError:
+    log.warning("trendspyg not installed, trending topics will not be available")
+    TRENDSPYG_AVAILABLE = False
 
-def _region_to_pn(region: str) -> str:
-    """Convert region code to pytrends pn parameter."""
-    # Mapping of common region codes to pytrends country names.
-    # https://github.com/GeneralMills/pytrends/blob/master/pytrends/trend_req.py#L30
-    # The pn is the "location" as per Google Trends.
-    # We'll keep simple: if region is two-letter uppercase, try to map.
-    mapping = {
-        'TW': 'taiwan',
-        'US': 'united_states',
-        'JP': 'japan',
-        'KR': 'south_korea',
-        'CN': 'china',
-        'HK': 'hong_kong',
-        'SG': 'singapore',
-        'MY': 'malaysia',
-        'TH': 'thailand',
-        'VN': 'vietnam',
-        'PH': 'philippines',
-        'ID': 'indonesia',
-        'AU': 'australia',
-        'CA': 'canada',
-        'GB': 'united_kingdom',
-        'DE': 'germany',
-        'FR': 'france',
-        'IT': 'italy',
-        'ES': 'spain',
-    }
-    # If region in mapping, return mapped; else return region lowercased (may still work)
-    return mapping.get(region.upper(), region.lower())
+# Fallback region mapping for trendspyg (uses geo codes like 'TW', 'US', etc.)
+# trendspyg uses standard Google Trends geo codes directly
+def _region_to_geo(region: str) -> str:
+    """Convert region code to trendspyg geo parameter."""
+    # trendspyg uses standard Google Trends geo codes
+    # 'TW' for Taiwan, 'US' for United States, etc.
+    return region.upper()
 
 def _fetch_trending_topics(region: str = 'TW', limit: int = 10) -> List[dict]:
-    """Blocking call to fetch trending searches via pytrends."""
+    """Blocking call to fetch trending searches via trendspyg RSS."""
+    if not TRENDSPYG_AVAILABLE:
+        log.error("trendspyg not available, cannot fetch trending topics")
+        return []
+    
     try:
-        pn = _region_to_pn(region)
-        log.debug(f"Fetching trending searches for region={region} -> pn={pn}")
-        # pytrends expects region like 'TW' for Taiwan.
-        # For trending searches, we use trending_searches.
-        df = _pytrends.trending_searches(pn=pn)
-        # df has columns: [0] (the query), maybe 'title'? Actually returns DataFrame with one column named 0.
-        # Rename for clarity.
-        if df.empty:
+        geo = _region_to_geo(region)
+        log.debug(f"Fetching trending searches via trendspyg RSS for region={region} -> geo={geo}")
+        
+        # trendspyg's RSS method - returns list of dicts with title, traffic, url, etc.
+        trends = download_google_trends_rss(geo=geo)
+        
+        if not trends:
+            log.warning(f"No trending topics returned for region {region}")
             return []
-        # Take top `limit` rows.
-        df = df.head(limit)
-        # Build list of dicts similar to the old SerpApi format: each item has 'title' (query) and maybe 'value' and 'url'.
-        # Since pytrends doesn't provide numeric value, we can set a placeholder or use index.
-        # We'll set value as (limit - idx) to give descending scores.
+        
+        # Take top `limit` rows
+        trends = trends[:limit]
+        
+        # Build list of dicts similar to the old SerpApi format
         results = []
-        for i, row in df.iterrows():
-            keyword = str(row.iloc[0]) if len(row) > 0 else ""
+        for i, item in enumerate(trends):
+            keyword = item.get('title', '') or item.get('trend', '')
             if not keyword:
                 continue
-            # Assign a decreasing score.
+            # Assign a decreasing score
             score = limit - i
+            # Use the provided URL or construct one
+            url = item.get('url', f"https://trends.google.com/trends/trendingsearches/daily?geo={region}&date=today 1-m&q={keyword}")
             results.append({
                 "title": keyword,
                 "value": score,
-                "url": f"https://trends.google.com/trends/trendingsearches/daily?geo={region}&date=today 1-m&q={keyword}"
+                "url": url
             })
         return results
     except Exception as e:
-        log.error(f"Error fetching trending topics via pytrends for region {region}: {e}")
-        # Optionally, try fallback to worldwide or empty.
+        log.error(f"Error fetching trending topics via trendspyg for region {region}: {e}")
         return []
 
 async def get_trending_topics(region: str = 'TW', limit: int = 10) -> List[Any]:
@@ -130,7 +115,8 @@ async def get_cached_trending_topics(region: str = 'TW', limit: int = 10) -> Lis
     return await get_trending_topics(region, limit)
 
 async def get_fallback_trending_topics(region: str = 'TW', limit: int = 10) -> List[Any]:
-    """Fallback: also pytrends but maybe with different region or parameters."""
-    # We'll just call the same function; could also try a different region like 'GLOBAL' or 'worldwide'.
-    # For simplicity, we reuse the same.
-    return await get_trending_topics(region, limit)
+    """Fallback: try a different region like 'worldwide' or 'US'."""
+    # Try worldwide as fallback
+    if region.upper() != 'WORLD' and region.upper() != 'GLOBAL':
+        return await get_trending_topics('worldwide', limit)
+    return []
