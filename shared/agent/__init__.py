@@ -5,7 +5,7 @@ KK群組 - Agent 核心套件
 """
 
 from .agent_core import (
-    ClaudeCodeAgent,
+    Agent,
     NvidiaNimClient,
     ToolExecutor,
     TaskStore,
@@ -28,7 +28,7 @@ from .memory import (
 
 __all__ = [
     # Core
-    "ClaudeCodeAgent",
+    "Agent",
     "NvidiaNimClient",
     "ToolExecutor",
     "TaskStore",

@@ -18,7 +18,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,7 +43,7 @@ def get_agent_module():
     global _agent_module
     if _agent_module is None:
         from shared.agent import (
-            ClaudeCodeAgent,
+            Agent,
             create_task,
             get_task,
             list_tasks,
@@ -52,7 +52,7 @@ def get_agent_module():
             TaskStatus,
         )
         _agent_module = {
-            "ClaudeCodeAgent": ClaudeCodeAgent,
+            "Agent": Agent,
             "create_task": create_task,
             "get_task": get_task,
             "list_tasks": list_tasks,
@@ -64,7 +64,10 @@ def get_agent_module():
 
 
 # ─── 全域狀態 ─────────────────────────────────────────────────────
-_running_tasks: dict[str, "ClaudeCodeAgent"] = {}
+if TYPE_CHECKING:
+    from shared.agent import Agent  # 延遲導入，僅供型別檢查器解析
+
+_running_tasks: dict[str, "Agent"] = {}
 
 
 # ─── Pydantic Models ──────────────────────────────────────────────
@@ -104,7 +107,7 @@ class CancelRequest(BaseModel):
 async def run_agent_task(task_id: str, user_id: int, channel_id: int, instruction: str, callback_url: Optional[str]):
     """背景執行 Agent 任務"""
     mod = get_agent_module()
-    ClaudeCodeAgent = mod["ClaudeCodeAgent"]
+    Agent = mod["Agent"]
     update_task = mod["update_task"]
 
     # 進度緩衝（供長輪詢讀取）
@@ -115,7 +118,7 @@ async def run_agent_task(task_id: str, user_id: int, channel_id: int, instructio
         # 即時更新資料庫（供輪詢 API 讀取）
         await update_task(task_id, progress=msg)
 
-    agent = ClaudeCodeAgent(
+    agent = Agent(
         task_id=task_id,
         user_id=user_id,
         channel_id=channel_id,
