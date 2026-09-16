@@ -339,19 +339,33 @@ class PersonalLockerCog(commands.Cog):
     async def update_single_locker_view(self, thread):
         """檢查並更新單個置物櫃thread的視圖"""
         try:
-            # 從thread名稱提取用戶ID
+            # 從 DB 反查 thread 對應的用戶
+            # （thread 由 bot 透過 forum_channel.create_thread 建立，owner_id 是 bot 自己，不能用）
             user_id = None
             if "的置物櫃" in thread.name:
                 try:
-                    # 獲取thread的擁有者
-                    if hasattr(thread, "owner_id") and thread.owner_id:
-                        user_id = thread.owner_id
+                    from db_adapter import async_get_user_by_field, async_get_all_users
+
+                    # 先用 thread_id 快速定位（建立 thread 時會寫入 users.thread_id）
+                    user_row = await async_get_user_by_field("thread_id", thread.id)
+                    if user_row and user_row.get("user_id"):
+                        user_id = user_row["user_id"]
                     else:
-                        print(f"⚠️ [Locker Update] Thread {thread.name} 沒有owner_id")
+                        # 後備方案：掃描所有用戶比對 thread_id
+                        all_users = await async_get_all_users()
+                        for user_data in all_users:
+                            if user_data and user_data.get("thread_id") == thread.id:
+                                user_id = user_data["user_id"]
+                                break
+
+                    if not user_id:
+                        print(
+                            f"⚠️ [Locker Update] 在資料庫中找不到 thread '{thread.name}' 對應的用戶"
+                        )
                         return False
                 except Exception as parse_error:
                     print(
-                        f"⚠️ [Locker Update] 解析thread名稱失敗 '{thread.name}': {parse_error}"
+                        f"⚠️ [Locker Update] 反查thread用戶失敗 '{thread.name}': {parse_error}"
                     )
                     return False
 

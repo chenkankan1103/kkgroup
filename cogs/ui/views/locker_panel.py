@@ -4,13 +4,14 @@ from db_adapter import async_set_user_field, async_get_user
 from cogs.shop.merchant.cannabis_farming import get_user_plants
 from .work_card import WorkCardActionView
 from status_dashboard import add_log
+from shared.utils.view_registry import PersistentViewBase
 
 
-class LockerPanelView(discord.ui.View):
+class LockerPanelView(PersistentViewBase):
     """置物櫃面板 - 包含更新和大麻系統按鈕"""
 
     def __init__(self, cog, user_id: int, thread=None):
-        super().__init__(timeout=None)  # 永久View
+        super().__init__()  # 永久View（PersistentViewBase 自動 timeout=None）
         self.cog = cog
         self.user_id = user_id
         self.thread = thread
@@ -109,7 +110,7 @@ class LockerPanelView(discord.ui.View):
             await async_set_user_field(owner_user_id, "last_activity", int(time.time()))
 
             # 重新獲取最新的用戶資料（確保數據是最新的）
-            user_data = self.cog.get_user_data(owner_user_id)
+            user_data = await self.cog.get_user_data(owner_user_id)
             if not user_data:
                 await interaction.followup.send("❌ 沒有找到你的資料！", ephemeral=True)
                 return
