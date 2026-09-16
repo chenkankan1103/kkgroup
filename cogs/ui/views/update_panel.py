@@ -1,12 +1,13 @@
 import discord
 import time
+from shared.utils.view_registry import PersistentViewBase
 
 
-class UpdatePanelView(discord.ui.View):
+class UpdatePanelView(PersistentViewBase):
     """更新面板視圖"""
 
     def __init__(self, cog, user_id: int):
-        super().__init__(timeout=None)
+        super().__init__()  # PersistentViewBase 自動 timeout=None
         self.cog = cog
         self.user_id = user_id
         if not hasattr(UpdatePanelView, "last_update"):
@@ -55,7 +56,7 @@ class UpdatePanelView(discord.ui.View):
             await interaction.response.defer(ephemeral=True)
             UpdatePanelView.last_update[interaction.user.id] = current_time
 
-            user_data = self.cog.get_user_data(interaction.user.id)
+            user_data = await self.cog.get_user_data(interaction.user.id)
             if not user_data:
                 await interaction.followup.send("❌ 沒有找到你的資料！", ephemeral=True)
                 return

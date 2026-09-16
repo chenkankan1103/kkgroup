@@ -16,13 +16,14 @@ from shared.db.async_adapter import (
     set_user_field as async_set_user_field,
 )
 from status_dashboard import add_log
+from shared.utils.view_registry import PersistentViewBase
 
 
-class PersonalLockerView(discord.ui.View):
+class PersonalLockerView(PersistentViewBase):
     """個人置物櫃主視圖"""
 
     def __init__(self, bot, cog, user_id, guild_id, channel_id, plants, user_panel):
-        super().__init__(timeout=None)  # 永久視圖
+        super().__init__()  # 永久視圖（PersistentViewBase 自動 timeout=None）
         self.bot = bot
         self.cog = cog
         self.user_id = user_id
@@ -468,7 +469,7 @@ class PersonalLockerView(discord.ui.View):
                 # 還原完整置物櫃 embed（確保保留紙娃娃/合併後物品欄）
                 user_panel_cog = self.bot.get_cog("UserPanel")
                 if user_panel_cog:
-                    user_data = user_panel_cog.get_user_data(self.user_id)
+                    user_data = await user_panel_cog.get_user_data(self.user_id)
                     user_obj = self.bot.get_user(
                         self.user_id
                     ) or await self.bot.fetch_user(self.user_id)
@@ -532,11 +533,11 @@ class PersonalLockerView(discord.ui.View):
                 pass
 
 
-class WeeklySummaryCannabisPanelView(discord.ui.View):
+class WeeklySummaryCannabisPanelView(PersistentViewBase):
     """周統計面板的大麻系統快速訪問"""
 
     def __init__(self, bot, user_id):
-        super().__init__(timeout=None)
+        super().__init__()  # PersistentViewBase 自動 timeout=None
         self.bot = bot
         self.user_id = user_id
 

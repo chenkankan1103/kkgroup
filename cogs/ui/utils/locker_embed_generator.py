@@ -35,13 +35,9 @@ def _build_locker_view(cog, bot, user_id: int, thread: Optional[discord.Thread])
     from ..views import LockerPanelView
 
     view = LockerPanelView(resolved_cog, user_id, thread)
-    # 註冊 View 到 bot，確保根據 custom_id 的交互回調能正常運行
-    # （編輯訊息時替換 view 會導致舊 view 失效，新 view 必須被註冊）
-    try:
-        if hasattr(bot, "add_view"):
-            bot.add_view(view)
-    except Exception:
-        pass
+    # 不呼叫 bot.add_view：Message.edit(view=...) 時 discord.py 會自動把 view
+    # 綁定到該訊息（store_view），互動派發時訊息綁定視圖優先；全域註冊反而會
+    # 讓這個暫時性 view 成為重啟後的殘留單例，與 setup() 預註冊的視圖衝突。
     return view
 
 
