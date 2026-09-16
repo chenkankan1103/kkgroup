@@ -51,10 +51,6 @@ python scripts/commands_manager.py --help
 ## 🛠️ 查詢工具（優先用這些）
 
 ```bash
-# 架構級
-python scripts/query_graph.py community KKCoin
-python scripts/query_graph.py callers <node_id>
-
 # 符號級
 python scripts/lsp_query.py --file <path> refs <symbol>
 python scripts/lsp_query.py --file <path> def <symbol>
@@ -75,5 +71,4 @@ python scripts/lsp_query.py --file <path> def <symbol>
 
 - 完整規範：`.github/copilot-instructions.md`
 - 知識庫：`knowledge/_wiki/`
-- 知識圖譜：`graphify-out/graph.json`
 - 維運 CLI：`scripts/commands_manager.py`

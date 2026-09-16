@@ -40,7 +40,6 @@ def get_all_py_files() -> list[Path]:
         '.git',
         '.claude',
         'chroma_db',
-        'graphify-out',
         'game',
         'tools',
         'docs_and_tests',

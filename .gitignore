@@ -500,7 +500,6 @@ reset_*.py
 .desloppify/
 .local/
 .swarm/
-graphify-out/
 knowledge/_wiki/Inbox/
 scheduled_tasks/
 scripts/
