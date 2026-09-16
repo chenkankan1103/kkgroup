@@ -176,7 +176,7 @@ async def _send_callback(url: str, task_id: str, result: Any):
 async def lifespan(app: FastAPI):
     logger.info("🚀 Agent Server starting...")
     # 預熱：初始化資料庫
-    get_agent_module()["create_task"]("warmup", "warmup", {})
+    await get_agent_module()["create_task"]("warmup", "warmup", {})
     yield
     logger.info("🛑 Agent Server shutting down...")
     # 清理運行中任務
