@@ -193,11 +193,11 @@ class KKCoin(commands.Cog):
         # 🔧 [改為事件驅動] 只在資料庫資產有變化時觸發更新，不做定時輪詢
         # 啟動必要的背景任務
         # self.auto_update_reserve_status.start()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
-        self.auto_check_tunnel_url.start()  # 🔄 啟動隧道 URL 自動檢查（每 10 分鐘）
+        # self.auto_check_tunnel_url.start()  # ❌ 已移除：方法本體已於 81bb17da 重構時誤刪；
+        #                                    #    tunnel URL 改由啟動時讀取 config.json（_load_base_url_from_config）
         # self.auto_push_leaderboard_to_github.start()  # 📤 ⏸️ 暫停：網頁開發的部分先停用
         print(f"✅ KKCoin 系統已載入，排行榜頻道: {self.rank_channel_id}")
         print(f"✅ 園區儲備狀態頻道: {self.reserve_channel_id}")
-        print("🔄 隧道 URL 自動檢查已啟用（每 10 分鐘掃描一次）")
         print(
             "📤 ✨ 排行榜已改用事件驅動模式：資料有變化時，等 5 分鐘後生成一次（避免頻繁更新，减少 VM 出站流量）"
         )
@@ -205,7 +205,7 @@ class KKCoin(commands.Cog):
     def cog_unload(self):
         """當 Cog 卸載時停止定時任務"""
         # self.auto_update_reserve_status.cancel()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
-        self.auto_check_tunnel_url.cancel()  # 🔄 取消隧道檢查任務
+        # self.auto_check_tunnel_url.cancel()  # ❌ 已移除：方法本體已於 81bb17da 重構時誤刪
         if self.auto_push_leaderboard_to_github.is_running():
             self.auto_push_leaderboard_to_github.cancel()  # 📤 取消 GitHub 推送任務
 
