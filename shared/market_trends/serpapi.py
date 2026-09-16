@@ -59,9 +59,15 @@ def _fetch_trending_topics(region: str = 'TW', limit: int = 10) -> List[dict]:
             # Use the provided URL or construct one
             url = item.get('url', f"https://trends.google.com/trends/trendingsearches/daily?geo={region}&date=today 1-m&q={keyword}")
             results.append({
+                # trendspyg 原生鍵（format_trends_embed / format_trends_text 使用）
                 "title": keyword,
                 "value": score,
-                "url": url
+                "url": url,
+                # 舊 SerpApi 相容鍵（fortress_system.trends_to_enemies /
+                # _extract_trend_titles 讀 topic / rank / search_volume）
+                "topic": keyword,
+                "rank": i + 1,
+                "search_volume": score,
             })
         return results
     except Exception as e:
