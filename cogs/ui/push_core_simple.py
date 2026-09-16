@@ -793,8 +793,8 @@ class SimpleAnimePushCore:
         # 計算現在時間
         now = datetime.now(TW_TZ)
 
-        # 計算需要睡眠的秒數
-        sleep_seconds = max(0, (next_push_time - now).total_seconds())
+        # 計算需要睡眠的秒數（+5 秒緩衝：等巴哈 API 於準點完成上架再推送）
+        sleep_seconds = max(0, (next_push_time - now).total_seconds() + 5)
 
         # 設置上限為30分鐘（1800秒）以避免錯過排程
         sleep_seconds = min(sleep_seconds, 1800)
@@ -812,10 +812,13 @@ class SimpleAnimePushCore:
             # 到達推送時間，檢查並推送當前時間的排程
             await self._check_and_push(channel_id)
         else:
-            # 時間還沒到，這不應該發生，但為安全起見繼續循環
-            logger.debug(
-                f"⏰ 睡眠結束但尚未到達推送時間，當前時間: {now}, 推送時間: {next_push_time}"
+            # 睡眠被提前喚醒：重睡剩餘時間到準點再推（比預期早的時刻 API 資料未就緒）
+            retry_seconds = max(0, (next_push_time - now).total_seconds())
+            logger.info(
+                f"⏰ 睡眠被提前喚醒，剩餘 {retry_seconds:.0f} 秒，重睡到推送時間: {next_push_time}"
             )
+            await asyncio.sleep(retry_seconds)
+            await self._check_and_push(channel_id)
 
     async def _fallback_polling_loop(self, channel_id: int):
         """備案模式：原始15分鐘輪詢"""
@@ -975,7 +978,7 @@ class SimpleAnimePushCore:
             pushed = item.get("pushed", False)
             video_sn = item.get("videoSn")
 
-            # 檢查是否符合當前時間（允許1分鐘容忍度）
+            # 檢查是否符合當前時間（僅允許晚 1 分鐘內；早於預期時 API 資料未就緒，不推送）
             if not pushed and scheduled_time:
                 # 解析排程時間
                 try:
@@ -985,8 +988,8 @@ class SimpleAnimePushCore:
                     schedule_total_minutes = schedule_hour * 60 + schedule_min
                     current_total_minutes = current_hour * 60 + current_min
 
-                    # 允許1分鐘容忍度（前後各30秒）
-                    if abs(schedule_total_minutes - current_total_minutes) <= 1:
+                    # 單向容忍度：只允許晚 0~1 分鐘，比預期早的時刻不推送
+                    if 0 <= current_total_minutes - schedule_total_minutes <= 1:
                         pending_schedule.append(item)
                 except ValueError:
                     logger.warning(f"⚠️ 無法解析排程時間: {scheduled_time}")
