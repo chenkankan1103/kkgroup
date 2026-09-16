@@ -13,7 +13,7 @@
 | **部署** | GCP VM (us-central1-a) + systemd + GitHub Webhook 自動化 |
 | **資料庫** | SQLite (`user_data.db`) + WAL 模式 + 向量庫 (`ruvector.db`) |
 | **核心語言** | Python 3.11+ (discord.py 2.0, Flask, asyncio) |
-| **知識庫** | `knowledge/_wiki/` (Obsidian 格式) + `graphify-out/` (知識圖譜) |
+| **知識庫** | `knowledge/_wiki/` (Obsidian 格式) |
 
 ---
 
@@ -62,11 +62,6 @@
 ## 🛠️ AI 專用查詢工具（優先用這些，別 grep 全專案）
 
 ```bash
-# 架構級查詢
-python scripts/query_graph.py stats
-python scripts/query_graph.py community KKCoin
-python scripts/query_graph.py callers <node_id>
-
 # 符號級精確查詢
 python scripts/lsp_query.py --file <path> symbols
 python scripts/lsp_query.py --file <path> refs <symbol>
@@ -107,5 +102,4 @@ python scripts/lsp_query.py --file <path> def <symbol>
 
 - **完整規範**：`.github/copilot-instructions.md` / `CLAUDE.md`
 - **知識庫**：`knowledge/_wiki/`
-- **知識圖譜**：`graphify-out/graph.json` (4570 節點、8512 邊、263 社群)
 - **維運入口**：`python scripts/commands_manager.py <service> <action>`

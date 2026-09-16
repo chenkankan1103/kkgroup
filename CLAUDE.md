@@ -332,7 +332,7 @@ shared/
 | 檢查用資料檔 | `*_debug_*.json`, `*_test_*.json` | 用完即刪 |
 
 **強制執行規則**：
-1. **建立前先思考**：能用現有工具（`scripts/commands_manager.py`、`scripts/query_graph.py`、`scripts/lsp_query.py`）解決就不用寫新檔
+1. **建立前先思考**：能用現有工具（`scripts/commands_manager.py`、`scripts/lsp_query.py`）解決就不用寫新檔
 2. **必須建立時**：放在專案根目錄或 `scripts/`，用完**立即刪除**（同一個對話結束前）
 3. **正式測試才放 `scripts/tests/`**：經過 code review、有明確目的、可重複執行的測試才可留存
 4. **資料庫備份**：只保留最新生產庫（`user_data.db`）與向量庫（`ruvector.db`），舊備份/空檔定期清理
@@ -718,46 +718,6 @@ await self.cog.update_user_data(user_id, appearance)
 
 ---
 
-## graphify — 專案知識圖譜（優先使用！）
-
-> `graphify-out/` 是預先建立的專案知識圖譜，包含 **4,100 個節點、8,301 條邊、258 個社群**。
-> 遇到架構問題時，**優先查詢 graph.json**，不要盲目 grep 整個專案。
-
-### 使用方式（GitHub Copilot 可執行）
-
-| 問題類型 | 做法 | 工具 |
-|----------|------|------|
-| 「某功能在哪個檔案？」 | 在 `graphify-out/graph.json` 中搜尋節點 `label` | `grep_search` |
-| 「A 和 B 的關聯？」 | 在 `graph.json` 中找兩個節點，追蹤它們的邊（edges） | `grep_search` + `read_file` |
-| 「這個概念涉及哪些檔案？」 | 查找 `graph.json` 中同一個 `community_name` 的所有節點 | `grep_search` |
-| 「專案整體架構？」 | 看 `graphify-out/GRAPH_REPORT.md` 的 Community Hubs 列表 | `read_file` |
-
-### 觸發條件
-
-當使用者問以下問題時，**優先查 graphify 而非 grep 原始碼**：
-- "這個功能在哪裡？" / "where is…"
-- "A 和 B 有什麼關係？" / "how does X relate to Y"
-- "有哪些檔案用到這個？" / "what depends on…"
-- "解釋一下架構" / "explain the architecture"
-- 任何需要理解檔案/類別之間關聯的問題
-
-### 結構說明
-
-`graph.json` 中每個節點包含：
-- `id` — 唯一識別碼（如 `cogs_ui_anime_tracker`）
-- `label` — 人類可讀名稱（如 `AnimeTracker`、`anime_tracker.py`）
-- `source_file` — 原始檔路徑
-- `community` / `community_name` — 所屬社群（如 `KKCoin`、`PersistentViewBase`）
-- `file_type` — `"code"` 表示程式碼節點
-
-邊（edges）記錄節點之間的引用、繼承、呼叫等關係。
-
-### 維護
-
-當專案結構有重大變更時，請求使用者執行 `/graphify` 重建圖譜。
-
----
-
 ## gstack Skill Routing (auto-trigger)
 
 gstack 是一個虛擬工程團隊（CEO review → Engineering review → QA → Ship pipeline）。當對話內容匹配時會**自動觸發**，不需要打 `/` 指令。
@@ -782,26 +742,9 @@ gstack 是一個虛擬工程團隊（CEO review → Engineering review → QA �
 
 ## AI 專用查詢工具（新增）
 
-本專案提供三個工具供 AI Agent 快速理解代碼庫，無需閱讀大量原始碼：
+本專案提供一個工具供 AI Agent 快速理解代碼庫，無需閱讀大量原始碼：
 
-### 1. scripts/query_graph.py — Graphify 知識圖譜查詢
-
-```bash
-python scripts/query_graph.py stats                    # 專案統計
-python scripts/query_graph.py hubs                     # 核心社群排行
-python scripts/query_graph.py community KKCoin         # 查詢社群所有節點
-python scripts/query_graph.py search update_user_kkcoin # 關鍵字查詢
-python scripts/query_graph.py callers <node_id>        # 反向查詢
-python scripts/query_graph.py callees <node_id>        # 正向查詢
-python scripts/query_graph.py impact cogs/shop/shop.py # 影響度分析
-python scripts/query_graph.py node <node_id>           # 節點詳細資訊
-```
-
-- **資料來源**：graphify-out/graph.json (4570 節點、8512 邊、263 社群)
-- **優勢**：架構級、離線、多語言、社群/依賴關係、影響分析
-- **自動更新**：.github/workflows/graphify-update.yml 每次 push main 自動重建
-
-### 2. scripts/lsp_query.py — Pylance LSP 封裝查詢
+### 1. scripts/lsp_query.py — Pylance LSP 封裝查詢
 
 ```bash
 python scripts/lsp_query.py --file <路徑> symbols      # 列出檔案所有符號
@@ -817,22 +760,4 @@ python scripts/lsp_query.py --file <路徑> hover <符號>     # Hover 詳細資
 - **優勢**：符號級、即時、精確、型別/重構/定義跳轉
 - **MCP 整合**：可直接呼叫 mcp_pylance_mcp_s_pylanceLSP
 
-### 3. .github/workflows/graphify-update.yml — Graphify 自動更新
-
-- **觸發**：push 到 main、PR merged、手動觸發、每日 03:00 UTC
-- **行為**：比對 built_at_commit，過期才重建，自動 commit 回 repo
-- **權限**：contents: write 可推送更新
-
-### 兩者互補關係
-
-| 查詢需求 | 用 Graphify | 用 LSP |
-|----------|-------------|--------|
-| 「KKCoin系統包含哪些檔案？」 | community KKCoin | 無 |
-| 「誰呼叫了 update_user_kkcoin？」 | callers (靜態分析) | refs (精確引用) |
-| 「改 shop.py 會影響哪些？」 | impact (按社群影響) | 無 |
-| 「這個函數的型別是什麼？」 | 無 | type |
-| 「專案架構核心是什麼？」 | hubs | 無 |
-| 「這個類別有哪些方法？」 | 部分 | symbols |
-
-**Graphify** = 架構級、離線、多語言、社群/依賴關係  
 **LSP** = 符號級、即時、精確、型別/重構/定義跳轉
