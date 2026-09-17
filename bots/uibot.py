@@ -99,6 +99,11 @@ discord_logger.setLevel(logging.WARNING)
 discord_webhook_logger = logging.getLogger("discord.webhook")
 discord_webhook_logger.setLevel(logging.WARNING)
 
+# 動畫推送系統日誌提升為 INFO（2026-09-17 修復：推送事件與心跳需進 journald，
+# 否則推送循環靜默失效 44 小時無從診斷——cogs.ui.* 的 INFO 預設被吞）
+logging.getLogger("cogs.ui.push_core_simple").setLevel(logging.INFO)
+logging.getLogger("cogs.ui.anime_tracker").setLevel(logging.INFO)
+
 STAGE = os.getenv("STAGE", "dev")
 TOKEN = os.getenv(f"{BOT_PREFIX}_BOT_TOKEN")
 GUILD_ID = os.getenv(f"{BOT_PREFIX}_GUILD_ID")

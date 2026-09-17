@@ -45,6 +45,7 @@ class AnimeTracker(commands.Cog):
         self.db = None
         self.schedule_tracker = None
         self._running = False
+        self._push_tick = 0
 
     async def set_dependencies(self, db_path: str = None):
         """設置依賴元件 - 初始化增強版推送系統並啟動"""
@@ -64,8 +65,14 @@ class AnimeTracker(commands.Cog):
         self.polling_core = SimpleAnimePushCore(self.db)
         self.polling_core.set_bot(self.bot)
 
-        # 啟動推送系統
-        await self.polling_core.start_polling(ANIME_CHANNEL_ID)
+        # 啟動推送系統（2026-09-17 修復：改用 tasks.loop 每分鐘檢查。
+        # 舊版 start_polling 用 asyncio.create_task 建立循環，task 異常會被困在
+        # 無人讀取的 task 物件中（self._task 強引用阻擋 GC），「Task exception
+        # was never retrieved」永不觸發 → 推送循環靜默死亡、44 小時零日誌零推送。
+        # tasks.loop 每圈接例外、自癒，且錯誤會記入日誌）
+        self.polling_core._running = True
+        if not self.push_check_loop.is_running():
+            self.push_check_loop.start()
 
         # 初始化週表排程管理器（每天 02:00 刷新 anime_push.db 的 anime_weekly_schedule）
         self.schedule_tracker = AnimeScheduleTracker(str(ANIME_PUSH_DB_PATH))
@@ -105,6 +112,8 @@ class AnimeTracker(commands.Cog):
     async def cog_unload(self):
         """Cog 卸載時清理"""
         self.logger.info("🛑 [AnimeTracker.cog_unload] 正在停止推送系統...")
+        if self.push_check_loop.is_running():
+            self.push_check_loop.cancel()
         if self.weekly_schedule_refresh_loop.is_running():
             self.weekly_schedule_refresh_loop.cancel()
         if self._running:
@@ -112,6 +121,38 @@ class AnimeTracker(commands.Cog):
                 await self.polling_core.stop_polling()
             self._running = False
         self.logger.info("🛑 [AnimeTracker.cog_unload] 推送系統已停止")
+
+    @tasks.loop(minutes=1)
+    async def push_check_loop(self):
+        """每分鐘檢查排程推送（2026-09-17 修復：取代易無聲死亡的智能睡眠循環）
+
+        tasks.loop 每圈接例外並繼續（自癒），不像 asyncio.create_task 的 task
+        異常會被困在無人讀取的 task 物件中導致靜默死亡。
+        """
+        if not self.polling_core:
+            return
+        self._push_tick += 1
+        try:
+            # 排程推送：每分鐘檢查（_check_and_push 內建 ±1 分鐘容差與
+            # is_notified 防重複，同一時刻只會推送一次）
+            await self.polling_core._check_and_push(ANIME_CHANNEL_ID)
+            # 備案安全網：每 15 分鐘輪詢 API 最新動畫
+            # （排程表遺漏的新集數靠此補推，歷史上 51187 即由此路徑推出）
+            if self._push_tick % 15 == 0:
+                await self.polling_core._check_and_push_polling(ANIME_CHANNEL_ID)
+            # 心跳：每小時一筆 INFO，證明循環存活
+            # （2026-09-15~17 靜默失效 44 小時無從診斷的教訓）
+            if self._push_tick % 60 == 0:
+                logger.info(
+                    f"💓 [push_check_loop] 循環存活心跳（第 {self._push_tick} 分鐘）"
+                )
+        except Exception as e:
+            logger.error(f"❌ [push_check_loop] 檢查失敗: {e}", exc_info=True)
+
+    @push_check_loop.before_loop
+    async def before_push_check_loop(self):
+        """等待 bot 就緒後再開始推送檢查循環"""
+        await self.bot.wait_until_ready()
 
     @tasks.loop(minutes=30)
     async def weekly_schedule_refresh_loop(self):
@@ -203,8 +244,8 @@ class AnimeTracker(commands.Cog):
                 [
                     f"📋 推送表: anime_weekly_schedule",
                     f"📝 通知記錄: anime_notified 表",
-                    f"⏱️ 排程機制: 智能睡眠直到下次排程時間 (最多30分鐘)",
-                    f"⏱️ 備案機制: 連續{max_failures}次失敗後切換到15分鐘輪詢",
+                    f"⏱️ 排程機制: tasks.loop 每分鐘檢查 (±1分鐘容差)",
+                    f"⏱️ 備案機制: 每15分鐘輪詢 API 補推排程遺漏的新集數",
                 ]
             )
 
