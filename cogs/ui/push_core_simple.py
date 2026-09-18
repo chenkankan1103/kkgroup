@@ -6,15 +6,14 @@
 使用獨立資料庫：anime_push.db
 """
 
+import asyncio
 import json
 import logging
 import sqlite3
-import asyncio
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, List, Dict, Set
 from zoneinfo import ZoneInfo
-import sys
 
 import aiohttp
 import discord
@@ -24,7 +23,6 @@ kkgroup_dir = Path(__file__).resolve().parent.parent.parent
 if str(kkgroup_dir) not in sys.path:
     sys.path.insert(0, str(kkgroup_dir))
 
-from cogs.ui.bahamut_web_scraper import fetch_new_anime_from_web
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +171,7 @@ class AnimePushDB:
         conn.close()
         return True
 
-    def get_notified_video_sns(self) -> Set[int]:
+    def get_notified_video_sns(self) -> set[int]:
         """獲取所有已通知的 videoSn（用於快速比對）"""
         conn = self._get_conn()
         c = conn.cursor()
@@ -188,7 +186,7 @@ class AnimePushDB:
         self,
         video_sn: int,
         anime_sn: int,
-        message_id: Optional[int],
+        message_id: int | None,
         vote_type: str,
         user_hash: str,
         anime_name: str = "",
@@ -224,7 +222,7 @@ class AnimePushDB:
             logger.error(f"❌ 記錄投票失敗: {e}")
             return False
 
-    def get_vote_stats(self, video_sn: int) -> Dict[str, int]:
+    def get_vote_stats(self, video_sn: int) -> dict[str, int]:
         """獲取指定動畫的投票統計"""
         try:
             conn = self._get_conn()
@@ -271,7 +269,7 @@ class AnimePushDB:
                 "disaster": 0,
             }
 
-    def get_vote_comments(self, video_sn: int, limit: int = 10) -> List[Dict]:
+    def get_vote_comments(self, video_sn: int, limit: int = 10) -> list[dict]:
         """獲取指定動畫的評論"""
         try:
             conn = self._get_conn()
@@ -314,7 +312,7 @@ class AnimePushDB:
         monday = date_obj - timedelta(days=date_obj.weekday())
         return monday.strftime("%Y-%m-%d")
 
-    def get_today_schedule(self, week_start_date: str = None) -> List[Dict]:
+    def get_today_schedule(self, week_start_date: str = None) -> list[dict]:
         """查詢今日應該推送的動畫排程（anime_weekly_schedule 表）
 
         week_start_date 參數為相容 AnimeScheduleTracker 的委託呼叫，忽略之
@@ -379,7 +377,7 @@ class AnimePushDB:
             logger.error(f"❌ 查詢今日排程失敗: {e}")
             return []
 
-    def get_upcoming_schedules(self) -> List[Dict]:
+    def get_upcoming_schedules(self) -> list[dict]:
         """查詢本週排程時刻尚未到達且未推送的排程（供輪詢路徑暫緩判斷）
 
         回傳的每一項含 videoSn / dayOfWeek / scheduledTime / scheduleDt。
@@ -439,7 +437,7 @@ class AnimePushDB:
             logger.error(f"❌ 查詢本週未來排程失敗: {e}")
             return []
 
-    def get_next_push_time(self) -> Optional[datetime]:
+    def get_next_push_time(self) -> datetime | None:
         """計算距離下次排程推送的時間（anime_weekly_schedule 表）"""
         try:
             conn = self._get_conn()
@@ -636,42 +634,41 @@ class AnimePushDB:
 # ========== API 獲取方法（保留自 ranking_stats）==========
 
 
-async def fetch_all_recent_anime_from_api() -> Optional[List[Dict]]:
+async def fetch_all_recent_anime_from_api() -> list[dict] | None:
     """從 Bahamut API 獲取所有最近的動畫集"""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                API_ENDPOINT,
-                timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
-            ) as resp:
-                if resp.status != 200:
-                    logger.warning(f"⚠️ API returned status {resp.status}")
-                    return None
+        async with aiohttp.ClientSession() as session, session.get(
+            API_ENDPOINT,
+            timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+        ) as resp:
+            if resp.status != 200:
+                logger.warning(f"⚠️ API returned status {resp.status}")
+                return None
 
-                data = await resp.json()
-                new_anime = data.get("data", {}).get("newAnime", {})
+            data = await resp.json()
+            new_anime = data.get("data", {}).get("newAnime", {})
 
-                all_episodes = []
-                if isinstance(new_anime, dict):
-                    all_episodes.extend(new_anime.get("date", []))
-                    all_episodes.extend(new_anime.get("popular", []))
+            all_episodes = []
+            if isinstance(new_anime, dict):
+                all_episodes.extend(new_anime.get("date", []))
+                all_episodes.extend(new_anime.get("popular", []))
 
-                # 去重
-                seen = set()
-                unique_episodes = []
-                for ep in all_episodes:
-                    if isinstance(ep, dict):
-                        video_sn = ep.get("videoSn")
-                        if video_sn and video_sn not in seen:
-                            seen.add(video_sn)
-                            unique_episodes.append(ep)
+            # 去重
+            seen = set()
+            unique_episodes = []
+            for ep in all_episodes:
+                if isinstance(ep, dict):
+                    video_sn = ep.get("videoSn")
+                    if video_sn and video_sn not in seen:
+                        seen.add(video_sn)
+                        unique_episodes.append(ep)
 
-                logger.info(
-                    f"🔍 [fetch_all_recent_anime_from_api] 獲得 {len(unique_episodes)} 部最近的動畫"
-                )
-                return unique_episodes
-    except asyncio.TimeoutError:
+            logger.info(
+                f"🔍 [fetch_all_recent_anime_from_api] 獲得 {len(unique_episodes)} 部最近的動畫"
+            )
+            return unique_episodes
+    except TimeoutError:
         logger.warning(f"⚠️ API timeout ({API_TIMEOUT}s)")
         return None
     except Exception as e:
@@ -703,7 +700,7 @@ def extract_view_count_from_episode(episode: dict, default: int = 0) -> int:
     return default
 
 
-async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
+async def fetch_anime_details_from_api(video_sn: int) -> dict | None:
     """從 Bahamut 手機 API 獲取動畫詳細信息"""
     if not video_sn:
         return None
@@ -916,7 +913,7 @@ class SimpleAnimePushCore:
             return
 
         # Import here to avoid circular import
-        from cogs.ui.push_embed import generate_anime_view, generate_anime_embed
+        from cogs.ui.push_embed import generate_anime_embed, generate_anime_view
 
         # 1. 從 API 獲取最新動畫列表
         episodes = await fetch_all_recent_anime_from_api()
@@ -1027,7 +1024,7 @@ class SimpleAnimePushCore:
         if not self.bot:
             return
         # Import here to avoid circular import
-        from cogs.ui.push_embed import generate_anime_view, generate_anime_embed
+        from cogs.ui.push_embed import generate_anime_embed, generate_anime_view
 
         # 取得現在時間
         now = datetime.now(TW_TZ)
@@ -1062,8 +1059,8 @@ class SimpleAnimePushCore:
                     schedule_total_minutes = schedule_hour * 60 + schedule_min
                     current_total_minutes = current_hour * 60 + current_min
 
-                    # 允許1分鐘容忍度（前後各30秒）
-                    if abs(schedule_total_minutes - current_total_minutes) <= 1:
+                    # 允許0~3分鐘容忍度（只在排程時間之後，防止推送舊集）
+                    if 0 <= current_total_minutes - schedule_total_minutes <= 3:
                         pending_schedule.append(item)
                 except ValueError:
                     logger.warning(f"⚠️ 無法解析排程時間: {scheduled_time}")
@@ -1078,14 +1075,24 @@ class SimpleAnimePushCore:
         # 取得當季總觀看數映射（animeSn → popular），供 embed 顯示當季總數
         # （detail API 的 popular 是本集觀看數；當季總數只在 index API）
         season_popular_map = {}
+        latest_video_map = {}
         try:
             recent_episodes = await fetch_all_recent_anime_from_api()
             for r in recent_episodes or []:
                 r_sn = r.get("animeSn") or r.get("anime_sn")
+                r_video = r.get("videoSn") or r.get("video_sn")
                 if not r_sn:
                     continue
                 try:
-                    season_popular_map[int(r_sn)] = int(r.get("popular") or 0)
+                    r_sn_int = int(r_sn)
+                    season_popular_map[r_sn_int] = int(r.get("popular") or 0)
+                    if r_video:
+                        r_video_int = int(r_video)
+                        # Keep the maximum videoSn for each animeSn (the latest episode)
+                        if r_sn_int in latest_video_map:
+                            latest_video_map[r_sn_int] = max(latest_video_map[r_sn_int], r_video_int)
+                        else:
+                            latest_video_map[r_sn_int] = r_video_int
                 except (ValueError, TypeError):
                     continue
         except Exception as e:
@@ -1098,46 +1105,55 @@ class SimpleAnimePushCore:
             logger.warning(f"頻道 {ANIME_CHANNEL_ID} 不存在")
             return
 
-        # 處理每個待推送的排程
         for item in pending_schedule:
             video_sn = item.get("videoSn")
             if not video_sn:
                 continue
+            # 解析 animeData 以取得 anime_sn（若有的話）
+            anime_data_str = item.get("animeData")
+            anime_sn_early = 0
+            if anime_data_str:
+                try:
+                    import json
 
-            # 雙重檢查：確認尚未推送（防止競爭條件）
-            # 注意：volume 為空時 is_notified 只比對 videoSn，輪詢先推掉也會命中
-            if self.db.is_notified(video_sn, ""):
+                    anime_data_parsed = json.loads(anime_data_str)
+                    anime_sn_early = int(
+                        anime_data_parsed.get("anime_sn")
+                        or anime_data_parsed.get("animeSn")
+                        or 0
+                    )
+                except (json.JSONDecodeError, TypeError):
+                    anime_sn_early = 0
+            # 解析決議後的 videoSn：若週表有動畫資訊則使用最新集數，否則維持原始
+            resolved_sn = video_sn
+            if anime_sn_early and anime_sn_early in latest_video_map:
+                resolved_sn = latest_video_map[anime_sn_early]
+            # 防止重複推送（使用解析後的 videoSn 檢查）
+            if self.db.is_notified(resolved_sn, ""):
                 logger.info(
-                    f"⏭️ 動畫 videoSn={video_sn} 已推送過（多為輪詢備案先推），排程跳過"
+                    f"⏭️ 動畫 videoSn={resolved_sn} 已推送過（多為輪詢備案先推），排程跳過"
                 )
                 continue
-
             # 取得動畫詳細資訊
             try:
-                # 嘗試從週表的 animeData 欄位取得詳細資訊
-                anime_data_str = item.get("animeData")
                 episode_data = None
-
-                if anime_data_str:
+                # 如果解析後的 videoSn 與週表原始 videoSn 相同，則嘗試使用週表的 animeData
+                if resolved_sn == video_sn and anime_data_str:
                     try:
-                        # 嘗試解析 JSON
-                        import json
-
                         episode_data = json.loads(anime_data_str)
-                        # 確保有必要的欄位
                         if not episode_data.get("title"):
                             episode_data = None
                     except (json.JSONDecodeError, TypeError):
                         episode_data = None
-
-                # 如果週表沒有完整資料，則從 API 獲取
+                # 若週表沒有完整資料或 videoSn 已被更新，則從 API 獲取
                 if not episode_data:
-                    episode_data = await fetch_anime_details_from_api(video_sn)
+                    episode_data = await fetch_anime_details_from_api(resolved_sn)
                     if not episode_data:
-                        logger.warning(f"⚠️ 無法取得動畫 videoSn={video_sn} 的詳細資訊")
+                        logger.warning(
+                            f"⚠️ 無法取得動畫 videoSn={resolved_sn} 的詳細資訊"
+                        )
                         continue
-
-                # 標準化資料格式
+                # 標準化資料格式（使用 resolved_sn 作為 videoSn）
                 anime_sn_raw = (
                     episode_data.get("anime_sn") or episode_data.get("animeSn") or 0
                 )
@@ -1146,7 +1162,7 @@ class SimpleAnimePushCore:
                 except (ValueError, TypeError):
                     anime_sn_val = 0
                 episode = {
-                    "videoSn": video_sn,
+                    "videoSn": resolved_sn,  # 使用解析後的 videoSn
                     "animeSn": anime_sn_val,
                     "title": episode_data.get("title", "未知標題"),
                     "content": episode_data.get("content", ""),
@@ -1164,10 +1180,10 @@ class SimpleAnimePushCore:
                     ),
                     "score": episode_data.get("score", 0),
                 }
-
-                # 從週表補充資訊（如果有的話）
+                # 從週表補充資訊（如果有的話且 videoSn 未變更）
                 if (
-                    anime_data_str
+                    resolved_sn == video_sn
+                    and anime_data_str
                     and isinstance(anime_data_str, str)
                     and anime_data_str.startswith("{")
                 ):
@@ -1185,86 +1201,38 @@ class SimpleAnimePushCore:
                                 ),
                                 # 嘗試獲取 episode-specific 的縮圖 - 優先使用 API 取得的資料
                                 "cover": (
-                                    episode[
-                                        "cover"
-                                    ]  # 先使用 API 取得的封面（可能是episode-specific）
+                                    episode["cover"]
                                     or anime_data_parsed.get("episodeCover")
                                     or anime_data_parsed.get("episodeThumb")
                                     or anime_data_parsed.get("thumb")
                                     or anime_data_parsed.get("thumbnail")
                                     or anime_data_parsed.get("videoThumb")
-                                    or anime_data_parsed.get(
-                                        "cover"
-                                    )  # 最後才使用週表的通用封面
-                                ),
+                                    or anime_data_parsed.get("cover")
+                                ),  # 最後才使用週表的通用封面
                             }
                         )
                     except:
                         pass  # 使用 API 取得的資料
-
-                # 顯示調試資訊：記錄實際獲取到的縮圖來源
-                cover_source = "unknown"
-                if episode.get("cover"):
-                    # 檢查縮圖來自哪個來源
-                    if (
-                        anime_data_str
-                        and isinstance(anime_data_str, str)
-                        and anime_data_str.startswith("{")
-                    ):
-                        try:
-                            anime_data_parsed = json.loads(anime_data_str)
-                            if (
-                                anime_data_parsed.get("episodeCover")
-                                == episode["cover"]
-                            ):
-                                cover_source = "episodeCover"
-                            elif (
-                                anime_data_parsed.get("episodeThumb")
-                                == episode["cover"]
-                            ):
-                                cover_source = "episodeThumb"
-                            elif anime_data_parsed.get("thumb") == episode["cover"]:
-                                cover_source = "thumb"
-                            elif anime_data_parsed.get("thumbnail") == episode["cover"]:
-                                cover_source = "thumbnail"
-                            elif (
-                                anime_data_parsed.get("videoThumb") == episode["cover"]
-                            ):
-                                cover_source = "videoThumb"
-                            elif anime_data_parsed.get("cover") == episode["cover"]:
-                                cover_source = "seriesCover"
-                            else:
-                                cover_source = "apiOrOther"
-                        except:
-                            cover_source = "apiOrOther"
-                    else:
-                        cover_source = "api"
-
-                logger.debug(f"🖼️ 縮圖來源: {cover_source} for videoSn={video_sn}")
-
             except Exception as e:
-                logger.error(f"❌ 取得動畫詳細資訊失敗 videoSn={video_sn}: {e}")
+                logger.error(f"❌ 取得動畫詳細資訊失敗 videoSn={resolved_sn}: {e}")
                 continue
-
             # 生成 view (按鈕)
             try:
                 view = await generate_anime_view(episode)
                 if not view:
-                    logger.warning(f"⚠️ 生成視圖失敗 videoSn={video_sn}")
+                    logger.warning(f"⚠️ 生成視圖失敗 videoSn={resolved_sn}")
                     continue
             except Exception as e:
-                logger.error(f"❌ 生成視圖失敗 videoSn={video_sn}: {e}")
+                logger.error(f"❌ 生成視圖失敗 videoSn={resolved_sn}: {e}")
                 continue
-
             # 生成 embed
             try:
                 embed = await generate_anime_embed(
                     episode, push_mode="排程推送", db=self.db
                 )
             except Exception as e:
-                logger.error(f"❌ 生成 embed 失敗 videoSn={video_sn}: {e}")
+                logger.error(f"❌ 生成 embed 失敗 videoSn={resolved_sn}: {e}")
                 continue  # skip to next item
-
             # 發送訊息 (帶重試機制)
             message_sent = False
             last_send_error = None
@@ -1276,43 +1244,36 @@ class SimpleAnimePushCore:
                 except Exception as e:
                     last_send_error = e
                     logger.warning(
-                        f"⚠️ 發送失敗 (嘗試 {attempt + 1}/3) videoSn={video_sn}: {e}"
+                        f"⚠️ 發送失敗 (嘗試 {attempt + 1}/3) videoSn={resolved_sn}: {e}"
                     )
                     if attempt < 2:  # not the last attempt
                         await asyncio.sleep(1 * (attempt + 1))  # 1s, 2s, 4s delay
-
             if not message_sent:
-                logger.error(f"❌ 發送失敗 videoSn={video_sn}: {last_send_error}")
+                logger.error(f"❌ 發送失敗 videoSn={resolved_sn}: {last_send_error}")
                 # 發送失敗時增加失敗計數
                 self._fail_count += 1
                 continue  # skip marking and move to next item
-
             # 只有發送成功時才進行後續處理
             if view and hasattr(view, "message_id"):
                 view.message_id = message.id
-
-            # 記錄為已推送
+            # 記錄為已推送（使用解析後的 videoSn）
             anime_sn = episode.get("animeSn", 0)
             title = episode.get("title", "未知標題")
             self.db.add_notified(
-                video_sn,
+                resolved_sn,
                 anime_sn,
                 title,
                 "",  # volume（週表中沒有這個欄位）
                 episode.get("cover", ""),
             )
-
-            # 同時更新週表的 pushed 欄位
+            # 同時更新週表的 pushed 欄位（使用原始 videoSn，因為排程行是以原始 videoSn 為キー）
             day_of_week = item.get("dayOfWeek", weekday)
             scheduled_time = item.get("scheduledTime", current_time)
             self.db.mark_time_pushed(day_of_week, scheduled_time, video_sn)
-
             # 註冊永久視圖
             if self.bot:
                 self.bot.add_view(view, message_id=message.id)
-
-            logger.info(f"✅ 已排程推送 Embed: {title} (videoSn={video_sn})")
-
+            logger.info(f"✅ 已排程推送 Embed: {title} (videoSn={resolved_sn})")
             # 重置失敗計數（成功推送）
             self._fail_count = max(0, self._fail_count - 1)
 
@@ -1339,7 +1300,7 @@ class AnimeDatabase:
     ) -> bool:
         return self.db.add_notified(video_sn, anime_sn, title, volume, cover)
 
-    def get_notified_video_sns(self) -> Set[int]:
+    def get_notified_video_sns(self) -> set[int]:
         return self.db.get_notified_video_sns()
 
     # 為相容性保留的實現（委託給實際的 db 實例）
@@ -1413,4 +1374,3 @@ class AnimeDatabase:
 
 async def setup(bot):
     """設置擴展的入口點"""
-    pass
