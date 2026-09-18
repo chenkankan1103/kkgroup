@@ -379,6 +379,66 @@ class AnimePushDB:
             logger.error(f"❌ 查詢今日排程失敗: {e}")
             return []
 
+    def get_upcoming_schedules(self) -> List[Dict]:
+        """查詢本週排程時刻尚未到達且未推送的排程（供輪詢路徑暫緩判斷）
+
+        回傳的每一項含 videoSn / dayOfWeek / scheduledTime / scheduleDt。
+        只查本週（weekStartDate = 本週一）：排程時刻已過或跨週後查不到，
+        輪詢路徑即照常推送（安全後備，不會漏推）。
+        """
+        try:
+            conn = self._get_conn()
+            c = conn.cursor()
+
+            now = datetime.now(TW_TZ)
+            week_start_date = self._get_week_start_date(now)
+
+            c.execute(
+                """
+                SELECT dayOfWeek, scheduledTime, videoSn
+                FROM anime_weekly_schedule
+                WHERE weekStartDate = ? AND pushed = 0
+                """,
+                (week_start_date,),
+            )
+
+            rows = c.fetchall()
+            conn.close()
+
+            upcoming = []
+            for day_of_week, scheduled_time, video_sn in rows:
+                if not video_sn:
+                    continue
+                scheduled_time = (
+                    scheduled_time.decode("utf-8")
+                    if isinstance(scheduled_time, bytes)
+                    else scheduled_time
+                )
+                try:
+                    # DB dayOfWeek 1-7（週一=1）換算為實際日期，再與現在比較
+                    sched_date = datetime.strptime(
+                        week_start_date, "%Y-%m-%d"
+                    ) + timedelta(days=int(day_of_week) - 1)
+                    sched_dt = datetime.strptime(
+                        f"{sched_date.strftime('%Y-%m-%d')} {scheduled_time}",
+                        "%Y-%m-%d %H:%M",
+                    ).replace(tzinfo=TW_TZ)
+                except (ValueError, TypeError):
+                    continue
+                if sched_dt > now:
+                    upcoming.append(
+                        {
+                            "videoSn": video_sn,
+                            "dayOfWeek": day_of_week,
+                            "scheduledTime": scheduled_time,
+                            "scheduleDt": sched_dt,
+                        }
+                    )
+            return upcoming
+        except Exception as e:
+            logger.error(f"❌ 查詢本週未來排程失敗: {e}")
+            return []
+
     def get_next_push_time(self) -> Optional[datetime]:
         """計算距離下次排程推送的時間（anime_weekly_schedule 表）"""
         try:
@@ -712,6 +772,8 @@ async def fetch_anime_details_from_api(video_sn: int) -> Optional[Dict]:
                     "content": anime_data.get("content", ""),
                     "tags": anime_data.get("tags", []),
                     "popular": view_count,
+                    # total_volume = 本季總集數（供 embed 計算平均觀看數）
+                    "episode_count": anime_data.get("total_volume") or 0,
                     "score": anime_data.get("score", 0),
                     "cover": episode_cover,  # 使用 episode-specific 的縮圖如果可用
                 }
@@ -886,9 +948,19 @@ class SimpleAnimePushCore:
             return
 
         # 5. 推送每部新動畫 (僅圖片)
+        # 排程保護：本週排程時刻未到的集數暫緩，讓排程路徑準時推送紫色 embed；
+        # 排程時刻已過（或跨週後查不到）才照常推送（安全後備，不會漏推）
+        upcoming_sns = {s.get("videoSn") for s in self.db.get_upcoming_schedules()}
         for ep in new_episodes:
             video_sn = int(ep.get("videoSn", 0))
             volume = ep.get("volume", "")
+
+            if video_sn in upcoming_sns:
+                logger.info(
+                    f"⏳ {ep.get('title', '未知標題')} (videoSn={video_sn}) "
+                    f"已排程且時刻未到，暫緩由排程路徑推送"
+                )
+                continue
 
             # 雙重檢查：再次確認是否已推送（防止並發）
             if self.db.is_notified(video_sn, volume):
@@ -896,12 +968,17 @@ class SimpleAnimePushCore:
 
             # 取得詳細資訊（含簡介和封面）
             try:
+                # index API 的 popular 是當季總觀看數（逐集加總），在 detail 覆蓋前保留
+                season_views = int(ep.get("popular") or 0)
                 details = await fetch_anime_details_from_api(video_sn)
                 if details:
                     ep = {
                         **ep,
                         "description": details.get("content", ""),
                         "cover": details.get("cover", ""),
+                        "total_views": season_views,
+                        "episode_count": int(details.get("episode_count") or 0),
+                        # detail 的 popular 是本集觀看數（embed 端優先顯示當季總數）
                         "popular": details.get("popular", 0),
                         "score": details.get("score", 0),
                     }
@@ -965,7 +1042,7 @@ class SimpleAnimePushCore:
         # 取得今日的排程
         today_schedule = self.db.get_today_schedule()
         if not today_schedule:
-            logger.debug("📅 今日沒有排程")
+            logger.info("📅 今日沒有排程（週表可能刷新失敗或資料缺失）")
             return
 
         # 過濾出符合當前時間且尚未推送的排程
@@ -998,6 +1075,22 @@ class SimpleAnimePushCore:
 
         logger.info(f"📋 找到 {len(pending_schedule)} 項符合當前時間的排程")
 
+        # 取得當季總觀看數映射（animeSn → popular），供 embed 顯示當季總數
+        # （detail API 的 popular 是本集觀看數；當季總數只在 index API）
+        season_popular_map = {}
+        try:
+            recent_episodes = await fetch_all_recent_anime_from_api()
+            for r in recent_episodes or []:
+                r_sn = r.get("animeSn") or r.get("anime_sn")
+                if not r_sn:
+                    continue
+                try:
+                    season_popular_map[int(r_sn)] = int(r.get("popular") or 0)
+                except (ValueError, TypeError):
+                    continue
+        except Exception as e:
+            logger.debug(f"取得當季觀看數映射失敗: {e}")
+
         # 獲取頻道
         await self.bot.wait_until_ready()
         channel = self.bot.get_channel(ANIME_CHANNEL_ID)
@@ -1012,8 +1105,11 @@ class SimpleAnimePushCore:
                 continue
 
             # 雙重檢查：確認尚未推送（防止競爭條件）
+            # 注意：volume 為空時 is_notified 只比對 videoSn，輪詢先推掉也會命中
             if self.db.is_notified(video_sn, ""):
-                logger.debug(f"⏭️ 動畫 videoSn={video_sn} 已經推送過，跳過")
+                logger.info(
+                    f"⏭️ 動畫 videoSn={video_sn} 已推送過（多為輪詢備案先推），排程跳過"
+                )
                 continue
 
             # 取得動畫詳細資訊
@@ -1042,9 +1138,16 @@ class SimpleAnimePushCore:
                         continue
 
                 # 標準化資料格式
+                anime_sn_raw = (
+                    episode_data.get("anime_sn") or episode_data.get("animeSn") or 0
+                )
+                try:
+                    anime_sn_val = int(anime_sn_raw)
+                except (ValueError, TypeError):
+                    anime_sn_val = 0
                 episode = {
                     "videoSn": video_sn,
-                    "animeSn": episode_data.get("anime_sn", 0),
+                    "animeSn": anime_sn_val,
                     "title": episode_data.get("title", "未知標題"),
                     "content": episode_data.get("content", ""),
                     "cover": episode_data.get("cover", ""),
@@ -1052,6 +1155,13 @@ class SimpleAnimePushCore:
                         "content", ""
                     ),  # embed 需要 description
                     "popular": episode_data.get("popular", 0),
+                    # 當季總觀看數（index API），供 embed 顯示「總數 (平均 Y/集)」
+                    "total_views": season_popular_map.get(anime_sn_val, 0),
+                    "episode_count": int(
+                        episode_data.get("episode_count")
+                        or episode_data.get("total_volume")
+                        or 0
+                    ),
                     "score": episode_data.get("score", 0),
                 }
 
