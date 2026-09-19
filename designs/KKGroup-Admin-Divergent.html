@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KKGroup 管理後台 - 發散版本</title>
+    <style>
+        :root {
+            --bg: #050617;
+            --surface: #0a0f2c;
+            --surface-alt: #11183a;
+            --border: #1e293b;
+            --text: #e2e8f0;
+            --text-muted: #64748b;
+            --primary: #3b82f6;
+            --primary-light: #60a5fa;
+            --primary-dark: #2563eb;
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --radius-lg: 16px;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
+            --font-mono: 'Fira Code', 'Courier New', monospace;
+            --font-serif: 'Merriweather', Georgia, serif;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+            font-size: 1rem;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.05) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.05) 0%, transparent 20%);
+        }
+        
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
+        
+        /* Header with Gradient */
+        .app-header {
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--secondary) 100%);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            margin-bottom: 24px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .app-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: 
+                radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, transparent 60%);
+            animation: pulse 4s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 0.6; }
+        }
+        
+        .header-content {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 24px;
+        }
+        
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .header-title h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(to right, var(--primary-light), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+        }
+        
+        .header-title .icon {
+            font-size: 2.5rem;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 24px;
+            border-radius: var(--radius);
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: var(--transition);
+            border: none;
+            position: relative;
+            overflow: hidden;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+            background: var(--primary-dark);
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        
+        .btn-outline {
+            background: transparent;
+            color: var(--text);
+            border: 2px solid var(--border);
+        }
+        
+        .btn-outline:hover {
+            background: rgba(59, 130, 246, 0.08);
+            color: var(--primary-light);
+            border-color: var(--primary-light);
+        }
+        
+        .btn-icon-only {
+            width: 56px;
+            height: 56px;
+            padding: 0;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 1.4rem;
+        }
+        
+        .btn-icon-only:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+        
+        /* Main Layout */
+        .app-main {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 24px;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-md);
+        }
+        
+        .sidebar-section {
+            margin-bottom: 28px;
+        }
+        
+        .sidebar-section:last-child { margin-bottom: 0; }
+        
+        .sidebar-section h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--primary-light);
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: var(--transition);
+            border: 1px solid transparent;
+            font-weight: 500;
+        }
+        
+        .nav-item:hover {
+            background: rgba(59, 130, 246, 0.08);
+            border-color: rgba(59, 130, 246, 0.2);
+            color: var(--primary-light);
+        }
+        
+        .nav-item.active {
+            background: linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.1) 100%);
+            border-left: 3px solid var(--primary);
+            color: var(--primary);
+            font-weight: 600;
+        }
+        
+        .nav-item i { font-size: 1.2rem; min-width: 20px; }
+        
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: var(--surface-alt);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+            transition: var(--transition);
+            backdrop-filter: blur(10px);
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary-light);
+        }
+        
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            opacity: 0;
+            transition: var(--transition);
+        }
+        
+        .stat-card:hover::after { opacity: 1; }
+        
+        .stat-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            font-size: 1.5rem;
+        }
+        
+        .stat-icon-primary { 
+            background: rgba(59, 130, 246, 0.1); 
+            color: var(--primary-light);
+        }
+        .stat-icon-success { 
+            background: rgba(16, 185, 129, 0.1); 
+            color: var(--success);
+        }
+        .stat-icon-warning { 
+            background: rgba(245, 158, 11, 0.1); 
+            color: var(--warning);
+        }
+        .stat-icon-info { 
+            background: rgba(6, 182, 212, 0.1); 
+            color: var(--info);
+        }
+        
+        .stat-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            line-height: 1;
+            margin: 12px 0;
+            font-variant-numeric: tabular-nums;
+            background: linear-gradient(to right, var(--primary-light), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .stat-label {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .stat-trend {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            margin-top: 12px;
+            padding: 6px 12px;
+            background: rgba(59, 130, 246, 0.05);
+            border-radius: var(--radius-sm);
+            font-weight: 500;
+        }
+        
+        .trend-up { color: var(--success); }
+        .trend-down { color: var(--danger); }
+        
+        /* User Cards Layout */
+        .user-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        
+        .user-card {
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            border: 1px solid var(--border);
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+            cursor: pointer;
+        }
+        
+        .user-card:hover {
+            transform: translateY(-6px) scale(1.02);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary-light);
+        }
+        
+        .user-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(180deg, var(--primary), var(--accent));
+            opacity: 0;
+            transition: var(--transition);
+        }
+        
+        .user-card:hover::before { opacity: 1; }
+        
+        .user-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .user-card-header h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+        }
+        
+        .user-card-header .level-badge {
+            background: var(--primary);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .user-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-item .label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+        
+        .stat-item .value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .stat-value.kkcoin { color: var(--warning); }
+        .stat-value.usd { color: var(--info); }
+        .stat-value.hp { color: var(--danger); }
+        .stat-value.xp { color: var(--success); }
+        .stat-value.stamina { color: var(--accent); }
+        
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        
+        .user-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+        
+        .action-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px;
+            border-radius: var(--radius);
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: var(--transition);
+            border: none;
+        }
+        
+        .action-view { 
+            background: rgba(6, 182, 212, 0.1); 
+            color: var(--info);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+        }
+        .action-view:hover { 
+            background: rgba(6, 182, 212, 0.15); 
+        }
+        
+        .action-edit { 
+            background: rgba(59, 130, 246, 0.1); 
+            color: var(--primary);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+        .action-edit:hover { 
+            background: rgba(59, 130, 246, 0.15); 
+        }
+        
+        .action-delete { 
+            background: rgba(239, 68, 68, 0.1); 
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+        .action-delete:hover { 
+            background: rgba(239, 68, 68, 0.15); 
+        }
+        
+        /* Filter Bar */
+        .filter-bar {
+            background: var(--surface-alt);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            border: 1px solid var(--border);
+            margin-bottom: 24px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .filter-bar h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .filter-group {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+        
+        .filter-group label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-weight: 500;
+            color: var(--text);
+            min-width: 120px;
+        }
+        
+        .filter-group input,
+        .filter-group select {
+            padding: 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.95rem;
+            min-width: 140px;
+        }
+        
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        
+        .filter-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        
+        /* Loading States */
+        .skeleton {
+            background: linear-gradient(90deg, var(--surface-alt) 0%, var(--surface) 50%, var(--surface-alt) 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: var(--radius);
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        
+        .skeleton-text {
+            height: 16px;
+            margin: 4px 0;
+        }
+        
+        .skeleton-title { width: 60%; height: 20px; }
+        .skeleton-subtitle { width: 40%; height: 16px; }
+        .skeleton-body { width: 80%; height: 14px; }
+        
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .app-main {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                order: 2;
+                margin-top: 20px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 16px; }
+            .header-content { flex-direction: column; align-items: stretch; }
+            .header-actions { width: 100%; justify-content: space-between; }
+            .stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+            .user-cards { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+            .filter-group { min-width: 100%; }
+        }
+        
+        @media (max-width: 480px) {
+            .header-title h1 { font-size: 1.8rem; }
+            .app-header { padding: 24px; }
+            .sidebar { padding: 16px; }
+            .filter-bar { padding: 16px; }
+            .user-card { padding: 16px; }
+            .stat-card { padding: 16px; }
+            .stat-value { font-size: 1.8rem; }
+        }
+        
+        /* Focus States for Accessibility */
+        .btn:focus,
+        .nav-item:focus,
+        .filter-group input:focus,
+        .filter-group select:focus,
+        .action-btn:focus {
+            outline: 2px solid var(--primary-light);
+            outline-offset: 2px;
+        }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #050617;
+                --surface: #0a0f2c;
+                --text: #e2e8f0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="app-header">
+            <div class="header-content">
+                <div class="header-title">
+                    <div class="icon">⚡</div>
+                    <h1>KKGroup 使用者管理中心</h1>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-icon-only" title="通知" onclick="showNotifications()">
+                        <span>🔔</span>
+                        <span class="notification-badge" id="notificationCount">3</span>
+                    </button>
+                    <button class="btn btn-icon-only" title="設定" onclick="openSettings()">
+                        <span>⚙️</span>
+                    </button>
+                    <button class="btn btn-outline" onclick="refreshData()">
+                        <span>🔄</span> 重新整理
+                    </button>
+                    <button class="btn btn-primary" onclick="createUser()">
+                        <span>➕</span> 新增使用者
+                    </button>
+                </div>
+            </div>
+        </header>
+        
+        <div class="app-main">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <h3><span>📊</span> 儀表板概覽</h3>
+                    <div class="nav-item active" onclick="showDashboard()">
+                        <span>🏠</span>
+                        <span>總覽</span>
+                    </div>
+                    <div class="nav-item" onclick="showAnalytics()">
+                        <span>📈</span>
+                        <span>數據分析</span>
+                    </div>
+                    <div class="nav-item" onclick="showReports()">
+                        <span>📋</span>
+                        <span>報表中心</span>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <h3><span>👥</span> 使用者管理</h3>
+                    <div class="nav-item" onclick="showUsers()">
+                        <span>👥</span>
+                        <span>使用者列表</span>
+                    </div>
+                    <div class="nav-item" onclick="showRoles()">
+                        <span>👔</span>
+                        <span>角色與權限</span>
+                    </div>
+                    <div class="nav-item" onclick="showGroups()">
+                        <span>👥</span>
+                        <span>使用者群組</span>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <h3><span>🛒</span> 商務管理</h3>
+                    <div class="nav-item" onclick="showOrders()">
+                        <span>📦</span>
+                        <span>訂單管理</span>
+                    </div>
+                    <div class="nav-item" onclick="showInventory()">
+                        <span>📦</span>
+                        <span>庫存管理</span>
+                    </div>
+                    <div class="nav-item" onclick="showPayments()">
+                        <span>💳</span>
+                        <span>付款管理</span>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section" style="margin-top: auto;">
+                    <div class="nav-item" onclick="showProfile()">
+                        <span>👤</span>
+                        <span>個人設定</span>
+                    </div>
+                    <div class="nav-item" onclick="logout()">
+                        <span>🚪</span>
+                        <span>登出</span>
+                    </div>
+                </div>
+            </aside>
+            
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Stats Overview -->
+                <section class="stats-overview">
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-primary">
+                            <span>👥</span>
+                        </div>
+                        <div class="stat-value" id="totalUsers">12,348</div>
+                        <div class="stat-label">總使用者</div>
+                        <div class="stat-trend">
+                            <span class="trend-up">▲ 12.4%</span>
+                            <span>本月增長</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-success">
+                            <span>💰</span>
+                        </div>
+                        <div class="stat-value" id="activeUsers">8,932</div>
+                        <div class="stat-label">活躍使用者</div>
+                        <div class="stat-trend">
+                            <span class="trend-up">▲ 8.7%</span>
+                            <span>日活躍率</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-warning">
+                            <span>⚠️</span>
+                        </div>
+                        <div class="stat-value" id="premiumUsers">1,256</div>
+                        <div class="stat-label">貴族會員</div>
+                        <div class="stat-trend">
+                            <span class="trend-up">▲ 15.2%</span>
+                            <span>訂閱成長</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-info">
+                            <span>📈</span>
+                        </div>
+                        <div class="stat-value" id="todayRevenue">$24,567.89</div>
+                        <div class="stat-label">今日收入</div>
+                        <div class="stat-trend">
+                            <span class="trend-up">▲ 22.1%</span>
+                            <span>比昨日</span>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Filter Bar -->
+                <section class="filter-bar">
+                    <h2><span>🔍</span> 使用者篩選與排序</h2>
+                    <div class="filter-group">
+                        <label for="searchUser">搜尋使用者</label>
+                        <input type="text" id="searchUser" placeholder="輸入使用者 ID、名稱或暱稱...">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="levelRange">等級範圍</label>
+                        <select id="levelRange">
+                            <option value="">所有等級</option>
+                            <option value="1-10">Lv. 1-10</option>
+                            <option value="11-20">Lv. 11-20</option>
+                            <option value="21-30">Lv. 21-30</option>
+                            <option value="31-40">Lv. 31-40</option>
+                            <option value="41+">Lv. 41+</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="statusFilter">狀態篩選</label>
+                        <select id="statusFilter">
+                            <option value="">所有狀態</option>
+                            <option value="active">正常</option>
+                            <option value="locked">鎖定</option>
+                            <option value="stunned">暈眩</option>
+                            <option value="flagged">需審核</option>
+                            <option value="premium">貴族會員</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="sortBy">排序方式</label>
+                        <select id="sortBy">
+                            <option value="kkcoin_desc">KK幣 (高到低)</option>
+                            <option value="kkcoin_asc">KK幣 (低到高)</option>
+                            <option value="level_desc">等級 (高到低)</option>
+                            <option value="level_asc">等級 (低到高)</option>
+                            <option value="recent">最近活躍</option>
+                            <option value="oldest">最早加入</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-actions">
+                        <button class="btn btn-outline" onclick="resetFilters()">
+                            <span>🔄</span> 重置篩選
+                        </button>
+                        <button class="btn btn-primary" onclick="applyFilters()">
+                            <span>🔍</span> 應用篩選
+                        </button>
+                    </div>
+                </section>
+                
+                <!-- User Cards -->
+                <section class="user-cards" id="userCardsContainer">
+                    <!-- User cards will be populated by JavaScript -->
+                </section>
+                
+                <!-- Pagination -->
+                <div class="pagination-container" style="text-align: center; margin-top: 32px;">
+                    <div class="pagination" id="paginationControls">
+                        <!-- Pagination controls will be populated by JavaScript -->
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // Mock data for demonstration
+        const mockUsers = Array.from({length: 187}, (_, i) => {
+            const isActive = Math.random() > 0.2;
+            const isLocked = Math.random() > 0.95;
+            const isStunned = Math.random() > 0.9;
+            const isFlagged = Math.random() > 0.92;
+            const isPremium = Math.random() > 0.8;
+            
+            const joinDate = new Date(Date.now() - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000));
+            const lastActive = new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000));
+            
+            return {
+                user_id: 1000000000000000 + i + 1,
+                user_name: `User${1000 + i}`,
+                nickname: `暱稱${i + 1}`,
+                level: Math.floor(Math.random() * 60) + 1,
+                kkcoin: Math.floor(Math.random() * 1000000),
+                digital_usd: parseFloat((Math.random() * 10000).toFixed(2)),
+                hp: Math.floor(Math.random() * 999) + 1,
+                stamina: Math.floor(Math.random() * 100) + 1,
+                xp: Math.floor(Math.random() * 500000),
+                actions_used: Math.floor(Math.random() * 50),
+                fortress_wins: Math.floor(Math.random() * 200),
+                join_date: joinDate.toISOString().split('T')[0],
+                last_active: lastActive.toLocaleString(),
+                status: isLocked ? 'locked' : (isStunned ? 'stunned' : (isFlagged ? 'flagged' : (isPremium ? 'premium' : 'active'))),
+                is_active: isActive,
+                is_locked: isLocked,
+                is_stunned: isStunned,
+                is_flagged: isFlagged,
+                is_premium: isPremium,
+                avatar: `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70) + 1}`
+            };
+        });
+
+        let currentPage = 0;
+        const PAGE_SIZE = 12;
+        let filteredUsers = [...mockUsers];
+        let selectedUsers = new Set();
+
+        function renderUsers() {
+            const start = currentPage * PAGE_SIZE;
+            const end = start + PAGE_SIZE;
+            const pageUsers = filteredUsers.slice(start, end);
+            
+            const container = document.getElementById('userCardsContainer');
+            container.innerHTML = pageUsers.map(user => {
+                const uid = String(user.user_id);
+                const kkcoin = user.kkcoin.toLocaleString();
+                const digital_usd = `$${user.digital_usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+                const level = `Lv.${user.level}`;
+                const xp = user.xp.toLocaleString();
+                const hp = user.hp;
+                const stamina = user.stamina;
+                const xpProgress = Math.min((user.xp % 1000) / 1000 * 100, 100); // XP progress to next level
+                const hpProgress = (user.hp / 999) * 100; // HP as percentage of max
+                const staminaProgress = (user.stamina / 100) * 100; // Stamina as percentage of max
+                
+                return `<div class="user-card" data-user-id="${uid}" onclick="selectUser(${user.user_id}, this)">
+                    <div class="user-card-header">
+                        <div>
+                            <img src="${user.avatar}" alt="${user.user_name}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border);">
+                            <div>
+                                <h3>${user.user_name}</h3>
+                                <div class="level-badge">${level}</div>
+                            </div>
+                        </div>
+                        <div class="user-status">
+                            <span class="status-dot ${getStatusClass(user.status)}"></span>
+                            <span>${getStatusText(user.status)}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="user-stats">
+                        <div class="stat-item">
+                            <div class="label">KK幣</div>
+                            <div class="value kkcoin">${kkcoin}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="label">美金</div>
+                            <div class="value usd">${digital_usd}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="label">HP</div>
+                            <div class="value hp">${hp}</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${hpProgress}%; background: linear-gradient(90deg, var(--danger), #f87171);"></div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="label">耐力</div>
+                            <div class="value stamina">${stamina}</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${staminaProgress}%; background: linear-gradient(90deg, var(--accent), #22d3ee);"></div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="label">XP</div>
+                            <div class="value xp">${xp}</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${xpProgress}%; background: linear-gradient(90deg, var(--success), #34d399);"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="user-actions">
+                        <button class="action-btn action-view" title="檢視使用者" onclick="event.stopPropagation(); viewUser(${user.user_id})">
+                            <span>👁️</span>
+                        </button>
+                        <button class="action-btn action-edit" title="編輯使用者" onclick="event.stopPropagation(); editUser(${user.user_id})">
+                            <span>✏️</span>
+                        </button>
+                        <button class="action-btn action-delete" title="刪除使用者" onclick="event.stopPropagation(); deleteUser(${user.user_id})">
+                            <span>🗑️</span>
+                        </button>
+                    </div>
+                </div>`;
+            }).join('');
+            
+            renderPagination();
+        }
+
+        function getStatusClass(status) {
+            switch(status) {
+                case 'active': return 'status-active';
+                case 'locked': return 'status-locked';
+                case 'stunned': return 'status-stunned';
+                case 'flagged': return 'status-flagged';
+                case 'premium': return 'status-premium';
+                default: return '';
+            }
+        }
+
+        function getStatusText(status) {
+            switch(status) {
+                case 'active': return '正常';
+                case 'locked': return '鎖定';
+                case 'stunned': return '暈眩';
+                case 'flagged': return '需審核';
+                case 'premium': return '貴族會員';
+                default: return '未知';
+            }
+        }
+
+        function selectUser(userId, cardElement) {
+            const isSelected = selectedUsers.has(userId);
+            if (isSelected) {
+                selectedUsers.delete(userId);
+                cardElement.classList.remove('selected-user');
+            } else {
+                selectedUsers.add(userId);
+                cardElement.classList.add('selected-user');
+            }
+            
+            // Update selected count in header (if we had one)
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            // This would update a selected count display if we had one in the UI
+            // For now, we'll just log it
+            console.log(`Selected users: ${selectedUsers.size}`);
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
+            const paginationControls = document.getElementById('paginationControls');
+            
+            paginationControls.innerHTML = `
+                <button class="btn btn-outline" ${currentPage === 0 ? 'disabled' : ''} onclick="changePage(-1)">
+                    <span>‹</span> 上一頁
+                </button>
+                <span class="pagination-info">
+                    第 ${currentPage + 1} 頁 / 共 ${totalPages} 頁
+                </span>
+                <button class="btn btn-outline" ${(currentPage + 1) >= totalPages ? 'disabled' : ''} onclick="changePage(1)">
+                    下一頁 <span>›</span>
+                </button>
+                <span style="margin: 0 16px; color: var(--text-muted); font-size: 0.9rem;">
+                    顯示 ${currentPage * PAGE_SIZE + 1}-${Math.min((currentPage + 1) * PAGE_SIZE, filteredUsers.length)} 筆，共 ${filteredUsers.length} 筆
+                </span>
+            `;
+        }
+
+        function changePage(delta) {
+            const maxPage = Math.ceil(filteredUsers.length / PAGE_SIZE) - 1;
+            currentPage = Math.max(0, Math.min(maxPage, currentPage + delta));
+            selectedUsers.clear(); // Clear selection when changing pages
+            renderUsers();
+        }
+
+        function searchUsers() {
+            const searchTerm = document.getElementById('searchUser').value.toLowerCase().trim();
+            const levelRange = document.getElementById('levelRange').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const sortBy = document.getElementById('sortBy').value;
+            
+            filteredUsers = mockUsers.filter(user => {
+                const matchesSearch = 
+                    String(user.user_id).includes(searchTerm) ||
+                    user.user_name.toLowerCase().includes(searchTerm) ||
+                    (user.nickname || '').toLowerCase().includes(searchTerm);
+                
+                const matchesLevel = !levelRange || 
+                    (levelRange === '1-10' && user.level >= 1 && user.level <= 10) ||
+                    (levelRange === '11-20' && user.level >= 11 && user.level <= 20) ||
+                    (levelRange === '21-30' && user.level >= 21 && user.level <= 30) ||
+                    (levelRange === '31-40' && user.level >= 31 && user.level <= 40) ||
+                    (levelRange === '41+' && user.level >= 41);
+                
+                const matchesStatus = !statusFilter ||
+                    (statusFilter === 'active' && !user.is_locked && !user.is_stunned && !user.is_flagged && !user.is_premium) ||
+                    (statusFilter === 'locked' && user.is_locked) ||
+                    (statusFilter === 'stunned' && user.is_stunned) ||
+                    (statusFilter === 'flagged' && user.is_flagged) ||
+                    (statusFilter === 'premium' && user.is_premium);
+                
+                return matchesSearch && matchesLevel && matchesStatus;
+            });
+            
+            // Apply sorting
+            filteredUsers.sort((a, b) => {
+                switch(sortBy) {
+                    case 'kkcoin_desc': return b.kkcoin - a.kkcoin;
+                    case 'kkcoin_asc': return a.kkcoin - b.kkcoin;
+                    case 'level_desc': return b.level - a.level;
+                    case 'level_asc': return a.level - b.level;
+                    case 'recent': return new Date(b.last_active) - new Date(a.last_active);
+                    case 'oldest': return new Date(a.last_active) - new Date(b.last_active);
+                    default: return 0;
+                }
+            });
+            
+            currentPage = 0;
+            renderUsers();
+        }
+
+        function applyFilters() {
+            searchUsers();
+        }
+
+        function resetFilters() {
+            document.getElementById('searchUser').value = '';
+            document.getElementById('levelRange').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('sortBy').value = 'kkcoin_desc';
+            filteredUsers = [...mockUsers];
+            // Apply default sorting
+            filteredUsers.sort((a, b) => b.kkcoin - a.kkcoin);
+            currentPage = 0;
+            selectedUsers.clear();
+            renderUsers();
+        }
+
+        function viewUser(userId) {
+            alert(`檢視使用者 ID: ${userId}\n\n這將開啟使用者詳細資料頁面。`);
+        }
+
+        function editUser(userId) {
+            alert(`編輯使用者 ID: ${userId}\n\n這將開啟使用者編輯表單。`);
+        }
+
+        function deleteUser(userId) {
+            if (confirm(`確定要刪除使用者 ID: ${userId} 嗎？\n此操作將永久刪除使用者及所有相關資料。`)) {
+                // In real app, this would call DELETE API
+                alert(`使用者 ID: ${userId} 已被刪除`);
+                searchUsers(); // Refresh the list
+            }
+        }
+
+        function createUser() {
+            alert('開啟新增使用者表單\n\n這將導航到使用者創建頁面。');
+        }
+
+        function showNotifications() {
+            alert('顯示通知面板\n\n這將開啟通知中心。');
+        }
+
+        function openSettings() {
+            alert('開啟設定頁面\n\n這將導航到使用者設定。');
+        }
+
+        function refreshData() {
+            // In real app, this would fetch fresh data from API
+            searchUsers(); // Just reapply current filters
+            showToast('資料已重新整理', 'success');
+        }
+
+        function showDashboard() {
+            alert('導航到儀表板總覽頁面');
+        }
+
+        function showAnalytics() {
+            alert('導航到數據分析頁面');
+        }
+
+        function showReports() {
+            alert('導航到報表中心頁面');
+        }
+
+        function showRoles() {
+            alert('導航到角色與權限管理頁面');
+        }
+
+        function showGroups() {
+            alert('導航到使用者群組管理頁面');
+        }
+
+        function showOrders() {
+            alert('導航到訂單管理頁面');
+        }
+
+        function showInventory() {
+            alert('導航到庫存管理頁面');
+        }
+
+        function showPayments() {
+            alert('導航到付款管理頁面');
+        }
+
+        function showProfile() {
+            alert('導航到個人設定頁面');
+        }
+
+        function logout() {
+            if (confirm('確定要登出嗎？\n您將被重新導向到登入頁面。')) {
+                alert('已成功登出');
+                // In real app, this would clear session and redirect to login
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            // Create toast element
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            
+            // Add to body
+            document.body.appendChild(toast);
+            
+            // Position and show
+            toast.style.position = 'fixed';
+            toast.style.top = '20px';
+            toast.style.right = '20px';
+            toast.style.padding = '12px 24px';
+            toast.style.borderRadius = 'var(--radius)';
+            toast.style.background = 'var(--surface-alt)';
+            toast.style.color = 'var(--text)';
+            toast.style.boxShadow = 'var(--shadow-lg)';
+            toast.style.zIndex = '1000';
+            toast.style.display = 'flex';
+            toast.style.alignItems = 'center';
+            toast.style.gap = '8px';
+            toast.style.animation = 'slideIn 0.3s ease forwards';
+            
+            // Add icon
+            const iconMap = {
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️'
+            };
+            const icon = document.createElement('span');
+            icon.textContent = iconMap[type] || 'ℹ️';
+            toast.insertBefore(icon, toast.firstChild);
+            
+            // Remove after timeout
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease forwards';
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 300);
+            }, 3000);
+        }
+        
+        // Add keyframe animations for toast
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Initialize stats (would come from API in real app)
+        document.getElementById('totalUsers').textContent = mockUsers.length.toLocaleString();
+        document.getElementById('activeUsers').textContent = mockUsers.filter(u => u.is_active).length.toLocaleString();
+        document.getElementById('premiumUsers').textContent = mockUsers.filter(u => u.is_premium).length.toLocaleString();
+        document.getElementById('todayRevenue').textContent = `$${mockUsers.reduce((sum, u) => sum + u.digital_usd, 0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+        
+        // Event listeners
+        document.getElementById('searchUser').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchUsers();
+        });
+        
+        document.getElementById('levelRange').addEventListener('change', searchUsers);
+        document.getElementById('statusFilter').addEventListener('change', searchUsers);
+        document.getElementById('sortBy').addEventListener('change', searchUsers);
+        
+        // Initial load
+        renderUsers();
+    </script>
+</body>
+</html>

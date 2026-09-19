@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KKGroup 管理後台 - 保守版本</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --border: #2a2d3a;
+            --text: #e1e4ed;
+            --text-muted: #6b7280;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --radius: 8px;
+            --radius-sm: 4px;
+            --radius-lg: 12px;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        
+        h1 { font-size: 1.5rem; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+        h1 span { color: var(--primary); }
+        
+        /* Dashboard Header */
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        
+        .dashboard-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .dashboard-stats {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 600;
+            display: block;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+        
+        /* Search and Filter Bar */
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .search-bar {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+            min-width: 280px;
+        }
+        
+        .search-bar input {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 1rem;
+        }
+        
+        .search-bar input:focus { outline: none; border-color: var(--primary); }
+        
+        .filter-select, .date-input {
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 1rem;
+            min-width: 140px;
+        }
+        
+        .filter-select:focus, .date-input:focus { outline: none; border-color: var(--primary); }
+        
+        .btn {
+            padding: 12px 20px;
+            border-radius: var(--radius);
+            border: none;
+            font-size: 0.9rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-success:hover { opacity: 0.9; }
+        
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { opacity: 0.9; }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+        
+        .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+        
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .card h2 {
+            font-size: 1.1rem;
+            margin: 0;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        /* Table Styles */
+        .table-responsive {
+            overflow-x: auto;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.875rem;
+        }
+        
+        th {
+            background: var(--bg);
+            text-align: left;
+            padding: 12px 16px;
+            border-bottom: 2px solid var(--border);
+            font-weight: 600;
+            color: var(--text);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        tr:hover td {
+            background: rgba(99, 102, 241, 0.05);
+        }
+        
+        tr:last-child td { border-bottom: none; }
+        
+        /* Action Buttons in Table */
+        .action-btn {
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            border: none;
+            font-size: 0.75rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.1s;
+            margin: 0 2px;
+        }
+        
+        .action-view { background: var(--info); color: white; }
+        .action-edit { background: var(--primary); color: white; }
+        .action-delete { background: var(--danger); color: white; }
+        
+        .action-btn:hover { opacity: 0.9; }
+        
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .page-btn {
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        
+        .page-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .page-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .page-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            border-color: var(--border);
+            color: var(--text-muted);
+        }
+        
+        /* Status Badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .status-active { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .status-inactive { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .status-pending { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+        
+        /* Quick Actions */
+        .quick-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        
+        .quick-action-btn {
+            flex: 1;
+            min-width: 100px;
+            padding: 12px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .quick-action-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: rgba(99, 102, 241, 0.05);
+        }
+        
+        .quick-action-icon { font-size: 1.5rem; }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container { padding: 16px; }
+            .dashboard-header { flex-direction: column; align-items: stretch; }
+            .toolbar { flex-direction: column; }
+            .search-bar { min-width: 100%; }
+            .filter-select, .date-input { min-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="dashboard-header">
+            <div class="dashboard-title">
+                <span>⚙️</span> KKGroup 使用者管理後台
+            </div>
+            <div class="dashboard-stats">
+                <div class="stat-card">
+                    <span class="stat-value" id="totalUsers">1,234</span>
+                    <span class="stat-label">總使用者</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="activeToday">89</span>
+                    <span class="stat-label">今日活躍</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="premiumUsers">156</span>
+                    <span class="stat-label">貴族會員</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Search and Filter Bar -->
+        <div class="toolbar">
+            <div class="search-bar">
+                <input type="text" id="userSearch" placeholder="搜尋使用者 ID、名稱或暱稱...">
+            </div>
+            <select class="filter-select" id="levelFilter">
+                <option value="">所有等級</option>
+                <option value="1">Lv. 1-10</option>
+                <option value="10">Lv. 10-20</option>
+                <option value="20">Lv. 20+</option>
+            </select>
+            <select class="filter-select" id="statusFilter">
+                <option value="">所有狀態</option>
+                <option value="active">正常</option>
+                <option value="locked">鎖定</option>
+                <option value="stunned">暈眩</option>
+            </select>
+            <input type="date" class="date-input" id="dateFilter">
+            <button class="btn btn-primary" onclick="searchUsers()">
+                🔍 搜尋
+            </button>
+            <button class="btn btn-outline" onclick="resetFilters()">
+                🔄 重置
+            </button>
+        </div>
+
+        <!-- Quick Stats Cards -->
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div class="stat-card">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <span style="font-size: 1.5rem; color: var(--warning)">💰</span>
+                    <div>
+                        <div class="stat-value" style="font-size: 1.5rem;" id="totalKKCoin">1,234,567</div>
+                        <div class="stat-label">KK幣總量</div>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <span style="font-size: 1.5rem; color: var(--info)">💵</span>
+                    <div>
+                        <div class="stat-value" style="font-size: 1.5rem;" id="totalUSD">$12,345.67</div>
+                        <div class="stat-label">數位美金</div>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <span style="font-size: 1.5rem; color: var(--success)">⭐</span>
+                    <div>
+                        <div class="stat-value" style="font-size: 1.5rem;" id="totalXP">9,876,543</div>
+                        <div class="stat-label">總經驗值</div>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <span style="font-size: 1.5rem; color: var(--danger)">❤️</span>
+                    <div>
+                        <div class="stat-value" style="font-size: 1.5rem;" id="avgHP">1,234</div>
+                        <div class="stat-label">平均HP</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User List Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2>👥 使用者列表 (<span id="userCount">0</span>)</h2>
+                <div>
+                    <button class="btn btn-outline" onclick="exportUsers()">
+                        📤 匯出
+                    </button>
+                    <button class="btn btn-outline" onclick="bulkActions()">
+                        ⚙️ 批次操作
+                    </button>
+                    <button class="btn btn-success" onclick="refreshUsers()">
+                        🔄 重新整理
+                    </button>
+                </div>
+            </div>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 120px;">User ID</th>
+                            <th style="width: 100px;">💰 KK幣</th>
+                            <th style="width: 100px;">💵 美金</th>
+                            <th style="width: 80px;">📊 等級</th>
+                            <th style="width: 100px;">💎 XP</th>
+                            <th style="width: 80px;">❤️ HP</th>
+                            <th style="width: 80px;">⚡ 耐力</th>
+                            <th style="width: 80px;">⚧ 性別</th>
+                            <th style="width: 100px;">🏷️ 頭銜</th>
+                            <th style="width: 80px;">🔥 連續</th>
+                            <th style="width: 60px; text-align: center;">😵 暈眩</th>
+                            <th style="width: 60px; text-align: center;">🔒 鎖定</th>
+                            <th style="width: 80px;">⚡ 已行動</th>
+                            <th style="width: 80px;">🏰 勝場</th>
+                            <th style="min-width: 120px;">👤 暱稱</th>
+                            <th style="width: 80px; text-align: centre;">✏️ 操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody">
+                        <!-- Sample rows will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <button class="page-btn" id="prevPage" onclick="changePage(-1)" disabled>⬅️ 上一頁</button>
+                <span style="padding: 8px 12px; color: var(--text-muted); font-size: 0.875rem;">
+                    第 <span id="currentPage">1</span> 頁 / 共 <span id="totalPages">10</span> 頁
+                </span>
+                <button class="page-btn" id="nextPage" onclick="changePage(1)">下一頁 ➡️</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Mock data for demonstration
+        const mockUsers = Array.from({length: 123}, (_, i) => ({
+            user_id: 1000000000000000 + i + 1,
+            user_name: `User${1000 + i}`,
+            nickname: `暱稱${i + 1}`,
+            kkcoin: Math.floor(Math.random() * 100000),
+            digital_usd: parseFloat((Math.random() * 1000).toFixed(2)),
+            level: Math.floor(Math.random() * 50) + 1,
+            xp: Math.floor(Math.random() * 100000),
+            hp: Math.floor(Math.random() * 999) + 1,
+            stamina: Math.floor(Math.random() * 100) + 1,
+            gender: ['男', '女', '其他'][Math.floor(Math.random() * 3)],
+            title: ['無頭銜', '新手', '老手', '達人', '大師'][Math.floor(Math.random() * 5)],
+            streak: Math.floor(Math.random() * 30),
+            is_stunned: Math.random() > 0.9,
+            is_locked: Math.random() > 0.95,
+            actions_used: Math.floor(Math.random() * 10),
+            fortress_wins: Math.floor(Math.random() * 50),
+            fortress_total_damage: Math.floor(Math.random() * 10000)
+        }));
+
+        let currentPage = 0;
+        const PAGE_SIZE = 20;
+        let filteredUsers = [...mockUsers];
+
+        function renderUsers() {
+            const start = currentPage * PAGE_SIZE;
+            const end = start + PAGE_SIZE;
+            const pageUsers = filteredUsers.slice(start, end);
+            
+            const tbody = document.getElementById('userTableBody');
+            tbody.innerHTML = pageUsers.map(user => {
+                const uid = String(user.user_id);
+                const kkcoin = user.kkcoin.toLocaleString();
+                const digital_usd = `$${user.digital_usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+                const level = `Lv.${user.level}`;
+                const xp = user.xp.toLocaleString();
+                const hp = user.hp;
+                const stamina = user.stamina;
+                const gender = user.gender;
+                const title = user.title || '-';
+                const streak = `${user.streak}🔥`;
+                const stunned = user.is_stunned ? '😵' : '✅';
+                const locked = user.is_locked ? '🔒' : '⬜';
+                const actions = user.actions_used;
+                const fwins = user.fortress_wins;
+                const nickname = user.nickname || user.user_name || '';
+                
+                return `<tr style="cursor:pointer;border-bottom:1px solid var(--border);"
+                        onclick="document.getElementById('userSearch').value='${uid}';searchUsers()"
+                        onmouseover="this.style.background='var(--surface)'"
+                        onmouseout="this.style.background=''">
+                    <td style="padding:6px 8px;font-family:monospace;">${uid}</td>
+                    <td style="padding:6px 8px;color:var(--warning);">${kkcoin}</td>
+                    <td style="padding:6px 8px;color:var(--info);">${digital_usd}</td>
+                    <td style="padding:6px 8px;">${level}</td>
+                    <td style="padding:6px 8px;">${xp}</td>
+                    <td style="padding:6px 8px;color:var(--danger);">${hp}</td>
+                    <td style="padding:6px 8px;">${stamina}</td>
+                    <td style="padding:6px 8px;">${gender}</td>
+                    <td style="padding:6px 8px;">${title}</td>
+                    <td style="padding:6px 8px;">${streak}</td>
+                    <td style="padding:6px 8px;text-align:center;">${stunned}</td>
+                    <td style="padding:6px 8px;text-align:center;">${locked}</td>
+                    <td style="padding:6px 8px;">${actions}</td>
+                    <td style="padding:6px 8px;">${fwins}</td>
+                    <td style="padding:6px 8px;color:var(--text-muted);">${nickname}</td>
+                    <td style="padding:6px 8px;text-align:center;">
+                        <button class="action-btn action-view" title="檢視">👁️</button>
+                        <button class="action-btn action-edit" title="編輯">✏️</button>
+                        <button class="action-btn action-delete" title="刪除">🗑️</button>
+                    </td>
+                </tr>`;
+            }).join('');
+            
+            document.getElementById('userCount').textContent = filteredUsers.length;
+            document.getElementById('currentPage').textContent = currentPage + 1;
+            document.getElementById('totalPages').textContent = Math.ceil(filteredUsers.length / PAGE_SIZE);
+            document.getElementById('prevPage').disabled = currentPage === 0;
+            document.getElementById('nextPage').disabled = (end) >= filteredUsers.length;
+        }
+
+        function searchUsers() {
+            const searchTerm = document.getElementById('userSearch').value.toLowerCase().trim();
+            const levelFilter = document.getElementById('levelFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const dateFilter = document.getElementById('dateFilter').value;
+            
+            filteredUsers = mockUsers.filter(user => {
+                const matchesSearch = 
+                    String(user.user_id).includes(searchTerm) ||
+                    user.user_name.toLowerCase().includes(searchTerm) ||
+                    (user.nickname || '').toLowerCase().includes(searchTerm);
+                
+                const matchesLevel = !levelFilter || 
+                    (levelFilter === '1' && user.level >= 1 && user.level <= 10) ||
+                    (levelFilter === '10' && user.level >= 10 && user.level <= 20) ||
+                    (levelFilter === '20' && user.level >= 20);
+                
+                const matchesStatus = !statusFilter ||
+                    (statusFilter === 'active' && !user.is_locked && !user.is_stunned) ||
+                    (statusFilter === 'locked' && user.is_locked) ||
+                    (statusFilter === 'stunned' && user.is_stunned);
+                
+                // Date filter would be implemented based on actual date fields
+                const matchesDate = !dateFilter; // Simplified for demo
+                
+                return matchesSearch && matchesLevel && matchesStatus && matchesDate;
+            });
+            
+            currentPage = 0;
+            renderUsers();
+        }
+
+        function resetFilters() {
+            document.getElementById('userSearch').value = '';
+            document.getElementById('levelFilter').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('dateFilter').value = '';
+            filteredUsers = [...mockUsers];
+            currentPage = 0;
+            renderUsers();
+        }
+
+        function changePage(delta) {
+            const maxPage = Math.ceil(filteredUsers.length / PAGE_SIZE) - 1;
+            currentPage = Math.max(0, Math.min(maxPage, currentPage + delta));
+            renderUsers();
+        }
+
+        function exportUsers() {
+            alert('匯出功能開發中...');
+        }
+
+        function bulkActions() {
+            alert('批次操作功能開發中...');
+        }
+
+        function refreshUsers() {
+            // In real app, this would fetch fresh data from API
+            searchUsers(); // Just reapply current filters
+        }
+
+        // Initialize stats (would come from API in real app)
+        document.getElementById('totalUsers').textContent = mockUsers.length.toLocaleString();
+        document.getElementById('activeToday').textContent = Math.floor(mockUsers.length * 0.07).toLocaleString();
+        document.getElementById('premiumUsers').textContent = Math.floor(mockUsers.length * 0.13).toLocaleString();
+        document.getElementById('totalKKCoin').textContent = mockUsers.reduce((sum, u) => sum + u.kkcoin, 0).toLocaleString();
+        document.getElementById('totalUSD').textContent = `$${mockUsers.reduce((sum, u) => sum + u.digital_usd, 0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+        document.getElementById('totalXP').textContent = mockUsers.reduce((sum, u) => sum + u.xp, 0).toLocaleString();
+        document.getElementById('avgHP').textContent = Math.floor(mockUsers.reduce((sum, u) => sum + u.hp, 0) / mockUsers.length).toLocaleString();
+
+        // Event listeners
+        document.getElementById('userSearch').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchUsers();
+        });
+        
+        document.getElementById('levelFilter').addEventListener('change', searchUsers);
+        document.getElementById('statusFilter').addEventListener('change', searchUsers);
+        document.getElementById('dateFilter').addEventListener('change', searchUsers);
+
+        // Initial load
+        renderUsers();
+    </script>
+</body>
+</html>

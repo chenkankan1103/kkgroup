@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KKGroup 管理後台 - 強適合版本</title>
+    <style>
+        :root {
+  --bg: #0d0d0d;
+  --text: #e0e0e0;
+  --primary: #ff0000;
+  --secondary: #ffaa00;
+  --success: #00ff00;
+  --border: #333;
+  --shadow: 0 0 10px rgba(255,0,0,0.3);
+}
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+            font-size: 1rem;
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        
+        /* Layout Grid - Operate Surface Focus */
+        .app-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 20px;
+            min-height: 100vh;
+        }
+        
+        /* Sidebar - Primary Navigation for Operate Surface */
+        .sidebar {
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+        }
+        
+        .nav-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 32px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .nav-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: var(--transition);
+            font-weight: 500;
+            font-size: 0.95rem;
+        }
+        
+        .nav-item:hover {
+            background: var(--surface-hover);
+            color: var(--primary);
+        }
+        
+        .nav-item.active {
+            background: rgba(59, 130, 246, 0.15);
+            border-left: 3px solid var(--primary);
+            color: var(--primary);
+            font-weight: 600;
+        }
+        
+        .nav-item i { font-size: 1.1rem; }
+        
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        /* Header with Actions */
+        .content-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        
+        .content-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+        
+        .content-title i { font-size: 1.8rem; }
+        
+        .actions-toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 20px;
+            border-radius: var(--radius);
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: var(--transition);
+            border: none;
+            white-space: nowrap;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-primary:active { background: var(--primary-pressed); transform: translateY(1px); }
+        
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+        
+        .btn-success:hover { background: #059669; }
+        
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .btn-danger:hover { background: #dc2626; }
+        
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--border);
+            color: var(--text);
+        }
+        
+        .btn-outline:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: rgba(59, 130, 246, 0.05);
+        }
+        
+        .btn-icon-only {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            justify-content: center;
+        }
+        
+        /* Stats Overview - Operate Surface Metrics */
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 20px;
+            border: 1px solid var(--border);
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+            border-color: var(--primary);
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--primary);
+            opacity: 0;
+            transition: var(--transition);
+        }
+        
+        .stat-card:hover::before { opacity: 1; }
+        
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+        }
+        
+        .stat-icon-primary { background: rgba(59, 130, 246, 0.1); color: var(--primary); }
+        .stat-icon-success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+        .stat-icon-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+        .stat-icon-info { background: rgba(6, 182, 212, 0.1); color: var(--info); }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1;
+            margin: 8px 0;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .stat-trend {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.875rem;
+            margin-top: 8px;
+        }
+        
+        .trend-up { color: var(--success); }
+        .trend-down { color: var(--danger); }
+        
+        /* User Management Panel */
+        .user-panel {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.05);
+        }
+        
+        .panel-header h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .panel-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        /* Data Table - Focus on Operate Surface */
+        .data-table-container {
+            overflow-x: auto;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 1000px;
+        }
+        
+        .data-table th {
+            background: var(--bg);
+            color: var(--text);
+            font-weight: 600;
+            text-align: left;
+            padding: 16px 20px;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 2px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .data-table td {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+            font-size: 0.9rem;
+        }
+        
+        .data-table tbody tr {
+            transition: var(--transition);
+            cursor: pointer;
+        }
+        
+        .data-table tbody tr:hover {
+            background: rgba(59, 130, 246, 0.05);
+        }
+        
+        .data-table tbody tr.selected {
+            background: rgba(59, 130, 246, 0.12);
+            border-left: 3px solid var(--primary);
+        }
+        
+        .data-table tbody tr:hover.selected {
+            background: rgba(59, 130, 246, 0.18);
+        }
+        
+        /* Cell Styles for Operate Surface */
+        .cell-id { font-family: var(--font-mono); font-size: 0.85rem; }
+        .cell-currency { color: var(--warning); font-variant-numeric: tabular-nums; }
+        .cell-usd { color: var(--info); font-variant-numeric: tabular-nums; }
+        .cell-level { background: rgba(59, 130, 246, 0.1); color: var(--primary); padding: 4px 8px; border-radius: var(--radius-sm); font-weight: 500; }
+        .cell-xp { color: var(--success); font-variant-numeric: tabular-nums; }
+        .cell-hp { color: var(--danger); }
+        .cell-status { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-active { background: var(--success); }
+        .status-locked { background: var(--danger); }
+        .status-stunned { background: var(--warning); }
+        
+        /* Action Cells */
+        .cell-actions {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+        }
+        
+        .action-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: var(--transition);
+            border: none;
+        }
+        
+        .action-view { background: rgba(6, 182, 212, 0.1); color: var(--info); }
+        .action-view:hover { background: rgba(6, 182, 212, 0.2); }
+        
+        .action-edit { background: rgba(59, 130, 246, 0.1); color: var(--primary); }
+        .action-edit:hover { background: rgba(59, 130, 246, 0.2); }
+        
+        .action-delete { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+        .action-delete:hover { background: rgba(239, 68, 68, 0.2); }
+        
+        /* Bulk Actions Bar */
+        .bulk-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-top: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.05);
+        }
+        
+        .bulk-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+        
+        .bulk-actions-btns {
+            display: flex;
+            gap: 8px;
+        }
+        
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            padding: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .page-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.875rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+        
+        .page-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: rgba(59, 130, 246, 0.05);
+        }
+        
+        .page-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .page-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            border-color: var(--border);
+            color: var(--text-muted);
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .app-layout {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                order: 2;
+                margin-top: 20px;
+            }
+        }
+        
+        @media (max-width: 640px) {
+            .container { padding: 12px; }
+            .content-header { flex-direction: column; align-items: stretch; }
+            .actions-toolbar { width: 100%; justify-content: space-between; }
+            .stats-overview { grid-template-columns: 1fr; }
+            .panel-header { flex-direction: column; gap: 12px; align-items: stretch; }
+            .panel-actions { width: 100%; justify-content: flex-end; }
+            .bulk-actions { flex-direction: column; gap: 16px; align-items: stretch; }
+            .bulk-actions-btns { width: 100%; justify-content: space-between; }
+        }
+        
+        /* Focus States for Accessibility */
+        .btn:focus, .nav-item:focus, .page-btn:focus, .action-btn:focus {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }
+        
+        /* Loading State */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Animation for table rows */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .data-table tbody tr {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        
+        .data-table tbody tr:nth-child(2) { animation-delay: 0.05s; }
+        .data-table tbody tr:nth-child(3) { animation-delay: 0.1s; }
+        .data-table tbody tr:nth-child(4) { animation-delay: 0.15s; }
+        .data-table tbody tr:nth-child(5) { animation-delay: 0.2s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="app-layout">
+            <!-- Sidebar Navigation -->
+            <aside class="sidebar">
+                <div class="nav-header">
+                    <span>⚙️</span>
+                    <h2>管理選單</h2>
+                </div>
+                
+                <nav class="nav-menu">
+                    <div class="nav-item active" onclick="navigateTo('users')">
+                        <span>👥</span>
+                        <span>使用者管理</span>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('orders')">
+                        <span>📦</span>
+                        <span>訂單管理</span>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('inventory')">
+                        <span>📦</span>
+                        <span>庫存管理</span>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('analytics')">
+                        <span>📊</span>
+                        <span>數據分析</span>
+                    </div>
+                    <div class="nav-item" onclick="navigateTo('settings')">
+                        <span>⚙️</span>
+                        <span>系統設定</span>
+                    </div>
+                </nav>
+                
+                <div style="margin-top: auto; padding-top: 24px; border-top: 1px solid var(--border);">
+                    <div class="nav-item" onclick="navigateTo('profile')">
+                        <span>👤</span>
+                        <span>個人設定</span>
+                    </div>
+                    <div class="nav-item" onclick="logout()">
+                        <span>🚪</span>
+                        <span>登出</span>
+                    </div>
+                </div>
+            </aside>
+            
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Header -->
+                <header class="content-header">
+                    <div class="content-title">
+                        <span>👥</span>
+                        <h1>使用者管理中心</h1>
+                    </div>
+                    <div class="actions-toolbar">
+                        <button class="btn btn-outline" onclick="showFilters()">
+                            <span>🔍</span> 篩選
+                        </button>
+                        <button class="btn btn-primary" onclick="bulkSelectAll()">
+                            <span>☑️</span> 全選
+                        </button>
+                        <button class="btn btn-success" onclick="exportSelected()">
+                            <span>📤</span> 匯出選取
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteSelected()">
+                            <span>🗑️</span> 刪除選取
+                        </button>
+                    </div>
+                </header>
+                
+                <!-- Stats Overview -->
+                <section class="stats-overview">
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-primary">
+                            <span>👥</span>
+                        </div>
+                        <div class="stat-value" id="totalUsers">12,348</div>
+                        <div class="stat-label">總使用者</div>
+                        <div class="stat-trend">
+                            <span class="trend-up">▲ 12%</span>
+                            <span>本月增長</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-success">
+                            <span>💰</span>
+                        </div>
+                        <div class="stat-value" id="activeUsers">8,932</div>
+                        <div class="stat-label">活躍使用者</div>
+                        <div class="stat-trend">
+                            <span class="trend-up">▲ 8%</span>
+                            <span>日活躍率</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-warning">
+                            <span>⚠️</span>
+                        </div>
+                        <div class="stat-value" id="flaggedUsers">156</div>
+                        <div class="stat-label">需審核使用者</div>
+                        <div class="stat-trend">
+                            <span class="trend-down">▼ 5%</span>
+                            <span>異常帳號</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-info">
+                            <span>📈</span>
+                        </div>
+                        <div class="stat-value" id="todaySignups">234</div>
+                        <div class="stat-label">今日新增</div>
+                        <div class="stat-trend">
+                            <span class="trend-up">▲ 22%</span>
+                            <span>比昨日</span>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- User Management Panel -->
+                <section class="user-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h3>使用者列表</h3>
+                        </div>
+                        <div class="panel-actions">
+                            <button class="btn btn-outline" onclick="refreshUsers()">
+                                <span>🔄</span> 重新整理
+                            </button>
+                            <button class="btn btn-primary" onclick="createUser()">
+                                <span>➕</span> 新增使用者
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Search and Filters -->
+                    <div id="searchFilters" style="padding: 16px 24px; border-bottom: 1px solid var(--border); background: rgba(0, 0, 0, 0.03); display: none;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                            <div>
+                                <input type="text" id="searchUser" placeholder="搜尋使用者 ID、名稱..." 
+                                       style="width: 100%; padding: 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.95rem;">
+                            </div>
+                            <div>
+                                <select id="levelRange" style="width: 100%; padding: 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+                                    <option value="">所有等級</option>
+                                    <option value="1-10">Lv. 1-10</option>
+                                    <option value="11-20">Lv. 11-20</option>
+                                    <option value="21-30">Lv. 21-30</option>
+                                    <option value="31+">Lv. 31+</option>
+                                </select>
+                            </div>
+                            <div>
+                                <select id="statusFilter" style="width: 100%; padding: 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text);">
+                                    <option value="">所有狀態</option>
+                                    <option value="active">正常</option>
+                                    <option value="locked">鎖定</option>
+                                    <option value="stunned">暈眩</option>
+                                    <option value="flagged">需審核</option>
+                                </select>
+                            </div>
+                            <div>
+                                <button class="btn btn-primary" onclick="applyFilters()" style="width: 100%;">
+                                    應用篩選
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Data Table -->
+                    <div class="data-table-container">
+                        <table class="data-table" id="usersTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 60px;">
+                                        <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                                    </th>
+                                    <th>User ID</th>
+                                    <th>使用者名稱</th>
+                                    <th>暱稱</th>
+                                    <th>等級</th>
+                                    <th>KK幣</th>
+                                    <th>美金</th>
+                                    <th>HP</th>
+                                    <th>狀態</th>
+                                    <th style="width: 120px;">最後行動</th>
+                                    <th style="width: 100px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <!-- Table rows will be populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Bulk Actions and Pagination -->
+                    <div class="bulk-actions">
+                        <div class="bulk-info">
+                            <span>已選取: <span id="selectedCount">0</span> 筆</span>
+                        </div>
+                        <div class="bulk-actions-btns">
+                            <button class="btn btn-outline" onclick="bulkAction('add_kkcoin', 1000)">
+                                +1000 KK幣
+                            </button>
+                            <button class="btn btn-outline" onclick="bulkAction('add_xp', 500)">
+                                +500 XP
+                            </button>
+                            <button class="btn btn-warning" onclick="bulkAction('reset_stamina')">
+                                回復耐力
+                            </button>
+                            <button class="btn btn-danger" onclick="bulkAction('flag_users')">
+                                標記審核
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="pagination" id="paginationContainer">
+                        <!-- Pagination controls will be populated by JavaScript -->
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // Mock data for demonstration
+        const mockUsers = Array.from({length: 234}, (_, i) => {
+            const isActive = Math.random() > 0.2;
+            const isLocked = Math.random() > 0.95;
+            const isStunned = Math.random() > 0.9;
+            const isFlagged = Math.random() > 0.92;
+            
+            return {
+                user_id: 1000000000000000 + i + 1,
+                user_name: `User${1000 + i}`,
+                nickname: `暱稱${i + 1}`,
+                level: Math.floor(Math.random() * 50) + 1,
+                kkcoin: Math.floor(Math.random() * 500000),
+                digital_usd: parseFloat((Math.random() * 5000).toFixed(2)),
+                hp: Math.floor(Math.random() * 999) + 1,
+                stamina: Math.floor(Math.random() * 100) + 1,
+                actions_used: Math.floor(Math.random() * 20),
+                last_action: new Date(Date.now() - Math.floor(Math.random() * 86400000 * 7)).toLocaleString(),
+                status: isLocked ? 'locked' : (isStunned ? 'stunned' : (isFlagged ? 'flagged' : 'active')),
+                is_active: isActive,
+                is_locked: isLocked,
+                is_stunned: isStunned,
+                is_flagged: isFlagged
+            };
+        });
+
+        let currentPage = 0;
+        const PAGE_SIZE = 25;
+        let filteredUsers = [...mockUsers];
+        let selectedUsers = new Set();
+
+        function renderUsers() {
+            const start = currentPage * PAGE_SIZE;
+            const end = start + PAGE_SIZE;
+            const pageUsers = filteredUsers.slice(start, end);
+            
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = pageUsers.map((user, index) => {
+                const isSelected = selectedUsers.has(user.user_id);
+                const uid = String(user.user_id);
+                const kkcoin = user.kkcoin.toLocaleString();
+                const digital_usd = `$${user.digital_usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+                const level = `Lv.${user.level}`;
+                const xp = user.xp?.toLocaleString() || '0';
+                const hp = user.hp;
+                const statusText = user.is_locked ? '鎖定' : (user.is_stunned ? '暈眩' : (user.is_flagged ? '需審核' : '正常'));
+                const statusClass = user.is_locked ? 'status-locked' : (user.is_stunned ? 'status-stunned' : (user.is_flagged ? 'status-flagged' : 'status-active'));
+                
+                return `<tr class="${isSelected ? 'selected' : ''}" data-user-id="${uid}" onclick="toggleUserSelection(${user.user_id}, this)">
+                    <td style="padding:16px 20px;">
+                        <input type="checkbox" class="row-checkbox" ${isSelected ? 'checked' : ''} onchange="event.stopPropagation(); toggleUserSelection(${user.user_id}, this.parentElement.parentElement)">
+                    </td>
+                    <td class="cell-id" style="padding:16px 20px; font-family:var(--font-mono);">${uid}</td>
+                    <td style="padding:16px 20px;">${user.user_name}</td>
+                    <td style="padding:16px 20px; color:var(--text-muted);">${user.nickname}</td>
+                    <td style="padding:16px 20px;" class="cell-level">${level}</td>
+                    <td class="cell-currency" style="padding:16px 20px;">${kkcoin}</td>
+                    <td class="cell-usd" style="padding:16px 20px;">${digital_usd}</td>
+                    <td style="padding:16px 20px; color:var(--danger); font-variant-numeric:tabular-nums;">${hp}</td>
+                    <td style="padding:16px 20px;" class="cell-status">
+                        <span class="status-dot ${statusClass}"></span>
+                        <span>${statusText}</span>
+                    </td>
+                    <td style="padding:16px 20px; color:var(--text-muted);">${user.last_action}</td>
+                    <td style="padding:16px 20px;" class="cell-actions">
+                        <button class="action-btn action-view" title="檢視使用者" onclick="event.stopPropagation(); viewUser(${user.user_id})">
+                            <span>👁️</span>
+                        </button>
+                        <button class="action-btn action-edit" title="編輯使用者" onclick="event.stopPropagation(); editUser(${user.user_id})">
+                            <span>✏️</span>
+                        </button>
+                        <button class="action-btn action-delete" title="刪除使用者" onclick="event.stopPropagation(); deleteUser(${user.user_id})">
+                            <span>🗑️</span>
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+            
+            // Update selection count
+            document.getElementById('selectedCount').textContent = selectedUsers.size;
+            document.getElementById('selectAllCheckbox').checked = selectedUsers.size === filteredUsers.length && filteredUsers.length > 0;
+            
+            // Update pagination
+            renderPagination();
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
+            const paginationContainer = document.getElementById('paginationContainer');
+            
+            paginationContainer.innerHTML = `
+                <button class="page-btn" ${currentPage === 0 ? 'disabled' : ''} onclick="changePage(-1)">
+                    ‹
+                </button>
+                <span class="pagination-info">
+                    第 ${currentPage + 1} 頁 / 共 ${totalPages} 頁
+                </span>
+                <button class="page-btn" ${(currentPage + 1) >= totalPages ? 'disabled' : ''} onclick="changePage(1)">
+                    ›
+                </button>
+            `;
+        }
+
+        function toggleUserSelection(userId, rowElement) {
+            if (selectedUsers.has(userId)) {
+                selectedUsers.delete(userId);
+                rowElement.classList.remove('selected');
+            } else {
+                selectedUsers.add(userId);
+                rowElement.classList.add('selected');
+            }
+            
+            // Update checkbox in row
+            const checkbox = rowElement.querySelector('.row-checkbox');
+            checkbox.checked = selectedUsers.has(userId);
+            
+            // Update select all state
+            document.getElementById('selectAllCheckbox').checked = 
+                selectedUsers.size === filteredUsers.length && filteredUsers.length > 0;
+            
+            document.getElementById('selectedCount').textContent = selectedUsers.size;
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAllCheckbox').checked;
+            const rows = document.querySelectorAll('#usersTableBody tr');
+            
+            if (selectAll) {
+                filteredUsers.forEach(user => selectedUsers.add(user.user_id));
+                rows.forEach(row => row.classList.add('selected'));
+            } else {
+                selectedUsers.clear();
+                rows.forEach(row => row.classList.remove('selected'));
+            }
+            
+            // Update all checkboxes
+            rows.forEach((row, index) => {
+                const checkbox = row.querySelector('.row-checkbox');
+                checkbox.checked = selectAll;
+            });
+            
+            document.getElementById('selectedCount').textContent = selectAll ? filteredUsers.length : 0;
+        }
+
+        function searchUsers() {
+            const searchTerm = document.getElementById('searchUser').value.toLowerCase().trim();
+            const levelRange = document.getElementById('levelRange').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            
+            filteredUsers = mockUsers.filter(user => {
+                const matchesSearch = 
+                    String(user.user_id).includes(searchTerm) ||
+                    user.user_name.toLowerCase().includes(searchTerm) ||
+                    (user.nickname || '').toLowerCase().includes(searchTerm);
+                
+                const matchesLevel = !levelRange || 
+                    (levelRange === '1-10' && user.level >= 1 && user.level <= 10) ||
+                    (levelRange === '11-20' && user.level >= 11 && user.level <= 20) ||
+                    (levelRange === '21-30' && user.level >= 21 && user.level <= 30) ||
+                    (levelRange === '31+' && user.level >= 31);
+                
+                const matchesStatus = !statusFilter ||
+                    (statusFilter === 'active' && !user.is_locked && !user.is_stunned && !user.is_flagged) ||
+                    (statusFilter === 'locked' && user.is_locked) ||
+                    (statusFilter === 'stunned' && user.is_stunned) ||
+                    (statusFilter === 'flagged' && user.is_flagged);
+                
+                return matchesSearch && matchesLevel && matchesStatus;
+            });
+            
+            currentPage = 0;
+            selectedUsers.clear();
+            renderUsers();
+        }
+
+        function applyFilters() {
+            searchUsers();
+            document.getElementById('searchFilters').style.display = 'none';
+        }
+
+        function showFilters() {
+            document.getElementById('searchFilters').style.display = 'grid';
+        }
+
+        function changePage(delta) {
+            const maxPage = Math.ceil(filteredUsers.length / PAGE_SIZE) - 1;
+            currentPage = Math.max(0, Math.min(maxPage, currentPage + delta));
+            selectedUsers.clear(); // Clear selection when changing pages
+            renderUsers();
+        }
+
+        function refreshUsers() {
+            // In real app, this would fetch fresh data from API
+            searchUsers(); // Just reapply current filters
+        }
+
+        function viewUser(userId) {
+            alert(`檢視使用者 ID: ${userId}`);
+        }
+
+        function editUser(userId) {
+            alert(`編輯使用者 ID: ${userId}`);
+        }
+
+        function deleteUser(userId) {
+            if (confirm(`確定要刪除使用者 ID: ${userId} 嗎？`)) {
+                // In real app, this would call DELETE API
+                alert(`使用者 ID: ${userId} 已刪除`);
+                refreshUsers();
+            }
+        }
+
+        function bulkSelectAll() {
+            document.getElementById('selectAllCheckbox').checked = true;
+            toggleSelectAll();
+        }
+
+        function exportSelected() {
+            if (selectedUsers.size === 0) {
+                alert('請先選取要匯出的使用者');
+                return;
+            }
+            alert(`匯出 ${selectedUsers.size} 位使用者的資料`);
+        }
+
+        function deleteSelected() {
+            if (selectedUsers.size === 0) {
+                alert('請先選取要刪除的使用者');
+                return;
+            }
+            if (confirm(`確定要刪除已選取的 ${selectedUsers.size} 位使用者嗎？此操作無法復原！`)) {
+                alert(`已刪除 ${selectedUsers.size} 位使用者`);
+                refreshUsers();
+            }
+        }
+
+        function bulkAction(actionType, value) {
+            if (selectedUsers.size === 0) {
+                alert('請先選取要執行批次操作的使用者');
+                return;
+            }
+            
+            let actionText = '';
+            switch(actionType) {
+                case 'add_kkcoin':
+                    actionText = `為 ${selectedUsers.size} 位使用者增加 ${value} KK幣`;
+                    break;
+                case 'add_xp':
+                    actionText = `為 ${selectedUsers.size} 位使用者增加 ${value} XP`;
+                    break;
+                case 'reset_stamina':
+                    actionText = `為 ${selectedUsers.size} 位使用者回復耐力`;
+                    break;
+                case 'flag_users':
+                    actionText = `將 ${selectedUsers.size} 位使用者標記為需審核`;
+                    break;
+            }
+            
+            alert(actionText);
+            // In real app, this would call bulk API endpoint
+            refreshUsers(); // Refresh to show updated data
+        }
+
+        function createUser() {
+            alert('開啟新增使用者表單');
+        }
+
+        function navigateTo(section) {
+            alert(`導航到 ${section} 頁面`);
+            // In real app, this would change route or load different content
+        }
+
+        function logout() {
+            if (confirm('確定要登出嗎？')) {
+                alert('已成功登出');
+                // In real app, this would clear session and redirect to login
+            }
+        }
+
+        // Initialize stats (would come from API in real app)
+        document.getElementById('totalUsers').textContent = mockUsers.length.toLocaleString();
+        document.getElementById('activeUsers').textContent = mockUsers.filter(u => u.is_active).length.toLocaleString();
+        document.getElementById('flaggedUsers').textContent = mockUsers.filter(u => u.is_flagged).length.toLocaleString();
+        document.getElementById('todaySignups').textContent = Math.floor(mockUsers.length * 0.1).toLocaleString();
+
+        // Event listeners
+        document.getElementById('searchUser').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchUsers();
+        });
+        
+        document.getElementById('levelRange').addEventListener('change', searchUsers);
+        document.getElementById('statusFilter').addEventListener('change', searchUsers);
+
+        // Initial load
+        renderUsers();
+    </script>
+</body>
+</html>
