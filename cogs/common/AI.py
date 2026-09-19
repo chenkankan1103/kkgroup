@@ -546,7 +546,7 @@ class KKBotAgent:
     async def run(self, user_id: int, user_msg: str) -> str:
         """主入口：給定用戶 ID 和訊息，回傳 AI 回應文字。"""
         contents = self.session.build_contents(user_id, user_msg)
-        needs_tools = self._needs_tools(user_msg)
+        needs_tools = self._should_use_tool(user_msg)
         tools_spec = self._tools_spec if (needs_tools and _TOOLS_AVAILABLE) else None
         system_prompt = self._build_system_prompt(user_msg)
 
@@ -674,8 +674,7 @@ class KKBotAgent:
         except Exception:
             pass
 
-    @staticmethod
-    def _needs_tools(msg: str) -> bool:
+    def _should_use_tool(self, msg: str) -> bool:
         """判斷是否需要工具（避免普通聊天帶上工具規格浪費 token）。"""
         if len(msg) < 5:
             return False
