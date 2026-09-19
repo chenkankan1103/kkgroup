@@ -3,22 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <title>KK 集團：資產中心入口</title>
-    <script>
-        // 自動讀取 config.json 中的最新隧道網址
-        fetch('./config.json?cache_bust=' + Date.now())
-            .then(response => response.json())
-            .then(data => {
-                if (data.url) {
-                    window.location.replace(data.url);
-                }
-            })
-            .catch(err => console.error("無法取得跳轉網址", err));
-    </script>
     <style>
-        body { background: #000; color: #0f0; font-family: monospace; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        body { margin:0; height:100vh; overflow:hidden; background:#000; color:#0f0; font-family:monospace; display:flex; justify-content:center; align-items:center; position:relative; }
+        #character { position:absolute; width:80px; height:80px; pointer-events:none; transition: transform 0.05s; }
+        .message { position:relative; z-index:2; }
+        .hint { position:absolute; bottom:20px; font-size:0.9em; opacity:0.7; }
     </style>
 </head>
 <body>
-    <p>> [系統訊息] 正在動態校準隧道頻率，請稍候...</p>
+    <div id="character">
+        <!-- Simple stick figure using SVG -->
+        <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle cx="40" cy="15" r="10" stroke="#0f0" stroke-width="2" fill="none"/>
+            <line x1="40" y1="25" x2="40" y2="55" stroke="#0f0" stroke-width="2"/>
+            <line x1="40" y1="35" x2="25" y2="50" stroke="#0f0" stroke-width="2"/>
+            <line x1="40" y1="35" x2="55" y2="50" stroke="#0f0" stroke-width="2"/>
+            <line x1="40" y1="55" x2="25" y2="75" stroke="#0f0" stroke-width="2"/>
+            <line x1="40" y1="55" x2="55" y2="75" stroke="#0f0" stroke-width="2"/>
+        </svg>
+    </div>
+    <p class="message">>> [系統訊息] 正在動態校準隧道頻率，請稍候...</p>
+    <p class="hint" id="hint"></p>
+    <script>
+        // 自動讀取 config.json 中的最新隧道網址
+        const hint = document.getElementById('hint');
+        function showHint(msg) {
+            hint.textContent = msg;
+        }
+        fetch('./config.json?cache_bust=' + Date.now())
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(data => {
+                if (data.url) {
+                    // Check if we are running locally (file://)
+                    if (location.protocol === 'file:') {
+                        showHint('本地測試模式：跳至 URL 已停用');
+                        // Optionally, after a delay, we could still redirect for testing
+                        // setTimeout(() => { window.location.replace(data.url); }, 3000);
+                    } else {
+                        showHint(`即將跳轉至: ${data.url}`);
+                        setTimeout(() => {
+                            window.location.replace(data.url);
+                        }, 2000); // 2 seconds delay to show the interactive figure
+                    }
+                } else {
+                    showHint('config.json 中未找到 url 欄位');
+                }
+            })
+            .catch(err => {
+                console.error("無法取得跳轉網址", err);
+                showHint('無法讀取 config.json，使用本地測試模式');
+            });
+    </script>
+    <script>
+        const character = document.getElementById('character');
+        document.addEventListener('mousemove', (e) => {
+            const x = e.clientX;
+            const y = e.clientY;
+            // Move character slightly opposite to mouse for parallax effect
+            const moveX = (x - window.innerWidth / 2) * 0.05;
+            const moveY = (y - window.innerHeight / 2) * 0.05;
+            character.style.transform = `translate(${moveX}px, ${moveY}px)`;
+        });
+    </script>
 </body>
 </html>
