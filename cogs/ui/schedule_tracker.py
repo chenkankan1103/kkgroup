@@ -184,8 +184,6 @@ class AnimeScheduleTracker:
                     return {"success": False, "skipped": True}
 
             logger.info("🔄 [refresh_weekly_schedule] 開始拉取本週時程表...")
-            # 記錄執行日期，防止 02:00 時段內重複執行（tasks.loop 每 30 分鐘觸發一次）
-            self._last_run_date = now.date()
 
             # 拉取完整一週的時程表 (優先使用 API，失敗則嘗試首頁爬取)
             schedule = await self._get_anime_schedule()
@@ -199,6 +197,10 @@ class AnimeScheduleTracker:
                     return {"success": False, "error": "所有來源皆無法取得時程表"}
                 else:
                     logger.info("✅ [refresh_weekly_schedule] 成功從首頁爬取到時程表")
+
+            # 記錄執行日期（2026-09-17 修復：資料來源成功後才標記，失敗時下一個
+            # 30 分鐘 tick 重試，避免單次失敗導致整天無排程資料）
+            self._last_run_date = now.date()
 
             # 🔑 正確計算 week_start_date (api_week=True: 用於儲存從 API 拉取的週表)
             week_start_str = get_week_start_date(now, api_week=True)
