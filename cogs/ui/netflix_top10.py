@@ -145,7 +145,10 @@ class NetflixTop10Cog(commands.Cog):
                         poster_url = f"https://images.justwatch.com{poster_url_template.replace('{profile}', profile).replace('{format}', image_format)}"
 
                     # 根據物件類型過濾
-                    target_type = "SHOW" if content_type == "show" else "MOVIE"
+                    if content_type == "movie":
+                        target_type = "MOVIE"
+                    else:  # content_type == "series"
+                        target_type = "SHOW"
                     if object_type == target_type:
                         results.append({
                             "title": title,
