@@ -11,101 +11,198 @@
       "toClean": 5
     }
   },
-
   "command_categories": {
     "GAME": {
       "description": "遊戲系統相關指令",
       "subcategories": {
         "趨勢樂透": {
-          "active": ["trends_predict", "trends_history", "trends_jackpot"],
-          "test": ["trends_test"]
+          "active": [
+            "trends_predict",
+            "trends_history",
+            "trends_jackpot"
+          ],
+          "test": [
+            "trends_test"
+          ]
         },
         "紙娃娃系統": {
-          "active": ["paperdoll", "set_character", "view_character", "list_paperdoll"],
-          "admin": ["admin_paperdoll"]
+          "active": [
+            "paperdoll",
+            "set_character",
+            "view_character",
+            "list_paperdoll"
+          ],
+          "admin": [
+            "admin_paperdoll"
+          ]
         },
         "置物櫃系統": {
-          "active": ["locker_panel", "crop", "harvest"],
-          "admin": ["locker_init", "locker_check", "locker_fix_missing", "locker_check_all", "locker_remake_thread"]
+          "active": [
+            "locker_panel",
+            "crop",
+            "harvest"
+          ],
+          "admin": [
+            "locker_init",
+            "locker_check",
+            "locker_fix_missing",
+            "locker_check_all",
+            "locker_remake_thread"
+          ]
         },
         "園區事件": {
-          "active": ["進行園區活動"],
-          "admin": ["event_stats", "event_reset", "event_force"]
+          "active": [
+            "進行園區活動"
+          ],
+          "admin": [
+            "event_stats",
+            "event_reset",
+            "event_force"
+          ]
         }
       }
     },
-
     "ECONOMY": {
       "description": "經濟系統相關指令",
       "subcategories": {
         "KK幣系統": {
-          "active": ["kkcoin", "kkcoin_rank"],
-          "admin": ["kkcoin_admin"]
+          "active": [
+            "kkcoin",
+            "kkcoin_rank"
+          ],
+          "admin": [
+            "kkcoin_admin"
+          ]
         },
         "儲備金系統": {
-          "active": ["reserve_status"],
-          "admin": ["reserve_admin"]
+          "active": [
+            "reserve_status"
+          ],
+          "admin": [
+            "reserve_admin"
+          ]
         },
         "購物系統": {
-          "active": ["shopping"],
-          "admin": ["grant_temporary_role", "check_my_roles"]
+          "active": [
+            "shopping"
+          ],
+          "admin": [
+            "grant_temporary_role",
+            "check_my_roles"
+          ]
         }
       }
     },
-
     "CHARACTER": {
       "description": "角色系統相關指令",
       "subcategories": {
         "角色管理": {
-          "active": ["select_character", "view_character"],
-          "admin": ["character_setup"]
+          "active": [
+            "select_character",
+            "view_character"
+          ],
+          "admin": [
+            "character_setup"
+          ]
         },
         "紅包系統": {
-          "admin": ["發紅包", "紅包修復", "紅包狀態", "紅包掃描"]
+          "admin": [
+            "發紅包",
+            "紅包修復",
+            "紅包狀態",
+            "紅包掃描"
+          ]
         }
       }
     },
-
     "ENTERTAINMENT": {
       "description": "娛樂和跟蹤相關指令",
       "subcategories": {
         "動畫追蹤": {
-          "active": ["anime_status", "anime_weekly", "anime_ranking", "anime_stats"],
-          "admin": ["anime_test", "anime_start"],
+          "active": [
+            "anime_status",
+            "anime_weekly",
+            "anime_ranking",
+            "anime_stats"
+          ],
+          "admin": [
+            "anime_test",
+            "anime_start"
+          ],
           "note": "需要定期維護，考慮移到獨立服務"
         },
         "Netflix 排行榜": {
-          "active": ["netflix_top10"]
+          "active": [
+            "netflix_top10"
+          ]
         },
         "工作系統": {
-          "active": ["work_info", "work_stats"],
-          "admin": ["work_health", "work_rebuild", "work_deploy"]
+          "active": [
+            "work_info",
+            "work_stats"
+          ],
+          "admin": [
+            "work_health",
+            "work_rebuild",
+            "work_deploy"
+          ]
         }
       }
     },
-
     "ADMIN": {
       "description": "管理員系統維護指令",
       "subcategories": {
         "系統控制": {
-          "commands": ["update_and_restart", "check_updates", "restart_all", "restart", "status"]
+          "commands": [
+            "update_and_restart",
+            "check_updates",
+            "restart_all",
+            "restart",
+            "status"
+          ]
         },
         "資料同步": {
-          "commands": ["sync_from_sheet", "export_to_sheet", "list_members", "sync_status"]
+          "commands": [
+            "sync_from_sheet",
+            "export_to_sheet",
+            "list_members",
+            "sync_status"
+          ]
         },
         "安全防護": {
-          "commands": ["unmute", "clear_violations", "emergency_cleanup", "ad_violations", "ad_settings"]
+          "commands": [
+            "unmute",
+            "clear_violations",
+            "emergency_cleanup",
+            "ad_violations",
+            "ad_settings"
+          ]
         },
         "AI系統": {
-          "commands": ["ai_personality_set", "ai_personality_list", "ai_knowledge_add", "ai_knowledge_search", "ai_memory_cleanup", "ai_memory_status", "cc", "cc_status", "cc_clear"]
+          "commands": [
+            "ai_personality_set",
+            "ai_personality_list",
+            "ai_knowledge_add",
+            "ai_knowledge_search",
+            "ai_memory_cleanup",
+            "ai_memory_status",
+            "cc",
+            "cc_status",
+            "cc_clear"
+          ]
         },
         "特殊操作": {
-          "commands": ["setup_scam_hub", "assign_nickname_id", "remove_nickname_id", "restore_global_nicknames", "feedback", "shellagent"]
+          "commands": [
+            "setup_scam_hub",
+            "assign_nickname_id",
+            "remove_nickname_id",
+            "restore_global_nicknames",
+            "feedback"
+          ]
         }
       }
     }
   },
-
   "commands": {
     "common": {
       "kcoin": {
@@ -233,15 +330,6 @@
         "status": "✅ 活躍",
         "category": "AI系統"
       },
-      "shellagent": {
-        "name": "shellagent",
-        "description": "啟動 AI Shell Agent（管理員限定）",
-        "type": "admin",
-        "file": "common/shell_agent.py",
-        "line": 213,
-        "status": "✅ 活躍",
-        "category": "AI系統"
-      },
       "sync_from_sheet": {
         "name": "sync_from_sheet",
         "description": "從 Google Sheet 同步資料到資料庫",
@@ -252,7 +340,6 @@
         "category": "資料同步"
       }
     },
-
     "shop": {
       "shopping": {
         "name": "shopping",
@@ -301,7 +388,6 @@
         "note": "也在 shop/merchant/role_expiry_manager.py:255"
       }
     },
-
     "ui": {
       "locker_init": {
         "name": "locker_init",
@@ -367,7 +453,6 @@
       }
     }
   },
-
   "cleanup_recommendations": {
     "test_commands": {
       "description": "應在正式部署前移除或隱藏的測試指令",
@@ -389,7 +474,12 @@
     },
     "chinese_command_names": {
       "description": "使用繁體中文作為指令名稱（可能有相容性問題）",
-      "commands": ["發紅包", "紅包修復", "紅包狀態", "紅包掃描"],
+      "commands": [
+        "發紅包",
+        "紅包修復",
+        "紅包狀態",
+        "紅包掃描"
+      ],
       "priority": "低",
       "action": "考慮添加英文別名或改為英文命令名稱"
     },
@@ -424,19 +514,45 @@
       "action": "遷移到斜線命令"
     }
   },
-
   "organization_structure": {
     "recommended_groups": {
       "user_commands": {
-        "core_games": ["shopping", "paperdoll", "trends_predict", "trends_history"],
-        "character": ["select_character", "view_character"],
-        "info": ["kkcoin", "kkcoin_rank", "anime_status", "work_stats"]
+        "core_games": [
+          "shopping",
+          "paperdoll",
+          "trends_predict",
+          "trends_history"
+        ],
+        "character": [
+          "select_character",
+          "view_character"
+        ],
+        "info": [
+          "kkcoin",
+          "kkcoin_rank",
+          "anime_status",
+          "work_stats"
+        ]
       },
       "admin_commands": {
-        "system": ["update_and_restart", "restart_all", "status"],
-        "roles": ["grant_temporary_role", "check_my_roles"],
-        "maintenance": ["sync_from_sheet", "locker_check", "event_stats"],
-        "ai": ["ai_personality_set", "ai_knowledge_add", "shellagent"]
+        "system": [
+          "update_and_restart",
+          "restart_all",
+          "status"
+        ],
+        "roles": [
+          "grant_temporary_role",
+          "check_my_roles"
+        ],
+        "maintenance": [
+          "sync_from_sheet",
+          "locker_check",
+          "event_stats"
+        ],
+        "ai": [
+          "ai_personality_set",
+          "ai_knowledge_add"
+        ]
       }
     },
     "notes": "建議在 cogs 中為不同功能創建子目錄，集中管理相關指令"
