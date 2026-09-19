@@ -180,14 +180,6 @@
           "requires": "administrator"
         },
         {
-          "name": "shellagent",
-          "description": "啟動 AI Shell Agent（管理員限定）：讓 Gemini 幫你自動達成伺服器任務",
-          "file": "common/shell_agent.py",
-          "line": 213,
-          "type": "@app_commands.command",
-          "requires": "administrator"
-        },
-        {
           "name": "assign_nickname_id",
           "description": "為所有成員設定園編編號",
           "file": "common/nickname_id.py",
@@ -735,7 +727,7 @@
     "high_complexity_commands": {
       "count": 20,
       "description": "涉及多個系統交互、AI調用、複雜流程",
-      "examples": ["shellagent", "update_and_restart", "admin_refresh_all_paperdolls"]
+      "examples": ["update_and_restart", "admin_refresh_all_paperdolls"]
     }
   },
   "file_mapping": {
