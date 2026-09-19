@@ -5,6 +5,7 @@ KK 園區對抗刑警大隊 - Discord Cog
 """
 
 import discord
+from discord import AllowedMentions
 from discord.ext import commands, tasks
 from discord import app_commands
 from discord.ui import Button, Modal, TextInput, Select
@@ -1298,7 +1299,7 @@ class FortressDefenseCog(commands.Cog):
             except Exception as exc:
                 log.warning(f"[Fortress] 編輯既有戰鬥 Embed 失敗，改為重發: {exc}")
 
-        msg = await channel.send(embed=embed, view=view)
+        msg = await channel.send(embed=embed, view=view, allowed_mentions=AllowedMentions.none())
         self._battle_message_id = msg.id
         _save_battle_message_state(msg.id)
         log.info(
@@ -1410,7 +1411,7 @@ class FortressDefenseCog(commands.Cog):
             )
             self._battle_message_id = None
             embed = build_settlement_embed(result, self.bot)
-            settlement_msg = await channel.send(embed=embed)
+            settlement_msg = await channel.send(embed=embed, allowed_mentions=AllowedMentions.none())
             self._settlement_message_id = settlement_msg.id
             _save_settlement_message_state(settlement_msg.id)
 
@@ -1712,9 +1713,9 @@ class FortressDefenseCog(commands.Cog):
         log.info(f"[Fortress] text !fortress_start invoked by {ctx.author.id}")
         success, msg, count = await self._start_battle_from_trends()
         if not success:
-            await ctx.send(f"❌ {msg}")
+            await ctx.send(f"❌ {msg}", allowed_mentions=AllowedMentions.none())
             return
-        await ctx.send(f"✅ {msg} 共 {count} 個趨勢敵人。")
+        await ctx.send(f"✅ {msg} 共 {count} 個趨勢敵人。", allowed_mentions=AllowedMentions.none())
 
 
 # ─── 興趣管理視圖（/my_interests 用）─────────────────────
