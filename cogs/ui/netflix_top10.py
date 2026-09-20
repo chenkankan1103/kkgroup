@@ -209,9 +209,19 @@ class NetflixTop10Cog(commands.Cog):
 
         return embeds
 
+    async def _send_silent(self, channel, embeds: list[discord.Embed]):
+        """以靜音模式推播排行榜（不觸發通知聲，供未來每日排程使用）。
+
+        與動畫推送一致使用 silent=True：等同 Discord 的「靜音通知」，
+        不會讓頻道成員手機/桌面跳出通知聲。
+        """
+        for batch in [embeds[i:i + MAX_EMBEDS_PER_MESSAGE]
+                      for i in range(0, len(embeds), MAX_EMBEDS_PER_MESSAGE)]:
+            await channel.send(embeds=batch, silent=True)
+
     @app_commands.command(
         name="netflix_top10",
-        description="查看台灣 Netflix 熱門電影/影集 TOP 16（顯示實際海報圖片）",
+        description="查看台灣 Netflix 熱門電影/影集 TOP 10（顯示實際海報縮圖）",
     )
     @app_commands.describe(
         show_type="選擇電影或影集排行榜（預設：影集）",
@@ -227,12 +237,12 @@ class NetflixTop10Cog(commands.Cog):
         interaction: discord.Interaction,
         show_type: app_commands.Choice[str] = None,
     ):
-        """斜線指令：/netflix_top10 [電影|影集] - 預設顯示影集前 16 名"""
+        """斜線指令：/netflix_top10 [電影|影集] - 預設顯示影集前 10 名"""
         await interaction.response.defer()  # 先 defer 避免 3 秒超時
 
         st = show_type.value if show_type else "series"
         label = "電影" if st == "movie" else "影集"
-        max_shows = 10 if st == "movie" else 16  # 電影 TOP 10、影集 TOP 16
+        max_shows = 10  # 電影、影集都顯示 TOP 10
 
         try:
             shows = await self._fetch_top_shows(st)
