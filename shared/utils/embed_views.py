@@ -432,6 +432,8 @@ class AnimePushView(discord.ui.View):
 
             # 記錄投票 (需要 db adapter 有 record_vote 方法)
             message_id = interaction.message.id if interaction.message else None
+            self.message_id = message_id  # 供後續統計依「同一則 embed」精確查詢
+            vote_recorded = False
             if self.db and hasattr(self.db, 'record_vote'):
                 vote_recorded = self.db.record_vote(
                     video_sn=self.video_sn,
@@ -444,6 +446,24 @@ class AnimePushView(discord.ui.View):
                 if not vote_recorded:
                     logger.error(f"❌ 投票記錄失敗")
 
+            # 投票成功且原訊息存在 → 只更新「這集表現得如何?」欄位
+            if vote_recorded and interaction.message:
+                try:
+                    if interaction.message.embeds:
+                        embed = interaction.message.embeds[0].copy()
+                        # 移除舊的投票統計欄位
+                        for i, field in enumerate(embed.fields):
+                            if field.name == "這集表現得如何?":
+                                embed.remove_field(i)
+                                break
+                        # 重建統計文字
+                        vote_text = self._build_vote_stats_text()
+                        if vote_text:
+                            embed.add_field(name="這集表現得如何?", value=vote_text, inline=False)
+                        await interaction.message.edit(embed=embed)
+                except Exception as e:
+                    logger.error(f"❌ 更新投票統計欄位失敗: {e}")
+
             # 先發送 follow-up 確認給用戶
             try:
                 await interaction.followup.send(
@@ -454,6 +474,27 @@ class AnimePushView(discord.ui.View):
 
         except Exception as e:
             logger.error(f"❌ [AnimePushView._vote_callback] 投票失敗: {e}", exc_info=True)
+
+    def _build_vote_stats_text(self) -> Optional[str]:
+        """從資料庫重建「這集表現得如何?」欄位文字（與 push_embed.generate_anime_embed 格式一致）。
+
+        以 self.message_id（該則 embed）精確查詢；尚未設定 message_id 時退回以 videoSn 查詢。
+        """
+        try:
+            if not self.db or not hasattr(self.db, "get_vote_stats") or not self.video_sn:
+                return None
+            vote_stats = self.db.get_vote_stats(int(self.video_sn), self.message_id)
+            vote_lines = []
+            # 依固定順序輸出，與生成 embed 時的順序一致
+            for vote_key in ["masterpiece", "great", "decent", "small_audience", "disaster"]:
+                emoji = self.VOTE_TYPES.get(vote_key, ("", None))[1] or "▪️"
+                label = self.VOTE_TYPES.get(vote_key, ("", None))[0]
+                count = vote_stats.get(vote_key, 0)
+                vote_lines.append(f"{emoji} {label}: {count}")
+            return "\n".join(vote_lines) if vote_lines else None
+        except Exception as e:
+            logger.error(f"❌ 重建投票統計失敗: {e}")
+            return None
 
     async def _comment_callback(self, interaction: discord.Interaction):
         """處理評論按鈕點擊 - 彈出評論輸入框"""
