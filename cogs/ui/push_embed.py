@@ -62,19 +62,20 @@ def _format_score(score) -> str:
     return f"{val:.1f}"
 
 
-async def generate_anime_view(episode: dict) -> Optional[discord.ui.View]:
+async def generate_anime_view(episode: dict, db=None) -> Optional[discord.ui.View]:
     """
     生成動畫推送視圖 (按鈕)
 
     Args:
         episode: 動畫資訊字典
+        db: AnimePushDB 實例，用於記錄投票（可選，不傳則投票無法寫入）
 
     Returns:
         discord.ui.View: 生成的 view 物件，失敗則返回 None
     """
     try:
-        # 使用共用的 AnimePushView 創建函數
-        return create_anime_push_view(episode)
+        # 使用共用的 AnimePushView 創建函數（務必轉傳 db，否則投票無法寫入資料庫）
+        return create_anime_push_view(episode, db_adapter=db)
     except Exception as e:
         logger.error(f"生成 view 失敗: {e}")
         return None
@@ -174,7 +175,7 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Op
 
                 if vote_lines:
                     vote_text = "\n".join(vote_lines)
-                    embed.add_field(name="📊 投票統計", value=vote_text, inline=False)
+                    embed.add_field(name="這集表現得如何?", value=vote_text, inline=False)
             except Exception as e:
                 logger.error(f"❌ 獲取投票統計失敗 videoSn={episode.get('videoSn')}: {e}")
 

@@ -192,12 +192,29 @@ class AnimePushDB:
         anime_name: str = "",
         comment: str = "",
     ) -> bool:
-        """記錄投票（如果用戶已投過同類型票則更新）"""
+        """記錄投票（一人一票：同一則 embed 內，新票替換該用戶的舊票，跨類型也生效）"""
         try:
             conn = self._get_conn()
             c = conn.cursor()
 
-            # 使用 INSERT OR REPLACE 來實現「新票替換舊票」的邏輯
+            # 一人一票：先刪除該用戶在「同一則推播 embed（message_id）」內的舊票（不含評論），
+            # 再插入新票。範圍是單一 embed（message_id），而非整部動畫（animeSn），
+            # 因此同一部動畫的其它 embed 可各自投票。評論同樣存於此表
+            # （vote_type='comment'），不能刪到它，否則用戶無法同時擁有投票與評論。
+            if vote_type != "comment":
+                if message_id:
+                    c.execute(
+                        "DELETE FROM anime_votes WHERE message_id = ? AND user_hash = ? AND vote_type != 'comment'",
+                        (message_id, user_hash),
+                    )
+                else:
+                    # 防呆：若無 message_id（理論上投票時都有），退回以 videoSn 為範圍
+                    c.execute(
+                        "DELETE FROM anime_votes WHERE videoSn = ? AND user_hash = ? AND vote_type != 'comment'",
+                        (video_sn, user_hash),
+                    )
+
+            # INSERT OR REPLACE 處理同類型重投與評論更新
             c.execute(
                 """
                 INSERT OR REPLACE INTO anime_votes
@@ -222,22 +239,37 @@ class AnimePushDB:
             logger.error(f"❌ 記錄投票失敗: {e}")
             return False
 
-    def get_vote_stats(self, video_sn: int) -> dict[str, int]:
-        """獲取指定動畫的投票統計"""
+    def get_vote_stats(self, video_sn: int, message_id: int | None = None) -> dict[str, int]:
+        """獲取指定推播 embed（message_id）的投票統計。
+
+        依 message_id 過濾可精確對應「同一則 embed」的統計；未提供 message_id
+        時退回以 videoSn 統計（供 embed 首次生成、尚無 message_id 時使用）。
+        """
         try:
             conn = self._get_conn()
             c = conn.cursor()
 
             # 統計每種投票類型的數量（不包括評論）
-            c.execute(
-                """
-                SELECT vote_type, COUNT(*) as count
-                FROM anime_votes
-                WHERE videoSn = ? AND vote_type != 'comment'
-                GROUP BY vote_type
-                """,
-                (video_sn,),
-            )
+            if message_id:
+                c.execute(
+                    """
+                    SELECT vote_type, COUNT(*) as count
+                    FROM anime_votes
+                    WHERE message_id = ? AND vote_type != 'comment'
+                    GROUP BY vote_type
+                    """,
+                    (message_id,),
+                )
+            else:
+                c.execute(
+                    """
+                    SELECT vote_type, COUNT(*) as count
+                    FROM anime_votes
+                    WHERE videoSn = ? AND vote_type != 'comment'
+                    GROUP BY vote_type
+                    """,
+                    (video_sn,),
+                )
 
             rows = c.fetchall()
             conn.close()
@@ -254,6 +286,9 @@ class AnimePushDB:
             # 填入實際統計值
             for row in rows:
                 vote_type = row[0]
+                # 連線使用 text_factory = bytes，字串欄位需解碼為 str 才能與 str 鍵比對
+                if isinstance(vote_type, bytes):
+                    vote_type = vote_type.decode("utf-8")
                 count = int(row[1])
                 if vote_type in vote_stats:
                     vote_stats[vote_type] = count
@@ -291,10 +326,13 @@ class AnimePushDB:
 
             comments = []
             for row in rows:
+                # 連線使用 text_factory = bytes，字串欄位需解碼為 str
+                user_hash = row[0].decode("utf-8") if isinstance(row[0], bytes) else row[0]
+                comment = row[1].decode("utf-8") if isinstance(row[1], bytes) else row[1]
                 comments.append(
                     {
-                        "user_hash": row[0],
-                        "comment": row[1],
+                        "user_hash": user_hash,
+                        "comment": comment,
                         "voted_at": row[2],
                     }
                 )
@@ -983,7 +1021,7 @@ class SimpleAnimePushCore:
                 logger.debug(f"取得動畫詳細資訊失敗 videoSn={video_sn}: {e}")
 
             # 生成 view (按鈕)
-            view = await generate_anime_view(ep)
+            view = await generate_anime_view(ep, db=self.db)
             if not view:
                 continue
 
@@ -1218,7 +1256,7 @@ class SimpleAnimePushCore:
                 continue
             # 生成 view (按鈕)
             try:
-                view = await generate_anime_view(episode)
+                view = await generate_anime_view(episode, db=self.db)
                 if not view:
                     logger.warning(f"⚠️ 生成視圖失敗 videoSn={resolved_sn}")
                     continue

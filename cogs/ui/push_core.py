@@ -1070,7 +1070,7 @@ class AnimePushCore:
                 return await self._view_factory(episode)
             from shared.utils.embed_views import create_anime_push_view
 
-            return create_anime_push_view(episode)
+            return create_anime_push_view(episode, db_adapter=self.db)
         except Exception as e:
             logger.error(f"生成 view 失敗: {e}")
             return None
@@ -1079,7 +1079,7 @@ class AnimePushCore:
         """生成動畫推送 embed - 使用 push_embed 模組"""
         try:
             from .push_embed import generate_anime_embed
-            return await generate_anime_embed(episode, push_mode)
+            return await generate_anime_embed(episode, push_mode, db=self.db)
         except Exception as e:
             logger.error(f"生成 embed 失敗: {e}")
             return None
