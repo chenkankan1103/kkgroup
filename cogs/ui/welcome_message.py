@@ -60,7 +60,7 @@ class InterestOnboardingView(discord.ui.View):
     ):
         await interaction.response.defer()
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ 這不是你的選項！", ephemeral=True
             )
             return
@@ -70,7 +70,7 @@ class InterestOnboardingView(discord.ui.View):
         )
         set_user_field(self.user_id, "trend_alert_enabled", 1)
         tags_text = " / ".join(selected) if selected else "（跳過）"
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"✅ 興趣標籤已設定：**{tags_text}**\n"
             "🏰 當你的標籤話題出現在熱搜時，堡壘保衛戰攻擊力將 **×2**！",
             ephemeral=True,
@@ -822,7 +822,7 @@ class WelcomeFlow(commands.Cog):
     async def create_user_data(self, user_id: int) -> bool:
         """Create new user data with random appearance and default values. Returns True if successful. Includes retry logic."""
         max_retries = 3
-        default_inventory = json.dumps(["手機", "身分證"])
+        default_inventory = json.dumps(["手機", "身分證"], ensure_ascii=False)
 
         # 🎭 為新用戶生成隨機造型（男/女各占 50%）
         random_appearance = paperdoll_manager.get_random()
