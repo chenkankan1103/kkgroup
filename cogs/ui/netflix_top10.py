@@ -140,7 +140,8 @@ class NetflixTop10Cog(commands.Cog):
                     poster_url = ""
                     if poster_url_template and '{profile}' in poster_url_template and '{format}' in poster_url_template:
                         # 使用常見的海報尺寸和格式
-                        profile = "S166"  # 標準海報尺寸
+                        # 注意：JustWatch CDN 只接受小寫 profile（如 s166/s332/s718），大寫會回傳 400
+                        profile = "s718"  # 標準海報尺寸（小寫）
                         image_format = "jpg"  # JPEG 格式
                         poster_url = f"https://images.justwatch.com{poster_url_template.replace('{profile}', profile).replace('{format}', image_format)}"
 
@@ -173,7 +174,7 @@ class NetflixTop10Cog(commands.Cog):
         return await self._fetch_popular_netflix(show_type)
 
     async def _create_show_embeds(self, shows: list[dict], max_shows: int) -> list[discord.Embed]:
-        """建立顯示節目的 Embeds（每個 Embed 顯示一張海報）"""
+        """建立顯示節目的 Embeds（每個 Embed 顯示海報縮圖 + 排名）"""
         shows = shows[:max_shows]
         if not shows:
             # 沒有資料時的預設 Embed
@@ -184,23 +185,24 @@ class NetflixTop10Cog(commands.Cog):
             )
             return [embed]
 
+        medals = ["🥇", "🥈", "🥉"]
         embeds = []
-        for show in shows:
+        for rank, show in enumerate(shows, start=1):
             title = show.get("title", "未知標題")
             object_type = show.get("object_type", "UNKNOWN")
             poster_url = show.get("poster_url", "")
 
-            # 建立 Embed
+            # 排名徽章：前三名用獎牌，其餘用數字
+            badge = medals[rank - 1] if rank <= 3 else f"{rank}."
             embed = discord.Embed(
-                title=f"[{object_type}] {title}",
+                title=f"{badge} #{rank} [{object_type}] {title}",
                 colour=discord.Color.blue() if object_type == "SHOW" else discord.Color.red(),
             )
 
-            # 如果有海報 URL，設定為 Embed 的圖片
+            # 如果有海報 URL，設定為縮圖；否則顯示說明
             if poster_url and poster_url.startswith("http"):
-                embed.set_image(url=poster_url)
+                embed.set_thumbnail(url=poster_url)
             else:
-                # 沒有海報時顯示說明
                 embed.description = "海報圖片載入失敗"
 
             embeds.append(embed)
