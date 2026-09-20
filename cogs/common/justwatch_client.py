@@ -104,7 +104,8 @@ async def fetch_popular_netflix(
                 poster_url = ""
                 if poster_url_template and '{profile}' in poster_url_template and '{format}' in poster_url_template:
                     # 使用常見的海報尺寸和格式
-                    profile = "S166"  # 標準海報尺寸
+                    # 注意：JustWatch CDN 只接受小寫 profile（如 s166/s332/s718），大寫會回傳 400
+                    profile = "s718"  # 標準海報尺寸（小寫）
                     image_format = "jpg"  # JPEG 格式
                     poster_url = f"https://images.justwatch.com{poster_url_template.replace('{profile}', profile).replace('{format}', image_format)}"
 
