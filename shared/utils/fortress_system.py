@@ -8,6 +8,7 @@ KK 園區堡壘保衛戰 - 遊戲引擎
 import json
 import os
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict, field
@@ -136,6 +137,7 @@ class FortressState:
     current_wave_id: str = ""
     current_wave_number: int = 1
     tower_slots: Dict[int, str] = field(default_factory=dict)  # user_id → slot_id
+    drafted_defenders: List[int] = field(default_factory=list)  # 被抓來防守的使用者 id
     settled_at: str = ""
     daily_trend_titles: List[str] = field(default_factory=list)
     wave_history: List[Dict[str, object]] = field(default_factory=list)
@@ -299,6 +301,7 @@ def _load_state() -> Optional[FortressState]:
                 "titles": daily_trend_titles,
             }
         ]
+        drafted_defenders = [int(uid) for uid in data.get("drafted_defenders", [])]
 
         return FortressState(
             round_id=data["round_id"],
@@ -313,6 +316,7 @@ def _load_state() -> Optional[FortressState]:
             current_wave_id=current_wave_id,
             current_wave_number=current_wave_number,
             tower_slots=tower_slots,
+            drafted_defenders=drafted_defenders,
             settled_at=data.get("settled_at", ""),
             daily_trend_titles=daily_trend_titles,
             wave_history=wave_history,
@@ -340,6 +344,7 @@ def _save_state(state: FortressState):
             "tower_slots": {
                 str(uid): slot_id for uid, slot_id in state.tower_slots.items()
             },
+            "drafted_defenders": list(state.drafted_defenders),
             "status": state.status,
             "started_at": state.started_at,
             "ends_at": state.ends_at,
@@ -868,6 +873,28 @@ def settle_battle() -> Dict:
     }
     logger.info(f"[Fortress] 結算完成: {state.status}, round={state.round_id}")
     return result
+
+
+def draft_random_defenders(candidate_ids: List[int], count: int = 2) -> Tuple[bool, List[int], str]:
+    """
+    從候選使用者中隨機抓取 count 名加入防守（僅在戰役活躍時）。
+    被抓者會被記錄進 drafted_defenders，避免重複抓同一人。
+    回傳：(success, drafted_ids, message)
+    """
+    state = _load_state()
+    if not state or not state.is_active():
+        return False, [], "目前沒有進行中的戰鬥"
+
+    # 過濾掉已是防守者/已被抓過的人與無效 id
+    existing = set(state.defenders.keys()) | set(state.drafted_defenders)
+    pool = [uid for uid in candidate_ids if uid not in existing]
+    if not pool:
+        return False, [], "沒有可招募的玩家"
+
+    drafted = random.sample(pool, min(count, len(pool)))
+    state.drafted_defenders.extend(drafted)
+    _save_state(state)
+    return True, drafted, f"隨機徵召 {len(drafted)} 名防守者"
 
 
 def get_leaderboard(top_n: int = 10) -> List[Tuple[int, int]]:

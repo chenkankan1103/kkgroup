@@ -37,6 +37,8 @@ FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS = 8
 FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS = 12
 FORTRESS_SETTLEMENT_HOUR = 0
 FORTRESS_SETTLEMENT_MINUTE = 0
+FORTRESS_DRAFT_INTERVAL_MINUTES = 60  # 每小時隨機徵召防守者
+FORTRESS_DRAFT_COUNT = 2  # 每次徵召人數
 
 _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
     {
@@ -994,6 +996,17 @@ def build_battle_embed(state: fs.FortressState, bot: discord.Client) -> discord.
         inline=False,
     )
 
+    if state.drafted_defenders:
+        drafted_names = []
+        for uid in state.drafted_defenders:
+            user = bot.get_user(uid)
+            drafted_names.append(user.display_name if user else f"玩家{uid}")
+        embed.add_field(
+            name="🚨 被抓來防守",
+            value="、".join(drafted_names),
+            inline=False,
+        )
+
     embed.add_field(
         name="🛡️ 對抗狀況",
         value=f"**{len(state.defenders)}** 名英雄出兵\n每人 {fs.FREE_ACTIONS_PER_ROUND} 次免費出兵",
@@ -1147,11 +1160,13 @@ class FortressDefenseCog(commands.Cog):
         self._settled_round_ids: set[str] = set()
         self._last_embed_refresh_at: Optional[datetime] = None
         self._last_started_schedule_round_id: str = ""
+        self._last_draft_at: Optional[datetime] = None
         self.settle_task.start()
         self.update_trends_scheduled.start()
         self.command_poll_task.start()
         self.enemy_movement_task.start()
         self.tower_attack_task.start()
+        self.draft_defenders_task.start()
         log.info("[Fortress] Cog 已初始化")
 
     async def cog_load(self):
@@ -1163,6 +1178,7 @@ class FortressDefenseCog(commands.Cog):
         self.command_poll_task.cancel()
         self.enemy_movement_task.cancel()
         self.tower_attack_task.cancel()
+        self.draft_defenders_task.cancel()
 
     # ── 斜線指令 ───────────────────────────────────────────
 
@@ -1653,6 +1669,60 @@ class FortressDefenseCog(commands.Cog):
 
     @tower_attack_task.before_loop
     async def before_tower_attack(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=1)
+    async def draft_defenders_task(self):
+        """戰役活躍期間每小時隨機徵召 2 名玩家加入防守（因參與者稀少）。"""
+        try:
+            now = datetime.now(TW_TZ)
+            state = fs.get_current_battle()
+            if not state or not state.is_active():
+                return
+
+            # 控制頻率：距上次徵召未滿一小時就跳過
+            if self._last_draft_at:
+                elapsed = (now - self._last_draft_at).total_seconds()
+                if elapsed < FORTRESS_DRAFT_INTERVAL_MINUTES * 60:
+                    return
+
+            channel = self.bot.get_channel(self._battle_channel_id)
+            if not channel or not getattr(channel, "guild", None):
+                return
+
+            # 候選池 = 伺服器內一般成員（排除 bot）
+            candidate_ids = [
+                m.id
+                for m in channel.guild.members
+                if not m.bot and m.id not in state.drafted_defenders
+            ]
+            if not candidate_ids:
+                return
+
+            success, drafted, msg = fs.draft_random_defenders(
+                candidate_ids, count=FORTRESS_DRAFT_COUNT
+            )
+            if not success:
+                return
+
+            self._last_draft_at = now
+            names = [
+                (channel.guild.get_member(uid).display_name if channel.guild.get_member(uid) else f"玩家{uid}")
+                for uid in drafted
+            ]
+            log.info(f"[Fortress] 隨機徵召防守者: {', '.join(names)}")
+
+            # 被抓者自動打一次免費傷害，讓「加入防守」有實際貢獻
+            for uid in drafted:
+                fs.apply_defense_action(uid, "free", user_interests=[])
+
+            # 刷新戰況 embed
+            await self._refresh_battle_embed_scheduled()
+        except Exception as e:
+            log.error(f"[Fortress] 徵召防守者任務出錯: {e}")
+
+    @draft_defenders_task.before_loop
+    async def before_draft_defenders(self):
         await self.bot.wait_until_ready()
 
     async def _refresh_battle_embed_scheduled(self):
