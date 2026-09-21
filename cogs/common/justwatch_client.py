@@ -5,6 +5,7 @@ JustWatch Popular Titles GraphQL Client
 """
 import logging
 import time
+from datetime import datetime
 from typing import Optional
 import aiohttp
 
@@ -24,7 +25,7 @@ CACHE_TTL = 7200  # 2 小時（熱門榜變動不大）
 async def fetch_popular_netflix(
     content_type: str,  # "movie" or "show"
     country: str = "TW",
-    provider: str = "nfx",  # 注意：GraphQL 可能不直接使用這個參數
+    provider: str = "nfx",  # JustWatch 平台代碼 (nfx=Netflix)
     page_size: int = 20,
 ) -> list[dict]:
     """
@@ -43,9 +44,14 @@ async def fetch_popular_netflix(
         return cached[0]
 
     # GraphQL 查詢
+    # 用 filter.packages 過濾只抓指定平台 (JustWatch 官方「平台熱門」做法)，
+    # 並用 releaseYear.min 限制今年起，排除舊片混入排行。
     graphql_query = """
-    query PopularTitles($country: Country!, $first: Int!) {
-      popularTitles(country: $country, first: $first) {
+    query PopularTitles($country: Country!, $first: Int!, $year: Int!, $pkg: String!) {
+      popularTitles(country: $country, first: $first, filter: {
+        packages: [$pkg],
+        releaseYear: { min: $year }
+      }) {
         edges {
           node {
             __typename
@@ -53,6 +59,7 @@ async def fetch_popular_netflix(
             objectType
             content(country: $country, language: "zh-TW") {
               title
+              originalReleaseYear
               posterUrl
             }
           }
@@ -63,7 +70,9 @@ async def fetch_popular_netflix(
 
     variables = {
         "country": country,
-        "first": page_size
+        "first": page_size,
+        "year": datetime.now().year,  # 動態帶入今年
+        "pkg": provider,
     }
 
     try:
@@ -112,13 +121,16 @@ async def fetch_popular_netflix(
                 # 根據物件類型過濾
                 target_type = "SHOW" if content_type == "show" else "MOVIE"
                 if object_type == target_type:
+                    # 取得實際發行年份（JustWatch 回傳數字）
+                    release_year = content.get('originalReleaseYear')
+                    release_year = release_year if isinstance(release_year, int) else "N/A"
                     results.append({
                         "title": title,
                         "object_type": object_type,
                         "id": show_id,
                         "poster_url": poster_url,
                         "content_type": content_type,  # 為了向後相容
-                        "release_year": "N/A",  # 暫時無法取得，保持向後相容
+                        "release_year": release_year,
                     })
 
         # 更新快取
