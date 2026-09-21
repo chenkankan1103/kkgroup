@@ -7,6 +7,7 @@ Netflix 台灣熱門排行榜 Cog
 import logging
 import asyncio
 import time
+from datetime import datetime
 from typing import Optional, List, Dict
 from io import BytesIO
 from pathlib import Path
@@ -174,19 +175,34 @@ class NetflixTop10Cog(commands.Cog):
         return await self._fetch_popular_netflix(show_type)
 
     async def _create_show_embeds(self, shows: list[dict], max_shows: int) -> list[discord.Embed]:
-        """建立顯示節目的 Embeds（每個 Embed 顯示海報縮圖 + 排名）"""
+        """建立排行榜 Embeds：首張為標題卡，其後每張顯示海報縮圖 + 排名。
+
+        設計：統一使用 Netflix 品牌紅 (#E50914)，標題卡帶出「Netflix 每日排行」
+        識別與日期，每部作品一張縮圖卡並標示名次。
+        """
         shows = shows[:max_shows]
         if not shows:
             # 沒有資料時的預設 Embed
-            embed = discord.Embed(
+            return [discord.Embed(
                 title="無法取得資料",
                 description="暫時無法取得 Netflix 熱門排行榜資料，請稍後再試。",
-                colour=discord.Color.dark_grey()
-            )
-            return [embed]
+                colour=discord.Color.dark_grey(),
+            )]
 
+        today = datetime.now().strftime("%Y-%m-%d")
         medals = ["🥇", "🥈", "🥉"]
+        NETFLIX_RED = 0xE50914  # Netflix 品牌紅
         embeds = []
+
+        # 標題卡：帶出「Netflix 每日排行」識別
+        header = discord.Embed(
+            title=f"🎬 Netflix 每日排行 TOP {max_shows}",
+            description=f"📅 {today} · 台灣 Netflix 熱門排行榜\n每部作品皆附海報縮圖與名次",
+            colour=discord.Color(NETFLIX_RED),
+        )
+        header.set_footer(text="Netflix 每日排行 · 資料來源 JustWatch")
+        embeds.append(header)
+
         for rank, show in enumerate(shows, start=1):
             title = show.get("title", "未知標題")
             object_type = show.get("object_type", "UNKNOWN")
@@ -195,9 +211,10 @@ class NetflixTop10Cog(commands.Cog):
             # 排名徽章：前三名用獎牌，其餘用數字
             badge = medals[rank - 1] if rank <= 3 else f"{rank}."
             embed = discord.Embed(
-                title=f"{badge} #{rank} [{object_type}] {title}",
-                colour=discord.Color.blue() if object_type == "SHOW" else discord.Color.red(),
+                title=f"{badge} #{rank} {title}",
+                colour=discord.Color(NETFLIX_RED),
             )
+            embed.set_footer(text="Netflix 每日排行")
 
             # 如果有海報 URL，設定為縮圖；否則顯示說明
             if poster_url and poster_url.startswith("http"):
