@@ -32,7 +32,7 @@ FORTRESS_COMMAND_FILE = os.path.join(
 )
 EMBED_REFRESH_COOLDOWN_SECONDS = 5
 FORTRESS_CHANNEL_ID_DEFAULT = 1505861352215019570
-FORTRESS_ALLOWED_HOURS = {8, 11, 14, 20, 22}
+FORTRESS_ALLOWED_HOURS = {9, 12, 15, 21, 23}
 FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS = 8
 FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS = 12
 FORTRESS_SETTLEMENT_HOUR = 0
@@ -1255,7 +1255,7 @@ class FortressDefenseCog(commands.Cog):
         scheduled_at: Optional[datetime] = None,
         new_day: bool = False,
     ):
-        """08:00 開新戰役，其餘時段將趨勢作為新波次追加到同一則戰況 Embed。"""
+        """09:00 開新戰役，其餘時段將趨勢作為新波次追加到同一則戰況 Embed。"""
         battle_time = scheduled_at or datetime.now(TW_TZ)
 
         channel = self.bot.get_channel(self._battle_channel_id)
@@ -1299,7 +1299,12 @@ class FortressDefenseCog(commands.Cog):
             except Exception as exc:
                 log.warning(f"[Fortress] 編輯既有戰鬥 Embed 失敗，改為重發: {exc}")
 
-        msg = await channel.send(embed=embed, view=view, allowed_mentions=AllowedMentions.none())
+        msg = await channel.send(
+            embed=embed,
+            view=view,
+            allowed_mentions=AllowedMentions.none(),
+            silent=True,
+        )
         self._battle_message_id = msg.id
         _save_battle_message_state(msg.id)
         log.info(
@@ -1411,7 +1416,11 @@ class FortressDefenseCog(commands.Cog):
             )
             self._battle_message_id = None
             embed = build_settlement_embed(result, self.bot)
-            settlement_msg = await channel.send(embed=embed, allowed_mentions=AllowedMentions.none())
+            settlement_msg = await channel.send(
+                embed=embed,
+                allowed_mentions=AllowedMentions.none(),
+                silent=True,
+            )
             self._settlement_message_id = settlement_msg.id
             _save_settlement_message_state(settlement_msg.id)
 
@@ -1517,7 +1526,7 @@ class FortressDefenseCog(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def update_trends_scheduled(self):
-        """每分鐘檢查台灣時鐘，於 08/11/14/20/22 追加單日堡壘戰波次。"""
+        """每分鐘檢查台灣時鐘，於 09/12/15/21/23 追加單日堡壘戰波次。"""
         try:
             now = datetime.now(TW_TZ)
             if now.hour not in FORTRESS_ALLOWED_HOURS:
@@ -1565,7 +1574,7 @@ class FortressDefenseCog(commands.Cog):
                 log.warning("[Fortress] ⚠️ 取得趨勢資料失敗，跳過本輪")
                 return
 
-            is_new_day = now.hour == 8
+            is_new_day = now.hour == 9
             await self.start_or_update_battle(
                 trends_data, scheduled_at=now, new_day=is_new_day
             )
