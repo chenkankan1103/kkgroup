@@ -417,11 +417,11 @@
       },
       "netflix_top10": {
         "name": "netflix_top10",
-        "description": "查看台灣 Netflix 熱門電影/影集 TOP 16（顯示實際海報圖片）",
+        "description": "查看台灣 Netflix 熱門影集 TOP 10（顯示實際海報縮圖）",
         "type": "user",
         "file": "ui/netflix_top10.py",
         "line": 1,
-        "usage": "/netflix_top10 [電影|影集]",
+        "usage": "/netflix_top10",
         "status": "✅ 活躍",
         "category": "娛樂"
       },
