@@ -32,6 +32,11 @@ trendspyg
 
 playwright>=1.40.0
 
+# Scrapling 爬蟲（Tudum 排行榜，curl_cffi TLS 指紋模擬）
+scrapling>=0.4.15
+curl_cffi>=0.13.0
+patchright>=1.63.0
+
 # Vector Database & Embeddings (for Chroma RAG)
 chromadb>=0.4.0
 sentence-transformers>=2.2.0

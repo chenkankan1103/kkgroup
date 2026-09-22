@@ -81,6 +81,9 @@ temp/
 *.sqlite
 *.sqlite3
 
+# Netflix 推送狀態快取（VM 為主，不進 Git）
+netflix_top10_last.json
+
 # Environment variables
 .env
 .env.*
