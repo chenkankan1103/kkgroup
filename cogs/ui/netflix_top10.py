@@ -131,14 +131,14 @@ class NetflixTop10Cog(commands.Cog):
                 edges = popular_data.get('edges', [])
 
                 for edge in edges:
-                    node = edge.get('node', {})
-                    content = node.get('content', {})
+                    node = edge.get('node') or {}
+                    content = node.get('content') or {}
 
                     # 只取得我們需要的欄位
-                    title = content.get('title', '未知標題')
-                    object_type = node.get('objectType', '').upper()  # SHOW or MOVIE
-                    show_id = node.get('id', '')
-                    poster_url_template = content.get('posterUrl', '')
+                    title = content.get('title') or '未知標題'
+                    object_type = (node.get('objectType') or '').upper()  # SHOW or MOVIE
+                    show_id = node.get('id') or ''
+                    poster_url_template = content.get('posterUrl') or ''
 
                     # 構建實際海報 URL
                     poster_url = ""
