@@ -37,7 +37,7 @@ FORTRESS_MANUAL_TRENDS_TIMEOUT_SECONDS = 8
 FORTRESS_SCHEDULED_TRENDS_TIMEOUT_SECONDS = 12
 FORTRESS_SETTLEMENT_HOUR = 0
 FORTRESS_SETTLEMENT_MINUTE = 0
-FORTRESS_DRAFT_INTERVAL_MINUTES = 60  # 每小時隨機徵召防守者
+FORTRESS_DRAFT_INTERVAL_MINUTES = 30  # 每半小時隨機徵召防守者
 FORTRESS_DRAFT_COUNT = 2  # 每次徵召人數
 
 _TD_MAP_LAYOUTS: List[Dict[str, object]] = [
@@ -1673,14 +1673,14 @@ class FortressDefenseCog(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def draft_defenders_task(self):
-        """戰役活躍期間每小時隨機徵召 2 名玩家加入防守（因參與者稀少）。"""
+        """戰役活躍期間每半小時隨機徵召 2 名玩家加入防守（因參與者稀少）。"""
         try:
             now = datetime.now(TW_TZ)
             state = fs.get_current_battle()
             if not state or not state.is_active():
                 return
 
-            # 控制頻率：距上次徵召未滿一小時就跳過
+            # 控制頻率：距上次徵召未滿半小時就跳過
             if self._last_draft_at:
                 elapsed = (now - self._last_draft_at).total_seconds()
                 if elapsed < FORTRESS_DRAFT_INTERVAL_MINUTES * 60:
@@ -1712,10 +1712,7 @@ class FortressDefenseCog(commands.Cog):
             ]
             log.info(f"[Fortress] 隨機徵召防守者: {', '.join(names)}")
 
-            # 被抓者自動打一次免費傷害，讓「加入防守」有實際貢獻
-            for uid in drafted:
-                fs.apply_defense_action(uid, "free", user_interests=[])
-
+            # 被抓者像砲台一樣持續自動攻擊（由 tower_attack_task 每 30 秒處理）
             # 刷新戰況 embed
             await self._refresh_battle_embed_scheduled()
         except Exception as e:
