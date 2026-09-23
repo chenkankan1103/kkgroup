@@ -88,6 +88,73 @@ class AnimeTracker(commands.Cog):
         msg = "✅ [AnimeTracker.set_dependencies] 增強版推送系統啟動完成 (排程+輪詢備案+週表刷新)"
         logger.info(msg)
 
+        # bot 重啟後重新註冊已推送訊息的按鈕視圖。discord.py 的視圖註冊是
+        # in-memory 的，重啟後全部清空，而 AnimePushView 的 custom_id 依集數
+        # 動態產生、無法在啟動時全域註冊；未重新註冊時，舊訊息的投票/留言
+        # 按鈕點擊會被 dispatch_view 直接丟棄（Discord 顯示「應用程式沒有回應」）
+        await self.reregister_push_views()
+
+    async def reregister_push_views(self):
+        """掃描推送頻道近期歷史，重建已推送訊息的按鈕視圖並依 message_id 綁定"""
+        if not self.bot or not self.db:
+            return
+        # 延遲載入避免循環匯入（與 push_core_simple._check_and_push 相同模式）
+        from shared.utils.embed_views import AnimePushView
+
+        try:
+            channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+            if channel is None:
+                logger.warning(
+                    f"⚠️ [AnimeTracker.reregister] 找不到推送頻道 {ANIME_CHANNEL_ID}"
+                )
+                return
+
+            registered = 0
+            seen: set[int] = set()
+            async for message in channel.history(limit=300, oldest_first=False):
+                if message.id in seen or not message.components:
+                    continue
+                # 從按鈕 custom_id 辨識動畫推送訊息並解析 video_sn
+                video_sn = None
+                for row in message.components:
+                    for child in row.children:
+                        cid = getattr(child, "custom_id", None)
+                        if cid and cid.startswith("anime_vote_"):
+                            try:
+                                video_sn = int(cid.rsplit("_", 1)[1])
+                            except (ValueError, IndexError):
+                                video_sn = None
+                            break
+                    if video_sn is not None:
+                        break
+                if video_sn is None:
+                    continue
+                seen.add(message.id)
+
+                # AnimePushView 建構需要 videoSn 與 animeSn 同時存在
+                info = self.db.get_notified_info(video_sn)
+                if not info:
+                    logger.warning(
+                        f"⚠️ [AnimeTracker.reregister] videoSn={video_sn} "
+                        f"不在 anime_notified，跳過"
+                    )
+                    continue
+                anime_sn, anime_name = info
+                view = AnimePushView(
+                    {"videoSn": video_sn, "animeSn": anime_sn, "title": anime_name},
+                    db_adapter=self.db,
+                )
+                view.message_id = message.id  # 讓留言也能精確記錄到該則 embed
+                self.bot.add_view(view, message_id=message.id)
+                registered += 1
+
+            logger.info(
+                f"✅ [AnimeTracker.reregister] 已重新註冊 {registered} 則"
+                f"動畫推送訊息的按鈕視圖"
+            )
+        except Exception as e:
+            logger.error(f"❌ [AnimeTracker.reregister] 失敗: {e}", exc_info=True)
+
     async def cog_load(self):
         """Cog 載入時執行的初始化"""
         self.logger.info("📺 [AnimeTracker.cog_load] 開始載入 Cog")
