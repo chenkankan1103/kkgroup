@@ -701,6 +701,47 @@ def tower_auto_attack() -> Tuple[bool, str]:
             else:
                 attacked_enemies.append(f"🗼 砲台對 {enemy.name} 造成 {damage} 傷害")
 
+    # 被徵召的防守者：像砲台一樣每輪自動攻擊存活刑警（無位置限制，打全體）
+    from shared.db.db_adapter import get_user_field
+
+    for uid in state.drafted_defenders:
+        alive_enemies = [e for e in state.enemies if not e.defeated]
+        if not alive_enemies:
+            break
+
+        interests_raw = get_user_field(uid, "user_interests", default="[]")
+        try:
+            interests = (
+                json.loads(interests_raw) if isinstance(interests_raw, str) else []
+            )
+        except Exception:
+            interests = []
+
+        has_bonus = any(
+            user_interests_match(interests, e.name) for e in alive_enemies
+        )
+        drafted_damage = calculate_player_damage("free", has_bonus)
+
+        # 平均分配到所有存活刑警
+        damage_per_enemy = drafted_damage // len(alive_enemies)
+        remaining_damage = drafted_damage % len(alive_enemies)
+
+        for i, enemy in enumerate(alive_enemies):
+            damage = damage_per_enemy + (remaining_damage if i == 0 else 0)
+            damage = min(damage, enemy.current_hp)
+            if damage <= 0:
+                continue
+            enemy.current_hp -= damage
+
+            if enemy.current_hp <= 0:
+                enemy.current_hp = 0
+                enemy.defeated = True
+                attacked_enemies.append(f"🚨 徵召防守者擊退了 {enemy.name}!")
+            else:
+                attacked_enemies.append(
+                    f"🚨 徵召防守者對 {enemy.name} 造成 {damage} 傷害"
+                )
+
     _save_state(state)
 
     if attacked_enemies:
