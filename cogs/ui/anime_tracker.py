@@ -50,7 +50,12 @@ class AnimeTracker(commands.Cog):
     async def set_dependencies(self, db_path: str = None):
         """設置依賴元件 - 初始化增強版推送系統並啟動"""
         if self._running:
-            logger.info("[AnimeTracker.set_dependencies] 已運行中，跳過")
+            # 已初始化過：僅重新註冊按鈕視圖（冪等）。cog_load 早於 on_ready 的
+            # logging 設定，第一次執行的日誌會遺失，此處的日誌可見可驗證
+            logger.info(
+                "[AnimeTracker.set_dependencies] 已運行中，跳過（僅重新註冊視圖）"
+            )
+            await self.reregister_push_views()
             return
 
         db_path = db_path or str(ANIME_PUSH_DB_PATH)
