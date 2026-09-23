@@ -180,6 +180,24 @@ class AnimePushDB:
         conn.close()
         return {int(row[0]) for row in rows if row[0] is not None}
 
+    def get_notified_info(self, video_sn: int) -> tuple[int, str] | None:
+        """查詢已推送動畫的 animeSn 與名稱（bot 重啟後重建按鈕視圖用）"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT animeSn, anime_name FROM anime_notified WHERE videoSn=? LIMIT 1",
+            (video_sn,),
+        )
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return None
+        anime_sn = int(row[0]) if row[0] is not None else 0
+        name = row[1]
+        if isinstance(name, bytes):  # text_factory=bytes，TEXT 欄位回傳 bytes 需解碼
+            name = name.decode("utf-8", errors="replace")
+        return (anime_sn, name or "")
+
     # ====== 投票功能 ======
 
     def record_vote(

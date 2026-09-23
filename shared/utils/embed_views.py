@@ -521,7 +521,12 @@ class AnimePushView(discord.ui.View):
                             return
 
                         user_hash = str(hash(modal_interaction.user.id))[:10]
-                        message_id = outer_self.message_id
+                        # 優先用 modal 來源訊息的 ID，未重新投票也能精確記錄到該則 embed
+                        message_id = (
+                            modal_interaction.message.id
+                            if modal_interaction.message
+                            else outer_self.message_id
+                        )
                         anime_name = outer_self.episode.get("title", "") if outer_self.episode else ""
 
                         # 記錄評論
