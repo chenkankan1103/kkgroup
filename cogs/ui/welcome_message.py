@@ -8,6 +8,7 @@ import asyncio
 import json
 import io
 from PIL import Image
+from collections.abc import Coroutine
 from typing import Optional
 from pathlib import Path
 import time
@@ -18,6 +19,33 @@ import logging
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+# ─── 背景任務強引用管理 ──────────────────────────────────────
+# CPython 事件迴圈僅持有 Task 的弱引用——create_task 返回值被丟棄時，
+# task 可能在 await/sleep 期間被 GC 靜默回收，整條後台鏈無聲消失
+# （2026-09 動畫推送事故同款根因）。所有背景任務必須經由此 helper 排程。
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _on_task_done(task: asyncio.Task) -> None:
+    """done_callback：釋放強引用並記錄逃逸的例外（含 HTTPException）。"""
+    _background_tasks.discard(task)
+    if not task.cancelled() and task.exception() is not None:
+        exc = task.exception()
+        logger.error(f"背景任務未處理例外: {type(exc).__name__}: {exc}")
+
+
+def spawn_background_task(coro: Coroutine) -> asyncio.Task:
+    """排程背景任務並持有強引用，防止 GC 回收。
+
+    WHY: 三處 create_task 原本直接丟棄返回 Task——最嚴重者掛著入園後
+    5 分鐘清理鏈（移除臨時身分組 → 刪除訊息 → 清理記錄）。
+    """
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_on_task_done)
+    return task
+
 
 # ─── 入園後興趣標籤選擇 ──────────────────────────────────────
 
@@ -526,7 +554,7 @@ class WelcomeFlow(commands.Cog):
         # 啟動時加載持久化緩存
         self.load_persistent_cache()
         # 啟動時預載入圖片 - 延遲啟動避免阻塞
-        self.bot.loop.create_task(self.delayed_preload())
+        spawn_background_task(self.delayed_preload())
 
         # 註冊跨重啟的 persistent view（處理 welcome 的按鈕/選單）
         try:
@@ -908,9 +936,16 @@ class WelcomeFlow(commands.Cog):
                 "last_recovery",
             }
 
+            failed_fields = []
             for key, value in data.items():
-                if key in allowed_fields:
-                    set_user_field(user_id, key, value)
+                if key in allowed_fields and not set_user_field(user_id, key, value):
+                    failed_fields.append(key)
+
+            if failed_fields:
+                logger.error(
+                    f"❌ 用戶 {user_id} 資料寫入失敗欄位: {failed_fields}，"
+                    "後續流程（如 recovery_cog 追蹤）可能不完整"
+                )
 
             # ✅ 新增備份邏輯：如果 hp 和 stamina 都是 100，自動清除 is_stunned
             # 這是 recovery_cog 的備份邏輯，確保昏倒狀態被正確清除
@@ -1661,7 +1696,7 @@ class WelcomeFlow(commands.Cog):
                     print(f"❌ 後台清理任務錯誤: {cleanup_err}")
 
             print("⏱️ 排隊 5 分鐘後的清理任務")
-            self.bot.loop.create_task(cleanup_after_delay())
+            spawn_background_task(cleanup_after_delay())
 
         except Exception as e:
             print(f"❌ handle_final_verification 錯誤: {e}")
@@ -1784,9 +1819,11 @@ class WelcomeFlow(commands.Cog):
                         await asyncio.sleep(300)
                         await completion_msg.delete()
                     except (discord.NotFound, discord.Forbidden):
-                        pass
+                        pass  # 訊息已刪或無權限——預期內
+                    except discord.HTTPException:
+                        logger.exception("刪除入園完成訊息失敗")
 
-                self.bot.loop.create_task(delete_completion_msg())
+                spawn_background_task(delete_completion_msg())
 
             # 清理記錄
             if user_id in self.stunned_users:
