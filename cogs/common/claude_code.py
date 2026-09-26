@@ -308,8 +308,6 @@ class ClaudeCodeCog(commands.Cog):
 
     @app_commands.command(name="cc", description="Claude Code Agent - AI 程式開發助手（管理員限定）")
     @app_commands.describe(prompt="任務描述，例如：幫我新增一個 /ping 指令", continue_conv="繼續上一輪對話")
-    @app_commands.command(name="cc", description="Claude Code Agent - AI 程式開發助手（管理員限定）")
-    @app_commands.describe(prompt="任務描述，例如：幫我新增一個 /ping 指令", continue_conv="繼續上一輪對話")
     async def cc(self, interaction: discord.Interaction, prompt: str, continue_conv: bool = False):
         if not self._check_permission(interaction):
             await interaction.response.send_message("❌ 僅限 Discord 管理員使用。", ephemeral=True)
