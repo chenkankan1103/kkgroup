@@ -14,6 +14,41 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ============================================================
+# 動畫投票統計顯示設定
+# ============================================================
+
+# 固定顯示順序：embed 生成（cogs/ui/push_embed.py）與按鈕視圖（AnimePushView）
+# 共用同一組常數，確保同一則 embed 在兩處重建後欄位格式完全一致。
+VOTE_TYPE_ORDER = ("masterpiece", "great", "decent", "small_audience", "disaster")
+VOTE_TYPE_LABELS: dict[str, tuple] = {
+    "masterpiece": ("神作", "🟩"),
+    "great": ("佳作", "🟦"),
+    "decent": ("普作", "🟨"),
+    "small_audience": ("小眾", "🟧"),
+    "disaster": ("爛作", "🟥"),
+}
+
+# 本集統計與全系列累計的 embed 欄位名稱（投票後重建欄位時以此比對）
+EPISODE_FIELD_NAME = "這集表現得如何?"
+CUMULATIVE_FIELD_NAME = "📊 全系列累計"
+
+
+def format_vote_stats(stats: dict[str, int]) -> str:
+    """將投票統計字典格式化為 embed 欄位文字（每種投票類型一行）。
+
+    Args:
+        stats: 投票類型 → 票數的對應；缺少的類型以 0 計。
+
+    Returns:
+        以換行分隔的統計文字，例如「🟩 神作: 3」。
+    """
+    return "\n".join(
+        f"{VOTE_TYPE_LABELS[key][1]} {VOTE_TYPE_LABELS[key][0]}: {stats.get(key, 0)}"
+        for key in VOTE_TYPE_ORDER
+    )
+
+
+# ============================================================
 # 按鈕樣式列舉
 # ============================================================
 
@@ -355,14 +390,8 @@ class AnimePushView(discord.ui.View):
     包含 5 個投票按鈕、1 個評論按鈕、動畫頁連結、觀看連結。
     """
 
-    # 投票類型配置 (與 AnimeVoteView 保持一致)
-    VOTE_TYPES = {
-        "masterpiece": ("神作", "🟩"),
-        "great": ("佳作", "🟦"),
-        "decent": ("普作", "🟨"),
-        "small_audience": ("小眾", "🟧"),
-        "disaster": ("爛作", "🟥"),
-    }
+    # 投票類型配置 (與 AnimeVoteView 保持一致；實際定義見模組頂端 VOTE_TYPE_LABELS)
+    VOTE_TYPES = VOTE_TYPE_LABELS
 
     def __init__(self, episode: dict, db_adapter=None):
         # 永久視圖：timeout=None
@@ -446,20 +475,31 @@ class AnimePushView(discord.ui.View):
                 if not vote_recorded:
                     logger.error(f"❌ 投票記錄失敗")
 
-            # 投票成功且原訊息存在 → 只更新「這集表現得如何?」欄位
+            # 投票成功且原訊息存在 → 更新「本集」與「全系列累計」兩個統計欄位
             if vote_recorded and interaction.message:
                 try:
                     if interaction.message.embeds:
                         embed = interaction.message.embeds[0].copy()
-                        # 移除舊的投票統計欄位
-                        for i, field in enumerate(embed.fields):
-                            if field.name == "這集表現得如何?":
-                                embed.remove_field(i)
-                                break
+                        # 兩個欄位都必須先移除再重建：若只重建本集欄位，
+                        # 全系列累計會停留在投票前的數字，與本集欄位互相矛盾。
+                        for field_name in (EPISODE_FIELD_NAME, CUMULATIVE_FIELD_NAME):
+                            for i, field in enumerate(embed.fields):
+                                if field.name == field_name:
+                                    embed.remove_field(i)
+                                    break
                         # 重建統計文字
                         vote_text = self._build_vote_stats_text()
                         if vote_text:
-                            embed.add_field(name="這集表現得如何?", value=vote_text, inline=False)
+                            embed.add_field(
+                                name=EPISODE_FIELD_NAME, value=vote_text, inline=False
+                            )
+                        cumulative_text = self._build_cumulative_stats_text()
+                        if cumulative_text:
+                            embed.add_field(
+                                name=CUMULATIVE_FIELD_NAME,
+                                value=cumulative_text,
+                                inline=False,
+                            )
                         await interaction.message.edit(embed=embed)
                 except Exception as e:
                     logger.error(f"❌ 更新投票統計欄位失敗: {e}")
@@ -484,16 +524,28 @@ class AnimePushView(discord.ui.View):
             if not self.db or not hasattr(self.db, "get_vote_stats") or not self.video_sn:
                 return None
             vote_stats = self.db.get_vote_stats(int(self.video_sn), self.message_id)
-            vote_lines = []
-            # 依固定順序輸出，與生成 embed 時的順序一致
-            for vote_key in ["masterpiece", "great", "decent", "small_audience", "disaster"]:
-                emoji = self.VOTE_TYPES.get(vote_key, ("", None))[1] or "▪️"
-                label = self.VOTE_TYPES.get(vote_key, ("", None))[0]
-                count = vote_stats.get(vote_key, 0)
-                vote_lines.append(f"{emoji} {label}: {count}")
-            return "\n".join(vote_lines) if vote_lines else None
+            return format_vote_stats(vote_stats)
         except Exception as e:
             logger.error(f"❌ 重建投票統計失敗: {e}")
+            return None
+
+    def _build_cumulative_stats_text(self) -> Optional[str]:
+        """從資料庫重建「全系列累計」欄位文字。
+
+        以 self.anime_sn 跨集數加總，讓最新一集的 embed 也能看到先前集數的累積表現。
+        """
+        try:
+            if (
+                not self.db
+                or not hasattr(self.db, "get_vote_stats_by_anime")
+                or not self.anime_sn
+            ):
+                return None
+            return format_vote_stats(
+                self.db.get_vote_stats_by_anime(int(self.anime_sn))
+            )
+        except Exception as e:
+            logger.error(f"❌ 重建全系列累計統計失敗: {e}")
             return None
 
     async def _comment_callback(self, interaction: discord.Interaction):

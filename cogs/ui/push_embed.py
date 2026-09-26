@@ -7,7 +7,12 @@ import logging
 import discord
 import re
 from typing import Optional, Dict, Any
-from shared.utils.embed_views import create_anime_push_view
+from shared.utils.embed_views import (
+    CUMULATIVE_FIELD_NAME,
+    EPISODE_FIELD_NAME,
+    create_anime_push_view,
+    format_vote_stats,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,38 +149,27 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Op
 
         embed.add_field(name="📡 推送方式", value=push_mode, inline=True)
 
-        # 新增：投票統計欄位
+        # 投票統計欄位：本集（單則 embed）+ 全系列累計（跨集數以 animeSn 加總）
         if db and episode.get("videoSn"):
             try:
                 video_sn = int(episode.get("videoSn"))
-                vote_stats = db.get_vote_stats(video_sn)
+                embed.add_field(
+                    name=EPISODE_FIELD_NAME,
+                    value=format_vote_stats(db.get_vote_stats(video_sn)),
+                    inline=False,
+                )
 
-                # 格式化投票統計文字
-                vote_lines = []
-                vote_emojis = {
-                    "masterpiece": "🟩",
-                    "great": "🟦",
-                    "decent": "🟨",
-                    "small_audience": "🟧",
-                    "disaster": "🟥"
-                }
-                vote_labels = {
-                    "masterpiece": "神作",
-                    "great": "佳作",
-                    "decent": "普作",
-                    "small_audience": "小眾",
-                    "disaster": "爛作"
-                }
-
-                for vote_key in ["masterpiece", "great", "decent", "small_audience", "disaster"]:
-                    emoji = vote_emojis[vote_key]
-                    label = vote_labels[vote_key]
-                    count = vote_stats.get(vote_key, 0)
-                    vote_lines.append(f"{emoji} {label}: {count}")
-
-                if vote_lines:
-                    vote_text = "\n".join(vote_lines)
-                    embed.add_field(name="這集表現得如何?", value=vote_text, inline=False)
+                # 全系列累計：讓新一集的 embed 顯示先前所有集數的加總，而非從 0 開始。
+                # animeSn 是系列層級的鍵（videoSn 則是單集），故累計須以 animeSn 聚合。
+                anime_sn = episode.get("animeSn")
+                if anime_sn and hasattr(db, "get_vote_stats_by_anime"):
+                    embed.add_field(
+                        name=CUMULATIVE_FIELD_NAME,
+                        value=format_vote_stats(
+                            db.get_vote_stats_by_anime(int(anime_sn))
+                        ),
+                        inline=False,
+                    )
             except Exception as e:
                 logger.error(f"❌ 獲取投票統計失敗 videoSn={episode.get('videoSn')}: {e}")
 
