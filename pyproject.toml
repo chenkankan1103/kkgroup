@@ -59,3 +59,18 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# asyncio_mode="auto"：讓裸 `async def test_*` 直接被收集執行。
+# 未設定時 pytest-asyncio 預設 strict，裸 async 測試會以
+# "async def functions are not natively supported" 失敗。
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: 需要外部服務或 VM 環境的整合測試（-m 'not integration' 可跳過）",
+    "unit: 純單元測試",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:pytest_asyncio.*",
+]
