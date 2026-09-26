@@ -574,7 +574,7 @@ kkgroup/
 #### Cron 排程任務
 
 - 每 5 分鐘：`update_restart.py`、`sync_to_sheet.py`
-- 每週三、六 14:00：`refresh_all_lockers_cron.py`
+- 每週三 03:00 UTC（台灣時間 11:00）：`refresh_all_lockers_cron.py`
 - 每週一 03:00：`weekly_backup.py`
 - 知識庫刷新：每天 18:00（台灣時間）執行 `refresh_knowledge_base.py`
 
