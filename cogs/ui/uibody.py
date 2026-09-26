@@ -25,7 +25,6 @@ from .utils import (
     restore_image_cache_from_storage,
     ensure_user_exists,
 )
-from .tasks import LockerTasks
 
 load_dotenv()
 
@@ -63,9 +62,6 @@ class UserPanel(commands.Cog):
         # 註冊永久視圖
         self.bot.add_view(UpdatePanelView(self, 0))
         self.bot.add_view(LockerPanelView(self, 0))
-
-        # 初始化任務
-        self.locker_tasks = LockerTasks(self)
 
         # 背景自動更新已完全禁用
         # 原因：背景任務每 30 分鐘覆蓋置物櫃 embed，會覆蓋 /update_forum_lockers 的高品質動態 API 圖片
