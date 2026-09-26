@@ -1,503 +1,183 @@
+# -*- coding: utf-8 -*-
+"""動畫推送系統測試 —— 對齊現行輪詢架構。
+
+歷史沿革（為何本檔與舊版完全不同）：
+舊版測試 11 個案例全部打已移除的內部：
+  - `AnimeTracker.scheduler` / `_reschedule_push_jobs`（APScheduler 已整個移除）
+  - `AnimeTracker._push_anime_task`（逐任務推送已改為每分鐘輪詢）
+  - `tracker.db.db`（`self.db` 現在直接就是 `AnimePushDB`，無 wrapper）
+  - `tracker.push_core`（已更名 `polling_core`）
+現行架構：`AnimeTracker.push_check_loop`（tasks.loop 每分鐘）→
+`SimpleAnimePushCore._check_and_push`，排程閘門為 `anime_weekly_schedule.pushed`
+與 `anime_notified` 兩道防重複。
+"""
+
+from datetime import datetime
+from unittest.mock import MagicMock
+
 import pytest
-import pytest_asyncio
-import asyncio
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
-from zoneinfo import ZoneInfo
+from discord.ext import tasks
 
-# Import the modules we need to test
 from cogs.ui.anime_tracker import AnimeTracker
-from cogs.ui.schedule_tracker import AnimeScheduleTracker
-from cogs.ui.push_core import AnimePushCore, TW_TZ
-from cogs.ui.ranking_stats import RankingStats
-import discord
-
-# Helper function to create a mock bot
-def create_mock_bot():
-    bot = MagicMock()
-    bot.get_cog = MagicMock(return_value=None)
-    return bot
+from cogs.ui.push_core_simple import TW_TZ, AnimePushDB, SimpleAnimePushCore
 
 
-def create_test_db_path():
-    """Create a temporary database file path for testing"""
-    import tempfile
-    import os
-    fd, path = tempfile.mkstemp(suffix='.db', prefix='test_anime_')
-    os.close(fd)
-    return path
+@pytest.fixture
+def db(temp_db_path):
+    """生產同款資料庫（AnimeTracker.set_dependencies 傳入的就是 AnimePushDB）"""
+    return AnimePushDB(temp_db_path)
 
-class TestAnimePushScheduler:
-    """Tests for the anime push scheduling logic"""
 
-    @pytest_asyncio.fixture
-    async def anime_tracker(self):
-        """Create an AnimeTracker instance with mocked dependencies"""
-        bot = create_mock_bot()
-        tracker = AnimeTracker(bot)
+def _now_week_and_day(db: AnimePushDB) -> tuple[str, int]:
+    """回傳「現在」所屬的週起始日與資料庫用星期編號（1=週一 … 7=週日）"""
+    now = datetime.now(TW_TZ)
+    return db._get_week_start_date(now), now.weekday() + 1
 
-        # Set up mocked dependencies using a file-based database (to share across connections)
-        db_path = create_test_db_path()
 
-        await tracker.set_dependencies(db_path)
+def _pushed_flag(db: AnimePushDB, week: str, day: int, time_str: str) -> int:
+    conn = db._get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT pushed FROM anime_weekly_schedule "
+        "WHERE weekStartDate=? AND dayOfWeek=? AND scheduledTime=?",
+        (week, day, time_str),
+    )
+    row = c.fetchone()
+    conn.close()
+    assert row is not None, "排程列應存在"
+    return row[0]
 
-        # Clean up temp file after test
-        yield tracker
 
-        # Teardown: remove temp file
-        import os
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+class TestNotifiedGate:
+    """`anime_notified` 防重複閘門 —— 靜默重複推送的根因所在"""
 
-    @pytest_asyncio.fixture
-    async def mock_scheduler(self):
-        """Create a mock scheduler"""
-        scheduler = MagicMock()
-        scheduler.get_jobs = MagicMock(return_value=[])
-        scheduler.remove_job = MagicMock()
-        scheduler.add_job = MagicMock()
-        scheduler.running = True
-        return scheduler
+    def test_is_notified_transitions(self, db):
+        assert db.is_notified(555) is False
+        assert db.add_notified(video_sn=555, anime_sn=1, title="測試番") is True
+        assert db.is_notified(555) is True
 
-    @pytest.mark.asyncio
-    async def test_days_ahead_calculation_monday_to_monday(self, anime_tracker):
-        """Test days_ahead calculation when today is Monday and target is Monday"""
-        today = datetime(2026, 8, 17, 10, 0, 0, tzinfo=TW_TZ)  # Monday
-        today_weekday = today.weekday()  # 0 for Monday
+    def test_get_notified_video_sns_and_info(self, db):
+        db.add_notified(video_sn=777, anime_sn=42, title="某番")
+        assert 777 in db.get_notified_video_sns()
+        info = db.get_notified_info(777)
+        assert info is not None and info[0] == 42
 
-        # Target is Monday (day_of_week = 1 in schedule data)
-        day_of_week = 1
+    def test_get_notified_info_missing_returns_none(self, db):
+        assert db.get_notified_info(999999) is None
 
-        with patch.object(anime_tracker, 'scheduler') as mock_sched:
-            mock_sched.get_jobs.return_value = []
-            mock_sched.remove_job = MagicMock()
-            mock_sched.add_job = MagicMock()
 
-            # Mock the schedule tracker to return a Monday schedule
-            anime_tracker.schedule_tracker.get_today_schedule = MagicMock(return_value=[
+class TestWeeklyScheduleGate:
+    """`anime_weekly_schedule.pushed` 排程閘門"""
+
+    def test_today_schedule_only_returns_unpushed(self, db):
+        week, day = _now_week_and_day(db)
+        db.save_weekly_schedule(
+            week,
+            [
                 {
-                    'day_of_week': 1,  # Monday
-                    'scheduled_time': '15:00',  # 3:00 PM
-                    'video_sn': 12345,
-                    'anime_sn': 67890
+                    "day_of_week": day,
+                    "scheduled_time": "23:59",
+                    "anime_data": {"videoSn": 777, "title": "今日番"},
                 }
-            ])
+            ],
+        )
 
-            # Mock datetime.now to return our test time
-            with patch('cogs.ui.anime_tracker.datetime') as mock_dt:
-                mock_dt.now.return_value = today
-                mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-                mock_dt.combine = datetime.combine
-                mock_dt.strptime = datetime.strptime
+        schedule = db.get_today_schedule()
+        assert any(s["videoSn"] == 777 for s in schedule)
+        assert all(s["pushed"] is False for s in schedule)
 
-                # Call the method
-                await anime_tracker._reschedule_push_jobs()
-
-                # Verify that a job was added
-                assert mock_sched.add_job.called
-
-                # Get the arguments passed to add_job
-                call_args = mock_sched.add_job.call_args
-                job_id = call_args[1]['id']
-                # The job should be for next Monday since 15:00 has passed 10:00
-                assert 'push_67890_12345_1_1500' in job_id
-
-    @pytest.mark.asyncio
-    async def test_days_ahead_calculation_monday_to_tuesday(self, anime_tracker):
-        """Test days_ahead calculation when today is Monday and target is Tuesday"""
-        # Today is Monday (weekday = 0)
-        today = datetime(2026, 8, 17, 10, 0, 0, tzinfo=TW_TZ)  # Monday
-
-        # Target is Tuesday (day_of_week = 2 in schedule data)
-        day_of_week = 2
-
-        # Expected: days_ahead = (2 - 0 - 1) % 7 = 1
-
-        with patch.object(anime_tracker, 'scheduler') as mock_sched:
-            mock_sched.get_jobs.return_value = []
-            mock_sched.remove_job = MagicMock()
-            mock_sched.add_job = MagicMock()
-
-            # Mock the schedule tracker to return a Tuesday schedule
-            anime_tracker.schedule_tracker.get_today_schedule = MagicMock(return_value=[
+    def test_mark_time_pushed_removes_from_today_schedule(self, db):
+        week, day = _now_week_and_day(db)
+        db.save_weekly_schedule(
+            week,
+            [
                 {
-                    'day_of_week': 2,  # Tuesday
-                    'scheduled_time': '15:00',  # 3:00 PM
-                    'video_sn': 12345,
-                    'anime_sn': 67890
+                    "day_of_week": day,
+                    "scheduled_time": "23:59",
+                    "anime_data": {"videoSn": 888, "title": "今日番"},
                 }
-            ])
+            ],
+        )
 
-            # Mock datetime.now to return our test time
-            with patch('cogs.ui.anime_tracker.datetime') as mock_dt:
-                mock_dt.now.return_value = today
-                mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-                mock_dt.combine = datetime.combine
-                mock_dt.strptime = datetime.strptime
+        assert db.mark_time_pushed(day, "23:59", 888) is True
+        assert _pushed_flag(db, week, day, "23:59") == 1
+        assert not any(s["videoSn"] == 888 for s in db.get_today_schedule())
 
-                # Call the method
-                await anime_tracker._reschedule_push_jobs()
+    def test_save_weekly_schedule_preserves_pushed_flag(self, db):
+        """週表重刷（每日 02:00）後 pushed=1 必須保留，否則同一集會被重複推送"""
+        week, day = _now_week_and_day(db)
+        entry = {
+            "day_of_week": day,
+            "scheduled_time": "23:58",
+            "anime_data": {"videoSn": 111, "title": "A"},
+        }
+        db.save_weekly_schedule(week, [entry])
+        assert db.mark_time_pushed(day, "23:58", 111) is True
 
-                # Verify that a job was added
-                assert mock_sched.add_job.called
+        # 模擬每日 02:00 的週表全量覆蓋
+        db.save_weekly_schedule(week, [entry])
 
-    @pytest.mark.asyncio
-    async def test_days_ahead_calculation_wednesday_to_monday(self, anime_tracker):
-        """Test days_ahead calculation when today is Wednesday and target is Monday"""
-        # Today is Wednesday (weekday = 2)
-        # 2026-08-19 is a Wednesday
-        today = datetime(2026, 8, 19, 10, 0, 0, tzinfo=TW_TZ)  # Wednesday
+        assert _pushed_flag(db, week, day, "23:58") == 1
 
-        # Target is Monday (day_of_week = 1 in schedule data)
-        day_of_week = 1
-
-        # Expected: days_ahead = (1 - 2 - 1) % 7 = (-2) % 7 = 5
-
-        with patch.object(anime_tracker, 'scheduler') as mock_sched:
-            mock_sched.get_jobs.return_value = []
-            mock_sched.remove_job = MagicMock()
-            mock_sched.add_job = MagicMock()
-
-            # Mock the schedule tracker to return a Monday schedule
-            anime_tracker.schedule_tracker.get_today_schedule = MagicMock(return_value=[
+    def test_save_weekly_schedule_dedups_same_slot(self, db):
+        week, _ = _now_week_and_day(db)
+        db.save_weekly_schedule(
+            week,
+            [
                 {
-                    'day_of_week': 1,  # Monday
-                    'scheduled_time': '15:00',  # 3:00 PM
-                    'video_sn': 12345,
-                    'anime_sn': 67890
-                }
-            ])
-
-            # Mock datetime.now to return our test time
-            with patch('cogs.ui.anime_tracker.datetime') as mock_dt:
-                mock_dt.now.return_value = today
-                mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-                mock_dt.combine = datetime.combine
-                mock_dt.strptime = datetime.strptime
-
-                # Call the method
-                await anime_tracker._reschedule_push_jobs()
-
-                # Verify that a job was added
-                assert mock_sched.add_job.called
-
-    @pytest.mark.asyncio
-    async def test_days_ahead_calculation_sunday_to_monday(self, anime_tracker):
-        """Test days_ahead calculation when today is Sunday and target is Monday"""
-        # Today is Sunday (weekday = 6)
-        # 2026-08-22 is a Sunday
-        today = datetime(2026, 8, 22, 10, 0, 0, tzinfo=TW_TZ)  # Sunday
-
-        # Target is Monday (day_of_week = 1 in schedule data)
-        day_of_week = 1
-
-        # Expected: days_ahead = (1 - 6 - 1) % 7 = (-6) % 7 = 1
-
-        with patch.object(anime_tracker, 'scheduler') as mock_sched:
-            mock_sched.get_jobs.return_value = []
-            mock_sched.remove_job = MagicMock()
-            mock_sched.add_job = MagicMock()
-
-            # Mock the schedule tracker to return a Monday schedule
-            anime_tracker.schedule_tracker.get_today_schedule = MagicMock(return_value=[
-                {
-                    'day_of_week': 1,  # Monday
-                    'scheduled_time': '15:00',  # 3:00 PM
-                    'video_sn': 12345,
-                    'anime_sn': 67890
-                }
-            ])
-
-            # Mock datetime.now to return our test time
-            with patch('cogs.ui.anime_tracker.datetime') as mock_dt:
-                mock_dt.now.return_value = today
-                mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-                mock_dt.combine = datetime.combine
-                mock_dt.strptime = datetime.strptime
-
-                # Call the method
-                await anime_tracker._reschedule_push_jobs()
-
-                # Verify that a job was added
-                assert mock_sched.add_job.called
-
-    @pytest.mark.asyncio
-    async def test_time_past_today_moves_to_next_week(self, anime_tracker):
-        """Test that if the scheduled time has already passed today, it moves to next week"""
-        # Today is Monday at 16:00 (4:00 PM)
-        today = datetime(2026, 8, 17, 16, 0, 0, tzinfo=TW_TZ)  # Monday 4:00 PM
-
-        # Target is Monday at 15:00 (3:00 PM) - this time has already passed today
-        day_of_week = 1  # Monday
-        scheduled_time = '15:00'
-
-        # Expected: days_ahead = 0 (same day), but since time has passed, it should go to next week
-
-        with patch.object(anime_tracker, 'scheduler') as mock_sched:
-            mock_sched.get_jobs.return_value = []
-            mock_sched.remove_job = MagicMock()
-            mock_sched.add_job = MagicMock()
-
-            # Mock the schedule tracker to return a Monday schedule
-            anime_tracker.schedule_tracker.get_today_schedule = MagicMock(return_value=[
-                {
-                    'day_of_week': 1,  # Monday
-                    'scheduled_time': scheduled_time,  # 3:00 PM
-                    'video_sn': 12345,
-                    'anime_sn': 67890
-                }
-            ])
-
-            # Mock datetime.now to return our test time
-            with patch('cogs.ui.anime_tracker.datetime') as mock_dt:
-                mock_dt.now.return_value = today
-                mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-                mock_dt.combine = datetime.combine
-                mock_dt.strptime = datetime.strptime
-
-                # Call the method
-                await anime_tracker._reschedule_push_jobs()
-
-                # Verify that a job was added
-                assert mock_sched.add_job.called
-
-                # Check that the job was scheduled for next week (7 days later)
-                # We can't easily check the exact time without inspecting the call args more deeply,
-                # but we can verify the method was called
-
-    @pytest.mark.asyncio
-    async def test_time_future_today_stays_same_week(self, anime_tracker):
-        """Test that if the scheduled time is in the future today, it stays in the same week"""
-        # Today is Monday at 10:00 AM
-        today = datetime(2026, 8, 17, 10, 0, 0, tzinfo=TW_TZ)  # Monday 10:00 AM
-
-        # Target is Monday at 15:00 (3:00 PM) - this time is in the future today
-        day_of_week = 1  # Monday
-        scheduled_time = '15:00'
-
-        # Expected: days_ahead = 0 (same day) and time is in future, so stays same day
-
-        with patch.object(anime_tracker, 'scheduler') as mock_sched:
-            mock_sched.get_jobs.return_value = []
-            mock_sched.remove_job = MagicMock()
-            mock_sched.add_job = MagicMock()
-
-            # Mock the schedule tracker to return a Monday schedule
-            anime_tracker.schedule_tracker.get_today_schedule = MagicMock(return_value=[
-                {
-                    'day_of_week': 1,  # Monday
-                    'scheduled_time': scheduled_time,  # 3:00 PM
-                    'video_sn': 12345,
-                    'anime_sn': 67890
-                }
-            ])
-
-            # Mock datetime.now to return our test time
-            with patch('cogs.ui.anime_tracker.datetime') as mock_dt:
-                mock_dt.now.return_value = today
-                mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-                mock_dt.combine = datetime.combine
-                mock_dt.strptime = datetime.strptime
-
-                # Call the method
-                await anime_tracker._reschedule_push_jobs()
-
-                # Verify that a job was added
-                assert mock_sched.add_job.called
-
-    @pytest.mark.asyncio
-    async def test_multiple_schedules(self, anime_tracker):
-        """Test scheduling multiple anime pushes on different days"""
-        # Today is Monday at 10:00 AM
-        today = datetime(2026, 8, 17, 10, 0, 0, tzinfo=TW_TZ)  # Monday
-
-        with patch.object(anime_tracker, 'scheduler') as mock_sched:
-            mock_sched.get_jobs.return_value = []
-            mock_sched.remove_job = MagicMock()
-            mock_sched.add_job = MagicMock()
-
-            # Mock the schedule tracker to return multiple schedules
-            anime_tracker.schedule_tracker.get_today_schedule = MagicMock(return_value=[
-                {
-                    'day_of_week': 1,  # Monday
-                    'scheduled_time': '15:00',  # 3:00 PM
-                    'video_sn': 12345,
-                    'anime_sn': 67890
+                    "day_of_week": 1,
+                    "scheduled_time": "21:00",
+                    "anime_data": {"videoSn": 1},
                 },
                 {
-                    'day_of_week': 3,  # Wednesday
-                    'scheduled_time': '20:00',  # 8:00 PM
-                    'video_sn': 12346,
-                    'anime_sn': 67891
+                    "day_of_week": 1,
+                    "scheduled_time": "21:00",
+                    "anime_data": {"videoSn": 2},
                 },
-                {
-                    'day_of_week': 5,  # Friday
-                    'scheduled_time': '10:00',  # 10:00 AM
-                    'video_sn': 12347,
-                    'anime_sn': 67892
-                }
-            ])
+            ],
+        )
 
-            # Mock datetime.now to return our test time
-            with patch('cogs.ui.anime_tracker.datetime') as mock_dt:
-                mock_dt.now.return_value = today
-                mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
-                mock_dt.combine = datetime.combine
-                mock_dt.strptime = datetime.strptime
-
-                # Call the method
-                await anime_tracker._reschedule_push_jobs()
-
-                # Verify that jobs were added for each schedule
-                assert mock_sched.add_job.call_count == 3
-
-class TestAnimePushTask:
-    """Tests for the anime push task execution"""
-
-    @pytest_asyncio.fixture
-    async def anime_tracker_with_mocked_push_core(self):
-        """Create an AnimeTracker instance with mocked push_core"""
-        bot = create_mock_bot()
-        tracker = AnimeTracker(bot)
-
-        # Set up mocked dependencies using a file-based database (to share across connections)
-        db_path = create_test_db_path()
-
-        await tracker.set_dependencies(db_path)
-
-        # Insert test schedule data into the database so _push_anime_task can find it
-        db_impl = tracker.db.db
-        conn = db_impl._get_conn()
+        conn = db._get_conn()
         c = conn.cursor()
-        import json
-        test_anime_data = json.dumps({"anime_sn": 12345, "videoSn": 67890, "title": "Test Anime"})
-        c.execute("""
-            INSERT INTO anime_weekly_schedule (weekStartDate, dayOfWeek, scheduledTime, pushed, animeData, videoSn)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, ("2026-08-24", 1, "15:00", 0, test_anime_data, 67890))
-        conn.commit()
+        c.execute(
+            "SELECT COUNT(*) FROM anime_weekly_schedule "
+            "WHERE weekStartDate=? AND dayOfWeek=1 AND scheduledTime='21:00'",
+            (week,),
+        )
+        count = c.fetchone()[0]
         conn.close()
+        assert count == 1, "同一 (dayOfWeek, scheduledTime) 只應保留一列"
 
-        # Mock the push_core to avoid actual API calls
-        tracker.push_core = AsyncMock()
-        tracker.push_core.send_anime_push = AsyncMock(return_value=True)
 
-        # Clean up temp file after test
-        yield tracker
+class TestPushArchitecture:
+    """推送循環架構的迴歸守門"""
 
-        # Teardown: remove temp file
-        import os
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+    def test_push_check_loop_is_minute_polling(self):
+        """推送必須是 tasks.loop 每分鐘輪詢。
 
-    @pytest.mark.asyncio
-    async def test_push_anime_task_success(self, anime_tracker_with_mocked_push_core):
-        """Test successful execution of _push_anime_task"""
-        anime_sn = 12345
-        video_sn = 67890
+        2026-09 曾用 asyncio.create_task 建立智能睡眠循環，task 的例外被困在
+        無人讀取的 task 物件中（self._task 強引用阻擋 GC），「Task exception
+        was never retrieved」永不觸發 → 推送循環靜默死亡 44 小時、零日誌零推送。
+        tasks.loop 每圈接例外並自癒，故此設計不可回退。
+        """
+        loop = AnimeTracker.push_check_loop
+        assert isinstance(loop, tasks.Loop), "推送循環必須是 tasks.loop"
+        assert loop.minutes == 1
 
-        # Execute the task
-        await anime_tracker_with_mocked_push_core._push_anime_task(anime_sn, video_sn)
+        # APScheduler 與逐任務推送皆已移除，不得復辟
+        assert not hasattr(AnimeTracker, "scheduler")
+        assert not hasattr(AnimeTracker, "_reschedule_push_jobs")
+        assert not hasattr(AnimeTracker, "_push_anime_task")
 
-        # Verify that push_core.send_anime_push was called (with correct signature: scheduled_time, channel_id, day_of_week, week_start_date)
-        anime_tracker_with_mocked_push_core.push_core.send_anime_push.assert_called_once()
-        call_args = anime_tracker_with_mocked_push_core.push_core.send_anime_push.call_args
-        # Database returns bytes, so decode for comparison
-        scheduled_time = call_args[0][0].decode() if isinstance(call_args[0][0], bytes) else call_args[0][0]
-        week_start_date = call_args[0][3].decode() if isinstance(call_args[0][3], bytes) else call_args[0][3]
-        assert scheduled_time == "15:00"  # scheduled_time
-        assert call_args[0][1] == 1252204317453324333  # channel_id (ANIME_CHANNEL_ID)
-        assert call_args[0][2] == 1  # day_of_week (Monday)
-        assert week_start_date == "2026-08-24"  # week_start_date
+    def test_simple_push_core_uses_injected_db(self, db):
+        """SimpleAnimePushCore 必須共用外部注入的 DB 連線，不自建第二個"""
+        core = SimpleAnimePushCore(db)
+        assert core.db is db
+        assert core._running is False
 
-    @pytest.mark.asyncio
-    async def test_push_anime_task_failure(self, anime_tracker_with_mocked_push_core):
-        """Test _push_anime_task handles failure gracefully"""
-        anime_sn = 12345
-        video_sn = 67890
-
-        # Configure mock to return False (indicating failure/no new episodes)
-        anime_tracker_with_mocked_push_core.push_core.send_anime_push.return_value = False
-
-        # Execute the task - should not raise exception
-        await anime_tracker_with_mocked_push_core._push_anime_task(anime_sn, video_sn)
-
-        # Verify that push_core.send_anime_push was called (with correct signature)
-        anime_tracker_with_mocked_push_core.push_core.send_anime_push.assert_called_once()
-        call_args = anime_tracker_with_mocked_push_core.push_core.send_anime_push.call_args
-        # Database returns bytes, so decode for comparison
-        scheduled_time = call_args[0][0].decode() if isinstance(call_args[0][0], bytes) else call_args[0][0]
-        week_start_date = call_args[0][3].decode() if isinstance(call_args[0][3], bytes) else call_args[0][3]
-        assert scheduled_time == "15:00"  # scheduled_time
-        assert call_args[0][1] == 1252204317453324333  # channel_id (ANIME_CHANNEL_ID)
-        assert call_args[0][2] == 1  # day_of_week (Monday)
-        assert week_start_date == "2026-08-24"  # week_start_date
-
-    @pytest.mark.asyncio
-    async def test_push_anime_task_exception(self, anime_tracker_with_mocked_push_core):
-        """Test _push_anime_task handles exceptions gracefully"""
-        anime_sn = 12345
-        video_sn = 67890
-
-        # Configure mock to raise an exception
-        anime_tracker_with_mocked_push_core.push_core.send_anime_push.side_effect = Exception("API Error")
-
-        # Execute the task - should not raise exception
-        await anime_tracker_with_mocked_push_core._push_anime_task(anime_sn, video_sn)
-
-        # Verify that push_core.send_anime_push was called (with correct signature)
-        anime_tracker_with_mocked_push_core.push_core.send_anime_push.assert_called_once()
-        call_args = anime_tracker_with_mocked_push_core.push_core.send_anime_push.call_args
-        # Database returns bytes, so decode for comparison
-        scheduled_time = call_args[0][0].decode() if isinstance(call_args[0][0], bytes) else call_args[0][0]
-        week_start_date = call_args[0][3].decode() if isinstance(call_args[0][3], bytes) else call_args[0][3]
-        assert scheduled_time == "15:00"  # scheduled_time
-        assert call_args[0][1] == 1252204317453324333  # channel_id (ANIME_CHANNEL_ID)
-        assert call_args[0][2] == 1  # day_of_week (Monday)
-        assert week_start_date == "2026-08-24"  # week_start_date
-
-    @pytest.mark.asyncio
-    async def test_push_anime_task_creates_correct_embed_and_view(self):
-        """Test that _push_anime_task creates proper embed and view (integration test)"""
-        # This test would require more complex mocking of discord components
-        # For now, we'll test the basic functionality is preserved
-        bot = create_mock_bot()
-        tracker = AnimeTracker(bot)
-
-        # Set up mocked dependencies using a file-based database (to share across connections)
-        db_path = create_test_db_path()
-
-        await tracker.set_dependencies(db_path)
-
-        # Insert test schedule data into the database so _push_anime_task can find it
-        db_impl = tracker.db.db
-        conn = db_impl._get_conn()
-        c = conn.cursor()
-        import json
-        test_anime_data = json.dumps({"anime_sn": 12345, "videoSn": 67890, "title": "Test Anime"})
-        c.execute("""
-            INSERT INTO anime_weekly_schedule (weekStartDate, dayOfWeek, scheduledTime, pushed, animeData, videoSn)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, ("2026-08-24", 1, "15:00", 0, test_anime_data, 67890))
-        conn.commit()
-        conn.close()
-
-        # Mock the push_core.send_anime_push to return True
-        tracker.push_core.send_anime_push = AsyncMock(return_value=True)
-
-        anime_sn = 12345
-        video_sn = 67890
-
-        # Execute the task
-        await tracker._push_anime_task(anime_sn, video_sn)
-
-        # Verify that the method was called
-        tracker.push_core.send_anime_push.assert_called_once()
-
-        # Cleanup
-        import os
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        bot = MagicMock()
+        core.set_bot(bot)
+        assert core.bot is bot
 
 
 if __name__ == "__main__":

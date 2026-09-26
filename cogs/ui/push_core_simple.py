@@ -675,7 +675,17 @@ class AnimePushDB:
                 (week_start_date,),
             )
             pushed_records = c.fetchall()
-            pushed_set = {(row[0], row[1], row[2]) for row in pushed_records}
+            # text_factory=bytes，scheduledTime 讀回為 bytes；不解碼則與下方
+            # 新資料的 str 永遠不相等，pushed=1 保留機制會靜默失效（每日週表
+            # 重刷即清空 pushed，已推送時刻被重新排入）
+            pushed_set = {
+                (
+                    row[0],
+                    row[1].decode("utf-8") if isinstance(row[1], bytes) else row[1],
+                    row[2],
+                )
+                for row in pushed_records
+            }
 
             # 2. 刪除該週所有資料
             c.execute(

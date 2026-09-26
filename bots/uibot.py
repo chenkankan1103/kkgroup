@@ -209,7 +209,6 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
         "init_missing_character_data",
         "embed_utils",
         "crop_utils",
-        "locker_tasks",
         "status_dashboard",
         "push_embed",
         "personal_items",

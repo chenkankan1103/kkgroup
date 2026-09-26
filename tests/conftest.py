@@ -234,8 +234,9 @@ async def anime_dpytest_setup(event_loop, temp_db_path, frozen_time, patch_baham
     # 修改 bot 的資料庫路徑指向臨時資料庫
     import cogs.ui.anime_tracker as anime_tracker_mod
 
-    original_db_path = anime_tracker_mod.ANIME_DB_PATH
-    anime_tracker_mod.ANIME_DB_PATH = Path(temp_db_path)
+    # 常數已更名：anime_tracker 現在匯入 push_core_simple.ANIME_PUSH_DB_PATH
+    original_db_path = anime_tracker_mod.ANIME_PUSH_DB_PATH
+    anime_tracker_mod.ANIME_PUSH_DB_PATH = Path(temp_db_path)
 
     # 取得 mock 實例
     mock_bahamut_api = patch_bahamut_api
@@ -277,7 +278,7 @@ async def anime_dpytest_setup(event_loop, temp_db_path, frozen_time, patch_baham
 
     # 2. 還原全域配置
     push_core_mod.ANIME_CHANNEL_ID = original_channel_id
-    anime_tracker_mod.ANIME_DB_PATH = original_db_path
+    anime_tracker_mod.ANIME_PUSH_DB_PATH = original_db_path
 
     # 3. 清空 dpytest 內部隊列 (async)
     await dpytest.empty_queue()
@@ -745,8 +746,9 @@ async def uibot_dpytest_setup(event_loop, temp_db_path):
     # 修改資料庫路徑
     import cogs.ui.anime_tracker as anime_tracker_mod
 
-    original_db_path = anime_tracker_mod.ANIME_DB_PATH
-    anime_tracker_mod.ANIME_DB_PATH = Path(temp_db_path)
+    # 常數已更名：anime_tracker 現在匯入 push_core_simple.ANIME_PUSH_DB_PATH
+    original_db_path = anime_tracker_mod.ANIME_PUSH_DB_PATH
+    anime_tracker_mod.ANIME_PUSH_DB_PATH = Path(temp_db_path)
 
     # 載入 cog
     await bot.add_cog(AnimeTracker(bot))
@@ -767,7 +769,7 @@ async def uibot_dpytest_setup(event_loop, temp_db_path):
     # 測試後清理
     await bot.remove_cog("AnimeTracker")
     push_core_mod.ANIME_CHANNEL_ID = original_channel_id
-    anime_tracker_mod.ANIME_DB_PATH = original_db_path
+    anime_tracker_mod.ANIME_PUSH_DB_PATH = original_db_path
     dpytest.empty_queue()
     try:
         dpytest.unconfigure()

@@ -490,6 +490,9 @@ crawl_*.py
 reset_*.py
 *_debug_*.json
 *_test_*.json
+# 例外：上面的 test_*.py 是未錨定模式，會連正式測試目錄一起吃掉
+# （tests/ 底下 6 個檔案曾有 4 個從未被 git 追蹤）。只還原正式測試目錄。
+!tests/test_*.py
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
