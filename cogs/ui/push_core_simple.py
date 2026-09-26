@@ -63,6 +63,20 @@ API_HEADERS = {
 # ========== 資料庫實現 ==========
 
 
+def _empty_vote_stats() -> dict[str, int]:
+    """回傳五種投票類型皆為 0 的統計字典。
+
+    每次呼叫都建立新物件，避免多處共用同一個可變字典而互相汙染。
+    """
+    return {
+        "masterpiece": 0,
+        "great": 0,
+        "decent": 0,
+        "small_audience": 0,
+        "disaster": 0,
+    }
+
+
 class AnimePushDB:
     """動畫推送專用資料庫 - 只維護 anime_notified 表"""
 
@@ -293,13 +307,7 @@ class AnimePushDB:
             conn.close()
 
             # 初始化所有投票類型為0
-            vote_stats = {
-                "masterpiece": 0,
-                "great": 0,
-                "decent": 0,
-                "small_audience": 0,
-                "disaster": 0,
-            }
+            vote_stats = _empty_vote_stats()
 
             # 填入實際統計值
             for row in rows:
@@ -314,13 +322,49 @@ class AnimePushDB:
             return vote_stats
         except Exception as e:
             logger.error(f"❌ 獲取投票統計失敗: {e}")
-            return {
-                "masterpiece": 0,
-                "great": 0,
-                "decent": 0,
-                "small_audience": 0,
-                "disaster": 0,
-            }
+            return _empty_vote_stats()
+
+    def get_vote_stats_by_anime(self, anime_sn: int) -> dict[str, int]:
+        """獲取整部動畫（animeSn）所有已推送集數的累計投票統計。
+
+        與 get_vote_stats 的差別只在聚合範圍：本方法跨集數加總，供單集 embed
+        呈現「全系列累計」表現；get_vote_stats 則限縮在單集或單則 embed。
+
+        Args:
+            anime_sn: 動畫系列編號（animeSn），非單集的 videoSn
+
+        Returns:
+            五種投票類型的累計票數；查詢失敗時全為 0。
+        """
+        try:
+            conn = self._get_conn()
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT vote_type, COUNT(*) as count
+                FROM anime_votes
+                WHERE animeSn = ? AND vote_type != 'comment'
+                GROUP BY vote_type
+                """,
+                (anime_sn,),
+            )
+            rows = c.fetchall()
+            conn.close()
+
+            vote_stats = _empty_vote_stats()
+            for row in rows:
+                vote_type = row[0]
+                # 連線使用 text_factory = bytes，字串欄位需解碼為 str 才能與 str 鍵比對
+                if isinstance(vote_type, bytes):
+                    vote_type = vote_type.decode("utf-8")
+                count = int(row[1])
+                if vote_type in vote_stats:
+                    vote_stats[vote_type] = count
+
+            return vote_stats
+        except Exception as e:
+            logger.error(f"❌ 獲取全系列投票統計失敗 animeSn={anime_sn}: {e}")
+            return _empty_vote_stats()
 
     def get_vote_comments(self, video_sn: int, limit: int = 10) -> list[dict]:
         """獲取指定動畫的評論"""
@@ -1386,6 +1430,9 @@ class AnimeDatabase:
 
     def get_vote_stats(self, *args, **kwargs):
         return self.db.get_vote_stats(*args, **kwargs)
+
+    def get_vote_stats_by_anime(self, *args, **kwargs):
+        return self.db.get_vote_stats_by_anime(*args, **kwargs)
 
     def get_vote_comments(self, *args, **kwargs):
         return self.db.get_vote_comments(*args, **kwargs)
