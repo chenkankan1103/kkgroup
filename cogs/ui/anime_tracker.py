@@ -35,6 +35,7 @@ from cogs.ui.push_core_simple import (
     fetch_all_recent_anime_from_api,
     fetch_anime_episodes_with_views,
     EPISODE_SNAPSHOT_CONCURRENCY,
+    EPISODE_SNAPSHOT_MAX_ATTEMPTS,
 )
 from cogs.ui.schedule_tracker import AnimeScheduleTracker
 
@@ -95,6 +96,9 @@ class AnimeTracker(commands.Cog):
         self.schedule_tracker = None
         self._running = False
         self._push_tick = 0
+        # 單集快照的重試計數：week_start → 已嘗試次數。整批失敗時靠它避免
+        # 每 30 分鐘無限重打；成功寫入後即清除
+        self._episode_attempts: dict[str, int] = {}
 
     async def set_dependencies(self, db_path: str = None):
         """設置依賴元件 - 初始化增強版推送系統並啟動"""
@@ -141,6 +145,10 @@ class AnimeTracker(commands.Cog):
         # 啟動每週觀看數快照循環（內建週日 22:00 閘門 + DB 冪等，可安全重跑）
         if not self.weekly_growth_loop.is_running():
             self.weekly_growth_loop.start()
+
+        # 啟動單集快照循環（與上面同一時點，但獨立重試，避免整批失敗就永久遺失該週）
+        if not self.episode_snapshot_loop.is_running():
+            self.episode_snapshot_loop.start()
 
         self._running = True
         msg = "✅ [AnimeTracker.set_dependencies] 增強版推送系統啟動完成 (排程+輪詢備案+週表刷新)"
@@ -334,12 +342,48 @@ class AnimeTracker(commands.Cog):
         """等待 bot 就緒後再開始快照循環"""
         await self.bot.wait_until_ready()
 
-    async def _run_weekly_growth(self, week_start: str):
-        """對全番取一次觀看數快照，接著推送成長圖"""
+    @tasks.loop(minutes=30)
+    async def episode_snapshot_loop(self):
+        """每週單集觀看數快照（與週成長快照同時點，但獨立重試）
+
+        獨立成一個 loop 而非掛在 _run_weekly_growth 之後：系列快照一存檔，
+        weekly_growth_loop 的閘門就會擋掉後續執行，若單集抓取整批失敗，那一週
+        就永久遺失（巴哈 API 不提供歷史，補不回來）。這裡只認 has_episode_snapshot，
+        整批失敗時下一輪（30 分鐘後）自動重試。
+        """
+        if not self.db:
+            return
+        try:
+            now = datetime.now(TW_TZ)
+            days_since_sunday = (now.weekday() + 1) % 7
+            sunday = (now - timedelta(days=days_since_sunday)).replace(
+                hour=GROWTH_SNAPSHOT_HOUR, minute=0, second=0, microsecond=0
+            )
+            if now < sunday:
+                return  # 本週觸發時刻還沒到
+
+            week_start = (sunday - timedelta(days=6)).date().isoformat()
+            if self.db.has_episode_snapshot(week_start):
+                return  # 本週已完整快照
+
+            await self._run_episode_snapshot(week_start)
+        except Exception as e:
+            logger.error(f"❌ [episode_snapshot_loop] 執行失敗: {e}", exc_info=True)
+
+    @episode_snapshot_loop.before_loop
+    async def before_episode_snapshot_loop(self):
+        """等待 bot 就緒後再開始快照循環"""
+        await self.bot.wait_until_ready()
+
+    async def _fetch_anime_rows(self) -> tuple[list[dict], dict[int, str]]:
+        """從 index API 取得「一部番一列」與封面表
+
+        系列快照與單集快照都需要這份清單（單集快照要的是每部的最新集 videoSn），
+        故抽成共用方法讓兩個 loop 各自取用。
+        """
         episodes = await fetch_all_recent_anime_from_api()
         if not episodes:
-            logger.warning("⚠️ [weekly_growth] API 無資料，本週快照略過")
-            return
+            return [], {}
 
         # 一部番一列（API 兩個陣列已去重，仍防禦同 animeSn 多集，取觀看數高者）
         # 封面在此順手收進記憶體供卡片用——快照表沒存 cover，而這支 API 已經回傳了，
@@ -368,33 +412,59 @@ class AnimeTracker(commands.Cog):
         rows = sorted(anime_map.values(), key=lambda r: r["total_views"], reverse=True)
         for idx, row in enumerate(rows, 1):
             row["rank"] = idx
+        return rows, covers
+
+    async def _run_weekly_growth(self, week_start: str):
+        """對全番取一次觀看數快照，接著推送成長圖"""
+        rows, covers = await self._fetch_anime_rows()
+        if not rows:
+            logger.warning("⚠️ [weekly_growth] API 無資料，本週快照略過")
+            return
 
         written = self.db.save_view_snapshot(week_start, rows)
         logger.info(f"📸 [weekly_growth] 快照完成 {week_start}: {written} 筆")
 
-        # 單集快照與系列快照同一時點寫入——兩份資料要能互相對照，時間點必須一致。
-        # 失敗不影響系列快照與推送（當週推送的資料來源是系列快照）
-        await self._snapshot_episodes(week_start, rows)
-
         await self._push_growth_embed(week_start, covers)
 
-    async def _snapshot_episodes(self, week_start: str, rows: list[dict]):
-        """對每部番逐集抓觀看數並落地
+    async def _run_episode_snapshot(self, week_start: str):
+        """抓取並落地某週的單集觀看數
+
+        獨立於 weekly_growth_loop：系列快照一存檔，那支 loop 的閘門就會擋掉後續
+        執行，若單集抓取整批失敗（例如被巴哈限流），該週就永久遺失。這裡只認
+        has_episode_snapshot，整批失敗（0 筆）時下一輪會自動重試。
+        """
+        attempts = self._episode_attempts.get(week_start, 0)
+        if attempts >= EPISODE_SNAPSHOT_MAX_ATTEMPTS:
+            return  # 已達重試上限，避免持續失敗時每半小時重打一次全量請求
+
+        rows, _ = await self._fetch_anime_rows()
+        if not rows:
+            logger.warning("⚠️ [episode_snapshot] API 無資料，本輪略過（下輪重試）")
+            return
+
+        self._episode_attempts[week_start] = attempts + 1
+        written = await self._snapshot_episodes(week_start, rows)
+        if written:
+            self._episode_attempts.pop(week_start, None)
+        else:
+            logger.warning(
+                f"⚠️ [episode_snapshot] {week_start} 本輪 0 筆，"
+                f"第 {attempts + 1}/{EPISODE_SNAPSHOT_MAX_ATTEMPTS} 次嘗試"
+            )
+
+    async def _snapshot_episodes(self, week_start: str, rows: list[dict]) -> int:
+        """對每部番逐集抓觀看數並落地，回傳寫入筆數
 
         這份資料有時效性：巴哈 API 不提供歷史，漏掉一週就永久少一週。口碑發酵
         曲線（ep1 逐週增量）需要連續數週才看得出形狀，故圖表尚未實作也先存。
 
-        部分失敗時仍寫入已取得的列——同週不會重跑，留下部分資料遠優於全數丟棄，
-        失敗部數會記在 log 供事後判讀該週資料是否完整。
+        部分失敗時仍寫入已取得的列——留下部分資料遠優於全數丟棄，失敗部數記在
+        log 供事後判讀該週是否完整；整批失敗回傳 0，由呼叫端決定是否重試。
         """
-        if self.db.has_episode_snapshot(week_start):
-            logger.info(f"⏭️ [episode_snapshot] {week_start} 已有單集快照，略過")
-            return
-
         targets = [(r["anime_sn"], r["video_sn"]) for r in rows if r.get("video_sn")]
         if not targets:
             logger.warning("⚠️ [episode_snapshot] 無可用 videoSn，略過")
-            return
+            return 0
 
         sem = asyncio.Semaphore(EPISODE_SNAPSHOT_CONCURRENCY)
         try:
@@ -407,7 +477,7 @@ class AnimeTracker(commands.Cog):
                 )
         except Exception as e:
             logger.error(f"❌ [episode_snapshot] 抓取失敗: {e}", exc_info=True)
-            return
+            return 0
 
         ep_rows = [r for group in results for r in group]
         failed = sum(1 for g in results if not g)
@@ -416,6 +486,7 @@ class AnimeTracker(commands.Cog):
             f"📸 [episode_snapshot] 完成 {week_start}: {written} 筆"
             f"（{len(targets)} 部，失敗 {failed} 部）"
         )
+        return written
 
     async def _push_growth_embed(self, week_start: str, covers: dict[int, str] = None):
         """推送本週成長排行與折線圖，並附上名次變動最大的卡片"""
