@@ -872,7 +872,7 @@ class AnimePushDB:
             c = conn.cursor()
             c.execute(
                 """SELECT s.anime_sn, s.anime_name, s.total_views, s.rank, s.volume_ep,
-                          p.total_views, p.volume_ep
+                          p.total_views, p.volume_ep, p.rank
                    FROM anime_view_snapshots s
                    JOIN anime_view_snapshots p ON p.anime_sn = s.anime_sn
                    WHERE s.week_start = ? AND p.week_start = ? AND p.total_views > 0
@@ -890,6 +890,7 @@ class AnimePushDB:
                         "rank": row[3],
                         "volume_ep": vol,
                         "prev_views": row[5],
+                        "prev_rank": row[7],
                         "growth": row[2] - row[5],
                         # 本週集數增加 → 成長含新集本身的觀看數，非單純舊集累積
                         "is_new_ep": bool(vol and prev_vol and vol > prev_vol),

@@ -42,6 +42,10 @@ GROWTH_SNAPSHOT_WEEKDAY = 6  # 0=週一 ... 6=週日
 GROWTH_SNAPSHOT_HOUR = 22  # 週日 22:00（避開 02:00 週表刷新與 API 尖峰）
 GROWTH_CHART_WEEKS = 12  # 折線圖回溯週數
 GROWTH_TOP_N = 10  # 成長排行取前 N 名
+GROWTH_MOVER_N = 3  # 黑馬卡片取前 N 名
+# 只取累計排名前 N 名：擋掉小基數造成的假高成長率（基數 1,000 漲到 2,000 就是
+# +100%，但那沒有意義），同時後段番本來就不是使用者關心的範圍
+GROWTH_MOVER_RANK_LIMIT = GROWTH_TOP_N * 3
 QUICKCHART_URL_LIMIT = 2048  # Discord embed 圖片 URL 上限
 GROWTH_VIEW_UNIT = 1000  # 折線圖 Y 值除以一千（成長值動輒 6 位數，不縮放塞不進 URL）
 _CHART_COLORS = [
@@ -335,11 +339,16 @@ class AnimeTracker(commands.Cog):
             return
 
         # 一部番一列（API 兩個陣列已去重，仍防禦同 animeSn 多集，取觀看數高者）
+        # 封面在此順手收進記憶體供卡片用——快照表沒存 cover，而這支 API 已經回傳了，
+        # 沒有理由為了縮圖再打一次 API 或改 schema
+        covers: dict[int, str] = {}
         anime_map: dict[int, dict] = {}
         for ep in episodes:
             sn = ep.get("animeSn")
             if not sn:
                 continue
+            if ep.get("cover"):
+                covers[int(sn)] = str(ep["cover"])
             views = int(ep.get("popular") or 0)
             prev = anime_map.get(int(sn))
             if prev is not None and views <= prev["total_views"]:
@@ -358,10 +367,11 @@ class AnimeTracker(commands.Cog):
         written = self.db.save_view_snapshot(week_start, rows)
         logger.info(f"📸 [weekly_growth] 快照完成 {week_start}: {written} 筆")
 
-        await self._push_growth_embed(week_start)
+        await self._push_growth_embed(week_start, covers)
 
-    async def _push_growth_embed(self, week_start: str):
-        """推送本週成長排行與折線圖"""
+    async def _push_growth_embed(self, week_start: str, covers: dict[int, str] = None):
+        """推送本週成長排行與折線圖，並附上名次變動最大的卡片"""
+        covers = covers or {}
         weeks = self.db.get_snapshot_weeks(limit=GROWTH_CHART_WEEKS)
         if week_start not in weeks:
             return
@@ -378,7 +388,7 @@ class AnimeTracker(commands.Cog):
                 color=discord.Color.blue(),
                 timestamp=datetime.now(TW_TZ),
             )
-            await self._send_growth_embed(embed)
+            await self._send_growth_embed([embed])
             return
 
         prev_week = weeks[idx + 1]
@@ -417,17 +427,65 @@ class AnimeTracker(commands.Cog):
         embed.set_footer(
             text="每週日 22:00 自動快照 | 成長 = 本週累計 − 上週累計 | 🆕 本週有新集"
         )
-        await self._send_growth_embed(embed)
+        embeds = [embed]
+        risers = self._pick_risers(growth)
+        if risers:
+            embeds.append(
+                discord.Embed(
+                    title="🚀 本週成長率最高",
+                    description=(
+                        "不看絕對量，看**相對自己基底的漲幅**——"
+                        "成長量永遠由大番霸榜，成長率才看得出誰在加速"
+                    ),
+                    color=discord.Color.blurple(),
+                )
+            )
+            embeds.extend(self._build_mover_embed(r, covers) for r in risers)
+        await self._send_growth_embed(embeds)
 
-    async def _send_growth_embed(self, embed: discord.Embed):
-        """送往動畫推送頻道"""
+    @staticmethod
+    def _pick_risers(growth: list[dict]) -> list[dict]:
+        """挑出週成長率最高的幾部（黑馬）
+
+        用成長率而非成長量：成長量永遠由大番霸榜，看不出「誰在加速」。改用
+        累計名次變動也不行——popular 是累計值只增不減，名次天生黏著，實測單週
+        只有 ±2 名的雜訊。成長率才是 2 週資料就能算出的黑馬訊號。
+        """
+        cand = [
+            g
+            for g in growth
+            if g["rank"] <= GROWTH_MOVER_RANK_LIMIT and g["prev_views"]
+        ]
+        cand.sort(key=lambda g: g["growth"] / g["prev_views"], reverse=True)
+        return cand[:GROWTH_MOVER_N]
+
+    def _build_mover_embed(self, item: dict, covers: dict[int, str]) -> discord.Embed:
+        """單一黑馬卡片：標題即成長率，另附絕對量與名次供對照"""
+        pct = item["growth"] / item["prev_views"] * 100
+        name = item["anime_name"]
+        if len(name) > 30:
+            name = name[:30] + "…"
+        embed = discord.Embed(
+            title=f"🚀 +{pct:.1f}%　{name}",
+            color=discord.Color.green(),
+        )
+        cover = covers.get(item["anime_sn"])
+        if cover:
+            embed.set_thumbnail(url=cover)
+        embed.add_field(name="本週新增", value=f"{item['growth']:,}", inline=True)
+        embed.add_field(name="累計觀看", value=f"{item['total_views']:,}", inline=True)
+        embed.add_field(name="累計排名", value=f"#{item['rank']}", inline=True)
+        return embed
+
+    async def _send_growth_embed(self, embeds: list[discord.Embed]):
+        """送往動畫推送頻道（Discord 一則訊息上限 10 個 embed）"""
         channel = self.bot.get_channel(ANIME_CHANNEL_ID)
         if channel is None:
             logger.warning(f"⚠️ [weekly_growth] 找不到頻道 {ANIME_CHANNEL_ID}")
             return
         try:
-            await channel.send(embed=embed)
-            logger.info("✅ [weekly_growth] 成長排行已推送")
+            await channel.send(embeds=embeds)
+            logger.info(f"✅ [weekly_growth] 成長排行已推送（{len(embeds)} 個 embed）")
         except Exception as e:
             logger.error(f"❌ [weekly_growth] 推送失敗: {e}", exc_info=True)
 
