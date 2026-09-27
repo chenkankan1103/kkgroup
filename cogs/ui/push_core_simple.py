@@ -63,6 +63,17 @@ API_HEADERS = {
 # ========== 資料庫實現 ==========
 
 
+def _as_text(value) -> str:
+    """把查出的 TEXT 欄位正規化為 str。
+
+    _get_conn() 設了 text_factory=bytes，字串欄位讀出來是 bytes；
+    少了這層轉換，番名會以 b'...' 形式寫進 embed 與圖表標籤。
+    """
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return "" if value is None else str(value)
+
+
 def _empty_vote_stats() -> dict[str, int]:
     """回傳五種投票類型皆為 0 的統計字典。
 
@@ -131,6 +142,22 @@ class AnimePushDB:
                 animeData TEXT,
                 videoSn INTEGER,
                 createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # anime_view_snapshots 表 - 每週觀看數快照（時間序列，供成長折線圖）
+        # 每週日 22:00 對 index API 全量快照一次；total_views 為系列累計觀看數，
+        # 逐週相減即得「每週新增觀看數」（PK 為 week_start+anime_sn，同週重跑覆蓋）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_view_snapshots (
+                week_start TEXT NOT NULL,      -- 該週週一 'YYYY-MM-DD'
+                anime_sn INTEGER NOT NULL,
+                anime_name TEXT NOT NULL,
+                total_views INTEGER NOT NULL,  -- index API 的 popular（系列累計）
+                volume_ep INTEGER,             -- 當時集數，供標記「本週有新集」
+                rank INTEGER,                  -- 該週在清單中的排名
+                captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (week_start, anime_sn)
             )
         """)
 
@@ -737,6 +764,138 @@ class AnimePushDB:
             )
             conn.rollback()
             return False
+        finally:
+            conn.close()
+
+    # ---- 每週觀看數快照（成長折線圖）----
+
+    def has_view_snapshot(self, week_start: str) -> bool:
+        """檢查某週是否已有快照（讓每週任務可重跑而不重複快照）"""
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.execute(
+                "SELECT 1 FROM anime_view_snapshots WHERE week_start=? LIMIT 1",
+                (week_start,),
+            )
+            return c.fetchone() is not None
+        finally:
+            conn.close()
+
+    def save_view_snapshot(self, week_start: str, rows: list[dict]) -> int:
+        """寫入某週的觀看數快照，回傳寫入筆數
+
+        rows 每筆需含 anime_sn / anime_name / total_views，選填 volume_ep / rank。
+        同週重跑為覆蓋（PK 為 week_start+anime_sn），不會累積重複列。
+        """
+        if not rows:
+            return 0
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.executemany(
+                """INSERT OR REPLACE INTO anime_view_snapshots
+                   (week_start, anime_sn, anime_name, total_views, volume_ep, rank)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        week_start,
+                        int(r["anime_sn"]),
+                        str(r["anime_name"]),
+                        int(r["total_views"]),
+                        r.get("volume_ep"),
+                        r.get("rank"),
+                    )
+                    for r in rows
+                ],
+            )
+            conn.commit()
+            return len(rows)
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] save_view_snapshot 失敗: {e}", exc_info=True)
+            conn.rollback()
+            return 0
+        finally:
+            conn.close()
+
+    def get_snapshot_weeks(self, limit: int = 12) -> list[str]:
+        """取得最近 N 個快照週次（新→舊）"""
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.execute(
+                "SELECT DISTINCT week_start FROM anime_view_snapshots "
+                "ORDER BY week_start DESC LIMIT ?",
+                (limit,),
+            )
+            return [_as_text(r[0]) for r in c.fetchall()]
+        finally:
+            conn.close()
+
+    def get_snapshots_range(self, weeks: list[str]) -> list[dict]:
+        """取得指定週次的所有快照（供成長序列計算）"""
+        if not weeks:
+            return []
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            placeholders = ",".join("?" * len(weeks))
+            c.execute(
+                f"""SELECT week_start, anime_sn, anime_name, total_views, volume_ep, rank
+                    FROM anime_view_snapshots
+                    WHERE week_start IN ({placeholders})
+                    ORDER BY week_start""",
+                weeks,
+            )
+            return [
+                {
+                    "week_start": _as_text(row[0]),
+                    "anime_sn": row[1],
+                    "anime_name": _as_text(row[2]),
+                    "total_views": row[3],
+                    "volume_ep": row[4],
+                    "rank": row[5],
+                }
+                for row in c.fetchall()
+            ]
+        finally:
+            conn.close()
+
+    def get_weekly_growth(self, week_start: str, prev_week: str) -> list[dict]:
+        """計算某週相對前一週的每週新增觀看數（依成長數新→舊排序）
+
+        過濾 p.total_views <= 0：前值為 0 代表該番當週才上架（如夏秋番交接期
+        新番），此時「本週 - 0」是上架至今累計而非單週新增，會造成假黑馬。
+        """
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.execute(
+                """SELECT s.anime_sn, s.anime_name, s.total_views, s.rank, s.volume_ep,
+                          p.total_views, p.volume_ep
+                   FROM anime_view_snapshots s
+                   JOIN anime_view_snapshots p ON p.anime_sn = s.anime_sn
+                   WHERE s.week_start = ? AND p.week_start = ? AND p.total_views > 0
+                   ORDER BY (s.total_views - p.total_views) DESC""",
+                (week_start, prev_week),
+            )
+            out = []
+            for row in c.fetchall():
+                vol, prev_vol = row[4], row[6]
+                out.append(
+                    {
+                        "anime_sn": row[0],
+                        "anime_name": _as_text(row[1]),
+                        "total_views": row[2],
+                        "rank": row[3],
+                        "volume_ep": vol,
+                        "prev_views": row[5],
+                        "growth": row[2] - row[5],
+                        # 本週集數增加 → 成長含新集本身的觀看數，非單純舊集累積
+                        "is_new_ep": bool(vol and prev_vol and vol > prev_vol),
+                    }
+                )
+            return out
         finally:
             conn.close()
 

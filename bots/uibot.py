@@ -200,7 +200,6 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
         # anime_tracker 子模組：它們是內部模組，不應獨立載入為 Cog
         "push_core",
         "schedule_tracker",
-        "ranking_stats",
         # cogs/ui 工具／事件模組：僅供 import 使用，沒有 setup()，載入為 Cog 必然失敗
         "plant_utils",
         "paperdoll_manager",

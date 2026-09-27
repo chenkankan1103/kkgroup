@@ -9,7 +9,9 @@ Bahamut 動畫追蹤 Cog - 增強版排程推送系統
 """
 
 import logging
+import json
 from datetime import datetime, timedelta
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 import asyncio
 import discord
@@ -29,10 +31,37 @@ from cogs.ui.push_core_simple import (
     ANIME_PUSH_DB_PATH,
     ANIME_CHANNEL_ID,
     TW_TZ,
+    fetch_all_recent_anime_from_api,
 )
 from cogs.ui.schedule_tracker import AnimeScheduleTracker
 
 logger = logging.getLogger(__name__)
+
+# 每週成長快照設定
+GROWTH_SNAPSHOT_WEEKDAY = 6  # 0=週一 ... 6=週日
+GROWTH_SNAPSHOT_HOUR = 22  # 週日 22:00（避開 02:00 週表刷新與 API 尖峰）
+GROWTH_CHART_WEEKS = 12  # 折線圖回溯週數
+GROWTH_TOP_N = 10  # 成長排行取前 N 名
+QUICKCHART_URL_LIMIT = 2048  # Discord embed 圖片 URL 上限
+GROWTH_VIEW_UNIT = 1000  # 折線圖 Y 值除以一千（成長值動輒 6 位數，不縮放塞不進 URL）
+_CHART_COLORS = [
+    "#FFD700",
+    "#FF6384",
+    "#36A2EB",
+    "#4BC0C0",
+    "#9966FF",
+    "#FF9F40",
+    "#8BC34A",
+    "#E91E63",
+    "#00BCD4",
+    "#795548",
+]
+
+
+def _parse_volume_ep(volume) -> Optional[int]:
+    """從 volume 字串（'第14集'）解析出集數 14，供標記「本週有新集」"""
+    digits = "".join(ch for ch in str(volume or "") if ch.isdigit())
+    return int(digits) if digits else None
 
 
 class AnimeTracker(commands.Cog):
@@ -88,6 +117,10 @@ class AnimeTracker(commands.Cog):
         # 啟動週表刷新循環（refresh_weekly_schedule 內建 02:00 時間閘門）
         if not self.weekly_schedule_refresh_loop.is_running():
             self.weekly_schedule_refresh_loop.start()
+
+        # 啟動每週觀看數快照循環（內建週日 22:00 閘門 + DB 冪等，可安全重跑）
+        if not self.weekly_growth_loop.is_running():
+            self.weekly_growth_loop.start()
 
         self._running = True
         msg = "✅ [AnimeTracker.set_dependencies] 增強版推送系統啟動完成 (排程+輪詢備案+週表刷新)"
@@ -188,6 +221,8 @@ class AnimeTracker(commands.Cog):
             self.push_check_loop.cancel()
         if self.weekly_schedule_refresh_loop.is_running():
             self.weekly_schedule_refresh_loop.cancel()
+        if self.weekly_growth_loop.is_running():
+            self.weekly_growth_loop.cancel()
         if self._running:
             if self.polling_core:
                 await self.polling_core.stop_polling()
@@ -244,6 +279,237 @@ class AnimeTracker(commands.Cog):
     async def before_weekly_schedule_refresh_loop(self):
         """等待 bot 就緒後再開始刷新循環"""
         await self.bot.wait_until_ready()
+
+    # ==================== 每週觀看數快照與成長推送 ====================
+
+    @tasks.loop(minutes=30)
+    async def weekly_growth_loop(self):
+        """每週日 22:00 快照全番觀看數，並推送成長折線圖
+
+        閘門不寫死「必須剛好 22:00」，而是「已過本週的週日 22:00 且本週尚未
+        快照」就執行——bot 在觸發時刻重啟也不會漏掉該週，且 has_view_snapshot
+        保證重跑不產生重複快照。
+        """
+        if not self.db:
+            return
+        try:
+            now = datetime.now(TW_TZ)
+            days_since_sunday = (now.weekday() + 1) % 7
+            sunday = (now - timedelta(days=days_since_sunday)).replace(
+                hour=GROWTH_SNAPSHOT_HOUR, minute=0, second=0, microsecond=0
+            )
+            if now < sunday:
+                return  # 本週觸發時刻還沒到
+
+            week_start = (sunday - timedelta(days=6)).date().isoformat()
+            if self.db.has_view_snapshot(week_start):
+                return  # 本週已快照
+
+            await self._run_weekly_growth(week_start)
+        except Exception as e:
+            logger.error(f"❌ [weekly_growth_loop] 執行失敗: {e}", exc_info=True)
+
+    @weekly_growth_loop.before_loop
+    async def before_weekly_growth_loop(self):
+        """等待 bot 就緒後再開始快照循環"""
+        await self.bot.wait_until_ready()
+
+    async def _run_weekly_growth(self, week_start: str):
+        """對全番取一次觀看數快照，接著推送成長圖"""
+        episodes = await fetch_all_recent_anime_from_api()
+        if not episodes:
+            logger.warning("⚠️ [weekly_growth] API 無資料，本週快照略過")
+            return
+
+        # 一部番一列（API 兩個陣列已去重，仍防禦同 animeSn 多集，取觀看數高者）
+        anime_map: dict[int, dict] = {}
+        for ep in episodes:
+            sn = ep.get("animeSn")
+            if not sn:
+                continue
+            views = int(ep.get("popular") or 0)
+            prev = anime_map.get(int(sn))
+            if prev is not None and views <= prev["total_views"]:
+                continue
+            anime_map[int(sn)] = {
+                "anime_sn": int(sn),
+                "anime_name": str(ep.get("title") or f"Anime #{sn}"),
+                "total_views": views,
+                "volume_ep": _parse_volume_ep(ep.get("volume")),
+            }
+
+        rows = sorted(anime_map.values(), key=lambda r: r["total_views"], reverse=True)
+        for idx, row in enumerate(rows, 1):
+            row["rank"] = idx
+
+        written = self.db.save_view_snapshot(week_start, rows)
+        logger.info(f"📸 [weekly_growth] 快照完成 {week_start}: {written} 筆")
+
+        await self._push_growth_embed(week_start)
+
+    async def _push_growth_embed(self, week_start: str):
+        """推送本週成長排行與折線圖"""
+        weeks = self.db.get_snapshot_weeks(limit=GROWTH_CHART_WEEKS)
+        if week_start not in weeks:
+            return
+        idx = weeks.index(week_start)
+
+        if idx + 1 >= len(weeks):
+            # 首次快照：只有基準，沒有可相減的前一週
+            embed = discord.Embed(
+                title="📈 新番週成長排行 — 基準已建立",
+                description=(
+                    f"已於 **{week_start}** 建立全番觀看數基準。\n"
+                    "下週日起將顯示每週新增觀看數折線圖。"
+                ),
+                color=discord.Color.blue(),
+                timestamp=datetime.now(TW_TZ),
+            )
+            await self._send_growth_embed(embed)
+            return
+
+        prev_week = weeks[idx + 1]
+        growth = self.db.get_weekly_growth(week_start, prev_week)
+        if not growth:
+            logger.warning(f"⚠️ [weekly_growth] {week_start} 無可比對的成長資料")
+            return
+
+        top = growth[:GROWTH_TOP_N]
+        chart_url = self._build_growth_chart(weeks, [t["anime_sn"] for t in top])
+
+        # 圖表 Y 軸已被 GROWTH_VIEW_UNIT 縮放，且為了省 URL 長度拿掉了 options 區塊，
+        # 軸上不會再出現單位——改在這裡說明，否則數字會被誤讀成實際觀看數
+        unit_note = "（圖表單位：千）" if chart_url else ""
+        embed = discord.Embed(
+            title="📈 新番週成長排行",
+            description=f"**{prev_week} → {week_start}** 每週新增觀看數{unit_note}",
+            color=discord.Color.gold(),
+            timestamp=datetime.now(TW_TZ),
+        )
+        if chart_url:
+            embed.set_image(url=chart_url)
+
+        lines = []
+        for rank, item in enumerate(top, 1):
+            medal = ["🥇", "🥈", "🥉"][rank - 1] if rank <= 3 else f"#{rank}"
+            name = item["anime_name"]
+            if len(name) > 20:
+                name = name[:20] + "…"
+            mark = " 🆕" if item["is_new_ep"] else ""
+            lines.append(
+                f"{medal} **{name}**{mark} `+{item['growth']:,}`"
+                f"（累計 {item['total_views']:,}）"
+            )
+        embed.add_field(name="📋 成長名單", value="\n".join(lines), inline=False)
+        embed.set_footer(
+            text="每週日 22:00 自動快照 | 成長 = 本週累計 − 上週累計 | 🆕 本週有新集"
+        )
+        await self._send_growth_embed(embed)
+
+    async def _send_growth_embed(self, embed: discord.Embed):
+        """送往動畫推送頻道"""
+        channel = self.bot.get_channel(ANIME_CHANNEL_ID)
+        if channel is None:
+            logger.warning(f"⚠️ [weekly_growth] 找不到頻道 {ANIME_CHANNEL_ID}")
+            return
+        try:
+            await channel.send(embed=embed)
+            logger.info("✅ [weekly_growth] 成長排行已推送")
+        except Exception as e:
+            logger.error(f"❌ [weekly_growth] 推送失敗: {e}", exc_info=True)
+
+    @staticmethod
+    def _short_name(name: str, limit: int = 4) -> str:
+        """圖例用的短名（中文經 URL 編碼後每字 9 字元，是 URL 長度的最大單一成本）
+
+        4 字是量測出來的上限：10 條線 × 11 週時，5 字名會讓 URL 超過 2048。
+        完整番名在 embed 的成長名單裡，圖例只求認得出是哪條線。
+        """
+        name = (name or "").strip()
+        return name if len(name) <= limit else name[:limit] + "…"
+
+    def _build_growth_chart(
+        self, weeks_new_to_old: list[str], top_sns: list[int]
+    ) -> Optional[str]:
+        """組 quickchart 折線圖 URL：X 軸為週次，每部番一條線，Y 軸為每週新增
+
+        兩個壓縮關鍵（少了任一項，10 線 × 11 週會爆 2048 字元上限）：
+        1. Y 值除以 GROWTH_VIEW_UNIT——成長值動輒 6 位數，10 條線 × 11 點光數字
+           就吃掉近千字元。
+        2. quote(safe=",:")——預設會把 JSON 的 `,` 與 `:` 編成 %2C/%3A，讓結構
+           字元成本三倍；這兩者在 query string 中本就可原樣傳遞。
+
+        仍保留由大而小的降級階梯（先減線數、再減週數）作為保險。
+        """
+        if len(weeks_new_to_old) < 2 or not top_sns:
+            return None
+
+        snaps = self.db.get_snapshots_range(weeks_new_to_old)
+        by_week: dict[str, dict[int, int]] = {}
+        names: dict[int, str] = {}
+        for s in snaps:
+            by_week.setdefault(s["week_start"], {})[s["anime_sn"]] = s["total_views"]
+            names.setdefault(s["anime_sn"], s["anime_name"])
+
+        ordered = list(reversed(weeks_new_to_old))  # 舊 → 新
+        all_labels = [w[5:].replace("-", "/") for w in ordered[1:]]  # 'MM/DD'
+
+        def series_for(sn: int) -> list[Optional[int]]:
+            """每週新增觀看數，已除以 GROWTH_VIEW_UNIT（圖表單位：千）"""
+            pts: list[Optional[int]] = []
+            for i in range(1, len(ordered)):
+                cur = by_week.get(ordered[i], {}).get(sn)
+                prev = by_week.get(ordered[i - 1], {}).get(sn)
+                # 前值為 0 代表該番當週才上架，相減是上架至今累計而非單週新增
+                pts.append(
+                    round((cur - prev) / GROWTH_VIEW_UNIT)
+                    if (cur is not None and prev)
+                    else None
+                )
+            return pts
+
+        for max_lines, max_weeks in (
+            (GROWTH_TOP_N, 12),
+            (8, 12),
+            (6, 10),
+            (5, 8),
+            (4, 6),
+        ):
+            cut = min(len(all_labels), max_weeks - 1)
+            if cut <= 0:
+                continue
+            # 只留必要鍵：quickchart 的 Chart.js 預設值已足夠（圖例顯示），逐鍵寫出來
+            # 會讓每條線多約 90 字元。刻意不設 spanGaps——新番上架前的 null 本就該讓
+            # 線從首週才開始，硬連會畫出它不存在的歷史。
+            # fill 必須顯式關閉：quickchart 預設跑 Chart.js v2，而 v2 的 line 圖預設
+            # fill=true，10 條半透明填色會疊成一片混濁，第 4 名之後根本追不出哪條是哪條。
+            datasets = []
+            for i, sn in enumerate(top_sns[:max_lines]):
+                datasets.append(
+                    {
+                        "label": self._short_name(names.get(sn, str(sn))),
+                        "data": series_for(sn)[-cut:],
+                        "borderColor": _CHART_COLORS[i % len(_CHART_COLORS)],
+                        "fill": False,
+                    }
+                )
+            config = {
+                "type": "line",
+                "data": {"labels": all_labels[-cut:], "datasets": datasets},
+            }
+            encoded = quote(
+                json.dumps(config, separators=(",", ":"), ensure_ascii=False),
+                safe=",:",
+            )
+            url = f"https://quickchart.io/chart?bkg=white&w=900&h=400&c={encoded}"
+            if len(url) <= QUICKCHART_URL_LIMIT:
+                return url
+            logger.warning(
+                f"⚠️ [weekly_growth] 圖表 URL {len(url)} 字元超限，降級重試"
+                f"（{max_lines} 線 / {max_weeks} 週）"
+            )
+        logger.warning("⚠️ [weekly_growth] 圖表 URL 無法壓進 2048 字元，改為純文字推送")
+        return None
 
     @commands.Cog.listener()
     async def on_ready(self):
