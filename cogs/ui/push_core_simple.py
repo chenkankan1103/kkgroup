@@ -38,6 +38,20 @@ ANIME_PUSH_DB_PATH = Path(__file__).resolve().parent.parent.parent / "anime_push
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15
 
+# 單集觀看數 API：mobile_app 版只有系列累計 popular，單集數字只在這一支。
+# 回傳 data.anime.popular 為「該集」觀看數——同一部番打不同集數會得到不同值
+# （Re:Zero S4 ep16/17/18 = 159,167 / 157,685 / 136,653），可證非系列累計。
+# 同時 data.anime.episodes['0'] 直接附上全部集數的 videoSn，一次呼叫即取得集數清單，
+# 故每部番只需「集數」次請求（首呼已含最新集觀看數）。
+EPISODE_API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/video.php"
+
+# 單集快照的抓取參數：一部番要逐集打，全量約 800 次請求，故節流避免被巴哈擋。
+# 併發 4 + 每請求間隔 0.1 秒 ≈ 每秒 13 次，全量約 1~2 分鐘，一週一次可接受。
+EPISODE_SNAPSHOT_CONCURRENCY = 4
+EPISODE_SNAPSHOT_DELAY = 0.1
+# 長番（數百集）會讓請求數失控，僅為失控防護；正常一季 12~26 集不會觸及
+EPISODE_SNAPSHOT_MAX = 100
+
 # 完整瀏覽器指紋 Header
 API_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
@@ -158,6 +172,25 @@ class AnimePushDB:
                 rank INTEGER,                  -- 該週在清單中的排名
                 captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (week_start, anime_sn)
+            )
+        """)
+
+        # anime_episode_snapshots 表 - 每集觀看數快照（留存曲線與口碑發酵偵測）
+        # 系列累計（上表）只看得出「誰漲得多」，看不出「誰的觀眾留得住」。單集觀看
+        # 數的衰減形狀才看得出：ep1 = 觸及（開播前就決定的期待值），末集/ep1 = 留存。
+        # 另外 ep1 的逐週增量是新觀眾湧入的代理指標——補番的人一定從第 1 集開始，
+        # 而重刷的人刷的是高光集、不會回頭刷 ep1，這是唯一能從觀看數把「口碑發酵」
+        # 與「單集重刷」分開的訊號（重刷只造成單點尖峰，不會墊高基底）。
+        # 巴哈 API 不提供歷史資料，只能自己逐週累積，漏掉一週就永久少一週。
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_episode_snapshots (
+                week_start TEXT NOT NULL,      -- 該週週一 'YYYY-MM-DD'
+                anime_sn INTEGER NOT NULL,
+                episode INTEGER NOT NULL,      -- 集數，1 起算
+                views INTEGER NOT NULL,        -- 該集當下累計觀看數
+                video_sn INTEGER,              -- 供追蹤同一集後續變化
+                captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (week_start, anime_sn, episode)
             )
         """)
 
@@ -298,7 +331,9 @@ class AnimePushDB:
             logger.error(f"❌ 記錄投票失敗: {e}")
             return False
 
-    def get_vote_stats(self, video_sn: int, message_id: int | None = None) -> dict[str, int]:
+    def get_vote_stats(
+        self, video_sn: int, message_id: int | None = None
+    ) -> dict[str, int]:
         """獲取指定推播 embed（message_id）的投票統計。
 
         依 message_id 過濾可精確對應「同一則 embed」的統計；未提供 message_id
@@ -416,8 +451,12 @@ class AnimePushDB:
             comments = []
             for row in rows:
                 # 連線使用 text_factory = bytes，字串欄位需解碼為 str
-                user_hash = row[0].decode("utf-8") if isinstance(row[0], bytes) else row[0]
-                comment = row[1].decode("utf-8") if isinstance(row[1], bytes) else row[1]
+                user_hash = (
+                    row[0].decode("utf-8") if isinstance(row[0], bytes) else row[0]
+                )
+                comment = (
+                    row[1].decode("utf-8") if isinstance(row[1], bytes) else row[1]
+                )
                 comments.append(
                     {
                         "user_hash": user_hash,
@@ -812,7 +851,61 @@ class AnimePushDB:
             conn.commit()
             return len(rows)
         except Exception as e:
-            logger.error(f"❌ [AnimePushDB] save_view_snapshot 失敗: {e}", exc_info=True)
+            logger.error(
+                f"❌ [AnimePushDB] save_view_snapshot 失敗: {e}", exc_info=True
+            )
+            conn.rollback()
+            return 0
+        finally:
+            conn.close()
+
+    # ---- 每集觀看數快照（留存曲線 / 口碑發酵）----
+
+    def has_episode_snapshot(self, week_start: str) -> bool:
+        """檢查某週是否已有單集快照（讓每週任務可重跑而不重複抓取）"""
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.execute(
+                "SELECT 1 FROM anime_episode_snapshots WHERE week_start=? LIMIT 1",
+                (week_start,),
+            )
+            return c.fetchone() is not None
+        finally:
+            conn.close()
+
+    def save_episode_snapshot(self, week_start: str, rows: list[dict]) -> int:
+        """寫入某週的單集觀看數快照，回傳寫入筆數
+
+        rows 每筆需含 anime_sn / episode / views，選填 video_sn。
+        同週重跑為覆蓋（PK 為 week_start+anime_sn+episode），不會累積重複列。
+        """
+        if not rows:
+            return 0
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.executemany(
+                """INSERT OR REPLACE INTO anime_episode_snapshots
+                   (week_start, anime_sn, episode, views, video_sn)
+                   VALUES (?, ?, ?, ?, ?)""",
+                [
+                    (
+                        week_start,
+                        int(r["anime_sn"]),
+                        int(r["episode"]),
+                        int(r["views"]),
+                        r.get("video_sn"),
+                    )
+                    for r in rows
+                ],
+            )
+            conn.commit()
+            return len(rows)
+        except Exception as e:
+            logger.error(
+                f"❌ [AnimePushDB] save_episode_snapshot 失敗: {e}", exc_info=True
+            )
             conn.rollback()
             return 0
         finally:
@@ -944,6 +1037,102 @@ async def fetch_all_recent_anime_from_api() -> list[dict] | None:
     except Exception as e:
         logger.error(f"❌ Error fetching anime from API: {e}", exc_info=True)
         return None
+
+
+async def fetch_anime_episodes_with_views(
+    session: aiohttp.ClientSession,
+    anime_sn: int,
+    latest_video_sn: int,
+    sem: asyncio.Semaphore,
+) -> list[dict]:
+    """取得一部番所有集數的觀看數（供留存曲線與口碑發酵偵測）
+
+    首呼（最新集）同時回傳集數清單與該集觀看數，因此總請求數 = 集數而非集數 + 1。
+    任一步失敗只影響該部，回傳已取得的列，不讓單一部的錯誤中斷整批快照。
+    """
+    async with sem:
+        try:
+            async with session.get(
+                f"{EPISODE_API_ENDPOINT}?videoSn={latest_video_sn}",
+                timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
+                headers=API_HEADERS,
+            ) as resp:
+                if resp.status != 200:
+                    logger.debug(
+                        f"⚠️ [episode_snapshot] animeSn={anime_sn} status={resp.status}"
+                    )
+                    return []
+                data = (await resp.json()).get("data") or {}
+        except Exception as e:
+            logger.debug(f"⚠️ [episode_snapshot] animeSn={anime_sn} 首呼失敗: {e}")
+            return []
+
+        anime = data.get("anime") or {}
+        # episodes 是 dict（分割放送會有多個鍵），值為 {episode, videoSn} 清單
+        ep_map: dict[int, int] = {}
+        for eps in (anime.get("episodes") or {}).values():
+            for e in eps or []:
+                ep_no, vsn = e.get("episode"), e.get("videoSn")
+                if ep_no and vsn:
+                    ep_map[int(ep_no)] = int(vsn)
+        if not ep_map:
+            return []
+
+        # 長番（數百集）會讓請求數失控，僅作為失控防護；正常一季 12~26 集不會觸及
+        if len(ep_map) > EPISODE_SNAPSHOT_MAX:
+            logger.warning(
+                f"⚠️ [episode_snapshot] animeSn={anime_sn} 集數 {len(ep_map)} "
+                f"超過上限 {EPISODE_SNAPSHOT_MAX}，僅取前 {EPISODE_SNAPSHOT_MAX} 集"
+            )
+            ep_map = dict(sorted(ep_map.items())[:EPISODE_SNAPSHOT_MAX])
+
+        rows: list[dict] = []
+        # 首呼回傳的就是最新集的觀看數，直接沿用，省下重複請求
+        latest_ep = next(
+            (n for n, v in ep_map.items() if v == int(latest_video_sn)), None
+        )
+        if latest_ep is not None:
+            views = int(anime.get("popular") or 0)
+            if views:
+                rows.append(
+                    {
+                        "anime_sn": anime_sn,
+                        "episode": latest_ep,
+                        "views": views,
+                        "video_sn": int(latest_video_sn),
+                    }
+                )
+
+        async def _one(ep_no: int, vsn: int):
+            async with sem:
+                await asyncio.sleep(EPISODE_SNAPSHOT_DELAY)
+                try:
+                    async with session.get(
+                        f"{EPISODE_API_ENDPOINT}?videoSn={vsn}",
+                        timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
+                        headers=API_HEADERS,
+                    ) as resp:
+                        if resp.status != 200:
+                            return None
+                        j = await resp.json()
+                    views = int(
+                        (j.get("data") or {}).get("anime", {}).get("popular") or 0
+                    )
+                    if not views:
+                        return None
+                    return {
+                        "anime_sn": anime_sn,
+                        "episode": ep_no,
+                        "views": views,
+                        "video_sn": vsn,
+                    }
+                except Exception:
+                    return None
+
+        todo = [(n, v) for n, v in ep_map.items() if n != latest_ep]
+        results = await asyncio.gather(*(_one(n, v) for n, v in todo))
+        rows.extend(r for r in results if r)
+        return rows
 
 
 def extract_view_count_from_episode(episode: dict, default: int = 0) -> int:
@@ -1360,7 +1549,9 @@ class SimpleAnimePushCore:
                         r_video_int = int(r_video)
                         # Keep the maximum videoSn for each animeSn (the latest episode)
                         if r_sn_int in latest_video_map:
-                            latest_video_map[r_sn_int] = max(latest_video_map[r_sn_int], r_video_int)
+                            latest_video_map[r_sn_int] = max(
+                                latest_video_map[r_sn_int], r_video_int
+                            )
                         else:
                             latest_video_map[r_sn_int] = r_video_int
                 except (ValueError, TypeError):

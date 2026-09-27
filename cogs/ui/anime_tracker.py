@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 import asyncio
+import aiohttp
 import discord
 from discord.ext import commands, tasks
 from typing import Optional
@@ -32,6 +33,8 @@ from cogs.ui.push_core_simple import (
     ANIME_CHANNEL_ID,
     TW_TZ,
     fetch_all_recent_anime_from_api,
+    fetch_anime_episodes_with_views,
+    EPISODE_SNAPSHOT_CONCURRENCY,
 )
 from cogs.ui.schedule_tracker import AnimeScheduleTracker
 
@@ -358,6 +361,8 @@ class AnimeTracker(commands.Cog):
                 "anime_name": str(ep.get("title") or f"Anime #{sn}"),
                 "total_views": views,
                 "volume_ep": _parse_volume_ep(ep.get("volume")),
+                # 最新一集的 videoSn：單集快照的入口（該支 API 會一併回傳集數清單）
+                "video_sn": int(ep["videoSn"]) if ep.get("videoSn") else None,
             }
 
         rows = sorted(anime_map.values(), key=lambda r: r["total_views"], reverse=True)
@@ -367,7 +372,50 @@ class AnimeTracker(commands.Cog):
         written = self.db.save_view_snapshot(week_start, rows)
         logger.info(f"📸 [weekly_growth] 快照完成 {week_start}: {written} 筆")
 
+        # 單集快照與系列快照同一時點寫入——兩份資料要能互相對照，時間點必須一致。
+        # 失敗不影響系列快照與推送（當週推送的資料來源是系列快照）
+        await self._snapshot_episodes(week_start, rows)
+
         await self._push_growth_embed(week_start, covers)
+
+    async def _snapshot_episodes(self, week_start: str, rows: list[dict]):
+        """對每部番逐集抓觀看數並落地
+
+        這份資料有時效性：巴哈 API 不提供歷史，漏掉一週就永久少一週。口碑發酵
+        曲線（ep1 逐週增量）需要連續數週才看得出形狀，故圖表尚未實作也先存。
+
+        部分失敗時仍寫入已取得的列——同週不會重跑，留下部分資料遠優於全數丟棄，
+        失敗部數會記在 log 供事後判讀該週資料是否完整。
+        """
+        if self.db.has_episode_snapshot(week_start):
+            logger.info(f"⏭️ [episode_snapshot] {week_start} 已有單集快照，略過")
+            return
+
+        targets = [(r["anime_sn"], r["video_sn"]) for r in rows if r.get("video_sn")]
+        if not targets:
+            logger.warning("⚠️ [episode_snapshot] 無可用 videoSn，略過")
+            return
+
+        sem = asyncio.Semaphore(EPISODE_SNAPSHOT_CONCURRENCY)
+        try:
+            async with aiohttp.ClientSession() as session:
+                results = await asyncio.gather(
+                    *(
+                        fetch_anime_episodes_with_views(session, sn, vsn, sem)
+                        for sn, vsn in targets
+                    )
+                )
+        except Exception as e:
+            logger.error(f"❌ [episode_snapshot] 抓取失敗: {e}", exc_info=True)
+            return
+
+        ep_rows = [r for group in results for r in group]
+        failed = sum(1 for g in results if not g)
+        written = self.db.save_episode_snapshot(week_start, ep_rows)
+        logger.info(
+            f"📸 [episode_snapshot] 完成 {week_start}: {written} 筆"
+            f"（{len(targets)} 部，失敗 {failed} 部）"
+        )
 
     async def _push_growth_embed(self, week_start: str, covers: dict[int, str] = None):
         """推送本週成長排行與折線圖，並附上名次變動最大的卡片"""
