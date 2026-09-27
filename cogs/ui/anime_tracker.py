@@ -512,7 +512,10 @@ class AnimeTracker(commands.Cog):
 
         仍保留由大而小的降級階梯（先減線數、再減週數）作為保險。
         """
-        if len(weeks_new_to_old) < 2 or not top_sns:
+        # 每條線的點數 = 週數 - 1（首週是相減的基準，不產生點）。要連成線至少
+        # 需要 2 點，也就是 3 週；只有 2 週時每條線僅 1 點，畫出來是一排孤立的
+        # 圓點而非趨勢，不如不畫，改由文字排行呈現。
+        if len(weeks_new_to_old) < 3 or not top_sns:
             return None
 
         snaps = self.db.get_snapshots_range(weeks_new_to_old)
