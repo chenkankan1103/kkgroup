@@ -57,6 +57,19 @@ _CHART_COLORS = [
     "#795548",
 ]
 
+# 深色主題：對齊 Discord 預設深色主題的 embed 底色 #2b2d31（# 在 query 中須編碼）
+_CHART_BG = "%232b2d31"
+# Chart.js v3 起 options.color 是全域文字色，一個鍵就覆蓋圖例與兩軸刻度；
+# v2 得逐軸寫 fontColor（且 scales 是陣列），成本高到塞不進 2048 字元。
+# 格線預設是 rgba(0,0,0,.1)，在深底上等於消失，故補上微亮格線。
+_DARK_CHART_OPTIONS = {
+    "color": "#dddddd",
+    "scales": {
+        "x": {"grid": {"color": "#3a3d42"}},
+        "y": {"grid": {"color": "#3a3d42"}},
+    },
+}
+
 
 def _parse_volume_ep(volume) -> Optional[int]:
     """從 volume 字串（'第14集'）解析出集數 14，供標記「本週有新集」"""
@@ -452,7 +465,8 @@ class AnimeTracker(commands.Cog):
             names.setdefault(s["anime_sn"], s["anime_name"])
 
         ordered = list(reversed(weeks_new_to_old))  # 舊 → 新
-        all_labels = [w[5:].replace("-", "/") for w in ordered[1:]]  # 'MM/DD'
+        # 'MM-DD'：'-' 是 URL 免編碼字元，比 '/'（→ %2F）每個標籤省 2 字元
+        all_labels = [w[5:] for w in ordered[1:]]
 
         def series_for(sn: int) -> list[Optional[int]]:
             """每週新增觀看數，已除以 GROWTH_VIEW_UNIT（圖表單位：千）"""
@@ -481,8 +495,9 @@ class AnimeTracker(commands.Cog):
             # 只留必要鍵：quickchart 的 Chart.js 預設值已足夠（圖例顯示），逐鍵寫出來
             # 會讓每條線多約 90 字元。刻意不設 spanGaps——新番上架前的 null 本就該讓
             # 線從首週才開始，硬連會畫出它不存在的歷史。
-            # fill 必須顯式關閉：quickchart 預設跑 Chart.js v2，而 v2 的 line 圖預設
-            # fill=true，10 條半透明填色會疊成一片混濁，第 4 名之後根本追不出哪條是哪條。
+            # 顯式指定 Chart.js v3（url 的 v=3）：v2 的 line 圖預設 fill=true，10 條
+            # 半透明填色會疊成一片混濁；v3 預設 fill=false，同時省下每條線 13 字元的
+            # "fill":false——這筆省下的額度正好拿來付深色主題的 options。
             datasets = []
             for i, sn in enumerate(top_sns[:max_lines]):
                 datasets.append(
@@ -490,18 +505,21 @@ class AnimeTracker(commands.Cog):
                         "label": self._short_name(names.get(sn, str(sn))),
                         "data": series_for(sn)[-cut:],
                         "borderColor": _CHART_COLORS[i % len(_CHART_COLORS)],
-                        "fill": False,
                     }
                 )
             config = {
                 "type": "line",
                 "data": {"labels": all_labels[-cut:], "datasets": datasets},
+                "options": _DARK_CHART_OPTIONS,
             }
             encoded = quote(
                 json.dumps(config, separators=(",", ":"), ensure_ascii=False),
                 safe=",:",
             )
-            url = f"https://quickchart.io/chart?bkg=white&w=900&h=400&c={encoded}"
+            url = (
+                f"https://quickchart.io/chart?v=3&bkg={_CHART_BG}"
+                f"&w=900&h=400&c={encoded}"
+            )
             if len(url) <= QUICKCHART_URL_LIMIT:
                 return url
             logger.warning(
