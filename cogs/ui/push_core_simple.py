@@ -45,12 +45,17 @@ API_TIMEOUT = 15
 # 故每部番只需「集數」次請求（首呼已含最新集觀看數）。
 EPISODE_API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/video.php"
 
-# 單集快照的抓取參數：一部番要逐集打，全量約 800 次請求，故節流避免被巴哈擋。
-# 併發 4 + 每請求間隔 0.1 秒 ≈ 每秒 13 次，全量約 1~2 分鐘，一週一次可接受。
-EPISODE_SNAPSHOT_CONCURRENCY = 4
-EPISODE_SNAPSHOT_DELAY = 0.1
+# 單集快照的抓取參數：一部番要逐集打，全量約 800 次請求，必須節流。
+# 風險不只是「抓不到」——api.gamer.com.tw 同時是 15 分鐘推送輪詢的來源，
+# 被擋掉會連帶讓整個動畫推送系統停擺，所以這裡刻意保守：
+# 併發 2 + 每請求間隔 0.5 秒 ≈ 每秒 2.5 次，全量約 5~6 分鐘，一週一次可接受。
+EPISODE_SNAPSHOT_CONCURRENCY = 2
+EPISODE_SNAPSHOT_DELAY = 0.5
 # 長番（數百集）會讓請求數失控，僅為失控防護；正常一季 12~26 集不會觸及
 EPISODE_SNAPSHOT_MAX = 100
+# 整批失敗時的重試上限：loop 每 30 分鐘一輪，若無上限，持續失敗會變成每半小時
+# 重打 800 次請求，反而自己招來封鎖
+EPISODE_SNAPSHOT_MAX_ATTEMPTS = 3
 
 # 完整瀏覽器指紋 Header
 API_HEADERS = {
