@@ -1056,6 +1056,9 @@ async def fetch_anime_episodes_with_views(
     任一步失敗只影響該部，回傳已取得的列，不讓單一部的錯誤中斷整批快照。
     """
     async with sem:
+        # 先睡再打。sem 只有 2，若不睡，63 部的首呼會在開頭兩秒內連發成一次
+        # 明顯突發（~3 req/s）；睡在 sem 內側才能同時壓住首呼尖峰
+        await asyncio.sleep(EPISODE_SNAPSHOT_DELAY)
         try:
             async with session.get(
                 f"{EPISODE_API_ENDPOINT}?videoSn={latest_video_sn}",
