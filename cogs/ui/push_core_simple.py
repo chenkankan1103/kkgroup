@@ -47,10 +47,12 @@ EPISODE_API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/video.php"
 
 # 單集快照的抓取參數：一部番要逐集打，全量約 800 次請求，必須節流。
 # 風險不只是「抓不到」——api.gamer.com.tw 同時是 15 分鐘推送輪詢的來源，
-# 被擋掉會連帶讓整個動畫推送系統停擺，所以這裡刻意保守：
-# 併發 2 + 每請求間隔 0.5 秒 ≈ 每秒 2.5 次，全量約 5~6 分鐘，一週一次可接受。
-EPISODE_SNAPSHOT_CONCURRENCY = 2
-EPISODE_SNAPSHOT_DELAY = 0.5
+# 被擋掉會連帶讓整個動畫推送系統停擺，所以這裡刻意保守。
+# 2026-09-28 再放慢：併發 2 + 間隔 0.5 秒（≈2.5 req/s）是「短時間內一次打完」
+# 的形狀，最容易被速率限制盯上。改為併發 1 + 間隔 3 秒（≈0.29 req/s，
+# 每集約 3.4 秒），全量約 45 分鐘——慢約 8.6 倍，且不再有突發尖峰。
+EPISODE_SNAPSHOT_CONCURRENCY = 1
+EPISODE_SNAPSHOT_DELAY = 3.0
 # 長番（數百集）會讓請求數失控，僅為失控防護；正常一季 12~26 集不會觸及
 EPISODE_SNAPSHOT_MAX = 100
 # 整批失敗時的重試上限：loop 每 30 分鐘一輪，若無上限，持續失敗會變成每半小時
@@ -1055,9 +1057,13 @@ async def fetch_anime_episodes_with_views(
     首呼（最新集）同時回傳集數清單與該集觀看數，因此總請求數 = 集數而非集數 + 1。
     任一步失敗只影響該部，回傳已取得的列，不讓單一部的錯誤中斷整批快照。
     """
+    # 首呼單獨持鎖、做完立刻放：內層 _one 也要拿同一個 sem，若在此持有許可才
+    # await gather，許可會被前幾部番佔住，而它們都在等自己的內層任務取得許可
+    # ——永久死鎖。2026-09-28 實測：loop 卡在首輪，零日誌、零資料列，且
+    # is_running() 仍為 True，監督器救不到這種「活著但卡住」的狀態
     async with sem:
-        # 先睡再打。sem 只有 2，若不睡，63 部的首呼會在開頭兩秒內連發成一次
-        # 明顯突發（~3 req/s）；睡在 sem 內側才能同時壓住首呼尖峰
+        # 先睡再打。睡在 sem 內側才能壓住首呼尖峰：若不睡，63 部的首呼會在
+        # 開頭連續射出，即使併發只有 1，也會變成明顯高於穩態的突發
         await asyncio.sleep(EPISODE_SNAPSHOT_DELAY)
         try:
             async with session.get(
@@ -1075,72 +1081,72 @@ async def fetch_anime_episodes_with_views(
             logger.debug(f"⚠️ [episode_snapshot] animeSn={anime_sn} 首呼失敗: {e}")
             return []
 
-        anime = data.get("anime") or {}
-        # episodes 是 dict（分割放送會有多個鍵），值為 {episode, videoSn} 清單
-        ep_map: dict[int, int] = {}
-        for eps in (anime.get("episodes") or {}).values():
-            for e in eps or []:
-                ep_no, vsn = e.get("episode"), e.get("videoSn")
-                if ep_no and vsn:
-                    ep_map[int(ep_no)] = int(vsn)
-        if not ep_map:
-            return []
+    anime = data.get("anime") or {}
+    # episodes 是 dict（分割放送會有多個鍵），值為 {episode, videoSn} 清單
+    ep_map: dict[int, int] = {}
+    for eps in (anime.get("episodes") or {}).values():
+        for e in eps or []:
+            ep_no, vsn = e.get("episode"), e.get("videoSn")
+            if ep_no and vsn:
+                ep_map[int(ep_no)] = int(vsn)
+    if not ep_map:
+        return []
 
-        # 長番（數百集）會讓請求數失控，僅作為失控防護；正常一季 12~26 集不會觸及
-        if len(ep_map) > EPISODE_SNAPSHOT_MAX:
-            logger.warning(
-                f"⚠️ [episode_snapshot] animeSn={anime_sn} 集數 {len(ep_map)} "
-                f"超過上限 {EPISODE_SNAPSHOT_MAX}，僅取前 {EPISODE_SNAPSHOT_MAX} 集"
-            )
-            ep_map = dict(sorted(ep_map.items())[:EPISODE_SNAPSHOT_MAX])
-
-        rows: list[dict] = []
-        # 首呼回傳的就是最新集的觀看數，直接沿用，省下重複請求
-        latest_ep = next(
-            (n for n, v in ep_map.items() if v == int(latest_video_sn)), None
+    # 長番（數百集）會讓請求數失控，僅作為失控防護；正常一季 12~26 集不會觸及
+    if len(ep_map) > EPISODE_SNAPSHOT_MAX:
+        logger.warning(
+            f"⚠️ [episode_snapshot] animeSn={anime_sn} 集數 {len(ep_map)} "
+            f"超過上限 {EPISODE_SNAPSHOT_MAX}，僅取前 {EPISODE_SNAPSHOT_MAX} 集"
         )
-        if latest_ep is not None:
-            views = int(anime.get("popular") or 0)
-            if views:
-                rows.append(
-                    {
-                        "anime_sn": anime_sn,
-                        "episode": latest_ep,
-                        "views": views,
-                        "video_sn": int(latest_video_sn),
-                    }
-                )
+        ep_map = dict(sorted(ep_map.items())[:EPISODE_SNAPSHOT_MAX])
 
-        async def _one(ep_no: int, vsn: int):
-            async with sem:
-                await asyncio.sleep(EPISODE_SNAPSHOT_DELAY)
-                try:
-                    async with session.get(
-                        f"{EPISODE_API_ENDPOINT}?videoSn={vsn}",
-                        timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
-                        headers=API_HEADERS,
-                    ) as resp:
-                        if resp.status != 200:
-                            return None
-                        j = await resp.json()
-                    views = int(
-                        (j.get("data") or {}).get("anime", {}).get("popular") or 0
-                    )
-                    if not views:
+    rows: list[dict] = []
+    # 首呼回傳的就是最新集的觀看數，直接沿用，省下重複請求
+    latest_ep = next(
+        (n for n, v in ep_map.items() if v == int(latest_video_sn)), None
+    )
+    if latest_ep is not None:
+        views = int(anime.get("popular") or 0)
+        if views:
+            rows.append(
+                {
+                    "anime_sn": anime_sn,
+                    "episode": latest_ep,
+                    "views": views,
+                    "video_sn": int(latest_video_sn),
+                }
+            )
+
+    async def _one(ep_no: int, vsn: int):
+        async with sem:
+            await asyncio.sleep(EPISODE_SNAPSHOT_DELAY)
+            try:
+                async with session.get(
+                    f"{EPISODE_API_ENDPOINT}?videoSn={vsn}",
+                    timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
+                    headers=API_HEADERS,
+                ) as resp:
+                    if resp.status != 200:
                         return None
-                    return {
-                        "anime_sn": anime_sn,
-                        "episode": ep_no,
-                        "views": views,
-                        "video_sn": vsn,
-                    }
-                except Exception:
+                    j = await resp.json()
+                views = int(
+                    (j.get("data") or {}).get("anime", {}).get("popular") or 0
+                )
+                if not views:
                     return None
+                return {
+                    "anime_sn": anime_sn,
+                    "episode": ep_no,
+                    "views": views,
+                    "video_sn": vsn,
+                }
+            except Exception:
+                return None
 
-        todo = [(n, v) for n, v in ep_map.items() if n != latest_ep]
-        results = await asyncio.gather(*(_one(n, v) for n, v in todo))
-        rows.extend(r for r in results if r)
-        return rows
+    todo = [(n, v) for n, v in ep_map.items() if n != latest_ep]
+    results = await asyncio.gather(*(_one(n, v) for n, v in todo))
+    rows.extend(r for r in results if r)
+    return rows
 
 
 def extract_view_count_from_episode(episode: dict, default: int = 0) -> int:
