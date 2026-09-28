@@ -100,15 +100,27 @@ class AnimeTracker(commands.Cog):
         # 單集快照的重試計數：week_start → 已嘗試次數。整批失敗時靠它避免
         # 每 30 分鐘無限重打；成功寫入後即清除
         self._episode_attempts: dict[str, int] = {}
+        # 監督器重啟次數：loop 名稱 → 次數，用來辨識「啟動後立刻又死」的 loop
+        self._loop_restarts: dict[str, int] = {}
 
     async def set_dependencies(self, db_path: str = None):
         """設置依賴元件 - 初始化增強版推送系統並啟動"""
         if self._running:
             # 已初始化過：僅重新註冊按鈕視圖（冪等）。cog_load 早於 on_ready 的
             # logging 設定，第一次執行的日誌會遺失，此處的日誌可見可驗證
+            # 這是整個啟動流程中唯一「看得見」的快照（第一次呼叫的日誌在
+            # on_ready 設定 logging 之前，必定遺失）。因此把四個 loop 的存活
+            # 狀態與 tick 計數一併印出：2026-09-28 episode_snapshot_loop 連續
+            # 兩輪零日誌，就是因為少了這行而分不出「沒啟動」與「啟動了但沒跑」
             logger.info(
                 "[AnimeTracker.set_dependencies] 已運行中，跳過（僅重新註冊視圖）"
+                f"｜loop: push={self.push_check_loop.is_running()}"
+                f" schedule={self.weekly_schedule_refresh_loop.is_running()}"
+                f" growth={self.weekly_growth_loop.is_running()}"
+                f" episode={self.episode_snapshot_loop.is_running()}"
+                f"｜tick: push={self._push_tick} episode={self._episode_tick}"
             )
+            self._ensure_loops_alive()
             await self.reregister_push_views()
             return
 
@@ -260,6 +272,39 @@ class AnimeTracker(commands.Cog):
             self._running = False
         self.logger.info("🛑 [AnimeTracker.cog_unload] 推送系統已停止")
 
+    # 受監督的 loop。push_check_loop 也在列：從 set_dependencies 呼叫時它若已死
+    # 會被救回；從它自己內部呼叫時 is_running() 為 True，自動略過
+    _SUPERVISED_LOOPS = (
+        "push_check_loop",
+        "weekly_schedule_refresh_loop",
+        "weekly_growth_loop",
+        "episode_snapshot_loop",
+    )
+
+    def _ensure_loops_alive(self) -> None:
+        """把意外死亡的背景 loop 重新啟動
+
+        discord.py 的 Loop._loop 把 before_loop 放在 try 之外，一旦它拋例外，
+        task 就帶例外結束且不留任何日誌（「Task exception was never retrieved」
+        只在 GC 時才印）；而 set_dependencies 第二次呼叫在 `if self._running:`
+        就 return，永遠不會補救 —— 該 loop 就此永久靜默。
+        2026-09-28 episode_snapshot_loop 全程零日誌即屬此類，故用已證實存活的
+        分鐘迴圈當監督者，任何死掉的 loop 一分鐘內復活。
+        """
+        for name in self._SUPERVISED_LOOPS:
+            loop = getattr(self, name)
+            if loop.is_running():
+                continue
+            self._loop_restarts[name] = self._loop_restarts.get(name, 0) + 1
+            logger.warning(
+                f"♻️ [supervisor] {name} 未運行，重新啟動"
+                f"（第 {self._loop_restarts[name]} 次）"
+            )
+            try:
+                loop.start()
+            except Exception as e:
+                logger.error(f"❌ [supervisor] {name} 重啟失敗: {e}", exc_info=True)
+
     @tasks.loop(minutes=1)
     async def push_check_loop(self):
         """每分鐘檢查排程推送（2026-09-17 修復：取代易無聲死亡的智能睡眠循環）
@@ -267,6 +312,9 @@ class AnimeTracker(commands.Cog):
         tasks.loop 每圈接例外並繼續（自癒），不像 asyncio.create_task 的 task
         異常會被困在無人讀取的 task 物件中導致靜默死亡。
         """
+        # 監督：每分鐘檢查所有背景 loop 是否存活。放在 polling_core 檢查之前，
+        # 確保就算 polling_core 沒設好也照樣救得回其他 loop
+        self._ensure_loops_alive()
         if not self.polling_core:
             return
         self._push_tick += 1
@@ -359,9 +407,10 @@ class AnimeTracker(commands.Cog):
             return
         try:
             self._episode_tick += 1
-            # 心跳：重啟後第一輪就印，之後每天一筆。這個 loop 曾整批靜默失敗卻
-            # 不留痕跡，沒有心跳就分不出「迴圈已死」與「閘門沒過」
-            if self._episode_tick == 1 or self._episode_tick % 48 == 0:
+            # 心跳：前兩輪都印，之後每天一筆。第一輪的日誌必定遺失（cog_load 早於
+            # on_ready 的 logging 設定），故第二輪（30 分鐘後）才是重啟後第一筆
+            # 看得見的存活證明。沒有心跳就分不出「迴圈已死」與「閘門沒過」
+            if self._episode_tick <= 2 or self._episode_tick % 48 == 0:
                 logger.info(
                     f"💓 [episode_snapshot] 循環存活心跳（第 {self._episode_tick} 輪）"
                 )
