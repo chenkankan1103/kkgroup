@@ -9,6 +9,7 @@
 import asyncio
 import json
 import logging
+import random
 import sqlite3
 import sys
 from datetime import datetime, timedelta
@@ -45,19 +46,31 @@ API_TIMEOUT = 15
 # 故每部番只需「集數」次請求（首呼已含最新集觀看數）。
 EPISODE_API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/video.php"
 
-# 單集快照的抓取參數：一部番要逐集打，全量約 800 次請求，必須節流。
+# 單集快照的抓取參數：一部番要逐集打，必須節流。
 # 風險不只是「抓不到」——api.gamer.com.tw 同時是 15 分鐘推送輪詢的來源，
 # 被擋掉會連帶讓整個動畫推送系統停擺，所以這裡刻意保守。
-# 2026-09-28 再放慢：併發 2 + 間隔 0.5 秒（≈2.5 req/s）是「短時間內一次打完」
-# 的形狀，最容易被速率限制盯上。改為併發 1 + 間隔 3 秒（≈0.29 req/s，
-# 每集約 3.4 秒），全量約 45 分鐘——慢約 8.6 倍，且不再有突發尖峰。
+# 2026-09-28 改為 trickle（每小時只抓一部），單部約 12~26 次請求，不再是
+# 一次 800 次的批次。基準間隔 5 秒並帶 ±2 秒抖動：固定間隔本身就是一種規律，
+# 比低速率更容易被判定為機器人——抖動才是處理「不要規律」的手段。
 EPISODE_SNAPSHOT_CONCURRENCY = 1
-EPISODE_SNAPSHOT_DELAY = 3.0
+EPISODE_SNAPSHOT_DELAY = 5.0
+EPISODE_SNAPSHOT_DELAY_JITTER = 2.0
 # 長番（數百集）會讓請求數失控，僅為失控防護；正常一季 12~26 集不會觸及
 EPISODE_SNAPSHOT_MAX = 100
-# 整批失敗時的重試上限：loop 每 30 分鐘一輪，若無上限，持續失敗會變成每半小時
-# 重打 800 次請求，反而自己招來封鎖
+# 同一部番的失敗重試上限：trickle 下每次只碰一部，失敗就下輪再試同一部，
+# 超過上限則跳過它繼續往下——否則一部永遠失敗的番會讓整週停擺
 EPISODE_SNAPSHOT_MAX_ATTEMPTS = 3
+
+
+def episode_request_delay() -> float:
+    """單集請求的間隔秒數：基準 5 秒 ± 2 秒抖動
+
+    抽成函式而非直接用常數，是為了讓「抖動」這件事只有一個定義處；呼叫端
+    不該自行決定要不要加抖動。
+    """
+    return EPISODE_SNAPSHOT_DELAY + random.uniform(
+        -EPISODE_SNAPSHOT_DELAY_JITTER, EPISODE_SNAPSHOT_DELAY_JITTER
+    )
 
 # 完整瀏覽器指紋 Header
 API_HEADERS = {
@@ -198,6 +211,22 @@ class AnimePushDB:
                 video_sn INTEGER,              -- 供追蹤同一集後續變化
                 captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (week_start, anime_sn, episode)
+            )
+        """)
+
+        # anime_episode_cursor 表 - trickle 進度游標（每小時抓一部）
+        # 逐集抓一部番要 12~26 次請求，63 部就是 800+ 次，一次射出等於對巴哈做
+        # 批次爬取。改成每小時只碰一部、跨週攤平，並把進度寫進這張表，讓服務
+        # 重啟後能續傳而不是從頭再打一輪。
+        # next_run_at 存 epoch 秒而非 ISO 字串：本連線 text_factory = bytes，
+        # TEXT 欄位讀回來是 bytes，還得 decode；數值欄位沒這個問題。
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_episode_cursor (
+                week_start TEXT PRIMARY KEY,   -- 該週週一 'YYYY-MM-DD'
+                last_anime_sn INTEGER NOT NULL DEFAULT 0,  -- 已完成的 anime_sn
+                next_run_at REAL,              -- epoch 秒；NULL = 可立即執行
+                attempts INTEGER NOT NULL DEFAULT 0,       -- 當前這部的連續失敗次數
+                done INTEGER NOT NULL DEFAULT 0            -- 1 = 本週已抓完
             )
         """)
 
@@ -918,6 +947,63 @@ class AnimePushDB:
         finally:
             conn.close()
 
+    # ---- trickle 進度游標 ----
+
+    def get_episode_cursor(self, week_start: str) -> dict:
+        """讀取該週的 trickle 進度；不存在時回傳可立即執行的初始值
+
+        回傳 dict 而非 tuple，是為了讓呼叫端不必記欄位順序——游標有 4 個欄位，
+        用位置解包容易在後續增欄時默默錯位。
+        """
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.execute(
+                """SELECT last_anime_sn, next_run_at, attempts, done
+                   FROM anime_episode_cursor WHERE week_start=?""",
+                (week_start,),
+            )
+            row = c.fetchone()
+            if row is None:
+                return {"last_anime_sn": 0, "next_run_at": None, "attempts": 0, "done": 0}
+            return {
+                "last_anime_sn": int(row[0] or 0),
+                "next_run_at": float(row[1]) if row[1] is not None else None,
+                "attempts": int(row[2] or 0),
+                "done": int(row[3] or 0),
+            }
+        finally:
+            conn.close()
+
+    def set_episode_cursor(
+        self,
+        week_start: str,
+        last_anime_sn: int,
+        next_run_at: float | None = None,
+        attempts: int = 0,
+        done: int = 0,
+    ) -> None:
+        """覆寫該週的 trickle 進度
+
+        整列覆寫而非逐欄更新：游標的四個欄位是一組狀態，分開寫會在中途失敗時
+        留下自相矛盾的組合（例如 last_anime_sn 已前進但 attempts 沒歸零）。
+        """
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.execute(
+                """INSERT OR REPLACE INTO anime_episode_cursor
+                   (week_start, last_anime_sn, next_run_at, attempts, done)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (week_start, int(last_anime_sn), next_run_at, int(attempts), int(done)),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] set_episode_cursor 失敗: {e}", exc_info=True)
+            conn.rollback()
+        finally:
+            conn.close()
+
     def get_snapshot_weeks(self, limit: int = 12) -> list[str]:
         """取得最近 N 個快照週次（新→舊）"""
         conn = self._get_conn()
@@ -1062,9 +1148,9 @@ async def fetch_anime_episodes_with_views(
     # ——永久死鎖。2026-09-28 實測：loop 卡在首輪，零日誌、零資料列，且
     # is_running() 仍為 True，監督器救不到這種「活著但卡住」的狀態
     async with sem:
-        # 先睡再打。睡在 sem 內側才能壓住首呼尖峰：若不睡，63 部的首呼會在
-        # 開頭連續射出，即使併發只有 1，也會變成明顯高於穩態的突發
-        await asyncio.sleep(EPISODE_SNAPSHOT_DELAY)
+        # 先睡再打，且睡在 sem 內側：trickle 下一次只服務一部番，但間隔仍要走
+        # 同一個抖動函式，否則每部番的首呼會變成一個可預測的固定起點
+        await asyncio.sleep(episode_request_delay())
         try:
             async with session.get(
                 f"{EPISODE_API_ENDPOINT}?videoSn={latest_video_sn}",
@@ -1119,7 +1205,7 @@ async def fetch_anime_episodes_with_views(
 
     async def _one(ep_no: int, vsn: int):
         async with sem:
-            await asyncio.sleep(EPISODE_SNAPSHOT_DELAY)
+            await asyncio.sleep(episode_request_delay())
             try:
                 async with session.get(
                     f"{EPISODE_API_ENDPOINT}?videoSn={vsn}",
