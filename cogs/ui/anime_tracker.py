@@ -96,6 +96,7 @@ class AnimeTracker(commands.Cog):
         self.schedule_tracker = None
         self._running = False
         self._push_tick = 0
+        self._episode_tick = 0
         # 單集快照的重試計數：week_start → 已嘗試次數。整批失敗時靠它避免
         # 每 30 分鐘無限重打；成功寫入後即清除
         self._episode_attempts: dict[str, int] = {}
@@ -251,6 +252,8 @@ class AnimeTracker(commands.Cog):
             self.weekly_schedule_refresh_loop.cancel()
         if self.weekly_growth_loop.is_running():
             self.weekly_growth_loop.cancel()
+        if self.episode_snapshot_loop.is_running():
+            self.episode_snapshot_loop.cancel()
         if self._running:
             if self.polling_core:
                 await self.polling_core.stop_polling()
@@ -352,20 +355,31 @@ class AnimeTracker(commands.Cog):
         整批失敗時下一輪（30 分鐘後）自動重試。
         """
         if not self.db:
+            logger.warning("⚠️ [episode_snapshot] db 未初始化，略過本輪")
             return
         try:
+            self._episode_tick += 1
+            # 心跳：重啟後第一輪就印，之後每天一筆。這個 loop 曾整批靜默失敗卻
+            # 不留痕跡，沒有心跳就分不出「迴圈已死」與「閘門沒過」
+            if self._episode_tick == 1 or self._episode_tick % 48 == 0:
+                logger.info(
+                    f"💓 [episode_snapshot] 循環存活心跳（第 {self._episode_tick} 輪）"
+                )
             now = datetime.now(TW_TZ)
             days_since_sunday = (now.weekday() + 1) % 7
             sunday = (now - timedelta(days=days_since_sunday)).replace(
                 hour=GROWTH_SNAPSHOT_HOUR, minute=0, second=0, microsecond=0
             )
             if now < sunday:
+                logger.debug(f"⏳ [episode_snapshot] 本週觸發時刻未到（{sunday}）")
                 return  # 本週觸發時刻還沒到
 
             week_start = (sunday - timedelta(days=6)).date().isoformat()
             if self.db.has_episode_snapshot(week_start):
+                logger.debug(f"✅ [episode_snapshot] {week_start} 已有快照，略過")
                 return  # 本週已完整快照
 
+            logger.info(f"🚀 [episode_snapshot] 開始抓取 {week_start} 的單集觀看數")
             await self._run_episode_snapshot(week_start)
         except Exception as e:
             logger.error(f"❌ [episode_snapshot_loop] 執行失敗: {e}", exc_info=True)
@@ -435,6 +449,10 @@ class AnimeTracker(commands.Cog):
         """
         attempts = self._episode_attempts.get(week_start, 0)
         if attempts >= EPISODE_SNAPSHOT_MAX_ATTEMPTS:
+            logger.info(
+                f"⏹️ [episode_snapshot] {week_start} 已達重試上限"
+                f"（{attempts}/{EPISODE_SNAPSHOT_MAX_ATTEMPTS}），本週不再嘗試"
+            )
             return  # 已達重試上限，避免持續失敗時每半小時重打一次全量請求
 
         rows, _ = await self._fetch_anime_rows()
