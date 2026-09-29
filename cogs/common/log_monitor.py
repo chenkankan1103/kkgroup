@@ -701,10 +701,9 @@ class LogMonitorEngine:
     - Discord 通知（帶冷却）
     """
 
-    def __init__(self, bot: commands.Bot, llm: LLMClient, shell_runner=None):
+    def __init__(self, bot: commands.Bot, llm: LLMClient):
         self.bot = bot
         self.llm = llm
-        self.shell_runner = shell_runner  # ShellAgentRunner，可為 None
         self.enabled = True
         self.cog_instance = None  # 引用 Cog 實例（由 Cog.__init__ 設定）
 
@@ -2009,7 +2008,7 @@ class LogMonitor(commands.Cog):
         self.bot = bot
         self._llm = LLMClient()
 
-        self._engine = LogMonitorEngine(bot, self._llm, shell_runner=None)
+        self._engine = LogMonitorEngine(bot, self._llm)
         self._engine.cog_instance = self  # ✅ 設定引用，讓 engine 能訪問全局視圖
         self._task: Optional[asyncio.Task] = None
         self._global_view = None  # 全局視圖實例，用於持久化按鈕

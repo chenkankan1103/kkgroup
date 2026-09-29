@@ -32,7 +32,6 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **monitor_leaderboard_url.py**: 排行榜 URL 監控
 - **nickname_id.py**: 暱稱/ID 管理
 - **role_color_changer.py**: 角色顏色變更
-- **shell_agent.py**: Shell Agent 整合
 - **123.py**: 測試/工具模組
 
 #### Shop Cogs (`cogs/shop/`) — 7+ 商店相關模組
@@ -117,7 +116,6 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **encoding_handler.py**: 編碼處理
 - **llm_text_router.py**: LLM 文字路由
 - **mutual_rescue.py**: 互助救援
-- **prompt_function_calling.py**: Prompt 函數呼叫
 
 ### 5. 工具程式 (`utils/`)
 - **earthquake.py**: 地震資訊
