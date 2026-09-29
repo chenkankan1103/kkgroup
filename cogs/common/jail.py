@@ -17,9 +17,11 @@ from cogs.ui.utils import paperdoll_manager
 
 load_dotenv()
 
-AI_API_KEY = os.getenv("AI_API_KEY")
-AI_API_URL = os.getenv("AI_API_URL")
-AI_API_MODEL = os.getenv("AI_API_MODEL", "gpt-3.5-turbo")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_URL = os.getenv(
+    "GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions"
+)
+GROQ_API_MODEL = os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile")
 MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", 0))
 PUNISHMENT_CHANNEL_ID = int(os.getenv("PUNISHMENT_CHANNEL_ID", 0))
 

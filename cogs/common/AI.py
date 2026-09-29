@@ -32,16 +32,6 @@ from shared.utils.llm_text_router import complete_text_with_fallback
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# ─── 工具箱 ────────────────────────────────────────────────────────────────
-try:
-    import agent_tools
-
-    _TOOLS_AVAILABLE = True
-except ImportError:
-    agent_tools = None  # type: ignore
-    _TOOLS_AVAILABLE = False
-    logger.warning("⚠️ agent_tools 未載入，工具功能停用")
-
 # ─── 長期記憶（修正 import 路徑）───────────────────────────────────────────
 try:
     from shared.db.ai_memory import (
@@ -408,68 +398,21 @@ class AgentSession:
 _SYSTEM_PROMPT = """\
 你是 KK園區的 AI 助理，代號「干部」。
 職責：
-- 回答用戶問題，簡潔（150 字以內）
-- 必要時呼叫工具查詢數據
+- 回答用戶問題，力求簡潔
 - 你同時是中控室 NPC，要善用長期記憶、知識庫與 VM 掃描報告回答問題
 - 使用繁體中文，語氣親切但專業
-
-工具使用規則：
-- 只在有明確數據需求時呼叫工具（餘額、排行榜、裝備等）
-- 一般聊天不使用工具
-- 呼叫工具後等待結果，再回覆用戶
 """
-
-_MAX_TOOL_ROUNDS = int(os.getenv("AI_MAX_TOOL_ROUNDS", "2"))
-
-_TOOL_KEYWORDS = [
-    "餘額",
-    "KK幣",
-    "kkcoin",
-    "排行",
-    "狀態",
-    "裝備",
-    "配裝",
-    "查詢",
-    "查一下",
-    "查",
-    "找",
-    "搜尋",
-    "爬取",
-    "抓取",
-    "搜索",
-    "search",
-    "crawl",
-    "fetch",
-    "查找",
-    "git",
-    "推送",
-    "日誌",
-    "錯誤",
-    "error",
-    "代碼",
-    "程式",
-    "bot",
-    "Bot",
-    "服務",
-    "service",
-]
 
 
 class KKBotAgent:
     """ADK 風格 Agent。
 
-    Agentic Loop（官方 Sequential Workflow）：
-      Think → Act（工具）→ Observe（結果）→ Think → ... → Final Reply
-
-    API 降級：Gemini（主 Key → 備用 Key）→ Groq（純文字，無工具）
+    API 降級：Gemini（主 Key → 備用 Key）→ Groq（純文字）
     """
 
     def __init__(self, llm: LLMClient, session: AgentSession):
         self.llm = llm
         self.session = session
-        self._tools_spec: Optional[List[Dict]] = (
-            agent_tools.get_gemini_tools_spec() if _TOOLS_AVAILABLE else None
-        )
 
     @staticmethod
     def _build_system_prompt(user_msg: str) -> str:
@@ -517,7 +460,7 @@ class KKBotAgent:
             "=== 回答規則 ===\n"
             "- 若知識庫或 VM 掃描已有答案，優先引用這些內容。\n"
             "- 若你根據 repo 結構推測可擴充功能，請明確說出依據。\n"
-            "- 若資料不足，直接說你需要再掃描或查工具。"
+            "- 若資料不足，直接說明你需要再掃描或補充資料。"
         )
         return "\n\n".join(part for part in prompt_parts if part)
 
@@ -546,23 +489,20 @@ class KKBotAgent:
     async def run(self, user_id: int, user_msg: str) -> str:
         """主入口：給定用戶 ID 和訊息，回傳 AI 回應文字。"""
         contents = self.session.build_contents(user_id, user_msg)
-        needs_tools = self._should_use_tool(user_msg)
-        tools_spec = self._tools_spec if (needs_tools and _TOOLS_AVAILABLE) else None
         system_prompt = self._build_system_prompt(user_msg)
 
-        if not needs_tools:
-            text_messages = self._contents_to_messages(system_prompt, contents)
-            text_result, provider = await complete_text_with_fallback(
-                text_messages,
-                max_tokens=800,
-                nvidia_timeout=AI_TEXT_NVIDIA_TIMEOUT_SEC,
-                gemini_timeout=AI_TEXT_GEMINI_TIMEOUT_SEC,
-                groq_timeout=AI_TEXT_GROQ_TIMEOUT_SEC,
-            )
-            if text_result:
-                logger.info("✅ 文字回覆使用 %s", provider)
-                self._save(user_id, user_msg, text_result)
-                return text_result
+        text_messages = self._contents_to_messages(system_prompt, contents)
+        text_result, provider = await complete_text_with_fallback(
+            text_messages,
+            max_tokens=800,
+            nvidia_timeout=AI_TEXT_NVIDIA_TIMEOUT_SEC,
+            gemini_timeout=AI_TEXT_GEMINI_TIMEOUT_SEC,
+            groq_timeout=AI_TEXT_GROQ_TIMEOUT_SEC,
+        )
+        if text_result:
+            logger.info("✅ 文字回覆使用 %s", provider)
+            self._save(user_id, user_msg, text_result)
+            return text_result
 
         # ── 嘗試 Gemini（主要 Key → 備用 Key）────────────────────────────
         for key, label in [
@@ -571,9 +511,7 @@ class KKBotAgent:
         ]:
             if not key:
                 continue
-            result = await self._gemini_loop(
-                key, label, system_prompt, contents, tools_spec, user_id
-            )
+            result = await self._gemini_call(key, label, system_prompt, contents)
             if result:
                 self._save(user_id, user_msg, result)
                 return result
@@ -592,79 +530,33 @@ class KKBotAgent:
 
         return "中控室訊號中斷，請稍後再試。"
 
-    async def _gemini_loop(
+    async def _gemini_call(
         self,
         api_key: str,
         label: str,
         system_prompt: str,
-        initial_contents: List[Dict],
-        tools_spec: Optional[List[Dict]],
-        user_id: int,
+        contents: List[Dict],
     ) -> Optional[str]:
-        """官方 Agentic Loop：Think → Act → Observe → Think... → Reply"""
-        contents = list(initial_contents)
+        """單次 Gemini 呼叫，回傳純文字回覆。"""
+        candidate = await self.llm.gemini(
+            api_key,
+            GEMINI_MODEL,
+            system_prompt,
+            contents,
+            label=label,
+        )
+        if candidate is None:
+            return None
 
-        for _round in range(_MAX_TOOL_ROUNDS + 1):
-            # 最後一輪不帶工具，強制 LLM 輸出文字
-            candidate = await self.llm.gemini(
-                api_key,
-                GEMINI_MODEL,
-                system_prompt,
-                contents,
-                tools_spec=(tools_spec if _round < _MAX_TOOL_ROUNDS else None),
-                label=label,
-            )
-            if candidate is None:
-                return None
+        parts = candidate.get("content", {}).get("parts", [])
+        if not parts:
+            return None
 
-            parts = candidate.get("content", {}).get("parts", [])
-            if not parts:
-                return None
+        if "text" not in parts[0]:
+            logger.warning(f"⚠️ {label} 未知 parts 類型: {list(parts[0].keys())}")
+            return None
 
-            # 純文字 → 完成
-            if "text" in parts[0]:
-                return parts[0]["text"].strip() or None
-
-            # Function Call → 執行工具，注入結果，繼續迴圈
-            if "functionCall" not in parts[0]:
-                logger.warning(f"⚠️ {label} 未知 parts 類型: {list(parts[0].keys())}")
-                return None
-
-            fc = parts[0]["functionCall"]
-            tool_name = fc.get("name", "")
-            tool_args = fc.get("args", {})
-
-            logger.info(f"🔧 [{label}] 工具呼叫: {tool_name}({tool_args})")
-            tool_result = self._call_tool(tool_name, tool_args, caller_id=user_id)
-            logger.info(f"✅ 工具結果: {str(tool_result)[:200]}")
-
-            # 官方 Function Calling 格式：注入 model 的工具呼叫 + user 的工具結果
-            contents.append({"role": "model", "parts": [{"functionCall": fc}]})
-            contents.append(
-                {
-                    "role": "user",
-                    "parts": [
-                        {
-                            "functionResponse": {
-                                "name": tool_name,
-                                "response": {"result": str(tool_result)},
-                            }
-                        }
-                    ],
-                }
-            )
-
-        logger.warning(f"⚠️ {label} 達到工具呼叫上限（{_MAX_TOOL_ROUNDS} 輪）")
-        return None
-
-    def _call_tool(self, name: str, args: Dict, caller_id: int) -> str:
-        if not _TOOLS_AVAILABLE:
-            return "工具系統未載入"
-        try:
-            return agent_tools.dispatch_tool(name, args, caller_id=caller_id)
-        except Exception as e:
-            logger.warning(f"⚠️ 工具執行失敗 {name}: {e}")
-            return f"工具執行錯誤: {e}"
+        return parts[0]["text"].strip() or None
 
     def _save(self, user_id: int, user_msg: str, reply: str):
         self.session.add(user_id, user_msg, reply)
@@ -674,11 +566,6 @@ class KKBotAgent:
         except Exception:
             pass
 
-    def _should_use_tool(self, msg: str) -> bool:
-        """判斷是否需要工具（避免普通聊天帶上工具規格浪費 token）。"""
-        if len(msg) < 5:
-            return False
-        return any(k in msg for k in _TOOL_KEYWORDS) or len(msg) > 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════

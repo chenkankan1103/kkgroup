@@ -1,6 +1,6 @@
 # .codex/instructions.md — Codex 專用指令
 
-> **單一真實來源**：完整詳細規範請參考 **`.github/copilot-instructions.md`**（與 `CLAUDE.md`、`AGENTS.md` 同步維護）。
+> **單一真實來源**：完整詳細規範請參考 **`CLAUDE.md`**（專案根目錄）。
 
 ---
 
@@ -8,7 +8,7 @@
 
 ```bash
 # 1. 讀取完整規範
-cat .github/copilot-instructions.md
+cat CLAUDE.md
 
 # 2. 專案一頁紙摘要
 cat knowledge/_wiki/concepts/ai-fast-read.md
@@ -69,6 +69,6 @@ python scripts/lsp_query.py --file <path> def <symbol>
 
 ## 🔗 關鍵連結
 
-- 完整規範：`.github/copilot-instructions.md`
+- 完整規範：`CLAUDE.md`
 - 知識庫：`knowledge/_wiki/`
 - 維運 CLI：`scripts/commands_manager.py`

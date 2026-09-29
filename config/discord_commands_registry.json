@@ -185,10 +185,7 @@
             "ai_knowledge_add",
             "ai_knowledge_search",
             "ai_memory_cleanup",
-            "ai_memory_status",
-            "cc",
-            "cc_status",
-            "cc_clear"
+            "ai_memory_status"
           ]
         },
         "特殊操作": {

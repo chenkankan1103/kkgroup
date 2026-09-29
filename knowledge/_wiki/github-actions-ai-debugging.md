@@ -9,12 +9,12 @@ KKGroup Discord Bot系統的AI驅動自動化除錯與修復系統，使用Gemin
 ### 🤖 AI監控流程
 
 ```
-Bot錯誤發生 → Shell Agent捕獲 → GitHub Actions觸發 → Gemini AI分析 → 自動修復 → VM重啟
+Bot錯誤發生 → LogMonitor 捕獲 → GitHub Actions觸發 → Gemini AI分析 → 自動修復 → VM重啟
 ```
 
 ### 🔧 核心組件
 
-1. **Shell Agent監控** (`cogs/common/shell_agent.py`)
+1. **LogMonitor 監控** (`cogs/common/log_monitor.py`)
    - 實時監控系統服務狀態
    - 捕獲OOM Killer、服務崩潰等錯誤
    - 自動執行基礎診斷指令
@@ -35,7 +35,7 @@ Bot錯誤發生 → Shell Agent捕獲 → GitHub Actions觸發 → Gemini AI分�
 
 ```yaml
 # GitHub Secrets
-GEMINI_API_KEY: "AIzaSyDlMU0Vjq9naAppLv_rtzRdpqJytF63FJc"
+GEMINI_API_KEY: "<在 GitHub Secrets 設定，勿寫入文件>"
 DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/..."
 ```
 
@@ -163,9 +163,6 @@ AI_PROVIDERS = {
 2. 選擇"AI Debug Monitor"
 3. 點擊"Run workflow"
 4. 輸入觸發參數
-
-# 通過Discord指令
-/shellagent 目標：執行AI除錯分析
 ```
 
 ### 📋 檢查清單
@@ -235,10 +232,7 @@ sudo journalctl -u bot.service -n 20 --no-pager
 
 ## 相關文檔
 
-- [Shell Agent使用指南](./shell-agent-guide.md)
-- [GitHub Actions配置](./github-actions-setup.md)
 - [Gemini API文檔](https://ai.google.dev/gemini-api)
-- [Discord Bot開發](./discord-bot-development.md)
 - [LogMonitor 與 Auto AI Fix 流程總覽](concepts/log_monitor_pipeline.md)
 - [開發工具和流程](concepts/development-tools-and-workflow.md)
 - [部署和維運指南](concepts/deployment-and-operations.md)

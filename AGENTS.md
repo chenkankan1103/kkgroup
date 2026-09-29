@@ -1,7 +1,7 @@
 # AGENTS.md — kkgroup 專案通用 Agent 指令
 
-> **單一真實來源**：本檔案為所有 AI Agent（Claude Code, Codex, Copilot, Cursor, Windsurf 等）的統一入口。
-> 完整詳細規範請參考 **`.github/copilot-instructions.md`**（與 `CLAUDE.md` 同步維護）。
+> **單一真實來源**：完整詳細規範請參考 **`CLAUDE.md`**（專案根目錄）。
+> 本檔案為所有 AI Agent（Claude Code, Codex, Copilot, Cursor, Windsurf 等）的統一入口。
 
 ---
 
@@ -19,10 +19,9 @@
 
 ## 📖 必讀檔案（按優先級）
 
-1. **`.github/copilot-instructions.md`** — 完整開發規範、技能調用、踩坑指南、AI 查詢工具
-2. **`CLAUDE.md`** — 與上方同步，給 Claude Code 讀取
-3. **`knowledge/_wiki/concepts/ai-fast-read.md`** — 一頁紙專案摘要、架構、高頻入口
-4. **`scripts/commands_manager.py`** — 統一維運 CLI 入口
+1. **`CLAUDE.md`** — 完整開發規範、技能調用、踩坑指南、AI 查詢工具（單一真實來源）
+2. **`knowledge/_wiki/concepts/ai-fast-read.md`** — 一頁紙專案摘要、架構、高頻入口
+3. **`scripts/commands_manager.py`** — 統一維運 CLI 入口
 
 ---
 
@@ -100,6 +99,6 @@ python scripts/lsp_query.py --file <path> def <symbol>
 
 ## 🔗 相關連結
 
-- **完整規範**：`.github/copilot-instructions.md` / `CLAUDE.md`
+- **完整規範**：`CLAUDE.md`（單一真實來源）
 - **知識庫**：`knowledge/_wiki/`
 - **維運入口**：`python scripts/commands_manager.py <service> <action>`

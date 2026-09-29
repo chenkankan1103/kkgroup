@@ -260,13 +260,6 @@ Trace (trace_id: uuid)
 4. 添加單元測試 `tests/unit/tools/test_new_tool.py`
 5. 重啟 Bot 自動發現
 
-### 7.2 新增 Agent 能力
-
-1. 定義 Prompt Template (`prompts/agent_name.md`)
-2. 配置工具白名單 (`config/agent_tools.yaml`)
-3. 實現專用 Handler (`core/agent/handlers/agent_name.py`)
-4. 註冊到 Agent Factory
-
 ---
 
 **版本**: 1.0.0
