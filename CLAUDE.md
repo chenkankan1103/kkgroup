@@ -573,10 +573,16 @@ kkgroup/
 
 #### Cron 排程任務
 
-- 每 5 分鐘：`update_restart.py`、`sync_to_sheet.py`
-- 每週三 03:00 UTC（台灣時間 11:00）：`refresh_all_lockers_cron.py`
-- 每週一 03:00：`weekly_backup.py`
-- 知識庫刷新：每天 18:00（台灣時間）執行 `refresh_knowledge_base.py`
+VM 系統時區為 `Etc/UTC`，crontab 內**未設** `CRON_TZ`，因此下列時刻皆為 **UTC**（台灣時間 = UTC+8）。
+
+| 排程（UTC） | 台灣時間 | 腳本 | 用途 |
+|---|---|---|---|
+| `0 3 * * 3` | 週三 11:00 | `scheduled_tasks/refresh_all_lockers_cron.py` | 置物櫃批量更新 |
+| `0 3 * * 1` | 週一 11:00 | `weekly_backup.py` | 每週備份 |
+| `10 3 * * 3` | 週三 11:10 | `scheduled_tasks/netflix_weekly_push.py` | Netflix 週榜推播 |
+
+> **2026-09-30 以 VM `crontab -l` 實測為準。**
+> `update_restart.py`、`sync_to_sheet.py`、`refresh_knowledge_base.py` **未掛在任何排程上**（cron、`/etc/cron.d`、systemd timer、repo 內 Python 呼叫端皆查無引用），目前不會自動執行。
 
 ---
 

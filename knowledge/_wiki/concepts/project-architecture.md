@@ -134,14 +134,14 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **sudoers/**: sudo 權限配置
 - **scripts/**: 部署相關腳本
 
-### 7. 排程任務 (`scheduled_tasks/`) — 8 個 Cron 任務
-- **update_restart.py** / **sync_to_sheet.py**: 每 5 分鐘執行
-- **refresh_all_lockers_cron.py**: 每週三、六 14:00 執行
-- **weekly_backup.py**: 每週一 03:00 執行
-- **refresh_knowledge_base.py**: 每天 18:00（台灣時間）執行
-- **auto_update_config.py** / **auto_update_webhook_v2.py**: 自動更新相關
-- **locker_maintenance.py**: 置物櫃維護
-- **webhook_logger.py**: Webhook 日誌記錄
+### 7. 排程任務 (`scheduled_tasks/`)
+實際掛在 cron 的僅 3 項（VM 時區 `Etc/UTC`，2026-09-30 `crontab -l` 實測）：
+- **refresh_all_lockers_cron.py**: 每週三 03:00 UTC（台灣 11:00）
+- **weekly_backup.py**: 每週一 03:00 UTC（台灣 11:00）
+- **netflix_weekly_push.py**: 每週三 03:10 UTC（台灣 11:10）
+
+其餘檔案存在但**未被 cron / systemd timer / 任何 Python 呼叫端引用**，目前不會自動執行：
+`update_restart.py`、`sync_to_sheet.py`、`refresh_knowledge_base.py`、`auto_update_config.py`、`auto_update_webhook_v2.py`、`locker_maintenance.py`、`webhook_logger.py`
 
 ### 8. 腳本系統 (`scripts/`) — 20+ 管理腳本
 - **commands_manager.py**: 統一維運入口（SSH、systemd、日誌、診斷）
@@ -226,7 +226,7 @@ graph TD
 - **AgentDB / ruvector.db**: 向量資料庫（HNSW 索引）
 - **ai_memory.py**: 長期記憶（四步驟管線：scan → ingest → refresh → query）
 - **knowledge_vector_index.py**: 知識向量索引
-- **每日 18:00 自動刷新**: `refresh_knowledge_base.py` + Discord Webhook 通知
+- **知識庫刷新**: `refresh_knowledge_base.py` + Discord Webhook 通知（⚠️ 2026-09-30 實測：**未掛任何排程**，不會自動執行）
 
 ## 安全考量
 

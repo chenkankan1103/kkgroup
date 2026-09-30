@@ -72,12 +72,12 @@ tcp6       0      0 :::80                   :::*                    LISTEN
 # 當代碼 push 到 main 分支時自動部署
 # 流程：Git Push → GitHub Webhook → VM Webhook 接收器 → Git Pull → 重啟服務
 
-# Cron 排程（僅用於維護任務）
+# Cron 排程（僅用於維護任務）— 2026-09-30 crontab -l 實測
+# 系統時區 Etc/UTC，未設 CRON_TZ，故以下時刻皆為 UTC
 # m h  dom mon dow   command
-0 3 * * 0 cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /var/log/kkgroup_locker_refresh.log 2>&1
+0 3 * * 3 . /home/e193752468/kkgroup/.env && cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /home/e193752468/kkgroup/logs/locker_refresh.log 2>&1
 0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python weekly_backup.py >> /tmp/weekly_backup.log 2>&1
-CRON_TZ=Asia/Taipei
-0 18 * * * cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_knowledge_base.py >> /home/e193752468/kkgroup/knowledge_refresh.log 2>&1
+10 3 * * 3 cd /home/e193752468/kkgroup && venv/bin/python scheduled_tasks/netflix_weekly_push.py >> scheduled_tasks/netflix_cron.log 2>&1
 ```
 
 **部署機制說明**:
@@ -85,7 +85,7 @@ CRON_TZ=Asia/Taipei
 - **Webhook 接收器**: `/web/blueprints/webhook.py`
 - **執行操作**: `git pull` + `systemctl restart` 所有服務
 - **通知機制**: 部署結果發送到 Discord 系統頻道
-- **AI 知識庫排程**: 每天台灣時間 18:00 掃描 VM 與 repo，更新中控室 NPC 的知識庫
+- **AI 知識庫排程**: ⚠️ **不存在**。2026-09-30 實測 `refresh_knowledge_base.py` 未掛在任何 cron / systemd timer / Python 呼叫端上，知識庫刷新目前不會自動執行
 - **2026-05-18 再驗證**: push 到 `main` 後，VM 已自動同步到最新 commit（實測 commit `d4094c3d`），證明 webhook 自動部署鏈正常。
 - **Mutual Rescue 前置權限**: GitHub Actions 已補上 `github-actions-vm-repair@kkgroup.iam.gserviceaccount.com` -> `862486124810-compute@developer.gserviceaccount.com` 的 `roles/iam.serviceAccountUser`。目前 agent 已可透過 `gcloud compute ssh` 遠端修復 bot 服務。
 
@@ -103,7 +103,7 @@ TZ=Asia/Taipei
 	- `DISCORD_WEBHOOK_URL`
 	- `DISCORD_WEBHOOK`
 	- `STARTUP_WEBHOOK_URL`
-- VM 目前已設定 `KNOWLEDGE_WEBHOOK_URL`，供每日知識庫刷新排程回報 Discord 狀態
+- VM 已設定 `KNOWLEDGE_WEBHOOK_URL`；但每日知識庫刷新排程已不存在（見上），故目前不會有自動回報
 
 ## 環境配置
 
@@ -218,13 +218,13 @@ WantedBy=multi-user.target
 ## 備份策略
 
 ### 自動備份
-- **每週備份**: 週一凌晨3點執行 `weekly_backup.py`
-- **每日任務**: 週日凌晨3點執行 `refresh_all_lockers_cron.py`
+- **每週備份**: 週一 03:00 UTC（台灣 11:00）執行 `weekly_backup.py`
+- **置物櫃更新**: 週三 03:00 UTC（台灣 11:00）執行 `refresh_all_lockers_cron.py`
 - **手動備份**: `full_backup.tar.gz` (335MB)
 
 ### 備份位置
 - **臨時備份**: `/tmp/weekly_backup.log`
-- **系統日誌**: `/var/log/kkgroup_locker_refresh.log`
+- **置物櫃日誌**: `kkgroup/logs/locker_refresh.log`（repo 內相對路徑，非 `/var/log/`）
 - **專案備份**: `/home/e193752468/kkgroup/backups/`
 
 ## 安全配置
