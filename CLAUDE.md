@@ -582,7 +582,7 @@ VM 系統時區為 `Etc/UTC`，crontab 內**未設** `CRON_TZ`，因此下列時
 | `10 3 * * 3` | 週三 11:10 | `scheduled_tasks/netflix_weekly_push.py` | Netflix 週榜推播 |
 
 > **2026-09-30 以 VM `crontab -l` 實測為準。**
-> `update_restart.py`、`sync_to_sheet.py`、`refresh_knowledge_base.py` **未掛在任何排程上**（cron、`/etc/cron.d`、systemd timer、repo 內 Python 呼叫端皆查無引用），目前不會自動執行。
+> `update_restart.py`、`sync_to_sheet.py`（含 `web/blueprints/` 內的重複副本）、`refresh_knowledge_base.py` 已於 2026-09-30 **退役刪除**：實測確認 cron / systemd timer / repo 內任何 Python 呼叫端皆無引用，`config/commands_registry.json` 的對應管理命令一併移除。
 
 ---
 

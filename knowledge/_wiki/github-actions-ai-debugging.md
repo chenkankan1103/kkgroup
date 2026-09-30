@@ -116,22 +116,19 @@ on:
 系統設計支援多AI提供商：
 
 ```python
-# AI提供商配置
+# AI提供商配置（實際使用；與 cogs/common/AI.py 的降級鏈一致）
 AI_PROVIDERS = {
     "gemini": {
         "api_key": "GEMINI_API_KEY",
         "model": "gemini-2.0-flash",
-        "endpoint": "https://generativelanguage.googleapis.com"
+        "endpoint": "https://generativelanguage.googleapis.com",
+        "role": "主要分析模型"
     },
-    "claude": {
-        "api_key": "CLAUDE_API_KEY",
-        "model": "claude-3-sonnet",
-        "endpoint": "https://api.anthropic.com"
-    },
-    "openai": {
-        "api_key": "OPENAI_API_KEY",
-        "model": "gpt-4",
-        "endpoint": "https://api.openai.com"
+    "groq": {
+        "api_key": "GROQ_API_KEY",
+        "model": "llama-3.3-70b-versatile",
+        "endpoint": "https://api.groq.com/openai/v1/chat/completions",
+        "role": "降級備援（純文字，無工具）"
     }
 }
 ```
@@ -139,8 +136,7 @@ AI_PROVIDERS = {
 ### 📈 未來擴展方向
 
 1. **更多AI模型支援**
-   - OpenAI GPT-4 Turbo
-   - Anthropic Claude 3.5
+   - 依 `cogs/common/AI.py` 既有降級鏈擴充（NVIDIA / SambaNova 等）
    - 本地開源模型
 
 2. **進階功能**

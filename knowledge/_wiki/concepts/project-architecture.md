@@ -77,16 +77,19 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **unified_api.py**: 統一 API 聚合入口
 - **game/**: Godot 遊戲專案（`.godot/`, `scenes/`, `scripts/`, `assets/`, `data/`）
 
-#### 藍圖系統 (`web/blueprints/`) — 7 個模組化路由
-- **discord_auth.py**: Discord OAuth 認證
-- **sheet_driven_db.py**: 表格驅動資料庫 API
-- **sheets.py**: Google Sheets 操作
-- **sheet_sync_manager.py**: 表格同步管理
-- **knowledge_api.py**: 知識庫 API
-- **stats.py**: 統計 API
-- **stocks_api.py**: 股票 API
-- **sync_to_sheet.py**: 同步到表格
-- **webhook.py**: GitHub Webhook 接收器（自動部署觸發點）
+#### 藍圖系統 (`web/blueprints/`) — 模組化路由
+實際在 `web/api/unified_api.py` 註冊的為 **6 個**：`stats_bp`、`sheets_bp`、`discord_auth_bp`、`knowledge_api_bp`、`stocks_api_bp`、`webhook_bp`（另有 `game_bp` 來自 `web/api/game_api.py`）。
+
+- **discord_auth.py**: Discord OAuth 認證 ✅ 已註冊
+- **sheets.py**: Google Sheets 操作 ✅ 已註冊
+- **knowledge_api.py**: 知識庫 API ✅ 已註冊
+- **stats.py**: 統計 API ✅ 已註冊
+- **stocks_api.py**: 股票 API ✅ 已註冊
+- **webhook.py**: GitHub Webhook 接收器（自動部署觸發點）✅ 已註冊
+- **sheet_driven_db.py**: 表格驅動資料庫 API ⚠️ 未註冊
+- **sheet_sync_manager.py**: 表格同步管理 ⚠️ 未註冊
+
+> `sync_to_sheet.py` 已於 2026-09-30 退役刪除（與 `scheduled_tasks/sync_to_sheet.py` 為位元組相同的重複副本，全 repo 零引用）。
 
 #### 前端 (`web/portal/`)
 - **index.html**: 主要入口
@@ -140,13 +143,14 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **weekly_backup.py**: 每週一 03:00 UTC（台灣 11:00）
 - **netflix_weekly_push.py**: 每週三 03:10 UTC（台灣 11:10）
 
+`update_restart.py`、`sync_to_sheet.py`、`refresh_knowledge_base.py` 已於 2026-09-30 **退役刪除**（實測確認無任何引用）。
+
 其餘檔案存在但**未被 cron / systemd timer / 任何 Python 呼叫端引用**，目前不會自動執行：
-`update_restart.py`、`sync_to_sheet.py`、`refresh_knowledge_base.py`、`auto_update_config.py`、`auto_update_webhook_v2.py`、`locker_maintenance.py`、`webhook_logger.py`
+`auto_update_config.py`、`auto_update_webhook_v2.py`、`locker_maintenance.py`、`webhook_logger.py`
 
 ### 8. 腳本系統 (`scripts/`) — 20+ 管理腳本
 - **commands_manager.py**: 統一維運入口（SSH、systemd、日誌、診斷）
-- **scan_vm_state.py**: 掃描 VM 狀態 → 產生 `knowledge/_wiki/Inbox/vm-scan-latest.md`
-- **refresh_knowledge_base.py**: 每日更新 knowledge wiki 與 VM 掃描結果到 AI 知識庫
+- **scan_vm_state.py**: 掃描 VM 狀態 → 產生 `knowledge/_wiki/Inbox/vm-scan-latest.md`（下游匯入腳本已退役，目前無消費者）
 - **sync-knowledge-to-vm.ps1** / **gcp-ssh.ps1**: PowerShell 管理腳本
 - **fetch_db_from_gcp.ps1**: 從 GCP 抓取資料庫
 - **auto_ai_fix.py** / **auto_error_detector.py** / **auto_self_heal.py**: 自動修復系統
@@ -226,7 +230,7 @@ graph TD
 - **AgentDB / ruvector.db**: 向量資料庫（HNSW 索引）
 - **ai_memory.py**: 長期記憶（四步驟管線：scan → ingest → refresh → query）
 - **knowledge_vector_index.py**: 知識向量索引
-- **知識庫刷新**: `refresh_knowledge_base.py` + Discord Webhook 通知（⚠️ 2026-09-30 實測：**未掛任何排程**，不會自動執行）
+- **知識庫刷新**: ⚠️ **整條管線已於 2026-09-30 退役**（`refresh_knowledge_base.py` 刪除，從未掛上排程）
 
 ## 安全考量
 
