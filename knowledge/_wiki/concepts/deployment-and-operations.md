@@ -176,20 +176,18 @@ sudo systemctl status bot.service | grep Active
 
 ### 2. Cron 排程任務（輔助維運）
 
-| 排程 | 腳本 | 用途 |
-|------|------|------|
-| `*/5 * * * *` | `update_restart.py` | 定期 git pull + 重啟（備用） |
-| `*/5 * * * *` | `sync_to_sheet.py` | Google Sheets 雙向同步 |
-| `0 14 * * 3,6` | `refresh_all_lockers_cron.py` | 置物櫃批量更新（週三、六 14:00） |
-| `0 3 * * 1` | `weekly_backup.py` | 每週備份（週一 03:00） |
-| `0 18 * * *` | `refresh_knowledge_base.py` | 知識庫刷新（每天 18:00 台時間） |
+VM 系統時區 `Etc/UTC`，crontab **未設** `CRON_TZ`，故下列時刻皆為 UTC（台灣時間 = UTC+8）。
+2026-09-30 以 `crontab -l` 實測：
 
-**Cron 環境變數**（`crontab -e`）：
-```bash
-CRON_TZ=Asia/Taipei
-PYTHONPATH=/home/ubuntu/kkgroup
-PATH=/home/ubuntu/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-```
+| 排程（UTC） | 台灣時間 | 腳本 | 用途 |
+|------|------|------|------|
+| `0 3 * * 3` | 週三 11:00 | `refresh_all_lockers_cron.py` | 置物櫃批量更新 |
+| `0 3 * * 1` | 週一 11:00 | `weekly_backup.py` | 每週備份 |
+| `10 3 * * 3` | 週三 11:10 | `netflix_weekly_push.py` | Netflix 週榜推播 |
+
+`update_restart.py`、`sync_to_sheet.py`、`refresh_knowledge_base.py` 未掛在任何排程上（cron、systemd timer、Python 呼叫端皆查無），目前不會自動執行。
+
+**執行環境**：crontab 內未設 `CRON_TZ`／`PYTHONPATH`；腳本以 `/home/e193752468/kkgroup/venv/bin/python` 執行，置物櫃任務另以 `. .env` 載入環境變數。
 
 ### 3. 統一維運入口
 ```bash
@@ -295,10 +293,10 @@ sudo tail -50 /var/log/nginx/error.log
 - Discord 通知：部署結果、錯誤告警、知識庫刷新結果
 
 ### 3. 知識庫自動刷新
-- **排程**：每天 18:00（台灣時間）
+- **排程**：⚠️ **目前沒有排程**。2026-09-30 實測 `refresh_knowledge_base.py` 未掛在任何 cron / systemd timer / Python 呼叫端上，需手動執行
 - **腳本**：`scheduled_tasks/refresh_knowledge_base.py`
 - **流程**：`scan_vm_state.py` → `refresh_knowledge_base.py` → 更新 `ai_memory.py` 知識庫
-- **通知**：Discord Webhook（`KNOWLEDGE_WEBHOOK_URL` 或 `DISCORD_WEBHOOK_URL`）
+- **通知**：Discord Webhook（`KNOWLEDGE_WEBHOOK_URL` 或 `DISCORD_WEBHOOK_URL`），僅在腳本被執行時才會發送
 
 ## 備份和恢復
 
@@ -380,14 +378,14 @@ if __name__ == "__main__":
 # 當代碼 push 到 main 分支時自動部署
 # 流程：Git Push → GitHub Webhook → VM Webhook 接收器 → Git Pull → 重啟服務
 
-# 備用 Cron 任務（僅用於監控和維護）
-*/5 * * * * /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/sync_to_sheet.py
+# Cron 任務（2026-09-30 crontab -l 實測；系統時區 Etc/UTC，未設 CRON_TZ）
+0 3 * * 3 . /home/e193752468/kkgroup/.env && cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /home/e193752468/kkgroup/logs/locker_refresh.log 2>&1
 
-# 置物櫃批量更新（每周三、六下午2點）
-0 14 * * 3,6 /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/refresh_all_lockers_cron.py
+# 每週一 03:00 UTC 備份
+0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python weekly_backup.py >> /tmp/weekly_backup.log 2>&1
 
-# 每週一凌晨3點備份
-0 3 * * 1 /home/ubuntu/kkgroup/.venv/bin/python /home/ubuntu/kkgroup/scheduled_tasks/weekly_backup.py
+# 每週三 03:10 UTC Netflix 週榜推播
+10 3 * * 3 cd /home/e193752468/kkgroup && venv/bin/python scheduled_tasks/netflix_weekly_push.py >> scheduled_tasks/netflix_cron.log 2>&1
 ```
 
 **Webhook 部署詳情**:

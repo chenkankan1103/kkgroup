@@ -40,10 +40,11 @@
 
 - 在 VM 本機用 cron 或 systemd timer，每 24 小時跑一次：
   - `python3 scheduled_tasks/refresh_knowledge_base.py`
-- 目前 VM 已設定 cron：每天台灣時間 18:00 執行一次
-  - `CRON_TZ=Asia/Taipei`
-  - `0 18 * * * cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_knowledge_base.py >> /home/e193752468/kkgroup/knowledge_refresh.log 2>&1`
-- 另外可以在部署後手動補跑一次，讓知識庫立即反映最新 commit
+- ⚠️ **2026-09-30 實測：VM 上並沒有這條排程。**
+  - `crontab -l`、`/etc/cron.d`、systemd timer 皆查無 `refresh_knowledge_base.py`，repo 內也沒有任何 Python 呼叫端
+  - 即知識庫刷新**目前不會自動執行**，需手動跑或重新掛上排程
+  - 歷史上曾以 `CRON_TZ=Asia/Taipei` + `0 18 * * *` 掛在 crontab，現已不存在
+- 部署後可手動補跑一次，讓知識庫立即反映最新 commit
 
 ## Discord Webhook 通知
 
@@ -53,7 +54,7 @@
   - `DISCORD_WEBHOOK_URL`
   - `DISCORD_WEBHOOK`
   - `STARTUP_WEBHOOK_URL`
-- 目前 VM 已配置 `KNOWLEDGE_WEBHOOK_URL`，每日 18:00 的知識庫刷新會嘗試發送 Discord 通知
+- VM 已配置 `KNOWLEDGE_WEBHOOK_URL`；但每日 18:00 的排程已不存在（見上），目前不會自動發送通知
 - 若以上都沒設定，排程仍會執行，只是不發送 Discord 通知
 
 ## 互相關聯頁面
