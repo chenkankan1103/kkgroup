@@ -49,11 +49,11 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/kkgroup
-Environment=PYTHONPATH=/home/ubuntu/kkgroup
+WorkingDirectory=/home/e193752468/kkgroup
+Environment=PYTHONPATH=/home/e193752468/kkgroup
 Environment=PYTHONIOENCODING=utf-8
 Environment=LANG=C.UTF-8
-ExecStart=/home/ubuntu/.venv/bin/python bots/bot.py
+ExecStart=/home/e193752468/kkgroup/venv/bin/python bots/bot.py
 Restart=on-failure
 RestartSec=10
 StartLimitBurst=10
@@ -73,11 +73,11 @@ Wants=network-online.target systemd-resolved.service
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/kkgroup
+WorkingDirectory=/home/e193752468/kkgroup
 Environment=FLASK_ENV=production
 Environment=PYTHONIOENCODING=utf-8
 Environment=LANG=C.UTF-8
-ExecStart=/home/ubuntu/.venv/bin/python -m flask run --host=0.0.0.0 --port=5000
+ExecStart=/home/e193752468/kkgroup/venv/bin/python -m flask run --host=0.0.0.0 --port=5000
 Restart=on-failure
 RestartSec=10
 StartLimitBurst=10
@@ -185,7 +185,7 @@ VM 系統時區 `Etc/UTC`，crontab **未設** `CRON_TZ`，故下列時刻皆為
 | `0 3 * * 1` | 週一 11:00 | `weekly_backup.py` | 每週備份 |
 | `10 3 * * 3` | 週三 11:10 | `netflix_weekly_push.py` | Netflix 週榜推播 |
 
-`update_restart.py`、`sync_to_sheet.py`、`refresh_knowledge_base.py` 未掛在任何排程上（cron、systemd timer、Python 呼叫端皆查無），目前不會自動執行。
+`update_restart.py`、`sync_to_sheet.py`（含 `web/blueprints/` 內的重複副本）、`refresh_knowledge_base.py` 已於 2026-09-30 退役刪除（cron、systemd timer、Python 呼叫端皆查無引用）。
 
 **執行環境**：crontab 內未設 `CRON_TZ`／`PYTHONPATH`；腳本以 `/home/e193752468/kkgroup/venv/bin/python` 執行，置物櫃任務另以 `. .env` 載入環境變數。
 
@@ -239,7 +239,7 @@ server {
 
     # 靜態檔案
     location /static/ {
-        alias /home/ubuntu/kkgroup/web/portal/static/;
+        alias /home/e193752468/kkgroup/web/portal/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
@@ -292,11 +292,10 @@ sudo tail -50 /var/log/nginx/error.log
 - `status_dashboard.py`：系統資源、服務狀態監控
 - Discord 通知：部署結果、錯誤告警、知識庫刷新結果
 
-### 3. 知識庫自動刷新
-- **排程**：⚠️ **目前沒有排程**。2026-09-30 實測 `refresh_knowledge_base.py` 未掛在任何 cron / systemd timer / Python 呼叫端上，需手動執行
-- **腳本**：`scheduled_tasks/refresh_knowledge_base.py`
-- **流程**：`scan_vm_state.py` → `refresh_knowledge_base.py` → 更新 `ai_memory.py` 知識庫
-- **通知**：Discord Webhook（`KNOWLEDGE_WEBHOOK_URL` 或 `DISCORD_WEBHOOK_URL`），僅在腳本被執行時才會發送
+### 3. 知識庫自動刷新（已退役）
+- **狀態**：⚠️ **整條管線已於 2026-09-30 退役**。`scheduled_tasks/refresh_knowledge_base.py` 已刪除——實測確認它從未掛上任何 cron / systemd timer，repo 內也無 Python 呼叫端，`config/commands_registry.json` 的管理命令同步移除
+- **殘留**：`scripts/scan_vm_state.py` 仍在，但它的產出（`knowledge/_wiki/Inbox/vm-scan-latest.md`）原本只由已刪除的 `refresh_knowledge_base.py` 消費，目前無下游
+- **要恢復自動刷新**：需一併重建「掃描 → 匯入 `ai_memory.py` → 掛排程」三件事，不能只把腳本放回來
 
 ## 備份和恢復
 
@@ -335,7 +334,7 @@ gcloud compute ssh e193752468@instance-20250501-142333 --zone=us-central1-a --tu
 | 隧道 URL 失效 | cloudflared 重啟 | 更新 GitHub Webhook URL、重啟 cloudflared.service |
 | Nginx 502 Bad Gateway | Flask 未啟動 | `sudo systemctl restart kkgroup-api.service` |
 | 紙娃娃修復不生效 | VM 未同步資料庫/代碼 | 1) `/admin_refresh_all_lockers` 2) 複製 DB 到 VM 3) 重啟服務 |
-| 推播重複/遺漏 | anime_check_history 表問題 | 檢查 `scheduled_tasks/refresh_knowledge_base.py` 邏輯 |
+| 推播重複/遺漏 | 排程閘門或 task 強引用遺失 | 檢查 `cogs/ui/push_core.py`、`cogs/ui/anime_tracker.py` 的 `is_notified` 邏輯 |
 
 ## 相關文檔
 
@@ -354,7 +353,7 @@ import time
 
 def update_and_restart():
     # 切換到專案目錄
-    os.chdir('/home/ubuntu/kkgroup')
+    os.chdir('/home/e193752468/kkgroup')
 
     # Git 拉取最新程式碼
     subprocess.run(['git', 'pull', 'origin', 'main'], check=True)
@@ -409,11 +408,11 @@ echo "開始部署 KKGroup 到 GCP..."
 sudo apt update && sudo apt upgrade -y
 
 # 2. 安裝 Python 依賴
-/home/ubuntu/.venv/bin/pip install -r requirements.txt
+/home/e193752468/kkgroup/venv/bin/pip install -r requirements.txt
 
 # 3. 設定檔案權限
-sudo chown -R ubuntu:ubuntu /home/ubuntu/kkgroup
-chmod +x /home/ubuntu/kkgroup/scheduled_tasks/*.py
+sudo chown -R e193752468:e193752468 /home/e193752468/kkgroup
+chmod +x /home/e193752468/kkgroup/scheduled_tasks/*.py
 
 # 4. 重新載入 systemd 配置
 sudo systemctl daemon-reload
@@ -478,7 +477,7 @@ server {
 
     # 靜態檔案服務
     location /static/ {
-        alias /home/ubuntu/kkgroup/web/portal/static/;
+        alias /home/e193752468/kkgroup/web/portal/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
@@ -526,7 +525,7 @@ class SystemMonitor:
 ### 2. 日誌管理
 **日誌輪轉配置** (`/etc/logrotate.d/kkgroup`):
 ```
-/home/ubuntu/kkgroup/logs/*.log {
+/home/e193752468/kkgroup/logs/*.log {
     daily
     missingok
     rotate 30
@@ -581,7 +580,7 @@ import tarfile
 
 def create_backup():
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_dir = f"/home/ubuntu/backups/{timestamp}"
+    backup_dir = f"/home/e193752468/backups/{timestamp}"
 
     # 建立備份目錄
     os.makedirs(backup_dir, exist_ok=True)
@@ -589,18 +588,18 @@ def create_backup():
     # 備份專案檔案
     subprocess.run([
         'tar', '-czf', f'{backup_dir}/kkgroup.tar.gz',
-        '-C', '/home/ubuntu', 'kkgroup'
+        '-C', '/home/e193752468', 'kkgroup'
     ], check=True)
 
     # 備份資料庫
     subprocess.run([
-        'cp', '/home/ubuntu/kkgroup/data/database.db',
+        'cp', '/home/e193752468/kkgroup/data/database.db',
         f'{backup_dir}/database.db'
     ], check=True)
 
     # 清理舊備份 (保留30天)
     subprocess.run([
-        'find', '/home/ubuntu/backups', '-type', 'd',
+        'find', '/home/e193752468/backups', '-type', 'd',
         '-mtime', '+30', '-exec', 'rm', '-rf', '{}', ';'
     ], check=True)
 
@@ -630,16 +629,16 @@ sudo systemctl stop shopbot.service
 sudo systemctl stop kkgroup-api.service
 
 # 2. 備份當前狀態
-sudo cp -r /home/ubuntu/kkgroup /home/ubuntu/kkgroup.backup.$(date +%Y%m%d_%H%M%S)
+sudo cp -r /home/e193752468/kkgroup /home/e193752468/kkgroup.backup.$(date +%Y%m%d_%H%M%S)
 
 # 3. 恢復專案檔案
-sudo tar -xzf $BACKUP_DIR/kkgroup.tar.gz -C /home/ubuntu/
+sudo tar -xzf $BACKUP_DIR/kkgroup.tar.gz -C /home/e193752468/
 
 # 4. 恢復資料庫
-sudo cp $BACKUP_DIR/database.db /home/ubuntu/kkgroup/data/
+sudo cp $BACKUP_DIR/database.db /home/e193752468/kkgroup/data/
 
 # 5. 重新設定權限
-sudo chown -R ubuntu:ubuntu /home/ubuntu/kkgroup
+sudo chown -R e193752468:e193752468 /home/e193752468/kkgroup
 
 # 6. 重啟服務
 sudo systemctl start bot.service
@@ -675,11 +674,11 @@ MaxAuthTries 3
 **.env 檔案保護**:
 ```bash
 # 設定檔案權限
-chmod 600 /home/ubuntu/kkgroup/.env
-chown ubuntu:ubuntu /home/ubuntu/kkgroup/.env
+chmod 600 /home/e193752468/kkgroup/.env
+chown e193752468:e193752468 /home/e193752468/kkgroup/.env
 
 # 確保不會被提交到 Git
-echo ".env" >> /home/ubuntu/kkgroup/.gitignore
+echo ".env" >> /home/e193752468/kkgroup/.gitignore
 ```
 
 ## 效能優化

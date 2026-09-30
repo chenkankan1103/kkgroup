@@ -85,7 +85,7 @@ tcp6       0      0 :::80                   :::*                    LISTEN
 - **Webhook 接收器**: `/web/blueprints/webhook.py`
 - **執行操作**: `git pull` + `systemctl restart` 所有服務
 - **通知機制**: 部署結果發送到 Discord 系統頻道
-- **AI 知識庫排程**: ⚠️ **不存在**。2026-09-30 實測 `refresh_knowledge_base.py` 未掛在任何 cron / systemd timer / Python 呼叫端上，知識庫刷新目前不會自動執行
+- **AI 知識庫排程**: ⚠️ **已退役**。2026-09-30 實測 `refresh_knowledge_base.py` 從未掛在任何 cron / systemd timer / Python 呼叫端上，該腳本與對應 registry 命令已刪除
 - **2026-05-18 再驗證**: push 到 `main` 後，VM 已自動同步到最新 commit（實測 commit `d4094c3d`），證明 webhook 自動部署鏈正常。
 - **Mutual Rescue 前置權限**: GitHub Actions 已補上 `github-actions-vm-repair@kkgroup.iam.gserviceaccount.com` -> `862486124810-compute@developer.gserviceaccount.com` 的 `roles/iam.serviceAccountUser`。目前 agent 已可透過 `gcloud compute ssh` 遠端修復 bot 服務。
 
@@ -97,13 +97,9 @@ PYTHONIOENCODING=utf-8
 TZ=Asia/Taipei
 ```
 
-### AI 知識庫通知
-- `scheduled_tasks/refresh_knowledge_base.py` 會嘗試從 `.env` 讀取以下 webhook 設定：
-	- `KNOWLEDGE_WEBHOOK_URL`
-	- `DISCORD_WEBHOOK_URL`
-	- `DISCORD_WEBHOOK`
-	- `STARTUP_WEBHOOK_URL`
-- VM 已設定 `KNOWLEDGE_WEBHOOK_URL`；但每日知識庫刷新排程已不存在（見上），故目前不會有自動回報
+### AI 知識庫通知（已退役）
+- 原本由 `scheduled_tasks/refresh_knowledge_base.py` 從 `.env` 依序讀取 `KNOWLEDGE_WEBHOOK_URL`、`DISCORD_WEBHOOK_URL`、`DISCORD_WEBHOOK`、`STARTUP_WEBHOOK_URL` 發送成功／失敗通知
+- 該腳本已於 2026-09-30 刪除，**不再有任何知識庫刷新通知**；VM 上的 `KNOWLEDGE_WEBHOOK_URL` 目前無消費者
 
 ## 環境配置
 

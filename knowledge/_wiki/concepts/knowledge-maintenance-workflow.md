@@ -6,7 +6,7 @@
 2. 經驗證後，整理到 `_wiki/` 對應主題頁
 3. 若是新的來源文件，先補 `sources/` 來源頁
 4. 更新 `index.md` 與 `log.md`
-5. 若該資訊來自 VM 或 repo 全域掃描，同步執行 `scheduled_tasks/refresh_knowledge_base.py`
+5. 若該資訊來自 VM 或 repo 全域掃描，執行 `python3 scripts/scan_vm_state.py` 更新 `Inbox/vm-scan-latest.md`（原自動匯入知識庫的管線已於 2026-09-30 退役，見 [AI 記憶與 VM 知識更新流程](ai-memory-and-vm-knowledge-pipeline.md)）
 
 ## 什麼值得進 wiki
 
@@ -35,7 +35,7 @@
 - 每次完成一個修復就補 `log.md`
 - 每週一次整理 `Inbox/`
 - 每次新增高頻命令就同步更新 registry 與 wiki
-- 每次更新掃描腳本或知識匯入邏輯後，手動跑一次 `scheduled_tasks/refresh_knowledge_base.py`
+- 每次更新掃描腳本後，手動跑一次 `scripts/scan_vm_state.py`
 
 ## 補鏈原則
 

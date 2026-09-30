@@ -86,3 +86,15 @@
 - 記錄 Cloudflare 整合：已安裝但未配置隧道
 - 建立完整的 [VM 實際配置狀況](entities/vm-actual-configuration.md) 文檔
 - 更新知識庫索引，新增 VM 配置文檔到核心入口列表
+
+## 2026-09-30 (排程與孤兒腳本清理)
+
+- **更正**：本頁 `2026-05-15` 段落記載「已在 VM crontab 設定每天台灣時間 18:00 執行 `scheduled_tasks/refresh_knowledge_base.py`」——2026-09-30 以 `crontab -l` 實測，**該排程從未存在**，`/etc/cron.d`、systemd timer、repo 內 Python 呼叫端亦皆查無引用
+- **退役刪除**三個從未被任何排程或程式引用的孤兒腳本：
+  - `scheduled_tasks/refresh_knowledge_base.py`（連同 `config/commands_registry.json` 的 `refresh_knowledge_base` 管理命令）
+  - `scheduled_tasks/update_restart.py`
+  - `scheduled_tasks/sync_to_sheet.py` 與其位元組相同的重複副本 `web/blueprints/sync_to_sheet.py`
+- **刪除** `docs/ARCHITECTURE.md`：內容為已取消的 Agent 專案架構設計（`core/agent`、`core/tools`、`infra/*`、PostgreSQL/Redis 等），與實際架構不符且全 repo 零引用；實際架構以 [專案架構總覽](concepts/project-architecture.md) 為準
+- **修正** `knowledge/_wiki/github-actions-ai-debugging.md` 的 AI 供應商清單：原文列出 `claude-3-5-sonnet` / `gpt-4-turbo` 等虛構項目，改為與 `cogs/common/AI.py` 實際降級鏈一致（NVIDIA 主要、Gemini 工具/備援、Groq 最終降級）
+- **修正** `deployment-and-operations.md` 等多份文件的路徑：`/home/ubuntu` → `/home/e193752468/kkgroup`、`.venv` → `venv`
+- ⚠️ **待確認**：文件記載的 `0 3 * * 1` 備份排程為 `venv/bin/python weekly_backup.py`（repo 根目錄），但該檔案實際位於 `scheduled_tasks/weekly_backup.py`——此排程可能一直靜默失敗

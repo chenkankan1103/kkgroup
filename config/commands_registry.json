@@ -122,12 +122,6 @@
         "sudo systemctl daemon-reload"
       ]
     },
-    "refresh_knowledge_base": {
-      "name": "更新 AI 知識庫",
-      "commands": [
-        "cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_knowledge_base.py"
-      ]
-    },
     "sync_anime_database": {
       "name": "同步動畫資料庫 (Bahamut videoSn)",
       "commands": [

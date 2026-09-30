@@ -342,9 +342,9 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/kkgroup
+WorkingDirectory=/home/e193752468/kkgroup
 Environment=FLASK_ENV=production
-ExecStart=/home/ubuntu/.venv/bin/python -m flask run --host=0.0.0.0 --port=5000
+ExecStart=/home/e193752468/kkgroup/venv/bin/python -m flask run --host=0.0.0.0 --port=5000
 Restart=always
 
 [Install]
@@ -367,7 +367,7 @@ server {
     }
 
     location /static/ {
-        alias /home/ubuntu/kkgroup/web/portal/static/;
+        alias /home/e193752468/kkgroup/web/portal/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
