@@ -16,3 +16,7 @@ pillow
 beautifulsoup4
 html5lib
 sqlalchemy
+# 測試會實際 import 的模組所需（shared/db/async_db、bots/uibot、shared/utils/encoding_handler）
+aiosqlite
+watchdog
+pytz
