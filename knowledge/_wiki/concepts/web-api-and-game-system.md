@@ -80,19 +80,8 @@ def callback():
 ```
 
 #### 表格驅動資料庫藍圖 (`sheet_driven_db.py`)
-```python
-sheet_db_bp = Blueprint('sheet_db', __name__)
 
-@sheet_db_bp.route('/sync', methods=['POST'])
-def sync_sheet():
-    # Google Sheets 同步
-    pass
-
-@sheet_db_bp.route('/data/<sheet_name>')
-def get_sheet_data(sheet_name):
-    # 獲取表格資料
-    pass
-```
+> 已於 2026-10-02 隨 Google Sheets 系統刪除。`shared/db/sheet_driven_db.py` 是純 SQLite 引擎，與此無關。
 
 ## 前端系統
 

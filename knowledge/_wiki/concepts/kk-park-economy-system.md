@@ -31,7 +31,7 @@ KK 園區的經濟系統不是單一 Cog，而是跨 Bot、跨資料層、跨互
   - `get_user_kkcoin(user_id)`
   - `update_user_kkcoin(user_id, amount)`
   - 這裡是大量舊代碼共用的向後相容入口
-- [shared/db/sheet_driven_db.py](../../../shared/db/sheet_driven_db.py)
+- [shared/db/sheet_driven_db.py](../../../shared/db/sheet_driven_db.py)（純 SQLite 引擎，檔名是舊稱，與 Google Sheets 無關）
   - `kkcoin` 是資料欄位的一部分
   - 說明經濟數值不是孤立表，而是玩家主資料的一部分
 - [shared/db/database_schema.py](../../../shared/db/database_schema.py)
@@ -66,7 +66,7 @@ KK 園區的經濟系統不是單一 Cog，而是跨 Bot、跨資料層、跨互
 `Discord 指令 / UI 互動 / 活動系統`
 -> `cogs/common | cogs/shop | cogs/ui`
 -> `shared/db/db_adapter.py`
--> `sheet-driven 使用者資料`
+-> `sheet_driven_db 使用者資料（SQLite）`
 
 其中最常見的控制流是：
 

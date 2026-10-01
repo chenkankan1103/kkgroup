@@ -2,7 +2,7 @@
 
 ## 專案一句話
 
-KKGroup 是一個以 Discord 多 Bot 為核心、結合 Google Sheets/SQLite、Flask API、Webhook 自動部署與紙娃娃遊戲系統的混合專案。
+KKGroup 是一個以 Discord 多 Bot 為核心、結合 SQLite、Flask API、Webhook 自動部署與紙娃娃遊戲系統的混合專案。
 
 ## 先讀哪些地方
 
@@ -36,9 +36,8 @@ KKGroup 是一個以 Discord 多 Bot 為核心、結合 Google Sheets/SQLite、F
 ## 資料層模型
 
 - 本地主要是 SQLite
-- 結構上以 Google Sheets 驅動欄位與同步
 - 穩定入口是 `shared/db/db_adapter.py`
-- 核心引擎是 `shared/db/sheet_driven_db.py`
+- 核心引擎是 `shared/db/sheet_driven_db.py`（純 SQLite，檔名是舊稱）
 - 經濟系統要從 `cogs/common/kcoin.py`、`cogs/shop/`、`cogs/ui/` 一起看，不是只看商店
 
 ## 高頻維運入口

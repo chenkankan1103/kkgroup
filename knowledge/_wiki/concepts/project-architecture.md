@@ -23,7 +23,6 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **announcement.py**: 公告系統
 - **auto_debug_system.py**: 自動除錯系統
 - **fraud_voice.py**: 語音頻道反詐騙/自動清理
-- **google_sheets_sync.py**: Google Sheets 同步
 - **jail.py**: 監獄/懲罰系統
 - **leaderboard_manager.py**: 排行榜管理
 - **log_monitor.py**: 日誌監控
@@ -78,17 +77,15 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **game/**: Godot 遊戲專案（`.godot/`, `scenes/`, `scripts/`, `assets/`, `data/`）
 
 #### 藍圖系統 (`web/blueprints/`) — 模組化路由
-實際在 `web/api/unified_api.py` 註冊的為 **6 個**：`stats_bp`、`sheets_bp`、`discord_auth_bp`、`knowledge_api_bp`、`stocks_api_bp`、`webhook_bp`（另有 `game_bp` 來自 `web/api/game_api.py`）。
+實際在 `web/api/unified_api.py` 註冊的為 **5 個**：`stats_bp`、`discord_auth_bp`、`knowledge_api_bp`、`stocks_api_bp`、`webhook_bp`（另有 `game_bp` 來自 `web/api/game_api.py`）。
 
 - **discord_auth.py**: Discord OAuth 認證 ✅ 已註冊
-- **sheets.py**: Google Sheets 操作 ✅ 已註冊
 - **knowledge_api.py**: 知識庫 API ✅ 已註冊
 - **stats.py**: 統計 API ✅ 已註冊
 - **stocks_api.py**: 股票 API ✅ 已註冊
 - **webhook.py**: GitHub Webhook 接收器（自動部署觸發點）✅ 已註冊
-- **sheet_driven_db.py**: 表格驅動資料庫引擎（本身不是 Blueprint，由 `sheets.py` 以 `blueprints.sheet_driven_db` 匯入使用）✅ 使用中
-- **sheet_sync_manager.py**: 表格同步管理器（本身不是 Blueprint，由 `sheets.py` 匯入使用）✅ 使用中
 
+> `sheets.py`、`sheet_driven_db.py`（`web/blueprints/` 版）、`sheet_sync_manager.py` 已於 2026-10-02 隨 Google Sheets 系統一併刪除。
 > `sync_to_sheet.py` 已於 2026-09-30 退役刪除（與 `scheduled_tasks/sync_to_sheet.py` 為位元組相同的重複副本，全 repo 零引用）。
 
 #### 前端 (`web/portal/`)
@@ -103,7 +100,7 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 ### 4. 共享資源 (`shared/`)
 #### 資料庫 (`shared/db/`)
 - **db_adapter.py**: 統一資料庫適配器（向後相容入口 `get_user_kkcoin()`, `update_user_kkcoin()`）
-- **sheet_driven_db.py**: 核心引擎，Google Sheets 驅動欄位與同步
+- **sheet_driven_db.py**: 核心引擎（純 SQLite，檔名沿用舊稱，與 Google Sheets 無關）
 - **database_schema.py**: Schema 定義
 - **ai_memory.py**: AI 長期記憶（topic/content/category + source_path/metadata/related_topics）
 - **feature_usage.py**: 功能使用統計
@@ -191,7 +188,7 @@ graph TD
     C --> D[共享資源 shared/]
     C --> E[Web API]
     E --> F[前端界面 web/portal]
-    D --> G[資料庫 SQLite + Google Sheets]
+    D --> G[資料庫 SQLite]
     H[排程任務] --> D
     I[配置系統 config/] --> C
     J[管理腳本 scripts/] --> C
@@ -205,7 +202,6 @@ graph TD
 - **discord.py 2.0+**: Discord API 整合（Slash Commands、Persistent Views）
 - **Flask**: Web API 框架（Blueprints 模組化路由）
 - **SQLite**: 本地資料庫（`check_same_thread=False` 連線池）
-- **Google Sheets API**: 雲端試算表同步（Sheet-driven 架構）
 - **asyncio**: 非同步處理（`asyncio.gather()` 平行操作）
 - **LiteLLM**: 多模型 AI 客戶端整合
 
