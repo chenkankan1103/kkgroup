@@ -463,8 +463,7 @@
         "test_remove_nickname_id",
         "anime_test",
         "anime_start",
-        "locker_health_check",
-        "test_locker_equipment"
+        "locker_health_check"
       ],
       "priority": "高",
       "action": "建議移到 /test 分類或用 app_commands.checks.is_owner() 限制"
