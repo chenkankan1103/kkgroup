@@ -111,3 +111,17 @@
 - **移除 `sync_from_sheet`**：`config/discord_commands_registry.json` 的指令定義、分類、maintenance 清單；同分類的 `export_to_sheet` / `list_members` / `sync_status` 也一併清掉（三個都查無實作）
 - ⚠️ **保留**：`shared/db/sheet_driven_db.py` **不能刪**——檔名雖有 sheet，實際是純 SQLite 引擎（`import sqlite3`，無 `gspread`），由 `db_adapter.py`、`unified_api.py`、`cannabis_unified.py` 匯入
 - **更正文件**：`project-architecture.md`、`ai-fast-read.md`、`web-api-and-game-system.md`、`kk-park-economy-system.md` 的 Sheets 描述；並在多處標註 `sheet_driven_db.py` 的檔名是舊稱
+
+## 2026-10-02 (GitHub Actions 修復)
+
+- **根因**：VM `instance-20250501-142333` 已於 2026-08-06 遷移到 `us-central1-a`，但三個 workflow 仍硬寫舊的 `us-central1-c`，導致每次 push 都紅燈
+- **修復 `ci.yml` 的依賴鏈**（兩個 commit）：
+  - `requirements-test.txt` 的 `discord-ext-test` 是**不存在的 PyPI 套件名**，正解是 `dpytest`（發行名 `dpytest`、import 路徑 `discord.ext.test`）
+  - 補上測試會實際 import 的三個套件：`aiosqlite`（`shared/db/async_db.py`）、`watchdog`（`bots/uibot.py`）、`pytz`（`shared/utils/encoding_handler.py`）
+  - 補套件的方式是先用本地 `.venv` 實跑整份測試（42 passed）反推依賴，不是一個一個撞 CI
+- **修復 `auto-deploy-uibot.yml`**：`GCP_ZONE` 改 `us-central1-a`；並在 job `env:` 補上 `DISCORD_WEBHOOK_URL`——原本兩個通知步驟的 `if: ... && env.DISCORD_WEBHOOK_URL != ''` 引用了從未宣告的 `env` key（宣告 `secrets.X` **不會**讓 `env.X` 有值），所以通知永遠不觸發
+- **修復 `auto-error-detector.yml`**：zone 改 `us-central1-a`；`python3 - <<'PY'` 的 heredoc 內容原本縮排 10 格，quoted heredoc 不做 dedent，直接 `IndentationError`——已把整段貼齊
+- **修復 `ai-debug-monitor.yml`**：兩處 `gcloud compute ssh` 補上 `--zone=us-central1-a` 與 `--tunnel-through-iap`（原本缺 IAP flag）
+- ⚠️ **已知未處理**：`ai-debug-monitor.yml` 把 SSH 例外吞掉（`except Exception` → print → `error_logs` 空 → `sys.exit(0)`），zone 修好前它一直「綠燈但什麼都沒做」。行為改動較大，待使用者決定是否收緊
+- ✅ **驗證**：CI run `36918745826`（`863c728d`）`conclusion: success`，所有步驟 ✓
+- ✅ **副作用確認**：`secrets.GCP_SA_KEY` 有效且在線（`Auto Deploy UIBot` 認證成功、一路打到 compute API 才因舊 zone 報錯），所以兩把 2026-04-02 的 enabled SA key 必須保留
