@@ -91,6 +91,9 @@ netflix_top10_last.json
 .env.*
 !.env.example
 
+# Google 服務帳號金鑰（VM 專用；已改用 ADC，嚴禁再進 Git）
+google_credentials.json
+
 # OS generated files
 .DS_Store
 .DS_Store?
