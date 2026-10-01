@@ -5,7 +5,7 @@ aiohttp
 pytest
 pytest-asyncio
 pytest-mock
-discord-ext-test
+dpytest
 python-dotenv
 requests
 flask

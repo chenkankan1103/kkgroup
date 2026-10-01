@@ -135,12 +135,12 @@ jobs:
                 try:
                   bot_status = subprocess.run([
                     'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
-                    '--project=kkgroup', '--zone=us-central1-c',
+                    '--project=kkgroup', '--zone=us-central1-a', '--tunnel-through-iap',
                     '--command', 'sudo systemctl is-active bot.service'
                   ], capture_output=True, text=True, timeout=30).stdout.strip()
                   bot_logs = subprocess.run([
                     'gcloud', 'compute', 'ssh', 'instance-20250501-142333',
-                    '--project=kkgroup', '--zone=us-central1-c',
+                    '--project=kkgroup', '--zone=us-central1-a', '--tunnel-through-iap',
                     '--command', 'sudo journalctl -u bot.service --since "1 hour ago" --no-pager -n 30'
                   ], capture_output=True, text=True, timeout=60).stdout
                   if any(token in (bot_status + '\n' + bot_logs).lower() for token in ['error', 'exception', 'failed', 'traceback', 'inactive']):
