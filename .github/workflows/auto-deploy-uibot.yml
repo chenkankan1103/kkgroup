@@ -26,8 +26,9 @@ jobs:
     timeout-minutes: 10
     env:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       GCP_PROJECT: kkgroup
-      GCP_ZONE: us-central1-c
+      GCP_ZONE: us-central1-a
       GCP_INSTANCE: instance-20250501-142333
       GCP_USER: e193752468
 
