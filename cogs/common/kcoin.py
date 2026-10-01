@@ -183,7 +183,7 @@ class KKCoin(commands.Cog):
         self._pending_leaderboard_generation = False  # 標記是否有待生成的任務
         self._generation_timer = None  # 5 分鐘延遲計時器
         self._generation_lock = asyncio.Lock()  # 防止同時多次觸發
-        self._startup_refresh_done = False  # 啟動時強制重生只做一次（on_ready 可能因重連多次觸發）
+        self._startup_task = None  # 啟動初始化背景任務（由 cog_load 啟動）
 
         # Cloudflare Quick Tunnel 支援
         # 不使用 kkgroup.com（已被第三方公司註冊），改從 config.json 讀取
@@ -207,6 +207,8 @@ class KKCoin(commands.Cog):
         """當 Cog 卸載時停止定時任務"""
         # self.auto_update_reserve_status.cancel()  # ❌ 已禁用：儲備狀態現在隨排行榜更新而更新
         # self.auto_check_tunnel_url.cancel()  # ❌ 已移除：方法本體已於 81bb17da 重構時誤刪
+        if self._startup_task and not self._startup_task.done():
+            self._startup_task.cancel()  # 🛑 取消尚未完成的啟動初始化
         if self.auto_push_leaderboard_to_github.is_running():
             self.auto_push_leaderboard_to_github.cancel()  # 📤 取消 GitHub 推送任務
 
@@ -624,9 +626,24 @@ class KKCoin(commands.Cog):
 
             traceback.print_exc()
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """機器人啟動時執行 - 嘗試獲取 Tunnel URL 並同步到 GitHub Pages"""
+    async def cog_load(self):
+        """Cog 載入時排入一次性啟動初始化。
+
+        使用 cog_load 而非 @commands.Cog.listener('on_ready') 的原因：
+        本 Cog 是由 bot 的 on_ready 事件處理中呼叫 setup_modules() 動態載入的，
+        當 add_cog() 執行時 Discord 的 ready 事件早已派發完畢 —— 而 ready 只派發一次，
+        後載入的 Cog 永遠收不到 on_ready。先前寫在 on_ready 的啟動初始化因此靜默失效，
+        排行榜重啟後不會重生（一直顯示舊圖）。
+
+        cog_load 是 discord.py 2.x 保證會執行的載入回調，無論何時載入都有效。
+        這裡只負責排程，實際工作丟到背景任務，避免阻塞 setup_modules() 載入其他 Cog。
+        """
+        self._startup_task = asyncio.create_task(self._startup_initialize())
+        print("🚀 KKCoin 啟動初始化已排入背景任務")
+
+    async def _startup_initialize(self):
+        """等待 bot 就緒後執行一次性啟動流程（Tunnel URL 同步 / Nginx 檢查 / 排行榜重生）"""
+        await self.bot.wait_until_ready()
         print("🔍 正在嘗試獲取 Cloudflare Tunnel URL...")
         tunnel_url = await self.get_tunnel_url()
 
@@ -681,11 +698,9 @@ class KKCoin(commands.Cog):
         await self._ensure_leaderboard_initialized()
 
         # 🔄 啟動時強制重生一次，避免重啟後仍顯示舊圖
-        #    on_ready 會因重連重複觸發，用旗標確保只跑一次
-        if not self._startup_refresh_done:
-            self._startup_refresh_done = True
-            print("🔄 啟動時強制更新排行榜...")
-            await self.update_leaderboard(min_interval=0, force=True)
+        #    cog_load 每次載入只跑一次，不需要額外旗標
+        print("🔄 啟動時強制更新排行榜...")
+        await self.update_leaderboard(min_interval=0, force=True)
 
     async def check_nginx_health(self):
         """✅ 檢查 Nginx 是否正確提供排行榜圖片
