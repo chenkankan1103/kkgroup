@@ -86,8 +86,8 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **stats.py**: 統計 API ✅ 已註冊
 - **stocks_api.py**: 股票 API ✅ 已註冊
 - **webhook.py**: GitHub Webhook 接收器（自動部署觸發點）✅ 已註冊
-- **sheet_driven_db.py**: 表格驅動資料庫 API ⚠️ 未註冊
-- **sheet_sync_manager.py**: 表格同步管理 ⚠️ 未註冊
+- **sheet_driven_db.py**: 表格驅動資料庫引擎（本身不是 Blueprint，由 `sheets.py` 以 `blueprints.sheet_driven_db` 匯入使用）✅ 使用中
+- **sheet_sync_manager.py**: 表格同步管理器（本身不是 Blueprint，由 `sheets.py` 匯入使用）✅ 使用中
 
 > `sync_to_sheet.py` 已於 2026-09-30 退役刪除（與 `scheduled_tasks/sync_to_sheet.py` 為位元組相同的重複副本，全 repo 零引用）。
 

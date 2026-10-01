@@ -578,7 +578,7 @@ VM 系統時區為 `Etc/UTC`，crontab 內**未設** `CRON_TZ`，因此下列時
 | 排程（UTC） | 台灣時間 | 腳本 | 用途 |
 |---|---|---|---|
 | `0 3 * * 3` | 週三 11:00 | `scheduled_tasks/refresh_all_lockers_cron.py` | 置物櫃批量更新 |
-| `0 3 * * 1` | 週一 11:00 | `weekly_backup.py` | 每週備份 |
+| `0 3 * * 1` | 週一 11:00 | `scheduled_tasks/weekly_backup.py` | 每週備份 |
 | `10 3 * * 3` | 週三 11:10 | `scheduled_tasks/netflix_weekly_push.py` | Netflix 週榜推播 |
 
 > **2026-09-30 以 VM `crontab -l` 實測為準。**

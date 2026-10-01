@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """
 weekly_backup.py - 每週自動備份 DB 至本機 + Google Sheets
-執行方式: venv/bin/python weekly_backup.py
-排程: crontab -e  →  0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python weekly_backup.py >> /tmp/weekly_backup.log 2>&1
+執行方式: cd /home/e193752468/kkgroup && venv/bin/python scheduled_tasks/weekly_backup.py
+排程: crontab -e  →  0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python scheduled_tasks/weekly_backup.py >> /home/e193752468/kkgroup/logs/weekly_backup.log 2>&1
 """
 
 import sqlite3
 import os
 import shutil
 import gspread
-from google.oauth2.service_account import Credentials
+import google.auth
 from datetime import datetime
 
 DB_PATH = "/home/e193752468/kkgroup/user_data.db"
 BACKUP_DIR = "/home/e193752468/kkgroup/backups"
 SHEET_ID = "1ixMX389tQZ4f4R93KO9rGj7MmU7DHEYSIAgykDVnIpM"
-CREDS_PATH = "/home/e193752468/kkgroup/google_credentials.json"
+# 認證改用 VM 自掛的服務帳號（ADC），不再讀取 google_credentials.json。
+# 舊的 service account key 曾在公開 repo 外洩，被 Google 自動停用
+# （DISABLE_REASON=KEY_EXPOSED），導致 Sheets 備份自 2026-04 起靜默失敗。
+# ADC 不落地、不需輪換，且身分與舊 key 相同（同一顆 compute SA）。
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -50,7 +53,7 @@ def backup_local():
 def backup_to_sheets(db_path):
     """將 DB 用戶資料備份至 Google Sheets 的「DB備份」分頁"""
     try:
-        creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
+        creds, _ = google.auth.default(scopes=SCOPES)
         gc = gspread.authorize(creds)
         spreadsheet = gc.open_by_key(SHEET_ID)
 
@@ -113,11 +116,8 @@ def main():
     # 1. 本機備份
     dest = backup_local()
 
-    # 2. Sheets 備份
-    if os.path.exists(CREDS_PATH):
-        backup_to_sheets(DB_PATH)
-    else:
-        print(f"[SHEETS] ⚠️  找不到 credentials: {CREDS_PATH}，跳過 Sheets 備份")
+    # 2. Sheets 備份（認證走 VM 自掛的服務帳號，無需 key 檔）
+    backup_to_sheets(DB_PATH)
 
     print(f'\n✅ 備份完成 - {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
 
