@@ -161,14 +161,6 @@
             "status"
           ]
         },
-        "資料同步": {
-          "commands": [
-            "sync_from_sheet",
-            "export_to_sheet",
-            "list_members",
-            "sync_status"
-          ]
-        },
         "安全防護": {
           "commands": [
             "unmute",
@@ -326,15 +318,6 @@
         "line": 46,
         "status": "✅ 活躍",
         "category": "AI系統"
-      },
-      "sync_from_sheet": {
-        "name": "sync_from_sheet",
-        "description": "從 Google Sheet 同步資料到資料庫",
-        "type": "admin",
-        "file": "common/google_sheets_sync.py",
-        "line": 332,
-        "status": "✅ 活躍",
-        "category": "資料同步"
       }
     },
     "shop": {
@@ -541,7 +524,6 @@
           "check_my_roles"
         ],
         "maintenance": [
-          "sync_from_sheet",
           "locker_check",
           "event_stats"
         ],

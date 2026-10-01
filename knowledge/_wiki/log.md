@@ -98,3 +98,16 @@
 - **修正** `knowledge/_wiki/github-actions-ai-debugging.md` 的 AI 供應商清單：原文列出 `claude-3-5-sonnet` / `gpt-4-turbo` 等虛構項目，改為與 `cogs/common/AI.py` 實際降級鏈一致（NVIDIA 主要、Gemini 工具/備援、Groq 最終降級）
 - **修正** `deployment-and-operations.md` 等多份文件的路徑：`/home/ubuntu` → `/home/e193752468/kkgroup`、`.venv` → `venv`
 - ⚠️ **待確認**：文件記載的 `0 3 * * 1` 備份排程為 `venv/bin/python weekly_backup.py`（repo 根目錄），但該檔案實際位於 `scheduled_tasks/weekly_backup.py`——此排程可能一直靜默失敗
+
+## 2026-10-02 (Google Sheets 系統退役)
+
+- **確認**：Google Sheets 系統已無人使用，整套移除
+- **刪除 5 個檔案**：
+  - `cogs/common/google_sheets_sync.py`（全 repo 唯一 import `gspread` 的檔案）
+  - `shared/db/sheet_sync_manager.py`
+  - `web/blueprints/sheets.py`、`web/blueprints/sheet_sync_manager.py`、`web/blueprints/sheet_driven_db.py`
+- **解除註冊**：`web/api/unified_api.py` 移除 `sheets_bp` 的 import 與 `register_blueprint`；註冊數 6 → 5。`/api/user/<user_id>` 由 `unified_api.py` 自身提供，admin 入口不受影響
+- **移除 `weekly_backup.py` 的 Sheets 備份**：`backup_to_sheets()` 整段刪除（該函式已因服務帳號金鑰被 Google 自動停用而失效），只留本機備份
+- **移除 `sync_from_sheet`**：`config/discord_commands_registry.json` 的指令定義、分類、maintenance 清單；同分類的 `export_to_sheet` / `list_members` / `sync_status` 也一併清掉（三個都查無實作）
+- ⚠️ **保留**：`shared/db/sheet_driven_db.py` **不能刪**——檔名雖有 sheet，實際是純 SQLite 引擎（`import sqlite3`，無 `gspread`），由 `db_adapter.py`、`unified_api.py`、`cannabis_unified.py` 匯入
+- **更正文件**：`project-architecture.md`、`ai-fast-read.md`、`web-api-and-game-system.md`、`kk-park-economy-system.md` 的 Sheets 描述；並在多處標註 `sheet_driven_db.py` 的檔名是舊稱

@@ -48,7 +48,6 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 from web.blueprints.stats import stats_bp
-from web.blueprints.sheets import sheets_bp
 from web.blueprints.discord_auth import discord_auth_bp
 from web.blueprints.knowledge_api import knowledge_api_bp
 from web.blueprints.stocks_api import stocks_api_bp
@@ -56,7 +55,6 @@ from web.blueprints.webhook import webhook_bp
 from web.api.game_api import game_bp, init_game_api
 
 app.register_blueprint(stats_bp)
-app.register_blueprint(sheets_bp)
 app.register_blueprint(discord_auth_bp)
 app.register_blueprint(knowledge_api_bp)
 app.register_blueprint(stocks_api_bp)
@@ -68,7 +66,6 @@ init_game_api(bot=None)
 
 logger.info("✅ 已註冊所有 Blueprints")
 logger.info("  - Stats API")
-logger.info("  - Sheets API")
 logger.info("  - Discord Auth API")
 logger.info("  - Knowledge API")
 logger.info("  - Stocks API")
