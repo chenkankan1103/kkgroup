@@ -1,333 +1,175 @@
 """
-Locker Event Listener Cog
-監聽置物櫃事件，根據事件類型進行局部或完整 embed 更新
+置物櫃事件監聽器
+
+職責：收到置物櫃相關事件 → 呼叫 update_locker_message() 刷新該用戶的置物櫃訊息。
+
+設計原則（單一真相）：
+- 所有 embed 生成一律交給 cogs/ui/utils/locker_embed_generator.update_locker_message()，
+  這裡不再自己組 embed。過去這裡有一套獨立的 embed 產生邏輯，會跟 canonical 版本打架，
+  而且刷新時只送 embeds 不送 view，會把置物櫃的按鈕整排弄不見。
+- 事件名稱必須與 dispatch() 的字串一致：dispatch("full_refresh", ...) → on_full_refresh。
+  歷史上唯一的發送端用了 "locker_full_refresh"，名稱對不上，靜默失效、不會報錯。
+- 發送端（locker_sync_loop）刻意放在這個 Cog 內：它只由 uibody.setup() 建立，
+  保證 uibot 只有一份，不會三隻 bot 各發一次。
 """
 
-import discord
-from discord.ext import commands
-from typing import Optional
+import asyncio
 
-from cogs.ui.events import (
-    EquipmentChangedEvent,
-    CurrencyChangedEvent,
-    HealthChangedEvent,
-    InventoryChangedEvent,
-    FullRefreshEvent,
-    SyncRequestedEvent,
-)
-from db_adapter import get_user, set_user_field, get_user_field
-from cogs.ui.utils.locker_cache import locker_cache
+import discord
+from discord.ext import commands, tasks
+
+from db_adapter import get_all_users, get_user_field
+from cogs.ui.events import FullRefreshEvent
+from cogs.ui.utils.locker_embed_generator import update_locker_message
+
+# 掃描間隔（分鐘）
+SYNC_INTERVAL_MINUTES = 10
+# 每輪最多刷新幾個人，避免一次打爆 Discord API
+MAX_UPDATES_PER_CYCLE = 15
+# 每次刷新之間的間隔秒數（節流）
+UPDATE_GAP_SECONDS = 1.5
+# 用來判斷「有變化」的欄位
+WATCHED_FIELDS = ("kkcoin", "hp")
 
 
 class LockerEventListenerCog(commands.Cog):
-    """置物櫃事件監聽器"""
+    """置物櫃事件監聽 + 變更偵測"""
 
     def __init__(self, bot, user_panel_cog):
-        """
-        Args:
-            bot: Discord bot instance
-            user_panel_cog: UserPanel cog 實例（提供 create_user_embed、get_character_image_url 等方法）
-        """
         self.bot = bot
         self.cog = user_panel_cog
-        self.FORUM_CHANNEL_ID = user_panel_cog.FORUM_CHANNEL_ID
+        # {user_id: (kkcoin, hp)} 上一輪看到的快照
+        self._last_seen = {}
+        self.locker_sync_loop.start()
 
-    async def _get_locker_message(self, user_id: int) -> Optional[discord.Message]:
-        """
-        根據 user_id 從資料庫取得 locker_message_id，
-        進而 fetch Discord 訊息物件
-        """
-        locker_message_id = get_user_field(user_id, "locker_message_id")
+    def cog_unload(self):
+        self.locker_sync_loop.cancel()
+
+    # ------------------------------------------------------------------
+    # 刷新
+    # ------------------------------------------------------------------
+    async def _refresh(self, user_id: int) -> bool:
+        """刷新單一用戶的置物櫃訊息。所有事件都走這裡。"""
         thread_id = get_user_field(user_id, "thread_id")
-
-        if not locker_message_id or not thread_id:
-            return None
+        if not thread_id:
+            return False
 
         try:
-            thread = self.bot.get_channel(thread_id) or await self.bot.fetch_channel(
-                thread_id
+            thread = self.bot.get_channel(thread_id)
+            if thread is None:
+                thread = await self.bot.fetch_channel(thread_id)
+        except Exception as e:
+            print(f"⚠️ [LockerEvent] 取不到 thread {thread_id}: {e}")
+            return False
+
+        if not isinstance(thread, discord.Thread):
+            return False
+
+        # 已知 message_id 就直接抓，省掉 update_locker_message 內部掃 30 筆歷史
+        message_obj = None
+        message_id = get_user_field(user_id, "locker_message_id")
+        if message_id:
+            try:
+                message_obj = await thread.fetch_message(message_id)
+            except Exception:
+                message_obj = None
+
+        try:
+            return await update_locker_message(
+                thread=thread,
+                user_id=user_id,
+                message_obj=message_obj,
+                bot=self.bot,
+                cog=self.cog,
             )
-            if not thread or not isinstance(thread, discord.Thread):
-                return None
-
-            message = await thread.fetch_message(locker_message_id)
-            return message
-        except discord.NotFound:
-            # 訊息已被刪除，清除 DB 紀錄
-            set_user_field(user_id, "locker_message_id", None)
-            return None
         except Exception as e:
-            print(f"⚠️ [LockerEventListener] 無法取得 locker message: {e}")
-            return None
+            print(f"❌ [LockerEvent] 刷新 user {user_id} 失敗: {e}")
+            return False
 
-    async def _render_summary_embed(
-        self, user_data: dict, user_obj: discord.User
-    ) -> discord.Embed:
-        """
-        生成 Summary Embed
-        包含：ID、等級、KK幣、血量、體力、職稱等文字資訊
-        不包含紙娃娃圖片
-        """
-        embed = await self.cog.create_user_embed(user_data, user_obj)
-        # 移除圖片設定（紙娃娃由 appearance embed 負責）
-        if embed.image:
-            embed.set_image(url=None)
-        return embed
-
-    async def _render_appearance_embed(
-        self, user_data: dict, user_obj: discord.User
-    ) -> discord.Embed:
-        """
-        生成 Appearance Embed
-        包含：紙娃娃圖片 + 全部裝備格子
-        """
-        embed = discord.Embed(
-            title=f"📦 {user_obj.display_name or user_obj.name} - 裝備",
-            color=0x9933FF,
-        )
-
-        # 設定紙娃娃圖片（使用快取）
-        paperdoll_image_url = await locker_cache.get_paperdoll_image(user_data)
-        if paperdoll_image_url:
-            embed.set_image(url=paperdoll_image_url)
-
-        # 添加裝備資訊欄位
-        equip_text = self._format_equipment_fields(user_data)
-        embed.add_field(name="🎽 裝備", value=equip_text, inline=False)
-
-        return embed
-
-    @staticmethod
-    def _format_equipment_fields(user_data: dict) -> str:
-        """
-        格式化裝備欄位為可讀的文字
-        例：武器: 劍 (ID: 1234), 頭盔: 王冠 (ID: 5678) ...
-        """
-        equip_slots = [
-            ("武器", 0),
-            ("頭盔", 1),
-            ("上衣", 2),
-            ("褲子", 3),
-            ("靴子", 4),
-            ("手套", 5),
-            ("腰帶", 6),
-            ("肩甲", 7),
-            ("戒指", 8),
-            ("項鍊", 9),
-        ]
-
-        lines = []
-        for slot_name, slot_idx in equip_slots:
-            equip_key = f"equip_{slot_idx}"
-            equip_id = user_data.get(equip_key)
-            if equip_id:
-                lines.append(f"• {slot_name}: `{equip_id}`")
-            else:
-                lines.append(f"• {slot_name}: 無")
-
-        return "\n".join(lines) if lines else "無裝備"
-
-    # ──────────────────────────────────────
-    # 事件監聽器方法
-    # ──────────────────────────────────────
-
-    @commands.Cog.listener()
-    async def on_equipment_changed(self, event: EquipmentChangedEvent):
-        """
-        裝備更新事件監聽器
-
-        觸發：
-        - 紙娃娃 hash 改變 → 重新請求 MapleStory API
-        - 更新 appearance embed 及紙娃娃圖片
-        """
-        try:
-            user_data = get_user(event.user_id)
-            if not user_data:
-                return
-
-            message = await self._get_locker_message(event.user_id)
-            if not message:
-                print(
-                    f"⚠️ [EquipmentChangedEvent] 找不到 locker message for user {event.user_id}"
-                )
-                return
-
-            try:
-                user_obj = self.bot.get_user(
-                    event.user_id
-                ) or await self.bot.fetch_user(event.user_id)
-            except:
-                return
-
-            # 生成新的 appearance embed
-            appearance_embed = await self._render_appearance_embed(user_data, user_obj)
-
-            # 編輯訊息（更新 embeds[1] 或新增）
-            current_embeds = list(message.embeds) if message.embeds else []
-
-            # 若現在只有 1 個 embed，表示還未拆分 → 新增第二個 embed
-            if len(current_embeds) == 1:
-                current_embeds.append(appearance_embed)
-            else:
-                # 若已有 2 個 embed，更新第二個
-                current_embeds[1] = appearance_embed
-
-            await message.edit(embeds=current_embeds)
-            print(
-                f"✅ [EquipmentChangedEvent] 已更新 user {event.user_id} 的裝備 embed"
-            )
-
-        except Exception as e:
-            print(f"❌ [EquipmentChangedEvent] 錯誤: {e}")
-
-    @commands.Cog.listener()
-    async def on_currency_changed(self, event: CurrencyChangedEvent):
-        """
-        KK幣/經驗值更新事件監聽器
-
-        觸發：
-        - 只更新 summary embed 的 KK幣/經驗值欄位
-        - 不涉及圖片、不請求 API
-        """
-        try:
-            user_data = get_user(event.user_id)
-            if not user_data:
-                return
-
-            message = await self._get_locker_message(event.user_id)
-            if not message:
-                return
-
-            try:
-                user_obj = self.bot.get_user(
-                    event.user_id
-                ) or await self.bot.fetch_user(event.user_id)
-            except:
-                return
-
-            # 生成新的 summary embed（只包含文字欄位）
-            summary_embed = await self._render_summary_embed(user_data, user_obj)
-
-            # 編輯訊息（更新 embeds[0]）
-            current_embeds = list(message.embeds) if message.embeds else []
-            if len(current_embeds) >= 1:
-                current_embeds[0] = summary_embed
-            else:
-                current_embeds = [summary_embed]
-
-            await message.edit(embeds=current_embeds)
-            print(f"✅ [CurrencyChangedEvent] 已更新 user {event.user_id} 的 KK幣/經驗")
-
-        except Exception as e:
-            print(f"❌ [CurrencyChangedEvent] 錯誤: {e}")
-
-    @commands.Cog.listener()
-    async def on_health_changed(self, event: HealthChangedEvent):
-        """
-        血量/體力更新事件監聽器
-
-        觸發：
-        - 只更新 summary embed 的進度條欄位
-        """
-        try:
-            user_data = get_user(event.user_id)
-            if not user_data:
-                return
-
-            message = await self._get_locker_message(event.user_id)
-            if not message:
-                return
-
-            try:
-                user_obj = self.bot.get_user(
-                    event.user_id
-                ) or await self.bot.fetch_user(event.user_id)
-            except:
-                return
-
-            # 生成新的 summary embed
-            summary_embed = await self._render_summary_embed(user_data, user_obj)
-
-            # 編輯訊息（更新 embeds[0]）
-            current_embeds = list(message.embeds) if message.embeds else []
-            if len(current_embeds) >= 1:
-                current_embeds[0] = summary_embed
-            else:
-                current_embeds = [summary_embed]
-
-            await message.edit(embeds=current_embeds)
-            print(f"✅ [HealthChangedEvent] 已更新 user {event.user_id} 的血量/體力")
-
-        except Exception as e:
-            print(f"❌ [HealthChangedEvent] 錯誤: {e}")
-
-    @commands.Cog.listener()
-    async def on_inventory_changed(self, event: InventoryChangedEvent):
-        """
-        物品欄更新事件監聽器
-
-        觸發：
-        - 只更新 summary embed 的物品欄資訊
-        """
-        # TODO: 實作物品欄更新邏輯
-        print(f"📌 [InventoryChangedEvent] user {event.user_id} 物品欄已更新")
-
+    # ------------------------------------------------------------------
+    # 事件監聽（名稱須與 dispatch 字串一致）
+    # ------------------------------------------------------------------
     @commands.Cog.listener()
     async def on_full_refresh(self, event: FullRefreshEvent):
-        """
-        完整刷新事件監聽器
-
-        觸發：
-        - 清除該使用者的紙娃娃快取
-        - 重新生成 summary + appearance embeds
-        - 同時更新兩個 embeds
-        """
-        try:
-            user_data = get_user(event.user_id)
-            if not user_data:
-                return
-
-            message = await self._get_locker_message(event.user_id)
-            if not message:
-                return
-
-            try:
-                user_obj = self.bot.get_user(
-                    event.user_id
-                ) or await self.bot.fetch_user(event.user_id)
-            except:
-                return
-
-            # 強制清除快取
-            paperdoll_hash = locker_cache.build_paperdoll_hash(user_data)
-            locker_cache.invalidate_hash(paperdoll_hash)
-
-            # 生成新的 embeds
-            summary_embed = await self._render_summary_embed(user_data, user_obj)
-            appearance_embed = await self._render_appearance_embed(user_data, user_obj)
-
-            # 編輯訊息
-            await message.edit(embeds=[summary_embed, appearance_embed])
-            print(f"✅ [FullRefreshEvent] 已完整刷新 user {event.user_id}")
-
-        except Exception as e:
-            print(f"❌ [FullRefreshEvent] 錯誤: {e}")
+        await self._refresh(event.user_id)
 
     @commands.Cog.listener()
-    async def on_sync_requested(self, event: SyncRequestedEvent):
-        """
-        同步請求事件監聽器
+    async def on_equipment_changed(self, event):
+        await self._refresh(event.user_id)
 
-        觸發：
-        - 檢查資料庫中的資料是否有變更
-        - 若有變更，觸發對應的更新事件
-        """
-        # TODO: 實作增量同步邏輯
-        # 可能需要檢查 DB 中的 last_* 欄位，比對 message 中的值
-        print(f"📌 [SyncRequestedEvent] user {event.user_id} 同步請求")
+    @commands.Cog.listener()
+    async def on_currency_changed(self, event):
+        await self._refresh(event.user_id)
+
+    @commands.Cog.listener()
+    async def on_health_changed(self, event):
+        await self._refresh(event.user_id)
+
+    @commands.Cog.listener()
+    async def on_inventory_changed(self, event):
+        await self._refresh(event.user_id)
+
+    @commands.Cog.listener()
+    async def on_sync_requested(self, event):
+        await self._refresh(event.user_id)
+
+    # ------------------------------------------------------------------
+    # 發送端：定時比對 KK幣／血量，有變才發事件
+    # ------------------------------------------------------------------
+    @tasks.loop(minutes=SYNC_INTERVAL_MINUTES)
+    async def locker_sync_loop(self):
+        try:
+            users = await asyncio.to_thread(get_all_users)
+        except Exception as e:
+            print(f"⚠️ [LockerSync] 讀取用戶失敗: {e}")
+            return
+
+        first_run = not self._last_seen
+        current = {}
+        changed = []
+
+        for user in users:
+            user_id = user.get("user_id")
+            if not user_id or not user.get("thread_id"):
+                continue
+            try:
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                continue
+
+            snapshot = tuple(user.get(f) for f in WATCHED_FIELDS)
+            current[user_id] = snapshot
+            if not first_run and self._last_seen.get(user_id) != snapshot:
+                changed.append(user_id)
+
+        # 首輪只建立基準，不觸發，避免開機時全員同時被刷新
+        if first_run:
+            self._last_seen = current
+            print(f"📋 [LockerSync] 建立基準快照：{len(current)} 位用戶")
+            return
+
+        if not changed:
+            return
+
+        print(f"🔄 [LockerSync] 偵測到 {len(changed)} 位用戶有變化，開始刷新")
+
+        for user_id in changed[:MAX_UPDATES_PER_CYCLE]:
+            # 只有真的送出刷新才更新基準；被上限擋掉的人維持舊快照，下輪會再被抓到
+            self._last_seen[user_id] = current[user_id]
+            self.bot.dispatch("full_refresh", FullRefreshEvent(user_id, {"*"}))
+            await asyncio.sleep(UPDATE_GAP_SECONDS)
+
+        if len(changed) > MAX_UPDATES_PER_CYCLE:
+            print(
+                f"⏭️ [LockerSync] 本輪上限 {MAX_UPDATES_PER_CYCLE} 人，"
+                f"剩 {len(changed) - MAX_UPDATES_PER_CYCLE} 人下輪處理"
+            )
+
+    @locker_sync_loop.before_loop
+    async def _before_sync(self):
+        await self.bot.wait_until_ready()
 
 
 async def setup(bot):
-    """從 uibody.py 中呼叫 await bot.add_cog(LockerEventListenerCog(...))"""
-    # 此函數由主 Cog 載入時呼叫
+    """由 uibody.setup() 直接建立本 Cog，不在此處 add_cog。"""
     pass
