@@ -570,14 +570,6 @@ async def on_ready():
         print("[bot] real guild not found in cache")
 
     try:
-        # 執行 DB migration（置物櫃事件驅動系統）
-        try:
-            from tools.migrate_locker_event_system import migrate_locker_event_columns
-
-            await asyncio.to_thread(migrate_locker_event_columns)
-        except (ImportError, OSError) as e:
-            print(f"⚠️  DB migration 失敗: {e}")
-
         # 清除舊指令
         if guild and STAGE != "prod":
             await client.tree.clear_commands(guild=guild)
