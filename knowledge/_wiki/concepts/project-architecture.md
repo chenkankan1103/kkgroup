@@ -177,11 +177,10 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **kkgroup.db** / **user_data.db**: SQLite 資料庫
 - **ruvector.db**: 向量資料庫
 - **twms_fashion_db.json**: 紙娃娃時裝資料庫（來源真理）
-- **locker_refresh_urls.json**: 置物櫃刷新 URL 配置
-- **market_message_data.json**: 市場訊息資料
-- **api_endpoints_index.json** / **api_index.json**: API 索引
 - **requirements.txt**: Python 依賴
-- **deploy_restructure.sh**: 部署重構腳本
+- **market_message_data.json**: 股票市場訊息 ID（執行時由 `cogs/shop/stock_market.py` 產生，不進 Git）
+- **api_index.json**: API 索引（VM 端產生，`scripts/scan_vm_state.py` 會讀）
+- **locker_refresh_urls.json**: 隧道 URL 配置（VM 端產生）
 
 ## 資料流向
 
