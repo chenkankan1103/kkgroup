@@ -179,7 +179,6 @@ KKGroup 是一個基於 Discord 的多功能機器人系統，包含遊戲、商
 - **twms_fashion_db.json**: 紙娃娃時裝資料庫（來源真理）
 - **locker_refresh_urls.json**: 置物櫃刷新 URL 配置
 - **market_message_data.json**: 市場訊息資料
-- **commands_inventory.json**: 指令清單
 - **api_endpoints_index.json** / **api_index.json**: API 索引
 - **requirements.txt**: Python 依賴
 - **deploy_restructure.sh**: 部署重構腳本

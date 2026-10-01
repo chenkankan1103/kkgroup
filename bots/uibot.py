@@ -204,7 +204,6 @@ async def find_and_load_extensions(base_path, package_prefix="", client=None):
         "plant_utils",
         "paperdoll_manager",
         "locker_embed_generator",
-        "locker_cache",
         "init_missing_character_data",
         "embed_utils",
         "crop_utils",
