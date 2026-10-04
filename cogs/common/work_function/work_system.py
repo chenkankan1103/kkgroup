@@ -8,6 +8,7 @@ import aiohttp
 from datetime import datetime, timedelta, timezone
 from .database import get_user, update_user
 from shared.utils.llm_text_router import complete_text_with_fallback
+from cogs.ui.utils import paperdoll_manager
 
 # 台灣時區（UTC+8）
 TAIWAN_TZ = timezone(timedelta(hours=8))
@@ -365,6 +366,15 @@ def create_work_embed(user, user_obj):
         embed = discord.Embed(
             title="🎴【詐騙園區 • 勞動記錄卡】", color=colors.get(level, 0x2F3136)
         )
+
+        # 角色動圖：swingO1 是楓之谷的採集動作（揮動），讓卡片看起來像真的在勞動。
+        # build_api_url 只組字串不打網路；失敗時只掉圖，不影響整張勞動記錄卡。
+        try:
+            api_url = paperdoll_manager.build_api_url(user, pose="swingO1")
+            if api_url:
+                embed.set_thumbnail(url=api_url)
+        except Exception as img_err:
+            print(f"[work_system] ⚠️ 紙娃娃縮圖失敗: {img_err}")
 
         embed.add_field(
             name="👤 員工資訊",
