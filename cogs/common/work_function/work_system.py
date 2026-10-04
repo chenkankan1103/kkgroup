@@ -368,13 +368,15 @@ def create_work_embed(user, user_obj):
         )
 
         # 角色動圖：swingO1 是楓之谷的採集動作（揮動），讓卡片看起來像真的在勞動。
+        # 用 set_image 而非 set_thumbnail：置物櫃（embed_utils.py:174）與其他紙娃娃入口
+        # 清一色 set_image；縮圖只有 ~80px，243×240 的角色縮下去會糊到看不見。
         # build_api_url 只組字串不打網路；失敗時只掉圖，不影響整張勞動記錄卡。
         try:
             api_url = paperdoll_manager.build_api_url(user, pose="swingO1")
             if api_url:
-                embed.set_thumbnail(url=api_url)
+                embed.set_image(url=api_url)
         except Exception as img_err:
-            print(f"[work_system] ⚠️ 紙娃娃縮圖失敗: {img_err}")
+            print(f"[work_system] ⚠️ 紙娃娃圖片失敗: {img_err}")
 
         embed.add_field(
             name="👤 員工資訊",
