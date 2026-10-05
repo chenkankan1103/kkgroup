@@ -11,6 +11,7 @@ from .work_system import (
     LEVELS,
     _safe_int,
     attach_paperdoll_gif,
+    pose_for_salary,
     process_checkin,
     process_work_action,
     check_level_up,
@@ -168,9 +169,12 @@ class CheckInButton(discord.ui.Button):
                 work_view = WorkActionView(updated_user, user_id)
 
                 # 角色動圖要當附件送出才會動（原因見 work_system.attach_paperdoll_gif）；
-                # 抓不到就回 None，embed 維持原本的靜態網址。
+                # 抓不到就回 None，embed 維持原本的靜態網址。姿勢要跟卡片裡那張一致，
+                # 所以同樣走 pose_for_salary（大豐收 heal／普通 swingO1／不順利 prone）。
                 paperdoll_file = await attach_paperdoll_gif(
-                    embeds_tuple[-1], updated_user
+                    embeds_tuple[-1],
+                    updated_user,
+                    pose=pose_for_salary(salary_multiplier),
                 )
                 files = [paperdoll_file] if paperdoll_file else []
 
@@ -213,25 +217,17 @@ class CheckInButton(discord.ui.Button):
 
                 if len(embeds_tuple) == 2:
                     logger.info(f"🎊 用戶升級到 Lv.{new_level} (user: {user_name})")
-                    await interaction.followup.send(
-                        content=f"## 🎊 恭喜升級！\n{checkin_msg}",
-                        embed=embeds_tuple[0],
-                        ephemeral=True,
-                    )
-                    await interaction.followup.send(
-                        embed=embeds_tuple[1],
-                        view=work_view,
-                        files=files,
-                        ephemeral=True,
-                    )
-                else:
-                    await interaction.followup.send(
-                        content=checkin_msg,
-                        embed=embeds_tuple[0],
-                        view=work_view,
-                        files=files,
-                        ephemeral=True,
-                    )
+                    checkin_msg = f"## 🎊 恭喜升級！\n{checkin_msg}"
+
+                # 升級時原本會多彈一則升級特效，改成兩張 embed（升級特效 + 勞動記錄卡）
+                # 併在同一則訊息；Discord 單則上限 10 張，兩張綽綽有餘。
+                await interaction.followup.send(
+                    content=checkin_msg,
+                    embeds=list(embeds_tuple),
+                    view=work_view,
+                    files=files,
+                    ephemeral=True,
+                )
             else:
                 error_msg = (
                     f"❌ 打卡失敗: process_checkin 返回 None (user: {user_name})"
@@ -419,8 +415,6 @@ class WorkActionButton(discord.ui.Button):
                 bot_type = get_bot_type(interaction.client)
                 add_log(bot_type, f"⚙️ {user_name} 執行工作行動: {action}")
 
-                await interaction.followup.send(embed=embeds_tuple[0], ephemeral=True)
-
                 # 角色動圖要當附件送出才會動（原因見 work_system.attach_paperdoll_gif）
                 paperdoll_file = await attach_paperdoll_gif(
                     embeds_tuple[-1], updated_user
@@ -432,26 +426,43 @@ class WorkActionButton(discord.ui.Button):
                 actions_used = updated_user.get("actions_used", {})
                 view.update_button_states(actions_used)
 
+                # 行動結果、勞動記錄卡、升級提示全部收攏回原本那張卡：把結果 embed
+                # 疊在卡片上面直接編輯，不再另外彈訊息。升級提示用字串比對擋重複，
+                # 免得同一天按多次行動時一直往 content 疊上去。
+                content = interaction.message.content or ""
+                if message and message not in content:
+                    content = f"{content}\n\n{message}" if content else message
+
                 # 抓不到動圖時不要傳 attachments，免得把原本的圖清掉
-                edit_kwargs = {"embed": embeds_tuple[1], "view": view}
+                edit_kwargs = {
+                    "content": content,
+                    "embeds": list(embeds_tuple),
+                    "view": view,
+                }
                 if files:
                     edit_kwargs["attachments"] = files
 
                 try:
-                    # 編輯原始訊息的 embed 和 view
+                    # 編輯原始訊息：結果與卡片一次到位
                     await interaction.message.edit(**edit_kwargs)
                 except discord.NotFound:
+                    # 原訊息已消失（例如使用者清了頻道）就退回自己發一則
                     await interaction.followup.send(
-                        embed=embeds_tuple[1], view=view, files=files, ephemeral=True
+                        content=content,
+                        embeds=list(embeds_tuple),
+                        view=view,
+                        files=files,
+                        ephemeral=True,
                     )
                 except discord.HTTPException as e:
                     logger.warning(f"編輯訊息失敗 (user: {user_name}): {e}")
                     await interaction.followup.send(
-                        embed=embeds_tuple[1], view=view, files=files, ephemeral=True
+                        content=content,
+                        embeds=list(embeds_tuple),
+                        view=view,
+                        files=files,
+                        ephemeral=True,
                     )
-
-                if message:
-                    await interaction.followup.send(message, ephemeral=True)
             else:
                 # process_work_action 返回 None 通常是預期行為（如：已執行過該行動）
                 # 不記錄為錯誤，只記錄 info 級別

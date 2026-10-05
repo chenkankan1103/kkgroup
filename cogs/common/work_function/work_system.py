@@ -385,7 +385,21 @@ async def attach_paperdoll_gif(work_embed, user_data, pose="swingO1"):
         return None
 
 
-def create_work_embed(user, user_obj):
+def pose_for_salary(salary_multiplier):
+    """依當日業績倍率挑角色動作，讓卡片一眼看出今天順不順。
+
+    heal（舉手施法發光）= 大豐收、swingO1（揮動幹活）= 普通、
+    prone（趴倒在地）= 不太順利。三段門檻要跟 work_cog 的業績評價文字一致，
+    改這裡記得一起改。三個姿勢都在 maplestory.io 實測抓得到圖（prone 是靜圖）。
+    """
+    if salary_multiplier > 0.8:
+        return "heal"
+    if salary_multiplier > 0.5:
+        return "swingO1"
+    return "prone"
+
+
+def create_work_embed(user, user_obj, pose="swingO1"):
     """創建工作記錄卡 Embed"""
     try:
         level = _safe_int(user.get("level", 0), 0)
@@ -404,14 +418,14 @@ def create_work_embed(user, user_obj):
             title="🎴【詐騙園區 • 勞動記錄卡】", color=colors.get(level, 0x2F3136)
         )
 
-        # 角色動圖：swingO1 是楓之谷的採集動作（揮動），讓卡片看起來像真的在勞動。
+        # 角色動圖：pose 由呼叫端決定（打卡走 pose_for_salary，依業績換動作）。
         # 用 set_image 而非 set_thumbnail：置物櫃（embed_utils.py:174）與其他紙娃娃入口
         # 清一色 set_image；縮圖只有 ~80px，243×240 的角色縮下去會糊到看不見。
         # 這裡放的是「靜態 fallback」網址；送出前會由 attach_paperdoll_gif 換成
         # 附件版本，動畫才會動（原因見該函式）。build_api_url 只組字串不打網路；
         # 失敗時只掉圖，不影響整張勞動記錄卡。
         try:
-            api_url = paperdoll_manager.build_api_url(user, pose="swingO1")
+            api_url = paperdoll_manager.build_api_url(user, pose=pose)
             if api_url:
                 embed.set_image(url=api_url)
         except Exception as img_err:
@@ -826,7 +840,9 @@ async def process_checkin(user_id, user_obj, guild):
             level_up_embed = create_level_up_embed(
                 user_obj, old_level, level, bonus_coins
             )
-            work_embed = create_work_embed(updated_user, user_obj)
+            work_embed = create_work_embed(
+                updated_user, user_obj, pose_for_salary(salary_multiplier)
+            )
             print(f"  ✅ [process_checkin] 打卡程序完成 (升級 Lv.{old_level}→{level})")
             return (
                 (level_up_embed, work_embed),
@@ -836,7 +852,9 @@ async def process_checkin(user_id, user_obj, guild):
             )
         else:
             print("  🎨 生成打卡 Embed...")
-            embed = create_work_embed(updated_user, user_obj)
+            embed = create_work_embed(
+                updated_user, user_obj, pose_for_salary(salary_multiplier)
+            )
             print("  ✅ [process_checkin] 打卡程序完成")
             return (embed,), updated_user, salary_multiplier, daily_story
 
