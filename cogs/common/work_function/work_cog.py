@@ -10,6 +10,7 @@ from .database import init_db, get_user, update_user, get_all_users
 from .work_system import (
     LEVELS,
     _safe_int,
+    attach_paperdoll_gif,
     process_checkin,
     process_work_action,
     check_level_up,
@@ -166,6 +167,13 @@ class CheckInButton(discord.ui.Button):
             if embeds_tuple and updated_user:
                 work_view = WorkActionView(updated_user, user_id)
 
+                # 角色動圖要當附件送出才會動（原因見 work_system.attach_paperdoll_gif）；
+                # 抓不到就回 None，embed 維持原本的靜態網址。
+                paperdoll_file = await attach_paperdoll_gif(
+                    embeds_tuple[-1], updated_user
+                )
+                files = [paperdoll_file] if paperdoll_file else []
+
                 base_salary = LEVELS[updated_user["level"]]["salary"]
                 actual_salary = int(base_salary * salary_multiplier)
                 new_level = updated_user.get("level")
@@ -211,13 +219,17 @@ class CheckInButton(discord.ui.Button):
                         ephemeral=True,
                     )
                     await interaction.followup.send(
-                        embed=embeds_tuple[1], view=work_view, ephemeral=True
+                        embed=embeds_tuple[1],
+                        view=work_view,
+                        files=files,
+                        ephemeral=True,
                     )
                 else:
                     await interaction.followup.send(
                         content=checkin_msg,
                         embed=embeds_tuple[0],
                         view=work_view,
+                        files=files,
                         ephemeral=True,
                     )
             else:
@@ -409,22 +421,33 @@ class WorkActionButton(discord.ui.Button):
 
                 await interaction.followup.send(embed=embeds_tuple[0], ephemeral=True)
 
+                # 角色動圖要當附件送出才會動（原因見 work_system.attach_paperdoll_gif）
+                paperdoll_file = await attach_paperdoll_gif(
+                    embeds_tuple[-1], updated_user
+                )
+                files = [paperdoll_file] if paperdoll_file else []
+
                 # 創建新的 View 並更新按鈕狀態
                 view = WorkActionView(updated_user, user_id)
                 actions_used = updated_user.get("actions_used", {})
                 view.update_button_states(actions_used)
 
+                # 抓不到動圖時不要傳 attachments，免得把原本的圖清掉
+                edit_kwargs = {"embed": embeds_tuple[1], "view": view}
+                if files:
+                    edit_kwargs["attachments"] = files
+
                 try:
                     # 編輯原始訊息的 embed 和 view
-                    await interaction.message.edit(embed=embeds_tuple[1], view=view)
+                    await interaction.message.edit(**edit_kwargs)
                 except discord.NotFound:
                     await interaction.followup.send(
-                        embed=embeds_tuple[1], view=view, ephemeral=True
+                        embed=embeds_tuple[1], view=view, files=files, ephemeral=True
                     )
                 except discord.HTTPException as e:
                     logger.warning(f"編輯訊息失敗 (user: {user_name}): {e}")
                     await interaction.followup.send(
-                        embed=embeds_tuple[1], view=view, ephemeral=True
+                        embed=embeds_tuple[1], view=view, files=files, ephemeral=True
                     )
 
                 if message:
