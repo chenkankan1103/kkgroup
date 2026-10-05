@@ -1,4 +1,5 @@
 import discord
+import io
 import json
 import random
 import traceback
@@ -348,6 +349,42 @@ def create_progress_bar(current, total, length=10):
     return f"{bar} {percentage}%"
 
 
+# 動圖附件的檔名：embed 用 attachment:// 指過去，Discord 就不會另外列出一筆附件
+WORK_CARD_GIF_NAME = "work_card.gif"
+
+
+async def attach_paperdoll_gif(work_embed, user_data, pose="swingO1"):
+    """把勞動記錄卡的角色圖換成「自己上傳的附件」，動畫才會真的動。
+
+    Discord 顯示 embed 圖片時會走它自己的 CDN proxy，來源網址不是以 .gif 結尾
+    就只留第一格（maplestory.io 的 /animated 端點沒有副檔名），所以直接貼網址
+    永遠看起來是靜圖。改成先把 GIF 抓下來、當附件送出，圖片網址就變成 Discord
+    自己的 CDN（結尾是 .gif），動畫才播得起來。
+
+    回傳要一起附在訊息上的 discord.File；抓不到時回傳 None，
+    embed 維持原本的靜態網址，卡片至少還有圖、不會開天窗。
+    """
+    api_url = paperdoll_manager.build_api_url(user_data, pose=pose)
+    if not api_url:
+        return None
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(
+            api_url
+        ) as resp:
+            if resp.status != 200:
+                print(f"[work_system] ⚠️ 紙娃娃動圖回應 {resp.status}，改用靜態圖")
+                return None
+            gif_bytes = await resp.read()
+
+        work_embed.set_image(url=f"attachment://{WORK_CARD_GIF_NAME}")
+        return discord.File(io.BytesIO(gif_bytes), filename=WORK_CARD_GIF_NAME)
+    except Exception as e:
+        print(f"[work_system] ⚠️ 紙娃娃動圖下載失敗，改用靜態圖: {e}")
+        return None
+
+
 def create_work_embed(user, user_obj):
     """創建工作記錄卡 Embed"""
     try:
@@ -370,7 +407,9 @@ def create_work_embed(user, user_obj):
         # 角色動圖：swingO1 是楓之谷的採集動作（揮動），讓卡片看起來像真的在勞動。
         # 用 set_image 而非 set_thumbnail：置物櫃（embed_utils.py:174）與其他紙娃娃入口
         # 清一色 set_image；縮圖只有 ~80px，243×240 的角色縮下去會糊到看不見。
-        # build_api_url 只組字串不打網路；失敗時只掉圖，不影響整張勞動記錄卡。
+        # 這裡放的是「靜態 fallback」網址；送出前會由 attach_paperdoll_gif 換成
+        # 附件版本，動畫才會動（原因見該函式）。build_api_url 只組字串不打網路；
+        # 失敗時只掉圖，不影響整張勞動記錄卡。
         try:
             api_url = paperdoll_manager.build_api_url(user, pose="swingO1")
             if api_url:
