@@ -21,9 +21,9 @@ bangumi (bgm.tv) API 客戶端 —— 補足巴哈動畫瘋缺少的動畫資料
 由 ``ALIASES`` 對照表補齊。
 
 顯示端則相反：bangumi 的 ``name_cn`` 是簡體，所以 :func:`get_ranking`、
-:func:`get_popular`、:func:`get_rating_by_title` 回傳的 ``title`` 都已用
-:func:`to_traditional` 轉回繁體，可直接推播給台灣用戶；``name`` / ``name_cn``
-則保留 API 原值。
+:func:`get_popular`、:func:`get_trending`、:func:`get_rating_by_title` 回傳的
+``title`` 都已用 :func:`to_traditional` 轉回繁體，可直接推播給台灣用戶；
+``name`` / ``name_cn`` 則保留 API 原值。
 """
 
 from __future__ import annotations
@@ -57,6 +57,14 @@ SEARCH_URL = API_BASE + "/search/subject/{}?responseGroup=small&max_results=5"
 SUBJECT_URL = API_BASE + "/v0/subjects/{}"
 EPISODES_URL = API_BASE + "/v0/episodes?subject_id={}"
 CALENDAR_URL = API_BASE + "/calendar"
+
+# bangumi 新版前端的私有端點。官網「動畫 > 近期注目」（/anime/browser/?sort=trends）
+# 就是打這支；公開的 api.bgm.tv/v0 沒有 trends 排序（實測回 unknown sort: trends）。
+P1_BASE = "https://next.bgm.tv/p1"
+P1_TRENDS_URL = P1_BASE + "/subjects?type={}&sort=trends&limit={}"
+P1_SUBJECT_URL = P1_BASE + "/subjects/{}"
+
+TRENDS_PAGE_SIZE = 24  # 實測 limit 傳 20/50/100 都只回 24 筆，這是端點的硬上限
 
 SUBJECT_TYPE_ANIME = "2"  # bangumi 分類：1=書籍 2=動畫 3=音樂 4=遊戲 6=三次元
 
@@ -393,8 +401,9 @@ async def get_ranking(
 ) -> List[dict]:
     """全站排行榜（依 bangumi 評分排名，涵蓋約 9000 部動畫）。
 
-    注意：bangumi 的 sort 只支援 ``rank`` 和 ``date``，**沒有「熱門」排序**，
-    要熱門請用 :func:`get_popular`。
+    注意：公開的 v0 端點 ``sort`` 只支援 ``rank`` 和 ``date``，**沒有「熱門」排序**
+    （實測 ``sort=trends`` 回 ``unknown sort: trends``）。要官網那種熱門榜請用
+    :func:`get_trending`；要「當季在看人數」則用 :func:`get_popular`。
 
     Returns:
         每筆 ``{"id", "title", "name", "name_cn", "score", "rank", "votes", "date"}``
@@ -437,8 +446,11 @@ async def get_popular(
 ) -> List[dict]:
     """熱門程度：當季放送中「在看人數」最多的動畫。
 
-    bangumi 沒有熱門排序端點，改用放送表的 ``collection.doing``（正在看的人數）
-    當熱度指標——這是唯一便宜又即時的熱度訊號，不必逐部打 detail。
+    這是**放送表口徑**的熱度，不是官網「近期注目」那份榜。兩者差很多：這裡只涵蓋
+    ``/calendar`` 當季有登記的作品（跨季續播、剛完結的常缺席），而且比的是累計
+    在看人數，不是近期標記速度。要跟官網對齊請用 :func:`get_trending`。
+
+    好處是放送表本身就帶 ``collection.doing``，一次請求拿到全部，不必逐部打 detail。
 
     Args:
         weekday: 1-7 只取某一天；``None`` 表示整週。
@@ -469,6 +481,73 @@ async def get_popular(
             "air_date": item.get("air_date"),
         }
         for item in items[:limit]
+    ]
+
+
+async def _fetch_doing(session: aiohttp.ClientSession, subject_id: Optional[int]) -> int:
+    """補「正在看人數」。
+
+    p1 的 ``collection`` 用數字當鍵（跟 v0 的具名鍵不同）：
+    1=想看 2=看過 3=在看 4=擱置 5=拋棄，所以要的是 ``"3"``。
+    拿不到就回 0——單一部失敗不該讓整份榜單開天窗。
+    """
+    if not subject_id:
+        return 0
+    detail = await _get_json(session, P1_SUBJECT_URL.format(subject_id))
+    if not isinstance(detail, dict):
+        return 0
+    try:
+        return int((detail.get("collection") or {}).get("3") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+async def get_trending(
+    limit: int = 10,
+    *,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> List[dict]:
+    """近期注目：與官網「動畫 > 近期注目」（``/anime/browser/?sort=trends``）同一份榜。
+
+    公開的 v0 API 沒有這個排序（實測 ``sort=trends`` 回 ``unknown sort: trends``），
+    但新版前端有私有端點 ``next.bgm.tv/p1/subjects`` 吃 ``sort=trends``，官網那頁
+    就是打它。實測 24 筆的順序與官網逐筆一致。
+
+    代價是這支端點**不給** ``collection``，所以「在看人數」得逐部補打
+    ``p1/subjects/{id}``。:func:`_throttle` 是模組層級的鎖，``gather`` 也會被排成
+    序列，20 部大約多花十幾秒——每週跑一次的 cron 吃得下。
+
+    Args:
+        limit: 取前幾名。端點每頁固定 24 筆，超過也只拿得到 24 筆。
+
+    Returns:
+        每筆 ``{"id", "title", "name", "name_cn", "score", "doing"}``
+
+        ``title`` 是已解析好的**繁體**顯示名稱，可直接推播；
+        ``name`` / ``name_cn`` 保留 API 原值（``name_cn`` 為簡體）。
+    """
+    url = P1_TRENDS_URL.format(SUBJECT_TYPE_ANIME, TRENDS_PAGE_SIZE)
+    async with _session(session) as sess:
+        data = await _get_json(sess, url)
+        if not isinstance(data, dict):
+            return []
+        rows = (data.get("data") or [])[:limit]
+        if not rows:
+            return []
+        doings = await asyncio.gather(
+            *(_fetch_doing(sess, item.get("id")) for item in rows)
+        )
+
+    return [
+        {
+            "id": item.get("id"),
+            "title": to_traditional(item.get("nameCN")) or item.get("name"),
+            "name": item.get("name"),
+            "name_cn": item.get("nameCN"),
+            "score": (item.get("rating") or {}).get("score"),
+            "doing": doing,
+        }
+        for item, doing in zip(rows, doings)
     ]
 
 
