@@ -10,9 +10,9 @@ bangumi 每週熱門排行推送任務
 
 import asyncio
 import logging
+import math
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import discord
@@ -39,6 +39,7 @@ CHANNEL_ID = int(os.getenv("BANGUMI_CHANNEL_ID", "1252204317453324333"))
 TOP_N = 20
 BANGUMI_PINK = 0xF09199  # bangumi 品牌色
 EMBED_DESC_LIMIT = 4096  # Discord Embed description 上限
+BAR_CELLS = 12  # 熱度條格數（包在 inline code 內用等寬字型，跨行才對得齊）
 
 # 日誌設定
 LOG_PATH = BASE_DIR / "bangumi_weekly_push.log"
@@ -50,17 +51,47 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _heat_bar(doing: int, peak: int) -> str:
+    """畫相對熱度條：以本週冠軍為滿格，一眼看出各名次差多少。
+
+    兩個刻意的選擇：
+
+    1. **相對值而非絕對值** —— 每週的「正在看人數」基準會浮動，固定比例才看得出
+       「這週第一名領先多少」。
+    2. **平方根刻度而非線性** —— 這份資料是冪次分布（冠軍 16,253 是末位 852 的 19 倍），
+       線性刻度下第 6 名之後全部塌成同一格，20 行看起來一模一樣，比不畫還糟。開根號
+       壓縮高端的差距，中後段才分得出層次。
+       （也刻意「不」再減掉最小值做正規化 —— 那會把尾段的差距再壓一次，等於白開根號。）
+
+    包在 inline code 內也是刻意的：比例字型下 █ 與 ░ 寬度不一，只有等寬字型能讓
+    20 行條圖左右對齊成一張圖表。
+    """
+    if peak <= 0:
+        return f"`{'░' * BAR_CELLS}`"
+    filled = max(1, round(math.sqrt(doing / peak) * BAR_CELLS))  # 至少一格，避免像 0
+    return f"`{'█' * filled}{'░' * (BAR_CELLS - filled)}`"
+
+
 def build_embed(items: list[dict]) -> discord.Embed:
-    """把熱門清單組成單一 Embed（前三名掛獎牌，其餘標數字名次）。"""
-    medals = ["🥇", "🥈", "🥉"]
+    """把熱門清單組成單一 Embed。
+
+    排版取捨：Discord 沒有原生表格，一般文字又是比例字型，靠空白對齊欄位在手機上
+    必歪。所以改用「行首名次固定寬度 + 等寬熱度條」製造視覺節奏 —— 名次與熱度用眼
+    睛掃就好，分數與人數當補充資訊。前三名掛獎牌，其餘用等寬名次籤（寬度與獎牌
+    不同，但換來 4～20 名彼此對齊）。
+    """
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    peak = max((item.get("doing") or 0) for item in items) if items else 0
+
     lines = []
     for rank, item in enumerate(items, start=1):
-        badge = medals[rank - 1] if rank <= 3 else f"`{rank:>2}.`"
+        badge = medals.get(rank, f"`{rank:>2}.`")
         score = item.get("score")
-        score_txt = f"{score} 分" if score else "尚未評分"
+        score_txt = f"**{score}** 分" if score else "— 分"
         doing = item.get("doing") or 0
         lines.append(
-            f"{badge} **{item.get('title')}** · {score_txt} · {doing:,} 人在看"
+            f"{badge} **{item.get('title')}** {_heat_bar(doing, peak)} "
+            f"{score_txt} · {doing:,} 人在看"
         )
 
     desc = "\n".join(lines)
@@ -71,10 +102,9 @@ def build_embed(items: list[dict]) -> discord.Embed:
         title=f"🏆 bangumi 本週熱門 TOP {len(items)}",
         description=desc,
         colour=discord.Color(BANGUMI_PINK),
+        timestamp=discord.utils.utcnow(),  # Discord 會自動換算成讀者所在時區
     )
-    embed.set_footer(
-        text=f"資料來源：bangumi（bgm.tv）· 依「正在看人數」排序 · {datetime.now():%Y-%m-%d}"
-    )
+    embed.set_footer(text="資料來源：bangumi（bgm.tv）· 依「正在看人數」排序")
     return embed
 
 
