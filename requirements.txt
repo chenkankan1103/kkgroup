@@ -41,6 +41,9 @@ patchright>=1.63.0
 chromadb>=0.4.0
 sentence-transformers>=2.2.0
 
+# 簡繁轉換（bangumi 搜尋索引只吃簡體，巴哈標題是繁體）
+zhconv>=1.4.3
+
 # Async SQLite for non-blocking DB operations
 aiosqlite>=0.19.0
 
