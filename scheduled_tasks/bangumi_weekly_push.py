@@ -41,6 +41,22 @@ BANGUMI_PINK = 0xF09199  # bangumi 品牌色
 EMBED_DESC_LIMIT = 4096  # Discord Embed description 上限
 BAR_CELLS = 12  # 熱度條格數（包在 inline code 內用等寬字型，跨行才對得齊）
 
+# 分數色階：門檻由高到低，取第一個 >= 的色塊，越高分越醒目（紫 > 藍 > 綠 > 黃 > 橘 > 紅）。
+#
+# 用彩色 emoji 而非 ANSI 色碼是刻意的：ANSI 只作用在 ```ansi code block 內，一般訊息與
+# embed 都不吃，而且手機版不支援（會退回沒顏色的等寬字），還會讓標題粗體失效。
+# emoji 色塊全平台一致、不吃掉粗體，也不用把整份清單包進 code block。
+SCORE_TIERS: tuple[tuple[float, str], ...] = (
+    (8.0, "🟪"),
+    (7.0, "🟦"),
+    (6.0, "🟩"),
+    (5.0, "🟨"),
+    (4.0, "🟧"),
+)
+SCORE_CHIP_LOW = "🟥"  # 4 分以下
+SCORE_CHIP_NA = "⬜"  # 未評分
+SCORE_LEGEND = "分數色階：🟪≥8　🟦≥7　🟩≥6　🟨≥5　🟧≥4　🟥<4"
+
 # 日誌設定
 LOG_PATH = BASE_DIR / "bangumi_weekly_push.log"
 logging.basicConfig(
@@ -72,6 +88,24 @@ def _heat_bar(doing: int, peak: int) -> str:
     return f"`{'█' * filled}{'░' * (BAR_CELLS - filled)}`"
 
 
+def _score_cell(score) -> str:
+    """分數欄：色塊 + 分數，色塊依 SCORE_TIERS 分級。
+
+    分數一律補到小數一位（bangumi 有些項目回 int 7、有些回 float 7.4），這樣 20 行的
+    小數點才對得齊。未評分時 bangumi 回 0 或空字串，一律當「無分數」處理，不誤標成最低階。
+    """
+    try:
+        value = float(score)
+    except (TypeError, ValueError):
+        return f"{SCORE_CHIP_NA} — 分"
+    if value <= 0:
+        return f"{SCORE_CHIP_NA} — 分"
+    for threshold, chip in SCORE_TIERS:
+        if value >= threshold:
+            return f"{chip} **{value:.1f}** 分"
+    return f"{SCORE_CHIP_LOW} **{value:.1f}** 分"
+
+
 def build_embed(items: list[dict]) -> discord.Embed:
     """把熱門清單組成單一 Embed。
 
@@ -79,6 +113,10 @@ def build_embed(items: list[dict]) -> discord.Embed:
     必歪。所以改用「行首名次固定寬度 + 等寬熱度條」製造視覺節奏 —— 名次與熱度用眼
     睛掃就好，分數與人數當補充資訊。前三名掛獎牌，其餘用等寬名次籤（寬度與獎牌
     不同，但換來 4～20 名彼此對齊）。
+
+    兩個維度各有各的視覺編碼，刻意不重疊：熱度條（長度）講「多少人看」，色塊（顏色）
+    講「好不好看」。所以掃一眼就能看出「這部很多人看但評價普通」這種落差。
+    色階說明放在清單最後一行，六階光看顏色猜不出門檻。
     """
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     peak = max((item.get("doing") or 0) for item in items) if items else 0
@@ -86,17 +124,17 @@ def build_embed(items: list[dict]) -> discord.Embed:
     lines = []
     for rank, item in enumerate(items, start=1):
         badge = medals.get(rank, f"`{rank:>2}.`")
-        score = item.get("score")
-        score_txt = f"**{score}** 分" if score else "— 分"
         doing = item.get("doing") or 0
         lines.append(
             f"{badge} **{item.get('title')}** {_heat_bar(doing, peak)} "
-            f"{score_txt} · {doing:,} 人在看"
+            f"{_score_cell(item.get('score'))} · {doing:,} 人在看"
         )
 
     desc = "\n".join(lines)
-    if len(desc) > EMBED_DESC_LIMIT:
-        desc = desc[: EMBED_DESC_LIMIT - 3] + "..."
+    reserve = len(SCORE_LEGEND) + 2  # 先扣掉色階說明要佔的位，免得截斷把說明砍掉
+    if len(desc) > EMBED_DESC_LIMIT - reserve:
+        desc = desc[: EMBED_DESC_LIMIT - reserve - 3] + "..."
+    desc += f"\n\n{SCORE_LEGEND}"
 
     embed = discord.Embed(
         title=f"🏆 bangumi 本週熱門 TOP {len(items)}",
