@@ -19,6 +19,11 @@ bangumi (bgm.tv) API 客戶端 —— 補足巴哈動畫瘋缺少的動畫資料
 對照率實測：41 部巴哈當季新番 → 36 部（87.8%）成功對到 bangumi。
 剩下對不上的主要是台譯與中譯不同的作品（拉拉熊↔輕鬆熊、超人力霸王↔奧特曼），
 由 ``ALIASES`` 對照表補齊。
+
+顯示端則相反：bangumi 的 ``name_cn`` 是簡體，所以 :func:`get_ranking`、
+:func:`get_popular`、:func:`get_rating_by_title` 回傳的 ``title`` 都已用
+:func:`to_traditional` 轉回繁體，可直接推播給台灣用戶；``name`` / ``name_cn``
+則保留 API 原值。
 """
 
 from __future__ import annotations
@@ -130,6 +135,22 @@ def to_simplified(text: str) -> str:
     if not _HAS_ZHCONV:
         return text
     return zhconv.convert(text, "zh-cn")
+
+
+def to_traditional(text: str) -> str:
+    """簡體轉繁體（台灣正體）。bangumi 的 ``name_cn`` 是簡體，要顯示給台灣用戶得轉回來。
+
+    與 :func:`to_simplified` 對稱：搜尋前轉簡體，顯示前轉回繁體。
+
+    用 ``zh-tw`` 而非 ``zh-hant``：zh-hant 挑的是正統字形，會把「為」寫成「爲」，
+    而台灣標準是「為」。zh-tw 另外會把少數用語換成台灣講法（軟件→軟體），
+    對作品名來說也是對的方向。
+    """
+    if not text:
+        return ""
+    if not _HAS_ZHCONV:
+        return text
+    return zhconv.convert(text, "zh-tw")
 
 
 def _canon_season(text: str) -> str:
@@ -378,8 +399,9 @@ async def get_ranking(
     Returns:
         每筆 ``{"id", "title", "name", "name_cn", "score", "rank", "votes", "date"}``
 
-        ``title`` 是已解析好的顯示名稱（``name_cn`` 沒有時退回日文原名）——
+        ``title`` 是已解析好的**繁體**顯示名稱（``name_cn`` 沒有時退回日文原名）——
         部分作品（如 CLANNAD）沒有中文名，直接取 ``name_cn`` 會拿到 None。
+        ``name`` / ``name_cn`` 保留 API 原值（``name_cn`` 為簡體）。
     """
     url = (
         f"{API_BASE}/v0/subjects?type={SUBJECT_TYPE_ANIME}"
@@ -395,7 +417,7 @@ async def get_ranking(
         out.append(
             {
                 "id": item.get("id"),
-                "title": item.get("name_cn") or item.get("name"),
+                "title": to_traditional(item.get("name_cn")) or item.get("name"),
                 "name": item.get("name"),
                 "name_cn": item.get("name_cn"),
                 "score": rating.get("score"),
@@ -423,6 +445,9 @@ async def get_popular(
 
     Returns:
         每筆 ``{"id", "title", "name", "name_cn", "score", "doing", "air_weekday", "air_date"}``
+
+        ``title`` 是已解析好的**繁體**顯示名稱，可直接推播；
+        ``name`` / ``name_cn`` 保留 API 原值（``name_cn`` 為簡體）。
     """
     calendar = await get_calendar(session=session)
     items: List[dict] = []
@@ -435,7 +460,7 @@ async def get_popular(
     return [
         {
             "id": item.get("id"),
-            "title": item.get("name_cn") or item.get("name"),
+            "title": to_traditional(item.get("name_cn")) or item.get("name"),
             "name": item.get("name"),
             "name_cn": item.get("name_cn"),
             "score": (item.get("rating") or {}).get("score"),
@@ -458,7 +483,9 @@ async def get_rating_by_title(
     """標題 → 評分摘要。找不到回 None。
 
     Returns:
-        ``{"id", "name_cn", "score", "rank", "votes", "matched_score"}``
+        ``{"id", "title", "name_cn", "score", "rank", "votes", "matched_score"}``
+
+        ``title`` 是**繁體**顯示名稱，可直接推播；``name_cn`` 保留 API 原值（簡體）。
     """
     found = await find_subject(title, session=session)
     if not found:
@@ -467,9 +494,11 @@ async def get_rating_by_title(
     if not detail:
         return None
     rating = detail.get("rating") or {}
+    name_cn = detail.get("name_cn")
     return {
         "id": found["id"],
-        "name_cn": detail.get("name_cn") or detail.get("name"),
+        "title": to_traditional(name_cn) or detail.get("name"),
+        "name_cn": name_cn,
         "score": rating.get("score"),
         "rank": rating.get("rank"),
         "votes": rating.get("total"),
