@@ -72,12 +72,13 @@ tcp6       0      0 :::80                   :::*                    LISTEN
 # 當代碼 push 到 main 分支時自動部署
 # 流程：Git Push → GitHub Webhook → VM Webhook 接收器 → Git Pull → 重啟服務
 
-# Cron 排程（僅用於維護任務）— 2026-09-30 crontab -l 實測
-# 系統時區 Etc/UTC，未設 CRON_TZ，故以下時刻皆為 UTC
+# Cron 排程（僅用於維護任務）— 2026-10-07 crontab -l 實測
+# 系統時區 Etc/UTC，未設 CRON_TZ，故以下時刻皆為 UTC（台灣時間 = UTC+8）
 # m h  dom mon dow   command
 0 3 * * 3 . /home/e193752468/kkgroup/.env && cd /home/e193752468/kkgroup && /home/e193752468/kkgroup/venv/bin/python3 scheduled_tasks/refresh_all_lockers_cron.py >> /home/e193752468/kkgroup/logs/locker_refresh.log 2>&1
-0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python weekly_backup.py >> /tmp/weekly_backup.log 2>&1
+0 3 * * 1 cd /home/e193752468/kkgroup && venv/bin/python scheduled_tasks/weekly_backup.py >> /home/e193752468/kkgroup/logs/weekly_backup.log 2>&1
 10 3 * * 3 cd /home/e193752468/kkgroup && venv/bin/python scheduled_tasks/netflix_weekly_push.py >> scheduled_tasks/netflix_cron.log 2>&1
+0 12 * * 4 cd /home/e193752468/kkgroup && venv/bin/python scheduled_tasks/bangumi_weekly_push.py >> scheduled_tasks/bangumi_cron.log 2>&1
 ```
 
 **部署機制說明**:
@@ -216,6 +217,8 @@ WantedBy=multi-user.target
 ### 自動備份
 - **每週備份**: 週一 03:00 UTC（台灣 11:00）執行 `weekly_backup.py`
 - **置物櫃更新**: 週三 03:00 UTC（台灣 11:00）執行 `refresh_all_lockers_cron.py`
+- **Netflix 週榜**: 週三 03:10 UTC（台灣 11:10）執行 `netflix_weekly_push.py`
+- **bangumi 週熱門**: 週四 12:00 UTC（台灣 20:00）執行 `bangumi_weekly_push.py`
 - **手動備份**: `full_backup.tar.gz` (335MB)
 
 ### 備份位置
