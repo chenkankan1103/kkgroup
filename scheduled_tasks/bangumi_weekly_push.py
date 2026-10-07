@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-bangumi 每週熱門排行推送任務
-- 取 bangumi 放送表中「正在看人數」（collection.doing）最多的前 20 部當季動畫
+bangumi 每週近期注目推送任務
+- 取官網「動畫 > 近期注目」（/anime/browser/?sort=trends）前 20 部，逐部補上在看人數
 - 以單一 Embed 靜音推送至動畫推送頻道
 - 排程：每週四 20:00（台灣時間）＝ 週四 12:00 UTC
 """
@@ -68,16 +68,19 @@ logger = logging.getLogger(__name__)
 
 
 def _heat_bar(doing: int, peak: int) -> str:
-    """畫相對熱度條：以本週冠軍為滿格，一眼看出各名次差多少。
+    """畫相對熱度條：以榜上最多人在看的那部為滿格，一眼看出各部差多少。
 
     兩個刻意的選擇：
 
     1. **相對值而非絕對值** —— 每週的「正在看人數」基準會浮動，固定比例才看得出
        「這週第一名領先多少」。
-    2. **平方根刻度而非線性** —— 這份資料是冪次分布（冠軍 16,253 是末位 852 的 19 倍），
-       線性刻度下第 6 名之後全部塌成同一格，20 行看起來一模一樣，比不畫還糟。開根號
+    2. **平方根刻度而非線性** —— 這份資料是冪次分布（冠軍往往是末位的十幾倍），
+       線性刻度下中後段全部塌成同一格，20 行看起來一模一樣，比不畫還糟。開根號
        壓縮高端的差距，中後段才分得出層次。
        （也刻意「不」再減掉最小值做正規化 —— 那會把尾段的差距再壓一次，等於白開根號。）
+
+    滿格的是「這 20 部裡最多人在看」的那部，不一定是第 1 名 —— 榜單排的是近期注目，
+    在看人數是另一個維度，第 5 名條比第 1 名長是正常且有意義的。
 
     包在 inline code 內也是刻意的：比例字型下 █ 與 ░ 寬度不一，只有等寬字型能讓
     20 行條圖左右對齊成一張圖表。
@@ -93,6 +96,9 @@ def _score_cell(score) -> str:
 
     分數一律補到小數一位（bangumi 有些項目回 int 7、有些回 float 7.4），這樣 20 行的
     小數點才對得齊。未評分時 bangumi 回 0 或空字串，一律當「無分數」處理，不誤標成最低階。
+
+    **先四捨五入再分級**，不是先分級再顯示：7.96 顯示出來是 8.0，色塊就得是 🟪。
+    拿原值分級的話會出現「🟦 8.0 分」這種跟圖例自相矛盾的畫面。
     """
     try:
         value = float(score)
@@ -100,6 +106,7 @@ def _score_cell(score) -> str:
         return f"{SCORE_CHIP_NA} — 分"
     if value <= 0:
         return f"{SCORE_CHIP_NA} — 分"
+    value = round(value, 1)
     for threshold, chip in SCORE_TIERS:
         if value >= threshold:
             return f"{chip} **{value:.1f}** 分"
@@ -137,12 +144,12 @@ def build_embed(items: list[dict]) -> discord.Embed:
     desc += f"\n\n{SCORE_LEGEND}"
 
     embed = discord.Embed(
-        title=f"🏆 bangumi 本週熱門 TOP {len(items)}",
+        title=f"🏆 bangumi 近期注目 TOP {len(items)}",
         description=desc,
         colour=discord.Color(BANGUMI_PINK),
         timestamp=discord.utils.utcnow(),  # Discord 會自動換算成讀者所在時區
     )
-    embed.set_footer(text="資料來源：bangumi（bgm.tv）· 依「正在看人數」排序")
+    embed.set_footer(text="資料來源：bangumi（bgm.tv）· 依官網「動畫 › 近期注目」排序")
     return embed
 
 
@@ -157,8 +164,8 @@ async def main() -> None:
         return
 
     # 先抓資料再連 Discord：連線階段才不會被 bot.start() 的 timeout 夾住
-    logger.info(f"🔍 正在取得 bangumi 熱門 TOP {TOP_N}...")
-    items = await bgm.get_popular(TOP_N)
+    logger.info(f"🔍 正在取得 bangumi 近期注目 TOP {TOP_N}...")
+    items = await bgm.get_trending(TOP_N)
     if not items:
         logger.warning("⚠️ 未取得 bangumi 熱門資料，本週不推送")
         return
