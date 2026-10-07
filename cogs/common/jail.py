@@ -505,7 +505,9 @@ class Ai(commands.Cog):
             if punishment_channel:
                 try:
                     admin_embed = self.create_admin_notification_embed(member)
-                    admin_message = await punishment_channel.send(embed=admin_embed)
+                    admin_message = await punishment_channel.send(
+                        embed=admin_embed, silent=True
+                    )
                     self.admin_notification_messages[member.id] = admin_message.id
                     logger.info(f"已發送管理員通知給 {member.display_name}")
                 except Exception as e:
@@ -772,7 +774,7 @@ class Ai(commands.Cog):
                         if punishment_message is None:
                             try:
                                 punishment_message = await punishment_channel.send(
-                                    f"{member.mention}", embed=embed
+                                    f"{member.mention}", embed=embed, silent=True
                                 )
                                 self.punishment_messages[member.id] = (
                                     punishment_message.id
@@ -793,7 +795,7 @@ class Ai(commands.Cog):
                                 # 如果訊息被刪除，重新發送
                                 try:
                                     punishment_message = await punishment_channel.send(
-                                        f"{member.mention}", embed=embed
+                                        f"{member.mention}", embed=embed, silent=True
                                     )
                                     self.punishment_messages[member.id] = (
                                         punishment_message.id
