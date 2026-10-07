@@ -362,6 +362,92 @@ async def get_calendar(
 
 
 # ============================================================
+# 排行與熱門
+# ============================================================
+async def get_ranking(
+    limit: int = 10,
+    offset: int = 0,
+    *,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> List[dict]:
+    """全站排行榜（依 bangumi 評分排名，涵蓋約 9000 部動畫）。
+
+    注意：bangumi 的 sort 只支援 ``rank`` 和 ``date``，**沒有「熱門」排序**，
+    要熱門請用 :func:`get_popular`。
+
+    Returns:
+        每筆 ``{"id", "title", "name", "name_cn", "score", "rank", "votes", "date"}``
+
+        ``title`` 是已解析好的顯示名稱（``name_cn`` 沒有時退回日文原名）——
+        部分作品（如 CLANNAD）沒有中文名，直接取 ``name_cn`` 會拿到 None。
+    """
+    url = (
+        f"{API_BASE}/v0/subjects?type={SUBJECT_TYPE_ANIME}"
+        f"&sort=rank&limit={limit}&offset={offset}"
+    )
+    async with _session(session) as sess:
+        data = await _get_json(sess, url)
+    if not isinstance(data, dict):
+        return []
+    out = []
+    for item in data.get("data") or []:
+        rating = item.get("rating") or {}
+        out.append(
+            {
+                "id": item.get("id"),
+                "title": item.get("name_cn") or item.get("name"),
+                "name": item.get("name"),
+                "name_cn": item.get("name_cn"),
+                "score": rating.get("score"),
+                "rank": rating.get("rank"),
+                "votes": rating.get("total"),
+                "date": item.get("date"),
+            }
+        )
+    return out
+
+
+async def get_popular(
+    limit: int = 10,
+    *,
+    weekday: Optional[int] = None,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> List[dict]:
+    """熱門程度：當季放送中「在看人數」最多的動畫。
+
+    bangumi 沒有熱門排序端點，改用放送表的 ``collection.doing``（正在看的人數）
+    當熱度指標——這是唯一便宜又即時的熱度訊號，不必逐部打 detail。
+
+    Args:
+        weekday: 1-7 只取某一天；``None`` 表示整週。
+
+    Returns:
+        每筆 ``{"id", "title", "name", "name_cn", "score", "doing", "air_weekday", "air_date"}``
+    """
+    calendar = await get_calendar(session=session)
+    items: List[dict] = []
+    for day in calendar:
+        if weekday is not None and (day.get("weekday") or {}).get("id") != weekday:
+            continue
+        items.extend(day.get("items") or [])
+
+    items.sort(key=lambda i: (i.get("collection") or {}).get("doing", 0), reverse=True)
+    return [
+        {
+            "id": item.get("id"),
+            "title": item.get("name_cn") or item.get("name"),
+            "name": item.get("name"),
+            "name_cn": item.get("name_cn"),
+            "score": (item.get("rating") or {}).get("score"),
+            "doing": (item.get("collection") or {}).get("doing", 0),
+            "air_weekday": item.get("air_weekday"),
+            "air_date": item.get("air_date"),
+        }
+        for item in items[:limit]
+    ]
+
+
+# ============================================================
 # 便利函數：常見的「拿標題換評分」用法
 # ============================================================
 async def get_rating_by_title(
