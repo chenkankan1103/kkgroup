@@ -25,9 +25,24 @@ GROQ_API_MODEL = os.getenv("GROQ_API_MODEL", "llama-3.3-70b-versatile")
 MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", 0))
 PUNISHMENT_CHANNEL_ID = int(os.getenv("PUNISHMENT_CHANNEL_ID", 0))
 
+# 禁閉室狀態列的色塊。刻意不用 ▰▱ 進度條：那在比例字型下寬度不一致，只有包進
+# inline code 才會左右對齊，但包了 code 就沒辦法混 emoji 標示。emoji 寬度固定，
+# 可以直接接在文字前面，桌機與手機都排得整齊。
+STATUS_CELLS = 10
+HEART_FULL, HEART_EMPTY = "❤️", "🖤"
+BOLT_FULL, BOLT_EMPTY = "⚡", "🖤"
+
 # 設置日誌記錄
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _fmt_coins(value) -> str:
+    """KKCoin 數字補千分位；來源若意外是字串就原樣輸出，不讓顯示層炸掉。"""
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return str(value)
 
 
 class Ai(commands.Cog):
@@ -298,8 +313,11 @@ class Ai(commands.Cog):
     def create_admin_notification_embed(self, member: discord.Member) -> discord.Embed:
         """創建管理員通知 Embed"""
         embed = discord.Embed(
-            title="🚨 禁閉室收容通知",
-            description=f"**{member.display_name}** (`{member.mention}`) 已被幹部抓進禁閉室",
+            title="🚨 禁閉室 · 收容通知",
+            description=(
+                f"**{member.display_name}**（{member.mention}）已被幹部抓進禁閉室\n"
+                "🔴 私人制裁進行中，懲罰進度將持續更新"
+            ),
             color=0xFF4444,
         )
 
@@ -311,14 +329,10 @@ class Ai(commands.Cog):
 
         embed.add_field(
             name="📅 收容時間",
-            value=f"<t:{int(asyncio.get_event_loop().time())}:F>",
+            # 一定要餵真實的 Unix 時間戳。原本用 asyncio.get_event_loop().time() 是
+            # 單調時鐘（開機至今的秒數），塞進 <t:> 會被當成 1970 年。
+            value=f"<t:{int(discord.utils.utcnow().timestamp())}:F>",
             inline=True,
-        )
-
-        embed.add_field(
-            name="⚡ 狀態",
-            value="🔴 **正在進行私人制裁**\n懲罰進度將持續更新",
-            inline=False,
         )
 
         embed.set_thumbnail(url=member.display_avatar.url)
@@ -335,126 +349,123 @@ class Ai(commands.Cog):
         theft_info: dict = None,
     ) -> discord.Embed:
         """創建懲罰狀態的 Embed"""
+        hp = damage_info.get("hp", 100)
+        stamina = damage_info.get("stamina", 100)
+
         # 根據HP狀態決定顏色
-        if damage_info.get("hp", 100) <= 0:
+        if hp <= 0:
             color = 0xFF0000  # 紅色 - 重傷
-        elif damage_info.get("hp", 100) <= 30:
+        elif hp <= 30:
             color = 0xFF8800  # 橙色 - 危險
-        elif damage_info.get("hp", 100) <= 60:
+        elif hp <= 60:
             color = 0xFFFF00  # 黃色 - 警告
         else:
             color = 0x00FF00  # 綠色 - 安全
 
+        # 兩行狀態色塊直接寫進 description，緊貼標題下方，掃一眼就是一台儀表板。
+        # 拆成 field 會被欄位標題與欄距撐開，反而看不出「還剩多少」。
+        desc_lines = [
+            f"**{member.display_name}** 正在接受幹部的制裁",
+            "",
+            f"{self.create_status_cells(hp, 100, HEART_FULL, HEART_EMPTY)} 生命 **{hp}**",
+            f"{self.create_status_cells(stamina, 100, BOLT_FULL, BOLT_EMPTY)} 體力 **{stamina}**",
+        ]
+
+        # 這一分鐘掉了多少 —— 只有真的扣到才顯示，沒扣就別佔一行
+        deltas = []
+        if damage_info.get("old_hp", 100) > hp:
+            deltas.append(f"💥 生命 -{damage_info.get('old_hp', 100) - hp}")
+        if damage_info.get("old_stamina", 100) > stamina:
+            deltas.append(f"😵 體力 -{damage_info.get('old_stamina', 100) - stamina}")
+        if deltas:
+            desc_lines += ["", "　".join(deltas)]
+
         embed = discord.Embed(
-            title="🚨 禁閉懲罰進行中 🚨",
-            description=f"**{member.display_name}** 正在接受幹部的制裁...",
+            title="🚨 禁閉室 · 制裁中",
+            description="\n".join(desc_lines),
             color=color,
+            timestamp=discord.utils.utcnow(),  # Discord 會自動換算成讀者時區
         )
-
-        # 狀態欄
-        hp_bar = self.create_health_bar(damage_info.get("hp", 100), 100)
-        stamina_bar = self.create_health_bar(damage_info.get("stamina", 100), 100)
-
-        embed.add_field(
-            name="❤️ 生命值",
-            value=f"{hp_bar} `{damage_info.get('hp', 100)}/100`",
-            inline=False,
-        )
-
-        embed.add_field(
-            name="⚡ 體力值",
-            value=f"{stamina_bar} `{damage_info.get('stamina', 100)}/100`",
-            inline=False,
-        )
-
-        # 傷害訊息
-        if damage_info.get("old_hp", 100) > damage_info.get("hp", 100):
-            hp_damage = damage_info.get("old_hp", 100) - damage_info.get("hp", 100)
-            embed.add_field(
-                name="💥 造成傷害", value=f"生命值 -{hp_damage}", inline=True
-            )
-
-        if damage_info.get("old_stamina", 100) > damage_info.get("stamina", 100):
-            stamina_damage = damage_info.get("old_stamina", 100) - damage_info.get(
-                "stamina", 100
-            )
-            embed.add_field(
-                name="😵 體力耗盡", value=f"體力值 -{stamina_damage}", inline=True
-            )
 
         # AI羞辱訊息 - 截斷過長的訊息
         if len(attack_message) > 1000:
             attack_message = attack_message[:997] + "..."
 
         embed.add_field(
-            name="🦹‍♂️ 幹部人員訊息", value=f"*{attack_message}*", inline=False
+            name="🦹 幹部人員訊息", value=f"*{attack_message}*", inline=False
         )
 
         # 如果有偷取財物的訊息
         if theft_info and (
             theft_info.get("stolen_coins", 0) > 0 or theft_info.get("stolen_items", [])
         ):
-            theft_text = "🦹‍♂️ **幹部偷取行為：**\n"
+            theft_text = ""
 
             if theft_info.get("stolen_coins", 0) > 0:
-                theft_text += f"💰 偷取了 {theft_info['stolen_coins']} KKCoin\n"
+                theft_text += (
+                    f"💰 偷取 **{_fmt_coins(theft_info['stolen_coins'])}** KKCoin\n"
+                )
 
             stolen_items = theft_info.get("stolen_items", [])
-            if stolen_items and len(stolen_items) > 0:
+            if stolen_items:
                 # 安全處理物品名稱顯示
                 try:
-                    stolen_items_display = []
-                    for item in stolen_items[:3]:  # 最多顯示3個
-                        if item and str(item).strip():
-                            stolen_items_display.append(str(item).strip())
+                    stolen_items_display = [
+                        str(item).strip()
+                        for item in stolen_items[:3]  # 最多顯示3個
+                        if item and str(item).strip()
+                    ]
 
                     if stolen_items_display:
-                        stolen_items_str = ", ".join(stolen_items_display)
+                        stolen_items_str = "、".join(stolen_items_display)
                         if len(stolen_items) > 3:
-                            stolen_items_str += f"... 等{len(stolen_items)}項"
-                        theft_text += f"🎒 偷取物品: {stolen_items_str}\n"
+                            stolen_items_str += f"… 等 {len(stolen_items)} 項"
+                        theft_text += f"🎒 偷取物品：{stolen_items_str}\n"
                 except Exception as e:
                     logger.warning(f"處理偷取物品顯示錯誤: {e}")
                     theft_text += f"🎒 偷取了 {len(stolen_items)} 個物品\n"
 
-            theft_text += f"💸 剩餘金錢: {theft_info.get('remaining_coins', 0)} KKCoin"
+            theft_text += (
+                f"💸 剩餘 **{_fmt_coins(theft_info.get('remaining_coins', 0))}** KKCoin"
+            )
 
-            embed.add_field(name="🚨 財物損失警報", value=theft_text, inline=False)
+            embed.add_field(
+                name="🚨 財物損失警報", value=theft_text.strip(), inline=False
+            )
 
         # 狀態提示
-        if damage_info.get("hp", 100) <= 0 and damage_info.get("stamina", 100) <= 0:
+        if hp <= 0 and stamina <= 0:
             embed.add_field(
-                name="💀 完全虛脫狀態",
+                name="💀 完全虛脫",
                 value="生命值和體力值都歸零！幹部們開始覬覦你的財物！",
                 inline=False,
             )
-        elif damage_info.get("hp", 100) <= 0:
+        elif hp <= 0:
             embed.add_field(
-                name="💀 重傷狀態", value="生命值歸零！開始消耗體力值！", inline=False
+                name="💀 重傷", value="生命值歸零！開始消耗體力值！", inline=False
             )
 
-        embed.set_footer(text=f"禁閉室懲罰：每分鐘更新 | {member.display_name}")
+        embed.set_footer(text=f"禁閉室懲罰 · 每分鐘更新 · {member.display_name}")
 
         return embed
 
-    def create_health_bar(self, current: int, maximum: int, length: int = 20) -> str:
-        """創建血條顯示"""
+    def create_status_cells(
+        self, current: int, maximum: int, full: str, empty: str
+    ) -> str:
+        """把 0～maximum 的數值畫成固定格數的色塊列（禁閉室的愛心／閃電）。
+
+        用 emoji 而不是 ▰▱ 進度條是刻意的：emoji 在 Discord 各平台渲染寬度固定，
+        兩行色塊不必包進 inline code 就能左右對齊，也才混得進 emoji 標示。
+
+        進位刻意用 int(x + 0.5) 而非 round()：Python 的 round() 是「銀行家進位」，
+        round(0.5) 得 0、round(9.5) 得 10，會讓一半的數值少亮一格，看起來像壞掉。
+        """
         if maximum <= 0:
-            return "▱" * length
+            return empty * STATUS_CELLS
 
-        percentage = max(0, min(1, current / maximum))  # 確保在 0-1 範圍內
-        filled_length = int(length * percentage)
-
-        if percentage > 0.6:
-            bar_char = "▰"  # 綠色滿血條
-        elif percentage > 0.3:
-            bar_char = "▰"  # 黃色警告
-        else:
-            bar_char = "▰"  # 紅色危險
-
-        empty_char = "▱"
-
-        return bar_char * filled_length + empty_char * (length - filled_length)
+        ratio = max(0.0, min(1.0, current / maximum))
+        filled = int(ratio * STATUS_CELLS + 0.5)
+        return full * filled + empty * (STATUS_CELLS - filled)
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
@@ -556,8 +567,11 @@ class Ai(commands.Cog):
 
                     # 更新管理員通知為釋放狀態
                     release_embed = discord.Embed(
-                        title="✅ 禁閉室釋放通知",
-                        description=f"**{member.display_name}** 已從禁閉室釋放",
+                        title="✅ 禁閉室 · 釋放通知",
+                        description=(
+                            f"**{member.display_name}** 已從禁閉室釋放\n"
+                            "🟢 懲罰結束，恢復正常狀態"
+                        ),
                         color=0x00FF00,
                     )
 
@@ -569,18 +583,13 @@ class Ai(commands.Cog):
 
                     release_embed.add_field(
                         name="📅 釋放時間",
-                        value=f"<t:{int(asyncio.get_event_loop().time())}:F>",
+                        # 同收容通知：要真實 Unix 時間戳，單調時鐘會被當成 1970 年
+                        value=f"<t:{int(discord.utils.utcnow().timestamp())}:F>",
                         inline=True,
                     )
 
-                    release_embed.add_field(
-                        name="⚡ 狀態",
-                        value="🟢 **已恢復正常**\n懲罰已結束",
-                        inline=False,
-                    )
-
                     release_embed.set_thumbnail(url=member.display_avatar.url)
-                    release_embed.set_footer(text="釋放通知")
+                    release_embed.set_footer(text="禁閉室釋放通知")
 
                     await admin_message.edit(embed=release_embed)
 
@@ -604,13 +613,14 @@ class Ai(commands.Cog):
                     )
 
                     recovery_embed = discord.Embed(
-                        title="✨ 懲罰結束",
+                        title="✨ 禁閉室 · 懲罰結束",
                         description=f"**{member.display_name}** 已從禁閉中釋放，恢復正常狀態！",
                         color=0x00FF00,
+                        timestamp=discord.utils.utcnow(),  # Discord 會自動換算成讀者時區
                     )
 
                     recovery_embed.set_footer(
-                        text=f"禁閉室釋放通知 | {member.display_name}"
+                        text=f"禁閉室釋放通知 · {member.display_name}"
                     )
 
                     if recovery_image_url:
