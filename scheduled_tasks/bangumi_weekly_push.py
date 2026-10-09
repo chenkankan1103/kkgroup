@@ -94,8 +94,12 @@ def _heat_bar(doing: int, peak: int) -> str:
 def _score_cell(score) -> str:
     """分數欄：色塊 + 分數，色塊依 SCORE_TIERS 分級。
 
+    這欄排在片名前面，所以**整欄寬度必須固定** —— 它只要寬一格，後面 20 行的片名起點
+    就整排位移。未評分因此不留白，而是補成跟 `8.3` 同寬的 `—.—`（bangumi 對還沒有人
+    評分的新番會回 0 或空字串，這種項目每季都有幾部，不能當例外處理）。
+
     分數一律補到小數一位（bangumi 有些項目回 int 7、有些回 float 7.4），這樣 20 行的
-    小數點才對得齊。未評分時 bangumi 回 0 或空字串，一律當「無分數」處理，不誤標成最低階。
+    小數點才對得齊。未評分一律當「無分數」處理，不誤標成最低階。
 
     **先四捨五入再分級**，不是先分級再顯示：7.96 顯示出來是 8.0，色塊就得是 🟪。
     拿原值分級的話會出現「🟦 8.0 分」這種跟圖例自相矛盾的畫面。
@@ -103,9 +107,9 @@ def _score_cell(score) -> str:
     try:
         value = float(score)
     except (TypeError, ValueError):
-        return f"{SCORE_CHIP_NA} — 分"
+        return f"{SCORE_CHIP_NA} **—.—** 分"
     if value <= 0:
-        return f"{SCORE_CHIP_NA} — 分"
+        return f"{SCORE_CHIP_NA} **—.—** 分"
     value = round(value, 1)
     for threshold, chip in SCORE_TIERS:
         if value >= threshold:
@@ -119,14 +123,22 @@ def build_embed(items: list[dict]) -> discord.Embed:
     排版取捨：Discord 沒有原生表格，一般文字又是比例字型，靠空白對齊欄位在手機上
     必歪。唯一的解法是讓每一行「可變寬的東西全部往後排」，前面只留寬度固定的欄位：
 
-        ` 1.` `████████████` **標題** · 分數 · 人數
-        ` 2.` `█████████░░░` **標題** · 分數 · 人數
-        ^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
-        名次籤   熱度條      標題起點
+        ` 1.` `████████████` 🟪 **8.3** 分 **標題** · 人數
+        ` 2.` `█████████░░░` 🟦 **7.0** 分 **標題** · 人數
+        ^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^
+        名次籤   熱度條       色塊+分數   片名起點
 
     名次籤是 3 個 ASCII 字元包在 inline code 裡（等寬，``1`` 與 ``20`` 同寬），熱度條
-    固定 BAR_CELLS 格，所以名次欄、熱度條欄、標題起點三欄都對得齊。行尾的分數與人數
-    參差是預期的 —— 那是「末欄不齊」，跟原本整排熱度條歪掉是兩回事。
+    固定 BAR_CELLS 格，分數欄固定「色塊 + 三位數字 + 分」（見 _score_cell），所以名次、
+    熱度條、色塊、分數、片名起點這五欄每一行都對得齊。
+
+    **分數刻意排在片名前面**：片名長度不可控，只要它前面還有欄位，那些欄位就會被它推歪。
+    把分數挪到前面，整份清單就只剩「片名尾巴到人數」這一段是參差的 —— 那是「末欄不齊」，
+    跟整排欄位歪掉是兩回事，讀起來也自然。
+
+    （為什麼不用 embed 欄位排？embed 上限 25 欄，20 部 × 3 欄的表格要 60 欄，塞不下；
+    改成「三個欄位各塞 20 行」也不行 —— inline 欄位寬度鎖死在 1/3，長片名一折行整排
+    就錯位，反而比現在更亂。）
 
     **前三名刻意不掛獎牌**：🥇 是 emoji，實測寬度約等於 2.3 個等寬字元，跟 `` 4.`` 對
     不齊；一掛上去，前三行的熱度條就整排往右位移，正是這份清單最該避免的視覺噪音。
@@ -143,7 +155,7 @@ def build_embed(items: list[dict]) -> discord.Embed:
         doing = item.get("doing") or 0
         lines.append(
             f"`{rank:>2}.` {_heat_bar(doing, peak)} "
-            f"**{item.get('title')}** · {_score_cell(item.get('score'))} · {doing:,} 人在看"
+            f"{_score_cell(item.get('score'))} **{item.get('title')}** · {doing:,} 人在看"
         )
 
     desc = "\n".join(lines)
