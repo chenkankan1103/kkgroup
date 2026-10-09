@@ -117,24 +117,33 @@ def build_embed(items: list[dict]) -> discord.Embed:
     """把熱門清單組成單一 Embed。
 
     排版取捨：Discord 沒有原生表格，一般文字又是比例字型，靠空白對齊欄位在手機上
-    必歪。所以改用「行首名次固定寬度 + 等寬熱度條」製造視覺節奏 —— 名次與熱度用眼
-    睛掃就好，分數與人數當補充資訊。前三名掛獎牌，其餘用等寬名次籤（寬度與獎牌
-    不同，但換來 4～20 名彼此對齊）。
+    必歪。唯一的解法是讓每一行「可變寬的東西全部往後排」，前面只留寬度固定的欄位：
+
+        ` 1.` `████████████` **標題** · 分數 · 人數
+        ` 2.` `█████████░░░` **標題** · 分數 · 人數
+        ^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
+        名次籤   熱度條      標題起點
+
+    名次籤是 3 個 ASCII 字元包在 inline code 裡（等寬，``1`` 與 ``20`` 同寬），熱度條
+    固定 BAR_CELLS 格，所以名次欄、熱度條欄、標題起點三欄都對得齊。行尾的分數與人數
+    參差是預期的 —— 那是「末欄不齊」，跟原本整排熱度條歪掉是兩回事。
+
+    **前三名刻意不掛獎牌**：🥇 是 emoji，實測寬度約等於 2.3 個等寬字元，跟 `` 4.`` 對
+    不齊；一掛上去，前三行的熱度條就整排往右位移，正是這份清單最該避免的視覺噪音。
+    名次本身就是排名資訊，獎牌只是裝飾，拿裝飾換 20 行整齊划得來。
 
     兩個維度各有各的視覺編碼，刻意不重疊：熱度條（長度）講「多少人看」，色塊（顏色）
     講「好不好看」。所以掃一眼就能看出「這部很多人看但評價普通」這種落差。
     色階說明放在清單最後一行，六階光看顏色猜不出門檻。
     """
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     peak = max((item.get("doing") or 0) for item in items) if items else 0
 
     lines = []
     for rank, item in enumerate(items, start=1):
-        badge = medals.get(rank, f"`{rank:>2}.`")
         doing = item.get("doing") or 0
         lines.append(
-            f"{badge} **{item.get('title')}** {_heat_bar(doing, peak)} "
-            f"{_score_cell(item.get('score'))} · {doing:,} 人在看"
+            f"`{rank:>2}.` {_heat_bar(doing, peak)} "
+            f"**{item.get('title')}** · {_score_cell(item.get('score'))} · {doing:,} 人在看"
         )
 
     desc = "\n".join(lines)
