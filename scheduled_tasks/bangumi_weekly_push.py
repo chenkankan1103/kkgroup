@@ -54,8 +54,11 @@ SCORE_TIERS: tuple[tuple[float, str], ...] = (
     (4.0, "🟧"),
 )
 SCORE_CHIP_LOW = "🟥"  # 4 分以下
-SCORE_CHIP_NA = "⬜"  # 未評分
-SCORE_LEGEND = "分數色階：🟪≥8　🟦≥7　🟩≥6　🟨≥5　🟧≥4　🟥<4"
+# 未評分色塊：⬜(U+2B1C) 的預設呈現方式是「文字」而非 emoji，部分平台會把它畫成單欄寬的
+# 純文字字符（其他色塊是兩欄寬），那一行的片名起點就會自己歪掉。補一個 VS16 強制走 emoji
+# 呈現，才會跟其他色塊同寬。
+SCORE_CHIP_NA = "⬜️"
+SCORE_LEGEND = f"分數色階：🟪≥8　🟦≥7　🟩≥6　🟨≥5　🟧≥4　🟥<4　{SCORE_CHIP_NA}未評分"
 
 # 日誌設定
 LOG_PATH = BASE_DIR / "bangumi_weekly_push.log"
@@ -95,8 +98,15 @@ def _score_cell(score) -> str:
     """分數欄：色塊 + 分數，色塊依 SCORE_TIERS 分級。
 
     這欄排在片名前面，所以**整欄寬度必須固定** —— 它只要寬一格，後面 20 行的片名起點
-    就整排位移。未評分因此不留白，而是補成跟 `8.3` 同寬的 `—.—`（bangumi 對還沒有人
-    評分的新番會回 0 或空字串，這種項目每季都有幾部，不能當例外處理）。
+    就整排位移。分數因此包在 inline code 內：等寬字型每個字符的 advance 都一樣，`8.3`
+    與 `-.-` 保證同寬。
+
+    這件事不能靠「挑一個看起來差不多寬的字符」解決 —— Discord 在 Windows / macOS /
+    Android / iOS 各用不同字型，比例字型下 `—` 這種字符的寬度從 0.49em 到 1.0em 都有，
+    同一份清單在不同裝置上會歪得不一樣。只有等寬字型能跨平台對齊。
+
+    未評分不留白、也不顯示 `0.0`（後者會被誤讀成最低分），而是補成跟 `8.3` 同寬的 `-.-`
+    —— bangumi 對還沒有人評分的新番會回 0 或空字串，這種項目每季都有幾部，不能當例外處理。
 
     分數一律補到小數一位（bangumi 有些項目回 int 7、有些回 float 7.4），這樣 20 行的
     小數點才對得齊。未評分一律當「無分數」處理，不誤標成最低階。
@@ -107,14 +117,14 @@ def _score_cell(score) -> str:
     try:
         value = float(score)
     except (TypeError, ValueError):
-        return f"{SCORE_CHIP_NA} **—.—** 分"
+        return f"{SCORE_CHIP_NA} `-.-` 分"
     if value <= 0:
-        return f"{SCORE_CHIP_NA} **—.—** 分"
+        return f"{SCORE_CHIP_NA} `-.-` 分"
     value = round(value, 1)
     for threshold, chip in SCORE_TIERS:
         if value >= threshold:
-            return f"{chip} **{value:.1f}** 分"
-    return f"{SCORE_CHIP_LOW} **{value:.1f}** 分"
+            return f"{chip} `{value:.1f}` 分"
+    return f"{SCORE_CHIP_LOW} `{value:.1f}` 分"
 
 
 def build_embed(items: list[dict]) -> discord.Embed:
@@ -123,18 +133,22 @@ def build_embed(items: list[dict]) -> discord.Embed:
     排版取捨：Discord 沒有原生表格，一般文字又是比例字型，靠空白對齊欄位在手機上
     必歪。唯一的解法是讓每一行「可變寬的東西全部往後排」，前面只留寬度固定的欄位：
 
-        ` 1.` `████████████` 🟪 **8.3** 分 **標題** · 人數
-        ` 2.` `█████████░░░` 🟦 **7.0** 分 **標題** · 人數
-        ^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^
-        名次籤   熱度條       色塊+分數   片名起點
+        ` 1.` `████████████` 🟪 `8.3` 分 `  4,000` 人在看 **標題**
+        ` 2.` `█████████░░░` 🟦 `7.0` 分 `  8,763` 人在看 **標題**
+        ^^^^^  ^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^  ^^^^^^
+        名次籤   熱度條       分數欄   人數欄    片名起點
 
     名次籤是 3 個 ASCII 字元包在 inline code 裡（等寬，``1`` 與 ``20`` 同寬），熱度條
-    固定 BAR_CELLS 格，分數欄固定「色塊 + 三位數字 + 分」（見 _score_cell），所以名次、
-    熱度條、色塊、分數、片名起點這五欄每一行都對得齊。
+    固定 BAR_CELLS 格，分數欄固定「色塊 + 三個等寬字元 + 分」（見 _score_cell），人數欄
+    右靠齊到這批資料最寬的人數（見下方 doing_width），所以名次、熱度條、分數、人數、
+    片名起點這五欄每一行都對得齊。
 
-    **分數刻意排在片名前面**：片名長度不可控，只要它前面還有欄位，那些欄位就會被它推歪。
-    把分數挪到前面，整份清單就只剩「片名尾巴到人數」這一段是參差的 —— 那是「末欄不齊」，
-    跟整排欄位歪掉是兩回事，讀起來也自然。
+    片名前那四欄之所以全部塞進 inline code，是因為等寬字型是**唯一能跨平台**保證同寬的
+    做法：Discord 在 Windows / macOS / Android / iOS 各用不同字型，靠比例字型「目測等寬」
+    的字符，同一份清單在不同裝置會歪得不一樣。
+
+    **所有固定寬度的欄位都排在片名前面**：片名長度不可控，只要它前面還有欄位，那些欄位
+    就會被它推歪。片名擺在最後一欄，它自己尾巴參差也無所謂 —— 後面已經沒有東西可以推歪。
 
     （為什麼不用 embed 欄位排？embed 上限 25 欄，20 部 × 3 欄的表格要 60 欄，塞不下；
     改成「三個欄位各塞 20 行」也不行 —— inline 欄位寬度鎖死在 1/3，長片名一折行整排
@@ -149,13 +163,18 @@ def build_embed(items: list[dict]) -> discord.Embed:
     色階說明放在清單最後一行，六階光看顏色猜不出門檻。
     """
     peak = max((item.get("doing") or 0) for item in items) if items else 0
+    # 人數欄也排在片名前面，寬度同樣得固定：先量出這批最寬的人數，其餘右靠齊補空白。
+    # 補空白一定得包在 inline code 內 —— 一般文字是比例字型，空白寬度不可靠，連續空白還有
+    # 被壓縮的風險；只有等寬字型能保證 20 行的片名起點落在同一欄。
+    doing_width = max((len(f"{item.get('doing') or 0:,}") for item in items), default=1)
 
     lines = []
     for rank, item in enumerate(items, start=1):
         doing = item.get("doing") or 0
         lines.append(
             f"`{rank:>2}.` {_heat_bar(doing, peak)} "
-            f"{_score_cell(item.get('score'))} **{item.get('title')}** · {doing:,} 人在看"
+            f"{_score_cell(item.get('score'))} `{doing:>{doing_width},}` 人在看 "
+            f"**{item.get('title')}**"
         )
 
     desc = "\n".join(lines)
