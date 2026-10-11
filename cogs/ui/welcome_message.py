@@ -591,6 +591,10 @@ class WelcomeFlow(commands.Cog):
         except Exception as e:
             print(f"⚠️ 註冊 PersistentWelcomeView 失敗: {e}")
 
+    async def cog_load(self):
+        """Cog 載入後補拔重啟時漏掉的臨時身分組。"""
+        spawn_background_task(self.recover_stale_temp_roles())
+
     def load_persistent_cache(self):
         """從文件加載持久化的 Discord URL 緩存"""
         try:
@@ -1888,6 +1892,46 @@ class WelcomeFlow(commands.Cog):
 
         except Exception as e:
             print(f"❌ 移除臨時身分組錯誤: {e}")
+
+    async def recover_stale_temp_roles(self):
+        """把「該拔卻沒拔掉」的臨時身分組補拔乾淨。
+
+        WHY: 入園流程是靠 handle_final_verification 排一個 asyncio.sleep(300)
+        的任務去拔臨時身分組，而那個任務只活在記憶體裡（stunned_users 也只是
+        一般 dict）。這個專案每次 git push 都由 webhook 重啟三個 bot，只要成員
+        在那 5 分鐘內入園，重啟後 remove_temp_role_and_cleanup 的第一行
+        `if user_id not in self.stunned_users: return` 就直接返回——臨時身分組
+        從此掛在人家身上再也拔不掉，入園完成通知和私訊也一併消失。
+        任務活不過重啟，所以只能在開機時補做。
+
+        判斷條件是「同時擁有臨時身分組與正式成員身分」——這是
+        handle_final_verification 建立的不變式：只有走完流程的人才會兩個都有。
+        所以還在流程中、或加入了卻沒驗證的人不會被誤拔。
+        """
+        try:
+            await self.bot.wait_until_ready()
+            if not self.temp_role1_id or not self.member_role_id:
+                return
+
+            fixed = 0
+            for guild in self.bot.guilds:
+                temp_role = guild.get_role(self.temp_role1_id)
+                member_role = guild.get_role(self.member_role_id)
+                if not temp_role or not member_role:
+                    continue
+                for member in guild.members:
+                    if temp_role not in member.roles or member_role not in member.roles:
+                        continue
+                    try:
+                        await member.remove_roles(
+                            temp_role, reason="重啟後補拔殘留的臨時身分組"
+                        )
+                        fixed += 1
+                    except (discord.Forbidden, discord.HTTPException) as e:
+                        print(f"⚠️ 補拔臨時身分組失敗 {member.id}: {e}")
+            print(f"🧹 開機補拔臨時身分組：{fixed} 位")
+        except Exception as e:
+            print(f"❌ 補拔臨時身分組發生錯誤: {e}")
 
     # ---------- debug helpers (slash commands) ----------
     @app_commands.command(name="debug_welcome")
