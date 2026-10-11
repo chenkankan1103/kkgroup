@@ -47,6 +47,15 @@ def spawn_background_task(coro: Coroutine) -> asyncio.Task:
     return task
 
 
+def _is_unset(value) -> bool:
+    """判斷欄位是否等於「從沒寫過」。
+
+    WHY: 只認 None、空字串、空 JSON 容器。0 不算未設定——xp、kkcoin、
+    thread_id 的 0 都是合法值，誤判會蓋掉真實進度。
+    """
+    return value is None or value in ("", "{}", "[]", {}, [])
+
+
 # ─── 入園後興趣標籤選擇 ──────────────────────────────────────
 
 
@@ -884,7 +893,27 @@ class WelcomeFlow(commands.Cog):
                 # 先檢查用戶是否已存在
                 existing = get_user(user_id)
                 if existing:
-                    print(f"⚠️ 用戶資料已存在: {user_id}（略過創建）")
+                    # MemberSync 的 on_member_join 沒有任何 await，會搶在
+                    # WelcomeFlow 之前用 set_user(member.id, {}) 建出一列空資料，
+                    # 讓這裡直接 return 而略過初始化。
+                    # level=0 是「這列從沒被初始化過」的可靠訊號（下面一律寫 1，
+                    # 沒有其他地方會把 level 設回 0）。實測有 21 列是這樣——這些
+                    # 新成員因此拿不到手機和身分證，handle_final_verification 的
+                    # 沒收檢查也會因為 inventory 是 "{}" 而整段跳過。
+                    if existing.get("level") in (0, "0"):
+                        healed = {
+                            field: value
+                            for field, value in user_data.items()
+                            if _is_unset(existing.get(field))
+                        }
+                        healed["level"] = user_data["level"]
+                        set_user(user_id, healed)
+                        print(
+                            f"🩹 補齊未初始化的用戶資料: {user_id}"
+                            f"（{len(healed)} 欄，嘗試 {attempt}/{max_retries}）"
+                        )
+                    else:
+                        print(f"⚠️ 用戶資料已存在: {user_id}（略過創建）")
                     return True
 
                 result = set_user(user_id, user_data)
