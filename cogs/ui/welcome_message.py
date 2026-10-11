@@ -1625,21 +1625,11 @@ class WelcomeFlow(commands.Cog):
                 )
                 return
 
-            # 設置擊暈狀態
-            print(f"💫 設置 {member.name} 為擊暈狀態")
-            current_timestamp = int(datetime.now().timestamp())
-            await self.update_user_data(
-                member.id,
-                {
-                    "is_stunned": 1,
-                    "hp": 10,
-                    "stamina": 10,
-                    "injury_recovery_time": current_timestamp,
-                    "last_recovery": current_timestamp,
-                },
-            )
-
-            # 立即添加正式成員身分
+            # 先加正式成員身分，成功了才寫入擊暈狀態。
+            # WHY: 原本順序相反——先寫 is_stunned=1 再 add_roles，一旦 add_roles
+            # 拋 Forbidden/HTTPException 就直接 return，留下「資料庫說這人被擊暈、
+            # 實際上沒拿到身分組」的半套狀態：stunned_users 沒登記、5 分鐘清理
+            # 任務沒排、臨時身分組永遠不會被移除、歡迎訊息的按鈕也還活著。
             try:
                 print(f"🎯 嘗試添加正式成員身分給 {member.name}...")
                 await member.add_roles(member_role, reason="進入園區成為正式成員")
@@ -1657,6 +1647,20 @@ class WelcomeFlow(commands.Cog):
                     "❌ 添加身分組失敗，請聯繫管理員。", ephemeral=True
                 )
                 return
+
+            # 設置擊暈狀態
+            print(f"💫 設置 {member.name} 為擊暈狀態")
+            current_timestamp = int(datetime.now().timestamp())
+            await self.update_user_data(
+                member.id,
+                {
+                    "is_stunned": 1,
+                    "hp": 10,
+                    "stamina": 10,
+                    "injury_recovery_time": current_timestamp,
+                    "last_recovery": current_timestamp,
+                },
+            )
 
             scam_id = f"{random.randint(1, 99999):05d}"
             nickname = f"NO.{scam_id} {member.display_name}"
