@@ -15,8 +15,20 @@ from db_adapter import (
 class UserRecoveryCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # 不在這裡啟動，而是在 ready 事件中啟動
-        self._recovery_loop_started = False
+
+    async def cog_load(self):
+        """Cog 載入時啟動回復循環。
+
+        uibot 是在自己的 on_ready handler 內才呼叫 setup_modules() 載入 cogs，
+        而 discord.py 的 Bot.dispatch('ready') 在呼叫該 handler 之前就已經把
+        extra_events['on_ready'] 取出來排程了，所以 cog 自己的 on_ready 監聽器
+        在首次 READY 時永遠不會被呼叫（2026-10-11 實測：自動回復自 2026-08-26
+        起完全沒跑過，users.last_recovery 整表凍結在該日）。因此改在 cog_load
+        啟動，與 cogs/ui/uibody.py 的寫法一致。
+        """
+        if not self.recovery_loop.is_running():
+            self.recovery_loop.start()
+            logging.info("✅ 自動回復循環已啟動（cog_load）")
 
     def cog_unload(self):
         """Cog 卸載時停止循環任務"""
@@ -51,12 +63,10 @@ class UserRecoveryCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        """Bot 準備完成時啟動回復循環"""
-        if not self._recovery_loop_started:
-            self._recovery_loop_started = True
-            if not self.recovery_loop.is_running():
-                self.recovery_loop.start()
-                logging.info("✅ 自動回復循環已啟動")
+        """備援：閘道重新 IDENTIFY 時 cog 的 on_ready 才會被派送到，補啟動用。"""
+        if not self.recovery_loop.is_running():
+            self.recovery_loop.start()
+            logging.info("✅ 自動回復循環已啟動（on_ready 備援）")
 
     def ensure_database_structure(self):
         """確保資料庫結構正確 - db_adapter 會自動管理欄位"""
