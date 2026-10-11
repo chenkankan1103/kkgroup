@@ -10,12 +10,16 @@ from db_adapter import (
     async_batch_set_users,
     async_get_all_users,
 )
+from shared.utils.encoding_handler import setup_utf8_logging
 
-# 必須用自己的 logger 並明確設 INFO：直接用 logging.info() 是打到 root logger，
-# 而 root 維持預設的 WARNING，訊息會被整個吞掉。這個迴圈先前靜默死了六週沒人
-# 發現，就是因為它的啟動與執行訊息全部走 root logger（2026-10-11）。
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+# 這支必須自帶 handler。直接用 logging.info() 是打到 root logger，會被吞掉；
+# 實測 root 根本沒有任何 handler（訊息掉進 lastResort 的 WARNING 就沒了），
+# 連 logging.getLogger(__name__).setLevel(INFO) 也救不回來——2026-10-11 修好
+# cog_load 啟動之後，資料庫證明迴圈每小時都在跑，journal 卻一行都沒有。
+# 用 setup_utf8_logging 把 handler 直接掛在這個 logger 上（與
+# cogs/common/work_function/work_cog.py 同一個做法），順便拿到 UTF-8 安全
+# 輸出與台灣時間格式。
+logger = setup_utf8_logging(__name__, logging.INFO)
 
 
 class UserRecoveryCog(commands.Cog):
