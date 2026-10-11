@@ -11,6 +11,12 @@ from db_adapter import (
     async_get_all_users,
 )
 
+# 必須用自己的 logger 並明確設 INFO：直接用 logging.info() 是打到 root logger，
+# 而 root 維持預設的 WARNING，訊息會被整個吞掉。這個迴圈先前靜默死了六週沒人
+# 發現，就是因為它的啟動與執行訊息全部走 root logger（2026-10-11）。
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 class UserRecoveryCog(commands.Cog):
     def __init__(self, bot):
@@ -28,7 +34,7 @@ class UserRecoveryCog(commands.Cog):
         """
         if not self.recovery_loop.is_running():
             self.recovery_loop.start()
-            logging.info("✅ 自動回復循環已啟動（cog_load）")
+            logger.info("✅ 自動回復循環已啟動（cog_load）")
 
     def cog_unload(self):
         """Cog 卸載時停止循環任務"""
@@ -39,34 +45,34 @@ class UserRecoveryCog(commands.Cog):
     async def recovery_loop(self):
         """每小時執行一次自動回復（帶超時控制）"""
         try:
-            logging.info("開始執行自動回復任務...")
+            logger.info("開始執行自動回復任務...")
             # 設置 5 分鐘超時，避免阻塞心跳
             recovered_users = await asyncio.wait_for(
                 self.process_all_users_recovery(),
                 timeout=300.0,  # 5 分鐘超時
             )
             if recovered_users > 0:
-                logging.info(f"自動回復完成，{recovered_users} 位用戶狀態更新")
+                logger.info(f"自動回復完成，{recovered_users} 位用戶狀態更新")
             else:
-                logging.info("自動回復完成，沒有用戶需要更新")
+                logger.info("自動回復完成，沒有用戶需要更新")
         except asyncio.TimeoutError:
-            logging.warning("⏱️ 自動回復任務超時（5分鐘），將在下一個循環重試")
+            logger.warning("⏱️ 自動回復任務超時（5分鐘），將在下一個循環重試")
         except Exception as e:
-            logging.error(f"自動回復過程發生錯誤: {e}")
-            logging.error(f"錯誤詳情: {traceback.format_exc()}")
+            logger.error(f"自動回復過程發生錯誤: {e}")
+            logger.error(f"錯誤詳情: {traceback.format_exc()}")
 
     @recovery_loop.before_loop
     async def before_recovery_loop(self):
         """等待 bot 準備完成"""
         await self.bot.wait_until_ready()
-        logging.info("機器人已準備就緒，自動回復系統啟動")
+        logger.info("機器人已準備就緒，自動回復系統啟動")
 
     @commands.Cog.listener()
     async def on_ready(self):
         """備援：閘道重新 IDENTIFY 時 cog 的 on_ready 才會被派送到，補啟動用。"""
         if not self.recovery_loop.is_running():
             self.recovery_loop.start()
-            logging.info("✅ 自動回復循環已啟動（on_ready 備援）")
+            logger.info("✅ 自動回復循環已啟動（on_ready 備援）")
 
     def ensure_database_structure(self):
         """確保資料庫結構正確 - db_adapter 會自動管理欄位"""
@@ -74,10 +80,10 @@ class UserRecoveryCog(commands.Cog):
         # 通過獲取所有用戶來觸發資料庫初始化
         try:
             get_all_users(limit=1)
-            logging.debug("資料庫結構檢查完成")
+            logger.debug("資料庫結構檢查完成")
             return True
         except Exception as e:
-            logging.error(f"確保資料庫結構時發生錯誤: {e}")
+            logger.error(f"確保資料庫結構時發生錯誤: {e}")
             return False
 
     def parse_recovery_time(self, time_value):
@@ -105,11 +111,11 @@ class UserRecoveryCog(commands.Cog):
                 except ValueError:
                     pass
 
-            logging.warning(f"無法解析時間值: {time_value}，使用預設時間")
+            logger.warning(f"無法解析時間值: {time_value}，使用預設時間")
             return datetime.now() - timedelta(hours=2)
 
         except Exception as e:
-            logging.error(f"解析時間時發生錯誤: {e}")
+            logger.error(f"解析時間時發生錯誤: {e}")
             return datetime.now() - timedelta(hours=2)
 
     async def process_all_users_recovery(self):
@@ -118,17 +124,17 @@ class UserRecoveryCog(commands.Cog):
         batch_updates = {}  # {'user_id': {'field': value, ...}, ...}
 
         try:
-            logging.debug("開始處理用戶回復...")
+            logger.debug("開始處理用戶回復...")
 
             if not self.ensure_database_structure():
                 return 0
 
             # 🔑 使用非同步方式獲取所有用戶，避免阻塞
             all_users = await async_get_all_users()
-            logging.info(f"資料庫中共有 {len(all_users)} 位用戶")
+            logger.info(f"資料庫中共有 {len(all_users)} 位用戶")
 
             if len(all_users) == 0:
-                logging.info("資料庫中沒有用戶數據")
+                logger.info("資料庫中沒有用戶數據")
                 return 0
 
             # 過濾出需要處理的用戶（有 hp 和 stamina 數據）
@@ -145,10 +151,10 @@ class UserRecoveryCog(commands.Cog):
                 if u.get("hp") is not None and u.get("stamina") is not None
             ]
 
-            logging.info(f"找到 {len(users)} 位用戶需要檢查回復狀態")
+            logger.info(f"找到 {len(users)} 位用戶需要檢查回復狀態")
 
             if not users:
-                logging.info("沒有找到可處理的用戶數據")
+                logger.info("沒有找到可處理的用戶數據")
                 return 0
 
             now = datetime.now()
@@ -244,35 +250,35 @@ class UserRecoveryCog(commands.Cog):
                                 }
 
                 except Exception as e:
-                    logging.error(f"處理用戶 {user_id} 回復時發生錯誤: {e}")
+                    logger.error(f"處理用戶 {user_id} 回復時發生錯誤: {e}")
                     continue
 
             # ✅ 批量執行所有數據庫更新（一次性提交）
             if batch_updates:
-                logging.info(f"批量更新 {len(batch_updates)} 位用戶到數據庫...")
+                logger.info(f"批量更新 {len(batch_updates)} 位用戶到數據庫...")
                 try:
                     # 使用非同步批量更新，避免阻塞
                     successfully_updated = await async_batch_set_users(batch_updates)
-                    logging.info(
+                    logger.info(
                         f"批量更新完成：{successfully_updated}/{len(batch_updates)} 位用戶成功"
                     )
                 except Exception as batch_err:
-                    logging.error(f"批量更新失敗: {batch_err}")
+                    logger.error(f"批量更新失敗: {batch_err}")
                     # 回退到逐個更新（會更慢但更安全）
                     for user_id, data in batch_updates.items():
                         try:
                             set_user(user_id, data)
                         except Exception as e:
-                            logging.error(f"回退更新用戶 {user_id} 失敗: {e}")
+                            logger.error(f"回退更新用戶 {user_id} 失敗: {e}")
 
-            logging.info(f"回復處理完成，成功更新 {recovered_count} 位用戶")
+            logger.info(f"回復處理完成，成功更新 {recovered_count} 位用戶")
             return recovered_count
 
         except asyncio.TimeoutError:
-            logging.warning("⏱️ 用戶回復處理超時")
+            logger.warning("⏱️ 用戶回復處理超時")
             return 0
         except Exception as e:
-            logging.error(f"處理用戶回復時發生未預期錯誤: {e}")
+            logger.error(f"處理用戶回復時發生未預期錯誤: {e}")
             return 0
 
     async def notify_injury_status(self, user_id: int):
@@ -281,14 +287,14 @@ class UserRecoveryCog(commands.Cog):
             # 這會被 HospitalMerchant cog 監聽
             self.bot.dispatch("user_injured", user_id)
         except Exception as e:
-            logging.error(f"通知傷病狀態失敗: {e}")
+            logger.error(f"通知傷病狀態失敗: {e}")
 
     async def notify_recovery_complete(self, user_id: int):
         """通知系統用戶完全恢復"""
         try:
             self.bot.dispatch("user_recovery_complete", user_id)
         except Exception as e:
-            logging.error(f"通知恢復完成失敗: {e}")
+            logger.error(f"通知恢復完成失敗: {e}")
 
     def get_user_stats(self, user_id: int):
         """獲取用戶狀態"""
@@ -301,7 +307,7 @@ class UserRecoveryCog(commands.Cog):
                 last_recovery = user.get("last_recovery")
                 is_stunned = user.get("is_stunned", 0)
 
-                logging.debug(
+                logger.debug(
                     f"獲取用戶 {user_id} 狀態: HP={hp}, Stamina={stamina}, Stunned={is_stunned}"
                 )
                 return {
@@ -311,11 +317,11 @@ class UserRecoveryCog(commands.Cog):
                     "is_stunned": is_stunned,
                 }
             else:
-                logging.warning(f"找不到用戶 {user_id} 的數據")
+                logger.warning(f"找不到用戶 {user_id} 的數據")
             return None
 
         except Exception as e:
-            logging.error(f"獲取用戶 {user_id} 狀態時發生錯誤: {e}")
+            logger.error(f"獲取用戶 {user_id} 狀態時發生錯誤: {e}")
             return None
 
     def update_user_stats(self, user_id: int, hp=None, stamina=None):
@@ -323,7 +329,7 @@ class UserRecoveryCog(commands.Cog):
         try:
             user = get_user(user_id)
             if not user:
-                logging.warning(f"用戶 {user_id} 不存在，無法更新狀態")
+                logger.warning(f"用戶 {user_id} 不存在，無法更新狀態")
                 return False
 
             current_timestamp = int(datetime.now().timestamp())
@@ -338,17 +344,17 @@ class UserRecoveryCog(commands.Cog):
             # Batch update all fields at once
             set_user(user_id, update_data)
 
-            logging.info(f"成功更新用戶 {user_id} 狀態")
+            logger.info(f"成功更新用戶 {user_id} 狀態")
             return True
 
         except Exception as e:
-            logging.error(f"更新用戶 {user_id} 狀態時發生錯誤: {e}")
+            logger.error(f"更新用戶 {user_id} 狀態時發生錯誤: {e}")
             return False
 
 
 async def setup(bot):
     if bot.get_cog("UserRecoveryCog") is not None:
-        logging.warning("UserRecoveryCog 已存在，跳過重複載入")
+        logger.warning("UserRecoveryCog 已存在，跳過重複載入")
         return
     await bot.add_cog(UserRecoveryCog(bot))
-    logging.info("UserRecoveryCog 已成功載入")
+    logger.info("UserRecoveryCog 已成功載入")
