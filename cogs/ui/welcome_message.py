@@ -56,6 +56,24 @@ def _is_unset(value) -> bool:
     return value is None or value in ("", "{}", "[]", {}, [])
 
 
+def _is_inventory_list(value) -> bool:
+    """判斷 inventory 欄位是不是「已經初始化過的 JSON 陣列」。
+
+    WHY: create_user_data 一律寫 json.dumps([...])，全專案也只有它會寫這個欄位
+    （cannabis_inventory、paperdoll_inventory 都是各自獨立的欄位）。MemberSync
+    搶先建出的空資料列拿到的是欄位預設值 "{}"，那是 dict 不是 list，正好可以
+    拿來當「這列從沒初始化過」的訊號。db_adapter 有時會先反序列化，兩種型別都要認。
+    """
+    if isinstance(value, list):
+        return True
+    if isinstance(value, str):
+        try:
+            return isinstance(json.loads(value), list)
+        except (ValueError, TypeError):
+            return False
+    return False
+
+
 # ─── 入園後興趣標籤選擇 ──────────────────────────────────────
 
 
@@ -896,17 +914,19 @@ class WelcomeFlow(commands.Cog):
                     # MemberSync 的 on_member_join 沒有任何 await，會搶在
                     # WelcomeFlow 之前用 set_user(member.id, {}) 建出一列空資料，
                     # 讓這裡直接 return 而略過初始化。
-                    # level=0 是「這列從沒被初始化過」的可靠訊號（下面一律寫 1，
-                    # 沒有其他地方會把 level 設回 0）。實測有 21 列是這樣——這些
-                    # 新成員因此拿不到手機和身分證，handle_final_verification 的
-                    # 沒收檢查也會因為 inventory 是 "{}" 而整段跳過。
-                    if existing.get("level") in (0, "0"):
+                    # 實測有 18 列是這樣——這些新成員因此拿不到手機和身分證，
+                    # handle_final_verification 的沒收檢查也會因為 inventory 是
+                    # "{}" 而整段跳過。
+                    # 訊號用 inventory 而不是 level=0：LEVELS[0] 是合法的
+                    # 「待宰豬仔」，真的 0 級玩家不該被誤升成 1 級。
+                    if not _is_inventory_list(existing.get("inventory")):
                         healed = {
                             field: value
                             for field, value in user_data.items()
                             if _is_unset(existing.get(field))
                         }
-                        healed["level"] = user_data["level"]
+                        if existing.get("level") in (0, "0"):
+                            healed["level"] = user_data["level"]
                         set_user(user_id, healed)
                         print(
                             f"🩹 補齊未初始化的用戶資料: {user_id}"
