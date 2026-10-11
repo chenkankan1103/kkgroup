@@ -7,6 +7,7 @@ import random
 import asyncio
 import json
 import io
+import re
 from PIL import Image
 from collections.abc import Coroutine
 from typing import Optional
@@ -72,6 +73,30 @@ def _is_inventory_list(value) -> bool:
         except (ValueError, TypeError):
             return False
     return False
+
+
+def _extract_target_user_id(message) -> Optional[int]:
+    """從歡迎訊息的 embed 反解出「這則訊息在歡迎誰」（找不到回 None）。
+
+    WHY: 永久視圖的按鈕回調拿不到訊息屬於誰，只能從 embed 反解；重啟後回頭
+    掃頻道找回歡迎訊息 ID 時也靠同一招，所以放在模組層級共用。
+    """
+    try:
+        if not message or not getattr(message, "embeds", None):
+            return None
+        for embed in message.embeds:
+            desc = getattr(embed, "description", "") or ""
+            m = re.search(r"<@!?(?P<id>\d+)>", desc)
+            if m:
+                return int(m.group("id"))
+            # 檢查欄位
+            for field in getattr(embed, "fields", []):
+                m = re.search(r"<@!?(?P<id>\d+)>", field.value or "")
+                if m:
+                    return int(m.group("id"))
+    except Exception:
+        return None
+    return None
 
 
 # ─── 入園後興趣標籤選擇 ──────────────────────────────────────
@@ -263,27 +288,6 @@ class PersistentWelcomeView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
-    def _extract_target_user_id(self, message: discord.Message) -> Optional[int]:
-        """從 embed 中解析被歡迎的 user id（fallback: None）"""
-        try:
-            import re
-
-            if not message or not getattr(message, "embeds", None):
-                return None
-            for embed in message.embeds:
-                desc = getattr(embed, "description", "") or ""
-                m = re.search(r"<@!?(?P<id>\d+)>", desc)
-                if m:
-                    return int(m.group("id"))
-                # 檢查欄位
-                for field in getattr(embed, "fields", []):
-                    m = re.search(r"<@!?(?P<id>\d+)>", field.value or "")
-                    if m:
-                        return int(m.group("id"))
-        except Exception:
-            return None
-        return None
-
     @discord.ui.select(
         custom_id="welcome_gender_select",
         placeholder="選擇你的性別...",
@@ -297,7 +301,7 @@ class PersistentWelcomeView(discord.ui.View):
     ):
         await interaction.response.defer(ephemeral=True)
         target_user_id = (
-            self._extract_target_user_id(interaction.message) or interaction.user.id
+            _extract_target_user_id(interaction.message) or interaction.user.id
         )
 
         if interaction.user.id != target_user_id:
@@ -325,7 +329,7 @@ class PersistentWelcomeView(discord.ui.View):
     ):
         await interaction.response.defer(ephemeral=True)
         target_user_id = (
-            self._extract_target_user_id(interaction.message) or interaction.user.id
+            _extract_target_user_id(interaction.message) or interaction.user.id
         )
 
         if interaction.user.id != target_user_id:
@@ -347,7 +351,7 @@ class PersistentWelcomeView(discord.ui.View):
     ):
         await interaction.response.defer(ephemeral=True)
         target_user_id = (
-            self._extract_target_user_id(interaction.message) or interaction.user.id
+            _extract_target_user_id(interaction.message) or interaction.user.id
         )
 
         if interaction.user.id != target_user_id:
@@ -383,7 +387,7 @@ class PersistentWelcomeView(discord.ui.View):
     ):
         await interaction.response.defer()
         target_user_id = (
-            self._extract_target_user_id(interaction.message) or interaction.user.id
+            _extract_target_user_id(interaction.message) or interaction.user.id
         )
 
         print(
@@ -1345,6 +1349,36 @@ class WelcomeFlow(commands.Cog):
             )
             return fallback
 
+    async def _find_welcome_message_id(self, guild_id: int, user_id: int):
+        """找出某位成員的歡迎訊息 ID，記憶體沒有就回頭掃頻道。
+
+        WHY: welcome_messages 只是一般 dict，重啟就空了。空了之後這裡原本只印
+        一行「未找到歡迎訊息 ID」就放棄——玩家選完性別、或按了繳交手機身分證，
+        頻道上的畫面都不會更新（確認按鈕本來就在訊息上，所以不擋入園，但體驗
+        是壞的）。訊息本身還在頻道上，embed 裡就有 <@user_id>，用
+        _extract_target_user_id 反解即可；找到就寫回快取，之後不必再掃。
+        """
+        cached = self.welcome_messages.get(guild_id, {}).get(user_id)
+        if cached:
+            return cached
+
+        channel = self.bot.get_channel(self.welcome_channel_id)
+        if not channel:
+            return None
+
+        me = self.bot.user
+        try:
+            async for msg in channel.history(limit=100):
+                if me and msg.author.id != me.id:
+                    continue
+                if _extract_target_user_id(msg) == user_id:
+                    self.welcome_messages.setdefault(guild_id, {})[user_id] = msg.id
+                    print(f"♻️ 由頻道歷史找回歡迎訊息 ID: {user_id} -> {msg.id}")
+                    return msg.id
+        except (discord.Forbidden, discord.HTTPException) as e:
+            print(f"⚠️ 掃描歡迎頻道失敗: {e}")
+        return None
+
     async def update_welcome_message(
         self, interaction: discord.Interaction, user_id: int
     ):
@@ -1374,8 +1408,8 @@ class WelcomeFlow(commands.Cog):
 
             # 更新歡迎頻道的原始訊息（如果有紀錄）
             try:
-                msg_id = self.welcome_messages.get(interaction.guild.id, {}).get(
-                    user_id
+                msg_id = await self._find_welcome_message_id(
+                    interaction.guild.id, user_id
                 )
                 if msg_id:
                     channel = self.bot.get_channel(self.welcome_channel_id)
