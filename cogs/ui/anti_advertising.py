@@ -5,48 +5,51 @@
 
 import discord
 from discord.ext import commands, tasks
+import logging
 import os
 import re
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from dotenv import load_dotenv
 
+from shared.utils.encoding_handler import setup_utf8_logging
+
 load_dotenv()
 
+# 這支必須自帶 handler：uibot 是用 client.start() 而非 client.run()，discord.py 的
+# setup_logging 根本不會被呼叫，root logger 一個 handler 都沒有，訊息會掉進
+# lastResort 的 WARNING 被吞掉；連 logging.getLogger(__name__).setLevel(INFO)
+# 也救不回來（2026-10-11 recovery_cog 已踩過同一個坑）。
+# 偵測與懲罰紀錄原本是 print，改成 logger 之後若沒有 handler 會整批消失，
+# 所以直接沿用 setup_utf8_logging，順便拿到 UTF-8 安全輸出與台灣時間格式。
+logger = setup_utf8_logging(__name__, logging.INFO)
+
 # ==================== 配置 ====================
+# 管理／版主身分組沿用 .env 既有的 ADMIN_ROLE_ID；未設定時為 0，代表停用該判斷
 ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID", 0))
-MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID", 0))
 
 # 廣告內容模式（正則表達式）
+# 只保留英文關鍵詞與 Discord 連結：中文的「商店／購物／賣場」在台灣日常對話太常見，
+# 誤判成本高於攔截收益，故移除；英文詞則確實有機器人在洗，且台灣日常少用。
 ADVERTISING_PATTERNS = {
     # Discord 邀請連結
     "discord_invite": r"(?:https?://)?discord\.gg/\w+",
-    "discord_base": r"(?:https?://)?discord\.(com|gg|app)/",
+    "discord_base": r"(?:https?://)?discord\.(?:com|gg|app)/",
     # 其他遊戲/社群邀請
-    "invite_links": r"(?:https?://)?(?:join|invite|server)[\w\.\/-]*",
+    "invite_links": r"\b(?:join|invite|server)[\w./-]*",
     # 社群媒體推廣
     "twitch": r"(?:https?://)?(?:www\.)?twitch\.tv/\w+",
     "youtube": r"(?:https?://)?(?:www\.)?youtube\.com/(?:c|channel|user)",
     "tiktok": r"(?:https?://)?(?:www\.)?tiktok\.com/@\w+",
     "ig": r"(?:https?://)?(?:www\.)?instagram\.com/\w+",
     "telegram": r"(?:https?://)?t\.me/\w+",
-    # 商業推廣
-    "shop_links": r"(?:shop|store|mall|商店|購物|賣場)",
-}
-
-# 違規等級
-VIOLATION_LEVELS = {
-    "low": {"warning_count": 1, "mute_duration": 300},  # 5分鐘禁言
-    "medium": {"warning_count": 2, "mute_duration": 1800},  # 30分鐘禁言
-    "high": {"warning_count": 3, "mute_duration": 3600},  # 1小時禁言
-    "critical": {"warning_count": 4, "mute_duration": 86400},  # 1天禁言 + 踢出
+    # 商業推廣（用 \b 邊界，避免 workshop 這類單字被當成 shop）
+    "shop_links": r"\b(?:shop|store|mall)\b",
 }
 
 # 重複連結檢測設置
 DUPLICATE_LINK_TIME_WINDOW = 300  # 時間窗口：5 分鐘
 SPAM_MENTION_TIME_WINDOW = 60  # @everyone/@here 檢測窗口：60 秒
-CROSS_CHANNEL_SPAM_TIME_WINDOW = 60  # 跨頻道洗版檢測：60 秒
-CROSS_CHANNEL_SPAM_THRESHOLD = 5  # 在多少個不同頻道發送就算嚴重洗版（踢出門檻）
 
 # @everyone/@here 被使用的次數 -> 懲罰對應表
 SPAM_MENTION_PUNISHMENT = {
@@ -80,24 +83,21 @@ class AntiAdvertising(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.violations: Dict[int, List[datetime]] = {}  # 追蹤過去 24 小時的違規
         self.muted_users: Dict[int, datetime] = {}  # 追蹤禁言狀態
-        self.duplicate_links: Dict[
-            str, List[datetime]
-        ] = {}  # 追蹤重複連結 {連結: [timestamp, ...]}
+        # 追蹤重複連結 {(user_id, 連結): [timestamp, ...]}
+        # 一定要分使用者：原本用全伺服器共用一個計數，第 3 個貼的人（可能是無辜的）
+        # 反而會被打，真正在洗的人卻沒事。
+        self.duplicate_links: Dict[tuple[int, str], List[datetime]] = {}
         self.spam_mentions: Dict[
             int, List[datetime]
         ] = {}  # 追蹤 @everyone/@here 使用 {user_id: [timestamp, ...]}
-        self.cross_channel_spam: Dict[
-            int, List[dict]
-        ] = {}  # 追蹤跨頻道洗版 {user_id: [{channel_id, content, timestamp}, ...]}
         self.cleanup_mutes.start()
-        print("✅ 防廣告系統已初始化")
+        logger.info("✅ 防廣告系統已初始化")
 
     def cog_unload(self):
         """卸載時停止任務"""
         self.cleanup_mutes.cancel()
-        print("❌ 防廣告系統已卸載")
+        logger.info("❌ 防廣告系統已卸載")
 
     # ==================== 廣告檢測 ====================
     def _detect_advertising(self, content: str) -> Optional[tuple[str, str]]:
@@ -114,65 +114,34 @@ class AntiAdvertising(commands.Cog):
                 )
         return None
 
-    def _track_duplicate_link(self, link: str) -> int:
+    def _track_duplicate_link(self, user_id: int, link: str) -> int:
         """
-        追蹤重複連結，清理過期記錄
-        返回: 該連結在時間窗口內的總次數（不區分使用者）
+        追蹤單一使用者重複貼同一連結的次數，並順手清掉過期記錄
+
+        時間一律用 discord.utils.utcnow()（帶時區）；用 datetime.utcnow()（不帶時區）
+        相減會直接丟 TypeError，把背景清理任務整個弄死。
+
+        返回: 該使用者在時間窗口內貼此連結的次數
         """
-        now = datetime.utcnow()
+        now = discord.utils.utcnow()
+        key = (user_id, link)
 
-        # 初始化追蹤
-        if link not in self.duplicate_links:
-            self.duplicate_links[link] = []
-
-        # 清理超出時間窗口的記錄
-        self.duplicate_links[link] = [
+        records = [
             ts
-            for ts in self.duplicate_links[link]
+            for ts in self.duplicate_links.get(key, [])
             if (now - ts).total_seconds() < DUPLICATE_LINK_TIME_WINDOW
         ]
+        records.append(now)
+        self.duplicate_links[key] = records
 
-        # 添加新記錄
-        self.duplicate_links[link].append(now)
-
-        # 返回總次數
-        return len(self.duplicate_links[link])
-
-    def _get_violation_level(self, user_id: int) -> str:
-        """
-        根據 24 小時內的違規次數判斷違規等級
-        """
-        now = datetime.utcnow()
-
-        # 清理 24 小時外的違規記錄
-        if user_id in self.violations:
-            self.violations[user_id] = [
-                v for v in self.violations[user_id] if (now - v).total_seconds() < 86400
-            ]
-
-        violation_count = len(self.violations.get(user_id, []))
-
-        if violation_count >= 4:
-            return "critical"
-        elif violation_count >= 3:
-            return "high"
-        elif violation_count >= 2:
-            return "medium"
-        else:
-            return "low"
-
-    def _add_violation(self, user_id: int):
-        """記錄一次違規"""
-        if user_id not in self.violations:
-            self.violations[user_id] = []
-        self.violations[user_id].append(datetime.utcnow())
+        return len(records)
 
     def _track_spam_mention(self, user_id: int) -> int:
         """
         追蹤 @everyone/@here 使用次數
         返回: 該用戶在時間窗口內使用的總次數
         """
-        now = datetime.utcnow()
+        now = discord.utils.utcnow()
 
         # 初始化追蹤
         if user_id not in self.spam_mentions:
@@ -212,60 +181,37 @@ class AntiAdvertising(commands.Cog):
 
         return False
 
-    def _track_cross_channel_spam(
-        self, user_id: int, channel_id: int, content: str
-    ) -> int:
-        """
-        追蹤跨頻道洗版
-        返回: 在不同頻道發送相同/相似內容的頻道數量
-        """
-        now = datetime.utcnow()
-
-        # 初始化用戶追蹤
-        if user_id not in self.cross_channel_spam:
-            self.cross_channel_spam[user_id] = []
-
-        # 清理超出時間窗口的記錄
-        self.cross_channel_spam[user_id] = [
-            record
-            for record in self.cross_channel_spam[user_id]
-            if (now - record["timestamp"]).total_seconds()
-            < CROSS_CHANNEL_SPAM_TIME_WINDOW
-        ]
-
-        # 添加新記錄
-        self.cross_channel_spam[user_id].append(
-            {
-                "channel_id": channel_id,
-                "content": content[:100],  # 只存前 100 字
-                "timestamp": now,
-            }
-        )
-
-        # 計算有多少個不同的頻道
-        unique_channels = set(
-            record["channel_id"] for record in self.cross_channel_spam[user_id]
-        )
-        return len(unique_channels)
-
-    def _is_account_compromised(
-        self, message: discord.Message, cross_channel_count: int
-    ) -> bool:
-        """
-        判斷帳號是否可能被盜
-        條件：在非常多個頻道跨頻道發送（5+ 頻道），且有附帶內容
-        """
-        # 只有在非常嚴重的跨頻道洗版時才判定為被盜
-        # 門檻很高：5+ 頻道 + 附帶內容
-        if (
-            cross_channel_count >= CROSS_CHANNEL_SPAM_THRESHOLD
-            and len(message.attachments) > 0
-        ):
-            return True
-
-        return False
-
     # ==================== 執行措施 ====================
+    async def _notify_user(
+        self,
+        channel: discord.abc.Messageable,
+        user: discord.Member,
+        embed: discord.Embed,
+        fallback_text: Optional[str] = None,
+    ):
+        """
+        通知違規使用者：先私訊，私訊關閉時退回頻道短暫訊息
+
+        收斂成單一入口，避免每個懲罰分支各自 try/except 而行為不一致
+        （原本 warn 有頻道備援、mute 沒有，且用裸 except 把所有錯誤吞掉）。
+        """
+        try:
+            await user.send(embed=embed)
+            return
+        except discord.Forbidden:
+            pass  # 對方關閉私訊，改用頻道備援
+        except discord.HTTPException as e:
+            logger.warning("⚠️ 無法私訊 %s: %s", user.name, e)
+            return
+
+        if not fallback_text:
+            return
+
+        try:
+            await channel.send(f"{user.mention} {fallback_text}", delete_after=30)
+        except discord.HTTPException as e:
+            logger.warning("⚠️ 無法在頻道通知 %s: %s", user.name, e)
+
     async def _handle_violation(
         self,
         message: discord.Message,
@@ -280,12 +226,12 @@ class AntiAdvertising(commands.Cog):
             message: Discord 消息物件
             pattern_type: 廣告類型
             matched_content: 符合的連結內容
-            spam_count: 該連結在時間窗口內被貼的總次數
+            spam_count: 該使用者在時間窗口內貼此連結的次數
 
         懲罰對應表：
         - 1-2 次：不動作
         - 3 次：警告 + 刪除
-        - 4 次：刪除
+        - 4 次：刪除（會通知）
         - 5+ 次：禁言（時間遞增）+ 刪除
         """
         user = message.author
@@ -301,18 +247,18 @@ class AntiAdvertising(commands.Cog):
         action = punishment["action"]
         description = punishment["description"]
 
-        print(f"📢 連結 #{spam_count}: {matched_content}")
-        print(f"   懲罰: {description}")
+        logger.info("📢 連結 #%s (%s): %s", spam_count, pattern_type, matched_content)
+        logger.info("   懲罰: %s", description)
 
-        # 1. 刪除消息（只有 delete/mute 需要刪除，warn 僅警告）
-        deleted = False
-        if action in ["delete", "mute"]:
+        # 1. 刪除消息（警告以上都刪，與懲罰表描述一致）
+        if action in ["warn", "delete", "mute"]:
             try:
                 await message.delete()
-                deleted = True
-                print("🗑️ 已刪除消息")
+                logger.info("🗑️ 已刪除消息")
             except discord.Forbidden:
-                print("⚠️ 無法刪除消息 - 權限不足")
+                logger.warning("⚠️ 無法刪除消息 - 權限不足")
+            except discord.HTTPException as e:
+                logger.warning("⚠️ 刪除消息失敗: %s", e)
 
         # 2. 根據懲罰類型執行
         try:
@@ -334,16 +280,24 @@ class AntiAdvertising(commands.Cog):
                 )
                 embed.set_footer(text="若再次違規將自動執行懲罰")
 
-                try:
-                    await user.send(embed=embed)
-                except:
-                    # 無法 DM，嘗試在頻道發送（短期）
-                    try:
-                        await message.channel.send(
-                            f"{user.mention} {embed.description}", delete_after=30
-                        )
-                    except:
-                        pass
+                await self._notify_user(
+                    message.channel, user, embed, fallback_text=embed.description
+                )
+
+            elif action == "delete":
+                # 原本這裡是靜默刪除，使用者完全不知道發生什麼事，補上通知
+                embed = discord.Embed(
+                    title="🗑️ 訊息已刪除",
+                    description=f"同一連結已被貼 **{spam_count} 次**，該訊息已刪除。",
+                    color=discord.Color.orange(),
+                )
+                embed.add_field(
+                    name="📎 連結內容", value=f"`{matched_content[:100]}`", inline=False
+                )
+
+                await self._notify_user(
+                    message.channel, user, embed, fallback_text=embed.description
+                )
 
             elif action == "mute":
                 # 禁言處理
@@ -368,13 +322,12 @@ class AntiAdvertising(commands.Cog):
                     name="📎 違規連結", value=f"`{matched_content[:100]}`", inline=False
                 )
 
-                try:
-                    await user.send(embed=embed)
-                except:
-                    pass
+                await self._notify_user(
+                    message.channel, user, embed, fallback_text=embed.description
+                )
 
         except discord.Forbidden:
-            print(f"⚠️ 無法對 {user.name} 進行懲罰 - 權限不足")
+            logger.warning("⚠️ 無法對 %s 進行懲罰 - 權限不足", user.name)
 
     async def _mute_user(
         self, guild: discord.Guild, user: discord.Member, duration: int, reason: str
@@ -387,9 +340,11 @@ class AntiAdvertising(commands.Cog):
             until = discord.utils.utcnow() + timedelta(seconds=duration)
             await user.timeout(until, reason=reason)
             self.muted_users[user.id] = until
-            print(f"🔇 已禁言 {user.name} {duration} 秒 - {reason}")
+            logger.info("🔇 已禁言 %s %s 秒 - %s", user.name, duration, reason)
         except discord.Forbidden:
-            print(f"⚠️ 無法禁言 {user.name} - 權限不足")
+            logger.warning("⚠️ 無法禁言 %s - 權限不足", user.name)
+        except discord.HTTPException as e:
+            logger.warning("⚠️ 禁言 %s 失敗: %s", user.name, e)
 
     async def _handle_spam_mention_violation(
         self, message: discord.Message, mention_count: int
@@ -415,14 +370,16 @@ class AntiAdvertising(commands.Cog):
         action = punishment["action"]
         description = punishment["description"]
 
-        print(f"🚨 @everyone/@here #{mention_count}: {description}")
+        logger.info("🚨 @everyone/@here #%s: %s", mention_count, description)
 
         # 1. 刪除消息
         try:
             await message.delete()
-            print("🗑️ 已刪除訊息")
+            logger.info("🗑️ 已刪除訊息")
         except discord.Forbidden:
-            print("⚠️ 無法刪除訊息 - 權限不足")
+            logger.warning("⚠️ 無法刪除訊息 - 權限不足")
+        except discord.HTTPException as e:
+            logger.warning("⚠️ 刪除訊息失敗: %s", e)
 
         # 2. 根據懲罰類型執行
         try:
@@ -433,10 +390,9 @@ class AntiAdvertising(commands.Cog):
                     description=f"您在短時間內使用了 @everyone/@here 標籤 **{mention_count} 次**。\n\n請停止這種行為，否則將被禁言。",
                     color=discord.Color.orange(),
                 )
-                try:
-                    await user.send(embed=embed)
-                except:
-                    pass
+                await self._notify_user(
+                    message.channel, user, embed, fallback_text=embed.description
+                )
 
             elif action == "mute":
                 mute_duration = punishment["mute_duration"]
@@ -455,72 +411,51 @@ class AntiAdvertising(commands.Cog):
                 embed.add_field(
                     name="⏱️ 禁言時長", value=f"{mute_duration // 60} 分鐘", inline=False
                 )
-                try:
-                    await user.send(embed=embed)
-                except:
-                    pass
+                await self._notify_user(
+                    message.channel, user, embed, fallback_text=embed.description
+                )
 
             elif action == "kick":
                 # 踢出是最後手段
-                kicked = await self._kick_user(
+                await self._kick_user(
                     user, f"濫用 @everyone/@here 標籤超過 {mention_count} 次"
                 )
-                print(f"🚪 已踢出 {user.name}")
 
         except discord.Forbidden:
-            print(f"⚠️ 無法對 {user.name} 進行懲罰 - 權限不足")
+            logger.warning("⚠️ 無法對 %s 進行懲罰 - 權限不足", user.name)
 
-    async def _kick_user(self, user: discord.Member, reason: str):
+    async def _kick_user(self, user: discord.Member, reason: str) -> bool:
         """
         踢出使用者
         """
         try:
             await user.kick(reason=reason)
-            print(f"🚪 已踢出 {user.name} - {reason}")
+            logger.info("🚪 已踢出 %s - %s", user.name, reason)
             return True
         except discord.Forbidden:
-            print(f"⚠️ 無法踢出 {user.name} - 權限不足")
+            logger.warning("⚠️ 無法踢出 %s - 權限不足", user.name)
+            return False
+        except discord.HTTPException as e:
+            logger.warning("⚠️ 踢出 %s 失敗: %s", user.name, e)
             return False
 
-    async def _delete_user_messages(
-        self, guild: discord.Guild, user: discord.Member, time_window: int = 300
-    ):
-        """
-        刪除使用者過去 N 秒內在所有頻道的訊息
-        """
-        deleted_count = 0
-        cutoff_time = discord.utils.utcnow() - timedelta(seconds=time_window)
-
-        for channel in guild.text_channels:
-            try:
-                async for message in channel.history(limit=100):
-                    if (
-                        message.author.id == user.id
-                        and message.created_at > cutoff_time
-                    ):
-                        try:
-                            await message.delete()
-                            deleted_count += 1
-                        except discord.Forbidden:
-                            continue
-            except discord.Forbidden:
-                continue
-
-        print(f"🗑️ 已刪除 {user.name} 的 {deleted_count} 則訊息")
-        return deleted_count
-
     def _is_admin(self, user: discord.Member) -> bool:
-        """檢查使用者是否為管理員"""
-        if isinstance(user, discord.User):
-            return user.id == self.bot.owner_id
+        """
+        檢查使用者是否為管理員／機器人擁有者
 
-        return (
+        回傳真正的 bool：原本寫成 `A or B and C or D and E` 的短路鏈，會把
+        Role 物件本身當成回傳值，呼叫端 `if self._is_admin(...)` 剛好能用，
+        但只要有人寫 `is True` 或 `== True` 就會踩雷。
+        """
+        if user.id == self.bot.owner_id:
+            return True
+
+        if getattr(user, "guild_permissions", None) and (
             user.guild_permissions.administrator
-            or ADMIN_ROLE_ID
-            and discord.utils.get(user.roles, id=ADMIN_ROLE_ID)
-            or MOD_ROLE_ID
-            and discord.utils.get(user.roles, id=MOD_ROLE_ID)
-        )
+        ):
+            return True
+
+        return bool(ADMIN_ROLE_ID and discord.utils.get(user.roles, id=ADMIN_ROLE_ID))
 
     # ==================== 事件監聽 ====================
     @commands.Cog.listener()
@@ -541,24 +476,32 @@ class AntiAdvertising(commands.Cog):
         has_spam_mention = self._detect_spam_mention(message)
         if has_spam_mention:
             mention_count = self._track_spam_mention(user.id)
-            print(f"🚨 檢測到 @everyone/@here: {user.name} (第 {mention_count} 次)")
+            logger.info(
+                "🚨 檢測到 @everyone/@here: %s (第 %s 次)", user.name, mention_count
+            )
 
             if mention_count >= 2:
                 await self._handle_spam_mention_violation(message, mention_count)
             else:
-                print("ℹ️ 第一次 @everyone/@here，暫不懲罰。")
+                logger.info("ℹ️ 第一次 @everyone/@here，暫不懲罰。")
             return
 
         # ==================== 檢測 2: 廣告連結 =====================
         result = self._detect_advertising(message.content)
         if result:
             pattern_type, matched_content = result
-            print(f"📢 檢測到廣告: {user.name} 在 #{message.channel.name}")
-            print(f"   類型: {pattern_type}, 內容: {matched_content}")
+            logger.info(
+                "📢 檢測到廣告: %s 在 #%s (類型: %s, 內容: %s)",
+                user.name,
+                message.channel.name,
+                pattern_type,
+                matched_content,
+            )
 
-            # 追蹤重複連結
-            spam_count = self._track_duplicate_link(matched_content)
-            print(f"   累計次數: {spam_count}")
+            # 追蹤重複連結（必須帶 user.id：不分使用者的話，第 3 個貼的人會替
+            # 真正在洗的人背鍋）
+            spam_count = self._track_duplicate_link(user.id, matched_content)
+            logger.info("   累計次數: %s", spam_count)
 
             # 當重複次數 >= 3 時才觸發懲罰
             if spam_count >= 3:
@@ -580,47 +523,41 @@ class AntiAdvertising(commands.Cog):
             del self.muted_users[user_id]
 
         if expired:
-            print(f"🧹 清理了 {len(expired)} 個過期禁言記錄")
+            logger.info("🧹 清理了 %s 個過期禁言記錄", len(expired))
 
         # 清理過期的重複連結追蹤
+        # 用 list(...) 先快照：邊迭代邊 del 會丟 RuntimeError
         cleaned_links = 0
-        links_to_remove = []
 
-        for link, records in self.duplicate_links.items():
-            # 保留時間窗口內的記錄
-            self.duplicate_links[link] = [
+        for key, records in list(self.duplicate_links.items()):
+            kept = [
                 ts
                 for ts in records
                 if (now - ts).total_seconds() < DUPLICATE_LINK_TIME_WINDOW
             ]
 
-            # 如果連結沒有時間窗口內的記錄，標記為移除
-            if not self.duplicate_links[link]:
-                links_to_remove.append(link)
+            if kept:
+                self.duplicate_links[key] = kept
+            else:
+                del self.duplicate_links[key]
                 cleaned_links += 1
 
-        # 移除空的連結記錄
-        for link in links_to_remove:
-            del self.duplicate_links[link]
-
         if cleaned_links > 0:
-            print(f"🧹 清理了 {cleaned_links} 個過期的連結追蹤記錄")
+            logger.info("🧹 清理了 %s 個過期的連結追蹤記錄", cleaned_links)
 
         # 清理過期的 @everyone/@here 計數
-        await self._cleanup_spam_mention_records()
-
-        # 清理跨頻道洗版記錄
-        await self._cleanup_cross_channel_records()
+        self._cleanup_spam_mention_records()
 
     @cleanup_mutes.before_loop
     async def before_cleanup_mutes(self):
         await self.bot.wait_until_ready()
 
-    async def _cleanup_spam_mention_records(self):
+    def _cleanup_spam_mention_records(self):
         """
         定期清理過期的 @everyone/@here 計數記錄
         """
-        now = datetime.utcnow()
+        # 時間一律用 discord.utils.utcnow()（帶時區），與 _track_spam_mention 一致
+        now = discord.utils.utcnow()
         users_to_clean = []
 
         for user_id, records in self.spam_mentions.items():
@@ -640,34 +577,9 @@ class AntiAdvertising(commands.Cog):
             del self.spam_mentions[user_id]
 
         if users_to_clean:
-            print(f"🧹 清理了 {len(users_to_clean)} 個過期的 @everyone/@here 計數記錄")
-
-    async def _cleanup_cross_channel_records(self):
-        """
-        定期清理過期的跨頻道洗版記錄
-        """
-        now = datetime.utcnow()
-        users_to_clean = []
-
-        for user_id, records in self.cross_channel_spam.items():
-            # 清理超出時間窗口的記錄
-            self.cross_channel_spam[user_id] = [
-                record
-                for record in records
-                if (now - record["timestamp"]).total_seconds()
-                < CROSS_CHANNEL_SPAM_TIME_WINDOW
-            ]
-
-            # 如果沒有記錄了，標記為移除
-            if not self.cross_channel_spam[user_id]:
-                users_to_clean.append(user_id)
-
-        # 移除空的用戶記錄
-        for user_id in users_to_clean:
-            del self.cross_channel_spam[user_id]
-
-        if users_to_clean:
-            print(f"🧹 清理了 {len(users_to_clean)} 個過期的跨頻道洗版記錄")
+            logger.info(
+                "🧹 清理了 %s 個過期的 @everyone/@here 計數記錄", len(users_to_clean)
+            )
 
     # ==================== 管理命令 ====================
 
