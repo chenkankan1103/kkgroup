@@ -19,28 +19,43 @@ logger = logging.getLogger(__name__)
 
 # 固定顯示順序：embed 生成（cogs/ui/push_embed.py）與按鈕視圖（AnimePushView）
 # 共用同一組常數，確保同一則 embed 在兩處重建後欄位格式完全一致。
-VOTE_TYPE_ORDER = ("masterpiece", "great", "decent", "small_audience", "disaster")
+# 鍵是分數字串（5 最好、1 最差）。2026-10-16 由「神作/佳作/…」改為分數，
+# anime_votes.vote_type 也同步遷移成同一組數字鍵 —— 兩邊必須一致，否則
+# get_vote_stats 的 `vote_type in vote_stats` 比對不到，票數會全部讀成 0。
+VOTE_TYPE_ORDER = ("5", "4", "3", "2", "1")
 VOTE_TYPE_LABELS: dict[str, tuple] = {
-    "masterpiece": ("神作", "🟩"),
-    "great": ("佳作", "🟦"),
-    "decent": ("普作", "🟨"),
-    "small_audience": ("小眾", "🟧"),
-    "disaster": ("爛作", "🟥"),
+    "5": ("5分", "🟩"),
+    "4": ("4分", "🟦"),
+    "3": ("3分", "🟨"),
+    "2": ("2分", "🟧"),
+    "1": ("1分", "🟥"),
 }
 
-# 本集統計與全系列累計的 embed 欄位名稱（投票後重建欄位時以此比對）
+# 本集統計、全系列累計、觀眾留言的 embed 欄位名稱（投票後重建欄位時以此比對）
 EPISODE_FIELD_NAME = "這集表現得如何?"
 CUMULATIVE_FIELD_NAME = "📊 全系列累計"
+COMMENTS_FIELD_NAME = "💬 觀眾留言"
+
+# 互動獎勵：每則推播、每人每種一次，且只獎勵「剛推播」的集數。
+# 舊訊息在 bot 重啟後會被重新註冊成可投票視圖，不設時窗就等於可以回頭
+# 翻訊息逐則投票刷幣。
+VOTE_REWARD_AMOUNT = 2000
+COMMENT_REWARD_AMOUNT = 10000
+REWARD_WINDOW_HOURS = 24
+VOTE_REWARD_WINDOW_HOURS = REWARD_WINDOW_HOURS  # 舊名，保留給既有呼叫端
+
+# embed 上的獎勵提示（金額與上面的常數同源，改金額時提示自動跟著變）
+REWARD_HINT = f"💰 投票 +{VOTE_REWARD_AMOUNT} KK幣 ・ 💬 留言 +{COMMENT_REWARD_AMOUNT} KK幣"
 
 
 def format_vote_stats(stats: dict[str, int]) -> str:
-    """將投票統計字典格式化為 embed 欄位文字（每種投票類型一行）。
+    """將投票統計字典格式化為 embed 欄位文字（每個分數一行）。
 
     Args:
-        stats: 投票類型 → 票數的對應；缺少的類型以 0 計。
+        stats: 分數 → 票數的對應；缺少的分數以 0 計。
 
     Returns:
-        以換行分隔的統計文字，例如「🟩 神作: 3」。
+        以換行分隔的統計文字，例如「🟩 5分: 3」。
     """
     return "\n".join(
         f"{VOTE_TYPE_LABELS[key][1]} {VOTE_TYPE_LABELS[key][0]}: {stats.get(key, 0)}"
@@ -504,16 +519,78 @@ class AnimePushView(discord.ui.View):
                 except Exception as e:
                     logger.error(f"❌ 更新投票統計欄位失敗: {e}")
 
+            # 發放投票獎勵（每人每則一次；已領過或超過時窗則不發）
+            rewarded = False
+            if vote_recorded and message_id:
+                rewarded = await self._grant_reward(
+                    interaction, message_id, "vote", VOTE_REWARD_AMOUNT
+                )
+
             # 先發送 follow-up 確認給用戶
             try:
-                await interaction.followup.send(
-                    f"✅ 投票成功！{vote_label}", ephemeral=True
-                )
+                reply = f"✅ 投票成功！{vote_label}"
+                if rewarded:
+                    reply += f"\n💰 獲得 {VOTE_REWARD_AMOUNT} KK幣"
+                await interaction.followup.send(reply, ephemeral=True)
             except Exception as e:
                 logger.error(f"發送 follow-up 失敗: {e}")
 
         except Exception as e:
             logger.error(f"❌ [AnimePushView._vote_callback] 投票失敗: {e}", exc_info=True)
+
+    async def _grant_reward(
+        self,
+        interaction: discord.Interaction,
+        message_id: int,
+        reward_type: str,
+        amount: int,
+    ) -> bool:
+        """發放互動 KK幣獎勵，回傳這次是否真的發出去了。
+
+        先向 DB 認領（原子寫入）再發幣，順序不能顛倒：反過來的話，發幣成功
+        但認領失敗就會重複發放。寧可極少數情況下使用者領不到，也不要多發。
+
+        兩道閘門對投票與留言一體適用：`anime_rewards` 的
+        UNIQUE(user_id, message_id, reward_type) 擋同人同則重複領，
+        is_recently_pushed 擋回頭翻舊訊息刷幣。留言可以無限重送，
+        沒有第一道閘門就是無限印鈔。
+        """
+        if not self.db or not hasattr(self.db, "record_reward"):
+            return False
+
+        if hasattr(self.db, "is_recently_pushed") and not self.db.is_recently_pushed(
+            self.video_sn, REWARD_WINDOW_HOURS
+        ):
+            logger.info(
+                f"⏭️ [AnimePushView] videoSn={self.video_sn} 已超過 "
+                f"{REWARD_WINDOW_HOURS}h 獎勵時窗，不發放 {reward_type} 獎勵"
+            )
+            return False
+
+        try:
+            claimed = self.db.record_reward(
+                interaction.user.id, message_id, reward_type, amount
+            )
+        except Exception as e:
+            logger.error(f"❌ [AnimePushView] 認領 {reward_type} 獎勵失敗: {e}")
+            return False
+
+        if not claimed:
+            return False
+
+        try:
+            # 區域匯入：embed_views 被多個 cog 匯入，模組層就載入 user_data.db
+            # 會拖慢啟動並增加循環匯入風險
+            from shared.db.async_adapter import update_user_kkcoin
+
+            await update_user_kkcoin(interaction.user.id, amount)
+        except Exception as e:
+            logger.error(
+                f"❌ [AnimePushView] 發放 {reward_type} 獎勵失敗 "
+                f"(user={interaction.user.id}): {e}"
+            )
+            return False
+        return True
 
     def _build_vote_stats_text(self) -> Optional[str]:
         """從資料庫重建「這集表現得如何?」欄位文字（與 push_embed.generate_anime_embed 格式一致）。
@@ -567,10 +644,15 @@ class AnimePushView(discord.ui.View):
                     try:
                         comment = str(self.comment_input).strip()
                         if not comment:
+                            # 空留言不必動用 DB，直接回掉，也就無須 defer
                             await modal_interaction.response.send_message(
                                 "評論不能為空", ephemeral=True
                             )
                             return
+
+                        # 🔑 先 defer：發幣要寫 user_data.db，超過 3 秒會被 Discord
+                        # 判定「應用程式沒有回應」
+                        await modal_interaction.response.defer(ephemeral=True)
 
                         user_hash = str(hash(modal_interaction.user.id))[:10]
                         # 優先用 modal 來源訊息的 ID，未重新投票也能精確記錄到該則 embed
@@ -583,7 +665,7 @@ class AnimePushView(discord.ui.View):
 
                         # 記錄評論
                         if outer_self.db and hasattr(outer_self.db, 'record_vote'):
-                            vote_recorded = outer_self.db.record_vote(
+                            outer_self.db.record_vote(
                                 video_sn=outer_self.video_sn,
                                 anime_sn=outer_self.anime_sn,
                                 message_id=message_id,
@@ -593,17 +675,35 @@ class AnimePushView(discord.ui.View):
                                 anime_name=anime_name,
                             )
 
-                        await modal_interaction.response.send_message(
-                            "✅ 評論已保存！感謝你的意見", ephemeral=True
-                        )
+                        # 留言獎勵：留言可以重複送出，防重複全靠 anime_rewards 的
+                        # UNIQUE(user_id, message_id, reward_type)
+                        rewarded = False
+                        if message_id:
+                            rewarded = await outer_self._grant_reward(
+                                modal_interaction,
+                                message_id,
+                                "comment",
+                                COMMENT_REWARD_AMOUNT,
+                            )
+
+                        reply = "✅ 評論已保存！感謝你的意見"
+                        if rewarded:
+                            reply += f"\n💰 獲得 {COMMENT_REWARD_AMOUNT} KK幣"
+                        await modal_interaction.followup.send(reply, ephemeral=True)
 
                     except Exception as e:
                         logger.error(f"❌ [CommentModal.on_submit] 失敗: {e}")
                         try:
-                            await modal_interaction.response.send_message(
-                                f"❌ 評論失敗: {str(e)[:50]}", ephemeral=True
-                            )
-                        except:
+                            # 上面可能已經 defer 過，用錯管道會再噴一次互動失敗
+                            if modal_interaction.response.is_done():
+                                await modal_interaction.followup.send(
+                                    f"❌ 評論失敗: {str(e)[:50]}", ephemeral=True
+                                )
+                            else:
+                                await modal_interaction.response.send_message(
+                                    f"❌ 評論失敗: {str(e)[:50]}", ephemeral=True
+                                )
+                        except Exception:
                             pass
 
             # 發送 Modal
