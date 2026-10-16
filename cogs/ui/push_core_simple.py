@@ -109,17 +109,14 @@ def _as_text(value) -> str:
 
 
 def _empty_vote_stats() -> dict[str, int]:
-    """回傳五種投票類型皆為 0 的統計字典。
+    """回傳五個分數皆為 0 的統計字典。
 
+    鍵必須與 embed_views.VOTE_TYPE_ORDER 完全一致（分數字串 5-1）。這裡是
+    第二份硬編碼的鍵集合，兩邊一旦走鐘，get_vote_stats 的
+    `vote_type in vote_stats` 會比對不到，票數全部靜默顯示 0。
     每次呼叫都建立新物件，避免多處共用同一個可變字典而互相汙染。
     """
-    return {
-        "masterpiece": 0,
-        "great": 0,
-        "decent": 0,
-        "small_audience": 0,
-        "disaster": 0,
-    }
+    return {"5": 0, "4": 0, "3": 0, "2": 0, "1": 0}
 
 
 class AnimePushDB:
@@ -130,7 +127,7 @@ class AnimePushDB:
         self._init_tables()
 
     def _init_tables(self):
-        """初始化 anime_notified、anime_votes 和 anime_weekly_schedule 表"""
+        """初始化 anime_notified、anime_votes、anime_rewards 等表"""
         conn = self._get_conn()
         c = conn.cursor()
 
@@ -155,12 +152,27 @@ class AnimePushDB:
                 videoSn INTEGER NOT NULL,
                 animeSn INTEGER NOT NULL,
                 message_id INTEGER,
-                vote_type TEXT NOT NULL,  -- masterpiece, great, decent, small_audience, disaster, comment
+                vote_type TEXT NOT NULL,  -- 5/4/3/2/1（分數字串）或 comment
                 user_hash TEXT NOT NULL,  -- 匿名用戶雜湊
                 comment TEXT,             -- 只有在 vote_type='comment' 時有值
                 anime_name TEXT,          -- 動畫名稱（備用）
                 voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(videoSn, user_hash, vote_type)  -- 同一用戶對同一動畫只能投同一類型的一票
+            )
+        """)
+
+        # anime_rewards 表 - 投票獎勵發放紀錄（發幣的冪等閘門）
+        # UNIQUE(user_id, message_id, reward_type) 是唯一防線：投票可以改票
+        # （record_vote 先 DELETE 再 INSERT），若每次點擊都發幣就是無限印鈔。
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_rewards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                reward_type TEXT NOT NULL,
+                reward_amount INTEGER NOT NULL,
+                awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, message_id, reward_type)
             )
         """)
 
@@ -307,6 +319,62 @@ class AnimePushDB:
         if isinstance(name, bytes):  # text_factory=bytes，TEXT 欄位回傳 bytes 需解碼
             name = name.decode("utf-8", errors="replace")
         return (anime_sn, name or "")
+
+    # ====== 投票獎勵發放 ======
+
+    def record_reward(
+        self,
+        user_id: int,
+        message_id: int,
+        reward_type: str,
+        reward_amount: int,
+    ) -> bool:
+        """登記並認領一次獎勵；回傳 True 代表這次真的領到了。
+
+        用單一 INSERT 搭配 UNIQUE(user_id, message_id, reward_type) 做原子性的
+        「檢查 + 寫入」，而非先查再寫：前者免去兩個請求同時通過檢查的競態，
+        也讓呼叫端只需看回傳值就知道該不該發幣。
+        """
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.execute(
+                """INSERT INTO anime_rewards
+                   (user_id, message_id, reward_type, reward_amount, awarded_at)
+                   VALUES (?, ?, ?, ?, datetime('now'))""",
+                (user_id, message_id, reward_type, reward_amount),
+            )
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            logger.info(
+                f"⏭️ [AnimePushDB] 用戶 {user_id} 已領過 {reward_type} 獎勵"
+                f" (message_id={message_id})"
+            )
+            return False
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] 記錄獎勵失敗: {e}")
+            return False
+        finally:
+            # 改票會走 IntegrityError 這條正常路徑，用 finally 確保連線一定關閉
+            conn.close()
+
+    def is_recently_pushed(self, video_sn: int, hours: int = 24) -> bool:
+        """該集是否在時窗內推播過（投票獎勵的時效閘門）。
+
+        重啟後 reregister_push_views 會把頻道裡數百則歷史推播重新註冊成可投票
+        視圖，不設時窗就等於可以回頭翻舊訊息逐則投票刷幣。
+        """
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT 1 FROM anime_notified "
+            "WHERE videoSn=? AND notified_at >= datetime('now', ?) LIMIT 1",
+            (video_sn, f"-{int(hours)} hours"),
+        )
+        row = c.fetchone()
+        conn.close()
+        return row is not None
 
     # ====== 投票功能 ======
 
@@ -504,6 +572,40 @@ class AnimePushDB:
             return comments
         except Exception as e:
             logger.error(f"❌ 獲取評論失敗: {e}")
+            return []
+
+    def get_comments_by_anime(self, anime_sn: int, limit: int = 3) -> list[dict]:
+        """取得同一系列（跨集數）的最新留言，供後續集數的 embed 顯示。
+
+        留言與投票同存於 anime_votes（vote_type='comment'），以 animeSn 聚合
+        即可讓新一集的推播看到先前集數的留言，語意與「全系列累計」一致。
+        刻意不回傳 user_hash：embed 上是匿名呈現，帶出去只是多一個外洩面。
+        """
+        try:
+            conn = self._get_conn()
+            c = conn.cursor()
+
+            c.execute(
+                """
+                SELECT comment, voted_at
+                FROM anime_votes
+                WHERE animeSn = ? AND vote_type = 'comment'
+                  AND comment IS NOT NULL AND comment != ''
+                ORDER BY voted_at DESC
+                LIMIT ?
+                """,
+                (anime_sn, limit),
+            )
+
+            rows = c.fetchall()
+            conn.close()
+
+            return [
+                {"comment": _as_text(row[0]), "voted_at": _as_text(row[1])}
+                for row in rows
+            ]
+        except Exception as e:
+            logger.error(f"❌ 獲取全系列留言失敗 animeSn={anime_sn}: {e}")
             return []
 
     # ====== 新增：週表相關方法 ======
