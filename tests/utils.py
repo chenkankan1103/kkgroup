@@ -238,23 +238,14 @@ class AnimeTestDataBuilder:
 
 
 class VoteTestDataBuilder:
-    """投票測試資料建構器"""
-
-    VOTE_TYPES = {
-        "masterpiece": "神作",
-        "great": "佳作",
-        "darkhorse": "黑馬",
-        "decent": "普作/小品",
-        "controversial": "爭議作",
-        "disaster": "雷作/糞作",
-    }
+    """投票測試資料建構器（vote_type 為分數字串 "5"-"1"）"""
 
     @staticmethod
     def vote(
         video_sn: int,
         anime_sn: int,
         message_id: int,
-        vote_type: str = "masterpiece",
+        vote_type: str = "5",
         user_hash: str = "test_user_1",
         comment: str = None,
     ) -> Dict[str, Any]:
