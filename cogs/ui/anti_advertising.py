@@ -34,12 +34,13 @@ ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID", 0))
 ADVERTISING_PATTERNS = {
     # Discord 邀請連結
     "discord_invite": r"(?:https?://)?discord\.gg/\w+",
-    "discord_base": r"(?:https?://)?discord\.(?:com|gg|app)/",
+    # 站內「複製訊息連結」長成 discord.com/channels/...，社群日常很常用，
+    # 用 (?!channels) 排除，只擋其他 discord 網域連結（例如 /invite/xxx）
+    "discord_base": r"(?:https?://)?discord\.(?:com|gg|app)/(?!channels)",
     # 其他遊戲/社群邀請
     "invite_links": r"\b(?:join|invite|server)[\w./-]*",
-    # 社群媒體推廣
+    # 社群媒體推廣（YT 不列：社群偶爾會貼 YouTube 網址，擋掉會誤傷）
     "twitch": r"(?:https?://)?(?:www\.)?twitch\.tv/\w+",
-    "youtube": r"(?:https?://)?(?:www\.)?youtube\.com/(?:c|channel|user)",
     "tiktok": r"(?:https?://)?(?:www\.)?tiktok\.com/@\w+",
     "ig": r"(?:https?://)?(?:www\.)?instagram\.com/\w+",
     "telegram": r"(?:https?://)?t\.me/\w+",
