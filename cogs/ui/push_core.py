@@ -167,9 +167,6 @@ class AnimeDatabase:
     def get_vote_comments(self, message_id: int, limit: int = 5) -> list:
         return self.db.get_vote_comments(message_id, limit)
 
-    def get_weekly_vote_stats(self) -> dict:
-        return self.db.get_weekly_vote_stats()
-
     # ---- 統計/快取 ----
     def record_episode_stats(
         self, video_sn: int, anime_sn: int, episode_num: str, views: int, score: float
@@ -637,16 +634,6 @@ class AnimeDBImpl:
                 }
             )
         return result
-
-    def get_weekly_vote_stats(self) -> dict:
-        conn = self._get_conn()
-        c = conn.cursor()
-        c.execute(
-            "SELECT vote_type, COUNT(*) as count FROM anime_votes WHERE vote_type IN ('masterpiece', 'great', 'darkhorse', 'decent', 'controversial', 'disaster') GROUP BY vote_type"
-        )
-        rows = c.fetchall()
-        conn.close()
-        return {row[0]: row[1] for row in rows}
 
     # ---- 統計/快取 ----
     def record_episode_stats(

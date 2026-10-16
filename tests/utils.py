@@ -446,45 +446,6 @@ def print_test_summary(test_name: str, passed: bool, details: str = ""):
         print(f"    {details}")
 
 
-# ==================== 常用斷言組合 ====================
-
-
-async def assert_vote_flow_complete(
-    dpytest_setup,
-    isolated_db,
-    message_id: int,
-    expected_votes: Dict[str, int],
-    expected_comments: List[str] = None,
-):
-    """
-    一次性驗證完整投票流程：
-    - DB 統計正確
-    - Embed 包含統計欄位
-    - 評論正確（若提供）
-    """
-    from cogs.ui.push_core import get_vote_stats, get_vote_comments
-
-    # 1. 驗證資料庫統計
-    stats = get_vote_stats(isolated_db, message_id)
-    for vote_type, count in expected_votes.items():
-        assert (
-            stats.get(vote_type, 0) == count
-        ), f"投票類型 {vote_type} 數量不符：預期 {count}，實際 {stats.get(vote_type, 0)}"
-
-    # 2. 驗證評論
-    if expected_comments is not None:
-        comments = get_vote_comments(isolated_db, message_id)
-        assert len(comments) == len(
-            expected_comments
-        ), f"評論數不符：預期 {len(expected_comments)}，實際 {len(comments)}"
-        for expected in expected_comments:
-            assert any(expected in c for c in comments), f"找不到預期評論: {expected}"
-
-    # 3. 驗證 Discord 訊息 embed（如果有訊息）
-    # 這需要 dpytest_setup 中的 channel_id 和 message_id 關聯
-    return True
-
-
 if __name__ == "__main__":
     # 簡單自測
     print("✅ tests/utils.py 載入無誤")
