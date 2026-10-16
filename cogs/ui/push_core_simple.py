@@ -2000,9 +2000,6 @@ class AnimeDatabase:
     def get_vote_comments(self, *args, **kwargs):
         return self.db.get_vote_comments(*args, **kwargs)
 
-    def get_weekly_vote_stats(self, *args, **kwargs):
-        return self.db.get_weekly_vote_stats(*args, **kwargs)
-
     def record_episode_stats(self, *args, **kwargs):
         return self.db.record_episode_stats(*args, **kwargs)
 
