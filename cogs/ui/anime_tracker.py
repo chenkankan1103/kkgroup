@@ -608,7 +608,9 @@ class AnimeTracker(commands.Cog):
             return
 
         top = growth[:GROWTH_TOP_N]
-        chart_url = self._build_growth_chart(weeks, [t["anime_sn"] for t in top])
+        # 候選給整份成長名單而非只有 TOP 10：新番常霸榜卻只有 1 週歷史，交給
+        # _build_growth_chart 篩掉連不成線的，名額不足再往下遞補
+        chart_url = self._build_growth_chart(weeks, [g["anime_sn"] for g in growth])
 
         # 圖表 Y 軸已被 GROWTH_VIEW_UNIT 縮放，且為了省 URL 長度拿掉了 options 區塊，
         # 軸上不會再出現單位——改在這裡說明，否則數字會被誤讀成實際觀看數
@@ -710,9 +712,11 @@ class AnimeTracker(commands.Cog):
         return name if len(name) <= limit else name[:limit] + "…"
 
     def _build_growth_chart(
-        self, weeks_new_to_old: list[str], top_sns: list[int]
+        self, weeks_new_to_old: list[str], candidate_sns: list[int]
     ) -> Optional[str]:
         """組 quickchart 折線圖 URL：X 軸為週次，每部番一條線，Y 軸為每週新增
+
+        candidate_sns 依成長量由高到低，只取其中連得成線的前 GROWTH_TOP_N 部。
 
         兩個壓縮關鍵（少了任一項，10 線 × 11 週會爆 2048 字元上限）：
         1. Y 值除以 GROWTH_VIEW_UNIT——成長值動輒 6 位數，10 條線 × 11 點光數字
@@ -725,7 +729,7 @@ class AnimeTracker(commands.Cog):
         # 每條線的點數 = 週數 - 1（首週是相減的基準，不產生點）。要連成線至少
         # 需要 2 點，也就是 3 週；只有 2 週時每條線僅 1 點，畫出來是一排孤立的
         # 圓點而非趨勢，不如不畫，改由文字排行呈現。
-        if len(weeks_new_to_old) < 3 or not top_sns:
+        if len(weeks_new_to_old) < 3 or not candidate_sns:
             return None
 
         snaps = self.db.get_snapshots_range(weeks_new_to_old)
@@ -753,6 +757,15 @@ class AnimeTracker(commands.Cog):
                 )
             return pts
 
+        # 只畫連得成線的番：換季期榜上多是剛開播的新番，它們只有 1 週歷史，
+        # 畫出來是孤立圓點（2026-10-18 實測 10 條線有 6 條如此）。故逐條檢查
+        # 可見區間內是否至少 2 點，不足的名額由成長名單往下遞補——圖上因此可能
+        # 出現文字名單（成長 TOP 10）以外的番，這是刻意的取捨。
+        series = {sn: series_for(sn) for sn in candidate_sns}
+        if not any(sum(v is not None for v in vals) >= 2 for vals in series.values()):
+            logger.warning("⚠️ [weekly_growth] 候選番皆無足夠歷史，改為純文字推送")
+            return None
+
         for max_lines, max_weeks in (
             (GROWTH_TOP_N, 12),
             (8, 12),
@@ -763,21 +776,27 @@ class AnimeTracker(commands.Cog):
             cut = min(len(all_labels), max_weeks - 1)
             if cut <= 0:
                 continue
+            picked = [
+                sn
+                for sn in candidate_sns
+                if sum(v is not None for v in series[sn][-cut:]) >= 2
+            ][:max_lines]
+            if not picked:
+                continue
             # 只留必要鍵：quickchart 的 Chart.js 預設值已足夠（圖例顯示），逐鍵寫出來
             # 會讓每條線多約 90 字元。刻意不設 spanGaps——新番上架前的 null 本就該讓
             # 線從首週才開始，硬連會畫出它不存在的歷史。
             # 顯式指定 Chart.js v3（url 的 v=3）：v2 的 line 圖預設 fill=true，10 條
             # 半透明填色會疊成一片混濁；v3 預設 fill=false，同時省下每條線 13 字元的
             # "fill":false——這筆省下的額度正好拿來付深色主題的 options。
-            datasets = []
-            for i, sn in enumerate(top_sns[:max_lines]):
-                datasets.append(
-                    {
-                        "label": self._short_name(names.get(sn, str(sn))),
-                        "data": series_for(sn)[-cut:],
-                        "borderColor": _CHART_COLORS[i % len(_CHART_COLORS)],
-                    }
-                )
+            datasets = [
+                {
+                    "label": self._short_name(names.get(sn, str(sn))),
+                    "data": series[sn][-cut:],
+                    "borderColor": _CHART_COLORS[i % len(_CHART_COLORS)],
+                }
+                for i, sn in enumerate(picked)
+            ]
             config = {
                 "type": "line",
                 "data": {"labels": all_labels[-cut:], "datasets": datasets},
