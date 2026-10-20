@@ -684,7 +684,7 @@ class AnimePushDB:
     def get_upcoming_schedules(self) -> list[dict]:
         """查詢本週排程時刻尚未到達且未推送的排程（供輪詢路徑暫緩判斷）
 
-        回傳的每一項含 videoSn / dayOfWeek / scheduledTime / scheduleDt。
+        回傳的每一項含 videoSn / animeSn / dayOfWeek / scheduledTime / scheduleDt。
         只查本週（weekStartDate = 本週一）：排程時刻已過或跨週後查不到，
         輪詢路徑即照常推送（安全後備，不會漏推）。
         """
@@ -697,7 +697,7 @@ class AnimePushDB:
 
             c.execute(
                 """
-                SELECT dayOfWeek, scheduledTime, videoSn
+                SELECT dayOfWeek, scheduledTime, videoSn, animeData
                 FROM anime_weekly_schedule
                 WHERE weekStartDate = ? AND pushed = 0
                 """,
@@ -708,8 +708,22 @@ class AnimePushDB:
             conn.close()
 
             upcoming = []
-            for day_of_week, scheduled_time, video_sn in rows:
-                if not video_sn:
+            for day_of_week, scheduled_time, video_sn, anime_data in rows:
+                # 週表列的 videoSn 是 02:00 抓到的「上一集」；新集上架後 videoSn 就對不上，
+                # 只有 animeSn 能穩定代表同一部番，故一併取出供輪詢閘門比對
+                anime_sn = None
+                raw_anime_data = (
+                    anime_data.decode("utf-8")
+                    if isinstance(anime_data, bytes)
+                    else anime_data
+                )
+                if raw_anime_data:
+                    try:
+                        anime_sn = json.loads(raw_anime_data).get("animeSn")
+                    except (ValueError, TypeError):
+                        anime_sn = None
+
+                if not video_sn and not anime_sn:
                     continue
                 scheduled_time = (
                     scheduled_time.decode("utf-8")
@@ -731,6 +745,7 @@ class AnimePushDB:
                     upcoming.append(
                         {
                             "videoSn": video_sn,
+                            "animeSn": anime_sn,
                             "dayOfWeek": day_of_week,
                             "scheduledTime": scheduled_time,
                             "scheduleDt": sched_dt,
@@ -1608,14 +1623,20 @@ class SimpleAnimePushCore:
         # 5. 推送每部新動畫 (僅圖片)
         # 排程保護：本週排程時刻未到的集數暫緩，讓排程路徑準時推送紫色 embed；
         # 排程時刻已過（或跨週後查不到）才照常推送（安全後備，不會漏推）
-        upcoming_sns = {s.get("videoSn") for s in self.db.get_upcoming_schedules()}
+        # 閘門須比對 animeSn：週表列記的 videoSn 是 02:00 抓的上一集，新集的 videoSn
+        # 不在集合裡，只比 videoSn 會攔不住新集，導致提前數百分鐘甚至數天推走
+        upcoming = self.db.get_upcoming_schedules()
+        upcoming_sns = {s.get("videoSn") for s in upcoming}
+        upcoming_anime_sns = {s.get("animeSn") for s in upcoming if s.get("animeSn")}
         for ep in new_episodes:
             video_sn = int(ep.get("videoSn", 0))
+            anime_sn = int(ep.get("animeSn", 0))
             volume = ep.get("volume", "")
 
-            if video_sn in upcoming_sns:
+            if video_sn in upcoming_sns or anime_sn in upcoming_anime_sns:
                 logger.info(
-                    f"⏳ {ep.get('title', '未知標題')} (videoSn={video_sn}) "
+                    f"⏳ {ep.get('title', '未知標題')} "
+                    f"(videoSn={video_sn}, animeSn={anime_sn}) "
                     f"已排程且時刻未到，暫緩由排程路徑推送"
                 )
                 continue
@@ -1659,7 +1680,6 @@ class SimpleAnimePushCore:
                     view.message_id = message.id
 
                 # 記錄
-                anime_sn = int(ep.get("animeSn", 0))
                 title = ep.get("title", "未知標題")
                 self.db.add_notified(
                     video_sn,
