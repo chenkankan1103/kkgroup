@@ -148,6 +148,46 @@ class TestWeeklyScheduleGate:
         conn.close()
         assert count == 1, "同一 (dayOfWeek, scheduledTime) 只應保留一列"
 
+    def test_upcoming_schedules_expose_anime_sn(self, db):
+        """輪詢閘門必須拿得到 animeSn，否則攔不住新集。
+
+        週表列記的 videoSn 是 02:00 抓到的「上一集」，新集上架後 videoSn 就不同，
+        只比 videoSn 的閘門會放行 → 輪詢提前把新集推走（實測最多提前 10034 分鐘）。
+        """
+        week, day = _now_week_and_day(db)
+        db.save_weekly_schedule(
+            week,
+            [
+                {
+                    "day_of_week": day,
+                    "scheduled_time": "23:59",
+                    "anime_data": {"videoSn": 111, "animeSn": 42, "title": "某番"},
+                }
+            ],
+        )
+
+        upcoming = db.get_upcoming_schedules()
+        assert any(s["animeSn"] == 42 for s in upcoming), (
+            "get_upcoming_schedules 必須回傳 animeSn，否則閘門無法比對新集"
+        )
+
+    def test_upcoming_schedules_keeps_row_without_video_sn(self, db):
+        """只有 animeSn、沒有 videoSn 的列仍算未來排程，不可被略過"""
+        week, day = _now_week_and_day(db)
+        db.save_weekly_schedule(
+            week,
+            [
+                {
+                    "day_of_week": day,
+                    "scheduled_time": "23:58",
+                    "anime_data": {"animeSn": 77, "title": "無 videoSn 番"},
+                }
+            ],
+        )
+
+        upcoming = db.get_upcoming_schedules()
+        assert any(s["animeSn"] == 77 for s in upcoming)
+
 
 class TestPushArchitecture:
     """推送循環架構的迴歸守門"""
