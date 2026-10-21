@@ -67,6 +67,15 @@ EPISODE_SNAPSHOT_MAX = 100
 # 超過上限則跳過它繼續往下——否則一部永遠失敗的番會讓整週停擺
 EPISODE_SNAPSHOT_MAX_ATTEMPTS = 3
 
+# 排程推送的喚醒上限與補推窗口。這兩個數字有依賴關係，必須一起看：
+# _schedule_based_loop 每次最多睡 SCHEDULE_MAX_SLEEP_SECONDS，所以任何一個排程
+# 時刻過去之後，最晚再這麼久就會被喚醒一次。補推窗口若小於這個上限，當睡眠睡過頭
+# 或行程剛好在排程時刻之後才起來，那一集就會被靜默跳過（排程行永遠停在 pushed=0，
+# 只能等輪詢備案或下週覆蓋）。原本寫死 3 分鐘、上限卻是 30 分鐘，這個落差就是漏推主因。
+SCHEDULE_MAX_SLEEP_SECONDS = 1800
+# 多留 15 分鐘餘裕，吸收 asyncio.sleep 的誤差與單次推送本身的耗時
+SCHEDULE_CATCHUP_MINUTES = SCHEDULE_MAX_SLEEP_SECONDS // 60 + 15
+
 
 def episode_request_delay() -> float:
     """單集請求的間隔秒數：基準 5 秒 ± 2 秒抖動
@@ -1537,8 +1546,8 @@ class SimpleAnimePushCore:
         # 計算需要睡眠的秒數
         sleep_seconds = max(0, (next_push_time - now).total_seconds())
 
-        # 設置上限為30分鐘（1800秒）以避免錯過排程
-        sleep_seconds = min(sleep_seconds, 1800)
+        # 睡眠上限；補推窗口（SCHEDULE_CATCHUP_MINUTES）必須大於此值，否則睡過頭就漏推
+        sleep_seconds = min(sleep_seconds, SCHEDULE_MAX_SLEEP_SECONDS)
 
         logger.debug(
             f"😴 智能睡眠 {sleep_seconds:.0f} 秒直到下次推送時間: {next_push_time}"
@@ -1736,7 +1745,7 @@ class SimpleAnimePushCore:
             pushed = item.get("pushed", False)
             video_sn = item.get("videoSn")
 
-            # 檢查是否符合當前時間（允許1分鐘容忍度）
+            # 檢查是否符合當前時間
             if not pushed and scheduled_time:
                 # 解析排程時間
                 try:
@@ -1746,8 +1755,13 @@ class SimpleAnimePushCore:
                     schedule_total_minutes = schedule_hour * 60 + schedule_min
                     current_total_minutes = current_hour * 60 + current_min
 
-                    # 允許0~3分鐘容忍度（只在排程時間之後，防止推送舊集）
-                    if 0 <= current_total_minutes - schedule_total_minutes <= 3:
+                    # 補推窗口：只認「排程時刻已過」的項目（diff >= 0），
+                    # 所以放寬不會提前推走新集，只是把睡過頭/重啟造成的漏推補回來
+                    if (
+                        0
+                        <= current_total_minutes - schedule_total_minutes
+                        <= SCHEDULE_CATCHUP_MINUTES
+                    ):
                         pending_schedule.append(item)
                 except ValueError:
                     logger.warning(f"⚠️ 無法解析排程時間: {scheduled_time}")
