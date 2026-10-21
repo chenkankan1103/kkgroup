@@ -39,8 +39,13 @@ from cogs.ui.push_core_simple import (
     EPISODE_SNAPSHOT_MAX_ATTEMPTS,
 )
 from cogs.ui.schedule_tracker import AnimeScheduleTracker
+from shared.utils.encoding_handler import setup_utf8_logging
 
-logger = logging.getLogger(__name__)
+# 這支必須自帶 handler：uibot 用 client.start()，discord.py 的 setup_logging 不會被呼叫，
+# root logger 一個 handler 都沒有，記錄會掉進 lastResort 的 WARNING 被吞掉；連
+# logging.getLogger(__name__).setLevel(INFO) 也救不回來（2026-10-11 recovery_cog 踩過同一個坑）。
+# 實測 journal 7 天 281360 行裡這支只有 12 筆（全是 set_dependencies），推送與投票紀錄全被吞掉。
+logger = setup_utf8_logging(__name__, logging.INFO)
 
 # 每週成長快照設定
 GROWTH_SNAPSHOT_WEEKDAY = 6  # 0=週一 ... 6=週日
