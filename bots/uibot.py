@@ -99,10 +99,10 @@ discord_logger.setLevel(logging.WARNING)
 discord_webhook_logger = logging.getLogger("discord.webhook")
 discord_webhook_logger.setLevel(logging.WARNING)
 
-# 動畫推送系統日誌提升為 INFO（2026-09-17 修復：推送事件與心跳需進 journald，
-# 否則推送循環靜默失效 44 小時無從診斷——cogs.ui.* 的 INFO 預設被吞）
-logging.getLogger("cogs.ui.push_core_simple").setLevel(logging.INFO)
-logging.getLogger("cogs.ui.anime_tracker").setLevel(logging.INFO)
+# 動畫推送系統的 INFO 改由各模組自帶 handler（2026-10-21）。原本只在這裡 setLevel(INFO)
+# 是無效的：那兩個 logger 都沒有 handler，記錄往上傳到同樣沒有 handler 的 root 就掉進
+# lastResort，只剩 WARNING 以上進得了 journald。handler 現掛在
+# cogs/ui/push_core_simple.py 與 cogs/ui/anime_tracker.py 各自的 logger 上。
 
 STAGE = os.getenv("STAGE", "dev")
 TOKEN = os.getenv(f"{BOT_PREFIX}_BOT_TOKEN")

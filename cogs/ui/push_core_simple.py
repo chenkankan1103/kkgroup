@@ -24,8 +24,14 @@ kkgroup_dir = Path(__file__).resolve().parent.parent.parent
 if str(kkgroup_dir) not in sys.path:
     sys.path.insert(0, str(kkgroup_dir))
 
+from shared.utils.encoding_handler import setup_utf8_logging
 
-logger = logging.getLogger(__name__)
+# 這支必須自帶 handler：uibot 用 client.start()，discord.py 的 setup_logging 不會被呼叫，
+# root logger 一個 handler 都沒有，記錄會掉進 lastResort 的 WARNING 被吞掉；連
+# logging.getLogger(__name__).setLevel(INFO) 也救不回來（2026-10-11 recovery_cog 踩過同一個坑）。
+# 輪詢心跳與推送事件是診斷「推送靜默失效」唯一的線索，所以直接沿用 setup_utf8_logging，
+# 順便拿到 UTF-8 安全輸出與台灣時間格式。
+logger = setup_utf8_logging(__name__, logging.INFO)
 
 # 常數
 TW_TZ = ZoneInfo("Asia/Taipei")
