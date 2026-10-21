@@ -134,7 +134,10 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Op
         if volume:
             vol_text = str(volume).strip()
             # 只在標題中未出現明顯的集數模式時才附加
-            episode_pattern = r'第\\s*\\d+\\s*[集話]|\\\\d+\\s*話|Ep\\s*\\d+'
+            # 原本寫成 r'第\\s*...'（raw string 內多一層跳脫），實際比對的是「反斜線 + s」，
+            # 永遠不會命中，volume 一律被附加成「標題 · 第N集」。補上 detail title 的
+            # 「[N]」形式，兩條推送路徑的標題才會一致
+            episode_pattern = r"第\s*\d+\s*[集話]|\d+\s*話|Ep\s*\d+|\[\s*\d+\s*\]"
             if vol_text and not re.search(episode_pattern, title, re.IGNORECASE):
                 # 以「·」分隔，避免與標題本身的文字混淆
                 display_title = f"{title} · {vol_text}"

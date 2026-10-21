@@ -1659,6 +1659,10 @@ class SimpleAnimePushCore:
                 if details:
                     ep = {
                         **ep,
+                        # detail API 的 title 帶集數標記（如「闇機 DARK MACHINE [2]」），
+                        # index API 的 title 沒有。排程路徑用的是 detail title，
+                        # 輪詢若續用 index title，兩條路徑的 embed 標題格式會不一致
+                        "title": details.get("title") or ep.get("title", ""),
                         "description": details.get("content", ""),
                         "cover": details.get("cover", ""),
                         "total_views": season_views,
