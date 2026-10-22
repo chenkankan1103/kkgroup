@@ -146,6 +146,59 @@ class AnimeScheduleTracker:
 
         return sorted(check_times)
 
+    def _merge_learned_slots(self, schedule_data: list) -> int:
+        """把輪詢學到的播出時刻補進週表資料，回傳補了幾筆
+
+        換季初期巴哈週表還沒收錄新番，那些番只能靠輪詢。輪詢推送時會把 index API
+        的官方時刻記進 anime_learned_slots，同一時刻連續觀察兩週就足以判定是固定
+        播出，這裡補進週表，之後改由排程路徑準時推送——這就是「輪詢升級成排程」。
+
+        官方週表已有的 animeSn 一律不補（官方資料優先）；補進去的列用的是最後一次
+        輪詢的 videoSn，排程路徑會用 animeSn 解析成當下最新集，舊 videoSn 無害。
+        """
+        if not hasattr(self.db, "get_learned_slots"):
+            return 0
+
+        official_sns = set()
+        for item in schedule_data:
+            anime = item.get("anime_data") or {}
+            sn = anime.get("animeSn") or anime.get("anime_sn")
+            if sn:
+                try:
+                    official_sns.add(int(sn))
+                except (ValueError, TypeError):
+                    pass
+
+        added = 0
+        try:
+            for slot in self.db.get_learned_slots(min_observations=2):
+                anime_sn = int(slot.get("animeSn") or 0)
+                if not anime_sn or anime_sn in official_sns:
+                    continue
+                scheduled_time = slot.get("scheduledTime") or ""
+                day_of_week = int(slot.get("dayOfWeek") or 0)
+                if not scheduled_time or not (1 <= day_of_week <= 7):
+                    continue
+                schedule_data.append(
+                    {
+                        "day_of_week": day_of_week,
+                        "scheduled_time": scheduled_time,
+                        "anime_data": {
+                            "animeSn": anime_sn,
+                            "videoSn": int(slot.get("videoSn") or 0),
+                            "animeTitle": slot.get("animeTitle") or "",
+                            "episode": slot.get("episode") or "",
+                            "scheduleTime": scheduled_time,
+                        },
+                    }
+                )
+                added += 1
+        except Exception as e:
+            logger.error(f"❌ [_merge_learned_slots] 補進學習時刻失敗: {e}", exc_info=True)
+            return 0
+
+        return added
+
     async def refresh_weekly_schedule(self, force: bool = False) -> dict:
         """
         每天 02:00 拉取完整週表並全量覆蓋 - 兼具「填滿行事曆」與「檢查漏推」功能
@@ -249,6 +302,13 @@ class AnimeScheduleTracker:
             logger.info(
                 f"📊 [refresh_weekly_schedule] 爬蟲映射表大小: {len(video_to_anime_map)}, 成功豐富: {enriched_count}/{len(schedule_data)}"
             )
+
+            # 補進輪詢學到的時刻（換季初期週表還沒收錄的新番，連續觀察兩週後升級為排程）
+            learned_added = self._merge_learned_slots(schedule_data)
+            if learned_added:
+                logger.info(
+                    f"🎓 [refresh_weekly_schedule] 由輪詢學習補進 {learned_added} 筆時刻（升級為排程推送）"
+                )
 
             # 全量覆蓋：先刪除該 week_start_date 的舊資料，再插入新資料
             # save_weekly_schedule 內部已做 UPSERT (保留 pushed=1) + pre-dedup
