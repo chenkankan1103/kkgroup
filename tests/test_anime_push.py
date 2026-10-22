@@ -20,6 +20,7 @@ from discord.ext import tasks
 
 from cogs.ui.anime_tracker import AnimeTracker
 from cogs.ui.push_core_simple import TW_TZ, AnimePushDB, SimpleAnimePushCore
+from cogs.ui.schedule_tracker import AnimeScheduleTracker
 
 
 @pytest.fixture
@@ -119,7 +120,14 @@ class TestWeeklyScheduleGate:
 
         assert _pushed_flag(db, week, day, "23:58") == 1
 
-    def test_save_weekly_schedule_dedups_same_slot(self, db):
+    def test_save_weekly_schedule_keeps_same_slot_different_anime(self, db):
+        """同一時刻的多部番都必須保留。
+
+        原本 pre-dedup 用 (dayOfWeek, scheduledTime) 當 key，同時刻只留第一筆。
+        巴哈首頁週表 53 筆因此只存進 44 筆，被吃掉的 9 部永遠沒有週表列、
+        只能一直靠輪詢推（2026-10-22 實測）。表約束本來就是
+        UNIQUE(weekStartDate, dayOfWeek, scheduledTime, videoSn)，同時刻多部不衝突。
+        """
         week, _ = _now_week_and_day(db)
         db.save_weekly_schedule(
             week,
@@ -146,7 +154,28 @@ class TestWeeklyScheduleGate:
         )
         count = c.fetchone()[0]
         conn.close()
-        assert count == 1, "同一 (dayOfWeek, scheduledTime) 只應保留一列"
+        assert count == 2, "同時刻的不同番都應保留，不可整批丟掉"
+
+    def test_save_weekly_schedule_dedups_exact_duplicate(self, db):
+        """完全相同的 (dayOfWeek, scheduledTime, videoSn) 才是真重複，只留一列"""
+        week, _ = _now_week_and_day(db)
+        entry = {
+            "day_of_week": 1,
+            "scheduled_time": "21:00",
+            "anime_data": {"videoSn": 1},
+        }
+        db.save_weekly_schedule(week, [entry, dict(entry)])
+
+        conn = db._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT COUNT(*) FROM anime_weekly_schedule "
+            "WHERE weekStartDate=? AND dayOfWeek=1 AND scheduledTime='21:00'",
+            (week,),
+        )
+        count = c.fetchone()[0]
+        conn.close()
+        assert count == 1, "完全相同的列只應保留一列"
 
     def test_upcoming_schedules_expose_anime_sn(self, db):
         """輪詢閘門必須拿得到 animeSn，否則攔不住新集。
@@ -187,6 +216,111 @@ class TestWeeklyScheduleGate:
 
         upcoming = db.get_upcoming_schedules()
         assert any(s["animeSn"] == 77 for s in upcoming)
+
+
+class TestLearnedSlots:
+    """換季橋接：輪詢觀察到的官方時刻，連續兩週後升級為排程推送
+
+    巴哈週表在換季初期常還沒收錄新番，那些番只能靠輪詢。輪詢推送時把 index API
+    的 week/upTimeHours 記進 anime_learned_slots，同一時刻觀察滿 2 次就補進週表，
+    之後改由排程路徑準時推送。
+    """
+
+    def test_single_observation_not_promoted(self, db):
+        db.record_learned_slot(114191, "3", "23:30", "某番", 51947, "第1集")
+        assert db.get_learned_slots(min_observations=2) == []
+
+    def test_two_observations_same_slot_promoted(self, db):
+        db.record_learned_slot(114191, "3", "23:30", "某番", 51947, "第1集")
+        db.record_learned_slot(114191, "3", "23:30", "某番", 51949, "第2集")
+
+        slots = db.get_learned_slots(min_observations=2)
+        assert len(slots) == 1
+        slot = slots[0]
+        assert slot["animeSn"] == 114191
+        assert slot["dayOfWeek"] == 3
+        assert slot["scheduledTime"] == "23:30"
+        # videoSn/episode 應更新為最新一次觀察
+        assert slot["videoSn"] == 51949
+
+    def test_slot_change_resets_count(self, db):
+        """時刻變動就整列重置，避免同時補進新舊兩個時刻"""
+        db.record_learned_slot(114191, "3", "23:30", "某番", 51947, "")
+        db.record_learned_slot(114191, "3", "23:30", "某番", 51949, "")
+        assert len(db.get_learned_slots(min_observations=2)) == 1
+
+        # 時刻改了 → 計數歸 1，不再達門檻
+        db.record_learned_slot(114191, "4", "22:00", "某番", 51950, "")
+        assert db.get_learned_slots(min_observations=2) == []
+
+        # 新時刻再看一次才達門檻，且只有一列（舊時刻已被取代）
+        db.record_learned_slot(114191, "4", "22:00", "某番", 51951, "")
+        slots = db.get_learned_slots(min_observations=2)
+        assert len(slots) == 1
+        assert slots[0]["dayOfWeek"] == 4
+        assert slots[0]["scheduledTime"] == "22:00"
+
+    def test_rejects_unscheduled_and_bad_values(self, db):
+        """week='0' 表示巴哈自己也沒排時刻（如 animeSn 114107），不可學"""
+        assert db.record_learned_slot(114107, "0", "23:30", "某番", 51310, "") is False
+        assert db.record_learned_slot(0, "3", "23:30", "某番", 1, "") is False
+        assert db.record_learned_slot(1, "3", "", "某番", 1, "") is False
+        assert db.record_learned_slot(1, "3", "25:99", "某番", 1, "") is False
+        assert db.record_learned_slot(1, None, "23:30", "某番", 1, "") is False
+        assert db.get_learned_slots(min_observations=1) == []
+
+
+class TestMergeLearnedSlots:
+    """`AnimeScheduleTracker._merge_learned_slots` 把學習結果併進週表資料"""
+
+    @pytest.fixture
+    def tracker(self, db):
+        t = AnimeScheduleTracker(db_path=":memory:")
+        t.db = db
+        return t
+
+    def test_merges_learned_slot_into_schedule(self, tracker, db):
+        for _ in range(2):
+            db.record_learned_slot(114191, "3", "23:30", "某番", 51947, "第1集")
+
+        schedule_data = []
+        added = tracker._merge_learned_slots(schedule_data)
+
+        assert added == 1
+        assert len(schedule_data) == 1
+        item = schedule_data[0]
+        assert item["day_of_week"] == 3
+        assert item["scheduled_time"] == "23:30"
+        assert item["anime_data"]["animeSn"] == 114191
+        assert item["anime_data"]["videoSn"] == 51947
+        assert item["anime_data"]["scheduleTime"] == "23:30"
+
+    def test_official_entry_wins(self, tracker, db):
+        """官方週表已收錄的番不補，避免蓋掉官方時刻"""
+        for _ in range(2):
+            db.record_learned_slot(114191, "3", "23:30", "某番", 51947, "")
+
+        schedule_data = [
+            {
+                "day_of_week": 3,
+                "scheduled_time": "22:00",
+                "anime_data": {"animeSn": 114191, "videoSn": 51947},
+            }
+        ]
+        added = tracker._merge_learned_slots(schedule_data)
+
+        assert added == 0
+        assert len(schedule_data) == 1
+        assert schedule_data[0]["scheduled_time"] == "22:00"
+
+    def test_below_threshold_not_merged(self, tracker, db):
+        db.record_learned_slot(114191, "3", "23:30", "某番", 51947, "")
+        assert tracker._merge_learned_slots([]) == 0
+
+    def test_missing_db_method_is_tolerated(self, tracker):
+        """db 沒有 get_learned_slots（舊版/替代實作）時不應爆"""
+        tracker.db = object()
+        assert tracker._merge_learned_slots([]) == 0
 
 
 class TestPushArchitecture:

@@ -197,6 +197,25 @@ class AnimePushDB:
             )
         """)
 
+        # anime_learned_slots 表 - 從輪詢觀察學到的播出時刻（新舊番轉換期的橋接）
+        # 巴哈首頁週表在換季初期常還沒收錄新番，那些番只能靠輪詢。輪詢每次推送時
+        # 把 index API 的 week/upTimeHours（官方播出時刻）記下來，同一時刻連續觀察
+        # 到 2 次（＝跨兩週）就補進週表，之後改由排程路徑準時推送。
+        # 一部番只留一列：時刻若變動就整列重置，避免同時補進新舊兩個時刻。
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime_learned_slots (
+                animeSn INTEGER PRIMARY KEY,
+                dayOfWeek INTEGER NOT NULL,
+                scheduledTime TEXT NOT NULL,
+                animeTitle TEXT,
+                videoSn INTEGER,
+                episode TEXT,
+                observed_count INTEGER NOT NULL DEFAULT 1,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # anime_view_snapshots 表 - 每週觀看數快照（時間序列，供成長折線圖）
         # 每週日 22:00 對 index API 全量快照一次；total_views 為系列累計觀看數，
         # 逐週相減即得「每週新增觀看數」（PK 為 week_start+anime_sn，同週重跑覆蓋）
@@ -918,11 +937,18 @@ class AnimePushDB:
                 (week_start_date,),
             )
 
-            # 3. Pre-dedup by (day_of_week, scheduled_time) 避免重複插入
+            # 3. Pre-dedup：key 必須含 videoSn，跟表的 UNIQUE 約束一致。
+            # 只用 (day_of_week, scheduled_time) 會把「同一時刻的其他番」整批丟掉
+            # ——巴哈首頁週表 53 筆裡有 9 筆是這樣被吃掉的，那些番因此永遠沒有
+            # 週表列，只能一直靠輪詢推（2026-10-22 實測）
             seen = set()
             deduped = []
             for item in schedule_data:
-                key = (item["day_of_week"], item["scheduled_time"])
+                key = (
+                    item["day_of_week"],
+                    item["scheduled_time"],
+                    (item.get("anime_data") or {}).get("videoSn"),
+                )
                 if key in seen:
                     continue
                 seen.add(key)
@@ -964,6 +990,109 @@ class AnimePushDB:
             return False
         finally:
             conn.close()
+
+    # ---- 從輪詢觀察學到的播出時刻（換季橋接）----
+
+    def record_learned_slot(
+        self,
+        anime_sn: int,
+        day_of_week,
+        scheduled_time: str,
+        title: str = "",
+        video_sn: int = 0,
+        episode: str = "",
+    ) -> bool:
+        """記下一次「這部番在這個時候播出」的觀察
+
+        同一 (dayOfWeek, scheduledTime) 再看到就累加 observed_count；時刻變了就整列
+        重置為新時刻、計數歸 1（一部番只留一列，才不會同時補進新舊兩個時刻）。
+        """
+        try:
+            dow = int(day_of_week)
+        except (TypeError, ValueError):
+            return False
+        if not anime_sn or not (1 <= dow <= 7) or not scheduled_time:
+            return False
+        try:
+            datetime.strptime(str(scheduled_time), "%H:%M")
+        except (ValueError, TypeError):
+            return False
+
+        conn = self._get_conn()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "SELECT dayOfWeek, scheduledTime FROM anime_learned_slots WHERE animeSn=?",
+                (int(anime_sn),),
+            )
+            row = c.fetchone()
+            # text_factory=bytes：讀回來的 TEXT 是 bytes，不轉回 str 會永遠比不上，
+            # 每次都走「時刻變了」的重置分支，observed_count 永遠停在 1
+            if row and int(row[0]) == dow and _as_text(row[1]) == str(scheduled_time):
+                c.execute(
+                    "UPDATE anime_learned_slots SET observed_count = observed_count + 1, "
+                    "last_seen = CURRENT_TIMESTAMP, videoSn=?, episode=? WHERE animeSn=?",
+                    (int(video_sn or 0), episode or "", int(anime_sn)),
+                )
+            else:
+                c.execute(
+                    "INSERT OR REPLACE INTO anime_learned_slots "
+                    "(animeSn, dayOfWeek, scheduledTime, animeTitle, videoSn, episode, "
+                    " observed_count, first_seen, last_seen) "
+                    "VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    (
+                        int(anime_sn),
+                        dow,
+                        str(scheduled_time),
+                        title or "",
+                        int(video_sn or 0),
+                        episode or "",
+                    ),
+                )
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] record_learned_slot 失敗: {e}", exc_info=True)
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def get_learned_slots(self, min_observations: int = 2) -> list[dict]:
+        """取得已達門檻的學習時刻（供週表刷新時補列）
+
+        門檻 2 次＝同一時刻跨兩週都觀察到，才足以判斷是固定播出而非臨時提前上架。
+        """
+        conn = self._get_conn()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "SELECT animeSn, dayOfWeek, scheduledTime, animeTitle, videoSn, episode, "
+                "observed_count FROM anime_learned_slots WHERE observed_count >= ?",
+                (int(min_observations),),
+            )
+            rows = c.fetchall()
+        except Exception as e:
+            logger.error(f"❌ [AnimePushDB] get_learned_slots 失敗: {e}", exc_info=True)
+            return []
+        finally:
+            conn.close()
+
+        def _txt(v):
+            return v.decode("utf-8") if isinstance(v, bytes) else v
+
+        return [
+            {
+                "animeSn": int(r[0]),
+                "dayOfWeek": int(r[1]),
+                "scheduledTime": _txt(r[2]),
+                "animeTitle": _txt(r[3]) or "",
+                "videoSn": int(r[4] or 0),
+                "episode": _txt(r[5]) or "",
+                "observed_count": int(r[6]),
+            }
+            for r in rows
+        ]
 
     # ---- 每週觀看數快照（成長折線圖）----
 
@@ -1697,6 +1826,19 @@ class SimpleAnimePushCore:
                     title,
                     volume,
                     ep.get("cover", ""),
+                )
+
+                # 學一次「這部番官方說幾點播」：換季初期週表還沒收錄新番，只能靠輪詢，
+                # 但 index API 的 week/upTimeHours 一直都有官方時刻。同一時刻連續觀察
+                # 兩週（＝兩次推送）就足以判定是固定播出，補進週表改走排程路徑。
+                # week 為 '0' 表示巴哈自己也沒排時刻（如 animeSn 114107），會被擋掉。
+                self.db.record_learned_slot(
+                    anime_sn,
+                    ep.get("week"),
+                    ep.get("upTimeHours"),
+                    title,
+                    video_sn,
+                    volume,
                 )
 
                 # 註冊永久視圖
