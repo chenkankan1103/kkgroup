@@ -27,7 +27,7 @@ concurrency:
 jobs:
   edit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
       issues: write
@@ -72,9 +72,17 @@ jobs:
           OPENAI_API_BASE: https://integrate.api.nvidia.com/v1
         run: |
           set -o pipefail
-          aider \
+          # 外面套 timeout：Aider 改完檔案後會再叫一次模型「摘要對話歷史」，
+          # 這個模型每次呼叫要 3 分鐘才吐第一個字，收尾常常比本體還久。
+          # 不設上限的話 job 會被砍在 AI 步驟裡，改好的檔案來不及 commit 就整批消失。
+          # 720 秒一到就砍掉 Aider，已經寫進硬碟的改動照樣往下 commit。
+          #
+          # --map-tokens 0 關掉 repo map：Aider 預設會對整個 repo 建
+          # tree-sitter 索引，這個 repo 很大，光建索引就會拖垮一次跑。
+          timeout 720 aider \
             --model openai/deepseek-ai/deepseek-v4.1-flash \
             --edit-format whole \
+            --map-tokens 0 \
             --yes-always \
             --no-auto-commits \
             --no-git \
@@ -103,8 +111,10 @@ jobs:
           git commit -m "AI 改遊戲：$GAME_PROMPT"
           git push
 
+      # 只在「真的沒改到東西」或「commit/push 失敗」時才貼，不然 timeout 砍掉
+      # Aider 會讓 ai 步驟永遠是 failure，每次成功改動也跟著洗一則 log 進 issue。
       - name: 沒改成功就把原因貼到 issue
-        if: steps.ai.outcome != 'success' || steps.commit.outputs.changed != 'true'
+        if: steps.commit.outputs.changed != 'true' || steps.commit.outcome != 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_OUTCOME: ${{ steps.ai.outcome }}
