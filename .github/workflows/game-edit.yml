@@ -5,6 +5,9 @@ name: 遊戲 AI 編輯
 #
 # 安全邊界：AI 只拿得到 web/kkpark-game/ 底下的四個檔案，
 # 碰不到 bot 本體、也碰不到資料庫。
+#
+# 沒改到東西時會把 Aider 的原始輸出貼進一個固定 issue，
+# 這樣「為什麼沒改成功」不必登入 runner 也看得到。
 
 on:
   workflow_dispatch:
@@ -27,12 +30,14 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      issues: write
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       # workflow_dispatch 走 inputs，repository_dispatch 走 client_payload
       GAME_PROMPT: ${{ github.event.inputs.prompt || github.event.client_payload.prompt }}
       GAME_FILES: web/kkpark-game/index.html web/kkpark-game/style.css web/kkpark-game/data.js web/kkpark-game/game.js
+      LOG_TITLE: '🎮 遊戲 AI 編輯失敗紀錄'
 
     steps:
       - name: 檢出代碼
@@ -58,11 +63,15 @@ jobs:
           echo "提示詞：$GAME_PROMPT"
 
       - name: AI 改遊戲
+        id: ai
+        # 失敗也繼續，讓後面的步驟有機會把原因貼出來
+        continue-on-error: true
         env:
           # NVIDIA NIM 是 OpenAI 相容端點，Aider 用這兩個環境變數接
           OPENAI_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENAI_API_BASE: https://integrate.api.nvidia.com/v1
         run: |
+          set -o pipefail
           aider \
             --model openai/deepseek-ai/deepseek-v4-pro \
             --edit-format whole \
@@ -70,16 +79,20 @@ jobs:
             --no-auto-commits \
             --no-git \
             --no-check-update \
+            --verbose \
             --message "$GAME_PROMPT" \
-            $GAME_FILES
+            $GAME_FILES 2>&1 | tee /tmp/aider.log
 
       - name: 提交變更
+        id: commit
         run: |
           if git diff --quiet -- web/kkpark-game/; then
-            echo "::warning::AI 沒有改動任何檔案，沒有東西要提交"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "AI 沒有改動任何檔案"
             exit 0
           fi
 
+          echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "=== AI 改了這些 ==="
           git diff --stat -- web/kkpark-game/
           echo "=================="
@@ -90,6 +103,33 @@ jobs:
           git commit -m "AI 改遊戲：$GAME_PROMPT"
           git push
 
+      - name: 沒改成功就把原因貼到 issue
+        if: steps.ai.outcome != 'success' || steps.commit.outputs.changed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AI_OUTCOME: ${{ steps.ai.outcome }}
+        run: |
+          {
+            echo "**提示詞**：$GAME_PROMPT"
+            echo "**Aider 步驟結果**：$AI_OUTCOME"
+            echo "**檔案有沒有變**：${{ steps.commit.outputs.changed }}"
+            echo
+            echo "---"
+            echo
+            echo '```'
+            # runner 上的 log 只留得住 90 天，而且沒登入看不到，所以貼進來
+            tail -c 40000 /tmp/aider.log 2>/dev/null || echo "（aider 沒有產生輸出）"
+            echo '```'
+          } > /tmp/body.md
+
+          ISSUE=$(gh issue list --state open --search "$LOG_TITLE in:title" \
+                    --json number --jq '.[0].number // empty')
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --body-file /tmp/body.md
+          else
+            gh issue create --title "$LOG_TITLE" --body-file /tmp/body.md
+          fi
+
       - name: 摘要
         if: always()
         run: |
@@ -97,9 +137,10 @@ jobs:
             echo "## 遊戲 AI 編輯"
             echo ""
             echo "**提示詞**：$GAME_PROMPT"
+            echo "**有沒有改到**：${{ steps.commit.outputs.changed }}"
             echo ""
-            echo "### 變更"
+            echo "### Aider 輸出（尾段）"
             echo '```'
-            git diff HEAD~1 --stat -- web/kkpark-game/ 2>/dev/null || echo "（沒有提交）"
+            tail -40 /tmp/aider.log 2>/dev/null || echo "（沒有輸出）"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
