@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<title>KK 園區 · 派遣版</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="hud">
+    <div class="hud-left">
+      <div class="rank-title" id="rankTitle">待宰豬仔</div>
+      <div class="rank-sub" id="rankSub">Lv.0 · 日薪 250</div>
+    </div>
+    <div class="hud-right">
+      <div class="money" id="money">0</div>
+      <div class="rate" id="rate">今日額度 24h</div>
+    </div>
+  </header>
+
+  <section class="stage">
+    <div class="room" id="room">
+      <div class="prop" data-prop="desk"   style="left:11%"><i>🖥️</i><span>電腦桌</span></div>
+      <div class="prop" data-prop="phone"  style="left:37%"><i>📞</i><span>電話</span></div>
+      <div class="prop" data-prop="vault"  style="left:63%"><i>🔐</i><span>金庫</span></div>
+      <div class="prop" data-prop="server" style="left:89%"><i>🗄️</i><span>機櫃</span></div>
+      <img class="doll" id="doll" alt="紙娃娃">
+      <div class="doll-glow" id="dollGlow"></div>
+    </div>
+    <div class="stage-msg" id="stageMsg">在園區裡待命…</div>
+
+    <div class="dbar hidden" id="dbar">
+      <div class="dbar-fill" id="dbarFill"></div>
+      <div class="dbar-text" id="dbarText"></div>
+    </div>
+  </section>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="dispatch">派遣</button>
+    <button class="tab" data-tab="doll">紙娃娃</button>
+    <button class="tab" data-tab="gear">設備</button>
+    <button class="tab" data-tab="crew">人手</button>
+    <button class="tab" data-tab="promo">升職</button>
+  </nav>
+
+  <main class="panels">
+    <div class="panel active" id="panel-dispatch"></div>
+    <div class="panel" id="panel-doll"></div>
+    <div class="panel" id="panel-gear"></div>
+    <div class="panel" id="panel-crew"></div>
+    <div class="panel" id="panel-promo"></div>
+  </main>
+
+  <footer class="foot">
+    <button class="link" id="btnReset">重來</button>
+    <span class="ver">v0.2 派遣版 · 存檔在本機瀏覽器</span>
+  </footer>
+
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<div class="modal hidden" id="modal">
+  <div class="modal-box">
+    <h2 id="modalTitle">歡迎回來</h2>
+    <p id="modalBody"></p>
+    <button class="btn-primary" id="modalOk">收下</button>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
