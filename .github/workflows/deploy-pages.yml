@@ -1,10 +1,12 @@
-name: Deploy KK Park Landing Page to GitHub Pages
+name: Deploy KK Park to GitHub Pages
 
 on:
   push:
     branches: [main]
     paths:
       - 'web/kkpark/**'
+      - 'web/kkpark-game/**'
+      - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -26,10 +28,19 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      # 一個 repo 只能有一個 Pages 站，所以兩個前端合成同一份 artifact：
+      # 首頁放根目錄，遊戲掛在 /game/。遊戲內部全用相對路徑（style.css、
+      # data.js、game.js），搬進子目錄不會壞掉。
+      - name: 組出要發佈的網站
+        run: |
+          mkdir -p _site/game
+          cp -r web/kkpark/. _site/
+          cp -r web/kkpark-game/. _site/game/
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './web/kkpark'
+          path: './_site'
 
   deploy:
     environment:
