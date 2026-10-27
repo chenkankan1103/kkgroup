@@ -73,7 +73,7 @@ jobs:
         run: |
           set -o pipefail
           aider \
-            --model openai/deepseek-ai/deepseek-v4-pro \
+            --model openai/deepseek-ai/deepseek-v4.1-flash \
             --edit-format whole \
             --yes-always \
             --no-auto-commits \
