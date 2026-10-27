@@ -31,6 +31,8 @@ jobs:
     permissions:
       contents: write
       issues: write
+      # 用來手動叫 Pages 部署，見下面「重新部署遊戲到 Pages」那步
+      actions: write
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -110,6 +112,15 @@ jobs:
           git add web/kkpark-game/
           git commit -m "AI 改遊戲：$GAME_PROMPT"
           git push
+
+      # GITHUB_TOKEN 推出去的 commit 不會觸發其他 workflow（GitHub 防遞迴的規則，
+      # workflow_dispatch 是例外），所以 Pages 不會自己重部署，得明著叫它一次。
+      # 少了這步，AI 改完、commit 也進去了，但朋友打開網址還是舊版。
+      - name: 重新部署遊戲到 Pages
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy-pages.yml --ref main
 
       # 只在「真的沒改到東西」或「commit/push 失敗」時才貼，不然 timeout 砍掉
       # Aider 會讓 ai 步驟永遠是 failure，每次成功改動也跟著洗一則 log 進 issue。
