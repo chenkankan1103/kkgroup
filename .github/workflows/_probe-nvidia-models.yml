@@ -1,0 +1,33 @@
+name: _probe nvidia models
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 列出可用的模型
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          echo "=== 全部模型 id ==="
+          curl -sS https://integrate.api.nvidia.com/v1/models \
+            -H "Authorization: Bearer $NVIDIA_API_KEY" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('\n'.join(sorted(m['id'] for m in d.get('data',[]))))"
+
+      - name: 逐一實測候選模型
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          for M in deepseek-ai/deepseek-v4.1-flash deepseek-ai/deepseek-v4.1 deepseek-ai/deepseek-v4-pro nvidia/nemotron-3-super-120b-a12b qwen/qwen3-coder-480b-a35b-instruct meta/llama-4-maverick-17b-128e-instruct; do
+            CODE=$(curl -sS -o /tmp/out.json -w '%{http_code}' \
+              https://integrate.api.nvidia.com/v1/chat/completions \
+              -H "Authorization: Bearer $NVIDIA_API_KEY" \
+              -H 'Content-Type: application/json' \
+              -d "{\"model\":\"$M\",\"messages\":[{\"role\":\"user\",\"content\":\"say OK\"}],\"max_tokens\":16}")
+            echo "----- $M -> HTTP $CODE"
+            head -c 300 /tmp/out.json
+            echo
+          done
