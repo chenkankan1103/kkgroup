@@ -605,6 +605,10 @@ class AnimePushDB:
         留言與投票同存於 anime_votes（vote_type='comment'），以 animeSn 聚合
         即可讓新一集的推播看到先前集數的留言，語意與「全系列累計」一致。
         刻意不回傳 user_hash：embed 上是匿名呈現，帶出去只是多一個外洩面。
+
+        集數（volume）不在 anime_votes 裡，得回頭查該則留言原屬的 videoSn 在
+        anime_notified 的推送記錄 —— 同一 videoSn 可能有多筆（volume 變動），
+        取最新一筆。查不到就是空字串，embed 上只顯示「匿名」。
         """
         try:
             conn = self._get_conn()
@@ -612,11 +616,14 @@ class AnimePushDB:
 
             c.execute(
                 """
-                SELECT comment, voted_at
-                FROM anime_votes
-                WHERE animeSn = ? AND vote_type = 'comment'
-                  AND comment IS NOT NULL AND comment != ''
-                ORDER BY voted_at DESC
+                SELECT v.comment, v.voted_at,
+                       (SELECT n.volume FROM anime_notified n
+                         WHERE n.videoSn = v.videoSn
+                         ORDER BY n.notified_at DESC LIMIT 1)
+                FROM anime_votes v
+                WHERE v.animeSn = ? AND v.vote_type = 'comment'
+                  AND v.comment IS NOT NULL AND v.comment != ''
+                ORDER BY v.voted_at DESC
                 LIMIT ?
                 """,
                 (anime_sn, limit),
@@ -626,7 +633,11 @@ class AnimePushDB:
             conn.close()
 
             return [
-                {"comment": _as_text(row[0]), "voted_at": _as_text(row[1])}
+                {
+                    "comment": _as_text(row[0]),
+                    "voted_at": _as_text(row[1]),
+                    "volume": _as_text(row[2]),
+                }
                 for row in rows
             ]
         except Exception as e:

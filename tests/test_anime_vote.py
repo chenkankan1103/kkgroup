@@ -22,11 +22,13 @@ import pytest
 from cogs.ui.push_core_simple import AnimePushDB
 from shared.utils.embed_views import (
     COMMENT_REWARD_AMOUNT,
+    COMMENTS_FIELD_NAME,
     CUMULATIVE_FIELD_NAME,
     EPISODE_FIELD_NAME,
     VOTE_REWARD_AMOUNT,
     VOTE_REWARD_WINDOW_HOURS,
     AnimePushView,
+    format_comments,
 )
 from tests.utils import create_mock_interaction, create_mock_message
 
@@ -81,12 +83,20 @@ def _backdate_notified(db, video_sn: int, hours: int) -> None:
     conn.close()
 
 
-async def _submit_comment(view, db, user_id, text, message_id=MESSAGE_ID):
-    """點留言按鈕 → 開 Modal → 送出文字，回傳 modal interaction"""
+async def _submit_comment(
+    view, db, user_id, text, message_id=MESSAGE_ID, source_message=None
+):
+    """點留言按鈕 → 開 Modal → 送出文字，回傳 modal interaction
+
+    source_message 用來注入帶有真實 embed 的原推播訊息；預設的 mock 訊息
+    embeds 為空，走不到「重建留言欄位」那條路。
+    """
     interaction = await _click(view, db, f"anime_comment_{VIDEO_SN}", user_id=user_id)
     modal = interaction.response.send_modal.call_args[0][0]
 
     modal_interaction = create_mock_interaction(user_id=user_id, message_id=message_id)
+    if source_message is not None:
+        modal_interaction.message = source_message
     modal.comment_input = MagicMock()
     modal.comment_input.__str__ = MagicMock(return_value=text)
     await modal.on_submit(modal_interaction)
@@ -218,6 +228,59 @@ class TestAnimeCommentInteraction:
         later = db.get_comments_by_anime(ANIME_SN)
         assert any("必看" in c["comment"] for c in later), later
         assert db.get_comments_by_anime(ANIME_SN + 1) == [], "不應跨系列外洩"
+
+    @pytest.mark.asyncio
+    async def test_comment_submission_rebuilds_embed_field(self, db):
+        """留言送出後 → 原推播 embed 的「觀眾留言」欄位立刻重建。
+
+        只寫 DB 不更新的話，使用者看到的是「幣發了、話不見了」；投票在同一則
+        訊息上是即時更新欄位的，留言必須一致。
+        """
+        view = _make_view(db)
+        view.message_id = MESSAGE_ID
+
+        embed = discord.Embed(title="測試動漫")
+        embed.add_field(name=EPISODE_FIELD_NAME, value="🟩 5分: 1", inline=False)
+        message = create_mock_message(message_id=MESSAGE_ID, embeds=[embed])
+
+        await _submit_comment(
+            view, db, user_id=5001, text="這部真好看", source_message=message
+        )
+
+        message.edit.assert_awaited()
+        fields = {f.name: f.value for f in message.edit.call_args.kwargs["embed"].fields}
+        assert COMMENTS_FIELD_NAME in fields, f"應加上留言欄位: {list(fields)}"
+        assert "真好看" in fields[COMMENTS_FIELD_NAME]
+        assert "匿名" in fields[COMMENTS_FIELD_NAME]
+        assert EPISODE_FIELD_NAME in fields, "重建留言不應動掉投票欄位"
+
+    @pytest.mark.asyncio
+    async def test_comments_are_annotated_with_episode_and_anonymous(self, db):
+        """留言以 animeSn 聚合，每則標註出自第幾集，且不洩漏 user_hash"""
+        db.add_notified(VIDEO_SN, ANIME_SN, "測試動漫", "第3集", "")
+        db.add_notified(VIDEO_SN + 1, ANIME_SN, "測試動漫", "第4集", "")
+        db.record_vote(
+            video_sn=VIDEO_SN,
+            anime_sn=ANIME_SN,
+            message_id=MESSAGE_ID,
+            vote_type="comment",
+            user_hash="hash_ep3",
+            comment="第三集好看",
+        )
+        db.record_vote(
+            video_sn=VIDEO_SN + 1,
+            anime_sn=ANIME_SN,
+            message_id=MESSAGE_ID,
+            vote_type="comment",
+            user_hash="hash_ep4",
+            comment="第四集更好看",
+        )
+
+        text = format_comments(db.get_comments_by_anime(ANIME_SN))
+
+        assert "第3集" in text and "第4集" in text, text
+        assert "匿名" in text
+        assert "hash_ep" not in text, "embed 上是匿名呈現，不應出現 user_hash"
 
     @pytest.mark.asyncio
     async def test_comment_modal_empty_submission_rejected(self, db):

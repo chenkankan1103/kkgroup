@@ -47,6 +47,11 @@ VOTE_REWARD_WINDOW_HOURS = REWARD_WINDOW_HOURS  # 舊名，保留給既有呼叫
 # embed 上的獎勵提示（金額與上面的常數同源，改金額時提示自動跟著變）
 REWARD_HINT = f"💰 投票 +{VOTE_REWARD_AMOUNT} KK幣 ・ 💬 留言 +{COMMENT_REWARD_AMOUNT} KK幣"
 
+# 「💬 觀眾留言」顯示設定：欄位值上限 1024 字元，故同時限制則數與單則長度。
+# 留言寫入時雖已限制 200 字，多則並列仍會過長，這裡再截一次才讀得下去。
+COMMENT_DISPLAY_LIMIT = 3
+COMMENT_MAX_LEN = 60
+
 
 def format_vote_stats(stats: dict[str, int]) -> str:
     """將投票統計字典格式化為 embed 欄位文字（每個分數一行）。
@@ -61,6 +66,66 @@ def format_vote_stats(stats: dict[str, int]) -> str:
         f"{VOTE_TYPE_LABELS[key][1]} {VOTE_TYPE_LABELS[key][0]}: {stats.get(key, 0)}"
         for key in VOTE_TYPE_ORDER
     )
+
+
+def format_comment_episode(volume) -> str:
+    """把 volume（'第14集' / '[14]' / '14'）正規化成「第14集」。
+
+    解析不出數字就回傳空字串，由呼叫端省略集數標註 —— 寧可只寫「匿名」，
+    也不要讓使用者看到「第None集」這種半調子的字。
+    """
+    digits = "".join(ch for ch in str(volume or "") if ch.isdigit())
+    return f"第{int(digits)}集" if digits else ""
+
+
+def format_comments(
+    comments: list,
+    limit: int = COMMENT_DISPLAY_LIMIT,
+    max_len: int = COMMENT_MAX_LEN,
+) -> str:
+    """將留言列表格式化為 embed 欄位文字（每則一行、匿名、標註出自第幾集）。
+
+    留言以 animeSn 跨集數聚合（見 AnimePushDB.get_comments_by_anime），同一系列
+    的新一集也看得到先前集數的留言，故每則都得標出集數，才讀得出「這是哪一集的
+    人在說」。刻意不顯示 user_hash：embed 上是匿名呈現。
+
+    Args:
+        comments: 每筆含 comment 與選填 volume 的字典列表。
+        limit: 最多顯示幾則（欄位值有 1024 字元上限）。
+        max_len: 單則留言截斷長度。
+
+    Returns:
+        以換行分隔的留言文字；沒有可顯示的留言時回傳空字串。
+    """
+    lines = []
+    for item in comments[:limit]:
+        text = " ".join(str(item.get("comment") or "").split())
+        if not text:
+            continue
+        if len(text) > max_len:
+            text = text[: max_len - 1].rstrip() + "…"
+        episode = format_comment_episode(item.get("volume"))
+        suffix = f"匿名 · {episode}" if episode else "匿名"
+        lines.append(f"> {text} — {suffix}")
+    return "\n".join(lines)
+
+
+def _set_embed_field(embed: discord.Embed, name: str, value: Optional[str]) -> None:
+    """就地覆蓋 embed 上的同名欄位（原位置換掉）；value 為空則整個欄位移除。
+
+    統計與留言都是「同一則 embed 由不同人陸續更新」的欄位，不覆蓋就會出現兩個
+    同名欄位各說各話。刻意寫回原位置而非移除後追加（那樣留言欄位會被擠到統計
+    上面），欄位順序與 generate_anime_embed 產出的一致。
+    """
+    for i, field in enumerate(embed.fields):
+        if field.name == name:
+            if value:
+                embed.set_field_at(i, name=name, value=value, inline=False)
+            else:
+                embed.remove_field(i)
+            return
+    if value:
+        embed.add_field(name=name, value=value, inline=False)
 
 
 # ============================================================
@@ -495,26 +560,16 @@ class AnimePushView(discord.ui.View):
                 try:
                     if interaction.message.embeds:
                         embed = interaction.message.embeds[0].copy()
-                        # 兩個欄位都必須先移除再重建：若只重建本集欄位，
-                        # 全系列累計會停留在投票前的數字，與本集欄位互相矛盾。
-                        for field_name in (EPISODE_FIELD_NAME, CUMULATIVE_FIELD_NAME):
-                            for i, field in enumerate(embed.fields):
-                                if field.name == field_name:
-                                    embed.remove_field(i)
-                                    break
-                        # 重建統計文字
-                        vote_text = self._build_vote_stats_text()
-                        if vote_text:
-                            embed.add_field(
-                                name=EPISODE_FIELD_NAME, value=vote_text, inline=False
-                            )
-                        cumulative_text = self._build_cumulative_stats_text()
-                        if cumulative_text:
-                            embed.add_field(
-                                name=CUMULATIVE_FIELD_NAME,
-                                value=cumulative_text,
-                                inline=False,
-                            )
+                        # 兩個欄位都要重建：若只重建本集欄位，全系列累計會停留在
+                        # 投票前的數字，與本集欄位互相矛盾。
+                        _set_embed_field(
+                            embed, EPISODE_FIELD_NAME, self._build_vote_stats_text()
+                        )
+                        _set_embed_field(
+                            embed,
+                            CUMULATIVE_FIELD_NAME,
+                            self._build_cumulative_stats_text(),
+                        )
                         await interaction.message.edit(embed=embed)
                 except Exception as e:
                     logger.error(f"❌ 更新投票統計欄位失敗: {e}")
@@ -625,12 +680,64 @@ class AnimePushView(discord.ui.View):
             logger.error(f"❌ 重建全系列累計統計失敗: {e}")
             return None
 
+    def _build_comments_text(self) -> Optional[str]:
+        """從資料庫重建「💬 觀眾留言」欄位文字（與 push_embed 的格式同源）。
+
+        以 self.anime_sn 跨集數取最新幾則，語意與「全系列累計」一致：同一系列
+        共用一塊留言板，新一集的推播也看得到先前集數的留言（各自標註集數）。
+        """
+        try:
+            if (
+                not self.db
+                or not hasattr(self.db, "get_comments_by_anime")
+                or not self.anime_sn
+            ):
+                return None
+            return format_comments(self.db.get_comments_by_anime(int(self.anime_sn)))
+        except Exception as e:
+            logger.error(f"❌ 重建觀眾留言失敗: {e}")
+            return None
+
+    async def _refresh_comments_field(
+        self,
+        interaction: discord.Interaction,
+        message: Optional[discord.Message],
+    ) -> None:
+        """把「💬 觀眾留言」欄位重建到原推播 embed 上（沒有留言就整欄移除）。
+
+        留言只寫進 DB 是不夠的：使用者按了留言、幣也發了，畫面上卻什麼都沒變，
+        看起來就像「話被吃掉了」。投票在同一則訊息上是即時更新欄位的，留言必須一致。
+
+        Args:
+            interaction: 用來在拿不到 message 物件時回頭抓訊息（有 channel 即可）。
+            message: 原推播訊息；Modal 不一定帶得到 message 物件，故由按鈕當下傳入。
+        """
+        try:
+            if message is None and self.message_id and interaction.channel:
+                message = await interaction.channel.fetch_message(self.message_id)
+            if not message or not message.embeds:
+                return
+
+            # None 代表查不到（db 不可用），此時不要動 embed，免得把既有留言欄位誤刪
+            comments_text = self._build_comments_text()
+            if comments_text is None:
+                return
+
+            embed = message.embeds[0].copy()
+            _set_embed_field(embed, COMMENTS_FIELD_NAME, comments_text)
+            await message.edit(embed=embed)
+        except Exception as e:
+            logger.error(f"❌ 更新觀眾留言欄位失敗: {e}")
+
     async def _comment_callback(self, interaction: discord.Interaction):
         """處理評論按鈕點擊 - 彈出評論輸入框"""
         try:
             logger.info(f"💬 [AnimePushView._comment_callback] 用戶 {interaction.user.name} 點擊評論")
 
             outer_self = self
+            # 按鈕當下的推播訊息：Modal 有時拿不到 message 物件，先在這裡抓下來，
+            # 留言存檔後才能把那則 embed 的留言欄位一起更新
+            source_message = interaction.message
 
             class CommentModal(discord.ui.Modal, title="留下匿名評論"):
                 comment_input = discord.ui.TextInput(
@@ -655,11 +762,10 @@ class AnimePushView(discord.ui.View):
                         await modal_interaction.response.defer(ephemeral=True)
 
                         user_hash = str(hash(modal_interaction.user.id))[:10]
-                        # 優先用 modal 來源訊息的 ID，未重新投票也能精確記錄到該則 embed
+                        # 優先用 modal 來源訊息，未重新投票也能精確記錄到該則 embed
+                        message = modal_interaction.message or source_message
                         message_id = (
-                            modal_interaction.message.id
-                            if modal_interaction.message
-                            else outer_self.message_id
+                            message.id if message else outer_self.message_id
                         )
                         anime_name = outer_self.episode.get("title", "") if outer_self.episode else ""
 
@@ -674,6 +780,12 @@ class AnimePushView(discord.ui.View):
                                 user_hash=user_hash,
                                 anime_name=anime_name,
                             )
+
+                        # 存檔後立刻把留言欄位貼回原推播 embed（與投票即時更新欄位一致），
+                        # 排在發幣之前：發幣要寫 user_data.db，先讓畫面更新才不會卡在等幣
+                        await outer_self._refresh_comments_field(
+                            modal_interaction, message
+                        )
 
                         # 留言獎勵：留言可以重複送出，防重複全靠 anime_rewards 的
                         # UNIQUE(user_id, message_id, reward_type)

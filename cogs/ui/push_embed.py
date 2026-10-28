@@ -13,6 +13,7 @@ from shared.utils.embed_views import (
     EPISODE_FIELD_NAME,
     REWARD_HINT,
     create_anime_push_view,
+    format_comments,
     format_vote_stats,
 )
 
@@ -56,20 +57,6 @@ def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
-
-
-def _format_comments(comments: list, limit: int = 3, max_len: int = 60) -> str:
-    """把留言列表格式化為 embed 欄位文字（每則一行、匿名呈現）。
-
-    embed 欄位值上限 1024 字元，故同時限制則數與單則長度；留言寫入時雖已
-    限制 200 字，但多則並列時仍會過長，這裡再截一次才讀得下去。
-    """
-    lines = []
-    for item in comments[:limit]:
-        text = _truncate(item.get("comment", ""), max_len)
-        if text:
-            lines.append(f"> {text} — 匿名")
-    return "\n".join(lines)
 
 
 def _format_score(score) -> str:
@@ -191,10 +178,10 @@ async def generate_anime_embed(episode: dict, push_mode: str = "unknown", db: Op
                     )
 
                 # 觀眾留言：同樣以 animeSn 跨集數取最新幾則，讓新一集的推播
-                # 也看得到先前集數的留言（與「全系列累計」同一套語意）。
-                # 沒有留言就不加欄位，不留一個空殼欄位佔版面。
+                # 也看得到先前集數的留言（與「全系列累計」同一套語意），
+                # 每則標註出自第幾集。沒有留言就不加欄位，不留一個空殼欄位佔版面。
                 if anime_sn and hasattr(db, "get_comments_by_anime"):
-                    comments_text = _format_comments(
+                    comments_text = format_comments(
                         db.get_comments_by_anime(int(anime_sn))
                     )
                     if comments_text:
