@@ -800,19 +800,23 @@ class AnimeTracker(commands.Cog):
         else:
             logger.warning(f"⚠️ [weekly_growth] 找不到字型 {_CJK_FONT_PATH}，中文恐變方框")
 
-        labels = [self._short(r["anime_name"], 14) for r in rows]
+        # 尺寸是照 Discord 的顯示規則反推的：embed 圖最大 550×400，縮放後的字級
+        # ≈ 7.6 × fontsize ÷ 圖寬(inch)。圖做寬一點字就變小——9.6 吋寬時只剩 9px，
+        # 手機上讀不出來，所以刻意收窄到 6.9 吋（約 13px）並放大字級。
+        # 高度取 0.5/列使長寬比 ≥1.375（＝550/400），才不會被高度綁住再縮一次。
+        labels = [self._short(r["anime_name"], 16) for r in rows]
         values = [r["growth"] for r in rows]
-        fig, ax = plt.subplots(figsize=(9.6, 0.62 * len(rows) + 1.2), dpi=160)
+        fig, ax = plt.subplots(figsize=(6.9, 0.5 * len(rows) + 1.0), dpi=160)
         fig.patch.set_facecolor(_CHART_BG_HEX)
         ax.set_facecolor(_CHART_BG_HEX)
         buf = io.BytesIO()
         try:
             # 由上而下＝由多到少：barh 的 y 軸原點在下方，故把 y 反過來
             y = list(range(len(rows)))[::-1]
-            ax.barh(y, values, height=0.62, color=_CHART_BAR_HEX, zorder=3)
+            ax.barh(y, values, height=0.72, color=_CHART_BAR_HEX, zorder=3)
             ax.set_yticks(y)
             ax.set_yticklabels(
-                labels, fontproperties=font, color=_CHART_TEXT_HEX, fontsize=11
+                labels, fontproperties=font, color=_CHART_TEXT_HEX, fontsize=12
             )
             ax.set_xticks([])
             ax.tick_params(axis="y", length=0)
@@ -829,7 +833,7 @@ class AnimeTracker(commands.Cog):
                     va="center",
                     ha="left",
                     color=_CHART_TEXT_HEX,
-                    fontsize=11.5,
+                    fontsize=12.5,
                     fontweight="bold",
                     fontproperties=font,
                 )
