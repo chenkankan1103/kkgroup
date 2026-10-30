@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 from shared.utils.view_registry import PersistentViewBase
 from shared.utils import fortress_system as fs
 from shared.db.db_adapter import get_user_field, set_user_field, add_user_field
+from cogs.ui.utils.embed_utils import create_progress_bar
 
 log = logging.getLogger("fortress_defense")
 TW_TZ = ZoneInfo("Asia/Taipei")
@@ -1076,69 +1077,77 @@ def build_status_embed(state: fs.FortressState, user_id: int) -> discord.Embed:
 
 
 def build_settlement_embed(result: dict, bot: discord.Client) -> discord.Embed:
-    """結算 Embed"""
+    """結算 Embed：數據方塊 + 貢獻長條圖，讓關鍵數字一眼可讀。"""
     won = result["status"] == "victory"
     color = 0x2ECC71 if won else 0x95A5A6
+    battle_date = result.get("battle_date", result["round_id"])
+    defeated, total = result["enemies_defeated"], result["enemies_total"]
+    remaining = result.get("remaining_minutes", 0)
 
     if won:
-        title = f"🎉 {result.get('battle_date', result['round_id'])} 守城成功！"
-        reward_text = ""
-        if result.get("total_reward_kkcoin", 0) > 0:
-            reward_text = (
-                f"\n💰 本日獎勵：{result['total_reward_kkcoin']:,} KKCoin"
-                f"（x{result.get('reward_multiplier', 1.0):.1f}）"
-            )
-        desc = (
-            f"全服英雄合力消滅 {result['enemies_defeated']}/{result['enemies_total']} 名敵軍！"
-            f"\n⏱️ 結算時剩餘 {result.get('remaining_minutes', 0)} 分鐘"
-            f"{reward_text}"
-        )
+        title = f"🎉 {battle_date} 守城成功！"
+        desc = f"全服英雄合力消滅 **{defeated} / {total}** 名敵軍！"
     else:
-        title = f"💀 {result.get('battle_date', result['round_id'])} 堡壘失守"
-        desc = f"堡壘剩餘 HP：{result['fortress_hp_remaining']:,}\n" + (
-            "（封測期間暫無懲罰，放心繼續試玩！）"
-            if result.get("beta_no_penalty")
-            else ""
-        )
+        title = f"💀 {battle_date} 堡壘失守"
+        desc = "堡壘被攻破了，刑警大隊突破防線。"
+        if result.get("beta_no_penalty"):
+            desc += "\n（封測期間暫無懲罰，放心繼續試玩！）"
 
     embed = discord.Embed(title=title, description=desc, color=color)
 
-    # 英雄榜
+    # ── 數據方塊：三個關鍵數字並排，不再埋在一句話裡 ──
+    stats = [("⚔️ 殲滅敵軍", f"**{defeated} / {total}**")]
+    if won:
+        stats.append(("⏱️ 剩餘時間", f"**{remaining} 分**"))
+        reward = result.get("total_reward_kkcoin", 0)
+        mult = result.get("reward_multiplier", 1.0)
+        stats.append(("💰 本日獎勵", f"**{reward:,}**\nKKCoin ×{mult:.1f}"))
+    else:
+        stats.insert(0, ("🏯 堡壘剩餘 HP", f"**{result['fortress_hp_remaining']:,}**"))
+        stats.append(("⏱️ 剩餘時間", f"**{remaining} 分**"))
+    for name, value in stats:
+        embed.add_field(name=name, value=value, inline=True)
+
+    # ── 英雄榜：每人一行長條圖，一眼看出貢獻差距 ──
     damage_map: dict = result.get("damage_map", {})
     if damage_map:
-        sorted_heroes = sorted(damage_map.items(), key=lambda x: x[1], reverse=True)[
-            :10
-        ]
+        sorted_heroes = sorted(damage_map.items(), key=lambda x: x[1], reverse=True)[:10]
         medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-        lines = []
+        hero_blocks = []
         for i, (uid, dmg) in enumerate(sorted_heroes):
             user = bot.get_user(int(uid))
-            name = user.display_name if user else f"玩家 {uid}"
+            raw_name = user.display_name if user else f"玩家 {uid}"
+            name = _truncate_embed_line(raw_name, 24)
             pct = result["contributions"].get(
                 uid, result["contributions"].get(str(uid), 0)
             )
+            bar = create_progress_bar(pct, 100, 10)
+            detail = f"　　{int(dmg):,} 傷害"
             reward = result.get("reward_map", {}).get(str(uid), 0)
-            reward_suffix = f" | +{reward:,} KKCoin" if reward else ""
-            safe_name = _truncate_embed_line(name, 32)
-            lines.append(
-                f"{medals[i]} **{safe_name}** — {dmg:,} 傷害 ({pct}%){reward_suffix}"
-            )
-        hero_chunks = _chunk_lines_for_embed(lines, chunk_size=5)
-        for index, chunk in enumerate(hero_chunks, start=1):
+            if reward:
+                detail += f" · +{reward:,} KKCoin"
+            hero_blocks.append(f"{medals[i]} **{name}** `{bar}` {pct}%\n{detail}")
+        for index, chunk in enumerate(
+            _chunk_lines_for_embed(hero_blocks, chunk_size=5), start=1
+        ):
             field_name = "🏆 對抗英雄榜" if index == 1 else f"🏆 對抗英雄榜 {index}"
             embed.add_field(name=field_name, value=chunk, inline=False)
 
+    # ── 當天趨勢：改為項目符號，波次一眼可數 ──
     wave_history = result.get("wave_history", [])
     if wave_history:
         wave_lines = []
         for wave in wave_history:
             titles = wave.get("titles", [])
             title_text = "、".join(titles) if titles else "無資料"
-            wave_lines.append(f"第 {wave.get('wave_number', '?')} 波：{title_text}")
-        trend_chunks = _chunk_lines_for_embed(wave_lines, chunk_size=4)
-        for index, chunk in enumerate(trend_chunks, start=1):
+            wave_lines.append(f"• 第 {wave.get('wave_number', '?')} 波 · {title_text}")
+        for index, chunk in enumerate(
+            _chunk_lines_for_embed(wave_lines, chunk_size=4), start=1
+        ):
             field_name = (
-                "📰 當天出現的趨勢標題" if index == 1 else f"📰 當天趨勢標題 {index}"
+                f"📰 當天趨勢（共 {len(wave_history)} 波）"
+                if index == 1
+                else f"📰 當天趨勢 {index}"
             )
             embed.add_field(name=field_name, value=chunk, inline=False)
 
