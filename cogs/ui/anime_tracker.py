@@ -11,7 +11,7 @@ Bahamut 動畫追蹤 Cog - 增強版排程推送系統
 import io
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 import asyncio
 import aiohttp
@@ -59,12 +59,32 @@ GROWTH_MOVER_N = 3  # 「本週衝最快」卡片取前 N 名
 # +100%，但那沒有意義），同時後段番本來就不是使用者關心的範圍
 GROWTH_MOVER_RANK_LIMIT = GROWTH_TOP_N * 3
 
+# 人氣走勢折線圖。快照是每天一格、推播只在週日，所以曲線有每日的解析度，
+# 但不會每天洗版
+GROWTH_TREND_N = 6  # 折線畫幾部（上限受色票槽數限制）
+GROWTH_TREND_DAYS = 70  # 折線回溯幾天
+GROWTH_WEEK_DAYS = 7  # 「週增量」＝跟幾天前的快照相減
+
 # 橫條圖用色：底色對齊 Discord 深色主題的 embed（#2b2d31）；條身 #3987e5 是
 # dataviz 12 色盤第一槽的深色版（單一系列色，已過色盲分離度與對比驗證）。
 # 條數固定用同一色——排行已經由長度編碼，顏色再扛辨識只是浪費。
 _CHART_BG_HEX = "#2b2d31"
 _CHART_BAR_HEX = "#3987e5"
 _CHART_TEXT_HEX = "#dbdee1"
+# 折線圖色票：dataviz 深色 8 槽裡取 6 槽，跳過 green。已用 validate_palette.py
+# 對底色 #2b2d31 驗過亮度帶、彩度、色盲分離度、正常視覺分離度、對比全數 PASS。
+# 跳過 green 有兩個理由：它跟 aqua 在折線圖上難以分辨，而且它對底色的對比只有
+# 2.79:1。橫條圖可以容忍（長度本身就是第二編碼），折線全靠顏色認人，撞色就完了。
+_CHART_SERIES_HEX = (
+    "#3987e5",  # blue
+    "#d95926",  # orange
+    "#199e70",  # aqua
+    "#c98500",  # yellow
+    "#d55181",  # magenta
+    "#9085e9",  # violet
+)
+_CHART_MUTED_HEX = "#898781"
+_CHART_GRID_HEX = "#2c2c2a"
 # 從 cogs/ui/ 出發到 repo 根是三層 `../`（與 cogs/common/ 的字型規則相同）
 _CJK_FONT_PATH = (
     Path(__file__).resolve().parent.parent.parent / "fonts" / "NotoSansCJKtc-Regular.otf"
@@ -115,9 +135,8 @@ class AnimeTracker(commands.Cog):
                 "[AnimeTracker.set_dependencies] 已運行中，跳過（僅重新註冊視圖）"
                 f"｜loop: push={self.push_check_loop.is_running()}"
                 f" schedule={self.weekly_schedule_refresh_loop.is_running()}"
-                f" growth={self.weekly_growth_loop.is_running()}"
-                f" episode={self.episode_snapshot_loop.is_running()}"
-                f"｜tick: push={self._push_tick} episode={self._episode_tick}"
+                f" growth={self.daily_growth_loop.is_running()}"
+                f"｜tick: push={self._push_tick}"
             )
             self._ensure_loops_alive()
             await self.reregister_push_views()
@@ -154,13 +173,17 @@ class AnimeTracker(commands.Cog):
         if not self.weekly_schedule_refresh_loop.is_running():
             self.weekly_schedule_refresh_loop.start()
 
-        # 啟動每週觀看數快照循環（內建週日 22:00 閘門 + DB 冪等，可安全重跑）
-        if not self.weekly_growth_loop.is_running():
-            self.weekly_growth_loop.start()
+        # 啟動每日觀看數快照循環（內建每天 22:00 閘門 + DB 冪等，可安全重跑）
+        if not self.daily_growth_loop.is_running():
+            self.daily_growth_loop.start()
 
-        # 啟動單集快照循環（與上面同一時點，但獨立重試，避免整批失敗就永久遺失該週）
-        if not self.episode_snapshot_loop.is_running():
-            self.episode_snapshot_loop.start()
+        # 單集（逐集）快照循環已於 2026-11-02 停用。它抓的是「每集各自的觀看數」，
+        # 與每日快照的「每部累計觀看數」是不同資料、不能互相取代；但那份資料蒐集
+        # 至今沒有任何讀取端，而每週要對巴哈發 800+ 次請求，停掉換得請求數下降。
+        # 方法都留在原處，要恢復就把下面兩行加回來——巴哈不提供歷史，停用期間的
+        # 逐集變化補不回來，所以這是一個「一旦停了就少一段」的決定。
+        # if not self.episode_snapshot_loop.is_running():
+        #     self.episode_snapshot_loop.start()
 
         self._running = True
         msg = "✅ [AnimeTracker.set_dependencies] 增強版推送系統啟動完成 (排程+輪詢備案+週表刷新)"
@@ -261,10 +284,8 @@ class AnimeTracker(commands.Cog):
             self.push_check_loop.cancel()
         if self.weekly_schedule_refresh_loop.is_running():
             self.weekly_schedule_refresh_loop.cancel()
-        if self.weekly_growth_loop.is_running():
-            self.weekly_growth_loop.cancel()
-        if self.episode_snapshot_loop.is_running():
-            self.episode_snapshot_loop.cancel()
+        if self.daily_growth_loop.is_running():
+            self.daily_growth_loop.cancel()
         if self._running:
             if self.polling_core:
                 await self.polling_core.stop_polling()
@@ -276,8 +297,7 @@ class AnimeTracker(commands.Cog):
     _SUPERVISED_LOOPS = (
         "push_check_loop",
         "weekly_schedule_refresh_loop",
-        "weekly_growth_loop",
-        "episode_snapshot_loop",
+        "daily_growth_loop",
     )
 
     def _ensure_loops_alive(self) -> None:
@@ -361,34 +381,43 @@ class AnimeTracker(commands.Cog):
     # ==================== 每週觀看數快照與成長推送 ====================
 
     @tasks.loop(minutes=30)
-    async def weekly_growth_loop(self):
-        """每週日 22:00 快照全番觀看數，並推送成長折線圖
+    async def daily_growth_loop(self):
+        """每天 22:00 快照全番觀看數；週日快照完接著推送人氣榜
 
-        閘門不寫死「必須剛好 22:00」，而是「已過本週的週日 22:00 且本週尚未
-        快照」就執行——bot 在觸發時刻重啟也不會漏掉該週，且 has_view_snapshot
-        保證重跑不產生重複快照。
+        一天一次、一次一支請求——index API 一次就回全部番（含每部累計
+        popular），不必逐部打。popular 是累計值，任兩天相減就是那段區間的新增
+        觀看數，所以每天存一格、要畫週增量時再跟 7 天前那格相減。
+
+        閘門不寫死「必須剛好 22:00」，而是「已過今天 22:00 且今天還沒快照」就
+        執行——bot 在觸發時刻重啟也不會漏掉那天。快照與推播共用同一個閘門：
+        快照一存檔 has_view_snapshot 就為真，週日的推播因此同樣只會發生一次，
+        不需要額外的「已推播」旗標。
+
+        2026-11-02 由「每週日一次」改為「每天一次」：一週一點畫不出曲線，實測
+        10 條線裡有 8 條只有 2 個資料點，那種線沒有「趨勢」可言。
         """
         if not self.db:
             return
         try:
             now = datetime.now(TW_TZ)
-            days_since_sunday = (now.weekday() + 1) % 7
-            sunday = (now - timedelta(days=days_since_sunday)).replace(
-                hour=GROWTH_SNAPSHOT_HOUR, minute=0, second=0, microsecond=0
-            )
-            if now < sunday:
-                return  # 本週觸發時刻還沒到
+            if now.hour < GROWTH_SNAPSHOT_HOUR:
+                return  # 今天觸發時刻還沒到
 
-            week_start = (sunday - timedelta(days=6)).date().isoformat()
-            if self.db.has_view_snapshot(week_start):
-                return  # 本週已快照
+            today = now.date().isoformat()
+            if self.db.has_view_snapshot(today):
+                return  # 今天已快照（週日的推播也在那一次做完了）
 
-            await self._run_weekly_growth(week_start)
+            covers = await self._take_daily_snapshot(today)
+            if not self.db.has_view_snapshot(today):
+                return  # 快照沒成功（API 無資料），下輪重試
+
+            if now.weekday() == GROWTH_SNAPSHOT_WEEKDAY:
+                await self._push_growth_embed(today, covers)
         except Exception as e:
-            logger.error(f"❌ [weekly_growth_loop] 執行失敗: {e}", exc_info=True)
+            logger.error(f"❌ [daily_growth_loop] 執行失敗: {e}", exc_info=True)
 
-    @weekly_growth_loop.before_loop
-    async def before_weekly_growth_loop(self):
+    @daily_growth_loop.before_loop
+    async def before_daily_growth_loop(self):
         """等待 bot 就緒後再開始快照循環"""
         await self.bot.wait_until_ready()
 
@@ -400,9 +429,9 @@ class AnimeTracker(commands.Cog):
         短時間內射出等於批次爬取。改成每小時一部、跨週攤平後，任一短窗口內的
         請求數都低到不像爬蟲。
 
-        為什麼不掛在 _run_weekly_growth 之後：系列快照一存檔，weekly_growth_loop
-        的閘門就會擋掉後續執行，若單集抓取失敗，那一週就永久遺失（巴哈 API 不
-        提供歷史，補不回來）。
+        為什麼不掛在系列快照之後：快照一存檔，daily_growth_loop 的閘門就會擋掉
+        後續執行，若單集抓取失敗，那一段就永久遺失（巴哈 API 不提供歷史，補不
+        回來）。
 
         進度存 DB（anime_episode_cursor）而非記憶體：trickle 會跨越多天，中間
         可能重啟服務，游標不落盤就得從頭再打一輪，反而製造更多請求。
@@ -492,17 +521,20 @@ class AnimeTracker(commands.Cog):
             row["rank"] = idx
         return rows, covers
 
-    async def _run_weekly_growth(self, week_start: str):
-        """對全番取一次觀看數快照，接著推送成長圖"""
+    async def _take_daily_snapshot(self, snapshot_date: str) -> dict[int, str]:
+        """對全番取一次觀看數快照，回傳封面表（供推播卡片縮圖用）
+
+        一支 index API 請求就拿到全部番的累計觀看數，所以「每天全部番」的成本
+        跟「每天一部」一樣。失敗時不寫任何東西，呼叫端會在下輪重試同一天。
+        """
         rows, covers = await self._fetch_anime_rows()
         if not rows:
-            logger.warning("⚠️ [weekly_growth] API 無資料，本週快照略過")
-            return
+            logger.warning("⚠️ [daily_growth] API 無資料，本日快照略過（下輪重試）")
+            return {}
 
-        written = self.db.save_view_snapshot(week_start, rows)
-        logger.info(f"📸 [weekly_growth] 快照完成 {week_start}: {written} 筆")
-
-        await self._push_growth_embed(week_start, covers)
+        written = self.db.save_view_snapshot(snapshot_date, rows)
+        logger.info(f"📸 [daily_growth] 快照完成 {snapshot_date}: {written} 筆")
+        return covers
 
     async def _run_episode_trickle(self, week_start: str, cursor: dict):
         """抓「一部」番的逐集觀看數並落地，然後把下次時間寫回游標
@@ -570,30 +602,36 @@ class AnimeTracker(commands.Cog):
             f"（下次 {delay:.0f} 分後，進度 {sn}）"
         )
 
-    async def _push_growth_embed(self, week_start: str, covers: dict[int, str] = None):
-        """推送本週人氣榜：橫條圖 + 持續在紅名單 + 本週衝最快卡片
+    async def _push_growth_embed(
+        self, snapshot_date: str, covers: dict[int, str] = None
+    ):
+        """推送本週人氣榜：橫條圖 + 人氣走勢折線圖 + 持續在紅 + 本週衝最快
 
-        2026-10-30 改版。舊版是 quickchart 折線圖（10 條線、Y 值除以千、沒有軸
-        單位），對一般觀眾讀不出東西——實測 10 條線有 8 條只有 2 個資料點，
-        本來就沒有「趨勢」可言。改成橫條圖後數字直接印在條尾，不必對圖例、
-        也不必看座標軸。
+        2026-10-30 把 quickchart 折線圖換成橫條圖：Discord 圖片網址上限 2048
+        字元，逼得舊圖把 Y 值除以千、拿掉軸標題與單位，反而更難讀。橫條圖把
+        數字直接印在條尾，不必對圖例也不必看座標軸。
+
+        2026-11-02 再把折線圖加回來，但這次是本機產圖、而且資料終於夠了：快照
+        從「一週一格」改成「每天一格」之後，每個點都是真的量測值，不再是兩三點
+        連成的直線。橫條圖回答「這週誰最熱」，折線圖回答「人氣有沒有維持、誰在
+        退燒」——後者才是當初想問的問題。
 
         也放棄「有沒有新集」當篩選條件：本週 53/54 部都有新集，用它篩等於沒篩
         （只剩 1 部）。改看兩件事——連續進榜（誰一直紅）與成長率（誰在竄紅）。
         """
         covers = covers or {}
-        weeks = self.db.get_snapshot_weeks(limit=GROWTH_HISTORY_WEEKS)
-        if week_start not in weeks:
-            return
-        idx = weeks.index(week_start)
+        prev_date = (
+            date.fromisoformat(snapshot_date) - timedelta(days=GROWTH_WEEK_DAYS)
+        ).isoformat()
 
-        if idx + 1 >= len(weeks):
-            # 首次快照：只有基準，沒有可相減的前一週
+        if not self.db.has_view_snapshot(prev_date):
+            # 首次快照／歷史不足：只有基準，沒有可相減的前一週
             embed = discord.Embed(
                 title="📈 本週動畫人氣 — 基準已建立",
                 description=(
-                    f"已於 **{week_start}** 建立全番觀看數基準。\n"
-                    "下週日起將顯示每週人氣榜與成長名單。"
+                    f"已於 **{snapshot_date}** 建立全番觀看數基準。\n"
+                    f"下週日起將顯示每週人氣榜與成長名單"
+                    f"（要有 **{prev_date}** 那天的快照才比得出來）。"
                 ),
                 color=discord.Color.blue(),
                 timestamp=datetime.now(TW_TZ),
@@ -601,34 +639,39 @@ class AnimeTracker(commands.Cog):
             await self._send_growth_embed([embed])
             return
 
-        prev_week = weeks[idx + 1]
         # total_views <= 0 是 API 回傳異常（實測每週 1~6 筆），留著會變成負成長，
         # 也會讓下週把它當成「新上架」而在相減時爆出假數字
         growth = [
-            g
-            for g in self.db.get_weekly_growth(week_start, prev_week)
-            if g["total_views"] > 0
+            g for g in self.db.get_weekly_growth(snapshot_date) if g["total_views"] > 0
         ]
         if not growth:
-            logger.warning(f"⚠️ [weekly_growth] {week_start} 無可比對的成長資料")
+            logger.warning(f"⚠️ [daily_growth] {snapshot_date} 無可比對的成長資料")
             return
 
-        chart_rows = growth[:GROWTH_BAR_N]
-        chart = self._build_growth_bar_chart(chart_rows)
+        bar = self._build_growth_bar_chart(growth[:GROWTH_BAR_N])
 
         embed = discord.Embed(
             title="📈 本週動畫人氣",
             description=(
-                f"**{prev_week} → {week_start}**\n"
+                f"**{prev_date} → {snapshot_date}**\n"
                 "數字＝這週被看的次數（全部集數加總）"
             ),
             color=discord.Color.gold(),
             timestamp=datetime.now(TW_TZ),
         )
-        if chart:
-            embed.set_image(url=f"attachment://{chart.filename}")
+        if bar:
+            embed.set_image(url=f"attachment://{bar.filename}")
 
-        streaks = self._growth_streaks(weeks)
+        trend_dates, trend = self._trend_series(snapshot_date)
+        trend_chart = self._build_growth_line_chart(trend_dates, trend)
+
+        # 「連續進榜」的單位是「週」，但快照是每天一格，直接丟進去會變成「連續
+        # 進前 N 名幾天」，語意完全不同。先抽成每週一格再算。
+        streaks = self._growth_streaks(
+            self._weekly_spaced(
+                self.db.get_snapshot_dates(limit=GROWTH_TREND_DAYS), GROWTH_HISTORY_WEEKS
+            )
+        )
         hot = sorted(
             (
                 (streaks.get(g["anime_sn"], 0), g)
@@ -648,10 +691,25 @@ class AnimeTracker(commands.Cog):
                 inline=False,
             )
         embed.set_footer(
-            text=f"每週日 22:00 自動統計 | 連 N 週＝連續進本週新增前 {GROWTH_TOP_N} 名"
+            text=(
+                "每天 22:00 自動快照、週日推播"
+                f" | 連 N 週＝連續進本週新增前 {GROWTH_TOP_N} 名"
+            )
         )
 
         embeds = [embed]
+        if trend_chart:
+            embeds.append(
+                discord.Embed(
+                    title="📉 人氣走勢",
+                    description=(
+                        f"最近 {GROWTH_TREND_N} 部的**每週新增觀看數**逐日變化。\n"
+                        "往下走＝退燒／有人在棄坑，持平或往上＝人氣還撐著"
+                    ),
+                    color=discord.Color.dark_teal(),
+                ).set_image(url=f"attachment://{trend_chart.filename}")
+            )
+
         risers = self._pick_risers(growth)
         if risers:
             embeds.append(
@@ -665,7 +723,7 @@ class AnimeTracker(commands.Cog):
                 )
             )
             embeds.extend(self._build_mover_embed(r, covers) for r in risers)
-        await self._send_growth_embed(embeds, file=chart)
+        await self._send_growth_embed(embeds, files=[bar, trend_chart])
 
     @staticmethod
     def _pick_risers(growth: list[dict]) -> list[dict]:
@@ -703,24 +761,29 @@ class AnimeTracker(commands.Cog):
         return embed
 
     async def _send_growth_embed(
-        self, embeds: list[discord.Embed], file: Optional[discord.File] = None
+        self, embeds: list[discord.Embed], files: Optional[list[discord.File]] = None
     ):
-        """送往動畫推送頻道（Discord 一則訊息上限 10 個 embed）"""
+        """送往動畫推送頻道（Discord 一則訊息上限 10 個 embed）
+
+        files 收清單而非單一檔案：人氣榜同時帶橫條圖與走勢折線圖。產圖失敗時
+        傳進來的是 None，這裡先濾掉，免得整則推播被一個空附件拖垮。
+        """
         channel = self.bot.get_channel(ANIME_CHANNEL_ID)
         if channel is None:
-            logger.warning(f"⚠️ [weekly_growth] 找不到頻道 {ANIME_CHANNEL_ID}")
+            logger.warning(f"⚠️ [daily_growth] 找不到頻道 {ANIME_CHANNEL_ID}")
             return
         try:
-            if file is not None:
-                await channel.send(embeds=embeds, file=file)
+            files = [f for f in (files or []) if f is not None]
+            if files:
+                await channel.send(embeds=embeds, files=files)
             else:
                 await channel.send(embeds=embeds)
             logger.info(
-                f"✅ [weekly_growth] 人氣榜已推送"
-                f"（{len(embeds)} 個 embed，圖={'有' if file else '無'}）"
+                f"✅ [daily_growth] 人氣榜已推送"
+                f"（{len(embeds)} 個 embed，圖 {len(files)} 張）"
             )
         except Exception as e:
-            logger.error(f"❌ [weekly_growth] 推送失敗: {e}", exc_info=True)
+            logger.error(f"❌ [daily_growth] 推送失敗: {e}", exc_info=True)
 
     @staticmethod
     def _short(name: str, limit: int = 20) -> str:
@@ -735,18 +798,79 @@ class AnimeTracker(commands.Cog):
             return f"+{v / 10000:.1f}萬"
         return f"+{v:,}"
 
-    def _growth_streaks(self, weeks_new_to_old: list[str]) -> dict[int, int]:
+    @staticmethod
+    def _weekly_spaced(dates_new_to_old: list[str], limit: int) -> list[str]:
+        """從每日快照日期裡挑出彼此間隔 7 天的那些，最多 limit 個
+
+        以最新一天為錨往回每 7 天取一點。推播固定在週日，最新一天就是週日，
+        所以取出來的剛好是每週推播的那幾天——「連續進榜」的週次因此對得上使用者
+        實際看到的那幾則推播，而不是隨便挑的日子。
+        """
+        if not dates_new_to_old:
+            return []
+        anchor = date.fromisoformat(dates_new_to_old[0])
+        return [
+            d
+            for d in dates_new_to_old
+            if (anchor - date.fromisoformat(d)).days % GROWTH_WEEK_DAYS == 0
+        ][:limit]
+
+    def _trend_series(self, snapshot_date: str) -> tuple[list[str], list[dict]]:
+        """折線圖的資料：最近 GROWTH_TREND_N 部的逐日週增量
+
+        回傳（日期軸, 每部的點）。點為 None 代表那天算不出來（缺 7 天前那一筆
+        快照），matplotlib 會當成缺漏值把線斷開，不會拉一條假線過去。
+
+        挑「最新一天週增量最大的前 N 部」，而不是整段區間累計最大的——後者永遠
+        被已經紅很久的番佔滿，看不出最近誰在退燒、誰在往上爬。
+        """
+        since = (
+            date.fromisoformat(snapshot_date) - timedelta(days=GROWTH_TREND_DAYS)
+        ).isoformat()
+        rows = self.db.get_rolling_weekly_growth(since)
+        if not rows:
+            return [], []
+
+        latest = max(r["snapshot_date"] for r in rows)
+        keep = [
+            r["anime_sn"]
+            for r in sorted(
+                (r for r in rows if r["snapshot_date"] == latest),
+                key=lambda r: -r["growth"],
+            )[:GROWTH_TREND_N]
+        ]
+        names = {r["anime_sn"]: r["anime_name"] for r in rows}
+        dates = sorted({r["snapshot_date"] for r in rows})
+
+        points: dict[int, dict[str, int]] = {}
+        for r in rows:
+            if r["anime_sn"] in keep:
+                points.setdefault(r["anime_sn"], {})[r["snapshot_date"]] = r["growth"]
+
+        return dates, [
+            {
+                "anime_sn": sn,
+                "anime_name": names.get(sn, f"Anime #{sn}"),
+                "points": [points.get(sn, {}).get(d) for d in dates],
+            }
+            for sn in keep
+        ]
+
+    def _growth_streaks(self, dates_new_to_old: list[str]) -> dict[int, int]:
         """每部番「連續幾週進本週新增前 GROWTH_TOP_N 名」
 
         這是「哪個有持續在成長」唯一站得住的定義：連續正成長沒區分度（實測
         52/54 部符合），有沒有新集也沒區分度（53/54 部都有），只有「一直待在前
         段班」能把長紅的番挑出來（實測 7 部）。
+
+        傳進來的日期必須是「每週一格」（見 _weekly_spaced）：快照雖然是每天一
+        格，這裡的單位卻是週，餵每日資料會變成「連續進榜幾天」。
         """
-        snaps = self.db.get_snapshots_range(weeks_new_to_old)
-        ordered = list(reversed(weeks_new_to_old))  # 舊 → 新
+        snaps = self.db.get_snapshots_range(dates_new_to_old)
+        ordered = list(reversed(dates_new_to_old))  # 舊 → 新
         by_week: dict[str, dict[int, int]] = {}
         for s in snaps:
-            by_week.setdefault(s["week_start"], {})[s["anime_sn"]] = s["total_views"]
+            by_week.setdefault(s["snapshot_date"], {})[s["anime_sn"]] = s["total_views"]
 
         # 逐週排出「本週新增」名次。前值為 0（當週才上架）或當週為 0（API 異常）
         # 都不列入該週比較，否則相減出來的是上架至今累計而非單週新增
@@ -852,6 +976,96 @@ class AnimeTracker(commands.Cog):
 
         buf.seek(0)
         return discord.File(buf, filename="weekly_growth.png")
+
+    def _build_growth_line_chart(
+        self, dates: list[str], series: list[dict]
+    ) -> Optional[discord.File]:
+        """人氣走勢折線圖（matplotlib 本機產 PNG，附加為檔案）
+
+        6 條線是上限而不是隨手訂的：折線不像橫條圖有長度當第二編碼，全靠顏色
+        認人，所以色票只用 dataviz 深色盤裡彼此分得開的 6 槽（已用
+        validate_palette.py 對底色 #2b2d31 驗過全數 PASS）。線再多就會開始撞色。
+        """
+        if not dates or not series:
+            return None
+        try:
+            import matplotlib
+
+            matplotlib.use("Agg")
+            from matplotlib import font_manager
+            from matplotlib import pyplot as plt
+        except Exception as e:  # 缺套件時退化成沒有這張圖，別讓整則推播消失
+            logger.warning(f"⚠️ [daily_growth] matplotlib 不可用，略過折線圖：{e}")
+            return None
+
+        font = None
+        if _CJK_FONT_PATH.exists():
+            font = font_manager.FontProperties(fname=str(_CJK_FONT_PATH))
+        else:
+            logger.warning(f"⚠️ [daily_growth] 找不到字型 {_CJK_FONT_PATH}，中文恐變方框")
+
+        # 長寬比 ≥1.375（＝Discord embed 圖上限 550×400）才不會先被高度綁住再縮一次
+        fig, ax = plt.subplots(figsize=(6.9, 4.6), dpi=160)
+        fig.patch.set_facecolor(_CHART_BG_HEX)
+        ax.set_facecolor(_CHART_BG_HEX)
+        buf = io.BytesIO()
+        try:
+            xi = list(range(len(dates)))
+            for i, s in enumerate(series):
+                ax.plot(
+                    xi,
+                    s["points"],
+                    color=_CHART_SERIES_HEX[i % len(_CHART_SERIES_HEX)],
+                    linewidth=2,
+                    zorder=3,
+                    label=self._short(s["anime_name"], 12),
+                )
+
+            # 點太密就不標日期，否則刻度會疊成一團
+            step = max(1, len(dates) // 10)
+            ax.set_xticks(xi[::step])
+            ax.set_xticklabels([dates[i][5:].replace("-", "/") for i in xi[::step]])
+            ax.grid(axis="y", color=_CHART_GRID_HEX, linewidth=0.8, zorder=0)
+            ax.set_axisbelow(True)
+            for sp in ("top", "right", "left"):
+                ax.spines[sp].set_visible(False)
+            ax.spines["bottom"].set_color("#383835")
+            ax.tick_params(colors=_CHART_MUTED_HEX, length=0, labelsize=9)
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font)
+            ax.yaxis.set_major_formatter(
+                lambda v, _p: f"{v / 10000:.0f}萬" if abs(v) >= 10000 else f"{v:,.0f}"
+            )
+
+            legend = ax.legend(
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.12),
+                ncol=2,
+                frameon=False,
+                fontsize=9,
+                handlelength=1.6,
+                columnspacing=1.2,
+                labelspacing=0.35,
+            )
+            for t in legend.get_texts():
+                t.set_color(_CHART_TEXT_HEX)
+                t.set_fontproperties(font)
+
+            fig.savefig(
+                buf,
+                format="png",
+                facecolor=fig.get_facecolor(),
+                bbox_inches="tight",
+                pad_inches=0.2,
+            )
+        except Exception as e:  # 產圖失敗不該讓整則推播消失
+            logger.error(f"❌ [daily_growth] 折線圖產圖失敗: {e}", exc_info=True)
+            return None
+        finally:
+            plt.close(fig)
+
+        buf.seek(0)
+        return discord.File(buf, filename="anime_trend.png")
 
     @commands.Cog.listener()
     async def on_ready(self):

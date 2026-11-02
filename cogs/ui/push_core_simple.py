@@ -125,6 +125,23 @@ def _empty_vote_stats() -> dict[str, int]:
     return {"5": 0, "4": 0, "3": 0, "2": 0, "1": 0}
 
 
+# 每日觀看數快照的建表語句（DDL）。
+# 抽成模組常數是因為「舊的每週表 → 每日表」遷移時必須先建一張同結構的新表再搬
+# 資料（SQLite 改不了 PRIMARY KEY），兩份 DDL 分開寫遲早會漂移。
+_VIEW_SNAPSHOTS_DDL = """
+    CREATE TABLE IF NOT EXISTS anime_view_snapshots (
+        snapshot_date TEXT NOT NULL,   -- 觀測日 'YYYY-MM-DD'（台北時區）
+        anime_sn INTEGER NOT NULL,
+        anime_name TEXT NOT NULL,
+        total_views INTEGER NOT NULL,  -- index API 的 popular（系列累計）
+        volume_ep INTEGER,             -- 當時集數，供標記「當天有新集」
+        rank INTEGER,                  -- 該日在清單中的排名
+        captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (snapshot_date, anime_sn)
+    )
+"""
+
+
 class AnimePushDB:
     """動畫推送專用資料庫 - 只維護 anime_notified 表"""
 
@@ -216,21 +233,14 @@ class AnimePushDB:
             )
         """)
 
-        # anime_view_snapshots 表 - 每週觀看數快照（時間序列，供成長折線圖）
-        # 每週日 22:00 對 index API 全量快照一次；total_views 為系列累計觀看數，
-        # 逐週相減即得「每週新增觀看數」（PK 為 week_start+anime_sn，同週重跑覆蓋）
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS anime_view_snapshots (
-                week_start TEXT NOT NULL,      -- 該週週一 'YYYY-MM-DD'
-                anime_sn INTEGER NOT NULL,
-                anime_name TEXT NOT NULL,
-                total_views INTEGER NOT NULL,  -- index API 的 popular（系列累計）
-                volume_ep INTEGER,             -- 當時集數，供標記「本週有新集」
-                rank INTEGER,                  -- 該週在清單中的排名
-                captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (week_start, anime_sn)
-            )
-        """)
+        # anime_view_snapshots 表 - 每日觀看數快照（時間序列，供成長折線圖）
+        # 每天 22:00 對 index API 全量快照一次——這支請求一次就回全部番（含每部
+        # 的累計 popular），不必逐部打；total_views 為系列累計觀看數，任兩天相減
+        # 即得該區間的新增觀看數。
+        # 2026-11-02 由「每週一格」改為「每天一格」：一週一點畫不出曲線，實測
+        # 10 條線裡有 8 條只有 2 個資料點。鍵 week_start（該週週一）隨之正名為
+        # snapshot_date（真正的觀測日），數值語意不變。
+        c.execute(_VIEW_SNAPSHOTS_DDL)
 
         # anime_episode_snapshots 表 - 每集觀看數快照（留存曲線與口碑發酵偵測）
         # 系列累計（上表）只看得出「誰漲得多」，看不出「誰的觀眾留得住」。單集觀看
@@ -267,9 +277,45 @@ class AnimePushDB:
             )
         """)
 
+        self._migrate_weekly_snapshots_to_daily(c)
+
         conn.commit()
         conn.close()
         logger.info("✅ [AnimePushDB] 資料庫初始化完成: anime_push.db")
+
+    @staticmethod
+    def _migrate_weekly_snapshots_to_daily(c) -> None:
+        """把舊的「每週一張」快照表升級成「每天一張」（week_start → snapshot_date）
+
+        2026-11-02 以前一週只存一格，鍵 week_start 記的是該週週一、不是觀測日。
+        改成每天存一格之後，鍵必須是真正的觀測日，否則同一週的 7 筆會撞 PRIMARY
+        KEY 互相覆蓋，一天只留得下最後一筆。
+
+        舊資料不丟：以 captured_at 的日期當觀測日搬過去。六筆原本就落在六個週日、
+        彼此間隔 7 天，相減仍是正確的週增量，所以折線圖的歷史直接接得上。
+
+        冪等：表裡已有 snapshot_date 欄就直接返回，每次啟動呼叫都安全。
+        """
+        cols = [
+            _as_text(r[1]) for r in c.execute("PRAGMA table_info(anime_view_snapshots)")
+        ]
+        if not cols or "snapshot_date" in cols:
+            return
+        c.execute("ALTER TABLE anime_view_snapshots RENAME TO anime_view_snapshots_weekly")
+        c.execute(_VIEW_SNAPSHOTS_DDL)
+        # captured_at 是 UTC（SQLite CURRENT_TIMESTAMP），而快照固定在台北 22:00，
+        # 換算後仍是同一天，故 date() 取到的就是觀測日
+        c.execute(
+            """INSERT OR IGNORE INTO anime_view_snapshots
+                   (snapshot_date, anime_sn, anime_name, total_views,
+                    volume_ep, rank, captured_at)
+               SELECT date(captured_at), anime_sn, anime_name, total_views,
+                      volume_ep, rank, captured_at
+               FROM anime_view_snapshots_weekly"""
+        )
+        moved = c.rowcount
+        c.execute("DROP TABLE anime_view_snapshots_weekly")
+        logger.info(f"🔁 [AnimePushDB] 每週快照表已升級為每日表，搬移 {moved} 筆舊資料")
 
     def _get_conn(self):
         """獲取連線，啟用 WAL 模式"""
@@ -1107,24 +1153,24 @@ class AnimePushDB:
 
     # ---- 每週觀看數快照（成長折線圖）----
 
-    def has_view_snapshot(self, week_start: str) -> bool:
-        """檢查某週是否已有快照（讓每週任務可重跑而不重複快照）"""
+    def has_view_snapshot(self, snapshot_date: str) -> bool:
+        """檢查某天是否已有快照（讓每日任務可重跑而不重複快照）"""
         conn = self._get_conn()
         try:
             c = conn.cursor()
             c.execute(
-                "SELECT 1 FROM anime_view_snapshots WHERE week_start=? LIMIT 1",
-                (week_start,),
+                "SELECT 1 FROM anime_view_snapshots WHERE snapshot_date=? LIMIT 1",
+                (snapshot_date,),
             )
             return c.fetchone() is not None
         finally:
             conn.close()
 
-    def save_view_snapshot(self, week_start: str, rows: list[dict]) -> int:
-        """寫入某週的觀看數快照，回傳寫入筆數
+    def save_view_snapshot(self, snapshot_date: str, rows: list[dict]) -> int:
+        """寫入某天的觀看數快照，回傳寫入筆數
 
         rows 每筆需含 anime_sn / anime_name / total_views，選填 volume_ep / rank。
-        同週重跑為覆蓋（PK 為 week_start+anime_sn），不會累積重複列。
+        同天重跑為覆蓋（PK 為 snapshot_date+anime_sn），不會累積重複列。
         """
         if not rows:
             return 0
@@ -1133,11 +1179,11 @@ class AnimePushDB:
             c = conn.cursor()
             c.executemany(
                 """INSERT OR REPLACE INTO anime_view_snapshots
-                   (week_start, anime_sn, anime_name, total_views, volume_ep, rank)
+                   (snapshot_date, anime_sn, anime_name, total_views, volume_ep, rank)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 [
                     (
-                        week_start,
+                        snapshot_date,
                         int(r["anime_sn"]),
                         str(r["anime_name"]),
                         int(r["total_views"]),
@@ -1267,38 +1313,38 @@ class AnimePushDB:
         finally:
             conn.close()
 
-    def get_snapshot_weeks(self, limit: int = 12) -> list[str]:
-        """取得最近 N 個快照週次（新→舊）"""
+    def get_snapshot_dates(self, limit: int = 12) -> list[str]:
+        """取得最近 N 個快照日期（新→舊）"""
         conn = self._get_conn()
         try:
             c = conn.cursor()
             c.execute(
-                "SELECT DISTINCT week_start FROM anime_view_snapshots "
-                "ORDER BY week_start DESC LIMIT ?",
+                "SELECT DISTINCT snapshot_date FROM anime_view_snapshots "
+                "ORDER BY snapshot_date DESC LIMIT ?",
                 (limit,),
             )
             return [_as_text(r[0]) for r in c.fetchall()]
         finally:
             conn.close()
 
-    def get_snapshots_range(self, weeks: list[str]) -> list[dict]:
-        """取得指定週次的所有快照（供成長序列計算）"""
-        if not weeks:
+    def get_snapshots_range(self, dates: list[str]) -> list[dict]:
+        """取得指定日期的所有快照（供成長序列計算）"""
+        if not dates:
             return []
         conn = self._get_conn()
         try:
             c = conn.cursor()
-            placeholders = ",".join("?" * len(weeks))
+            placeholders = ",".join("?" * len(dates))
             c.execute(
-                f"""SELECT week_start, anime_sn, anime_name, total_views, volume_ep, rank
+                f"""SELECT snapshot_date, anime_sn, anime_name, total_views, volume_ep, rank
                     FROM anime_view_snapshots
-                    WHERE week_start IN ({placeholders})
-                    ORDER BY week_start""",
-                weeks,
+                    WHERE snapshot_date IN ({placeholders})
+                    ORDER BY snapshot_date""",
+                dates,
             )
             return [
                 {
-                    "week_start": _as_text(row[0]),
+                    "snapshot_date": _as_text(row[0]),
                     "anime_sn": row[1],
                     "anime_name": _as_text(row[2]),
                     "total_views": row[3],
@@ -1310,11 +1356,16 @@ class AnimePushDB:
         finally:
             conn.close()
 
-    def get_weekly_growth(self, week_start: str, prev_week: str) -> list[dict]:
-        """計算某週相對前一週的每週新增觀看數（依成長數新→舊排序）
+    def get_weekly_growth(self, snapshot_date: str, days: int = 7) -> list[dict]:
+        """計算某日相對 N 天前的每週新增觀看數（依成長數新→舊排序）
 
-        過濾 p.total_views <= 0：前值為 0 代表該番當週才上架（如夏秋番交接期
-        新番），此時「本週 - 0」是上架至今累計而非單週新增，會造成假黑馬。
+        基準日用 julianday 差精確比對「剛好 N 天前」那一筆，而不是拿日期清單的
+        前一格——改成每天快照後，清單的前一格是「昨天」，相減會變成每日增量。
+        找不到剛好 N 天前的快照時回空清單（漏抓的那天就留一個洞），不會拿別的
+        區間湊出一個看起來連續的假值。
+
+        過濾 p.total_views <= 0：前值為 0 代表該番那時才上架（如夏秋番交接期
+        新番），此時「本日 - 0」是上架至今累計而非單週新增，會造成假黑馬。
         """
         conn = self._get_conn()
         try:
@@ -1324,9 +1375,12 @@ class AnimePushDB:
                           p.total_views, p.volume_ep, p.rank
                    FROM anime_view_snapshots s
                    JOIN anime_view_snapshots p ON p.anime_sn = s.anime_sn
-                   WHERE s.week_start = ? AND p.week_start = ? AND p.total_views > 0
+                   WHERE s.snapshot_date = ?
+                     AND CAST(julianday(s.snapshot_date)
+                              - julianday(p.snapshot_date) AS INTEGER) = ?
+                     AND p.total_views > 0
                    ORDER BY (s.total_views - p.total_views) DESC""",
-                (week_start, prev_week),
+                (snapshot_date, days),
             )
             out = []
             for row in c.fetchall():
@@ -1346,6 +1400,43 @@ class AnimePushDB:
                     }
                 )
             return out
+        finally:
+            conn.close()
+
+    def get_rolling_weekly_growth(self, since_date: str, days: int = 7) -> list[dict]:
+        """取 since_date 之後每天的「滾動 N 日增量」，供人氣走勢折線圖
+
+        每列是（日期, 番, 該日相對 N 天前的累計差）。因為 popular 是累計值，任
+        兩天的差就等於那段區間的新增觀看數，所以中間漏幾天不影響正確性——只要
+        頭尾兩天都在，差值就是對的（這是累計值相減相對「每日增量」最大的好處）。
+
+        缺少剛好 N 天前那一筆的日期不會出現在結果裡，曲線上就是留一個洞，不會
+        用別的區間湊出看起來連續的假值。
+        """
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            c.execute(
+                """SELECT s.snapshot_date, s.anime_sn, s.anime_name,
+                          s.total_views - p.total_views
+                   FROM anime_view_snapshots s
+                   JOIN anime_view_snapshots p ON p.anime_sn = s.anime_sn
+                   WHERE s.snapshot_date >= ?
+                     AND CAST(julianday(s.snapshot_date)
+                              - julianday(p.snapshot_date) AS INTEGER) = ?
+                     AND p.total_views > 0
+                   ORDER BY s.snapshot_date""",
+                (since_date, days),
+            )
+            return [
+                {
+                    "snapshot_date": _as_text(row[0]),
+                    "anime_sn": row[1],
+                    "anime_name": _as_text(row[2]),
+                    "growth": row[3],
+                }
+                for row in c.fetchall()
+            ]
         finally:
             conn.close()
 

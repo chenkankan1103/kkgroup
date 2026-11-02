@@ -152,7 +152,7 @@ class TestPushGrowthEmbed:
 
         channel.send.assert_awaited_once()
         kwargs = channel.send.await_args.kwargs
-        assert kwargs.get("file") is file, "圖要以附件送出，不是網址"
+        assert file in (kwargs.get("files") or []), "圖要以附件送出，不是網址"
 
         embeds = kwargs["embeds"]
         main = embeds[0]
@@ -182,7 +182,10 @@ class TestPushGrowthEmbed:
 
         main = channel.send.await_args.kwargs["embeds"][0]
         assert [f.name for f in main.fields] == [], "只有一週歷史 → 沒有連續進榜"
-        assert "file" not in channel.send.await_args.kwargs
+        sent = channel.send.await_args.kwargs.get("files") or []
+        assert not any(f.filename == "weekly_growth.png" for f in sent), (
+            "橫條圖產不出來就不該附檔"
+        )
         assert not main.image.url, "沒有圖時不該掛 attachment://"
 
     async def test_first_snapshot_is_baseline_only(self, tracker, channel):
@@ -194,6 +197,74 @@ class TestPushGrowthEmbed:
         embeds = channel.send.await_args.kwargs["embeds"]
         assert len(embeds) == 1
         assert "基準已建立" in embeds[0].title
+
+
+# ==================== 每日快照 → 每週一格 ====================
+
+
+class TestWeeklySpacing:
+    """快照是每天一格，但「連續進榜」的單位是週，必須先抽成每週一格"""
+
+    def test_picks_every_seventh_day_from_newest(self):
+        dates = [
+            "2026-10-19",
+            "2026-10-18",
+            "2026-10-17",
+            "2026-10-16",
+            "2026-10-12",
+            "2026-10-11",
+            "2026-10-05",
+        ]
+        assert AnimeTracker._weekly_spaced(dates, 12) == [
+            "2026-10-19",
+            "2026-10-12",
+            "2026-10-05",
+        ]
+
+    def test_limit_caps_the_window(self):
+        dates = ["2026-10-19", "2026-10-12", "2026-10-05", "2026-09-28"]
+        assert AnimeTracker._weekly_spaced(dates, 2) == ["2026-10-19", "2026-10-12"]
+
+    def test_empty(self):
+        assert AnimeTracker._weekly_spaced([], 12) == []
+
+
+# ==================== 走勢折線圖的資料 ====================
+
+
+class TestTrendSeries:
+    """折線圖＝最新一天週增量前 N 部的逐日週增量"""
+
+    @staticmethod
+    def _seed(tracker, days: int, missing: set[int]) -> None:
+        """每天兩部番；missing 是「長紅番當天沒出現在 API 清單」的日子（1 起算）"""
+        for i in range(days):
+            rows = [
+                {"anime_sn": 2, "anime_name": "穩定番", "total_views": 500 * (i + 1)}
+            ]
+            if i + 1 not in missing:
+                rows.append(
+                    {"anime_sn": 1, "anime_name": "長紅番", "total_views": 1000 * (i + 1)}
+                )
+            tracker.db.save_view_snapshot(f"2026-10-{i + 1:02d}", rows)
+
+    def test_weekly_increase_is_today_minus_seven_days_ago(self, tracker):
+        self._seed(tracker, 10, missing=set())
+        dates, series = tracker._trend_series("2026-10-10")
+
+        assert [s["anime_name"] for s in series] == ["長紅番", "穩定番"], "依最新一天排名"
+        assert dates[0] == "2026-10-08", "前 7 天沒有『7 天前』那一筆，不上軸"
+        assert all(p == 7000 for p in series[0]["points"]), "每天 +1000、跨 7 天"
+
+    def test_missing_day_is_null_and_does_not_leak(self, tracker):
+        """某天漏抓 → 那天與其後 7 天算不出來，但不會外溢、也不影響別部番"""
+        self._seed(tracker, 15, missing={5})  # 10-05 長紅番缺席
+        dates, series = tracker._trend_series("2026-10-15")
+        by_name = {s["anime_name"]: dict(zip(dates, s["points"])) for s in series}
+
+        assert by_name["長紅番"]["2026-10-12"] is None, "缺 10-05 → 10-12 算不出來"
+        assert by_name["長紅番"]["2026-10-13"] == 7000, "只影響那一天，不外溢"
+        assert set(by_name["穩定番"].values()) == {3500}, "別部番不受影響"
 
 
 # ==================== 圖檔 ====================
