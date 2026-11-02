@@ -10,11 +10,8 @@ Bahamut 動畫追蹤 Cog - 增強版排程推送系統
 
 import io
 import logging
-import random
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
-import asyncio
-import aiohttp
 import discord
 from discord.ext import commands, tasks
 from typing import Optional
@@ -33,9 +30,6 @@ from cogs.ui.push_core_simple import (
     ANIME_CHANNEL_ID,
     TW_TZ,
     fetch_all_recent_anime_from_api,
-    fetch_anime_episodes_with_views,
-    EPISODE_SNAPSHOT_CONCURRENCY,
-    EPISODE_SNAPSHOT_MAX_ATTEMPTS,
 )
 from cogs.ui.schedule_tracker import AnimeScheduleTracker
 from shared.utils.encoding_handler import setup_utf8_logging
@@ -90,16 +84,6 @@ _CJK_FONT_PATH = (
     Path(__file__).resolve().parent.parent.parent / "fonts" / "NotoSansCJKtc-Regular.otf"
 )
 
-# 單集快照的 trickle 節奏：每小時抓一部，抓完就停，下一小時換下一部。
-# 整批抓（63 部、800+ 次請求）等於對巴哈做批次爬取，而 api.gamer.com.tw 同時是
-# 15 分鐘推送輪詢的來源，被擋掉會連帶讓整個動畫推送系統停擺。
-# 刻意不對齊整點：整點觸發本身就是一種規律，比低速率更容易被判定為機器人，
-# 所以每輪結束後才抽下一次的時間（60 ± 10 分），排程不落在任何固定時刻。
-EPISODE_TRICKLE_INTERVAL_MIN = 60
-EPISODE_TRICKLE_JITTER_MIN = 10
-# 掃描週期只決定「有沒有到點」，與實際抓取間隔無關；5 分鐘足夠準時又不浪費 tick
-EPISODE_TRICKLE_TICK_MIN = 5
-
 
 def _parse_volume_ep(volume) -> Optional[int]:
     """從 volume 字串（'第14集'）解析出集數 14，供標記「本週有新集」"""
@@ -118,7 +102,6 @@ class AnimeTracker(commands.Cog):
         self.schedule_tracker = None
         self._running = False
         self._push_tick = 0
-        self._episode_tick = 0
         # 監督器重啟次數：loop 名稱 → 次數，用來辨識「啟動後立刻又死」的 loop
         self._loop_restarts: dict[str, int] = {}
 
@@ -128,9 +111,9 @@ class AnimeTracker(commands.Cog):
             # 已初始化過：僅重新註冊按鈕視圖（冪等）。cog_load 早於 on_ready 的
             # logging 設定，第一次執行的日誌會遺失，此處的日誌可見可驗證
             # 這是整個啟動流程中唯一「看得見」的快照（第一次呼叫的日誌在
-            # on_ready 設定 logging 之前，必定遺失）。因此把四個 loop 的存活
-            # 狀態與 tick 計數一併印出：2026-09-28 episode_snapshot_loop 連續
-            # 兩輪零日誌，就是因為少了這行而分不出「沒啟動」與「啟動了但沒跑」
+            # on_ready 設定 logging 之前，必定遺失）。因此把各 loop 的存活
+            # 狀態與 tick 計數一併印出：少了這行就分不出「沒啟動」與
+            # 「啟動了但沒跑」——2026-09-28 曾在一個每週迴圈上白等兩輪
             logger.info(
                 "[AnimeTracker.set_dependencies] 已運行中，跳過（僅重新註冊視圖）"
                 f"｜loop: push={self.push_check_loop.is_running()}"
@@ -176,14 +159,6 @@ class AnimeTracker(commands.Cog):
         # 啟動每日觀看數快照循環（內建每天 22:00 閘門 + DB 冪等，可安全重跑）
         if not self.daily_growth_loop.is_running():
             self.daily_growth_loop.start()
-
-        # 單集（逐集）快照循環已於 2026-11-02 停用。它抓的是「每集各自的觀看數」，
-        # 與每日快照的「每部累計觀看數」是不同資料、不能互相取代；但那份資料蒐集
-        # 至今沒有任何讀取端，而每週要對巴哈發 800+ 次請求，停掉換得請求數下降。
-        # 方法都留在原處，要恢復就把下面兩行加回來——巴哈不提供歷史，停用期間的
-        # 逐集變化補不回來，所以這是一個「一旦停了就少一段」的決定。
-        # if not self.episode_snapshot_loop.is_running():
-        #     self.episode_snapshot_loop.start()
 
         self._running = True
         msg = "✅ [AnimeTracker.set_dependencies] 增強版推送系統啟動完成 (排程+輪詢備案+週表刷新)"
@@ -307,7 +282,7 @@ class AnimeTracker(commands.Cog):
         task 就帶例外結束且不留任何日誌（「Task exception was never retrieved」
         只在 GC 時才印）；而 set_dependencies 第二次呼叫在 `if self._running:`
         就 return，永遠不會補救 —— 該 loop 就此永久靜默。
-        2026-09-28 episode_snapshot_loop 全程零日誌即屬此類，故用已證實存活的
+        2026-09-28 曾有一個每週迴圈全程零日誌即屬此類，故用已證實存活的
         分鐘迴圈當監督者，任何死掉的 loop 一分鐘內復活。
         """
         for name in self._SUPERVISED_LOOPS:
@@ -421,72 +396,10 @@ class AnimeTracker(commands.Cog):
         """等待 bot 就緒後再開始快照循環"""
         await self.bot.wait_until_ready()
 
-    @tasks.loop(minutes=EPISODE_TRICKLE_TICK_MIN)
-    async def episode_snapshot_loop(self):
-        """每週單集觀看數快照——trickle：每小時只抓一部，抓完就停
-
-        為什麼是 trickle 而不是一次抓完：一部番要逐集打，63 部就是 800+ 次請求，
-        短時間內射出等於批次爬取。改成每小時一部、跨週攤平後，任一短窗口內的
-        請求數都低到不像爬蟲。
-
-        為什麼不掛在系列快照之後：快照一存檔，daily_growth_loop 的閘門就會擋掉
-        後續執行，若單集抓取失敗，那一段就永久遺失（巴哈 API 不提供歷史，補不
-        回來）。
-
-        進度存 DB（anime_episode_cursor）而非記憶體：trickle 會跨越多天，中間
-        可能重啟服務，游標不落盤就得從頭再打一輪，反而製造更多請求。
-
-        排序用 anime_sn 遞增而非 _fetch_anime_rows 的 total_views 遞減：游標必須
-        穩定，否則每週同一部番落在不同時間點。trickle 一週攤開約 2.6 天，單集
-        觀看數在這段期間仍在成長，落點不固定就會把這個偏移掺進週差值；順序穩定
-        則偏移每週大致相同，相減時自然抵銷。
-        """
-        if not self.db:
-            logger.warning("⚠️ [episode_snapshot] db 未初始化，略過本輪")
-            return
-        try:
-            self._episode_tick += 1
-            # 心跳：前兩輪都印，之後每天一筆（5 分鐘 tick × 288 = 一天）。第一輪的
-            # 日誌必定遺失（cog_load 早於 on_ready 的 logging 設定），故第二輪才是
-            # 重啟後第一筆看得見的存活證明。沒有心跳就分不出「迴圈已死」與
-            # 「閘門沒過」——2026-09-28 就是靠這個才排除掉迴圈本身的問題
-            if self._episode_tick <= 2 or self._episode_tick % 288 == 0:
-                logger.info(
-                    f"💓 [episode_snapshot] 循環存活心跳（第 {self._episode_tick} 輪）"
-                )
-            now = datetime.now(TW_TZ)
-            days_since_sunday = (now.weekday() + 1) % 7
-            sunday = (now - timedelta(days=days_since_sunday)).replace(
-                hour=GROWTH_SNAPSHOT_HOUR, minute=0, second=0, microsecond=0
-            )
-            if now < sunday:
-                logger.debug(f"⏳ [episode_snapshot] 本週觸發時刻未到（{sunday}）")
-                return  # 本週觸發時刻還沒到
-
-            week_start = (sunday - timedelta(days=6)).date().isoformat()
-            cursor = self.db.get_episode_cursor(week_start)
-            if cursor["done"]:
-                logger.debug(f"✅ [episode_snapshot] {week_start} 已抓完，略過")
-                return
-
-            # 未到點就靜靜離開：這輪什麼都不做是預期行為，不是異常
-            if cursor["next_run_at"] is not None and now.timestamp() < cursor["next_run_at"]:
-                return
-
-            await self._run_episode_trickle(week_start, cursor)
-        except Exception as e:
-            logger.error(f"❌ [episode_snapshot_loop] 執行失敗: {e}", exc_info=True)
-
-    @episode_snapshot_loop.before_loop
-    async def before_episode_snapshot_loop(self):
-        """等待 bot 就緒後再開始快照循環"""
-        await self.bot.wait_until_ready()
-
     async def _fetch_anime_rows(self) -> tuple[list[dict], dict[int, str]]:
         """從 index API 取得「一部番一列」與封面表
 
-        系列快照與單集快照都需要這份清單（單集快照要的是每部的最新集 videoSn），
-        故抽成共用方法讓兩個 loop 各自取用。
+        一支請求就回全部番，所以「取全部」與「取一部」的成本一樣。
         """
         episodes = await fetch_all_recent_anime_from_api()
         if not episodes:
@@ -512,8 +425,6 @@ class AnimeTracker(commands.Cog):
                 "anime_name": str(ep.get("title") or f"Anime #{sn}"),
                 "total_views": views,
                 "volume_ep": _parse_volume_ep(ep.get("volume")),
-                # 最新一集的 videoSn：單集快照的入口（該支 API 會一併回傳集數清單）
-                "video_sn": int(ep["videoSn"]) if ep.get("videoSn") else None,
             }
 
         rows = sorted(anime_map.values(), key=lambda r: r["total_views"], reverse=True)
@@ -535,72 +446,6 @@ class AnimeTracker(commands.Cog):
         written = self.db.save_view_snapshot(snapshot_date, rows)
         logger.info(f"📸 [daily_growth] 快照完成 {snapshot_date}: {written} 筆")
         return covers
-
-    async def _run_episode_trickle(self, week_start: str, cursor: dict):
-        """抓「一部」番的逐集觀看數並落地，然後把下次時間寫回游標
-
-        一次只碰一部是這個設計的全部重點：單部 12~26 次請求，加上 5±2 秒間隔，
-        一輪約 1~3 分鐘，之後整小時不再對巴哈發出任何請求。
-
-        失敗時不前進游標，下一輪（5 分鐘後）重試同一部，連續失敗達上限才跳過——
-        一部永遠失敗的番不該讓整週停擺。但也不能無上限重試，否則失敗的番會變成
-        每 5 分鐘一次的固定請求來源。
-        """
-        rows, _ = await self._fetch_anime_rows()
-        if not rows:
-            logger.warning("⚠️ [episode_snapshot] API 無資料，本輪略過（下輪重試）")
-            return  # 不動游標，下輪再試
-
-        # 穩定順序（anime_sn 遞增）：游標必須可續傳，順序一變游標就失去意義；
-        # 且順序穩定才能讓「本週落在哪個時間點」每週一致，使週差值的偏移抵銷
-        rows.sort(key=lambda r: r["anime_sn"])
-        last_sn = cursor["last_anime_sn"]
-        target = next(
-            (r for r in rows if r["anime_sn"] > last_sn and r.get("video_sn")), None
-        )
-        if target is None:
-            self.db.set_episode_cursor(week_start, last_sn, None, 0, done=1)
-            logger.info(f"🏁 [episode_snapshot] {week_start} 全部 {len(rows)} 部已抓完")
-            return
-
-        sn, vsn = target["anime_sn"], target["video_sn"]
-        sem = asyncio.Semaphore(EPISODE_SNAPSHOT_CONCURRENCY)
-        try:
-            async with aiohttp.ClientSession() as session:
-                ep_rows = await fetch_anime_episodes_with_views(session, sn, vsn, sem)
-        except Exception as e:
-            logger.error(
-                f"❌ [episode_snapshot] anime_sn={sn} 抓取失敗: {e}", exc_info=True
-            )
-            ep_rows = []
-
-        written = self.db.save_episode_snapshot(week_start, ep_rows) if ep_rows else 0
-        attempts = cursor["attempts"] + 1
-        if not written and attempts < EPISODE_SNAPSHOT_MAX_ATTEMPTS:
-            # 停在原地：last_anime_sn 不動、next_run_at 留空（下輪立即重試同一部）
-            self.db.set_episode_cursor(week_start, last_sn, None, attempts)
-            logger.warning(
-                f"⚠️ [episode_snapshot] anime_sn={sn} 本輪 0 筆，"
-                f"第 {attempts}/{EPISODE_SNAPSHOT_MAX_ATTEMPTS} 次嘗試"
-            )
-            return
-
-        if not written:
-            logger.warning(
-                f"⚠️ [episode_snapshot] anime_sn={sn} 連續 {attempts} 次失敗，跳過"
-            )
-
-        # 抽下一次的時間而非固定 +60 分：整點觸發本身是一種規律，比低速率更容易
-        # 被判定為機器人。每輪結束才抽，排程不落在任何可預測的時刻
-        delay = EPISODE_TRICKLE_INTERVAL_MIN + random.uniform(
-            -EPISODE_TRICKLE_JITTER_MIN, EPISODE_TRICKLE_JITTER_MIN
-        )
-        next_run_at = (datetime.now(TW_TZ) + timedelta(minutes=delay)).timestamp()
-        self.db.set_episode_cursor(week_start, sn, next_run_at, 0)
-        logger.info(
-            f"📸 [episode_snapshot] anime_sn={sn}: {written} 筆"
-            f"（下次 {delay:.0f} 分後，進度 {sn}）"
-        )
 
     async def _push_growth_embed(
         self, snapshot_date: str, covers: dict[int, str] = None

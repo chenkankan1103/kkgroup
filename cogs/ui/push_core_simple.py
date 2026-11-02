@@ -9,7 +9,6 @@
 import asyncio
 import json
 import logging
-import random
 import sqlite3
 import sys
 from datetime import datetime, timedelta
@@ -44,39 +43,6 @@ ANIME_PUSH_DB_PATH = Path(__file__).resolve().parent.parent.parent / "anime_push
 # API 常數
 API_ENDPOINT = "https://api.gamer.com.tw/mobile_app/anime/v3/index.php"
 API_TIMEOUT = 15
-
-# 單集觀看數 API：mobile_app 版只有系列累計 popular，單集數字只在這一支。
-# 回傳 data.anime.popular 為「該集」觀看數——同一部番打不同集數會得到不同值
-# （Re:Zero S4 ep16/17/18 = 159,167 / 157,685 / 136,653），可證非系列累計。
-# 同時 data.anime.episodes['0'] 直接附上全部集數的 videoSn，一次呼叫即取得集數清單，
-# 故每部番只需「集數」次請求（首呼已含最新集觀看數）。
-EPISODE_API_ENDPOINT = "https://api.gamer.com.tw/anime/v1/video.php"
-
-# 單集快照的抓取參數：一部番要逐集打，必須節流。
-# 風險不只是「抓不到」——api.gamer.com.tw 同時是 15 分鐘推送輪詢的來源，
-# 被擋掉會連帶讓整個動畫推送系統停擺，所以這裡刻意保守。
-# 2026-09-28 改為 trickle（每小時只抓一部），單部約 12~26 次請求，不再是
-# 一次 800 次的批次。基準間隔 5 秒並帶 ±2 秒抖動：固定間隔本身就是一種規律，
-# 比低速率更容易被判定為機器人——抖動才是處理「不要規律」的手段。
-EPISODE_SNAPSHOT_CONCURRENCY = 1
-EPISODE_SNAPSHOT_DELAY = 5.0
-EPISODE_SNAPSHOT_DELAY_JITTER = 2.0
-# 長番（數百集）會讓請求數失控，僅為失控防護；正常一季 12~26 集不會觸及
-EPISODE_SNAPSHOT_MAX = 100
-# 同一部番的失敗重試上限：trickle 下每次只碰一部，失敗就下輪再試同一部，
-# 超過上限則跳過它繼續往下——否則一部永遠失敗的番會讓整週停擺
-EPISODE_SNAPSHOT_MAX_ATTEMPTS = 3
-
-
-def episode_request_delay() -> float:
-    """單集請求的間隔秒數：基準 5 秒 ± 2 秒抖動
-
-    抽成函式而非直接用常數，是為了讓「抖動」這件事只有一個定義處；呼叫端
-    不該自行決定要不要加抖動。
-    """
-    return EPISODE_SNAPSHOT_DELAY + random.uniform(
-        -EPISODE_SNAPSHOT_DELAY_JITTER, EPISODE_SNAPSHOT_DELAY_JITTER
-    )
 
 # 完整瀏覽器指紋 Header
 API_HEADERS = {
@@ -241,41 +207,6 @@ class AnimePushDB:
         # 10 條線裡有 8 條只有 2 個資料點。鍵 week_start（該週週一）隨之正名為
         # snapshot_date（真正的觀測日），數值語意不變。
         c.execute(_VIEW_SNAPSHOTS_DDL)
-
-        # anime_episode_snapshots 表 - 每集觀看數快照（留存曲線與口碑發酵偵測）
-        # 系列累計（上表）只看得出「誰漲得多」，看不出「誰的觀眾留得住」。單集觀看
-        # 數的衰減形狀才看得出：ep1 = 觸及（開播前就決定的期待值），末集/ep1 = 留存。
-        # 另外 ep1 的逐週增量是新觀眾湧入的代理指標——補番的人一定從第 1 集開始，
-        # 而重刷的人刷的是高光集、不會回頭刷 ep1，這是唯一能從觀看數把「口碑發酵」
-        # 與「單集重刷」分開的訊號（重刷只造成單點尖峰，不會墊高基底）。
-        # 巴哈 API 不提供歷史資料，只能自己逐週累積，漏掉一週就永久少一週。
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS anime_episode_snapshots (
-                week_start TEXT NOT NULL,      -- 該週週一 'YYYY-MM-DD'
-                anime_sn INTEGER NOT NULL,
-                episode INTEGER NOT NULL,      -- 集數，1 起算
-                views INTEGER NOT NULL,        -- 該集當下累計觀看數
-                video_sn INTEGER,              -- 供追蹤同一集後續變化
-                captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (week_start, anime_sn, episode)
-            )
-        """)
-
-        # anime_episode_cursor 表 - trickle 進度游標（每小時抓一部）
-        # 逐集抓一部番要 12~26 次請求，63 部就是 800+ 次，一次射出等於對巴哈做
-        # 批次爬取。改成每小時只碰一部、跨週攤平，並把進度寫進這張表，讓服務
-        # 重啟後能續傳而不是從頭再打一輪。
-        # next_run_at 存 epoch 秒而非 ISO 字串：本連線 text_factory = bytes，
-        # TEXT 欄位讀回來是 bytes，還得 decode；數值欄位沒這個問題。
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS anime_episode_cursor (
-                week_start TEXT PRIMARY KEY,   -- 該週週一 'YYYY-MM-DD'
-                last_anime_sn INTEGER NOT NULL DEFAULT 0,  -- 已完成的 anime_sn
-                next_run_at REAL,              -- epoch 秒；NULL = 可立即執行
-                attempts INTEGER NOT NULL DEFAULT 0,       -- 當前這部的連續失敗次數
-                done INTEGER NOT NULL DEFAULT 0            -- 1 = 本週已抓完
-            )
-        """)
 
         self._migrate_weekly_snapshots_to_daily(c)
 
@@ -1204,115 +1135,6 @@ class AnimePushDB:
         finally:
             conn.close()
 
-    # ---- 每集觀看數快照（留存曲線 / 口碑發酵）----
-
-    def has_episode_snapshot(self, week_start: str) -> bool:
-        """檢查某週是否已有單集快照（讓每週任務可重跑而不重複抓取）"""
-        conn = self._get_conn()
-        try:
-            c = conn.cursor()
-            c.execute(
-                "SELECT 1 FROM anime_episode_snapshots WHERE week_start=? LIMIT 1",
-                (week_start,),
-            )
-            return c.fetchone() is not None
-        finally:
-            conn.close()
-
-    def save_episode_snapshot(self, week_start: str, rows: list[dict]) -> int:
-        """寫入某週的單集觀看數快照，回傳寫入筆數
-
-        rows 每筆需含 anime_sn / episode / views，選填 video_sn。
-        同週重跑為覆蓋（PK 為 week_start+anime_sn+episode），不會累積重複列。
-        """
-        if not rows:
-            return 0
-        conn = self._get_conn()
-        try:
-            c = conn.cursor()
-            c.executemany(
-                """INSERT OR REPLACE INTO anime_episode_snapshots
-                   (week_start, anime_sn, episode, views, video_sn)
-                   VALUES (?, ?, ?, ?, ?)""",
-                [
-                    (
-                        week_start,
-                        int(r["anime_sn"]),
-                        int(r["episode"]),
-                        int(r["views"]),
-                        r.get("video_sn"),
-                    )
-                    for r in rows
-                ],
-            )
-            conn.commit()
-            return len(rows)
-        except Exception as e:
-            logger.error(
-                f"❌ [AnimePushDB] save_episode_snapshot 失敗: {e}", exc_info=True
-            )
-            conn.rollback()
-            return 0
-        finally:
-            conn.close()
-
-    # ---- trickle 進度游標 ----
-
-    def get_episode_cursor(self, week_start: str) -> dict:
-        """讀取該週的 trickle 進度；不存在時回傳可立即執行的初始值
-
-        回傳 dict 而非 tuple，是為了讓呼叫端不必記欄位順序——游標有 4 個欄位，
-        用位置解包容易在後續增欄時默默錯位。
-        """
-        conn = self._get_conn()
-        try:
-            c = conn.cursor()
-            c.execute(
-                """SELECT last_anime_sn, next_run_at, attempts, done
-                   FROM anime_episode_cursor WHERE week_start=?""",
-                (week_start,),
-            )
-            row = c.fetchone()
-            if row is None:
-                return {"last_anime_sn": 0, "next_run_at": None, "attempts": 0, "done": 0}
-            return {
-                "last_anime_sn": int(row[0] or 0),
-                "next_run_at": float(row[1]) if row[1] is not None else None,
-                "attempts": int(row[2] or 0),
-                "done": int(row[3] or 0),
-            }
-        finally:
-            conn.close()
-
-    def set_episode_cursor(
-        self,
-        week_start: str,
-        last_anime_sn: int,
-        next_run_at: float | None = None,
-        attempts: int = 0,
-        done: int = 0,
-    ) -> None:
-        """覆寫該週的 trickle 進度
-
-        整列覆寫而非逐欄更新：游標的四個欄位是一組狀態，分開寫會在中途失敗時
-        留下自相矛盾的組合（例如 last_anime_sn 已前進但 attempts 沒歸零）。
-        """
-        conn = self._get_conn()
-        try:
-            c = conn.cursor()
-            c.execute(
-                """INSERT OR REPLACE INTO anime_episode_cursor
-                   (week_start, last_anime_sn, next_run_at, attempts, done)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (week_start, int(last_anime_sn), next_run_at, int(attempts), int(done)),
-            )
-            conn.commit()
-        except Exception as e:
-            logger.error(f"❌ [AnimePushDB] set_episode_cursor 失敗: {e}", exc_info=True)
-            conn.rollback()
-        finally:
-            conn.close()
-
     def get_snapshot_dates(self, limit: int = 12) -> list[str]:
         """取得最近 N 個快照日期（新→舊）"""
         conn = self._get_conn()
@@ -1484,109 +1306,6 @@ async def fetch_all_recent_anime_from_api() -> list[dict] | None:
     except Exception as e:
         logger.error(f"❌ Error fetching anime from API: {e}", exc_info=True)
         return None
-
-
-async def fetch_anime_episodes_with_views(
-    session: aiohttp.ClientSession,
-    anime_sn: int,
-    latest_video_sn: int,
-    sem: asyncio.Semaphore,
-) -> list[dict]:
-    """取得一部番所有集數的觀看數（供留存曲線與口碑發酵偵測）
-
-    首呼（最新集）同時回傳集數清單與該集觀看數，因此總請求數 = 集數而非集數 + 1。
-    任一步失敗只影響該部，回傳已取得的列，不讓單一部的錯誤中斷整批快照。
-    """
-    # 首呼單獨持鎖、做完立刻放：內層 _one 也要拿同一個 sem，若在此持有許可才
-    # await gather，許可會被前幾部番佔住，而它們都在等自己的內層任務取得許可
-    # ——永久死鎖。2026-09-28 實測：loop 卡在首輪，零日誌、零資料列，且
-    # is_running() 仍為 True，監督器救不到這種「活著但卡住」的狀態
-    async with sem:
-        # 先睡再打，且睡在 sem 內側：trickle 下一次只服務一部番，但間隔仍要走
-        # 同一個抖動函式，否則每部番的首呼會變成一個可預測的固定起點
-        await asyncio.sleep(episode_request_delay())
-        try:
-            async with session.get(
-                f"{EPISODE_API_ENDPOINT}?videoSn={latest_video_sn}",
-                timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
-                headers=API_HEADERS,
-            ) as resp:
-                if resp.status != 200:
-                    logger.debug(
-                        f"⚠️ [episode_snapshot] animeSn={anime_sn} status={resp.status}"
-                    )
-                    return []
-                data = (await resp.json()).get("data") or {}
-        except Exception as e:
-            logger.debug(f"⚠️ [episode_snapshot] animeSn={anime_sn} 首呼失敗: {e}")
-            return []
-
-    anime = data.get("anime") or {}
-    # episodes 是 dict（分割放送會有多個鍵），值為 {episode, videoSn} 清單
-    ep_map: dict[int, int] = {}
-    for eps in (anime.get("episodes") or {}).values():
-        for e in eps or []:
-            ep_no, vsn = e.get("episode"), e.get("videoSn")
-            if ep_no and vsn:
-                ep_map[int(ep_no)] = int(vsn)
-    if not ep_map:
-        return []
-
-    # 長番（數百集）會讓請求數失控，僅作為失控防護；正常一季 12~26 集不會觸及
-    if len(ep_map) > EPISODE_SNAPSHOT_MAX:
-        logger.warning(
-            f"⚠️ [episode_snapshot] animeSn={anime_sn} 集數 {len(ep_map)} "
-            f"超過上限 {EPISODE_SNAPSHOT_MAX}，僅取前 {EPISODE_SNAPSHOT_MAX} 集"
-        )
-        ep_map = dict(sorted(ep_map.items())[:EPISODE_SNAPSHOT_MAX])
-
-    rows: list[dict] = []
-    # 首呼回傳的就是最新集的觀看數，直接沿用，省下重複請求
-    latest_ep = next(
-        (n for n, v in ep_map.items() if v == int(latest_video_sn)), None
-    )
-    if latest_ep is not None:
-        views = int(anime.get("popular") or 0)
-        if views:
-            rows.append(
-                {
-                    "anime_sn": anime_sn,
-                    "episode": latest_ep,
-                    "views": views,
-                    "video_sn": int(latest_video_sn),
-                }
-            )
-
-    async def _one(ep_no: int, vsn: int):
-        async with sem:
-            await asyncio.sleep(episode_request_delay())
-            try:
-                async with session.get(
-                    f"{EPISODE_API_ENDPOINT}?videoSn={vsn}",
-                    timeout=aiohttp.ClientTimeout(total=API_TIMEOUT),
-                    headers=API_HEADERS,
-                ) as resp:
-                    if resp.status != 200:
-                        return None
-                    j = await resp.json()
-                views = int(
-                    (j.get("data") or {}).get("anime", {}).get("popular") or 0
-                )
-                if not views:
-                    return None
-                return {
-                    "anime_sn": anime_sn,
-                    "episode": ep_no,
-                    "views": views,
-                    "video_sn": vsn,
-                }
-            except Exception:
-                return None
-
-    todo = [(n, v) for n, v in ep_map.items() if n != latest_ep]
-    results = await asyncio.gather(*(_one(n, v) for n, v in todo))
-    rows.extend(r for r in results if r)
-    return rows
 
 
 def extract_view_count_from_episode(episode: dict, default: int = 0) -> int:

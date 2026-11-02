@@ -166,9 +166,13 @@ class TestPushGrowthEmbed:
         assert "**新竄番**　連 2 週進前 10 名" in hot[0].value
 
         # 黑馬卡片：本週成長率＝新竄番 +42.9%、長紅番 +25%
-        assert embeds[1].title == "🚀 本週衝最快"
-        assert embeds[2].title.startswith("🚀 +42.9%")
-        assert embeds[3].title.startswith("🚀 +25.0%")
+        # 依標題找而不是依索引：走勢圖那張 embed 只在畫得出來時才插進來，
+        # 寫死索引會讓「本機畫不出圖」與「順序改了」看起來像同一種失敗。
+        assert "🚀 本週衝最快" in [e.title for e in embeds]
+        movers = [e.title for e in embeds if e.title.startswith("🚀 +")]
+        assert len(movers) == 2, "兩部黑馬各一張卡片"
+        assert movers[0].startswith("🚀 +42.9%")
+        assert movers[1].startswith("🚀 +25.0%")
 
     async def test_no_streak_field_with_one_week_history(
         self, tracker, channel, monkeypatch
