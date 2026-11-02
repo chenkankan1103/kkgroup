@@ -48,7 +48,7 @@ logger = setup_utf8_logging(__name__, logging.INFO)
 
 # 每週成長快照設定
 GROWTH_SNAPSHOT_WEEKDAY = 6  # 0=週一 ... 6=週日
-GROWTH_SNAPSHOT_HOUR = 22  # 週日 22:00（避開 02:00 週表刷新與 API 尖峰）
+GROWTH_SNAPSHOT_HOUR = 22  # 每天 22:00（避開 02:00 週表刷新與 API 尖峰）
 GROWTH_HISTORY_WEEKS = 12  # 回溯週數（算「連續進榜」用）
 GROWTH_TOP_N = 10  # 進榜門檻：本週新增前 N 名
 GROWTH_BAR_N = 8  # 橫條圖畫幾條
