@@ -85,6 +85,41 @@ _CJK_FONT_PATH = (
 )
 
 
+def _iter_dispatchable_items(components):
+    """遞迴走訪元件樹，逐一吐出帶 custom_id 的按鈕。
+
+    V2 訊息的按鈕藏在 Container → ActionRow → Button 第三層，embed 時代只有
+    ActionRow → Button 兩層。只走兩層對 V2 是全面失效：getattr(ActionRow,
+    "custom_id") 恆為 None，於是每則 V2 訊息都被判定成「不是動畫推送」而跳過，
+    重啟後所有 V2 按鈕靜默死亡。
+    """
+    for component in components:
+        if getattr(component, "custom_id", None):
+            yield component
+        children = getattr(component, "children", None)
+        if children:
+            yield from _iter_dispatchable_items(children)
+
+
+def _push_mode_of_message(message) -> str:
+    """從卡片左側色條回推推送模式。
+
+    V2 訊息沒有其他欄位記得住推送模式，重畫畫面時得照原樣上色 —— 猜錯的話
+    使用者一投票，卡片就從排程推送的紫色變成預設灰。
+    """
+    from cogs.ui.push_embed import _PUSH_MODE_COLORS
+
+    for component in message.components:
+        colour = getattr(component, "accent_colour", None)
+        if colour is None:
+            continue
+        value = getattr(colour, "value", colour)
+        for name, hex_value in _PUSH_MODE_COLORS.items():
+            if hex_value == value:
+                return name
+    return "unknown"
+
+
 def _parse_volume_ep(volume) -> Optional[int]:
     """從 volume 字串（'第14集'）解析出集數 14，供標記「本週有新集」"""
     digits = "".join(ch for ch in str(volume or "") if ch.isdigit())
@@ -192,16 +227,13 @@ class AnimeTracker(commands.Cog):
                     continue
                 # 從按鈕 custom_id 辨識動畫推送訊息並解析 video_sn
                 video_sn = None
-                for row in message.components:
-                    for child in row.children:
-                        cid = getattr(child, "custom_id", None)
-                        if cid and cid.startswith("anime_vote_"):
-                            try:
-                                video_sn = int(cid.rsplit("_", 1)[1])
-                            except (ValueError, IndexError):
-                                video_sn = None
-                            break
-                    if video_sn is not None:
+                for item in _iter_dispatchable_items(message.components):
+                    cid = item.custom_id
+                    if cid.startswith("anime_vote_"):
+                        try:
+                            video_sn = int(cid.rsplit("_", 1)[1])
+                        except (ValueError, IndexError):
+                            video_sn = None
                         break
                 if video_sn is None:
                     continue
@@ -216,11 +248,27 @@ class AnimeTracker(commands.Cog):
                     )
                     continue
                 anime_sn, anime_name = info
-                view = AnimePushView(
-                    {"videoSn": video_sn, "animeSn": anime_sn, "title": anime_name},
-                    db_adapter=self.db,
-                )
-                view.message_id = message.id  # 讓留言也能精確記錄到該則 embed
+                episode = {
+                    "videoSn": video_sn,
+                    "animeSn": anime_sn,
+                    "title": anime_name,
+                }
+                if message.flags.components_v2:
+                    # V2 訊息的按鈕長在版面裡，只能用 LayoutView 家族重建
+                    # （View.from_message 對 V2 會直接 raise ValueError）。
+                    # bot.add_view 內部走 walk_children()，本來就會遞迴註冊巢狀
+                    # 按鈕，所以這裡不必自己再拆到第三層。
+                    from cogs.ui.push_embed_v2 import AnimePushLayout
+
+                    view = AnimePushLayout(
+                        episode,
+                        push_mode=_push_mode_of_message(message),
+                        db_adapter=self.db,
+                        message_id=message.id,
+                    )
+                else:
+                    view = AnimePushView(episode, db_adapter=self.db)
+                    view.message_id = message.id  # 讓留言也能精確記錄到該則 embed
                 self.bot.add_view(view, message_id=message.id)
                 registered += 1
 
