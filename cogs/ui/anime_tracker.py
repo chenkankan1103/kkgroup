@@ -977,13 +977,13 @@ class AnimeTracker(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def anime_status(self, ctx: commands.Context):
         """查看動畫推送系統狀態"""
-        if hasattr(ctx, "response"):
-            await ctx.response.defer(ephemeral=True)
-            send_response = lambda content, ephemeral=True: ctx.followup.send(
-                content, ephemeral=ephemeral
-            )
-        else:
-            send_response = lambda content: ctx.send(content)
+        # hybrid 指令統一走 ctx.defer：slash 會 defer interaction、prefix 呼叫是
+        # no-op。舊寫法 hasattr(ctx, "response") 恆為 False（Context 沒這屬性）→
+        # 從不 defer → slash 呼叫只要超過 3 秒就跳「應用程式沒有回應」。
+        await ctx.defer(ephemeral=True)
+        send_response = lambda content, ephemeral=True: ctx.send(
+            content, ephemeral=ephemeral
+        )
 
         try:
             status_lines = [
@@ -1053,13 +1053,13 @@ class AnimeTracker(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def anime_manual_check(self, ctx: commands.Context):
         """手動觸發一次動畫檢查與推送"""
-        if hasattr(ctx, "response"):
-            await ctx.response.defer(ephemeral=True)
-            send_response = lambda content, ephemeral=True: ctx.followup.send(
-                content, ephemeral=ephemeral
-            )
-        else:
-            send_response = lambda content: ctx.send(content)
+        # hybrid 指令統一走 ctx.defer：slash 會 defer interaction、prefix 呼叫是
+        # no-op。舊寫法 hasattr(ctx, "response") 恆為 False（Context 沒這屬性）→
+        # 從不 defer → slash 呼叫只要超過 3 秒就跳「應用程式沒有回應」。
+        await ctx.defer(ephemeral=True)
+        send_response = lambda content, ephemeral=True: ctx.send(
+            content, ephemeral=ephemeral
+        )
 
         try:
             self.logger.info(
@@ -1094,13 +1094,13 @@ class AnimeTracker(commands.Cog):
         episode 組法照抄輪詢路徑（index API 打底、detail API 補簡介封面），
         確保測試卡跟生產推送吃同一種資料形狀。
         """
-        if hasattr(ctx, "response"):
-            await ctx.response.defer(ephemeral=True)
-            send_response = lambda content, ephemeral=True: ctx.followup.send(
-                content, ephemeral=ephemeral
-            )
-        else:
-            send_response = lambda content: ctx.send(content)
+        # hybrid 指令統一走 ctx.defer：slash 會 defer interaction、prefix 呼叫是
+        # no-op。舊寫法 hasattr(ctx, "response") 恆為 False（Context 沒這屬性）→
+        # 從不 defer → slash 呼叫只要超過 3 秒就跳「應用程式沒有回應」。
+        await ctx.defer(ephemeral=True)
+        send_response = lambda content, ephemeral=True: ctx.send(
+            content, ephemeral=ephemeral
+        )
 
         try:
             from cogs.ui.push_core_simple import (
@@ -1110,8 +1110,12 @@ class AnimeTracker(commands.Cog):
             from cogs.ui.push_embed_v2 import generate_anime_layout
 
             channel = self.bot.get_channel(ANIME_V2_TEST_CHANNEL_ID)
-            if channel is None:
-                await send_response("❌ 找不到 V2 測試頻道", ephemeral=True)
+            # 1504438347974705152 是論壇頻道本身（ForumChannel），不是 thread ——
+            # ForumChannel 沒有 .send()，得用 create_thread 開新討論串放測試卡
+            if channel is None or not hasattr(channel, "create_thread"):
+                await send_response(
+                    "❌ 找不到 V2 測試頻道（或不是論壇頻道）", ephemeral=True
+                )
                 return
 
             eps = await fetch_all_recent_anime_from_api() or []
@@ -1154,7 +1158,11 @@ class AnimeTracker(commands.Cog):
                 await send_response("❌ V2 版面生成失敗", ephemeral=True)
                 return
 
-            message = await channel.send(view=layout, silent=True)
+            fallback_name = f"videoSn {video_sn}"
+            thread_name = f"V2 測試卡：{ep.get('title') or fallback_name}"[:100]
+            _thread, message = await channel.create_thread(
+                name=thread_name, view=layout, silent=True
+            )
             layout.message_id = message.id
             self.bot.add_view(layout, message_id=message.id)
             self.logger.info(
