@@ -395,16 +395,6 @@
         "status": "✅ 活躍",
         "category": "動畫追蹤"
       },
-      "anime_v2_test": {
-        "name": "anime_v2_test",
-        "description": "發一張 Components V2 測試卡到測試頻道（可帶 video_sn）",
-        "type": "admin",
-        "file": "ui/anime_tracker.py",
-        "line": 1089,
-        "status": "🧪 測試中",
-        "category": "動畫追蹤",
-        "note": "V2 版面驗證用暫時指令，cutover 完成後移除"
-      },
       "netflix_top10": {
         "name": "netflix_top10",
         "description": "查看台灣 Netflix 熱門影集 TOP 10（顯示實際海報縮圖）",

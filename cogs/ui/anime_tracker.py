@@ -85,10 +85,6 @@ _CJK_FONT_PATH = (
 )
 
 
-# V2 版面測試頻道（forum thread）。只給 anime_v2_test 用，cutover 完成後整段移除
-ANIME_V2_TEST_CHANNEL_ID = 1504438347974705152
-
-
 def _iter_dispatchable_items(components):
     """遞迴走訪元件樹，逐一吐出帶 custom_id 的按鈕。
 
@@ -1080,100 +1076,6 @@ class AnimeTracker(commands.Cog):
                 f"❌ [AnimeTracker.anime_manual_check] 手動檢查失敗: {e}", exc_info=True
             )
             await send_response(f"❌ 手動檢查失敗: {str(e)}", ephemeral=True)
-
-    @commands.hybrid_command(
-        name="anime_v2_test",
-        description="發一張 Components V2 測試卡到測試頻道（可帶 video_sn）",
-    )
-    @commands.has_permissions(administrator=True)
-    async def anime_v2_test(self, ctx: commands.Context, video_sn: int = 0):
-        """用 bot 本尊發一張 V2 卡，按鈕才會真的接上視圖。
-
-        REST 直發的卡片沒經過 bot 程序，視圖不會被註冊，按鈕按了沒反應；
-        這支走 channel.send(view=layout)，discord.py 當場註冊，可實測點擊。
-        episode 組法照抄輪詢路徑（index API 打底、detail API 補簡介封面），
-        確保測試卡跟生產推送吃同一種資料形狀。
-        """
-        # hybrid 指令統一走 ctx.defer：slash 會 defer interaction、prefix 呼叫是
-        # no-op。舊寫法 hasattr(ctx, "response") 恆為 False（Context 沒這屬性）→
-        # 從不 defer → slash 呼叫只要超過 3 秒就跳「應用程式沒有回應」。
-        await ctx.defer(ephemeral=True)
-        send_response = lambda content, ephemeral=True: ctx.send(
-            content, ephemeral=ephemeral
-        )
-
-        try:
-            from cogs.ui.push_core_simple import (
-                fetch_all_recent_anime_from_api,
-                fetch_anime_details_from_api,
-            )
-            from cogs.ui.push_embed_v2 import generate_anime_layout
-
-            channel = self.bot.get_channel(ANIME_V2_TEST_CHANNEL_ID)
-            # 1504438347974705152 是論壇頻道本身（ForumChannel），不是 thread ——
-            # ForumChannel 沒有 .send()，得用 create_thread 開新討論串放測試卡
-            if channel is None or not hasattr(channel, "create_thread"):
-                await send_response(
-                    "❌ 找不到 V2 測試頻道（或不是論壇頻道）", ephemeral=True
-                )
-                return
-
-            eps = await fetch_all_recent_anime_from_api() or []
-            if video_sn:
-                ep = next(
-                    (e for e in eps if int(e.get("videoSn") or 0) == video_sn), None
-                )
-            else:
-                ep = next((e for e in eps if e.get("videoSn")), None)
-                video_sn = int(ep.get("videoSn")) if ep else 0
-            if ep is None:
-                if not video_sn:
-                    await send_response("❌ API 抓不到動畫資料", ephemeral=True)
-                    return
-                ep = {"videoSn": video_sn}
-
-            # 詳細資訊合併 —— 與輪詢路徑同一套 key 對應；season_views 先 capture，
-            # 因為合併會把 index 的當季總數覆蓋成 detail 的本集數
-            season_views = int(ep.get("popular") or 0)
-            try:
-                details = await fetch_anime_details_from_api(video_sn)
-                if details:
-                    ep = {
-                        **ep,
-                        "animeSn": ep.get("animeSn") or details.get("anime_sn", 0),
-                        "title": details.get("title") or ep.get("title", ""),
-                        "description": details.get("content", ""),
-                        "cover": details.get("cover", ""),
-                        "total_views": season_views,
-                        "episode_count": int(details.get("episode_count") or 0),
-                        "popular": details.get("popular", 0),
-                        "score": details.get("score", 0),
-                    }
-            except Exception as e:
-                self.logger.debug(f"取得動畫詳細資訊失敗 videoSn={video_sn}: {e}")
-
-            db = self.polling_core.db if self.polling_core else None
-            layout = await generate_anime_layout(ep, push_mode="排程推送", db=db)
-            if layout is None:
-                await send_response("❌ V2 版面生成失敗", ephemeral=True)
-                return
-
-            fallback_name = f"videoSn {video_sn}"
-            thread_name = f"V2 測試卡：{ep.get('title') or fallback_name}"[:100]
-            _thread, message = await channel.create_thread(
-                name=thread_name, view=layout, silent=True
-            )
-            layout.message_id = message.id
-            self.bot.add_view(layout, message_id=message.id)
-            self.logger.info(
-                f"✅ [AnimeTracker.anime_v2_test] 已發 V2 測試卡 videoSn={video_sn}"
-            )
-            await send_response(f"✅ 已發 V2 測試卡：{message.jump_url}", ephemeral=True)
-        except Exception as e:
-            self.logger.error(
-                f"❌ [AnimeTracker.anime_v2_test] 發送失敗: {e}", exc_info=True
-            )
-            await send_response(f"❌ 發送失敗: {str(e)}", ephemeral=True)
 
 
 async def setup(bot):
