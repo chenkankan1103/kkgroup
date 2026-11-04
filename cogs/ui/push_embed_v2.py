@@ -65,16 +65,108 @@ VARIANT_THUMBNAIL = "thumbnail"
 DEFAULT_VARIANT = VARIANT_GALLERY
 
 # 舊 embed 受欄位值 1024 字元所迫，簡介只留 200 字、留言只顯示 3 則 × 60 字。
-# V2 沒有欄位上限，放寬之餘仍要留預算給標題、統計與 footer（見模組 docstring 第 3 點）。
-DESCRIPTION_LIMIT = 500
+# V2 沒有欄位上限，只有整則訊息共用的 4000 字元預算（見模組 docstring 第 3 點）。
+# 實測 20 部動畫的 content：簡介最長 1235、名單最長 854，所以這裡的額度
+# 幾乎等於不截斷 —— 真的遇到超長內容才由 _truncate 收尾。
+SYNOPSIS_LIMIT = 1200
+CREDITS_LIMIT = 1000
 COMMENT_DISPLAY_LIMIT = 6
 COMMENT_MAX_LEN = 100
+
+# 製作名單的排版方式
+#   compact  —— 一個區段一行，｜ 換成 ・，省垂直空間；但製作團隊那種十幾項的
+#               長區段在手機上照樣折成三、四行，等於沒分段
+#   expanded —— 每個項目自成一行，實測約 28 行，項目邊界一目瞭然
+# 2026-11-04 在測試頻道兩版並排比對後選了 expanded。
+CREDITS_COMPACT = "compact"
+CREDITS_EXPANDED = "expanded"
+DEFAULT_CREDITS_STYLE = CREDITS_EXPANDED
 
 # 標題已含集數標記時就不再附加 volume，避免出現「第5集 · 第5集」。
 # 與 push_embed.py 的 episode_pattern 同一條規則。
 _EPISODE_PATTERN = re.compile(
     r"第\s*\d+\s*[集話]|\d+\s*話|Ep\s*\d+|\[\s*\d+\s*\]", re.IGNORECASE
 )
+
+# 巴哈 content 的區段標題，例如 ＜製作團隊＞ / ＜聲優演員＞ / ＜音樂＞，
+# 英文版是 ＜STAFF＞ / ＜CAST＞ / ＜MUSIC＞。
+# 括號不能省：re.split 只有在 pattern 帶捕獲群組時才會把分隔符留在結果裡。
+# 少了這對括號會回 [前段, 內容1, 內容2]，標題整個消失、內容被當成標題，
+# 排出來會是「＜｜原作性質：輕小說…製作委員會＞」這種把整份名單吞進標題的亂碼。
+_SECTION_MARK = re.compile(r"(＜[^＞]{1,12}＞)")
+
+# 項目分隔符。巴哈用全形 ｜，但少數條目混用半形 |，一起收。
+_ITEM_SEP = re.compile(r"[｜|]")
+
+
+def split_anime_content(content: str) -> tuple:
+    """把巴哈的單行 content 切成（簡介, 製作名單）。
+
+    為什麼需要切：實測 20 部動畫的 content，換行數全部是 0、<br> 也全部是 0
+    —— API 回的是一條到底的字串，段落資訊不存在，只能從符號結構自己切。
+    它其實有結構，只是用 ＜區段＞ 當標題、｜ 當項目分隔：
+
+        <劇情簡介><製作團隊>原作：X｜導演：Y<聲優演員>主角：Z｜...
+
+    實測簡介中位數 235 字、名單中位數 457 字，也就是說這面文字牆有三分之二
+    是製作名單。不分開的話，簡介會被名單擠掉（舊版砍到 200 字，砍掉的幾乎
+    全是簡介）。
+
+    Returns:
+        (簡介, 製作名單)；沒有區段標記時整段都算簡介、名單為空字串。
+    """
+    if not content:
+        return "", ""
+    text = " ".join(str(content).split())
+    match = _SECTION_MARK.search(text)
+    if not match:
+        # 實測 20 部裡有 3 部沒有區段標記，硬切只會切出半句話，整段當簡介。
+        return text, ""
+    return text[: match.start()].strip(), text[match.start() :].strip()
+
+
+def _split_items(body: str) -> list:
+    """把一個區段的內容拆成項目清單。"""
+    return [x.strip() for x in _ITEM_SEP.split(body) if x.strip()]
+
+
+def format_credits(credits: str, style: str = DEFAULT_CREDITS_STYLE) -> str:
+    """把製作名單排成 Discord 的細字區塊（-# 開頭）。
+
+    用細字而不是正常字級，是因為名單是「有需要再看」的資訊，不該跟劇情簡介
+    搶版面。
+
+    Args:
+        credits: split_anime_content 切出來的名單段。
+        style: compact 一個區段一行；expanded 每個項目自成一行。
+    """
+    if not credits:
+        return ""
+
+    # 以區段標題切開。pattern 帶捕獲群組，所以結果是
+    # [區段前的殘料, 標題1, 內容1, 標題2, 內容2, ...] —— 標題會留著。
+    chunks = _SECTION_MARK.split(credits)
+    lines = []
+    head = chunks[0].strip()
+    if head:
+        lines.append(head)
+
+    for i in range(1, len(chunks) - 1, 2):
+        # 捕獲群組抓到的已經是「＜製作團隊＞」整串，不能再補一次括號
+        label = chunks[i].strip()
+        body = chunks[i + 1].strip()
+        items = _split_items(body) if body else []
+        if style == CREDITS_EXPANDED:
+            lines.append(label)
+            lines.extend(items)
+        elif items:
+            # compact 仍要分段，只是把換行換成 ・ —— 原本照抄 ｜ 會跟全形標點
+            # 混在一起糊成一條，換成 ・ 才看得出項目邊界。
+            lines.append(f"{label} {'・'.join(items)}")
+        else:
+            lines.append(label)
+
+    return "\n".join(f"-# {line}" for line in lines if line)
 
 
 def _display_title(episode: dict) -> str:
@@ -143,12 +235,14 @@ class AnimePushLayout(ui.LayoutView):
         push_mode: str = "unknown",
         db_adapter=None,
         variant: str = DEFAULT_VARIANT,
+        credits_style: str = DEFAULT_CREDITS_STYLE,
         message_id: Optional[int] = None,
     ):
         super().__init__(timeout=None)
         self.episode = episode
         self.push_mode = push_mode
         self.variant = variant
+        self.credits_style = credits_style
         self.db = db_adapter
         self.video_sn = episode.get("videoSn")
         self.anime_sn = episode.get("animeSn")
@@ -167,9 +261,13 @@ class AnimePushLayout(ui.LayoutView):
 
         title = _display_title(self.episode)
         cover = self.episode.get("cover", "")
-        description = _truncate(
-            self.episode.get("description") or self.episode.get("content") or "",
-            DESCRIPTION_LIMIT,
+        # 巴哈的 content 是一條到底的字串，先切成簡介與製作名單再各自呈現
+        synopsis, credits = split_anime_content(
+            self.episode.get("description") or self.episode.get("content") or ""
+        )
+        synopsis = _truncate(synopsis, SYNOPSIS_LIMIT)
+        credits_text = format_credits(
+            _truncate(credits, CREDITS_LIMIT), self.credits_style
         )
 
         # 標題區：縮圖版把封面掛在 Section 右側；大圖版留到最下面用 MediaGallery 呈現。
@@ -178,13 +276,17 @@ class AnimePushLayout(ui.LayoutView):
             container.add_item(
                 ui.Section(
                     ui.TextDisplay(f"# {title}"),
-                    ui.TextDisplay(description or "（無簡介）"),
+                    ui.TextDisplay(synopsis or "（無簡介）"),
                     accessory=ui.Thumbnail(cover, description="封面"),
                 )
             )
         else:
             container.add_item(ui.TextDisplay(f"# {title}"))
-            container.add_item(ui.TextDisplay(description or "（無簡介）"))
+            container.add_item(ui.TextDisplay(synopsis or "（無簡介）"))
+
+        # 製作名單接在簡介後面：它是簡介的細字附註，拆開後就不再跟劇情搶版面
+        if credits_text:
+            container.add_item(ui.TextDisplay(credits_text))
 
         container.add_item(ui.Separator())
 
@@ -325,6 +427,7 @@ class AnimePushLayout(ui.LayoutView):
             push_mode=self.push_mode,
             db_adapter=self.db,
             variant=self.variant,
+            credits_style=self.credits_style,
             message_id=message.id,
         )
         await message.edit(view=fresh)
@@ -347,6 +450,7 @@ async def generate_anime_layout(
     push_mode: str = "unknown",
     db=None,
     variant: str = DEFAULT_VARIANT,
+    credits_style: str = DEFAULT_CREDITS_STYLE,
 ) -> Optional[ui.LayoutView]:
     """生成動畫推送的 V2 版面。
 
@@ -359,13 +463,18 @@ async def generate_anime_layout(
         push_mode: 推送模式（"排程推送" / "輪詢 (備案模式)"）
         db: AnimePushDB 實例，用於取投票統計
         variant: 版面變體（gallery / thumbnail）
+        credits_style: 製作名單排版（compact / expanded）
 
     Returns:
         LayoutView，失敗則回傳 None
     """
     try:
         return AnimePushLayout(
-            episode, push_mode=push_mode, db_adapter=db, variant=variant
+            episode,
+            push_mode=push_mode,
+            db_adapter=db,
+            variant=variant,
+            credits_style=credits_style,
         )
     except Exception as e:
         logger.error(f"生成 V2 版面失敗: {e}")
