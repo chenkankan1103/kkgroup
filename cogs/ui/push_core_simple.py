@@ -1545,7 +1545,7 @@ class SimpleAnimePushCore:
             return
 
         # Import here to avoid circular import
-        from cogs.ui.push_embed import generate_anime_embed, generate_anime_view
+        from cogs.ui.push_embed_v2 import generate_anime_layout
 
         # 1. 從 API 獲取最新動畫列表
         episodes = await fetch_all_recent_anime_from_api()
@@ -1624,20 +1624,17 @@ class SimpleAnimePushCore:
             except Exception as e:
                 logger.debug(f"取得動畫詳細資訊失敗 videoSn={video_sn}: {e}")
 
-            # 生成 view (按鈕)
-            view = await generate_anime_view(ep, db=self.db)
-            if not view:
+            # 生成 V2 版面（LayoutView 已內含按鈕，不再分 embed/view 兩步）
+            layout = await generate_anime_layout(ep, push_mode="輪詢 (備案模式)", db=self.db)
+            if not layout:
                 continue
 
-            # 生成 embed 和發送訊息
+            # 發送訊息
             try:
-                embed = await generate_anime_embed(
-                    ep, push_mode="輪詢 (備案模式)", db=self.db
-                )
-                message = await channel.send(embed=embed, view=view, silent=True)
+                message = await channel.send(view=layout, silent=True)
 
-                if view and hasattr(view, "message_id"):
-                    view.message_id = message.id
+                if layout and hasattr(layout, "message_id"):
+                    layout.message_id = message.id
 
                 # 記錄
                 title = ep.get("title", "未知標題")
@@ -1664,10 +1661,10 @@ class SimpleAnimePushCore:
 
                 # 註冊永久視圖
                 if self.bot:
-                    self.bot.add_view(view, message_id=message.id)
+                    self.bot.add_view(layout, message_id=message.id)
 
                 logger.info(
-                    f"✅ 已推送 Embed: {title} (videoSn={video_sn}, volume={volume})"
+                    f"✅ 已推送 V2 卡: {title} (videoSn={video_sn}, volume={volume})"
                 )
 
             except Exception as e:
@@ -1678,7 +1675,7 @@ class SimpleAnimePushCore:
         if not self.bot:
             return
         # Import here to avoid circular import
-        from cogs.ui.push_embed import generate_anime_embed, generate_anime_view
+        from cogs.ui.push_embed_v2 import generate_anime_layout
 
         # 取得現在時間
         now = datetime.now(TW_TZ)
@@ -1872,29 +1869,23 @@ class SimpleAnimePushCore:
             except Exception as e:
                 logger.error(f"❌ 取得動畫詳細資訊失敗 videoSn={resolved_sn}: {e}")
                 continue
-            # 生成 view (按鈕)
+            # 生成 V2 版面（LayoutView 已內含按鈕，不再分 embed/view 兩步）
             try:
-                view = await generate_anime_view(episode, db=self.db)
-                if not view:
+                layout = await generate_anime_layout(
+                    episode, push_mode="排程推送", db=self.db
+                )
+                if not layout:
                     logger.warning(f"⚠️ 生成視圖失敗 videoSn={resolved_sn}")
                     continue
             except Exception as e:
                 logger.error(f"❌ 生成視圖失敗 videoSn={resolved_sn}: {e}")
                 continue
-            # 生成 embed
-            try:
-                embed = await generate_anime_embed(
-                    episode, push_mode="排程推送", db=self.db
-                )
-            except Exception as e:
-                logger.error(f"❌ 生成 embed 失敗 videoSn={resolved_sn}: {e}")
-                continue  # skip to next item
             # 發送訊息 (帶重試機制)
             message_sent = False
             last_send_error = None
             for attempt in range(3):
                 try:
-                    message = await channel.send(embed=embed, view=view, silent=True)
+                    message = await channel.send(view=layout, silent=True)
                     message_sent = True
                     break
                 except Exception as e:
@@ -1910,8 +1901,8 @@ class SimpleAnimePushCore:
                 self._fail_count += 1
                 continue  # skip marking and move to next item
             # 只有發送成功時才進行後續處理
-            if view and hasattr(view, "message_id"):
-                view.message_id = message.id
+            if layout and hasattr(layout, "message_id"):
+                layout.message_id = message.id
             # 記錄為已推送（使用解析後的 videoSn）
             anime_sn = episode.get("animeSn", 0)
             title = episode.get("title", "未知標題")
@@ -1928,8 +1919,8 @@ class SimpleAnimePushCore:
             self.db.mark_time_pushed(day_of_week, scheduled_time, video_sn)
             # 註冊永久視圖
             if self.bot:
-                self.bot.add_view(view, message_id=message.id)
-            logger.info(f"✅ 已排程推送 Embed: {title} (videoSn={resolved_sn})")
+                self.bot.add_view(layout, message_id=message.id)
+            logger.info(f"✅ 已排程推送 V2 卡: {title} (videoSn={resolved_sn})")
             # 重置失敗計數（成功推送）
             self._fail_count = max(0, self._fail_count - 1)
 
