@@ -361,6 +361,12 @@ def _clear_settlement_message_state():
     _clear_env_message_state("FORTRESS_SETTLEMENT_MESSAGE_ID")
 
 
+def _message_is_components_v2(message) -> bool:
+    """判斷訊息是否為 Components V2 格式（2026-11-05 cutover 過渡期新舊訊息並存：
+    舊 embed 訊息維持 classic 更新，V2 訊息用 fortress_defense_v2 版面更新）。"""
+    return bool(getattr(message.flags, "components_v2", False))
+
+
 # ─── 興趣標籤 Modal ────────────────────────────────────────
 
 
@@ -1308,12 +1314,23 @@ class FortressDefenseCog(commands.Cog):
                 )
                 return
 
-        embed = build_battle_embed(state, self.bot)
-        view = FortressEnemyView(self)
+        from cogs.ui.fortress_defense_v2 import build_battle_layout
+
         if self._battle_message_id:
             try:
                 msg = await channel.fetch_message(self._battle_message_id)
-                await msg.edit(embed=embed, view=view)
+                if _message_is_components_v2(msg):
+                    # V2 訊息：只能用 view 編輯（不能再帶 embed）
+                    await msg.edit(view=build_battle_layout(self, state, self.bot))
+                    log.info(
+                        f"[Fortress] 戰鬥版面(V2)已更新 msg={msg.id}, new_day={new_day}, wave={state.current_wave_number}"
+                    )
+                    return
+                # 舊 classic 訊息：維持 embed 更新到當日戰役結束（cutover 過渡期）
+                await msg.edit(
+                    embed=build_battle_embed(state, self.bot),
+                    view=FortressEnemyView(self),
+                )
                 log.info(
                     f"[Fortress] 戰鬥 Embed 已更新 msg={msg.id}, new_day={new_day}, wave={state.current_wave_number}"
                 )
@@ -1324,9 +1341,9 @@ class FortressDefenseCog(commands.Cog):
             except Exception as exc:
                 log.warning(f"[Fortress] 編輯既有戰鬥 Embed 失敗，改為重發: {exc}")
 
+        # 新發送的戰場訊息一律走 V2（00:00 結算刪舊訊息後，次日 09:00 起生效）
         msg = await channel.send(
-            embed=embed,
-            view=view,
+            view=build_battle_layout(self, state, self.bot),
             allowed_mentions=AllowedMentions.none(),
             silent=True,
         )
@@ -1440,9 +1457,11 @@ class FortressDefenseCog(commands.Cog):
                 channel, self._battle_message_id, _clear_battle_message_state
             )
             self._battle_message_id = None
-            embed = build_settlement_embed(result, self.bot)
+            # 結算卡走 V2（legacy build_settlement_embed 留檔備份，回滾用 git revert）
+            from cogs.ui.fortress_defense_v2 import build_settlement_layout
+
             settlement_msg = await channel.send(
-                embed=embed,
+                view=build_settlement_layout(result, self.bot),
                 allowed_mentions=AllowedMentions.none(),
                 silent=True,
             )
@@ -1476,8 +1495,20 @@ class FortressDefenseCog(commands.Cog):
                 return
             msg = await channel.fetch_message(self._battle_message_id)
             if state:
+                from cogs.ui.fortress_defense_v2 import build_battle_layout
+
                 view = None if state.status != "active" else FortressEnemyView(self)
-                await msg.edit(embed=build_battle_embed(state, self.bot), view=view)
+                if _message_is_components_v2(msg):
+                    v2_view = (
+                        None
+                        if state.status != "active"
+                        else build_battle_layout(self, state, self.bot)
+                    )
+                    await msg.edit(view=v2_view)
+                else:
+                    await msg.edit(
+                        embed=build_battle_embed(state, self.bot), view=view
+                    )
                 self._last_embed_refresh_at = now
         except discord.NotFound:
             pass
@@ -1499,7 +1530,12 @@ class FortressDefenseCog(commands.Cog):
                 return
 
             message = await channel.fetch_message(self._battle_message_id)
-            await message.edit(view=FortressEnemyView(self))
+            if _message_is_components_v2(message):
+                from cogs.ui.fortress_defense_v2 import build_battle_layout
+
+                await message.edit(view=build_battle_layout(self, state, self.bot))
+            else:
+                await message.edit(view=FortressEnemyView(self))
             log.info(f"[Fortress] 已恢復戰場訊息引用: {self._battle_message_id}")
         except discord.NotFound:
             log.warning("[Fortress] 重啟後找不到舊的戰場訊息，已清除引用")
@@ -1747,8 +1783,17 @@ class FortressDefenseCog(commands.Cog):
 
             try:
                 message = await channel.fetch_message(self._battle_message_id)
-                embed = build_battle_embed(state, self.bot)
-                await message.edit(embed=embed, view=FortressEnemyView(self))
+                from cogs.ui.fortress_defense_v2 import build_battle_layout
+
+                if _message_is_components_v2(message):
+                    await message.edit(
+                        view=build_battle_layout(self, state, self.bot)
+                    )
+                else:
+                    await message.edit(
+                        embed=build_battle_embed(state, self.bot),
+                        view=FortressEnemyView(self),
+                    )
             except discord.NotFound:
                 log.warning("[Fortress] 戰況訊息不存在，停止更新")
                 self._battle_message_id = None
