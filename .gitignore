@@ -516,7 +516,10 @@ reset_*.py
 .local/
 .swarm/
 knowledge/_wiki/Inbox/
-scheduled_tasks/
+# scheduled_tasks 改為排除內容物但保留目錄，關鍵腳本用 ! 白名單納入版本控制
+# （update_tunnel_url_event.sh → auto_update_webhook_v2.py 這條 webhook 自動修復鏈必須進 git）
+scheduled_tasks/*
+!scheduled_tasks/auto_update_webhook_v2.py
 scripts/
 shared/db/data/
 status/
