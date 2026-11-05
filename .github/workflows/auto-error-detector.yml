@@ -63,6 +63,7 @@ jobs:
             --project=kkgroup \
             --zone=us-central1-a \
             --tunnel-through-iap \
+            --ssh-key-expire-after=10m \
             --command "cd /home/e193752468/kkgroup && export PYTHONPATH=/home/e193752468/kkgroup:\$PYTHONPATH && export GITHUB_TOKEN='${GITHUB_TOKEN}' && export DISCORD_WEBHOOK='${DISCORD_WEBHOOK}' && export AUTO_DEBUG_RUN_ONCE=true && python3 -m cogs.common.auto_debug_system"
           echo "VM auto-debug probe completed at: $(date -u)"
 

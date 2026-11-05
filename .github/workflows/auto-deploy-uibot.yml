@@ -101,6 +101,7 @@ jobs:
             --project=${{ env.GCP_PROJECT }} \
             --zone=${{ env.GCP_ZONE }} \
             --tunnel-through-iap \
+            --ssh-key-expire-after=10m \
             --command="${REMOTE_CMD}"
 
       - name: Notify Discord on failure
