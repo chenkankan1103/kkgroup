@@ -86,6 +86,10 @@ temp/
 # Netflix 推送狀態快取（VM 為主，不進 Git）
 netflix_top10_last.json
 
+# VM runtime 狀態檔（VM 為主，不進 Git）
+data/self_heal_state.json
+data/fortress_state.json
+
 # Environment variables
 .env
 .env.*
