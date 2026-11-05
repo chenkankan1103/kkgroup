@@ -479,3 +479,8 @@ async def generate_anime_layout(
     except Exception as e:
         logger.error(f"生成 V2 版面失敗: {e}")
         return None
+
+
+async def setup(bot):
+    """uibot 會把 cogs/ui/ 下每個 .py 當 extension 載入；本檔是版面模組不是 cog，
+    補空 setup 讓載入成功，不再每次重啟噴「no setup function」。"""

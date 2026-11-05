@@ -5,10 +5,12 @@
 Netflix 台灣每週排行榜推送任務（Tudum 官方榜單）
 - 爬取 https://www.netflix.com/tudum/top10/taiwan/tv 官方 TOP 10（Scrapling Fetcher，無需 JS 渲染）
 - 以 (videoId, 上榜週數) 指紋比對，僅在官方榜單變更時推送
-- 有變更時以靜音（silent）方式推送至指定 Discord 頻道
+- 有變更時以 Components V2 單卡靜音推送（2026-11-05 cutover；舊版 11 張 embed 拆兩批
+  的路徑保留在下方當備份，回滾用 git revert cutover commit）
 """
 
 import os
+import sys
 import json
 import logging
 import asyncio
@@ -23,9 +25,14 @@ BASE_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = BASE_DIR.parent
 ENV_FILE = PROJECT_DIR / ".env"
 
+# cron 的 sys.path[0] 是 scheduled_tasks/，專案根目錄要自己補上才匯得進 cogs.*
+sys.path.insert(0, str(PROJECT_DIR))
+
 # 載入環境變數
 from dotenv import load_dotenv
 load_dotenv(ENV_FILE)
+
+from cogs.ui.netflix_push_v2 import generate_netflix_layout  # noqa: E402
 
 # Discord 機器人 Token
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -189,6 +196,11 @@ def save_last_data(week_end: str, shows: List[Dict[str, Any]]) -> None:
         logger.error(f"儲存最後推送資料失敗: {e}")
 
 
+# ------------------------------------------------------------------
+# 舊版 embed 路徑（V2 cutover 後未使用，保留備份；回滾用 git revert）
+# ------------------------------------------------------------------
+
+
 async def create_show_embeds(
     shows: List[Dict[str, Any]], week_end: str, max_shows: int = 10
 ) -> List[discord.Embed]:
@@ -297,10 +309,10 @@ async def main() -> None:
                 logger.info("✅ Tudum 官方榜單無變更，本週不推送")
             else:
                 logger.info("🔄 Tudum 官方榜單有變更，準備推送更新")
-                embeds = await create_show_embeds(shows, week_end, max_shows=10)
-                await send_silent_embeds(channel, embeds)
+                layout = generate_netflix_layout(shows, week_end, max_shows=10)
+                await channel.send(view=layout, silent=True)
                 save_last_data(week_end, shows)
-                logger.info("✅ Tudum 排行榜推送完成")
+                logger.info("✅ Tudum 排行榜推送完成（V2 單卡）")
 
         except Exception as e:
             logger.error(f"❌ 執行過程中發生錯誤: {e}", exc_info=True)

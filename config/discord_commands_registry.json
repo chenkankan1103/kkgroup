@@ -405,24 +405,6 @@
         "status": "✅ 活躍",
         "category": "娛樂"
       },
-      "netflix_v2_test": {
-        "name": "netflix_v2_test",
-        "description": "抓即時 Tudum 榜單，發一張 Netflix 週榜 V2 測試卡到測試論壇",
-        "type": "admin",
-        "file": "ui/v2_test_lab.py",
-        "status": "🧪 測試中",
-        "category": "娛樂",
-        "note": "V2 遷移測試用暫時指令，cutover 完成後整支刪除"
-      },
-      "bangumi_v2_test": {
-        "name": "bangumi_v2_test",
-        "description": "抓即時 bangumi 近期注目，發一張 V2 測試卡到測試論壇",
-        "type": "admin",
-        "file": "ui/v2_test_lab.py",
-        "status": "🧪 測試中",
-        "category": "動畫追蹤",
-        "note": "V2 遷移測試用暫時指令，cutover 完成後整支刪除"
-      },
       "anime_weekly": {
         "name": "anime_weekly",
         "description": "查看本週投票統計",

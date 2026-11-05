@@ -93,3 +93,8 @@ def generate_netflix_layout(
     container.add_item(ui.TextDisplay("-# 資料來源 Netflix Tudum 官方排行榜"))
     view.add_item(container)
     return view
+
+
+async def setup(bot):
+    """uibot 會把 cogs/ui/ 下每個 .py 當 extension 載入；本檔是版面模組不是 cog，
+    補空 setup 讓載入成功，不再每次重啟噴「no setup function」。"""

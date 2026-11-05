@@ -9,10 +9,12 @@
 下面只保留實作。**改表格任何一行之前，先回去讀那份 docstring** —— 這份表格
 每一格的寬度都是刻意設計的，憑感覺改很容易在別的裝置上整排歪掉。
 
-兩個刻意保留的差異：
+三個刻意保留的差異：
 - 舊版「前三名不掛獎牌」是為了等寬對齊，V2 版照樣不掛 —— 表格邏輯一行都不動
 - 截斷預算從 embed 的 4096 降為 V2 的 4000（TextDisplay 總預算），扣掉
   標題/圖例/頁尾後表格可用約 3600 字 —— 實測 20 行約 1400 字，永遠用不到
+- 片名超過 TITLE_MAX_UNITS 顯示寬度就截尾補 …（V2 Container 較窄，長片名
+  會折行把表格弄亂；舊 embed 時代描述區寬，沒這問題）
 """
 
 import logging
@@ -49,6 +51,27 @@ SCORE_LEGEND = f"分數色階：🟪≥8　🟦≥7　🟩≥6　🟨≥5　🟧
 # 標題（約 40）+ 圖例（約 50）+ 頁尾（約 60）+ 時間戳（約 30）+ 安全餘裕 ≈ 400。
 V2_TOTAL_LIMIT = 4000
 _CHROME_RESERVE = 400
+
+# 片名截斷上限（顯示寬度單位：全形 1、半形 0.5）。V2 Container 比 embed 的
+# 描述區窄，超過這個長度的片名會折到第二行，折行後下一行從最左邊開始，
+# 視�上就跟下一部的進度條黏在一起（2026-11-05 測試卡實測回饋）。截尾補 …。
+TITLE_MAX_UNITS = 16
+
+
+def _display_title(title: str) -> str:
+    """片名截斷：全形字算 1 單位、半形算 0.5，超過 TITLE_MAX_UNITS 砍尾補 …。
+
+    名次/熱度條/分數/人數欄都在片名「前面」，折行推不歪它們 —— 被弄亂的是
+    這一行自己往下掉，跟下一部黏在一起。所以寧可截尾，讓每行都是剛好一行。
+    """
+    units = 0.0
+    for i, ch in enumerate(title):
+        # U+2E80 起為 CJK 部首/標點/方塊字區，全形算 1 單位；之前的拉丁、
+        # 數字、空白算 0.5（‧、& 這類半形符號也落在這邊）
+        units += 0.5 if ord(ch) < 0x2E80 else 1.0
+        if units > TITLE_MAX_UNITS - 1:  # 留 1 單位給 …
+            return title[:i] + "…"
+    return title
 
 
 def _heat_bar(doing: int, peak: int) -> str:
@@ -103,7 +126,7 @@ def build_table_lines(items: list) -> str:
         lines.append(
             f"`{rank:>2}.` {_heat_bar(doing, peak)} "
             f"{_score_cell(item.get('score'))} `{doing:>{doing_width},}` 人在看 "
-            f"**{item.get('title')}**"
+            f"**{_display_title(item.get('title') or '')}**"
         )
     return "\n".join(lines)
 
@@ -148,3 +171,8 @@ def generate_bangumi_layout(items: list) -> ui.LayoutView:
     )
     view.add_item(container)
     return view
+
+
+async def setup(bot):
+    """uibot 會把 cogs/ui/ 下每個 .py 當 extension 載入；本檔是版面模組不是 cog，
+    補空 setup 讓載入成功，不再每次重啟噴「no setup function」。"""

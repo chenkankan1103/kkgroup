@@ -4,7 +4,8 @@
 """
 bangumi 每週近期注目推送任務
 - 取官網「動畫 > 近期注目」（/anime/browser/?sort=trends）前 20 部，逐部補上在看人數
-- 以單一 Embed 靜音推送至動畫推送頻道
+- 以 Components V2 單卡靜音推送至動畫推送頻道（2026-11-05 cutover；
+  舊版單一 Embed 路徑保留在下方當備份，回滾用 git revert cutover commit）
 - 排程：每週四 20:00（台灣時間）＝ 週四 12:00 UTC
 """
 
@@ -29,7 +30,8 @@ load_dotenv(ENV_FILE)
 # cron 的 sys.path[0] 是 scheduled_tasks/，專案根目錄要自己補上才匯得進 shared.*
 sys.path.insert(0, str(PROJECT_DIR))
 
-from shared.utils import bangumi_client as bgm  # noqa: E402
+from cogs.ui.bangumi_push_v2 import generate_bangumi_layout
+from shared.utils import bangumi_client as bgm
 
 # Discord 機器人 Token
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -127,6 +129,11 @@ def _score_cell(score) -> str:
     return f"{SCORE_CHIP_LOW} `{value:.1f}` 分"
 
 
+# ------------------------------------------------------------------
+# 舊版 embed 路徑（V2 cutover 後未使用，保留備份；回滾用 git revert）
+# ------------------------------------------------------------------
+
+
 def build_embed(items: list[dict]) -> discord.Embed:
     """把熱門清單組成單一 Embed。
 
@@ -213,7 +220,7 @@ async def main() -> None:
         return
 
     logger.info(f"✅ 取得 {len(items)} 筆，第一名：{items[0].get('title')}")
-    embed = build_embed(items)
+    layout = generate_bangumi_layout(items)
 
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix="!", intents=intents)
@@ -226,7 +233,7 @@ async def main() -> None:
             if not isinstance(channel, discord.TextChannel):
                 logger.error(f"❌ 找不到有效文字頻道 ID: {CHANNEL_ID}")
                 return
-            await channel.send(embed=embed, silent=True)
+            await channel.send(view=layout, silent=True)
             logger.info(f"✅ 已推送至 {channel.name}（{channel.id}）")
         except Exception as e:
             logger.error(f"❌ 推送失敗: {e}", exc_info=True)
