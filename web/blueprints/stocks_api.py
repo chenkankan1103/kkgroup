@@ -18,7 +18,7 @@ from db_adapter import (
     get_all_users,
 )
 from utils.stock_api import fetch_price as async_fetch_price
-from blueprints.discord_auth import user_sessions
+from web.blueprints.discord_auth import user_sessions
 
 
 # 同步包裝函數

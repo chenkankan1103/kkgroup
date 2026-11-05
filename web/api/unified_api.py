@@ -100,7 +100,7 @@ except Exception as _e:
 # ============================================================
 # 權限驗證裝飾器
 # ============================================================
-from blueprints.discord_auth import user_sessions as _discord_sessions
+from web.blueprints.discord_auth import user_sessions as _discord_sessions
 
 ADMIN_ROLE_ID = os.getenv("ADMIN_ROLE_ID", "")
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
