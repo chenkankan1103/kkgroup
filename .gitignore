@@ -89,6 +89,7 @@ netflix_top10_last.json
 # VM runtime 狀態檔（VM 為主，不進 Git）
 data/self_heal_state.json
 data/fortress_state.json
+config/webhook_config.json
 
 # Environment variables
 .env

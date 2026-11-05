@@ -4,10 +4,17 @@
 🔄 改進版自動更新 GitHub Webhook 隧道 URL
 使用 requests 庫替代 curl，加入重試邏輯、詳細日誌和 Discord 告警
 
-使用方式：
-  python3 auto_update_webhook_v2.py
+使用方式（實際呼叫鏈，非 crontab）：
+  cloudflared.service ExecStartPost
+    → scripts/update_tunnel_url_event.sh（等 60 秒讓隧道註冊完成）
+      → python3 scheduled_tasks/auto_update_webhook_v2.py >> /var/log/webhook_auto_update.log
 
-  crontab: */5 * * * * cd /home/e193752468/kkgroup && python3 scheduled_tasks/auto_update_webhook_v2.py >> /var/log/webhook_auto_update_v2.log 2>&1
+行為設計（2026-11-06 修正）：
+  1. 隧道 URL 只存在於 cloudflared 啟動日誌（quick tunnel 每次重啟隨機產生）
+  2. URL 變更必然伴隨 cloudflared 重啟 → 重啟時日誌必新鮮，journalctl 一定撈得到
+  3. 日誌輪轉後（未重啟）撈不到 URL → 視為無變更，安全 no-op（以 GitHub 現值佐證）
+  4. 只更新 GitHub webhook；config.json 的 url/API_BASE 是 Discord OAuth 回呼基準，
+     必須維持 duckdns 網域，絕不可改寫成隧道 URL
 """
 
 import os
@@ -38,7 +45,6 @@ else:
     load_dotenv(Path.cwd() / ".env")
 
 # 配置
-CONFIG_FILE = Path(__file__).parent.parent / "config" / "config.json"
 WEBHOOK_CONFIG_FILE = Path(__file__).parent.parent / "config" / "webhook_config.json"
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "321qwe321")
@@ -48,6 +54,38 @@ WEBHOOK_ENDPOINT = "/webhook/github"
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # 秒
+
+
+def get_url_from_github():
+    """第三層備援：從 GitHub API 讀取 webhook 目前指向的隧道 URL。
+
+    cloudflared 日誌會輪轉（journald vacuum / 時間推移），註冊網址的那幾行
+    可能消失；GitHub webhook 設定本身即是「現用網址」的真相來源。
+    """
+    if not GITHUB_TOKEN:
+        return None
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/hooks",
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "kkgroup-webhook-updater",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            hooks = json.loads(resp.read().decode("utf-8"))
+        for hook in hooks:
+            url = hook.get("config", {}).get("url", "")
+            if WEBHOOK_ENDPOINT in url:
+                base = url.split(WEBHOOK_ENDPOINT)[0].rstrip("/")
+                print(f"✅ 從 GitHub API 讀到現用隧道 URL: {base}")
+                return base
+    except Exception as e:
+        print(f"⚠️ 讀取 GitHub webhook 現值失敗: {e}")
+    return None
 
 
 def log(msg, is_error=False):
@@ -198,31 +236,6 @@ def save_webhook_config(tunnel_url, webhook_id):
         print(f"❌ 保存配置失敗: {e}")
 
 
-def update_config_json(tunnel_url):
-    """更新 config.json"""
-    try:
-        config = {}
-        if CONFIG_FILE.exists():
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-        config["url"] = tunnel_url
-        config["API_BASE"] = tunnel_url
-        config["lastUpdated"] = datetime.utcnow().isoformat() + "Z"
-        # 保留原有 imageURL（若有）
-        # Note: imageURL 處理在原腳本中保留
-
-        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-
-        print(f"✅ config.json 已更新: {tunnel_url}")
-        return True
-    except Exception as e:
-        print(f"❌ 更新 config.json 失敗: {e}")
-        return False
-
-
 def update_github_webhook(tunnel_url, retry_count=0):
     """使用 GitHub API 更新 webhook（帶重試邏輯）"""
 
@@ -354,78 +367,42 @@ def update_github_webhook(tunnel_url, retry_count=0):
         return False
 
 
-def git_commit_changes(tunnel_url):
-    """git commit 和 push config.json"""
-    try:
-        repo_dir = Path(__file__).parent.parent
-
-        print("📝 git add config.json...")
-        subprocess.run(
-            ["git", "add", "config/config.json"],
-            cwd=repo_dir,
-            capture_output=True,
-            timeout=10,
-            check=True,
-        )
-
-        print("📝 git commit...")
-        result = subprocess.run(
-            ["git", "commit", "-m", f"Auto-update: Tunnel URL changed to {tunnel_url}"],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode == 0:
-            print("✅ git commit 成功")
-
-            print("📤 git push...")
-            push_result = subprocess.run(
-                ["git", "push", "origin", "main"],
-                cwd=repo_dir,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-
-            if push_result.returncode == 0:
-                print("✅ git push 成功")
-                log_discord(f"✅ Git 提交成功\n隧道已更新: {tunnel_url}")
-                return True
-            else:
-                print(f"⚠️ git push 失敗: {push_result.stderr}")
-        else:
-            # 無變更可提交
-            print(f"ℹ️ 無變更需要提交: {result.stderr}")
-
-        return True
-    except Exception as e:
-        print(f"❌ Git 操作失敗: {e}")
-        log_discord(f"❌ Git 操作失敗: {str(e)}", is_error=True)
-        return False
-
-
 def main():
     """主函數"""
     print("=" * 60)
     print("🚀 開始隧道 URL 自動更新檢查")
     print("=" * 60)
 
-    # 1. 提取當前隧道 URL
+    # 1. 提取當前隧道 URL（journalctl → cloudflared 設定檔）
     current_url = get_current_tunnel_url()
-    if not current_url:
-        print("❌ 無法提取隧道 URL，本次更新失敗")
-        log_discord("❌ 無法提取隧道 URL - 隧道可能未啟動", is_error=True)
-        return False
 
     # 2. 加載上次保存的配置
     old_config = load_webhook_config()
     old_url = old_config.get("tunnel_url")
 
-    # 3. 檢查是否需要更新
+    # 3. 本機提取不到 URL（日誌已輪轉、隧道未重啟）→ 不可能發生「網址變更」
+    #    （網址變更必然伴隨 cloudflared 重啟，重啟會寫入全新日誌）→ 安全 no-op
+    if not current_url:
+        github_current = get_url_from_github()
+        print(f"ℹ️ 本機無法提取隧道 URL；GitHub webhook 現值: {github_current or '未知'}")
+        print("ℹ️ 未偵測到可驗證的網址變更，本次不動任何設定（安全 no-op）")
+        return True
+
+    # 3.5 首次執行（無本地狀態檔）：以 GitHub 現值為基準，避免誤判「已變更」
+    if old_url is None:
+        github_current = get_url_from_github()
+        if github_current == current_url:
+            print("ℹ️ 無本地狀態檔，但 GitHub webhook 已指向相同 URL → 建立基準即可")
+            save_webhook_config(current_url, None)
+            return True
+        if github_current:
+            old_url = github_current
+            print(f"ℹ️ 以 GitHub 現值為舊基準: {old_url}")
+
+    # 4. 檢查是否需要更新
     if current_url == old_url:
         print("✅ 隧道 URL 無變化，無需更新")
+        save_webhook_config(current_url, old_config.get("webhook_id"))
         return True
 
     print("⚠️ 隧道 URL 已變更！")
@@ -433,22 +410,15 @@ def main():
     print(f"   新 URL: {current_url}")
     log_discord(f"🚨 隧道 URL 已變更\n舊: {old_url}\n新: {current_url}")
 
-    # 4. 更新 config.json
-    if not update_config_json(current_url):
-        print("❌ config.json 更新失敗")
-        return False
-
     # 5. 更新 GitHub webhook
+    #    （config.json 的 url/API_BASE 現在是 Discord OAuth 回呼與紙娃娃 API 的
+    #    基準網址，必須維持 duckdns 網域，不可改寫成隧道 URL——這是舊版行為的地雷）
     if not update_github_webhook(current_url):
         print("❌ GitHub webhook 更新失敗")
         return False
 
     # 6. 保存配置
     save_webhook_config(current_url, old_config.get("webhook_id"))
-
-    # 7. git commit
-    if not git_commit_changes(current_url):
-        print("⚠️ Git 提交失敗，但隧道 URL 已更新")
 
     print("=" * 60)
     print("✅ 隧道 URL 自動更新完成")
