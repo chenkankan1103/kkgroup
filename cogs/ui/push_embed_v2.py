@@ -49,6 +49,7 @@ from shared.utils.embed_views import (
     EPISODE_FIELD_NAME,
     REWARD_HINT,
     VOTE_TYPE_LABELS,
+    VOTE_TYPE_ORDER,
     AnimePushView,
     format_comments,
 )
@@ -225,8 +226,6 @@ class AnimePushLayout(ui.LayoutView):
 
     # 整支沿用 production 的實作，只覆蓋下面標了「V2 版」的接縫。
     _grant_reward = AnimePushView._grant_reward
-    _build_vote_stats_text = AnimePushView._build_vote_stats_text
-    _build_cumulative_stats_text = AnimePushView._build_cumulative_stats_text
     _comment_callback = AnimePushView._comment_callback
 
     def __init__(
@@ -253,6 +252,39 @@ class AnimePushLayout(ui.LayoutView):
         self.add_item(self._build_container())
 
     # ---------------------------------------------------------------- 版面
+
+    @staticmethod
+    def _format_stats_row(stats: dict) -> str:
+        """投票統計壓成單行：本尊一格一行（本集 + 累計 = 10 行）把卡片拖成長條。
+
+        顏色 emoji 與下方評分鈕同款（🟩=5分…🟥=1分），按鈕就在統計正下方可對照，
+        所以橫版省去「5分:」文字也不會看不懂。
+        """
+        return "・".join(
+            f"{VOTE_TYPE_LABELS[key][1]} {stats.get(key, 0)}" for key in VOTE_TYPE_ORDER
+        )
+
+    def _build_vote_stats_text(self) -> Optional[str]:
+        """V2 版：單行橫排統計（本集）。查詢條件與本尊一致（message_id 精準查）。"""
+        if not (self.db and hasattr(self.db, "get_vote_stats") and self.video_sn):
+            return None
+        try:
+            stats = self.db.get_vote_stats(int(self.video_sn), self.message_id)
+            return self._format_stats_row(stats)
+        except Exception as e:
+            logger.error(f"❌ 重建投票統計失敗: {e}")
+            return None
+
+    def _build_cumulative_stats_text(self) -> Optional[str]:
+        """V2 版：單行橫排統計（全系列累計）。查詢條件與本尊一致（anime_sn 加總）。"""
+        if not (self.db and hasattr(self.db, "get_vote_stats_by_anime") and self.anime_sn):
+            return None
+        try:
+            stats = self.db.get_vote_stats_by_anime(int(self.anime_sn))
+            return self._format_stats_row(stats)
+        except Exception as e:
+            logger.error(f"❌ 重建全系列累計統計失敗: {e}")
+            return None
 
     def _build_container(self) -> ui.Container:
         """組出整張卡片（含按鈕列）。"""
@@ -297,23 +329,26 @@ class AnimePushLayout(ui.LayoutView):
 
         container.add_item(ui.Separator(spacing=discord.SeparatorSpacing.large))
 
-        # 統計區。標題沿用同一組常數，重畫時才比對得到
-        # （舊版靠 embed_views._set_embed_field 用同一個名字定位欄位）。
+        # 統計區：標題與單行統計合併成一塊，卡片更緊湊
+        # （欄位名沿用同一組常數，重畫比對邏輯在 V2 是整個 view 重建，仍保持同源）。
         episode_stats = self._build_vote_stats_text()
         if episode_stats:
-            container.add_item(ui.TextDisplay(f"### {EPISODE_FIELD_NAME}"))
-            container.add_item(ui.TextDisplay(episode_stats))
+            container.add_item(
+                ui.TextDisplay(f"### {EPISODE_FIELD_NAME}\n{episode_stats}")
+            )
 
         cumulative_stats = self._build_cumulative_stats_text()
         if cumulative_stats:
-            container.add_item(ui.TextDisplay(f"### {CUMULATIVE_FIELD_NAME}"))
-            container.add_item(ui.TextDisplay(cumulative_stats))
+            container.add_item(
+                ui.TextDisplay(f"### {CUMULATIVE_FIELD_NAME}\n{cumulative_stats}")
+            )
 
         # 留言：沒有留言就整塊不放，不留空殼佔版面（與舊版行為一致）
         comments_text = self._build_comments_text()
         if comments_text:
-            container.add_item(ui.TextDisplay(f"### {COMMENTS_FIELD_NAME}"))
-            container.add_item(ui.TextDisplay(comments_text))
+            container.add_item(
+                ui.TextDisplay(f"### {COMMENTS_FIELD_NAME}\n{comments_text}")
+            )
 
         # 大圖版：封面放最後，位置對應舊 embed 的 set_image
         if self.variant == VARIANT_GALLERY and cover:
