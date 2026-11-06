@@ -207,6 +207,14 @@ def _snapshot_requires_repair(snapshot: dict[str, str]) -> tuple[bool, str]:
     status = (snapshot.get("status") or "unknown").strip().lower()
     combined_text = _filtered_snapshot_text(snapshot)
 
+    # 「Failed to connect to bus」= 本機無法查詢 systemd 狀態（dbus 未啟動等），
+    # 不代表服務掛了。2026-11-06 曾因 dbus 開機失敗，三隻 bot 互查全部拿到
+    # 這個錯誤 → 彼此誤判死亡 → 互相重啟的無限循環。查不到狀態時必須跳過。
+    if "failed to connect to bus" in status or (
+        "failed to connect to bus" in combined_text and status in {"", "unknown"}
+    ):
+        return False, "無法查詢 systemd 狀態（bus 不可用），不視為異常，跳過"
+
     if status not in _HEALTHY_STATUSES:
         return True, f"狀態異常: {status}"
 
