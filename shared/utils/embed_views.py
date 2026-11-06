@@ -650,12 +650,13 @@ class AnimePushView(discord.ui.View):
     def _build_vote_stats_text(self) -> Optional[str]:
         """從資料庫重建「這集表現得如何?」欄位文字（與 push_embed.generate_anime_embed 格式一致）。
 
-        以 self.message_id（該則 embed）精確查詢；尚未設定 message_id 時退回以 videoSn 查詢。
+        以 videoSn 全查（與首次渲染同口徑）。不看 message_id：同一集的票都算這一集的，
+        重畫後數字才不會比初始渲染縮水（DB 層的 message_id 參數保留給測試與特殊查詢用）。
         """
         try:
             if not self.db or not hasattr(self.db, "get_vote_stats") or not self.video_sn:
                 return None
-            vote_stats = self.db.get_vote_stats(int(self.video_sn), self.message_id)
+            vote_stats = self.db.get_vote_stats(int(self.video_sn))
             return format_vote_stats(vote_stats)
         except Exception as e:
             logger.error(f"❌ 重建投票統計失敗: {e}")

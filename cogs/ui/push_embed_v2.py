@@ -245,8 +245,8 @@ class AnimePushLayout(ui.LayoutView):
         self.db = db_adapter
         self.video_sn = episode.get("videoSn")
         self.anime_sn = episode.get("animeSn")
-        # 先有 message_id 才組版面，統計才會以「這一則訊息」精準查詢；
-        # 順序顛倒的話重畫會退回用 videoSn 查，數字與舊版不一致。
+        # message_id 讓留言的 followup 與重畫能精準定位原訊息；統計查詢不走它
+        # （以 videoSn 全查，見 _build_vote_stats_text 的說明）。
         self.message_id = message_id
 
         self.add_item(self._build_container())
@@ -265,11 +265,16 @@ class AnimePushLayout(ui.LayoutView):
         )
 
     def _build_vote_stats_text(self) -> Optional[str]:
-        """V2 版：單行橫排統計（本集）。查詢條件與本尊一致（message_id 精準查）。"""
+        """V2 版：單行橫排統計（本集）。以 videoSn 全查，與首次渲染同口徑。
+
+        刻意不帶 message_id：初始渲染（推送當下）沒有 message_id，本來就是以
+        videoSn 查；若重畫時改用 message_id 過濾，同一張卡投票後的數字會跟
+        剛推出時不一致（DB 層的 message_id 參數保留給測試用）。
+        """
         if not (self.db and hasattr(self.db, "get_vote_stats") and self.video_sn):
             return None
         try:
-            stats = self.db.get_vote_stats(int(self.video_sn), self.message_id)
+            stats = self.db.get_vote_stats(int(self.video_sn))
             return self._format_stats_row(stats)
         except Exception as e:
             logger.error(f"❌ 重建投票統計失敗: {e}")
@@ -456,6 +461,27 @@ class AnimePushLayout(ui.LayoutView):
             message = await interaction.channel.fetch_message(self.message_id)
         if message is None:
             return
+
+        # 重啟後 reregister_push_views 重建的視圖只帶（videoSn, animeSn, title）
+        # 瘦身 episode —— DB 沒存簡介與製作名單，直接重畫會把卡片洗成「裸卡」
+        # （剩標題＋無簡介＋統計＋按鈕）。第一次重畫前先補打 detail API 把資料
+        # 補齊；啟動時零 API 呼叫，代價是重啟後第一次互動多等一次請求。
+        if not (self.episode.get("content") or self.episode.get("description")):
+            try:
+                from cogs.ui.push_core_simple import fetch_anime_details_from_api
+
+                details = await fetch_anime_details_from_api(int(self.video_sn))
+                if details:
+                    self.episode = {
+                        **details,
+                        "videoSn": self.video_sn,
+                        "animeSn": self.anime_sn,
+                        "title": self.episode.get("title") or details.get("title", ""),
+                    }
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ 重畫前補抓動畫詳細資訊失敗 videoSn={self.video_sn}: {e}"
+                )
 
         fresh = AnimePushLayout(
             self.episode,
