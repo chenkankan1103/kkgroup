@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""動畫推送 Components V2 版面（測試版，尚未接上推送路徑）
+"""動畫推送 Components V2 版面（2026-11-04 起為線上正式版）
 
-為什麼另開一支而不是直接改 push_embed.py：舊版 embed 還在線上跑，V2 得先在
-測試頻道驗證外觀與互動，確認無痛之後才回頭覆蓋舊版。
+為什麼另開一支而不是直接改 push_embed.py：舊版 embed 切換期間仍在線上跑，
+V2 先在測試頻道驗證外觀與互動，確認無痛之後才回頭覆蓋舊版。
 
 與舊版的關係（刻意保持一致，切換時呼叫端才不用改語意）：
 - 吃同一個 episode dict、同一組 push_mode 字串
@@ -45,7 +45,6 @@ from cogs.ui.push_embed import (
 )
 from shared.utils.embed_views import (
     COMMENTS_FIELD_NAME,
-    CUMULATIVE_FIELD_NAME,
     EPISODE_FIELD_NAME,
     REWARD_HINT,
     VOTE_TYPE_LABELS,
@@ -57,19 +56,18 @@ from shared.utils.embed_views import (
 logger = logging.getLogger(__name__)
 
 # 版面變體
-#   gallery   —— 底部放全寬大圖，忠實對應舊 embed 的 set_image
+#   gallery   —— 封面以全寬大圖放在卡片最頂（2026-11-07 依使用者回饋從底部上移：
+#                「很多人只看畫風不看文字簡介」，海報先行），其餘資訊接在圖下
 #   thumbnail —— 標題旁放小縮圖（Section + Thumbnail），省下大片垂直空間，
 #                代價是失去大圖的視覺重量
-# 兩者資訊完全相同，差別只在封面怎麼擺，留給測試頻道決定。
 VARIANT_GALLERY = "gallery"
 VARIANT_THUMBNAIL = "thumbnail"
 DEFAULT_VARIANT = VARIANT_GALLERY
 
-# 舊 embed 受欄位值 1024 字元所迫，簡介只留 200 字、留言只顯示 3 則 × 60 字。
-# V2 沒有欄位上限，只有整則訊息共用的 4000 字元預算（見模組 docstring 第 3 點）。
-# 實測 20 部動畫的 content：簡介最長 1235、名單最長 854，所以這裡的額度
-# 幾乎等於不截斷 —— 真的遇到超長內容才由 _truncate 收尾。
-SYNOPSIS_LIMIT = 1200
+# 2026-11-07 使用者回饋：卡片太長，而「很多人只看畫風不看文字簡介」。
+# 簡介從「幾乎不截斷」（1200）壓到 160 字 —— 想看完整的點下方觀看連結；
+# 名單另由 minimal 版式壓縮（見 format_credits），CREDITS_LIMIT 留著兜底。
+SYNOPSIS_LIMIT = 160
 CREDITS_LIMIT = 1000
 COMMENT_DISPLAY_LIMIT = 6
 COMMENT_MAX_LEN = 100
@@ -78,10 +76,18 @@ COMMENT_MAX_LEN = 100
 #   compact  —— 一個區段一行，｜ 換成 ・，省垂直空間；但製作團隊那種十幾項的
 #               長區段在手機上照樣折成三、四行，等於沒分段
 #   expanded —— 每個項目自成一行，實測約 28 行，項目邊界一目瞭然
-# 2026-11-04 在測試頻道兩版並排比對後選了 expanded。
+#   minimal  —— 每個區段一行、每行最多三項，砍括號附註、超項以「等」收尾；
+#               2026-11-07 依使用者回饋成為預設（「製作團隊比較少人想知道」，
+#               28 行的名單把整張卡拖成長條）
 CREDITS_COMPACT = "compact"
 CREDITS_EXPANDED = "expanded"
-DEFAULT_CREDITS_STYLE = CREDITS_EXPANDED
+CREDITS_MINIMAL = "minimal"
+DEFAULT_CREDITS_STYLE = CREDITS_MINIMAL
+
+# minimal 版式的修剪參數：每區段取前幾項、單項截多長。
+# 「原作性質：漫畫」這種欄位整項濾掉（資訊價值最低卻常排第一，擠掉導演/製作）。
+_MINIMAL_ITEMS_PER_SECTION = 3
+_MINIMAL_ITEM_LEN = 24
 
 # 標題已含集數標記時就不再附加 volume，避免出現「第5集 · 第5集」。
 # 與 push_embed.py 的 episode_pattern 同一條規則。
@@ -98,6 +104,10 @@ _SECTION_MARK = re.compile(r"(＜[^＞]{1,12}＞)")
 
 # 項目分隔符。巴哈用全形 ｜，但少數條目混用半形 |，一起收。
 _ITEM_SEP = re.compile(r"[｜|]")
+
+# minimal 版砍掉的括號附註，如「原作：漆原侑來（連載於「秋田書店…」）」的
+# 連載資訊 —— 名單要一眼掃完，附註留給巴哈頁。
+_ITEM_PAREN = re.compile(r"（[^）]*）|\([^)]*\)")
 
 
 def split_anime_content(content: str) -> tuple:
@@ -131,6 +141,14 @@ def _split_items(body: str) -> list:
     return [x.strip() for x in _ITEM_SEP.split(body) if x.strip()]
 
 
+def _minimal_item(item: str) -> str:
+    """minimal 版式的單項修剪：砍括號附註、限長，讓區段一行掃得完。"""
+    text = _ITEM_PAREN.sub("", item).strip()
+    if len(text) > _MINIMAL_ITEM_LEN:
+        text = text[: _MINIMAL_ITEM_LEN - 1] + "…"
+    return text
+
+
 def format_credits(credits: str, style: str = DEFAULT_CREDITS_STYLE) -> str:
     """把製作名單排成 Discord 的細字區塊（-# 開頭）。
 
@@ -139,7 +157,8 @@ def format_credits(credits: str, style: str = DEFAULT_CREDITS_STYLE) -> str:
 
     Args:
         credits: split_anime_content 切出來的名單段。
-        style: compact 一個區段一行；expanded 每個項目自成一行。
+        style: compact 一個區段一行；expanded 每個項目自成一行；
+            minimal 每個區段一行、每行最多三項並砍括號附註。
     """
     if not credits:
         return ""
@@ -157,7 +176,19 @@ def format_credits(credits: str, style: str = DEFAULT_CREDITS_STYLE) -> str:
         label = chunks[i].strip()
         body = chunks[i + 1].strip()
         items = _split_items(body) if body else []
-        if style == CREDITS_EXPANDED:
+        if style == CREDITS_MINIMAL:
+            items = [
+                _minimal_item(x) for x in items if not x.startswith("原作性質")
+            ]
+            items = [x for x in items if x]
+            if items:
+                shown = items[:_MINIMAL_ITEMS_PER_SECTION]
+                line = "・".join(shown)
+                if len(items) > _MINIMAL_ITEMS_PER_SECTION:
+                    line += " 等"
+                lines.append(f"{label} {line}")
+            # 整段被濾光（如只有「原作性質」）就連標題一起略過
+        elif style == CREDITS_EXPANDED:
             lines.append(label)
             lines.extend(items)
         elif items:
@@ -190,11 +221,12 @@ def _popular_text(episode: dict) -> str:
     return f"{text} 總觀看" if text else ""
 
 
-def _info_line(episode: dict, push_mode: str) -> str:
-    """把 embed 的三個行內欄位收成一行。
+def _info_line(episode: dict) -> str:
+    """把 embed 的行內欄位收成一行（觀看數 + 評分）。
 
     embed 的行內欄位在手機上會各自折行、讀起來像三段碎片；V2 沒有行內欄位，
-    索性收成一行，桌機手機都讀得下去。
+    索性收成一行，桌機手機都讀得下去。推送方式（📡）屬於維運資訊，2026-11-07
+    起移進最底 footer 細字 —— 觀眾只看作品，不看它怎麼來的。
     """
     parts = []
     popular = _popular_text(episode)
@@ -203,7 +235,6 @@ def _info_line(episode: dict, push_mode: str) -> str:
         parts.append(f"👁️ {popular}")
     if score:
         parts.append(f"⭐ {score}")
-    parts.append(f"📡 {push_mode}")
     return " ・ ".join(parts)
 
 
@@ -255,14 +286,18 @@ class AnimePushLayout(ui.LayoutView):
 
     @staticmethod
     def _format_stats_row(stats: dict) -> str:
-        """投票統計壓成單行：本尊一格一行（本集 + 累計 = 10 行）把卡片拖成長條。
+        """本集統計壓成單行，只列有票的項目並標明分數。
 
-        顏色 emoji 與下方評分鈕同款（🟩=5分…🟥=1分），按鈕就在統計正下方可對照，
-        所以橫版省去「5分:」文字也不會看不懂。
+        2026-11-07 使用者回饋的兩件事一起解：只看顏色猜不出對應分數（🟩 是幾分？），
+        所以每項帶「5分」標籤；實際投票率很低（每集 ≤5 票），滿格五項大多是 0，
+        列出來只是噪音 —— 有票才顯示，全 0 時由呼叫端補文案。
         """
-        return "・".join(
-            f"{VOTE_TYPE_LABELS[key][1]} {stats.get(key, 0)}" for key in VOTE_TYPE_ORDER
-        )
+        parts = [
+            f"{VOTE_TYPE_LABELS[key][1]} {VOTE_TYPE_LABELS[key][0]} ×{stats.get(key, 0)}"
+            for key in VOTE_TYPE_ORDER
+            if stats.get(key, 0) > 0
+        ]
+        return " ・ ".join(parts)
 
     def _build_vote_stats_text(self) -> Optional[str]:
         """V2 版：單行橫排統計（本集）。以 videoSn 全查，與首次渲染同口徑。
@@ -270,23 +305,34 @@ class AnimePushLayout(ui.LayoutView):
         刻意不帶 message_id：初始渲染（推送當下）沒有 message_id，本來就是以
         videoSn 查；若重畫時改用 message_id 過濾，同一張卡投票後的數字會跟
         剛推出時不一致（DB 層的 message_id 參數保留給測試用）。
+        全 0 票回 None，由 _build_container 顯示「本集還沒有人投票」。
         """
         if not (self.db and hasattr(self.db, "get_vote_stats") and self.video_sn):
             return None
         try:
             stats = self.db.get_vote_stats(int(self.video_sn))
-            return self._format_stats_row(stats)
+            return self._format_stats_row(stats) or None
         except Exception as e:
             logger.error(f"❌ 重建投票統計失敗: {e}")
             return None
 
     def _build_cumulative_stats_text(self) -> Optional[str]:
-        """V2 版：單行橫排統計（全系列累計）。查詢條件與本尊一致（anime_sn 加總）。"""
+        """全系列累計改為摘要細字一行：總票數 + 加權平均分。
+
+        本集統計已逐項列出（見 _format_stats_row），累計再排一份同款橫排是
+        重複資訊；低票率下「N 票 ・ 平均 X.X 分」反而一眼讀完。加權平均以
+        分數 × 票數計（5 分 2 票 + 4 分 1 票 → 4.7 分）。全系列 0 票回 None。
+        """
         if not (self.db and hasattr(self.db, "get_vote_stats_by_anime") and self.anime_sn):
             return None
         try:
             stats = self.db.get_vote_stats_by_anime(int(self.anime_sn))
-            return self._format_stats_row(stats)
+            total = sum(stats.get(key, 0) for key in VOTE_TYPE_ORDER)
+            if not total:
+                return None
+            weighted = sum(int(key) * stats.get(key, 0) for key in VOTE_TYPE_ORDER)
+            avg = weighted / total
+            return f"📊 全系列累計 {total} 票 ・ 平均 {avg:.1f} 分"
         except Exception as e:
             logger.error(f"❌ 重建全系列累計統計失敗: {e}")
             return None
@@ -307,7 +353,15 @@ class AnimePushLayout(ui.LayoutView):
             _truncate(credits, CREDITS_LIMIT), self.credits_style
         )
 
-        # 標題區：縮圖版把封面掛在 Section 右側；大圖版留到最下面用 MediaGallery 呈現。
+        # 版面順序（2026-11-07 依使用者回饋定稿）：封面全寬大圖放最頂
+        # （「很多人只看畫風不看文字簡介」→ 海報先行），標題、簡介、名單接在
+        # 圖下，統計與按鈕在後。獎勵提示貼著按鈕（行動召喚旁），推送方式進 footer。
+        if self.variant == VARIANT_GALLERY and cover:
+            container.add_item(
+                ui.MediaGallery(discord.MediaGalleryItem(cover, description="封面"))
+            )
+
+        # 標題區：縮圖版把封面掛在 Section 右側；大圖版的封面已在最頂，
         # 刻意不同時放兩份 —— 同一張圖出現兩次看起來像 bug。
         if self.variant == VARIANT_THUMBNAIL and cover:
             container.add_item(
@@ -325,28 +379,25 @@ class AnimePushLayout(ui.LayoutView):
         if credits_text:
             container.add_item(ui.TextDisplay(credits_text))
 
-        container.add_item(ui.Separator())
-
-        # 資訊列 + 獎勵提示。舊版把獎勵提示接在簡介尾端，混在內文裡容易被讀過去，
-        # 這裡獨立成一行讓它自己站著。
-        container.add_item(ui.TextDisplay(_info_line(self.episode, self.push_mode)))
-        container.add_item(ui.TextDisplay(REWARD_HINT))
+        # 資訊列：觀看數與評分（📡 已移 footer；兩者皆缺就不放，免得雙分隔線相鄰）
+        info = _info_line(self.episode)
+        if info:
+            container.add_item(ui.Separator())
+            container.add_item(ui.TextDisplay(info))
 
         container.add_item(ui.Separator(spacing=discord.SeparatorSpacing.large))
 
-        # 統計區：標題與單行統計合併成一塊，卡片更緊湊
-        # （欄位名沿用同一組常數，重畫比對邏輯在 V2 是整個 view 重建，仍保持同源）。
+        # 統計區：本集逐項（只列有票項，見 _format_stats_row）；本集 0 票但系列
+        # 有票時補一句狀態，避免「### 標題」下面直接空掉。累計壓成細字摘要行。
         episode_stats = self._build_vote_stats_text()
-        if episode_stats:
-            container.add_item(
-                ui.TextDisplay(f"### {EPISODE_FIELD_NAME}\n{episode_stats}")
-            )
-
         cumulative_stats = self._build_cumulative_stats_text()
-        if cumulative_stats:
+        if episode_stats or cumulative_stats:
+            body = episode_stats or "本集還沒有人投票"
             container.add_item(
-                ui.TextDisplay(f"### {CUMULATIVE_FIELD_NAME}\n{cumulative_stats}")
+                ui.TextDisplay(f"### {EPISODE_FIELD_NAME}\n{body}")
             )
+            if cumulative_stats:
+                container.add_item(ui.TextDisplay(f"-# {cumulative_stats}"))
 
         # 留言：沒有留言就整塊不放，不留空殼佔版面（與舊版行為一致）
         comments_text = self._build_comments_text()
@@ -355,20 +406,17 @@ class AnimePushLayout(ui.LayoutView):
                 ui.TextDisplay(f"### {COMMENTS_FIELD_NAME}\n{comments_text}")
             )
 
-        # 大圖版：封面放最後，位置對應舊 embed 的 set_image
-        if self.variant == VARIANT_GALLERY and cover:
-            container.add_item(ui.Separator())
-            container.add_item(
-                ui.MediaGallery(discord.MediaGalleryItem(cover, description="封面"))
-            )
-
         for row in self._build_action_rows():
             container.add_item(row)
+
+        # 獎勵提示貼在按鈕正下方：這是行動召喚的說明，跟按鈕分開就失去意義
+        container.add_item(ui.TextDisplay(f"-# {REWARD_HINT}"))
 
         container.add_item(ui.Separator())
         container.add_item(
             ui.TextDisplay(
-                f"-# KKGroup 動畫推送 ・ <t:{int(discord.utils.utcnow().timestamp())}:f>"
+                f"-# KKGroup 動畫推送 ・ 📡 {self.push_mode} ・"
+                f" <t:{int(discord.utils.utcnow().timestamp())}:f>"
             )
         )
         return container
