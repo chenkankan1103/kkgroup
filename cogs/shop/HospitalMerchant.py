@@ -267,10 +267,8 @@ class HospitalMerchant(commands.Cog):
         )
 
         embed.set_footer(text="💡 提示：購買是選擇性的，您可以選擇免費等待自然恢復")
-        # 使用商人圖片作為大圖
-        embed.set_image(
-            url="https://cdn.discordapp.com/attachments/1275688788806467635/1427730328792989788/image.png"
-        )
+        # 原商人圖片存放在已刪除的「系統頻道」附件中，CDN 連結已 404（2026-11-06 發現），
+        # 本地無備份可重新上傳，故移除大圖；之後有新圖可直接在此 embed.set_image()。
 
         return embed
 
