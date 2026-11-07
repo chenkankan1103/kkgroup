@@ -120,6 +120,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{
               "content": "✅ **UIBot 自動部署成功**",
+              "flags": 4096,
               "embeds": [{
                 "title": "🚀 uibot.service 已重啟",
                 "description": "最新代碼已部署到 GCP VM",

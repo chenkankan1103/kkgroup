@@ -328,7 +328,8 @@ async def _send_discord_embed(title, description, color, details=None):
                         )
 
                 embed.set_footer(text="🪝 GitHub Webhook 自動部署")
-                await channel.send(embed=embed)
+                # silent=True：靜音推播，訊息照樣進頻道——每次 push 都響一聲太吵
+                await channel.send(embed=embed, silent=True)
                 logger.info("✅ Discord 通知已發送")
 
             except Exception as e:
