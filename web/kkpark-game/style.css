@@ -87,90 +87,7 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* ================= 房間 ================= */
-
-.stage { margin-top: 12px; }
-
-.room {
-  position: relative;
-  height: 210px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background:
-    radial-gradient(120% 80% at 50% 0%, #1d2534 0%, #12161f 62%, #0e1219 100%);
-}
-
-/* 地板：一條亮線當作牆角，下面稍微亮一點 */
-.room::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 34px;
-  background: #171d27;
-  border-top: 1px solid #2b3444;
-}
-
-.prop {
-  position: absolute;
-  bottom: 34px;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  transform: translateX(-50%);
-  animation: bob 3.4s ease-in-out infinite;
-}
-
-.prop i {
-  font-size: 28px;
-  font-style: normal;
-  line-height: 1;
-  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.6));
-}
-
-.prop span {
-  font-size: 9px;
-  color: var(--dim);
-  white-space: nowrap;
-}
-
-.prop:nth-of-type(2) { animation-delay: -0.9s; }
-.prop:nth-of-type(3) { animation-delay: -1.7s; }
-.prop:nth-of-type(4) { animation-delay: -2.5s; }
-
-/* 紙娃娃：原生 GIF 只有 39×66，用 pixelated 放大才不會糊 */
-.doll {
-  position: absolute;
-  bottom: 36px;
-  left: 50%;
-  z-index: 3;
-  width: 78px;
-  height: 132px;
-  object-fit: contain;
-  transform: translateX(-50%);
-  transition: left 1.1s ease-in-out;
-  image-rendering: pixelated;
-  pointer-events: none;
-  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55));
-}
-
-.doll-glow {
-  position: absolute;
-  bottom: 32px;
-  left: 50%;
-  z-index: 2;
-  width: 62px;
-  height: 12px;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(240, 185, 11, 0.34), transparent 78%);
-  transform: translateX(-50%);
-  transition: left 1.1s ease-in-out;
-  animation: breathe 3s ease-in-out infinite;
-}
+/* ================= 舞台下方訊息 ================= */
 
 .stage-msg {
   margin-top: 8px;
@@ -347,6 +264,22 @@ button {
 
 /* ================= 派遣：業務清單 ================= */
 
+.stn-head {
+  margin: 14px 2px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 10px currentColor;
+}
+
+.stn-filter {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.stn-filter .link { padding: 2px 4px; }
+
 .job {
   padding: 11px 13px;
   margin-bottom: 6px;
@@ -359,6 +292,46 @@ button {
 
 .job.sel {
   background: var(--card2);
+  border-color: var(--gold);
+}
+
+/* 還沒解鎖的業務：看得到、點不了，當作升職目標 */
+.job.off {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ================= 自動派遣 ================= */
+
+.auto-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px 13px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.auto-info { flex: 1; min-width: 0; }
+
+.auto-info b {
+  display: block;
+  font-size: 13px;
+}
+
+.auto-info small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+.auto-btn.on {
+  color: #10141b;
+  background: var(--gold);
   border-color: var(--gold);
 }
 
@@ -591,7 +564,7 @@ button {
 }
 
 .modal-box h2 { margin: 0 0 10px; font-size: 18px; }
-.modal-box p { margin: 0 0 18px; font-size: 13px; line-height: 1.7; color: var(--dim); }
+.modal-box p { margin: 0 0 18px; font-size: 13px; line-height: 1.7; color: var(--dim); white-space: pre-line; }
 
 .btn-primary {
   width: 100%;
@@ -604,16 +577,6 @@ button {
 }
 
 /* ================= 動畫 ================= */
-
-@keyframes bob {
-  0%, 100% { transform: translateX(-50%) translateY(0); }
-  50% { transform: translateX(-50%) translateY(-4px); }
-}
-
-@keyframes breathe {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
 
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(240, 185, 11, 0); }
@@ -629,14 +592,10 @@ button {
 
 @media (max-width: 380px) {
   .money { font-size: 22px; }
-  .room { height: 186px; }
-  .doll { width: 68px; height: 116px; }
-  .prop i { font-size: 24px; }
   .item-name { font-size: 10px; }
   .tab { font-size: 11px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .prop, .doll-glow, .dcard.ready { animation: none; }
-  .doll, .doll-glow { transition: none; }
+  .dcard.ready { animation: none; }
 }

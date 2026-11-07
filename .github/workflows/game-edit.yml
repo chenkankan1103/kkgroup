@@ -38,7 +38,7 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       # workflow_dispatch 走 inputs，repository_dispatch 走 client_payload
       GAME_PROMPT: ${{ github.event.inputs.prompt || github.event.client_payload.prompt }}
-      GAME_FILES: web/kkpark-game/index.html web/kkpark-game/style.css web/kkpark-game/data.js web/kkpark-game/game.js
+      GAME_FILES: web/kkpark-game/index.html web/kkpark-game/style.css web/kkpark-game/map.css web/kkpark-game/data.js web/kkpark-game/map.js web/kkpark-game/game.js
       LOG_TITLE: '🎮 遊戲 AI 編輯失敗紀錄'
 
     steps:

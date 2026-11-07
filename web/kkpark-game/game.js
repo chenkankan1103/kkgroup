@@ -1,15 +1,19 @@
-/* KK 園區 · 派遣版 — 遊戲邏輯
+/* KK 園區 · 地圖版 — 遊戲邏輯
  *
  * 純前端，存檔在 localStorage，沒有後端。
  * 沒有每秒產出：錢只能靠「派遣 → 時間到 → 收錢」拿到，
  * 一天 24 小時的派遣額度用完就沒了，所以不會有放置遊戲那種無限膨脹。
+ *
+ * 舞台換成可走動的園區地圖（map.js 負責走動/碰撞/鏡頭），
+ * 這裡只管錢、派遣、面板；兩邊透過 window.KKMap 溝通。
+ * 掛機三件套：離線歡迎回來、自動派遣（Lv.3 解鎖）、地圖撿紅包。
  */
 (function () {
   'use strict';
 
   const SAVE_KEY = 'kkpark_dispatch_v1';
   const ORDER = ['face', 'hair', 'hat', 'faceAccessory', 'top', 'bottom', 'shoes'];
-  const IDLE_LEFT = 50;
+  const STATION_ORDER = ['desk', 'phone', 'vault', 'server'];
 
   /* ================= 存檔 ================= */
 
@@ -41,6 +45,9 @@
       dayKey: todayKey(),
       lastSave: Date.now(),
       totalEarned: 0,
+      autoOn: false,         // 自動派遣開關
+      autoJob: null,         // 自動派遣要重派的業務（最後一次派過的）
+      seenIntro: false,      // 新手教學彈窗只跳一次
     };
   }
 
@@ -147,7 +154,7 @@
 
   function $id(id) { return document.getElementById(id); }
 
-  /* ================= 紙娃娃 ================= */
+  /* ================= 紙娃娃（交給 map.js） ================= */
 
   function equipCsv() {
     const ids = [API.body];
@@ -158,102 +165,10 @@
     return ids.join(',');
   }
 
-  function dollUrl(anim) {
-    return API.base + '/animated/' + API.skin + '/' + equipCsv() + '/' + anim +
-           '/0?showears=false&resize=' + API.resize + '&flipX=true';
-  }
-
-  let dollAnim = API.idle;
-  let dollLeft = IDLE_LEFT;
-  let dollTimer = null;
-  let dollSeq = 0;
-  let firstLoad = true;
-
-  /* maplestory.io 是即時生成圖的：每組「造型 × 動作」第一次要 3~8 秒，之後才走 24h 快取。
-   * 直接換 img.src 會讓角色先消失好幾秒，所以先用 Image() 探好、載完才真的換上去。 */
-  const loaded = {};
-
-  function dollDone() {
-    if (!firstLoad) return;
-    firstLoad = false;
-    $id('stageMsg').textContent = '在園區裡待命…';
-  }
-
-  function applyDoll(url) {
-    const el = $id('doll');
-    if (el.getAttribute('src') === url) return;
-    if (loaded[url]) { el.src = url; dollDone(); return; }
-
-    const seq = ++dollSeq;
-    const im = new Image();
-    im.onload = function () {
-      loaded[url] = true;
-      if (seq !== dollSeq) return;      // 中途又換動作了，這次的結果作廢
-      el.src = url;
-      dollDone();
-    };
-    im.onerror = function () {
-      // 造型組合被伺服器拒絕時退回純身體，至少不要整張破圖
-      if (seq !== dollSeq) return;
-      const fb = API.base + '/animated/' + API.skin + '/' + API.body + '/' + dollAnim +
-                 '/0?resize=' + API.resize;
-      loaded[fb] = true;
-      el.src = fb;
-      dollDone();
-    };
-    im.src = url;
-  }
-
-  function setDollAnim(a) {
-    if (dollAnim === a) return;
-    dollAnim = a;
-    applyDoll(dollUrl(a));
-  }
-
-  function setDollLeft(p) {
-    dollLeft = Math.max(5, Math.min(95, p));
-    $id('doll').style.left = dollLeft + '%';
-    $id('dollGlow').style.left = dollLeft + '%';
-  }
-
-  function propLeft(name) {
-    const el = document.querySelector('.prop[data-prop="' + name + '"]');
-    return el ? parseFloat(el.style.left) : IDLE_LEFT;
-  }
-
-  /* 走到某個物件前面，站定後換成工作動作。 */
-  function walkTo(prop, anim) {
-    clearTimeout(dollTimer);
-    const target = propLeft(prop) - 6;
-    if (Math.abs(target - dollLeft) < 1) { setDollAnim(anim); return; }
-    setDollAnim(API.walk);
-    setDollLeft(target);
-    dollTimer = setTimeout(function () { setDollAnim(anim); }, 1200);
-  }
-
-  function walkHome() {
-    clearTimeout(dollTimer);
-    if (Math.abs(IDLE_LEFT - dollLeft) < 1) { setDollAnim(API.idle); return; }
-    setDollAnim(API.walk);
-    setDollLeft(IDLE_LEFT);
-    dollTimer = setTimeout(function () { setDollAnim(API.idle); }, 1200);
-  }
-
-  function renderDoll() { applyDoll(dollUrl(dollAnim)); }
-
-  /* 先抓常用動作，派遣當下就不用等。載完的 URL 記進 loaded，之後換裝是秒切。 */
-  function preload() {
-    for (let i = 0; i < PRELOAD_ANIMS.length; i++) {
-      const u = dollUrl(PRELOAD_ANIMS[i]);
-      const im = new Image();
-      im.onload = function () { loaded[u] = true; };
-      im.src = u;
-    }
-  }
-
   /* ================= 派遣 ================= */
 
   let selectedJob = null;
+  let stationFilter = null;   // 從地圖點建築進來時，只看那一站的業務
   let wasReady = false;
 
   function activeJob() { return S.dispatch ? jobById[S.dispatch.jobId] : null; }
@@ -270,10 +185,11 @@
     S.hoursUsed += hours;
     const now = Date.now();
     S.dispatch = { jobId: jobId, startAt: now, endAt: now + hours * 3600000, hours: hours };
+    S.autoJob = jobId;          // 自動派遣記住最後一次派的
     wasReady = false;
     save();
     paint();
-    walkTo(job.prop, job.anim);
+    KKMap.goToStation(job.prop, job.anim);
     toast('派去「' + job.name + '」，' + fmtHours(hours) + '後回來', 'good');
   }
 
@@ -300,13 +216,43 @@
 
     paint();
 
-    clearTimeout(dollTimer);
-    setDollAnim(failed ? API.fail : API.done);
-    if (failed) {
-      dollTimer = setTimeout(function () { setDollAnim(API.idle); }, 2000);
-    } else {
-      dollTimer = setTimeout(walkHome, 1200);
+    $id('stageMsg').textContent = '收完錢，在園區裡自由活動…';
+    KKMap.goIdle();
+    KKMap.setStationState(job.prop, null);
+    KKMap.playOnce(failed ? API.fail : API.done, failed ? 2000 : 1600);
+    if (!failed) KKMap.cashBurst(job.prop);
+  }
+
+  /* ================= 掛機：自動派遣 ================= */
+
+  /* 開著的話，額度夠就自動把人派出去；時長挑額度裝得下的最大段。 */
+  function maybeAuto() {
+    if (!S.autoOn || S.rank < AUTO_UNLOCK_RANK || S.dispatch) return;
+    const left = DAILY_HOURS - S.hoursUsed;
+    if (left < 0.5 - 1e-6) return;
+
+    let job = (S.autoJob && jobById[S.autoJob] && jobById[S.autoJob].lv <= S.rank)
+      ? jobById[S.autoJob] : null;
+    if (!job) {
+      for (let i = 0; i < JOBS.length; i++) {
+        if (JOBS[i].lv <= S.rank) { job = JOBS[i]; break; }
+      }
     }
+    if (!job) return;
+
+    const hours = left >= 8 ? 8 : left >= 2 ? 2 : 0.5;
+    startDispatch(job.id, hours);
+  }
+
+  /* ================= 掛機：紅包 ================= */
+
+  function onCoinPickup() {
+    const v = MAP.coin.base + S.rank * MAP.coin.perRank;
+    S.money += v;
+    S.totalEarned += v;
+    save();
+    paint();
+    return v;
   }
 
   /* ================= 動作 ================= */
@@ -337,6 +283,7 @@
     S.rank++;
     save(); paint();
     toast('升職成功 — ' + RANKS[S.rank].title, 'good');
+    if (S.rank === AUTO_UNLOCK_RANK) toast('自動派遣解鎖了！到派遣頁打開', 'good');
   }
 
   /* 點單品：沒買過就買下並穿上，已穿就脫掉。 */
@@ -355,7 +302,7 @@
       S.equip[slot] = it.id;
       toast('買下 ' + it.name, 'good');
     }
-    save(); paint(); renderDoll();
+    save(); paint(); KKMap.refreshDoll();
   }
 
   /* ================= 渲染 ================= */
@@ -401,34 +348,70 @@
       return;
     }
 
-    if (selectedJob === null || jobById[selectedJob].lv > S.rank) {
+    /* 預設選中：可接、且在目前篩選的站裡 */
+    if (selectedJob === null || jobById[selectedJob].lv > S.rank ||
+        (stationFilter && jobById[selectedJob].prop !== stationFilter)) {
       selectedJob = null;
       for (let i = 0; i < JOBS.length; i++) {
-        if (JOBS[i].lv <= S.rank) { selectedJob = JOBS[i].id; break; }
+        if (JOBS[i].lv <= S.rank && (!stationFilter || JOBS[i].prop === stationFilter)) {
+          selectedJob = JOBS[i].id;
+          break;
+        }
       }
     }
 
     let html = '';
-    for (let i = 0; i < JOBS.length; i++) {
-      const j = JOBS[i];
-      if (j.lv > S.rank) continue;
-      const sb = slotBonus(j);
-      const slotName = j.slot ? slotNameOf(j.slot) : '';
-      html +=
-        '<div class="job' + (j.id === selectedJob ? ' sel' : '') + '" data-pick="' + j.id + '">' +
-          '<div class="row-main">' +
-            '<div class="row-name">' + j.name +
-              (sb > 0 ? '<span class="badge ok">部位 +' + Math.round(sb * 100) + '%</span>' : '') +
+    if (stationFilter) {
+      html += '<div class="stn-filter">篩選：「' + MAP.stations[stationFilter].sign +
+              '」　<button class="link" data-clear-filter="1">看全部業務</button></div>';
+    }
+
+    /* 業務照派遣站分組：地圖上那棟建築就是它的入口 */
+    const groups = stationFilter ? [stationFilter] : STATION_ORDER;
+    for (let g = 0; g < groups.length; g++) {
+      const prop = groups[g];
+      const meta = MAP.stations[prop];
+      let rows = '';
+      for (let i = 0; i < JOBS.length; i++) {
+        const j = JOBS[i];
+        if (j.prop !== prop) continue;
+        if (j.lv > S.rank) {
+          rows +=
+            '<div class="job off">' +
+              '<div class="row-main">' +
+                '<div class="row-name">' + j.name +
+                  '<span class="badge">升到「' + RANKS[j.lv].title + '」解鎖</span>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+          continue;
+        }
+        const sb = slotBonus(j);
+        const slotName = j.slot ? slotNameOf(j.slot) : '';
+        rows +=
+          '<div class="job' + (j.id === selectedJob ? ' sel' : '') + '" data-pick="' + j.id + '">' +
+            '<div class="row-main">' +
+              '<div class="row-name">' + j.name +
+                (sb > 0 ? '<span class="badge ok">部位 +' + Math.round(sb * 100) + '%</span>' : '') +
+              '</div>' +
+              '<div class="row-sub">每小時 ' + fmt(hourly(j)) +
+                '　·　風險 ' + Math.round(j.risk * 100) + '%' +
+                (j.slot ? '　·　吃' + slotName : '') +
+              '</div>' +
             '</div>' +
-            '<div class="row-sub">每小時 ' + fmt(hourly(j)) +
-              '　·　風險 ' + Math.round(j.risk * 100) + '%' +
-              (j.slot ? '　·　吃' + slotName : '') +
-            '</div>' +
-          '</div>' +
-        '</div>';
+          '</div>';
+      }
+      if (!rows) continue;
+      html += '<div class="stn-head" style="color:' + meta.neon + '">' +
+              meta.emoji + ' ' + meta.sign + '</div>' + rows;
     }
 
     const sel = jobById[selectedJob];
+    if (!sel) {
+      panel.innerHTML = html + '<p class="hint">這裡的業務你還接不了，先去升職。</p>';
+      return;
+    }
+
     const left = DAILY_HOURS - S.hoursUsed;
     let btns = '';
     for (let i = 0; i < DURATIONS.length; i++) {
@@ -441,8 +424,26 @@
         '</button>';
     }
 
-    $id('panel-dispatch').innerHTML =
-      html +
+    /* 自動派遣開關 */
+    const unlocked = S.rank >= AUTO_UNLOCK_RANK;
+    const autoName = S.autoJob && jobById[S.autoJob] ? jobById[S.autoJob].name : null;
+    html +=
+      '<div class="auto-row">' +
+        '<div class="auto-info"><b>自動派遣</b>' +
+          '<small>' + (unlocked
+            ? (S.autoOn
+                ? '運作中：額度內自動重派「' + (autoName || '上次業務') + '」'
+                : '打開就會自己接單，額度用完自動停')
+            : '升到「' + RANKS[AUTO_UNLOCK_RANK].title + '」解鎖：底下有人跑腿，不用手動派') +
+          '</small>' +
+        '</div>' +
+        '<button class="btn auto-btn' + (unlocked && S.autoOn ? ' on' : '') + '"' +
+          (unlocked ? ' data-auto="1"' : ' disabled') + '>' +
+          (unlocked ? (S.autoOn ? '開' : '關') : '未解鎖') +
+        '</button>' +
+      '</div>';
+
+    panel.innerHTML = html +
       '<div class="gobar">' +
         '<div class="gobar-info">派誰去「<b>' + sel.name + '</b>」　·　今日剩 ' + trimH(left) + ' 小時</div>' +
         '<div class="gobar-btns">' + btns + '</div>' +
@@ -590,6 +591,12 @@
     setTimeout(function () { el.remove(); }, 3200);
   }
 
+  function showModal(title, body) {
+    $id('modalTitle').textContent = title;
+    $id('modalBody').textContent = body;   /* CSS 用 pre-line，\n 會真的換行 */
+    $id('modal').classList.remove('hidden');
+  }
+
   /* ================= 每幀更新 ================= */
 
   const WORK_MSGS = [
@@ -597,22 +604,37 @@
     '今天也要努力…', '樓下在催進度…', '這單不能漏…',
   ];
 
+  function progressPct() {
+    const d = S.dispatch;
+    return Math.max(0, Math.min(100, (Date.now() - d.startAt) / (d.endAt - d.startAt) * 100));
+  }
+
   function renderProgress() {
     const d = S.dispatch;
     const bar = $id('dbar');
     if (!d) { bar.classList.add('hidden'); return; }
     bar.classList.remove('hidden');
-    const total = d.endAt - d.startAt;
-    const pct = Math.max(0, Math.min(100, (Date.now() - d.startAt) / total * 100));
+    const pct = progressPct();
     $id('dbarFill').style.width = pct.toFixed(1) + '%';
     $id('dbarText').textContent = isReady()
       ? '完成了'
       : activeJob().name + '　' + fmtLeft(d.endAt - Date.now()) + '　' + Math.floor(pct) + '%';
   }
 
+  /* 把派遣進度同步到地圖上的站點泡泡 */
+  function syncBubble() {
+    const d = S.dispatch;
+    if (!d) return;
+    const job = activeJob();
+    KKMap.setStationState(job.prop,
+      isReady() ? { ready: true } : { label: job.name, pct: progressPct() });
+  }
+
   function tick() {
     rollDay();
     renderProgress();
+    syncBubble();
+    maybeAuto();
 
     const d = S.dispatch;
     if (d) {
@@ -626,30 +648,91 @@
 
   /* ================= 初始化 ================= */
 
+  function switchTab(name) {
+    activeTab = name;
+    const tabs = document.querySelectorAll('.tab');
+    for (let i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle('active', tabs[i].getAttribute('data-tab') === name);
+    }
+    const panels = document.querySelectorAll('.panel');
+    for (let i = 0; i < panels.length; i++) {
+      panels[i].classList.toggle('active', panels[i].id === 'panel-' + name);
+    }
+    renderPanel();
+    refreshAffordability();
+  }
+
+  /* 從地圖走進站點：有派遣就收錢／看進度，沒有就打開派遣頁篩那一站 */
+  function onInteract(prop) {
+    const d = S.dispatch;
+    if (d) {
+      const job = activeJob();
+      if (job.prop === prop) {
+        if (isReady()) collectDispatch();
+        else toast('「' + job.name + '」還在忙，剩 ' + fmtLeft(d.endAt - Date.now()));
+      } else {
+        toast('人還在「' + job.name + '」那邊');
+      }
+      return;
+    }
+    stationFilter = prop;
+    switchTab('dispatch');
+    $id('tabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function init() {
     rollDay();
-    $id('stageMsg').textContent = '正在載入紙娃娃…';
-    renderDoll();
-    setDollLeft(IDLE_LEFT);
+
+    KKMap.init({
+      getDollCsv: equipCsv,
+      onInteract: onInteract,
+      onCoin: onCoinPickup,
+      onDollReady: function () {
+        if (!S.dispatch) $id('stageMsg').textContent = '在園區裡待命…';
+      },
+    });
+
     paint();
-    preload();
     renderProgress();
+
+    if (S.dispatch) {
+      const job = activeJob();
+      KKMap.placeAtStation(job.prop, job.anim);
+      if (Date.now() >= S.dispatch.endAt) {
+        showModal('歡迎回來',
+          '你不在的時候，「' + job.name + '」已經收工了。\n預估可領 ' +
+          fmt(rewardFor(job, S.dispatch.hours)) + ' KK幣（成不成就看運氣）。\n' +
+          '到「' + MAP.stations[job.prop].sign + '」門口按互動收錢，或在下面按收錢。');
+      }
+    } else if (!S.seenIntro) {
+      S.seenIntro = true;
+      save();
+      showModal('歡迎來到 KK 園區',
+        '用方向鍵／WASD 或右下搖桿在園區走動。\n走到建築物門口按「互動」（或按 Z）挑業務派遣。\n一天 24 小時額度派完就收工，明天再來。');
+    }
 
     $id('tabs').addEventListener('click', function (e) {
       const b = e.target.closest('.tab');
       if (!b) return;
-      activeTab = b.getAttribute('data-tab');
-      const tabs = document.querySelectorAll('.tab');
-      for (let i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', tabs[i] === b);
-      const panels = document.querySelectorAll('.panel');
-      for (let i = 0; i < panels.length; i++) {
-        panels[i].classList.toggle('active', panels[i].id === 'panel-' + activeTab);
-      }
-      renderPanel();
-      refreshAffordability();
+      switchTab(b.getAttribute('data-tab'));
     });
 
     document.addEventListener('click', function (e) {
+      if (e.target.closest('[data-clear-filter]')) {
+        stationFilter = null;
+        renderDispatch();
+        return;
+      }
+
+      const ab = e.target.closest('[data-auto]');
+      if (ab && !ab.disabled) {
+        S.autoOn = !S.autoOn;
+        save(); paint();
+        toast(S.autoOn ? '自動派遣開始運作' : '自動派遣關掉了', 'good');
+        if (S.autoOn) maybeAuto();
+        return;
+      }
+
       const pick = e.target.closest('[data-pick]');
       if (pick) { selectedJob = pick.getAttribute('data-pick'); renderDispatch(); return; }
 
@@ -680,10 +763,11 @@
     $id('btnReset').addEventListener('click', function () {
       if (!confirm('確定要清掉存檔、從頭開始嗎？')) return;
       S = freshState();
+      stationFilter = null;
+      selectedJob = null;
       save();
-      renderDoll();
-      setDollLeft(IDLE_LEFT);
-      setDollAnim(API.idle);
+      KKMap.reset();
+      KKMap.refreshDoll();
       paint();
       toast('已重新開始', 'good');
     });

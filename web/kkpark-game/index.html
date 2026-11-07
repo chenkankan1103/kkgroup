@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0b0e14">
 <title>KK 園區 · 派遣版</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="map.css">
 </head>
 <body>
 
@@ -22,22 +23,24 @@
     </div>
   </header>
 
-  <section class="stage">
-    <div class="room" id="room">
-      <div class="prop" data-prop="desk"   style="left:11%"><i>🖥️</i><span>電腦桌</span></div>
-      <div class="prop" data-prop="phone"  style="left:37%"><i>📞</i><span>電話</span></div>
-      <div class="prop" data-prop="vault"  style="left:63%"><i>🔐</i><span>金庫</span></div>
-      <div class="prop" data-prop="server" style="left:89%"><i>🗄️</i><span>機櫃</span></div>
-      <img class="doll" id="doll" alt="紙娃娃">
-      <div class="doll-glow" id="dollGlow"></div>
+  <section class="map-viewport" id="mapViewport">
+    <div class="map-world" id="mapWorld"></div>
+    <div class="map-vignette"></div>
+    <div class="dpad" id="dpad">
+      <button class="dbtn up"    data-dir="up"    aria-label="上">▲</button>
+      <button class="dbtn left"  data-dir="left"  aria-label="左">◀</button>
+      <button class="dbtn right" data-dir="right" aria-label="右">▶</button>
+      <button class="dbtn down"  data-dir="down"  aria-label="下">▼</button>
     </div>
-    <div class="stage-msg" id="stageMsg">在園區裡待命…</div>
-
-    <div class="dbar hidden" id="dbar">
-      <div class="dbar-fill" id="dbarFill"></div>
-      <div class="dbar-text" id="dbarText"></div>
-    </div>
+    <button class="act-btn off" id="btnInteract">互動<small>Z</small></button>
   </section>
+
+  <div class="stage-msg" id="stageMsg">正在載入紙娃娃…</div>
+
+  <div class="dbar hidden" id="dbar">
+    <div class="dbar-fill" id="dbarFill"></div>
+    <div class="dbar-text" id="dbarText"></div>
+  </div>
 
   <nav class="tabs" id="tabs">
     <button class="tab active" data-tab="dispatch">派遣</button>
@@ -57,7 +60,7 @@
 
   <footer class="foot">
     <button class="link" id="btnReset">重來</button>
-    <span class="ver">v0.4 派遣版 · 存檔在本機瀏覽器</span>
+    <span class="ver">v0.5 地圖版 · 存檔在本機瀏覽器</span>
   </footer>
 
 </div>
@@ -73,6 +76,7 @@
 </div>
 
 <script src="data.js"></script>
+<script src="map.js"></script>
 <script src="game.js"></script>
 </body>
 </html>
