@@ -43,6 +43,8 @@ PROJECT_DIR = Path("/home/e193752468/kkgroup")
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 DISCORD_SYS_CHANNEL_ID = os.getenv("DISCORD_SYS_CHANNEL_ID", "")
+# 論壇式頻道：部署通知改發到這裡（每次通知開一篇貼文），不吵到一般頻道
+DISCORD_FORUM_CHANNEL_ID = os.getenv("DISCORD_FORUM_CHANNEL_ID", "")
 SYSTEMD_SERVICES = [
     "bot.service",
     "shopbot.service",
@@ -280,7 +282,9 @@ def send_discord_notification_thread(title, description, color, details=None):
     """
     在後臺線程中發送 Discord 通知（避免 Flask 異步問題）
     """
-    if not DISCORD_BOT_TOKEN or not DISCORD_SYS_CHANNEL_ID:
+    if not DISCORD_BOT_TOKEN or not (
+        DISCORD_SYS_CHANNEL_ID or DISCORD_FORUM_CHANNEL_ID
+    ):
         logger.warning("⚠️ 缺少 Discord 配置，跳過通知")
         return
 
@@ -306,7 +310,11 @@ async def _send_discord_embed(title, description, color, details=None):
         @bot.event
         async def on_ready():
             try:
-                channel_id = int(DISCORD_SYS_CHANNEL_ID)
+                # 優先發到論壇頻道；未設定才退回系統頻道
+                if DISCORD_FORUM_CHANNEL_ID:
+                    channel_id = int(DISCORD_FORUM_CHANNEL_ID)
+                else:
+                    channel_id = int(DISCORD_SYS_CHANNEL_ID)
                 channel = bot.get_channel(channel_id)
 
                 if not channel:
@@ -329,7 +337,17 @@ async def _send_discord_embed(title, description, color, details=None):
 
                 embed.set_footer(text="🪝 GitHub Webhook 自動部署")
                 # silent=True：靜音推播，訊息照樣進頻道——每次 push 都響一聲太吵
-                await channel.send(embed=embed, silent=True)
+                if isinstance(channel, discord.ForumChannel):
+                    # 論壇頻道不能直接 send，每次通知開一篇新貼文
+                    try:
+                        await channel.create_thread(
+                            name=title, embed=embed, silent=True
+                        )
+                    except TypeError:
+                        # 舊版 discord.py 的 create_thread 不支援 silent
+                        await channel.create_thread(name=title, embed=embed)
+                else:
+                    await channel.send(embed=embed, silent=True)
                 logger.info("✅ Discord 通知已發送")
 
             except Exception as e:
@@ -564,6 +582,9 @@ def webhook_health():
             "status": "ok",
             "service": "GitHub Webhook Receiver",
             "configured": bool(GITHUB_WEBHOOK_SECRET),
-            "discord_enabled": bool(DISCORD_BOT_TOKEN and DISCORD_SYS_CHANNEL_ID),
+            "discord_enabled": bool(
+                DISCORD_BOT_TOKEN
+                and (DISCORD_SYS_CHANNEL_ID or DISCORD_FORUM_CHANNEL_ID)
+            ),
         }
     ), 200

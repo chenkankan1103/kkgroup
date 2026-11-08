@@ -252,7 +252,7 @@ class AdminLockerCommands(commands.Cog):
 
         觸發訊息由 cron 腳本用 Bot Token 透過 REST API 發送（靜音），
         因此 author 為 bot，必須在「忽略 bot 訊息」之前判斷，否則會被擋掉。
-        同時限定只在已知的管理員/系統頻道接受，避免他人在其他頻道偽造觸發。
+        同時限定只在已知的管理員/系統/論壇頻道接受，避免他人在其他頻道偽造觸發。
         """
         # 先檢查是否為 cron 觸發訊息（即便 author 是 bot 也要放行）
         if message.content.strip() == "定時任務觸發：批量刷新置物櫃":
@@ -261,6 +261,7 @@ class AdminLockerCommands(commands.Cog):
             for env_key in (
                 "ADMIN_CHANNEL_ID",
                 "DISCORD_SYS_CHANNEL_ID",
+                "DISCORD_FORUM_CHANNEL_ID",
                 "WELCOME_CHANNEL_ID",
                 "ANNOUNCEMENT_CHANNEL_ID",
                 "STAFF_ID_CHANNEL_ID",
@@ -271,7 +272,10 @@ class AdminLockerCommands(commands.Cog):
                         allowed_ids.add(int(val))
                     except ValueError:
                         pass
-            if allowed_ids and message.channel.id not in allowed_ids:
+            # 論壇貼文的 message.channel 是 Thread，要比對 parent_id（論壇頻道 id）
+            channel_ids = {message.channel.id, getattr(message.channel, "parent_id", None)}
+            channel_ids.discard(None)
+            if allowed_ids and not (channel_ids & allowed_ids):
                 return
             logger.info(
                 f"📡 收到置物櫃自動刷新觸發訊息（頻道 {message.channel.id}），開始執行..."

@@ -5,8 +5,9 @@
 配置：0 3 * * 3 cd /home/e193752468/kkgroup && python3 scheduled_tasks/refresh_all_lockers_cron.py
 
 流程：
-  cron 腳本用 Bot Token 透過 REST API 發送一條「靜音」觸發訊息到系統頻道
-  → 線上 uibot 的 on_message 收到 → 執行 refresh_all_lockers() → 30 分鐘後刪除觸發訊息
+  cron 腳本用 Bot Token 透過 REST API 在論壇頻道開一篇「靜音」觸發貼文
+  （未設論壇頻道時退回系統/管理員等文字頻道）
+  → 線上 uibot 的 on_message 收到 → 執行 refresh_all_lockers()（觸發貼文保留）
 
 優點：
   - 不開第二條 Discord gateway 連線，不會踢到線上常駐 uibot
@@ -47,7 +48,7 @@ TRIGGER_CONTENT = "定時任務觸發：批量刷新置物櫃"
 
 
 def trigger_locker_refresh() -> bool:
-    """以 Bot Token 透過 REST API 發送靜音觸發訊息到管理員/系統頻道，由線上 uibot 接手執行更新。"""
+    """以 Bot Token 透過 REST API 發送靜音觸發貼文/訊息到論壇（或文字）頻道，由線上 uibot 接手執行更新。"""
     import requests
 
     bot_token = os.getenv("UI_DISCORD_BOT_TOKEN")
@@ -55,7 +56,38 @@ def trigger_locker_refresh() -> bool:
         logger.error("❌ 缺少 UI_DISCORD_BOT_TOKEN")
         return False
 
-    # 優先順序：管理員頻道 → 系統頻道 → 歡迎頻道 → 公告頻道
+    headers = {
+        "Authorization": f"Bot {bot_token}",
+        "Content-Type": "application/json",
+    }
+
+    # 優先發到論壇式頻道（每次觸發開一篇貼文，不吵人）
+    forum_id = os.getenv("DISCORD_FORUM_CHANNEL_ID")
+    if forum_id:
+        url = f"https://discord.com/api/v10/channels/{forum_id}/threads"
+        payload = {
+            "name": "批量刷新置物櫃（定時任務）",
+            "message": {
+                "content": TRIGGER_CONTENT,
+                "flags": SUPPRESS_NOTIFICATIONS,
+            },
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            # 建立 thread 成功回傳 201（偶有 200）
+            if response.status_code in (200, 201):
+                data = response.json()
+                logger.info(
+                    f"✅ 靜音觸發貼文已建立於論壇頻道 (thread_id={data.get('id')})，uibot 將接手執行置物櫃更新"
+                )
+                return True
+            logger.warning(
+                f"⚠️ 論壇頻道發送失敗：HTTP {response.status_code} - {response.text[:200]}，改用文字頻道候選..."
+            )
+        except Exception as e:
+            logger.error(f"❌ 論壇頻道請求異常：{e}，改用文字頻道候選...")
+
+    # Fallback：文字頻道候選（管理員 → 系統 → 歡迎 → 公告）
     # 皆為文字頻道，發送靜音訊息不跳通知
     candidate_env_keys = [
         "ADMIN_CHANNEL_ID",  # 🕴管理員 (文字頻道)
@@ -70,10 +102,6 @@ def trigger_locker_refresh() -> bool:
         if not channel_id:
             continue
         url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-        headers = {
-            "Authorization": f"Bot {bot_token}",
-            "Content-Type": "application/json",
-        }
         payload = {
             "content": TRIGGER_CONTENT,
             "flags": SUPPRESS_NOTIFICATIONS,
