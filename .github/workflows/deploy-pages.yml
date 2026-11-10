@@ -6,6 +6,7 @@ on:
     paths:
       - 'web/kkpark/**'
       - 'web/kkpark-game/**'
+      - 'web/kkpark-map/**'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
@@ -33,9 +34,10 @@ jobs:
       # data.js、game.js），搬進子目錄不會壞掉。
       - name: 組出要發佈的網站
         run: |
-          mkdir -p _site/game
+          mkdir -p _site/game _site/map
           cp -r web/kkpark/. _site/
           cp -r web/kkpark-game/. _site/game/
+          cp -r web/kkpark-map/. _site/map/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KK 園區：雙面線人</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+
+<!-- 頂部 HUD -->
+<div id="hud" class="hidden">
+  <div class="hud-left">
+    <div id="hudMoney" class="hud-chip">💰 $0</div>
+    <div id="hudFood" class="hud-chip">🍚 25</div>
+    <div id="hudClock" class="hud-chip">第 1 天 09:00</div>
+    <div class="hud-chip">🗺️ 任務 <b id="misCount">0</b></div>
+  </div>
+  <div class="hud-bars">
+    <div class="bar trust"><span class="bar-ic" title="組織信任">🏴</span><div class="bar-track"><div id="fillTrust"></div></div></div>
+    <div class="bar police"><span class="bar-ic" title="警方進度（滿了就收網）">🚔</span><div class="bar-track"><div id="fillPolice"></div></div></div>
+    <div class="bar sus"><span class="bar-ic" title="警方懷疑（滿了就被收押）">👁️</span><div class="bar-track"><div id="fillSus"></div></div></div>
+  </div>
+  <button id="btnShop">💰 花錢</button>
+  <button id="btnHelp" title="玩法說明">❓</button>
+</div>
+
+<!-- 派遣局名冊 -->
+<aside id="roster" class="hidden"></aside>
+
+<!-- 任務詳情面板 -->
+<div id="misPanel" class="panel hidden">
+  <div class="panel-head"><b>任務</b><button id="btnMisClose" class="x">✕</button></div>
+  <div id="misBody"></div>
+</div>
+
+<!-- 花錢商店 -->
+<div id="shop" class="panel hidden">
+  <div class="panel-head"><b>💰 花錢</b><button id="btnShopClose" class="x">✕</button></div>
+  <div id="shopBody"></div>
+</div>
+
+<!-- 事件抉擇 -->
+<div id="eventModal" class="overlay hidden">
+  <div class="modal event">
+    <div id="evIcon" class="ev-icon">🚨</div>
+    <h3 id="evTitle"></h3>
+    <p id="evText"></p>
+    <div class="ev-choices">
+      <button id="evA" class="ev-btn main"></button>
+      <button id="evB" class="ev-btn"></button>
+    </div>
+  </div>
+</div>
+
+<!-- 結局 -->
+<div id="endingModal" class="overlay hidden">
+  <div class="modal ending">
+    <div id="endIcon" class="ev-icon">🚔</div>
+    <h3 id="endTitle"></h3>
+    <p id="endText"></p>
+    <div id="endStats" class="end-stats"></div>
+    <button id="btnRestart" class="ev-btn main">🔁 再臥底一次</button>
+  </div>
+</div>
+
+<!-- 開場 -->
+<div id="intro" class="overlay">
+  <div class="modal intro">
+    <h2 id="introTitle">KK 園區：雙面線人</h2>
+    <p id="introStory">
+      你被「海外高薪工作」騙到這座島上。高牆、配額、毒打……你都熬過來了。<br><br>
+      三年後，你從豬仔爬成了園區小主管，手底下有自己的人。<br><br>
+      直到某天，一位刑警找上你：「幫我拿證據，我送你回家。」<br><br>
+      ——從今天起，你有兩個老闆。
+    </p>
+    <ul class="intro-tips">
+      <li>🏴 <b>組織信任</b>歸零 → 被滅口</li>
+      <li>🚔 <b>警方進度</b>集滿 → 全台收網（勝利）</li>
+      <li>👁️ <b>警方懷疑</b>集滿 → 被當核心犯收押</li>
+    </ul>
+    <div class="intro-btns">
+      <button id="btnContinue" class="ev-btn hidden">📂 繼續存檔</button>
+      <button id="btnStartNew" class="ev-btn main">🕶️ 開始臥底人生</button>
+    </div>
+  </div>
+</div>
+
+<!-- 玩法教學（❓ 可重開） -->
+<div id="howto" class="overlay hidden">
+  <div class="modal intro">
+    <h2>🕵️ 線人操作手冊</h2>
+    <ol class="howto-steps">
+      <li><b>點地圖上的任務標記</b>——地圖上散著 ☎️🚗📦 加編號的小牌子，點它打開任務面板</li>
+      <li>選 ⚡<b>快跑</b>（盯著他跑、會跳事件）或 🌙<b>大活</b>（錢多、關掉網頁也照跑）</li>
+      <li>在面板下方<b>點一個成員</b>派人出發，左側名冊會跑進度條</li>
+      <li>時間到自動結算入帳；途中跳出事件視窗，選 A 或 B 應對</li>
+      <li>賺了錢按右上「💰 花錢」：買裝備、招募人手、買情報推 🚔 進度</li>
+      <li>🍚 <b>伙食</b>每天清晨消耗（成功任務會順手帶一份回來）；「花錢」裡可以補伙食、🏗️ <b>蓋設施</b>——水塔產糧、發電機加薪、工寮多住人</li>
+    </ol>
+    <ul class="intro-tips">
+      <li>🎯 把 🚔 <b>警方進度</b>拚到 100 → 全台收網，任務完成（勝利）</li>
+      <li>⚠️ 🏴 組織信任歸零 → 被滅口；👁️ 警方懷疑集滿 → 被收押</li>
+    </ul>
+    <div class="intro-btns">
+      <button id="btnHowClose" class="ev-btn main">✅ 懂了，開始派人</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="footNote">遊戲內地點皆屬虛構 · 地圖 © Esri, HERE, Garmin, © OpenStreetMap contributors</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="data.js"></script>
+<script src="save.js"></script>
+<script src="sim.js"></script>
+<script src="map.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
